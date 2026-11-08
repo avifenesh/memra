@@ -3288,6 +3288,175 @@ pub(crate) fn context_cache_bytes(
     ) as usize
 }
 
+/// How a request's prime holds its workspace (`AdmissionCostModel::held_workspace_bytes`,
+/// research/c8-workspace-20261108).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PrimeHold {
+    /// The charge before that lane: the widest call on an empty slab and a whole-prompt stack.
+    cold: bool,
+    /// The rows one slab call of this prime carries.
+    call_rows: usize,
+    /// The rows of hiddens it keeps at once.
+    stack_rows: usize,
+    /// The rows of a take that can join a concat batch prime (0 on a walker route).
+    concat_rows: usize,
+    /// Prime slab bytes already resident on the request's device (`prime_slab_bytes`).
+    slab_resident: usize,
+}
+
+impl PrimeHold {
+    const COLD: Self = Self {
+        cold: true,
+        call_rows: 0,
+        stack_rows: 0,
+        concat_rows: 0,
+        slab_resident: 0,
+    };
+}
+
+/// The card whose admission charges the prefill workspace a prime holds instead of the cold
+/// charge: the RTX 5090 Laptop GPU, where research/c8-workspace-20261108 measured both the prime
+/// calls and the serving A/B. The desktop RTX 5090 (170 SMs, 32 GB) primes through the qwen prime
+/// graph with a chunk graph kept per session, which no cell measured; it, every other card and
+/// unified memory keep the cold charge until their own cell reads.
+fn prefill_held_for_device(device_name: &str, unified: bool) -> bool {
+    !unified
+        && device_name.contains("Laptop")
+        && matches!(
+            memra_engine::parallel::HardwareTarget::from_device_name(device_name),
+            Ok(memra_engine::parallel::HardwareTarget::Rtx5090)
+        )
+}
+
+/// The boot receipt of [`prefill_held_for_device`], one line.
+fn prefill_held_boot_line(on: bool) -> &'static str {
+    if on {
+        "[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is \
+         charged what it allocates beside the resident slab; concat batches fit free memory)"
+    } else {
+        "[admission] prefill workspace: cold (no receipt for this card: the widest call on an \
+         empty slab and a whole-prompt stack)"
+    }
+}
+
+/// The widest take a plain chunked prefill of `prompt_rows` gets per tick (`prefill_tick`): the
+/// configured budget while another session shares the worker, the solo widening when none does
+/// (`interactive_prefill_budget`), an explicit `MEMRA_PREFILL_TICK` always, plus the sub-floor
+/// tail `prefill_tick_take` merges.
+fn admission_plain_take(
+    configured: usize,
+    explicit: bool,
+    shares_device: bool,
+    prompt_rows: usize,
+) -> usize {
+    let budget =
+        interactive_prefill_budget(configured, explicit, !shares_device, true, prompt_rows);
+    prompt_rows.min(budget.saturating_add(memra_engine::hybrid_forward::PRIME_MIN_T - 1))
+}
+
+/// `MEMRA_PRIME_BATCH_MAX_T` (default 2048): the most rows one member brings to a concat batch.
+fn prime_batch_max_t() -> usize {
+    std::env::var("MEMRA_PRIME_BATCH_MAX_T")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(2048)
+}
+
+/// The widest take a concat batch prime gives one member (`interactive_prime_batch_take`, then
+/// `batch_row_take`'s sub-floor merge). The batch uses the configured budget, never the solo
+/// widening.
+fn admission_concat_take(configured: usize, max_t: usize, prompt_rows: usize) -> usize {
+    prompt_rows.min(
+        configured
+            .min(max_t)
+            .saturating_add(memra_engine::hybrid_forward::PRIME_MIN_T - 1),
+    )
+}
+
+/// The hold admission charges a request with (research/c8-workspace-20261108). The cold charge
+/// unless the card is keyed (`prefill_held_for_device`), the model sits on one device, its prime
+/// runs `prime_layers` on the retained slab (not the gemma or Step35 programs, not a monolithic
+/// prime) and the deployment keeps the default 4096-row chunks the boot calibration probes.
+/// A walker route (`spec`: the MTP and DFlash walkers) keeps its widest chunk and a whole-prompt
+/// stack and never joins a concat batch; the plain route holds one take, which can. The DFlash
+/// walker keeps per-chunk tap buffers rather than the stack; those are a transient of the
+/// 4096-token prime the route's boot calibration measures into its reserve.
+#[allow(clippy::too_many_arguments)] // allow: one pure decision over the admission site's inputs
+fn admission_prime_hold(
+    keyed: bool,
+    single_device: bool,
+    slab_program: bool,
+    default_chunks: bool,
+    spec: bool,
+    plain_take: usize,
+    concat_take: usize,
+    prompt_rows: usize,
+    slab_resident: usize,
+) -> PrimeHold {
+    if !(keyed && single_device && slab_program && default_chunks) {
+        return PrimeHold::COLD;
+    }
+    if spec {
+        PrimeHold {
+            cold: false,
+            call_rows: prompt_rows,
+            stack_rows: prompt_rows,
+            concat_rows: 0,
+            slab_resident,
+        }
+    } else {
+        PrimeHold {
+            cold: false,
+            call_rows: plain_take,
+            stack_rows: plain_take,
+            concat_rows: concat_take,
+            slab_resident,
+        }
+    }
+}
+
+/// How many of a concat batch's candidate takes fit `room` bytes (effective free memory less the
+/// transient reserve) at `row_bytes` per row of the batch, in order. A batch's planes are its own
+/// (`prime_cache_batch`), the sum of its members' takes, and no admission charge books them
+/// together, so the batch former stops where they would no longer fit (research/c8-workspace-
+/// 20261108). None places no bound.
+fn concat_takes_within(
+    room: Option<usize>,
+    row_bytes: usize,
+    rows_so_far: usize,
+    take: usize,
+) -> bool {
+    room.is_none_or(|room| row_bytes.saturating_mul(rows_so_far.saturating_add(take)) <= room)
+}
+
+/// A concat batch's bytes per row: a call's row bytes and its returned hiddens (458 KB on
+/// Qwen3.8-27B, above the 444 KB per row the probe measured on concat batches).
+fn concat_row_bytes(admission_costs: &HashMap<String, AdmissionCostModel>, model: &str) -> usize {
+    admission_costs
+        .get(model)
+        .and_then(|cost| cost.prime.as_ref())
+        .map_or(0, |shape| shape.call_row_bytes + shape.prompt_row_bytes)
+}
+
+/// The room a concat batch of `model` may fill (`concat_takes_within`): effective free memory less
+/// the model's transient reserve floor. None (no bound) off the keyed card.
+fn concat_room(
+    free: Option<usize>,
+    admission_costs: &HashMap<String, AdmissionCostModel>,
+    model: &str,
+) -> Option<usize> {
+    free.map(|free| {
+        free.saturating_sub(admission_reserve(
+            true,
+            0,
+            admission_costs
+                .get(model)
+                .and_then(|cost| cost.transient_floor),
+            admit_reserve_override(),
+        ))
+    })
+}
+
 /// Per-model request-shaped admission estimate. Full-attention rows scale with the request's
 /// context cap; Step35 SWA rows stop at their physical ring cap. Everything else is a measured
 /// high-water residual, never lowered by reuse or allocator-pool hits.
@@ -3412,7 +3581,10 @@ impl AdmissionCostModel {
     }
 
     /// Prefill-workspace charge at this request's shape; 0 for every non-hyper model and under
-    /// the `MEMRA_ADMIT_PREFILL_WORKSPACE=0` rollback (both leave `prefill` unset).
+    /// the `MEMRA_ADMIT_PREFILL_WORKSPACE=0` rollback (both leave `prefill` unset). This is the
+    /// COLD charge: the widest call on an empty prime slab and a whole-prompt hiddens stack.
+    /// Admission charges what the request's prime holds (`held_workspace_bytes`); the cold
+    /// charge still sizes the plain path's transient reserve (`admission_reserve`).
     ///
     /// Keyed on PROMPT rows, not `ctx_cap`, deliberately: every workspace term (the per-call
     /// transients, the k-pool score plane, the returned hiddens stack) is a function of what
@@ -3422,6 +3594,13 @@ impl AdmissionCostModel {
     /// context planes keep charging `ctx_cap` in `context_bytes`, because that IS the eager
     /// allocation (`Cache::new_planned` books latent rows at the session's max_ctx).
     fn prefill_workspace_bytes(&self, prompt_rows: usize) -> usize {
+        self.held_workspace_bytes(prompt_rows, PrimeHold::COLD)
+    }
+
+    /// What the request's prime holds at once (`PrimeWorkspaceShape::held_bytes`, on the hold
+    /// `admission_prime_hold` builds): the cold charge, or a slab prime's allocations beside the
+    /// resident slab. The hyper trunk keeps its own shape.
+    fn held_workspace_bytes(&self, prompt_rows: usize, hold: PrimeHold) -> usize {
         let hyper = self
             .prefill
             .as_ref()
@@ -3430,31 +3609,54 @@ impl AdmissionCostModel {
         let prime = self
             .prime
             .as_ref()
-            .map(|shape| shape.admission_bytes(prompt_rows))
+            .map(|shape| {
+                if hold.cold {
+                    shape.admission_bytes(prompt_rows)
+                } else {
+                    shape.held_bytes(
+                        prompt_rows,
+                        hold.call_rows,
+                        hold.stack_rows,
+                        hold.concat_rows,
+                        hold.slab_resident,
+                    )
+                }
+            })
             .unwrap_or(0);
         hyper.saturating_add(prime)
     }
 
     fn estimate(&self, ctx_cap: usize, prompt_rows: usize, spec: bool) -> usize {
+        self.estimate_held(ctx_cap, prompt_rows, spec, PrimeHold::COLD)
+    }
+
+    fn estimate_held(
+        &self,
+        ctx_cap: usize,
+        prompt_rows: usize,
+        spec: bool,
+        hold: PrimeHold,
+    ) -> usize {
         self.context_bytes(ctx_cap, spec)
-            .saturating_add(self.prefill_workspace_bytes(prompt_rows))
+            .saturating_add(self.held_workspace_bytes(prompt_rows, hold))
             .saturating_add(self.activation_bytes)
     }
 
-    /// Replace only the cold prefill workspace for a guaranteed whole-entry restore.
-    /// Active KV, fixed residual, draft state and the caller's reserve are unchanged.
+    /// Replace only the prefill workspace for a guaranteed whole-entry restore, held the same way
+    /// (`hold`) for the whole prompt and for the suffix the restore leaves to prime. Active KV,
+    /// fixed residual, draft state and the caller's reserve are unchanged.
     fn cost_after_prefix_restore(
         &self,
-        cold_cost: usize,
+        cost: usize,
         prompt_rows: usize,
         restored_rows: usize,
+        hold: PrimeHold,
     ) -> Option<usize> {
         if restored_rows == 0 || restored_rows > prompt_rows {
             return None;
         }
-        cold_cost
-            .checked_sub(self.prefill_workspace_bytes(prompt_rows))?
-            .checked_add(self.prefill_workspace_bytes(prompt_rows - restored_rows))
+        cost.checked_sub(self.held_workspace_bytes(prompt_rows, hold))?
+            .checked_add(self.held_workspace_bytes(prompt_rows - restored_rows, hold))
     }
 
     /// Learn only the fixed residual beyond the exact context allocation.
@@ -18072,6 +18274,9 @@ pub fn run(
     // BATCHED-CHUNK OOM RECOVERY (WP-B day 49): the card's arm, resolved once and stated.
     let batch_oom_recover = batch_oom_recover_default(&device_name);
     eprintln!("{}", batch_oom_recover_boot_line(batch_oom_recover));
+    // PREFILL WORKSPACE HELD (research/c8-workspace-20261108): the card's arm, resolved once.
+    let prefill_held = prefill_held_for_device(&device_name, device_is_unified(&engine));
+    eprintln!("{}", prefill_held_boot_line(prefill_held));
     // ON-DEMAND KV PLANES (WP-B day 37, research/spill-b-20260919/DAY37.md): the default on the
     // card class whose deciding cell read PROMOTE-ELIGIBLE (the RTX PRO 6000 Blackwell
     // Workstation Edition, docs/decisions/KV-VMM-SERVING-DEFAULT.md), pooled planes elsewhere.
@@ -18762,8 +18967,48 @@ pub fn run(
             let decode_policy = chunk_policies
                 .get(&model_key)
                 .expect("loaded model missing decode chunk policy");
+            // PREFILL WORKSPACE HELD (research/c8-workspace-20261108). On the RTX 5090 class a
+            // single-device slab prime is charged what it allocates beside the device's resident
+            // prime slab (`admission_prime_hold`): a plain request one take per tick with only
+            // that take's hiddens, a walker its 4096-row chunk and whole-prompt stack, and either
+            // the whole new slab while the slab is smaller than its widest call. At agentic c8 on
+            // the 24 GB RTX 5090 Laptop (Qwen3.8-27B) a 17,166-token prompt was charged 2,147 MB
+            // of workspace while each of its 1024-row ticks peaked under 300 MB beside a
+            // 4096-row slab the boot probe had already grown. A concat batch, whose planes are
+            // the sum of its members' takes, is bounded where it forms (`concat_takes_within`).
+            let prime_hold = {
+                let lm = &loaded[&model_key];
+                let n_trunk = (lm.model.cfg.n_layer - lm.model.cfg.nextn_predict_layers) as usize;
+                let shape = admission_costs
+                    .get(&model_key)
+                    .and_then(|model| model.prime.as_ref());
+                let budget = policy.prefill_budget.iter().copied().max().unwrap_or(0);
+                admission_prime_hold(
+                    prefill_held,
+                    memra_engine::pp::pp_cuts(n_trunk).is_none() && lm.model.devices().len() <= 1,
+                    !lm.model.uses_gemma_program()
+                        && !lm.model.uses_sliding_gated_moe_program()
+                        && !monolithic_prime_model(lm),
+                    std::env::var_os("MEMRA_PRIME_CHUNK").is_none()
+                        && shape.is_some_and(|shape| {
+                            shape.call_rows(prompt_len)
+                                <= memra_engine::cache::PRIME_CHUNK_MAX_TOKENS
+                        }),
+                    estimate_spec,
+                    admission_plain_take(
+                        budget,
+                        prefill_tick_explicit,
+                        !active.is_empty(),
+                        prompt_len,
+                    ),
+                    admission_concat_take(budget, prime_batch_max_t(), prompt_len),
+                    prompt_len,
+                    lm.model.prime_slab_bytes(&engine),
+                )
+            };
             let (
                 cost,
+                cold_cost,
                 context_cap_bytes,
                 bytes_per_token,
                 ring_bytes_per_token,
@@ -18776,7 +19021,8 @@ pub fn run(
                 let model = admission_costs
                     .get_mut(&model_key)
                     .expect("loaded model missing admission cost model");
-                let cost = model.estimate(admission_cap, prompt_len, estimate_spec);
+                let cost =
+                    model.estimate_held(admission_cap, prompt_len, estimate_spec, prime_hold);
                 let key = (admission_cap, estimate_spec, cost);
                 let log = model.last_logged != Some(key);
                 if log {
@@ -18784,6 +19030,7 @@ pub fn run(
                 }
                 (
                     cost,
+                    model.estimate(admission_cap, prompt_len, estimate_spec),
                     // memra#476: the exact context allocation at the cap, so the predictive
                     // charge below can re-key the physical cost's context term and nothing else.
                     model.context_bytes(admission_cap, estimate_spec),
@@ -18791,7 +19038,7 @@ pub fn run(
                     model.ring_bytes_per_token(estimate_spec),
                     model.ring_rows,
                     model.activation_bytes,
-                    model.prefill_workspace_bytes(prompt_len),
+                    model.held_workspace_bytes(prompt_len, prime_hold),
                     model.pp_activation_bytes,
                     log,
                 )
@@ -18843,6 +19090,22 @@ pub fn run(
                     activation_bytes as f64 / 1e6,
                     cost_pre_draft as f64 / 1e6,
                 );
+                if cold_cost != cost_pre_draft {
+                    // Separate line, as above: the held workspace's inputs.
+                    eprintln!(
+                        "[admission] prefill workspace held: model={model_key:?} prompt={prompt_len} \
+                         call={} stack={} concat={} slab_resident={:.0}MB held={:.0}MB cold={:.0}MB",
+                        prime_hold.call_rows,
+                        prime_hold.stack_rows,
+                        prime_hold.concat_rows,
+                        prime_hold.slab_resident as f64 / 1e6,
+                        prefill_bytes as f64 / 1e6,
+                        cold_cost
+                            .saturating_sub(cost_pre_draft)
+                            .saturating_add(prefill_bytes) as f64
+                            / 1e6,
+                    );
+                }
             }
 
             // PREDICTIVE-ADMISSION SHADOW, KV arm (D2 gaps G1+G5). This sits at exactly
@@ -18866,9 +19129,10 @@ pub fn run(
                 // re-keyed to the predicted context. Before this it was ctx(P + L + 8) + A:
                 // the prefill workspace and the draft state were absent from this book, so an
                 // enforced predictive budget did not bound the workspace-inclusive footprint
-                // (research/spill-b-20260919/DAY24.md section 1). The verdict reads the COLD
-                // cost: the retained-prefix and eager arms have not run yet at this seam, so
-                // this is the worst case the request can book, never less than the book.
+                // (research/spill-b-20260919/DAY24.md section 1). The verdict reads the cost
+                // before the retained-prefix and eager arms run (they have not run yet at this
+                // seam), so this is the worst case the request can book, never less than the
+                // book. Its workspace is the held charge where the card keys it.
                 let request_kv_hat = crate::admit_predict::RequestCharge::from_physical_cost(
                     cost as u64,
                     context_cap_bytes as u64,
@@ -19023,12 +19287,14 @@ pub fn run(
                 // bound: before, 262k session capacity on the 96GB pair was halved by
                 // reserve == cost. Step-OOM park + alloc-OOM reclaim-retry remain the
                 // backstops the floor was gated against.
+                // Sized from the cold charge, so a plain request's transient reserve does not
+                // shrink with the held workspace (research/c8-workspace-20261108).
                 let reserve = admission_reserve(
                     peer_probe_spec_admission(serve_spec_enabled(), peer_probe_allows_spec)
                         && loaded.get(&req.model).is_some_and(|lm| {
                             served_spec_route_capable(lm, dspark_drafts.contains_key(&model_key))
                         }),
-                    cost,
+                    cold_cost.saturating_add(draft_state_bytes),
                     admission_costs
                         .get(&model_key)
                         .and_then(|model| model.transient_floor),
@@ -19772,7 +20038,12 @@ pub fn run(
                                         .saturating_sub(memra_engine::hybrid_forward::PRIME_MIN_T),
                                 ),
                             };
-                            model.cost_after_prefix_restore(cost, prompt_len, workspace_rows)
+                            model.cost_after_prefix_restore(
+                                cost,
+                                prompt_len,
+                                workspace_rows,
+                                prime_hold,
+                            )
                         });
                         if let Some((rows, next_cost)) = restored.zip(planned_cost)
                             && !headroom.sufficient(required)
@@ -21788,13 +22059,20 @@ pub fn run(
                 // varlen cores (task #22 vl twins) batched wins at EVERY tested T:
                 // +30.1% at T=320, +12.6% at 512, +5.9% at 937, +3.0% at 1536
                 // (prime-batch-gate --bench, B=3). budgets[0] still caps per-tick load.
-                let pb_maxt: usize = std::env::var("MEMRA_PRIME_BATCH_MAX_T")
-                    .ok()
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(2048);
+                let pb_maxt = prime_batch_max_t();
                 let min_t = memra_engine::hybrid_forward::PRIME_MIN_T.max(2);
                 let mut cand: Vec<(usize, usize)> = Vec::new();
                 let mut cand_model: Option<String> = None;
+                // CONCAT PLANES WITHIN FREE MEMORY (research/c8-workspace-20261108): where the
+                // held workspace charge is on, no admission charge books a batch's members
+                // together, so the batch stops adding takes once its planes (the model's per-call
+                // row bytes times the rows so far) would pass effective free memory less the
+                // transient reserve. Read once per round, after the previous round's planes went
+                // back to the pool.
+                let concat_free = prefill_held
+                    .then(|| effective_free_bytes(&engine).map(|(free, _)| free))
+                    .flatten();
+                let mut concat_rows = 0usize;
                 if !defer_interactive_prefill && pb_max >= 2 && !confidence_trace_enabled() {
                     #[allow(clippy::needless_range_loop)]
                     // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
@@ -21852,8 +22130,15 @@ pub fn run(
                             // path serves it, as before.
                             && take >= min_t
                             && cand_model.as_ref().is_none_or(|m| *m == s.model)
+                            && concat_takes_within(
+                                concat_room(concat_free, &admission_costs, &s.model),
+                                concat_row_bytes(&admission_costs, &s.model),
+                                concat_rows,
+                                take,
+                            )
                         {
                             cand_model.get_or_insert_with(|| s.model.clone());
+                            concat_rows += take;
                             cand.push((i, take));
                             if cand.len() == pb_max {
                                 break;
@@ -22532,6 +22817,10 @@ pub fn run(
             let mut dark_batched = false;
             {
                 let min_t = memra_engine::hybrid_forward::PRIME_MIN_T.max(2);
+                // The same plane bound as the interactive batch (`concat_takes_within`).
+                let dark_free = prefill_held
+                    .then(|| effective_free_bytes(&engine).map(|(free, _)| free))
+                    .flatten();
                 let mut dcand: Vec<usize> = Vec::new();
                 let mut dmodel: Option<String> = None;
                 let mut dlane: Option<usize> = None;
@@ -22586,6 +22875,14 @@ pub fn run(
                     }
                     let cap = budgets[li].min(adaptive_cap);
                     if ql < min_t || dsum + ql > cap {
+                        continue;
+                    }
+                    if !concat_takes_within(
+                        concat_room(dark_free, &admission_costs, &s.model),
+                        concat_row_bytes(&admission_costs, &s.model),
+                        dsum,
+                        ql,
+                    ) {
                         continue;
                     }
                     if dlane.is_some_and(|l| l != li) {
@@ -24292,7 +24589,11 @@ fn prepare_request(
 }
 
 /// Conservative pre-admit path choice. Reuse or request constraints may ultimately fall back to
-/// plain serving, but treating an MTP-capable request as spec here can only reserve more memory.
+/// plain serving, but treating an MTP-capable request as spec here can only reserve more context
+/// memory. Its held prefill workspace (`admission_prime_hold`) can be smaller than the plain
+/// route's, because a walker never joins a concat batch. A spec-estimated request served plain
+/// still primes on the slab one take at a time, and a concat batch it joins is bounded where the
+/// batch forms (`concat_takes_within`).
 /// `projected_active` is the WAVE projection (`projected_admission_wave`), the same signal the
 /// serve-time `choose_spec_k` in `admit` reads — the two must never key on different counts
 /// (the FIFO burst-split class: estimate says spec, serve says plain, memory is reserved for
@@ -41294,6 +41595,222 @@ mod tests {
         assert_eq!(px.total_bytes, 0);
     }
 
+    fn q38_cost_model() -> super::AdmissionCostModel {
+        let (h, f) = (5120usize, 17408usize);
+        super::AdmissionCostModel {
+            plain_bytes_per_token: 29_696,
+            spec_bytes_per_token: 31_552,
+            plain_ring_bytes_per_token: 0,
+            spec_ring_bytes_per_token: 0,
+            ring_rows: 0,
+            activation_bytes: 340_000_000,
+            prefill: None,
+            prime: Some(memra_engine::hybrid_forward::PrimeWorkspaceShape {
+                call_row_bytes: 38 * h + 14 * f,
+                slab_row_bytes: 28 * h + 12 * f,
+                prompt_row_bytes: 4 * h,
+                n_layers: 64,
+                swa_ring: false,
+            }),
+            transient_floor: Some(1882 << 20),
+            pp_activation_bytes: [0; 4],
+            last_logged: None,
+        }
+    }
+
+    /// research/c8-workspace-20261108: which hold admission builds. Anything off the keyed path
+    /// (another card, more than one device, a non-slab program, chunks wider than the boot probe)
+    /// is the cold charge; a walker keeps its chunk and whole-prompt stack and never joins a
+    /// concat batch; a plain request holds one take, which can.
+    #[test]
+    fn the_prime_hold_is_cold_off_the_keyed_single_device_slab_path() {
+        let floor = memra_engine::hybrid_forward::PRIME_MIN_T - 1;
+        let (prompt, slab) = (17_166usize, 1_443_000_000usize);
+        let plain_take = super::admission_plain_take(1024, false, true, prompt);
+        let concat_take = super::admission_concat_take(1024, 2048, prompt);
+        assert_eq!(plain_take, 1024 + floor);
+        assert_eq!(concat_take, 1024 + floor);
+        assert_eq!(
+            super::admission_plain_take(1024, false, false, prompt),
+            8192 + floor
+        );
+        assert_eq!(
+            super::admission_plain_take(2048, true, false, prompt),
+            2048 + floor
+        );
+        assert_eq!(super::admission_plain_take(1024, false, true, 700), 700);
+        assert_eq!(
+            super::admission_concat_take(4096, 2048, prompt),
+            2048 + floor
+        );
+        let hold = |keyed, single, program, chunks, spec| {
+            super::admission_prime_hold(
+                keyed,
+                single,
+                program,
+                chunks,
+                spec,
+                plain_take,
+                concat_take,
+                prompt,
+                slab,
+            )
+        };
+        for off in [
+            hold(false, true, true, true, false),
+            hold(true, false, true, true, false),
+            hold(true, true, false, true, false),
+            hold(true, true, true, false, false),
+            hold(false, true, true, true, true),
+        ] {
+            assert_eq!(off, super::PrimeHold::COLD);
+        }
+        let walker = hold(true, true, true, true, true);
+        assert_eq!(
+            (
+                walker.cold,
+                walker.call_rows,
+                walker.stack_rows,
+                walker.concat_rows
+            ),
+            (false, prompt, prompt, 0)
+        );
+        let plain = hold(true, true, true, true, false);
+        assert_eq!(
+            (
+                plain.cold,
+                plain.call_rows,
+                plain.stack_rows,
+                plain.concat_rows
+            ),
+            (false, plain_take, plain_take, concat_take)
+        );
+        assert_eq!((walker.slab_resident, plain.slab_resident), (slab, slab));
+        assert!(super::prefill_held_for_device(
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            false
+        ));
+        assert!(!super::prefill_held_for_device(
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            true
+        ));
+        for name in [
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+            "NVIDIA GB10",
+            "NVIDIA H100 80GB HBM3",
+            "",
+        ] {
+            assert!(!super::prefill_held_for_device(name, false), "{name}");
+        }
+        assert!(super::prefill_held_boot_line(true).contains("prefill workspace: held"));
+        assert!(super::prefill_held_boot_line(false).contains("prefill workspace: cold"));
+    }
+
+    /// research/c8-workspace-20261108: the admission site builds the hold through
+    /// `admission_prime_hold`, charges `estimate_held`, and sizes the transient reserve from the
+    /// cold charge, so a held charge never shrinks a plain-only model's `min(cost, floor)` reserve.
+    #[test]
+    fn the_admission_site_charges_the_hold_and_reserves_from_the_cold_charge() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let live = squash(include_str!("worker.rs"));
+        // Each needle is split with concat! so this test's own text cannot match it.
+        for needle in [
+            concat!("let prime_hold = {", " let lm = &loaded[&model_key];"),
+            concat!("admission_prime_hold(", " prefill_held,"),
+            concat!(
+                "let cost = model.estimate_held(",
+                "admission_cap, prompt_len, estimate_spec, prime_hold);"
+            ),
+            concat!(
+                "let reserve = admission_reserve(",
+                " peer_probe_spec_admission(serve_spec_enabled(), peer_probe_allows_spec)",
+                " && loaded.get(&req.model).is_some_and(|lm| {",
+                " served_spec_route_capable(lm, dspark_drafts.contains_key(&model_key)) }),",
+                " cold_cost.saturating_add(draft_state_bytes),"
+            ),
+            concat!(
+                "model.cost_after_prefix_restore(",
+                " cost, prompt_len, workspace_rows, prime_hold, )"
+            ),
+            concat!(
+                "let prefill_held =",
+                " prefill_held_for_device(&device_name, device_is_unified(&engine));"
+            ),
+        ] {
+            assert_eq!(
+                live.matches(needle).count(),
+                1,
+                "the admission site lost: {needle}"
+            );
+        }
+    }
+
+    /// research/c8-workspace-20261108: what each hold charges on Qwen3.8-27B geometry, against
+    /// the cold charge, and a prefix restore on the same hold.
+    #[test]
+    fn a_held_charge_is_what_the_prime_allocates_beside_the_resident_slab() {
+        let model = q38_cost_model();
+        let shape = model.prime.unwrap();
+        let (prompt, ctx) = (17_166usize, 17_934usize);
+        let floor = memra_engine::hybrid_forward::PRIME_MIN_T - 1;
+        let take = 1024 + floor;
+        let cold = model.prefill_workspace_bytes(prompt);
+        assert_eq!(cold, shape.admission_bytes(prompt));
+        assert_eq!(
+            model.held_workspace_bytes(prompt, super::PrimeHold::COLD),
+            cold
+        );
+        let slab = shape.slab_row_bytes * 4096;
+        let plain = |resident| {
+            super::admission_prime_hold(true, true, true, true, false, take, take, prompt, resident)
+        };
+        let warm = model.held_workspace_bytes(prompt, plain(slab));
+        assert_eq!(warm, (shape.call_row_bytes + shape.prompt_row_bytes) * take);
+        assert!(warm * 4 < cold, "held {warm} against cold {cold}");
+        let extras = shape.call_row_bytes - shape.slab_row_bytes;
+        assert_eq!(
+            model.held_workspace_bytes(prompt, plain(0)),
+            slab + extras * take + shape.prompt_row_bytes * take
+        );
+        assert_eq!(
+            model.estimate(ctx, prompt, false)
+                - model.estimate_held(ctx, prompt, false, plain(slab)),
+            cold - warm
+        );
+        let walker =
+            super::admission_prime_hold(true, true, true, true, true, take, take, prompt, slab);
+        assert_eq!(
+            model.held_workspace_bytes(prompt, walker),
+            extras * 4096 + shape.prompt_row_bytes * prompt
+        );
+        // A prefix restore swaps the held workspace of the prompt for that of its suffix.
+        let cost = model.estimate_held(ctx, prompt, false, plain(slab));
+        let restored = 16_000;
+        assert_eq!(
+            model.cost_after_prefix_restore(cost, prompt, restored, plain(slab)),
+            Some(cost - warm + model.held_workspace_bytes(prompt - restored, plain(slab)))
+        );
+        // No hold charges above the cold charge.
+        for hold in [plain(0), plain(slab), walker] {
+            assert!(model.held_workspace_bytes(prompt, hold) <= cold);
+        }
+    }
+
+    /// research/c8-workspace-20261108: a concat batch stops adding takes where its planes would
+    /// pass the room left (effective free less the reserve); no bound where the key is off.
+    #[test]
+    fn a_concat_batch_adds_takes_only_while_its_planes_fit() {
+        let row = 438_272usize;
+        assert!(super::concat_takes_within(None, row, 1 << 40, 1 << 20));
+        let room = Some(row * 3000);
+        assert!(super::concat_takes_within(room, row, 0, 1039));
+        assert!(super::concat_takes_within(room, row, 1039, 1039));
+        assert!(!super::concat_takes_within(room, row, 2078, 1039));
+        assert!(super::concat_takes_within(room, row, 2078, 922));
+        assert!(!super::concat_takes_within(Some(0), row, 0, 16));
+    }
+
     #[test]
     fn predictive_charge_books_the_physical_cost_terms_on_every_path() {
         // memra#476: the predictive book (RequestCharge) and the physical cost differ by the
@@ -41313,6 +41830,7 @@ mod tests {
                     prefill: None,
                     prime: Some(memra_engine::hybrid_forward::PrimeWorkspaceShape {
                         call_row_bytes: 345_000,
+                        slab_row_bytes: 250_000,
                         prompt_row_bytes: 8192,
                         n_layers: 40,
                         swa_ring: false,
@@ -41336,6 +41854,7 @@ mod tests {
                     prefill: None,
                     prime: Some(memra_engine::hybrid_forward::PrimeWorkspaceShape {
                         call_row_bytes: 250_000,
+                        slab_row_bytes: 180_000,
                         prompt_row_bytes: 12_288,
                         n_layers: 32,
                         swa_ring: true,
@@ -41400,7 +41919,7 @@ mod tests {
                 );
                 // retained prefix: W(P) -> W(P - R), everything else unchanged
                 let after = model
-                    .cost_after_prefix_restore(cold, prompt, restored)
+                    .cost_after_prefix_restore(cold, prompt, restored, super::PrimeHold::COLD)
                     .expect("restore plan");
                 let charge_r = RequestCharge::from_physical_cost(
                     after as u64,
@@ -41477,6 +41996,7 @@ mod tests {
             prefill: None,
             prime: Some(memra_engine::hybrid_forward::PrimeWorkspaceShape {
                 call_row_bytes: 345_000,
+                slab_row_bytes: 250_000,
                 prompt_row_bytes: 8192,
                 n_layers: 40,
                 swa_ring: false,
@@ -41492,7 +42012,7 @@ mod tests {
         let reserve = 1536 << 20;
         let cold = model.estimate(ctx, prompt, true) + draft;
         let warm = model
-            .cost_after_prefix_restore(cold, prompt, restored)
+            .cost_after_prefix_restore(cold, prompt, restored, super::PrimeHold::COLD)
             .unwrap();
         assert!(warm < cold);
         assert_eq!(
@@ -41503,12 +42023,18 @@ mod tests {
                 + model.prefill_workspace_bytes(prompt - restored)
         );
         assert_eq!(super::admission_required(warm, reserve), warm + reserve);
-        assert_eq!(model.cost_after_prefix_restore(cold, prompt, 0), None);
         assert_eq!(
-            model.cost_after_prefix_restore(cold, prompt, prompt + 1),
+            model.cost_after_prefix_restore(cold, prompt, 0, super::PrimeHold::COLD),
             None
         );
-        assert_eq!(model.cost_after_prefix_restore(0, prompt, restored), None);
+        assert_eq!(
+            model.cost_after_prefix_restore(cold, prompt, prompt + 1, super::PrimeHold::COLD),
+            None
+        );
+        assert_eq!(
+            model.cost_after_prefix_restore(0, prompt, restored, super::PrimeHold::COLD),
+            None
+        );
     }
 
     #[test]
@@ -42385,6 +42911,7 @@ mod tests {
     fn non_hyper_prime_workspace_is_charged_and_chunk_bounded() {
         let shape = memra_engine::hybrid_forward::PrimeWorkspaceShape {
             call_row_bytes: 42 * 2048 + 14 * 2048,
+            slab_row_bytes: 28 * 2048 + 12 * 2048,
             prompt_row_bytes: 4 * 2048,
             n_layers: 41,
             swa_ring: false,
@@ -45967,6 +46494,7 @@ mod tests {
     fn corrected_pending_prime_books_one_call_once_and_unstarted_walker_stacks() {
         let shape = memra_engine::hybrid_forward::PrimeWorkspaceShape {
             call_row_bytes: 400_000,
+            slab_row_bytes: 300_000,
             prompt_row_bytes: 20_480,
             n_layers: 64,
             swa_ring: false,
