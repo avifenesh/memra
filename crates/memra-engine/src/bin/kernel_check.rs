@@ -1342,6 +1342,119 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // --- NORM-SKIP-UNWRITTEN: the fused norm with no f32 output (`dst = None`, the prime's skip
+    //     before a fully seeded mixer, memra#1117). (a) Both entries with `dst = None` and the
+    //     q8_1 pair seed the same scratch and pair as with `dst`. (b) Over the unwritten buffer a
+    //     single-weight group, a group whose weight bypasses the seed (an f32 weight) and a dp4a
+    //     weight with no seeded pair are refused; (c) two NVFP4 dp4a weights take the seeded pair
+    //     and give the same outputs as over the written buffer. ---
+    {
+        use cudarc::driver::CudaSlice;
+        use memra_engine::model::GpuTensor;
+        let (ncols, nrows, eps) = (5120usize, 1024usize, 1e-6f32);
+        let a: Vec<f32> = (0..ncols * nrows).map(|i| pr(i + 211) * 2.0).collect();
+        let b: Vec<f32> = (0..ncols * nrows).map(|i| pr(i + 223) * 0.6).collect();
+        let w: Vec<f32> = (0..ncols).map(|i| 0.5 + pr(i + 227) * 0.4).collect();
+        let (ad, bd, wd) = (e.htod(&a)?, e.htod(&b)?, e.htod(&w)?);
+        let u8s = |e: &Engine, x: &CudaSlice<u8>| e.dtoh_u8(x);
+        let pair_bytes = |e: &Engine,
+                          p: &(CudaSlice<i8>, CudaSlice<f32>)|
+         -> Result<(Vec<i8>, Vec<u32>), Box<dyn std::error::Error>> {
+            Ok((
+                e.dtoh_i8(&p.0)?,
+                e.dtoh(&p.1)?.iter().map(|v| v.to_bits()).collect(),
+            ))
+        };
+        // (a) reference with the f32 output written
+        let mut res = e.zeros(ncols * nrows)?;
+        let mut z = e.zeros(ncols * nrows)?;
+        let key = e.addr_f32(&z);
+        e.add_rms_norm_f8f4v2(
+            &ad,
+            &bd,
+            &wd,
+            &mut res,
+            Some(&mut z),
+            key,
+            true,
+            ncols,
+            nrows,
+            eps,
+        )?;
+        let (sr, pr_) = e.f8f4_take_seed().ok_or("NORM-SKIP-UNWRITTEN: no seed")?;
+        let (sr, pr_) = (
+            u8s(&e, &sr.ok_or("no scratch")?)?,
+            pair_bytes(&e, &pr_.ok_or("no pair")?)?,
+        );
+        let zu = e.zeros(ncols * nrows)?; // never written by the skipped norms below
+        let key_u = e.addr_f32(&zu);
+        let mut res2 = e.zeros(ncols * nrows)?;
+        e.add_rms_norm_f8f4v2(
+            &ad, &bd, &wd, &mut res2, None, key_u, true, ncols, nrows, eps,
+        )?;
+        let (s1, p1) = e.f8f4_take_seed().ok_or("NORM-SKIP-UNWRITTEN: no seed")?;
+        let add_bad = (u8s(&e, &s1.ok_or("no scratch")?)? != sr) as usize
+            + (pair_bytes(&e, &p1.ok_or("no pair")?)? != pr_) as usize;
+        e.rms_norm_f8f4v2(&res, &wd, None, key_u, true, ncols, nrows, eps)?;
+        let (s2, p2) = e.f8f4_take_seed().ok_or("NORM-SKIP-UNWRITTEN: no seed")?;
+        let norm_bad = (u8s(&e, &s2.ok_or("no scratch")?)? != sr) as usize
+            + (pair_bytes(&e, &p2.ok_or("no pair")?)? != pr_) as usize;
+        // (b) the refusals
+        let wf = |seed: usize, out_f: usize| -> Result<GpuTensor, Box<dyn std::error::Error>> {
+            let v: Vec<f32> = (0..out_f * ncols).map(|i| pr(i + seed) - 0.5).collect();
+            Ok(GpuTensor::Float {
+                data: e.htod(&v)?,
+                ne: vec![ncols as u64, out_f as u64],
+            })
+        };
+        let wq = |seed: usize, out_f: usize| -> Result<GpuTensor, Box<dyn std::error::Error>> {
+            let row_bytes = ncols / 64 * 36;
+            let raw: Vec<u8> = (0..out_f * row_bytes)
+                .map(|i| (((i + seed).wrapping_mul(2654435761)) >> 13) as u8)
+                .collect();
+            GpuTensor::nvfp4_rp_from_raw(&e, &raw, ncols, out_f, 1.0)
+        };
+        let (f1, f2) = (wf(229, 64)?, wf(233, 64)?);
+        let (q1, q2) = (wq(239, 48)?, wq(241, 48)?);
+        let seed_unwritten =
+            |q8: bool| e.rms_norm_f8f4v2(&res, &wd, None, key_u, q8, ncols, nrows, eps);
+        let refused = |r: Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>>| matches!(r, Err(err) if err.to_string().contains("unwritten"));
+        seed_unwritten(true)?;
+        let single = refused(e.matmul_group(&[&f1], &zu, nrows));
+        e.f8f4_seed_clear();
+        seed_unwritten(true)?;
+        let bypass = refused(e.matmul_group(&[&f1, &f2], &zu, nrows));
+        e.f8f4_seed_clear();
+        seed_unwritten(false)?;
+        let no_pair = refused(e.matmul_group(&[&q1, &q2], &zu, nrows));
+        e.f8f4_seed_clear();
+        // (c) the dp4a pair taken from the seed over the unwritten buffer = over the written one
+        seed_unwritten(true)?;
+        let got = e.matmul_group(&[&q1, &q2], &zu, nrows);
+        e.f8f4_seed_clear();
+        let want = e.matmul_group(&[&q1, &q2], &z, nrows)?;
+        let mut pair_bad = if got.is_err() { 1 } else { 0 };
+        for (g, w_) in got.unwrap_or_default().iter().zip(&want) {
+            pair_bad += e
+                .dtoh(g)?
+                .iter()
+                .zip(&e.dtoh(w_)?)
+                .filter(|(x, y)| x.to_bits() != y.to_bits())
+                .count();
+        }
+        let ok = add_bad == 0 && norm_bad == 0 && single && bypass && no_pair && pair_bad == 0;
+        println!(
+            "NORM-SKIP-UNWRITTEN: dst=None seeds (add {add_bad}, norm {norm_bad}) refused (single {single}, \
+             bypass {bypass}, no pair {no_pair}) seeded dp4a outputs {pair_bad} mismatching {}",
+            if ok {
+                "OK"
+            } else {
+                fails += 1;
+                "FAIL"
+            }
+        );
+    }
+
     // --- DECODE GLUE-FUSION: add_rms_norm_q8_1 must be BIT-IDENTICAL to add_rms_norm -> quantize_q8_1
     //     (same residual `res` AND same q8_1 bytes/scales). ---
     {
