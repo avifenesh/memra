@@ -396,6 +396,30 @@ class CellGate(unittest.TestCase):
         with self.assertRaisesRegex(q.GateError, "needs battery"):
             self.f.push(oid=head, base=main_tip)
 
+    def test_a_docs_file_named_only_in_crate_data_still_drifts(self):
+        # 2026-11-08: a model fixture under crates/ spelled "README.md" (a file of the model
+        # repository it describes), and the literal census made the repo README a crate input,
+        # so every README push voided every pending record. Data files and `#` comments read
+        # nothing; a code line still does.
+        self.f.write("crates/memra-engine/src/fixtures/source.lock.json", '{"path": "README.md"}\n')
+        self.f.write("crates/memra-engine/tests/collect.py", "# see AGENTS.md\n")
+        self.f.base = self.f.commit("crate data that names docs files")
+        code, banked = self.kernel_lane_with_record()
+        main_tip, head = self.rebase_onto({"README.md": "# fixture, edited\n", "AGENTS.md": "# a\n"},
+                                          code, banked)
+        self.assertEqual(ce.research_drift(self.f.repo, code, head), ("AGENTS.md", "README.md"))
+        self.assertIn("CELL-QUALIFIED", self.f.push(oid=head, base=main_tip))
+
+    def test_a_docs_file_a_crate_code_line_names_still_voids(self):
+        self.f.write("crates/memra-server/src/worker.rs",
+                     'pub fn step() { let _ = std::fs::read_to_string("README.md"); }\n')
+        self.f.base = self.f.commit("a crate opens the README")
+        code, banked = self.kernel_lane_with_record()
+        main_tip, head = self.rebase_onto({"README.md": "# fixture, edited\n"}, code, banked)
+        self.assertIsNone(ce.research_drift(self.f.repo, code, head))
+        with self.assertRaisesRegex(q.GateError, "needs battery"):
+            self.f.push(oid=head, base=main_tip)
+
     def test_a_non_research_main_move_still_voids_the_record(self):
         for change in ({"tools/fast-gate/plan.py": "print(2)\n"},
                        {"crates/memra-engine/src/lib.rs": "pub fn f() { let _ = 1; }\n"},

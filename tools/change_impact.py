@@ -184,6 +184,21 @@ def _comment_line(line):
     return stripped.startswith("//") and not stripped.endswith("\\")
 
 
+# Files that cannot read a path themselves: data a crate may load, whose path strings name files
+# of some other tree (a model fixture's `"path": "README.md"`), never this repository's.
+DATA_SUFFIXES = (".json", ".md", ".txt", ".lock", ".tsv", ".csv", ".yaml", ".yml", ".jsonl")
+
+
+def _may_read(source, text):
+    """Whether a line of `source` that spells a path can be a read of it: not a data file, and not
+    a `#` comment in Python, shell or TOML."""
+    if source.endswith(DATA_SUFFIXES):
+        return False
+    if source.endswith((".py", ".sh", ".toml")) and text.strip().startswith("#"):
+        return False
+    return True
+
+
 def _package_of(path, owners):
     if owners is None:
         match = re.match(r"crates/([a-z0-9-]+)/", path)
@@ -492,7 +507,7 @@ def literal_inputs(repo, ref, paths):
     inputs = {}
     for line in result.stdout.decode(errors="replace").splitlines():
         _, source, _, text = line.split(":", 3)
-        if _comment_line(text):
+        if _comment_line(text) or not _may_read(source, text):
             continue
         package = _package_of(source, None)
         for path in wanted:

@@ -123,7 +123,8 @@ input that differs between the record's tested commit and the candidate may be a
 documentation path that the impact classifier calls research or docs
 (`cell_evidence.research_drift`; `.gitattributes` never, since it can change the bytes a checkout
 gives the build): no crate reads it (the CI include census, which must answer at both commits;
-build.rs reading `docs/FLAGS.md` makes that file code) and no gate tool reads it (a
+build.rs reading `docs/FLAGS.md` makes that file code; its literal check ignores paths spelled in
+data files and `#` comments under `crates/`) and no gate tool reads it (a
 `gate` rule; `tools/test_change_impact.py` keeps those rules complete against the research paths
 the gate tools spell, and scans the gate tools run for a device record for any tracked docs file
 their code names). Then the record still proves its cells, and `check` names the drift. The same rule admits a
