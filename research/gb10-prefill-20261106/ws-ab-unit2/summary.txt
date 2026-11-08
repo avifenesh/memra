@@ -1,0 +1,23 @@
+campaign ws-ab-unit2: 18 requests, arms ['B', 'W']
+
+target 32768
+  B        ttft 23.058, 23.045, 23.042                   median 23.045  cells ['01-B', '04-B', '05-B']
+  W        ttft 23.008, 23.037, 23.032                   median 23.032  cells ['02-W', '03-W', '06-W']
+  W vs B: -0.06%
+
+target 131072
+  B        ttft 121.979, 121.913, 121.929                median 121.929  cells ['01-B', '04-B', '05-B']
+  W        ttft 121.743, 121.773, 121.661                median 121.743  cells ['02-W', '03-W', '06-W']
+  W vs B: -0.15%
+
+target 260000
+  B        ttft 323.445, 321.685, 321.930                median 321.930  cells ['01-B', '04-B', '05-B']
+  W        ttft 320.721, 320.897, 320.919                median 320.897  cells ['02-W', '03-W', '06-W']
+  W vs B: -0.32%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+  target 260000 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL
