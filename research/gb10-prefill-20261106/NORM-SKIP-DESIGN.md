@@ -1,6 +1,6 @@
 # The f32 output of the fused norm before each mixer (round 4 design, 2026-11-08)
 
-Design note before measurement. Follows `WS-DEQUANT-DESIGN.md` (ledger rows 52-53).
+Design note, then the measurement (ledger row 54). Follows `WS-DEQUANT-DESIGN.md` (ledger rows 52-53).
 
 ## The part
 
@@ -32,3 +32,10 @@ its write is 84 MB per call, about 0.39 ms at the device's copy rate, about 2,04
 Exactness: no value changes; the same seeded bytes reach the same GEMMs. The gate is the
 prime-path logits byte compare at 16k and 33k against the base, the served fingerprints, and
 kernel-check's norm-only arm of `ADD-RMS-NORM-E4M3V2` (the kernel with `dst = None`).
+
+## Result (unit 1, ledger row 54)
+
+Served B N N B B N, 3 boots per arm: 22.691 -> 22.466 s at 32k (-0.99%), 120.730 -> 119.709 s at 131k
+(-0.85%), 319.329 -> 317.468 s at 260k (-0.58%), complete separation at every length, identical
+answers. The prime-path logits are byte-identical to the base at 16k and 33k, and no run hit a
+fail-closed refusal. The gain beat the estimate (1.02 s against 0.6-0.8 s at 131k).
