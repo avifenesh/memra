@@ -1,0 +1,10 @@
+     Running unittests src/lib.rs (<target>/release/deps/memra_server-c9aa0d05c61c43ca)
+test request_log::tests::a_full_queue_drops_and_counts_instead_of_blocking ... ok
+test request_log::tests::end_reason_follows_the_terminal_signal_in_priority_order ... ok
+test request_log::tests::line_hashes_identity_and_content_and_carries_no_text ... ok
+test tests::affinity_key_honors_both_client_conventions_in_priority_order ... ok
+test tests::affinity_key_plumbs_to_the_worker_request_on_both_bodies ... ok
+test worker::tests::implicit_affinity_key_is_equal_exactly_at_the_nomination_bar ... ok
+test tests::request_log_on_and_off_serve_identical_bytes ... ok
+test tests::request_log_two_turns_of_one_session_share_a_key_and_fill_every_field ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 1106 filtered out; finished in 0.01s
