@@ -1241,6 +1241,7 @@ All three carry the `X-RateLimit` trio, and all three are what the router's circ
 load spill consume. **Circuit breaking stays at the router**; the engine's contribution is
 honest, prompt 429s. Dark lanes (`judge`/`harvest`) are untouched here — they already shed
 at cap inside the worker.
+
 - **Parameter breadth + honesty:** `frequency_penalty`/`presence_penalty`/
   `repetition_penalty` plumb to the sampler (last 8,192 tokens on every host, device, and
   speculative path; greedy+penalized
@@ -1250,6 +1251,52 @@ at cap inside the worker.
   unknown `response_format` types); cosmetic fields (`user`) are accepted and ignored;
   `stream_options.include_usage` selects the streaming usage shape described above. Streams exclude stop-sequence text exactly like non-stream
   responses (holdback buffer).
+
+### Queued and prefilling requests under the first-token deadline (2026-11-07)
+
+Three worker policies decide the order in which the device takes work and how much memory the prefix
+cache may keep under it. They change order or residency, not a prime call's boundaries. What they do
+change is which prime calls run concatenated and which run alone, the batched-prime near-tie class of
+"First-token cross-config drift" below, as any change in batch composition does.
+
+- **A memory-deferred request holds the queue.** When the VRAM gate defers an interactive request
+  that could fit once its device's sessions retire and the evictable prefix entries go, every later
+  request of that admission pass on a device it shares waits behind it. Interactive requests keep their
+  order; dark-lane ones shed. The hold comes after the refusals that need no memory (slot capacity, the
+  template, the first-token gate), so those still answer at once. A request that cannot fit even then
+  waits alone, as before, until the idle-box check refuses it. Until 2026-11-07 later requests that fit
+  were admitted past a deferred one, so the defer line's `queueing (FIFO)` held only in name. `/metrics`
+  `admission_vram_hol_holds` counts the held requests.
+- **A prefill at risk goes first.** The interactive prefill phase normally advances every prefilling
+  session one chunk per tick (round robin). It reads the measured tick prefill rate (prompt tokens primed
+  per tick over the wall from one prefill phase to the next, smoothed; an idle wait drops the sample)
+  and each request's wire first-token deadline. When a session would miss its deadline under the round
+  robin but would make it served alone, the tick advances sessions in earliest-deadline order until one
+  chunk of tokens is used. When nothing is at risk, the round robin resumes. With requests waiting for
+  admission, the estimate assumes a finishing peer is replaced at once. Only sessions the tick can
+  advance count: n>1 choice members and fanout rows still forming are left out and never held back. A
+  request without a deadline orders by its arrival plus the default streaming deadline. Every row still
+  takes its usual chunk. `[prefill-order]` logs each switch, and `/metrics` `prefill_deadline_ticks`
+  counts the ticks.
+- **The prefix cache yields the transient reserve.** Before a decode phase, if the cache published since
+  the last check, a discrete card fences and reads effective free memory (driver free plus the pool's
+  cached bytes). It compares that with the transient reserve admission charges every admitted request.
+  On a shortfall it evicts the oldest unleased entries and trims their bytes back to the driver.
+  `[prefix-cache] reserve: ...` logs the eviction, and `/metrics` `prefix_headroom_evictions` counts the
+  entries. Unified memory keeps its own insert guard (below).
+
+Why: on the 24 GB RTX 5090 Laptop, agentic c8 (Qwen3.8-27B, 32,768 context, 29 turns of 1.4k-17k
+tokens) answered one or two 408s per prime pass on main with the GPU at 99.6% busy. Free memory hovered
+under a 17,166-token request's 5,048 MB charge while 15 later requests were admitted past it for its
+whole 90 s window. Under the round robin, a 12k-17k prompt that was admitted spent 42-68 s priming,
+which still put first tokens at 84-96 s. In the greedy measured pass, seed inserts took driver free from
+3.8 GB to 83 MB. The fa partial pool's next grow then failed inside a batched decode step, and all eight
+streams ended `overloaded`. vLLM and SGLang have no first-token deadline and queue such requests instead;
+vLLM's V1 scheduler stops at the first waiting request it cannot allocate, the order the hold keeps. The
+cost is the short turns' median: at equal work (main given a 900 s deadline so it serves every turn;
+two runs per arm pooled) the mean first-token wait is unchanged (33.3 s against 34.5 s), the median rises
+from 19.4 s to 37.4 s and the p99 falls from 152 s to 70 s.
+Receipts: `research/c8-serving-20261107/`.
 
 ## Gateway listing surface
 
@@ -3011,9 +3058,15 @@ start. Operator-visible consequences, stated plainly:
   counted in `/metrics` `prefix_cache_seed_grid_refusals` (operator-only). A prime path that
   does not stop on the armed boundary refuses the off-grid prompt-end state with the same line
   rather than publishing it.
-- A cold session whose seed boundary lies inside the prompt primes alone (the concat prime
-  cannot honor a per-session stop, the same rule the LCP split has); the in-batch fanout is
-  unchanged (its participants never seed).
+- A cold interactive session whose seed boundary lies inside the prompt joins the concat prime
+  with its row's take ending on the boundary (`batch_row_take`, the stop `prefill_tick`
+  applies to a single prime), and the seed publishes after that batch call; the remainder
+  primes from the grid start, batched with its peers' remainders. Until 2026-11-07 such a
+  session primed alone up to its seed, so at c8 every off-grid cold prompt waited for one solo
+  prime per peer: on the 24 GB RTX 5090 Laptop the mixed shape's batch TTFT p50 was 1,304 ms
+  with the cache on against 736 ms off, nearly all of it `prime_wait` (420 ms against 4 ms)
+  (`research/c8-serving-20261107/`). The LCP split and the plain-affinity checkpoint still
+  prime alone, and the in-batch fanout is unchanged (its participants never seed).
 - The spec session's publications obey the same law since 2026-09-21 as well (day 19, lead
   ruling: one capture law for every site the server captures at). A cold spec session's
   `capture_at` is the seed's grid boundary and a prime stop of its own beside the affinity
