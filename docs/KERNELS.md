@@ -92,7 +92,7 @@ Numerical bodies preserve the corresponding eager entry's operation order.
 | Symbol | Purpose | Binding |
 | --- | --- | --- |
 | `append_quantize_kv_q8_0_q5_1_rows_prime_table` | Quantized KV append and live length publication | `Engine::append_kv_quantized_rows` |
-| `fa_dequant_kv_ws_bf16_prime_table` | True-depth dequantization into stable BF16 workspace | `Engine::fa_prefill_view_ws` |
+| `fa_dequant_kv_ws_bf16_prime_table` | True-depth dequantization into stable BF16 workspace; shares `fa_dequant_kv_ws_bf16`'s body (eight elements per thread when both widths are multiples of 8, since 2026-11-08; bytes pinned by kernel-check ARC B and `research/gb10-prefill-20261106/attn-r4/probe/probe_ws.cu`) | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_db_prime_table` | Existing four-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_h2_prime_table` | Two-head (h2) attention with live causal depth | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_h2p_prime_table` | Two-head mbarrier-ring (h2p) attention with live causal depth; reached only on a 170-SM 120a card with `MEMRA_PRIME_KV_H2=1 MEMRA_PRIME_KV_H2P=1` (no default reaches it), ungated | `Engine::fa_prefill_view_ws` |

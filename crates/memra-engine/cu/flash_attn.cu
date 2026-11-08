@@ -3857,12 +3857,15 @@ extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 2) fa_prefill_q_hd
 //  __float2bfloat16(dq_*_elem(...)) — the IDENTICAL value fa_prefill_q  //
 //  writes to smem — so the MMA sees bit-identical inputs and the output //
 //  is bit-identical (kernel_check pins ws-vs-inline bitdiff=0).         //
-//  One thread per element, grid-stride over K elems then V elems.      //
+//  Grid-stride over K then V: eight elements of one token row per      //
+//  thread when both widths are multiples of 8, else one element.       //
 // ===================================================================== //
-// Eight consecutive elements of one token row per thread when both widths are multiples of 8 (one
-// 16-byte store; the block's scale bytes are read once for the eight): each element is still
-// __float2bfloat16(DQ_*_ELEM(...)), so the workspace bytes are unchanged (kernel_check ARC B
-// cells). The grid is sized by fa_dequant_ws_items: groups of 8, or elements otherwise.
+// Eight consecutive elements of one token row per thread when both widths are multiples of 8 and
+// the group count fits 32 bits (one 16-byte store, an eighth of the threads, 32-bit index math;
+// the element loads are still per element): each element is still __float2bfloat16(DQ_*_ELEM(...)),
+// so the workspace bytes are unchanged (kernel_check ARC B cells). The grid is sized by
+// fa_dequant_ws_items: groups of 8, or elements otherwise. The 32-bit loop needs g + stride < 2^32:
+// every launch caps the grid at 65,535 x 16 blocks of 256 (stride < 2^28) and total < 2^31.
 static __device__ __forceinline__ uint4 fa_ws_pack8(const float* f) {
     uint4 u;
     __nv_bfloat162 p0 = __halves2bfloat162(__float2bfloat16(f[0]), __float2bfloat16(f[1]));
@@ -3878,7 +3881,8 @@ static __device__ __forceinline__ void fa_dequant_kv_ws_body(
         int kv_dim_k, int kv_dim_v, int t_kv,
         long k_tok_bytes, long v_tok_bytes)
 {
-    if (((kv_dim_k | kv_dim_v) & 7) == 0 && (long)t_kv * ((kv_dim_k + kv_dim_v) / 8) < (1L << 31)) {
+    if (t_kv >= 0 && ((kv_dim_k | kv_dim_v) & 7) == 0
+        && (long)t_kv * ((kv_dim_k + kv_dim_v) / 8) < (1L << 31)) {
         const unsigned gk = (unsigned)kv_dim_k / 8u, gv = (unsigned)kv_dim_v / 8u;
         const unsigned nk = (unsigned)t_kv * gk, total = nk + (unsigned)t_kv * gv;
         for (unsigned g = blockIdx.x * blockDim.x + threadIdx.x; g < total; g += gridDim.x * blockDim.x) {

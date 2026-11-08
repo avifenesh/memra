@@ -28903,7 +28903,7 @@ impl Engine {
             ));
         }
         let (kw, vw) = guard.as_mut().unwrap();
-        // pass 1: dequant K+V once into the bf16 workspace (grid-stride, 1 thread/elem)
+        // pass 1: dequant K+V once into the bf16 workspace (grid-stride, `fa_dequant_ws_items`)
         {
             // only THIS pass parses KV bytes — pass 2 reads the bf16 workspace (format-free).
             let f = if live.is_some() {
