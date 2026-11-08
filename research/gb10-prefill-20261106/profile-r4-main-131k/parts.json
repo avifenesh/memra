@@ -1,0 +1,222 @@
+{
+ "window_s": 122.232107392,
+ "busy_s": 120.492049485,
+ "kernel_sum_s": 120.49249758100031,
+ "parts_s": {
+  "glue: norms/adds/act": 3.2320401209999927,
+  "gemm: activation e4m3 quantize": 0.018936255999999964,
+  "gemm: F8F4 v2 weight image": 5.929232480000018,
+  "gemm: NVFP4 F8F4 v3 tile": 55.2550025920002,
+  "other": 1.6697377879999973,
+  "gemm: other MMQ / matvec": 1.9645541380000002,
+  "gdn: conv/l2/gates": 2.2969250560000036,
+  "gdn: chunk scan kernels": 6.042476896000006,
+  "attention: rope/qk-norm/gate glue": 1.3855936629999954,
+  "attention: KV append/quantize": 0.38527046400007725,
+  "attention: KV dequant workspace": 1.371430752,
+  "attention: FA prime kernel": 40.85056451200001,
+  "gemm: NVFP4 F8F4 MMQ": 0.09073286299999997
+ },
+ "top": [
+  {
+   "name": "mul_mat_f8f4v3<",
+   "s": 55.255002592,
+   "count": 10752
+  },
+  {
+   "name": "fa_prefill_qw_h2p",
+   "s": 40.687807584,
+   "count": 512
+  },
+  {
+   "name": "f8f4v2_image_kernel<",
+   "s": 5.92923248,
+   "count": 10752
+  },
+  {
+   "name": "rms_norm_e4m3v2_f32",
+   "s": 2.996294304,
+   "count": 4064
+  },
+  {
+   "name": "gdn_chunk_state_output_mma",
+   "s": 2.546457056,
+   "count": 1584
+  },
+  {
+   "name": "ssm_conv1d_gdn_state_l2_f32",
+   "s": 2.27888608,
+   "count": 1584
+  },
+  {
+   "name": "gdn_chunk_solve32_f32",
+   "s": 2.166908832,
+   "count": 1584
+  },
+  {
+   "name": "gated_rmsnorm_e4m3v2_f32",
+   "s": 1.54034128,
+   "count": 1536
+  },
+  {
+   "name": "fa_dequant_kv_ws_bf16",
+   "s": 1.371430752,
+   "count": 528
+  },
+  {
+   "name": "qmatvec_nvfp4_dp4a_rp_t4",
+   "s": 1.321440864,
+   "count": 3168
+  },
+  {
+   "name": "gdn_chunk_attn32_f32",
+   "s": 1.293711712,
+   "count": 1584
+  },
+  {
+   "name": "q_split_norm_rope_f32",
+   "s": 0.881503456,
+   "count": 528
+  },
+  {
+   "name": "sig_mul_e4m3v2_f32",
+   "s": 0.487755296,
+   "count": 512
+  },
+  {
+   "name": "append_quantize_kv_q8_0_q5_1",
+   "s": 0.278252576,
+   "count": 125876
+  },
+  {
+   "name": "mul_mat_q_q45k<",
+   "s": 0.273136384,
+   "count": 62
+  },
+  {
+   "name": "rms_norm_f32_v2",
+   "s": 0.204729244,
+   "count": 829
+  },
+  {
+   "name": "qmatvec_q5_K_mmvq_il",
+   "s": 0.175225088,
+   "count": 34
+  },
+  {
+   "name": "fa_prefill_qw_db",
+   "s": 0.162756928,
+   "count": 16
+  },
+  {
+   "name": "qmatvec_gemm_q6_K",
+   "s": 0.12520512,
+   "count": 31
+  },
+  {
+   "name": "append_quantize_kv_q8_0_q5_1_rows",
+   "s": 0.10694864,
+   "count": 528
+  },
+  {
+   "name": "mul_mat_q_nvfp4_f8f4<",
+   "s": 0.090732863,
+   "count": 400
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_mr2_rp",
+   "s": 0.066705914,
+   "count": 498
+  },
+  {
+   "name": "quantize_mmq_q8_1_ds4_kernel",
+   "s": 0.045396928,
+   "count": 62
+  },
+  {
+   "name": "quantize_q8_1",
+   "s": 0.041409308,
+   "count": 365
+  },
+  {
+   "name": "gdn_chunk_cumgate_f32",
+   "s": 0.034480928,
+   "count": 1584
+  },
+  {
+   "name": "embed_gather_u32_t",
+   "s": 0.02907504,
+   "count": 64
+  },
+  {
+   "name": "fa_decode_vec_q_seqs_v4_deep",
+   "s": 0.023117088,
+   "count": 16
+  },
+  {
+   "name": "quantize_mmq_e4m3_d4_kernel<",
+   "s": 0.018028192,
+   "count": 224
+  },
+  {
+   "name": "rope_neox_f32",
+   "s": 0.016297056,
+   "count": 595
+  },
+  {
+   "name": "gdn_glog_f32",
+   "s": 0.014219392,
+   "count": 1584
+  },
+  {
+   "name": "sigmoid_f32",
+   "s": 0.012841472,
+   "count": 1618
+  },
+  {
+   "name": "fa_decode_combine_seqs",
+   "s": 0.005868192,
+   "count": 16
+  },
+  {
+   "name": "ssm_conv_ring_update_f32",
+   "s": 0.003675584,
+   "count": 1584
+  },
+  {
+   "name": "qmatvec_q4_K_mmvq",
+   "s": 0.001973504,
+   "count": 12
+  },
+  {
+   "name": "add_rms_norm_f32_v2",
+   "s": 0.001478685,
+   "count": 191
+  },
+  {
+   "name": "quantize_mmq_e4m3_d4_silu_kernel<",
+   "s": 0.000908064,
+   "count": 64
+  },
+  {
+   "name": "qmatvec_q6_K_mmvq",
+   "s": 0.000867264,
+   "count": 4
+  },
+  {
+   "name": "gdn_scan_s128_b",
+   "s": 0.000838208,
+   "count": 48
+  },
+  {
+   "name": "gated_rmsnorm_f32",
+   "s": 0.000278432,
+   "count": 48
+  },
+  {
+   "name": "fa_decode_vec_q_v4_deep_dc",
+   "s": 0.000259552,
+   "count": 2
+  }
+ ]
+}

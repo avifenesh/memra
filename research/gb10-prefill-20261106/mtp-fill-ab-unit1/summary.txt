@@ -1,0 +1,17 @@
+campaign fill-ab-unit1: 8 requests, arms ['B', 'V']
+
+target 32768
+  B        ttft 23.093, 23.122                           median 23.108  cells ['01-B', '04-B']
+  V        ttft 22.712, 22.684                           median 22.698  cells ['02-V', '03-V']
+  V vs B: -1.77%
+
+target 131072
+  B        ttft 122.416, 122.606                         median 122.511  cells ['01-B', '04-B']
+  V        ttft 121.067, 120.913                         median 120.990  cells ['02-V', '03-V']
+  V vs B: -1.24%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL

@@ -1,0 +1,75 @@
+2026-11-08T16:30:00+02:00
+641e022f5 perf(spec): the MTP prime fill concatenates and appends its rows in batched launches
+e759f4ac87f1c0fbacd9e0c8778e69d27eac8d1bcab9f102225d1b8f1649fafb  flash_attn.cu
+9ec65f8aba4eec549e20a08d49d99fcab43e5e7a605f20dc5c1767a7028252b3  attn_pp.cuh
+d6fb8db9337433cc4b4d736664b5097d224bb40b1a24cecc3c17b801d41f84ff  probe_pp.cu
+Build cuda_13.0.r13.0/compiler.36424714_0
+ptxas info    : Function properties for cand_ex2b
+    72 bytes stack frame, 136 bytes spill stores, 136 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 72 bytes cumulative stack size
+ptxas info    : Function properties for cand_ex2
+    64 bytes stack frame, 108 bytes spill stores, 108 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 64 bytes cumulative stack size
+ptxas info    : Function properties for cand_ppv
+    56 bytes stack frame, 96 bytes spill stores, 96 bytes spill loads
+ptxas info    : Used 255 registers, used 16 barriers, 56 bytes cumulative stack size
+ptxas info    : Function properties for cand_ppl
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 16 barriers
+ptxas info    : Function properties for cand_ppg
+    16 bytes stack frame, 16 bytes spill stores, 16 bytes spill loads
+ptxas info    : Used 255 registers, used 16 barriers, 16 bytes cumulative stack size
+ptxas info    : Function properties for cand_ppw
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 16 barriers
+ptxas info    : Function properties for cand_pp0
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for fa_prefill_qw_h2p_prime_table
+    24 bytes stack frame, 28 bytes spill stores, 28 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 24 bytes cumulative stack size
+ptxas info    : Function properties for fa_prefill_qw_h2_prime_table
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for fa_prefill_qw_h2p
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for fa_prefill_qw_h2
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+nvcc rc=0
+NVIDIA GB10, 208 MHz, 3003 MHz, 56, 4.99 W
+device NVIDIA GB10 sms 48 T 4096 reps 3
+kernel h2p      regs 255 local 8 B smem 98368 B blocks/SM 1
+kernel ex2      regs 255 local 64 B smem 98368 B blocks/SM 1
+kernel ex2b     regs 255 local 72 B smem 98368 B blocks/SM 1
+kernel h2p      regs 255 local 8 B smem 98368 B blocks/SM 1
+kernel ex2b     regs 255 local 72 B smem 98368 B blocks/SM 1
+kernel ex2      regs 255 local 64 B smem 98368 B blocks/SM 1
+T 4096 Tkv    4096 h2p          3.355 ms  61.46 TFLOPS mismatch 0 nonfinite 0 (min 3.313 max 3.629)
+T 4096 Tkv    4096 ex2          3.431 ms  60.10 TFLOPS mismatch 0 nonfinite 0 (min 3.424 max 3.434)
+T 4096 Tkv    4096 ex2b         3.417 ms  60.35 TFLOPS mismatch 0 nonfinite 0 (min 3.414 max 3.824)
+T 4096 Tkv    4096 h2p          3.304 ms  62.41 TFLOPS mismatch 0 nonfinite 0 (min 3.297 max 3.704)
+T 4096 Tkv    4096 ex2b         3.415 ms  60.39 TFLOPS mismatch 0 nonfinite 0 (min 3.414 max 3.415)
+T 4096 Tkv    4096 ex2          3.437 ms  59.99 TFLOPS mismatch 0 nonfinite 0 (min 3.425 max 3.845)
+T 4096 Tkv   16384 h2p         18.361 ms  78.60 TFLOPS mismatch 0 nonfinite 0 (min 18.273 max 18.411)
+T 4096 Tkv   16384 ex2         19.385 ms  74.45 TFLOPS mismatch 0 nonfinite 0 (min 19.012 max 19.472)
+T 4096 Tkv   16384 ex2b        19.132 ms  75.43 TFLOPS mismatch 0 nonfinite 0 (min 18.806 max 19.240)
+T 4096 Tkv   16384 h2p         18.355 ms  78.63 TFLOPS mismatch 0 nonfinite 0 (min 18.353 max 18.408)
+T 4096 Tkv   16384 ex2b        19.155 ms  75.34 TFLOPS mismatch 0 nonfinite 0 (min 19.134 max 19.204)
+T 4096 Tkv   16384 ex2         19.370 ms  74.51 TFLOPS mismatch 0 nonfinite 0 (min 19.010 max 19.401)
+T 4096 Tkv   65536 h2p         76.090 ms  83.99 TFLOPS mismatch 0 nonfinite 0 (min 75.781 max 76.401)
+T 4096 Tkv   65536 ex2         79.996 ms  79.89 TFLOPS mismatch 0 nonfinite 0 (min 79.589 max 80.949)
+T 4096 Tkv   65536 ex2b        79.394 ms  80.50 TFLOPS mismatch 0 nonfinite 0 (min 79.076 max 79.803)
+T 4096 Tkv   65536 h2p         76.096 ms  83.99 TFLOPS mismatch 0 nonfinite 0 (min 76.038 max 76.284)
+T 4096 Tkv   65536 ex2b        79.410 ms  80.48 TFLOPS mismatch 0 nonfinite 0 (min 79.331 max 79.559)
+T 4096 Tkv   65536 ex2         80.331 ms  79.56 TFLOPS mismatch 0 nonfinite 0 (min 80.163 max 80.470)
+T 4096 Tkv  131072 h2p        153.274 ms  84.74 TFLOPS mismatch 0 nonfinite 0 (min 152.767 max 153.352)
+T 4096 Tkv  131072 ex2        161.053 ms  80.64 TFLOPS mismatch 0 nonfinite 0 (min 161.037 max 161.339)
+T 4096 Tkv  131072 ex2b       159.267 ms  81.55 TFLOPS mismatch 0 nonfinite 0 (min 159.178 max 159.796)
+T 4096 Tkv  131072 h2p        152.649 ms  85.08 TFLOPS mismatch 0 nonfinite 0 (min 152.622 max 153.576)
+T 4096 Tkv  131072 ex2b       159.438 ms  81.46 TFLOPS mismatch 0 nonfinite 0 (min 159.268 max 159.605)
+T 4096 Tkv  131072 ex2        161.183 ms  80.58 TFLOPS mismatch 0 nonfinite 0 (min 160.709 max 161.941)
+probe rc=0
+NVIDIA GB10, 2177 MHz, 62, 75.77 W
+2026-11-08T16:30:24+02:00

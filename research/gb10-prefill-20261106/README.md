@@ -466,3 +466,55 @@ model's budget of 1 (`tools/argmax-margin-gate.sh`, `tools/test_argmax_margin_ga
   `gdn_chunk_output_mma`, `ssm_conv1d_gdn_state`) before any rewrite.
 - The alpha/beta dp4a matvecs (3.2 s) quantize their shared input twice; one dual kernel reading it
   once keeps both dot products.
+
+## Round 4 (2026-11-08): the request window, attention scheduling, the MTP draft fill
+
+Base main `d6ef68f5a1`. Ledger rows 46-50. Design notes: `ATTN-PINGPONG-DESIGN.md` (attention,
+rejected) and `MTP-FILL-DESIGN.md` (the landed lever). Harness: `harness/r4/`.
+
+### Fresh per-part profile, one cold 131,051-token served prefill (`profile-r4-main-131k/`)
+
+Unit 1, Nsight Systems, TTFT 122.731 s (122.416 / 122.606 s unprofiled). The window is the request
+itself (`parts_req.py`): the trunk runs 119.43 s from the prime's first kernel to its last prime
+attention launch, then the boundary tail chunk and the MTP draft fill take 2.86 s before the first
+token. (`parts_last.py`'s window ends at the last attention launch, so on this route it started
+2.7 s before the request arrived; that "gap" was the server waiting.)
+
+| part (GPU seconds) | memra main | work | achieved | measured ceiling | time at ceiling | SGLang tuned |
+|---|---:|---|---:|---|---:|---:|
+| trunk GEMMs, F8F4 v3 tile | 55.26 | 6.38 PFLOP | 115 TFLOPS | exact epilogue on register operands 173 TFLOPS (row 33); the tile's loop over resident smem 120-140 | 36.9 / 45.6-53.2 | 26.48 (FP4 MLP 15.77 + FP8 proj 10.71) |
+| F8F4 v2 weight image | 5.93 | 41 GB per chunk | 222 GB/s | DRAM copy 215 GB/s | at floor | |
+| prime attention (h2p + the tail's db) | 40.85 | 3.38 PFLOP | 83 TFLOPS | bf16 mma.sync forms 102; FA2-class BF16 82.3 | 33.1 | 42.26 |
+| GDN chunk scan + conv/L2 | 8.34 | | | DRAM floor (`research/gb10-prefill-next-20261107/`) | at floor | 8.70 |
+| glue, norms, q path, gated norm, matvecs, KV dequant/append | 10.10 | | | DRAM floor per pass | | 13.82 (glue) |
+| idle inside the request window | 1.79 | | | | 0 | |
+
+SGLang: the lane receipt `q27-prefill-budget-per-part.json` (torch profiler, 131,017 tokens, 8,192-row
+chunks, a different checkpoint and numerical program: FP4 x FP4 MLP and FP8 projections), TTFT 92.3 s.
+memra's attention, GDN and glue are at or under SGLang's now; the gap is the GEMMs (61.2 s with the
+image pass against 26.5 s), whose exact program is e4m3 activations on every NVFP4 weight with an f32
+epilogue per k32 block.
+
+The phases of the request (timestamped server log, `ts-probe-main-unit1/`, unprofiled):
+
+| phase | 32,784 tokens | 131,051 tokens |
+|---|---:|---:|
+| request to the first prime kernel (host) | 0.124 s | 0.446 s |
+| trunk, 4,096-row chunks | 22.144 s | 119.340 s |
+| trunk boundary tail (16 / 43 rows, the prefix cache's stable boundary) | 0.257 s | 0.460 s |
+| MTP draft fill, 4,096-row chunks (72-74 ms each) | 0.583 s | 2.342 s |
+| TTFT | 23.109 s | 122.597 s |
+
+### Levers
+
+- **Attention ping-pong** (row 47, probe): strict alternation of the MMA blocks of the two warps
+  that share a scheduler loses a third (57 against 85 TFLOPS); alternating only the PV blocks loses
+  9%. Exact, rejected: one warp alone cannot keep the pipe busy, and h2p's free drift already
+  overlaps more than a fixed schedule does.
+- **O-rescale skip** (row 48): not built. The rescale is fused into the PV add (one FFMA per element).
+- **Raw exponentials in range** (row 49, probe): exact, 4-5% slower; the second exponential path
+  spills the 255-register body.
+- **MTP draft fill batched** (row 50, adopted): each 4,096-row fill chunk issued 8,192 row copies and
+  4,096 single-row appends from the host (a 36 ms GPU-idle gap per chunk). Two strided copies and the
+  batched append write the same bytes. Served on unit 1, B V V B: 23.108 -> 22.698 s at 32k (-1.77%),
+  122.511 -> 120.990 s at 131k (-1.24%), answers and speculative acceptance identical in every boot.

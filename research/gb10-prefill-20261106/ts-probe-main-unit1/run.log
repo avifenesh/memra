@@ -1,0 +1,11 @@
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m10s
+2026-11-08T15:59:42+02:00 ready
+{"tag": "ts-probe", "target": 32768, "rep": 0, "ttft_s": 23.109, "total_s": 24.589, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+{"tag": "ts-probe", "target": 131072, "rep": 0, "ttft_s": 122.597, "total_s": 125.309, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+{"tag": "ts-probe", "target": 260000, "rep": 0, "ttft_s": 324.714, "total_s": 329.353, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+waitfor: gone 3385241 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+TS-PROBE-DONE
