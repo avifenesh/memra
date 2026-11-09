@@ -196,6 +196,18 @@ def check_log(boot_rec: dict) -> list:
     return fails
 
 
+def waiter_matches(pattern: str) -> bool:
+    """A `gpulock status` waiting line matching `pattern` (a shared card's landing record)."""
+    import re
+    try:
+        text = subprocess.run(["gpulock", "status"], capture_output=True, text=True,
+                              timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return any(line.strip().startswith("waiting:") and re.search(pattern, line)
+               for line in text.splitlines())
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--bin", required=True)
@@ -204,6 +216,9 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=8191)
     ap.add_argument("--boot-timeout", type=float, default=600.0)
     ap.add_argument("--env", action="append", default=[], help="extra KEY=VALUE for every boot")
+    ap.add_argument("--yield-to", default=None,
+                    help="regex: before each boot after the first, give the card back (exit 75, "
+                         "no verdict) when a `gpulock status` waiter matches it")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -211,7 +226,13 @@ def main() -> int:
     meta = {"bin": args.bin, "bin_sha256": hashlib.sha256(binary).hexdigest(),
             "model": args.model, "env": args.env, "order": "A B B A (A=log off, B=log on)",
             "started": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
-    boots = [boot(args, arm, i, out) for i, arm in enumerate(("off", "on", "on", "off"))]
+    boots = []
+    for i, arm in enumerate(("off", "on", "on", "off")):
+        if i and args.yield_to and waiter_matches(args.yield_to):
+            print(f"request-log A/B: YIELDED before boot {i} to a waiter matching {args.yield_to!r}; "
+                  "no verdict, rerun from the start")
+            return 75
+        boots.append(boot(args, arm, i, out))
     names = list(boots[0]["results"])
     diffs = []
     for name in names:
