@@ -1865,8 +1865,9 @@ VMM placement defaults) stays for the tier gates (`kv-tier-gate`, `tier-transfer
 program is banked on
 `bank/spill-program-20260928`. Git history is the archive. History:
 [FLAGS-HISTORY.md](FLAGS-HISTORY.md#memra_kv_host_contracts). Record:
-`research/spill-c-20260919/DOOR-DECISION-PACKET.md` (no measured verdict, so no darklanes
-ledger line).
+`research/spill-c-20260919/DOOR-DECISION-PACKET.md`. Its cells are N=1 and executed-not-qualified
+(for example `research/spill-a-20260919/pro-single-day16/box/stall-off` and `stall-on`), so no
+qualified verdict and no darklanes ledger line.
 
 ## Removed doors, 2026-11-03 (the FP8 block-128 scale fold: superseded by the block MMQ)
 
@@ -1875,7 +1876,8 @@ into one per-tensor scale at load (dequant each block, take the global amax, re-
 `s = amax/448`) so the per-tensor e4m3 consumers could take a block-128 checkpoint. It carried no
 decide-by, and its receipt is a superseding one: `research/fp8st-20260804/mmq/SLICE3-MODEL-VERDICT.md`
 measured ARM A's step-0 top-1 flipped against the Q8_0 floor, with teacher-forced logit drift 1.45x
-(rms) and 1.62x (max_abs) above the per-block MMQ prefill tile, which keeps the floor's top-1 and
+(rms) and 1.62x (max_abs, `mmq/drift-table.log`) above the per-block MMQ prefill tile, which keeps
+the floor's top-1 and
 top-10 and became the default for block-128 checkpoints. Deleted with its env read
 (`fp8_fold_enabled`) and the fold arm in `find_fp8_native`; a block-128 grid now always takes the
 native per-block path. No kernel and no test reached only through it. Git history is the archive.
@@ -1972,7 +1974,8 @@ already overlaps its own launch's GPU work (2026-07-23). Values 0 and 1 were the
 larger value opened the known-bad multi-launch window, so the door could only add a crash.
 Deleted with its env read, the chunk-extension loop and the multi-token ring drain with its
 mid-chunk stop rollback; the loop launches once, syncs and reads its one token from the ring.
-Git history is the archive. Its rows were never banked, so no darklanes ledger line.
+Git history is the archive. Ledger: `VERDICT:graph-drain-door-removed` (darklanes
+`agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-03 (the segmented prime capture, `MEMRA_PRIME_SEG=1`)
 
@@ -2027,7 +2030,8 @@ door's eager middle. The live twins went with `MEMRA_GLM5_VERIFY_GRAPH`, their o
 section). The selector
 fix and the snapshot's `index_pools_ready` rewind stay too. It returns only with a box row.
 Git history is the archive. No measured verdict, so no darklanes ledger line; the defect is
-darklanes `TRAP:a-door-can-fail-by-dropping-the-graph-it-rides-on`.
+`TRAP:a-door-can-fail-by-dropping-the-graph-it-rides-on` in darklanes
+`agent-knowledge/gpu/measurement-laws.md`.
 
 ## Removed doors, 2026-11-03 (`MEMRA_GLM5_VERIFY_GRAPH`: decide-by 2026-09-19 passed with no valid row)
 
@@ -2193,7 +2197,7 @@ receipt deletes the door. Neither is armed by a launcher.
   arm returns only with an NVLink receipt. Its PCIe rows were never banked, so no darklanes
   ledger line.
 
-Neither door has a darklanes ledger line, since neither receipt was banked. Git history is the
+Git history is the
 archive. The `MEMRA_FENCE_RANK1` row of the 2026-09-05 door sweep below still says
 `MEMRA_FENCE_MEMOPS` stayed; this entry supersedes that.
 
@@ -2231,8 +2235,8 @@ history is the archive.
   `tests/hc_pre_norm_fuse_gpu.rs` with its two skip-census rows, and the FLAGS.md and KERNELS.md
   entries. Ledger: `VERDICT:glm5-hc-pre-norm-fold-loses-on-tp-symmetric`.
 
-The swiglu door has no darklanes ledger line, since its doorscreen rows were never banked; the
-hc-pre fold already has its line there. The fourth door of the same audit,
+Of the two doors, only the hc-pre fold has a darklanes ledger line. The fourth door of the
+same audit,
 `MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME`, is not removed: a launcher sets it, and its row now says so.
 
 ## Removed doors, 2026-11-03 (`MEMRA_ROUTER_FUSED`: negative on the TP walk)
@@ -2280,10 +2284,10 @@ no decide-by, are not removed: a launcher sets both, and their rows now say so.
 `moe_gate_up_preclamp8_q8_v2` and `moe_down8_fma_q8_v2` (`cu/qmatvec.cu`, lane
 b200-gemv-hbm-20260902) were the MoE half of `MEMRA_B200_GEMV_V2`. The 2026-09-02 box receipt
 (B200 dev 0, `b200_matvec_bench 5 3`, the table in the `MEMRA_B200_GEMV_V2` section above) put
-gate/up at 54.4 us against the `_w4` twin's 53.3 (inside noise) and down at 43.2 against 36.0
-(0.870x against shipped's 37.6, a regression), both bit-identical. The dispatch was removed on
-that receipt and the two
-kernels stayed only as bench arms. A neutral and a negative receipt delete the code: the two
+gate/up at 54.4 us against the `_w4` twin's 53.3 (inside noise) and down at 43.2 against
+shipped's 37.6 and the twin's 36.0 (0.870x of shipped, a regression), both bit-identical. The
+dispatch was removed on that receipt and the two kernels stayed only as bench arms. A neutral
+and a negative receipt delete the code: the two
 `Engine` launchers, both kernels, their two `b200_matvec_bench` arms and their `docs/KERNELS.md`
 row. `MEMRA_B200_GEMV_V2` keeps its bf16-row, kda6 and W8 q8_0 families. Git history is the
 archive. Ledger: `VERDICT:b200-moe-v2-twins-removed` (darklanes
@@ -2540,8 +2544,10 @@ Later the same day the glm5 symmetric TP-2 walk was restored as the sm_100a defa
 one-shot crossings admit `device-push` only, so the glm5 loader with no transport named arms
 `device-push` under that posture and `peer-pull` on the root-orchestrated walk, where this
 receipt was measured (`glm5_tp::unset_transport_for`, the symmetric walk entry below). Decision:
-`docs/decisions/TP-PEER-PULL-DEFAULT.md`; its rows were never banked, so no darklanes ledger
-line.
+`docs/decisions/TP-PEER-PULL-DEFAULT.md`. Ledger: `VERDICT:glm5-tp2-peer-pull-still-loses`
+(darklanes `agent-knowledge/gpu/verdicts-ledger.md`; it holds the 15.20 -> 17.81 receipt, whose
+rows were never banked).
+
 ## Removed doors, 2026-11-04 (`MEMRA_KV_ALLOCATOR`, `MEMRA_KV_VMM_GROW`: on-demand KV planes are a card default)
 `MEMRA_KV_ALLOCATOR=vmm` and its placement seam `MEMRA_KV_VMM_GROW` armed and placed the server's
 on-demand K/V planes (WP-B day 37, `research/spill-b-20260919/DAY37.md`; decide-by 2026-10-04):
@@ -2620,12 +2626,13 @@ darklanes ledger line.
 SDPA. The code's own note named that shape broken: `fa_prefill`'s non-causal arm with T != T_kv
 measured attn maxdiff 0.34 against the torch oracle (jsonl 2026-07-13). A later row of the same
 day withdrew that reading (the 0.34 was the kernel's bf16 mma class against an f32 oracle, not a
-mask bug) and adopted the fa arm, but no bf16-class parity receipt was banked. The door had no
+mask bug) and adopted the fa arm in that lane, but no bf16-class parity receipt was banked and in
+memra the arm stayed opt-in. The door had no
 decide-by date and never served. Deleted with its two env reads and both dispatch arms.
 `fa_prefill` keeps its other callers, so no kernel and no `docs/KERNELS.md` row goes with it. The
 block attention stays on `sdpa_naive`; DFlash2 sliding layers keep `d2_windowed_attn`. An fa arm
-returns only with a bf16-class parity receipt. Git history is the archive. No measured verdict,
-so no darklanes ledger line.
+returns only with a bf16-class parity receipt. Git history is the archive. Ledger:
+`VERDICT:dflash-fa-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 **Correction, 2026-11-09:** the "broken" reading above was withdrawn on 2026-07-13, the day it
 was made. The later "fa arm ADOPTED" row of `research/gemma4-bringup/rig5090-gemma4.jsonl`
@@ -2692,8 +2699,8 @@ The same bundle carried `MEMRA_KDA_FUSED_PROJ` and `MEMRA_GLM5_Q8_FUSE`. The fus
 also has a door-level TP-2 row (tpwalk3 v5, 82.58 -> 87.90 tok/s, tape unchanged) and is now the
 sm_100a default, its variable kept as an explicit selector because its GPU gates drive both arms
 (its row). The q8 fuse has only the bundle, so it stays default OFF with a decide-by (its row).
-Decision: `docs/decisions/GLM5-B200-DOORS.md`. No measured per-door verdict (the record reads
-one bundle row), so no darklanes ledger line.
+Decision: `docs/decisions/GLM5-B200-DOORS.md`. Ledger: `VERDICT:glm5-b200-decode-bundle-per-door`
+(darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-04 (`MEMRA_MLA_COALESCE` and the TP-shard reach of `MEMRA_B200_MLA_DECODE_ARM`: the winners are sm_100a defaults, the switches go; the arm's unsharded reach is superseded)
 
@@ -2734,7 +2741,9 @@ Deleted: both env reads and both FLAGS.md rows. The kernels stay (the generic sp
 shard reach and the gate use them); `mla-decode-arm-gate` and `mla-coalesce-bench` call them
 directly and are unchanged. The retired launcher set both names, so the boot audit now refuses
 them. History: [FLAGS-HISTORY.md](FLAGS-HISTORY.md#memra_b200_mla_decode_arm). Decision:
-`docs/decisions/GLM5-B200-DOORS.md`. Its rows were never banked, so no darklanes ledger line.
+`docs/decisions/GLM5-B200-DOORS.md`. Its rows were never banked, so no VERDICT line; the TP-shard
+split's scaling is `KNEE:glm5-mla-coalesced-split-is-a-class-keyed-by-blocks` in the darklanes
+ledger.
 
 ## Removed doors, 2026-11-04 (`MEMRA_GLM5_TP_PREFIX`: the winner is the sm_100a default, its switch goes)
 
@@ -2809,8 +2818,8 @@ kernel-level, with no model-scale row, and whether sm_120a takes v2 on it is an 
 Deleted: the env read and the row. Both bodies stay, reachable by name through
 `Engine::mla_kpool_select_single_cta`, which `tests/mla_kpool_select_v2_gpu.rs` now calls
 directly so its 14 cells run on every build; on sm_100a builds it also checks the dispatch.
-Decision: `docs/decisions/GLM5-B200-DOORS.md`. Its rows were never banked, so no darklanes
-ledger line.
+Decision: `docs/decisions/GLM5-B200-DOORS.md`. Its box rows were never banked, so the sm_100a
+default has no ledger line of its own.
 
 ## Removed doors, 2026-11-04 (`MEMRA_TOPK_WARP`: the winner is the sm_100a default, its switch goes)
 
