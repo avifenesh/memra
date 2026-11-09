@@ -9848,8 +9848,10 @@ fn reclaim_arrival_seed_bytes(prompt_len: usize, entry_bytes_at_prompt: usize) -
 /// RECLAIM BOOKING (2026-11-09): what the door-off gate books after a partial reclaim. The pass
 /// left free only the arrival's need plus what the priming sessions owe, and the door-off gate
 /// books nothing, so the next arrival of the burst would pass on those bytes. While `armed`, the
-/// gate books what the pass counted: the prime transients, and the pending seeds capped at the room
-/// the cache has left (the door's own `seed_booking_cap`; on a full cache a seed replaces bytes).
+/// gate books what the priming sessions owe (prime transients and pending seeds), capped at the
+/// room the cache has left: the passes freed at least that room, and the booking keeps no more
+/// than what they freed. As landing seeds refill the cache the room, and with it the booking, falls
+/// to 0, so steady traffic on a full cache meets the unbooked door-off gate again.
 fn reclaim_owed_booking(
     armed: bool,
     prime_owed: usize,
@@ -9858,10 +9860,18 @@ fn reclaim_owed_booking(
     resident: usize,
 ) -> usize {
     if armed {
-        prime_owed.saturating_add(seed_booking_cap(pending_seed_uncapped, budget, resident))
+        prime_owed
+            .saturating_add(pending_seed_uncapped)
+            .min(budget.saturating_sub(resident))
     } else {
         0
     }
+}
+
+/// Whether a partial pass arms the reclaim booking: it freed bytes, by its own eviction or by the
+/// fallback flush of the rest. A pass that freed nothing changes nothing.
+fn reclaim_pass_arms_booking(pass_evicted: usize, rest: bool) -> bool {
+    pass_evicted > 0 || rest
 }
 
 /// The booking ends at an arrival that finds nothing owed: no session priming, no seed pending.
@@ -19980,10 +19990,11 @@ pub fn run(
                 let pending_booked =
                     pending_booked.saturating_add(unified_growth.saturating_sub(pending_seed));
                 // RECLAIM BOOKING (2026-11-09, `research/partial-reclaim-20261109/`): door off,
-                // after a partial reclaim, what the priming sessions owe is booked (the prime
-                // transients, and the pending seeds capped at the cache's room) until nothing is
-                // owed. Disarmed (every naked boot until a partial reclaim runs) it is 0 and the
-                // gate is unchanged.
+                // after a partial reclaim, what the priming sessions owe (prime transients and
+                // pending seeds) is booked, capped at the cache's room, until nothing is owed. The
+                // flag is worker-wide and the terms count every model's sessions; the booked
+                // reading reduces the primary device, as the door's own booking does. Disarmed
+                // (every naked boot until a partial reclaim runs) it is 0 and the gate is unchanged.
                 let reclaim_booked = if reclaim_booking && !admit_memory_cfg.armed {
                     let prime_owed =
                         pending_prime_owed_bytes(&engine, &loaded, &active, &admission_costs);
@@ -20286,7 +20297,7 @@ pub fn run(
                             });
                             // One line per pass that freed something: a deferred arrival comes
                             // back through this site every tick.
-                            if pass_evicted > 0 || rest {
+                            if reclaim_pass_arms_booking(pass_evicted, rest) {
                                 eprintln!(
                                     "[admit-oom] reclaim-on-defer (partial): evicted \
                                      {pass_evicted} prefix entries ({:.0}MB, oldest first) for \
@@ -43684,10 +43695,10 @@ mod tests {
         assert_prefix_cache_accounting(&px);
     }
 
-    /// RECLAIM BOOKING (2026-11-09): disarmed it books nothing; armed it books what the pass
-    /// counted as owed, the prime transients whole and the pending seeds capped at the cache's
-    /// room (a full cache books only the transients), and it disarms only at an arrival that finds
-    /// neither owed.
+    /// RECLAIM BOOKING (2026-11-09): disarmed it books nothing; armed it books what the priming
+    /// sessions owe, prime transients and seeds, capped at the cache's room (a full cache books 0),
+    /// and it disarms only at an arrival that finds neither owed. Only a pass that freed bytes arms
+    /// it.
     #[test]
     fn reclaim_booking_books_what_priming_sessions_owe_until_nothing_is() {
         use super::{reclaim_booking_disarms as disarms, reclaim_owed_booking as booking};
@@ -43704,15 +43715,25 @@ mod tests {
         );
         assert_eq!(
             booking(true, prime, seeds, budget, room(1_000_000_000)),
-            prime + 1_000_000_000,
-            "the seeds capped at the room"
+            1_000_000_000,
+            "capped at the room the passes freed"
         );
         assert_eq!(
             booking(true, prime, seeds, budget, budget),
-            prime,
-            "a full cache"
+            0,
+            "a full cache: steady traffic meets the unbooked gate"
         );
         assert_eq!(booking(true, 0, 0, budget, 0), 0);
+
+        assert!(
+            super::reclaim_pass_arms_booking(1, false),
+            "the pass freed entries"
+        );
+        assert!(
+            super::reclaim_pass_arms_booking(0, true),
+            "the fallback freed the rest"
+        );
+        assert!(!super::reclaim_pass_arms_booking(0, false), "nothing freed");
 
         assert!(disarms(true, 0, 0));
         assert!(!disarms(true, 0, 1), "a seed still pending");
@@ -43842,8 +43863,9 @@ mod tests {
              = pool_readings(&engine, &loaded); let bytes_before_rest = px.total_bytes; \
              evicted_prefix += px.evict_all();",
         );
-        let arm = at("if pass_evicted > 0 || rest {");
-        let stored = at("reclaim_booking = true;");
+        let arm = at("if reclaim_pass_arms_booking(pass_evicted, rest) {");
+        // The arm is the last statement of that block, inside the pass's own block.
+        let stored = at("reclaim_booking = true; } }");
         let spare = at(
             "if !headroom.sufficient(required) && reclaim_spare.as_ref().is_some_and(|s| s.also.is_some())",
         );

@@ -59,8 +59,9 @@ door off, on a discrete card whose derived budget is above its two-entry floor a
 deferred arrival frees its unbooked shortfall, the entry it will itself publish and what the priming sessions still
 owe (prime transients and their uncapped pending seeds), oldest entry first, and the rest of the cache stays. Still
 short after the settle, the rest of the unleased cache goes as before. A pass that freed bytes arms a booking: the
-door-off gate books what the priming sessions owe (the transients, and the seeds capped at the cache's room) until
-nothing is owed, so a later arrival of the same burst cannot pass on those bytes. The door's demoting flush, unified
+door-off gate books what the priming sessions owe (prime transients and pending seeds), capped at the cache's room,
+until nothing is owed, so a later arrival of the same burst cannot pass on the freed bytes; once seeds refill the
+cache the booking is 0. The door's demoting flush, unified
 memory, a per-device reading, an operator budget and the floor (every measured RTX 5090 configuration, the Max-Q at
 the default caps) keep the flush. Measured on one RTX PRO 6000 Max-Q (2026-11-09, the at-the-limit cell, A B B A
 against #1090's head): no flush, six partial passes per B arm freeing 18.2 GB of the 54.2 GB, the 16 repeats hit

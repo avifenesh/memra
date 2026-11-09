@@ -50,11 +50,15 @@ deciding to queue or reject".
    prefill workspace, but the shared prime slab means it allocates about 1 GB at admission, so several pass before
    any defers. Their seeds then land into the room the pass made: in the limit cell's burst, about 5.5 GB of seeds
    for the six sessions priming at the defer and 11 GB for all twelve, against a few GB of free memory. So once a
-   pass has freed bytes, admission books what the pass counted as owed: the prime transients, and the pending seeds
-   capped at the room the cache has left (`seed_booking_cap`, the door's own seed term; on a full cache a seed
-   replaces bytes and books 0). A later arrival of the burst then defers and runs its own pass. The booking stays
-   armed through a fallback flush (after a flush its seed term binds only when free memory is short) and ends at an
-   arrival that finds nothing owed: no session priming and no seed pending.
+   pass has freed bytes, admission books what the priming sessions owe (the prime transients and the pending seeds),
+   capped at the room the cache has left. The passes freed at least that room, so the booking never keeps more than
+   they freed, and as landing seeds refill the cache it falls to 0: steady traffic on a full cache meets the
+   unbooked door-off gate again. A later arrival of the burst defers and runs its own pass. The booking stays armed
+   through a fallback flush (the room is then the whole budget, so everything owed is booked, up to what the flush
+   freed) and ends at an arrival that finds nothing owed: no session priming and no seed pending. The flag is
+   worker-wide and counts every model's sessions; like the door's own booking it reduces the primary device's
+   reading. While it is armed, the restorable spare's climb and the parked-session ladder read the booked headroom,
+   so an arrival the cache cannot cover may evict parked sessions for what other sessions owe, as under the door.
 5. **One line per pass that freed something.** A deferred arrival comes back through the reclaim every tick, so a
    pass that evicted nothing prints nothing, as the flush did.
 6. **No flag.** The rollback is the revert.
@@ -64,7 +68,9 @@ The lane's banked code (`bank/prefix-budget-gds-20261107`, 39ec446dd5: `reclaim_
 had no booking, no arrival entry and applied on every discrete card. This change re-derives the pass against the
 current site and adds the floor key, the arrival's entry and the booking. The arrival's entry, the booking's prime
 term and its life through a fallback came from the independent review of the first version (24f0f95825), whose
-acceptance run was stopped in its first B arm so that the measured binary is the final code.
+acceptance run was stopped in its first B arm so that the measured binary is the final code. The cap of the whole
+booking at the cache's room came from the second review (of d6c81127e7): without it the booking would hold every
+prime transient for as long as some session primes, which on steady traffic is the whole busy period.
 
 ## Results (one RTX PRO 6000 Max-Q, 2026-11-09): pass
 
