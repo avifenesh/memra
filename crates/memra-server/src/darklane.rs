@@ -1644,6 +1644,8 @@ mod tests {
             (vec![t('Z', false, false), t('S', false, false)], Unclaimed),
             (vec![t('S', true, false)], NotYet),
             (vec![t('D', true, false)], TookEffect),
+            // A multithreaded process continued from outside: the stop is in no set at all.
+            (vec![t('S', false, false), t('S', false, false)], Unclaimed),
             // The main thread parked in vfork, the other thread sleeping or blocked elsewhere:
             // the kernel flagged the main thread only.
             (vec![t('D', false, true), t('S', false, true)], Unclaimed),
@@ -1799,11 +1801,18 @@ mod tests {
         fn spawn() -> Self {
             use std::os::unix::process::CommandExt;
             let sleeper = |pgid: i32| {
-                std::process::Command::new("sleep")
-                    .arg("600")
-                    .process_group(pgid)
-                    .spawn()
-                    .unwrap()
+                let mut cmd = std::process::Command::new("sleep");
+                cmd.arg("600").process_group(pgid);
+                // The sleepers die with the test binary, as the runner's job does with the server.
+                unsafe {
+                    cmd.pre_exec(
+                        || match libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) {
+                            0 => Ok(()),
+                            _ => Err(std::io::Error::last_os_error()),
+                        },
+                    );
+                }
+                cmd.spawn().unwrap()
             };
             let leader = sleeper(0);
             let pgid = leader.id();
@@ -1830,6 +1839,10 @@ mod tests {
 
     impl Drop for SleepGroup {
         fn drop(&mut self) {
+            if std::thread::panicking() {
+                let (leader, member) = self.states();
+                eprintln!("sleep group at the failure: leader {leader:?} member {member:?}");
+            }
             kill_group(self.pgid, libc::SIGKILL);
             for child in &mut self.children {
                 let _ = child.wait();
