@@ -438,7 +438,18 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
         | OperationKind::DraftPlan
         | OperationKind::DsparkFusion
         | OperationKind::DsparkMarkovHead
-        | OperationKind::DsparkConfidenceHead => Surfaces::NONE,
+        | OperationKind::DsparkConfidenceHead
+        // DeepSeek-V4.1: no reference executor or tuned surface implements these yet.
+        | OperationKind::Fp8Block32Linear
+        | OperationKind::Csa2Attention
+        | OperationKind::Csa2Compressor
+        | OperationKind::Csa2Indexer
+        | OperationKind::Csa2CandidatePool
+        | OperationKind::Csa2KvReuse
+        | OperationKind::Csa2IndexReuse
+        | OperationKind::Csa2State
+        | OperationKind::SinglePassHyperConnections
+        | OperationKind::EngramLookup => Surfaces::NONE,
     }
 }
 
@@ -510,6 +521,16 @@ pub const ALL_OPERATIONS: &[OperationKind] = &[
     OperationKind::LatentKvState,
     OperationKind::CompressedAttentionState,
     OperationKind::SharedKvState,
+    OperationKind::Fp8Block32Linear,
+    OperationKind::Csa2Attention,
+    OperationKind::Csa2Compressor,
+    OperationKind::Csa2Indexer,
+    OperationKind::Csa2CandidatePool,
+    OperationKind::Csa2KvReuse,
+    OperationKind::Csa2IndexReuse,
+    OperationKind::Csa2State,
+    OperationKind::SinglePassHyperConnections,
+    OperationKind::EngramLookup,
     OperationKind::Mtp,
     OperationKind::DraftPlan,
     OperationKind::MtpFusion,
@@ -568,7 +589,7 @@ mod tests {
         // follow. Bump it in the same commit as the variant.
         assert_eq!(
             ALL_OPERATIONS.len(),
-            74,
+            84,
             "OperationKind variant count moved; update ALL_OPERATIONS"
         );
     }

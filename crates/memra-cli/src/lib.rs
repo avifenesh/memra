@@ -1290,6 +1290,12 @@ pub fn inspect_model(
         &request.out_dir.join("model-plan.txt"),
         plan_text.as_bytes(),
     )?;
+    // The ModelConfig the pack compiled from: what normalization made of the artifact's
+    // config (the lock hashes the config.json bytes for an HF source, this text for GGUF).
+    write_atomic(
+        &request.out_dir.join("normalized-config.txt"),
+        format!("{:#?}\n", source.config).as_bytes(),
+    )?;
     write_atomic(
         &request.out_dir.join("execution-rewrites.tsv"),
         rewrite_manifest.as_bytes(),
@@ -2816,6 +2822,7 @@ mod tests {
             "artifact.lock",
             "tensor-census.tsv",
             "model-plan.txt",
+            "normalized-config.txt",
             "execution-rewrites.tsv",
             "placement-checkpoint-2.tsv",
             "gates.txt",

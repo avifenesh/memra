@@ -344,6 +344,10 @@ pub enum QuantConstraint {
     Nvfp4,
     Mxfp4,
     Fp8Block128,
+    /// FP8 e4m3 with one scale per 32x32 block (DeepSeek-V4.1 dense weights).
+    Fp8Block32,
+    /// FP8 e4m3 with one scale per 32 elements of each row (DeepSeek-V4.1 Engram tables).
+    Fp8Row32,
     I64,
 }
 
@@ -782,7 +786,10 @@ pub(crate) fn rope_factor_width(plan: &ModelPlan) -> Option<u32> {
                 )
                 .then_some(rope.dimensions / 2),
             },
-            AttentionPlan::GatedDeltaNet(_) | AttentionPlan::KimiDeltaNet(_) => None,
+            // CSA2 rotates with YaRN factors derived from config, never checkpoint factors.
+            AttentionPlan::GatedDeltaNet(_)
+            | AttentionPlan::KimiDeltaNet(_)
+            | AttentionPlan::Csa2(_) => None,
         })
         .max()
 }
@@ -809,6 +816,16 @@ impl QuantConstraint {
                 storage,
                 StorageLayout::Quantized(layout)
                     if layout.format == "FP8_E4M3" && layout.block_shape == [128, 128]
+            ),
+            Self::Fp8Block32 => matches!(
+                storage,
+                StorageLayout::Quantized(layout)
+                    if layout.format == "FP8_E4M3" && layout.block_shape == [32, 32]
+            ),
+            Self::Fp8Row32 => matches!(
+                storage,
+                StorageLayout::Quantized(layout)
+                    if layout.format == "FP8_E4M3" && layout.block_shape == [1, 32]
             ),
             Self::I64 => matches!(storage, StorageLayout::Integer(IntegerType::I64)),
         }
@@ -1085,6 +1102,13 @@ fn add_layer(
         AttentionPlan::GatedDeltaNet(gdn) => add_gdn(builder, plan, index, *gdn),
         AttentionPlan::KimiDeltaNet(kda) => add_kda(builder, plan, index, *kda),
         AttentionPlan::Mla(mla) => add_mla(builder, plan, index, mla)?,
+        // CSA2 names are pack-owned (`model_packs::deepseek_v41` generates its schema); the
+        // canonical HF/GGUF namer has no spelling for them.
+        AttentionPlan::Csa2(_) => {
+            return Err(TensorContractError::UnsupportedPlanOperation {
+                operation: "CSA2 attention in the canonical tensor schema",
+            });
+        }
     }
     if let ResidualTopology::HyperConnections { streams, .. } = layer.residual {
         add_hyper_connections(builder, plan, index, streams);

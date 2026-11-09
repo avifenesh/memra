@@ -174,6 +174,7 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
         sampling_defaults: None,
         per_layer_input: None,
         partition_boundaries: vec![1],
+        deepseek_v41: None,
     })
 }
 

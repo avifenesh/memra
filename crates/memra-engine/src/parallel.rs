@@ -1610,6 +1610,7 @@ mod tests {
             multimodal: None,
             mla: None,
             dsv4: None,
+            dsv41: None,
             mimo: None,
             qwen4exp: None,
             qwen35_vision: None,

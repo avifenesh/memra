@@ -109,6 +109,16 @@ pre-existing allowlists for every operation, pinned by
 | `LatentKvState` | — | — | — | — | — | — | yes | yes | yes | — |
 | `CompressedAttentionState` | — | — | — | — | — | — | — | — | — | — |
 | `SharedKvState` | — | — | — | — | — | — | — | — | — | — |
+| `Fp8Block32Linear` | — | — | — | — | — | — | — | — | — | — |
+| `Csa2Attention` | — | — | — | — | — | — | — | — | — | — |
+| `Csa2Compressor` | — | — | — | — | — | — | — | — | — | — |
+| `Csa2Indexer` | — | — | — | — | — | — | — | — | — | — |
+| `Csa2CandidatePool` | — | — | — | — | — | — | — | — | — | — |
+| `Csa2KvReuse` | — | — | — | — | — | — | — | — | — | — |
+| `Csa2IndexReuse` | — | — | — | — | — | — | — | — | — | — |
+| `Csa2State` | — | — | — | — | — | — | — | — | — | — |
+| `SinglePassHyperConnections` | — | — | — | — | — | — | — | — | — | — |
+| `EngramLookup` | — | — | — | — | — | — | — | — | — | — |
 | `Mtp` | — | — | — | — | yes | — | yes | — | yes | — |
 | `DraftPlan` | — | — | — | — | — | — | — | — | — | — |
 | `MtpFusion` | — | — | — | — | yes | — | yes | — | yes | — |

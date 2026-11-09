@@ -71,7 +71,8 @@ The `memra model inspect` artifact lock is bound to the code as well as to the b
 `config_sha256` hashes the normalized `ModelConfig`'s text instead of a `config.json`, so a
 `ModelConfig` field change moves the lock when the same artifact is inspected again (removing
 `n_layer_total` on 2026-11-03 did). A regenerated lock needs its rewrite receipts regenerated
-with it.
+with it. `normalized-config.txt` beside the lock is that `ModelConfig` text for every source, so
+the normalization an HF `config.json` went through can be read without rerunning the parser.
 
 ## 1. Inspect before implementing
 

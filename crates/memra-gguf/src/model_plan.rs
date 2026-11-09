@@ -7,7 +7,13 @@
 use crate::config::{Arch, AttentionGateKind, LayerKind, ModelConfig};
 use crate::model_packs::mimo_v2::audio::MiMoAudioPatchPlan;
 
+pub mod deepseek_v41;
 pub mod speech;
+pub use deepseek_v41::{
+    BlockElement, BlockQuant, BlockScale, Csa2AttentionPlan, Csa2Candidates, Csa2CompressedState,
+    Csa2CompressorPlan, Csa2IndexerPlan, Csa2Mode, Csa2Pooling, Csa2StatePlan, DeepSeekV41Numerics,
+    EngramPlan, SinglePassHcPlan,
+};
 use speech::WhisperPlan;
 
 #[derive(Clone, PartialEq)]
@@ -44,6 +50,9 @@ pub struct ModelPlan {
     /// Valid cuts are between complete trunk blocks. Whether a backend can transport every state
     /// crossing one of these cuts is derived from the operations, not from the architecture name.
     pub partition_boundaries: Vec<usize>,
+    /// DeepSeek-V4.1 checkpoint numerics (32x32 FP8 dense blocks, per-32 activation
+    /// quantization). `None` for every other family.
+    pub deepseek_v41: Option<DeepSeekV41Numerics>,
 }
 
 // Plan hashes use Debug serialization. Keep the pre-speech representation unchanged
@@ -76,6 +85,10 @@ impl std::fmt::Debug for ModelPlan {
         d.field("draft_source", &self.draft_source);
         d.field("sampling_defaults", &self.sampling_defaults);
         d.field("partition_boundaries", &self.partition_boundaries);
+        // Omitted when absent so every other family's serialized plan is unchanged.
+        if let Some(numerics) = &self.deepseek_v41 {
+            d.field("deepseek_v41", numerics);
+        }
         d.finish()
     }
 }
@@ -343,6 +356,8 @@ pub enum AttentionPlan {
     Mla(MlaAttentionPlan),
     GatedDeltaNet(GatedDeltaNetPlan),
     KimiDeltaNet(KimiDeltaNetPlan),
+    /// DeepSeek-V4.1 compressed sparse attention 2 (Full / Reindex / Reuse / window-only).
+    Csa2(Csa2AttentionPlan),
 }
 
 #[derive(Clone, PartialEq)]
@@ -764,6 +779,10 @@ pub enum ResidualTopology {
         streams: u32,         // 4 (hc_count)
         bottleneck_rank: u32, // 320 (hc_lowrank)
     },
+    /// DeepSeek-V4.1 single-pass mHC: each sublayer collapses with the previous sublayer's pre
+    /// mix, and the exit collapses with the last one. Not the per-sublayer `HyperConnections`
+    /// program, which collapses each sublayer with its own mix.
+    SinglePassHyperConnections(SinglePassHcPlan),
 }
 
 /// qwen4_exp trunk/MTP exit downmix: `hyper_connection_mixer` (same tensor shapes as one
@@ -834,6 +853,9 @@ pub enum StatePlan {
     SharedKvCache {
         source_layer: u32,
     },
+    /// DeepSeek-V4.1 CSA2: a window ring per layer plus a compressed KV and index-key plane
+    /// owned by the group's Full-mode layer.
+    Csa2(Csa2StatePlan),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1028,6 +1050,14 @@ impl std::error::Error for PlanCompileError {}
 impl ModelPlan {
     pub fn compile(cfg: &ModelConfig) -> Result<Self, PlanCompileError> {
         cfg.validate_plan_semantics()?;
+        // The canonical compiler has no CSA2, single-pass mHC or Engram arm, so it would
+        // compile a different program; only the deepseek_v41 pack compiles this family.
+        if cfg.dsv41.is_some() {
+            return Err(PlanCompileError::UnsupportedSemantics {
+                field: "deepseek_v41",
+                value: "compiled only by the deepseek_v41 model pack".into(),
+            });
+        }
         const MAX_MODEL_LAYERS: u32 = 1_024;
         const MAX_MTP_LAYERS: u32 = 128;
         const MAX_VISION_LAYERS: u32 = 1_024;
@@ -1335,6 +1365,7 @@ impl ModelPlan {
                 DraftSourcePlan::None
             },
             sampling_defaults: None,
+            deepseek_v41: None,
         })
     }
 
@@ -1373,6 +1404,9 @@ impl ModelPlan {
 
     pub fn draft_operations(&self) -> Option<Vec<OperationKind>> {
         let mut operations = vec![OperationKind::Embedding];
+        if self.deepseek_v41.is_some() {
+            operations.push(OperationKind::Fp8Block32Linear);
+        }
         for block in &self.mtp_blocks {
             operations.push(OperationKind::Mtp);
             operations.push(OperationKind::MtpFusion);
@@ -1446,6 +1480,9 @@ impl ModelPlan {
             operations.push(OperationKind::VisionTokenInjection);
         }
         operations.push(OperationKind::Embedding);
+        if self.deepseek_v41.is_some() {
+            operations.push(OperationKind::Fp8Block32Linear);
+        }
         if self.per_layer_input.is_some() {
             operations.push(OperationKind::PerLayerInputEmbedding);
         }
@@ -1802,6 +1839,10 @@ impl ModelConfig {
                         .dsv4
                         .as_ref()
                         .is_some_and(|d| d.sliding_window == window)
+                    || self
+                        .dsv41
+                        .as_ref()
+                        .is_some_and(|d| d.sliding_window == window)
                     || self.geometry.as_ref().is_some_and(|g| {
                         g.classes().iter().any(|layer| layer.window == Some(window))
                     });
@@ -1815,7 +1856,7 @@ impl ModelConfig {
                 // Step's global plan uses Checkpoint factors: synthesized from HF, or
                 // supplied as rope_freqs.weight by GGUF (tensor presence is its contract).
                 "llama3" => self.step35.is_some(),
-                "yarn" => self.rope_yarn.is_some() || self.dsv4.is_some(),
+                "yarn" => self.rope_yarn.is_some() || self.dsv4.is_some() || self.dsv41.is_some(),
                 _ => false,
             };
             if !represented {
@@ -1909,6 +1950,13 @@ impl LayerPlan {
         if self.ple.is_some() {
             operations.push(OperationKind::PleNgramEmbedding);
         }
+        if let ResidualTopology::SinglePassHyperConnections(SinglePassHcPlan {
+            engram: Some(_),
+            ..
+        }) = self.residual
+        {
+            operations.push(OperationKind::EngramLookup);
+        }
         operations.push(OperationKind::RmsNorm);
         if self.sparse_overlay.is_some() {
             operations.push(OperationKind::MicroBlockSparseIndex);
@@ -1945,6 +1993,30 @@ impl LayerPlan {
             }
             AttentionPlan::GatedDeltaNet(_) => operations.push(OperationKind::GatedDeltaNet),
             AttentionPlan::KimiDeltaNet(_) => operations.push(OperationKind::KimiDeltaNet),
+            AttentionPlan::Csa2(csa2) => {
+                operations.push(OperationKind::Csa2Attention);
+                let candidates = match csa2.mode {
+                    Csa2Mode::Window => None,
+                    Csa2Mode::Full { indexer, .. } => {
+                        operations.push(OperationKind::Csa2Compressor);
+                        operations.push(OperationKind::Csa2Indexer);
+                        Some(indexer.candidates)
+                    }
+                    Csa2Mode::Reindex { indexer, .. } => {
+                        operations.push(OperationKind::Csa2KvReuse);
+                        operations.push(OperationKind::Csa2Indexer);
+                        Some(indexer.candidates)
+                    }
+                    Csa2Mode::Reuse { .. } => {
+                        operations.push(OperationKind::Csa2KvReuse);
+                        operations.push(OperationKind::Csa2IndexReuse);
+                        None
+                    }
+                };
+                if candidates.is_some_and(|candidates| candidates != Csa2Candidates::None) {
+                    operations.push(OperationKind::Csa2CandidatePool);
+                }
+            }
         }
         operations.push(match self.state {
             StatePlan::KvCache { .. } => OperationKind::KvState,
@@ -1953,6 +2025,7 @@ impl LayerPlan {
             StatePlan::LatentKvCache { .. } => OperationKind::LatentKvState,
             StatePlan::CompressedAttention { .. } => OperationKind::CompressedAttentionState,
             StatePlan::SharedKvCache { .. } => OperationKind::SharedKvState,
+            StatePlan::Csa2(_) => OperationKind::Csa2State,
         });
         operations.push(OperationKind::RmsNorm);
         match &self.mlp {
@@ -1985,6 +2058,9 @@ impl LayerPlan {
             } => OperationKind::GemmaResidual,
             ResidualTopology::HyperConnections { .. } => OperationKind::HyperConnections,
             ResidualTopology::GatedResidual { .. } => OperationKind::GatedResidualConnections,
+            ResidualTopology::SinglePassHyperConnections(_) => {
+                OperationKind::SinglePassHyperConnections
+            }
         });
     }
 }
@@ -2898,6 +2974,29 @@ pub enum OperationKind {
     CompressedAttentionState,
     /// gemma4 KV-shared layer: no own cache, reads an earlier layer's.
     SharedKvState,
+    /// DeepSeek-V4.1 checkpoint numerics: e4m3 dense weights with ue8m0 scales per 32x32
+    /// block and a dynamic per-32 FP8 quantize-dequantize on every FP8/FP4 linear input.
+    Fp8Block32Linear,
+    /// DeepSeek-V4.1 CSA2 attention core: sink softmax over the layer's window KV plus its
+    /// selected compressed entries, grouped low-rank output. Not `CompressedMlaAttention`.
+    Csa2Attention,
+    /// CSA2 non-overlapping compressor (softmax-gated above ratio 1, a projection at ratio 1).
+    Csa2Compressor,
+    /// CSA2 indexer: FP4 relu-weighted scoring over index keys projected from the latent.
+    Csa2Indexer,
+    /// CSA2 hierarchical candidate pool: the source layer's block top-k, then masking at
+    /// every later indexer.
+    Csa2CandidatePool,
+    /// CSA2 Reindex/Reuse: read the group's compressed KV and index keys from its Full layer.
+    Csa2KvReuse,
+    /// CSA2 Reuse: read the most recent index-producing layer's top-k.
+    Csa2IndexReuse,
+    /// CSA2 per-layer window ring plus the group-owned compressed planes.
+    Csa2State,
+    /// DeepSeek-V4.1 single-pass mHC (deferred pre-mix, pre-mix exit collapse).
+    SinglePassHyperConnections,
+    /// DeepSeek-V4.1 Engram n-gram hash memory gated into the residual streams.
+    EngramLookup,
     Mtp,
     DraftPlan,
     MtpFusion,

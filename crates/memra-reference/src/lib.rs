@@ -256,7 +256,21 @@ impl std::fmt::Display for ReferenceError {
 
 impl std::error::Error for ReferenceError {}
 
+/// DeepSeek-V4.1 plans (CSA2, single-pass mHC, Engram) have no reference implementation yet.
+/// Refused at every entry point by the plan's own numerics marker, before any fixture or
+/// weight is touched.
+fn refuse_deepseek_v41(plan: &ModelPlan) -> Result<(), ReferenceError> {
+    if plan.deepseek_v41.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "DeepSeek-V4.1 CSA2 / single-pass mHC / Engram reference execution",
+        });
+    }
+    Ok(())
+}
+
 pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, ReferenceError> {
+    refuse_deepseek_v41(plan)?;
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
@@ -408,6 +422,12 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
                     hidden,
                 )?;
             }
+            ResidualTopology::SinglePassHyperConnections(_) => {
+                return Err(ReferenceError::UnsupportedOperation {
+                    layer: Some(layer.index),
+                    operation: "single-pass mHC",
+                });
+            }
         }
         // qwen4_exp has no input_layernorm/post_attention_layernorm modules — the read
         // gate's grouped hc_norm IS the sublayer normalization (SEMANTICS.md §Layer stack).
@@ -457,6 +477,12 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
             }
             AttentionPlan::KimiDeltaNet(kda) => {
                 add_kda_fixture(&mut weights, layer.index, kda, hidden)?;
+            }
+            AttentionPlan::Csa2(_) => {
+                return Err(ReferenceError::UnsupportedOperation {
+                    layer: Some(layer.index),
+                    operation: "CSA2 attention",
+                });
             }
         }
         match &layer.mlp {
@@ -2051,6 +2077,7 @@ pub fn execute(
     weights: &ReferenceWeights,
     token_ids: &[u32],
 ) -> Result<ReferenceOutput, ReferenceError> {
+    refuse_deepseek_v41(plan)?;
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
@@ -2073,6 +2100,7 @@ pub fn execute_multimodal(
     token_ids: &[u32],
     vision_input: &ReferenceVisionInput,
 ) -> Result<ReferenceMultimodalOutput, ReferenceError> {
+    refuse_deepseek_v41(plan)?;
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
@@ -4344,6 +4372,12 @@ fn execute_layer(
             tokens,
             hidden,
         )?,
+        AttentionPlan::Csa2(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "CSA2 attention",
+            });
+        }
     };
     let mut output = input.to_vec();
     add_in_place(&mut output, &attention);
@@ -4752,6 +4786,12 @@ fn execute_hyper_layer(
             tokens,
             hidden,
         )?,
+        AttentionPlan::Csa2(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "CSA2 attention",
+            });
+        }
     };
     let attention_residual = memra_gguf::dsv4_forward::hc_post(
         &attention,
@@ -5860,6 +5900,7 @@ pub fn execute_mtp_standalone(
     token_ids: &[u32],
     trunk_hidden: &[f32],
 ) -> Result<Vec<ReferenceMtpOutput>, ReferenceError> {
+    refuse_deepseek_v41(plan)?;
     let hidden = plan.hidden_size as usize;
     let vocab = plan.vocab_size as usize;
     let tokens = token_ids.len();
