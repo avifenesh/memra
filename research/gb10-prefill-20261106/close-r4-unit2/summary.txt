@@ -1,0 +1,23 @@
+campaign close-r4-unit2: 18 requests, arms ['B', 'M']
+
+target 32768
+  B        ttft 23.059, 23.063, 23.092                   median 23.063  cells ['01-B', '04-B', '05-B']
+  M        ttft 22.028, 22.019, 21.994                   median 22.019  cells ['02-M', '03-M', '06-M']
+  M vs B: -4.53%
+
+target 131072
+  B        ttft 122.337, 122.123, 122.268                median 122.268  cells ['01-B', '04-B', '05-B']
+  M        ttft 118.069, 117.764, 117.691                median 117.764  cells ['02-M', '03-M', '06-M']
+  M vs B: -3.68%
+
+target 260000
+  B        ttft 321.923, 322.378, 322.279                median 322.279  cells ['01-B', '04-B', '05-B']
+  M        ttft 313.651, 312.990, 312.821                median 312.990  cells ['02-M', '03-M', '06-M']
+  M vs B: -2.88%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+  target 260000 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL

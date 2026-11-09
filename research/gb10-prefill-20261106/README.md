@@ -467,10 +467,11 @@ model's budget of 1 (`tools/argmax-margin-gate.sh`, `tools/test_argmax_margin_ga
 - The alpha/beta dp4a matvecs (3.2 s) quantize their shared input twice; one dual kernel reading it
   once keeps both dot products.
 
-## Round 4 (2026-11-08): the request window, attention scheduling, the MTP draft fill
+## Round 4 (2026-11-08/09): the request window, attention scheduling, the MTP draft fill, the GDN out-norm, the GEMM's last wave
 
-Base main `d6ef68f5a1`. Ledger rows 46-50. Design notes: `ATTN-PINGPONG-DESIGN.md` (attention,
-rejected) and `MTP-FILL-DESIGN.md` (the landed lever). Harness: `harness/r4/`.
+Base main `d6ef68f5a1`. Ledger rows 46-66b; the close against the base is at the end of this
+section. Design notes: `ATTN-PINGPONG-DESIGN.md` (attention, rejected), `MTP-FILL-DESIGN.md`,
+`GDN-OUTNORM-DESIGN.md` and `GEMM-V4-DESIGN.md`. Harness: `harness/r4/`.
 
 ### Fresh per-part profile, one cold 131,051-token served prefill (`profile-r4-main-131k/`)
 
@@ -567,22 +568,55 @@ The phases of the request (timestamped server log, `ts-probe-main-unit1/`, unpro
   117.704 s (-0.21%), separated; 260k a tie. Unit 1's medians are -0.28% / -0.23% / -0.69%,
   overlapping through two reduced-clock cells.
 
-### Next (round 4)
+### Close (round 4): main after the landings against the round's start (`close-r4-unit1/`, `close-r4-unit2/`)
 
-Measured seconds left outside the trunk at 131k after row 50: the trunk boundary tail chunk 0.46 s,
-the host time before the first kernel 0.45 s (mostly the KV allocation for the request's context),
-the draft fill's own kernels about 0.7 s. Inside the trunk, the exact levers left are small and at
-the DRAM floor except two:
+B = `d6ef68f5a1`, the round's start. M = main after round 4's landings: `8671108d14` on unit 2, which
+is main `aa939d49db` plus #1126's first form, and `eba6f59d87` on unit 1, which has the same tree over
+`crates/`, `tools/` and `docs/`. Main since then adds #1114 (admission accounting for the RTX 5090
+Laptop, no change to the prime's kernels) and #1126's review form, whose device code is identical
+(row 65c). Cells B M M B B M, one fresh boot and one lease per cell, 3 per arm (4 B cells on unit
+1, below); medians:
 
-- the KV dequant workspace pass runs at about 150 GB/s (one thread per element, 2-byte stores):
-  1.37 s at 131k and about 5 s at 260k, against about 215 GB/s for its bytes. An
-  eight-elements-per-thread form with 16-byte stores keeps each element's conversion
-  (`attn-r4/probe/probe_ws.cu`, branch `perf/gb10-ws-dequant8`).
-- the f32 norm output before a GDN mixer, which no prime reader needs when every weight of the
-  group takes the seeded activation (about 0.6-0.8 s at 131k); the GEMM groups first need a
-  fail-closed check for an unwritten f32 input, as `matmul_prefill_ffn_f8f4v2` has (`z_written`).
+| unit | prompt tokens | B | M | change | SGLang tuned | M / SGLang (B) |
+|---|---:|---:|---:|---:|---:|---:|
+| 1 | 32,768 | 23.099 s | 22.060 s | -4.50% | 14.9 s | 1.48x (1.55x) |
+| 1 | 131,072 | 122.490 s | 118.199 s | -3.50% | 92.3 s | 1.28x (1.33x) |
+| 1 | 260,000 | 324.061 s | 314.265 s | -3.02% | 269.2 s | 1.17x (1.20x) |
+| 2 | 32,768 | 23.063 s | 22.019 s | -4.53% | 14.9 s | 1.48x (1.55x) |
+| 2 | 131,072 | 122.268 s | 117.764 s | -3.68% | 92.3 s | 1.28x (1.32x) |
+| 2 | 260,000 | 322.279 s | 312.990 s | -2.88% | 269.2 s | 1.16x (1.20x) |
 
-The big parts stay where rows 33-45 and A0-A23 left them: the F8F4 tile at 115 TFLOPS against
-120-140 for its loop over resident smem and 173 for the exact epilogue on register operands, and
-h2p at 83-85 TFLOPS against about 102. Both need the register budget that 16 warps x 128 and
-8 warps x 255 already use (rows 35-36, 47, 49).
+Every length separates completely on both units. On unit 2 every cell ran at full clock (2,158-2,164
+MHz). On unit 1 the cells ran in two parts around another landing's cell record (01-B to 04-B, then
+05-B to 07-B), and 04-B ran beside that landing's CPU build on the unit: its 131k request ran at
+2,047 MHz median and 70.7 W against 2,151-2,158 MHz and 85-87 W in every other cell (129.093 s
+against 122.4-122.5 s). 07-B is the extra B cell for it; B's medians are over all four B cells, and
+over the three full-clock ones they are 23.090 / 122.460 / 323.975 s (M -4.46% / -3.48% / -3.00%).
+The answers are identical in every request, on both arms and both units. SGLang's numbers are the
+lane receipt's tuned profile on the same Spark, which serves a different checkpoint and numerical
+program (above).
+
+What landed in round 4, each measured served against the commit before it (unit 2, 32k / 131k /
+260k, 3 per arm, the rows named):
+
+| PR | lever | served change | rows |
+|---|---|---|---|
+| #1108 | MTP draft fill batched | -1.75 / -1.36 / -1.01% | 50-51b |
+| #1110 | KV dequant workspace pass, eight elements per thread | -0.06 / -0.15 / -0.32% | 52-53 |
+| #1117 | no f32 norm output before a fully seeded mixer | -1.01 / -0.80 / -0.43% | 54-54c |
+| #1122 | the GDN out-norm inside the fused K4+K5 pass | -1.39 / -1.04 / -0.78% | 55-57 |
+| #1126 | the F8F4 v3 GEMM's partial last wave at half height | -0.20 / -0.21% / tie | 64-65c |
+
+Rejected or not pursued: attention ping-pong, skipping the O rescale at alpha 1 and the raw
+MUFU.EX2 exponential (rows 47-49); the host time before the first kernel (row 58, the pool's growth
+on a fresh boot); a persistent GEMM tile walk and per-group slot release (rows 60, 63); h2p's feed
+(row 62, compute-bound at 79% tensor-active).
+
+### Next (after round 4)
+
+- The trunk boundary tail chunk (0.46 s at 131k, 16 or 43 rows on the prefix cache's stable
+  boundary): fold it into the last full chunk when the prefix cache allows.
+- The MTP draft fill's own kernels, about 0.7 s at 131k.
+- The F8F4 tile and h2p stay at the register walls of rows 35-36, 47, 49 and 59-63. The one exact
+  GEMM idea left is the partial fragment double buffer (`GEMM-V4-DESIGN.md`, candidate 4), which
+  needs SASS evidence that ptxas does not already hoist those loads.
