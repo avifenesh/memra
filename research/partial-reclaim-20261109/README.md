@@ -206,9 +206,92 @@ choices vary per boot on both arms, so that column carries no A/B signal.
 ### Scope
 
 One card class, one model (Qwen3.8-27B NVFP4 + Q5_K with its MTP head), one served context (32,768), one cap
-(`MEMRA_MAX_SESSIONS=12`), three shapes, two power regimes for the waves (280 and 250 W). Unmeasured: an RTX 5090
-boot that derives a budget above the floor, and steady traffic at the limit beyond back-to-back bursts. Unchanged by construction: the floor, unified memory (GB10),
+(`MEMRA_MAX_SESSIONS=12`), three shapes, two power regimes for the waves (280 and 250 W). An RTX 5090 boot above the
+floor is measured below. Steady traffic at the limit beyond back-to-back bursts stays owed until its cell lands. Unchanged by construction: the floor, unified memory (GB10),
 per-device readings, operator budgets and the door-armed path.
+
+## An RTX 5090 boot above the floor (2026-11-09): `rtx5090-above-floor/`
+
+The scope above listed this as unmeasured: on the 24 GB RTX 5090 Laptop every measured Qwen3.8-27B configuration
+derives the two-entry floor, but a smaller model or lower caps derive more, and then the partial pass applies.
+
+**The config.** Qwen3.5-9B NVFP4 with its MTP head (`Qwen3.5-9B-NVFP4-MTP-GGUF.gguf`), `MEMRA_CTX=32768`. A full-context
+entry is 539,230,208 B (14,848 B/token plus 52.7 MB of recurrent state), so the floor is 1,078 MB; one served-context
+session is 600,047,616 B; boot driver free is 18.31 GB. The derived budget by interactive cap (`probe/`, A's boot
+line; the judge and harvest lanes add 12 resident sessions to every row):
+
+| `MEMRA_MAX_SESSIONS` | resident sessions | session peak | derived budget | against the floor |
+|---|---|---|---|---|
+| 12 | 24 | 14.40 GB | 1,078 MB | the floor |
+| 8 | 20 | 12.00 GB | 2,549 MB | 2.4x |
+| 4 | 16 | 9.60 GB | 4,949 MB | 4.6x |
+| 2 | 14 | 8.40 GB | 6,150 MB | 5.7x |
+
+The cells run at `MEMRA_MAX_SESSIONS=4`: 4.6 times the floor, about nine full-context entries, a real low-concurrency
+server and not the far end of the range. Both arms boot the same budget line (#1090 is on main).
+
+**Arms.** A = main fa0ee88acf. B = #1124 (3448243319) merged onto that main in a scratch worktree (tree 113ef7a1e0,
+not pushed), so the arms differ only by #1124; #1124's own base predates main's new GDN prime kernels. Release builds
+on the rig (`<bins>` sha256 `45896f1d1143c530...` and `a940b9147037c98b...`). One gpulock lease per arm (`harness/pairs.sh`),
+A B B A as two pairs; both pairs ran intact (no other lease between their arms). The card was yielded once for another
+lane's record, at an arm boundary before this block; the A arm before that break is kept in `limit-prebreak/`. Both arms
+boot the same budget line, 4,949 MB.
+
+### The scaled at-the-limit cell (`limit/`, `harness/limit.py` at `--tok 26000 --fill 32 --fill-conc 4 --pressure 4 --repeat 6`)
+
+The #1090 lane's harness at its own defaults for concurrency (fill four at a time, pressure at the interactive cap),
+with the prompt size and counts scaled to this budget: 32 unique fill prompts of about 28.6k tokens (one entry
+about 0.48 GB each, nine fill the budget), 4 more at once, then the 6 most recent fill prompts again.
+
+| arm | budget MB | reclaims (partial, still short) | entries / GB freed (largest) | booking on / off | evictions preflight / LRU | OOM lines | pressure: errors, TTFT p50 / max s | repeats: hits, cached tokens, TTFT p50 s | greedy texts = A |
+|---|---|---|---|---|---|---|---|---|---|
+| limit-1-A | 4949 | 6 (0, 0) | 30 / 15.2 (9 / 4.5) | 0 / 0 | 0 / 1 | 0 | 0 of 4, 29.6 / 29.7 | 0 of 6, 0, 7.86 | 42/42 |
+| limit-2-B | 4949 | 14 (12, 0) | 28 / 14.4 (4 / 2.1) | 7 / 7 | 0 / 1 | 0 | 0 of 4, 29.8 / 29.9 | 1 of 6, 28960, 7.64 | 42/42 |
+| limit-3-B | 4949 | 16 (13, 0) | 33 / 16.9 (1 / 2.1) | 8 / 7 | 0 / 1 | 0 | 0 of 4, 28.4 / 28.5 | 0 of 6, 0, 7.62 | 42/42 |
+| limit-4-A | 4949 | 6 (0, 0) | 25 / 12.8 (9 / 4.5) | 0 / 0 | 0 / 1 | 0 | 0 of 4, 28.9 / 28.9 | 1 of 6, 28960, 7.52 | 42/42 |
+
+| arm | inserts | resident MB at insert: median / mean / max | inserts into an empty cache (resident = the entry) |
+|---|---|---|---|
+| limit-1-A | 42 | 1609 / 1913 / 4997 | 9 |
+| limit-2-B | 41 | 2060 / 2297 / 4997 | 5 |
+| limit-3-B | 42 | 1958 / 2196 / 4997 | 6 |
+| limit-4-A | 41 | 1609 / 1934 / 4997 | 9 |
+
+- **On this card the reclaim runs through the fill, on both arms.** The 16 parked sessions of about 0.54 GB each
+  (8.6 GB, outside the session-peak estimate) outgrow the budget's 4.95 GB, and an arrival of 28.6k tokens needs about
+  3.0 GB (a 1,384 MB charge plus the 1.5 GiB transient reserve) while free memory sits at 2.0 to 3.0 GB. A flushed 6
+  times per arm (25 to 30 entries, 12.8 to 15.2 GB, up to 9 entries at once). B ran 12 or 13 partial passes per arm,
+  every one covered, no fallback (14 or 16 reclaim lines with the ones that took only parked sessions), freeing 28 to 33
+  entries (14.4 to 16.9 GB, at most 4 at once). The booking armed and ended 7 or 8 times per arm. From the reclaim
+  numbers, a window where the fill fits and only the burst defers needs fill prompts within about 0.5 GB of the limit,
+  narrower than the estimate's error, so this regime is what the card reaches at this config.
+- **Safe and flat.** No OOM line, every greedy row equal on every arm. Repeats: A 0 and 1 of 6, B 1 and 0 of 6. B held
+  more of the cache (median resident at insert 2,060 and 1,958 MB against 1,609 MB) and started from an empty cache less
+  often (5 and 6 inserts against 9), but the parked pool keeps the cache to a few entries either way, so the repeats
+  did not move. Pressure TTFT p50 29.8 and 28.4 s against 29.6 and 28.9 s. The pre-break A arm and the two sizing arms
+  (`sizing1/`, the same arguments; `sizing2/`, the fill one at a time) read the same.
+
+### The mixed shape (`mixed/`, counts only, A B B A)
+
+| arm | budget MB | repeats hit | repeat TTFT median ms | batch tok/s | batch TTFT p50 ms | reclaims (partial) | evict lines | OOM lines | greedy texts = A |
+|---|---|---|---|---|---|---|---|---|---|
+| mixed-1-A | 4949 | 6 of 6 | 1319 | 273.18 | 985 | 0 (0) | 52 | 0 | 150/150 |
+| mixed-2-B | 4949 | 6 of 6 | 1334 | 272.08 | 988 | 0 (0) | 52 | 0 | 149/149 |
+| mixed-3-B | 4949 | 6 of 6 | 1336 | 271.99 | 991 | 0 (0) | 52 | 0 | 149/149 |
+| mixed-4-A | 4949 | 6 of 6 | 1334 | 271.94 | 990 | 0 (0) | 52 | 0 | 148/148 |
+
+No reclaim on any arm; the cache sits at its budget and plain LRU evicts the same 52 entries on every arm. Counts
+are identical.
+
+**Verdict.** On an RTX 5090 boot above the floor the partial reclaim engages, stays safe and is flat: no OOM, every
+pass covered, the same repeat hits and TTFT, slightly more of the cache kept. Its gain needs a budget large beside what
+one arrival and the parked pool take, as on the RTX PRO 6000 at 54 GB; nothing here argues for keying it off on the
+5090.
+
+**Validity after rebase.** These cells ran A = fa0ee88acf against B = #1124 on it. Main then gained lever 7 (#1126),
+which changes the F8F4 v3 GEMM's partial last wave (a launch-shape change its commits state is bit-identical, aimed at
+GB10's 640-tile grids) and nothing in admission or the prefix cache, so the counts stand as behavior evidence for the
+rebased head.
 
 ## Acceptance plan (one RTX PRO 6000 Max-Q, untimed)
 

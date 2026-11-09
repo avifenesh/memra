@@ -18,8 +18,10 @@ def order(p):
     return (int(m.group(1)) if m else 0, p.name)
 
 
-# An arm stopped mid-run keeps its receipts under a `.stopped` suffix and stays out of the tables.
-arms = sorted((p for p in root.iterdir() if (p / "rows.json").is_file() and not p.name.endswith(".stopped")), key=order)
+# An arm stopped mid-run (`.stopped`) or a pair another lease came between (`.split`) keeps its receipts under a
+# suffix and stays out of the tables.
+arms = sorted((p for p in root.iterdir() if (p / "rows.json").is_file() and not p.name.endswith((".stopped", ".split"))),
+              key=order)
 ref = next((p for p in arms if p.name.endswith("-A")), None)
 ref_text = {r["tag"]: r["text"] for r in json.loads((ref / "rows.json").read_text())["rows"]} if ref else {}
 

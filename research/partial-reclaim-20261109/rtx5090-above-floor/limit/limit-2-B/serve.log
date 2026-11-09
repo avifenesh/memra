@@ -1,0 +1,834 @@
+[server] build: memra-0.139.0-3de5b89cc0fd (id: source-tree, git: ffb2b4b909b4)
+[server] starting; models config = [("gate", "<models>/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "gate" <- <models>/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "gate": 33 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 4949MB (4949409792 B, derived: 2 x 539230208 B max entry for model "gate" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 9600761856 B (16 resident sessions x 600047616 B served-context session), requested 4949409792 B; boot driver free 18308268032 B, post-reserve clamp 16697655296 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "gate": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[fa-pool] grow #5 dev=0 o_len 2162688 -> 4325376 ml_len 8448 -> 16896 (retired kept, zero=false)
+[spec-pool] pooled rows draft engaged: 3 members (arms [GraphGreedy, GraphGreedy, GraphGreedy])
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":3221225472,"still_owned_bytes":7741794176,"pool_reserved_bytes":7952400384,"pool_cached_bytes":210606208,"driver_free_bytes":16930439168,"synchronization_errors":[]}
+[spec-cost] model="gate" depth=2048 pooled=true plain_cap=16 round_overhead=5.55ms pooled_overhead=Some((4, 1.749697970588235)) verify_ms[1..16]=[7.7 8.4 9.1 10.1 11.0 12.0 13.3 14.5 15.9 17.3 18.7 20.1 21.1 22.1 23.1 24.1] plain_ms[1..]=[7.9 9.1 10.1 11.0 12.2 13.5 14.7 15.9 17.2 18.5 19.8 21.1 22.4 23.7 25.0 26.3] (11.8s)
+[prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":973078528,"still_owned_bytes":8287053696,"pool_reserved_bytes":8623489024,"pool_cached_bytes":336435328,"driver_free_bytes":16259350528,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 928MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 1536MB (static was 1536MB; measured 825MB; probe kv charge 67MB, draft-state 34MB, drafted 48 accepted 47; [dev0 peak-mapped 9152MB rest-mapped 8224MB charged 102MB -> 825MB]; 1.1s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18197
+[meter] admit id=cmpl-c3a4ab6a84149322e38db74d42bee362 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-2f70a4d893de4d06f5a4efd83bad07d0 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-1b84fc619181ec289f1c75ceea0527b6 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-ded48d4229e2869cce230685b15e3ff8 tenant=default lane=interactive model="gate"
+[spec-cost] model="gate" n=4 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="gate" +37MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=27853 path=spec = 16704 B/token x ctx + 723MB prefill-workspace + 0MB fixed = 1188MB
+[admission] prefill workspace held: model="gate" prompt=27725 call=27725 stack=27725 concat=0 slab_resident=1074MB held=723MB cold=1796MB
+[spec-k] model="gate" tenant="ns-f0" K=3 source=cost-model prompt=27725 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 155MB (observed 619MB at ctx 27797 path=spec)
+[spec-cost] model="gate" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=759.332 max_chunk_ms=759.332
+[admission] per-session draft-state charge: model="gate" +37MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=27853 path=spec = 16704 B/token x ctx + 723MB prefill-workspace + 155MB fixed = 1343MB
+[admission] prefill workspace held: model="gate" prompt=27725 call=27725 stack=27725 concat=0 slab_resident=1074MB held=723MB cold=1796MB
+[spec-k] model="gate" tenant="ns-f1" K=3 source=cost-model prompt=27725 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f2" K=3 source=cost-model prompt=27725 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f3" K=3 source=cost-model prompt=27725 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=816.654 max_chunk_ms=816.654
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=834.291 max_chunk_ms=834.291
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=831.553 max_chunk_ms=831.553
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=862.706 max_chunk_ms=862.706
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=858.607 max_chunk_ms=858.607
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=857.369 max_chunk_ms=857.369
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=858.035 max_chunk_ms=858.035
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=905.802 max_chunk_ms=905.802
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=906.150 max_chunk_ms=906.150
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=905.879 max_chunk_ms=905.879
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=949.418 max_chunk_ms=949.418
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=907.287 max_chunk_ms=907.287
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=950.511 max_chunk_ms=950.511
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=992.498 max_chunk_ms=992.498
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=947.408 max_chunk_ms=947.408
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1010.749 max_chunk_ms=1010.749
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1049.862 max_chunk_ms=1049.862
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1012.086 max_chunk_ms=1012.086
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1003.831 max_chunk_ms=1003.831
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1010.137 max_chunk_ms=1010.137
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1102.559 max_chunk_ms=1102.559
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1065.514 max_chunk_ms=1065.514
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1039.059 max_chunk_ms=1039.059
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=893.019 max_chunk_ms=893.019
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=866.607 max_chunk_ms=866.607
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=861.111 max_chunk_ms=861.111
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=77.131 max_chunk_ms=77.131
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=893.035 max_chunk_ms=893.035
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=80.620 max_chunk_ms=80.620
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.906 max_chunk_ms=4.906
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=71.301 max_chunk_ms=71.301
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=67.681 max_chunk_ms=67.681
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.762 max_chunk_ms=4.762
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.775 max_chunk_ms=4.775
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.764 max_chunk_ms=4.764
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.782 max_chunk_ms=4.782
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.787 max_chunk_ms=4.787
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.948 max_chunk_ms=4.948
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.983 max_chunk_ms=4.983
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.941 max_chunk_ms=4.941
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.902 max_chunk_ms=4.902
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.889 max_chunk_ms=4.889
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.989 max_chunk_ms=4.989
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.984 max_chunk_ms=4.984
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=5.025 max_chunk_ms=5.025
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=5.017 max_chunk_ms=5.017
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=5.017 max_chunk_ms=5.017
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=5.024 max_chunk_ms=5.024
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=5.026 max_chunk_ms=5.026
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=5.036 max_chunk_ms=5.036
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=5.014 max_chunk_ms=5.014
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=5.034 max_chunk_ms=5.034
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=5.077 max_chunk_ms=5.077
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=5.065 max_chunk_ms=5.065
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=5.055 max_chunk_ms=5.055
+[prefix-cache] insert (spec-boundary): 27680 tokens, 515.1MB (resident 515.1MB / 4949MB, model gate, ns "ns-f0")
+[prefix-cache] insert (spec-boundary): 27680 tokens, 515.1MB (resident 1030.1MB / 4949MB, model gate, ns "ns-f1")
+[prefix-cache] insert (spec-boundary): 27680 tokens, 515.1MB (resident 1545.2MB / 4949MB, model gate, ns "ns-f2")
+[prefix-cache] insert (spec-boundary): 27680 tokens, 515.1MB (resident 2060.3MB / 4949MB, model gate, ns "ns-f3")
+[spec-pool] pooled MTP cohort engaged: 4 sessions (model gate)
+[spec-acc] ctx=27726 burst=21/36 cum=21/36=0.583
+[fa-pool] grow #6 dev=0 o_len 4325376 -> 11554816 ml_len 16896 -> 45136 (retired kept, zero=false)
+[fa-pool] grow #7 dev=0 o_len 11554816 -> 23109632 ml_len 45136 -> 90272 (retired kept, zero=false)
+[spec-acc] ctx=27728 burst=20/36 cum=20/36=0.556
+[spec-acc] ctx=27727 burst=19/36 cum=19/36=0.528
+[spec-acc] ctx=27760 burst=18/33 cum=39/69=0.565
+[spec-acc] ctx=27727 burst=19/39 cum=19/39=0.487
+[meter] admit id=cmpl-4c9c9d2445ff6c8ce30511ce9b46a709 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f4" K=3 source=cost-model prompt=27725 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[spec-pool] pooled MTP cohort engaged: 3 sessions (model gate)
+[spec-acc] ctx=27761 burst=17/33 cum=37/69=0.536
+[spec-acc] ctx=27759 burst=19/36 cum=38/72=0.528
+[spec-acc] ctx=27760 burst=18/33 cum=37/72=0.514
+[meter] admit id=cmpl-adcba87f41731f0325a9591ded6840d9 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-198569b530c1849c50c7eb4a713644d0 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-7990d93a0fe595cb231f3c4755bbeb76 tenant=default lane=interactive model="gate"
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=831.090 max_chunk_ms=831.090
+[spec-cost] model="gate" n=4 rung=3 -> K=0 (predicted 348.7 vs plain 364.7 tok/s; pooled=true)
+[admission] request cost: model="gate" ctx=27853 path=plain = 14848 B/token x ctx + 357MB prefill-workspace + 155MB fixed = 926MB
+[admission] prefill workspace held: model="gate" prompt=27725 call=1039 stack=1039 concat=1039 slab_resident=1074MB held=357MB cold=1796MB
+[spec-k] model="gate" tenant="ns-f6" K=0 source=cost-model prompt=27725 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f5" K=0 source=cost-model prompt=27725 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f7" K=0 source=cost-model prompt=27725 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=878.581 max_chunk_ms=878.581
+[prime-batch] B=3 tokens=3072 carried=0 partial=3 in 642.6ms
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=942.467 max_chunk_ms=942.467
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 652.0ms
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1018.765 max_chunk_ms=1018.765
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 690.5ms
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1026.053 max_chunk_ms=1026.053
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 661.2ms
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1090.527 max_chunk_ms=1090.527
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 684.5ms
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=822.254 max_chunk_ms=822.254
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 705.2ms
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=83.129 max_chunk_ms=83.129
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 697.3ms
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=5.475 max_chunk_ms=5.475
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 724.6ms
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=5.237 max_chunk_ms=5.237
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 726.6ms
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=5.444 max_chunk_ms=5.444
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 735.8ms
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=5.525 max_chunk_ms=5.525
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 760.8ms
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=5.157 max_chunk_ms=5.157
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 754.2ms
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=5.186 max_chunk_ms=5.186
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 764.6ms
+[spec-acc] ctx=27725 burst=17/42 cum=17/42=0.405
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 756.8ms
+[prefix-cache] insert (spec-boundary): 27680 tokens, 515.1MB (resident 2575.4MB / 4949MB, model gate, ns "ns-f4")
+[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model gate, committed 27757, generated 32, greedy)
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 791.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 830.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 843.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 822.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 805.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 799.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 877.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 842.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 887.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 895.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 856.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 912.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 927.9ms
+[prime-batch] B=3 tokens=96 carried=3 partial=3 in 119.1ms
+[prefix-cache] insert (seed): 27680 tokens, 463.7MB (resident 3039.1MB / 4949MB, model gate, ns "ns-f6")
+[prefix-cache] insert (seed): 27680 tokens, 463.7MB (resident 3502.7MB / 4949MB, model gate, ns "ns-f5")
+[prefix-cache] insert (seed): 27680 tokens, 463.7MB (resident 3966.4MB / 4949MB, model gate, ns "ns-f7")
+[prime-batch] B=3 tokens=135 carried=3 partial=0 in 116.7ms
+[spec-cost] model="gate" realized n=4 K=0: 273.1 tok/s (now priced from serving)
+[meter] admit id=cmpl-728c0fc25cd7f862c2283391cbca6cf7 tenant=default lane=interactive model="gate"
+[kv-reuse] park-compact: 27789 of 27797 rows retained in 2.6ms (model gate)
+[spec-cost] model="gate" n=4 rung=3 -> K=2 (predicted 343.2 vs plain 252.8 tok/s; pooled=true)
+[admission] per-session draft-state charge: model="gate" +37MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=27853 path=spec = 16704 B/token x ctx + 723MB prefill-workspace + 155MB fixed = 1343MB
+[admission] prefill workspace held: model="gate" prompt=27725 call=27725 stack=27725 concat=0 slab_resident=1074MB held=723MB cold=1796MB
+[spec-k] model="gate" tenant="ns-f8" K=2 source=cost-model prompt=27725 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[spec-cost] model="gate" n=4 rung=2 -> K=2 (predicted 343.2 vs plain 252.8 tok/s; pooled=true)
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=865.916 max_chunk_ms=865.916
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=933.094 max_chunk_ms=933.094
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=963.256 max_chunk_ms=963.256
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1006.088 max_chunk_ms=1006.088
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1059.726 max_chunk_ms=1059.726
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1092.882 max_chunk_ms=1092.882
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=914.342 max_chunk_ms=914.342
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=79.653 max_chunk_ms=79.653
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.836 max_chunk_ms=4.836
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.948 max_chunk_ms=4.948
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=5.232 max_chunk_ms=5.232
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=5.348 max_chunk_ms=5.348
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=5.313 max_chunk_ms=5.313
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=5.302 max_chunk_ms=5.302
+[spec-acc] ctx=27725 burst=18/30 cum=18/30=0.600
+[prefix-cache] insert (spec-boundary): 27680 tokens, 515.1MB (resident 4481.5MB / 4949MB, model gate, ns "ns-f8")
+[spec-pool] pooled MTP cohort engaged: 1 sessions (model gate)
+[spec-pool] unified step engaged: 1 spec + 3 plain sessions (model gate)
+[spec-acc] ctx=27759 burst=17/26 cum=35/56=0.625
+[meter] admit id=cmpl-e00b3fedbfa7b99401e10e5cbe870f30 tenant=default lane=interactive model="gate"
+[spec-cost] model="gate" n=4 rung=3 -> K=3 (exploring: no acceptance history yet)
+[spec-k] model="gate" tenant="ns-f9" K=3 source=cost-model prompt=27725 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=844.279 max_chunk_ms=844.279
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=931.239 max_chunk_ms=931.239
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=964.630 max_chunk_ms=964.630
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1008.519 max_chunk_ms=1008.519
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1059.424 max_chunk_ms=1059.424
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1102.850 max_chunk_ms=1102.850
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=876.866 max_chunk_ms=876.866
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=82.463 max_chunk_ms=82.463
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.893 max_chunk_ms=4.893
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.982 max_chunk_ms=4.982
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=5.144 max_chunk_ms=5.144
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=5.231 max_chunk_ms=5.231
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=5.226 max_chunk_ms=5.226
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=5.232 max_chunk_ms=5.232
+[spec-acc] ctx=27725 burst=18/39 cum=18/39=0.462
+[prefix-cache] insert (spec-boundary): 27680 tokens, 515.1MB (resident 4996.6MB / 4949MB, model gate, ns "ns-f9")
+[prefix-cache] evict (LRU): 27680 tokens, 515.1MB (model gate, ns "ns-f0")
+[meter] admit id=cmpl-8e9fe583a0170335f146db1e661488cf tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-15aeb32c077518859fd91a294b84ef8d tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-b91f394e1bf73425856f3504b86dfc3a tenant=default lane=interactive model="gate"
+[spec-acc] ctx=27757 burst=4/9 cum=22/48=0.458
+[kv-reuse] park-compact: 27789 of 27797 rows retained in 2.2ms (model gate)
+[kv-reuse] park-compact: 27789 of 27797 rows retained in 2.2ms (model gate)
+[kv-reuse] park-compact: 27789 of 27797 rows retained in 2.1ms (model gate)
+[admission] per-session draft-state charge: model="gate" +37MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=29104 path=spec = 16704 B/token x ctx + 743MB prefill-workspace + 155MB fixed = 1384MB
+[admission] prefill workspace held: model="gate" prompt=28976 call=28976 stack=28976 concat=0 slab_resident=1074MB held=743MB cold=1817MB
+[spec-k] model="gate" tenant="ns-f11" K=3 source=cost-model prompt=28976 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 157MB (observed 642MB at ctx 29048 path=spec)
+[admission] per-session draft-state charge: model="gate" +37MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=29104 path=spec = 16704 B/token x ctx + 743MB prefill-workspace + 157MB fixed = 1386MB
+[admission] prefill workspace held: model="gate" prompt=28976 call=28976 stack=28976 concat=0 slab_resident=1074MB held=743MB cold=1817MB
+[spec-k] model="gate" tenant="ns-f10" K=3 source=cost-model prompt=28976 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f12" K=3 source=cost-model prompt=28976 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=841.214 max_chunk_ms=841.214
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=887.091 max_chunk_ms=887.091
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=870.378 max_chunk_ms=870.378
+[spec-acc] ctx=27764 burst=2/3 cum=24/51=0.471
+[spec-acc] ctx=27767 burst=3/3 cum=27/54=0.500
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=921.222 max_chunk_ms=921.222
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=920.679 max_chunk_ms=920.679
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=921.270 max_chunk_ms=921.270
+[spec-acc] ctx=27771 burst=3/3 cum=30/57=0.526
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=953.850 max_chunk_ms=953.850
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=963.511 max_chunk_ms=963.511
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=961.772 max_chunk_ms=961.772
+[spec-acc] ctx=27775 burst=2/3 cum=32/60=0.533
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1007.341 max_chunk_ms=1007.341
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1004.370 max_chunk_ms=1004.370
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1039.238 max_chunk_ms=1039.238
+[spec-acc] ctx=27778 burst=3/3 cum=35/63=0.556
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1067.140 max_chunk_ms=1067.140
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1047.498 max_chunk_ms=1047.498
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1077.117 max_chunk_ms=1077.117
+[spec-acc] ctx=27782 burst=3/3 cum=38/66=0.576
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1126.111 max_chunk_ms=1126.111
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1100.904 max_chunk_ms=1100.904
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1090.547 max_chunk_ms=1090.547
+[spec-acc] ctx=27786 burst=0/3 cum=38/69=0.551
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1143.784 max_chunk_ms=1143.784
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1122.646 max_chunk_ms=1122.646
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1135.631 max_chunk_ms=1135.631
+[spec-acc] ctx=27787 burst=1/3 cum=39/72=0.542
+[meter] admit id=cmpl-8b76e8739ed5ddb76befd05edd9c33ba tenant=default lane=interactive model="gate"
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=117.830 max_chunk_ms=117.830
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=116.283 max_chunk_ms=116.283
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=116.496 max_chunk_ms=116.496
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=2060296192 pool_cached_gain_bytes=2060230656 trim_released_bytes=2046820352 driver_free_bytes 1260519424 -> 3307339776 pool_reserved_bytes 23622320128 -> 21575499776 pool_used_bytes 22836151632 -> 20775920976 pool_retained_bytes=13410304 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 4 prefix entries (2060MB, oldest first) for 1805MB (818MB of it owed by 3 priming sessions and the arrival's own entry); kept 5 unleased entries (2421MB); effective free 2047MB -> 4107MB; covered (model gate)
+[admit-oom] reclaim booking on: admission books what priming sessions owe (prime transients and pending seeds, capped together at the cache's room) until nothing is owed (model gate)
+[admit-oom] reclaim-on-defer: evicted 4 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2047MB -> 4107MB
+[spec-k] model="gate" tenant="ns-f13" K=3 source=cost-model prompt=28976 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=864.270 max_chunk_ms=864.270
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2801MB (driver 1682MB + pool-cached 1118MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=77.933 max_chunk_ms=77.933
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2750MB (driver 1682MB + pool-cached 1068MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=67.880 max_chunk_ms=67.880
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2700MB (driver 1682MB + pool-cached 1018MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=67.645 max_chunk_ms=67.645
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=4.777 max_chunk_ms=4.777
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=4.804 max_chunk_ms=4.804
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=4.813 max_chunk_ms=4.813
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=895.131 max_chunk_ms=895.131
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=5.696 max_chunk_ms=5.696
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=5.494 max_chunk_ms=5.494
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=1031.411 max_chunk_ms=1031.411
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=5.790 max_chunk_ms=5.790
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=5.701 max_chunk_ms=5.701
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1034.788 max_chunk_ms=1034.788
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=5.532 max_chunk_ms=5.532
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=5.402 max_chunk_ms=5.402
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1070.313 max_chunk_ms=1070.313
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.503 max_chunk_ms=5.503
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.658 max_chunk_ms=5.658
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.668 max_chunk_ms=5.668
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=5.662 max_chunk_ms=5.662
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=5.592 max_chunk_ms=5.592
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=5.560 max_chunk_ms=5.560
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1119.659 max_chunk_ms=1119.659
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=5.199 max_chunk_ms=5.199
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=5.214 max_chunk_ms=5.214
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1132.927 max_chunk_ms=1132.927
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=5.123 max_chunk_ms=5.123
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=5.118 max_chunk_ms=5.118
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=111.923 max_chunk_ms=111.923
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=5.225 max_chunk_ms=5.225
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=5.226 max_chunk_ms=5.226
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2599MB (driver 1554MB + pool-cached 1045MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=77.581 max_chunk_ms=77.581
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 2957.7MB / 4949MB, model gate, ns "ns-f11")
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 3494.1MB / 4949MB, model gate, ns "ns-f10")
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 4030.6MB / 4949MB, model gate, ns "ns-f12")
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=4.944 max_chunk_ms=4.944
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=5.053 max_chunk_ms=5.053
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=5.102 max_chunk_ms=5.102
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.099 max_chunk_ms=5.099
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=4.954 max_chunk_ms=4.954
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=4.941 max_chunk_ms=4.941
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=4.981 max_chunk_ms=4.981
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 4567.0MB / 4949MB, model gate, ns "ns-f13")
+[spec-acc] ctx=28977 burst=18/42 cum=18/42=0.429
+[spec-acc] ctx=28986 burst=19/39 cum=19/39=0.487
+[spec-acc] ctx=28986 burst=21/36 cum=21/36=0.583
+[spec-acc] ctx=28986 burst=15/48 cum=15/48=0.312
+[spec-acc] ctx=29010 burst=19/33 cum=37/75=0.493
+[meter] admit id=cmpl-f2b1a6a378f0a2c929facc7f67cc789b tenant=default lane=interactive model="gate"
+[spec-cost] model="gate" n=4 rung=3 -> K=2 (predicted 323.2 vs plain 252.8 tok/s; pooled=true)
+[admit-oom] reclaim booking off: no session owes prime or seed bytes (model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=927367168 pool_cached_gain_bytes=927367168 trim_released_bytes=905969664 driver_free_bytes 1629618176 -> 2535587840 pool_reserved_bytes 23253221376 -> 22347251712 pool_used_bytes 22192554680 -> 21265187512 pool_retained_bytes=21397504 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 2 prefix entries (927MB, oldest first) for 826MB (483MB of it owed by 0 priming sessions and the arrival's own entry); kept 7 unleased entries (3640MB); effective free 2690MB -> 3618MB; covered (model gate)
+[admit-oom] reclaim booking on: admission books what priming sessions owe (prime transients and pending seeds, capped together at the cache's room) until nothing is owed (model gate)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2690MB -> 3618MB
+[spec-k] model="gate" tenant="ns-f14" K=2 source=cost-model prompt=28976 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[spec-acc] ctx=29019 burst=14/21 cum=33/60=0.550
+[spec-acc] ctx=29020 burst=14/27 cum=35/63=0.556
+[spec-acc] ctx=29018 burst=17/21 cum=32/69=0.464
+[meter] admit id=cmpl-530eb86a96b4415b2ae5c0ac49810fc2 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-440196f3a2693f3040f3cd3abf503b2c tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-a806e5d5c85803fe7cb09f3b7c6eff48 tenant=default lane=interactive model="gate"
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=869.916 max_chunk_ms=869.916
+[spec-cost] model="gate" n=4 rung=3 -> K=3 (predicted 333.0 vs plain 252.8 tok/s; pooled=true)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1493831680 pool_cached_gain_bytes=1493798912 trim_released_bytes=1476395008 driver_free_bytes 1495400448 -> 2971795456 pool_reserved_bytes 23387439104 -> 21911044096 pool_used_bytes 22382083952 -> 20888285040 pool_retained_bytes=17403904 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 3 prefix entries (1494MB, oldest first) for 1351MB (818MB of it owed by 1 priming sessions and the arrival's own entry); kept 4 unleased entries (2146MB); effective free 2165MB -> 3659MB; covered (model gate)
+[admit-oom] reclaim-on-defer: evicted 3 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2165MB -> 3659MB
+[spec-k] model="gate" tenant="ns-f15" K=3 source=cost-model prompt=28976 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1072910336 pool_cached_gain_bytes=1072877568 trim_released_bytes=973078528 driver_free_bytes 2971795456 -> 3944873984 pool_reserved_bytes 21911044096 -> 20937965568 pool_used_bytes 21530438696 -> 20457561128 pool_retained_bytes=99799040 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 2 prefix entries (1073MB, oldest first) for 974MB (1293MB of it owed by 2 priming sessions and the arrival's own entry); kept 2 unleased entries (1073MB); effective free 2542MB -> 3615MB; covered (model gate)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2542MB -> 3615MB
+[spec-k] model="gate" tenant="ns-f17" K=3 source=cost-model prompt=28976 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1072910336 pool_cached_gain_bytes=1072877568 trim_released_bytes=939524096 driver_free_bytes 3542220800 -> 4481744896 pool_reserved_bytes 21340618752 -> 20401094656 pool_used_bytes 21099714784 -> 20026837216 pool_retained_bytes=133353472 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 2 prefix entries (1073MB, oldest first) for 1018MB (1768MB of it owed by 3 priming sessions and the arrival's own entry); kept 0 unleased entries (0MB); effective free 2498MB -> 3571MB; covered (model gate)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2498MB -> 3571MB
+[spec-k] model="gate" tenant="ns-f16" K=3 source=cost-model prompt=28976 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=882.823 max_chunk_ms=882.823
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=888.061 max_chunk_ms=888.061
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=873.411 max_chunk_ms=873.411
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=926.849 max_chunk_ms=926.849
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=922.419 max_chunk_ms=922.419
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=915.850 max_chunk_ms=915.850
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=921.514 max_chunk_ms=921.514
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=979.791 max_chunk_ms=979.791
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=968.474 max_chunk_ms=968.474
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=962.072 max_chunk_ms=962.072
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1004.913 max_chunk_ms=1004.913
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=968.920 max_chunk_ms=968.920
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1018.436 max_chunk_ms=1018.436
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1062.755 max_chunk_ms=1062.755
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1009.357 max_chunk_ms=1009.357
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1005.914 max_chunk_ms=1005.914
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1069.173 max_chunk_ms=1069.173
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1026.042 max_chunk_ms=1026.042
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1023.087 max_chunk_ms=1023.087
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1044.820 max_chunk_ms=1044.820
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1123.025 max_chunk_ms=1123.025
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1104.045 max_chunk_ms=1104.045
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1078.919 max_chunk_ms=1078.919
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1206.863 max_chunk_ms=1206.863
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1222.041 max_chunk_ms=1222.041
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1157.080 max_chunk_ms=1157.080
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=113.167 max_chunk_ms=113.167
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1110.095 max_chunk_ms=1110.095
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=112.493 max_chunk_ms=112.493
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2509MB (driver 1618MB + pool-cached 891MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=71.207 max_chunk_ms=71.207
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=105.893 max_chunk_ms=105.893
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=115.456 max_chunk_ms=115.456
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=5.254 max_chunk_ms=5.254
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2358MB (driver 1618MB + pool-cached 740MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=75.511 max_chunk_ms=75.511
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2308MB (driver 1618MB + pool-cached 690MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=67.895 max_chunk_ms=67.895
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2258MB (driver 1618MB + pool-cached 639MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=66.408 max_chunk_ms=66.408
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=4.776 max_chunk_ms=4.776
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=4.811 max_chunk_ms=4.811
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=4.913 max_chunk_ms=4.913
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=4.882 max_chunk_ms=4.882
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=4.877 max_chunk_ms=4.877
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=4.917 max_chunk_ms=4.917
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=4.943 max_chunk_ms=4.943
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=5.199 max_chunk_ms=5.199
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=5.201 max_chunk_ms=5.201
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.191 max_chunk_ms=5.191
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=5.276 max_chunk_ms=5.276
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=5.339 max_chunk_ms=5.339
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=5.334 max_chunk_ms=5.334
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.340 max_chunk_ms=5.340
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.331 max_chunk_ms=5.331
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.347 max_chunk_ms=5.347
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=5.344 max_chunk_ms=5.344
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=5.342 max_chunk_ms=5.342
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=5.375 max_chunk_ms=5.375
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=5.414 max_chunk_ms=5.414
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=5.408 max_chunk_ms=5.408
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=5.400 max_chunk_ms=5.400
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=5.400 max_chunk_ms=5.400
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=5.414 max_chunk_ms=5.414
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=5.386 max_chunk_ms=5.386
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=5.347 max_chunk_ms=5.347
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=5.349 max_chunk_ms=5.349
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 536.5MB / 4949MB, model gate, ns "ns-f14")
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 1072.9MB / 4949MB, model gate, ns "ns-f15")
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 1609.4MB / 4949MB, model gate, ns "ns-f17")
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 2145.8MB / 4949MB, model gate, ns "ns-f16")
+[spec-acc] ctx=28977 burst=19/36 cum=19/36=0.528
+[spec-cost] model="gate" n=4 rung=3 -> K=2 (predicted 334.3 vs plain 252.8 tok/s; pooled=true)
+[spec-acc] ctx=28979 burst=18/28 cum=18/28=0.643
+[spec-acc] ctx=28978 burst=20/39 cum=20/39=0.513
+[spec-acc] ctx=28978 burst=19/42 cum=19/42=0.452
+[spec-acc] ctx=29009 burst=21/30 cum=40/66=0.606
+[meter] admit id=cmpl-d7c29cade8728dea5d3e29b347734995 tenant=default lane=interactive model="gate"
+[spec-cost] model="gate" n=4 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admit-oom] reclaim booking off: no session owes prime or seed bytes (model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1609365504 pool_cached_gain_bytes=1609316352 trim_released_bytes=1577058304 driver_free_bytes 1461846016 -> 3038904320 pool_reserved_bytes 23420993536 -> 21843935232 pool_used_bytes 22550963784 -> 20941647432 pool_retained_bytes=32258048 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 3 prefix entries (1609MB, oldest first) for 1185MB (483MB of it owed by 0 priming sessions and the arrival's own entry); kept 1 unleased entries (536MB); effective free 2332MB -> 3941MB; covered (model gate)
+[admit-oom] reclaim booking on: admission books what priming sessions owe (prime transients and pending seeds, capped together at the cache's room) until nothing is owed (model gate)
+[admit-oom] reclaim-on-defer: evicted 3 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2332MB -> 3941MB
+[spec-k] model="gate" tenant="ns-f18" K=3 source=cost-model prompt=28976 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[spec-acc] ctx=29012 burst=16/24 cum=34/52=0.654
+[spec-acc] ctx=29012 burst=20/27 cum=40/66=0.606
+[spec-acc] ctx=29012 burst=18/36 cum=37/78=0.474
+[meter] admit id=cmpl-a2aa20206528b6eb5217d84d8b950caa tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-77721882820abfa97558da4daa726391 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-296c5df67e215914c3bb261f710de534 tenant=default lane=interactive model="gate"
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=865.779 max_chunk_ms=865.779
+[admit-trim] dev0 driver_free_bytes=1596063744 floor_bytes=2147483648 reclaimed_bytes=536870912 still_owned_bytes=20709039160 pool_reserved_bytes=22749904896 driver_free_after=2132934656 before prime
+[spec-k] model="gate" tenant="ns-f19" K=3 source=cost-model prompt=28976 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=536455168 pool_cached_gain_bytes=536438784 trim_released_bytes=503316480 driver_free_bytes 2132934656 -> 2636251136 pool_reserved_bytes 22749904896 -> 22246588416 pool_used_bytes 21351192816 -> 20814754032 pool_retained_bytes=33122304 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 1 prefix entries (536MB, oldest first) for 795MB (1293MB of it owed by 2 priming sessions and the arrival's own entry); kept 0 unleased entries (0MB); effective free 2721MB -> 3258MB; covered (model gate)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2721MB -> 3258MB
+[spec-k] model="gate" tenant="ns-f21" K=3 source=cost-model prompt=28976 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 2 spec + 0 dspark parked sessions (global LRU); effective free 2141MB -> 3490MB
+[spec-k] model="gate" tenant="ns-f20" K=3 source=cost-model prompt=28976 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=829.920 max_chunk_ms=829.920
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=876.258 max_chunk_ms=876.258
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=876.285 max_chunk_ms=876.285
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=927.123 max_chunk_ms=927.123
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=925.949 max_chunk_ms=925.949
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=916.658 max_chunk_ms=916.658
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=951.193 max_chunk_ms=951.193
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=926.435 max_chunk_ms=926.435
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=953.883 max_chunk_ms=953.883
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1010.599 max_chunk_ms=1010.599
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=956.613 max_chunk_ms=956.613
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=975.413 max_chunk_ms=975.413
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1062.527 max_chunk_ms=1062.527
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1011.306 max_chunk_ms=1011.306
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1007.615 max_chunk_ms=1007.615
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1039.688 max_chunk_ms=1039.688
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1079.719 max_chunk_ms=1079.719
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1117.747 max_chunk_ms=1117.747
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1095.236 max_chunk_ms=1095.236
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1189.923 max_chunk_ms=1189.923
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1147.586 max_chunk_ms=1147.586
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1128.147 max_chunk_ms=1128.147
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1173.522 max_chunk_ms=1173.522
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1140.711 max_chunk_ms=1140.711
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1226.733 max_chunk_ms=1226.733
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=122.370 max_chunk_ms=122.370
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1226.518 max_chunk_ms=1226.518
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1208.833 max_chunk_ms=1208.833
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2482MB (driver 1458MB + pool-cached 1024MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=84.848 max_chunk_ms=84.848
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=122.006 max_chunk_ms=122.006
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=125.011 max_chunk_ms=125.011
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=122.843 max_chunk_ms=122.843
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2281MB (driver 1458MB + pool-cached 823MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=78.641 max_chunk_ms=78.641
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2231MB (driver 1458MB + pool-cached 773MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=70.496 max_chunk_ms=70.496
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2181MB (driver 1458MB + pool-cached 723MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=70.460 max_chunk_ms=70.460
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=4.845 max_chunk_ms=4.845
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=4.929 max_chunk_ms=4.929
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=4.930 max_chunk_ms=4.930
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=4.925 max_chunk_ms=4.925
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=4.939 max_chunk_ms=4.939
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=4.949 max_chunk_ms=4.949
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=5.355 max_chunk_ms=5.355
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=5.427 max_chunk_ms=5.427
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=5.448 max_chunk_ms=5.448
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.440 max_chunk_ms=5.440
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=5.573 max_chunk_ms=5.573
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=5.650 max_chunk_ms=5.650
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=5.632 max_chunk_ms=5.632
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.600 max_chunk_ms=5.600
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.591 max_chunk_ms=5.591
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.596 max_chunk_ms=5.596
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=5.606 max_chunk_ms=5.606
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=5.672 max_chunk_ms=5.672
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=5.671 max_chunk_ms=5.671
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=5.674 max_chunk_ms=5.674
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=5.676 max_chunk_ms=5.676
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=5.687 max_chunk_ms=5.687
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=5.669 max_chunk_ms=5.669
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=5.685 max_chunk_ms=5.685
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=5.660 max_chunk_ms=5.660
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=5.674 max_chunk_ms=5.674
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=5.577 max_chunk_ms=5.577
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=5.581 max_chunk_ms=5.581
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 536.5MB / 4949MB, model gate, ns "ns-f18")
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 1072.9MB / 4949MB, model gate, ns "ns-f19")
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 1609.4MB / 4949MB, model gate, ns "ns-f21")
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 2145.8MB / 4949MB, model gate, ns "ns-f20")
+[spec-acc] ctx=28977 burst=18/39 cum=18/39=0.462
+[spec-cost] model="gate" realized n=4 K=3: 117.8 tok/s (now priced from serving)
+[spec-acc] ctx=28979 burst=19/39 cum=19/39=0.487
+[spec-acc] ctx=29009 burst=22/30 cum=40/69=0.580
+[spec-acc] ctx=28978 burst=21/39 cum=21/39=0.538
+[spec-acc] ctx=28978 burst=20/39 cum=20/39=0.513
+[meter] admit id=cmpl-bb57e8805acc5d12df6fd6910aad915d tenant=default lane=interactive model="gate"
+[admit-oom] reclaim booking off: no session owes prime or seed bytes (model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1609365504 pool_cached_gain_bytes=1609316352 trim_released_bytes=1577058304 driver_free_bytes 1327628288 -> 2904686592 pool_reserved_bytes 23555211264 -> 21978152960 pool_used_bytes 22631529544 -> 21022213192 pool_retained_bytes=32258048 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 3 prefix entries (1609MB, oldest first) for 1265MB (483MB of it owed by 0 priming sessions and the arrival's own entry); kept 1 unleased entries (536MB); effective free 2251MB -> 3861MB; covered (model gate)
+[admit-oom] reclaim booking on: admission books what priming sessions owe (prime transients and pending seeds, capped together at the cache's room) until nothing is owed (model gate)
+[admit-oom] reclaim-on-defer: evicted 3 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2251MB -> 3861MB
+[spec-k] model="gate" tenant="ns-f22" K=3 source=cost-model prompt=28976 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[spec-acc] ctx=29012 burst=21/30 cum=40/69=0.580
+[spec-acc] ctx=29013 burst=17/30 cum=38/69=0.551
+[spec-acc] ctx=29012 burst=21/30 cum=41/69=0.594
+[meter] admit id=cmpl-ed46ccad68fd5bc712805b7a20f73263 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-82ab23e1e9a0693cec6f8c6161878272 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-bd3690ae7670fde1928eec730125a7fa tenant=default lane=interactive model="gate"
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=907.117 max_chunk_ms=907.117
+[spec-cost] model="gate" n=4 rung=3 -> K=0 (predicted 117.8 vs plain 252.8 tok/s; pooled=true)
+[admission] request cost: model="gate" ctx=29104 path=plain = 14848 B/token x ctx + 357MB prefill-workspace + 157MB fixed = 947MB
+[admission] prefill workspace held: model="gate" prompt=28976 call=1039 stack=1039 concat=1039 slab_resident=1074MB held=357MB cold=1817MB
+[admit-trim] dev0 driver_free_bytes=1294073856 floor_bytes=2147483648 reclaimed_bytes=838860800 still_owned_bytes=20897147048 pool_reserved_bytes=22749904896 driver_free_after=2132934656 before prime
+[spec-k] model="gate" tenant="ns-f23" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=536455168 pool_cached_gain_bytes=536438784 trim_released_bytes=503316480 driver_free_bytes 2132934656 -> 2636251136 pool_reserved_bytes 22749904896 -> 22246588416 pool_used_bytes 21485387612 -> 20948948828 pool_retained_bytes=33122304 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 1 prefix entries (536MB, oldest first) for 515MB (1355MB of it owed by 2 priming sessions and the arrival's own entry); kept 0 unleased entries (0MB); effective free 2525MB -> 3062MB; covered (model gate)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2525MB -> 3062MB
+[spec-k] model="gate" tenant="ns-f24" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 1937MB -> 3072MB
+[spec-k] model="gate" tenant="ns-f25" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=962.759 max_chunk_ms=962.759
+[prime-batch] B=3 tokens=3072 carried=0 partial=3 in 706.9ms
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=1036.720 max_chunk_ms=1036.720
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 717.3ms
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=1084.086 max_chunk_ms=1084.086
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 729.1ms
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=1137.355 max_chunk_ms=1137.355
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 732.6ms
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=1161.842 max_chunk_ms=1161.842
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 728.5ms
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=1233.301 max_chunk_ms=1233.301
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 747.9ms
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=121.962 max_chunk_ms=121.962
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 722.2ms
+[spec] pre-capture pool trim: released 800MB cached back to the driver (driver free 2514MB < required 3141MB; instantiate allocates from the driver)
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=83.159 max_chunk_ms=83.159
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 716.3ms
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=5.413 max_chunk_ms=5.413
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 786.6ms
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=5.868 max_chunk_ms=5.868
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 786.8ms
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=5.708 max_chunk_ms=5.708
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 787.9ms
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=5.487 max_chunk_ms=5.487
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 799.2ms
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=5.610 max_chunk_ms=5.610
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 772.1ms
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=5.377 max_chunk_ms=5.377
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 811.2ms
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=5.570 max_chunk_ms=5.570
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 805.6ms
+[spec-acc] ctx=28976 burst=18/39 cum=18/39=0.462
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 821.2ms
+[prefix-cache] insert (spec-boundary): 28960 tokens, 536.5MB (resident 536.5MB / 4949MB, model gate, ns "ns-f22")
+[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model gate, committed 29008, generated 32, greedy)
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 816.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 807.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 821.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 855.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 885.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 903.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 887.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 890.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 875.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 899.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 897.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 925.8ms
+[prime-batch] B=3 tokens=864 carried=3 partial=3 in 294.0ms
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 1019.1MB / 4949MB, model gate, ns "ns-f23")
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 1501.8MB / 4949MB, model gate, ns "ns-f24")
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 1984.5MB / 4949MB, model gate, ns "ns-f25")
+[prime-batch] B=3 tokens=48 carried=3 partial=0 in 120.4ms
+[meter] admit id=cmpl-fb930a92d6034d8edeaf1a458249c1a0 tenant=default lane=interactive model="gate"
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.9ms (model gate)
+[admit-oom] reclaim booking off: no session owes prime or seed bytes (model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1019144192 pool_cached_gain_bytes=1019127808 trim_released_bytes=1006632960 driver_free_bytes 1696727040 -> 2703360000 pool_reserved_bytes 23186112512 -> 22179479552 pool_used_bytes 22449705688 -> 21430577880 pool_retained_bytes=12494848 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 2 prefix entries (1019MB, oldest first) for 607MB (483MB of it owed by 0 priming sessions and the arrival's own entry); kept 2 unleased entries (965MB); effective free 2433MB -> 3452MB; covered (model gate)
+[admit-oom] reclaim booking on: admission books what priming sessions owe (prime transients and pending seeds, capped together at the cache's room) until nothing is owed (model gate)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2433MB -> 3452MB
+[spec-k] model="gate" tenant="ns-f26" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 1448.1MB / 4949MB, model gate, ns "ns-f26")
+[meter] admit id=cmpl-47bb34eaf308a47563ec974464e96415 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-c65f7261b4178143b3b6b05255505c12 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-4815a3fb364c8bd5db3e9428a841aabe tenant=default lane=interactive model="gate"
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.6ms (model gate)
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.3ms (model gate)
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.3ms (model gate)
+[admit-oom] reclaim booking off: no session owes prime or seed bytes (model gate)
+[admit-trim] dev0 driver_free_bytes=1663172608 floor_bytes=2147483648 reclaimed_bytes=469762048 still_owned_bytes=21257157428 pool_reserved_bytes=22749904896 driver_free_after=2132934656 before prime
+[spec-k] model="gate" tenant="ns-f27" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[admit-trim] dev0 driver_free_bytes=2132934656 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=21845397992 pool_reserved_bytes=22749904896 driver_free_after=2132934656 before prime
+[spec-k] model="gate" tenant="ns-f28" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1448067072 pool_cached_gain_bytes=1448067072 trim_released_bytes=1342177280 driver_free_bytes 2132934656 -> 3475111936 pool_reserved_bytes 22749904896 -> 21407727616 pool_used_bytes 22433638556 -> 20985571484 pool_retained_bytes=105889792 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 3 prefix entries (1448MB, oldest first) for 1999MB (1891MB of it owed by 2 priming sessions and the arrival's own entry); kept 0 unleased entries (0MB); effective free 2449MB -> 3897MB; covered (model gate)
+[admit-oom] reclaim booking on: admission books what priming sessions owe (prime transients and pending seeds, capped together at the cache's room) until nothing is owed (model gate)
+[admit-oom] reclaim-on-defer: evicted 3 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2449MB -> 3897MB
+[spec-k] model="gate" tenant="ns-f29" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 396.6ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 668.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 672.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 682.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 691.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 722.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 727.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 733.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 735.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 733.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 779.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 775.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 794.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 803.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 800.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 803.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 815.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 839.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 924.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 878.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 825.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 901.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 912.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 896.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 940.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 894.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 960.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1020.9ms
+[prime-batch] B=3 tokens=1600 carried=3 partial=3 in 549.9ms
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 482.7MB / 4949MB, model gate, ns "ns-f27")
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 965.4MB / 4949MB, model gate, ns "ns-f28")
+[prime-batch] B=3 tokens=320 carried=3 partial=1 in 178.3ms
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 1448.1MB / 4949MB, model gate, ns "ns-f29")
+[meter] admit id=cmpl-1fca476270bf988821b8a940b96c1fe9 tenant=default lane=interactive model="gate"
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.3ms (model gate)
+[admit-oom] reclaim booking off: no session owes prime or seed bytes (model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=965378048 pool_cached_gain_bytes=965378048 trim_released_bytes=939524096 driver_free_bytes 1696727040 -> 2636251136 pool_reserved_bytes 23186112512 -> 22246588416 pool_used_bytes 22328838252 -> 21363460204 pool_retained_bytes=25853952 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 2 prefix entries (965MB, oldest first) for 486MB (483MB of it owed by 0 priming sessions and the arrival's own entry); kept 1 unleased entries (483MB); effective free 2554MB -> 3519MB; covered (model gate)
+[admit-oom] reclaim booking on: admission books what priming sessions owe (prime transients and pending seeds, capped together at the cache's room) until nothing is owed (model gate)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2554MB -> 3519MB
+[spec-k] model="gate" tenant="ns-f30" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 965.4MB / 4949MB, model gate, ns "ns-f30")
+[meter] admit id=cmpl-0277f23808fd6ce8126c42511d1f6ff9 tenant=default lane=interactive model="gate"
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.3ms (model gate)
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.3ms (model gate)
+[spec-cost] model="gate" n=3 rung=3 -> K=0 (predicted 96.0 vs plain 197.3 tok/s; pooled=true)
+[admit-oom] reclaim booking off: no session owes prime or seed bytes (model gate)
+[spec-k] model="gate" tenant="ns-f31" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.3ms (model gate)
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 1448.1MB / 4949MB, model gate, ns "ns-f31")
+[spec-cost] model="gate" realized n=2 K=0: 174.6 tok/s (now priced from serving)
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.3ms (model gate)
+[spec-cost] model="gate" realized n=1 K=0: 105.4 tok/s (now priced from serving)
+[meter] admit id=cmpl-f50e0d6a1125d9cb60c965c5f0be1fdf tenant=default lane=interactive model="gate"
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.2ms (model gate)
+[meter] admit id=cmpl-a684f0ec8a577cf5d3d96e414bd0a183 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-812d237d31838b4081771ac94e1d58f0 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-8fc9565616320abc2ad073d4893ecf5f tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=27853 path=plain = 14848 B/token x ctx + 475MB prefill-workspace + 157MB fixed = 1045MB
+[admission] prefill workspace held: model="gate" prompt=27725 call=8207 stack=8207 concat=1039 slab_resident=1074MB held=475MB cold=1796MB
+[spec-k] model="gate" tenant="ns-p0" K=0 source=cost-model prompt=27725 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=27853 path=plain = 14848 B/token x ctx + 357MB prefill-workspace + 157MB fixed = 928MB
+[admission] prefill workspace held: model="gate" prompt=27725 call=1039 stack=1039 concat=1039 slab_resident=1074MB held=357MB cold=1796MB
+[spec-k] model="gate" tenant="ns-p1" K=0 source=cost-model prompt=27725 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-p3" K=0 source=cost-model prompt=27725 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-p2" K=0 source=cost-model prompt=27725 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 423.7ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 460.4ms
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 463.6ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 474.3ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 470.5ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 483.3ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 479.4ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 491.0ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 485.9ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 498.2ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 494.4ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 505.7ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 500.6ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 514.8ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 508.0ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 523.2ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 518.1ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 529.3ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 515.0ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 521.6ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 534.1ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 556.9ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 556.1ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 554.5ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 545.8ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 561.8ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 553.4ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 550.5ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 557.8ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 556.0ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 553.9ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 572.4ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 561.8ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 557.9ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 602.6ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 591.3ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 570.0ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 570.9ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 554.0ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 556.5ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 576.5ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 586.2ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 583.9ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 596.6ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 622.1ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 578.4ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 576.4ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 596.8ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 661.1ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 629.0ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 615.2ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 622.6ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 640.2ms
+[prime-batch] B=4 tokens=1120 carried=4 partial=4 in 412.7ms
+[prefix-cache] insert (seed): 27680 tokens, 463.7MB (resident 1911.8MB / 4949MB, model gate, ns "ns-p0")
+[prefix-cache] insert (seed): 27680 tokens, 463.7MB (resident 2375.4MB / 4949MB, model gate, ns "ns-p1")
+[prefix-cache] insert (seed): 27680 tokens, 463.7MB (resident 2839.1MB / 4949MB, model gate, ns "ns-p3")
+[admit-oom] reclaim settle (prefix reserve): dev0 evicted_prefix_bytes=482689024 pool_cached_gain_bytes=482689024 trim_released_bytes=335544320 driver_free_bytes 1025638400 -> 1361182720 pool_reserved_bytes 23857201152 -> 23521656832 pool_used_bytes 23687628592 -> 23204939568 pool_retained_bytes=147144704 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[prefix-cache] reserve: effective free 1195MB under the 1611MB transient reserve after an insert; evicted 1 entries (483MB, resident 2839MB -> 2356MB)
+[prime-batch] B=4 tokens=167 carried=4 partial=1 in 154.4ms
+[prefix-cache] insert (seed): 27680 tokens, 463.7MB (resident 2820.1MB / 4949MB, model gate, ns "ns-p2")
+[admit-oom] reclaim settle (prefix reserve): dev0 evicted_prefix_bytes=482689024 pool_cached_gain_bytes=482689024 trim_released_bytes=301989888 driver_free_bytes 1025638400 -> 1327628288 pool_reserved_bytes 23857201152 -> 23555211264 pool_used_bytes 23668623152 -> 23185934128 pool_retained_bytes=180699136 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[prefix-cache] reserve: effective free 1214MB under the 1611MB transient reserve after an insert; evicted 1 entries (483MB, resident 2820MB -> 2337MB)
+[kv-reuse] park-compact: 27789 of 27797 rows retained in 2.2ms (model gate)
+[kv-reuse] park-compact: 27789 of 27797 rows retained in 2.2ms (model gate)
+[kv-reuse] park-compact: 27789 of 27797 rows retained in 2.2ms (model gate)
+[kv-reuse] park-compact: 27789 of 27797 rows retained in 2.2ms (model gate)
+[meter] admit id=cmpl-f07900cde1a43151f4e21f92e9784c64 tenant=default lane=interactive model="gate"
+[spec-cost] model="gate" n=1 rung=3 -> K=0 (predicted 58.7 vs plain 108.5 tok/s; pooled=true)
+[admission] request cost: model="gate" ctx=29104 path=plain = 14848 B/token x ctx + 475MB prefill-workspace + 157MB fixed = 1064MB
+[admission] prefill workspace held: model="gate" prompt=28976 call=8207 stack=8207 concat=1039 slab_resident=1074MB held=475MB cold=1817MB
+[admit-trim] dev0 driver_free_bytes=1327628288 floor_bytes=2147483648 reclaimed_bytes=805306368 still_owned_bytes=20405824416 pool_reserved_bytes=22749904896 driver_free_after=2132934656 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 28976 prompt tokens; model gate)
+[prefix-cache] hit: 28960 of 28976 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f31" K=0 source=cost-model prompt=28976 cached=28960 lcp=28960 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 28960 tokens, model gate)
+[meter] admit id=cmpl-3c6d9e1ae2d7123622997d61ce9974a2 tenant=default lane=interactive model="gate"
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.3ms (model gate)
+[admit-trim] dev0 driver_free_bytes=2132934656 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=20299037552 pool_reserved_bytes=22749904896 driver_free_after=2132934656 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 28976 prompt tokens; model gate)
+[spec-k] model="gate" tenant="ns-f30" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 2820.1MB / 4949MB, model gate, ns "ns-f30")
+[meter] admit id=cmpl-9dc5bf91f03d484cb240f8b87c00273c tenant=default lane=interactive model="gate"
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.3ms (model gate)
+[admit-trim] dev0 driver_free_bytes=1562509312 floor_bytes=2147483648 reclaimed_bytes=570425344 still_owned_bytes=20674939712 pool_reserved_bytes=22749904896 driver_free_after=2132934656 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 28976 prompt tokens; model gate)
+[spec-k] model="gate" tenant="ns-f29" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 3302.8MB / 4949MB, model gate, ns "ns-f29")
+[meter] admit id=cmpl-6ae06982659c9192d5dd66e8ce667213 tenant=default lane=interactive model="gate"
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.2ms (model gate)
+[admit-trim] dev0 driver_free_bytes=1394737152 floor_bytes=2147483648 reclaimed_bytes=738197504 still_owned_bytes=21157628736 pool_reserved_bytes=22749904896 driver_free_after=2132934656 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 28976 prompt tokens; model gate)
+[spec-k] model="gate" tenant="ns-f28" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 3785.5MB / 4949MB, model gate, ns "ns-f28")
+[meter] admit id=cmpl-f84e3435348994256372e008178e0506 tenant=default lane=interactive model="gate"
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.2ms (model gate)
+[admit-trim] dev0 driver_free_bytes=924975104 floor_bytes=2147483648 reclaimed_bytes=1006632960 still_owned_bytes=21640317760 pool_reserved_bytes=22951231488 driver_free_after=1931608064 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 28976 prompt tokens; model gate)
+[spec-k] model="gate" tenant="ns-f27" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 4268.2MB / 4949MB, model gate, ns "ns-f27")
+[meter] admit id=cmpl-2389c4d543de1c1fd859f43423856687 tenant=default lane=interactive model="gate"
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.2ms (model gate)
+[admit-trim] dev0 driver_free_bytes=992083968 floor_bytes=2147483648 reclaimed_bytes=536870912 still_owned_bytes=22123006784 pool_reserved_bytes=23353884672 driver_free_after=1528954880 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 28976 prompt tokens; model gate)
+[spec-k] model="gate" tenant="ns-f26" K=0 source=cost-model prompt=28976 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 28960 tokens, 482.7MB (resident 4750.9MB / 4949MB, model gate, ns "ns-f26")
+[kv-reuse] park-compact: 29040 of 29048 rows retained in 2.2ms (model gate)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

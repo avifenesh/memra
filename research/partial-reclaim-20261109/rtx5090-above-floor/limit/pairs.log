@@ -1,0 +1,20 @@
+2026-11-09 13:06:46 pairs limit A=memra-server-fa0ee88acf B=memra-server-ffb2b4b909 env: MEMRA_MAX_SESSIONS=4 LIMIT_ARGS=--tok 26000 --fill 32 --fill-conc 4 --pressure 4 --repeat 6
+gpulock: 5090 leased as claude-code-20261109T130646-2423819 for 25m
+waitfor: MET after 0m18s
+waitfor: MET after 0m15s
+2026-11-09 13:26:51 limit 1 A rc=0 oom_lines=0 reclaim_on_defer_lines=12  budget 4949MB
+gpulock: 5090 leased as claude-code-20261109T132651-2523994 for 25m
+waitfor: MET after 0m18s
+waitfor: MET after 0m15s
+2026-11-09 13:32:43 limit 2 B rc=0 oom_lines=0 reclaim_on_defer_lines=38  budget 4949MB
+2026-11-09 13:32:43 limit pair 1-2 (A B) intact: gap 0 s
+gpulock: 5090 leased as claude-code-20261109T133243-350137 for 25m
+waitfor: MET after 0m16s
+waitfor: MET after 0m15s
+2026-11-09 13:38:37 limit 3 B rc=0 oom_lines=0 reclaim_on_defer_lines=42  budget 4949MB
+gpulock: 5090 leased as claude-code-20261109T133837-366448 for 25m
+waitfor: MET after 0m15s
+waitfor: MET after 0m15s
+2026-11-09 13:44:21 limit 4 A rc=0 oom_lines=0 reclaim_on_defer_lines=12  budget 4949MB
+2026-11-09 13:44:21 limit pair 3-4 (B A) intact: gap 0 s
+2026-11-09 13:44:21 pairs limit done

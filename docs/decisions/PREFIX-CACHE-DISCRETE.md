@@ -142,8 +142,9 @@ Greedy texts matched the cache-off run on every compared row of every mixed-shap
   re-time is planned). Still owed: the default caps, where a Max-Q keeps the two-entry floor and still missed 0/18
   repeats.
 - A partial admission reclaim at a large budget: (c), measured on the at-the-limit cell in
-  `research/partial-reclaim-20261109/`. Still owed there: an RTX 5090 boot that derives a budget above the floor,
-  and other burst shapes at the limit.
+  `research/partial-reclaim-20261109/`. An RTX 5090 boot above the floor is measured there too (2026-11-09,
+  Qwen3.5-9B NVFP4 at `MEMRA_MAX_SESSIONS=4`, a 4,949 MB budget, 4.6 times the floor): safe and flat, the parked pool
+  keeps the cache to a few entries on both arms. Still owed: steady traffic at the limit beyond back-to-back bursts.
 - GB10 keeps its own budget rule (the half share). One input moves: the budget is now read after the vision towers
   load, so a boot with a tower reads less free memory and gets a smaller half share. The sm_121a cell record of the
   landing commit covers a GB10 boot without a tower; no GB10 boot with a tower was measured.
