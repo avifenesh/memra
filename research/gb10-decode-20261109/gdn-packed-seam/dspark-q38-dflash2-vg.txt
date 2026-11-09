@@ -1,0 +1,20 @@
+gpulock: 5090 leased as claude-code-20261110T005838-2046437 for 20m
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+target loaded (65 layers); dspark draft: block 8, taps [5, 19, 33, 47, 61], markov false, yarn false
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 73728 ml_len 24 -> 288 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 73728 -> 147456 ml_len 288 -> 576 (retired kept, zero=false)
+[topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #3 dev=0 o_len 147456 -> 479232 ml_len 576 -> 1872 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 479232 -> 958464 ml_len 1872 -> 3744 (retired kept, zero=false)
+ids-a: prompt 16 -> gen 96 | plain 18.0 tok/s | spec 116.3 tok/s | EXACT
+[dspark-q38-gate] ids-a: prompt=16 spec_sha256=956d702cb3634e10cb72929eb09231ab949289502313ed1755fbb35ca81538e0 plain_sha256=956d702cb3634e10cb72929eb09231ab949289502313ed1755fbb35ca81538e0 spec_len=96 plain_len=96 prime_s=0.112
+[fa-pool] grow #5 dev=0 o_len 958464 -> 1916928 ml_len 3744 -> 7488 (retired kept, zero=false)
+ids-b: prompt 64 -> gen 96 | plain 43.7 tok/s | spec 107.0 tok/s | EXACT
+[dspark-q38-gate] ids-b: prompt=64 spec_sha256=ed23df04b1699de0d98bd6cc801aa35ca15344251f73652cc6ebff927f18d79d plain_sha256=ed23df04b1699de0d98bd6cc801aa35ca15344251f73652cc6ebff927f18d79d spec_len=96 plain_len=96 prime_s=0.109
+ids-c: prompt 16 -> gen 96 | plain 43.6 tok/s | spec 102.7 tok/s | EXACT
+[dspark-q38-gate] ids-c: prompt=16 spec_sha256=956d702cb3634e10cb72929eb09231ab949289502313ed1755fbb35ca81538e0 plain_sha256=956d702cb3634e10cb72929eb09231ab949289502313ed1755fbb35ca81538e0 spec_len=96 plain_len=96 prime_s=0.105
+== dspark_q38_gate: ALL EXACT | mean plain 35.1 tok/s | mean spec 108.7 tok/s | 288 tokens ==

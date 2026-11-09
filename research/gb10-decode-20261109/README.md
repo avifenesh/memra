@@ -209,3 +209,14 @@ Gates at the change (ed2e0c85ac), receipts in `gdn-packed-seam/`:
 | `tools/check-flags.sh`, `cargo fmt --check`, `git diff --check` | rig | pass |
 
 The pool cell's tok/s lines are single runs and not a speed claim: the same stack-parent binary read 158.6 tok/s at c2 in lever 3a's cell and 178.9 here.
+
+**Review round (0a7d83bf65).** The first `run-spec` sweep replayed verify graphs only at T=2: run-spec builds the MTP pool once at its first run's width (K=1, so `vt_cap=2`), wider rounds take the eager walk, and an even T writes the state in place without touching the alt entry. So the 3-entry table's odd-T replays got their own cells, each in a fresh process and its own lease:
+
+| cell | result |
+|---|---|
+| `MEMRA_SPEC_K=2/4/6/8 run-spec`, Ornith-1.5-35B-A3B | `=== SELF-CONSISTENCY PASS ===` at every K, `[spec-vg] MTP verify-graph pool ENGAGED (vt_cap=3/5/7/9)`; drafted 30/60/90/120 tokens in rounds of K, so the rounds verify at T=3/5/7/9 |
+| `tools/dspark-serve-smoke.sh`, Qwen3.8-27B + DFlash2, serve-route graphs (default ON) | `dspark-serve-smoke: ALL GREEN`, 3 of 3 greedy completions identical to the spec-off boot, `[dspark-vg] serve pool ENGAGED (vt_cap=8)` in both dspark boots; the window ladder puts mixed widths through that pool |
+| `MEMRA_DSPARK_VERIFY_GRAPH=1 dspark_q38_gate`, DFlash2 drafter | `ALL EXACT` (288 tokens), but not a graph cell: the one-shot replays graphs only on its deferred path, which DFlash2 proposals never take (no graph-walk line in the log) |
+| the same gate with the DSpark agentic drafter and `MEMRA_DSPARK_VT=ladder` | panics in `DflashDraft::ingest_ctx` (`copy_into`, out-of-range `slice_mut`) with graphs and without, and the same on the stack parent 9390bd3755's binary: a drafter-ring bug that predates this branch, not a result of it |
+
+The review's code fixes (an empty verify returns an error; the packed arm's width checks return an error instead of being debug asserts) and their CPU checks are in `cpu-checks-review.txt`: clippy clean, the memra-server suite 1,153 passed, env_audit 9 passed.
