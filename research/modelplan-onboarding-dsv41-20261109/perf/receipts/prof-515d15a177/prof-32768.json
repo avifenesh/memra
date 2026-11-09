@@ -1,0 +1,11 @@
+{"bench": "layer", "device": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition", "path": "group1", "tokens": 32768, "chunk": 8192, "reps": 2, "nvtx": true, "prefill_wall_s": 29.29,
+ "layers": [
+  {"layer": 2, "tokens": 32768, "first_ms": 374.7219, "ms": [375.567, 376.025], "median_ms": 375.7958, "reruns_identical": 2, "engram_ms": null, "out_sha": "d283c276ecfc6257115aee6c", "pre_sha": "673d745863bcb52325ab4617"},
+  {"layer": 20, "tokens": 32768, "first_ms": 391.1691, "ms": [391.021, 390.919], "median_ms": 390.9704, "reruns_identical": 2, "engram_ms": null, "out_sha": "f4af9767edbd646572f30c76", "pre_sha": "a10adf5c735c4c22a5af5916"},
+  {"layer": 21, "tokens": 32768, "first_ms": 320.7191, "ms": [319.054, 319.243], "median_ms": 319.1481, "reruns_identical": 2, "engram_ms": null, "out_sha": "1e0d1cede09c9b887320699a", "pre_sha": "a3d1be493970c2a85c6b0a65"}
+ ],
+ "decode": [
+  {"run": [2], "from_pos": 32768, "steps": 6, "step_ms": [0.908, 0.814, 0.788, 0.815, 0.788, 0.812], "per_layer": [{"layer": 2, "ms": [0.908, 0.814, 0.788, 0.815, 0.788, 0.812], "median_ms_after_first": 0.8125}], "step_sha": ["4e41f33d9fac998664b1d2b6:df30389515b9049de1f7ca1e", "56369a1b7eaf462bf7891011:751d2237ad84be11527a8b2f", "efec5e1dd20d42ce2f675368:d2f8a2444a036a69d6708871", "cce7080330911fedf9acf024:1f10a7ab615f7122160601e3", "91130c06576c7d9ed519edb9:37d6c36c0d2531ffa1b524ee", "2b14f1ee1751e8b8b0503e18:c24906ea9c4e7151f2d3a4f6"]},
+  {"run": [20, 21], "from_pos": 32768, "steps": 6, "step_ms": [1.489, 1.478, 1.482, 1.477, 1.479, 1.477], "per_layer": [{"layer": 20, "ms": [0.840, 0.833, 0.833, 0.831, 0.832, 0.829], "median_ms_after_first": 0.8320}, {"layer": 21, "ms": [0.649, 0.645, 0.649, 0.646, 0.647, 0.648], "median_ms_after_first": 0.6471}], "step_sha": ["f70256412b45ba12df0edf23:5ad273011846c6b3954a6825", "3da76456ff58731324ec4958:91b380b1bc1b14f6e366df5e", "a9611356813a4a20abe8e592:73f9ed5b1ece3bae7a8632e1", "3ab45c5668032fdaee6076ed:b5f2fccd8838b064c1a012ac", "b3dd7d5e6b877fbde18ea19c:bae22f05c5fc654f7110dd1e", "2dc5735789078b43bc76302f:5ff80fe3371a0d58e36ea0dd"]}
+ ]
+}

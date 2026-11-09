@@ -1,0 +1,32 @@
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) gathers-only=true
+dsv41-bench: 4096 tokens, layers [2, 20, 21], reps 2, decode 6, chunk 8192, path group1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition
+layer 0: load 0.5 s, block 59.1 ms
+layer 1: load 0.5 s, block 51.9 ms
+layer 2: prefill 4096 tokens: first 59.082 ms, reps [58.230, 58.246] ms, median 58.238 ms, 2/2 reruns byte-identical, engram NaN ms, out b99aad4ceed2c852afcaeb45 pre 18eab62a8520470791e5d551
+layer 3: load 0.5 s, block 55.4 ms
+layer 4: load 0.5 s, block 54.9 ms
+layer 5: load 0.5 s, block 54.0 ms
+layer 6: load 0.5 s, block 55.0 ms
+layer 7: load 0.5 s, block 56.8 ms
+layer 8: load 0.5 s, block 55.8 ms
+layer 9: load 0.5 s, block 53.4 ms
+layer 10: load 0.5 s, block 52.7 ms
+layer 11: load 0.5 s, block 54.3 ms
+layer 12: load 0.5 s, block 55.2 ms
+layer 13: load 0.5 s, block 56.5 ms
+layer 14: load 0.5 s, block 56.6 ms
+layer 15: load 0.5 s, block 57.1 ms
+layer 16: load 0.5 s, block 53.8 ms
+layer 17: load 0.5 s, block 55.3 ms
+layer 18: load 0.5 s, block 55.2 ms
+layer 19: load 0.5 s, block 58.0 ms
+layer 20: prefill 4096 tokens: first 56.427 ms, reps [56.622, 56.498] ms, median 56.560 ms, 2/2 reruns byte-identical, engram NaN ms, out 4fee875bf63377e428d57c3a pre 3eb5421d9e34cc9f3b4987f9
+layer 21: prefill 4096 tokens: first 54.517 ms, reps [54.528, 54.513] ms, median 54.520 ms, 2/2 reruns byte-identical, engram NaN ms, out 56dd8aaaf47ea0cedbe9286f pre 0a6f42c47f706f93652c9f48
+layer 2: decode at 4096..4102: steps [4.085, 4.038, 3.998, 4.039, 4.000, 4.037] ms, median (steps 2..) 4.037 ms
+layer 20: decode at 4096..4102: steps [3.449, 3.416, 3.422, 3.419, 3.433, 3.421] ms, median (steps 2..) 3.421 ms
+layer 21: decode at 4096..4102: steps [3.001, 2.996, 2.989, 2.988, 2.988, 2.993] ms, median (steps 2..) 2.989 ms
+Collecting data...
+Generating '/tmp/nsys-access/nsys-report-46b3.qdstrm'
+[1/1] [0%                          ] prof-4096.nsys-rep[1/1] [0%                          ] prof-4096.nsys-rep[1/1] [1%                          ] prof-4096.nsys-rep[1/1] [2%                          ] prof-4096.nsys-rep[1/1] [5%                          ] prof-4096.nsys-rep[1/1] [6%                          ] prof-4096.nsys-rep[1/1] [7%                          ] prof-4096.nsys-rep[1/1] [8%                          ] prof-4096.nsys-rep[1/1] [9%                          ] prof-4096.nsys-rep[1/1] [10%                         ] prof-4096.nsys-rep[1/1] [11%                         ] prof-4096.nsys-rep[1/1] [12%                         ] prof-4096.nsys-rep[1/1] [13%                         ] prof-4096.nsys-rep[1/1] [14%                         ] prof-4096.nsys-rep[1/1] [=15%                        ] prof-4096.nsys-rep[1/1] [=16%                        ] prof-4096.nsys-rep[1/1] [==18%                       ] prof-4096.nsys-rep[1/1] [==19%                       ] prof-4096.nsys-rep[1/1] [==20%                       ] prof-4096.nsys-rep[1/1] [======================92%   ] prof-4096.nsys-rep[1/1] [=======================96%  ] prof-4096.nsys-rep[1/1] [========================98% ] prof-4096.nsys-rep[1/1] [========================100%] prof-4096.nsys-rep[1/1] [========================100%] prof-4096.nsys-rep
+Generated:
+	$LANE/receipts-perf/base-26f82ae0aa/prof-4096.nsys-rep

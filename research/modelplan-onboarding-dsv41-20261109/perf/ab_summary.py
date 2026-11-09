@@ -7,7 +7,7 @@ two arms' run ranges overlap, and whether every run of both arms wrote the same 
 (the byte-identity check: a schedule change must not move them). Telemetry: GPU0 power, temperature,
 SM clock and fan over the runs, and the co-tenant cards' power (GPUs 2 and 3, another session).
 
-usage: ab_summary.py AB_DIR [--md OUT.md] [--json OUT.json]
+usage: ab_summary.py AB_DIR [--arms X,Y] [--md OUT.md] [--json OUT.json]
 """
 import csv
 import glob
@@ -26,9 +26,15 @@ def main():
     d = sys.argv[1]
     out_md = sys.argv[sys.argv.index("--md") + 1] if "--md" in sys.argv else None
     out_js = sys.argv[sys.argv.index("--json") + 1] if "--json" in sys.argv else None
+    # a multi-arm directory (perf_multi.sh: arms A, B, C, ...): --arms X,Y compares Y (as B) against X (as A)
+    pair = sys.argv[sys.argv.index("--arms") + 1].split(",") if "--arms" in sys.argv else None
     runs = []
     for f in sorted(glob.glob(os.path.join(d, "run*-?.json")), key=lambda p: int(re.search(r"run(\d+)-", p).group(1))):
         arm = f[-6]
+        if pair:
+            if arm not in pair:
+                continue
+            arm = "AB"[pair.index(arm)]
         runs.append((arm, json.load(open(f)), f))
     per = {}  # (layer, phase) -> arm -> [run medians]
     hashes = {}  # (layer, phase) -> set of hash strings per arm
