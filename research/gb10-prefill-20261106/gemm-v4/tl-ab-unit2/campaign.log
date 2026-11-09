@@ -1,0 +1,115 @@
+kernel-check rc=0 ALL GREEN (127 cells, 5 skipped)
+sdpa_naive_w_lo[longctx Tkv=16392 win=2048]: legacy_launch=FAILS(expected) clipped_maxdiff=4.19e-9 OK
+sdpa_naive_gmem[longctx Tkv=16392]: legacy_launch=FAILS(expected) gmem_maxdiff=4.19e-9 OK
+MMQ-F8F4-V2 mainloop v2 (cp.async)
+MMQ-F8F4-V2 blk.0.ffn_down.weight [NVFP4 12288x4096] rp=0 T=16: bit-mismatch 0/65536 OK
+MMQ-F8F4-V2 blk.0.ffn_down.weight [NVFP4 12288x4096] rp=1 T=16: bit-mismatch 0/65536 OK
+MMQ-F8F4-V2 blk.0.ffn_down.weight [NVFP4 12288x4096] rp=0 T=130: bit-mismatch 0/532480 OK
+MMQ-F8F4-V2 blk.0.ffn_down.weight [NVFP4 12288x4096] rp=1 T=130: bit-mismatch 0/532480 OK
+MMQ-F8F4-V2 blk.0.ffn_down.weight [NVFP4 12288x4096] rp=0 T=1024: bit-mismatch 0/4194304 OK
+MMQ-F8F4-V2 blk.0.ffn_down.weight [NVFP4 12288x4096] rp=1 T=1024: bit-mismatch 0/4194304 OK
+MMQ-F8F4-V2 blk.0.ffn_down.weight [NVFP4 12288x4096] rp=0 T=4096: bit-mismatch 0/16777216 OK
+MMQ-F8F4-V2 blk.0.ffn_down.weight [NVFP4 12288x4096] rp=1 T=4096: bit-mismatch 0/16777216 OK
+MMQ-F8F4-V2 blk.0.ffn_gate.weight [NVFP4 4096x12288] rp=0 T=16: bit-mismatch 0/196608 OK
+MMQ-F8F4-V2 blk.0.ffn_gate.weight [NVFP4 4096x12288] rp=1 T=16: bit-mismatch 0/196608 OK
+MMQ-F8F4-V2 blk.0.ffn_gate.weight [NVFP4 4096x12288] rp=0 T=130: bit-mismatch 0/1597440 OK
+MMQ-F8F4-V2 blk.0.ffn_gate.weight [NVFP4 4096x12288] rp=1 T=130: bit-mismatch 0/1597440 OK
+MMQ-F8F4-V2 blk.0.ffn_gate.weight [NVFP4 4096x12288] rp=0 T=1024: bit-mismatch 0/12582912 OK
+MMQ-F8F4-V2 blk.0.ffn_gate.weight [NVFP4 4096x12288] rp=1 T=1024: bit-mismatch 0/12582912 OK
+MMQ-F8F4-V2 blk.0.ffn_gate.weight [NVFP4 4096x12288] rp=0 T=4096: bit-mismatch 0/50331648 OK
+MMQ-F8F4-V2 blk.0.ffn_gate.weight [NVFP4 4096x12288] rp=1 T=4096: bit-mismatch 0/50331648 OK
+MMQ-F8F4-V2 blk.2.attn_qkv.weight [NVFP4 4096x8192] rp=0 T=16: bit-mismatch 0/131072 OK
+MMQ-F8F4-V2 blk.2.attn_qkv.weight [NVFP4 4096x8192] rp=1 T=16: bit-mismatch 0/131072 OK
+MMQ-F8F4-V2 blk.2.attn_qkv.weight [NVFP4 4096x8192] rp=0 T=130: bit-mismatch 0/1064960 OK
+MMQ-F8F4-V2 blk.2.attn_qkv.weight [NVFP4 4096x8192] rp=1 T=130: bit-mismatch 0/1064960 OK
+MMQ-F8F4-V2 blk.2.attn_qkv.weight [NVFP4 4096x8192] rp=0 T=1024: bit-mismatch 0/8388608 OK
+MMQ-F8F4-V2 blk.2.attn_qkv.weight [NVFP4 4096x8192] rp=1 T=1024: bit-mismatch 0/8388608 OK
+MMQ-F8F4-V2 blk.2.attn_qkv.weight [NVFP4 4096x8192] rp=0 T=4096: bit-mismatch 0/33554432 OK
+MMQ-F8F4-V2 blk.2.attn_qkv.weight [NVFP4 4096x8192] rp=1 T=4096: bit-mismatch 0/33554432 OK
+MMQ-F8F4-V2 blk.3.attn_output.weight [NVFP4 4096x4096] rp=0 T=16: bit-mismatch 0/65536 OK
+MMQ-F8F4-V2 blk.3.attn_output.weight [NVFP4 4096x4096] rp=1 T=16: bit-mismatch 0/65536 OK
+MMQ-F8F4-V2 blk.3.attn_output.weight [NVFP4 4096x4096] rp=0 T=130: bit-mismatch 0/532480 OK
+MMQ-F8F4-V2 blk.3.attn_output.weight [NVFP4 4096x4096] rp=1 T=130: bit-mismatch 0/532480 OK
+MMQ-F8F4-V2 blk.3.attn_output.weight [NVFP4 4096x4096] rp=0 T=1024: bit-mismatch 0/4194304 OK
+MMQ-F8F4-V2 blk.3.attn_output.weight [NVFP4 4096x4096] rp=1 T=1024: bit-mismatch 0/4194304 OK
+MMQ-F8F4-V2 blk.3.attn_output.weight [NVFP4 4096x4096] rp=0 T=4096: bit-mismatch 0/16777216 OK
+MMQ-F8F4-V2 blk.3.attn_output.weight [NVFP4 4096x4096] rp=1 T=4096: bit-mismatch 0/16777216 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..200] [NVFP4 12288x200] rp=0 T=16: bit-mismatch 0/3200 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..200] [NVFP4 12288x200] rp=1 T=16: bit-mismatch 0/3200 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..200] [NVFP4 12288x200] rp=0 T=130: bit-mismatch 0/26000 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..200] [NVFP4 12288x200] rp=1 T=130: bit-mismatch 0/26000 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..200] [NVFP4 12288x200] rp=0 T=1024: bit-mismatch 0/204800 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..200] [NVFP4 12288x200] rp=1 T=1024: bit-mismatch 0/204800 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..1000] [NVFP4 12288x1000] rp=0 T=16: bit-mismatch 0/16000 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..1000] [NVFP4 12288x1000] rp=1 T=16: bit-mismatch 0/16000 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..1000] [NVFP4 12288x1000] rp=0 T=130: bit-mismatch 0/130000 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..1000] [NVFP4 12288x1000] rp=1 T=130: bit-mismatch 0/130000 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..1000] [NVFP4 12288x1000] rp=0 T=1024: bit-mismatch 0/1024000 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..1000] [NVFP4 12288x1000] rp=1 T=1024: bit-mismatch 0/1024000 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..1152] [NVFP4 12288x1152] rp=0 T=16: bit-mismatch 0/18432 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..1152] [NVFP4 12288x1152] rp=1 T=16: bit-mismatch 0/18432 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..1152] [NVFP4 12288x1152] rp=0 T=130: bit-mismatch 0/149760 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..1152] [NVFP4 12288x1152] rp=1 T=130: bit-mismatch 0/149760 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..1152] [NVFP4 12288x1152] rp=0 T=1024: bit-mismatch 0/1179648 OK
+MMQ-F8F4-V2-TAIL blk.0.ffn_down.weight[..1152] [NVFP4 12288x1152] rp=1 T=1024: bit-mismatch 0/1179648 OK
+MMQ-F8F4-V2-SILU blk.0.ffn_down.weight [NVFP4] T=16: bit-mismatch 0/65536 OK
+MMQ-F8F4-V2-SILU blk.0.ffn_down.weight [NVFP4] T=130: bit-mismatch 0/532480 OK
+MMQ-F8F4-V2-SILU blk.0.ffn_down.weight [NVFP4] T=1024: bit-mismatch 0/4194304 OK
+MMQ-F8F4-V2-SILU blk.0.ffn_down.weight [NVFP4] T=4096: bit-mismatch 0/16777216 OK
+MMQ-F8F4-V2-GATEUP blk.0.ffn_gate/up [NVFP4 4096x12288] rp=0 T=130: byte-mismatch 0/1647360 OK
+MMQ-F8F4-V2-GATEUP blk.0.ffn_gate/up [NVFP4 4096x12288] rp=0 T=1024: byte-mismatch 0/12976128 OK
+MMQ-F8F4-V2-GATEUP blk.0.ffn_gate/up [NVFP4 4096x12288] rp=0 T=4096: byte-mismatch 0/51904512 OK
+2026-11-09T10:10:11+02:00 cell 01-B bin=~/.cache/memra-gb10-r4/bins/tlb-f5abc0f14a
+2026-11-09T10:10:11+02:00 run_arm OUT=~/.cache/memra-gb10-r4/runs/tl-ab-unit2/01-B BIN=~/.cache/memra-gb10-r4/bins/tlb-f5abc0f14a EXTRA= TARGETS=32768 131072 260000 REPS=1 1 1 WRAP=
+2026-11-09T10:12:18+02:00 ready
+2026-11-09T10:20:00+02:00 bench rc=0
+2026-11-09T10:20:15+02:00 done
+B {"tag": "01-B", "target": 32768, "rep": 0, "ttft_s": 22.071, "total_s": 23.556, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+B {"tag": "01-B", "target": 131072, "rep": 0, "ttft_s": 117.949, "total_s": 120.682, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+B {"tag": "01-B", "target": 260000, "rep": 0, "ttft_s": 313.147, "total_s": 317.639, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+TL-CELL-DONE 01-B
+2026-11-09T10:20:35+02:00 cell 02-T bin=~/.cache/memra-gb10-r4/bins/tlt-eba6f59d87
+2026-11-09T10:20:35+02:00 run_arm OUT=~/.cache/memra-gb10-r4/runs/tl-ab-unit2/02-T BIN=~/.cache/memra-gb10-r4/bins/tlt-eba6f59d87 EXTRA= TARGETS=32768 131072 260000 REPS=1 1 1 WRAP=
+2026-11-09T10:22:47+02:00 ready
+2026-11-09T10:30:29+02:00 bench rc=0
+2026-11-09T10:30:44+02:00 done
+T {"tag": "02-T", "target": 32768, "rep": 0, "ttft_s": 22.026, "total_s": 23.514, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+T {"tag": "02-T", "target": 131072, "rep": 0, "ttft_s": 117.769, "total_s": 120.506, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+T {"tag": "02-T", "target": 260000, "rep": 0, "ttft_s": 313.288, "total_s": 317.787, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+TL-CELL-DONE 02-T
+2026-11-09T10:30:54+02:00 cell 03-T bin=~/.cache/memra-gb10-r4/bins/tlt-eba6f59d87
+2026-11-09T10:30:54+02:00 run_arm OUT=~/.cache/memra-gb10-r4/runs/tl-ab-unit2/03-T BIN=~/.cache/memra-gb10-r4/bins/tlt-eba6f59d87 EXTRA= TARGETS=32768 131072 260000 REPS=1 1 1 WRAP=
+2026-11-09T10:33:02+02:00 ready
+2026-11-09T10:40:44+02:00 bench rc=0
+2026-11-09T10:40:59+02:00 done
+T {"tag": "03-T", "target": 32768, "rep": 0, "ttft_s": 22.018, "total_s": 23.505, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+T {"tag": "03-T", "target": 131072, "rep": 0, "ttft_s": 117.704, "total_s": 120.432, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+T {"tag": "03-T", "target": 260000, "rep": 0, "ttft_s": 314.017, "total_s": 318.521, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+TL-CELL-DONE 03-T
+2026-11-09T10:41:14+02:00 cell 04-B bin=~/.cache/memra-gb10-r4/bins/tlb-f5abc0f14a
+2026-11-09T10:41:14+02:00 run_arm OUT=~/.cache/memra-gb10-r4/runs/tl-ab-unit2/04-B BIN=~/.cache/memra-gb10-r4/bins/tlb-f5abc0f14a EXTRA= TARGETS=32768 131072 260000 REPS=1 1 1 WRAP=
+2026-11-09T10:43:26+02:00 ready
+2026-11-09T10:51:09+02:00 bench rc=0
+2026-11-09T10:51:24+02:00 done
+B {"tag": "04-B", "target": 32768, "rep": 0, "ttft_s": 22.066, "total_s": 23.564, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+B {"tag": "04-B", "target": 131072, "rep": 0, "ttft_s": 117.883, "total_s": 120.615, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+B {"tag": "04-B", "target": 260000, "rep": 0, "ttft_s": 313.528, "total_s": 318.031, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+TL-CELL-DONE 04-B
+2026-11-09T10:51:34+02:00 cell 05-B bin=~/.cache/memra-gb10-r4/bins/tlb-f5abc0f14a
+2026-11-09T10:51:34+02:00 run_arm OUT=~/.cache/memra-gb10-r4/runs/tl-ab-unit2/05-B BIN=~/.cache/memra-gb10-r4/bins/tlb-f5abc0f14a EXTRA= TARGETS=32768 131072 260000 REPS=1 1 1 WRAP=
+2026-11-09T10:53:46+02:00 ready
+2026-11-09T11:01:28+02:00 bench rc=0
+2026-11-09T11:01:43+02:00 done
+B {"tag": "05-B", "target": 32768, "rep": 0, "ttft_s": 22.065, "total_s": 23.558, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+B {"tag": "05-B", "target": 131072, "rep": 0, "ttft_s": 118.009, "total_s": 120.746, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+B {"tag": "05-B", "target": 260000, "rep": 0, "ttft_s": 313.278, "total_s": 317.772, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+TL-CELL-DONE 05-B
+2026-11-09T11:01:53+02:00 cell 06-T bin=~/.cache/memra-gb10-r4/bins/tlt-eba6f59d87
+2026-11-09T11:01:53+02:00 run_arm OUT=~/.cache/memra-gb10-r4/runs/tl-ab-unit2/06-T BIN=~/.cache/memra-gb10-r4/bins/tlt-eba6f59d87 EXTRA= TARGETS=32768 131072 260000 REPS=1 1 1 WRAP=
+2026-11-09T11:04:01+02:00 ready
+2026-11-09T11:11:42+02:00 bench rc=0
+2026-11-09T11:11:57+02:00 done
+T {"tag": "06-T", "target": 32768, "rep": 0, "ttft_s": 22.021, "total_s": 23.51, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+T {"tag": "06-T", "target": 131072, "rep": 0, "ttft_s": 117.627, "total_s": 120.356, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+T {"tag": "06-T", "target": 260000, "rep": 0, "ttft_s": 312.872, "total_s": 317.376, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+TL-CELL-DONE 06-T
