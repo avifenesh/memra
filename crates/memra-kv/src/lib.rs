@@ -2310,6 +2310,11 @@ pub struct Cache {
     /// (the probe's capture seam was host-side too). None on every non-dflash2 path
     /// (zero cost: one Option check per layer).
     pub hc_taps: Option<HcTapSink>,
+    /// GDN state tap (the boundary tail fold, GB10 prefill round 4): when armed, the eager
+    /// prime's GDN layers split the call that contains `GdnTap::at` there and copy each
+    /// layer's conv ring and SSM state at that row into the tap, so a prefix-cache capture at
+    /// that boundary needs no separate prime call. None on every other path.
+    pub gdn_tap: Option<GdnTap>,
     /// glm5_next DECODE-GRAPH pool (`MEMRA_GLM5_DECODE_GRAPH`, default OFF): this session's
     /// captured per-stage CUDA graphs of its contiguous KDA-layer runs. Typed as `Any` because
     /// the graphs bake `cudarc` handles the ENGINE owns and this crate must not depend on —
@@ -2580,6 +2585,27 @@ pub fn cache_ring_row_cap_for_plan(plan: &memra_gguf::model_plan::ModelPlan) -> 
         .unwrap_or(0)
 }
 
+/// See [`Cache::gdn_tap`]. `conv[il]` / `ssm[il]` are device copies of GDN layer `il`'s conv
+/// ring and SSM state at absolute row `at`, filled by the prime call that contains `at`;
+/// `taken` counts the layers filled.
+pub struct GdnTap {
+    pub at: usize,
+    pub conv: Vec<Option<CudaSlice<f32>>>,
+    pub ssm: Vec<Option<CudaSlice<f32>>>,
+    pub taken: usize,
+}
+
+impl GdnTap {
+    pub fn new(at: usize, n_layers: usize) -> Self {
+        Self {
+            at,
+            conv: (0..n_layers).map(|_| None).collect(),
+            ssm: (0..n_layers).map(|_| None).collect(),
+            taken: 0,
+        }
+    }
+}
+
 /// See [`Cache::dflash_taps`]. Armed per forward by the dflash round (t = that forward's
 /// row count); the trunk writes tap slot s of row r at buf[r*n_taps*hidden + s*hidden ..].
 pub struct DflashTapSink {
@@ -2749,6 +2775,23 @@ pub struct CacheSnapshot {
     pub conv: Vec<Option<CudaSlice<f32>>>, // per layer (Some for linear-attn layers, D2D copy)
     pub ssm: Vec<Option<CudaSlice<f32>>>,
     pub pos: usize,
+}
+
+impl CacheSnapshot {
+    /// An independent device copy (fresh conv/ssm buffers), as a second `Cache::snapshot()` at
+    /// the same point would be.
+    pub fn clone_dtod(&self, e: &impl KvDev) -> Result<Self, Box<dyn std::error::Error>> {
+        let copy = |v: &Vec<Option<CudaSlice<f32>>>| -> Result<Vec<Option<CudaSlice<f32>>>, Box<dyn std::error::Error>> {
+            v.iter().map(|b| b.as_ref().map(|b| e.clone_dtod(b)).transpose()).collect()
+        };
+        Ok(Self {
+            kv_len: self.kv_len.clone(),
+            tp_kv_len: self.tp_kv_len.clone(),
+            conv: copy(&self.conv)?,
+            ssm: copy(&self.ssm)?,
+            pos: self.pos,
+        })
+    }
 }
 
 impl Cache {
@@ -3225,6 +3268,7 @@ impl Cache {
             tainted: false,
             suspended: SuspendedLayers::default(),
             dflash_taps: None,
+            gdn_tap: None,
             hc_taps: None,
             glm5_decode_graph: None,
             glm5_tp_sym_graph: None,
@@ -3316,6 +3360,72 @@ impl Cache {
             conv,
             ssm,
             pos: self.pos,
+        })
+    }
+
+    /// The snapshot `snapshot()` would have returned at row `tap.at`, from a filled GDN tap (the
+    /// boundary tail fold): the tap's conv rings and SSM states (moved, not copied), each
+    /// full-attention length less the rows appended after `tap.at`, `pos = tap.at`. Refuses a tap
+    /// that missed a recurrent layer, a TP or ring KV layer (their lengths are not
+    /// row-for-row), and glm5 TP state.
+    pub fn snapshot_from_tap(
+        &self,
+        tap: GdnTap,
+    ) -> Result<CacheSnapshot, Box<dyn std::error::Error>> {
+        if self.glm5_tp_recur.iter().any(Option::is_some)
+            || self.glm5_tp_latent_peer.iter().any(Option::is_some)
+            || self.tp_kv.iter().any(Option::is_some)
+        {
+            return Err("gdn tap snapshot: TP state is not carried".into());
+        }
+        self.ensure_usable("gdn tap snapshot")?;
+        let at = tap.at;
+        let back = self
+            .pos
+            .checked_sub(at)
+            .ok_or("gdn tap snapshot: the tap is past the cache position")?;
+        let n = self.kv.len();
+        if tap.conv.len() != n || tap.ssm.len() != n {
+            return Err("gdn tap snapshot: the tap's layer count differs from the cache's".into());
+        }
+        let mut kv_len = Vec::with_capacity(n);
+        let mut conv = Vec::with_capacity(n);
+        let mut ssm = Vec::with_capacity(n);
+        let GdnTap {
+            conv: tap_conv,
+            ssm: tap_ssm,
+            ..
+        } = tap;
+        for (il, (c, s)) in tap_conv.into_iter().zip(tap_ssm).enumerate() {
+            match &self.kv[il] {
+                Some(kvl) => {
+                    if kvl.ring.is_some() {
+                        return Err("gdn tap snapshot: ring KV layers are not row-for-row".into());
+                    }
+                    kv_len.push(Some(kvl.len.checked_sub(back).ok_or(
+                        "gdn tap snapshot: a KV layer holds fewer rows than the tap's distance",
+                    )?));
+                }
+                None => kv_len.push(None),
+            }
+            match (&self.recur[il], c, s) {
+                (Some(_), Some(c), Some(s)) => {
+                    conv.push(Some(c));
+                    ssm.push(Some(s));
+                }
+                (None, None, None) => {
+                    conv.push(None);
+                    ssm.push(None);
+                }
+                _ => return Err(format!("gdn tap snapshot: layer {il} was not tapped").into()),
+            }
+        }
+        Ok(CacheSnapshot {
+            kv_len,
+            tp_kv_len: vec![None; n],
+            conv,
+            ssm,
+            pos: at,
         })
     }
 
@@ -3923,6 +4033,7 @@ mod tp_transaction_tests {
             tainted: false,
             suspended: super::SuspendedLayers::default(),
             dflash_taps: None,
+            gdn_tap: None,
             hc_taps: None,
             glm5_decode_graph: None,
             glm5_tp_sym_graph: None,
@@ -4269,6 +4380,7 @@ mod continuation_gate_tests {
             tainted: false,
             suspended: SuspendedLayers::default(),
             dflash_taps: None,
+            gdn_tap: None,
             hc_taps: None,
             glm5_decode_graph: None,
             glm5_tp_sym_graph: None,

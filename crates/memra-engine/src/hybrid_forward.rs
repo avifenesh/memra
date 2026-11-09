@@ -288,6 +288,7 @@ impl<'a> PrimeCacheStages<'a> {
                         .collect(),
                     last_logits_dev: None,
                     dflash_taps: None,
+                    gdn_tap: None,
                     hc_taps: None,
                     // Per-stage split caches start with no captured graphs: a run graph bakes the
                     // state pointers of the cache it was captured against, and this one is new.
@@ -7677,6 +7678,97 @@ impl HybridModel {
         ))
     }
 
+    /// The last-row logits a prime call ending after `row` returns: that row of a
+    /// prime-returned hidden stack through the final norm and the LM head, as
+    /// `prime_chunk_epilogue` computes them (the norm is per row). The boundary tail fold's
+    /// capture logits.
+    pub fn prime_row_logits(
+        &self,
+        e: &Engine,
+        hiddens: &CudaSlice<f32>,
+        row: usize,
+    ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
+        if self.uses_gemma_program() {
+            return Err("prime_row_logits: the gemma logit head is not wired".into());
+        }
+        let n_embd = self.cfg.n_embd as usize;
+        let mut x1 = e.uninit(n_embd)?;
+        e.copy_view_into(
+            &mut x1,
+            0,
+            &hiddens.slice(row * n_embd..(row + 1) * n_embd),
+            n_embd,
+        )?;
+        let hlast = if crate::spec::spec_hpost() {
+            x1
+        } else {
+            let mut hn = e.uninit(n_embd)?;
+            e.rms_norm(
+                &x1,
+                self.output_norm.float_data(),
+                &mut hn,
+                n_embd,
+                1,
+                self.cfg.rms_eps,
+            )?;
+            hn
+        };
+        let logits = e.matmul(&self.output, &hlast, 1)?;
+        e.dtoh(&logits)
+    }
+
+    /// The boundary tail fold (research/gb10-prefill-20261106/TAIL-FOLD-DESIGN.md): whether a
+    /// cold prime of `n` rows can run as one walk with a GDN tap at row `b` instead of a prime
+    /// split at `b`. It needs the eager serial walk of a GDN model (no gemma, hyper, sliding
+    /// gated, ring or pipeline-parallel program), both sides at least `PRIME_MIN_T` rows (so the
+    /// split's tail is a batched prime too), `b` on the GDN chunk grid of the walk call that
+    /// contains it, and the batched prime.
+    pub fn prime_tail_fold_ok(&self, e: &Engine, n: usize, b: usize) -> bool {
+        let _numeric = self.enter_numeric();
+        let c = Engine::gdn_chunk_size();
+        if c == 0
+            || self.uses_gemma_program()
+            || self.uses_sliding_gated_moe_program()
+            || self.hyper.is_some()
+            || self.swa_ring_on()
+            || !self.gdn_prime_grid_on()
+            || !self
+                .layers
+                .iter()
+                .any(|l| matches!(l.mixer, Mixer::Linear(_)))
+            || !self
+                .layers
+                .iter()
+                .all(|l| matches!(l.mixer, Mixer::Full(_) | Mixer::Linear(_)))
+        {
+            return false;
+        }
+        if crate::pp::pp_host_bounce_active()
+            || (!crate::pp::pp2_streams_off()
+                && crate::pp::prime_pp_on()
+                && crate::pp::pp_cuts(self.layers.len()).is_some())
+        {
+            return false;
+        }
+        if b < PRIME_MIN_T || n.saturating_sub(b) < PRIME_MIN_T || !b.is_multiple_of(c) {
+            return false;
+        }
+        if std::env::var_os("MEMRA_PRIME_TOKENWISE").is_some()
+            || e.frozen_cpu_experts_prefer_tokenwise_prime()
+        {
+            return false;
+        }
+        prime_chunk_ranges(
+            n,
+            self.layers.len(),
+            self.gdn_prime_grid_on(),
+            self.swa_ring_on(),
+        )
+        .iter()
+        .any(|&(s, end)| s <= b && b < end && (b - s).is_multiple_of(c))
+    }
+
     /// Post-final-norm hidden state of one row of a prime-returned hidden stack — the
     /// embedding-pooling read (lane/embed-serve). `hiddens` is `prime_cache`'s third
     /// return: the pre-norm stack by default, but ALREADY post-norm under
@@ -9914,22 +10006,82 @@ impl HybridModel {
         let eps = cfg.rms_eps;
         let scale = 1.0 / (d_state as f32).sqrt();
 
-        let prep =
-            self.linear_attn_gdn_prep(e, la, qkv_mixed, beta_raw, alpha, t, cache, il, pad_len)?;
+        // The boundary tail fold (research/gb10-prefill-20261106/TAIL-FOLD-DESIGN.md): a GDN tap
+        // at row `r` of this call splits the conv prep and the chunked scan there and copies
+        // the conv ring and the SSM state at that row into the tap. Rows [r, t) start from what
+        // rows [0, r) left, the prime split law on the chunk grid, so every output equals the
+        // split prime's. A tap at the call's first row copies the state the previous call left.
+        // Padded primes, a captured prime graph and an off-grid row leave the tap unfilled, and
+        // the caller then publishes no capture.
+        let tap_r = match cache.gdn_tap.as_ref() {
+            Some(tap) if pad_len.is_none() && crate::qwen_prime_graph::current().is_none() => {
+                tap.at.checked_sub(cache.pos).filter(|&r| r < t)
+            }
+            _ => None,
+        };
+        if tap_r == Some(0) {
+            self.gdn_tap_fill(e, cache, il)?;
+        }
+        let d_conv = geometry.conv_kernel as usize;
+        let tapped = tap_r.filter(|&r| {
+            r > 0 && r % Engine::gdn_chunk_size() == 0 && r >= d_conv - 1 && t - r >= d_conv - 1
+        });
+        let o = if let Some(r) = tapped {
+            self.gdn_scan_prefill_tapped(e, la, qkv_mixed, beta_raw, alpha, t, r, cache, il, scale)?
+        } else {
+            let prep = self
+                .linear_attn_gdn_prep(e, la, qkv_mixed, beta_raw, alpha, t, cache, il, pad_len)?;
 
-        // The seeded gated-norm arm below with the norm inside the fused K4+K5 scan
-        // (GDN-OUTNORM-DESIGN.md, round 4): the same activation bytes, seed and state, `o`
-        // never stored. `gn` is only the seed's key, as in that arm.
-        if seed_out
-            && pad_len.is_none()
-            && d_state == 128
-            && !Self::f16out_on(e, t)
-            && Self::prime_norm_fuse_on()
-            && e.f8f4_v2_direct(&la.ssm_out, t)
-            && e.gdn_k45_norm_route(t)
-        {
-            let gn = e.uninit(d_state * num_v * t)?;
-            let key = e.addr_f32(&gn);
+            // The seeded gated-norm arm below with the norm inside the fused K4+K5 scan
+            // (GDN-OUTNORM-DESIGN.md, round 4): the same activation bytes, seed and state, `o`
+            // never stored. `gn` is only the seed's key, as in that arm.
+            if seed_out
+                && pad_len.is_none()
+                && d_state == 128
+                && !Self::f16out_on(e, t)
+                && Self::prime_norm_fuse_on()
+                && e.f8f4_v2_direct(&la.ssm_out, t)
+                && e.gdn_k45_norm_route(t)
+            {
+                let gn = e.uninit(d_state * num_v * t)?;
+                let key = e.addr_f32(&gn);
+                let rl = cache.recur[il].as_mut().unwrap();
+                {
+                    let crate::cache::RecurLayer {
+                        ssm_state,
+                        ssm_state_alt,
+                        ..
+                    } = rl;
+                    e.gdn_scan_prefill_norm_f8f4v2(
+                        &prep.q_l2,
+                        &prep.k_l2,
+                        &prep.v_g,
+                        &prep.g_log,
+                        &prep.beta,
+                        prep.kb16.as_ref(),
+                        prep.qb16.as_ref(),
+                        ssm_state,
+                        ssm_state_alt,
+                        num_v,
+                        t,
+                        scale,
+                        prep.hk,
+                        z,
+                        la.ssm_norm.float_data(),
+                        eps,
+                        key,
+                    )?;
+                }
+                std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
+                return Ok((gn, None));
+            }
+
+            // ONE gdn_scan over T from the cache's CURRENT state (zero at fresh prime); the final
+            // state lands in the spare buffer and ping-pongs back (stable resident pointers, the
+            // decode-determinism discipline from linear_attn_decode_inner). A4: `gdn_scan_prefill`
+            // dispatches the chunked WY form under MEMRA_GDN_CHUNKED (prefill-only seam; decode +
+            // verify keep the sequential kernel).
+            let mut o = e.uninit(d_state * num_v * t)?;
             let rl = cache.recur[il].as_mut().unwrap();
             {
                 let crate::cache::RecurLayer {
@@ -9937,7 +10089,7 @@ impl HybridModel {
                     ssm_state_alt,
                     ..
                 } = rl;
-                e.gdn_scan_prefill_norm_f8f4v2(
+                e.gdn_scan_prefill(
                     &prep.q_l2,
                     &prep.k_l2,
                     &prep.v_g,
@@ -9947,51 +10099,16 @@ impl HybridModel {
                     prep.qb16.as_ref(),
                     ssm_state,
                     ssm_state_alt,
+                    &mut o,
                     num_v,
                     t,
                     scale,
                     prep.hk,
-                    z,
-                    la.ssm_norm.float_data(),
-                    eps,
-                    key,
                 )?;
             }
             std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
-            return Ok((gn, None));
-        }
-
-        // ONE gdn_scan over T from the cache's CURRENT state (zero at fresh prime); the final
-        // state lands in the spare buffer and ping-pongs back (stable resident pointers, the
-        // decode-determinism discipline from linear_attn_decode_inner). A4: `gdn_scan_prefill`
-        // dispatches the chunked WY form under MEMRA_GDN_CHUNKED (prefill-only seam; decode +
-        // verify keep the sequential kernel).
-        let mut o = e.uninit(d_state * num_v * t)?;
-        let rl = cache.recur[il].as_mut().unwrap();
-        {
-            let crate::cache::RecurLayer {
-                ssm_state,
-                ssm_state_alt,
-                ..
-            } = rl;
-            e.gdn_scan_prefill(
-                &prep.q_l2,
-                &prep.k_l2,
-                &prep.v_g,
-                &prep.g_log,
-                &prep.beta,
-                prep.kb16.as_ref(),
-                prep.qb16.as_ref(),
-                ssm_state,
-                ssm_state_alt,
-                &mut o,
-                num_v,
-                t,
-                scale,
-                prep.hk,
-            )?;
-        }
-        std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
+            o
+        };
 
         // gated RMSNorm + out projection (prefill dispatch). task #17: the f16out twin also
         // emits the ssm_out GEMM's fp16 operand in-epilogue (kills the standalone convert).
@@ -10042,6 +10159,100 @@ impl HybridModel {
             None
         };
         Ok((gn, gn16))
+    }
+
+    /// Copy GDN layer `il`'s conv ring and SSM state, as they stand, into the cache's tap.
+    fn gdn_tap_fill(
+        &self,
+        e: &Engine,
+        cache: &mut Cache,
+        il: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let rl = cache.recur[il]
+            .as_ref()
+            .ok_or("gdn tap: not a recurrent layer")?;
+        let conv = e.clone_dtod(&rl.conv_state)?;
+        let ssm = e.clone_dtod(&rl.ssm_state)?;
+        if let Some(tap) = cache.gdn_tap.as_mut() {
+            tap.conv[il] = Some(conv);
+            tap.ssm[il] = Some(ssm);
+            tap.taken += 1;
+        }
+        Ok(())
+    }
+
+    /// The GDN prep and chunked scan of one prime call in two parts, rows [0, r) and [r, t),
+    /// with the state at row `r` copied into the cache's tap between them (the boundary tail
+    /// fold). Each part runs the prep and `gdn_scan_prefill` a call of that many rows runs, so
+    /// the scan output (returned, `[t, num_v, d_state]`) and the final state equal the split
+    /// prime's. The out-norm is left to the caller, unfused.
+    #[allow(clippy::too_many_arguments)]
+    fn gdn_scan_prefill_tapped(
+        &self,
+        e: &Engine,
+        la: &LinearAttnLayer,
+        qkv_mixed: &cudarc::driver::CudaView<f32>,
+        beta_raw: &cudarc::driver::CudaView<f32>,
+        alpha: &cudarc::driver::CudaView<f32>,
+        t: usize,
+        r: usize,
+        cache: &mut Cache,
+        il: usize,
+        scale: f32,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let geometry = la.geometry;
+        let d_state = geometry.key_head_dim as usize;
+        let num_k = geometry.key_heads as usize;
+        let num_v = geometry.value_heads as usize;
+        let value_dim = geometry.value_head_dim as usize * num_v;
+        let conv_dim = d_state * num_k * 2 + value_dim;
+        let w = d_state * num_v;
+        let mut o = e.uninit(w * t)?;
+        for (lo, hi) in [(0, r), (r, t)] {
+            let n = hi - lo;
+            let prep = self.linear_attn_gdn_prep(
+                e,
+                la,
+                &qkv_mixed.slice(lo * conv_dim..hi * conv_dim),
+                &beta_raw.slice(lo * num_v..hi * num_v),
+                &alpha.slice(lo * num_v..hi * num_v),
+                n,
+                cache,
+                il,
+                None,
+            )?;
+            let mut part = e.uninit(w * n)?;
+            let rl = cache.recur[il].as_mut().unwrap();
+            {
+                let crate::cache::RecurLayer {
+                    ssm_state,
+                    ssm_state_alt,
+                    ..
+                } = rl;
+                e.gdn_scan_prefill(
+                    &prep.q_l2,
+                    &prep.k_l2,
+                    &prep.v_g,
+                    &prep.g_log,
+                    &prep.beta,
+                    prep.kb16.as_ref(),
+                    prep.qb16.as_ref(),
+                    ssm_state,
+                    ssm_state_alt,
+                    &mut part,
+                    num_v,
+                    n,
+                    scale,
+                    prep.hk,
+                )?;
+            }
+            std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
+            e.copy_into(&mut o, lo * w, &part, n * w)?;
+            if lo == 0 {
+                self.gdn_tap_fill(e, cache, il)?;
+            }
+        }
+        Ok(o)
     }
 
     /// Task #15 core-split wrapper: composes inner + ssm_out (== the old core).
