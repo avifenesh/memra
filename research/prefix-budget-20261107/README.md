@@ -3,16 +3,18 @@
 Lane `fix/discrete-prefix-budget` (memra#1090), base main `6f5e03e74a`. Decision record:
 [`docs/decisions/PREFIX-CACHE-DISCRETE.md`](../../docs/decisions/PREFIX-CACHE-DISCRETE.md).
 
-Verdict: the discrete budget leaves the session peak (a no-op on the 24 GB RTX 5090 Laptop; on one RTX PRO
+Verdict: the discrete budget leaves the session peak (on one RTX PRO
 6000 Max-Q at `MEMRA_MAX_SESSIONS=12` it takes the budget from 2.26 GB to 54.3 GB, repeats hit 30/30 against
-0/30, agentic c1 and c4 cache 99.5% of prompt tokens against 19.8% and 16.8%, no OOM, about 55 GiB still free). Value-per-byte eviction won the mixed shape (6/6 repeats against 3/6) and tied the
+0/30, agentic c1 and c4 cache 99.5% of prompt tokens against 19.8% and 16.8%, no OOM; with the cache at its limit
+one defer flushes the whole 54.2 GB, with no OOM and pressure TTFT within about 0.15 s of main; on the 5090 it is a
+no-op for Qwen3.8-27B at the measured caps). Value-per-byte eviction won the mixed shape (6/6 repeats against 3/6) and tied the
 2026-09-21 incident replay 10/10, but lost the agentic c1 cell's shared 256-token head (16 against 24 hits,
 -5.7% cached tokens): rejected. The partial admission reclaim was flat with plain LRU and the live-free insert
 clamp lost the shared entry: both rejected. The rejected levers' code is banked on
 `bank/prefix-budget-gds-20261107`.
 Model in every cell: Qwen3.8-27B NVFP4 + Q5_K GGUF with its MTP head (`Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`),
-`MEMRA_CTX=32768` unless stated. Card for every scored cell: one RTX 5090 Laptop GPU (24 GB),
-balanced platform profile, 74-80 C under load. Local absolute paths in the receipts are replaced by
+`MEMRA_CTX=32768` unless stated. Card for every scored cell outside the RTX PRO 6000 sections: one RTX 5090
+Laptop GPU (24 GB), balanced platform profile, 74-80 C under load. The PRO 6000 sections name their card. Local absolute paths in the receipts are replaced by
 placeholders (`<lane>`, `<models>`, ...).
 
 ## The finding (one RTX PRO 6000 Max-Q, 96 GB): `pro6000-finding/`
@@ -82,6 +84,51 @@ agentic headline cells is owed before any of these timings is published.
 
 Scripts: `pro6000-maxq/campaign/` (`arm.sh` is the 5090 lane's arm pinned to one card by UUID; `phases-1090*.sh` order the arms; `m12_table.py` makes the mixed table). Each run dir keeps `arm.txt` (binary hash, env, boot budget line, device free and MemAvailable floors, eviction, OOM and reclaim counts), `serve.log`, the 250 ms `gpu-tel.csv`, `memavail.txt`, the result and the rows (agentic rows as numbers plus output sha256).
 
+## The cache at its limit (one RTX PRO 6000 Max-Q, 2026-11-09): `pro6000-maxq/limit/`
+
+The owed cells above never filled the cache: it peaked at 20.5 GB (mixed) and 11.2 GB (agentic) of the 54.3 GB
+budget, with no reclaim. This cell fills it. `harness/limit.py`, `MEMRA_CTX=32768`, `MEMRA_MAX_SESSIONS=12`, every
+request greedy, streamed and in its own `cache_salt` namespace (so finished sessions park, up to 16):
+
+- fill: 64 unique prompts of about 26.5k tokens, four at a time; each leaves one prefix entry (about 0.95 GB) and parks its
+  session;
+- pressure: 12 more unique prompts of about 25.5k tokens at once (the interactive cap);
+- repeat: the 16 most recent fill prompts again, one at a time.
+
+A = main `9877f6a696`, B = this change on it (`aabb3ae1b6`; the review fixes after it change comments, tests and
+a pure-function split of the session count, not behavior), cell_evidence's own release builds of both, four fresh boots interleaved A B B A on wrx GPU 3 at its 280 W
+limit, no thermal throttle. Table: `harness/limit_table.py`.
+
+| arm | budget MB | reclaim-on-defer flushes | entries / GB flushed | evictions preflight / LRU | OOM lines | pressure: errors, TTFT p50 / max s | repeats: hits, TTFT p50 s |
+|---|---|---|---|---|---|---|---|
+| limit-1-A | 2260 | 0 | 0 / 0.0 | 75 / 11 | 0 | 4 of 12, 53.3 / 88.7 | 0 of 16, 10.61 |
+| limit-2-B | 54277 | 1 | 57 / 54.2 | 7 / 0 | 0 | 4 of 12, 53.3 / 88.7 | 0 of 16, 10.61 |
+| limit-3-B | 54277 | 1 | 57 / 54.2 | 7 / 0 | 0 | 4 of 12, 53.3 / 88.7 | 0 of 16, 10.60 |
+| limit-4-A | 2260 | 0 | 0 / 0.0 | 75 / 11 | 0 | 4 of 12, 53.2 / 88.6 | 0 of 16, 10.59 |
+
+What it shows:
+
+- B filled the budget (seven single-entry evictions at the top), then one pressure arrival deferred and
+  `reclaim-on-defer` flushed the whole cache: 57 entries, 54.2 GB, effective free 4.6 GB to 58.8 GB. Admission
+  charged that arrival 3.4 GB (KV, a 2.3 GB prefill workspace and fixed state); the shortfall was under 1 GB. The
+  parked sessions were not touched. No other eviction kind appeared: no post-insert yield and no allocation-failure
+  eviction on any arm (the only lines are `evict (LRU)` and `evict (snapshot preflight, LRU)`).
+- Against main nothing got worse: no OOM on either arm, pressure TTFT at most about 0.15 s behind main at every rank
+  (all 12 arrivals are admitted and the flush runs before the first prefill finishes, so the offset starts at rank 1;
+  the arrivals then wait for each other's 25k-token prefill), and the 16 repeats re-prime
+  on both arms (0 hits, 10.6 s each). A never held those entries; B held them until the flush.
+- Four pressure requests on every arm end with HTTP 408 at the 90 s first-token deadline: they were admitted but
+  waited for their prefill turn behind 25k-token prefills, on both arms alike. `admit_oom_lines` in `arm.txt` counts
+  the `[admit-oom]` boot banner and the reclaim lines, not out-of-memory events. The harness's Prometheus capture
+  read nothing (`/metrics` answers JSON without an `Accept` header), so the table comes from the serve.log lines.
+- The cost of the flush is the cache, not latency: a partial reclaim that frees only the arrival's shortfall,
+  oldest first, would have kept the repeats' entries. That lever is owed in the decision record, with this cell as
+  its acceptance test.
+
+Conditions: the box's other cards ran another lane's training jobs during these arms (about 28 GB each, full
+utilization). The decision metrics here are counts (flushes, evictions, hits, OOM lines); the TTFT comparison is
+interleaved on one card and both arms carry the same load.
+
 ## Harness (`harness/`)
 
 - `mixed.py`: the spec-cache-mixed workload with every request streamed (TTFT per row, greedy text per
@@ -92,6 +139,8 @@ Scripts: `pro6000-maxq/campaign/` (`arm.sh` is the 5090 lane's arm pinned to one
 - `arm.sh`: one boot, one workload, 250 ms `nvidia-smi` telemetry (device free floor) and 1 s
   `/proc/meminfo` MemAvailable; `phase*.sh` interleave the arms, each phase under its own gpulock lease.
 - `policy_sim.py`: the trace-free policy simulator below; `prefix-evict-ab.py`: the incident replay.
+- `limit.py`: the at-the-limit workload (fill, pressure, repeat; one `cache_salt` namespace per prompt);
+  `limit_table.py`: its table from the arms' serve.log and rows.
 
 ## Policy simulator: `sim/policy-sim.txt`
 
