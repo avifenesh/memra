@@ -580,6 +580,50 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
         rep.f32rel("hc/pre", &f32h(&ops, &pre)?, &f.f32s("pre")?, 1e-5);
         rep.f32rel("hc/post", &f32h(&ops, &post)?, &f.f32s("post")?, 1e-5);
         rep.f32rel("hc/comb", &f32h(&ops, &comb)?, &f.f32s("comb")?, 1e-5);
+        // the one-token instance (decode) against row 0 of the many-token run, byte for byte
+        {
+            let mixes1 = ops.buf(nm * 4)?;
+            let pre1 = ops.buf(hc * 4)?;
+            let post1 = ops.buf(hc * 4)?;
+            let comb1 = ops.buf(hc * hc * 4)?;
+            let parts1 = ops.buf(8 * (nm + 1) * 4)?;
+            ck("hc_mixes", unsafe {
+                ffi::memra_v41_hc_mixes(
+                    x.p(&st).m(),
+                    fn_.p(&st).f(),
+                    sc.p(&st).f(),
+                    base.p(&st).f(),
+                    1,
+                    hc as i32,
+                    d as i32,
+                    20,
+                    1e-20,
+                    1e-6,
+                    parts1.p(&st).fm(),
+                    mixes1.p(&st).fm(),
+                    pre1.p(&st).fm(),
+                    post1.p(&st).fm(),
+                    comb1.p(&st).fm(),
+                    sv,
+                )
+            })?;
+            for (nm_, one, all, n1) in [
+                ("mixes", &mixes1, &mixes, nm * 4),
+                ("pre", &pre1, &pre, hc * 4),
+                ("post", &post1, &post, hc * 4),
+                ("comb", &comb1, &comb, hc * hc * 4),
+            ] {
+                let a = one.host(&st)?;
+                let b = all.host(&st)?;
+                let same = a[..n1] == b[..n1];
+                rep.raw(
+                    &format!("schedule/hc_mixes/one_token/{nm_}"),
+                    same,
+                    "the one-token instance writes row 0's bytes",
+                    format!("{n1} bytes"),
+                );
+            }
+        }
         let carried = f.dev(&ops, "carried")?;
         let y = ops.buf(s * d * 2)?;
         ck("hc_pre", unsafe {
@@ -1415,6 +1459,8 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         (1usize, 1024usize, 4096usize, 8usize),
         (3, 32, 5120, 1),
         (4, 512, 5120, 1),
+        (1, 384, 5120, 1),
+        (1, 5000, 1280, 1),
     ] {
         let a = Buf::from_bytes(&st, &rng.bf16(8 * k * batch))?;
         let b = Buf::from_bytes(&st, &rng.bf16(n * k * batch))?;

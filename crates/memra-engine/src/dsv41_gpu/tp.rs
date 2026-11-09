@@ -700,7 +700,7 @@ impl Group {
             let (_m, p, po, co) =
                 c.hc_mix(&w.hc_ffn_fn, &w.hc_ffn_scale, &w.hc_ffn_base, &h[r], s)?;
             let x2 = c.hc_pre_norm(&h[r], &a_pre[r], &w.ffn_norm, s)?;
-            let m = c.ops.buf(s * d * 2)?;
+            let m = c.ops.tmp(s * d * 2)?;
             Ok((p, po, co, x2, m))
         })?;
         drop((a_pre, a_post, a_comb));
@@ -782,10 +782,10 @@ impl Group {
         let bufs = self.each(|r, cx| {
             let ops = &cx.ops;
             Ok((
-                ops.buf(c * lw[r].heads_l * hd * 2)?,
-                ops.buf(c * lw[r].heads_l * hd * 2)?,
-                ops.buf(c * oa_ld * 2)?,
-                ops.buf(s * d * 2)?,
+                ops.tmp(c * lw[r].heads_l * hd * 2)?,
+                ops.tmp(c * lw[r].heads_l * hd * 2)?,
+                ops.tmp(c * oa_ld * 2)?,
+                ops.tmp(s * d * 2)?,
             ))
         })?;
         let (mut q, mut o, mut oa, mut out) = (vec![], vec![], vec![], vec![]);
@@ -909,7 +909,7 @@ impl Group {
             let (p0, p1) = (off[er.start], off[er.end]);
             let st = c.ops.st.clone();
             let x = x2[r].at(&st, r0 * d * 2);
-            let sl = c.ops.buf(np * d * 2)?;
+            let sl = c.ops.tmp(np * d * 2)?;
             let so = if lw[r].experts.is_empty() && p1 > p0 {
                 // experts off the card: queue the misses' copies first, so they overlap the
                 // shared expert (an independent output; launch order never changes a value)
@@ -1405,10 +1405,10 @@ impl Ctx {
         let st = self.ops.st.clone();
         let (d, inter) = (g.dim, g.moe_inter);
         let [s1, s2, s3] = &lw.shared;
-        let gb = self.ops.buf(rows * inter * 2)?;
-        let ub = self.ops.buf(rows * inter * 2)?;
-        let hb = self.ops.buf(rows * inter * 2)?;
-        let out = self.ops.buf(rows * d * 2)?;
+        let gb = self.ops.tmp(rows * inter * 2)?;
+        let ub = self.ops.tmp(rows * inter * 2)?;
+        let hb = self.ops.tmp(rows * inter * 2)?;
+        let out = self.ops.tmp(rows * d * 2)?;
         self.ops
             .linear_q(x, d, rows, s1, gb.p(&st), inter, false, &mut self.scr)?;
         self.ops

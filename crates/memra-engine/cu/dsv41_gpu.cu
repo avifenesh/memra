@@ -226,17 +226,31 @@ __global__ void v41_rmsnorm_kernel(const v41_bf* x, long ldx, const v41_bf* __re
                                    int d, float eps) {
     __shared__ float red[32];
     const v41_bf* xr = x + (long)blockIdx.x * ldx;
+    int bd = blockDim.x;
     float ss = 0.f;
-    for (int i = threadIdx.x; i < d; i += blockDim.x) {
-        float v = v41_bf2f(xr[i]);
-        ss = __fadd_rn(ss, __fmul_rn(v, v));
+    // four strided loads in flight ahead of their adds, which stay in the strided order
+    for (int i = threadIdx.x; i < d; i += 4 * bd) {
+        float v[4];
+#pragma unroll
+        for (int u = 0; u < 4; ++u) v[u] = i + u * bd < d ? v41_bf2f(xr[i + u * bd]) : 0.f;
+#pragma unroll
+        for (int u = 0; u < 4; ++u)
+            if (i + u * bd < d) ss = __fadd_rn(ss, __fmul_rn(v[u], v[u]));
     }
     float tot = v41_block_sum(ss, red);
     float rs = rsqrtf(__fadd_rn(tot / (float)d, eps));
     v41_bf* yr = y + (long)blockIdx.x * ldy;
-    for (int i = threadIdx.x; i < d; i += blockDim.x) {
-        float v = v41_bf2f(xr[i]);
-        yr[i] = v41_f2bf(__fmul_rn(v41_bf2f(w[i]), __fmul_rn(v, rs)));
+    for (int i = threadIdx.x; i < d; i += 4 * bd) {
+        float v[4], wv[4];
+#pragma unroll
+        for (int u = 0; u < 4; ++u) {
+            bool ok = i + u * bd < d;
+            v[u] = ok ? v41_bf2f(xr[i + u * bd]) : 0.f;
+            wv[u] = ok ? v41_bf2f(w[i + u * bd]) : 0.f;
+        }
+#pragma unroll
+        for (int u = 0; u < 4; ++u)
+            if (i + u * bd < d) yr[i + u * bd] = v41_f2bf(__fmul_rn(wv[u], __fmul_rn(v[u], rs)));
     }
 }
 
@@ -788,7 +802,7 @@ __global__ void __launch_bounds__(256) v41_gemm_f8_pipe_kernel(const uint8_t* __
 // column) adds them in K order. So a row's bytes do not depend on which of the two kernels ran,
 // and a one-token decode streams the weight with every SM instead of N/128 tiles walking K.
 #define V41_SM_MAX 4
-#define V41_SM_U 4  // K blocks a warp loads ahead of their MMAs
+#define V41_SM_U 8  // K blocks a warp loads ahead of their MMAs
 
 __device__ __forceinline__ uint32_t v41_ldg32(const uint8_t* p) { return __ldg((const unsigned int*)p); }
 __device__ __forceinline__ uint32_t v41_ldg16(const uint8_t* p) { return (uint32_t)__ldg((const unsigned short*)p); }
@@ -882,7 +896,15 @@ __device__ __forceinline__ void v41_gemv_f8_cols(const uint8_t* __restrict__ A, 
     if (tid < M * 8) {
         int r = tid >> 3, cc = tid & 7;
         float acc = 0.f;
-        for (int kb = 0; kb < KB; ++kb) acc = __fadd_rn(acc, sT[((long)kb * M + r) * 8 + cc]);
+        int kb = 0;
+        for (; kb + 8 <= KB; kb += 8) {
+            float v[8];
+#pragma unroll
+            for (int u = 0; u < 8; ++u) v[u] = sT[((long)(kb + u) * M + r) * 8 + cc];
+#pragma unroll
+            for (int u = 0; u < 8; ++u) acc = __fadd_rn(acc, v[u]);
+        }
+        for (; kb < KB; ++kb) acc = __fadd_rn(acc, sT[((long)kb * M + r) * 8 + cc]);
         int cn = n0 + cc;
         if (cn < N) {
             if (OUTF == 0) ((v41_bf*)C)[(long)r * ldc + cn] = v41_f2bf(acc);
@@ -1331,15 +1353,78 @@ __global__ void __launch_bounds__(128) v41_gemv_ffma_kernel(const v41_bf* __rest
         if (k0 + V41_SMF_KC < K) fetch(k0 + V41_SMF_KC);
         int kn = min(V41_SMF_KC, K - k0);
         if (r < M)
-            for (int kk = 0; kk < kn; ++kk) acc = __fmaf_rn(sA[r][kk], sB[kk][cc], acc);
+            for (int kk = 0; kk < kn; kk += 8) {
+                float av[8], bv[8];
+#pragma unroll
+                for (int u = 0; u < 8; ++u) {
+                    av[u] = sA[r][kk + u];
+                    bv[u] = sB[kk + u][cc];
+                }
+#pragma unroll
+                for (int u = 0; u < 8; ++u) acc = __fmaf_rn(av[u], bv[u], acc);
+            }
     }
     if (r < M && n0 + cc < N) C[(long)r * ldc + n0 + cc] = acc;
+}
+
+// The same chain for a narrow output (the router, the ratio-2 compressor): a block owns 4 columns and
+// lands their whole K slice and A's rows in shared memory with every copy in flight, then thread
+// (row, column) runs its chain; with K dependent fmas per output the chain is the floor, so the
+// columns spread over as many blocks as possible.
+#define V41_SMF_NC 4
+
+__global__ void __launch_bounds__(128) v41_gemv_ffma_narrow_kernel(const v41_bf* __restrict__ A, long lda,
+                                                                   const v41_bf* __restrict__ B, long ldb,
+                                                                   float* __restrict__ C, long ldc, int M, int N,
+                                                                   int K) {
+    extern __shared__ __align__(16) uint8_t v41_ffma_sm[];
+    int pitch = K + 8;  // elements: rows 16 bytes apart in the bank map
+    v41_bf* sB = (v41_bf*)v41_ffma_sm;
+    v41_bf* sA = sB + V41_SMF_NC * pitch;
+    int tid = threadIdx.x, n0 = blockIdx.x * V41_SMF_NC;
+    int chunks = K / 8;
+    for (int q = tid; q < V41_SMF_NC * chunks; q += 128) {
+        int r = q / chunks, c = q % chunks;
+        bool ok = n0 + r < N;
+        v41_cp16(sB + r * pitch + c * 8, B + (long)(ok ? n0 + r : 0) * ldb + c * 8, ok);
+    }
+    for (int q = tid; q < M * chunks; q += 128) {
+        int r = q / chunks, c = q % chunks;
+        v41_cp16(sA + r * pitch + c * 8, A + (long)r * lda + c * 8, true);
+    }
+    v41_cp_commit();
+    v41_cp_wait<0>();
+    __syncthreads();
+    if (tid >= M * V41_SMF_NC) return;
+    int r = tid / V41_SMF_NC, cc = tid % V41_SMF_NC;
+    if (n0 + cc >= N) return;
+    const v41_bf* ar = sA + r * pitch;
+    const v41_bf* br = sB + cc * pitch;
+    float acc = 0.f;
+    for (int k = 0; k < K; k += 8) {
+        uint4 av = *(const uint4*)(ar + k), bv = *(const uint4*)(br + k);
+        const v41_bf* ae = (const v41_bf*)&av;
+        const v41_bf* be = (const v41_bf*)&bv;
+#pragma unroll
+        for (int u = 0; u < 8; ++u) acc = __fmaf_rn(v41_bf2f(ae[u]), v41_bf2f(be[u]), acc);
+    }
+    C[(long)r * ldc + n0 + cc] = acc;
 }
 
 extern "C" int memra_v41_gemm_ffma(const void* a, long lda, const void* b, long ldb, float* c, long ldc, int m, int n,
                                    int k, void* stream) {
     if (k % 32 || m < 0 || n <= 0) return 41023;
     if (m == 0) return 0;
+    if (m <= V41_SM_MAX && lda % 8 == 0 && ldb % 8 == 0 && n <= 4096) {
+        int smem = (V41_SMF_NC + m) * (k + 8) * 2;
+        if (smem <= 99 * 1024) {
+            if (smem > 48 * 1024)
+                cudaFuncSetAttribute(v41_gemv_ffma_narrow_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+            v41_gemv_ffma_narrow_kernel<<<(n + V41_SMF_NC - 1) / V41_SMF_NC, 128, smem, (cudaStream_t)stream>>>(
+                (const v41_bf*)a, lda, (const v41_bf*)b, ldb, c, ldc, m, n, k);
+            V41_ERR();
+        }
+    }
     if (m <= V41_SM_MAX && lda % 8 == 0 && ldb % 8 == 0) {
         v41_gemv_ffma_kernel<<<(n + 31) / 32, 128, 0, (cudaStream_t)stream>>>((const v41_bf*)a, lda, (const v41_bf*)b,
                                                                               ldb, c, ldc, m, n, k);
@@ -1378,11 +1463,13 @@ __global__ void __launch_bounds__(128) v41_sparse_attn_kernel(const v41_bf* __re
     int mq = blockIdx.x, h0 = blockIdx.y * V41_AH;
     int tid = threadIdx.x, w = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
 
+    // every copy of a tile in flight at once (cp.async), then one wait: the gathers are latency-bound
     const uint8_t* qg = (const uint8_t*)(q + (long)mq * ldq + (long)h0 * V41_AD);
     for (int i = tid; i < V41_AH * 64; i += 128) {
         int r = i >> 6, c = i & 63;
-        *(uint4*)(sQ + r * V41_ARS + c * 16) = *(const uint4*)(qg + (long)r * V41_AD * 2 + c * 16);
+        v41_cp16(sQ + r * V41_ARS + c * 16, qg + (long)r * V41_AD * 2 + c * 16, true);
     }
+    v41_cp_commit();
     float m_run[2] = {-1e30f, -1e30f}, l_run[2] = {0.f, 0.f};
     float oacc[16][4];
 #pragma unroll
@@ -1400,10 +1487,11 @@ __global__ void __launch_bounds__(128) v41_sparse_attn_kernel(const v41_bf* __re
         for (int i = tid; i < V41_AK * 64; i += 128) {
             int r = i >> 6, c = i & 63;
             int ix = sIdx[r];
-            uint4 v = make_uint4(0, 0, 0, 0);
-            if (ix >= 0) v = *(const uint4*)((const uint8_t*)(kv + (long)ix * V41_AD) + c * 16);
-            *(uint4*)(sKV + r * V41_ARS + c * 16) = v;
+            const uint8_t* src = (const uint8_t*)(kv + (long)(ix >= 0 ? ix : 0) * V41_AD) + c * 16;
+            v41_cp16(sKV + r * V41_ARS + c * 16, src, ix >= 0);  // a missing key lands as zeros
         }
+        v41_cp_commit();
+        v41_cp_wait<0>();
         __syncthreads();
         // scores for keys [16w, 16w+16): two n8 tiles over K = 512
         float s[2][4];
@@ -1514,6 +1602,7 @@ __global__ void __launch_bounds__(128) v41_sparse_attn_kernel(const v41_bf* __re
         }
         __syncthreads();
     }
+    v41_cp_wait<0>();  // no key block: the Q copies are still drained before exit
     float den[2];
 #pragma unroll
     for (int hh = 0; hh < 2; ++hh) den[hh] = __fadd_rn(l_run[hh], expf(sink[h0 + g + hh * 8] - m_run[hh]));
@@ -1630,6 +1719,32 @@ __global__ void __launch_bounds__(128) v41_index_score_kernel(const v41_bf* __re
     __shared__ float sW[32];
     int t0 = blockIdx.x * 64;
     int tid = threadIdx.x, wp = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
+    // A row whose every key of this tile is masked (past its causal limit, or in no kept candidate
+    // block) is written -inf without its MMAs: the masked score is -inf whatever the product was.
+    auto masked = [&](int row) {
+        if (PART) return false;
+        if (t0 >= (start_pos + row + 1) / ratio) return true;
+        if (!cand) return false;
+        int b1 = (min(T, t0 + 64) - 1) / cb;
+        for (int bb = t0 / cb; bb <= b1; ++bb)
+            if (cand[(long)row * ldc + bb]) return false;
+        return true;
+    };
+    auto write_masked = [&](int row) {
+        if (tid < 64 && t0 + tid < T) ((v41_bf*)outv)[(long)row * ldo + t0 + tid] = (v41_bf)0xFF80u;  // bf16 -inf
+    };
+    bool any = false;
+    for (int rq = 0; rq < V41_IQB; ++rq) {
+        int row = blockIdx.y * V41_IQB + rq;
+        if (row < rows && !masked(row)) any = true;
+    }
+    if (!any) {
+        for (int rq = 0; rq < V41_IQB; ++rq) {
+            int row = blockIdx.y * V41_IQB + rq;
+            if (row < rows) write_masked(row);
+        }
+        return;
+    }
     for (int i = tid; i < 64 * 16; i += 128) {
         int r = i >> 4, c = i & 15;
         uint4 v = make_uint4(0, 0, 0, 0);
@@ -1639,6 +1754,10 @@ __global__ void __launch_bounds__(128) v41_index_score_kernel(const v41_bf* __re
     for (int rq = 0; rq < V41_IQB; ++rq) {
         int row = blockIdx.y * V41_IQB + rq;
         if (row >= rows) break;
+        if (masked(row)) {
+            write_masked(row);
+            continue;
+        }
         __syncthreads();  // the previous row's readers are done with sQ / sW
         const uint8_t* qg = (const uint8_t*)(q + (long)row * ldq);
         for (int i = tid; i < MI * 16 * 16; i += 128) {
@@ -1954,11 +2073,16 @@ __global__ void v41_route_kernel(const float* __restrict__ raw, long ldr, const 
     int wid = (blockIdx.x * blockDim.x + threadIdx.x) >> 5, lane = threadIdx.x & 31;
     if (wid >= rows) return;
     const float* r = raw + (long)wid * ldr;
-    float sc[32], bs[32];
+    float sc[32], bs[32], rv[32];
     int per = (ne + 31) / 32;
+#pragma unroll
+    for (int i = 0; i < 32; ++i) {
+        int e = lane + 32 * i;
+        rv[i] = (i < per && e < ne) ? r[e] : 0.f;
+    }
     for (int i = 0; i < per; ++i) {
         int e = lane + 32 * i;
-        float v = e < ne ? r[e] : 0.f;
+        float v = rv[i];
         float sp = v > 20.f ? v : log1pf(expf(v));
         sc[i] = sqrtf(sp);
         bs[i] = e < ne ? __fadd_rn(sc[i], bias ? bias[e] : 0.f) : -INFINITY;
@@ -2195,7 +2319,8 @@ __global__ void v41_moe_combine_kernel(const v41_bf* __restrict__ slots, long ld
                                        long ldo, int d) {
     int t = blockIdx.x;
     const int* o = order + (long)t * topk;
-    for (int i = threadIdx.x; i < d; i += blockDim.x) {
+    int i1 = min(d, (int)(blockIdx.y + 1) * 1024);
+    for (int i = blockIdx.y * 1024 + threadIdx.x; i < i1; i += blockDim.x) {
         float v = 0.f;
         for (int j = 0; j < topk; ++j) {
             int p = o[j];
@@ -2210,7 +2335,8 @@ extern "C" int memra_v41_moe_combine(const void* slots, long lds, const int* ord
                                      long ldsh, void* out, long ldo, int rows, int d, void* stream) {
     if (rows <= 0) return rows < 0 ? 41017 : 0;
     if (topk <= 0 || d <= 0) return 41017;
-    v41_moe_combine_kernel<<<rows, 256, 0, (cudaStream_t)stream>>>((const v41_bf*)slots, lds, order, topk,
+    dim3 grid(rows, (d + 1023) / 1024);
+    v41_moe_combine_kernel<<<grid, 256, 0, (cudaStream_t)stream>>>((const v41_bf*)slots, lds, order, topk,
                                                                    (const v41_bf*)shared, ldsh, (v41_bf*)out, ldo, d);
     V41_ERR();
 }
@@ -2228,11 +2354,13 @@ extern "C" int memra_v41_moe_combine(const void* slots, long lds, const int* ord
 // instead of once per token, and a one-token decode spreads over 8 blocks.
 // parts[s][8][nmix + 1] holds each virtual warp's sums.
 
-#define V41_HCT 32  // tokens per block
-#define V41_HCM 8   // strided steps of x staged through shared memory at a time
-
-__global__ void v41_hc_mixes_part_kernel(const v41_bf* __restrict__ x, const float* __restrict__ fn, int nmix, int n,
-                                         int rows, float* __restrict__ parts) {
+// V41_HCT tokens per block, V41_HCM strided steps staged at a time: 16 x 16 for a prefill, 1 x 40 for
+// a one-token decode (half of a chain's fn loads in flight at once). 25 warps per block, so at most
+// 80 registers per thread.
+template <int V41_HCT, int V41_HCM>
+__global__ void __launch_bounds__(800, 1) v41_hc_mixes_part_kernel(const v41_bf* __restrict__ x,
+                                                                   const float* __restrict__ fn, int nmix, int n,
+                                                                   int rows, float* __restrict__ parts) {
     __shared__ float sx[V41_HCM][V41_HCT][32];
     int b = blockIdx.y;  // virtual warp
     int s0 = blockIdx.x * V41_HCT;
@@ -2244,6 +2372,13 @@ __global__ void v41_hc_mixes_part_kernel(const v41_bf* __restrict__ x, const flo
 #pragma unroll
     for (int t = 0; t < V41_HCT; ++t) acc[t] = 0.f;
     for (int m0 = 0; m0 * 256 < n; m0 += V41_HCM) {
+        // this chain's fn values of the chunk, in flight while x is staged
+        float fv[V41_HCM];
+#pragma unroll
+        for (int mm = 0; mm < V41_HCM; ++mm) {
+            int i = vt + 256 * (m0 + mm);
+            fv[mm] = (j < nmix && i < n) ? __ldg(f + i) : 0.f;
+        }
         __syncthreads();  // the previous steps' readers are done with sx
         // this virtual warp's x values of the next V41_HCM steps, once for the 25 chains that read them
         for (int q = threadIdx.x; q < V41_HCM * nt * 32; q += blockDim.x) {
@@ -2256,12 +2391,11 @@ __global__ void v41_hc_mixes_part_kernel(const v41_bf* __restrict__ x, const flo
         for (int mm = 0; mm < V41_HCM; ++mm) {
             int i = vt + 256 * (m0 + mm);  // the original thread's i, in its order
             if (i < n) {
-                float fv = j < nmix ? __ldg(f + i) : 0.f;
 #pragma unroll
                 for (int t = 0; t < V41_HCT; ++t) {
                     if (t < nt) {
                         float v = sx[mm][t][lane];
-                        acc[t] = __fadd_rn(acc[t], j < nmix ? __fmul_rn(v, fv) : __fmul_rn(v, v));
+                        acc[t] = __fadd_rn(acc[t], j < nmix ? __fmul_rn(v, fv[mm]) : __fmul_rn(v, v));
                     }
                 }
             }
@@ -2364,8 +2498,14 @@ extern "C" int memra_v41_hc_mixes(const void* x, const float* fn, const float* s
     if (hc <= 0 || hc > 4 || nmix > 31) return 41016;
     if (rows <= 0) return rows < 0 ? 41016 : 0;
     cudaStream_t st = (cudaStream_t)stream;
-    dim3 g1((rows + V41_HCT - 1) / V41_HCT, 8);
-    v41_hc_mixes_part_kernel<<<g1, 32 * (nmix + 1), 0, st>>>((const v41_bf*)x, fn, nmix, hc * d, rows, parts);
+    if (rows == 1) {
+        v41_hc_mixes_part_kernel<1, 40><<<dim3(1, 8), 32 * (nmix + 1), 0, st>>>((const v41_bf*)x, fn, nmix, hc * d,
+                                                                               rows, parts);
+    } else {
+        dim3 g1((rows + 15) / 16, 8);
+        v41_hc_mixes_part_kernel<16, 16><<<g1, 32 * (nmix + 1), 0, st>>>((const v41_bf*)x, fn, nmix, hc * d, rows,
+                                                                          parts);
+    }
     v41_hc_finish_kernel<<<(rows + 15) / 16, 256, 0, st>>>(parts, nmix, hc * d, norm_eps, scale, base, hc, iters,
                                                            hc_eps, mixes, pre, post, comb, rows);
     V41_ERR();
@@ -2402,7 +2542,8 @@ __global__ void v41_hc_post_kernel(const v41_bf* __restrict__ f, long ldf, const
     for (int k = 0; k < hc; ++k) pk[k] = post[(long)s * hc + k];
     for (int j = 0; j < hc; ++j)
         for (int k = 0; k < hc; ++k) cm[j][k] = comb[(long)s * hc * hc + j * hc + k];
-    for (int i = threadIdx.x; i < d; i += blockDim.x) {
+    int i1 = min(d, (int)(blockIdx.y + 1) * 1024);
+    for (int i = blockIdx.y * 1024 + threadIdx.x; i < i1; i += blockDim.x) {
         float fv = v41_bf2f(f[(long)s * ldf + i]);
         float rv[4];
         for (int j = 0; j < hc; ++j) rv[j] = v41_bf2f(rr[(long)j * d + i]);
@@ -2418,7 +2559,8 @@ extern "C" int memra_v41_hc_post(const void* f, long ldf, const void* res, const
                                  int rows, int hc, int d, void* out, void* stream) {
     if (hc <= 0 || hc > 4) return 41018;
     if (rows <= 0) return rows < 0 ? 41018 : 0;
-    v41_hc_post_kernel<<<rows, 256, 0, (cudaStream_t)stream>>>((const v41_bf*)f, ldf, (const v41_bf*)res, post, comb,
+    dim3 grid(rows, (d + 1023) / 1024);
+    v41_hc_post_kernel<<<grid, 256, 0, (cudaStream_t)stream>>>((const v41_bf*)f, ldf, (const v41_bf*)res, post, comb,
                                                                hc, d, (v41_bf*)out);
     V41_ERR();
 }

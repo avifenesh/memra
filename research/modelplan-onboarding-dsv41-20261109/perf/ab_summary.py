@@ -43,10 +43,15 @@ def main():
                 per.setdefault(key, {}).setdefault(arm, []).append(pl["median_ms_after_first"])
             key = (tuple(D["run"]), f"decode steps at {D['from_pos']}")
             hashes.setdefault(key, {}).setdefault(arm, set()).add("|".join(D["step_sha"]))
+            if "whole_step_ms" in D:
+                key = (str(tuple(D["run"])), f"whole decode step at {D['from_pos'] + D['steps']}")
+                per.setdefault(key, {}).setdefault(arm, []).append(D["whole_step_median_ms_after_first"])
+                key = (tuple(D["run"]), f"whole decode steps at {D['from_pos'] + D['steps']}")
+                hashes.setdefault(key, {}).setdefault(arm, set()).add("|".join(D["whole_step_sha"]))
     rows = []
     md = ["| layer | phase | A runs (ms) | B runs (ms) | A median | B median | B/A | A spread | B spread | ranges |",
           "|---|---|---|---|---|---|---|---|---|---|"]
-    for key in sorted(per, key=lambda k: (str(k[1]), k[0])):
+    for key in sorted(per, key=lambda k: (str(k[1]), str(k[0]))):
         a, b = per[key].get("A", []), per[key].get("B", [])
         ma, mb = med(a), med(b)
         sa = (max(a) - min(a)) / ma if a else float("nan")

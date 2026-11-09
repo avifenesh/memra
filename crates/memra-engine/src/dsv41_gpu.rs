@@ -505,6 +505,14 @@ impl Buf {
             .map_err(|e| format!("alloc {len}: {e:?}"))?;
         Ok(Self { s, len })
     }
+    /// Device memory without the zero fill, for a buffer its kernels write in full before
+    /// anything reads it (stream-ordered like every allocation here).
+    pub fn uninit(st: &Arc<CudaStream>, len: usize) -> Result<Self, String> {
+        // SAFETY: the bytes are device memory the caller writes before reading; the host never
+        // reads them uninitialized (every host copy follows the kernel that wrote them)
+        let s = unsafe { st.alloc::<u8>(len.max(1)) }.map_err(|e| format!("alloc {len}: {e:?}"))?;
+        Ok(Self { s, len })
+    }
     pub fn from_bytes(st: &Arc<CudaStream>, b: &[u8]) -> Result<Self, String> {
         if b.is_empty() {
             return Self::zeros(st, 0);
@@ -618,6 +626,10 @@ impl Ops {
     }
     pub fn buf(&self, len: usize) -> Result<Buf, String> {
         Buf::zeros(&self.st, len)
+    }
+    /// A layer temporary its kernels write in full before reading (no zero-fill memset).
+    pub fn tmp(&self, len: usize) -> Result<Buf, String> {
+        Buf::uninit(&self.st, len)
     }
 
     /// act_quant(x, 32, "ue8m0") of `rows` bf16 rows of `k` (gathered through `rowidx` when it
@@ -947,10 +959,10 @@ impl Scratch {
         let nq = rows * k;
         let ns = rows * k / 32;
         if self.q.as_ref().is_none_or(|b| b.len < nq) {
-            self.q = Some(ops.buf(nq)?);
+            self.q = Some(ops.tmp(nq)?);
         }
         if self.s.as_ref().is_none_or(|b| b.len < ns) {
-            self.s = Some(ops.buf(ns)?);
+            self.s = Some(ops.tmp(ns)?);
         }
         Ok((
             self.q.as_ref().unwrap().p(&ops.st),
@@ -2028,8 +2040,8 @@ impl Ctx {
         }
         let st = self.ops.st.clone();
         let nkv = g.dim * (g.hc + 1);
-        let emb = self.ops.buf(c * cols * hd * 2)?;
-        let kv = self.ops.buf(c * nkv * 2)?;
+        let emb = self.ops.tmp(c * cols * hd * 2)?;
+        let kv = self.ops.tmp(c * nkv * 2)?;
         let row_bytes = g.hc * g.dim * 2;
         for r0 in (0..s).step_by(c) {
             let n = c.min(s - r0);
@@ -2172,7 +2184,7 @@ impl Ctx {
             .ok_or("indexer: no index keys from a kv source")?;
         let qd = g.index_heads * g.index_dim;
         self.nv(c"index_q");
-        let q = self.ops.buf(rows * qd * 2)?;
+        let q = self.ops.tmp(rows * qd * 2)?;
         self.ops.linear_q(
             qr.at(&st, r0 * g.q_lora * 2),
             g.q_lora,
@@ -2195,7 +2207,7 @@ impl Ctx {
             false,
         )?;
         self.ops.fp4_qdq(q.p(&st), qd, rows, qd, 32)?;
-        let w = self.ops.buf(rows * g.index_heads * 2)?;
+        let w = self.ops.tmp(rows * g.index_heads * 2)?;
         self.ops.linear_bf16(
             x.at(&st, r0 * g.dim * 2),
             g.dim,
@@ -2209,7 +2221,7 @@ impl Ctx {
         let wscale = ((g.index_dim as f64).powf(-0.5) * (g.index_heads as f64).powf(-0.5)) as f32;
         self.nv_end();
         self.nv(c"index_score");
-        let score = self.ops.buf(rows * n_c * 2)?;
+        let score = self.ops.tmp(rows * n_c * 2)?;
         let crow = r0
             .checked_sub(sh.cand_row0)
             .ok_or("indexer: query row before the candidate pool's first row")?;
@@ -2306,7 +2318,7 @@ impl Ctx {
                 .rmsnorm(lat.p(&st), hd, &cw.norm, lat.p(&st), hd, n, hd, g.norm_eps)
         };
         if ratio == 1 {
-            let lat = self.ops.buf(s * hd * 2)?;
+            let lat = self.ops.tmp(s * hd * 2)?;
             self.ops
                 .linear_bf16(x.p(&st), g.dim, s, &cw.wkv, lat.p(&st), hd, false)?;
             norm(self, &lat, s)?;
@@ -2315,8 +2327,8 @@ impl Ctx {
         if ratio != 2 {
             return Err(format!("compressor ratio {ratio} has no pooling kernel"));
         }
-        let kvf = self.ops.buf(s * hd * 4)?;
-        let scf = self.ops.buf(s * hd * 4)?;
+        let kvf = self.ops.tmp(s * hd * 4)?;
+        let scf = self.ops.tmp(s * hd * 4)?;
         self.ops
             .linear_bf16(x.p(&st), g.dim, s, &cw.wkv, kvf.p(&st), hd, true)?;
         self.ops.linear_bf16(
@@ -2329,6 +2341,7 @@ impl Ctx {
             true,
         )?;
         if ls.c_kv.is_none() {
+            // carried state: zeroed, so a slot no token wrote yet holds the same bytes on every rank
             ls.c_kv = Some(self.ops.buf(2 * hd * 4)?);
             ls.c_sc = Some(self.ops.buf(2 * hd * 4)?);
         }
@@ -2357,7 +2370,7 @@ impl Ctx {
             if n == 0 {
                 return Ok(None);
             }
-            let lat = self.ops.buf(n * hd * 2)?;
+            let lat = self.ops.tmp(n * hd * 2)?;
             pool(self, &kvf, &scf, n, &lat)?;
             norm(self, &lat, n)?;
             return Ok(Some((lat, 0, n)));
@@ -2371,7 +2384,7 @@ impl Ctx {
         if !(sp + 1).is_multiple_of(2) {
             return Ok(None);
         }
-        let lat = self.ops.buf(hd * 2)?;
+        let lat = self.ops.tmp(hd * 2)?;
         pool(self, ckv, csc, 1, &lat)?;
         norm(self, &lat, 1)?;
         Ok(Some((lat, sp / 2, 1)))
@@ -2400,11 +2413,11 @@ impl Ctx {
         self.nv_end();
         let qdim = lw.heads_l * g.head_dim;
         let c = self.chunk.min(s).max(1);
-        let out = self.ops.buf(s * g.dim * 2)?;
-        let q = self.ops.buf(c * qdim * 2)?;
-        let o = self.ops.buf(c * qdim * 2)?;
+        let out = self.ops.tmp(s * g.dim * 2)?;
+        let q = self.ops.tmp(c * qdim * 2)?;
+        let o = self.ops.tmp(c * qdim * 2)?;
         let oa_ld = g.o_groups * g.o_lora;
-        let oa = self.ops.buf(c * oa_ld * 2)?;
+        let oa = self.ops.tmp(c * oa_ld * 2)?;
         let single = c == s;
         for r0 in (0..s).step_by(c) {
             let rows = c.min(s - r0);
@@ -2458,7 +2471,7 @@ impl Ctx {
             return Err("attention: chunked decode is not implemented".into());
         }
         self.nv(c"qr");
-        let qr = self.ops.buf(s * g.q_lora * 2)?;
+        let qr = self.ops.tmp(s * g.q_lora * 2)?;
         self.ops.linear_q(
             x.p(&st),
             g.dim,
@@ -2482,7 +2495,7 @@ impl Ctx {
         self.nv_end();
         // this call's window KV: kv_norm(wkv(x)), RoPE, fp8 per-32 quant-dequant
         self.nv(c"kv_window");
-        let kvw = self.ops.buf(s * hd * 2)?;
+        let kvw = self.ops.tmp(s * hd * 2)?;
         self.ops.linear_q(
             x.p(&st),
             g.dim,
@@ -2523,21 +2536,24 @@ impl Ctx {
             ls.ring = Some(self.ops.buf(win * hd * 2)?);
         }
         let ring = ls.ring.as_ref().unwrap();
-        // the ring holds position p at slot p % win; a prefill seeds it with its last win rows
-        let p0 = (sp + s).saturating_sub(win).max(sp);
-        for p in p0..sp + s {
+        // the ring holds position p at slot p % win; a prefill seeds it with its last win rows, as
+        // at most two contiguous runs (split where the slots wrap)
+        let mut p = (sp + s).saturating_sub(win).max(sp);
+        while p < sp + s {
+            let run = (win - p % win).min(sp + s - p);
             copy_d2d(
                 &self.ops,
                 &kvw,
                 (p - sp) * hd * 2,
                 ring,
                 (p % win) * hd * 2,
-                hd * 2,
+                run * hd * 2,
             )?;
+            p += run;
         }
         let (win_rows, ww) = if sp == 0 { (s, s.min(win)) } else { (win, win) };
         let n_c = (sp + s).checked_div(ratio).unwrap_or(0);
-        let kv_all = self.ops.buf((win_rows + n_c).max(1) * hd * 2)?;
+        let kv_all = self.ops.tmp((win_rows + n_c).max(1) * hd * 2)?;
         if sp == 0 {
             copy_d2d(&self.ops, &kvw, 0, &kv_all, 0, s * hd * 2)?;
         } else {
@@ -2572,14 +2588,14 @@ impl Ctx {
                         self.nv_end();
                     }
                     let tw = g.index_topk.min(n_c);
-                    sh.topk = Some(self.ops.buf(s * tw * 4)?);
+                    sh.topk = Some(self.ops.tmp(s * tw * 4)?);
                     sh.topk_w = tw;
                     let span = self.index_rows.clone().unwrap_or(0..s);
                     if lw.cand_source {
                         // only the rows this card selects: its later index layers read no other
                         let nb = n_c.div_ceil(g.cand_block);
                         let (a, b) = (span.start.min(s), span.end.min(s));
-                        sh.cand = Some(self.ops.buf((b - a).max(1) * nb)?);
+                        sh.cand = Some(self.ops.tmp((b - a).max(1) * nb)?);
                         sh.cand_ld = nb;
                         sh.cand_row0 = a;
                     }
@@ -2711,7 +2727,7 @@ impl Ctx {
         // index rows on the device: the window part (`window_row`, or the decode ring oldest slot
         // first), then the selection rows
         self.nv(c"attn_idx_rows");
-        let idx = self.ops.buf(rows * tot * 4)?;
+        let idx = self.ops.tmp(rows * tot * 4)?;
         let sel = if tw > 0 {
             sh.topk
                 .as_ref()
@@ -2856,7 +2872,7 @@ impl Ctx {
         let plan = self.moe_plan(&sel, &selw, s, ex)?;
         self.nv_end();
         self.nv(c"experts");
-        let slots = self.ops.buf(plan.np * d * 2)?;
+        let slots = self.ops.tmp(plan.np * d * 2)?;
         self.experts_tiles(lw, x, &plan, 0, plan.np, &slots, None)?;
         self.nv_end();
         self.nv(c"shared_expert");
@@ -2894,11 +2910,11 @@ impl Ctx {
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let ne = g.n_experts;
-        let raw = self.ops.buf(rows * ne * 4)?;
+        let raw = self.ops.tmp(rows * ne * 4)?;
         self.ops
             .linear_bf16(x, g.dim, rows, &lw.gate_w, raw.p(&st), ne, true)?;
-        let sel = self.ops.buf(rows * g.topk * 4)?;
-        let selw = self.ops.buf(rows * g.topk * 4)?;
+        let sel = self.ops.tmp(rows * g.topk * 4)?;
+        let selw = self.ops.tmp(rows * g.topk * 4)?;
         ck("route", unsafe {
             ffi::memra_v41_route(
                 raw.p(&st).f(),
@@ -2944,18 +2960,20 @@ impl Ctx {
         let np = rows * topk;
         let bm = self.moe_bm(rows);
         let max_tiles = np.div_ceil(bm) + ex.len().min(np);
-        let counts = self.ops.buf(rows.div_ceil(256) * ne * 4)?;
+        let counts = self.ops.tmp(rows.div_ceil(256) * ne * 4)?;
         let plan = MoePlanDev {
             rows,
             np,
             bm,
             max_tiles,
-            off: self.ops.buf((ne + 1) * 4)?,
+            off: self.ops.tmp((ne + 1) * 4)?,
+            // zeroed: a pair the placement skips (an out-of-range id) still names token 0
             ptok: self.ops.buf(np * 4)?,
             pw: self.ops.buf(np * 4)?,
-            order: self.ops.buf(np * 4)?,
-            tiles: self.ops.buf(max_tiles * 16)?,
-            ntiles: self.ops.buf(4)?,
+            order: self.ops.tmp(np * 4)?,
+            tiles: self.ops.tmp(max_tiles * 16)?,
+            ntiles: self.ops.tmp(4)?,
+            // counted with atomics: starts at zero
             err: self.ops.buf(4)?,
         };
         ck("moe_plan", unsafe {
@@ -3021,6 +3039,7 @@ impl Ctx {
     /// exactly this rank's experts (all pairs at N = 1): the pairs' rows of `x` quantized, `w1` and
     /// `w3` as one tile-list launch each, the weighted clamped SwiGLU, `w2` into `slots` (bf16
     /// `[np][dim]`, each pair's row at its plan index). Per row, the per-expert loop's arithmetic.
+    #[allow(clippy::too_many_arguments)]
     pub fn experts_tiles(
         &mut self,
         lw: &LayerW,
@@ -3054,8 +3073,8 @@ impl Ctx {
         };
         let exp_tab = cached.unwrap_or(&lw.exp_tab);
         let kdiv = if wfmt == 1 { 32 } else { 16 };
-        let aq = self.ops.buf(np * d)?;
-        let as_ = self.ops.buf(np * d / 32)?;
+        let aq = self.ops.tmp(np * d)?;
+        let as_ = self.ops.tmp(np * d / 32)?;
         self.ops.act_quant(
             x,
             d,
@@ -3065,9 +3084,9 @@ impl Ctx {
             aq.at(&st, p0 * d),
             as_.at(&st, p0 * d / 32),
         )?;
-        let gb = self.ops.buf(np * inter * 2)?;
-        let ub = self.ops.buf(np * inter * 2)?;
-        let hb = self.ops.buf(np * inter * 2)?;
+        let gb = self.ops.tmp(np * inter * 2)?;
+        let ub = self.ops.tmp(np * inter * 2)?;
+        let hb = self.ops.tmp(np * inter * 2)?;
         let tiles = |ops: &Ops, a: &Buf, a_s: &Buf, k: usize, proj: i32, c: Dp, nout: usize| {
             ck("gemm_f8_tiles", unsafe {
                 ffi::memra_v41_gemm_f8_tiles(
@@ -3109,8 +3128,8 @@ impl Ctx {
                 self.ops.sv(),
             )
         })?;
-        let aq2 = self.ops.buf(np * inter)?;
-        let as2 = self.ops.buf(np * inter / 32)?;
+        let aq2 = self.ops.tmp(np * inter)?;
+        let as2 = self.ops.tmp(np * inter / 32)?;
         self.ops.act_quant(
             hb.at(&st, p0 * inter * 2),
             inter,
@@ -3136,12 +3155,12 @@ impl Ctx {
         let st = self.ops.st.clone();
         let (hc, d) = (g.hc, g.dim);
         let nmix = (2 + hc) * hc;
-        let mixes = self.ops.buf(s * nmix * 4)?;
-        let pre = self.ops.buf(s * hc * 4)?;
-        let post = self.ops.buf(s * hc * 4)?;
-        let comb = self.ops.buf(s * hc * hc * 4)?;
+        let mixes = self.ops.tmp(s * nmix * 4)?;
+        let pre = self.ops.tmp(s * hc * 4)?;
+        let post = self.ops.tmp(s * hc * 4)?;
+        let comb = self.ops.tmp(s * hc * hc * 4)?;
         // the partial pass's 8 virtual-warp sums of each mix and of the square sum
-        let parts = self.ops.buf(s * 8 * (nmix + 1) * 4)?;
+        let parts = self.ops.tmp(s * 8 * (nmix + 1) * 4)?;
         ck("hc_mixes", unsafe {
             ffi::memra_v41_hc_mixes(
                 x.p(&st).m(),
@@ -3170,7 +3189,7 @@ impl Ctx {
         let g = &self.g;
         let st = self.ops.st.clone();
         let (hc, d) = (g.hc, g.dim);
-        let x = self.ops.buf(s * d * 2)?;
+        let x = self.ops.tmp(s * d * 2)?;
         ck("hc_pre", unsafe {
             ffi::memra_v41_hc_pre(
                 h.p(&st).m(),
@@ -3200,7 +3219,7 @@ impl Ctx {
         let g = &self.g;
         let st = self.ops.st.clone();
         let (hc, d) = (g.hc, g.dim);
-        let out = self.ops.buf(s * hc * d * 2)?;
+        let out = self.ops.tmp(s * hc * d * 2)?;
         ck("hc_post", unsafe {
             ffi::memra_v41_hc_post(
                 f.p(&st).m(),
@@ -3294,7 +3313,7 @@ impl Ctx {
         let x2 = self.hc_pre_norm(&h1, &a_pre, &lw.ffn_norm, s)?;
         self.nv_end();
         // the MoE runs `chunk` tokens at a time: each token's experts still add in ascending id order
-        let m = self.ops.buf(s * d * 2)?;
+        let m = self.ops.tmp(s * d * 2)?;
         // larger slices here: the per-expert loop runs once per slice
         let cm = (4 * self.chunk).min(s).max(1);
         for r0 in (0..s).step_by(cm) {
@@ -3316,7 +3335,7 @@ impl Ctx {
 }
 
 fn clone_buf(ops: &Ops, b: &Buf) -> Result<Buf, String> {
-    let o = ops.buf(b.len)?;
+    let o = ops.tmp(b.len)?;
     copy_d2d(ops, b, 0, &o, 0, b.len)?;
     Ok(o)
 }

@@ -15,7 +15,8 @@
 //! bytes, and two binaries' hashes say whether a change moved the numerics. `--decode D` then
 //! runs D one-token steps from position N through each run of consecutive listed layers that
 //! starts at a kv source (2; 20,21), on the CSA2 state and window rings that run's prefill left;
-//! step i feeds prefill row N-1-i of the run's first input, and every step is hashed. The layer
+//! step i feeds prefill row N-1-i of the run's first input, and every step is hashed; the same rows
+//! then run again as whole steps (positions N+D ..) with one wait per step. The layer
 //! runs through `tp::Group` at N = 1 (the decode runner's path) unless `--path onecard` selects
 //! `Ctx::block_forward`. `--nvtx` opens a range per op for an nsys profile (`perf/prof_attr.py`).
 //!
@@ -280,10 +281,10 @@ fn layer_bench(a: &[String]) -> Result<String, String> {
     let onecard = flag(a, "--path").as_deref() == Some("onecard");
     let mut rt = if onecard {
         let e = memra_engine::Engine::new(0).map_err(|e| e.to_string())?;
-        let c = Ctx::new(e.stream(), g.clone(), s + decode + 16)?;
+        let c = Ctx::new(e.stream(), g.clone(), s + 2 * decode + 16)?;
         Rt::One(c, e)
     } else {
-        Rt::Grp(Group::new(&[0], &g, s + decode + 16)?)
+        Rt::Grp(Group::new(&[0], &g, s + 2 * decode + 16)?)
     };
     let dev = match &rt {
         Rt::One(_, e) => e.ctx().name().unwrap_or_default(),
@@ -455,6 +456,44 @@ fn layer_bench(a: &[String]) -> Result<String, String> {
             step_ms.push(tot);
             shas.push(format!("{}:{}", sha(&x.host(&st)?), sha(&p.host(&st)?)));
         }
+        // then the same rows as whole steps with one wait per step (positions s + decode ..): what
+        // a decode loop sees once a layer no longer waits on the host
+        let mut whole_ms = Vec::new();
+        let mut whole_shas = Vec::new();
+        let wname = cname(format!(
+            "L{}-{}/step",
+            r.layers[0],
+            r.layers.last().unwrap()
+        ));
+        for k in 0..decode {
+            let pos = s + decode + k;
+            let mut x = clone_buf(&rt.cx().ops, &r.h_rows[k])?;
+            let mut p = clone_buf(&rt.cx().ops, &r.p_rows[k])?;
+            rt.cx().ops.sync()?;
+            let t0 = Instant::now();
+            rt.cx().nv(wname);
+            for i in 0..r.layers.len() {
+                let mut tr = Trace::default();
+                let (x2, p2) = rt.fwd(&r.lw[i], &x, &p, pos, 1, &mut sh, &mut r.ls[i], &mut tr)?;
+                x = x2;
+                p = p2;
+            }
+            rt.cx().ops.sync()?;
+            rt.cx().nv_end();
+            whole_ms.push(t0.elapsed().as_secs_f64() * 1e3);
+            whole_shas.push(format!("{}:{}", sha(&x.host(&st)?), sha(&p.host(&st)?)));
+        }
+        let wm = if whole_ms.len() > 1 {
+            median(&whole_ms[1..])
+        } else {
+            median(&whole_ms)
+        };
+        eprintln!(
+            "run {:?}: whole decode steps at {}..: {} ms, median (steps 2..) {wm:.3} ms",
+            r.layers,
+            s + decode,
+            fmt_list(&whole_ms)
+        );
         for (li, v) in &per {
             // the first step pays one-time allocations (first decode-shaped buffers); report both
             let warm = if v.len() > 1 { &v[1..] } else { &v[..] };
@@ -477,11 +516,13 @@ fn layer_bench(a: &[String]) -> Result<String, String> {
             })
             .collect();
         js_dec.push(format!(
-            "{{\"run\": {:?}, \"from_pos\": {s}, \"steps\": {decode}, \"step_ms\": {}, \"per_layer\": [{}], \"step_sha\": {:?}}}",
+            "{{\"run\": {:?}, \"from_pos\": {s}, \"steps\": {decode}, \"step_ms\": {}, \"per_layer\": [{}], \"step_sha\": {:?}, \"whole_step_ms\": {}, \"whole_step_median_ms_after_first\": {wm:.4}, \"whole_step_sha\": {:?}}}",
             r.layers,
             fmt_list(&step_ms),
             rows.join(", "),
-            shas
+            shas,
+            fmt_list(&whole_ms),
+            whole_shas
         ));
     }
     Ok(format!(
