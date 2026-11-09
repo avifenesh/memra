@@ -1,0 +1,67 @@
+env_audit's real test module (crates/memra-engine/src/env_audit.rs) compiled standalone with
+rustc 1.97.1 against the registry build.rs generates from docs/FLAGS.md (build.rs's own
+generate_env_registry, run as a program). Tools: tools/gdn_seam_failbefore.py, tools/gdn_seam_failbefore.sh.
+
+  A  new test, base registry (9390bd3755 FLAGS.md), base sources   FAILED  a_retired_door_refuses_with_its_ledger
+       MEMRA_SPEC_GDN_PACKED: EnvAudit { refusals: [], warnings: [] }   (the name was legal)
+  B  new test, new registry, new sources                          ok      9 passed
+  C  base test, base registry, base sources (harness sanity)      ok      9 passed
+  D  new test, new registry, base sources                         FAILED  retired_names_are_not_read_at_runtime
+       retired names still read at runtime: ["MEMRA_SPEC_GDN_PACKED"]   (the base spec.rs read)
+
+Registry entries:
+  base: LEGAL_NAMES   "MEMRA_SPEC_GDN_PACKED",
+  new:  RETIRED       ("MEMRA_SPEC_GDN_PACKED", "Removed doors, 2026-11-09 (`MEMRA_SPEC_GDN_PACKED`: the packed GDN verify is the only path)"),
+
+Full per-test output:
+
+== cell A
+test tests::a_retired_door_refuses_with_its_ledger ... FAILED
+test tests::every_legal_name_passes ... ok
+test tests::os_audit_all_legal_names_accept_uninterpretable_values ... ok
+test tests::os_audit_classifies_raw_prefixes_before_rendering_and_keeps_utf8_distinct ... ok
+test tests::os_audit_preserves_utf8_retired_wildcard_and_value_ignorance ... ok
+test tests::os_audit_refuses_owned_bytes_and_summarizes_deduplicated_unowned_names ... ok
+test tests::registry_is_populated_sorted_and_disjoint ... ok
+test tests::retired_names_are_not_read_at_runtime ... ok
+test tests::unknown_names_refuse_inside_owned_families_and_warn_outside ... ok
+thread 'tests::a_retired_door_refuses_with_its_ledger' (1537148) panicked at ~/.cache/memra-gb10-r5/wt-seam/crates/memra-engine/src/env_audit.rs:445:13:
+assertion `left == right` failed: MEMRA_SPEC_GDN_PACKED: EnvAudit { refusals: [], warnings: [] }
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+== cell B
+test tests::a_retired_door_refuses_with_its_ledger ... ok
+test tests::every_legal_name_passes ... ok
+test tests::os_audit_all_legal_names_accept_uninterpretable_values ... ok
+test tests::os_audit_classifies_raw_prefixes_before_rendering_and_keeps_utf8_distinct ... ok
+test tests::os_audit_preserves_utf8_retired_wildcard_and_value_ignorance ... ok
+test tests::os_audit_refuses_owned_bytes_and_summarizes_deduplicated_unowned_names ... ok
+test tests::registry_is_populated_sorted_and_disjoint ... ok
+test tests::retired_names_are_not_read_at_runtime ... ok
+test tests::unknown_names_refuse_inside_owned_families_and_warn_outside ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+== cell C
+test tests::a_retired_door_refuses_with_its_ledger ... ok
+test tests::every_legal_name_passes ... ok
+test tests::os_audit_all_legal_names_accept_uninterpretable_values ... ok
+test tests::os_audit_classifies_raw_prefixes_before_rendering_and_keeps_utf8_distinct ... ok
+test tests::os_audit_preserves_utf8_retired_wildcard_and_value_ignorance ... ok
+test tests::os_audit_refuses_owned_bytes_and_summarizes_deduplicated_unowned_names ... ok
+test tests::registry_is_populated_sorted_and_disjoint ... ok
+test tests::retired_names_are_not_read_at_runtime ... ok
+test tests::unknown_names_refuse_inside_owned_families_and_warn_outside ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+== cell D
+test tests::a_retired_door_refuses_with_its_ledger ... ok
+test tests::every_legal_name_passes ... ok
+test tests::os_audit_all_legal_names_accept_uninterpretable_values ... ok
+test tests::os_audit_classifies_raw_prefixes_before_rendering_and_keeps_utf8_distinct ... ok
+test tests::os_audit_preserves_utf8_retired_wildcard_and_value_ignorance ... ok
+test tests::os_audit_refuses_owned_bytes_and_summarizes_deduplicated_unowned_names ... ok
+test tests::registry_is_populated_sorted_and_disjoint ... ok
+test tests::retired_names_are_not_read_at_runtime ... FAILED
+test tests::unknown_names_refuse_inside_owned_families_and_warn_outside ... ok
+thread 'tests::retired_names_are_not_read_at_runtime' (1537357) panicked at ~/.cache/memra-gb10-r5/wt-seam/crates/memra-engine/src/env_audit.rs:528:9:
+retired names still read at runtime: ["MEMRA_SPEC_GDN_PACKED"]
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+new/out/memra_env_registry.rs:1232:    ("MEMRA_SPEC_GDN_PACKED", "Removed doors, 2026-11-09 (`MEMRA_SPEC_GDN_PACKED`: the packed GDN verify is the only path)"),
+old/out/memra_env_registry.rs:807:    "MEMRA_SPEC_GDN_PACKED",

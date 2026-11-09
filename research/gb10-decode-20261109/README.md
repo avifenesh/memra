@@ -186,3 +186,26 @@ Per prompt (`kcl-unit1/per-prompt.md`):
 - **The door reaches further on GB10.** Every `[spec-k]` line on GB10 reads `source=cost-model`, and with the door at 2 the 34-token prompts ran K=2 as well. Those two prompts were 1.9% and 6.9% faster at K=2. So the short prompts are not a same-K reference here, and the harness's normalized columns are left out. It is also a lead for the GB10 cost model's short-prompt K, not a result: two prompts.
 
 For memra#1093's flip: the cold-long K=2 default does not carry to GB10. GB10 keeps K=3 on that rung.
+
+## The GDN packed seam leaves (after lever 3a)
+
+`MEMRA_SPEC_GDN_PACKED=0` was the rollback seam of the packed GDN verify, the default since 2026-09-08. It had passed its two weeks unused: no launcher, gate or CI script set it, and its only runs at `0` were exactness cells (lever 3a's per-row fill check above was the last). So it goes, and the packed path is the only path at T >= 2. The ledger entry is in `docs/FLAGS.md` ("Removed doors, 2026-11-09").
+
+- **Deleted:** the env read and its three pool guards; the per-row loop for T >= 2 in `qwen35_tparallel_linear_layer`, with its stash copies and `ColStates::put` fills; the second triple of the 6-entry pointer table (only that loop's odd rows read it); `copy_indirect_src_f32`, kernel and wrapper, which only those stash copies reached.
+- **Kept:** a one-row verify runs the b_n=1 kernels on row 0. T = 1 reaches the layer in serving (`spec_target_step_h` feeds one token at a round boundary) and in the probes, and the packed branch has always needed T >= 2. Those kernels are also `gdn_packed_gpu`'s per-row reference. The rowwise verify keeps its own `ColStates::put` fill.
+- **The boot refuses the name:** the env audit retires it from the ledger. The test lists it, and it fails before the change: `env_audit.rs`'s test module compiled against the base FLAGS.md's registry reads `MEMRA_SPEC_GDN_PACKED: EnvAudit { refusals: [], warnings: [] }` (`gdn-packed-seam/env-audit-failbefore.txt`).
+
+Gates at the change (ed2e0c85ac), receipts in `gdn-packed-seam/`:
+
+| gate | where | result |
+|---|---|---|
+| `run-spec` K=1..8, Qwen3.8-27B | RTX 5090 | `=== SELF-CONSISTENCY PASS ===`, acceptance the same as the `=0` cell above at every K |
+| `run-spec` K=1..8, Ornith-1.5-35B-A3B | RTX 5090 | `=== SELF-CONSISTENCY PASS ===`, MTP verify-graph pool engaged (`vt_cap=2`) |
+| pooled-cohort stream cell (`battery/pool_cell.py`, q9, c = 2, 4, 8), stack parent 3ab0a686a1 against the change | RTX 5090 | `VERDICT: ALL 14 STREAMS IDENTICAL` |
+| `kernel-check` (the battery's form) | RTX 5090 | ALL GREEN (124 cells, 118 executed, 10 required, 6 skipped; budget 11) |
+| clippy `-D warnings`, memra-engine and memra-server, all targets | dev desk, stub build | rc=0 |
+| memra-server suite | dev desk, nvcc 13.1, `120a` | 1,153 passed, 0 failed, 11 ignored |
+| engine `env_audit` tests | dev desk, nvcc 13.1 | 9 passed |
+| `tools/check-flags.sh`, `cargo fmt --check`, `git diff --check` | rig | pass |
+
+The pool cell's tok/s lines are single runs and not a speed claim: the same stack-parent binary read 158.6 tok/s at c2 in lever 3a's cell and 178.9 here.

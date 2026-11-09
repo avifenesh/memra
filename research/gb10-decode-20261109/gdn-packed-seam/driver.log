@@ -1,0 +1,17 @@
+waitfor: MET after 0m00s
+2026-11-09T23:54:18+02:00 run-spec K=1..8 on Qwen3.8-27B start; 5090: held by claude-code (pid 1564067) for "memra GB10 round 5 lever 2 (verify rows kernel): kernel-check FA-VERIFY-ROWS bit identity on the 5090 (one cell per lease)", expires in 6m, id claude-code-20261109T234556-1564067   legacy /tmp/memra-5090.lock: held 
+2026-11-09T23:56:22+02:00 run-spec K=1..8 on Qwen3.8-27B rc=0 last: === SELF-CONSISTENCY PASS ===
+waitfor: MET after 0m00s
+2026-11-09T23:56:22+02:00 run-spec K=1..8 on Ornith-1.5-35B-A3B start; 5090: free   waiting: claude-code for "memra #1146 turn-2 route probe on the 5090 (one run)" since 0m, id claude-code-20261109T235529-1729067 
+2026-11-09T23:57:09+02:00 run-spec K=1..8 on Ornith-1.5-35B-A3B rc=0 last: === SELF-CONSISTENCY PASS ===
+waitfor: MET after 0m00s
+2026-11-09T23:57:09+02:00 pooled-cohort stream cell, stack parent server start; 5090: free 
+2026-11-09T23:57:45+02:00 pooled-cohort stream cell, stack parent server rc=0 last: [spec-pool] pooled MTP cohort engaged: 6 sessions (model q9)
+waitfor: MET after 0m00s
+2026-11-09T23:57:45+02:00 pooled-cohort stream cell, this branch's server start; 5090: free   waiting: claude-code for "memra #1146 turn-2 route probe on the 5090, MEMRA_QWEN_DC=0 (one run)" since 0m, id claude-code-20261109T235730-1740231 
+2026-11-09T23:58:52+02:00 pooled-cohort stream cell, this branch's server rc=0 last: [spec-pool] pooled MTP cohort engaged: 7 sessions (model q9)
+2026-11-09T23:58:52+02:00 compare rc=0 VERDICT: ALL 14 STREAMS IDENTICAL
+waitfor: MET after 0m00s
+2026-11-09T23:58:52+02:00 kernel-check (copy_indirect_src_f32 removed) start; 5090: free   waiting: claude-code for "memra #1146 turn-2 route probe on the 5090, MEMRA_FAST=0 (one run)" since 0m, id claude-code-20261109T235814-1744322 
+2026-11-10T00:05:00+02:00 kernel-check (copy_indirect_src_f32 removed) rc=0 last: ALL GREEN (124 cells, 6 skipped)
+2026-11-10T00:05:00+02:00 all cells done
