@@ -2737,11 +2737,13 @@ impl DflashDraft {
             // full non-causal attention: every block query sees all ctx+b keys.
             let mut attn = e.uninit(b * nh * hd)?;
             let scale = 1.0f32 / (hd as f32).sqrt();
-            // NAIVE SDPA: fa_prefill's NON-CAUSAL arm with T != T_kv is BROKEN (attn
-            // maxdiff 0.34 vs the torch oracle; q/k inputs bit-close — no existing caller
-            // exercises that shape class, jsonl 2026-07-13). The 16 x (ctx+16) block
-            // attention is tiny. An fa arm returns only with a fixed kernel and its parity
-            // receipt (FLAGS.md, removed doors 2026-11-03).
+            // NAIVE SDPA: the block attention stays on it. The attn maxdiff 0.34 once read as
+            // fa_prefill's non-causal T != T_kv arm being broken was its bf16 mma class against
+            // an f32 torch oracle, not a mask bug (jsonl 2026-07-13: the found_bug row, then the
+            // "fa arm ADOPTED" row). The fa arm was removed on door hygiene: no decide-by, never
+            // served, no bf16-class parity receipt. It returns only with that parity receipt
+            // (FLAGS.md, removed doors 2026-11-03; darklanes VERDICT:dflash-fa-door-removed).
+            // The 16 x (ctx+16) block attention is tiny.
             if self.dflash2.is_some() && c.layer_sliding[li] {
                 // DFlash2 non-causal symmetric window (config is_causal=false, all
                 // layers sliding). The kernel masks only keys OLDER than
