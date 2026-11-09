@@ -149,6 +149,7 @@ async fn run_capture(
         sampler_cfg: memra_engine::sampler::SamplerConfig::default(),
         stop_strings: Vec::new(),
         stop_token_ids: Vec::new(),
+        ignore_eos: false,
         trace_id: None,
         request_id: env.id.clone(),
         admit_predict_logged: false,

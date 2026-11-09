@@ -2096,6 +2096,9 @@ pub struct Request {
     pub sampler_cfg: SamplerConfig,
     pub stop_strings: Vec<String>,
     pub stop_token_ids: Vec<u32>,
+    /// `/v1/completions` `ignore_eos`: generation does not stop at the model's end-of-sentence
+    /// token. The HTTP layer admits `true` only for the deepseek-v4.1 route, which honors it.
+    pub ignore_eos: bool,
     pub trace_id: Option<String>,
     /// The HTTP envelope's request id (`x-request-id`, the metering receipt identity).
     /// Carried to the worker so the `[admit-predict]` shadow receipt (D2 gap G5) joins
@@ -2259,6 +2262,7 @@ pub(crate) fn choice_requests(
             sampler_cfg,
             stop_strings: leader.stop_strings.clone(),
             stop_token_ids: leader.stop_token_ids.clone(),
+            ignore_eos: leader.ignore_eos,
             trace_id: None,
             request_id: format!("{}:choice:{index}", leader.request_id),
             admit_predict_logged: false,
@@ -25342,6 +25346,9 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         sampler_cfg: p.sampler_cfg.clone(),
         stop_strings: s.stop_strings.clone(),
         stop_token_ids: s.stop_token_ids.clone(),
+        // a session of this worker never has it: the HTTP layer admits `ignore_eos` only for
+        // the deepseek-v4.1 route, which has its own serving thread
+        ignore_eos: false,
         trace_id: s.trace_id.clone(),
         request_id: s.request_id.clone(),
         // A park replay is the SAME arrival: its shadow verdict (if any) was already
@@ -35130,6 +35137,7 @@ mod tests {
             sampler_cfg: SamplerConfig::default(),
             stop_strings: Vec::new(),
             stop_token_ids: Vec::new(),
+            ignore_eos: false,
             trace_id: None,
             max_prompt_tokens: None,
             cache_ns: String::new(),
@@ -35747,6 +35755,7 @@ mod tests {
             sampler_cfg: memra_engine::sampler::SamplerConfig::default(),
             stop_strings: Vec::new(),
             stop_token_ids: Vec::new(),
+            ignore_eos: false,
             trace_id: None,
             max_prompt_tokens: None,
             cache_ns: String::new(),
@@ -47015,6 +47024,7 @@ mod tests {
             sampler_cfg: memra_engine::sampler::SamplerConfig::default(),
             stop_strings: Vec::new(),
             stop_token_ids: Vec::new(),
+            ignore_eos: false,
             trace_id: None,
             max_prompt_tokens: None,
             cache_ns: String::new(),

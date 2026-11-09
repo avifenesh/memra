@@ -70,6 +70,15 @@ ids in its speculative burst are neither emitted nor included in
 `usage.completion_tokens`. Explicit token stops take precedence over EOS (ordinary
 EOS accounting is unchanged when not explicitly listed). This applies to streaming
 and non-streaming responses. String `stop` remains independently supported.
+## `ignore_eos` on completions (deepseek-v4.1 route)
+`POST /v1/completions` accepts optional `ignore_eos: bool` (default `false`), the
+benchmark field of other OpenAI-compatible servers: with `true` the model's
+end-of-sentence token no longer ends generation; it is detokenized into the stream and
+fed back like any token, and the request ends at `max_tokens`, a stop string or a stop
+id. Only the deepseek-v4.1 route serves it. For any other model `ignore_eos: true`
+returns HTTP 400 `invalid_request_error` with `param: "ignore_eos"`; `false` is
+accepted everywhere. The chat surface has no such field.
+
 ## `/v1/tokenize` and `/v1/detokenize`: token inspection
 Both are CPU-only `POST` endpoints using the same bearer authentication, 192 MiB
 body ceiling and bounded body-admission pools as chat completions, and they take the

@@ -27,7 +27,8 @@
 //!   GET  /yield/metrics          -> per-lane x-lane QoS counters + engine-truth step p50/p99
 //!                                     (lane/qos-p95 2026-08-02).
 //!   POST /v1/completions         -> {model,prompt|prompt_ids,max_tokens,temperature?,top_p?,top_k?,
-//!                                     seed?,stop?,chat?,stream?,cache_salt?}. stream=true => SSE
+//!                                     seed?,stop?,chat?,stream?,cache_salt?,ignore_eos? (the
+//!                                     deepseek-v4.1 route only)}. stream=true => SSE
 //!                                     token-by-token; else a single JSON {text,tokens,stop_reason}.
 //!   POST /v1/chat/completions    -> OpenAI chat messages rendered by the GGUF chat template;
 //!                                     OpenAI message/chunk response shapes. `tools`/`tool_choice`
@@ -3701,6 +3702,11 @@ struct CompletionReq {
     /// completion_tokens, including inside speculative bursts; finish_reason is "stop".
     #[serde(default)]
     stop_token_ids: Vec<u32>,
+    /// Do not stop at the model's end-of-sentence token (the vLLM/SGLang benchmark field): the
+    /// request decodes until `max_tokens`, a stop string or a stop id. Served by the
+    /// deepseek-v4.1 route; any other model answers `true` with a 400 naming the field.
+    #[serde(default)]
+    ignore_eos: bool,
     /// Unsupported-but-semantic fields (gap-scan F4): captured so they 400 loudly instead
     /// of being silently swallowed by serde (policy: clean 400s, not silent downgrades).
     #[serde(default)]
@@ -9180,6 +9186,7 @@ fn build_request_with_trace(
         sampler_cfg,
         stop_strings: req.stop.clone().into_vec(),
         stop_token_ids: req.stop_token_ids.clone(),
+        ignore_eos: req.ignore_eos,
         trace_id: req.trace_id.clone(),
         // Stamped with the envelope id by the handler before submission (the builder
         // does not see the envelope).
@@ -9739,6 +9746,7 @@ fn build_chat_request_with_trace(
             },
             sampler_cfg,
             stop_token_ids: req.stop_token_ids,
+            ignore_eos: false, // the chat surface always stops at the end-of-sentence token
             stop_strings: {
                 // gemma4 tooluse: the model emits `<|tool_call>call:…<tool_call|>` and would
                 // then run past its handoff into a hallucinated `<|tool_response>`; stop when
@@ -10946,6 +10954,16 @@ async fn completions_with_admission(
     }
     if let Err(msg) = validate_stop_token_ids(&req.stop_token_ids, st.caps.get(&req.model)) {
         return with_request_id(&env.id, bad_request(&msg, Some("stop_token_ids")));
+    }
+    if req.ignore_eos && !st.caps.get(&req.model).is_some_and(|c| c.dsv41) {
+        return with_request_id(
+            &env.id,
+            bad_request(
+                "ignore_eos is served by the deepseek-v4.1 route only; this model stops at its \
+                 end-of-sentence token",
+                Some("ignore_eos"),
+            ),
+        );
     }
     // Request deadline (lane/deadline-billing): validated with the other request params
     // (a named 400 costs no slot and opens no receipt), armed from this point on.

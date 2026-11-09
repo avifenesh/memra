@@ -39,9 +39,10 @@
 //! served greedy answer is `dsv41-run --gen`'s). Temperature, top-p and top-k draw through the
 //! DSv4 route's position-keyed host sampler (`dsv4_sample_row`, seeded and reproducible),
 //! penalties through `dsv4_penalize_row` over the prompt and the generated tokens; `min_p` is
-//! refused, as on the DSv4 route. Stops: the end-of-sentence id, the request's stop ids, stop
-//! strings over the detokenized stream (the V4.1 DSML close stays in the stream so the parser
-//! closes the call), and the token budget.
+//! refused, as on the DSv4 route. Stops: the end-of-sentence id (unless the completions request
+//! sets `ignore_eos`, the benchmark field: the id is then an ordinary token), the request's stop
+//! ids, stop strings over the detokenized stream (the V4.1 DSML close stays in the stream so the
+//! parser closes the call), and the token budget.
 //!
 //! Deliberate limits, stated: `response_format`/grammar refused by name; image parts are refused
 //! by the HTTP layer (no V4.1 vision program); no DSpark drafts, prefix cache or CUDA graphs.
@@ -647,6 +648,17 @@ fn prepare(tok: &Tokenizer, max_seq: usize, req: &mut Request) -> Result<Rendere
     })
 }
 
+/// The ids that end a request's generation: the request's own and the model's end-of-sentence
+/// id. With `ignore_eos` the model's id is left out, so it is an ordinary token (decoded into the
+/// stream and fed back) and only the budget or a stop ends the run.
+fn end_ids(request: &[u32], model_eos: u32, ignore_eos: bool) -> Vec<u32> {
+    let mut ids = request.to_vec();
+    if !ignore_eos && !ids.contains(&model_eos) {
+        ids.push(model_eos);
+    }
+    ids
+}
+
 /// The next token from one logits row: penalties over the window, then the argmax (lowest id among
 /// equal maxima) or the position-keyed draw at absolute position `pos`.
 fn choose(
@@ -1133,10 +1145,7 @@ fn serve_loop(
                 Ok(true) => {
                     let mut pr = pending.pop_front().expect("the head exists");
                     let tok = cfg.tok.clone();
-                    let mut eos = pr.req.params.eos.clone();
-                    if !eos.contains(&cfg.eos) {
-                        eos.push(cfg.eos);
-                    }
+                    let eos = end_ids(&pr.req.params.eos, cfg.eos, pr.req.ignore_eos);
                     let _ = pr.req.tx.send(Event::PromptUsage {
                         n_prompt: p,
                         n_cached: 0,
@@ -1442,6 +1451,16 @@ mod tests {
             &[0, 1, 2, 3],
             &[card, card, 60 << 30, card]
         ));
+    }
+
+    #[test]
+    fn ignore_eos_leaves_the_model_end_id_out() {
+        assert_eq!(end_ids(&[], 1, false), vec![1]);
+        assert_eq!(end_ids(&[1], 1, false), vec![1]);
+        assert_eq!(end_ids(&[7], 1, false), vec![7, 1]);
+        assert!(end_ids(&[], 1, true).is_empty());
+        // the request's own ids still end it
+        assert_eq!(end_ids(&[7], 1, true), vec![7]);
     }
 
     #[test]
