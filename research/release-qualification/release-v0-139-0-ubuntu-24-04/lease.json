@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "wrapper_pid": 421366,
+  "child_pid": 421377,
+  "requested_uuids": [
+    "GPU-875678d1-165c-23e1-ba0e-65298ed4a996"
+  ],
+  "lock_order": [
+    "GPU-875678d1-165c-23e1-ba0e-65298ed4a996"
+  ],
+  "lock_files": {
+    "GPU-875678d1-165c-23e1-ba0e-65298ed4a996": "/tmp/memra-gpu-locks/GPU-875678d1-165c-23e1-ba0e-65298ed4a996.lock"
+  },
+  "lock_inodes": {
+    "GPU-875678d1-165c-23e1-ba0e-65298ed4a996": {
+      "inode": 243946,
+      "device_major": 0,
+      "device_minor": 47
+    }
+  },
+  "box_lock": "/mnt/Data/work/evals/gpu3.lock",
+  "devices": [
+    {
+      "index": 3,
+      "uuid": "GPU-875678d1-165c-23e1-ba0e-65298ed4a996",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:F1:00.0"
+    }
+  ],
+  "all_devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-f8021f32-a83b-fa33-7ef6-03e0698a4e3b",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:01:00.0"
+    },
+    {
+      "index": 1,
+      "uuid": "GPU-c2a4ccee-d2dd-56e8-4ea1-cc31f0190fed",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:21:00.0"
+    },
+    {
+      "index": 2,
+      "uuid": "GPU-9f8ecd14-35a9-f104-1dd9-c4757538bb34",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:C1:00.0"
+    },
+    {
+      "index": 3,
+      "uuid": "GPU-875678d1-165c-23e1-ba0e-65298ed4a996",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:F1:00.0"
+    }
+  ],
+  "command": [
+    "python3",
+    "tools/qualify-release.py",
+    "capture",
+    "--expected-head",
+    "abac82d04347391d76fb8103f6a1b46b9fcf06b1",
+    "--build",
+    "/mnt/Data/work/memra-wrx-ds/rq/build-ubuntu-24.04-abac82d043",
+    "--out",
+    "/mnt/Data/work/memra-wrx-ds/rq/run-ubuntu-24.04-abac82d043-rel",
+    "--oracles",
+    "/mnt/Data/work/memra-wrx-ds/oracles"
+  ],
+  "started_unix": 1794183771.426112,
+  "state": "finished",
+  "child_exit_code": 0,
+  "finished_unix": 1794184079.6396544,
+  "timed_out": false,
+  "interrupted_signal": null,
+  "lingering_compute": [],
+  "process_group_lingered": false,
+  "exit_code": 0
+}

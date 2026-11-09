@@ -1,0 +1,283 @@
+{
+  "battery_log": {
+    "path": "battery.log",
+    "sha256": "8078b74a968314dfe87fde080dd490558b6d3b05126cdc65f2f4ebabab11b597"
+  },
+  "binaries_after": {
+    "argmax-margin-probe": {
+      "bytes": 39488912,
+      "format": "ELF-x86_64",
+      "sha256": "da49d06067e019c8a6bdb8e8c21094c59ec13a2ecc84fe7f0ebb347ecf12a69c"
+    },
+    "kernel-check": {
+      "bytes": 29726192,
+      "format": "ELF-x86_64",
+      "sha256": "002d503347d75f6b834a61e4daa88ea1f29734f808688bb9fc588c051b330ba8"
+    },
+    "memra-server": {
+      "bytes": 59731272,
+      "format": "ELF-x86_64",
+      "sha256": "4ad07d1f7ed13950c9a738aed52346484fccc0200eb418af3bbd8c4ab2bdcaf6"
+    },
+    "run-gen": {
+      "bytes": 41577904,
+      "format": "ELF-x86_64",
+      "sha256": "3d2cde54ee49e6b4d6fa2bde9a612b87655e14a42416a239127dae58286047dc"
+    },
+    "run-spec": {
+      "bytes": 41498912,
+      "format": "ELF-x86_64",
+      "sha256": "29236bffb6f3e29d949bf23fbf59fc3d4c654c8d1e03ffbfbe2da585f69011a2"
+    },
+    "tok-parity": {
+      "bytes": 1385304,
+      "format": "ELF-x86_64",
+      "sha256": "7d8284ee37f7a337bef5d4bd8919bd9d975405360aed00861a4ca6519808993d"
+    }
+  },
+  "binaries_before": {
+    "argmax-margin-probe": {
+      "bytes": 39488912,
+      "format": "ELF-x86_64",
+      "sha256": "da49d06067e019c8a6bdb8e8c21094c59ec13a2ecc84fe7f0ebb347ecf12a69c"
+    },
+    "kernel-check": {
+      "bytes": 29726192,
+      "format": "ELF-x86_64",
+      "sha256": "002d503347d75f6b834a61e4daa88ea1f29734f808688bb9fc588c051b330ba8"
+    },
+    "memra-server": {
+      "bytes": 59731272,
+      "format": "ELF-x86_64",
+      "sha256": "4ad07d1f7ed13950c9a738aed52346484fccc0200eb418af3bbd8c4ab2bdcaf6"
+    },
+    "run-gen": {
+      "bytes": 41577904,
+      "format": "ELF-x86_64",
+      "sha256": "3d2cde54ee49e6b4d6fa2bde9a612b87655e14a42416a239127dae58286047dc"
+    },
+    "run-spec": {
+      "bytes": 41498912,
+      "format": "ELF-x86_64",
+      "sha256": "29236bffb6f3e29d949bf23fbf59fc3d4c654c8d1e03ffbfbe2da585f69011a2"
+    },
+    "tok-parity": {
+      "bytes": 1385304,
+      "format": "ELF-x86_64",
+      "sha256": "7d8284ee37f7a337bef5d4bd8919bd9d975405360aed00861a4ca6519808993d"
+    }
+  },
+  "cells": [
+    {
+      "exit_code": 0,
+      "kind": "kernel",
+      "log": {
+        "path": "cells/1-kernel.log",
+        "sha256": "fb9551144b518595ec093c40d695b693fc1f1b2012997c24077b8630e7d54146"
+      },
+      "model": "kernel"
+    },
+    {
+      "exit_code": 0,
+      "kind": "argmax",
+      "log": {
+        "path": "cells/2-argmax.log",
+        "sha256": "8ae4d918ea0f221044f95a55caf6497b14d4857c20c4ad69312bc6d2b27a63a4"
+      },
+      "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+      "exit_code": 0,
+      "kind": "argmax-batch",
+      "log": {
+        "path": "cells/3-argmax-batch.log",
+        "sha256": "261ac52e8d4fb417fce666747fa85a8f2e76796d78eafdff07e816e22510ca68"
+      },
+      "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+      "exit_code": 0,
+      "kind": "spec",
+      "log": {
+        "path": "cells/4-spec.log",
+        "sha256": "3c2d05111770ad42dc14b9badbde989b06ee09734104adc39f230e441887a122"
+      },
+      "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+      "exit_code": 0,
+      "kind": "argmax",
+      "log": {
+        "path": "cells/5-argmax.log",
+        "sha256": "a2360d7c7aa520cc854cfc7f4144da2e8967f8cd4bc58060cc2329e9953cf45a"
+      },
+      "model": "qwen/qwen3.8-27b"
+    },
+    {
+      "exit_code": 0,
+      "kind": "argmax-batch",
+      "log": {
+        "path": "cells/6-argmax-batch.log",
+        "sha256": "611d65d3a7129a4ae4bf298bfd89f45fd8dc20bb8769ed89609fe98182fda051"
+      },
+      "model": "qwen/qwen3.8-27b"
+    },
+    {
+      "exit_code": 0,
+      "kind": "spec",
+      "log": {
+        "path": "cells/7-spec.log",
+        "sha256": "738a0ea78777640e4804daa544b6a304c3bd3eb687e43d6b699a78ef8b40ddf9"
+      },
+      "model": "qwen/qwen3.8-27b"
+    }
+  ],
+  "command": [
+    "bash",
+    "tools/release-battery.sh",
+    "--evidence-dir",
+    "cells"
+  ],
+  "exit_code": 0,
+  "finished_unix": 1794184079.3724854,
+  "hardware": {
+    "devices": [
+      {
+        "compute_cap": "12.0",
+        "driver_version": "615.71.09",
+        "index": "3",
+        "memory_mib": "97887",
+        "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+        "pci_bus_id": "00000000:F1:00.0",
+        "pci_device_id": "0x2BB410DE",
+        "pci_sub_device_id": "0x204C10DE",
+        "power_max_limit_w": "325.00",
+        "uuid": "GPU-875678d1-165c-23e1-ba0e-65298ed4a996"
+      }
+    ],
+    "headroom_query": {
+      "nvml_index": 3,
+      "selector": "cuda-visible-uuid",
+      "uuid": "GPU-875678d1-165c-23e1-ba0e-65298ed4a996"
+    },
+    "runtime_platform": {
+      "glibc": "2.43",
+      "machine": "x86_64",
+      "profile": "ubuntu-26.04"
+    },
+    "topology_sha256": "d073641ac388d019907a92071847c879f50240b026b33c8461afe0fdec4d0d3f"
+  },
+  "hardware_after": {
+    "devices": [
+      {
+        "compute_cap": "12.0",
+        "driver_version": "615.71.09",
+        "index": "3",
+        "memory_mib": "97887",
+        "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+        "pci_bus_id": "00000000:F1:00.0",
+        "pci_device_id": "0x2BB410DE",
+        "pci_sub_device_id": "0x204C10DE",
+        "power_max_limit_w": "325.00",
+        "uuid": "GPU-875678d1-165c-23e1-ba0e-65298ed4a996"
+      }
+    ],
+    "headroom_query": {
+      "nvml_index": 3,
+      "selector": "cuda-visible-uuid",
+      "uuid": "GPU-875678d1-165c-23e1-ba0e-65298ed4a996"
+    },
+    "runtime_platform": {
+      "glibc": "2.43",
+      "machine": "x86_64",
+      "profile": "ubuntu-26.04"
+    },
+    "topology_sha256": "d073641ac388d019907a92071847c879f50240b026b33c8461afe0fdec4d0d3f"
+  },
+  "lease_owner": {
+    "child_pid": 421377,
+    "requested_uuids": [
+      "GPU-875678d1-165c-23e1-ba0e-65298ed4a996"
+    ],
+    "wrapper_pid": 421366
+  },
+  "manifests": {
+    "tools/kernel-check-27b.cells": {
+      "path": "kernel-check-27b.cells",
+      "sha256": "4c8382370a988e24bc09f73fac484b2657d73a872116071cacb3e9d486cd74ea"
+    },
+    "tools/kernel-check-step35.cells": {
+      "path": "kernel-check-step35.cells",
+      "sha256": "1fdf361e60da2d2bb14cea997e12fa2462e4b722c8c86967c5064698c7338951"
+    }
+  },
+  "models_after": {
+    "/data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf": {
+      "bytes": 20188038400,
+      "sha256": "72ff9600aa2b0de77a5b27041a84448c2ce88c7b2055529fc23b3cd5bf518fd3"
+    },
+    "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf": {
+      "bytes": 15705922304,
+      "sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a"
+    },
+    "/mnt/Data/work/memra-wrx-ds/oracles/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf": {
+      "bytes": 5657607424,
+      "sha256": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de"
+    },
+    "/mnt/Data/work/memra-wrx-ds/oracles/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf": {
+      "bytes": 17730509792,
+      "sha256": "649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3"
+    },
+    "/mnt/Data/work/memra-wrx-ds/oracles/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf": {
+      "bytes": 15705922304,
+      "sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a"
+    }
+  },
+  "models_before": {
+    "/data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf": {
+      "bytes": 20188038400,
+      "sha256": "72ff9600aa2b0de77a5b27041a84448c2ce88c7b2055529fc23b3cd5bf518fd3"
+    },
+    "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf": {
+      "bytes": 15705922304,
+      "sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a"
+    },
+    "/mnt/Data/work/memra-wrx-ds/oracles/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf": {
+      "bytes": 5657607424,
+      "sha256": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de"
+    },
+    "/mnt/Data/work/memra-wrx-ds/oracles/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf": {
+      "bytes": 17730509792,
+      "sha256": "649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3"
+    },
+    "/mnt/Data/work/memra-wrx-ds/oracles/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf": {
+      "bytes": 15705922304,
+      "sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a"
+    }
+  },
+  "numeric_environment": {
+    "CUDA_VISIBLE_DEVICES": "f22ccec2dff0d849f5a1a39e1812357ea26cd41614e7b676fd6ea72b7fe2486a",
+    "MEMRA_KC_MODELS_DIR": "7f86e10a4dd61866e61f667f885c98ebe276cc5e89932cdf6a0eb3a4d6274bde"
+  },
+  "numeric_environment_after": {
+    "CUDA_VISIBLE_DEVICES": "f22ccec2dff0d849f5a1a39e1812357ea26cd41614e7b676fd6ea72b7fe2486a",
+    "MEMRA_KC_MODELS_DIR": "7f86e10a4dd61866e61f667f885c98ebe276cc5e89932cdf6a0eb3a4d6274bde"
+  },
+  "oracle_directory": "/mnt/Data/work/memra-wrx-ds/oracles",
+  "roster": {
+    "path": "roster.tsv",
+    "sha256": "703be08e63494bed7a6a035d780c4cc2b352d5f0a8c56d665137302dc8e7ff8f"
+  },
+  "schema": "memra-native-release-run-v1",
+  "source_after": "2769957920869be40f56cdf7e81e067868914a2758f64b6ad3f1da767dd849b1",
+  "source_before": "2769957920869be40f56cdf7e81e067868914a2758f64b6ad3f1da767dd849b1",
+  "started_unix": 1794183829.5316122,
+  "telemetry": {
+    "path": "telemetry.csv",
+    "sha256": "f84ec519848f9c49a300b26840b13ad62893a720757f87856ab70ad1ba2ffbd3"
+  },
+  "topology": {
+    "path": "topology.txt",
+    "sha256": "d073641ac388d019907a92071847c879f50240b026b33c8461afe0fdec4d0d3f"
+  }
+}
