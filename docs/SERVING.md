@@ -1973,7 +1973,7 @@ class now comes from the producer:
 | condition | status | `type` | `code` | retry headers |
 |---|---|---|---|---|
 | malformed field, bad template, bad `response_format` | 400 | `invalid_request_error` | — | `x-should-retry: false` |
-| JSON body type or syntax error (wrong type, null on a non-nullable field, missing field, malformed JSON) | 400 | `invalid_request_error` | — | `x-should-retry: false`; `param` names the field when the parser has a path; a syntax error reads `invalid JSON: ...`; no line or column |
+| JSON body type or syntax error (wrong type, null on a field upstream declares non-nullable, missing field, malformed JSON; null on a nullable field is absent) | 400 | `invalid_request_error` | — | `x-should-retry: false`; `param` names the field when the parser has a path; a syntax error reads `invalid JSON: ...`; no line or column |
 | missing or non-JSON `Content-Type` on a JSON body route | 415 | `invalid_request_error` | — | `x-should-retry: false` |
 | prompt ≥ context cap | 400 | `invalid_request_error` | `context_length_exceeded` | `x-should-retry: false` |
 | unknown model id | 400 | `invalid_request_error` | `model_not_found` | `x-should-retry: false` |

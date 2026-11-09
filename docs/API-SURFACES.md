@@ -26,6 +26,11 @@ column. A syntax error names no field and reads `invalid JSON: <description>`. A
 non-JSON content type is a 415 in the same shape. `/v1/messages` and
 `/v1/responses` parse their own bodies.
 
+On chat and text completions an explicit `null` is absent for every field openai-python
+declares nullable, as on `/v1/responses`: `stream: null` runs non-streaming and text
+`prompt: null` is an omitted prompt. Null on a field upstream declares non-nullable (`model`,
+chat `messages` and `tools`) stays a 400 naming it.
+
 Two further OpenAI/Cohere-shaped routes exist outside this document's scope because they
 do not generate: `POST /v1/embeddings` and `POST /v1/rerank` are prefill-only **capture
 surfaces** over a causal LM, with their own schemas, caps and worker semantics, see

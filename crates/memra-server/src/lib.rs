@@ -3740,7 +3740,7 @@ struct CompletionReq {
     /// Buffered complete-result delivery. Incompatible with streaming.
     #[serde(default = "background_jobs::default_background")]
     background: serde_json::Value,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     prompt: String,
     /// raw token-id prompt (the exact-token validation-gate path; bypasses the tokenizer).
     #[serde(default)]
@@ -3809,7 +3809,7 @@ struct CompletionReq {
     #[serde(default)]
     chat: bool,
     /// stream tokens via SSE; else return one JSON when done.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     stream: bool,
     #[serde(default)]
     stream_options: Option<StreamOptions>,
@@ -3892,6 +3892,19 @@ struct ReqToolFunction {
     /// encoding.py reads when the call level has none.
     #[serde(default)]
     namespace: Option<serde_json::Value>,
+}
+
+/// An explicit JSON `null` deserializes as the field's `Default`, the same as an omitted field
+/// (`#[serde(default)]` covers that case). For chat and text fields the upstream OpenAI schema
+/// declares nullable (`Optional[...]` in openai-python's create params) and memra models
+/// without an `Option`: `stream`, and text `prompt`. Any other value deserializes as `T`, so a
+/// type error (`"stream": "true"`) is still the extractor's 400 naming the field.
+fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Clone, Default, Deserialize)]
@@ -4000,7 +4013,7 @@ struct ChatCompletionReq {
     /// completion_tokens, including inside speculative bursts; finish_reason is "stop".
     #[serde(default)]
     stop_token_ids: Vec<u32>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     stream: bool,
     #[serde(default)]
     stream_options: Option<StreamOptions>,
@@ -27031,6 +27044,174 @@ temperature = 0.6
             }
             assert!(rx.try_recv().is_err());
             assert!(mock.events().is_empty());
+        }
+    }
+
+    /// One synchronous chat or text request on a fresh bg914 fixture. `Ok` carries the response
+    /// of an admitted request driven to a one-token completion; `Err` the response of one
+    /// refused before any worker command.
+    async fn bg914_sync_outcome(
+        path: &'static str,
+        body: serde_json::Value,
+    ) -> Result<Response, Response> {
+        let (st, _mock, _, rx) = bg914_fixture(None);
+        let app = Router::new()
+            .route("/v1/completions", post(completions_admitted))
+            .route("/v1/chat/completions", post(chat_completions_admitted))
+            .with_state(st);
+        let call = tokio::spawn(bg914_http(app, "POST", path, Some("owner-key"), body));
+        let command =
+            tokio::task::spawn_blocking(move || rx.recv_timeout(std::time::Duration::from_secs(3)))
+                .await
+                .unwrap();
+        let Ok(Cmd::Generate(mut request)) = command else {
+            let response = tokio::time::timeout(std::time::Duration::from_secs(5), call)
+                .await
+                .unwrap_or_else(|_| panic!("{path}: neither admitted nor answered"))
+                .unwrap();
+            return Err(response);
+        };
+        worker::release_pending_admit();
+        worker::release_request_reservation(&mut request);
+        request
+            .tx
+            .send(Event::PromptUsage {
+                n_prompt: 3,
+                n_cached: 0,
+            })
+            .unwrap();
+        request
+            .tx
+            .send(Event::Token {
+                id: 7,
+                text: "ok".into(),
+            })
+            .unwrap();
+        request
+            .tx
+            .send(Event::Done {
+                stop_reason: "eos".into(),
+                n_tokens: 1,
+                n_prompt: 3,
+                n_cached: 0,
+                elapsed_s: 0.01,
+                spec: None,
+            })
+            .unwrap();
+        Ok(
+            tokio::time::timeout(std::time::Duration::from_secs(5), call)
+                .await
+                .unwrap_or_else(|_| panic!("{path}: admitted but never answered"))
+                .unwrap(),
+        )
+    }
+
+    fn json_content_type(response: &Response) -> String {
+        response.headers()[axum::http::header::CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .to_string()
+    }
+
+    /// An explicit null on a field openai-python declares nullable counts as absent on chat and
+    /// text completions, as on `/v1/responses`. `stream: null` used to be a 400 (a 422 before
+    /// that); it now runs non-streaming. Text `prompt: null` used to be a 400; it now behaves
+    /// exactly like an omitted prompt. `stop: null` already counted as absent and still does.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
+    async fn null_is_absent_on_nullable_chat_and_text_fields() {
+        let _drain = drain_lock();
+        let chat = || json!({"model": "bg914", "messages": [{"role": "user", "content": "hi"}]});
+        let text = || json!({"model": "bg914", "prompt": "hi"});
+        for (path, base, field) in [
+            ("/v1/chat/completions", chat(), "stream"),
+            ("/v1/completions", text(), "stream"),
+            ("/v1/chat/completions", chat(), "stop"),
+            ("/v1/completions", text(), "stop"),
+        ] {
+            let mut body = base;
+            body[field] = serde_json::Value::Null;
+            let response = match bg914_sync_outcome(path, body).await {
+                Ok(response) => response,
+                Err(refused) => {
+                    panic!("{path} {field}=null refused: {}", body_value(refused).await)
+                }
+            };
+            assert_eq!(response.status(), StatusCode::OK, "{path} {field}=null");
+            let content_type = json_content_type(&response);
+            assert!(
+                content_type.starts_with("application/json"),
+                "{path} {field}=null must answer one non-streaming body: {content_type}"
+            );
+        }
+
+        // Text `prompt: null` takes the omitted-prompt path, whatever that path answers.
+        let omitted = bg914_sync_outcome("/v1/completions", json!({"model": "bg914"})).await;
+        let null =
+            bg914_sync_outcome("/v1/completions", json!({"model": "bg914", "prompt": null})).await;
+        match (omitted, null) {
+            (Ok(omitted), Ok(null)) => assert_eq!(omitted.status(), null.status()),
+            (Err(omitted), Err(null)) => {
+                assert_eq!(omitted.status(), null.status());
+                assert_eq!(body_value(omitted).await, body_value(null).await);
+            }
+            (omitted, null) => panic!(
+                "prompt: null must match an omitted prompt: omitted admitted={}, null admitted={}",
+                omitted.is_ok(),
+                null.is_ok()
+            ),
+        }
+    }
+
+    /// Null stays a 400 naming the field where openai-python declares the field non-nullable,
+    /// and a real type error on a nullable field is still the extractor's 400.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
+    async fn null_is_still_refused_on_non_nullable_chat_and_text_fields() {
+        let _drain = drain_lock();
+        let chat = || json!({"model": "bg914", "messages": [{"role": "user", "content": "hi"}]});
+        let text = || json!({"model": "bg914", "prompt": "hi"});
+        for (path, base, field, value) in [
+            (
+                "/v1/chat/completions",
+                chat(),
+                "model",
+                serde_json::Value::Null,
+            ),
+            (
+                "/v1/chat/completions",
+                chat(),
+                "messages",
+                serde_json::Value::Null,
+            ),
+            (
+                "/v1/chat/completions",
+                chat(),
+                "tools",
+                serde_json::Value::Null,
+            ),
+            ("/v1/completions", text(), "model", serde_json::Value::Null),
+            ("/v1/chat/completions", chat(), "stream", json!("true")),
+            ("/v1/completions", text(), "stream", json!("true")),
+            ("/v1/completions", text(), "prompt", json!(5)),
+        ] {
+            let mut body = base;
+            body[field] = value.clone();
+            let refused = match bg914_sync_outcome(path, body).await {
+                Err(refused) => refused,
+                Ok(_) => panic!("{path} {field}={value} was admitted"),
+            };
+            assert_eq!(
+                refused.status(),
+                StatusCode::BAD_REQUEST,
+                "{path} {field}={value}"
+            );
+            let error = body_value(refused).await["error"].clone();
+            assert_eq!(
+                error["type"], "invalid_request_error",
+                "{path} {field}={value}"
+            );
+            assert_eq!(error["param"], field, "{path} {field}={value}: {error}");
         }
     }
 
