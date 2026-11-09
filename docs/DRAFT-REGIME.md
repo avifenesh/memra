@@ -112,7 +112,7 @@ off because plain batching wins every measured c=1/2/4 cell. Use
 ## Prebuilt drafts
 
 Every board model's draft (built by exactly this pipeline, from exactly the published
-model bytes) ships at [huggingface.co/Avifenesh/memra-bench](https://huggingface.co/Avifenesh/memra-bench)
+model bytes) ships at [huggingface.co/tiyuvta/memra-bench](https://huggingface.co/tiyuvta/memra-bench)
 with per-file provenance (source model, rank corpus, commands). Use ours for the board
 models; build your own (commands above) for any other model, requant, or finetune —
 a finetune's distribution moved, so its draft must too (law 1).
