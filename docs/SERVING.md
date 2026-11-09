@@ -2153,7 +2153,12 @@ Two caching tiers serve prompt tokens without recomputing them:
    the serving-transient reserve (a discrete card: the larger of that and the free memory left after
    the session peak, `docs/decisions/PREFIX-CACHE-DISCRETE.md`; unified memory: the larger of that
    and half the post-load pool,
-   [below](#unified-memory-devices-gb10-dgx-spark)); an explicit value remains authoritative. Entries are REUSABLE — a hit
+   [below](#unified-memory-devices-gb10-dgx-spark)); an explicit value remains authoritative. When an
+   arrival does not fit, the admission reclaim drops unleased entries before it queues the arrival.
+   With the memory door off, on a discrete card whose derived budget is above its two-entry floor,
+   it frees only the arrival's shortfall plus what the priming sessions still owe, oldest first,
+   and then books those sessions' pending seeds (capped at the cache's room) until they land
+   (`research/partial-reclaim-20261109/`); everywhere else it drops every unleased entry. Entries are REUSABLE — a hit
    deep-copies the entry into the new session's cache, so one marketplace system prompt serves
    any number of sessions. Learning sequence for a shared-prefix pattern: request 1 seeds its
    full prompt, request 2 split-primes at the longest-common-prefix and inserts the boundary
@@ -2888,7 +2893,7 @@ a discrete arm of its own (its row). Arithmetic:
 | `MEMRA_SSE_PREFILL_COMMIT_MS` | off | 60,000 ms beside the derived deadline | headers and keepalives start inside the shipped 90 s window, so a fronting proxy still sees them; a stream still queued there keeps waiting under the keepalive until its first-token deadline |
 | non-streaming `timeout_ms` default/max | 90,000 ms | the streaming value above plus 8192 open output tokens (admission's open-output charge when derived; the deadline keeps its own constant) at 4 tok/s: 3,045,311 ms on GB10 at 262,144 tokens | a non-streaming deadline bounds the whole response and cannot send headers early; 90 s cannot hold one 131k prompt or four concurrent 32k prompts at GB10's measured prefill (32,768 cold tokens in 45.2 s), and vLLM and SGLang have no such deadline. 4 tok/s floors the measured per-stream decode under concurrent prefill (agentic c4, 4.59 tok/s median) |
 | prefix-cache insert budget | the configured budget | clamped on every insert to what the cache holds plus live allocatable free memory minus the driver headroom and the admission reserve; the insert loop evicts LRU entries or refuses (`[prefix-cache] unified memory: insert budget` line) | the first GB10 quality panel admitted eight 131k sessions while each prefill published a 4 GB entry, and MemAvailable fell to 1.5 GiB; with the guard and the booking below the same panel bottomed at 17.0 GiB; the guard alone was not enough (next row) |
-| admission booking of the cache's growth | none | the cache's allowed growth (budget minus resident) is booked as committed | sessions and the cache draw from one pool: with the insert guard alone the same panel fell to 1.02 GiB MemAvailable and the memory guard stopped the server (A/B in `research/gb10-tuning-20261102/booking-ab/`) |
+| admission booking of the cache's growth | none, except after a partial admission reclaim kept cache bytes (memory door off, a budget above the floor): the pending seeds, capped at the cache's room, until none is pending | the cache's allowed growth (budget minus resident) is booked as committed | sessions and the cache draw from one pool: with the insert guard alone the same panel fell to 1.02 GiB MemAvailable and the memory guard stopped the server (A/B in `research/gb10-tuning-20261102/booking-ab/`) |
 
 Reviewed and unchanged on unified memory, with the reason:
 

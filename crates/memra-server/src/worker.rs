@@ -5354,6 +5354,27 @@ impl PrefixCacheBudget {
             Self::Configured { bytes } | Self::Derived { bytes, .. } => *bytes,
         }
     }
+
+    /// A derived budget above its floor (`PREFIX_CACHE_DEFAULT_ENTRIES` served-context entries):
+    /// the regime where the admission reclaim may stop short of the flush. On the floor the cache
+    /// holds two entries and a partial pass measured flat (`reclaim_partial_applies`). An operator
+    /// budget (`MEMRA_PREFIX_CACHE_MB`) carries no entry size and keeps the flush.
+    fn above_entry_floor(&self) -> bool {
+        match self {
+            Self::Configured { .. } => false,
+            Self::Derived {
+                bytes, entry_bytes, ..
+            } => *bytes > entry_bytes.saturating_mul(PREFIX_CACHE_DEFAULT_ENTRIES),
+        }
+    }
+}
+
+/// Whether the worker's derived prefix budget is above its two-entry floor; `false` before the
+/// worker sizes it.
+fn prefix_budget_above_floor() -> bool {
+    PREFIX_CACHE_BUDGET
+        .get()
+        .is_some_and(PrefixCacheBudget::above_entry_floor)
 }
 
 static PREFIX_CACHE_BUDGET: std::sync::OnceLock<PrefixCacheBudget> = std::sync::OnceLock::new();
@@ -9746,6 +9767,94 @@ fn primary_unbooked_shortfall(
         .then(|| admission_headroom(engine, loaded, None))
         .flatten()
         .and_then(|h| h.primary_shortfall(required.saturating_add(pending_booked)))
+}
+
+/// PARTIAL RECLAIM (2026-11-09, `research/partial-reclaim-20261109/`): whether the admission
+/// reclaim frees only what the arrival and the priming sessions need instead of every unleased
+/// entry. The memory door off (armed, its demoting flush runs), a discrete card (unified memory
+/// keeps the flush), a single primary reading (a per-device reading has no single shortfall) and
+/// a derived budget above its two-entry floor. On the floor the cache holds two entries and the
+/// partial pass measured flat on the RTX 5090 (`research/prefix-budget-20261107/`, `lru` arm); at
+/// 54.3 GB on one RTX PRO 6000 Max-Q one deferred arrival flushed 57 entries for a shortfall under
+/// 1 GB.
+fn reclaim_partial_applies(
+    door_armed: bool,
+    unified: bool,
+    primary_reading: bool,
+    budget_above_floor: bool,
+) -> bool {
+    !door_armed && !unified && primary_reading && budget_above_floor
+}
+
+/// The resident bytes that stay once a partial reclaim frees `need`, in victim order
+/// (`PrefixCache::evict_to_bytes`, which never takes a leased entry). `need` covering everything
+/// resident gives 0, the flush.
+fn reclaim_prefix_target(resident: usize, need: usize) -> usize {
+    resident.saturating_sub(need)
+}
+
+/// What the sessions still priming will allocate after this reading, which the door-off gate does
+/// not book: their prime transients (`pending_prime_bytes_v2`) and the prefix entries they publish
+/// (`pending_seed_bytes`). The seeds are uncapped: on a full cache a landing seed replaces bytes,
+/// but a partial reclaim makes room and the seeds regrow into it. A partial reclaim frees these
+/// beside the arrival's shortfall, so it never hands one free byte to the arrival and to a priming
+/// session at once (the flush hid that by freeing everything).
+fn reclaim_owed_bytes(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    active: &[Session],
+    admission_costs: &HashMap<String, AdmissionCostModel>,
+) -> usize {
+    pending_prime_bytes_v2(
+        active,
+        admission_costs,
+        &|name| {
+            loaded
+                .get(name)
+                .map_or(0, |lm| lm.model.prime_slab_bytes(engine))
+        },
+        &|name| {
+            memra_engine::prime_walker::prime_yield_enabled()
+                && loaded
+                    .get(name)
+                    .is_some_and(|lm| lm.model.mtp_prime_walk_supported())
+        },
+    )
+    .saturating_add(pending_seed_bytes(active))
+}
+
+/// RECLAIM BOOKING (2026-11-09): what the door-off gate books once a partial reclaim has kept cache
+/// bytes. The pass left free only the arrival's need plus what the priming sessions owe, and the
+/// door-off gate books nothing, so the next arrival of the burst would pass on the seeds' bytes
+/// and the seeds would then land into the room the pass made. While `armed`, the gate books the
+/// seeds pending, capped at the room the cache has left (the door's own `seed_booking_cap`); on a
+/// full cache a seed replaces bytes and the booking is 0. The prime transients stay unbooked: each
+/// arrival's own workspace charge covers them, as the door-off gate always relied on.
+fn reclaim_seed_booking(
+    armed: bool,
+    pending_seed_uncapped: usize,
+    budget: usize,
+    resident: usize,
+) -> usize {
+    if armed {
+        seed_booking_cap(pending_seed_uncapped, budget, resident)
+    } else {
+        0
+    }
+}
+
+/// The booking's state after a partial pass: it arms when the pass covered the arrival and kept
+/// unleased bytes (a pass that kept nothing, or fell back to the flush, leaves the flush's state,
+/// which needs no booking); otherwise it keeps its state. It disarms at an arrival that finds no
+/// seed pending (`reclaim_booking_disarms`).
+fn reclaim_booking_after_pass(armed: bool, covered: bool, kept_bytes: u64) -> bool {
+    armed || (covered && kept_bytes > 0)
+}
+
+/// The booking ends once the seeds it protects have landed (or been refused): no session has a
+/// seed pending.
+fn reclaim_booking_disarms(armed: bool, pending_seed_uncapped: usize) -> bool {
+    armed && pending_seed_uncapped == 0
 }
 
 /// The restorable spare's climb, after `longer_droppable` said the longer entry may go: evict
@@ -18435,6 +18544,10 @@ pub fn run(
     let mut n_cached_in = 0u64;
     let mut n_session_defers = 0u64;
     let mut n_vram_defers = 0u64;
+    // RECLAIM BOOKING (`reclaim_seed_booking`): armed by a door-off partial reclaim that kept cache
+    // bytes, disarmed at an arrival that finds no seed pending. Spans ticks: a burst's seeds land
+    // over many of them.
+    let mut reclaim_booking = false;
     let mut n_vram_hol_holds = 0u64;
     // Deadline-aware prefill order (`deadline_prefill_rows`): the measured tick prefill rate,
     // the previous tick's prefill mark, and the ticks the order left the round robin.
@@ -19817,7 +19930,8 @@ pub fn run(
                 // evicts or demotes older unleased entries to fit a seed inside the cache's byte
                 // budget before it allocates, so the cache's device bytes can grow by at most
                 // `budget - total_bytes`. A warm, full cache replaces bytes; it does not add them.
-                let pending_seed_uncapped = if admit_memory_cfg.armed {
+                // The door-off reclaim booking (below) reads the same term while it is armed.
+                let pending_seed_uncapped = if admit_memory_cfg.armed || reclaim_booking {
                     pending_seed_bytes(&active)
                 } else {
                     0
@@ -19842,6 +19956,29 @@ pub fn run(
                 let pending_booked = pending_prime.saturating_add(pending_seed);
                 let pending_booked =
                     pending_booked.saturating_add(unified_growth.saturating_sub(pending_seed));
+                // RECLAIM BOOKING (2026-11-09, `research/partial-reclaim-20261109/`): door off,
+                // after a partial reclaim kept cache bytes, the seeds the priming sessions will
+                // publish are booked, capped at the cache's room, until none is pending. Disarmed
+                // (every naked boot until a partial reclaim runs) it is 0 and the gate is unchanged.
+                let reclaim_seed_booked = if reclaim_booking && !admit_memory_cfg.armed {
+                    let pending = pending_seed_uncapped;
+                    if reclaim_booking_disarms(reclaim_booking, pending) {
+                        reclaim_booking = false;
+                        eprintln!(
+                            "[admit-oom] reclaim booking off: no priming session has a seed \
+                             pending (model {model_key})"
+                        );
+                    }
+                    reclaim_seed_booking(
+                        reclaim_booking,
+                        pending,
+                        kv_flex_effective_budget(),
+                        px.total_bytes,
+                    )
+                } else {
+                    0
+                };
+                let pending_booked = pending_booked.saturating_add(reclaim_seed_booked);
                 // OWED GROWTH (WP-B day 37, on-demand KV planes, DAY37 1.4): an admitted
                 // on-demand session backs only the rows it has reached, so the live reading does
                 // not see the rest of the context the pooled allocator would already hold. Armed,
@@ -19980,12 +20117,39 @@ pub fn run(
                         // DEMOTED into the pinned host tier on the way out instead of being
                         // dropped, bounded by this arrival's own shortfall so a tick never
                         // stalls behind more D2H than the admission needs. Off, this is
-                        // byte-identical to `px.evict_all()`.
+                        // byte-identical to `px.evict_all()`, except where a partial pass applies.
                         // RECLAIM SETTLE (memra#346/#445): the readings the receipt line and
                         // the settle step compare against are taken BEFORE the eviction.
                         let free_before_reclaim = headroom.limiting_free_bytes();
                         let prefix_bytes_before_reclaim = px.total_bytes;
                         let pool_before_reclaim = pool_readings(&engine, &loaded);
+                        // PARTIAL RECLAIM (2026-11-09, `research/partial-reclaim-20261109/`):
+                        // door off on a discrete card with a budget above its floor, free the
+                        // arrival's unbooked shortfall plus what the priming sessions owe
+                        // (`reclaim_owed_bytes`), oldest entry first, and keep the rest. The
+                        // reclaim booking is left out of the bookings here: the owed term
+                        // counts those seeds uncapped.
+                        let partial_need = if reclaim_partial_applies(
+                            admit_memory_cfg.armed,
+                            device_is_unified(&engine),
+                            matches!(headroom, AdmissionHeadroom::Primary { .. }),
+                            prefix_budget_above_floor(),
+                        ) {
+                            let owed =
+                                reclaim_owed_bytes(&engine, &loaded, &active, &admission_costs);
+                            primary_unbooked_shortfall(
+                                &engine,
+                                &loaded,
+                                &headroom,
+                                required,
+                                pending_booked
+                                    .saturating_sub(reclaim_seed_booked)
+                                    .saturating_add(owed),
+                            )
+                            .map(|need| (need, owed))
+                        } else {
+                            None
+                        };
                         let (evicted_prefix, demoted_prefix, demoted_prefix_bytes) =
                             if admit_memory_cfg.armed {
                                 // The SAME decision rule the defer site uses, taken here
@@ -20012,6 +20176,9 @@ pub fn run(
                                     ),
                                 );
                                 evict_all_demoting(&engine, &mut px, &mut hpx, budget)
+                            } else if let Some((need, _)) = partial_need {
+                                let target = reclaim_prefix_target(px.total_bytes, need);
+                                (px.evict_to_bytes(target).0, 0, 0)
                             } else {
                                 (px.evict_all(), 0, 0)
                             };
@@ -20039,6 +20206,90 @@ pub fn run(
                             {
                                 headroom = next_headroom;
                             }
+                        }
+                        // PARTIAL RECLAIM, the rest: still short after the partial pass
+                        // (allocator rounding, a neighbour's growth between readings, leased bytes
+                        // the pass could not reach), the rest of the unleased cache goes as
+                        // before, so the restorable spare's climb and the parked-session ladder
+                        // below still meet an empty evictable set. Covered with unleased bytes
+                        // kept, the reclaim booking arms.
+                        let mut evicted_prefix = evicted_prefix;
+                        if let Some((need, owed)) = partial_need {
+                            if evicted_prefix == 0
+                                && let Some(next_headroom) = admission_headroom(
+                                    &engine,
+                                    &loaded,
+                                    device_requirements.as_deref(),
+                                )
+                                .map(book)
+                            {
+                                headroom = next_headroom;
+                            }
+                            let covered = headroom.sufficient(required);
+                            let kept_bytes = px.evictable_bytes();
+                            eprintln!(
+                                "[admit-oom] reclaim-on-defer (partial): evicted {evicted_prefix} \
+                                 prefix entries ({:.0}MB, oldest first) for {:.0}MB ({:.0}MB of it \
+                                 owed by {} priming sessions); kept {} unleased entries ({:.0}MB); \
+                                 effective free {:.0}MB -> {:.0}MB; {} (model {model_key})",
+                                prefix_bytes_before_reclaim.saturating_sub(px.total_bytes) as f64
+                                    / 1e6,
+                                need as f64 / 1e6,
+                                owed as f64 / 1e6,
+                                active
+                                    .iter()
+                                    .filter(|s| {
+                                        session_pending_prime_rows(
+                                            s.prefill_done,
+                                            s.prefill_queue.len(),
+                                        ) > 0
+                                    })
+                                    .count(),
+                                px.lru.len(),
+                                kept_bytes as f64 / 1e6,
+                                free_before_reclaim as f64 / 1e6,
+                                headroom.limiting_free_bytes() as f64 / 1e6,
+                                if covered {
+                                    "covered"
+                                } else if kept_bytes > 0 {
+                                    "still short, the rest go"
+                                } else {
+                                    "still short, nothing unleased left"
+                                },
+                            );
+                            if !covered && kept_bytes > 0 {
+                                let pool_before_rest = pool_readings(&engine, &loaded);
+                                let bytes_before_rest = px.total_bytes;
+                                evicted_prefix += px.evict_all();
+                                settle_reclaimed_prefix_bytes(
+                                    &engine,
+                                    &loaded,
+                                    &pool_before_rest,
+                                    bytes_before_rest.saturating_sub(px.total_bytes),
+                                    "reclaim-on-defer",
+                                );
+                                if let Some(next_headroom) = admission_headroom(
+                                    &engine,
+                                    &loaded,
+                                    device_requirements.as_deref(),
+                                )
+                                .map(book)
+                                {
+                                    headroom = next_headroom;
+                                }
+                            }
+                            let armed =
+                                reclaim_booking_after_pass(reclaim_booking, covered, kept_bytes);
+                            if armed && !reclaim_booking {
+                                eprintln!(
+                                    "[admit-oom] reclaim booking on: the partial reclaim kept \
+                                     {:.0}MB, so admission books the seeds priming sessions will \
+                                     publish (capped at the cache's room) until none is pending \
+                                     (model {model_key})",
+                                    kept_bytes as f64 / 1e6,
+                                );
+                            }
+                            reclaim_booking = armed;
                         }
                         // RESTORABLE SPARE, still short with both entries leased: climb the
                         // parked-session ladder while the longer entry cannot cover the rest, then
@@ -43307,6 +43558,197 @@ mod tests {
         assert_prefix_cache_accounting(&px);
     }
 
+    /// PARTIAL RECLAIM (2026-11-09): the pass applies only with the memory door off, on a discrete
+    /// card, on a single primary reading and with a derived budget above its two-entry floor;
+    /// each condition alone keeps the flush.
+    #[test]
+    fn partial_reclaim_applies_only_door_off_discrete_primary_above_the_floor() {
+        use super::reclaim_partial_applies as applies;
+        assert!(applies(false, false, true, true));
+        assert!(
+            !applies(true, false, true, true),
+            "the door's demoting flush"
+        );
+        assert!(
+            !applies(false, true, true, true),
+            "unified memory keeps the flush"
+        );
+        assert!(!applies(false, false, false, true), "a per-device reading");
+        assert!(!applies(false, false, true, false), "the two-entry floor");
+    }
+
+    /// The floor key: a derived budget strictly above two served-context entries (the RTX PRO 6000
+    /// Max-Q at `MEMRA_MAX_SESSIONS=12`, 54,277,046,272 B against 2 x 1,129,971,712 B); the floor
+    /// itself (every RTX 5090 configuration, the Max-Q at the default caps) and an operator budget
+    /// keep the flush.
+    #[test]
+    fn partial_reclaim_floor_key_is_a_derived_budget_above_two_entries() {
+        let entry = 1_129_971_712;
+        use super::PrefixCacheBudget;
+        let derived = |bytes| PrefixCacheBudget::Derived {
+            bytes,
+            requested_bytes: bytes,
+            entry_bytes: entry,
+            model: "gate".to_string(),
+            ctx: 32_768,
+            ctx_source: "MEMRA_CTX",
+            boot_free_bytes: 86_614_081_536,
+            clamp_bytes: 85_003_468_800,
+            device: None,
+        };
+        assert!(derived(54_277_046_272).above_entry_floor());
+        assert!(derived(2 * entry + 1).above_entry_floor());
+        assert!(!derived(2 * entry).above_entry_floor(), "the floor itself");
+        assert!(
+            !derived(entry).above_entry_floor(),
+            "a tight card under the floor"
+        );
+        assert!(
+            !PrefixCacheBudget::Configured {
+                bytes: 54_277_046_272
+            }
+            .above_entry_floor(),
+            "an operator budget keeps the flush"
+        );
+    }
+
+    /// The pass frees the need in victim order, oldest first, never a leased entry, and keeps the
+    /// newest entries; a need covering everything resident is the flush.
+    #[test]
+    fn partial_reclaim_frees_the_need_oldest_first_and_keeps_the_newest() {
+        use super::reclaim_prefix_target as target;
+        assert_eq!(target(60, 25), 35);
+        assert_eq!(target(60, 60), 0, "the need covers the cache: the flush");
+        assert_eq!(target(60, 600), 0);
+        assert_eq!(target(60, 0), 60, "nothing needed, nothing goes");
+
+        let k = key("");
+        let mut px = PrefixCache::default();
+        for ident in 0..6u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", 100);
+        }
+        let oldest = px.entries[&k].iter().position(|e| e.toks[0] == 0).unwrap();
+        let pin = px.pin(&k, oldest).expect("an entry takes a lease");
+        // The arrival's need is 25 bytes: the three oldest unleased entries go (30 bytes), the
+        // leased oldest one and the two newest stay.
+        assert_eq!(px.evict_to_bytes(target(px.total_bytes, 25)), (3, 30));
+        assert_eq!(px_survivors(&px), vec![0, 4, 5]);
+        assert_eq!(px.evictable_bytes(), 20);
+        assert_prefix_cache_accounting(&px);
+        // A need past what is unleased takes every unleased entry, as the flush would.
+        assert_eq!(px.evict_to_bytes(target(px.total_bytes, 1_000)), (2, 20));
+        assert_eq!(px_survivors(&px), vec![0]);
+        assert!(px.unpin(&pin));
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// RECLAIM BOOKING (2026-11-09): disarmed it books nothing; armed it books the pending seeds,
+    /// capped at the cache's room, so a full cache books 0. It arms only after a pass that covered
+    /// the arrival and kept unleased bytes, stays armed across later passes, and disarms only at an
+    /// arrival that finds no seed pending.
+    #[test]
+    fn reclaim_booking_books_capped_seeds_while_armed_and_ends_when_none_is_pending() {
+        use super::{
+            reclaim_booking_after_pass as after, reclaim_booking_disarms as disarms,
+            reclaim_seed_booking as booking,
+        };
+        // The limit cell's burst: six 913.3 MB seeds pending after a pass that left 9 GB of room.
+        let seeds = 6 * 913_300_000;
+        let budget = 54_277_046_272;
+        assert_eq!(booking(false, seeds, budget, budget - 9_000_000_000), 0);
+        assert_eq!(booking(true, seeds, budget, budget - 9_000_000_000), seeds);
+        assert_eq!(
+            booking(true, seeds, budget, budget - 1_000_000_000),
+            1_000_000_000,
+            "capped at the room"
+        );
+        assert_eq!(booking(true, seeds, budget, budget), 0, "a full cache");
+
+        assert!(after(false, true, 1), "covered with bytes kept: arms");
+        assert!(!after(false, true, 0), "kept nothing: the flush's state");
+        assert!(!after(false, false, 1), "fell back to the flush");
+        assert!(after(true, false, 0), "a later pass keeps it armed");
+
+        assert!(disarms(true, 0));
+        assert!(!disarms(true, 1), "a seed still pending");
+        assert!(!disarms(false, 0), "nothing to disarm");
+    }
+
+    /// The production wiring of the partial reclaim and its booking, on comment-stripped,
+    /// whitespace-free production text: the booking joins the gate's bookings before the `book`
+    /// reading; the reclaim site keys the pass, sizes it from the unbooked shortfall less the
+    /// booking plus the owed bytes, takes `evict_to_bytes` before the door-off flush, and after
+    /// the settle falls back to the flush when still short, then arms the booking, all before the
+    /// restorable spare's gate; the owed term carries the prime transients and the uncapped seeds.
+    #[test]
+    fn partial_reclaim_and_its_booking_are_wired_into_the_reclaim_site() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+        let flat: String = prod.chars().filter(|c| !c.is_whitespace()).collect();
+        let at = |needle: &str| {
+            let n: String = needle.chars().filter(|c| !c.is_whitespace()).collect();
+            assert_eq!(flat.matches(n.as_str()).count(), 1, "exactly one: {needle}");
+            flat.find(n.as_str()).unwrap()
+        };
+        let booked =
+            at("let reclaim_seed_booked = if reclaim_booking && !admit_memory_cfg.armed {");
+        let disarm =
+            at("if reclaim_booking_disarms(reclaim_booking, pending) { reclaim_booking = false;");
+        let booking = at(
+            "reclaim_seed_booking( reclaim_booking, pending, kv_flex_effective_budget(), px.total_bytes, )",
+        );
+        let joined = at("let pending_booked = pending_booked.saturating_add(reclaim_seed_booked);");
+        let book =
+            at("move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);");
+        assert!(booked < disarm && disarm < booking && booking < joined && joined < book);
+
+        let keyed = at(
+            "let partial_need = if reclaim_partial_applies( admit_memory_cfg.armed, \
+             device_is_unified(&engine), matches!(headroom, AdmissionHeadroom::Primary { .. }), \
+             prefix_budget_above_floor(), ) {",
+        );
+        let owed =
+            at("let owed = reclaim_owed_bytes(&engine, &loaded, &active, &admission_costs);");
+        let sized = at(
+            "primary_unbooked_shortfall( &engine, &loaded, &headroom, required, \
+             pending_booked .saturating_sub(reclaim_seed_booked) .saturating_add(owed), ) \
+             .map(|need| (need, owed))",
+        );
+        let pass = at(
+            "} else if let Some((need, _)) = partial_need { let target = \
+             reclaim_prefix_target(px.total_bytes, need); (px.evict_to_bytes(target).0, 0, 0) \
+             } else { (px.evict_all(), 0, 0) };",
+        );
+        let settle = flat[pass..]
+            .find("settle_reclaimed_prefix_bytes(")
+            .map(|i| pass + i)
+            .expect("the pass settles");
+        let rest = at(
+            "if !covered && kept_bytes > 0 { let pool_before_rest = pool_readings(&engine, \
+             &loaded); let bytes_before_rest = px.total_bytes; evicted_prefix += px.evict_all();",
+        );
+        let covered = at("let covered = headroom.sufficient(required);");
+        let arm =
+            at("let armed = reclaim_booking_after_pass(reclaim_booking, covered, kept_bytes);");
+        let stored = at("reclaim_booking = armed;");
+        let spare = at(
+            "if !headroom.sufficient(required) && reclaim_spare.as_ref().is_some_and(|s| s.also.is_some())",
+        );
+        assert!(book < keyed && keyed < owed && owed < sized && sized < pass);
+        assert!(pass < settle && settle < covered && covered < rest && rest < arm);
+        assert!(arm < stored && stored < spare);
+
+        let owed_fn = &flat[at("fn reclaim_owed_bytes(")..];
+        let owed_fn = &owed_fn[..owed_fn.find("}fn").expect("the next item follows")];
+        assert!(owed_fn.contains("pending_prime_bytes_v2(active,admission_costs,"));
+        assert!(owed_fn.contains(".saturating_add(pending_seed_bytes(active))"));
+    }
+
     /// memra#523 item 1, review: the kv-flex shed reaches its floor through unleased bytes,
     /// reused or not (it counts as a shed, no warning path), and takes the "nothing
     /// evictable" path only when every byte above the floor is leased.
@@ -46948,15 +47390,21 @@ mod tests {
         );
     }
 
-    /// The seed term is computed only with the door armed, and it joins the workspace term in
+    /// The seed term is computed only with the door armed or, door off, while a partial reclaim's
+    /// booking is armed (2026-11-09; the name predates that), and it joins the workspace term in
     /// the one booked reduction every headroom reading takes.
     #[test]
     fn pending_seed_is_armed_only_and_joins_the_booked_reduction() {
         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        // The door books the capped seed; the door-off reclaim booking (`reclaim_seed_booking`)
+        // reads the same uncapped term while it is armed, and books nothing else of it.
         assert!(live.contains(
-            "let pending_seed_uncapped = if admit_memory_cfg.armed { pending_seed_bytes(&active) } else { 0 }; let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_uncapped, kv_flex_effective_budget(), px.total_bytes, ) } else { 0 };"
+            "let pending_seed_uncapped = if admit_memory_cfg.armed || reclaim_booking { pending_seed_bytes(&active) } else { 0 }; let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_uncapped, kv_flex_effective_budget(), px.total_bytes, ) } else { 0 };"
+        ));
+        assert!(live.contains(
+            "let reclaim_seed_booked = if reclaim_booking && !admit_memory_cfg.armed { let pending = pending_seed_uncapped;"
         ));
         assert!(live.contains("let pending_booked = pending_prime.saturating_add(pending_seed);"));
         assert!(live.contains(

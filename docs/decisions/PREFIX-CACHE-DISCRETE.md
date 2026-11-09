@@ -11,9 +11,10 @@ OOM, pressure TTFT at most about 0.15 s behind main at every rank and the same r
 main, and loses nothing against it (Owed, below). On the 24 GB RTX 5090 Laptop
 the rule gives the old two-entry budget in every measured configuration, so it changes nothing there; the cards it
 changes are the large ones, and the finding that opened the lane came from one of them (one RTX PRO 6000 Max-Q,
-below). The eviction order stays plain LRU ([PREFIX-CACHE-POLICY.md](PREFIX-CACHE-POLICY.md)) and the admission
-reclaim stays the flush: the lane measured a value-per-byte order, a partial reclaim and a live-free insert clamp on
-the 5090 and kept none of them (Rejected, below). Receipts: `research/prefix-budget-20261107/`; the full lane,
+below). The eviction order stays plain LRU ([PREFIX-CACHE-POLICY.md](PREFIX-CACHE-POLICY.md)) and on the floor the
+admission reclaim stays the flush: the lane measured a value-per-byte order, a partial reclaim and a live-free insert
+clamp on the 5090 and kept none of them (Rejected, below). Above the floor the reclaim is partial since 2026-11-09
+((c), below). Receipts: `research/prefix-budget-20261107/`; the full lane,
 including the rejected levers' code, is banked on `bank/prefix-budget-gds-20261107`.
 
 ## Question
@@ -52,6 +53,16 @@ every repeat under plain LRU (6/6) and every turn of the agentic replay (29/29).
 
 **(b) Victim order and admission: unchanged** (plain LRU, every capture admitted, the reclaim flush). Each candidate
 won one shape and lost or tied another on the 5090; the owner's rule keeps only levers that measure positive.
+
+**(c) Admission reclaim above the floor: partial (2026-11-09, `research/partial-reclaim-20261109/`).** With the memory
+door off, on a discrete card whose derived budget is above its two-entry floor and a single primary reading, a
+deferred arrival frees its unbooked shortfall plus what the priming sessions still owe (prime transients and their
+uncapped pending seeds), oldest entry first, and the rest of the cache stays. Still short after the settle, the rest
+of the unleased cache goes as before. A pass that kept cache bytes arms a booking: the door-off gate books the seeds
+the priming sessions will publish, capped at the cache's room, until none is pending, so a later arrival of the same
+burst cannot pass on those bytes. The door's demoting flush, unified memory, a per-device reading, an operator
+budget and the floor (every RTX 5090 configuration, the Max-Q at the default caps) keep the flush. Its acceptance
+cell is the at-the-limit cell (the README there has the numbers).
 
 ## Measured
 
@@ -101,7 +112,8 @@ Greedy texts matched the cache-off run on every compared row of every mixed-shap
   way); it helped only beside value per byte. The flush it would replace grows with the budget: in the PRO 6000
   at-the-limit cell one deferred arrival (admission charged it 3.4 GB: KV, a 2.3 GB prefill workspace and fixed state;
   the shortfall was under 1 GB) flushed 54.2 GB, and the 16 repeats that followed
-  all re-primed. That is where a partial reclaim would earn its place (Owed).
+  all re-primed. That is where a partial reclaim earns its place: on the floor it stays rejected, above it it
+  is (c).
 - **GB10's live-free insert clamp on discrete cards.** Three runs per arm on the mixed shape (`phase1a-clamp/`): the
   shared entry hit 0, 0, 0 (LRU) and 1, 1, 1 (value per byte) of six repeats, against 6, 6, 6 without the clamp and
   2, 3, 3 on main. Under c8 load it held the cache to about one entry, and since an insert never evicts itself every
@@ -123,10 +135,8 @@ Greedy texts matched the cache-off run on every compared row of every mixed-shap
   spec-cache-mixed shape and the agentic c1 and c4 cells with (a), labelled as loaded-box timings (no quiet-box
   re-time is planned). Still owed: the default caps, where a Max-Q keeps the two-entry floor and still missed 0/18
   repeats.
-- A partial admission reclaim at a large budget. The at-the-limit cell is its acceptance test: today a defer drops
-  the whole cache and every repeat after it re-primes on both arms; a partial reclaim that evicts only the arrival's
-  shortfall, oldest first, should keep the repeats' entries. It is a lever over this change, not a fix to it: the
-  flush costs nothing against main.
+- A partial admission reclaim at a large budget: (c), measured on the at-the-limit cell in
+  `research/partial-reclaim-20261109/`.
 - GB10 keeps its own budget rule (the half share). One input moves: the budget is now read after the vision towers
   load, so a boot with a tower reads less free memory and gets a smaller half share. The sm_121a cell record of the
   landing commit covers a GB10 boot without a tower; no GB10 boot with a tower was measured.
