@@ -126,3 +126,15 @@ two candidates (1, 2) that free no registers at all.
   ncu puts h2p's tensor pipe at 78.6% active against 79.7% in mode 3. The attention prime is
   compute-bound. Its idle fifth is the dependency chain of 2 warps per scheduler at 255 registers;
   no feed or wait lever exists there, and rows 47-49 found no exact schedule above it.
+- P3 (row 63), candidate 1, per-group slot release: bit-identical, slower on every shape (-0.3..-5.4%
+  on the plain GEMMs, -8..-13% on gate/up). Rejected.
+
+## Verdict
+
+No exact rewrite measured here beats the shipped v3. The perfect-feed ceiling is about 6% of GEMM
+time (row 61). Both candidates aimed at it lost: the persistent walk (row 60) and the per-group
+release (row 63). The compute above that ceiling sits under the 128-register cap, which no measured
+structure loosens. h2p is compute-bound too, with no feed cost (row 62). The round's remaining
+exact gains are at most a few seconds at 131k, all inside a 6% feed share that two designs failed to
+reach. Candidates 3 (wave balance for the 640-tile grids, about 1 s at 131k) and 4 (a partial
+fragment prefetch) were not built.
