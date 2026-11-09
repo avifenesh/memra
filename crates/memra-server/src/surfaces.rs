@@ -149,7 +149,7 @@ pub(crate) async fn admit_translated(
     // Read BEFORE the plan build consumes `req`: the feasibility gate judges only a
     // caller-DECLARED max_tokens (an omitted one is resolved downstream to the model max,
     // which is not a number the caller chose).
-    let declared_max_tokens = req.max_tokens.is_some();
+    let declared_max_tokens = req.output_cap().is_some();
     let vision_preprocess_permit = crate::try_vision_preprocess(crate::request_has_vision(&req))?;
     crate::image_fetch::resolve_remote_image_urls_in_messages(
         &mut req.messages,

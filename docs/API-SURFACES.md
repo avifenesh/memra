@@ -28,8 +28,10 @@ non-JSON content type is a 415 in the same shape. `/v1/messages` and
 
 On chat and text completions an explicit `null` is absent for every field openai-python
 declares nullable, as on `/v1/responses`: `stream: null` runs non-streaming and text
-`prompt: null` is an omitted prompt. Null on a field upstream declares non-nullable (`model`,
-chat `messages` and `tools`) stays a 400 naming it.
+`prompt: null` is an omitted prompt. Null is a 400 naming the field only where it has no
+absent meaning: `model`, chat `messages` and `tools`, and memra's own fields with no null form
+(`background`, `stop_token_ids`). On chat, `max_tokens` and `max_completion_tokens` name one
+cap: a null one is absent, and a body that sets both to values is a 400.
 
 Two further OpenAI/Cohere-shaped routes exist outside this document's scope because they
 do not generate: `POST /v1/embeddings` and `POST /v1/rerank` are prefill-only **capture

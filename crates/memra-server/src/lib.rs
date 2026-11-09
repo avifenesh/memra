@@ -3894,6 +3894,14 @@ struct ReqToolFunction {
     namespace: Option<serde_json::Value>,
 }
 
+impl ChatCompletionReq {
+    /// The caller's output cap: `max_tokens` or `max_completion_tokens`, whichever is set (the
+    /// chat route refuses a body that sets both).
+    fn output_cap(&self) -> Option<usize> {
+        self.max_tokens.or(self.max_completion_tokens)
+    }
+}
+
 /// An explicit JSON `null` deserializes as the field's `Default`, the same as an omitted field
 /// (`#[serde(default)]` covers that case). For chat and text fields the upstream OpenAI schema
 /// declares nullable (`Optional[...]` in openai-python's create params) and memra models
@@ -3980,8 +3988,14 @@ struct ChatCompletionReq {
     /// Blackwell Workstation Edition) the bound is the charged open output instead
     /// (`admit_memory::charged_ctx_tokens`, `worker::request_budget`). The OpenAI
     /// contract does not pin this bound (`research/spill-b-20260919/OPEN-OUTPUT-SURVEY.md`).
-    #[serde(default, alias = "max_completion_tokens")]
+    #[serde(default)]
     max_tokens: Option<usize>,
+    /// OpenAI's current name for the same cap (`max_tokens` is its deprecated alias). Its own
+    /// field, not a serde alias: an alias shares one slot, so a body carrying both keys (one of
+    /// them `null`, as clients that send every unset optional do) was a duplicate-field 400.
+    /// Read the cap through `output_cap`; a body setting both to values is refused.
+    #[serde(default)]
+    max_completion_tokens: Option<usize>,
     /// Kept as Option so loaded-model capabilities can apply a provider-published default only
     /// when the caller omitted the field. Explicit values, including 0 and 1, remain authoritative.
     #[serde(default)]
@@ -9911,7 +9925,11 @@ fn build_chat_request_with_trace(
             think,
             reasoning_effort,
             params: GenParams {
-                max_new: req.max_tokens.unwrap_or(worker::MAX_NEW_CTX_BOUNDED),
+                // `output_cap`, inlined: `req.model` has already moved out of `req`.
+                max_new: req
+                    .max_tokens
+                    .or(req.max_completion_tokens)
+                    .unwrap_or(worker::MAX_NEW_CTX_BOUNDED),
                 max_ctx: req.max_ctx,
                 eos: Vec::new(),
             },
@@ -11685,6 +11703,15 @@ async fn chat_completions_with_admission(
 ) -> Response {
     http_metrics::bind_model(canonical_model_id(&st.models, &req.model));
     let env = Envelope::new(true);
+    if req.max_tokens.is_some() && req.max_completion_tokens.is_some() {
+        return with_request_id(
+            &env.id,
+            bad_request(
+                "max_tokens and max_completion_tokens set the same output cap; send only one",
+                Some("max_completion_tokens"),
+            ),
+        );
+    }
     if let Err(message) = background_jobs::validate(&req.background, req.stream) {
         return with_request_id(&env.id, bad_request(message, Some("background")));
     }
@@ -11783,7 +11810,7 @@ async fn chat_completions_with_admission(
     // Read BEFORE the plan build consumes `req`: the feasibility gate judges only a
     // caller-DECLARED max_tokens (an omitted one is resolved to the model max downstream,
     // which is not a number the caller chose).
-    let declared_max_tokens = req.max_tokens.is_some();
+    let declared_max_tokens = req.output_cap().is_some();
     // Preprocessing has its own bounded permit. GIFs must be decoded while the plan is built so
     // their sampled timestamps can render the prompt, while still images decode later; serializing
     // this phase keeps their transient canvases from multiplying outside request admission.
@@ -27047,19 +27074,21 @@ temperature = 0.6
         }
     }
 
-    /// One synchronous chat or text request on a fresh bg914 fixture. `Ok` carries the response
-    /// of an admitted request driven to a one-token completion; `Err` the response of one
-    /// refused before any worker command.
+    /// One synchronous chat or text request on a fresh bg914 fixture. `Ok` carries the admitted
+    /// worker request and the response it answered after a one-token completion; `Err` the
+    /// response of a request refused before any worker command.
     async fn bg914_sync_outcome(
         path: &'static str,
         body: serde_json::Value,
-    ) -> Result<Response, Response> {
+    ) -> Result<(Response, Box<worker::Request>), Response> {
         let (st, _mock, _, rx) = bg914_fixture(None);
-        let app = Router::new()
-            .route("/v1/completions", post(completions_admitted))
-            .route("/v1/chat/completions", post(chat_completions_admitted))
-            .with_state(st);
-        let call = tokio::spawn(bg914_http(app, "POST", path, Some("owner-key"), body));
+        let call = tokio::spawn(bg914_http(
+            bg914_router(st),
+            "POST",
+            path,
+            Some("owner-key"),
+            body,
+        ));
         let command =
             tokio::task::spawn_blocking(move || rx.recv_timeout(std::time::Duration::from_secs(3)))
                 .await
@@ -27098,12 +27127,21 @@ temperature = 0.6
                 spec: None,
             })
             .unwrap();
-        Ok(
-            tokio::time::timeout(std::time::Duration::from_secs(5), call)
-                .await
-                .unwrap_or_else(|_| panic!("{path}: admitted but never answered"))
-                .unwrap(),
-        )
+        let response = tokio::time::timeout(std::time::Duration::from_secs(5), call)
+            .await
+            .unwrap_or_else(|_| panic!("{path}: admitted but never answered"))
+            .unwrap();
+        Ok((response, request))
+    }
+
+    async fn bg914_admitted(
+        path: &'static str,
+        body: serde_json::Value,
+    ) -> (Response, Box<worker::Request>) {
+        match bg914_sync_outcome(path, body).await {
+            Ok(admitted) => admitted,
+            Err(refused) => panic!("{path} refused: {}", body_value(refused).await),
+        }
     }
 
     fn json_content_type(response: &Response) -> String {
@@ -27113,10 +27151,61 @@ temperature = 0.6
             .to_string()
     }
 
+    /// The fields openai-python v3.48.0 declares nullable on chat and text completion create
+    /// params (`types/chat/completion_create_params.py`, `types/completion_create_params.py`).
+    const CHAT_NULLABLE_V3_48: &[&str] = &[
+        "audio",
+        "frequency_penalty",
+        "logit_bias",
+        "logprobs",
+        "max_completion_tokens",
+        "max_tokens",
+        "metadata",
+        "modalities",
+        "moderation",
+        "n",
+        "prediction",
+        "presence_penalty",
+        "prompt_cache_key",
+        "prompt_cache_retention",
+        "reasoning_effort",
+        "safety_identifier",
+        "seed",
+        "service_tier",
+        "stop",
+        "store",
+        "stream",
+        "stream_options",
+        "temperature",
+        "top_logprobs",
+        "top_p",
+        "verbosity",
+    ];
+    const TEXT_NULLABLE_V3_48: &[&str] = &[
+        "best_of",
+        "echo",
+        "frequency_penalty",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "n",
+        "presence_penalty",
+        "prompt",
+        "seed",
+        "stop",
+        "stream",
+        "stream_options",
+        "suffix",
+        "temperature",
+        "top_p",
+    ];
+
     /// An explicit null on a field openai-python declares nullable counts as absent on chat and
     /// text completions, as on `/v1/responses`. `stream: null` used to be a 400 (a 422 before
-    /// that); it now runs non-streaming. Text `prompt: null` used to be a 400; it now behaves
-    /// exactly like an omitted prompt. `stop: null` already counted as absent and still does.
+    /// that); it now runs non-streaming. Text `prompt: null` used to be a 400; it now reaches
+    /// the worker exactly as an omitted prompt does. A body with every nullable field null is
+    /// admitted; it used to be a 400 (and on chat a duplicate-field 400 from the
+    /// `max_completion_tokens` alias).
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
     async fn null_is_absent_on_nullable_chat_and_text_fields() {
@@ -27131,12 +27220,7 @@ temperature = 0.6
         ] {
             let mut body = base;
             body[field] = serde_json::Value::Null;
-            let response = match bg914_sync_outcome(path, body).await {
-                Ok(response) => response,
-                Err(refused) => {
-                    panic!("{path} {field}=null refused: {}", body_value(refused).await)
-                }
-            };
+            let (response, _) = bg914_admitted(path, body).await;
             assert_eq!(response.status(), StatusCode::OK, "{path} {field}=null");
             let content_type = json_content_type(&response);
             assert!(
@@ -27145,32 +27229,60 @@ temperature = 0.6
             );
         }
 
-        // Text `prompt: null` takes the omitted-prompt path, whatever that path answers.
-        let omitted = bg914_sync_outcome("/v1/completions", json!({"model": "bg914"})).await;
-        let null =
-            bg914_sync_outcome("/v1/completions", json!({"model": "bg914", "prompt": null})).await;
-        match (omitted, null) {
-            (Ok(omitted), Ok(null)) => assert_eq!(omitted.status(), null.status()),
-            (Err(omitted), Err(null)) => {
-                assert_eq!(omitted.status(), null.status());
-                assert_eq!(body_value(omitted).await, body_value(null).await);
+        // Every upstream-nullable field null in one body, as a client that sends each unset
+        // optional as null does.
+        for (path, base, fields) in [
+            ("/v1/chat/completions", chat(), CHAT_NULLABLE_V3_48),
+            ("/v1/completions", text(), TEXT_NULLABLE_V3_48),
+        ] {
+            let mut body = base;
+            for field in fields {
+                body[*field] = serde_json::Value::Null;
             }
-            (omitted, null) => panic!(
-                "prompt: null must match an omitted prompt: omitted admitted={}, null admitted={}",
-                omitted.is_ok(),
-                null.is_ok()
-            ),
+            let (response, request) = bg914_admitted(path, body).await;
+            assert_eq!(response.status(), StatusCode::OK, "{path} all-null");
+            assert_eq!(
+                request.params.max_new,
+                worker::MAX_NEW_CTX_BOUNDED,
+                "{path} all-null"
+            );
+        }
+
+        // Text `prompt: null` reaches the worker exactly as an omitted prompt does.
+        let (_, omitted) = bg914_admitted("/v1/completions", json!({"model": "bg914"})).await;
+        let (_, null) =
+            bg914_admitted("/v1/completions", json!({"model": "bg914", "prompt": null})).await;
+        assert_eq!(omitted.prompt_text, null.prompt_text);
+        assert_eq!(omitted.prompt_ids, null.prompt_ids);
+        assert_eq!(omitted.chat, null.chat);
+
+        // `max_completion_tokens` and `max_tokens` are one cap; the null one is absent.
+        for (body, cap) in [
+            (json!({"max_tokens": null, "max_completion_tokens": 7}), 7),
+            (json!({"max_tokens": 5, "max_completion_tokens": null}), 5),
+            (json!({"max_completion_tokens": 9}), 9),
+        ] {
+            let mut request_body = chat();
+            for (key, value) in body.as_object().unwrap() {
+                request_body[key] = value.clone();
+            }
+            let (_, request) = bg914_admitted("/v1/chat/completions", request_body).await;
+            assert_eq!(request.params.max_new, cap, "{body}");
         }
     }
 
-    /// Null stays a 400 naming the field where openai-python declares the field non-nullable,
-    /// and a real type error on a nullable field is still the extractor's 400.
+    /// Null stays a 400 naming the field where it has no absent meaning (`model`, chat `messages`
+    /// and `tools`), a real type error on a nullable field is still the extractor's 400, and a
+    /// chat body that sets both cap names to values is refused.
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
     async fn null_is_still_refused_on_non_nullable_chat_and_text_fields() {
         let _drain = drain_lock();
         let chat = || json!({"model": "bg914", "messages": [{"role": "user", "content": "hi"}]});
         let text = || json!({"model": "bg914", "prompt": "hi"});
+        let mut both_caps = chat();
+        both_caps["max_tokens"] = json!(5);
+        both_caps["max_completion_tokens"] = json!(6);
         for (path, base, field, value) in [
             (
                 "/v1/chat/completions",
@@ -27194,6 +27306,12 @@ temperature = 0.6
             ("/v1/chat/completions", chat(), "stream", json!("true")),
             ("/v1/completions", text(), "stream", json!("true")),
             ("/v1/completions", text(), "prompt", json!(5)),
+            (
+                "/v1/chat/completions",
+                both_caps,
+                "max_completion_tokens",
+                json!(6),
+            ),
         ] {
             let mut body = base;
             body[field] = value.clone();
