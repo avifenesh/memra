@@ -1,0 +1,68 @@
+[server] build: memra-0.138.0-e6eac87d2c31 (id: source-tree, git: 019138265291)
+[server] starting; models config = [("q", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves OFF (whole-entry restore, strict-prefix restore and boundary capture together)
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] q: DSPARK SPEC route armed (drafter attached (/data/ai-ml/models/q38-gguf/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] q: DFlash2 draft head FULL target vocab (external_mtp_d2t_ignored=false; set MEMRA_FRSPEC_TRIM=<ranks.txt> to trim)
+[prefix-cache] on: budget 800MB (800325632 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), requested 800325632 B; boot driver free 9047244800 B, post-reserve clamp 7436632064 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+[admission] "q": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="q" route=dspark supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2064 kept=2056 phys_rows=4120
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1845493760,"still_owned_bytes":19475432320,"pool_reserved_bytes":19528679424,"pool_cached_bytes":53247104,"driver_free_bytes":4972478464,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1760MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=dspark transient floor 1640MB (static was 1536MB; measured 1640MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20384MB rest-mapped 18624MB charged 119MB -> 1640MB]; 3.6s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18175
+[meter] admit id=cmpl-354ce26a905b4aa07a26d748387abe7f tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +146MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=3548 path=spec = 29696 B/token x ctx + 1363MB prefill-workspace + 0MB fixed = 1469MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=2972 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=2003.891 max_chunk_ms=2003.891
+[dspark-acc] ctx=2972 burst=22/38 cum=22/38=0.579
+[prefix-cache] insert (dspark-boundary): 2944 tokens, 244.3MB (resident 244.3MB / 800MB, model q)
+[worker] dspark-park REWOUND (grid law): 3003 rows to the prime boundary 2944; parked (model q)
+[meter] admit id=cmpl-9e96e372001daab5d0a60106ad78acbb tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +147MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=3587 path=spec = 29696 B/token x ctx + 1381MB prefill-workspace + 0MB fixed = 1488MB
+[worker] dspark-reuse: grew the rewound session from 3492 to 3531 rows for the request's cap (model q)
+[worker] dspark-reuse: 2944 committed tokens resumed at the prime boundary (parked at 3003) (suffix 67 to prime) [sampler=equivalent] (model q)
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=3011 cached=2944 lcp=2944 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=103.270 max_chunk_ms=103.270
+[dspark-acc] ctx=3011 burst=24/37 cum=24/37=0.649
+[prefix-cache] insert (dspark-boundary): 2976 tokens, 245.3MB (resident 489.6MB / 800MB, model q)
+[dspark-acc] ctx=3043 burst=15/28 cum=39/65=0.600
+[worker] dspark-park REWOUND (grid law): 3067 rows to the prime boundary 2976; parked (model q)
+[meter] admit id=cmpl-ffa6bb4fa41f0f8e3e998857b270d7e0 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +150MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=3646 path=spec = 29696 B/token x ctx + 1408MB prefill-workspace + 0MB fixed = 1517MB
+[worker] dspark-reuse: grew the rewound session from 3531 to 3590 rows for the request's cap (model q)
+[worker] dspark-reuse: 2976 committed tokens resumed at the prime boundary (parked at 3067) (suffix 94 to prime) [sampler=equivalent] (model q)
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=3070 cached=2976 lcp=2976 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=108.847 max_chunk_ms=108.847
+[dspark-acc] ctx=3070 burst=19/33 cum=19/33=0.576
+[prefix-cache] insert (dspark-boundary): 3040 tokens, 247.2MB (resident 736.8MB / 800MB, model q)
+[worker] dspark-park REWOUND (grid law): 3097 rows to the prime boundary 3040; parked (model q)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

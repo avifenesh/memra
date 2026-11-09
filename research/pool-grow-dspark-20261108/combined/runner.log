@@ -1,0 +1,54 @@
+arm 1 lease wait 2026-11-09T00:42:58+02:00
+gpulock: 5090 leased as claude-code-20261109T004258-1760272 for 60m
+01:04:05 grow A/B start base e0ee6417229a fix 25a763427a03 arms 1
+waitfor: MET after 0m25s
+01:04:30 start 1-base-full
+01:12:06 1-base-full c1 {"arm": "1-base-full", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 11549, "wall_s": 330.4, "aggregate_gen_tps": 35.2, "per_user_gen_tps_median"
+01:19:32 1-base-full c2 {"arm": "1-base-full", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 11549, "wall_s": 312.0, "aggregate_gen_tps": 37.69, "per_user_gen_tps_median
+01:26:03 1-base-full c4 {"arm": "1-base-full", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 10623, "wall_s": 240.7, "aggregate_gen_tps": 46.04, "per_user_gen_tps_median
+01:32:36 1-base-full c8 {"arm": "1-base-full", "users": 8, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 10623, "wall_s": 242.7, "aggregate_gen_tps": 47.56, "per_user_gen_tps_median
+waitfor: MET after 0m15s
+01:32:51 1-base-full done: NVIDIA GeForce RTX 5090 Laptop GPU, 72, 180 MHz, [N/A] end 2026-11-09T01:32:51+02:00 load=3.98 4.72 6.82 capacity-rejects=0 vram-defer-lines=4083 dspark-park-rewound=46 dspark-park-skipped=8 dspark-rewound-resumes=0 dspark-grows=0 dspark-miss=46 cache-preferred=4 seat-declines=0 oom-lines=0 fixed:     145 MB prefill-workspace + 340MB fixed fixed:      78 MB prefill-workspace + 341MB fixed fixed:       6 MB prefill-workspace + 335MB fixed floor: [admit-cal] boot calibration done: model="q38" route=dspark transient f
+01:32:51 GROW_AB_DONE
+arm 1 exit 0 2026-11-09T01:32:51+02:00
+arm 2 lease wait 2026-11-09T01:32:51+02:00
+gpulock: 5090 leased as claude-code-20261109T013251-2673128 for 60m
+01:49:43 grow A/B start base e0ee6417229a fix 25a763427a03 arms 2
+waitfor: MET after 0m35s
+01:50:18 start 2-fix-full
+01:57:08 2-fix-full c1 {"arm": "2-fix-full", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 10818, "wall_s": 283.6, "aggregate_gen_tps": 38.46, "per_user_gen_tps_median"
+02:04:23 2-fix-full c2 {"arm": "2-fix-full", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 11058, "wall_s": 300.4, "aggregate_gen_tps": 37.5, "per_user_gen_tps_median":
+02:11:00 2-fix-full c4 {"arm": "2-fix-full", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 10623, "wall_s": 243.5, "aggregate_gen_tps": 45.55, "per_user_gen_tps_median"
+02:17:32 2-fix-full c8 {"arm": "2-fix-full", "users": 8, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 10623, "wall_s": 245.9, "aggregate_gen_tps": 44.08, "per_user_gen_tps_median"
+waitfor: MET after 0m15s
+02:17:47 2-fix-full done: NVIDIA GeForce RTX 5090 Laptop GPU, 80, 1642 MHz, [N/A] end 2026-11-09T02:17:47+02:00 load=10.58 7.71 6.82 capacity-rejects=0 vram-defer-lines=4288 dspark-park-rewound=46 dspark-park-skipped=11 dspark-rewound-resumes=17 dspark-grows=17 dspark-miss=33 cache-preferred=1 seat-declines=0 oom-lines=0 fixed:     145 MB prefill-workspace + 340MB fixed fixed:      78 MB prefill-workspace + 341MB fixed fixed:       6 MB prefill-workspace + 335MB fixed floor: [admit-cal] boot calibration done: model="q38" route=dspark transi
+02:17:47 GROW_AB_DONE
+arm 2 exit 0 2026-11-09T02:17:47+02:00
+arm 3 lease wait 2026-11-09T02:17:47+02:00
+gpulock: 5090 leased as claude-code-20261109T021747-3377736 for 60m
+02:38:25 grow A/B start base e0ee6417229a fix 25a763427a03 arms 3
+waitfor: MET after 0m30s
+02:38:55 start 3-fix-full
+02:45:47 3-fix-full c1 {"arm": "3-fix-full", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 10818, "wall_s": 289.3, "aggregate_gen_tps": 37.7, "per_user_gen_tps_median":
+02:53:04 3-fix-full c2 {"arm": "3-fix-full", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 11058, "wall_s": 299.0, "aggregate_gen_tps": 37.68, "per_user_gen_tps_median"
+02:59:34 3-fix-full c4 {"arm": "3-fix-full", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 10623, "wall_s": 242.6, "aggregate_gen_tps": 45.67, "per_user_gen_tps_median"
+03:06:06 3-fix-full c8 {"arm": "3-fix-full", "users": 8, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 10623, "wall_s": 241.7, "aggregate_gen_tps": 44.93, "per_user_gen_tps_median"
+waitfor: MET after 0m15s
+03:06:22 3-fix-full done: NVIDIA GeForce RTX 5090 Laptop GPU, 71, 180 MHz, [N/A] end 2026-11-09T03:06:22+02:00 load=3.18 4.38 5.07 capacity-rejects=0 vram-defer-lines=4263 dspark-park-rewound=46 dspark-park-skipped=11 dspark-rewound-resumes=17 dspark-grows=17 dspark-miss=35 cache-preferred=1 seat-declines=0 oom-lines=1 fixed:     146 MB prefill-workspace + 340MB fixed fixed:      78 MB prefill-workspace + 341MB fixed fixed:       6 MB prefill-workspace + 335MB fixed floor: [admit-cal] boot calibration done: model="q38" route=dspark transien
+03:06:22 GROW_AB_DONE
+arm 3 exit 0 2026-11-09T03:06:22+02:00
+arm 4 lease wait 2026-11-09T03:06:22+02:00
+arm 4 lease wait 2026-11-09T03:49:47+02:00
+gpulock: 5090 leased as claude-code-20261109T034947-280596 for 60m
+03:49:47 grow A/B start base e0ee6417229a fix 25a763427a03 arms 4
+waitfor: MET after 0m25s
+03:50:13 start 4-base-full
+03:57:37 4-base-full c1 {"arm": "4-base-full", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 11549, "wall_s": 322.0, "aggregate_gen_tps": 36.12, "per_user_gen_tps_median
+04:04:55 4-base-full c2 {"arm": "4-base-full", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 11549, "wall_s": 305.8, "aggregate_gen_tps": 38.45, "per_user_gen_tps_median
+04:11:17 4-base-full c4 {"arm": "4-base-full", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 10623, "wall_s": 237.7, "aggregate_gen_tps": 46.69, "per_user_gen_tps_median
+04:17:45 4-base-full c8 {"arm": "4-base-full", "users": 8, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "ok": 29, "http_400": 0, "http_408": 0, "other_failures": 0, "tokens": 10623, "wall_s": 238.5, "aggregate_gen_tps": 45.46, "per_user_gen_tps_median
+waitfor: MET after 0m15s
+04:18:00 4-base-full done: NVIDIA GeForce RTX 5090 Laptop GPU, 69, 180 MHz, [N/A] end 2026-11-09T04:18:00+02:00 load=4.12 3.94 4.69 capacity-rejects=0 vram-defer-lines=4262 dspark-park-rewound=44 dspark-park-skipped=10 dspark-rewound-resumes=0 dspark-grows=0 dspark-miss=47 cache-preferred=4 seat-declines=0 oom-lines=0 fixed:     145 MB prefill-workspace + 340MB fixed fixed:      78 MB prefill-workspace + 341MB fixed fixed:       6 MB prefill-workspace + 335MB fixed floor: [admit-cal] boot calibration done: model="q38" route=dspark transient 
+04:18:00 GROW_AB_DONE
+arm 4 exit 0 2026-11-09T04:18:00+02:00
+AB_RUNNER_DONE
