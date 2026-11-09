@@ -49,12 +49,15 @@ pub(crate) fn default_background() -> Value {
     Value::Bool(false)
 }
 
+/// The one refusal every dialect gives a non-boolean `background` (param `background`).
+pub(crate) const BACKGROUND_NOT_BOOLEAN: &str = "background must be a boolean";
+
 pub(crate) fn validate(value: &Value, stream: bool) -> Result<(), &'static str> {
     let background = match value {
         Value::Bool(value) => *value,
         // Serde's default for an omitted Value is null. Use a dedicated false
         // default so an explicit null is distinguishable and refused.
-        _ => return Err("background must be a boolean"),
+        _ => return Err(BACKGROUND_NOT_BOOLEAN),
     };
     if background && stream {
         return Err("background and stream cannot both be true");

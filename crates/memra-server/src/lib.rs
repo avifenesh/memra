@@ -26952,6 +26952,49 @@ temperature = 0.6
         }
     }
 
+    /// A non-boolean `background` on `/v1/responses` gets the same 400 body chat completions
+    /// give, before any worker or receipt intake. It used to run synchronously.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
+    async fn background_non_boolean_on_responses_is_refused_like_chat() {
+        let _drain = drain_lock();
+        let (st, mock, _, rx) = bg914_fixture(None);
+        let app = Router::new()
+            .route("/v1/responses", post(responses_api::responses_admitted))
+            .route("/v1/chat/completions", post(chat_completions_admitted))
+            .with_state(st);
+        for invalid in [json!("true"), json!(1), json!({}), json!([])] {
+            let mut responses = json!({"model": "bg914", "input": "hi"});
+            responses["background"] = invalid.clone();
+            let mut chat = bg914_body(true);
+            chat["background"] = invalid.clone();
+            let mut errors = Vec::new();
+            for (path, body) in [("/v1/responses", responses), ("/v1/chat/completions", chat)] {
+                let response = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    bg914_http(app.clone(), "POST", path, Some("owner-key"), body),
+                )
+                .await
+                .unwrap_or_else(|_| {
+                    panic!("{path} {invalid}: no answer; the request was not refused")
+                });
+                assert_eq!(
+                    response.status(),
+                    StatusCode::BAD_REQUEST,
+                    "{path} {invalid}"
+                );
+                errors.push(body_value(response).await["error"].clone());
+            }
+            assert_eq!(errors[0]["param"], "background");
+            assert_eq!(
+                errors[0], errors[1],
+                "{invalid}: Responses must refuse like chat"
+            );
+        }
+        assert!(rx.try_recv().is_err());
+        assert!(mock.events().is_empty());
+    }
+
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
     async fn background_chat_text_complete_after_deadline_preserves_native_data_and_defaults() {

@@ -1203,7 +1203,8 @@ and `failed`; an output-token or context limit remains an explicit incomplete re
 Background requests keep normal authentication, budget, capacity, queue and model
 limits. They bypass synchronous deadline feasibility and have no wire deadline or
 90-second wall-clock limit. `timeout_ms` does not limit background generation.
-`stream: true` together with `background: true` is a 400. A request that omits
+`stream: true` together with `background: true` is a 400, and so is a non-boolean
+`background` on every route (on `/v1/responses` an explicit `null` is absent). A request that omits
 `background` or sets it to false keeps the synchronous path.
 
 Poll and cancel resolve the authenticated tenant on every request. A different tenant

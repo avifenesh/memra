@@ -160,7 +160,18 @@ pub(crate) fn translate(v: &Value) -> Result<Value, (String, Option<String>)> {
             "server-side conversation state does not exist here",
         ));
     }
-    let background_requested = obj.get("background").and_then(|b| b.as_bool()) == Some(true);
+    // Same refusal as chat and text completions for a non-boolean value. An explicit null is
+    // absence here: OpenAI declares this field nullable, like the other nullable fields above.
+    let background_requested = match obj.get("background") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(_) => {
+            return Err((
+                crate::background_jobs::BACKGROUND_NOT_BOOLEAN.to_string(),
+                Some("background".to_string()),
+            ));
+        }
+    };
     if background_requested && obj.get("stream").and_then(|s| s.as_bool()) == Some(true) {
         return Err(gate(
             "background",
@@ -2167,6 +2178,25 @@ mod tests {
         // stream alone (no background) is unaffected.
         let stream_only = json!({"model": "m", "input": "hi", "stream": true});
         assert!(translate(&stream_only).is_ok());
+    }
+
+    #[test]
+    fn background_must_be_a_boolean_and_null_is_absence() {
+        // A non-boolean value used to translate as "absent" and run synchronously.
+        for invalid in [json!("true"), json!(1), json!({}), json!([])] {
+            let req = json!({"model": "m", "input": "hi", "background": invalid});
+            let (msg, field) = translate(&req).unwrap_err();
+            assert_eq!(
+                msg,
+                crate::background_jobs::BACKGROUND_NOT_BOOLEAN,
+                "{invalid}"
+            );
+            assert_eq!(field.as_deref(), Some("background"));
+        }
+        for absent in [json!(null), json!(false)] {
+            let req = json!({"model": "m", "input": "hi", "background": absent});
+            assert!(translate(&req).is_ok(), "{absent} must translate");
+        }
     }
 
     #[test]
