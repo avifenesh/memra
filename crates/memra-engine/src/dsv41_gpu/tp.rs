@@ -592,6 +592,19 @@ impl Group {
         id: usize,
         mint: bool,
     ) -> Result<Vec<LayerW>, String> {
+        self.load_layer_with(stm, g, id, mint, true)
+    }
+
+    /// [`Self::load_layer`]; with `routed` false the shares leave their routed experts to the
+    /// ranks' expert caches ([`LayerW::load_part_with`]).
+    pub fn load_layer_with(
+        &self,
+        stm: &StModel,
+        g: &Geo,
+        id: usize,
+        mint: bool,
+        routed: bool,
+    ) -> Result<Vec<LayerW>, String> {
         let n = self.n();
         let ops: Vec<&super::Ops> = self.cx.iter().map(|c| &c.ops).collect();
         std::thread::scope(|sc| {
@@ -600,7 +613,9 @@ impl Group {
                 .enumerate()
                 .map(|(r, o)| {
                     let o: &super::Ops = o;
-                    sc.spawn(move || LayerW::load_part(o, stm, g, id, mint, Part { rank: r, n }))
+                    sc.spawn(move || {
+                        LayerW::load_part_with(o, stm, g, id, mint, Part { rank: r, n }, routed)
+                    })
                 })
                 .collect();
             hs.into_iter()
@@ -895,8 +910,23 @@ impl Group {
             let st = c.ops.st.clone();
             let x = x2[r].at(&st, r0 * d * 2);
             let sl = c.ops.buf(np * d * 2)?;
-            c.experts_tiles(&lw[r], x, &plans[r], p0, p1, &sl)?;
-            let so = c.shared_expert(&lw[r], x, rows)?;
+            let so = if lw[r].experts.is_empty() && p1 > p0 {
+                // experts off the card: queue the misses' copies first, so they overlap the
+                // shared expert (an independent output; launch order never changes a value)
+                let need: Vec<usize> = er.clone().filter(|&e| off[e + 1] > off[e]).collect();
+                let cache = c
+                    .experts
+                    .as_mut()
+                    .ok_or("the layer holds no routed experts and the rank has no expert cache")?;
+                let bases = cache.resolve(&c.ops, lw[r].id, &need)?;
+                let tab = c.cached_expert_table(er.clone(), &need, &bases)?;
+                let so = c.shared_expert(&lw[r], x, rows)?;
+                c.experts_tiles(&lw[r], x, &plans[r], p0, p1, &sl, Some(&tab))?;
+                so
+            } else {
+                c.experts_tiles(&lw[r], x, &plans[r], p0, p1, &sl, None)?;
+                c.shared_expert(&lw[r], x, rows)?
+            };
             Ok((sl, so, Blk::flat(p0 * d * 2, (p1 - p0) * d * 2)))
         })?;
         let (mut slots, mut shared_out, mut blks) = (vec![], vec![], vec![]);

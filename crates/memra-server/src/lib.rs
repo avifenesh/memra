@@ -106,6 +106,7 @@ mod build_id;
 mod capacity_metrics;
 #[cfg(test)]
 mod dsv41_encoding_tests;
+mod dsv41_serve;
 mod dsv4_admit;
 mod dsv4_serve;
 mod embed_api;
@@ -5576,6 +5577,7 @@ fn parse_think(
     suppress_switch: Option<bool>,
     default_effort: Option<&str>,
     max_tier: bool,
+    numeric_budget: bool,
 ) -> Result<(ThinkMode, Option<String>, bool), String> {
     let mut effort = reasoning_effort.clone();
     let ReasoningObject {
@@ -5644,6 +5646,22 @@ fn parse_think(
     // `enabled == false` early-return here skipped validation the same way).
     let effort_arm = match effort.as_deref() {
         None => None,
+        // deepseek-v4.1's numeric reasoning budget (`encoding_dsv41`: an integer 1..=100, low = 50,
+        // high = 75, max = 100), carried as the effort string on the models whose renderer reads
+        // it; every other model keeps the level table below and refuses a number there.
+        Some(raw) if numeric_budget && raw.starts_with(|c: char| c.is_ascii_digit()) => {
+            match raw.parse::<u8>() {
+                Ok(n) if (1..=100).contains(&n) && n.to_string() == raw => {
+                    Some((ThinkMode::Think, raw.to_string()))
+                }
+                _ => {
+                    return Err(format!(
+                        "bad reasoning_effort {raw:?}: a numeric reasoning budget is an integer \
+                         in [1, 100] (or none|minimal|low|medium|high|max)"
+                    ));
+                }
+            }
+        }
         Some(raw) => {
             let level = canonical_effort_for(raw, max_tier).ok_or_else(|| {
                 format!(
@@ -5652,21 +5670,22 @@ fn parse_think(
                      highest level this model's template distinguishes)"
                 )
             })?;
-            Some(match level {
+            let (think, level) = match level {
                 "none" | "minimal" => (ThinkMode::NoThink, "low"),
                 "low" => (ThinkMode::Think, "low"),
                 "medium" => (ThinkMode::Think, "medium"),
                 "max" => (ThinkMode::Think, "max"),
                 _ => (ThinkMode::Think, "high"),
-            })
+            };
+            Some((think, level.to_string()))
         }
     };
     let (think, level) = match (enabled, effort_arm) {
         // OpenRouter "thinking off" / Anthropic thinking.type "disabled": the strongest
         // off-request any surface can express — it wins over a coexisting effort level.
         (Some(false), _) => (ThinkMode::NoThink, Some("low".to_string())),
-        (Some(true), arm) => (ThinkMode::Think, arm.map(|(_, level)| level.to_string())),
-        (None, Some((think, level))) => (think, Some(level.to_string())),
+        (Some(true), arm) => (ThinkMode::Think, arm.map(|(_, level)| level)),
+        (None, Some((think, level))) => (think, Some(level)),
         (None, None) => (ThinkMode::Default, None),
     };
     Ok((think, level, client_explicit))
@@ -6810,6 +6829,12 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
     let live = crate::dsv4_serve::join_lanes(std::time::Duration::from_secs(drain_deadline_s()));
     if live > 0 {
         eprintln!("[server] {live} dsv4 serving lane(s) still in an engine call; exiting anyway");
+    }
+    let live = crate::dsv41_serve::join_threads(std::time::Duration::from_secs(drain_deadline_s()));
+    if live > 0 {
+        eprintln!(
+            "[server] {live} deepseek-v4.1 serving thread(s) still in a step; exiting anyway"
+        );
     }
     Ok(())
 }
@@ -9392,6 +9417,8 @@ fn build_chat_request_with_trace(
         // GLM-5.3-Flash's `Reasoning Effort: Max` (its own default). Clamping xhigh/max/ultra
         // into `high` on these silently drops the tier the client asked for.
         caps.is_some_and(|c| c.dsv4 || c.glm5),
+        // deepseek-v4.1 reads a numeric budget (1..=100) as well as the levels.
+        caps.is_some_and(|c| c.dsv41),
     )?;
     // Does this model's template express a reasoning DEPTH at all, and can it be turned off?
     // Both are template-probed capabilities, never inferred from the family name (house law:
@@ -13918,7 +13945,7 @@ mod tests {
             .and_then(|v| v.as_str())
             .map(String::from);
         let (think, _lvl, _explicit) =
-            parse_think(&effort, &None, None, None, None, false).unwrap();
+            parse_think(&effort, &None, None, None, None, false, false).unwrap();
 
         let mut turns: Vec<TmplTurn> = Vec::new();
         for msg in request["messages"].as_array().unwrap() {
@@ -14203,6 +14230,31 @@ mod tests {
     /// `reasoning_effort` must reach the TEMPLATE (a rendered system line), never the sampler,
     /// and the model's `max` rung — a real tier ABOVE `high`, and its own default — must
     /// survive `canonical_effort_for` instead of clamping into `high`.
+    /// deepseek-v4.1's numeric reasoning budget (`encoding_dsv41`, 1..=100) rides the effort
+    /// string on a V4.1 model only: a canonical integer is a thinking request carrying it, an
+    /// out-of-range or non-canonical number is a 400, the level names keep working, and every
+    /// other model still refuses a number.
+    #[test]
+    fn dsv41_numeric_reasoning_budget_rides_the_effort_string_on_v41_only() {
+        let eff = |v: &str| Some(v.to_string());
+        let think = |v: &str, v41: bool| parse_think(&eff(v), &None, None, None, None, true, v41);
+        let (mode, level, explicit) = think("63", true).unwrap();
+        assert_eq!(
+            (mode, level.as_deref(), explicit),
+            (ThinkMode::Think, Some("63"), true)
+        );
+        assert_eq!(think("1", true).unwrap().1.as_deref(), Some("1"));
+        assert_eq!(think("100", true).unwrap().1.as_deref(), Some("100"));
+        for bad in ["0", "101", "07", "1.5", "+5", "255", "1000"] {
+            let err = think(bad, true).unwrap_err();
+            assert!(err.contains("reasoning_effort"), "{bad}: {err}");
+        }
+        assert_eq!(think("max", true).unwrap().1.as_deref(), Some("max"));
+        assert_eq!(think("none", true).unwrap().0, ThinkMode::NoThink);
+        // a model whose renderer reads no number keeps the level table
+        assert!(think("63", false).is_err());
+    }
+
     #[test]
     fn glm5_reasoning_effort_renders_and_keeps_its_max_tier() {
         for (sent, line) in [

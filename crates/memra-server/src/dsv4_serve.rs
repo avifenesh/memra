@@ -1270,7 +1270,7 @@ impl Drop for ExitLatch {
 /// channel, not the event stream: failing only via tx leaves the HTTP layer to a 503 compile
 /// timeout (rung-3 serve finding: response_format 503 instead of the named 400). Same
 /// dispatch as the worker's fail_request.
-fn fail_request(req: &mut Request, err: EngineError) {
+pub(crate) fn fail_request(req: &mut Request, err: EngineError) {
     if let Some(ready) = req.constraint_ready.take() {
         let _ = ready.send(Err(err));
     } else {
@@ -2274,6 +2274,22 @@ pub(crate) fn snap(s: &str, mut i: usize) -> usize {
 /// are exclusive. Extracted from Emit::push so the multi-byte window arithmetic has
 /// a toothed unit gate (both boundary panics were found LIVE, never by a test).
 pub(crate) fn scan_stop_cut(text: &str, full: &str, stops: &[String]) -> Option<usize> {
+    scan_stop_cut_with(
+        text,
+        full,
+        stops,
+        &["</\u{ff5c}DSML\u{ff5c}tool_calls>", "<tool_call|>"],
+    )
+}
+
+/// [`scan_stop_cut`] with the caller's set of parser-closing (inclusive) stops: the deepseek-v4.1
+/// route keeps its own DSML close (`</｜DSML｜ calls>`) in the stream the same way.
+pub(crate) fn scan_stop_cut_with(
+    text: &str,
+    full: &str,
+    stops: &[String],
+    inclusive_stops: &[&str],
+) -> Option<usize> {
     let delta = &full[snap(full, text.len())..];
     let scan_from = snap(text, text.len().saturating_sub(64));
     let probe = format!("{}{}", &text[scan_from..], delta);
@@ -2281,7 +2297,7 @@ pub(crate) fn scan_stop_cut(text: &str, full: &str, stops: &[String]) -> Option<
     for ss in stops {
         if let Some(p) = probe.find(ss.as_str()) {
             let abs = scan_from + p;
-            let inclusive = ss == "</\u{ff5c}DSML\u{ff5c}tool_calls>" || ss == "<tool_call|>";
+            let inclusive = inclusive_stops.contains(&ss.as_str());
             let end = if inclusive { abs + ss.len() } else { abs };
             // never rewind past already-emitted text
             let end = end.max(text.len()).min(full.len());
@@ -2421,6 +2437,12 @@ impl<'a> Emit<'a> {
 }
 
 fn render_prompt(m: &Dsv4Model, req: &Request) -> Result<Vec<u32>, EngineError> {
+    render_prompt_tok(&m.tok, req)
+}
+
+/// The worker's `prepare_request` rendering law on a dedicated route's tokenizer (shared with the
+/// deepseek-v4.1 route, `dsv41_serve`).
+pub(crate) fn render_prompt_tok(tok: &Tokenizer, req: &Request) -> Result<Vec<u32>, EngineError> {
     if let Some(error) = crate::worker::prompt_source_limit_error(req) {
         let param = if !req.prompt_ids.is_empty() {
             "prompt_ids"
@@ -2447,7 +2469,7 @@ fn render_prompt(m: &Dsv4Model, req: &Request) -> Result<Vec<u32>, EngineError> 
             &req.think,
             req.reasoning_effort.as_deref(),
             &req.chat_turns,
-            m.tok.has_qwen_effort_ladder(),
+            tok.has_qwen_effort_ladder(),
         );
         let rendered = if plain {
             let messages: Vec<_> = req
@@ -2455,29 +2477,24 @@ fn render_prompt(m: &Dsv4Model, req: &Request) -> Result<Vec<u32>, EngineError> 
                 .iter()
                 .map(|t| (t.role.as_str(), t.content.as_str()))
                 .collect();
-            m.tok.apply_chat_template(&messages, true)
+            tok.apply_chat_template(&messages, true)
         } else {
-            m.tok
-                .apply_chat_template_tools_ex(
-                    &req.chat_turns,
-                    true,
-                    &req.tools_json,
-                    &req.tools_struct,
-                    req.think,
-                    req.reasoning_effort.as_deref(),
-                )
-                .map_err(|e| {
-                    EngineError::invalid_param(format!("chat template: {e}"), "messages")
-                })?
+            tok.apply_chat_template_tools_ex(
+                &req.chat_turns,
+                true,
+                &req.tools_json,
+                &req.tools_struct,
+                req.think,
+                req.reasoning_effort.as_deref(),
+            )
+            .map_err(|e| EngineError::invalid_param(format!("chat template: {e}"), "messages"))?
         };
-        m.tok.encode(&rendered, true)
+        tok.encode(&rendered, true)
     } else if req.chat {
-        let rendered = m
-            .tok
-            .apply_chat_template(&[("user", req.prompt_text.as_str())], true);
-        m.tok.encode(&rendered, true)
+        let rendered = tok.apply_chat_template(&[("user", req.prompt_text.as_str())], true);
+        tok.encode(&rendered, true)
     } else {
-        m.tok.encode(&req.prompt_text, true)
+        tok.encode(&req.prompt_text, true)
     };
     if prompt.is_empty() {
         return Err(EngineError::invalid_param(

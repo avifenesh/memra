@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 pub mod decode;
 pub mod engram;
+pub mod experts;
 pub mod tp;
 
 pub mod ffi {
@@ -1525,6 +1526,22 @@ impl LayerW {
         mint: bool,
         part: Part,
     ) -> Result<Self, String> {
+        Self::load_part_with(ops, stm, g, id, mint, part, true)
+    }
+
+    /// [`Self::load_part`], with this rank's routed experts on the card or (`routed` false) left
+    /// to an [`experts::ExpertCache`]: `experts` is then empty and the MoE resolves each slice's
+    /// experts through the rank's cache.
+    #[allow(clippy::too_many_arguments)]
+    pub fn load_part_with(
+        ops: &Ops,
+        stm: &StModel,
+        g: &Geo,
+        id: usize,
+        mint: bool,
+        part: Part,
+        routed: bool,
+    ) -> Result<Self, String> {
         Part::check(g, part.n)?;
         let heads = part.range(g.heads);
         let groups = part.range(g.o_groups);
@@ -1609,7 +1626,7 @@ impl LayerW {
         };
         let expert0 = experts.start;
         let mut experts_w = Vec::with_capacity(experts.len());
-        for e in experts {
+        for e in experts.filter(|_| routed) {
             let ep = format!("{p}.ffn.experts.{e}");
             experts_w.push([
                 load_fp4(ops, stm, &format!("{ep}.w1"), g.moe_inter, g.dim, mint)?,
@@ -1897,6 +1914,8 @@ pub struct Ctx {
     /// NVTX ranges around each op (set by `dsv41-bench --nvtx` for an nsys profile; off, the
     /// range calls are skipped)
     pub nvtx: bool,
+    /// this rank's routed experts when the layers hold none ([`LayerW::load_part_with`])
+    pub experts: Option<experts::ExpertCache>,
 }
 
 impl Ctx {
@@ -1933,6 +1952,7 @@ impl Ctx {
             chunk: 8192,
             index_rows: None,
             nvtx: false,
+            experts: None,
         })
     }
 
@@ -2815,6 +2835,12 @@ impl Ctx {
         out: Dp,
         tr: &mut Trace,
     ) -> Result<(), String> {
+        if lw.experts.is_empty() {
+            return Err(
+                "the layer holds no routed experts on the card; cached experts run in dsv41_gpu::tp"
+                    .into(),
+            );
+        }
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let d = g.dim;
@@ -2831,7 +2857,7 @@ impl Ctx {
         self.nv_end();
         self.nv(c"experts");
         let slots = self.ops.buf(plan.np * d * 2)?;
-        self.experts_tiles(lw, x, &plan, 0, plan.np, &slots)?;
+        self.experts_tiles(lw, x, &plan, 0, plan.np, &slots, None)?;
         self.nv_end();
         self.nv(c"shared_expert");
         let shared = self.shared_expert(lw, x, s)?;
@@ -2956,6 +2982,41 @@ impl Ctx {
         Ok(plan)
     }
 
+    /// The `V41ExpW` table of this rank's expert range `er` for a layer whose routed experts live
+    /// in the rank's [`experts::ExpertCache`]: the record of each expert of `need` (the experts
+    /// with rows, ascending) points at its cache slot `bases[i]` (the checkpoint's MXFP4 bytes in
+    /// [`experts::Layout`] order); an expert without rows has no tile and its record stays zero.
+    pub fn cached_expert_table(
+        &mut self,
+        er: std::ops::Range<usize>,
+        need: &[usize],
+        bases: &[u64],
+    ) -> Result<Buf, String> {
+        if need.len() != bases.len() {
+            return Err(format!(
+                "{} cached expert slots for {} experts with rows",
+                bases.len(),
+                need.len()
+            ));
+        }
+        let lay = experts::Layout::of(&self.g);
+        let mut t = vec![0u8; er.len() * 64];
+        for (&e, &b) in need.iter().zip(bases) {
+            if !er.contains(&e) {
+                return Err(format!("expert {e} is not in this rank's range {er:?}"));
+            }
+            let rec = &mut t[(e - er.start) * 64..(e - er.start + 1) * 64];
+            // weights w1, w2, w3, then their scales, then the three second-level scales (1.0)
+            for (i, k) in [0usize, 4, 2, 1, 5, 3].into_iter().enumerate() {
+                rec[i * 8..i * 8 + 8].copy_from_slice(&(b + lay.off[k] as u64).to_le_bytes());
+            }
+            for i in 0..3 {
+                rec[48 + i * 4..52 + i * 4].copy_from_slice(&1.0f32.to_le_bytes());
+            }
+        }
+        Buf::from_bytes(&self.ops.st, &t)
+    }
+
     /// The routed experts of `lw` over pairs `[p0, p1)` of a device plan whose tile list holds
     /// exactly this rank's experts (all pairs at N = 1): the pairs' rows of `x` quantized, `w1` and
     /// `w3` as one tile-list launch each, the weighted clamped SwiGLU, `w2` into `slots` (bf16
@@ -2968,6 +3029,7 @@ impl Ctx {
         p0: usize,
         p1: usize,
         slots: &Buf,
+        cached: Option<&Buf>,
     ) -> Result<(), String> {
         let g = self.g.clone();
         let st = self.ops.st.clone();
@@ -2976,11 +3038,21 @@ impl Ctx {
         if n == 0 {
             return Ok(());
         }
-        let wfmt = match lw.experts[0][0].fmt {
-            QFmt::Mxfp4 => 1,
-            QFmt::Nvfp4Minted { .. } => 2,
-            QFmt::Fp8Block32 => return Err("routed experts are FP4".into()),
+        let wfmt = match (cached, lw.experts.first()) {
+            // the cache holds the checkpoint's MXFP4 bytes as stored
+            (Some(_), _) => 1,
+            (None, Some(ws)) => match ws[0].fmt {
+                QFmt::Mxfp4 => 1,
+                QFmt::Nvfp4Minted { .. } => 2,
+                QFmt::Fp8Block32 => return Err("routed experts are FP4".into()),
+            },
+            (None, None) => {
+                return Err(
+                    "the layer holds no routed experts and no cached table was given".into(),
+                );
+            }
         };
+        let exp_tab = cached.unwrap_or(&lw.exp_tab);
         let kdiv = if wfmt == 1 { 32 } else { 16 };
         let aq = self.ops.buf(np * d)?;
         let as_ = self.ops.buf(np * d / 32)?;
@@ -3006,7 +3078,7 @@ impl Ctx {
                     plan.tiles.p(&st).c(),
                     plan.ntiles.p(&st).i(),
                     plan.max_tiles as i32,
-                    lw.exp_tab.p(&st).c(),
+                    exp_tab.p(&st).c(),
                     proj,
                     (k / 2) as i64,
                     (k / kdiv) as i64,

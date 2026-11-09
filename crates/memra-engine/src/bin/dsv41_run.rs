@@ -48,6 +48,14 @@
 //!                            and continues (a finished sequence is only replayed and checked)
 //!   --eos ID                 end of sequence (default: the config's eos_token_id)
 //!   --full-steps N           full logits of the first N steps (default 8, as the tapes)
+//! Residency:
+//!   --experts-host           the serving route's single-card residency: every layer's own weights
+//!                            and the head resident, the routed experts in pinned host memory
+//!                            behind a device LRU cache (`dsv41_gpu::experts`); the bytes a kernel
+//!                            reads are the streamed route's, so the outputs are too
+//!   --cache-slots N          at most N expert slots per rank (default: all the free memory less
+//!                            --cache-reserve-mb; never below one slice's experts)
+//!   --cache-reserve-mb N     device memory left beside the cache for the forwards (default 16384)
 
 use memra_engine::dsv41_gpu::{
     self as v, Geo,
@@ -133,7 +141,7 @@ fn run() -> Result<(), String> {
     let mut ids: Vec<u32> = Vec::new();
     let mut i = 2;
     while i < a.len() {
-        if a[i] == "--preload" {
+        if a[i] == "--preload" || a[i] == "--experts-host" {
             i += 1;
             continue;
         }
@@ -302,6 +310,24 @@ fn run() -> Result<(), String> {
             + state)
             * per_dev;
         rn.load_resident(keep, reserve)?;
+    }
+    if a.iter().any(|x| x == "--experts-host") {
+        let threads = std::thread::available_parallelism().map_or(8, |n| n.get());
+        let ctx = rn.grp.cx[0].ops.st.context().clone();
+        let host = std::sync::Arc::new(v::experts::HostExperts::fill(
+            &stm, &g, n_layers, &ctx, threads,
+        )?);
+        eprintln!(
+            "dsv41-run: routed experts of {n_layers} layers in pinned host memory: {} bytes, filled and locked in {:.1}s on {threads} threads",
+            host.bytes, host.fill_s
+        );
+        let resident = rn.experts_off_card(host)?;
+        let reserve = num("--cache-reserve-mb")?.unwrap_or(16384) as u64 * (1 << 20);
+        let slots = rn.grow_caches(reserve, num("--cache-slots")?.unwrap_or(usize::MAX))?;
+        eprintln!(
+            "dsv41-run: resident weights {resident:?} bytes per rank; expert cache {slots:?} slots per rank ({} bytes a slot), {reserve} bytes reserved",
+            v::experts::Layout::of(&g).bytes
+        );
     }
     eprintln!(
         "dsv41-run: {} sequence(s), longest prompt {}, {n_layers} layers, chunk {chunk}, {} rank(s) on devices {devices:?}, {keep} resident, transport {}",
@@ -498,6 +524,13 @@ fn run() -> Result<(), String> {
         st.run_s,
         t0.elapsed().as_secs_f64()
     );
+    if rn.offloaded() {
+        let (cs, slots) = rn.cache_stats();
+        eprintln!(
+            "dsv41-run: expert cache {slots:?} slots: {} lookups, {} hits, {} misses, {} evictions, {} bytes H2D",
+            cs.lookups, cs.hits, cs.misses, cs.evictions, cs.h2d_bytes
+        );
+    }
     Ok(())
 }
 
