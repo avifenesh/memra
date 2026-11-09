@@ -8,15 +8,20 @@ docs/RELEASE-QUALIFICATION.md "Produce a record" runs tools/qualify-release.py c
 It takes an exclusive flock on the canonical per-UUID lock /tmp/memra-gpu-locks/<UUID>.lock (and on the box's
 campaign lock when --box-lock names one), refuses a card that already runs a compute process, and creates
 DIR/lease.json exclusively once it holds the locks. The command runs in its own process group with
-CUDA_VISIBLE_DEVICES set to the UUID and MEMRA_GPU_LEASE_FILE pointing at the lease, and with the default SIGPIPE
-and SIGXFSZ dispositions. It starts only after the lease names its pid: a child that does not get the go byte
-exits without running anything. The lock descriptors are inherited down the command's process tree, so the card
-stays locked while any of it runs, even if the wrapper dies. A timeout or a forwarded signal stops the whole group
-(SIGTERM, then SIGKILL after a grace period), and the lease is finished only when the group is empty: the child's
-exit code, timeout, signal, whether the group left processes behind and any compute process left on the card.
-It never evicts another process and never changes the card. Format: the lease.json of the banked records under
-research/release-qualification/ (schema_version 1). CPU contract: tools/test_memra_gpu_run.py (--lock-dir and
---linger-wait are its seams; capture accepts only the canonical directory).
+CUDA_VISIBLE_DEVICES set to the UUID and MEMRA_GPU_LEASE_FILE pointing at the lease (both paths absolute), and
+with the default SIGPIPE and SIGXFSZ dispositions; a SIGTERM, SIGINT or SIGHUP the wrapper inherited as ignored
+(nohup, a background job) stays ignored, for the wrapper and the command. It starts only after the lease names its
+pid: a child that does not get the go byte exits without running anything, and a signal that arrives before the
+go byte is recorded and keeps the command from starting. The lock descriptors are inheritable, so the command
+holds the card's lock too and a killed wrapper leaves the card locked while the command runs. A descendant holds
+it only while it keeps those descriptors: Python's subprocess closes them unless close_fds=False, so under
+capture a dead wrapper's lock lasts as long as qualify-release.py itself, not a battery it leaves behind (that
+lease also stays "running", which seal refuses). A timeout or a forwarded signal stops the whole group (SIGTERM,
+then SIGKILL after a grace period), and the lease is finished only when the group is empty: the child's exit code,
+timeout, signal, whether the group left processes behind (which also fails exit_code) and any compute process left
+on the card. It never evicts another process and never changes the card. Format: the lease.json of the banked
+records under research/release-qualification/ (schema_version 1). CPU contract: tools/test_memra_gpu_run.py
+(--lock-dir, --linger-wait and --grace are its seams; capture accepts only the canonical directory).
 """
 import argparse
 import csv
@@ -33,7 +38,7 @@ from pathlib import Path
 LOCK_DIR = Path("/tmp/memra-gpu-locks")  # the canonical directory qualify-release.py capture checks
 FORWARDED = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 # Python ignores these at startup and exec keeps an ignored disposition; the command gets the defaults.
-CHILD_DEFAULTS = FORWARDED + (signal.SIGPIPE, signal.SIGXFSZ)
+CHILD_DEFAULTS = (signal.SIGPIPE, signal.SIGXFSZ)
 GRACE_S = 60
 
 
@@ -79,7 +84,7 @@ def take(path, wait):
         except FileNotFoundError:
             now = None
         if now is not None and (now.st_dev, now.st_ino) == (st.st_dev, st.st_ino):
-            os.set_inheritable(fd, True)  # the command's process tree keeps the card locked
+            os.set_inheritable(fd, True)  # the command keeps the card locked if the wrapper dies
             return fd, st
         os.close(fd)
 
@@ -95,10 +100,16 @@ def group_alive(pgid):
 
 
 def signal_group(pgid, sig):
+    # A group left with only another account's processes cannot be signalled; the straggler wait then records it
+    # (group_alive stays true) and the lease fails, instead of the wrapper dying with a traceback.
     try:
         os.killpg(pgid, sig)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         pass
+
+
+def absolute(path):
+    return Path(os.path.abspath(path)) if path is not None else None  # no symlink resolution: the lock path is checked as written
 
 
 def main():
@@ -110,6 +121,7 @@ def main():
     ap.add_argument("--wait", type=float, default=600)
     ap.add_argument("--lock-dir", type=Path, default=LOCK_DIR, help=argparse.SUPPRESS)
     ap.add_argument("--linger-wait", type=float, default=30, help=argparse.SUPPRESS)
+    ap.add_argument("--grace", type=float, default=GRACE_S, help=argparse.SUPPRESS)
     ap.add_argument("cmd", nargs=argparse.REMAINDER)
     a = ap.parse_args()
     cmd = a.cmd[1:] if a.cmd[:1] == ["--"] else a.cmd
@@ -117,21 +129,22 @@ def main():
     if len(uuids) != 1 or not cmd:
         sys.exit("memra-gpu-run: one physical card UUID and a command are required")
     uuid = uuids[0]
+    receipt, box_lock, lock_dir = absolute(a.receipt), absolute(a.box_lock), absolute(a.lock_dir)
     all_devices = devices()
     leased = [d for d in all_devices if d["uuid"] == uuid]
     if not leased:
         sys.exit(f"memra-gpu-run: no such GPU {uuid}")
-    a.receipt.mkdir(parents=True, exist_ok=True)
-    lease_path = a.receipt / "lease.json"
-    a.lock_dir.mkdir(exist_ok=True)
+    receipt.mkdir(parents=True, exist_ok=True)
+    lease_path = receipt / "lease.json"
+    lock_dir.mkdir(exist_ok=True)
     try:
-        os.chmod(a.lock_dir, 0o1777)  # the umask would leave 1755; other accounts lock here too
+        os.chmod(lock_dir, 0o1777)  # the umask would leave 1755; other accounts lock here too
     except PermissionError:
         pass
     held = []
-    if a.box_lock:
-        held.append(take(a.box_lock, a.wait)[0])
-    lock = a.lock_dir / f"{uuid}.lock"
+    if box_lock:
+        held.append(take(box_lock, a.wait)[0])
+    lock = lock_dir / f"{uuid}.lock"
     fd, st = take(lock, a.wait)
     held.append(fd)
     busy = compute_on(uuid)
@@ -147,33 +160,41 @@ def main():
              "requested_uuids": [uuid], "lock_order": [uuid], "lock_files": {uuid: str(lock)},
              "lock_inodes": {uuid: {"inode": st.st_ino, "device_major": os.major(st.st_dev),
                                     "device_minor": os.minor(st.st_dev)}},
-             "box_lock": str(a.box_lock) if a.box_lock else None,
+             "box_lock": str(box_lock) if box_lock else None,
              "devices": leased, "all_devices": all_devices, "command": cmd,
              "started_unix": time.time(), "state": "running"}
     env = dict(os.environ, CUDA_VISIBLE_DEVICES=uuid, MEMRA_GPU_LEASE_FILE=str(lease_path))
-    state = {"sig": None, "pgid": None}
+    state = {"sig": None, "pgid": None, "go": False}
+    # A signal the wrapper inherited as ignored stays ignored, here and in the command (nohup keeps its meaning).
+    watched = tuple(s for s in FORWARDED if signal.getsignal(s) != signal.SIG_IGN)
 
     def forward(signum, _frame):
         if state["sig"] is None:
             state["sig"] = signum
-        if state["pgid"] is not None:
+        if state["go"] and state["pgid"] is not None:  # before the go byte there is no command to stop
             signal_group(state["pgid"], signal.SIGTERM)
 
-    for s in FORWARDED:  # before fork: a signal between fork and the go byte is recorded, not lost
+    for s in watched:
         signal.signal(s, forward)
+    # Blocked across fork: the child resets its dispositions before any of them can run the inherited handler.
+    unblocked = signal.pthread_sigmask(signal.SIG_BLOCK, watched)
     r, w = os.pipe()
     pid = os.fork()
     if pid == 0:
         try:
             os.close(w)
             os.setpgid(0, 0)
-            for s in CHILD_DEFAULTS:
+            for s in watched + CHILD_DEFAULTS:
                 signal.signal(s, signal.SIG_DFL)
-            if os.read(r, 1) == b"1":  # anything else: the wrapper died or refused before the lease named us
+            signal.pthread_sigmask(signal.SIG_SETMASK, unblocked)
+            if os.read(r, 1) == b"1":  # anything else: the wrapper died, refused or was signalled first
                 os.close(r)
                 os.execvpe(cmd[0], cmd, env)
+        except OSError as exc:
+            os.write(2, f"memra-gpu-run: cannot run {cmd[0]}: {exc}\n".encode())
         finally:
             os._exit(127)
+    signal.pthread_sigmask(signal.SIG_SETMASK, unblocked)
     os.close(r)
     try:
         os.setpgid(pid, pid)
@@ -187,9 +208,17 @@ def main():
         signal_group(pid, signal.SIGKILL)
         os.waitpid(pid, 0)
         sys.exit(f"memra-gpu-run: cannot write the lease ({exc}); the command did not run")
-    if state["sig"] is None:
-        os.write(w, b"1")
+    # The go decision and the go byte are one step: a signal that is already pending keeps the command from
+    # starting, and one that comes after the byte is forwarded to a command that runs.
+    signal.pthread_sigmask(signal.SIG_BLOCK, watched)
+    if state["sig"] is None and not (signal.sigpending() & set(watched)):
+        try:
+            os.write(w, b"1")
+            state["go"] = True
+        except BrokenPipeError:
+            pass  # the child is gone; its status says how
     os.close(w)
+    signal.pthread_sigmask(signal.SIG_SETMASK, unblocked)
     deadline = time.monotonic() + a.timeout
     timed_out, kill_at, status = False, None, None
     while status is None:
@@ -202,7 +231,7 @@ def main():
             timed_out = True
             signal_group(pid, signal.SIGTERM)
         if (timed_out or state["sig"] is not None) and kill_at is None:
-            kill_at = now + GRACE_S
+            kill_at = now + a.grace
         if kill_at is not None and now >= kill_at:
             signal_group(pid, signal.SIGKILL)
         time.sleep(0.2)
@@ -214,13 +243,13 @@ def main():
         end = time.monotonic() + (0 if (timed_out or state["sig"] is not None) else 10)
         while group_alive(pid) and time.monotonic() < end:
             time.sleep(0.2)
-        for sig, wait in ((signal.SIGTERM, GRACE_S), (signal.SIGKILL, 30)):
+        for sig, wait in ((signal.SIGTERM, a.grace), (signal.SIGKILL, 30)):
             signal_group(pid, sig)
             end = time.monotonic() + wait
             while group_alive(pid) and time.monotonic() < end:
                 time.sleep(0.2)
     state["pgid"] = None
-    for s in FORWARDED:  # nothing of the lease is left to forward to
+    for s in watched:  # nothing of the lease is left to forward to
         signal.signal(s, signal.SIG_DFL)
     end = time.monotonic() + a.linger_wait
     while True:  # a dying CUDA context can take a moment to leave the card

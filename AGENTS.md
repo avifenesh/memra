@@ -142,6 +142,8 @@ Exactly two memra GPU lock files exist, one per rig class. A third name gives no
 | any 2x RTX PRO 6000 pair or 3-card pod | `/tmp/memra-gpu.lock` |
 | the local RTX 5090 | `/tmp/memra-5090.lock` |
 
+The lease wrapper's per-card locks, `/tmp/memra-gpu-locks/<UUID>.lock`, are not a campaign lock: `tools/memra-gpu-run` holds a card's lock for one lease, together with the box's lock above (`--box-lock`), so a lease and a campaign exclude each other.
+
 `MEMRA_CI_LOCK` and `MEMRA_GPU_LOCK` remain override seams, but their defaults stay on this table. On the local rig, take the GPU through `gpulock` (SHARED.md), which also respects these locks. A DGX Spark is taken through its `sparklock` lease, never a local flock, which other machines cannot see; the `gb10` cell-evidence row does this with the unit from the box's `MEMRA_SPARK_UNIT`.
 
 ## Measurements and decisions are a corpus

@@ -6,13 +6,18 @@ the compute processes, read from files the test and the child write), and --lock
 a temporary directory. Each case runs the real wrapper as a subprocess and checks what qualify-release.py capture
 and seal rely on: the child passes capture's own live_lease (its lock-dir seam pointed at the test's directory),
 sees its own pid, its parent and its card in the lease, runs in its own process group with the box lock held and
-the default SIGPIPE/SIGXFSZ dispositions; the command never runs without a lease; a timeout or a
-signal stops the command's whole process group before the lease is finished and the locks released; the lock
-outlives a killed wrapper while the command runs and is held until the lease is finished; a descendant
-left in the group fails the lease; and the finished lease records exit, timeout, signal and
-lingering compute the way release_qualification.validate_lease judges them (a dirty run must be refused).
+the default SIGPIPE/SIGXFSZ dispositions, with an inherited ignored SIGHUP/SIGINT left ignored; the command never
+runs without a lease (a receipt dir that refuses it, a lease write that fails, a wrapper killed or signalled
+before the go byte); a missing command says why; a timeout or a signal stops the command's whole process group
+(SIGKILL for one that ignores SIGTERM) before the lease is finished and the locks released; the lock outlives a
+killed wrapper while the command runs, reaches a descendant only through inherited descriptors, and is held until
+the lease is finished; a descendant left in the group fails the lease; and the finished lease records exit,
+timeout, signal and lingering compute the way release_qualification.validate_lease judges them (a dirty run must
+be refused).
 """
 import fcntl
+import importlib.machinery
+import importlib.util
 import json
 import os
 import signal
@@ -20,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -116,6 +122,39 @@ def held(path):
         os.close(fd)
 
 
+def children(pid):
+    try:
+        return [int(c) for c in Path(f"/proc/{pid}/task/{pid}/children").read_text().split()]
+    except FileNotFoundError:
+        return []
+
+
+def drain_fifo(path, timeout=30.0):
+    """Read a FIFO the wrapper writes; None when no writer came within TIMEOUT (a bounded wait, never a hang)."""
+    out = {}
+
+    def read():
+        with open(path) as fifo:
+            out["data"] = fifo.read()
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    reader.join(timeout)
+    if reader.is_alive():
+        os.close(os.open(path, os.O_WRONLY | os.O_NONBLOCK))  # a writer that closes at once ends the read
+        reader.join(5)
+        return None
+    return out.get("data")
+
+
+def wrapper_module():
+    loader = importlib.machinery.SourceFileLoader("memra_gpu_run", str(WRAPPER))
+    spec = importlib.util.spec_from_loader("memra_gpu_run", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
 def wait_until(cond, timeout=20.0):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
@@ -158,6 +197,34 @@ class WrapperTests(unittest.TestCase):
 
     def wrap(self, mode="exit", arg="0", extra=()):
         return subprocess.run(self.argv(mode, arg, extra), env=self.env, capture_output=True, text=True, timeout=180)
+
+    def bare(self, *cmd, extra=(), receipt=None):
+        """argv for a plain command (no lease checks of its own, so nothing but the wrapper stops it)."""
+        return [sys.executable, str(WRAPPER), "--gpus", UUID, "--receipt", str(receipt or self.receipt),
+                "--lock-dir", str(self.locks), "--wait", "5", "--linger-wait", "1", *extra, "--", *cmd]
+
+    def blocked_in_the_lease_write(self, cmd):
+        """Start the wrapper with lease.json.tmp planted as a FIFO: it forks, then blocks writing the lease
+        (no reader), so the child waits for a go byte that has not come. Returns (wrapper, child pid)."""
+        self.receipt.mkdir()
+        os.mkfifo(self.receipt / "lease.json.tmp")
+        p = subprocess.Popen(self.bare(*cmd), env=self.env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(p.stderr.close)
+        # lease.json is created after the wrapper's last nvidia-smi call, so its only child from then on is the fork
+        self.assertTrue(wait_until(lambda: (self.receipt / "lease.json").exists()), "the wrapper never created the lease")
+        kids = []
+        self.assertTrue(wait_until(lambda: kids.extend(children(p.pid)) or kids), "the wrapper never forked")
+        child = kids[0]
+
+        def stop():
+            for pid in (p.pid, child):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            p.wait(timeout=30)
+        self.addCleanup(stop)
+        return p, child
 
     def start(self, mode, arg, extra=()):
         p = subprocess.Popen(self.argv(mode, arg, extra), env=self.env, stdout=subprocess.PIPE,
@@ -304,6 +371,7 @@ class WrapperTests(unittest.TestCase):
         self.assertTrue(held(self.lock), "a killed wrapper freed the card while its command still ran")
         self.assertTrue(wait_until(lambda: not held(self.lock), 30), "the lock stayed held after the command ended")
 
+    @unittest.skipIf(os.geteuid() == 0, "root ignores the read-only mode this case relies on")
     def test_the_command_never_runs_without_its_lease(self):
         self.receipt.mkdir()
         self.receipt.chmod(0o555)  # the lease cannot be created
@@ -316,6 +384,113 @@ class WrapperTests(unittest.TestCase):
         time.sleep(1)
         self.assertFalse(self.marker.exists(), "the command ran without a lease")
         self.assertFalse(held(self.lock))
+
+    def test_a_wrapper_killed_before_the_go_byte_never_runs_the_command(self):
+        p, child = self.blocked_in_the_lease_write(["sh", "-c", f"echo ran > {self.marker}"])
+        p.send_signal(signal.SIGKILL)
+        p.wait(timeout=30)
+        self.assertTrue(wait_until(lambda: not alive(child), 10), "the child outlived its wrapper without a go byte")
+        self.assertTrue(wait_until(lambda: not held(self.lock), 10), "a child without a go byte kept the card locked")
+        self.assertFalse(self.marker.exists(), "the command ran although the lease never named it")
+
+    def test_a_signal_before_the_go_byte_keeps_the_command_from_starting(self):
+        p, _ = self.blocked_in_the_lease_write(["sh", "-c", f"echo ran > {self.marker}"])
+        p.send_signal(signal.SIGTERM)
+        running = drain_fifo(self.receipt / "lease.json.tmp")  # let the lease write finish
+        self.assertIsNotNone(running, "the wrapper did not survive the signal to write its lease")
+        self.assertEqual(json.loads(running)["state"], "running")
+        p.wait(timeout=60)
+        self.assertEqual(p.returncode, 1, p.stderr.read())
+        lease = self.lease()
+        self.assertEqual(lease["interrupted_signal"], signal.SIGTERM)
+        self.assertEqual(lease["child_exit_code"], 127, "the child did not exit before the command (it ran it or was stopped mid-start)")
+        self.assertFalse(self.marker.exists())
+        self.assertFalse(held(self.lock))
+
+    def test_a_lease_that_cannot_be_written_never_starts_the_command(self):
+        self.receipt.mkdir()
+        (self.receipt / "lease.json.tmp").mkdir()  # the lease is created, but its content cannot land
+        r = subprocess.run(self.bare("sh", "-c", f"echo ran > {self.marker}"), env=self.env, capture_output=True,
+                           text=True, timeout=60)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("cannot write the lease", r.stderr)
+        time.sleep(1)
+        self.assertFalse(self.marker.exists(), "the command ran without a written lease")
+        self.assertFalse(held(self.lock))
+
+    def test_a_missing_command_fails_the_lease_and_says_why(self):
+        r = subprocess.run(self.bare(str(self.tmp / "no-such-command")), env=self.env, capture_output=True,
+                           text=True, timeout=60)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("cannot run " + str(self.tmp / "no-such-command"), r.stderr)
+        lease = self.lease()
+        self.assertEqual((lease["child_exit_code"], lease["exit_code"]), (127, 1))
+
+    def test_a_command_that_ignores_sigterm_is_killed_after_the_grace(self):
+        start = time.monotonic()
+        r = subprocess.run(self.bare("sh", "-c", f"trap '' TERM; echo ran > {self.marker}; sleep 120",
+                                     extra=("--timeout", "1", "--grace", "1")),
+                           env=self.env, capture_output=True, text=True, timeout=90)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        lease = self.lease()
+        self.assertIs(lease["timed_out"], True)
+        self.assertEqual(lease["child_exit_code"], -signal.SIGKILL)
+        self.assertLess(time.monotonic() - start, 60, "the SIGKILL never came")
+        self.assertFalse(held(self.lock))
+
+    def test_signals_inherited_as_ignored_stay_ignored(self):
+        def ignore():
+            signal.signal(signal.SIGHUP, signal.SIG_IGN)
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+        p = subprocess.Popen(self.bare("sh", "-c", f"grep SigIgn: /proc/$$/status > {self.marker}; sleep 3"),
+                             env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                             preexec_fn=ignore)
+        self.assertTrue(wait_until(lambda: self.marker.exists() and self.marker.read_text()))
+        p.send_signal(signal.SIGHUP)  # nohup: a dropped connection must not stop the capture
+        p.send_signal(signal.SIGINT)
+        p.wait(timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr.read())
+        lease = self.lease()
+        self.assertIsNone(lease["interrupted_signal"])
+        self.assertEqual(lease["child_exit_code"], 0)
+        ign = int(self.marker.read_text().split()[1], 16)
+        self.assertTrue(ign & (1 << (signal.SIGHUP - 1)) and ign & (1 << (signal.SIGINT - 1)),
+                        f"the command lost the inherited ignore: {ign:x}")
+
+    def test_a_relative_receipt_reaches_a_command_in_another_directory(self):
+        r = subprocess.run(self.bare("sh", "-c", f'cd / && test -f "$MEMRA_GPU_LEASE_FILE" && echo ran > {self.marker}',
+                                     receipt="lease"),
+                           env=self.env, cwd=self.tmp, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self.marker.exists(), "MEMRA_GPU_LEASE_FILE was not absolute")
+
+    def test_the_lock_reaches_a_descendant_only_through_inherited_descriptors(self):
+        # The docs' claim, pinned: the command holds the lock; a Python subprocess child holds it only with
+        # close_fds=False (capture's battery is started with the default, so it does not).
+        probe = (f"import os, subprocess, sys; lock = {str(self.lock)!r}; "
+                 "check = 'for f in /proc/self/fd/*; do [ \"$(readlink $f)\" = \"$1\" ] && echo held; done; :'; "
+                 "out = lambda **kw: subprocess.run(['sh', '-c', check, 'sh', lock], capture_output=True, text=True, **kw).stdout; "
+                 f"open({str(self.marker)!r}, 'w').write(out() + '|' + out(close_fds=False))")
+        r = subprocess.run(self.bare(sys.executable, "-c", probe), env=self.env, capture_output=True, text=True,
+                           timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        default, kept = self.marker.read_text().split("|")
+        self.assertEqual(default.strip(), "", "a default subprocess child kept the lock descriptor")
+        self.assertEqual(kept.strip(), "held", "close_fds=False did not pass the lock descriptor")
+
+    def test_signalling_a_group_of_another_account_does_not_crash_the_wrapper(self):
+        module = wrapper_module()
+        real = os.killpg
+
+        def refuse(_pgid, _sig):
+            raise PermissionError(1, "Operation not permitted")
+
+        os.killpg = refuse
+        try:
+            module.signal_group(424242, signal.SIGTERM)  # must not raise
+            self.assertTrue(module.group_alive(424242), "an unsignallable group must count as alive")
+        finally:
+            os.killpg = real
 
     def test_refuses_a_reused_receipt_and_an_unknown_card(self):
         self.assertEqual(self.wrap().returncode, 0)

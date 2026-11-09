@@ -369,13 +369,22 @@ process. The wrapper takes the canonical `/tmp/memra-gpu-locks/<UUID>.lock` and,
 the box's campaign lock: on a 2x RTX PRO 6000 box that is `/tmp/memra-gpu.lock` (the AGENTS.md lock
 table), so a capture and a campaign exclude each other; a box with its own per-card lock convention
 names that file instead. It refuses a card that already runs compute and creates the lease
-exclusively before the command starts; the command runs in its own process group and inherits the
-lock descriptors, so the card stays locked while any of its tree runs, even if the wrapper dies. A
-timeout or a forwarded signal stops the whole group, and the lease is finished only when the group
-is empty, with the exit, timeout, signal, any process the group left and any compute left on the
-card. `tools/test_memra_gpu_run.py` runs capture's own `live_lease` check inside the wrapped
-command and judges each finished lease with `validate_lease`, including dirty runs that must be
-refused.
+exclusively before the command starts. The command starts only after the lease names it: a wrapper
+that dies or is signalled before then leaves a child that exits without running anything. The
+command runs in its own process group and inherits the lock descriptors, so the card stays locked
+while the command runs, even if the wrapper dies. A descendant holds the lock only while it keeps
+those descriptors: Python's `subprocess` closes them unless `close_fds=False`, so under capture a
+dead wrapper's lock lasts as long as `qualify-release.py` itself, not a battery it leaves behind.
+That case also leaves the lease `running`, which seal refuses. A timeout or a forwarded signal
+stops the whole group (SIGTERM, then SIGKILL after 60 s), and the lease is finished only when the
+group is empty, with the exit, timeout, signal, any process the group left and any compute left on
+the card. A SIGHUP or SIGINT the wrapper inherited as ignored stays ignored, so `nohup` keeps a
+capture alive through a dropped connection. `validate_lease` judges `exit_code`, which the wrapper
+fails for a group that left processes behind (`process_group_lingered`); it does not read
+`box_lock`, so on a pair box the recipe's `--box-lock` is the only control that a capture and a
+campaign exclude each other. `tools/test_memra_gpu_run.py` runs capture's own `live_lease` check
+inside the wrapped command and judges each finished lease with `validate_lease`, including dirty
+runs that must be refused.
 
 **The generic battery qualifies one leased RTX PRO 6000 Blackwell at any NVML index.**
 `release-battery.sh` resolves CUDA device 0 to its physical UUID
