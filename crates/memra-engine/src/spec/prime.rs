@@ -51,6 +51,9 @@ pub struct MtpPrimeState {
     prepared: Option<PreparedMtp>,
     wall: std::time::Duration,
     call_local: bool,
+    /// The boundary tail fold (research/gb10-prefill-20261106/TAIL-FOLD-DESIGN.md): the one stop,
+    /// primed inside an unsegmented walk with a GDN tap instead of ending a segment.
+    fold_at: Option<usize>,
 }
 
 impl MtpPrimeState {
@@ -301,10 +304,18 @@ impl HybridModel {
         }
         let tokenwise = std::env::var("MEMRA_PRIME_TOKENWISE").is_ok()
             || e.frozen_cpu_experts_prefer_tokenwise_prime();
+        // The boundary tail fold: a cold walk with one stop runs unsegmented, with a GDN tap at
+        // the stop; the split law makes every row, the KV and the tapped state the split's.
+        let fold_at = match (prime_split, ckpt_rel) {
+            (Some(b), None) | (None, Some(b)) => Some(b),
+            (Some(b), Some(c)) if b == c => Some(b),
+            _ => None,
+        }
+        .filter(|&b| base == 0 && !tokenwise && self.prime_tail_fold_ok(e, tp, b));
         let chunks = trunk_schedule(
             tp,
-            prime_split,
-            ckpt_rel,
+            prime_split.filter(|_| fold_at.is_none()),
+            ckpt_rel.filter(|_| fold_at.is_none()),
             tokenwise,
             base > 0,
             crate::plan_backend::gdn_dspark_compatible(&self.plan),
@@ -351,6 +362,7 @@ impl HybridModel {
             prepared: None,
             wall: std::time::Duration::ZERO,
             call_local: std::env::var("MEMRA_PRIME_CALLLOCAL").as_deref() == Ok("1"),
+            fold_at,
         })
     }
 
@@ -378,7 +390,14 @@ impl MtpPrimeWalker<'_> {
         let n = self.model.cfg.n_embd as usize;
         let h_all = s.hiddens.as_mut().ok_or("MTP hidden stack missing")?;
         if chunk.batched {
-            let (logits, seed, h) = self.model.prime_chunk(
+            let fold = s.fold_at.filter(|&b| chunk.start <= b && b < chunk.end);
+            if let Some(b) = fold {
+                self.sess.cache.gdn_tap = Some(crate::cache::GdnTap::new(
+                    s.base + b,
+                    self.sess.cache.recur.len(),
+                ));
+            }
+            let primed = self.model.prime_chunk(
                 self.e,
                 &s.prompt[chunk.start..chunk.end],
                 &mut self.sess.cache,
@@ -390,11 +409,57 @@ impl MtpPrimeWalker<'_> {
                     },
                 chunk.start - chunk.segment_start,
                 None,
-            )?;
+            );
+            let tap = self.sess.cache.gdn_tap.take();
+            let (logits, seed, h) = primed?;
             self.e
                 .copy_into(h_all, chunk.start * n, &h, (chunk.end - chunk.start) * n)?;
             drop(seed);
             s.logits = logits;
+            if let Some(b) = fold {
+                let recurrent = self.sess.cache.recur.iter().flatten().count();
+                let mut snap = tap
+                    .filter(|tap| tap.taken == recurrent)
+                    .and_then(|tap| self.sess.cache.snapshot_from_tap(tap).ok());
+                if snap.is_none() {
+                    eprintln!(
+                        "[prime-walk] tail fold at {b}: the GDN tap is incomplete; no boundary capture"
+                    );
+                }
+                let want_ckpt = s.ckpt_rel == Some(b);
+                if s.capture_at == Some(b) || want_ckpt {
+                    let logits_b = self.model.prime_row_logits(self.e, h_all, b - 1).ok();
+                    let one = match (&snap, want_ckpt) {
+                        (Some(x), true) => x.clone_dtod(self.e).ok(),
+                        (Some(_), false) => snap.take(),
+                        (None, _) => None,
+                    };
+                    if let (Some(one), Some(logits_b)) = (one, logits_b) {
+                        self.sess.boundary_captures.push(SpecBoundaryCapture {
+                            snap: one,
+                            pos: s.base + b,
+                            logits: logits_b,
+                            last_h: capture_boundary_hidden(self.e, h_all, b, n),
+                            latent_tails: Vec::new(),
+                        });
+                    }
+                }
+                if want_ckpt {
+                    let anchor = self.e.uninit(n).and_then(|mut a| {
+                        self.e
+                            .copy_view_into(&mut a, 0, &h_all.slice((b - 1) * n..b * n), n)?;
+                        Ok(a)
+                    });
+                    self.sess.turn_ckpt = match (snap.take(), anchor) {
+                        (Some(snap), Ok(last_h)) => Some(SpecCheckpoint {
+                            snap,
+                            pos: s.base + b,
+                            last_h,
+                        }),
+                        _ => None,
+                    };
+                }
+            }
         } else {
             for i in chunk.start..chunk.end {
                 let (logits, h) = if chunk.target_step {
@@ -739,6 +804,7 @@ mod tests {
             prepared: None,
             wall: std::time::Duration::ZERO,
             call_local: false,
+            fold_at: None,
         };
         assert!(state(Some(1024), 0).owes_turn_checkpoint());
         assert!(

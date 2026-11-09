@@ -13193,11 +13193,89 @@ impl HybridModel {
         // the legacy prompt-end capture). Some(None) = capture attempted and failed -> the
         // slot is cleared (a stale checkpoint would rewind to the WRONG boundary).
         let mut ckpt_early: Option<Option<SpecCheckpoint>> = None;
+        // The boundary tail fold (research/gb10-prefill-20261106/TAIL-FOLD-DESIGN.md): a cold
+        // prime with one stop runs as one walk with a GDN tap at the stop, and the capture and
+        // the turn checkpoint are built from the tap. The split law makes every primed row, the
+        // KV and the tapped state equal the split prime's; the stop's logits are its row
+        // through the final norm and the LM head, as a call ending there computes them.
+        let fold_b = match stops.as_slice() {
+            &[b] if prepared.is_none()
+                && !continuation
+                && base == 0
+                && batched_prime
+                && self.prime_tail_fold_ok(e, prompt.len(), b) =>
+            {
+                Some(b)
+            }
+            _ => None,
+        };
         if let Some(ready) = prepared.as_mut() {
             prime_logits = ready.logits.clone();
             prompt_h = ready.hiddens.take();
         } else if continuation {
             prime_logits = Vec::new();
+        } else if let Some(b) = fold_b {
+            cache.gdn_tap = Some(memra_kv::GdnTap::new(b, cache.recur.len()));
+            let primed = self.prime_cache(e, prompt, &mut *cache, 0);
+            let tap = cache.gdn_tap.take();
+            let (l, _h_seed, h_all) = primed?;
+            prime_logits = l;
+            let recurrent = cache.recur.iter().flatten().count();
+            let mut snap = tap
+                .filter(|tap| tap.taken == recurrent)
+                .and_then(|tap| cache.snapshot_from_tap(tap).ok());
+            if snap.is_none() {
+                eprintln!(
+                    "[spec-prime] tail fold at {b}: the GDN tap is incomplete; no boundary capture"
+                );
+            }
+            let want_ckpt = ckpt_rel == Some(b);
+            let want_slot = sess_capture
+                .as_ref()
+                .is_some_and(|(requested, _)| *requested == Some(b) || want_ckpt);
+            if want_slot {
+                let logits_b = self.prime_row_logits(e, &h_all, b - 1).ok();
+                let s = match (&snap, want_ckpt) {
+                    (Some(s), true) => s.clone_dtod(e).ok(),
+                    (Some(_), false) => snap.take(),
+                    (None, _) => None,
+                };
+                if let (Some(s), Some(logits_b), Some((_, slot))) =
+                    (s, logits_b, sess_capture.as_mut())
+                {
+                    slot.push(SpecBoundaryCapture {
+                        snap: s,
+                        pos: b,
+                        logits: logits_b,
+                        last_h: capture_boundary_hidden(e, &h_all, b, n_embd),
+                        latent_tails: Vec::new(),
+                    });
+                }
+            }
+            if want_ckpt {
+                let anchor: Result<CudaSlice<f32>, Box<dyn std::error::Error>> =
+                    e.uninit(n_embd).and_then(|mut a| {
+                        e.copy_view_into(
+                            &mut a,
+                            0,
+                            &h_all.slice((b - 1) * n_embd..b * n_embd),
+                            n_embd,
+                        )?;
+                        Ok(a)
+                    });
+                ckpt_early = Some(match (snap.take(), anchor) {
+                    (Some(snap), Ok(last_h)) => Some(SpecCheckpoint {
+                        snap,
+                        pos: b,
+                        last_h,
+                    }),
+                    _ => None,
+                });
+            }
+            if std::env::var("MEMRA_SPEC_STATS").as_deref() == Ok("1") {
+                eprintln!("[spec-prime] stops=[{b}] tail={} folded", prompt.len() - b);
+            }
+            prompt_h = Some(h_all);
         } else if !stops.is_empty() {
             if let Some(&first) = stops.first()
                 && prime_split == Some(first)
