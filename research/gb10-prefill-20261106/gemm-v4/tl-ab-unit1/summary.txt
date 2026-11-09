@@ -1,0 +1,23 @@
+campaign tl-ab-unit1: 18 requests, arms ['B', 'T']
+
+target 32768
+  B        ttft 22.100, 22.141, 22.161                   median 22.141  cells ['01-B', '04-B', '05-B']
+  T        ttft 22.078, 22.063, 22.202                   median 22.078  cells ['02-T', '03-T', '06-T']
+  T vs B: -0.28%
+
+target 131072
+  B        ttft 118.267, 118.415, 119.697                median 118.415  cells ['01-B', '04-B', '05-B']
+  T        ttft 118.059, 118.144, 119.264                median 118.144  cells ['02-T', '03-T', '06-T']
+  T vs B: -0.23%
+
+target 260000
+  B        ttft 316.113, 314.496, 320.078                median 316.113  cells ['01-B', '04-B', '05-B']
+  T        ttft 313.335, 313.927, 315.883                median 313.927  cells ['02-T', '03-T', '06-T']
+  T vs B: -0.69%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+  target 260000 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL
