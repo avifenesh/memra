@@ -270,10 +270,10 @@ pub struct Tokenizer {
     chat_template: Option<String>,
     /// SPM-style BPE (gemma4): \u2581 whitespace escaping, raw-UTF-8 merges, <0xXX> byte fallback.
     spm_style: bool,
-    /// deepseek-v4 encoding revision, detected from the checkpoint's config.json dspark_*
-    /// key census at `from_hf_dir` (see `chat::Dsv4Encoding` \u2014 the effort ladder differs
-    /// between the preview and 0731 checkpoints while every tokenizer/template byte is
-    /// identical). None = unknown (no config.json next to the tokenizer, or a GGUF \u2014 no
+    /// DeepSeek encoding, detected from the checkpoint's config.json at `from_hf_dir`: the
+    /// dspark_* key census for deepseek-v4 (see `chat::Dsv4Encoding` \u2014 the effort ladder
+    /// differs between the preview and 0731 checkpoints while every tokenizer/template byte is
+    /// identical), `model_type` for deepseek-v4.1 (its own dialect). None = unknown (no config.json next to the tokenizer, or a GGUF \u2014 no
     /// dsv4 GGUF lineage exists yet and no metadata key is defined for it); rendering then
     /// refuses dsv4 effort levels whose bytes differ across revisions instead of guessing.
     dsv4_encoding: Option<chat::Dsv4Encoding>,
@@ -665,7 +665,29 @@ impl Tokenizer {
         let tj_path = dir.join("tokenizer.json");
         let text = std::fs::read_to_string(&tj_path)
             .map_err(|e| format!("read {}: {e}", tj_path.display()))?;
-        let tj = json::parse(&text).map_err(|e| format!("{}: {e}", tj_path.display()))?;
+        let sidecar = |name: &str| std::fs::read_to_string(dir.join(name)).ok();
+        let tokenizer_config = sidecar("tokenizer_config.json");
+        let generation_config = sidecar("generation_config.json");
+        let chat_template_jinja = sidecar("chat_template.jinja");
+        let config = sidecar("config.json");
+        Self::from_hf_files(&HfTokenizerFiles {
+            origin: dir,
+            tokenizer_json: &text,
+            tokenizer_config: tokenizer_config.as_deref(),
+            generation_config: generation_config.as_deref(),
+            chat_template_jinja: chat_template_jinja.as_deref(),
+            config: config.as_deref(),
+        })
+    }
+
+    /// `from_hf_dir` over texts the caller already holds (a pinned remote revision the
+    /// onboarding gate fetched). Same mapping, same errors; `files.origin` stands in for the
+    /// directory in messages.
+    pub fn from_hf_files(files: &HfTokenizerFiles<'_>) -> Result<Self, String> {
+        let dir = files.origin;
+        let tj_path = dir.join("tokenizer.json");
+        let tj =
+            json::parse(files.tokenizer_json).map_err(|e| format!("{}: {e}", tj_path.display()))?;
         let normalization = normalizer::NormalizationProgram::parse(tj.get("normalizer"))
             .map_err(|error| format!("tokenizer.json: {error}"))?;
 
@@ -831,12 +853,8 @@ impl Tokenizer {
         });
 
         // ---- sidecars: tokenizer_config.json + generation_config.json ----
-        let tc = std::fs::read_to_string(dir.join("tokenizer_config.json"))
-            .ok()
-            .and_then(|t| json::parse(&t).ok());
-        let gc = std::fs::read_to_string(dir.join("generation_config.json"))
-            .ok()
-            .and_then(|t| json::parse(&t).ok());
+        let tc = files.tokenizer_config.and_then(|t| json::parse(t).ok());
+        let gc = files.generation_config.and_then(|t| json::parse(t).ok());
 
         // eos_token/bos_token: plain string OR {"content": "..."} AddedToken object.
         let tok_content = |v: &json::Value| -> Option<String> {
@@ -903,7 +921,7 @@ impl Tokenizer {
             .and_then(|c| c.get("chat_template"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
-            .or_else(|| std::fs::read_to_string(dir.join("chat_template.jinja")).ok());
+            .or_else(|| files.chat_template_jinja.map(str::to_string));
         // Pre-tokenizer identification, in order of authority:
         //   1. `tokenizer_config.json`'s `pretokenize_regex` (Qwen ships it explicitly), and
         //   2. the `Split` step regexes of `tokenizer.json`'s own `pre_tokenizer`.
@@ -961,7 +979,10 @@ impl Tokenizer {
         // across the preview and 0731 checkpoints). Missing/unparseable config.json (e.g. a
         // tokenizer-only ref dir) = unknown; a PARTIAL dspark key set is a corrupt config and
         // refuses the load rather than guessing an effort ladder.
-        let dsv4_encoding = dsv4_encoding_from_config(dir)?;
+        let dsv4_encoding = match files.config {
+            Some(text) => dsv4_encoding_from_config_text(&dir.join("config.json"), text)?,
+            None => None,
+        };
 
         let hf_input = hf_input::HfInput::new(
             added
@@ -1043,8 +1064,9 @@ impl Tokenizer {
     pub fn chat_template(&self) -> Option<&str> {
         self.chat_template.as_deref()
     }
-    /// deepseek-v4 encoding revision detected at load (config.json dspark_* census);
-    /// None = unknown. Meaningful only for dsv4-template artifacts.
+    /// DeepSeek encoding detected at load (config.json census: the dspark_* keys for
+    /// deepseek-v4, `model_type` for deepseek-v4.1); None = unknown. Meaningful only for
+    /// DeepSeek-dialect artifacts.
     pub fn dsv4_encoding(&self) -> Option<chat::Dsv4Encoding> {
         self.dsv4_encoding
     }
@@ -1487,40 +1509,57 @@ enum Fragment {
     Token(u32),
 }
 
-/// deepseek-v4 encoding-revision census over the checkpoint's config.json (0731 re-gate,
-/// research/dsv4-template-20260818/ENCODING-DIFF.md). The 0731 checkpoint added exactly
+/// The texts [`Tokenizer::from_hf_files`] maps, as `from_hf_dir` reads them from a checkpoint
+/// directory: `tokenizer.json` is required, every sidecar is optional.
+pub struct HfTokenizerFiles<'a> {
+    /// Names the source in error messages (the directory, or a pinned remote base).
+    pub origin: &'a std::path::Path,
+    pub tokenizer_json: &'a str,
+    pub tokenizer_config: Option<&'a str>,
+    pub generation_config: Option<&'a str>,
+    pub chat_template_jinja: Option<&'a str>,
+    pub config: Option<&'a str>,
+}
+
+/// DeepSeek encoding census over the checkpoint's config.json (0731 re-gate,
+/// research/dsv4-template-20260818/ENCODING-DIFF.md; V4.1 onboarding,
+/// research/modelplan-onboarding-dsv41-20261109/encoding/). The 0731 checkpoint added exactly
 /// these four keys in the same revision that remapped the reasoning-effort ladder, and
 /// they are the ONLY artifact-level marker (tokenizer.json / tokenizer_config.json /
 /// generation_config.json are byte-identical across preview and 0731):
 ///
 ///   - `model_type == "deepseek_v4"` with all four present -> `Some(V0731)`
 ///   - `model_type == "deepseek_v4"` with none present      -> `Some(Preview)`
+///   - `model_type` `deepseek_v41` (or its text config `deepseek_v41_text`) -> `Some(V41)`: the
+///     V4.1 artifact ships its own `encoding/encoding.py` dialect and no template
 ///   - config.json absent/unparseable, or a different model family -> `None` (unknown;
 ///     dsv4 renders then refuse the effort levels whose bytes differ across revisions)
 ///   - a PARTIAL set -> `Err` (a hand-edited/corrupt config; refuse the load rather
 ///     than guess an effort ladder)
 ///
 /// Detection reads config CONTENT via the json parser — never filenames or template text.
-fn dsv4_encoding_from_config(dir: &std::path::Path) -> Result<Option<chat::Dsv4Encoding>, String> {
+/// `cfg_path` only names the file in the refusal.
+pub fn dsv4_encoding_from_config_text(
+    cfg_path: &std::path::Path,
+    text: &str,
+) -> Result<Option<chat::Dsv4Encoding>, String> {
     const DSPARK_KEYS: [&str; 4] = [
         "dspark_block_size",
         "dspark_markov_rank",
         "dspark_noise_token_id",
         "dspark_target_layer_ids",
     ];
-    let cfg_path = dir.join("config.json");
-    let Ok(text) = std::fs::read_to_string(&cfg_path) else {
-        return Ok(None);
-    };
-    let Ok(cfg) = json::parse(&text) else {
+    let Ok(cfg) = json::parse(text) else {
         // A config.json the model loader cannot read either; the tokenizer stays honest
         // with "unknown" instead of failing a load the loader may report better.
         return Ok(None);
     };
-    if cfg.get("model_type").and_then(|v| v.as_str()) != Some("deepseek_v4") {
+    match cfg.get("model_type").and_then(|v| v.as_str()) {
+        Some("deepseek_v4") => {}
+        Some("deepseek_v41" | "deepseek_v41_text") => return Ok(Some(chat::Dsv4Encoding::V41)),
         // Not this family's config: no encoding claim (a dsv4 TEMPLATE over a foreign
         // config is a franken artifact — effort-differing renders refuse).
-        return Ok(None);
+        _ => return Ok(None),
     }
     let present: Vec<&str> = DSPARK_KEYS
         .iter()
@@ -2398,6 +2437,55 @@ mod hf_tests {
         std::fs::write(dir.join("config.json"), r#"{"model_type": "qwen3"}"#).unwrap();
         let tok = Tokenizer::from_hf_dir(&dir).unwrap();
         assert_eq!(tok.dsv4_encoding(), None);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // deepseek_v41 (and its text config) is its own dialect, keyed on model_type alone.
+        for model_type in ["deepseek_v41", "deepseek_v41_text"] {
+            let dir = write_fixture("dsv41", None, Some(gc), None);
+            std::fs::write(
+                dir.join("config.json"),
+                format!(r#"{{"model_type": "{model_type}", "num_nextn_predict_layers": 3}}"#),
+            )
+            .unwrap();
+            let tok = Tokenizer::from_hf_dir(&dir).unwrap();
+            assert_eq!(
+                tok.dsv4_encoding(),
+                Some(chat::Dsv4Encoding::V41),
+                "{model_type}"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    /// `from_hf_files` is `from_hf_dir` over held texts: the same ids, eos, template and census.
+    #[test]
+    fn hf_files_load_matches_hf_dir_load() {
+        let gc = r#"{"eos_token_id": [15]}"#;
+        let dir = write_fixture("hf-files", None, Some(gc), None);
+        let config = r#"{"model_type": "deepseek_v41"}"#;
+        std::fs::write(dir.join("config.json"), config).unwrap();
+        let from_dir = Tokenizer::from_hf_dir(&dir).unwrap();
+        let tokenizer_json = std::fs::read_to_string(dir.join("tokenizer.json")).unwrap();
+        let tokenizer_config = std::fs::read_to_string(dir.join("tokenizer_config.json")).ok();
+        let from_files = Tokenizer::from_hf_files(&HfTokenizerFiles {
+            origin: &dir,
+            tokenizer_json: &tokenizer_json,
+            tokenizer_config: tokenizer_config.as_deref(),
+            generation_config: Some(gc),
+            chat_template_jinja: None,
+            config: Some(config),
+        })
+        .unwrap();
+        for text in ["hello <think> world", "a<|end|>b"] {
+            assert_eq!(
+                from_dir.encode(text, true),
+                from_files.encode(text, true),
+                "{text}"
+            );
+        }
+        assert_eq!(from_dir.eos_id(), from_files.eos_id());
+        assert_eq!(from_dir.chat_template(), from_files.chat_template());
+        assert_eq!(from_files.dsv4_encoding(), Some(chat::Dsv4Encoding::V41));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

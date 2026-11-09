@@ -1,0 +1,14 @@
+{
+  "source": "test_encoding.py::test_v41_rejects_non_string_non_integer_effort_types[1.5]",
+  "messages": [
+    {
+      "role": "user",
+      "content": "question"
+    }
+  ],
+  "req_tools": null,
+  "think": "thinking",
+  "reasoning_effort": "1.5",
+  "add_generation_prompt": true,
+  "error": "AssertionError: Invalid reasoning effort for deepseek_v41: 1.5, should be int within [1,100] or ['high', 'low', 'max']"
+}

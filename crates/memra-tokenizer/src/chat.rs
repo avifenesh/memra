@@ -52,6 +52,22 @@ pub struct ToolCall {
     pub args: Vec<(String, Val)>,
     /// gemma4: the call id, matched against a following tool turn's `tool_call_id`.
     pub id: Option<String>,
+    /// deepseek-v4.1: the call's tool namespace (encoding.py `tool_calls_from_openai_format`
+    /// reads `tool_call.namespace or function.namespace`). The DSML invoke then names
+    /// `namespace::name`; a `name` already spelled `ns::name` must agree with it. Every other
+    /// dialect ignores this.
+    pub namespace: Option<String>,
+}
+
+/// One part of a message's structured content (the OpenAI `content` array), kept in order for
+/// the deepseek-v4.1 dialect: encoding.py joins parts with `"\n\n"` and renders an image part as
+/// its `<｜deepseek_image｜>` placeholder. `Image(i)` carries the caller's index for the image so
+/// a render can report the order images take in the prompt, which is not message order once
+/// tool results are re-sorted by call order. Every other dialect ignores `Turn::parts`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContentPart {
+    Text(String),
+    Image(usize),
 }
 
 /// One chat turn for the tools-capable renderer (`apply_chat_template_tools`).
@@ -85,6 +101,18 @@ pub struct Turn {
     /// tools via `tools_struct`, which the dsv4 arm folds onto the leading system turn.
     /// Every other dialect ignores this.
     pub tools: Vec<Val>,
+    /// deepseek-v4.1: the message's content as ordered parts (text and image). When `Some`, the
+    /// v4.1 arm renders these and ignores `content`; `None` means `content` is the whole text.
+    /// Every other dialect ignores this.
+    pub parts: Option<Vec<ContentPart>>,
+    /// deepseek-v4.1: a system message's `response_format` schema, rendered as the
+    /// `## Response Format:` block after its tools (encoding.py `response_format_template`).
+    /// Set only by the fixture harness; every other dialect ignores it.
+    pub response_format: Option<Val>,
+    /// deepseek-v4.1: an assistant turn rendered without its end-of-sentence token (encoding.py
+    /// `wo_eos`, a prefill the model continues). Set only by the fixture harness; every other
+    /// dialect ignores it.
+    pub wo_eos: bool,
 }
 
 /// Thinking control (owner directive 2026-08-07: every supported model is a thinking model,
@@ -109,11 +137,19 @@ pub enum ThinkMode {
     Think,
 }
 
-/// Which `encoding_dsv4.py` revision governs the deepseek-v4 REASONING-EFFORT ladder
-/// (0731 re-gate, 2026-08-18 — research/dsv4-template-20260818/ENCODING-DIFF.md).
+/// Which DeepSeek encoding governs a deepseek-v4-class chat dialect: the two `encoding_dsv4.py`
+/// revisions that differ in the REASONING-EFFORT ladder (0731 re-gate, 2026-08-18:
+/// research/dsv4-template-20260818/ENCODING-DIFF.md), or DeepSeek-V4.1's own `encoding.py`.
 ///
-/// The two shipped encodings differ ONLY here; every other rendering law (roles, tool
-/// blocks, transitions, special tokens, think-mode prefixes, parsing) is byte-identical:
+/// `V41` is a separate dialect, not a third ladder: DSML tag names with a leading space, a
+/// numeric reasoning budget behind `<｜System｜>`, mid-conversation system turns, image parts and
+/// tool namespaces (`apply_dsv41_template`; byte law in
+/// research/modelplan-onboarding-dsv41-20261109/encoding/). Its census key is the config's
+/// `model_type` (`deepseek_v41` / `deepseek_v41_text`).
+///
+/// The two shipped encoding_dsv4 revisions differ ONLY in the ladder; every other rendering law
+/// (roles, tool blocks, transitions, special tokens, think-mode prefixes, parsing) is
+/// byte-identical:
 ///
 /// | `reasoning_effort` | `Preview` (base repo @ 60d8d707)     | `V0731` (0731 @ 7872f01b)          |
 /// |--------------------|--------------------------------------|-------------------------------------|
@@ -140,6 +176,8 @@ pub enum Dsv4Encoding {
     Preview,
     /// DeepSeek-V4-Flash-0731 law: None/"low" no prefix, "high" -> absolute, "max" -> beyond.
     V0731,
+    /// DeepSeek-V4.1-Flash `encoding/encoding.py` (1017 @ 1bae0e10): its own dialect.
+    V41,
 }
 
 /// Render messages into the prompt string.
@@ -162,7 +200,11 @@ pub fn apply_chat_template_enc(
     add_generation_prompt: bool,
     dsv4_encoding: Option<Dsv4Encoding>,
 ) -> Result<String, String> {
-    if dsv4_encoding.is_some() && !template.is_some_and(template_is_dsv4) {
+    // A V4.1 census always renders V4.1: no template string can name its dialect, so a dsv4
+    // marker template beside it would only pull the render onto the wrong encoding.
+    if dsv4_encoding == Some(Dsv4Encoding::V41)
+        || (dsv4_encoding.is_some() && !template.is_some_and(template_is_dsv4))
+    {
         let msgs: Vec<Turn> = messages
             .iter()
             .map(|(r, c)| Turn {
@@ -1646,6 +1688,207 @@ pub fn template_is_dsv4(t: &str) -> bool {
     t.contains("<\u{ff5c}Assistant\u{ff5c}>") && t.contains("\u{ff5c}DSML\u{ff5c}")
 }
 
+/// The chat dialects this engine owns as code, under the names model packs give them
+/// (`memra_gguf::model_packs::TemplateContract::EngineRenderer`). The onboarding gate resolves a
+/// pack's renderer through this table, so a pack naming a renderer that does not exist fails its
+/// TokenizerTemplate gate instead of passing on the name alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineDialect {
+    /// `encoding_dsv4`: DeepSeek-V4-Flash, both `encoding_dsv4.py` revisions.
+    Dsv4,
+    /// `encoding_dsv41`: DeepSeek-V4.1-Flash's `encoding/encoding.py`.
+    Dsv41,
+}
+
+impl EngineDialect {
+    pub fn from_renderer_name(name: &str) -> Option<Self> {
+        match name {
+            "encoding_dsv4" => Some(Self::Dsv4),
+            "encoding_dsv41" => Some(Self::Dsv41),
+            _ => None,
+        }
+    }
+
+    pub fn renderer_name(self) -> &'static str {
+        match self {
+            Self::Dsv4 => "encoding_dsv4",
+            Self::Dsv41 => "encoding_dsv41",
+        }
+    }
+
+    /// Does this renderer own an artifact whose config census detected `encoding`?
+    pub fn covers(self, encoding: Dsv4Encoding) -> bool {
+        match self {
+            Self::Dsv4 => matches!(encoding, Dsv4Encoding::Preview | Dsv4Encoding::V0731),
+            Self::Dsv41 => encoding == Dsv4Encoding::V41,
+        }
+    }
+
+    /// The control strings in `text`, by the DeepSeek dialects' own spelling: a run between two
+    /// fullwidth bars (U+FF5C), with its angle brackets when both enclose it (`<｜User｜>`) and
+    /// bare otherwise (the DSML tag token inside `<｜DSML｜ calls>`). Bars pair in order of
+    /// appearance; an unpaired bar is returned alone. [`Self::markers`] must hold every one a
+    /// render emits: the onboarding gate checks the probe render, and the dialect's fixture gates
+    /// check every vendor render.
+    pub fn control_strings(text: &str) -> Vec<&str> {
+        const BAR: char = '\u{ff5c}';
+        let bars: Vec<usize> = text.match_indices(BAR).map(|(i, _)| i).collect();
+        bars.chunks(2)
+            .map(|pair| {
+                let open = pair[0];
+                let Some(&last) = pair.get(1) else {
+                    return &text[open..open + BAR.len_utf8()];
+                };
+                let close = last + BAR.len_utf8();
+                if text[..open].ends_with('<') && text[close..].starts_with('>') {
+                    &text[open - 1..close + 1]
+                } else {
+                    &text[open..close]
+                }
+            })
+            .collect()
+    }
+
+    /// The control strings of `text` ([`Self::control_strings`]) that [`Self::markers`] does not
+    /// list, in order.
+    pub fn unlisted_control_strings(self, text: &str) -> Vec<&str> {
+        let markers = self.markers();
+        Self::control_strings(text)
+            .into_iter()
+            .filter(|span| !markers.contains(span))
+            .collect()
+    }
+
+    /// Every control string the renderer emits. The artifact's tokenizer must encode each as one
+    /// id, or the rendered prompt tokenizes into pieces the model never saw. The task tokens come
+    /// from the renderer's own table, `DS_TASK_TOKENS`.
+    pub fn markers(self) -> &'static [&'static str] {
+        const DSV4: &[&str] = &[
+            DS_BOS,
+            DS_EOS,
+            DS_USER,
+            DS_ASSISTANT,
+            DS_REMINDER,
+            DS_THINK_START,
+            DS_THINK_END,
+            DS_DSML,
+            DS_TASK_TOKENS[0].1,
+            DS_TASK_TOKENS[1].1,
+            DS_TASK_TOKENS[2].1,
+            DS_TASK_TOKENS[3].1,
+            DS_TASK_TOKENS[4].1,
+            DS_TASK_TOKENS[5].1,
+        ];
+        const DSV41: &[&str] = &[
+            DS_BOS,
+            DS_EOS,
+            DS_SYSTEM,
+            DS_USER,
+            DS_ASSISTANT,
+            DS_REMINDER,
+            DS_THINK_START,
+            DS_THINK_END,
+            DS_DSML,
+            DS_IMAGE,
+            DS_TASK_TOKENS[0].1,
+            DS_TASK_TOKENS[1].1,
+            DS_TASK_TOKENS[2].1,
+            DS_TASK_TOKENS[3].1,
+            DS_TASK_TOKENS[4].1,
+            DS_TASK_TOKENS[5].1,
+        ];
+        match self {
+            Self::Dsv4 => DSV4,
+            Self::Dsv41 => DSV41,
+        }
+    }
+
+    /// Render a fixed probe conversation through the renderer under `encoding`: a system turn
+    /// with a declared tool, a user turn, an assistant tool call with reasoning, its result and a
+    /// follow-up user turn, in thinking mode at the default effort (V4.1 adds an image part and a
+    /// mid-conversation system turn). The gate tokenizes it with the artifact's own tokenizer.
+    pub fn render_probe(self, encoding: Dsv4Encoding) -> Result<String, String> {
+        if !self.covers(encoding) {
+            return Err(format!(
+                "renderer {} does not cover the {encoding:?} encoding",
+                self.renderer_name()
+            ));
+        }
+        let tool = Val::Obj(vec![
+            ("name".into(), Val::Str("get_weather".into())),
+            (
+                "description".into(),
+                Val::Str("Get the weather for a city".into()),
+            ),
+            (
+                "parameters".into(),
+                Val::Obj(vec![
+                    ("type".into(), Val::Str("object".into())),
+                    (
+                        "properties".into(),
+                        Val::Obj(vec![(
+                            "city".into(),
+                            Val::Obj(vec![("type".into(), Val::Str("string".into()))]),
+                        )]),
+                    ),
+                ]),
+            ),
+        ]);
+        let turn = |role: &str, content: &str| Turn {
+            role: role.into(),
+            content: content.into(),
+            ..Default::default()
+        };
+        let mut user = turn("user", "What is the weather in Paris?");
+        if self == Self::Dsv41 {
+            user.parts = Some(vec![
+                ContentPart::Text("What is the weather in Paris?".into()),
+                ContentPart::Image(0),
+            ]);
+        }
+        let mut turns = vec![
+            turn("system", "You are a helpful assistant."),
+            user,
+            Turn {
+                role: "assistant".into(),
+                reasoning: Some("Call the weather tool.".into()),
+                tool_calls: vec![ToolCall {
+                    name: "get_weather".into(),
+                    args: vec![("city".into(), Val::Str("Paris".into()))],
+                    id: Some("call_0".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            Turn {
+                role: "tool".into(),
+                content: "{\"temperature\": 18}".into(),
+                tool_call_id: Some("call_0".into()),
+                ..Default::default()
+            },
+            Turn {
+                role: "assistant".into(),
+                reasoning: Some("Answer.".into()),
+                content: "It is 18 degrees in Paris.".into(),
+                ..Default::default()
+            },
+        ];
+        if self == Self::Dsv41 {
+            turns.push(turn("system", "Answer in French from now on."));
+        } else {
+            turns.push(turn("user", "Thanks."));
+        }
+        apply_dsv4_template(
+            &turns,
+            true,
+            &[tool],
+            ThinkMode::Think,
+            None,
+            Some(encoding),
+        )
+    }
+}
+
 // ---- gemma4 tooluse dialect ---------------------------------------------------------------
 // A faithful port of research/gemma4-tools-20260817/official-tooluse-template.jinja (extracted
 // byte-identical from the official Q8_0-MTP GGUF — the served trunk). The jinja is the LAW;
@@ -2182,6 +2425,11 @@ const DS_EFFORT_ABSOLUTE_MAX: &str = "Reasoning Effort: Absolute maximum with no
 // is U+2014 EM DASH in the source; ends with "\n\n". Not present in the preview encoding.
 const DS_EFFORT_BEYOND_MAX: &str = "Reasoning Effort: Beyond maximum \u{2014} exhaustive, relentless, and uncompromising.\nYou MUST reason with the utmost depth and rigor, leaving absolutely nothing to chance: exhaustively decompose the problem into its most fundamental components, trace every causal chain to its root, and resolve the underlying cause rather than any surface symptom.\nDo not stop reasoning until you have independently verified the solution from multiple angles and are certain that no assumption remains unchecked and no error remains undiscovered.\n\n";
 
+/// `apply_dsv4_template` hands a V4.1 census to its own renderer before any ladder is read, so
+/// this arm is unreachable through the dispatch; it refuses rather than render a V4 ladder rung.
+const DSV41_NOT_A_LADDER: &str =
+    "deepseek-v4.1 renders a numeric reasoning budget, not the encoding_dsv4 ladder";
+
 /// The reasoning-effort prompt prefix for one render (encoding_dsv4 preview E:260-263 /
 /// 0731 E:270-277). `Ok("")` = no prefix. Errs ONLY on the ambiguous cell: an effort level
 /// whose bytes differ between the two encodings (`"high"`/`"max"` in thinking mode) with no
@@ -2209,6 +2457,7 @@ fn dsv4_effort_prefix(
         Some("high") => match encoding {
             Some(Dsv4Encoding::Preview) => Ok(""), // preview law: "high" == None (E:261-263)
             Some(Dsv4Encoding::V0731) => Ok(DS_EFFORT_ABSOLUTE_MAX),
+            Some(Dsv4Encoding::V41) => Err(DSV41_NOT_A_LADDER.into()),
             None => Err(
                 "dsv4 reasoning_effort \"high\" renders differently on the preview vs 0731 \
                  encoding and this artifact's encoding revision is unknown (config.json \
@@ -2219,6 +2468,7 @@ fn dsv4_effort_prefix(
         Some("max") => match encoding {
             Some(Dsv4Encoding::Preview) => Ok(DS_EFFORT_ABSOLUTE_MAX),
             Some(Dsv4Encoding::V0731) => Ok(DS_EFFORT_BEYOND_MAX),
+            Some(Dsv4Encoding::V41) => Err(DSV41_NOT_A_LADDER.into()),
             None => Err(
                 "dsv4 reasoning_effort \"max\" renders differently on the preview vs 0731 \
                  encoding and this artifact's encoding revision is unknown (config.json \
@@ -2230,17 +2480,24 @@ fn dsv4_effort_prefix(
     }
 }
 
-/// encoding_dsv4 DS_TASK_SP_TOKENS (E:28-35). The task token for a quick-instruction head.
+/// encoding_dsv4 DS_TASK_SP_TOKENS (E:28-35), shared by encoding_dsv41: (task, token). One table
+/// for the renderer and [`EngineDialect::markers`], so a task token the renderer emits is a
+/// marker the onboarding gate checks.
+const DS_TASK_TOKENS: [(&str, &str); 6] = [
+    ("action", "<\u{ff5c}action\u{ff5c}>"),
+    ("query", "<\u{ff5c}query\u{ff5c}>"),
+    ("authority", "<\u{ff5c}authority\u{ff5c}>"),
+    ("domain", "<\u{ff5c}domain\u{ff5c}>"),
+    ("title", "<\u{ff5c}title\u{ff5c}>"),
+    ("read_url", "<\u{ff5c}read_url\u{ff5c}>"),
+];
+
+/// The task token for a quick-instruction head.
 fn ds_task_token(task: &str) -> Option<&'static str> {
-    match task {
-        "action" => Some("<\u{ff5c}action\u{ff5c}>"),
-        "query" => Some("<\u{ff5c}query\u{ff5c}>"),
-        "authority" => Some("<\u{ff5c}authority\u{ff5c}>"),
-        "domain" => Some("<\u{ff5c}domain\u{ff5c}>"),
-        "title" => Some("<\u{ff5c}title\u{ff5c}>"),
-        "read_url" => Some("<\u{ff5c}read_url\u{ff5c}>"),
-        _ => None,
-    }
+    DS_TASK_TOKENS
+        .iter()
+        .find(|(name, _)| *name == task)
+        .map(|(_, token)| *token)
 }
 
 /// python `json.dumps(v, ensure_ascii=False)` over a `Val` (encoding_dsv4 `to_json`, E:101-106):
@@ -2304,6 +2561,27 @@ fn py_json_escape(s: &str, out: &mut String) {
     }
 }
 
+/// DSML tag names. encoding_dsv4 writes `tool_calls` / `invoke` / `parameter`; DeepSeek-V4.1's
+/// encoding.py writes the same tags with a leading space (` calls` / ` invoke` / ` parameter`,
+/// E:428-430). Every other byte of the tools block and the call block is shared.
+struct DsmlTags {
+    calls: &'static str,
+    invoke: &'static str,
+    parameter: &'static str,
+}
+
+const DSML_V4: DsmlTags = DsmlTags {
+    calls: "tool_calls",
+    invoke: "invoke",
+    parameter: "parameter",
+};
+
+const DSML_V41: DsmlTags = DsmlTags {
+    calls: " calls",
+    invoke: " invoke",
+    parameter: " parameter",
+};
+
 /// encoding_dsv4 `render_tools` (E:189-206) + TOOLS_TEMPLATE (E:70-95): the tool-declaration
 /// block appended to a system/developer turn. `funcs` are the tool `function` objects
 /// (encoding_dsv4 `tools_from_openai_format`). Ends with a trailing `\n`.
@@ -2315,12 +2593,18 @@ fn dsv4_render_tools(funcs: &[Val]) -> String {
         }
         py_json(f, &mut schemas);
     }
+    ds_render_tools(&schemas, &DSML_V4)
+}
+
+/// The TOOLS_TEMPLATE shared by encoding_dsv4 (E:70-95) and V4.1's encoding.py (E:481-506),
+/// over the `"\n"`-joined schema JSON and the dialect's tag names.
+fn ds_render_tools(schemas: &str, tags: &DsmlTags) -> String {
     format!(
         "## Tools\n\nYou have access to a set of tools to help answer the user's question. \
-You can invoke tools by writing a \"<{d}tool_calls>\" block like the following:\n\n\
-<{d}tool_calls>\n<{d}invoke name=\"$TOOL_NAME\">\n\
-<{d}parameter name=\"$PARAMETER_NAME\" string=\"true|false\">$PARAMETER_VALUE</{d}parameter>\n\
-...\n</{d}invoke>\n<{d}invoke name=\"$TOOL_NAME2\">\n...\n</{d}invoke>\n</{d}tool_calls>\n\n\
+You can invoke tools by writing a \"<{d}{c}>\" block like the following:\n\n\
+<{d}{c}>\n<{d}{i} name=\"$TOOL_NAME\">\n\
+<{d}{p} name=\"$PARAMETER_NAME\" string=\"true|false\">$PARAMETER_VALUE</{d}{p}>\n\
+...\n</{d}{i}>\n<{d}{i} name=\"$TOOL_NAME2\">\n...\n</{d}{i}>\n</{d}{c}>\n\n\
 String parameters should be specified as is and set `string=\"true\"`. For all other types \
 (numbers, booleans, arrays, objects), pass the value in JSON format and set `string=\"false\"`.\
 \n\nIf thinking_mode is enabled (triggered by {ts}), you MUST output your complete reasoning \
@@ -2329,6 +2613,9 @@ after {te} with tool calls or final response.\n\n### Available Tool Schemas\n\n{
 You MUST strictly follow the above defined tool name and parameter schemas to invoke tool \
 calls.\n",
         d = DS_DSML,
+        c = tags.calls,
+        i = tags.invoke,
+        p = tags.parameter,
         ts = DS_THINK_START,
         te = DS_THINK_END,
         schemas = schemas,
@@ -2340,24 +2627,38 @@ calls.\n",
 /// `<｜DSML｜parameter>` line (string values raw with `string="true"`, everything else
 /// json.dumps'd with `string="false"`). Argument order = insertion order (NO dictsort).
 fn dsv4_render_tool_calls(calls: &[ToolCall]) -> String {
+    ds_render_tool_calls(
+        calls.iter().map(|c| (c.name.as_str(), c.args.as_slice())),
+        &DSML_V4,
+    )
+}
+
+/// The call block shared by encoding_dsv4 and V4.1's encoding.py (E:432-437, E:524-555,
+/// E:669-683): `(invoke name, arguments)` per call, in order.
+fn ds_render_tool_calls<'a>(
+    calls: impl IntoIterator<Item = (&'a str, &'a [(String, Val)])>,
+    tags: &DsmlTags,
+) -> String {
     let mut invokes = String::new();
-    for (i, call) in calls.iter().enumerate() {
+    for (i, (name, args)) in calls.into_iter().enumerate() {
         if i > 0 {
             invokes.push('\n');
         }
         invokes.push_str(&format!(
-            "<{d}invoke name=\"{n}\">\n",
+            "<{d}{inv} name=\"{n}\">\n",
             d = DS_DSML,
-            n = call.name
+            inv = tags.invoke,
+            n = name
         ));
-        for (j, (k, v)) in call.args.iter().enumerate() {
+        for (j, (k, v)) in args.iter().enumerate() {
             if j > 0 {
                 invokes.push('\n');
             }
             let is_str = matches!(v, Val::Str(_));
             invokes.push_str(&format!(
-                "<{d}parameter name=\"{k}\" string=\"{b}\">",
+                "<{d}{p} name=\"{k}\" string=\"{b}\">",
                 d = DS_DSML,
+                p = tags.parameter,
                 k = k,
                 b = if is_str { "true" } else { "false" },
             ));
@@ -2365,13 +2666,14 @@ fn dsv4_render_tool_calls(calls: &[ToolCall]) -> String {
                 Val::Str(s) => invokes.push_str(s),
                 other => py_json(other, &mut invokes),
             }
-            invokes.push_str(&format!("</{d}parameter>", d = DS_DSML));
+            invokes.push_str(&format!("</{d}{p}>", d = DS_DSML, p = tags.parameter));
         }
-        invokes.push_str(&format!("\n</{d}invoke>", d = DS_DSML));
+        invokes.push_str(&format!("\n</{d}{inv}>", d = DS_DSML, inv = tags.invoke));
     }
     format!(
-        "\n\n<{d}tool_calls>\n{invokes}\n</{d}tool_calls>",
+        "\n\n<{d}{c}>\n{invokes}\n</{d}{c}>",
         d = DS_DSML,
+        c = tags.calls,
         invokes = invokes
     )
 }
@@ -2613,6 +2915,15 @@ fn apply_dsv4_template(
     reasoning_effort: Option<&str>,
     encoding: Option<Dsv4Encoding>,
 ) -> Result<String, String> {
+    if encoding == Some(Dsv4Encoding::V41) {
+        return apply_dsv41_template(
+            turns,
+            add_generation_prompt,
+            req_tools,
+            think,
+            reasoning_effort,
+        );
+    }
     let thinking = think != ThinkMode::NoThink; // Default + Think -> thinking; NoThink -> chat
     let effort_prefix = dsv4_effort_prefix(thinking, reasoning_effort, encoding)?;
 
@@ -2736,6 +3047,679 @@ fn apply_dsv4_template(
         }
     }
     Ok(out)
+}
+
+// ---- deepseek-v4.1 (`encoding_dsv41`) dialect -------------------------------------------------
+// A port of DeepSeek-V4.1-Flash's `encoding/encoding.py` (deepseek-ai/DeepSeek-V4.1-Flash-1017
+// @1bae0e1088993b9b82de08f59de5be5a34e42170, sha256 13231c59…; "E:" line refs below are into that
+// file). The python IS the law. Byte parity is pinned by the fixtures under
+// research/modelplan-onboarding-dsv41-20261109/encoding/, generated by running that file over a
+// case set that reaches every branch (the vendor's own encoding/tests pairs and test_encoding.py
+// cases included), and by the token ids the artifact's tokenizer.json gives for each render.
+//
+// V4.1 is its own dialect, not a third encoding_dsv4 ladder:
+//   - DSML tag names carry a leading space (`<｜DSML｜ calls>`, ` invoke`, ` parameter`);
+//   - reasoning effort is a numeric budget (1-100; low/high/max = 50/75/100, default high),
+//     rendered once at index 0 in thinking mode, behind a `<｜System｜>` token that a leading
+//     system message also takes;
+//   - a system message may appear mid-conversation (`<｜System｜>`); it counts as a user turn for
+//     the generation header and for the drop-thinking boundary;
+//   - a user turn holding only tool results does not start a new turn;
+//   - image parts render as `<｜deepseek_image｜>` (text and parts join with "\n\n"), and the
+//     placeholder may not appear in any text;
+//   - tool names may carry a namespace (`ns::name`), with the namespace description prepended.
+//
+// Deviations from the python, all on inputs memra's surfaces cannot produce or refuse earlier:
+// a `None` tool/latest_reminder content renders "" here (Python formats it as "None"; memra
+// carries content as a string), tool-call arguments arrive decoded (`ToolCall::args`; the
+// vendor's tolerance for double-encoded or non-object argument strings is the caller's), and an
+// unknown role or task is an `Err` where the python raises.
+
+const DS_SYSTEM: &str = "<\u{ff5c}System\u{ff5c}>";
+const DS_IMAGE: &str = "<\u{ff5c}deepseek_image\u{ff5c}>";
+
+/// encoding.py `render_reasoning_effort` (E:443-474): the numeric budget for the index-0 prefix.
+/// `None` is the vendor default `"high"` (75). A decimal string `"1"`..`"100"` is the budget
+/// itself (the vendor's int argument; serve requests carry level names). Any other numeric-looking
+/// string (a sign, a point, a leading zero, out of range) refuses, as the vendor's assert does. A
+/// level name encoding.py does not define (OpenAI `"medium"`) renders as the default level, the
+/// never-corrupt clamp the encoding_dsv4 arm applies to the same request.
+fn dsv41_effort_budget(effort: Option<&str>) -> Result<u8, String> {
+    match effort {
+        None | Some("high") => Ok(75),
+        Some("low") => Ok(50),
+        Some("max") => Ok(100),
+        Some(s) if s.starts_with(|c: char| c.is_ascii_digit() || "+-.".contains(c)) => {
+            match s.parse::<u8>() {
+                Ok(n) if (1..=100).contains(&n) && n.to_string() == s => Ok(n),
+                _ => Err(format!(
+                    "deepseek-v4.1 reasoning_effort {s:?}: a numeric budget must be an integer \
+                     within [1, 100]"
+                )),
+            }
+        }
+        Some(_) => Ok(75),
+    }
+}
+
+/// encoding.py `_split_tool_name` (E:101-113): split a possibly qualified `ns::name`, checking it
+/// against an explicit namespace.
+fn dsv41_split_tool_name<'a>(
+    name: &'a str,
+    namespace: Option<&'a str>,
+) -> Result<(Option<&'a str>, &'a str), String> {
+    let (namespace, name) = match name.split_once("::") {
+        Some((prefix, bare)) => {
+            if let Some(ns) = namespace
+                && ns != prefix
+            {
+                return Err(format!("Conflicting tool namespaces: {ns} != {prefix}"));
+            }
+            (Some(prefix), bare)
+        }
+        None => (namespace, name),
+    };
+    if name.contains("::") {
+        return Err(format!("Tool name must not contain '::': {name}"));
+    }
+    if let Some(ns) = namespace
+        && ns.contains("::")
+    {
+        return Err(format!("Tool namespace must not contain '::': {ns}"));
+    }
+    Ok((namespace, name))
+}
+
+/// encoding.py `_tool_name_for_encoding` (E:116-121): the DSML/schema name, `ns::name` or `name`.
+fn dsv41_qualified_name(name: &str, namespace: Option<&str>) -> Result<String, String> {
+    Ok(match dsv41_split_tool_name(name, namespace)? {
+        (Some(ns), bare) => format!("{ns}::{bare}"),
+        (None, bare) => bare.to_string(),
+    })
+}
+
+/// A tool function object's namespace: a string, or an object with a string `name` and an
+/// optional `description` (an empty one is none). `(name, description)`.
+fn dsv41_tool_namespace(obj: &[(String, Val)]) -> Result<(Option<&str>, Option<&str>), String> {
+    Ok(match val_get(obj, "namespace") {
+        None | Some(Val::Null) => (None, None),
+        Some(Val::Str(s)) => (Some(s.as_str()), None),
+        Some(Val::Obj(ns)) => {
+            let name = match val_get(ns, "name") {
+                Some(Val::Str(s)) => s.as_str(),
+                _ => return Err("deepseek-v4.1 tool namespace object needs a string name".into()),
+            };
+            let desc = match val_get(ns, "description") {
+                None | Some(Val::Null) => None,
+                Some(Val::Str(s)) if s.is_empty() => None,
+                Some(Val::Str(s)) => Some(s.as_str()),
+                Some(_) => {
+                    return Err("deepseek-v4.1 tool namespace description must be a string".into());
+                }
+            };
+            (Some(name), desc)
+        }
+        Some(_) => return Err("deepseek-v4.1 tool namespace must be a string or an object".into()),
+    })
+}
+
+/// The name a tool function object declares to the model (encoding.py `_tool_name_for_encoding`):
+/// `namespace::name` when the object carries a namespace (string or `{name}`), the bare name
+/// otherwise, refusing a qualified name that disagrees with the namespace. A tool-level
+/// namespace is the caller's to fold into the object first, as for [`apply_dsv41_template_media`].
+pub fn dsv41_tool_name(func: &Val) -> Result<String, String> {
+    let obj = as_obj(func).ok_or("deepseek-v4.1 tool function must be a JSON object")?;
+    let (ns_name, _) = dsv41_tool_namespace(obj)?;
+    match val_get(obj, "name") {
+        Some(Val::Str(name)) => dsv41_qualified_name(name, ns_name),
+        _ => Err("deepseek-v4.1 tool function needs a string name".into()),
+    }
+}
+
+/// encoding.py `tools_from_openai_format` (E:84-98) for one tool `function` object. A tool-level
+/// `namespace` is the caller's to fold into the function object (the vendor reads the tool level
+/// first, so a caller folding it overrides a function-level one); the key itself never renders.
+/// A namespace is a string or an object with `name` and an optional `description`, which is
+/// prepended to the tool's description across a newline.
+fn dsv41_tool_schema(func: &Val) -> Result<Val, String> {
+    let obj = as_obj(func).ok_or("deepseek-v4.1 tool function must be a JSON object")?;
+    let (_, ns_desc) = dsv41_tool_namespace(obj)?;
+    let qualified = dsv41_tool_name(func)?;
+    let prefixed = |own: Option<&Val>| -> Result<Val, String> {
+        let own = match own {
+            None | Some(Val::Null) => "",
+            Some(Val::Str(s)) => s.as_str(),
+            Some(_) => return Err("deepseek-v4.1 tool description must be a string".into()),
+        };
+        Ok(Val::Str(format!("{}\n{own}", ns_desc.unwrap_or_default())))
+    };
+    let mut out = Vec::with_capacity(obj.len());
+    for (k, v) in obj {
+        match k.as_str() {
+            "namespace" => {}
+            "name" => out.push((k.clone(), Val::Str(qualified.clone()))),
+            "description" if ns_desc.is_some() => out.push((k.clone(), prefixed(Some(v))?)),
+            _ => out.push((k.clone(), v.clone())),
+        }
+    }
+    if ns_desc.is_some() && val_get(obj, "description").is_none() {
+        out.push(("description".into(), prefixed(None)?));
+    }
+    Ok(Val::Obj(out))
+}
+
+/// encoding.py `render_tools` (E:509-521) over V4.1's tag names.
+fn dsv41_render_tools(funcs: &[Val]) -> Result<String, String> {
+    let mut schemas = String::new();
+    for (i, f) in funcs.iter().enumerate() {
+        if i > 0 {
+            schemas.push('\n');
+        }
+        py_json(&dsv41_tool_schema(f)?, &mut schemas);
+    }
+    Ok(ds_render_tools(&schemas, &DSML_V41))
+}
+
+/// Parts joined the way encoding.py joins a message's text blocks after image processing
+/// (E:383-393, E:644-651): `"\n\n"`, an image part as its placeholder.
+fn dsv41_join_parts(parts: &[ContentPart]) -> String {
+    parts
+        .iter()
+        .map(|p| match p {
+            ContentPart::Text(t) => t.as_str(),
+            ContentPart::Image(_) => DS_IMAGE,
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// A tool result's content: the message string, or its parts.
+enum Dsv41ToolContent {
+    Text(String),
+    Parts(Vec<ContentPart>),
+}
+
+/// One content block of a merged user turn (encoding.py `merge_tool_messages`, E:184-230).
+enum Dsv41Block {
+    Text(String),
+    Image(usize),
+    ToolResult {
+        tool_use_id: String,
+        content: Dsv41ToolContent,
+    },
+}
+
+/// One preprocessed message. `blocks` is `Some` for user turns; other roles carry `content`
+/// (their parts already joined) and `images` (their parts' images, in order).
+struct Dsv41Msg {
+    role: String,
+    content: String,
+    blocks: Option<Vec<Dsv41Block>>,
+    images: Vec<usize>,
+    reasoning: String,
+    tool_calls: Vec<ToolCall>,
+    tools: Vec<Val>,
+    task: Option<String>,
+    response_format: Option<Val>,
+    wo_eos: bool,
+}
+
+impl Dsv41Msg {
+    fn bare(role: &str) -> Self {
+        Dsv41Msg {
+            role: role.to_string(),
+            content: String::new(),
+            blocks: None,
+            images: Vec::new(),
+            reasoning: String::new(),
+            tool_calls: Vec::new(),
+            tools: Vec::new(),
+            task: None,
+            response_format: None,
+            wo_eos: false,
+        }
+    }
+}
+
+/// encoding.py `_validate_no_image_sp_tokens` + the text-block check (E:342-367): the image
+/// placeholder never appears in text; images are parts.
+fn dsv41_validate_text(turn: &Turn) -> Result<(), String> {
+    let texts: Vec<&str> = match &turn.parts {
+        Some(parts) => parts
+            .iter()
+            .filter_map(|p| match p {
+                ContentPart::Text(t) => Some(t.as_str()),
+                ContentPart::Image(_) => None,
+            })
+            .collect(),
+        None => vec![turn.content.as_str()],
+    };
+    if texts.iter().any(|t| t.contains(DS_IMAGE)) {
+        return Err(format!(
+            "{} message text contains the image placeholder {DS_IMAGE}; images are content \
+             parts",
+            turn.role
+        ));
+    }
+    if turn
+        .reasoning
+        .as_deref()
+        .is_some_and(|r| r.contains(DS_IMAGE))
+    {
+        return Err(format!(
+            "reasoning contains the image placeholder {DS_IMAGE}"
+        ));
+    }
+    Ok(())
+}
+
+/// encoding.py `merge_tool_messages` (E:184-230) on serve-shape turns. Request-level tools ride
+/// the leading system turn, or a synthetic empty one, exactly as the encoding_dsv4 arm attaches
+/// them (`dsv4_merge`); a turn's own `tools` take precedence.
+fn dsv41_merge(turns: &[Turn], req_tools: &[Val]) -> Result<Vec<Dsv41Msg>, String> {
+    for turn in turns {
+        dsv41_validate_text(turn)?;
+    }
+    let mut merged: Vec<Dsv41Msg> = Vec::new();
+    let any_turn_tools = turns.iter().any(|t| !t.tools.is_empty());
+    let mut leading_tools_pending = !req_tools.is_empty() && !any_turn_tools;
+    if leading_tools_pending && !turns.first().is_some_and(|t| t.role == "system") {
+        let mut sys = Dsv41Msg::bare("system");
+        sys.tools = req_tools.to_vec();
+        merged.push(sys);
+        leading_tools_pending = false;
+    }
+    for turn in turns {
+        match turn.role.as_str() {
+            "tool" => {
+                let block = Dsv41Block::ToolResult {
+                    tool_use_id: turn.tool_call_id.clone().unwrap_or_default(),
+                    content: match &turn.parts {
+                        Some(parts) => Dsv41ToolContent::Parts(parts.clone()),
+                        None => Dsv41ToolContent::Text(turn.content.clone()),
+                    },
+                };
+                match merged.last_mut() {
+                    Some(m) if m.role == "user" && m.blocks.is_some() => {
+                        m.blocks.as_mut().unwrap().push(block);
+                    }
+                    _ => {
+                        let mut user = Dsv41Msg::bare("user");
+                        user.blocks = Some(vec![block]);
+                        merged.push(user);
+                    }
+                }
+            }
+            "user" => {
+                let blocks: Vec<Dsv41Block> = match &turn.parts {
+                    Some(parts) => parts
+                        .iter()
+                        .map(|p| match p {
+                            ContentPart::Text(t) => Dsv41Block::Text(t.clone()),
+                            ContentPart::Image(i) => Dsv41Block::Image(*i),
+                        })
+                        .collect(),
+                    None => vec![Dsv41Block::Text(turn.content.clone())],
+                };
+                match merged.last_mut() {
+                    // a later user turn extends a merged one (its own metadata is dropped).
+                    Some(m) if m.role == "user" && m.blocks.is_some() && m.task.is_none() => {
+                        m.blocks.as_mut().unwrap().extend(blocks);
+                    }
+                    _ => {
+                        // the vendor keeps the whole message and all its metadata (E:222-226).
+                        let mut user = Dsv41Msg::bare("user");
+                        user.content = turn.content.clone();
+                        user.blocks = Some(blocks);
+                        user.tools = turn.tools.clone();
+                        user.task = turn.task.clone();
+                        merged.push(user);
+                    }
+                }
+            }
+            role => {
+                let mut msg = Dsv41Msg::bare(role);
+                msg.tools = turn.tools.clone();
+                if role == "system" && leading_tools_pending && merged.is_empty() {
+                    msg.tools = req_tools.to_vec();
+                    leading_tools_pending = false;
+                }
+                match &turn.parts {
+                    Some(parts) => {
+                        msg.content = dsv41_join_parts(parts);
+                        msg.images = parts
+                            .iter()
+                            .filter_map(|p| match p {
+                                ContentPart::Image(i) => Some(*i),
+                                ContentPart::Text(_) => None,
+                            })
+                            .collect();
+                    }
+                    None => msg.content = turn.content.clone(),
+                }
+                msg.reasoning = turn.reasoning.clone().unwrap_or_default();
+                msg.tool_calls = turn.tool_calls.clone();
+                msg.task = turn.task.clone();
+                msg.response_format = turn.response_format.clone();
+                msg.wo_eos = turn.wo_eos;
+                merged.push(msg);
+            }
+        }
+    }
+    Ok(merged)
+}
+
+/// encoding.py `sort_tool_results_by_call_order` (E:233-266): within a user turn holding more
+/// than one tool result, order the results by the preceding assistant's call ids (stable; an
+/// unknown id sorts as 0). Other blocks keep their positions.
+#[allow(clippy::needless_range_loop)] // indexed: reads earlier turns' order, mutates msgs[i]
+fn dsv41_sort_tool_results(msgs: &mut [Dsv41Msg]) {
+    let mut order: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for i in 0..msgs.len() {
+        if msgs[i].role == "assistant" && !msgs[i].tool_calls.is_empty() {
+            order.clear();
+            for (idx, tc) in msgs[i].tool_calls.iter().enumerate() {
+                if let Some(id) = tc.id.as_deref()
+                    && !id.is_empty()
+                {
+                    order.insert(id.to_string(), idx);
+                }
+            }
+        } else if msgs[i].role == "user"
+            && let Some(blocks) = msgs[i].blocks.take()
+        {
+            let n_tool = blocks
+                .iter()
+                .filter(|b| matches!(b, Dsv41Block::ToolResult { .. }))
+                .count();
+            if n_tool > 1 && !order.is_empty() {
+                let mut tools: Vec<Dsv41Block> = Vec::with_capacity(n_tool);
+                let mut slots: Vec<Option<Dsv41Block>> = Vec::with_capacity(blocks.len());
+                for b in blocks {
+                    if matches!(b, Dsv41Block::ToolResult { .. }) {
+                        tools.push(b);
+                        slots.push(None);
+                    } else {
+                        slots.push(Some(b));
+                    }
+                }
+                tools.sort_by_key(|b| match b {
+                    Dsv41Block::ToolResult { tool_use_id, .. } => {
+                        order.get(tool_use_id).copied().unwrap_or(0)
+                    }
+                    _ => 0,
+                });
+                let mut sorted = tools.into_iter();
+                msgs[i].blocks = Some(
+                    slots
+                        .into_iter()
+                        .map(|s| s.unwrap_or_else(|| sorted.next().unwrap()))
+                        .collect(),
+                );
+            } else {
+                msgs[i].blocks = Some(blocks);
+            }
+        }
+    }
+}
+
+/// encoding.py `process_image_messages` (E:370-396): image records in prompt order, after merging
+/// and sorting, nested tool-result images included.
+fn dsv41_image_order(msgs: &[Dsv41Msg]) -> Vec<usize> {
+    let mut out = Vec::new();
+    for m in msgs {
+        match &m.blocks {
+            Some(blocks) => {
+                for b in blocks {
+                    match b {
+                        Dsv41Block::Image(i) => out.push(*i),
+                        Dsv41Block::ToolResult {
+                            content: Dsv41ToolContent::Parts(parts),
+                            ..
+                        } => out.extend(parts.iter().filter_map(|p| match p {
+                            ContentPart::Image(i) => Some(*i),
+                            ContentPart::Text(_) => None,
+                        })),
+                        _ => {}
+                    }
+                }
+            }
+            None => out.extend(m.images.iter().copied()),
+        }
+    }
+    out
+}
+
+/// encoding.py `find_last_user_index` (E:562-582): the last user turn or mid-conversation system
+/// turn, skipping user turns that hold only tool results.
+fn dsv41_last_user_idx(msgs: &[Dsv41Msg]) -> isize {
+    for i in (0..msgs.len()).rev() {
+        let m = &msgs[i];
+        if m.role == "user" || (m.role == "system" && i > 0) {
+            if let Some(blocks) = &m.blocks
+                && !blocks.is_empty()
+                && !blocks
+                    .iter()
+                    .any(|b| matches!(b, Dsv41Block::Text(_) | Dsv41Block::Image(_)))
+            {
+                continue;
+            }
+            return i as isize;
+        }
+    }
+    -1
+}
+
+/// encoding.py `_drop_thinking_messages` (E:749-767): keep user/system/latest_reminder turns and
+/// everything from the last user turn on; earlier assistants lose their reasoning; other roles
+/// before it are dropped. Runs in thinking mode with no tools declared.
+fn dsv41_drop_thinking(msgs: Vec<Dsv41Msg>) -> Vec<Dsv41Msg> {
+    let last = dsv41_last_user_idx(&msgs);
+    let mut out = Vec::with_capacity(msgs.len());
+    for (i, mut m) in msgs.into_iter().enumerate() {
+        let keep_role = matches!(
+            m.role.as_str(),
+            "user" | "system" | "tool" | "latest_reminder" | "direct_search_results"
+        );
+        if keep_role || (i as isize) >= last {
+            out.push(m);
+        } else if m.role == "assistant" {
+            m.reasoning.clear();
+            out.push(m);
+        }
+    }
+    out
+}
+
+/// DeepSeek-V4.1 `encode_messages` (E:810-844) + `render_message` (E:585-742): see the dialect
+/// notes above. ThinkMode maps onto the vendor's thinking_mode exactly as the encoding_dsv4 arm
+/// does (`Default`/`Think` -> thinking, `NoThink` -> chat); `reasoning_effort` resolves through
+/// `dsv41_effort_budget`; `req_tools` attach to the leading system turn; `add_generation_prompt`
+/// gates only the final message's generation-prompt transition.
+fn apply_dsv41_template(
+    turns: &[Turn],
+    add_generation_prompt: bool,
+    req_tools: &[Val],
+    think: ThinkMode,
+    reasoning_effort: Option<&str>,
+) -> Result<String, String> {
+    apply_dsv41_template_media(
+        turns,
+        add_generation_prompt,
+        req_tools,
+        think,
+        reasoning_effort,
+    )
+    .map(|(prompt, _)| prompt)
+}
+
+/// `apply_dsv41_template` plus the prompt order of its images: the `ContentPart::Image` indices in
+/// the order their placeholders appear in the prompt (encoding.py's `media["images"]`), which a
+/// vision path splices in. Tool results re-sorted by call order move their images with them.
+pub fn apply_dsv41_template_media(
+    turns: &[Turn],
+    add_generation_prompt: bool,
+    req_tools: &[Val],
+    think: ThinkMode,
+    reasoning_effort: Option<&str>,
+) -> Result<(String, Vec<usize>), String> {
+    let thinking = think != ThinkMode::NoThink;
+    // validated in every mode, as the vendor asserts before it checks the mode (E:464-469).
+    let budget = dsv41_effort_budget(reasoning_effort)?;
+
+    let mut msgs = dsv41_merge(turns, req_tools)?;
+    dsv41_sort_tool_results(&mut msgs);
+    let images = dsv41_image_order(&msgs);
+    // drop_thinking defaults on and turns off when any message declares tools (E:785-788).
+    let effective_drop = !msgs.iter().any(|m| !m.tools.is_empty());
+    if thinking && effective_drop {
+        msgs = dsv41_drop_thinking(msgs);
+    }
+    let last_user = dsv41_last_user_idx(&msgs);
+    let n = msgs.len();
+
+    let mut out = String::from(DS_BOS);
+    for idx in 0..n {
+        let m = &msgs[idx];
+        if idx == 0 {
+            // E:614-619: the effort prefix (thinking mode, index 0) rides a `<｜System｜>` token,
+            // which a leading system message takes as well.
+            if thinking || m.role == "system" {
+                out.push_str(DS_SYSTEM);
+            }
+            if thinking {
+                out.push_str(&format!(
+                    "Reasoning Effort: {budget} (range 1-100, the higher the value, the more \
+                     thorough the reasoning)\n\n"
+                ));
+            }
+        }
+        match m.role.as_str() {
+            "system" => {
+                if idx > 0 {
+                    out.push_str(DS_SYSTEM);
+                }
+                out.push_str(&m.content);
+                if !m.tools.is_empty() {
+                    out.push_str("\n\n");
+                    out.push_str(&dsv41_render_tools(&m.tools)?);
+                }
+                if let Some(schema) = &m.response_format {
+                    out.push_str(
+                        "\n\n## Response Format:\n\nYou MUST strictly adhere to the following \
+                         schema to reply:\n",
+                    );
+                    py_json(schema, &mut out);
+                }
+            }
+            "user" => {
+                out.push_str(DS_USER);
+                match m.blocks.as_deref() {
+                    Some(blocks) if !blocks.is_empty() => {
+                        for (i, b) in blocks.iter().enumerate() {
+                            if i > 0 {
+                                out.push_str("\n\n");
+                            }
+                            match b {
+                                Dsv41Block::Text(t) => out.push_str(t),
+                                Dsv41Block::Image(_) => out.push_str(DS_IMAGE),
+                                Dsv41Block::ToolResult { content, .. } => {
+                                    out.push_str("<tool_result>");
+                                    match content {
+                                        Dsv41ToolContent::Text(t) => out.push_str(t),
+                                        Dsv41ToolContent::Parts(p) => {
+                                            out.push_str(&dsv41_join_parts(p))
+                                        }
+                                    }
+                                    out.push_str("</tool_result>");
+                                }
+                            }
+                        }
+                    }
+                    _ => out.push_str(&m.content),
+                }
+            }
+            "latest_reminder" => {
+                out.push_str(DS_REMINDER);
+                out.push_str(&m.content);
+            }
+            "assistant" => {
+                let prev_has_task = idx > 0 && msgs[idx - 1].task.is_some();
+                if thinking && !prev_has_task && (!effective_drop || (idx as isize) > last_user) {
+                    out.push_str(&m.reasoning);
+                    out.push_str(DS_THINK_END);
+                }
+                out.push_str(&m.content);
+                if !m.tool_calls.is_empty() {
+                    let names = m
+                        .tool_calls
+                        .iter()
+                        .map(|c| dsv41_qualified_name(&c.name, c.namespace.as_deref()))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    out.push_str(&ds_render_tool_calls(
+                        names
+                            .iter()
+                            .zip(&m.tool_calls)
+                            .map(|(name, c)| (name.as_str(), c.args.as_slice())),
+                        &DSML_V41,
+                    ));
+                }
+                if !m.wo_eos {
+                    out.push_str(DS_EOS);
+                }
+            }
+            other => {
+                return Err(format!(
+                    "deepseek-v4.1 encoding has no {other:?} role (tool turns merge into user \
+                     turns; there is no developer role)"
+                ));
+            }
+        }
+
+        // --- transition tokens (E:712-740) ---
+        if idx + 1 < n {
+            let next = msgs[idx + 1].role.as_str();
+            if next != "assistant" && next != "latest_reminder" {
+                continue;
+            }
+        }
+        let is_last = idx + 1 >= n;
+        if let Some(task) = m.task.as_deref() {
+            if is_last && !add_generation_prompt {
+                continue;
+            }
+            let tok = ds_task_token(task).ok_or_else(|| {
+                format!(
+                    "deepseek-v4.1 task {task:?} is not one of action, query, authority, \
+                     domain, title, read_url"
+                )
+            })?;
+            if task != "action" {
+                out.push_str(tok);
+            } else {
+                out.push_str(DS_ASSISTANT);
+                out.push_str(if thinking {
+                    DS_THINK_START
+                } else {
+                    DS_THINK_END
+                });
+                out.push_str(tok);
+            }
+        } else if m.role == "user" || (m.role == "system" && idx > 0) {
+            if is_last && !add_generation_prompt {
+                continue;
+            }
+            out.push_str(DS_ASSISTANT);
+            // E:735-740: thinking opens `<think>` when drop_thinking is off (tools declared) or at
+            // and after the last user turn; otherwise, and always in chat mode, it closes.
+            if thinking && (!effective_drop || (idx as isize) >= last_user) {
+                out.push_str(DS_THINK_START);
+            } else {
+                out.push_str(DS_THINK_END);
+            }
+        }
+    }
+    Ok((out, images))
 }
 
 #[cfg(test)]
@@ -3851,6 +4835,254 @@ mod tests {
         assert_eq!(render(Some("low"), None).unwrap(), base);
         assert!(render(Some("high"), None).is_err());
         assert!(render(Some("max"), None).is_err());
+    }
+
+    // ================= DEEPSEEK-V4.1 (`encoding_dsv41`) ========================================
+    // Byte parity against encoding.py is the fixture gate in memra-server
+    // (`dsv41_encoding_tests`, research/modelplan-onboarding-dsv41-20261109/encoding/). These
+    // pin what the fixtures cannot: memra's own surface choices around the vendor law.
+
+    fn v41(
+        turns: &[Turn],
+        agp: bool,
+        think: ThinkMode,
+        effort: Option<&str>,
+    ) -> Result<String, String> {
+        apply_chat_template_tools_ex(
+            None,
+            turns,
+            agp,
+            &[],
+            &[],
+            think,
+            effort,
+            Some(Dsv4Encoding::V41),
+        )
+    }
+
+    /// The budget law: vendor levels and decimal budgets render their number; a numeric-looking
+    /// string the vendor would assert on refuses; a level name the vendor does not define
+    /// (`medium`) renders the default, never a guessed interpolation.
+    #[test]
+    fn dsv41_effort_budget_law() {
+        for (effort, budget) in [
+            (None, 75),
+            (Some("low"), 50),
+            (Some("high"), 75),
+            (Some("max"), 100),
+            (Some("1"), 1),
+            (Some("63"), 63),
+            (Some("100"), 100),
+            (Some("medium"), 75),
+        ] {
+            assert_eq!(dsv41_effort_budget(effort), Ok(budget), "{effort:?}");
+        }
+        for bad in ["0", "101", "-1", "+5", "07", "1.5", "255", "1000"] {
+            assert!(dsv41_effort_budget(Some(bad)).is_err(), "{bad}");
+        }
+        let one = [turn("user", "q")];
+        let max = v41(&one, true, ThinkMode::Think, Some("max")).unwrap();
+        assert!(max.starts_with(&format!(
+            "{DS_BOS}{DS_SYSTEM}Reasoning Effort: 100 (range 1-100"
+        )));
+        // chat mode renders no budget, but an invalid one still refuses (the vendor asserts
+        // before it reads the mode).
+        assert_eq!(
+            v41(&one, true, ThinkMode::NoThink, Some("max")).unwrap(),
+            format!("{DS_BOS}{DS_USER}q{DS_ASSISTANT}{DS_THINK_END}")
+        );
+        assert!(v41(&one, true, ThinkMode::NoThink, Some("0")).is_err());
+    }
+
+    /// Every entry reaches the V4.1 arm on a V4.1 census, a dsv4-marker template included (a
+    /// template cannot name this dialect), and the plain entry renders the serve default:
+    /// thinking at the default budget.
+    #[test]
+    fn dsv41_census_dispatches_every_entry() {
+        let thinking_default = format!(
+            "{DS_BOS}{DS_SYSTEM}Reasoning Effort: 75 (range 1-100, the higher the value, the more \
+             thorough the reasoning)\n\n{DS_USER}hi{DS_ASSISTANT}{DS_THINK_START}"
+        );
+        for template in [
+            None,
+            Some("<\u{ff5c}Assistant\u{ff5c}> \u{ff5c}DSML\u{ff5c}"),
+        ] {
+            assert_eq!(
+                apply_chat_template_enc(template, &[("user", "hi")], true, Some(Dsv4Encoding::V41))
+                    .unwrap(),
+                thinking_default
+            );
+            assert_eq!(
+                apply_chat_template_tools_ex(
+                    template,
+                    &[turn("user", "hi")],
+                    true,
+                    &[],
+                    &[],
+                    ThinkMode::Default,
+                    None,
+                    Some(Dsv4Encoding::V41)
+                )
+                .unwrap(),
+                thinking_default
+            );
+        }
+        // and a V4 census never does: no System token, no numeric budget.
+        let v4 = apply_chat_template_enc(None, &[("user", "hi")], true, Some(Dsv4Encoding::V0731))
+            .unwrap();
+        assert!(
+            !v4.contains(DS_SYSTEM) && !v4.contains("Reasoning Effort"),
+            "{v4}"
+        );
+    }
+
+    /// `add_generation_prompt = false` drops exactly the final transition, as on the DSv4 arm, so
+    /// the render without it plus the header is the render with it.
+    #[test]
+    fn dsv41_generation_prompt_gates_only_the_final_transition() {
+        let mid = [
+            turn("user", "q1"),
+            turn("assistant", "a1"),
+            turn("system", "now be brief"),
+        ];
+        let task = [Turn {
+            task: Some("query".into()),
+            ..turn("user", "classify")
+        }];
+        for (turns, think, tail) in [
+            (
+                &mid[..],
+                ThinkMode::Think,
+                format!("{DS_ASSISTANT}{DS_THINK_START}"),
+            ),
+            (
+                &mid[..],
+                ThinkMode::NoThink,
+                format!("{DS_ASSISTANT}{DS_THINK_END}"),
+            ),
+            (
+                &task[..],
+                ThinkMode::NoThink,
+                "<\u{ff5c}query\u{ff5c}>".to_string(),
+            ),
+        ] {
+            let with = v41(turns, true, think, None).unwrap();
+            let without = v41(turns, false, think, None).unwrap();
+            assert_eq!(format!("{without}{tail}"), with);
+        }
+    }
+
+    /// The registry the onboarding gate resolves pack renderer names through.
+    #[test]
+    fn engine_dialects_resolve_cover_and_render_their_probe() {
+        assert_eq!(
+            EngineDialect::from_renderer_name("encoding_dsv4"),
+            Some(EngineDialect::Dsv4)
+        );
+        assert_eq!(
+            EngineDialect::from_renderer_name("encoding_dsv41"),
+            Some(EngineDialect::Dsv41)
+        );
+        assert_eq!(EngineDialect::from_renderer_name("encoding_dsv5"), None);
+        for d in [EngineDialect::Dsv4, EngineDialect::Dsv41] {
+            assert_eq!(
+                EngineDialect::from_renderer_name(d.renderer_name()),
+                Some(d)
+            );
+        }
+        assert!(EngineDialect::Dsv4.covers(Dsv4Encoding::V0731));
+        assert!(EngineDialect::Dsv4.covers(Dsv4Encoding::Preview));
+        assert!(!EngineDialect::Dsv4.covers(Dsv4Encoding::V41));
+        assert!(EngineDialect::Dsv41.covers(Dsv4Encoding::V41));
+        assert!(!EngineDialect::Dsv41.covers(Dsv4Encoding::V0731));
+        assert!(
+            EngineDialect::Dsv41
+                .render_probe(Dsv4Encoding::V0731)
+                .is_err()
+        );
+
+        let v4 = EngineDialect::Dsv4
+            .render_probe(Dsv4Encoding::V0731)
+            .unwrap();
+        let v41 = EngineDialect::Dsv41
+            .render_probe(Dsv4Encoding::V41)
+            .unwrap();
+        assert!(v4.contains("\u{ff5c}DSML\u{ff5c}tool_calls>") && !v4.contains(DS_SYSTEM));
+        assert!(
+            v41.contains("\u{ff5c}DSML\u{ff5c} calls>") && !v41.contains("DSML\u{ff5c}tool_calls")
+        );
+        assert!(v41.contains(&format!("{DS_SYSTEM}Answer in French")) && v41.contains(DS_IMAGE));
+        // every marker the probe emits is one the dialect declares, so the gate's single-id
+        // check covers the probe.
+        for (d, probe) in [(EngineDialect::Dsv4, &v4), (EngineDialect::Dsv41, &v41)] {
+            for m in [DS_BOS, DS_USER, DS_ASSISTANT, DS_THINK_END, DS_EOS] {
+                assert!(probe.contains(m) && d.markers().contains(&m), "{d:?} {m}");
+            }
+            assert_eq!(
+                d.unlisted_control_strings(probe),
+                Vec::<&str>::new(),
+                "{d:?}"
+            );
+        }
+        // Every task head renders a listed marker under both dialects.
+        for (task, token) in DS_TASK_TOKENS {
+            let turns = [Turn {
+                role: "user".into(),
+                content: "q".into(),
+                task: Some(task.into()),
+                ..Default::default()
+            }];
+            for (d, encoding) in [
+                (EngineDialect::Dsv4, Dsv4Encoding::V0731),
+                (EngineDialect::Dsv41, Dsv4Encoding::V41),
+            ] {
+                let out = apply_dsv4_template(
+                    &turns,
+                    true,
+                    &[],
+                    ThinkMode::NoThink,
+                    None,
+                    Some(encoding),
+                )
+                .unwrap();
+                assert!(out.contains(token), "{d:?} {task}: {out:?}");
+                assert_eq!(
+                    d.unlisted_control_strings(&out),
+                    Vec::<&str>::new(),
+                    "{d:?}"
+                );
+            }
+        }
+    }
+
+    /// The control-string scan finds every bar-delimited span the way the dialects spell them,
+    /// and flags what the marker list does not hold: a new or misspelled control string cannot
+    /// pass the single-id check by being absent from it.
+    #[test]
+    fn control_string_scan_flags_unlisted_markers() {
+        let text = "<\u{ff5c}begin\u{2581}of\u{2581}sentence\u{ff5c}><\u{ff5c}User\u{ff5c}>q\
+                    <\u{ff5c}Assistant\u{ff5c}>\n\n<\u{ff5c}DSML\u{ff5c} calls>\
+                    </\u{ff5c}DSML\u{ff5c} calls>";
+        assert_eq!(
+            EngineDialect::control_strings(text),
+            [DS_BOS, DS_USER, DS_ASSISTANT, DS_DSML, DS_DSML]
+        );
+        assert!(
+            EngineDialect::Dsv41
+                .unlisted_control_strings(text)
+                .is_empty()
+        );
+        let typo = format!("{DS_USER}q<\u{ff5c}Asistant\u{ff5c}>");
+        assert_eq!(
+            EngineDialect::Dsv41.unlisted_control_strings(&typo),
+            ["<\u{ff5c}Asistant\u{ff5c}>"]
+        );
+        // The V4.1 system and image markers are not DSv4's.
+        assert_eq!(
+            EngineDialect::Dsv4.unlisted_control_strings(&format!("{DS_SYSTEM}{DS_IMAGE}")),
+            [DS_SYSTEM, DS_IMAGE]
+        );
+        assert_eq!(EngineDialect::control_strings("a \u{ff5c} b"), ["\u{ff5c}"]);
     }
 
     // ================= QWEN3.8 REASONING-EFFORT LADDER (lane/reasoning-schema-20260823) ======

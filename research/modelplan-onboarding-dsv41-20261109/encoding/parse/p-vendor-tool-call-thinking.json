@@ -1,0 +1,20 @@
+{
+  "completion": "  reason  </think>summary\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"lookup\">\n<｜DSML｜ parameter name=\"query\" string=\"true\">value</｜DSML｜ parameter>\n<｜DSML｜ parameter name=\"limit\" string=\"false\">2</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls><｜end▁of▁sentence｜>",
+  "think": "thinking",
+  "expected": {
+    "reasoning_content": "  reason  ",
+    "content": "summary",
+    "tool_calls": [
+      {
+        "name": "lookup",
+        "namespace": null,
+        "arguments": {
+          "query": "value",
+          "limit": 2
+        },
+        "arguments_text": "{\"query\": \"value\", \"limit\": 2}"
+      }
+    ]
+  },
+  "reencodes_to_completion": true
+}

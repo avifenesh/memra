@@ -10,6 +10,8 @@ use crate::tensor_contract::{
 };
 
 pub mod deepseek_v4;
+/// DeepSeek-V4.1-Flash: its own config, CSA2 plan and census; no DSv4 code path accepts it.
+pub mod deepseek_v41;
 pub mod gemma4_dense;
 pub mod gemma4_e4b;
 pub mod gemma4_moe;
@@ -186,6 +188,7 @@ pub const PACKS: &[&ModelPack] = &[
     &gemma4_moe::PACK,
     &deepseek_v4::PACK,
     &deepseek_v4::DSPARK_PACK,
+    &deepseek_v41::PACK,
     &qwen4_exp::PACK,
     &step35::PACK,
     &hy3::PACK,

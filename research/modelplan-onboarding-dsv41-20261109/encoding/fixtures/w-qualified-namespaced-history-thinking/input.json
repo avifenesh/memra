@@ -1,0 +1,121 @@
+{
+  "source": "matrix",
+  "messages": [
+    {
+      "role": "user",
+      "content": "question"
+    },
+    {
+      "role": "assistant",
+      "content": "Looking.",
+      "reasoning_content": "Pick the right lookup.",
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "search::lookup",
+            "arguments": "{\"query\": \"x\"}"
+          },
+          "id": "call_0"
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "files::lookup",
+            "arguments": "{\"query\": \"y\", \"limit\": 2}"
+          },
+          "id": "call_1"
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup",
+            "arguments": "{\"query\": \"z\"}"
+          },
+          "id": "call_2"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_0",
+      "content": "result 0"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_1",
+      "content": "result 1"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_2",
+      "content": "result 2"
+    }
+  ],
+  "req_tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "lookup",
+        "description": "Look up a value",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "lookup",
+        "description": "Look up a value",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "namespace": {
+        "name": "search",
+        "description": "Search tools."
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "lookup",
+        "description": "Look up a value",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "namespace": "files"
+    }
+  ],
+  "think": "thinking",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [],
+  "wire": true
+}

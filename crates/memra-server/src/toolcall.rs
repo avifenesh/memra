@@ -138,6 +138,52 @@ const DSV4_INVOKE: &str = "<\u{ff5c}DSML\u{ff5c}invoke name=\"";
 const DSV4_PARAM: &str = "<\u{ff5c}DSML\u{ff5c}parameter name=\"";
 const DSV4_PARAM_END: &str = "</\u{ff5c}DSML\u{ff5c}parameter>";
 const DSV4_INVOKE_END: &str = "</\u{ff5c}DSML\u{ff5c}invoke>";
+/// DeepSeek-V4.1 (`encoding_dsv41`, encoding.py E:428-437) spells the same DSML wire with a
+/// leading space in each tag name: `\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name="N">\n<｜DSML｜
+/// parameter name="K" string="true|false">V</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜
+/// calls>`. A V4.1 invoke name may carry a namespace (`ns::name`).
+const DSV41_OPEN: &str = "<\u{ff5c}DSML\u{ff5c} calls>";
+const DSV41_CLOSE: &str = "</\u{ff5c}DSML\u{ff5c} calls>";
+const DSV41_INVOKE: &str = "<\u{ff5c}DSML\u{ff5c} invoke name=\"";
+const DSV41_PARAM: &str = "<\u{ff5c}DSML\u{ff5c} parameter name=\"";
+const DSV41_PARAM_END: &str = "</\u{ff5c}DSML\u{ff5c} parameter>";
+const DSV41_INVOKE_END: &str = "</\u{ff5c}DSML\u{ff5c} invoke>";
+
+/// One DeepSeek dialect's DSML tag set. The two dialects share the block grammar, the think
+/// seam and the malformed policy; only the tag spellings and V4.1's qualified names differ.
+pub(crate) struct DsmlTags {
+    pub(crate) open: &'static str,
+    pub(crate) close: &'static str,
+    invoke: &'static str,
+    param: &'static str,
+    param_end: &'static str,
+    invoke_end: &'static str,
+    /// V4.1: an invoke name is `name` or `ns::name` (encoding.py `_split_tool_name`); a second
+    /// `::` is malformed. The qualified spelling is returned as the call name, which the V4.1
+    /// renderer accepts back verbatim, so the OpenAI wire (which has no namespace field)
+    /// round-trips it.
+    qualified_names: bool,
+}
+
+pub(crate) const DSML_V4: DsmlTags = DsmlTags {
+    open: DSV4_OPEN,
+    close: DSV4_CLOSE,
+    invoke: DSV4_INVOKE,
+    param: DSV4_PARAM,
+    param_end: DSV4_PARAM_END,
+    invoke_end: DSV4_INVOKE_END,
+    qualified_names: false,
+};
+
+pub(crate) const DSML_V41: DsmlTags = DsmlTags {
+    open: DSV41_OPEN,
+    close: DSV41_CLOSE,
+    invoke: DSV41_INVOKE,
+    param: DSV41_PARAM,
+    param_end: DSV41_PARAM_END,
+    invoke_end: DSV41_INVOKE_END,
+    qualified_names: true,
+};
 /// Tencent HY3 shipping tool protocol (the `:opensource` suffix is part of every token).
 const HY3_THINK_END: &str = "</think:opensource>";
 const HY3_OPEN: &str = "<tool_calls:opensource>";
@@ -169,6 +215,8 @@ pub struct ToolStreamParser {
     /// dsv4 content starts immediately after `</think>`), then Scan watches for
     /// `<｜DSML｜tool_calls>` (the `\n\n` before it is wire syntax).
     dsv4: bool,
+    /// The dsv4 dialect's DSML tag set: encoding_dsv4's, or V4.1's spaced tags.
+    dsml: &'static DsmlTags,
     /// GLM-5.3-Flash dialect: same as dsv4 on the think seam (no separator-newline swallow —
     /// this template puts content directly after `</think>`), and the `<tool_call>` body is
     /// the `<arg_key>`/`<arg_value>` grammar rather than qwen's `<function=`/`<parameter=`.
@@ -198,7 +246,8 @@ pub struct ToolStreamParser {
 
 /// AGENT-PAUSE TAIL PREDICATE (lane/kv-pause-demote-20260831, tiering spec Arc E): does a
 /// generation tail END with a completed tool-call block in one of the served dialects
-/// (qwen `</tool_call>`, gemma tooluse `<tool_call|>`, deepseek-v4 `</｜DSML｜tool_calls>`)?
+/// (qwen `</tool_call>`, gemma tooluse `<tool_call|>`, deepseek-v4 `</｜DSML｜tool_calls>`,
+/// deepseek-v4.1 `</｜DSML｜ calls>`)?
 /// The markers live HERE so this predicate and the streaming parser can never disagree on
 /// what a close tag looks like.
 ///
@@ -224,7 +273,10 @@ pub struct ToolStreamParser {
 /// v2 refinement in `research/kv-pause-20260831/REPORT.md`.
 pub fn tail_ends_with_tool_call(tail: &str) -> bool {
     let t = tail.trim_end();
-    t.ends_with(CLOSE) || t.ends_with(GEMMA_CALL_CLOSE) || t.ends_with(DSV4_CLOSE)
+    t.ends_with(CLOSE)
+        || t.ends_with(GEMMA_CALL_CLOSE)
+        || t.ends_with(DSV4_CLOSE)
+        || t.ends_with(DSV41_CLOSE)
 }
 
 /// Length of the longest PROPER prefix of `tag` that `s` ends with. NOTE: byte-indexed —
@@ -260,6 +312,7 @@ impl ToolStreamParser {
             gemma: false,
             gemma_tools: false,
             dsv4: false,
+            dsml: &DSML_V4,
             glm5: false,
             hy3: false,
             postthink_nl: 0,
@@ -346,6 +399,7 @@ impl ToolStreamParser {
         parser.gemma = self.gemma;
         parser.gemma_tools = self.gemma_tools;
         parser.dsv4 = self.dsv4;
+        parser.dsml = self.dsml;
         parser.glm5 = self.glm5;
         parser.hy3 = self.hy3;
         parser.json_arguments = self.json_arguments;
@@ -367,6 +421,17 @@ impl ToolStreamParser {
         let mut p = Self::new(HashMap::new(), skip_think);
         p.scan_tools = false;
         p.dsv4 = true;
+        p
+    }
+
+    /// DeepSeek-V4.1 (`encoding_dsv41`) parser: the dsv4 parser over V4.1's spaced DSML tags
+    /// (encoding.py `parse_message_from_completion_text`, E:946-990). Reasoning routes to
+    /// `</think>` on a thinking-mode prompt, content runs to `\n\n<｜DSML｜ calls>`, and each
+    /// `<｜DSML｜ invoke>` parses to an OpenAI call whose name keeps its `ns::name` spelling.
+    /// The unspaced V4 tags are content here, as they are to the vendor parser.
+    pub fn dsv41(skip_think: bool) -> Self {
+        let mut p = Self::dsv4(skip_think);
+        p.dsml = &DSML_V41;
         p
     }
 
@@ -557,7 +622,8 @@ impl ToolStreamParser {
                     if self.dsv4 {
                         // content until `<｜DSML｜tool_calls>`; the `\n\n` before it is wire
                         // syntax (encoding_dsv4 tool_calls_start_token, E:710) and is stripped.
-                        if let Some(i) = self.buf.find(DSV4_OPEN) {
+                        let open = self.dsml.open;
+                        if let Some(i) = self.buf.find(open) {
                             let mut end = i;
                             // strip up to two `\n` immediately before the open (the `\n\n`).
                             for _ in 0..2 {
@@ -570,13 +636,13 @@ impl ToolStreamParser {
                             if end > 0 {
                                 emit_content(&mut out, self.buf[..end].to_string());
                             }
-                            self.buf.drain(..i + DSV4_OPEN.len());
+                            self.buf.drain(..i + open.len());
                             self.state = State::Dsv4Call;
                             continue;
                         }
                         // hold back a partial `<｜DSML｜tool_calls>` suffix, plus up to two
                         // trailing newlines that may be its `\n\n` prefix (stripped on match).
-                        let mut keep = partial_suffix_len(&self.buf, DSV4_OPEN);
+                        let mut keep = partial_suffix_len(&self.buf, open);
                         let mut nl = 0;
                         while nl < 2
                             && keep < self.buf.len()
@@ -742,11 +808,12 @@ impl ToolStreamParser {
                     continue;
                 }
                 State::Dsv4Call => {
-                    let Some(i) = self.buf.find(DSV4_CLOSE) else {
+                    let tags = self.dsml;
+                    let Some(i) = self.buf.find(tags.close) else {
                         break;
                     };
                     let inner: String = self.buf[..i].to_string();
-                    self.buf.drain(..i + DSV4_CLOSE.len());
+                    self.buf.drain(..i + tags.close.len());
                     self.state = State::Scan;
                     match self.parse_dsv4_calls(&inner) {
                         // one `<｜DSML｜tool_calls>` block yields one-or-more OpenAI calls.
@@ -756,7 +823,7 @@ impl ToolStreamParser {
                             }
                         }
                         // malformed / empty: surfaced verbatim, tags included, stream continues.
-                        _ => emit_content(&mut out, format!("{DSV4_OPEN}{inner}{DSV4_CLOSE}")),
+                        _ => emit_content(&mut out, format!("{}{inner}{}", tags.open, tags.close)),
                     }
                     continue;
                 }
@@ -812,7 +879,7 @@ impl ToolStreamParser {
                 // restored), same malformed policy as the qwen arm.
                 State::GemmaCall => emit_content(&mut out, format!("{GEMMA_CALL_OPEN}{tail}")),
                 // dsv4 unterminated `<｜DSML｜tool_calls>` block: surfaced raw (open restored).
-                State::Dsv4Call => emit_content(&mut out, format!("{DSV4_OPEN}{tail}")),
+                State::Dsv4Call => emit_content(&mut out, format!("{}{tail}", self.dsml.open)),
                 State::Hy3Call => emit_content(&mut out, format!("{HY3_OPEN}{tail}")),
                 _ => emit_content(&mut out, tail),
             }
@@ -1003,10 +1070,11 @@ impl ToolStreamParser {
     /// `string="false"` values are JSON (number/bool/array/object, embedded raw). None =
     /// malformed (surfaced verbatim). `schemas` is unused — the wire is self-describing.
     fn parse_dsv4_calls(&mut self, inner: &str) -> Option<Vec<ParsedToolCall>> {
+        let tags = self.dsml;
         let mut calls = Vec::new();
         let mut rest = inner;
         loop {
-            let Some(iv) = rest.find(DSV4_INVOKE) else {
+            let Some(iv) = rest.find(tags.invoke) else {
                 // no more invokes: the remainder must be the wrapper's whitespace only.
                 if rest.trim().is_empty() {
                     break;
@@ -1017,21 +1085,25 @@ impl ToolStreamParser {
             if !rest[..iv].trim().is_empty() {
                 return None;
             }
-            rest = &rest[iv + DSV4_INVOKE.len()..];
+            rest = &rest[iv + tags.invoke.len()..];
             let name_end = rest.find("\">")?;
             let name = rest[..name_end].to_string();
             if name.is_empty() || name.contains(['<', '>', '\n']) {
+                return None;
+            }
+            // V4.1: at most one `ns::` qualifier (encoding.py refuses `a::b::c`).
+            if tags.qualified_names && name.matches("::").count() > 1 {
                 return None;
             }
             rest = &rest[name_end + 2..]; // past `">`
             let mut args = serde_json::Map::new();
             loop {
                 let t = rest.trim_start_matches('\n');
-                if let Some(after) = t.strip_prefix(DSV4_INVOKE_END) {
+                if let Some(after) = t.strip_prefix(tags.invoke_end) {
                     rest = after;
                     break;
                 }
-                let p = t.strip_prefix(DSV4_PARAM)?;
+                let p = t.strip_prefix(tags.param)?;
                 let n_end = p.find("\" string=\"")?;
                 let key = p[..n_end].to_string();
                 if key.is_empty() || key.contains(['<', '>', '\n']) {
@@ -1041,7 +1113,7 @@ impl ToolStreamParser {
                 let flag_end = after_key.find("\">")?;
                 let flag = &after_key[..flag_end];
                 let after_flag = &after_key[flag_end + 2..];
-                let v_end = after_flag.find(DSV4_PARAM_END)?;
+                let v_end = after_flag.find(tags.param_end)?;
                 let value = &after_flag[..v_end];
                 let coerced = match flag {
                     "true" => serde_json::Value::String(value.to_string()),
@@ -1053,7 +1125,7 @@ impl ToolStreamParser {
                     return None; // duplicate parameter name (E:673-674)
                 }
                 args.insert(key, coerced);
-                rest = &after_flag[v_end + DSV4_PARAM_END.len()..];
+                rest = &after_flag[v_end + tags.param_end.len()..];
             }
             let arguments = serde_json::to_string(&serde_json::Value::Object(args)).ok()?;
             let id = format!(

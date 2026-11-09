@@ -14,7 +14,7 @@ use memra_gguf::source::{
     census_from_safetensors_headers,
 };
 use memra_gguf::tensor_contract::{BoundTensorContract, CheckpointDialect, TensorId, TensorOwner};
-use memra_reference::{deterministic_fixture, execute, execute_multimodal, execute_vision};
+use memra_reference::{deterministic_fixture, execute_multimodal, execute_tokens, execute_vision};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -171,11 +171,38 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
             let out_dir = request.out_dir.ok_or("verify tiny requires --out")?;
             let plan = pack.compile_tiny_plan()?;
             let fixture = deterministic_fixture(&plan)?;
-            let first = execute(&plan, &fixture.weights, &fixture.token_ids)?;
-            let second = execute(&plan, &fixture.weights, &fixture.token_ids)?;
+            let run = || {
+                execute_tokens(
+                    &plan,
+                    &fixture.weights,
+                    &fixture.token_ids,
+                    fixture.decode_from,
+                )
+            };
+            let first = run()?;
+            let second = run()?;
             if first != second {
                 return Err("native reference fixture is not bit-deterministic".into());
             }
+            // The fixture, its checkpoint image and this run's oracle land before the pinned
+            // comparison, so a failed gate leaves what it compared, and an external oracle can
+            // load the same checkpoint bytes.
+            std::fs::create_dir_all(&out_dir)?;
+            write_atomic(
+                &out_dir.join("tiny-fixture.txt"),
+                format_tiny_fixture(&plan, &fixture).as_bytes(),
+            )?;
+            if !fixture.checkpoint_files.is_empty() {
+                let checkpoint = out_dir.join("tiny-checkpoint");
+                std::fs::create_dir_all(&checkpoint)?;
+                for (name, bytes) in &fixture.checkpoint_files {
+                    write_atomic(&checkpoint.join(name), bytes)?;
+                }
+            }
+            write_atomic(
+                &out_dir.join("reference-oracle.tsv"),
+                format_reference_oracle(&first).as_bytes(),
+            )?;
             // Bit-determinism above only proves the executor agrees with itself; it is
             // vacuous against a wrong numerical program because a bug reproduces identically
             // on both calls. The oracle below is a git-committed, reviewed value pinned in a
@@ -206,6 +233,69 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                         .into());
                     }
                 }
+            }
+            // The family's variants beside the main fixture (DeepSeek-V4.1: splits below the
+            // window and a two-block window, which the main fixture never runs), each with its
+            // fixture, checkpoint image and oracle written first and pinned the same way.
+            let mut variant_texts = Vec::new();
+            for variant in memra_reference::tiny_variants(&plan)? {
+                let run = || {
+                    execute_tokens(
+                        &variant.plan,
+                        &variant.fixture.weights,
+                        &variant.fixture.token_ids,
+                        variant.fixture.decode_from,
+                    )
+                };
+                let output = run()?;
+                if output != run()? {
+                    return Err(format!(
+                        "native reference tiny variant {} is not bit-deterministic",
+                        variant.name
+                    )
+                    .into());
+                }
+                write_atomic(
+                    &out_dir.join(format!("tiny-fixture-{}.txt", variant.name)),
+                    format_tiny_fixture(&variant.plan, &variant.fixture).as_bytes(),
+                )?;
+                let checkpoint = out_dir.join(format!("tiny-checkpoint-{}", variant.name));
+                std::fs::create_dir_all(&checkpoint)?;
+                for (name, bytes) in &variant.fixture.checkpoint_files {
+                    write_atomic(&checkpoint.join(name), bytes)?;
+                }
+                let text = format_reference_oracle(&output);
+                write_atomic(
+                    &out_dir.join(format!("reference-oracle-{}.tsv", variant.name)),
+                    text.as_bytes(),
+                )?;
+                variant_texts.push((variant.name, text));
+            }
+            let mut variant_receipts = String::new();
+            for (name, text) in &variant_texts {
+                let path = pinned_tiny_variant_oracle_path(pack.family, name);
+                let pinned = pinned_tiny_variant_oracle(pack.family, name).ok_or_else(|| {
+                    format!(
+                        "tiny parity requires a pinned oracle for the {} variant {name}; add {path} (reviewed, committed); no fallback is allowed",
+                        pack.family
+                    )
+                })?;
+                let gate = pack.checkpoint_parity.expect(
+                    "a NativeReference pack with a pinned tiny oracle always declares a checkpoint-parity tolerance",
+                );
+                if let Err(reason) = oracle_matches_within_tolerance(pinned, text, &gate) {
+                    return Err(format!(
+                        "tiny parity diverges from the pinned oracle at {path}: {reason} (textual diff for context: {:?})",
+                        first_diff_line(pinned, text),
+                    )
+                    .into());
+                }
+                writeln!(
+                    variant_receipts,
+                    "pinned_oracle_sha256_{name}\t{}",
+                    hex_sha256(text.as_bytes())
+                )
+                .unwrap();
             }
             let vision = fixture
                 .vision
@@ -298,15 +388,6 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                     }
                 }
             }
-            std::fs::create_dir_all(&out_dir)?;
-            write_atomic(
-                &out_dir.join("tiny-fixture.txt"),
-                format_tiny_fixture(&plan, &fixture).as_bytes(),
-            )?;
-            write_atomic(
-                &out_dir.join("reference-oracle.tsv"),
-                format_reference_oracle(&first).as_bytes(),
-            )?;
             if let Some(vision) = vision.as_ref() {
                 write_atomic(
                     &out_dir.join("reference-vision-oracle.tsv"),
@@ -322,7 +403,7 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
             write_atomic(
                 &out_dir.join("tiny-gate.tsv"),
                 format!(
-                    "status\tpassed\nfamily\t{}\npinned_oracle_sha256\t{}\n",
+                    "status\tpassed\nfamily\t{}\npinned_oracle_sha256\t{}\n{variant_receipts}",
                     pack.family,
                     hex_sha256(oracle_text.as_bytes())
                 )
@@ -1236,6 +1317,31 @@ struct TokenizerEvidence {
     /// vendor ships the dialect as code has no template to find, and a loader that
     /// refuses there refuses a correct artifact forever.
     template: Option<TemplateEvidence>,
+    /// Where the tokenizer files came from, so the gate can load the tokenizer an
+    /// engine-owned renderer is exercised under (`exercise_engine_renderer`).
+    origin: TokenizerOrigin,
+}
+
+enum TokenizerOrigin {
+    Gguf,
+    Dir(PathBuf),
+    Remote {
+        base: String,
+        tokenizer_json: String,
+        tokenizer_config: Option<String>,
+    },
+}
+
+/// What the TokenizerTemplate gate learned by exercising an `EngineRenderer` pack's renderer on
+/// the artifact's own files: the renderer the name resolved to, the encoding the artifact's
+/// config.json census selected, and the digests of a fixed probe conversation rendered through
+/// it and tokenized with the artifact's tokenizer.
+struct RendererProbe {
+    dialect: memra_tokenizer::chat::EngineDialect,
+    encoding: memra_tokenizer::chat::Dsv4Encoding,
+    probe_sha256: String,
+    probe_tokens: usize,
+    probe_ids_sha256: String,
 }
 
 struct TemplateEvidence {
@@ -1290,6 +1396,12 @@ pub fn inspect_model(
         &request.out_dir.join("model-plan.txt"),
         plan_text.as_bytes(),
     )?;
+    // The ModelConfig the pack compiled from: what normalization made of the artifact's
+    // config (the lock hashes the config.json bytes for an HF source, this text for GGUF).
+    write_atomic(
+        &request.out_dir.join("normalized-config.txt"),
+        format!("{:#?}\n", source.config).as_bytes(),
+    )?;
     write_atomic(
         &request.out_dir.join("execution-rewrites.tsv"),
         rewrite_manifest.as_bytes(),
@@ -1306,16 +1418,10 @@ pub fn inspect_model(
     if let Some(binding) = binding.as_ref() {
         write_checkpoint_placement_candidates(&request.out_dir, &plan, binding, &plan_hash)?;
     }
-    let tokenizer_error = match &source.tokenizer {
-        Ok(evidence) if !pack.tokenizer_sources.contains(&evidence.source) => Some(format!(
-            "model pack {} does not accept tokenizer source {:?}",
-            pack.family, evidence.source
-        )),
-        Ok(evidence) => template_contract_error(pack, evidence.template.is_some()),
-        Err(error) => Some(error.clone()),
-    };
+    let verdict = tokenizer_verdict(pack, &source);
+    let tokenizer_error = verdict.as_ref().err().cloned();
     if let Ok(evidence) = &source.tokenizer
-        && tokenizer_error.is_none()
+        && let Ok(probe) = &verdict
     {
         let (dialect, sha, bytes) = match (&evidence.template, pack.template) {
             (Some(template), _) => ("artifact", template.sha256.clone(), template.bytes),
@@ -1324,13 +1430,25 @@ pub fn inspect_model(
             }
             (None, TemplateContract::ArtifactRequired) => unreachable!("gated above"),
         };
+        let mut contract = format!(
+            "status\tpassed\nsource\t{:?}\ntokenizer_sha256\t{}\ndialect\t{}\ntemplate_sha256\t{}\ntemplate_bytes\t{}\n",
+            evidence.source, evidence.tokenizer_sha256, dialect, sha, bytes,
+        );
+        if let Some(probe) = probe {
+            write!(
+                contract,
+                "renderer\t{}\nrenderer_encoding\t{:?}\nrenderer_probe_sha256\t{}\nrenderer_probe_tokens\t{}\nrenderer_probe_ids_sha256\t{}\n",
+                probe.dialect.renderer_name(),
+                probe.encoding,
+                probe.probe_sha256,
+                probe.probe_tokens,
+                probe.probe_ids_sha256,
+            )
+            .unwrap();
+        }
         write_atomic(
             &request.out_dir.join("tokenizer-contract.tsv"),
-            format!(
-                "status\tpassed\nsource\t{:?}\ntokenizer_sha256\t{}\ndialect\t{}\ntemplate_sha256\t{}\ntemplate_bytes\t{}\n",
-                evidence.source, evidence.tokenizer_sha256, dialect, sha, bytes,
-            )
-            .as_bytes(),
+            contract.as_bytes(),
         )?;
     }
     write_atomic(
@@ -1347,6 +1465,7 @@ pub fn inspect_model(
             } else {
                 "passed"
             },
+            verdict.is_ok(),
         )
         .as_bytes(),
     )?;
@@ -1620,6 +1739,7 @@ fn inspect_gguf_tokenizer(gguf: &GgufFile) -> Result<TokenizerEvidence, String> 
             sha256: hex_sha256(template.as_bytes()),
             bytes: template.len(),
         }),
+        origin: TokenizerOrigin::Gguf,
     })
 }
 
@@ -1635,6 +1755,7 @@ fn inspect_hf_tokenizer_dir(path: &Path) -> Result<TokenizerEvidence, String> {
             sha256: hex_sha256(template.as_bytes()),
             bytes: template.len(),
         }),
+        origin: TokenizerOrigin::Dir(path.to_path_buf()),
     })
 }
 
@@ -1670,6 +1791,137 @@ fn template_contract_error(pack: &ModelPack, artifact_has_template: bool) -> Opt
             pack.family
         )),
     }
+}
+
+/// The whole TokenizerTemplate judgment, made once and read by both the gate and the lock: the
+/// artifact's tokenizer evidence, the pack's accepted sources, the two-sided template contract
+/// and, for an `EngineRenderer` pack, the renderer exercised on the artifact
+/// (`exercise_engine_renderer`). `Ok(Some(probe))` is a passed renderer gate.
+fn tokenizer_verdict(
+    pack: &ModelPack,
+    source: &SourceData,
+) -> Result<Option<RendererProbe>, String> {
+    let evidence = source.tokenizer.as_ref().map_err(Clone::clone)?;
+    if !pack.tokenizer_sources.contains(&evidence.source) {
+        return Err(format!(
+            "model pack {} does not accept tokenizer source {:?}",
+            pack.family, evidence.source
+        ));
+    }
+    if let Some(error) = template_contract_error(pack, evidence.template.is_some()) {
+        return Err(error);
+    }
+    match pack.template {
+        TemplateContract::ArtifactRequired => Ok(None),
+        TemplateContract::EngineRenderer(renderer) => {
+            exercise_engine_renderer(pack.family, renderer, evidence, &source.config_bytes)
+                .map(Some)
+        }
+    }
+}
+
+/// An `EngineRenderer` pack passes only when the renderer it names exists and owns this artifact:
+/// the name resolves in the tokenizer crate's dialect table, the artifact's config.json census
+/// selects an encoding that renderer covers, every control string the renderer emits encodes as
+/// one id under the artifact's tokenizer, and a fixed probe conversation renders through it.
+/// Before this the gate recorded the name and passed on it alone, so a pack could name a
+/// renderer that did not exist (deepseek_v41's `encoding_dsv41`, until its renderer landed).
+fn exercise_engine_renderer(
+    family: &str,
+    renderer: &str,
+    evidence: &TokenizerEvidence,
+    config_bytes: &[u8],
+) -> Result<RendererProbe, String> {
+    use memra_tokenizer::chat::EngineDialect;
+    let dialect = EngineDialect::from_renderer_name(renderer).ok_or_else(|| {
+        format!(
+            "model pack {} names the engine renderer {renderer}, which this engine does not \
+             implement",
+            family
+        )
+    })?;
+    let tok = match &evidence.origin {
+        TokenizerOrigin::Dir(dir) => memra_tokenizer::Tokenizer::from_hf_dir(dir)?,
+        TokenizerOrigin::Remote {
+            base,
+            tokenizer_json,
+            tokenizer_config,
+        } => {
+            let generation_config = http_text(&format!("{base}/generation_config.json"))
+                .map_err(|error| error.to_string())?;
+            let config = std::str::from_utf8(config_bytes)
+                .map_err(|error| format!("config.json is not UTF-8: {error}"))?;
+            memra_tokenizer::Tokenizer::from_hf_files(&memra_tokenizer::HfTokenizerFiles {
+                origin: Path::new(base),
+                tokenizer_json,
+                tokenizer_config: tokenizer_config.as_deref(),
+                generation_config: generation_config.as_deref(),
+                chat_template_jinja: None,
+                config: Some(config),
+            })?
+        }
+        TokenizerOrigin::Gguf => {
+            return Err(format!(
+                "model pack {}: the engine renderer {renderer} is keyed on an HF config.json \
+                 census, which a GGUF does not carry",
+                family
+            ));
+        }
+    };
+    let encoding = tok.dsv4_encoding().ok_or_else(|| {
+        format!(
+            "model pack {} names the engine renderer {renderer}, but the artifact's config.json \
+             selects no DeepSeek encoding",
+            family
+        )
+    })?;
+    if !dialect.covers(encoding) {
+        return Err(format!(
+            "model pack {} names the engine renderer {renderer}, but the artifact's config.json \
+             selects the {encoding:?} encoding, which {renderer} does not render",
+            family
+        ));
+    }
+    for marker in dialect.markers() {
+        let ids = tok.encode(marker, false);
+        if ids.len() != 1 || tok.id_of(marker) != Some(ids[0]) {
+            return Err(format!(
+                "the artifact's tokenizer encodes the {renderer} control string {marker} as \
+                 {ids:?}, not as its one id"
+            ));
+        }
+    }
+    let probe = dialect.render_probe(encoding)?;
+    // The single-id check above covers the listed markers; these two make the list complete
+    // for what the renderer emits: every control string the probe render spells is listed, and
+    // every special token its ids hold is a listed marker.
+    let unlisted = dialect.unlisted_control_strings(&probe);
+    if !unlisted.is_empty() {
+        return Err(format!(
+            "the {renderer} probe render emits control strings its marker list does not hold: \
+             {unlisted:?}"
+        ));
+    }
+    let ids = tok.encode(&probe, true);
+    for &id in &ids {
+        if tok.token_is_special(id) {
+            let piece = tok.decode(&[id]);
+            if !dialect.markers().contains(&piece.as_str()) {
+                return Err(format!(
+                    "the {renderer} probe render holds the special token {piece:?} (id {id}), \
+                     which its marker list does not hold"
+                ));
+            }
+        }
+    }
+    let id_bytes: Vec<u8> = ids.iter().flat_map(|id| id.to_le_bytes()).collect();
+    Ok(RendererProbe {
+        dialect,
+        encoding,
+        probe_sha256: hex_sha256(probe.as_bytes()),
+        probe_tokens: ids.len(),
+        probe_ids_sha256: hex_sha256(&id_bytes),
+    })
 }
 
 fn local_hf_template(path: &Path) -> Result<Option<String>, String> {
@@ -1717,6 +1969,11 @@ fn inspect_remote_hf_tokenizer(base: &str) -> Result<TokenizerEvidence, String> 
             sha256: hex_sha256(template.as_bytes()),
             bytes: template.len(),
         }),
+        origin: TokenizerOrigin::Remote {
+            base: base.to_string(),
+            tokenizer_json: tokenizer,
+            tokenizer_config: config,
+        },
     })
 }
 
@@ -2083,6 +2340,9 @@ fn format_execution_rewrites(
     output
 }
 
+// allow: the lock is a flat record of every gate input; the tokenizer verdict joined it so the
+// lock reads the gate's one judgment instead of re-deriving it.
+#[allow(clippy::too_many_arguments)]
 fn format_lock(
     pack: &ModelPack,
     source: &SourceData,
@@ -2091,6 +2351,7 @@ fn format_lock(
     plan: &str,
     rewrites: &str,
     binding: &str,
+    tokenizer_passed: bool,
 ) -> String {
     let mut output = String::from("format_version=2\n");
     writeln!(output, "source={}", lock_value(&source.label)).unwrap();
@@ -2110,13 +2371,12 @@ fn format_lock(
     writeln!(output, "plan_sha256={plan}").unwrap();
     writeln!(output, "rewrite_manifest_sha256={rewrites}").unwrap();
     writeln!(output, "binding={binding}").unwrap();
-    // The lock records the SAME judgment the gate made, through the same function: a lock
-    // that said `passed` on its own accounting once let a gate failure out of sight.
+    // The lock records the SAME judgment the gate made (`tokenizer_verdict`, computed once by
+    // the caller): a lock that said `passed` on its own accounting once let a gate failure out
+    // of sight. The renderer probe lives in tokenizer-contract.tsv, so a passing lock keeps the
+    // bytes it had before the renderer was exercised.
     match &source.tokenizer {
-        Ok(evidence)
-            if pack.tokenizer_sources.contains(&evidence.source)
-                && template_contract_error(pack, evidence.template.is_some()).is_none() =>
-        {
+        Ok(evidence) if tokenizer_passed => {
             writeln!(output, "tokenizer=passed").unwrap();
             writeln!(output, "tokenizer_source={:?}", evidence.source).unwrap();
             writeln!(output, "tokenizer_sha256={}", evidence.tokenizer_sha256).unwrap();
@@ -2340,6 +2600,17 @@ fn format_tiny_fixture(
     if let Some(token_ids) = fixture.multimodal_token_ids.as_ref() {
         writeln!(output, "multimodal_tokens={token_ids:?}").unwrap();
     }
+    if let Some(decode_from) = fixture.decode_from {
+        writeln!(output, "decode_from={decode_from}").unwrap();
+    }
+    for (name, bytes) in &fixture.checkpoint_files {
+        writeln!(
+            output,
+            "checkpoint_file={name}\tsha256={}",
+            hex_sha256(bytes)
+        )
+        .unwrap();
+    }
     output
 }
 
@@ -2372,12 +2643,38 @@ fn pinned_tiny_oracle(family: &str) -> Option<&'static str> {
         "deepseek_v4_dspark" => Some(include_str!(
             "../tests/fixtures/tiny-oracle/deepseek_v4_dspark.tsv"
         )),
+        // Produced by the vendor model.py over the fixture's checkpoint image, not by memra:
+        // research/modelplan-onboarding-dsv41-20261109/tiny/make_tiny_oracle.py.
+        "deepseek_v41" => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/deepseek_v41.tsv"
+        )),
         _ => None,
     }
 }
 
 fn pinned_tiny_oracle_path(family: &str) -> String {
     format!("crates/memra-cli/tests/fixtures/tiny-oracle/{family}.tsv")
+}
+
+/// Pinned oracles of a family's tiny variants (`memra_reference::tiny_variants`), same
+/// discipline as [`pinned_tiny_oracle`]: each generated once by the family's external oracle on
+/// the variant's checkpoint image (`tiny-checkpoint-<variant>/`), reviewed and committed.
+fn pinned_tiny_variant_oracle(family: &str, variant: &str) -> Option<&'static str> {
+    match (family, variant) {
+        // The vendor model.py on each variant's checkpoint image, through
+        // research/modelplan-onboarding-dsv41-20261109/tiny/make_tiny_oracle.py.
+        ("deepseek_v41", "split60") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/deepseek_v41-split60.tsv"
+        )),
+        ("deepseek_v41", "window128") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/deepseek_v41-window128.tsv"
+        )),
+        _ => None,
+    }
+}
+
+fn pinned_tiny_variant_oracle_path(family: &str, variant: &str) -> String {
+    format!("crates/memra-cli/tests/fixtures/tiny-oracle/{family}-{variant}.tsv")
 }
 
 /// Pinned vision-stream oracle, same discipline as [`pinned_tiny_oracle`]. Only families whose
@@ -2554,6 +2851,34 @@ fn format_reference_oracle(output: &memra_reference::ReferenceOutput) -> String 
             .unwrap();
         }
     }
+    // Teacher-forced decode (DeepSeek-V4.1): one DSpark draft after each decode step, keyed by
+    // the step's position.
+    if let Some(decode) = output.decode.as_ref() {
+        for (step, draft) in decode.drafts.iter().enumerate() {
+            let at = decode.prefill_tokens + step;
+            append_oracle_rows(
+                &mut text,
+                &format!("dspark@{at}"),
+                &draft.logits,
+                draft.block_size,
+                output.vocab,
+            );
+            for (position, (&token, &confidence)) in draft
+                .output_ids
+                .iter()
+                .skip(1)
+                .zip(&draft.confidence)
+                .enumerate()
+            {
+                writeln!(
+                    text,
+                    "dspark-confidence@{at}\t{position}\t{token}\t{:08x}",
+                    confidence.to_bits()
+                )
+                .unwrap();
+            }
+        }
+    }
     text
 }
 
@@ -2626,6 +2951,7 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use memra_reference::execute;
 
     #[test]
     fn hf_template_lock_uses_decoded_json_and_refuses_malformed_sidecars() {
@@ -2762,6 +3088,89 @@ mod tests {
         assert!(franken.contains("encoding_dsv4"), "{franken}");
     }
 
+    /// Every `EngineRenderer` name a pack declares resolves to a renderer the tokenizer crate
+    /// implements, the onboarding profiles included. A pack naming a renderer that does not exist
+    /// would otherwise fail every artifact at inspect, which this pins at build time instead.
+    #[test]
+    fn every_engine_renderer_pack_names_an_implemented_renderer() {
+        let mut named = Vec::new();
+        for pack in model_packs::PACKS
+            .iter()
+            .chain(model_packs::ONBOARDING_PROFILES)
+        {
+            if let TemplateContract::EngineRenderer(renderer) = pack.template {
+                assert!(
+                    memra_tokenizer::chat::EngineDialect::from_renderer_name(renderer).is_some(),
+                    "{} names {renderer}",
+                    pack.family
+                );
+                named.push(renderer);
+            }
+        }
+        assert!(
+            named.contains(&"encoding_dsv4") && named.contains(&"encoding_dsv41"),
+            "{named:?}"
+        );
+    }
+
+    fn hf_dir_evidence(dir: &Path) -> TokenizerEvidence {
+        inspect_hf_tokenizer_dir(dir).expect("tokenizer evidence")
+    }
+
+    /// The TokenizerTemplate gate exercises the renderer a pack names on the artifact's own
+    /// files: the V4.1 artifact files (tokenizer.json, tokenizer_config.json, config.json at the
+    /// pinned revision) pass `encoding_dsv41` and are refused by `encoding_dsv4`; a tokenizer
+    /// with no config census, and a renderer name nothing implements, are refused by name.
+    #[test]
+    fn the_tokenizer_gate_exercises_the_named_renderer_on_the_artifact() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let v41 = root.join("research/modelplan-onboarding-dsv41-20261109/encoding/ref");
+        let config = std::fs::read(v41.join("config.json")).unwrap();
+        let evidence = hf_dir_evidence(&v41);
+        assert!(
+            evidence.template.is_none(),
+            "the V4.1 artifact ships no template"
+        );
+
+        let probe = exercise_engine_renderer("deepseek_v41", "encoding_dsv41", &evidence, &config)
+            .unwrap_or_else(|e| panic!("the V4.1 artifact must pass encoding_dsv41: {e}"));
+        assert_eq!(probe.encoding, memra_tokenizer::chat::Dsv4Encoding::V41);
+        assert_eq!(probe.dialect.renderer_name(), "encoding_dsv41");
+        assert!(probe.probe_tokens > 100, "{}", probe.probe_tokens);
+        // deterministic: the same files give the same probe digests.
+        let again =
+            exercise_engine_renderer("deepseek_v41", "encoding_dsv41", &evidence, &config).unwrap();
+        assert_eq!(
+            (&again.probe_sha256, &again.probe_ids_sha256),
+            (&probe.probe_sha256, &probe.probe_ids_sha256)
+        );
+
+        let wrong = exercise_engine_renderer("deepseek_v4", "encoding_dsv4", &evidence, &config)
+            .err()
+            .expect("the DSv4 renderer must refuse a V4.1 artifact");
+        assert!(
+            wrong.contains("V41") && wrong.contains("does not render"),
+            "{wrong}"
+        );
+
+        let missing = exercise_engine_renderer("x", "encoding_nope", &evidence, &config)
+            .err()
+            .expect("an unimplemented renderer must refuse");
+        assert!(missing.contains("does not implement"), "{missing}");
+
+        // the DSv4 template research ref carries tokenizer.json but no config.json: no census.
+        let no_census = root.join("research/dsv4-template-20260818/ref");
+        let none = exercise_engine_renderer(
+            "deepseek_v41",
+            "encoding_dsv41",
+            &hf_dir_evidence(&no_census),
+            b"{}",
+        )
+        .err()
+        .expect("no census must refuse");
+        assert!(none.contains("selects no DeepSeek encoding"), "{none}");
+    }
+
     /// The deepseek-v4 packs are the reason `EngineRenderer` exists: upstream
     /// `deepseek-ai/DeepSeek-V4-Flash-0731` ships `encoding/encoding_dsv4.py` and no
     /// template in any form, so `ArtifactRequired` there refuses a correct artifact.
@@ -2816,6 +3225,7 @@ mod tests {
             "artifact.lock",
             "tensor-census.tsv",
             "model-plan.txt",
+            "normalized-config.txt",
             "execution-rewrites.tsv",
             "placement-checkpoint-2.tsv",
             "gates.txt",
@@ -3018,6 +3428,22 @@ mod tests {
                         .join("reference-oracle.tsv")
                         .is_file()
                 );
+                // Every variant ran against its own pinned oracle and left its receipt.
+                let gate =
+                    std::fs::read_to_string(root.join(pack.family).join("tiny-gate.tsv")).unwrap();
+                let plan = pack.compile_tiny_plan().unwrap();
+                for variant in memra_reference::tiny_variants(&plan).unwrap() {
+                    assert!(
+                        root.join(pack.family)
+                            .join(format!("reference-oracle-{}.tsv", variant.name))
+                            .is_file()
+                    );
+                    assert!(
+                        gate.contains(&format!("pinned_oracle_sha256_{}\t", variant.name)),
+                        "{}: {gate}",
+                        pack.family
+                    );
+                }
                 // A tiny plan with a tower pins its vision and multimodal oracles too; the
                 // E4B fixture is text-only.
                 if pack.compile_tiny_plan().unwrap().vision.is_some() {

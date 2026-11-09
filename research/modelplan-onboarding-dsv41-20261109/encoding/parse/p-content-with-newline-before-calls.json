@@ -1,0 +1,17 @@
+{
+  "completion": "</think>line one\n\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"ping\">\n\n</｜DSML｜ invoke>\n</｜DSML｜ calls><｜end▁of▁sentence｜>",
+  "think": "thinking",
+  "expected": {
+    "reasoning_content": "",
+    "content": "line one\n",
+    "tool_calls": [
+      {
+        "name": "ping",
+        "namespace": null,
+        "arguments": {},
+        "arguments_text": "{}"
+      }
+    ]
+  },
+  "reencodes_to_completion": true
+}

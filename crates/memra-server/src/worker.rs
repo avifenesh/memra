@@ -2519,6 +2519,14 @@ pub struct ModelCaps {
     /// serve path maps ThinkMode onto encoding_dsv4's thinking_mode. Keyed on the same
     /// `template_is_dsv4` marker law the renderer dispatch uses.
     pub dsv4: bool,
+    /// deepseek-v4.1 (`encoding_dsv41`): set TOGETHER with `dsv4`, which carries every law the
+    /// two DeepSeek dialects share (think-mode mapping, the `max` rung, the NoThink exemption,
+    /// DSML as a tools branch). This one selects V4.1's half: the spaced-DSML parser
+    /// (`ToolStreamParser::dsv41`, `</｜DSML｜ calls>` stop), text content parts kept in order
+    /// for the renderer, and a named refusal of image parts (memra has no V4.1 vision
+    /// program). The renderer itself keys on the tokenizer's census (`Dsv4Encoding::V41`), so
+    /// whoever builds these caps for a V4.1 checkpoint sets this from the same census.
+    pub dsv41: bool,
     /// GLM-5.3-Flash (`glm5_next`) dialect (lane/glm53-flash-bringup, 2026-08-27): the
     /// `[gMASK]<sop>` + `<|user|>`/`<|assistant|>`/`<|observation|>` turn dialect, an
     /// always-open `<think>` tail, an always-rendered `Reasoning Effort:` system line with a
@@ -17754,6 +17762,9 @@ pub fn run(
                 gemma_think: t.is_some_and(|t| t.contains("<|channel>")),
                 gemma_unopened_thought: lm.model.is_gemma4_e4b(),
                 dsv4: t.is_some_and(memra_tokenizer::chat::template_is_dsv4),
+                // No V4.1 program runs on this loader (the `deepseek_v41` pack compiles a plan
+                // nothing executes yet), so no model it loads speaks V4.1's dialect.
+                dsv41: false,
                 // GLM-5.3-Flash: `[gMASK]<sop>` + `<|observation|>`. Template-keyed like every
                 // other cap — a glm5 checkpoint that shipped without its template would fall
                 // back to ChatML rendering, where arming this dialect would be guessing.

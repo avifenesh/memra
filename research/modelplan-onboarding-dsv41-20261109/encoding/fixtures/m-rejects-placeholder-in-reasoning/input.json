@@ -1,0 +1,19 @@
+{
+  "source": "matrix",
+  "messages": [
+    {
+      "role": "user",
+      "content": "q"
+    },
+    {
+      "role": "assistant",
+      "content": "a",
+      "reasoning_content": "r <｜deepseek_image｜>"
+    }
+  ],
+  "req_tools": null,
+  "think": "thinking",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "error": "ValueError: reasoning_content contains image special token '<｜deepseek_image｜>'"
+}

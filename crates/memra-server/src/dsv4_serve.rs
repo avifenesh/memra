@@ -867,6 +867,10 @@ fn served_act_quant(
              RefFp8Round contract only, and the clamp-only arm runs only under the \
              reference program a class gate arms; serve a 0731-class artifact"
         )),
+        Some(chat::Dsv4Encoding::V41) => Err(format!(
+            "dsv4 model {name:?}: config.json is a deepseek_v41 checkpoint; this route runs \
+             the deepseek_v4 program only"
+        )),
         None => Err(format!(
             "dsv4 model {name:?}: encoding revision undetectable from config.json \
              dspark_* census: cannot key the act-quant contract (REF vs clamp-only); \
@@ -1211,6 +1215,8 @@ pub fn caps(m: &Dsv4Model) -> ModelCaps {
         gemma_think: false,
         gemma_unopened_thought: false,
         dsv4: enc || t.is_some_and(chat::template_is_dsv4),
+        // `served_act_quant` refuses a V4.1 census at load, so this route never serves one.
+        dsv41: false,
         // A dsv4 artifact is never a glm5 one (disjoint dialect markers); stated rather than
         // left to `..Default::default()`, which this literal does not use.
         glm5: false,
@@ -3372,6 +3378,8 @@ mod act_quant_tests {
         );
         let err = served_act_quant("m", None).unwrap_err();
         assert!(err.contains("undetectable"), "{err}");
+        let err = served_act_quant("m", Some(Dsv4Encoding::V41)).unwrap_err();
+        assert!(err.contains("deepseek_v41"), "{err}");
     }
 }
 

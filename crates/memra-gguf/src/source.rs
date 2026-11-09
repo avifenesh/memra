@@ -524,7 +524,7 @@ fn safetensors_storage(
                 .ok_or("packed I8 logical shape overflows")?;
             ("MXFP4", vec![32])
         }
-        "F8_E4M3" => ("FP8_E4M3", vec![128, 128]),
+        "F8_E4M3" => ("FP8_E4M3", fp8_block_shape(&shape, auxiliaries, headers)?),
         other => return Err(format!("unsupported quantized weight dtype {other}")),
     };
     Ok((
@@ -535,6 +535,47 @@ fn safetensors_storage(
             auxiliaries: Vec::new(),
         }),
     ))
+}
+
+/// Block shape of an FP8 weight. A single E8M0 `.scale` plane pins it through its grid: a
+/// `[ceil(out/128), ceil(in/128)]` grid (DeepSeek-V4) keeps the historical `[128, 128]` label,
+/// checked first so a grid that also fits 32 never moves; `[ceil(out/32), ceil(in/32)]` is a
+/// 32x32 block (DeepSeek-V4.1 dense weights); `[out, ceil(in/32)]` is one scale per 32 elements
+/// of a row (DeepSeek-V4.1 Engram tables). An E8M0 grid that is none of these is refused: a
+/// label it does not match would make the census claim a block layout the scales do not have.
+/// Every other auxiliary set (no E8M0 `.scale` plane) keeps `[128, 128]`.
+fn fp8_block_shape(
+    shape: &[u64],
+    auxiliaries: &[String],
+    headers: &BTreeMap<String, StInfo>,
+) -> Result<Vec<u32>, String> {
+    let legacy = vec![128, 128];
+    let scale = match auxiliaries {
+        [only] if only.ends_with(".scale") => headers.get(only).map(|scale| (only, scale)),
+        _ => None,
+    };
+    let Some((scale_name, scale)) = scale.filter(|(_, scale)| scale.dtype == "F8_E8M0") else {
+        return Ok(legacy);
+    };
+    let [out, input] = shape else {
+        return Err(format!(
+            "FP8 weight with E8M0 scale {scale_name} has shape {shape:?}; a scale grid needs a 2-D weight"
+        ));
+    };
+    let grid = |rows: u64, cols: u64| scale.shape == [out.div_ceil(rows), input.div_ceil(cols)];
+    if grid(128, 128) {
+        Ok(legacy)
+    } else if grid(32, 32) {
+        Ok(vec![32, 32])
+    } else if grid(1, 32) {
+        Ok(vec![1, 32])
+    } else {
+        Err(format!(
+            "FP8 weight {shape:?} has E8M0 scale {scale_name} {:?}, which matches no known block \
+             grid (128x128, 32x32, 1x32)",
+            scale.shape
+        ))
+    }
 }
 
 /// Build an exact-byte safetensors census from parsed headers only.
@@ -3448,6 +3489,68 @@ mod tests {
             "model.layers.1.self_attn.q_proj.weight_packed"
         );
         assert_eq!(packed.entry.physical_bytes, 14);
+    }
+
+    /// The FP8 census label follows the E8M0 `.scale` grid: DeepSeek-V4's 128-blocks keep
+    /// their label, DeepSeek-V4.1's 32x32 dense blocks and per-row-32 Engram tables get theirs,
+    /// a grid that fits both 128 and 32 (both dims <= 32) stays 128, and an E8M0 grid that is
+    /// none of these is refused.
+    #[test]
+    fn fp8_census_block_shape_follows_the_e8m0_scale_grid() {
+        let headers_of = |shape: Vec<u64>, scale: Vec<u64>, scale_dtype: &str| {
+            BTreeMap::from([
+                (
+                    "w.weight".to_string(),
+                    StInfo {
+                        dtype: "F8_E4M3".to_string(),
+                        data_offsets: [0, shape.iter().product::<u64>() as usize],
+                        shape,
+                    },
+                ),
+                (
+                    "w.scale".to_string(),
+                    StInfo {
+                        dtype: scale_dtype.to_string(),
+                        data_offsets: [0, 0],
+                        shape: scale,
+                    },
+                ),
+            ])
+        };
+        let block_of = |shape: Vec<u64>, scale: Vec<u64>, scale_dtype: &str| {
+            let census =
+                census_from_safetensors_headers(&headers_of(shape, scale, scale_dtype)).unwrap();
+            assert_eq!(census.tensors.len(), 1);
+            let StorageLayout::Quantized(layout) = &census.tensors[0].entry.storage else {
+                panic!("scaled FP8 weight must be quantized");
+            };
+            assert_eq!(layout.format, "FP8_E4M3");
+            assert_eq!(layout.auxiliaries, ["w.scale"]);
+            layout.block_shape.clone()
+        };
+        // DeepSeek-V4 0731 wq_a: [1024, 4096] with a [8, 32] grid.
+        assert_eq!(
+            block_of(vec![1024, 4096], vec![8, 32], "F8_E8M0"),
+            [128, 128]
+        );
+        // DeepSeek-V4.1 wq_b: [32768, 1280] with a [1024, 40] grid; a ragged edge rounds up.
+        assert_eq!(
+            block_of(vec![32768, 1280], vec![1024, 40], "F8_E8M0"),
+            [32, 32]
+        );
+        assert_eq!(block_of(vec![100, 70], vec![4, 3], "F8_E8M0"), [32, 32]);
+        // DeepSeek-V4.1 Engram table rows: [rows, 256] with a [rows, 8] grid.
+        assert_eq!(block_of(vec![1000, 256], vec![1000, 8], "F8_E8M0"), [1, 32]);
+        // An ambiguous grid (both dims <= 32 fit 128 and 32) and a non-E8M0 scale keep the
+        // historical label.
+        assert_eq!(block_of(vec![32, 32], vec![1, 1], "F8_E8M0"), [128, 128]);
+        assert_eq!(block_of(vec![1024, 4096], vec![32, 128], "F32"), [128, 128]);
+        // An E8M0 grid that matches no known block (64x64 here) is refused, not labelled.
+        let error =
+            census_from_safetensors_headers(&headers_of(vec![1024, 4096], vec![16, 64], "F8_E8M0"))
+                .unwrap_err()
+                .to_string();
+        assert!(error.contains("matches no known block grid"), "{error}");
     }
 
     #[test]

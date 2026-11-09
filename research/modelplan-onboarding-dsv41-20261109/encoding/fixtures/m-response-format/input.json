@@ -1,0 +1,53 @@
+{
+  "source": "matrix",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Reply in JSON.",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "Get the weather for a specific location",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "location": {
+                  "type": "string",
+                  "description": "The city name"
+                },
+                "unit": {
+                  "type": "string",
+                  "enum": [
+                    "celsius",
+                    "fahrenheit"
+                  ]
+                }
+              },
+              "required": [
+                "location"
+              ]
+            }
+          }
+        }
+      ],
+      "response_format": {
+        "type": "json_object",
+        "schema": {
+          "answer": "string"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "hi"
+    }
+  ],
+  "req_tools": null,
+  "think": "chat",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [],
+  "wire": false
+}

@@ -123,7 +123,9 @@ impl std::fmt::Display for CheckpointBindError {
 
 impl std::error::Error for CheckpointBindError {}
 
-const HEAD_NAMES: [&str; 2] = ["output.weight", "lm_head.weight"];
+/// Checkpoint spellings of a separate output projection: GGUF, HF, and the DeepSeek reference
+/// naming (`head.weight`) that DeepSeek-V4 and V4.1 safetensors ship.
+const HEAD_NAMES: [&str; 3] = ["output.weight", "lm_head.weight", "head.weight"];
 
 fn family_of(pack: Option<&'static ModelPack>) -> &'static str {
     pack.map(|pack| pack.family).unwrap_or("canonical")

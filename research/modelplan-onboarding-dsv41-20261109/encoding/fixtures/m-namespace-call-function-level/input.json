@@ -1,0 +1,29 @@
+{
+  "source": "matrix",
+  "messages": [
+    {
+      "role": "user",
+      "content": "q"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup",
+            "namespace": "search",
+            "arguments": "{\"query\": \"x\"}"
+          }
+        }
+      ]
+    }
+  ],
+  "req_tools": null,
+  "think": "chat",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [],
+  "wire": true
+}

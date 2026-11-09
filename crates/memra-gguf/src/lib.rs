@@ -33,6 +33,7 @@ mod config_json;
 pub mod d2t;
 pub mod dequant;
 pub mod dsv4;
+pub mod dsv41_forward;
 pub mod dsv4_decode;
 pub mod dsv4_dspark;
 pub mod dsv4_forward;

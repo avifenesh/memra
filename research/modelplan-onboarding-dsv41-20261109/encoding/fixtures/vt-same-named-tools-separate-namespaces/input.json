@@ -1,0 +1,110 @@
+{
+  "source": "test_encoding.py::test_v41_keeps_same_named_tools_in_separate_namespaces",
+  "messages": [
+    {
+      "role": "system",
+      "content": "system",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup",
+            "description": "Look up a value",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup",
+            "description": "Look up a value",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "namespace": {
+            "name": "search"
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup",
+            "description": "Look up a value",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "namespace": {
+            "name": "files"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "question"
+    },
+    {
+      "role": "assistant",
+      "content": "summary",
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup",
+            "arguments": "{\"query\":\"value\"}"
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup",
+            "arguments": "{\"query\":\"value\"}"
+          },
+          "namespace": "search"
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup",
+            "arguments": "{\"query\":\"value\"}"
+          },
+          "namespace": "files"
+        }
+      ]
+    }
+  ],
+  "req_tools": null,
+  "think": "chat",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [],
+  "wire": false
+}

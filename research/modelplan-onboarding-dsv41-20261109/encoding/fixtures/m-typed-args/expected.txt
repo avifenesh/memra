@@ -1,0 +1,44 @@
+<｜begin▁of▁sentence｜><｜System｜>Reasoning Effort: 75 (range 1-100, the higher the value, the more thorough the reasoning)
+
+Use tools.
+
+## Tools
+
+You have access to a set of tools to help answer the user's question. You can invoke tools by writing a "<｜DSML｜ calls>" block like the following:
+
+<｜DSML｜ calls>
+<｜DSML｜ invoke name="$TOOL_NAME">
+<｜DSML｜ parameter name="$PARAMETER_NAME" string="true|false">$PARAMETER_VALUE</｜DSML｜ parameter>
+...
+</｜DSML｜ invoke>
+<｜DSML｜ invoke name="$TOOL_NAME2">
+...
+</｜DSML｜ invoke>
+</｜DSML｜ calls>
+
+String parameters should be specified as is and set `string="true"`. For all other types (numbers, booleans, arrays, objects), pass the value in JSON format and set `string="false"`.
+
+If thinking_mode is enabled (triggered by <think>), you MUST output your complete reasoning inside <think>...</think> BEFORE any tool calls or final response.
+
+Otherwise, output directly after </think> with tool calls or final response.
+
+### Available Tool Schemas
+
+{"name": "get_weather", "description": "Get the weather for a specific location", "parameters": {"type": "object", "properties": {"location": {"type": "string", "description": "The city name"}, "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}}, "required": ["location"]}}
+
+You MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.
+<｜User｜>Weather for 3 days, metric.<｜Assistant｜><think>typed args</think>
+
+<｜DSML｜ calls>
+<｜DSML｜ invoke name="get_weather">
+<｜DSML｜ parameter name="location" string="true">Beijing "north"
+</｜DSML｜ parameter>
+<｜DSML｜ parameter name="days" string="false">3</｜DSML｜ parameter>
+<｜DSML｜ parameter name="metric" string="false">true</｜DSML｜ parameter>
+<｜DSML｜ parameter name="ratio" string="false">0.5</｜DSML｜ parameter>
+<｜DSML｜ parameter name="none" string="false">null</｜DSML｜ parameter>
+<｜DSML｜ parameter name="tags" string="false">["a", "b"]</｜DSML｜ parameter>
+<｜DSML｜ parameter name="opts" string="false">{"k": "v", "n": [1, 2]}</｜DSML｜ parameter>
+<｜DSML｜ parameter name="city" string="true">北京</｜DSML｜ parameter>
+</｜DSML｜ invoke>
+</｜DSML｜ calls><｜end▁of▁sentence｜><｜User｜><tool_result>ok</tool_result><｜Assistant｜><think>

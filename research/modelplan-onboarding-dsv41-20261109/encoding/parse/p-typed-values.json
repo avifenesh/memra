@@ -1,0 +1,36 @@
+{
+  "completion": "</think>\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"f\">\n<｜DSML｜ parameter name=\"n\" string=\"false\">3</｜DSML｜ parameter>\n<｜DSML｜ parameter name=\"b\" string=\"false\">true</｜DSML｜ parameter>\n<｜DSML｜ parameter name=\"x\" string=\"false\">0.5</｜DSML｜ parameter>\n<｜DSML｜ parameter name=\"z\" string=\"false\">null</｜DSML｜ parameter>\n<｜DSML｜ parameter name=\"arr\" string=\"false\">[\"a\", 1]</｜DSML｜ parameter>\n<｜DSML｜ parameter name=\"obj\" string=\"false\">{\"k\": {\"n\": [1, 2]}}</｜DSML｜ parameter>\n<｜DSML｜ parameter name=\"s\" string=\"true\">quote \" and\nnewline</｜DSML｜ parameter>\n<｜DSML｜ parameter name=\"u\" string=\"true\">北京</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls><｜end▁of▁sentence｜>",
+  "think": "thinking",
+  "expected": {
+    "reasoning_content": "",
+    "content": "",
+    "tool_calls": [
+      {
+        "name": "f",
+        "namespace": null,
+        "arguments": {
+          "n": 3,
+          "b": true,
+          "x": 0.5,
+          "z": null,
+          "arr": [
+            "a",
+            1
+          ],
+          "obj": {
+            "k": {
+              "n": [
+                1,
+                2
+              ]
+            }
+          },
+          "s": "quote \" and\nnewline",
+          "u": "北京"
+        },
+        "arguments_text": "{\"n\": 3, \"b\": true, \"x\": 0.5, \"z\": null, \"arr\": [\"a\", 1], \"obj\": {\"k\": {\"n\": [1, 2]}}, \"s\": \"quote \\\" and\\nnewline\", \"u\": \"北京\"}"
+      }
+    ]
+  },
+  "reencodes_to_completion": true
+}

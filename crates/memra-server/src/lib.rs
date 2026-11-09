@@ -104,6 +104,8 @@ mod background_jobs;
 #[allow(dead_code)] // one implementation, two callers: each uses a subset.
 mod build_id;
 mod capacity_metrics;
+#[cfg(test)]
+mod dsv41_encoding_tests;
 mod dsv4_admit;
 mod dsv4_serve;
 mod embed_api;
@@ -3778,6 +3780,12 @@ struct ReqToolCall {
     #[allow(dead_code)]
     id: Option<String>,
     function: ReqToolFunction,
+    /// deepseek-v4.1 only: the call's tool namespace, where the vendor's own parser output
+    /// (`tool_calls_to_openai_format`) puts it, beside `function`. Read by
+    /// [`render_req_tool_call`] under the V4.1 dialect; every other dialect ignores it, as
+    /// before the field existed.
+    #[serde(default)]
+    namespace: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -3786,6 +3794,10 @@ struct ReqToolFunction {
     /// OpenAI sends a JSON-encoded STRING; inline objects are accepted too.
     #[serde(default)]
     arguments: serde_json::Value,
+    /// deepseek-v4.1 only: the function-level spelling of the call's namespace, which
+    /// encoding.py reads when the call level has none.
+    #[serde(default)]
+    namespace: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Default, Deserialize)]
@@ -5931,9 +5943,18 @@ fn json_to_val(v: &serde_json::Value) -> chat::Val {
 /// Validate tool schemas and pre-serialize them for the template's <tools> block; also produce
 /// the gemma4 tooluse dialect's typed `function` objects, and extract declared parameter types
 /// (function -> parameter -> type) for argument coercion.
+///
+/// deepseek-v4.1 (`dsv41`): a tool may carry a `namespace` (a string or `{name, description}`) at
+/// the tool level, beside `function`, as the vendor README and encoding.py lead with. It is
+/// folded into the function object the renderer reads (encoding.py `tools_from_openai_format`:
+/// the tool level overrides a function-level one, and a null is none), and the tool's schema is
+/// keyed by the name the model sees, `namespace::name`, so same-named tools in two namespaces stay
+/// two tools. A namespace the renderer would refuse is a 400 here. Every other dialect reads
+/// `function` alone, as before.
 #[allow(clippy::type_complexity)]
 fn prepare_tools(
     tools: &[serde_json::Value],
+    dsv41: bool,
 ) -> Result<
     (
         Vec<String>,
@@ -5953,6 +5974,18 @@ fn prepare_tools(
             .get("name")
             .and_then(|n| n.as_str())
             .ok_or("each tool needs function.name")?;
+        let folded;
+        let (f, name) = if dsv41 {
+            let mut function = f.clone();
+            if let Some(ns) = t.get("namespace").filter(|ns| !ns.is_null()) {
+                function["namespace"] = ns.clone();
+            }
+            let qualified = chat::dsv41_tool_name(&json_to_val(&function))?;
+            folded = function;
+            (&folded, qualified)
+        } else {
+            (f, name.to_string())
+        };
         let mut params: HashMap<String, String> = HashMap::new();
         if let Some(props) = f
             .get("parameters")
@@ -5965,7 +5998,7 @@ fn prepare_tools(
                 }
             }
         }
-        schemas.insert(name.to_string(), params);
+        schemas.insert(name, params);
         tools_json.push(pyjson_str(t));
         // gemma4 arm reads the FUNCTION object (name/description/parameters/response).
         tools_struct.push(json_to_val(f));
@@ -5973,11 +6006,46 @@ fn prepare_tools(
     Ok((tools_json, tools_struct, schemas))
 }
 
+/// deepseek-v4.1 content parts: a content array's text parts, in order. encoding.py joins a
+/// message's parts with `"\n\n"` where every other dialect here concatenates them, so the V4.1
+/// renderer needs the parts, not the flattened text. Image parts refuse by name: memra has no
+/// V4.1 vision program, and a placeholder with no image behind it is a prompt the model was
+/// never trained on. String or null content is not parts (`None`).
+fn dsv41_content_parts(v: &serde_json::Value) -> Result<Option<Vec<chat::ContentPart>>, String> {
+    let serde_json::Value::Array(parts) = v else {
+        return Ok(None);
+    };
+    parts
+        .iter()
+        .map(|p| match p.get("type").and_then(|t| t.as_str()) {
+            Some("text") | None => p
+                .get("text")
+                .and_then(|t| t.as_str())
+                .map(|t| chat::ContentPart::Text(t.to_string()))
+                .ok_or_else(|| "content part has no text field".to_string()),
+            Some(kind @ ("image_url" | "image" | "input_image" | "video_url")) => Err(format!(
+                "{kind} parts are not served on deepseek_v41: memra has no V4.1 vision program"
+            )),
+            Some(other) => Err(format!(
+                "unsupported content part type {other:?} (text only)"
+            )),
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
 /// Re-render an assistant-history tool call for the template. Value law mirrors the
 /// template's `args_value | tojson if mapping/sequence else | string`: strings raw,
 /// objects/arrays python-style JSON; scalars use their JSON text (`true`/`3`/`null` —
 /// JSON spelling, not python's, so a parse round-trip stays self-consistent).
-fn render_req_tool_call(tc: &ReqToolCall) -> Result<TmplToolCall, String> {
+///
+/// deepseek-v4.1 (`dsv41`): the call's namespace is read as encoding.py
+/// `tool_calls_from_openai_format` reads it, `tool_call.namespace or function.namespace` (a
+/// non-empty string at the call level, else the function level's), so a history call in the
+/// vendor parser's output shape (`function.name` bare, `namespace` beside it) re-renders as
+/// `namespace::name`, the name the model generated. A namespace that is not a string is a 400.
+/// Every other dialect ignores both fields.
+fn render_req_tool_call(tc: &ReqToolCall, dsv41: bool) -> Result<TmplToolCall, String> {
     let parsed: serde_json::Value = match &tc.function.arguments {
         serde_json::Value::Null => json!({}),
         serde_json::Value::String(s) if s.trim().is_empty() => json!({}),
@@ -6011,6 +6079,29 @@ fn render_req_tool_call(tc: &ReqToolCall) -> Result<TmplToolCall, String> {
         params,
         args,
         id: tc.id.clone(),
+        namespace: if dsv41 {
+            dsv41_call_namespace(tc)?
+        } else {
+            None
+        },
+    })
+}
+
+/// encoding.py `tool_call.get("namespace") or function.get("namespace")` over the two string
+/// spellings memra's surface accepts.
+fn dsv41_call_namespace(tc: &ReqToolCall) -> Result<Option<String>, String> {
+    let as_str = |v: &Option<serde_json::Value>, at: &str| -> Result<Option<String>, String> {
+        match v {
+            None | Some(serde_json::Value::Null) => Ok(None),
+            Some(serde_json::Value::String(s)) => Ok(Some(s.clone())),
+            Some(_) => Err(format!(
+                "tool_calls {at}namespace must be a string on deepseek-v4.1"
+            )),
+        }
+    };
+    Ok(match as_str(&tc.namespace, "")? {
+        Some(ns) if !ns.is_empty() => Some(ns),
+        _ => as_str(&tc.function.namespace, "function.")?,
     })
 }
 
@@ -9524,7 +9615,7 @@ fn build_chat_request_with_trace(
     // tool_choice "none" = OpenAI "the model will not call tools": the prompt renders
     // WITHOUT the tools block (byte-identical to a no-tools request) and no parser runs.
     let (tools_json, tools_struct, schemas) = if active_tools {
-        prepare_tools(&req.tools)?
+        prepare_tools(&req.tools, caps.is_some_and(|c| c.dsv41))?
     } else {
         (Vec::new(), Vec::new(), HashMap::new())
     };
@@ -9535,7 +9626,15 @@ fn build_chat_request_with_trace(
     let mut glm5_images: Vec<PendingGlm5Image> = Vec::new();
     let mut step_images: Vec<PendingStepImage> = Vec::new();
     let mut next_video = 0usize;
+    let is_dsv41 = caps.is_some_and(|c| c.dsv41);
     for msg in &req.messages {
+        // deepseek-v4.1 keeps text parts as parts (and refuses image parts) BEFORE the shared
+        // vision walker can admit an image this model has no program for.
+        let parts = if is_dsv41 {
+            dsv41_content_parts(&msg.content).map_err(|e| format!("{} message: {e}", msg.role))?
+        } else {
+            None
+        };
         let content = content_to_text_vision(
             &msg.content,
             &mut images,
@@ -9548,7 +9647,7 @@ fn build_chat_request_with_trace(
         let tool_calls = msg
             .tool_calls
             .iter()
-            .map(render_req_tool_call)
+            .map(|tc| render_req_tool_call(tc, is_dsv41))
             .collect::<Result<Vec<_>, _>>()?;
         if !tool_calls.is_empty() && msg.role != "assistant" {
             return Err("tool_calls are only valid on assistant messages".into());
@@ -9574,6 +9673,11 @@ fn build_chat_request_with_trace(
             // turn by the dsv4 arm); every other dialect ignores both.
             task: None,
             tools: Vec::new(),
+            // dsv4.1-only fields: content parts (above), and neither a per-message
+            // response_format nor an unterminated assistant prefill exists on this surface.
+            parts,
+            response_format: None,
+            wo_eos: false,
         });
     }
 
@@ -9646,7 +9750,12 @@ fn build_chat_request_with_trace(
     } else if is_hy3 && (hy3_tools || hy3_think_open) {
         Some(ToolStreamParser::hy3(schemas, hy3_think_open))
     } else if is_dsv4 && (dsv4_tools || dsv4_think_open) {
-        Some(ToolStreamParser::dsv4(dsv4_think_open))
+        // V4.1 rides the same arm with its spaced DSML tags (`ModelCaps::dsv41`).
+        Some(if is_dsv41 {
+            ToolStreamParser::dsv41(dsv4_think_open)
+        } else {
+            ToolStreamParser::dsv4(dsv4_think_open)
+        })
     } else if gemma_tools {
         Some(gemma_hold(ToolStreamParser::gemma_tools()))
     } else if !tools_json.is_empty() {
@@ -9708,7 +9817,12 @@ fn build_chat_request_with_trace(
                 // (scoped to dsv4 tool requests, never global; the close stays in the stream so
                 // the parser finishes the span — same law as gemma's `<tool_call|>`).
                 if dsv4_tools {
-                    stops.push("</\u{ff5c}DSML\u{ff5c}tool_calls>".to_string());
+                    let dsml = if is_dsv41 {
+                        &toolcall::DSML_V41
+                    } else {
+                        &toolcall::DSML_V4
+                    };
+                    stops.push(dsml.close.to_string());
                 }
                 // HY3 tool requests: stop on the native suffixed tool_calls close. Keep the
                 // marker in the stream so the parser can close and emit every call.
@@ -13909,7 +14023,7 @@ mod tests {
         let (tools_json, tools_struct, _schemas) = if tools_arr.is_empty() {
             (Vec::new(), Vec::new(), HashMap::new())
         } else {
-            prepare_tools(&tools_arr).unwrap()
+            prepare_tools(&tools_arr, false).unwrap()
         };
         let effort = request
             .get("reasoning_effort")
@@ -13931,7 +14045,7 @@ mod tests {
                     a.iter()
                         .map(|tc| {
                             let rtc: ReqToolCall = serde_json::from_value(tc.clone()).unwrap();
-                            render_req_tool_call(&rtc).unwrap()
+                            render_req_tool_call(&rtc, false).unwrap()
                         })
                         .collect()
                 })
@@ -13967,6 +14081,7 @@ mod tests {
                 tool_responses,
                 task: None,
                 tools: Vec::new(),
+                ..Default::default()
             });
         }
         chat::apply_chat_template_tools_ex(
@@ -14810,7 +14925,7 @@ mod tests {
                 a.iter()
                     .map(|tc| {
                         let rtc: ReqToolCall = serde_json::from_value(tc.clone()).unwrap();
-                        render_req_tool_call(&rtc).unwrap()
+                        render_req_tool_call(&rtc, false).unwrap()
                     })
                     .collect()
             })
@@ -14837,6 +14952,7 @@ mod tests {
             tool_responses: Vec::new(),
             task: msg.get("task").and_then(|s| s.as_str()).map(String::from),
             tools,
+            ..Default::default()
         }
     }
 
@@ -30780,6 +30896,7 @@ temperature = 0.6
             gemma_think: false,
             gemma_unopened_thought: false,
             dsv4: false,
+            dsv41: false,
             glm5: false,
             chat_temperature_default: None,
             chat_top_p_default: None,

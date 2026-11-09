@@ -1,0 +1,14 @@
+{
+  "source": "test_encoding.py::test_v41_rejects_image_placeholder_in_text[user]",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi <｜deepseek_image｜>"
+    }
+  ],
+  "req_tools": null,
+  "think": "chat",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "error": "ValueError: Message content contains image special token '<｜deepseek_image｜>'. Images should be provided as image content blocks."
+}

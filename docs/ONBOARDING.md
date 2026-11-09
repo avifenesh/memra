@@ -71,7 +71,8 @@ The `memra model inspect` artifact lock is bound to the code as well as to the b
 `config_sha256` hashes the normalized `ModelConfig`'s text instead of a `config.json`, so a
 `ModelConfig` field change moves the lock when the same artifact is inspected again (removing
 `n_layer_total` on 2026-11-03 did). A regenerated lock needs its rewrite receipts regenerated
-with it.
+with it. `normalized-config.txt` beside the lock is that `ModelConfig` text for every source, so
+the normalization an HF `config.json` went through can be read without rerunning the parser.
 
 ## 1. Inspect before implementing
 
@@ -199,6 +200,17 @@ Kernel tests need confusion guards, not only happy paths. Exercise the nearest w
 interpretation: fused versus separate gates, full versus partial rotary, windowed versus full
 attention, block-local versus file-level heads, uniform versus mixed quant layouts, and pruned
 versus retained ids.
+
+A tiny oracle taken from the vendor's own code pins the program only if both sides evaluate their
+primitives the same way, once the source stores activations in bf16 and selects by top-k. One f32
+ulp of accumulation difference flips a bf16 rounding, the flip changes a selection, and later
+layers move by O(1), past any tolerance worth having. The `deepseek_v41` tiny gate evaluates
+GEMMs, reductions and transcendental functions in f64 and rounds once, on both the vendor side and
+the reference side, takes top-k ties in index order (the CUDA `topk` rule), and matches the
+vendor `model.py`, run with torch stand-ins for its tilelang kernels, to the bit
+(`research/modelplan-onboarding-dsv41-20261109/`). A fixture also pins only the splits it runs:
+where the source's prefill and decode lay a row out differently (V4.1 below its window), a split
+there is another numeric program, so the gate pins one variant per layout.
 
 ## 4. Prove tokenizer, template, tools, and thinking
 

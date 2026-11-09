@@ -1,0 +1,29 @@
+{
+  "source": "test_encoding.py::test_v41_namespaced_tool_calls_roundtrip[qualified_name-thinking]",
+  "messages": [
+    {
+      "role": "user",
+      "content": "question"
+    },
+    {
+      "role": "assistant",
+      "reasoning_content": "  reason  ",
+      "content": "summary",
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "search::lookup",
+            "arguments": "{\"query\":\"value\",\"limit\":2}"
+          }
+        }
+      ]
+    }
+  ],
+  "req_tools": null,
+  "think": "thinking",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [],
+  "wire": true
+}

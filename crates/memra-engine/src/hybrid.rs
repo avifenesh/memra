@@ -488,6 +488,13 @@ fn load_mixer_kind(
         GpuTensor::load_opt_from_source_calibrated(e, src, cfg, name)
     };
     Ok(match attention {
+        // DeepSeek-V4.1 CSA2 has no hybrid mixer; refuse at load, before any tensor upload.
+        AttentionPlan::Csa2(_) => {
+            return Err(format!(
+                "layer {il}: CSA2 attention (deepseek_v41) has no hybrid-engine mixer"
+            )
+            .into());
+        }
         AttentionPlan::Mla(mla) => Mixer::Mla(MlaAttnLayer::load(e, src, il, mla)?),
         AttentionPlan::Full(full)
         | AttentionPlan::SlidingWindow {

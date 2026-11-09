@@ -29,6 +29,11 @@ pub enum Arch {
     // Sinkhorn hyper-connections (hc_*), 1 NextN/MTP layer. Census-gated safetensors ingest
     // (research/dsv4-flash-loader-20260818); its dedicated engine is `Dsv4Gpu`, served by
     // memra-server's dsv4 route (`dsv4_serve`), not by the generic HybridModel forward.
+    DeepSeekV41, // DeepSeek-V4.1-Flash: causal encoder-decoder (20 + 20 layers), CSA2 attention
+    // (one compressed KV per layer group, Full/Reindex/Reuse modes, hierarchical candidate
+    // indexer), single-pass mHC, Engram n-gram memory, 384-expert sqrtsoftplus MoE with FP4
+    // experts and 32x32 FP8 dense blocks, 3 DSpark blocks, DeepSeek-ViT tower. Its own pack
+    // (`deepseek_v41`); no DSv4 code path accepts it.
     Qwen4Exp, // Qwen3.8-Flash-Next (HF `qwen4_exp`): hybrid GDN 3:1 QSA (micro-block sparse
     // attention, MQA indexer 4Q/1K over 4-token blocks, budget 512 blocks), 512-expert
     // softmax top-k renormalized router (Qwen3NextTopKRouter — NOT sigmoid; the sigmoid
@@ -66,6 +71,8 @@ impl Arch {
             "mimo-v2" => Arch::MiMoV2,
             // No public GGUF writes this arch yet; the name is memra's own (safetensors-first).
             "deepseek-v4" => Arch::DeepSeekV4,
+            // No public GGUF writes this arch; the name is memra's own (safetensors-first).
+            "deepseek-v41" => Arch::DeepSeekV41,
             // Qwen3.8-Flash-Next. Upstream llama.cpp has GGUFs for it, but memra's lane is
             // safetensors-first; the GGUF arch string is adopted when that entry lands.
             "qwen4exp" => Arch::Qwen4Exp,
@@ -97,6 +104,9 @@ impl Arch {
             "glm_moe_dsa" => "glm-dsa",
             // DeepSeek-V4-Flash (HF `DeepseekV4ForCausalLM`, model_type `deepseek_v4`)
             "deepseek_v4" => "deepseek-v4",
+            // DeepSeek-V4.1-Flash (HF `DeepseekV41ForCausalLM`): the multimodal wrapper is
+            // `deepseek_v41`, its text_config `deepseek_v41_text`.
+            "deepseek_v41" | "deepseek_v41_text" => "deepseek-v41",
             // Qwen3.8-Flash-Next (HF `Qwen4ExpForConditionalGeneration`, model_type
             // `qwen4_exp`; the text_config carries `qwen4_exp_text`)
             "qwen4_exp" | "qwen4_exp_text" => "qwen4exp",
@@ -170,6 +180,8 @@ impl Arch {
             // q_gate_split path; its attn_q out-features carry no fused gate — declared None
             // like the other DSA-family arch (GlmDsa) rather than left to a fallback.
             Arch::DeepSeekV4 => Some(AttentionGateKind::None),
+            // CSA2 `wq_b` out-features are exactly n_head*head_dim: no output gate.
+            Arch::DeepSeekV41 => Some(AttentionGateKind::None),
             // GLM-5.3-Flash MLA layers carry no fused q gate; KDA layers gate inside the mixer
             // via separate g_a_proj/g_b_proj tensors, not the attention q layout.
             Arch::Glm5Next => Some(AttentionGateKind::None),
@@ -183,6 +195,12 @@ impl Arch {
     /// `Dsv4Gpu` engine, which memra-server's `dsv4_serve` route serves.
     pub fn is_dsv4(&self) -> bool {
         matches!(self, Arch::DeepSeekV4)
+    }
+
+    /// DeepSeek-V4.1-Flash (HF `deepseek_v41` / `deepseek_v41_text`): safetensors-first,
+    /// compiled only by the `deepseek_v41` pack. Never `is_dsv4`.
+    pub fn is_dsv41(&self) -> bool {
+        matches!(self, Arch::DeepSeekV41)
     }
 
     /// Qwen3.8-Flash-Next (HF `qwen4_exp`) — safetensors-first; runs on its dedicated
@@ -851,6 +869,490 @@ impl DeepSeekV4Config {
     }
 }
 
+/// DeepSeek-V4.1-Flash (`deepseek_v41`, text model `deepseek_v41_text`) config. Values in
+/// comments are the 1017 artifact (`deepseek-ai/DeepSeek-V4.1-Flash-1017@1bae0e10`). The semantic
+/// source is the vendor `inference/model.py` (`ModelArgs` and every module's parameters); its
+/// argument names are in brackets where the HF key differs.
+///
+/// V4.1 is not a DSv4 variant with other numbers. CSA2 shares one compressed KV across a group of
+/// layers (Full / Reindex / Reuse modes), its compressor has no overlap and no positional
+/// embedding, index keys project the compressed latent, a hierarchical candidate pool narrows the
+/// decoder indexers, the hyper-connections are single-pass (attention collapses with the previous
+/// sublayer's pre-mix), Engram injects n-gram memory at two layers, and dense weights use 32x32
+/// FP8 blocks. Nothing here is shared with [`DeepSeekV4Config`].
+///
+/// Every field is REQUIRED: `from_hf` panics with the field name when config.json omits one, and
+/// with the invariant when the declared topology is not one the vendor program can run.
+#[derive(Debug, Clone)]
+pub struct DeepSeekV41Config {
+    // ---- MoE routing ----
+    pub scoring_func: String,       // "sqrtsoftplus" [score_func]
+    pub topk_method: String,        // "noaux_tc" (selection-only correction bias)
+    pub routed_scaling_factor: f32, // 1.5 [route_scale]
+    pub norm_topk_prob: bool,       // true
+    pub n_routed_experts: u32,      // 384
+    pub num_experts_per_tok: u32,   // 6 [n_activated_experts]
+    pub moe_intermediate_size: u32, // 2304 [moe_inter_dim]; shared expert uses the same width
+    pub n_shared_experts: u32,      // 1 (the vendor MoE asserts exactly one)
+    pub swiglu_limit: f32,          // 10.0
+    // ---- Single-pass mHC ----
+    pub hc_mult: u32,           // 4
+    pub hc_sinkhorn_iters: u32, // 20
+    pub hc_eps: f32,            // 1e-6
+    // ---- attention (CSA2) ----
+    pub head_dim: u32,            // 512: one latent KV head, K = V
+    pub num_key_value_heads: u32, // 1
+    pub q_lora_rank: u32,         // 1280
+    pub qk_rope_head_dim: u32,    // 64 [rope_head_dim]: trailing dims of every head
+    pub o_lora_rank: u32,         // 1024
+    pub o_groups: u32,            // 8
+    pub sliding_window: u32,      // 128 [window_size]
+    /// One entry per layer, trunk then DSpark blocks: 0 = sliding window only, r = KV
+    /// compressed r-to-1. 1017: `[0,0, 2 x18, 1 x20, 0,0,0]`.
+    pub compress_ratios: Vec<u32>,
+    pub compress_rope_theta: f32, // 160000
+    /// Full-mode layers: compute the group's compressed KV and index keys. [kv_source_layers]
+    pub kv_source_layer_ids: Vec<u32>, // [2, 8, 14, 20]
+    /// Index-producing layers (Full or Reindex). [index_source_layers]
+    pub index_source_layer_ids: Vec<u32>, // [2, 8, 14, 20, 24, 28, 32, 36]
+    pub index_n_heads: u32,       // 32
+    pub index_head_dim: u32,      // 128
+    pub index_topk: u32,          // 512
+    /// Hierarchical indexer: this layer's scores pick candidate blocks that every later indexer
+    /// is restricted to. [candidate_source_layer]
+    pub candidate_source_layer_id: u32, // 20
+    pub candidate_topk_blocks: u32, // 2048
+    pub candidate_block_size: u32, // 8
+    // ---- RoPE (YaRN on compressed layers only) ----
+    pub rope_yarn_factor: f32,    // 16 [rope_factor]
+    pub rope_yarn_orig_ctx: u32,  // 65536 [original_seq_len]
+    pub rope_yarn_beta_fast: f32, // 32
+    pub rope_yarn_beta_slow: f32, // 1
+    // ---- Engram ----
+    pub engram_layer_ids: Vec<u32>,        // [1, 14]
+    pub engram_num_embeddings: Vec<u32>,   // [384006168, 384016682] table rows per engram layer
+    pub engram_max_ngram_size: u32,        // 4 (2-gram .. 4-gram)
+    pub engram_vocab_size: u32,            // 16_000_000: bucket primes are drawn above it
+    pub engram_n_heads: u32,               // 8
+    pub engram_head_dim: u32,              // 256
+    pub engram_pad_token_id: u32,          // 2 [engram_pad_id]
+    pub engram_compressed_vocab_size: u32, // 99092: hash multipliers derive from it
+    // ---- DSpark drafter (`mtp.*`) ----
+    pub num_nextn_predict_layers: u32,     // 3 [n_mtp_layers]
+    pub dspark_block_size: u32,            // 5
+    pub dspark_noise_token_id: u32,        // 128799
+    pub dspark_target_layer_ids: Vec<u32>, // [37, 38, 39]
+    pub dspark_markov_rank: u32,           // 256
+    pub dspark_n_routed_experts: u32,      // 128
+    pub dspark_num_experts_per_tok: u32,   // 3 [dspark_n_activated_experts]
+    // ---- quantization_config (checkpoint numerics) ----
+    pub quant_method: String,              // "fp8" [dtype]
+    pub quant_activation_scheme: String,   // "dynamic"
+    pub quant_weight_block_size: Vec<u32>, // [32, 32]
+    pub quant_scale_fmt: String,           // "ue8m0"
+    pub quant_expert_dtype: String,        // "fp4" [expert_dtype]
+    // ---- multimodal ----
+    pub image_token_id: u32, // 129264
+    pub vision: DeepSeekV41VisionConfig,
+}
+
+/// DeepSeek-ViT geometry (`vision_config.model_type` `deepseek_v41_vision`; vendor
+/// `inference/vision.py`): linear patch embedding, 2D RoPE, RMSNorm, fused SwiGLU MLP, then a
+/// 3x3 pixel-unshuffle aligner (GELU MLP) into the text hidden width.
+#[derive(Debug, Clone)]
+pub struct DeepSeekV41VisionConfig {
+    pub num_hidden_layers: u32,   // 32 [vision_n_layers]
+    pub hidden_size: u32,         // 1024 [vision_dim]
+    pub num_attention_heads: u32, // 16 [vision_n_heads]
+    pub intermediate_size: u32,   // 2816 [vision_inter_dim]
+    pub patch_size: u32,          // 14 [vision_patch_size]
+    pub rope_theta: f32,          // 10000 [vision_rope_theta]
+    pub downsample_ratio: u32,    // 3 [vision_downsample_ratio]
+    pub max_image_tokens: u32,    // 1024 [vision_max_n_token]
+    pub min_pixels: u32,          // 295936 [vision_min_pixels]
+}
+
+/// How a CSA2 layer obtains its compressed KV, index keys and top-k (tech report §2.3.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Csa2LayerMode {
+    /// Ratio 0: the layer-local sliding window only.
+    Window,
+    /// Computes the group's compressed KV and index keys and runs its own indexer.
+    Full,
+    /// Reuses `kv_source`'s compressed KV and index keys; rescores them with its own index query.
+    Reindex { kv_source: u32 },
+    /// Reuses `kv_source`'s compressed KV and `index_source`'s top-k.
+    Reuse { kv_source: u32, index_source: u32 },
+}
+
+impl DeepSeekV41Config {
+    /// Trunk layers (`num_hidden_layers`); DSpark blocks follow at these indices onward.
+    pub fn trunk_layers(&self) -> u32 {
+        self.compress_ratios.len() as u32 - self.num_nextn_predict_layers
+    }
+
+    pub fn compress_ratio(&self, il: u32) -> u32 {
+        self.compress_ratios[il as usize]
+    }
+
+    pub fn is_kv_source(&self, il: u32) -> bool {
+        self.kv_source_layer_ids.contains(&il)
+    }
+
+    pub fn is_index_source(&self, il: u32) -> bool {
+        self.index_source_layer_ids.contains(&il)
+    }
+
+    /// The most recent Full-mode layer at or before `il` (the vendor `SharedAttentionRuntime`
+    /// slot it reads). Only trunk layers have one.
+    pub fn kv_source_for(&self, il: u32) -> Option<u32> {
+        self.kv_source_layer_ids
+            .iter()
+            .copied()
+            .filter(|&source| source <= il)
+            .max()
+    }
+
+    /// The most recent index-producing layer at or before `il`.
+    pub fn index_source_for(&self, il: u32) -> Option<u32> {
+        self.index_source_layer_ids
+            .iter()
+            .copied()
+            .filter(|&source| source <= il)
+            .max()
+    }
+
+    /// The CSA2 mode of layer `il`. Valid only after [`Self::validate`] passed.
+    pub fn layer_mode(&self, il: u32) -> Csa2LayerMode {
+        if il >= self.trunk_layers() || self.compress_ratio(il) == 0 {
+            return Csa2LayerMode::Window;
+        }
+        if self.is_kv_source(il) {
+            return Csa2LayerMode::Full;
+        }
+        let kv_source = self
+            .kv_source_for(il)
+            .expect("validated: every compressed layer follows a KV source");
+        if self.is_index_source(il) {
+            Csa2LayerMode::Reindex { kv_source }
+        } else {
+            Csa2LayerMode::Reuse {
+                kv_source,
+                index_source: self
+                    .index_source_for(il)
+                    .expect("validated: every reuse layer follows an index source"),
+            }
+        }
+    }
+
+    /// Position of `il` in `engram_layer_ids`: the layer's hash row and table.
+    pub fn engram_slot(&self, il: u32) -> Option<usize> {
+        self.engram_layer_ids.iter().position(|&layer| layer == il)
+    }
+
+    /// Hash columns per position: `(max_ngram - 1)` n-gram sizes times `n_heads` heads.
+    pub fn engram_hash_columns(&self) -> u32 {
+        (self.engram_max_ngram_size - 1) * self.engram_n_heads
+    }
+
+    /// Table rows derived from the vendor `EngramLayout`: every (layer, n-gram size, head) owns a
+    /// prime-sized bucket range, primes drawn in order above `engram_vocab_size - 1` and never
+    /// reused, so a layer's table is the sum of its primes. 1017: [384006168, 384016682].
+    pub fn derived_engram_table_rows(&self) -> Vec<u64> {
+        fn is_prime(n: u64) -> bool {
+            if n < 2 {
+                return false;
+            }
+            if n.is_multiple_of(2) {
+                return n == 2;
+            }
+            let mut divisor = 3;
+            while divisor * divisor <= n {
+                if n.is_multiple_of(divisor) {
+                    return false;
+                }
+                divisor += 2;
+            }
+            true
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        self.engram_layer_ids
+            .iter()
+            .map(|_| {
+                let mut rows = 0u64;
+                for _ in 1..self.engram_max_ngram_size {
+                    let mut current = u64::from(self.engram_vocab_size).saturating_sub(1);
+                    for _ in 0..self.engram_n_heads {
+                        let mut candidate = current + 1;
+                        while !is_prime(candidate) || seen.contains(&candidate) {
+                            candidate += 1;
+                        }
+                        seen.insert(candidate);
+                        current = candidate;
+                        rows += candidate;
+                    }
+                }
+                rows
+            })
+            .collect()
+    }
+
+    /// The structural invariants the vendor program relies on. `from_hf` refuses a config that
+    /// breaks one; a later artifact with another topology needs these rules re-derived.
+    pub fn validate(
+        &self,
+        num_hidden_layers: u32,
+        n_head: u32,
+        n_vocab: u32,
+    ) -> Result<(), String> {
+        let trunk = num_hidden_layers;
+        let expect = |ok: bool, what: String| if ok { Ok(()) } else { Err(what) };
+        expect(
+            self.compress_ratios.len() as u32 == trunk + self.num_nextn_predict_layers,
+            format!(
+                "compress_ratios has {} entries, num_hidden_layers + num_nextn_predict_layers = {}",
+                self.compress_ratios.len(),
+                trunk + self.num_nextn_predict_layers
+            ),
+        )?;
+        for (k, &ratio) in self.compress_ratios[trunk as usize..].iter().enumerate() {
+            expect(
+                ratio == 0,
+                format!(
+                    "DSpark block {k} has compress ratio {ratio}; drafter blocks are window-only"
+                ),
+            )?;
+        }
+        for (field, value, want) in [
+            ("scoring_func", self.scoring_func.as_str(), "sqrtsoftplus"),
+            ("topk_method", self.topk_method.as_str(), "noaux_tc"),
+            (
+                "quantization_config.quant_method",
+                self.quant_method.as_str(),
+                "fp8",
+            ),
+            (
+                "quantization_config.activation_scheme",
+                self.quant_activation_scheme.as_str(),
+                "dynamic",
+            ),
+            (
+                "quantization_config.scale_fmt",
+                self.quant_scale_fmt.as_str(),
+                "ue8m0",
+            ),
+            (
+                "quantization_config.expert_dtype",
+                self.quant_expert_dtype.as_str(),
+                "fp4",
+            ),
+        ] {
+            expect(
+                value == want,
+                format!("{field} is {value:?}; the pinned program is {want:?}"),
+            )?;
+        }
+        expect(
+            self.quant_weight_block_size == [32, 32],
+            format!(
+                "quantization_config.weight_block_size is {:?}; the pinned program is [32, 32]",
+                self.quant_weight_block_size
+            ),
+        )?;
+        expect(
+            self.n_shared_experts == 1,
+            format!(
+                "n_shared_experts is {}; the vendor MoE asserts 1",
+                self.n_shared_experts
+            ),
+        )?;
+        expect(
+            self.num_key_value_heads == 1,
+            format!(
+                "num_key_value_heads is {}; CSA2 has one latent KV head",
+                self.num_key_value_heads
+            ),
+        )?;
+        expect(
+            self.qk_rope_head_dim > 0
+                && self.qk_rope_head_dim < self.head_dim
+                && self.qk_rope_head_dim.is_multiple_of(2),
+            format!(
+                "qk_rope_head_dim {} must be even and inside head_dim {}",
+                self.qk_rope_head_dim, self.head_dim
+            ),
+        )?;
+        expect(
+            self.o_groups > 0
+                && n_head.is_multiple_of(self.o_groups)
+                && (n_head * self.head_dim).is_multiple_of(self.o_groups),
+            format!(
+                "o_groups {} must divide num_attention_heads {n_head}",
+                self.o_groups
+            ),
+        )?;
+        expect(self.hc_mult > 0, "hc_mult is 0".to_string())?;
+        expect(
+            self.num_experts_per_tok > 0 && self.num_experts_per_tok <= self.n_routed_experts,
+            format!(
+                "num_experts_per_tok {} must be in 1..=n_routed_experts {}",
+                self.num_experts_per_tok, self.n_routed_experts
+            ),
+        )?;
+        // CSA2 topology.
+        for &source in &self.index_source_layer_ids {
+            expect(
+                source < trunk && self.compress_ratio(source) > 0,
+                format!("index source layer {source} must be a compressed trunk layer"),
+            )?;
+        }
+        for &source in &self.kv_source_layer_ids {
+            expect(
+                self.is_index_source(source),
+                format!("kv source layer {source} is not an index source"),
+            )?;
+        }
+        expect(
+            self.is_kv_source(self.candidate_source_layer_id),
+            format!(
+                "candidate_source_layer_id {} is not a kv source",
+                self.candidate_source_layer_id
+            ),
+        )?;
+        expect(
+            self.candidate_topk_blocks > 0 && self.candidate_block_size > 0,
+            "candidate_topk_blocks and candidate_block_size must be positive".to_string(),
+        )?;
+        // Every indexer after the candidate source masks its scores with the source's
+        // per-entry candidate mask, so it must score the same compressed entries.
+        let candidate_ratio = self.compress_ratio(self.candidate_source_layer_id);
+        for &source in &self.index_source_layer_ids {
+            expect(
+                source <= self.candidate_source_layer_id
+                    || self.compress_ratio(source) == candidate_ratio,
+                format!(
+                    "index source layer {source} after candidate source {} has ratio {}, not \
+                     the candidate ratio {candidate_ratio}",
+                    self.candidate_source_layer_id,
+                    self.compress_ratio(source)
+                ),
+            )?;
+        }
+        for il in 0..trunk {
+            let ratio = self.compress_ratio(il);
+            if ratio == 0 {
+                continue;
+            }
+            let source = self.kv_source_for(il);
+            expect(
+                source.is_some_and(|source| self.compress_ratio(source) == ratio),
+                format!(
+                    "layer {il} (ratio {ratio}) has no kv source at or before it with the same ratio \
+                     (most recent: {source:?})"
+                ),
+            )?;
+            if !self.is_index_source(il) {
+                let index = self.index_source_for(il);
+                expect(
+                    index.is_some_and(|index| self.kv_source_for(index) == source),
+                    format!(
+                        "reuse layer {il} has no index source over its kv source {source:?} \
+                         (most recent: {index:?})"
+                    ),
+                )?;
+            }
+        }
+        // Engram.
+        expect(
+            self.engram_layer_ids.len() == self.engram_num_embeddings.len(),
+            format!(
+                "engram_num_embeddings has {} entries for {} engram layers",
+                self.engram_num_embeddings.len(),
+                self.engram_layer_ids.len()
+            ),
+        )?;
+        for &layer in &self.engram_layer_ids {
+            expect(
+                layer < trunk,
+                format!("engram layer {layer} is not a trunk layer (< {trunk})"),
+            )?;
+        }
+        expect(
+            self.engram_max_ngram_size >= 2
+                && self.engram_n_heads > 0
+                && self.engram_head_dim.is_multiple_of(32)
+                && self.engram_head_dim > 0,
+            "engram needs max_ngram_size >= 2, n_heads > 0 and a head_dim divisible by 32"
+                .to_string(),
+        )?;
+        let derived = self.derived_engram_table_rows();
+        let declared: Vec<u64> = self
+            .engram_num_embeddings
+            .iter()
+            .map(|&n| n.into())
+            .collect();
+        expect(
+            derived == declared,
+            format!(
+                "engram_num_embeddings {declared:?} != the prime bucket sums {derived:?} derived from \
+                 engram_vocab_size/max_ngram_size/n_heads"
+            ),
+        )?;
+        expect(
+            self.engram_pad_token_id < n_vocab,
+            format!(
+                "engram_pad_token_id {} is outside the vocabulary",
+                self.engram_pad_token_id
+            ),
+        )?;
+        // DSpark.
+        expect(
+            self.num_nextn_predict_layers > 0
+                && self.dspark_block_size > 0
+                && self.dspark_markov_rank > 0
+                && self.dspark_n_routed_experts > 0
+                && self.dspark_num_experts_per_tok > 0
+                && self.dspark_num_experts_per_tok <= self.dspark_n_routed_experts,
+            "DSpark needs blocks, a block size, a markov rank and a valid expert top-k".to_string(),
+        )?;
+        // The vendor (`Transformer.forward`) appends a target's tap as the trunk passes its
+        // layer, so `main_proj` reads the taps in layer order; the plan places each tap at its
+        // index in this list. Only a strictly ascending list makes the two orders one.
+        expect(
+            !self.dspark_target_layer_ids.is_empty()
+                && self
+                    .dspark_target_layer_ids
+                    .iter()
+                    .all(|&layer| layer < trunk)
+                && self
+                    .dspark_target_layer_ids
+                    .windows(2)
+                    .all(|pair| pair[0] < pair[1]),
+            format!(
+                "dspark_target_layer_ids {:?} must be non-empty trunk layers in strictly \
+                 ascending order",
+                self.dspark_target_layer_ids
+            ),
+        )?;
+        expect(
+            self.dspark_noise_token_id < n_vocab && self.image_token_id < n_vocab,
+            "dspark_noise_token_id and image_token_id must be vocabulary ids".to_string(),
+        )?;
+        let vision = &self.vision;
+        expect(
+            vision.num_hidden_layers > 0
+                && vision.num_attention_heads > 0
+                && vision
+                    .hidden_size
+                    .is_multiple_of(vision.num_attention_heads)
+                && vision.downsample_ratio > 0,
+            "vision_config needs layers, heads dividing hidden_size and a downsample ratio"
+                .to_string(),
+        )?;
+        Ok(())
+    }
+}
+
 /// Qwen3.8-Flash-Next (`qwen4_exp`) config. Values in comments are the pinned artifact
 /// (Qwen/Qwen3.8-Flash-Next @ de4b8e4d — geometry receipts research/qwen4exp-bringup-20260829/
 /// ARCH.md, forward semantics SEMANTICS.md from transformers modular_qwen4_exp.py). qwen3_5
@@ -1281,6 +1783,8 @@ pub struct ModelConfig {
     pub step35: Option<Step35Config>,
     // DeepSeek-V4-Flash extras — `deepseek_v4` only (None for every other arch)
     pub dsv4: Option<DeepSeekV4Config>,
+    // DeepSeek-V4.1-Flash extras: `deepseek_v41` only (None for every other arch)
+    pub dsv41: Option<DeepSeekV41Config>,
     // MiMo-V2.6 extras — exact hybrid geometry and source-specific attention math.
     pub mimo: Option<MiMoV2Config>,
     // Qwen3.8-Flash-Next extras — `qwen4_exp` only (None for every other arch)
@@ -1781,8 +2285,9 @@ impl ModelConfig {
             multimodal: None,
             mla,
             step35,
-            dsv4: None, // safetensors-first arch: no GGUF artifact exists (loader lane)
-            mimo: None, // MiMo-V2.6 is safetensors-first and has no GGUF pack.
+            dsv4: None,  // safetensors-first arch: no GGUF artifact exists (loader lane)
+            dsv41: None, // safetensors-first arch: no GGUF artifact exists
+            mimo: None,  // MiMo-V2.6 is safetensors-first and has no GGUF pack.
             qwen4exp: None, // safetensors-first arch: no GGUF artifact exists (loader lane)
             qwen35_vision: None, // GGUF qwen35 trunks carry no tower
             rope_yarn: None,
@@ -2121,6 +2626,134 @@ impl ModelConfig {
                 rope_yarn_beta_fast: req_f(c.rope_yarn_beta_fast, "rope_scaling.beta_fast"),
                 rope_yarn_beta_slow: req_f(c.rope_yarn_beta_slow, "rope_scaling.beta_slow"),
             })
+        } else {
+            None
+        };
+
+        // deepseek_v41: every field the vendor ModelArgs reads is required by name, and the
+        // declared CSA2 / Engram / DSpark topology must be one the vendor program can run.
+        // `num_nextn_predict_layers` is load-bearing here (3 DSpark blocks); it must agree with
+        // the drafter tail of compress_ratios, which `validate` checks.
+        let dsv41 = if arch.is_dsv41() {
+            fn missing(k: &str) -> ! {
+                panic!("deepseek_v41 config.json missing required field {k}")
+            }
+            let req_u = |v: Option<u32>, k: &str| v.unwrap_or_else(|| missing(k));
+            let req_f = |v: Option<f32>, k: &str| v.unwrap_or_else(|| missing(k));
+            let req_s = |v: &Option<String>, k: &str| v.clone().unwrap_or_else(|| missing(k));
+            let req_v = |v: &Option<Vec<u32>>, k: &str| v.clone().unwrap_or_else(|| missing(k));
+            if !c.rms_norm_eps_explicit {
+                missing("rms_norm_eps");
+            }
+            if let Some(act) = c.hidden_act.as_deref() {
+                assert_eq!(
+                    act, "silu",
+                    "deepseek_v41 hidden_act {act:?}: the program is clamped SwiGLU over silu"
+                );
+            }
+            assert_eq!(
+                c.tie_word_embeddings,
+                Some(false),
+                "deepseek_v41 tie_word_embeddings must be false (separate head.weight)"
+            );
+            let config = DeepSeekV41Config {
+                scoring_func: req_s(&c.scoring_func, "scoring_func"),
+                topk_method: req_s(&c.topk_method, "topk_method"),
+                routed_scaling_factor: req_f(c.routed_scaling_factor, "routed_scaling_factor"),
+                norm_topk_prob: c
+                    .norm_topk_prob
+                    .unwrap_or_else(|| missing("norm_topk_prob")),
+                n_routed_experts: req_u(c.num_experts, "n_routed_experts"),
+                num_experts_per_tok: req_u(c.num_experts_per_tok, "num_experts_per_tok"),
+                moe_intermediate_size: req_u(c.moe_intermediate_size, "moe_intermediate_size"),
+                n_shared_experts: req_u(c.n_shared_experts, "n_shared_experts"),
+                swiglu_limit: req_f(c.swiglu_limit, "swiglu_limit"),
+                hc_mult: req_u(c.hc_mult, "hc_mult"),
+                hc_sinkhorn_iters: req_u(c.hc_sinkhorn_iters, "hc_sinkhorn_iters"),
+                hc_eps: req_f(c.hc_eps, "hc_eps"),
+                head_dim: req_u(c.head_dim, "head_dim"),
+                num_key_value_heads: req_u(c.num_key_value_heads, "num_key_value_heads"),
+                q_lora_rank: req_u(c.q_lora_rank, "q_lora_rank"),
+                qk_rope_head_dim: req_u(c.qk_rope_head_dim, "qk_rope_head_dim"),
+                o_lora_rank: req_u(c.o_lora_rank, "o_lora_rank"),
+                o_groups: req_u(c.o_groups, "o_groups"),
+                sliding_window: req_u(c.sliding_window, "sliding_window"),
+                compress_ratios: req_v(&c.compress_ratios, "compress_ratios"),
+                compress_rope_theta: req_f(c.compress_rope_theta, "compress_rope_theta"),
+                kv_source_layer_ids: req_v(&c.kv_source_layer_ids, "kv_source_layer_ids"),
+                index_source_layer_ids: req_v(&c.index_source_layer_ids, "index_source_layer_ids"),
+                index_n_heads: req_u(c.index_n_heads, "index_n_heads"),
+                index_head_dim: req_u(c.index_head_dim, "index_head_dim"),
+                index_topk: req_u(c.index_topk, "index_topk"),
+                candidate_source_layer_id: req_u(
+                    c.candidate_source_layer_id,
+                    "candidate_source_layer_id",
+                ),
+                candidate_topk_blocks: req_u(c.candidate_topk_blocks, "candidate_topk_blocks"),
+                candidate_block_size: req_u(c.candidate_block_size, "candidate_block_size"),
+                rope_yarn_factor: req_f(c.rope_yarn_factor, "rope_scaling.factor"),
+                rope_yarn_orig_ctx: req_u(
+                    c.rope_yarn_orig_ctx,
+                    "rope_scaling.original_max_position_embeddings",
+                ),
+                rope_yarn_beta_fast: req_f(c.rope_yarn_beta_fast, "rope_scaling.beta_fast"),
+                rope_yarn_beta_slow: req_f(c.rope_yarn_beta_slow, "rope_scaling.beta_slow"),
+                engram_layer_ids: req_v(&c.engram_layer_ids, "engram_layer_ids"),
+                engram_num_embeddings: req_v(&c.engram_num_embeddings, "engram_num_embeddings"),
+                engram_max_ngram_size: req_u(c.engram_max_ngram_size, "engram_max_ngram_size"),
+                engram_vocab_size: req_u(c.engram_vocab_size, "engram_vocab_size"),
+                engram_n_heads: req_u(c.engram_n_heads, "engram_n_heads"),
+                engram_head_dim: req_u(c.engram_head_dim, "engram_head_dim"),
+                engram_pad_token_id: req_u(c.engram_pad_token_id, "engram_pad_token_id"),
+                engram_compressed_vocab_size: req_u(
+                    c.engram_compressed_vocab_size,
+                    "engram_compressed_vocab_size",
+                ),
+                num_nextn_predict_layers: req_u(
+                    c.num_nextn_predict_layers,
+                    "num_nextn_predict_layers",
+                ),
+                dspark_block_size: req_u(c.dspark_block_size, "dspark_block_size"),
+                dspark_noise_token_id: req_u(c.dspark_noise_token_id, "dspark_noise_token_id"),
+                dspark_target_layer_ids: req_v(
+                    &c.dspark_target_layer_ids,
+                    "dspark_target_layer_ids",
+                ),
+                dspark_markov_rank: req_u(c.dspark_markov_rank, "dspark_markov_rank"),
+                dspark_n_routed_experts: req_u(
+                    c.dspark_n_routed_experts,
+                    "dspark_n_routed_experts",
+                ),
+                dspark_num_experts_per_tok: req_u(
+                    c.dspark_num_experts_per_tok,
+                    "dspark_num_experts_per_tok",
+                ),
+                quant_method: req_s(&c.quant_method, "quantization_config.quant_method"),
+                quant_activation_scheme: req_s(
+                    &c.quant_activation_scheme,
+                    "quantization_config.activation_scheme",
+                ),
+                quant_weight_block_size: req_v(
+                    &c.quant_weight_block_size,
+                    "quantization_config.weight_block_size",
+                ),
+                quant_scale_fmt: req_s(&c.quant_scale_fmt, "quantization_config.scale_fmt"),
+                quant_expert_dtype: req_s(
+                    &c.quant_expert_dtype,
+                    "quantization_config.expert_dtype",
+                ),
+                image_token_id: req_u(c.image_token_id, "image_token_id"),
+                vision: c
+                    .dsv41_vision
+                    .clone()
+                    .unwrap_or_else(|| missing("vision_config (deepseek_v41_vision)")),
+            };
+            if let Err(why) =
+                config.validate(c.num_hidden_layers, c.num_attention_heads, c.vocab_size)
+            {
+                panic!("deepseek_v41 config.json: {why}");
+            }
+            Some(config)
         } else {
             None
         };
@@ -2610,6 +3243,7 @@ impl ModelConfig {
             mla: None, // GGUF-first arch (glm-dsa): HF/safetensors import is a later arc
             step35,
             dsv4,
+            dsv41,
             mimo,
             qwen4exp,
             qwen35_vision: c.qwen35_vision.clone(),
@@ -3091,6 +3725,35 @@ pub struct HfConfig {
     pub index_topk: Option<u32>,
     pub compress_ratios: Option<Vec<u32>>,
     pub compress_rope_theta: Option<f32>,
+    // ---- DeepSeek-V4.1 (`deepseek_v41_text`) ----
+    pub kv_source_layer_ids: Option<Vec<u32>>,
+    pub index_source_layer_ids: Option<Vec<u32>>,
+    pub candidate_source_layer_id: Option<u32>,
+    pub candidate_topk_blocks: Option<u32>,
+    pub candidate_block_size: Option<u32>,
+    pub engram_layer_ids: Option<Vec<u32>>,
+    pub engram_num_embeddings: Option<Vec<u32>>,
+    pub engram_max_ngram_size: Option<u32>,
+    pub engram_vocab_size: Option<u32>,
+    pub engram_n_heads: Option<u32>,
+    pub engram_head_dim: Option<u32>,
+    pub engram_pad_token_id: Option<u32>,
+    pub engram_compressed_vocab_size: Option<u32>,
+    pub dspark_block_size: Option<u32>,
+    pub dspark_noise_token_id: Option<u32>,
+    pub dspark_target_layer_ids: Option<Vec<u32>>,
+    pub dspark_markov_rank: Option<u32>,
+    pub dspark_n_routed_experts: Option<u32>,
+    pub dspark_num_experts_per_tok: Option<u32>,
+    /// Top-level `quantization_config` keys beyond `quant_algo`, read for every config and
+    /// required by `deepseek_v41`, whose numerics they pin.
+    pub quant_method: Option<String>,
+    pub quant_activation_scheme: Option<String>,
+    pub quant_weight_block_size: Option<Vec<u32>>,
+    pub quant_scale_fmt: Option<String>,
+    pub quant_expert_dtype: Option<String>,
+    /// `vision_config` of model_type `deepseek_v41_vision` (DeepSeek-ViT).
+    pub dsv41_vision: Option<DeepSeekV41VisionConfig>,
     // ---- GLM-5.3-Flash (`glm5_next` text_config) ----
     pub kv_lora_rank: Option<u32>,
     pub qk_head_dim: Option<u32>,
@@ -3284,6 +3947,31 @@ impl Default for HfConfig {
             index_topk: None,
             compress_ratios: None,
             compress_rope_theta: None,
+            kv_source_layer_ids: None,
+            index_source_layer_ids: None,
+            candidate_source_layer_id: None,
+            candidate_topk_blocks: None,
+            candidate_block_size: None,
+            engram_layer_ids: None,
+            engram_num_embeddings: None,
+            engram_max_ngram_size: None,
+            engram_vocab_size: None,
+            engram_n_heads: None,
+            engram_head_dim: None,
+            engram_pad_token_id: None,
+            engram_compressed_vocab_size: None,
+            dspark_block_size: None,
+            dspark_noise_token_id: None,
+            dspark_target_layer_ids: None,
+            dspark_markov_rank: None,
+            dspark_n_routed_experts: None,
+            dspark_num_experts_per_tok: None,
+            quant_method: None,
+            quant_activation_scheme: None,
+            quant_weight_block_size: None,
+            quant_scale_fmt: None,
+            quant_expert_dtype: None,
+            dsv41_vision: None,
             kv_lora_rank: None,
             qk_head_dim: None,
             qk_nope_head_dim: None,
@@ -3438,6 +4126,11 @@ impl HfConfig {
             let activation = q.string("activation_scheme")?;
             let format = q.string("fmt")?;
             let block = q.u32_array("weight_block_size")?;
+            cfg.quant_method = method.clone();
+            cfg.quant_activation_scheme = activation.clone();
+            cfg.quant_weight_block_size = block.clone();
+            cfg.quant_scale_fmt = q.string("scale_fmt")?;
+            cfg.quant_expert_dtype = q.string("expert_dtype")?;
             cfg.preserve_checkpoint_bf16 = (model_type.as_deref() == Some("step3p7")
                 && ((method.as_deref() == Some("fp8")
                     && activation.as_deref() == Some("dynamic")
@@ -3531,7 +4224,30 @@ impl HfConfig {
                     };
                 }
             }
-            if vision_type.as_deref() == Some("glm5_next_vision") {
+            if vision_type.as_deref() == Some("deepseek_v41_vision") {
+                let req_u = |key: &str| {
+                    required(
+                        vision.u32(key)?,
+                        "deepseek_v41_vision",
+                        &format!("vision_config.{key}"),
+                    )
+                };
+                cfg.dsv41_vision = Some(DeepSeekV41VisionConfig {
+                    num_hidden_layers: req_u("num_hidden_layers")?,
+                    hidden_size: req_u("hidden_size")?,
+                    num_attention_heads: req_u("num_attention_heads")?,
+                    intermediate_size: req_u("intermediate_size")?,
+                    patch_size: req_u("patch_size")?,
+                    rope_theta: required(
+                        vision.f32("rope_theta")?,
+                        "deepseek_v41_vision",
+                        "vision_config.rope_theta",
+                    )?,
+                    downsample_ratio: req_u("downsample_ratio")?,
+                    max_image_tokens: req_u("max_image_tokens")?,
+                    min_pixels: req_u("min_pixels")?,
+                });
+            } else if vision_type.as_deref() == Some("glm5_next_vision") {
                 let req_u = |key: &str| {
                     required(
                         vision.u32(key)?,
@@ -4095,6 +4811,47 @@ impl HfConfig {
         }
         if let Some(v) = o.f32("compress_rope_theta")? {
             self.compress_rope_theta = Some(v);
+        }
+        // ---- DeepSeek-V4.1 keys (deepseek_v41_text) ----
+        for (field, key) in [
+            (&mut self.kv_source_layer_ids, "kv_source_layer_ids"),
+            (&mut self.index_source_layer_ids, "index_source_layer_ids"),
+            (&mut self.engram_layer_ids, "engram_layer_ids"),
+            (&mut self.engram_num_embeddings, "engram_num_embeddings"),
+            (&mut self.dspark_target_layer_ids, "dspark_target_layer_ids"),
+        ] {
+            if let Some(v) = o.u32_array(key)? {
+                *field = Some(v);
+            }
+        }
+        for (field, key) in [
+            (
+                &mut self.candidate_source_layer_id,
+                "candidate_source_layer_id",
+            ),
+            (&mut self.candidate_topk_blocks, "candidate_topk_blocks"),
+            (&mut self.candidate_block_size, "candidate_block_size"),
+            (&mut self.engram_max_ngram_size, "engram_max_ngram_size"),
+            (&mut self.engram_vocab_size, "engram_vocab_size"),
+            (&mut self.engram_n_heads, "engram_n_heads"),
+            (&mut self.engram_head_dim, "engram_head_dim"),
+            (&mut self.engram_pad_token_id, "engram_pad_token_id"),
+            (
+                &mut self.engram_compressed_vocab_size,
+                "engram_compressed_vocab_size",
+            ),
+            (&mut self.dspark_block_size, "dspark_block_size"),
+            (&mut self.dspark_noise_token_id, "dspark_noise_token_id"),
+            (&mut self.dspark_markov_rank, "dspark_markov_rank"),
+            (&mut self.dspark_n_routed_experts, "dspark_n_routed_experts"),
+            (
+                &mut self.dspark_num_experts_per_tok,
+                "dspark_num_experts_per_tok",
+            ),
+        ] {
+            if let Some(v) = o.u32(key)? {
+                *field = Some(v);
+            }
         }
         // ---- GLM-5.3-Flash keys ----
         if let Some(v) = o.u32("kv_lora_rank")? {

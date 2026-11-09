@@ -1,0 +1,28 @@
+{
+  "completion": "Let me check both.</think>\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"get_weather\">\n<｜DSML｜ parameter name=\"location\" string=\"true\">Beijing</｜DSML｜ parameter>\n<｜DSML｜ parameter name=\"unit\" string=\"true\">celsius</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n<｜DSML｜ invoke name=\"calculate\">\n<｜DSML｜ parameter name=\"expr\" string=\"true\">2+2</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls><｜end▁of▁sentence｜>",
+  "think": "thinking",
+  "expected": {
+    "reasoning_content": "Let me check both.",
+    "content": "",
+    "tool_calls": [
+      {
+        "name": "get_weather",
+        "namespace": null,
+        "arguments": {
+          "location": "Beijing",
+          "unit": "celsius"
+        },
+        "arguments_text": "{\"location\": \"Beijing\", \"unit\": \"celsius\"}"
+      },
+      {
+        "name": "calculate",
+        "namespace": null,
+        "arguments": {
+          "expr": "2+2"
+        },
+        "arguments_text": "{\"expr\": \"2+2\"}"
+      }
+    ]
+  },
+  "reencodes_to_completion": true
+}
