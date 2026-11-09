@@ -1,0 +1,22 @@
+start 2026-11-09T15:02:49+02:00 args: --lib -- --exact darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec --nocapture
+   Compiling memra-engine v0.139.0 ($WORK/src-darklane/crates/memra-engine)
+   Compiling memra-server v0.139.0 ($WORK/src-darklane/crates/memra-server)
+warning: memra-engine@0.139.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 12s
+     Running unittests src/lib.rs ($WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e)
+
+running 1 test
+[darklane] bg runner armed: cmd="DARKLANE_TEST_VFORK_FIFO='$WORK/tmp/darklane-vfork-3980786/fifo' exec '$WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e' --exact darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec --nocapture > '$WORK/tmp/darklane-vfork-3980786/leader.log' 2>&1" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 3980789, fresh)
+launch: acknowledged after 12ms
+spawning thread waits in vfork on a child opening the FIFO: acknowledged after 54ms
+stop acknowledged with a thread parked in vfork: acknowledged after 10ms
+resumed, the vfork child back in its open: acknowledged after 10ms
+FIFO writer opened: acknowledged after 0ms
+[darklane] job COMPLETE (exit 0)
+leader completed: acknowledged after 25ms
+test darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1121 filtered out; finished in 0.14s
+
+exit 0 2026-11-09T15:07:01+02:00

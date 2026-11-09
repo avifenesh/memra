@@ -27,11 +27,17 @@
 //!
 //! YIELD MECHANISM v1 — simplest honest first: the job is a CHILD PROCESS in its own
 //! process group. The runner submits SIGSTOP/SIGCONT on poll ticks (`MEMRA_BG_POLL_MS`,
-//! default 25 ms) and publishes yielded after observing a stop on a later tick. OS
-//! scheduling and signal delivery control latency. Historical timing receipts live in
-//! `research/darktrain-20260807/`. Two consequences the operator must know:
-//!   * a SIGSTOPPED process KEEPS its memory — VRAM included. The VRAM budget below is
-//!     therefore carved out for the LIFE of the job, not per-valley.
+//! default 25 ms) and publishes yielded once a later tick observes the stop take effect:
+//! waitid reports the leader stopped, or /proc shows every leader thread stopped or blocked
+//! in the kernel with the stop pending. The second form exists for vfork: a leader thread
+//! waiting in vfork on a child that the same stop caught before exec stays in D until
+//! SIGCONT, so waitid never reports the stop (dash spawns every external command that way;
+//! `research/darklane-vfork-stop-20261109/`). OS scheduling and signal delivery control
+//! latency. Historical timing receipts live in `research/darktrain-20260807/`. Two
+//! consequences the operator must know:
+//!   * a SIGSTOPPED process KEEPS its memory — VRAM included, and so does a leader parked
+//!     in vfork. The VRAM budget below is therefore carved out for the LIFE of the job, not
+//!     per-valley.
 //!   * SIGSTOP is only cheap for jobs whose working set can sit cold. GPU-resident training
 //!     that can't sit on stopped VRAM uses checkpoint mode instead.
 //!
@@ -345,6 +351,14 @@ fn terminate_owned_group_with_grace(c: &mut std::process::Child) {
 
 /// Observe a stop without reaping an exit that Child::try_wait must classify.
 /// Sending SIGSTOP successfully does not prove the child remains alive or stopped.
+///
+/// waitid reports a stop only once EVERY thread of the leader has stopped, and a thread
+/// waiting in vfork cannot stop until its child execs or exits. The same group SIGSTOP stops
+/// that child before exec, so the waiting thread stays in D until SIGCONT and waitid never
+/// reports the stop. dash spawns every external command with vfork; glibc's posix_spawn
+/// (and through it CPython's subprocess) clones with CLONE_VFORK too
+/// (`research/darklane-vfork-stop-20261109/`). When waitid has nothing to report, the stop is
+/// read from /proc instead: see [`leader_stop_took_effect`].
 fn child_stop_acknowledged(pid: u32) -> std::io::Result<bool> {
     let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
     let rc = unsafe {
@@ -358,7 +372,99 @@ fn child_stop_acknowledged(pid: u32) -> std::io::Result<bool> {
     if rc != 0 {
         return Err(std::io::Error::last_os_error());
     }
-    Ok(info.si_code == libc::CLD_STOPPED)
+    if info.si_code == libc::CLD_STOPPED {
+        return Ok(true);
+    }
+    if unsafe { info.si_pid() } != 0 {
+        return Ok(false); // An exit: try_wait reaps and classifies it on the next tick.
+    }
+    leader_stop_took_effect(pid)
+}
+
+/// What the leader's thread states say about a submitted group stop.
+#[derive(Debug, PartialEq, Eq)]
+enum LeaderThreads {
+    /// A thread can still run job code (or none is alive): no acknowledgement.
+    Running,
+    /// Every live thread is stopped or blocked uninterruptibly, and at least one is stopped:
+    /// a group stop is under way, and the blocked threads carry its pending stop.
+    Stopping,
+    /// Every live thread is blocked uninterruptibly: the stop took effect only if SIGSTOP is
+    /// still pending (no thread has been able to dequeue it).
+    Blocked,
+}
+
+fn classify_leader_threads(states: &[char]) -> LeaderThreads {
+    let mut live = 0;
+    let mut stopped = false;
+    for state in states {
+        match state {
+            'Z' | 'X' => {}
+            'T' | 't' => {
+                live += 1;
+                stopped = true;
+            }
+            // D, and I (TASK_IDLE = uninterruptible without load accounting).
+            'D' | 'I' => live += 1,
+            _ => return LeaderThreads::Running,
+        }
+    }
+    match (live, stopped) {
+        (0, _) => LeaderThreads::Running,
+        (_, true) => LeaderThreads::Stopping,
+        (_, false) => LeaderThreads::Blocked,
+    }
+}
+
+/// The state letter of a `/proc/.../stat` line: the first field after the LAST ')' (comm
+/// may itself contain spaces and parentheses).
+fn proc_stat_state(stat: &str) -> Option<char> {
+    let i = stat.rfind(')')?;
+    stat[i + 1..].trim_start().chars().next()
+}
+
+/// Is SIGSTOP in the shared pending set of a `/proc/<pid>/status`?
+fn shared_sigstop_pending(status: &str) -> Option<bool> {
+    let mask = status.lines().find_map(|l| l.strip_prefix("ShdPnd:"))?;
+    let mask = u64::from_str_radix(mask.trim(), 16).ok()?;
+    Some(mask & (1u64 << (libc::SIGSTOP - 1)) != 0)
+}
+
+/// The stop has taken effect on the leader when every live thread is stopped, or blocked in
+/// the kernel with the stop pending: a blocked thread handles the pending SIGSTOP before it
+/// next returns to user space, so no leader thread runs job code again before SIGCONT. The
+/// vfork-parked thread is the case this exists for; any other uninterruptible wait ends in
+/// the stop by itself. Called only after a group SIGSTOP was sent successfully.
+fn leader_stop_took_effect(pid: u32) -> std::io::Result<bool> {
+    let gone = |err: &std::io::Error| {
+        err.kind() == std::io::ErrorKind::NotFound || err.raw_os_error() == Some(libc::ESRCH)
+    };
+    let tasks = match std::fs::read_dir(format!("/proc/{pid}/task")) {
+        Ok(tasks) => tasks,
+        Err(err) if gone(&err) => return Ok(false),
+        Err(err) => return Err(err),
+    };
+    let mut states = Vec::new();
+    for task in tasks {
+        match std::fs::read_to_string(task?.path().join("stat")) {
+            Ok(stat) => states.push(proc_stat_state(&stat).ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "unparsable task stat")
+            })?),
+            Err(err) if gone(&err) => {} // The thread exited after the listing.
+            Err(err) => return Err(err),
+        }
+    }
+    match classify_leader_threads(&states) {
+        LeaderThreads::Running => Ok(false),
+        LeaderThreads::Stopping => Ok(true),
+        LeaderThreads::Blocked => match std::fs::read_to_string(format!("/proc/{pid}/status")) {
+            Ok(status) => shared_sigstop_pending(&status).ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "no ShdPnd in status")
+            }),
+            Err(err) if gone(&err) => Ok(false),
+            Err(err) => Err(err),
+        },
+    }
 }
 
 /// Spawn the supervisor thread. `in_valley` / `busy_now` are injected (prod: ValleySignal;
@@ -687,10 +793,70 @@ mod tests {
 
     /// /proc/<pid>/stat field 3 — 'T' is stopped, 'R'/'S' running/sleeping, gone = None.
     fn proc_state(pid: u32) -> Option<char> {
-        let s = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-        // field 2 (comm) may contain spaces/parens — state is the char after the LAST ')'.
-        s.rfind(')')
-            .and_then(|i| s[i + 1..].trim_start().chars().next())
+        proc_stat_state(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)
+    }
+
+    /// `/proc/.../stat` fields after comm: (state, ppid, flags).
+    fn proc_stat_fields(path: &std::path::Path) -> Option<(char, u32, i64)> {
+        let s = std::fs::read_to_string(path).ok()?;
+        let rest: Vec<&str> = s[s.rfind(')')? + 1..].split_whitespace().collect();
+        Some((
+            rest.first()?.chars().next()?,
+            rest.get(1)?.parse().ok()?,
+            rest.get(6)?.parse().ok()?,
+        ))
+    }
+
+    /// Every thread's state, from `/proc/<pid>/task/*/stat`.
+    fn leader_thread_states(pid: u32) -> Vec<char> {
+        let Ok(tasks) = std::fs::read_dir(format!("/proc/{pid}/task")) else {
+            return Vec::new();
+        };
+        tasks
+            .filter_map(|t| proc_stat_fields(&t.ok()?.path().join("stat")).map(|f| f.0))
+            .collect()
+    }
+
+    /// Children of `pid` that were forked and have not exec'd (PF_FORKNOEXEC), with state.
+    fn unexeced_children(pid: u32) -> Vec<(u32, char)> {
+        let Ok(procs) = std::fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        procs
+            .filter_map(|p| {
+                let child: u32 = p.ok()?.file_name().to_str()?.parse().ok()?;
+                let (state, ppid, flags) =
+                    proc_stat_fields(std::path::Path::new(&format!("/proc/{child}/stat")))?;
+                (ppid == pid && flags & libc::PF_FORKNOEXEC as i64 != 0).then_some((child, state))
+            })
+            .collect()
+    }
+
+    /// The shapes a group SIGSTOP leaves the leader in: every thread stopped, or a thread
+    /// blocked in vfork (D) on a child that the same stop caught before exec.
+    fn leader_stopped_or_vfork_parked(pid: u32) -> bool {
+        let threads = leader_thread_states(pid);
+        if threads.is_empty() {
+            return false;
+        }
+        threads.iter().all(|s| *s == 'T')
+            || (threads.iter().all(|s| matches!(s, 'T' | 'D'))
+                && unexeced_children(pid).iter().any(|&(_, s)| s == 'T'))
+    }
+
+    /// waitid's own view: has the whole leader (every thread) reported stopped?
+    fn leader_reports_stopped(pid: u32) -> bool {
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        let rc = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid,
+                &mut info,
+                libc::WSTOPPED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        assert_eq!(rc, 0, "waitid: {}", std::io::Error::last_os_error());
+        info.si_code == libc::CLD_STOPPED
     }
 
     /// WP-A day 57 (`research/spill-a-20260919/DAY57.md`, OWED item 24): wait for an
@@ -1189,7 +1355,14 @@ mod tests {
                 st.state.load(Ordering::Acquire) == BG_YIELDED
                     && st.yields.load(Ordering::Relaxed) == cycle
             });
-            assert_eq!(proc_state(pid), Some('T'));
+            // dash spawns `sleep` with vfork: the stop can park the shell in D on a child
+            // it caught before exec (research/darklane-vfork-stop-20261109/).
+            assert!(
+                leader_stopped_or_vfork_parked(pid),
+                "threads {:?} unexeced children {:?}",
+                leader_thread_states(pid),
+                unexeced_children(pid)
+            );
             if cycle == 1 {
                 sig.busy.store(false, Ordering::Release);
                 sig.valley.store(true, Ordering::Release);
@@ -1210,6 +1383,215 @@ mod tests {
             "stopped shutdown must reap the child"
         );
         assert_eq!(st.job_pid.load(Ordering::Acquire), 0);
+    }
+
+    /// The /proc reading, case by case. The single-threaded parked shell (D with SIGSTOP in
+    /// ShdPnd) and a running shell inside an ordinary vfork (D, nothing pending) differ only in
+    /// the pending set; the second must never acknowledge.
+    #[test]
+    fn leader_thread_states_classify_the_stop() {
+        use LeaderThreads::*;
+        for (states, want) in [
+            (&['T'][..], Stopping),
+            (&['T', 'D'][..], Stopping),
+            (&['t'][..], Stopping),
+            (&['Z', 'T'][..], Stopping),
+            (&['D'][..], Blocked),
+            (&['D', 'I'][..], Blocked),
+            (&['S', 'T'][..], Running),
+            (&['R'][..], Running),
+            (&['Z'][..], Running),
+            (&[][..], Running),
+        ] {
+            assert_eq!(classify_leader_threads(states), want, "{states:?}");
+        }
+        // The probe's parked dash leader: SIGCHLD and SIGSTOP pending.
+        let parked =
+            "State:\tD (disk sleep)\nSigPnd:\t0000000000000000\nShdPnd:\t0000000000050000\n";
+        assert_eq!(shared_sigstop_pending(parked), Some(true));
+        let resumed = "SigPnd:\t0000000000000000\nShdPnd:\t0000000000010000\n";
+        assert_eq!(shared_sigstop_pending(resumed), Some(false));
+        assert_eq!(shared_sigstop_pending("State:\tD\n"), None);
+        assert_eq!(proc_stat_state("4242 (a ) (b) T 1 4242"), Some('T'));
+        assert_eq!(proc_stat_state("4242 (sh) D 1"), Some('D'));
+    }
+
+    /// Set in the job's environment: this test binary then runs as the job leader below.
+    const VFORK_LEADER_FIFO: &str = "DARKLANE_TEST_VFORK_FIFO";
+
+    /// The job-leader half of the next test. glibc and musl posix_spawn clone with
+    /// CLONE_VM | CLONE_VFORK and run file actions in the child before exec, so the
+    /// spawning thread waits in vfork while the child blocks opening the FIFO for reading.
+    /// The other threads (the test harness's and this one, joining) are ordinary sleepers.
+    fn vfork_leader(fifo: std::ffi::OsString) {
+        use std::os::unix::ffi::OsStrExt;
+        let fifo = std::ffi::CString::new(fifo.as_bytes()).unwrap();
+        let spawner = std::thread::spawn(move || unsafe {
+            let mut actions: libc::posix_spawn_file_actions_t = std::mem::zeroed();
+            assert_eq!(libc::posix_spawn_file_actions_init(&mut actions), 0);
+            assert_eq!(
+                libc::posix_spawn_file_actions_addopen(
+                    &mut actions,
+                    0,
+                    fifo.as_ptr(),
+                    libc::O_RDONLY,
+                    0
+                ),
+                0
+            );
+            let argv = [
+                c"sh".as_ptr().cast_mut(),
+                c"-c".as_ptr().cast_mut(),
+                c"exit 0".as_ptr().cast_mut(),
+                std::ptr::null_mut(),
+            ];
+            let envp = [std::ptr::null_mut()];
+            let mut pid = 0;
+            let rc = libc::posix_spawn(
+                &mut pid,
+                c"/bin/sh".as_ptr(),
+                &actions,
+                std::ptr::null(),
+                argv.as_ptr(),
+                envp.as_ptr(),
+            );
+            assert_eq!(rc, 0, "posix_spawn");
+            libc::posix_spawn_file_actions_destroy(&mut actions);
+            let mut status = 0;
+            assert_eq!(libc::waitpid(pid, &mut status, 0), pid);
+            assert!(
+                libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0,
+                "spawned child status {status}"
+            );
+        });
+        spawner.join().unwrap();
+    }
+
+    /// A group SIGSTOP that lands while a leader thread waits in vfork stops the vfork child
+    /// before exec, and the waiting thread cannot stop until that child execs or exits: it
+    /// stays in D until SIGCONT, the leader's group stop never completes, and waitid never
+    /// reports it stopped. The runner must still acknowledge the yield and resume the job
+    /// (research/darklane-vfork-stop-20261109/: dash spawns every external command this way).
+    #[test]
+    fn stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec() {
+        if let Some(fifo) = std::env::var_os(VFORK_LEADER_FIFO) {
+            return vfork_leader(fifo);
+        }
+        use std::os::unix::ffi::OsStrExt;
+        use std::os::unix::fs::OpenOptionsExt;
+        let path = std::env::temp_dir().join(format!("darklane-vfork-{}", std::process::id()));
+        std::fs::create_dir(&path).unwrap();
+        let dir = TestDir(path);
+        let fifo = dir.0.join("fifo");
+        let fifo_c = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        assert_eq!(
+            unsafe { libc::mkfifo(fifo_c.as_ptr(), 0o600) },
+            0,
+            "mkfifo: {}",
+            std::io::Error::last_os_error()
+        );
+        let cmd = format!(
+            "{VFORK_LEADER_FIFO}='{}' exec '{}' --exact \
+             darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec \
+             --nocapture > '{}' 2>&1",
+            fifo.display(),
+            std::env::current_exe().unwrap().display(),
+            dir.0.join("leader.log").display()
+        );
+        let (sig, v, b) = sigs();
+        let h = spawn_runner(cfg(&cmd, YieldMode::Stop), v, b, Arc::new(|| None));
+        let st = h.state.clone();
+        let guard = RunnerGuard(Some(h));
+        sig.valley.store(true, Ordering::Release);
+        wait_acknowledged("launch", || st.state.load(Ordering::Acquire) == BG_RUNNING);
+        let pid = st.job_pid.load(Ordering::Acquire);
+        wait_acknowledged(
+            "spawning thread waits in vfork on a child opening the FIFO",
+            || {
+                leader_thread_states(pid).contains(&'D')
+                    && unexeced_children(pid).iter().any(|&(_, s)| s == 'S')
+            },
+        );
+        sig.valley.store(false, Ordering::Release);
+        sig.busy.store(true, Ordering::Release);
+        wait_acknowledged("stop acknowledged with a thread parked in vfork", || {
+            st.state.load(Ordering::Acquire) == BG_YIELDED && st.yields.load(Ordering::Relaxed) == 1
+        });
+        let threads = leader_thread_states(pid);
+        let children = unexeced_children(pid);
+        assert!(
+            threads.contains(&'D') && threads.contains(&'T') && leader_stopped_or_vfork_parked(pid),
+            "threads {threads:?} unexeced children {children:?}"
+        );
+        assert!(
+            !leader_reports_stopped(pid),
+            "the leader's group stop cannot complete while a thread waits in vfork"
+        );
+        sig.busy.store(false, Ordering::Release);
+        sig.valley.store(true, Ordering::Release);
+        wait_acknowledged("resumed, the vfork child back in its open", || {
+            st.resumes.load(Ordering::Relaxed) == 1
+                && unexeced_children(pid).iter().all(|&(_, s)| s != 'T')
+        });
+        // A writer releases the child's open: it execs, posix_spawn returns, the leader exits 0.
+        wait_acknowledged("FIFO writer opened", || {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .custom_flags(libc::O_NONBLOCK)
+                .open(&fifo)
+                .is_ok()
+        });
+        wait_acknowledged("leader completed", || {
+            st.state.load(Ordering::Acquire) == BG_DONE && st.job_pid.load(Ordering::Acquire) == 0
+        });
+        assert_eq!(st.yields.load(Ordering::Relaxed), 1);
+        assert_eq!(st.resumes.load(Ordering::Relaxed), 1);
+        guard.shutdown();
+    }
+
+    /// The flake's own shape, at volume: dash vforks `/bin/true` constantly, so many stops
+    /// land in the vfork window. Every stop must be acknowledged and resumed.
+    #[test]
+    #[ignore = "stress: 300 stop/resume cycles on a constantly spawning shell job; run with --ignored"]
+    fn stop_resume_cycles_on_a_constantly_spawning_shell_job() {
+        let (sig, v, b) = sigs();
+        let h = spawn_runner(
+            cfg("while :; do /bin/true; done", YieldMode::Stop),
+            v,
+            b,
+            Arc::new(|| None),
+        );
+        let st = h.state.clone();
+        let guard = RunnerGuard(Some(h));
+        sig.valley.store(true, Ordering::Release);
+        wait_acknowledged("launch", || st.state.load(Ordering::Acquire) == BG_RUNNING);
+        let pid = st.job_pid.load(Ordering::Acquire);
+        let mut parked = 0;
+        for cycle in 1..=300 {
+            sig.valley.store(false, Ordering::Release);
+            sig.busy.store(true, Ordering::Release);
+            wait_acknowledged(&format!("stop {cycle} acknowledged"), || {
+                st.state.load(Ordering::Acquire) == BG_YIELDED
+                    && st.yields.load(Ordering::Relaxed) == cycle
+            });
+            assert!(
+                leader_stopped_or_vfork_parked(pid),
+                "stop {cycle}: threads {:?} unexeced children {:?}",
+                leader_thread_states(pid),
+                unexeced_children(pid)
+            );
+            if leader_thread_states(pid).contains(&'D') {
+                parked += 1;
+            }
+            sig.busy.store(false, Ordering::Release);
+            sig.valley.store(true, Ordering::Release);
+            wait_acknowledged(&format!("resume {cycle}"), || {
+                st.resumes.load(Ordering::Relaxed) == cycle
+                    && st.state.load(Ordering::Acquire) == BG_RUNNING
+            });
+        }
+        println!("stops acknowledged with the leader parked in vfork: {parked} of 300");
+        guard.shutdown();
     }
 
     #[test]
@@ -1290,7 +1672,9 @@ mod tests {
         wait_acknowledged("the runner yields", || {
             st.state.load(Ordering::Acquire) == BG_YIELDED
         });
-        wait_acknowledged("yield to T", || proc_state(pid) == Some('T'));
+        wait_acknowledged("yield to T, or to D parked in vfork", || {
+            leader_stopped_or_vfork_parked(pid)
+        });
         assert_eq!(st.state.load(Ordering::Acquire), BG_YIELDED);
         assert_eq!(st.yields.load(Ordering::Relaxed), 1);
         // back to valley -> SIGCONT.

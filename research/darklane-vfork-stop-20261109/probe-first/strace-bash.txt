@@ -1,0 +1,4 @@
+3945619 execve("/usr/bin/bash", ["bash", "-c", "sleep 0.001; true"], 0x7ffd0ea99f00 /* 19 vars */) = 0
+3945619 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x748bdedbea10) = 3945620
+3945620 execve("/usr/bin/sleep", ["sleep", "0.001"], 0x61db3f4b1160 /* 19 vars */) = 0
+3945619 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3945620, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---

@@ -1,0 +1,6 @@
+79113 execve("/usr/bin/sh", ["sh", "-c", "sleep 0.001"], 0x7fffb75eba80 /* 19 vars */) = 0
+79113 vfork( <unfinished ...>
+79114 execve("/usr/bin/sleep", ["sleep", "0.001"], 0x5ef9ad7a1598 /* 19 vars */ <unfinished ...>
+79113 <... vfork resumed>)              = 79114
+79114 <... execve resumed>)             = 0
+79113 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=79114, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
