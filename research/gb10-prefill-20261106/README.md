@@ -540,7 +540,9 @@ The phases of the request (timestamped server log, `ts-probe-main-unit1/`, unpro
   118.359 s at 131k (-1.01%), both completely separated. At 260k the medians are 318.038 ->
   315.286 s (-0.87%), but the arms overlap: three cells, B and G alike, ran under a lower platform
   power budget (SM 2,099-2,132 MHz at 81-83 W against 2,158 MHz at 88 W; `clocks.txt`), so 260k
-  counts as a tie. The answers are identical in every request.
+  counts as a tie. Four more 260k cells at full clock (row 56b) bring it to 7 per arm: 317.489 ->
+  315.286 s over all cells (-0.69%, overlapping), and within the full-clock regime the arms
+  separate completely (317.440 -> 314.777 s, -0.84%). The answers are identical in every request.
 
 ### Next (round 4)
 
