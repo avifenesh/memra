@@ -8,8 +8,9 @@
 //! Bit-compares: every hidden row, the final logits, the logits at b - 1 (the split's first
 //! call's), the boundary snapshot (conv rings, SSM states, KV lengths, pos), the final
 //! recurrent state of every GDN layer and the K/V bytes of rows [0, n) of every
-//! full-attention layer. Also checks that `prime_tail_fold_ok` accepts the case, so the gate
-//! covers what the serving path folds. Exit 1 on any difference.
+//! full-attention layer. Also checks that `prime_tail_fold_ok` accepts each case, so the gate
+//! covers what the serving path folds, and refuses a stop on a call boundary. Exit 1 on any
+//! difference.
 //!
 //! usage: prime-fold-gate <model.gguf> [--cases n:b,n:b,...]
 
@@ -62,12 +63,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .unwrap_or_else(|| {
             vec![
-                (4396, 4352),   // b inside the last call, a 44-row tail
-                (8292, 8192),   // b at the last call's first row
-                (1000, 960),    // one call, a 40-row tail
-                (4176, 4160),   // the shortest tail, 16 rows
-                (8232, 8128),   // b in a middle call, the tail crosses into the last call
-                (12331, 12288), // b at a call start, a 43-row tail
+                (8171, 8128), // the served 131k shape: 4,032 rows into a 4,075-row last call, 43 after
+                (8139, 8096), // the same with the stop between two 64-row tiles (r = 4,000)
+                (4171, 4128), // 32 rows into the last call, 43 after
+                (4396, 4352), // 256 rows into the last call, 44 after
+                (4176, 4160), // the shortest tail, 16 rows
+                (1000, 960),  // one call
+                (8232, 8160), // a middle call (32 rows left in it), the tail crosses into the last call
+                (8292, 8192), // the stop on a call boundary: refused, the split already ends a call there
             ]
         });
 
@@ -88,6 +91,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|i| ((i * 2_654_435_761 + 97 * ci as u64 + 11) % (vocab - 1000) + 500) as u32)
             .collect();
         let accepted = model.prime_tail_fold_ok(&e, n, b);
+        let ranges = memra_engine::hybrid_forward::prime_chunk_ranges(
+            n,
+            model.layers.len(),
+            model.gdn_prime_grid_on(),
+            model.swa_ring_on(),
+        );
+        if ranges.iter().any(|&(s, _)| s == b) {
+            let ok = !accepted;
+            fails += usize::from(!ok);
+            println!(
+                "PRIME-FOLD n={n} b={b}: the stop is a call boundary, fold_ok={accepted} {}",
+                if ok {
+                    "OK (refused)"
+                } else {
+                    "FAIL (accepted)"
+                }
+            );
+            continue;
+        }
         let ctx = n + 64;
 
         let mut cs = Cache::new(&e, &model.cfg, ctx)?;
@@ -124,11 +146,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for (x, y) in cs.kv.iter().zip(&cf.kv) {
             if let (Some(x), Some(y)) = (x, y) {
                 d_kv += usize::from(x.len != y.len);
+                let rows = x.len.min(y.len);
                 for (px, py, tb) in [(&x.k, &y.k, x.k_tok_bytes), (&x.v, &y.v, x.v_tok_bytes)] {
                     let (bx, by) = (e.dtoh_u8(px)?, e.dtoh_u8(py)?);
-                    d_kv += bx[..n * tb]
+                    d_kv += bx[..rows * tb]
                         .iter()
-                        .zip(&by[..n * tb])
+                        .zip(&by[..rows * tb])
                         .filter(|(p, q)| p != q)
                         .count();
                 }

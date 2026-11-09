@@ -41,7 +41,9 @@ and the SSM state into a tap. Every other operation of the call (GEMMs, attentio
 append) runs over the whole call as before. After the prime the capture is built from the tap:
 
 - `conv`, `ssm`: the tap's copies, per GDN layer;
-- `kv_len`: the full-attention length at `b` (each layer appended every row, so `len - (n - b)`);
+- `kv_len`: the full-attention length at `b` (each trunk layer appended every row, so
+  `len - (n - b)`; a layer the trunk walk does not advance, such as the MTP block's plane, keeps
+  its length);
 - `pos`: `b`;
 - `logits`: row `b - 1`'s trunk hidden through the final norm and LM head, the path a call ending at
   `b` takes for its last row;
@@ -58,13 +60,17 @@ The prime split law (`spec.rs`, `dflash.rs`, `worker.rs`: a prime split at `L` w
 2. Inside the call, the two-part conv and scan are the same law applied to one layer: the conv of
    rows `[r, t)` reads the ring that rows `[0, r)` left, and the scan of rows `[r, t)` starts from
    the state rows `[0, r)` produced. Every chunk-local GDN quantity (cumulative gate, `attn32`,
-   `solve32`) is computed per 64-row chunk and does not see the split.
+   `solve32`) is computed per GDN chunk (`gdn_chunk_size()`, 32 rows) and does not see the split.
 3. The tap's conv ring and SSM state are the values the split prime's first call left in the cache
    at `b`, by the same law.
 
-Kept on the split (no fold): padded or batched primes, a call the prime graph would capture, the
-pipeline-parallel and hyper walks, the dspark path, the restored-session suffix feed, and any GDN
-route the tap does not cover. The tapped call runs the unfused out-norm (`gdn_scan_prefill` then
+Kept on the split (`HybridModel::prime_tail_fold_ok`): a stop on a call boundary (the split
+already ends a call there, so a fold gains nothing), a stop with fewer than `PRIME_MIN_T` rows of its
+call on either side, MoE trunks (their small-row expert program differs from the grouped one, so
+the split law is not established for them), an explicit `MEMRA_PRIME_CHUNK` (operator ranges off
+the grid), the gemma, hyper, sliding-gated, ring and pipeline-parallel programs, warm and restored
+primes, and the dspark path. A tap a GDN route did not fill (a padded prime, a captured prime
+graph) publishes no capture; the primed rows are the same either way. The tapped call runs the unfused out-norm (`gdn_scan_prefill` then
 `gated_rmsnorm_f8f4v2`, bit-identical to the K4+K5 out-norm kernel by lever 4's gate) because the
 fused kernel writes its activation's k-major scale plane by absolute token column.
 
@@ -75,16 +81,22 @@ without the fused out-norm at about 0.9 ms each, 48 SSM state copies of 3 MB, 96
 
 | prompt tokens | tail call | fold cost | net | of TTFT (main) |
 |---:|---:|---:|---:|---:|
-| 32,768 | 0.257 s | ~0.06 s | ~0.20 s | ~0.9% |
-| 131,072 | 0.460 s | ~0.10 s | ~0.36 s | ~0.3% |
+| 32,784 (stop 32,768) | 0.257 s | | 0 | 0 |
+| 131,051 (stop 131,008) | 0.460 s | ~0.10 s | ~0.36 s | ~0.3% |
 | 260,000 | ~0.68 s | ~0.13 s | ~0.55 s | ~0.18% |
+
+The 32k bench prompt's stop is 8 x 4,096, a call boundary, so it keeps the split. A stop that is the
+last turn marker rounded down to the 32-row grid lands on a 4,096-row boundary about once in 128
+prompts.
 
 ## Gates
 
-- A bit-compare cell on the 27B (kernel-check): prime one prompt split at `b` and folded, for `b` in
-  the last call, `b` on a 4,096-row call boundary, and tails of 16 and 43 rows. Compare every hidden
-  row, the final logits, the logits at `b - 1`, the KV bytes of rows `[0, n)`, the capture's conv
-  and SSM bytes, and its `kv_len` and `pos`.
+- `prime-fold-gate` on the 27B: prime one prompt split at `b` and folded, for the served 131k shape
+  (4,032 rows into a 4,075-row last call, 43 after), the stop between two 64-row tiles, 32 rows into
+  a call, a 16-row tail, one call, and a middle call whose tail crosses into the next. Compare every
+  hidden row, the final logits, the logits at `b - 1`, the KV bytes of every layer's rows, the
+  capture's conv and SSM bytes, `kv_len` and `pos`, and the final recurrent state; and check that a
+  stop on a call boundary is refused.
 - Served A/B B T T B B T at 32k / 131k / 260k with the text fingerprints, plus the prefix-cache
   restore: a second turn that extends the first, restored from each arm's capture, gives the same
   answer.
