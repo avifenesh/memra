@@ -14,22 +14,21 @@
 //!
 //! The engine boundary is the runner's rank group (`dsv41_gpu::tp::Group`): the route speaks
 //! `Runner::forward` / `Runner::logits` over `Seq`s and never a card, and every residency choice
-//! lives in `bring_up`. `MEMRA_DSV41_DEVICES` names the ranks; an N-rank resident engine sits
-//! behind the same session, sampler, stop and encoding layer.
+//! lives in `bring_up`. `MEMRA_DSV41_DEVICES` names the ranks; the session, sampler, stop and
+//! encoding layer is the same over either residency.
 //!
-//! Residency, on the cards (`MEMRA_DSV41_RESIDENCY=cards`, or chosen when every card's free
-//! memory holds its ranks' shares: four 96 GB cards at N=4). Each rank loads its share of every
-//! trunk layer and the head once at startup (`Runner::load_resident`), the boot prints each
-//! card's budget and refuses when the weights and one full prefill slice's request do not fit,
-//! and the memory book admits requests against what the load left with the runner's N-rank
-//! arithmetic (`decode::prefill_workspace_bytes`, `decode::seq_state_bytes`).
-//!
-//! Residency, in host memory (one card, or cards too small for the shares). Every trunk layer's
-//! own weights and the head stay on the card; the routed experts live in pinned host memory
+//! Residency follows the cards (`experts_on_card`). Where every rank's routed experts fit its
+//! card (four ranks on four 96 GB cards), the whole trunk and the head load onto the ranks at
+//! start and stay (`Runner::load_resident`: each card's budget printed, the boot refused when
+//! the weights and one full prefill slice's request do not fit): no host store, no cache, and
+//! the memory book admits requests against what the weights leave free with the runner's N-rank
+//! arithmetic (`decode::prefill_workspace_bytes`, `decode::seq_state_bytes`). Where they do not
+//! (one card), every trunk layer's own weights and the head stay
+//! on the card and the routed experts live in pinned host memory
 //! (`dsv41_gpu::experts::HostExperts`) behind each rank's device LRU cache, which fills the free
 //! memory and gives back slabs, least recently used first, when a prompt's prefill needs the
 //! room. The cache moves bytes, never values: a slot holds the checkpoint's MXFP4 expert as
-//! stored and the MoE's tile GEMMs read it through a table of the slots.
+//! stored and the grouped GEMMs read it through the same table.
 //!
 //! Batching. Up to `MEMRA_MAX_SESSIONS` requests run at once. Each step is one runner forward
 //! with at most one new prompt's prefill call and one decode call per running request; the runner
@@ -73,11 +72,6 @@ const PREFILL_CHUNK: usize = 8192;
 /// granularity and the per-layer temporaries the shape model does not list (mixes, the MoE plan
 /// tables, index rows). Every forward logs the pool's high-water mark against the model.
 const MARGIN_BYTES: u64 = 1 << 30;
-/// An upper bound of a rank's own weights (attention, compressors, indexers, routers, shared
-/// experts, mHC, Engram projections, head): the one-card route holds 9,863,726,528 bytes of
-/// them, and a rank of N holds a share of the split ones. Only the residency choice reads it;
-/// the load itself measures.
-const OWN_WEIGHTS_BYTES: u64 = 10 << 30;
 
 /// The V4.1 parser-closing stop, kept in the stream like the DSv4 close.
 const DSML_V41_CLOSE: &str = "</\u{ff5c}DSML\u{ff5c} calls>";
@@ -282,9 +276,6 @@ struct EngineCfg {
     dir: PathBuf,
     tok: Arc<Tokenizer>,
     devices: Vec<usize>,
-    /// `MEMRA_DSV41_RESIDENCY`: the routed experts on the cards (`Some(true)`), in pinned host
-    /// memory behind the expert caches (`Some(false)`), or chosen from the cards' free memory
-    residency: Option<bool>,
     /// `MEMRA_DSV41_TRUNK_LAYERS`: a shortened trunk (a rehearsal of the memory book and the
     /// serving loop on fewer cards; the answers are not the checkpoint's)
     trunk_layers: Option<usize>,
@@ -292,18 +283,6 @@ struct EngineCfg {
     max_seq: usize,
     sessions: usize,
     eos: u32,
-}
-
-/// `MEMRA_DSV41_RESIDENCY`: `cards`, `host`, or `auto` (unset).
-fn resolve_residency(raw: Option<&str>) -> Result<Option<bool>, String> {
-    match raw.map(str::trim) {
-        None | Some("") | Some("auto") => Ok(None),
-        Some("cards") => Ok(Some(true)),
-        Some("host") => Ok(Some(false)),
-        Some(x) => Err(format!(
-            "MEMRA_DSV41_RESIDENCY {x:?} is not auto, cards or host"
-        )),
-    }
 }
 
 /// `MEMRA_DSV41_TRUNK_LAYERS`: a positive layer count, or unset for the checkpoint's trunk.
@@ -361,7 +340,6 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv41Model, S
     })?;
     let devices = resolve_devices(std::env::var("MEMRA_DSV41_DEVICES").ok().as_deref())?;
     v41::Part::check(&g, devices.len())?;
-    let residency = resolve_residency(std::env::var("MEMRA_DSV41_RESIDENCY").ok().as_deref())?;
     let trunk_layers =
         resolve_trunk_layers(std::env::var("MEMRA_DSV41_TRUNK_LAYERS").ok().as_deref())?;
     let token_map = std::env::var_os("MEMRA_DSV41_TOKEN_MAP")
@@ -390,7 +368,6 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv41Model, S
         dir: dir.to_path_buf(),
         tok: tok.clone(),
         devices,
-        residency,
         trunk_layers,
         token_map,
         max_seq,
@@ -498,8 +475,8 @@ impl Drop for ExitLatch {
     }
 }
 
-/// The detokenized stream of one request and its stop rules (the DSv4 route's `Emit` law on an
-/// owned request: the same stop-string scan, EOS, stop ids and budget).
+/// The detokenized stream of one request and its stop rules: EOS, stop ids, the budget, and stop
+/// strings through the DSv4 route's scan, with a client's stop sent whole ([`stop_end`]).
 struct Stream {
     tok: Arc<Tokenizer>,
     tx: EventSender,
@@ -526,7 +503,7 @@ impl Stream {
         }
         self.ids.push(id);
         let full = self.tok.decode(&self.ids);
-        let cut = scan_stop_cut_with(&self.text, &full, &self.stops, &[DSML_V41_CLOSE]);
+        let cut = stop_end(&self.text, &full, &self.stops);
         let start = snap(&full, self.text.len());
         if let Some(abs) = cut {
             let delta = full[start..snap(&full, abs)].to_string();
@@ -564,6 +541,20 @@ impl Stream {
             spec: None,
         });
     }
+}
+
+/// Where the stream ends when a stop string completes in `full`, whose first `text.len()` bytes
+/// are already sent (None: no stop). A client's stop ends it after the whole token, the worker's
+/// law: the HTTP layer finds the complete stop text and cuts there (`truncate_at_stop`, the
+/// stream scrubber), so a stop that straddles two tokens leaves no prefix of itself in the
+/// answer. The parser-closing DSML stop alone ends the stream at its close.
+fn stop_end(text: &str, full: &str, stops: &[String]) -> Option<usize> {
+    let cut = scan_stop_cut_with(text, full, stops, &[DSML_V41_CLOSE])?;
+    let client = stops
+        .iter()
+        .filter(|s| s.as_str() != DSML_V41_CLOSE)
+        .any(|s| scan_stop_cut_with(text, full, std::slice::from_ref(s), &[]).is_some());
+    Some(if client { full.len() } else { cut })
 }
 
 /// A request the route is serving.
@@ -696,19 +687,14 @@ impl Book {
     /// largest decode call), plus the margin.
     fn state(&self, cap: usize) -> u64 {
         match &self.resident {
-            Some((g, _)) => {
-                memra_engine::dsv41_gpu::decode::seq_state_bytes(g, self.model.layers, cap) as u64
-            }
+            Some((g, _)) => v41::decode::seq_state_bytes(g, self.model.layers, cap) as u64,
             None => self.model.state_bytes(cap),
         }
     }
 
     fn prefill(&self, s: usize) -> u64 {
         match &self.resident {
-            Some((g, n)) => {
-                memra_engine::dsv41_gpu::decode::prefill_workspace_bytes(g, *n, s, self.model.chunk)
-                    as u64
-            }
+            Some((g, n)) => v41::decode::prefill_workspace_bytes(g, *n, s, self.model.chunk) as u64,
             None => self.model.prefill_bytes(s),
         }
     }
@@ -840,8 +826,6 @@ struct Up<'a> {
     rn: Runner<'a>,
     book: Book,
     max_slots: usize,
-    /// the routed experts are on the cards (no expert cache to grow or shrink)
-    resident: bool,
 }
 
 fn bring_up<'a>(
@@ -876,85 +860,56 @@ fn bring_up<'a>(
         0,
         PREFILL_CHUNK,
     )?;
-    let n = cfg.devices.len();
     let slot = Layout::of(&g).bytes as u64;
-    let per_rank = (g.n_experts / n) as u64;
-    let model = MemModel::of(&g, trunk, PREFILL_CHUNK);
-    let devs = rn.device_ranks();
+    let per_rank = (g.n_experts / cfg.devices.len()) as u64;
+    // a rank's routed experts, all layers
+    let routed = trunk as u64 * per_rank * slot;
+    let mut free = Vec::new();
+    for c in &rn.grp.cx {
+        free.push(v41::experts::device_memory(&c.ops)?.0);
+    }
+    let on_card = experts_on_card(routed, &cfg.devices, &free);
+    let n = cfg.devices.len();
     let gib = |b: u64| b as f64 / (1u64 << 30) as f64;
-    // one prompt of a full prefill slice must fit beside the weights on every rank
-    let first = PREFILL_CHUNK.min(cfg.max_seq.saturating_sub(1)).max(1);
-    let on_cards = match cfg.residency {
-        Some(x) => x,
-        None => {
-            // a rank's share of the routed experts plus its own weights (at most the one-card
-            // route's, OWN_WEIGHTS_BYTES), against what each card has free now
-            let rank_bytes = trunk as u64 * per_rank * slot + OWN_WEIGHTS_BYTES;
-            let mem = rn.device_mem()?;
-            let need_one = v41::decode::prefill_workspace_bytes(&g, n, first, PREFILL_CHUNK) as u64
-                + v41::decode::seq_state_bytes(&g, trunk, first + 1) as u64
-                + MARGIN_BYTES;
-            let fits = devs.iter().all(|(_, ranks)| {
-                (rank_bytes + need_one) * ranks.len() as u64 <= mem[ranks[0]].0 as u64
-            });
-            eprintln!(
-                "[dsv41-serve] {}: residency auto: {:.1} GiB of weights a rank and {:.1} GiB for a \
-                 {first}-token prompt, {} rank(s) a card, {:.1} GiB free on the fullest card: {}",
-                cfg.name,
-                gib(rank_bytes),
-                gib(need_one),
-                devs.iter().map(|x| x.1.len()).max().unwrap_or(1),
-                devs.iter()
-                    .map(|(_, r)| gib(mem[r[0]].0 as u64))
-                    .fold(f64::INFINITY, f64::min),
-                if fits {
-                    "the routed experts go on the cards"
-                } else {
-                    "the routed experts stay in pinned host memory"
-                }
-            );
-            fits
-        }
-    };
-    let (book, max_slots) = if on_cards {
+    // a rank's ceiling when the trunk is resident: its card's free memory after the load, shared
+    // by the card's ranks
+    let mut left = vec![0u64; n];
+    let (resident, floor_cache, max_slots) = if on_card {
+        // the whole trunk and the head on the ranks, loaded now: one prompt of a full prefill
+        // slice must still fit beside them on every rank, or the load refuses before it runs out
+        let first = PREFILL_CHUNK.min(cfg.max_seq.saturating_sub(1)).max(1);
         let reserve_rank = v41::decode::prefill_workspace_bytes(&g, n, first, PREFILL_CHUNK)
             + v41::decode::seq_state_bytes(&g, trunk, first + 1)
             + MARGIN_BYTES as usize;
-        let most = devs.iter().map(|x| x.1.len()).max().unwrap_or(1);
-        let rep = rn.load_resident(trunk, reserve_rank * most).map_err(|e| {
-            format!("{e} (MEMRA_DSV41_RESIDENCY=host keeps the routed experts in host memory)")
-        })?;
-        // a rank's ceiling: its card's free memory after the load, shared by the card's ranks
-        let mut ceiling = vec![0u64; n];
+        let most = rn
+            .device_ranks()
+            .iter()
+            .map(|x| x.1.len())
+            .max()
+            .unwrap_or(1);
+        let rep = rn.load_resident(trunk, reserve_rank * most)?;
+        let mut resident = vec![0u64; n];
         for b in &rep.devices {
             for &r in &b.ranks {
-                ceiling[r] = (b.free_after / b.ranks.len()) as u64;
+                left[r] = (b.free_after / b.ranks.len()) as u64;
+                resident[r] = (b.resident / b.ranks.len()) as u64;
             }
             eprintln!(
                 "[dsv41-serve] {}: card {} ranks {:?}: weights {:.2} GiB resident ({:.2} GiB a \
-                 rank), {:.2} GiB of {:.2} GiB left for requests ({:.2} GiB a rank)",
+                 rank) in {:.1}s, {:.2} GiB of {:.2} GiB left for requests ({:.2} GiB a rank)",
                 cfg.name,
                 b.device,
                 b.ranks,
                 gib(b.resident as u64),
                 gib((b.resident / b.ranks.len()) as u64),
+                rep.load_s,
                 gib(b.free_after as u64),
                 gib(b.total as u64),
                 gib((b.free_after / b.ranks.len()) as u64),
             );
         }
-        eprintln!(
-            "[dsv41-serve] {}: {n} rank(s) on devices {:?}; {trunk} layers and the head resident, \
-             loaded in {:.1}s; max_seq {}; {} session(s); prefill slices of {PREFILL_CHUNK} rows",
-            cfg.name, cfg.devices, rep.load_s, cfg.max_seq, cfg.sessions,
-        );
-        let book = Book {
-            model,
-            ceiling,
-            floor_cache: 0,
-            resident: Some((g.clone(), n)),
-        };
-        (book, 0)
+        warm_up(&mut rn, cfg)?;
+        (resident, 0, 0)
     } else {
         let threads = std::thread::available_parallelism().map_or(8, |n| n.get());
         let ctx = rn.grp.cx[0].ops.st.context().clone();
@@ -965,45 +920,61 @@ fn bring_up<'a>(
             cfg.name, host.bytes, host.fill_s
         );
         let resident = rn.experts_off_card(host)?;
-        let mut ceiling = Vec::new();
-        for c in &rn.grp.cx {
-            ceiling.push(v41::experts::device_memory(&c.ops)?.0);
-        }
-        let floor_cache = per_rank.div_ceil(v41::experts::SLAB_SLOTS as u64)
+        // one slice can route to every expert of the rank's range: the cache never goes below
+        // that; every routed expert of every layer on one rank is the most it can ever use
+        let floor = per_rank.div_ceil(v41::experts::SLAB_SLOTS as u64)
             * v41::experts::SLAB_SLOTS as u64
             * slot;
-        let book = Book {
-            model,
-            ceiling,
-            floor_cache,
-            resident: None,
-        };
-        // every routed expert of every layer on one rank is the most the cache can ever use
-        let max_slots = trunk * per_rank as usize;
-        let slots = rn.grow_caches(book.live_need(&[], None), max_slots)?;
-        eprintln!(
-            "[dsv41-serve] {}: {} rank(s) on devices {:?}; resident weights {resident:?} bytes per rank; \
-             ceiling {:?} bytes; expert cache {slots:?} slots of {slot} bytes (floor {} slots, all \
-             {max_slots}); max_seq {}; {} session(s); prefill slices of {PREFILL_CHUNK} rows",
-            cfg.name,
-            rn.grp.n(),
-            cfg.devices,
-            book.ceiling,
-            per_rank,
-            cfg.max_seq,
-            cfg.sessions,
-        );
-        (book, max_slots)
+        (resident, floor, trunk * per_rank as usize)
     };
+    let mut ceiling = Vec::new();
+    for (c, &l) in rn.grp.cx.iter().zip(&left) {
+        ceiling.push(if on_card {
+            l
+        } else {
+            v41::experts::device_memory(&c.ops)?.0
+        });
+    }
+    let book = Book {
+        model: MemModel::of(&g, trunk, PREFILL_CHUNK),
+        ceiling,
+        floor_cache,
+        resident: on_card.then(|| (g.clone(), n)),
+    };
+    let slots = if on_card {
+        Vec::new()
+    } else {
+        rn.grow_caches(book.live_need(&[], None), max_slots)?
+    };
+    eprintln!(
+        "[dsv41-serve] {}: {} rank(s) on devices {:?}; routed experts {}; resident weights \
+         {resident:?} bytes per rank; ceiling {:?} bytes; expert cache {slots:?} slots of {slot} \
+         bytes (floor {} slots, all {max_slots}); max_seq {}; {} session(s); prefill slices of \
+         {PREFILL_CHUNK} rows",
+        cfg.name,
+        rn.grp.n(),
+        cfg.devices,
+        if on_card {
+            "on the cards"
+        } else {
+            "in pinned host memory"
+        },
+        book.ceiling,
+        if on_card { 0 } else { per_rank },
+        cfg.max_seq,
+        cfg.sessions,
+    );
+    if !on_card {
+        warm_up(&mut rn, cfg)?;
+    }
     // what the memory book admits with the route idle: the longest session, and how many
     // sessions of the benchmark's shapes at once
-    let longest = book.largest_fit(cfg.max_seq);
     eprintln!(
         "[dsv41-serve] {}: capacity: the longest session with the route idle is {} positions \
          (max_seq {}); at once: {} sessions of 1,536 positions (1,024-token prompts), {} of 4,608 \
          (4,096-token prompts), {} of 32,768, {} of 131,072; MEMRA_MAX_SESSIONS {}",
         cfg.name,
-        longest.min(cfg.max_seq),
+        book.largest_fit(cfg.max_seq).min(cfg.max_seq),
         cfg.max_seq,
         book.sessions_fit(1024, 1536, 4096),
         book.sessions_fit(4096, 4608, 4096),
@@ -1015,7 +986,28 @@ fn bring_up<'a>(
         ),
         cfg.sessions,
     );
-    // warm the program once: a two-token prompt and one decode call, freed after
+    Ok(Up {
+        rn,
+        book,
+        max_slots,
+    })
+}
+
+/// Whether every rank's routed experts (`routed` bytes a rank, all layers) fit the cards: a card
+/// carrying k ranks needs k times that inside its free memory (`free[r]` is rank r's card, before
+/// any weight loads). When they fit the trunk is resident; a rank's own weights and the sessions
+/// must then fit the rest, and a load that does not says so. When they do not, the experts stay
+/// in pinned host memory behind the device cache.
+fn experts_on_card(routed: u64, devices: &[usize], free: &[u64]) -> bool {
+    devices.iter().zip(free).all(|(d, &f)| {
+        let ranks = devices.iter().filter(|x| *x == d).count() as u64;
+        routed.saturating_mul(ranks) <= f
+    })
+}
+
+/// Run the program once, a two-token prompt and one decode call, freed after. With the trunk
+/// resident this is also what loads every layer's share and the head.
+fn warm_up(rn: &mut Runner, cfg: &EngineCfg) -> Result<(), String> {
     let mut seqs = vec![rn.seq_with_capacity(8)];
     let probe = vec![cfg.eos, cfg.eos];
     let t = Instant::now();
@@ -1044,12 +1036,7 @@ fn bring_up<'a>(
         cfg.name,
         t.elapsed().as_secs_f64()
     );
-    Ok(Up {
-        rn,
-        book,
-        max_slots,
-        resident: on_cards,
-    })
+    Ok(())
 }
 
 fn pool_peak_reset(rn: &Runner) {
@@ -1324,7 +1311,7 @@ fn serve_loop(
             finish(a, health);
         }
         // the prefill's transient is gone: let the cache take the free memory back
-        if pending.is_empty() && !up.resident {
+        if pending.is_empty() && up.rn.offloaded() {
             let running: Vec<usize> = act.iter().map(|a| a.cap).collect();
             let reserve = up.book.live_need(&running, None);
             if let Err(e) = up.rn.grow_caches(reserve, up.max_slots) {
@@ -1436,6 +1423,28 @@ mod tests {
     }
 
     #[test]
+    fn residency_follows_whether_the_routed_experts_fit_the_cards() {
+        // the 1017 checkpoint: 40 layers of 384 routed experts of 18,800,640 bytes
+        let all = 40 * 384 * 18_800_640u64;
+        assert_eq!(all, 288_777_830_400);
+        let card = 95u64 << 30;
+        // one card: 289 GB of experts against 95 GiB free
+        assert!(!experts_on_card(all, &[0], &[card]));
+        // two cards: 144 GB a rank
+        assert!(!experts_on_card(all / 2, &[0, 1], &[card, card]));
+        // four cards: 72 GB a rank
+        assert!(experts_on_card(all / 4, &[0, 1, 2, 3], &[card; 4]));
+        // four ranks sharing one card need four shares of it
+        assert!(!experts_on_card(all / 4, &[0, 0, 0, 0], &[card; 4]));
+        // one busy card among four keeps the experts in host memory
+        assert!(!experts_on_card(
+            all / 4,
+            &[0, 1, 2, 3],
+            &[card, card, 60 << 30, card]
+        ));
+    }
+
+    #[test]
     fn the_state_book_matches_the_decode_lane_arithmetic() {
         let m = flash();
         // per layer a 128 KB ring; per group 1 KB of compressed KV and 256 B of index key a row,
@@ -1495,7 +1504,28 @@ mod tests {
     fn the_v41_dsml_close_stays_in_the_stream() {
         let stops = vec![DSML_V41_CLOSE.to_string()];
         let full = format!("x{DSML_V41_CLOSE}tail");
-        let cut = scan_stop_cut_with("x", &full, &stops, &[DSML_V41_CLOSE]).unwrap();
+        let cut = stop_end("x", &full, &stops).unwrap();
         assert_eq!(&full[..cut], format!("x{DSML_V41_CLOSE}"));
+    }
+
+    #[test]
+    fn a_client_stop_across_two_tokens_reaches_the_http_cut_whole() {
+        // the served case: stop `:"A` over the tokens `:"` (already sent) and `Au`
+        let stops = vec![":\"A".to_string(), DSML_V41_CLOSE.to_string()];
+        let sent = "{\"gold\":\"";
+        let full = "{\"gold\":\"Au";
+        // the shared scan cannot take sent text back: cutting there leaves `:"` in the answer
+        // and hides the stop from the HTTP layer
+        assert_eq!(
+            scan_stop_cut_with(sent, full, &stops, &[DSML_V41_CLOSE]),
+            Some(sent.len())
+        );
+        // the stream ends after the whole token; the HTTP layer's cut is then exact
+        let end = stop_end(sent, full, &stops).unwrap();
+        assert_eq!(end, full.len());
+        let at = full[..end].find(stops[0].as_str()).unwrap();
+        assert_eq!(&full[..at], "{\"gold\"");
+        // no stop in the text: the stream goes on
+        assert_eq!(stop_end(sent, "{\"gold\":\"Fe", &stops), None);
     }
 }
