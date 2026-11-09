@@ -2830,8 +2830,8 @@ pub struct Metrics {
     pub dspark_pool_grid_rewind_grows: u64,
     /// The spec pool under the grid law (memra#1093): exact or text hits on a recurrent trunk
     /// rewound to the session's on-grid turn checkpoint (a subset of spec_pool_hits); hits refused
-    /// because no on-grid checkpoint serves the prompt (the request primes cold); recurrent spec
-    /// retires freed instead of parked, holding no on-grid checkpoint.
+    /// because no on-grid checkpoint serves the prompt, or its restore failed (the request primes
+    /// cold); recurrent spec retires freed instead of parked, holding no on-grid checkpoint.
     pub spec_pool_grid_rewinds: u64,
     pub spec_pool_grid_declines: u64,
     pub spec_pool_grid_park_skips: u64,
@@ -3307,8 +3307,10 @@ struct ReuseMetrics {
     /// The spec pool under the grid law (memra#1093): exact or text hits on a recurrent trunk
     /// rewound to the session's on-grid turn checkpoint (a subset of `spec_hits`); exact, text
     /// or affinity hits refused because the session holds no on-grid checkpoint the prompt
-    /// extends by the prime floor (the request primes cold; not hits); and recurrent spec
-    /// retires freed instead of parked because they hold no on-grid checkpoint at all.
+    /// extends by the prime floor, or whose checkpoint restore failed (the request primes cold;
+    /// not hits; an affinity probe counts once when a candidate it would otherwise take was
+    /// refused and none resumed); and recurrent spec retires freed instead of parked because
+    /// they hold no on-grid checkpoint at all.
     spec_grid_rewinds: u64,
     spec_grid_declines: u64,
     spec_grid_park_skips: u64,
@@ -28492,13 +28494,22 @@ fn admit(
                 // memoization; a NEW request gets a fresh capture chance (transient VRAM
                 // pressure at park time must not become permanent coverage loss).
                 sess.reset_graph_fallback_on_resume();
-                // A RESUME IS A NEW REQUEST'S STREAM (memra#1093): the Philox event counters are
-                // (0,0) at admit, as on a cold session, so the boundary draw and every round draw
-                // the counters a cold prime of this prompt draws. Carrying the parked request's
-                // counters made a sampled warm turn leave the cold text even from an on-grid
-                // checkpoint (`research/spec-pool-grid-20261109/`, chat-story-open-t1).
-                sess.sctr = 0;
-                sess.uctr = 0;
+                // A RESUME THAT PRIMES IS A NEW REQUEST'S STREAM (memra#1093): the Philox event
+                // counters are (0,0) at admit, as on a cold session, so the boundary draw and every
+                // round draw the counters a cold prime of this prompt draws. Carrying the parked
+                // request's counters made a sampled warm turn leave the cold text even from an
+                // on-grid checkpoint (`research/spec-pool-grid-20261109/`, chat-story-open-t1).
+                // An empty-suffix continuation keeps them: it emits the stash the parked request
+                // drew at its counter, and restarting at 0 would reuse that draw's noise inside
+                // this response.
+                let resume_primes = match &text_suffix {
+                    Some(suffix) => !suffix.is_empty(),
+                    None => prompt.len() > sess.committed.len(),
+                };
+                if resume_primes {
+                    sess.sctr = 0;
+                    sess.uctr = 0;
+                }
                 spec_resumed = sess.committed.len();
                 match (affinity_rewound, grid_rewound) {
                     (Some((pos, tier)), _) => eprintln!(
@@ -32708,7 +32719,9 @@ fn step_session(
     // DISTRIBUTIONALLY exact instead: the rejection-sampling verify draws from the same
     // filtered/penalized target as plain sampled decode, but consumes its own Philox streams
     // (sess.sctr/uctr), so the token stream is reproducible per (seed, session) rather than
-    // byte-equal to a plain-sampled run. That is the contract, not a gap.
+    // byte-equal to a plain-sampled run. That is the contract, not a gap. A pool resume that
+    // primes restarts the counters at (0,0) (memra#1093), so a resumed turn draws what a cold
+    // session of the same prompt and seed draws.
     if s.vision.is_some() && s.spec.is_some() {
         // Backstop for the admit gate: a spec burst's turn-1 prime has no overlay seam,
         // so serving a vision session through it would silently prime pad embeddings
@@ -41921,9 +41934,9 @@ mod tests {
         assert!(squashed.contains(
             "&& cache_carries_recurrent(sess.cache_ref()) && let Some(why) = spec_checkpoint_grid_refusal(sess.rewind_pos(), sess.rewind_is_resident())"
         ));
-        // Every pool resume starts the request's Philox stream where a cold session does.
+        // A pool resume that primes starts the request's Philox stream where a cold session does.
         assert!(squashed.contains(
-            "sess.sctr = 0; sess.uctr = 0; spec_resumed = sess.committed.len(); match (affinity_rewound, grid_rewound) {"
+            "let resume_primes = match &text_suffix { Some(suffix) => !suffix.is_empty(), None => prompt.len() > sess.committed.len(), }; if resume_primes { sess.sctr = 0; sess.uctr = 0; } spec_resumed = sess.committed.len(); match (affinity_rewound, grid_rewound) {"
         ));
     }
 
