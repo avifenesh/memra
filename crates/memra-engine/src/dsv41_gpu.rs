@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 pub mod decode;
 pub mod engram;
+pub mod experts;
 pub mod tp;
 
 pub mod ffi {
@@ -1455,6 +1456,22 @@ impl LayerW {
         mint: bool,
         part: Part,
     ) -> Result<Self, String> {
+        Self::load_part_with(ops, stm, g, id, mint, part, true)
+    }
+
+    /// [`Self::load_part`], with this rank's routed experts on the card or (`routed` false) left
+    /// to an [`experts::ExpertCache`]: `experts` is then empty and the MoE resolves each slice's
+    /// experts through the rank's cache.
+    #[allow(clippy::too_many_arguments)]
+    pub fn load_part_with(
+        ops: &Ops,
+        stm: &StModel,
+        g: &Geo,
+        id: usize,
+        mint: bool,
+        part: Part,
+        routed: bool,
+    ) -> Result<Self, String> {
         Part::check(g, part.n)?;
         let heads = part.range(g.heads);
         let groups = part.range(g.o_groups);
@@ -1539,7 +1556,7 @@ impl LayerW {
         };
         let expert0 = experts.start;
         let mut experts_w = Vec::with_capacity(experts.len());
-        for e in experts {
+        for e in experts.filter(|_| routed) {
             let ep = format!("{p}.ffn.experts.{e}");
             experts_w.push([
                 load_fp4(ops, stm, &format!("{ep}.w1"), g.moe_inter, g.dim, mint)?,
@@ -1767,6 +1784,11 @@ pub struct Ctx {
     /// each rank a contiguous range and gathers the selection rows (`dsv41_gpu::tp`); the
     /// selection is per row, so the split never changes a result
     pub index_rows: Option<std::ops::Range<usize>>,
+    /// this rank's routed experts when the layers hold none ([`LayerW::load_part_with`])
+    pub experts: Option<experts::ExpertCache>,
+    /// positions a sequence's compressed KV and index keys are first sized for (the running
+    /// sequence's capacity, at most `max_pos`); a sequence that outgrows it doubles them
+    pub rows_hint: usize,
 }
 
 impl Ctx {
@@ -1801,6 +1823,8 @@ impl Ctx {
             max_pos,
             chunk: 8192,
             index_rows: None,
+            experts: None,
+            rows_hint: max_pos,
         })
     }
 
@@ -1945,7 +1969,7 @@ impl Ctx {
             &mut sh.index_k_cap,
             row0 + nrows,
             rb,
-            self.max_pos / ratio,
+            self.rows_hint.min(self.max_pos) / ratio,
         )?;
         let kp = sh.index_k.as_ref().unwrap().at(&st, row0 * rb);
         self.ops
@@ -2418,7 +2442,7 @@ impl Ctx {
                     &mut sh.compress_cap,
                     row0 + nrows,
                     hd * 2,
-                    self.max_pos / ratio,
+                    self.rows_hint.min(self.max_pos) / ratio,
                 )?;
                 copy_d2d(
                     &self.ops,
@@ -2624,6 +2648,12 @@ impl Ctx {
     /// MoE (vendor `MoE.forward`): the sqrtsoftplus gate with its selection bias, routed MXFP4
     /// (or minted NVFP4) experts in ascending id order, the shared FP8 expert, bf16 out.
     fn moe(&mut self, lw: &LayerW, x: Dp, s: usize, out: Dp, tr: &mut Trace) -> Result<(), String> {
+        if lw.experts.len() != self.g.n_experts {
+            return Err(
+                "the per-expert MoE runs a whole layer's experts; cached experts run in dsv41_gpu::tp"
+                    .into(),
+            );
+        }
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let ne = g.n_experts;

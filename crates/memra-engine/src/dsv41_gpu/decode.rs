@@ -33,9 +33,11 @@
 //! bytes.
 
 use super::engram::EngramConsts;
+use super::experts::{CacheStats, ExpertCache, HostExperts};
 use super::tp::Group;
-use super::{BW, Buf, Geo, LayerState, LayerW, Shared, Trace};
+use super::{BW, Buf, Geo, LayerState, LayerW, Part, Shared, Trace};
 use memra_gguf::safetensors::StModel;
+use std::sync::Arc;
 use std::time::Instant;
 
 /// One call: the next tokens of sequence `seq` (the whole prompt at position 0, then one token).
@@ -58,6 +60,8 @@ pub struct Out {
 pub struct Seq {
     /// the tokens in the cache, in order
     pub ids: Vec<u32>,
+    /// positions its compressed KV and index keys are sized for at their first allocation
+    pub cap: usize,
     /// `[layer][rank]`: window ring and the ratio-2 compressor's open group
     ls: Vec<Vec<LayerState>>,
     /// `[kv source][rank]`: each kv-source group's compressed KV and index keys
@@ -85,7 +89,8 @@ pub struct Stats {
 }
 
 /// The trunk on a rank group, its weights streamed per forward from the checkpoint mmap (the
-/// first `keep` layers kept on the card once loaded).
+/// first `keep` layers kept on the card once loaded), or, after [`Runner::experts_off_card`],
+/// every layer's own weights resident and the routed experts behind each rank's expert cache.
 pub struct Runner<'a> {
     pub grp: Group,
     pub g: Geo,
@@ -97,6 +102,8 @@ pub struct Runner<'a> {
     keep: usize,
     resident: Vec<Option<Vec<LayerW>>>,
     head: Option<(Vec<Buf>, Vec<BW>)>,
+    /// the routed experts in pinned host memory, when they are off the card
+    host: Option<Arc<HostExperts>>,
     pub stats: Stats,
 }
 
@@ -137,25 +144,152 @@ impl<'a> Runner<'a> {
             keep: keep.min(n_layers),
             resident: (0..n_layers).map(|_| None).collect(),
             head: None,
+            host: None,
             stats: Stats::default(),
         })
     }
 
     /// Keep the first `keep` layers on the card from the next forward on (fewer: free the rest).
     /// A long prompt's prefill wants the memory; the decode forwards after it want the layers.
+    /// With the experts off the card every layer stays resident and this does nothing.
     pub fn set_keep(&mut self, keep: usize) {
+        if self.host.is_some() {
+            return;
+        }
         self.keep = keep.min(self.n_layers);
         for w in self.resident.iter_mut().skip(self.keep) {
             *w = None;
         }
     }
 
-    /// An empty sequence for this runner's ranks and layers.
+    /// The single-card residency: load every trunk layer's own weights (attention, compressor,
+    /// indexer, router, shared expert, mHC, Engram projections) and the head onto the card for
+    /// good, leave the routed experts in `host`, and give each rank an expert cache of its range
+    /// with no slabs yet ([`Self::grow_caches`] sizes them). Returns the device bytes the
+    /// resident weights took on each rank.
+    pub fn experts_off_card(&mut self, host: Arc<HostExperts>) -> Result<Vec<u64>, String> {
+        if host.n_layers < self.n_layers || host.n_experts != self.g.n_experts {
+            return Err(format!(
+                "the host store holds {} layers of {} experts; the runner needs {} of {}",
+                host.n_layers, host.n_experts, self.n_layers, self.g.n_experts
+            ));
+        }
+        let g = self.g.clone();
+        let n = self.grp.n();
+        let mut before = Vec::with_capacity(n);
+        for c in &self.grp.cx {
+            before.push(super::experts::device_memory(&c.ops)?.0);
+        }
+        for li in 0..self.n_layers {
+            self.resident[li] = Some(self.grp.load_layer_with(self.stm, &g, li, false, false)?);
+        }
+        if self.head.is_none() {
+            self.head = Some(self.grp.load_head(self.stm, &g)?);
+        }
+        self.keep = self.n_layers;
+        // one slice can route to every expert of the rank's range: that many slots is the floor
+        let per_rank = g.n_experts / n;
+        for (r, c) in self.grp.cx.iter_mut().enumerate() {
+            debug_assert_eq!(Part { rank: r, n }.range(g.n_experts).len(), per_rank);
+            c.experts = Some(ExpertCache::new(&c.ops, host.clone(), per_rank)?);
+        }
+        self.host = Some(host);
+        let mut used = Vec::with_capacity(n);
+        for (c, b) in self.grp.cx.iter().zip(before) {
+            used.push(b.saturating_sub(super::experts::device_memory(&c.ops)?.0));
+        }
+        Ok(used)
+    }
+
+    /// Whether the routed experts are off the card.
+    pub fn offloaded(&self) -> bool {
+        self.host.is_some()
+    }
+
+    /// Grow every rank's expert cache into its effective free memory less `reserve` bytes, up to
+    /// `max_slots` slots per rank (at least the floor). Returns the slots per rank.
+    pub fn grow_caches(&mut self, reserve: u64, max_slots: usize) -> Result<Vec<usize>, String> {
+        let mut out = Vec::with_capacity(self.grp.n());
+        for c in self.grp.cx.iter_mut() {
+            let (free, _) = super::experts::device_memory(&c.ops)?;
+            let budget = free.saturating_sub(reserve) as usize;
+            let Some(cache) = c.experts.as_mut() else {
+                return Err("the experts are on the card: no expert cache".into());
+            };
+            cache.grow(&c.ops, budget, max_slots)?;
+            if cache.slots() < cache.floor_slots {
+                return Err(format!(
+                    "the expert cache needs {} slots ({} bytes) for one slice and {} fit beside the \
+                     resident weights and the {reserve}-byte reserve",
+                    cache.floor_slots,
+                    cache.floor_slabs() * cache.slab_bytes(),
+                    cache.slots()
+                ));
+            }
+            out.push(cache.slots());
+        }
+        Ok(out)
+    }
+
+    /// Give back expert-cache slabs on every rank until each has `need` effective free bytes, or
+    /// only the floor is left. Returns each rank's effective free bytes after.
+    pub fn make_room(&mut self, need: u64) -> Result<Vec<u64>, String> {
+        let mut out = Vec::with_capacity(self.grp.n());
+        for c in self.grp.cx.iter_mut() {
+            let (free, _) = super::experts::device_memory(&c.ops)?;
+            if free < need
+                && let Some(cache) = c.experts.as_mut()
+            {
+                cache.release(&c.ops, (need - free) as usize)?;
+            }
+            out.push(super::experts::device_memory(&c.ops)?.0);
+        }
+        Ok(out)
+    }
+
+    /// Every rank's expert-cache counters, summed, and the slots per rank.
+    pub fn cache_stats(&self) -> (CacheStats, Vec<usize>) {
+        let mut st = CacheStats::default();
+        let mut slots = Vec::new();
+        for c in &self.grp.cx {
+            if let Some(cache) = c.experts.as_ref() {
+                st.add(&cache.stats);
+                slots.push(cache.slots());
+            }
+        }
+        (st, slots)
+    }
+
+    /// The device bytes the cache can give back on each rank (its slabs above the floor).
+    pub fn cache_reclaimable(&self) -> Vec<u64> {
+        self.grp
+            .cx
+            .iter()
+            .map(|c| {
+                c.experts.as_ref().map_or(0, |cache| {
+                    (cache
+                        .slots()
+                        .saturating_sub(cache.floor_slabs() * super::experts::SLAB_SLOTS)
+                        * cache.slab_bytes()
+                        / super::experts::SLAB_SLOTS) as u64
+                })
+            })
+            .collect()
+    }
+
+    /// An empty sequence for this runner's ranks and layers, its caches sized for `max_pos`.
     pub fn seq(&self) -> Seq {
+        self.seq_with_capacity(self.max_pos)
+    }
+
+    /// An empty sequence whose compressed KV and index keys are first allocated for `cap`
+    /// positions (allocation only: a sequence that outgrows it doubles them, as before).
+    pub fn seq_with_capacity(&self, cap: usize) -> Seq {
         let n = self.grp.n();
         let per_rank =
             |_: usize| -> Vec<LayerState> { (0..n).map(|_| LayerState::default()).collect() };
         Seq {
+            cap: cap.clamp(1, self.max_pos),
             ids: Vec::new(),
             ls: (0..self.n_layers).map(per_rank).collect(),
             store: (0..self.g.kv_sources.len())
@@ -262,13 +396,21 @@ impl<'a> Runner<'a> {
             .map(|_| (0..n).map(|_| Shared::default()).collect())
             .collect();
         let mut tr: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
+        let rows: usize = pos.iter().map(|&(_, s)| s).sum();
         for li in 0..self.n_layers {
             let tl = Instant::now();
-            let lw = match self.resident[li].take() {
+            // a resident layer is borrowed, so an error part-way never loses it
+            let mut streamed: Option<Vec<LayerW>> = None;
+            let lw: &Vec<LayerW> = match self.resident[li].as_ref() {
                 Some(w) => w,
+                None if self.host.is_some() => {
+                    return Err(format!(
+                        "layer {li} is not resident with the experts off the card"
+                    ));
+                }
                 None => {
                     self.stats.layers_loaded += 1;
-                    self.grp.load_layer(self.stm, &g, li, false)?
+                    streamed.insert(self.grp.load_layer(self.stm, &g, li, false)?)
                 }
             };
             self.stats.load_s += tl.elapsed().as_secs_f64();
@@ -302,8 +444,11 @@ impl<'a> Runner<'a> {
                         f.swap_group(st);
                     }
                 }
+                for cx in self.grp.cx.iter_mut() {
+                    cx.rows_hint = q.cap;
+                }
                 let res = self.grp.block_forward(
-                    &lw,
+                    lw,
                     &h[ci],
                     &pre[ci],
                     sp,
@@ -322,8 +467,12 @@ impl<'a> Runner<'a> {
                 pre[ci] = p2;
             }
             self.stats.run_s += tr0.elapsed().as_secs_f64();
-            if li < self.keep {
-                self.resident[li] = Some(lw);
+            // a serving thread's progress sink sees every layer pass of the forward's rows
+            crate::progress::note_prime_rows(rows);
+            if let Some(w) = streamed
+                && li < self.keep
+            {
+                self.resident[li] = Some(w);
             }
         }
         self.stats.forwards += 1;

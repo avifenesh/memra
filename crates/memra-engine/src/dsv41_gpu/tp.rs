@@ -415,6 +415,19 @@ impl Group {
         id: usize,
         mint: bool,
     ) -> Result<Vec<LayerW>, String> {
+        self.load_layer_with(stm, g, id, mint, true)
+    }
+
+    /// [`Self::load_layer`]; with `routed` false the shares leave their routed experts to the
+    /// ranks' expert caches ([`LayerW::load_part_with`]).
+    pub fn load_layer_with(
+        &self,
+        stm: &StModel,
+        g: &Geo,
+        id: usize,
+        mint: bool,
+        routed: bool,
+    ) -> Result<Vec<LayerW>, String> {
         let n = self.n();
         let ops: Vec<&super::Ops> = self.cx.iter().map(|c| &c.ops).collect();
         std::thread::scope(|sc| {
@@ -423,7 +436,9 @@ impl Group {
                 .enumerate()
                 .map(|(r, o)| {
                     let o: &super::Ops = o;
-                    sc.spawn(move || LayerW::load_part(o, stm, g, id, mint, Part { rank: r, n }))
+                    sc.spawn(move || {
+                        LayerW::load_part_with(o, stm, g, id, mint, Part { rank: r, n }, routed)
+                    })
                 })
                 .collect();
             hs.into_iter()
@@ -667,10 +682,29 @@ impl Group {
             let st = c.ops.st.clone();
             let x = x2[r].at(&st, r0 * d * 2);
             let sl = c.ops.buf(np * d * 2)?;
-            if p1 > p0 {
-                c.experts_grouped(&lw[r], x, &plan, er, sl.at(&st, p0 * d * 2))?;
-            }
+            // experts off the card: queue the misses' copies first, so they overlap the shared
+            // expert (an independent output; launch order never changes a value)
+            let bases = if lw[r].experts.is_empty() && p1 > p0 {
+                let need: Vec<usize> = er.clone().filter(|&e| plan.cnt[e] > 0).collect();
+                let cache = c
+                    .experts
+                    .as_mut()
+                    .ok_or("the layer holds no routed experts and the rank has no expert cache")?;
+                Some(cache.resolve(&c.ops, lw[r].id, &need)?)
+            } else {
+                None
+            };
             shared_out.push(c.shared_expert(&lw[r], x, rows)?);
+            if p1 > p0 {
+                c.experts_grouped(
+                    &lw[r],
+                    x,
+                    &plan,
+                    er,
+                    sl.at(&st, p0 * d * 2),
+                    bases.as_deref(),
+                )?;
+            }
             slots.push(sl);
             blks.push(Blk::flat(p0 * d * 2, (p1 - p0) * d * 2));
         }
@@ -1144,6 +1178,11 @@ impl Ctx {
     /// pairs' rows of `x` quantized once, `w1` and `w3` as one launch each over every expert with
     /// rows, the weighted clamped SwiGLU, `w2` into `out` (bf16 rows in plan order from the
     /// range's first pair). Per row, the arithmetic of the per-expert loop.
+    ///
+    /// `cached` is the slot address of each expert of `ex` with rows, in id order, when the layer
+    /// holds no routed experts (the rank's [`super::experts::ExpertCache`] resolved them): the
+    /// checkpoint's MXFP4 bytes in [`super::experts::Layout`] order, read through the same table.
+    #[allow(clippy::too_many_arguments)]
     pub fn experts_grouped(
         &mut self,
         lw: &LayerW,
@@ -1151,54 +1190,79 @@ impl Ctx {
         plan: &MoePlan,
         ex: std::ops::Range<usize>,
         out: Dp,
+        cached: Option<&[u64]>,
     ) -> Result<(), String> {
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let (d, inter) = (g.dim, g.moe_inter);
         let (p0, p1) = (plan.off[ex.start], plan.off[ex.end]);
         let np = p1 - p0;
-        if ex.start < lw.expert0 || ex.end > lw.expert0 + lw.experts.len() {
-            return Err(format!(
-                "experts {ex:?} are not on this rank ({} from {})",
-                lw.experts.len(),
-                lw.expert0
-            ));
-        }
-        let fmt = lw.experts[0][0].fmt;
-        let (wfmt, kdiv) = match fmt {
-            QFmt::Mxfp4 => (1, 32),
-            QFmt::Nvfp4Minted { .. } => (2, 16),
-            QFmt::Fp8Block32 => return Err("routed experts are FP4".into()),
-        };
         let (mut t1, mut t3, mut t2) = (vec![], vec![], vec![]);
         let mut ng = 0usize;
         let mut max_rows = 0;
-        for e in ex.clone() {
-            let c = plan.cnt[e];
-            if c == 0 {
-                continue;
+        let (wfmt, kdiv) = if let Some(bases) = cached {
+            let lay = super::experts::Layout::of(&g);
+            let with_rows: Vec<usize> = ex.clone().filter(|&e| plan.cnt[e] > 0).collect();
+            if bases.len() != with_rows.len() {
+                return Err(format!(
+                    "{} cached expert slots for {} experts with rows",
+                    bases.len(),
+                    with_rows.len()
+                ));
             }
-            let ws = &lw.experts[e - lw.expert0];
-            for (t, w) in [(&mut t1, &ws[0]), (&mut t3, &ws[2]), (&mut t2, &ws[1])] {
-                if std::mem::discriminant(&w.fmt) != std::mem::discriminant(&fmt) {
-                    return Err("mixed expert formats in one layer".into());
+            for (&e, &b) in with_rows.iter().zip(bases) {
+                let c = plan.cnt[e];
+                let at = |k: usize| b + lay.off[k] as u64;
+                group_rec(&mut t1, plan.off[e] - p0, c, 1.0, at(0), at(1));
+                group_rec(&mut t3, plan.off[e] - p0, c, 1.0, at(2), at(3));
+                group_rec(&mut t2, plan.off[e] - p0, c, 1.0, at(4), at(5));
+                ng += 1;
+                max_rows = max_rows.max(c);
+            }
+            // the cache holds the checkpoint's MXFP4 bytes as stored
+            (1, 32)
+        } else {
+            if ex.start < lw.expert0 || ex.end > lw.expert0 + lw.experts.len() {
+                return Err(format!(
+                    "experts {ex:?} are not on this rank ({} from {})",
+                    lw.experts.len(),
+                    lw.expert0
+                ));
+            }
+            let fmt = lw.experts[0][0].fmt;
+            let fk = match fmt {
+                QFmt::Mxfp4 => (1, 32),
+                QFmt::Nvfp4Minted { .. } => (2, 16),
+                QFmt::Fp8Block32 => return Err("routed experts are FP4".into()),
+            };
+            for e in ex.clone() {
+                let c = plan.cnt[e];
+                if c == 0 {
+                    continue;
                 }
-                let s2 = match w.fmt {
-                    QFmt::Nvfp4Minted { scale2 } => scale2,
-                    _ => 1.0,
-                };
-                group_rec(
-                    t,
-                    plan.off[e] - p0,
-                    c,
-                    s2,
-                    w.w.p(&st).addr(),
-                    w.s.p(&st).addr(),
-                );
+                let ws = &lw.experts[e - lw.expert0];
+                for (t, w) in [(&mut t1, &ws[0]), (&mut t3, &ws[2]), (&mut t2, &ws[1])] {
+                    if std::mem::discriminant(&w.fmt) != std::mem::discriminant(&fmt) {
+                        return Err("mixed expert formats in one layer".into());
+                    }
+                    let s2 = match w.fmt {
+                        QFmt::Nvfp4Minted { scale2 } => scale2,
+                        _ => 1.0,
+                    };
+                    group_rec(
+                        t,
+                        plan.off[e] - p0,
+                        c,
+                        s2,
+                        w.w.p(&st).addr(),
+                        w.s.p(&st).addr(),
+                    );
+                }
+                ng += 1;
+                max_rows = max_rows.max(c);
             }
-            ng += 1;
-            max_rows = max_rows.max(c);
-        }
+            fk
+        };
         let ridx = Buf::from_bytes(&st, &i32_bytes(&plan.ptok[p0..p1]))?;
         let rw = Buf::from_bytes(&st, &super::f32_bytes(&plan.pw[p0..p1]))?;
         let (g1, g3, g2) = (
