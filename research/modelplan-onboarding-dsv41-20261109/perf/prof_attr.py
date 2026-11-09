@@ -28,6 +28,7 @@ def main():
     out_json = sys.argv[sys.argv.index("--json") + 1] if "--json" in sys.argv else None
     out_md = sys.argv[sys.argv.index("--md") + 1] if "--md" in sys.argv else None
     con = sqlite3.connect(db)
+    con.text_factory = lambda b: b.decode("utf-8", "replace")  # an export can carry a non-UTF-8 string id
     cur = con.cursor()
     strings = dict(cur.execute("select id, value from StringIds"))
 

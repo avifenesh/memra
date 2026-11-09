@@ -1,0 +1,11 @@
+{"bench": "layer", "device": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition", "path": "group1", "tokens": 4096, "chunk": 8192, "reps": 2, "nvtx": true, "prefill_wall_s": 13.80,
+ "layers": [
+  {"layer": 2, "tokens": 4096, "first_ms": 47.6306, "ms": [47.625, 47.580], "median_ms": 47.6026, "reruns_identical": 2, "engram_ms": null, "out_sha": "b99aad4ceed2c852afcaeb45", "pre_sha": "18eab62a8520470791e5d551"},
+  {"layer": 20, "tokens": 4096, "first_ms": 45.7188, "ms": [45.789, 45.778], "median_ms": 45.7834, "reruns_identical": 2, "engram_ms": null, "out_sha": "4fee875bf63377e428d57c3a", "pre_sha": "3eb5421d9e34cc9f3b4987f9"},
+  {"layer": 21, "tokens": 4096, "first_ms": 44.2550, "ms": [43.763, 43.759], "median_ms": 43.7611, "reruns_identical": 2, "engram_ms": null, "out_sha": "56dd8aaaf47ea0cedbe9286f", "pre_sha": "0a6f42c47f706f93652c9f48"}
+ ],
+ "decode": [
+  {"run": [2], "from_pos": 4096, "steps": 6, "step_ms": [1.085, 1.048, 1.020, 1.044, 1.022, 1.044], "per_layer": [{"layer": 2, "ms": [1.085, 1.048, 1.020, 1.044, 1.022, 1.044], "median_ms_after_first": 1.0440}], "step_sha": ["dc879a368bfe980a3ca2d3cd:f35c5185419370155e56236c", "1afe79bcd83f9c52b4ba3f73:3f89627c65241ccfd60a8cad", "6e2e145d21407f12f074595d:a42bc8be849404fd1c9173d0", "6db625255ff260a13c8401fb:039c7cd58a0d4ec2294d6f7f", "c8cf3d88efe4677cd3afef09:49a4ec4337350c4f438eb732", "564e12bc5a469cace6dd0cfb:f52efca5db67b7e2e2c32685"]},
+  {"run": [20, 21], "from_pos": 4096, "steps": 6, "step_ms": [1.868, 1.869, 1.878, 1.864, 1.869, 1.879], "per_layer": [{"layer": 20, "ms": [0.998, 0.999, 1.003, 0.998, 0.998, 1.008], "median_ms_after_first": 0.9989}, {"layer": 21, "ms": [0.869, 0.870, 0.875, 0.866, 0.871, 0.872], "median_ms_after_first": 0.8709}], "step_sha": ["726c95d76c579b490b3c6fb0:79021a35610655e6e34daa7a", "012f14841c00e1463b5832d3:a0c1c63547dcb08f48fa3f06", "f5ac56f1b5ce541011fef6e7:aedc10935c6f17ef1baa7c8c", "6ad2a594d1caf720682c1c2c:a760f25b8fcd30a2d9c62785", "f7cf07760b0de68d1543d30b:372deb74f9ec9f0ec873e3af", "15ed4fe679f58e9ac977f8af:6c879ab5a73d8d18d2b29c4a"]}
+ ]
+}

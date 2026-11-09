@@ -1,0 +1,405 @@
+===== $LANE/receipts-perf/ncul-f14/ncu-v41_act_quant_kernel_.details.csv
+  GPU Speed Of Light Through DRAM Frequency                                 13.28 Ghz
+  GPU Speed Of Light Through SM Frequency                                   2.29 Ghz
+  GPU Speed Of Light Through Elapsed Cycles                                 21,481 cycle
+  GPU Speed Of Light Through Memory Throughput                              29.38 %
+  GPU Speed Of Light Through DRAM Throughput                                26.55 %
+  GPU Speed Of Light Through Duration                                       9.31 us
+  GPU Speed Of Light Through L1/TEX Cache Throughput                        34.45 %
+  GPU Speed Of Light Through L2 Cache Throughput                            15.78 %
+  GPU Speed Of Light Through SM Active Cycles                               18,215.16 cycle
+  GPU Speed Of Light Through Compute (SM) Throughput                        51.41 %
+  RULE SOLBottleneck: This workload exhibits low compute throughput and memory bandwidth utilization relative to the peak performance of this device. Achieved compute throughput and/or memory bandwidth below 60.0% of peak typically indicate latency issues. Look at Scheduler Statistics and Warp State Statistics for potential reasons.
+  RULE SOLFPRoofline: The ratio of peak float (FP32) to double (FP64) performance on this device is 64:1. The workload achieved 3% of this device's FP32 peak performance and 0% of its FP64 peak performance. See the Profiling Guide (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline) for more details on roofline analysis.
+  RULE PMSamplingData: Sampling interval is larger than 10% of the workload duration, which likely results in very few collected samples. For better results, use the --pm-sampling-interval option to reduce the sampling interval. Use --pm-sampling-buffer-size to increase the sampling buffer size for the smaller interval, or don't set a fixed buffer size and let the tool adjust it automatically.
+  Compute Workload Analysis  Executed Ipc Active                            2.41 inst/cycle
+  Compute Workload Analysis  Executed Ipc Elapsed                           2.06 inst/cycle
+  Compute Workload Analysis  Issue Slots Busy                               51.41 %
+  Compute Workload Analysis  Issued Ipc Active                              2.41 inst/cycle
+  Compute Workload Analysis  SM Busy                                        51.41 %
+  RULE HighPipeUtilization: Shared FMA Heavy is the highest-utilized pipeline (39.8%) based on elapsed cycles in the workload, taking into account the rates of its different instructions. It is a physical pipe and shared by the logical pipes FMA Heavy and ALU Lite. It's dominated by its ALU Lite sub-pipeline. It is well-utilized, but should not be a bottleneck. Based on the number of executed instructions, the highest utilized pipeline (35.5%) is Shared FMA Heavy. It can execute instructions from FMA. Comparing the two, the overall pipeline u
+  Memory Workload Analysis   Local Memory Spilling Requests                 0 
+  Memory Workload Analysis   Local Memory Spilling Request Overhead         0 %
+  Memory Workload Analysis   L2 Sector Promotion Misses                     0 %
+  Memory Workload Analysis   Shared Memory Spilling Requests                0 
+  Memory Workload Analysis   Shared Memory Spilling Request Overhead        0 %
+  Memory Workload Analysis   Memory Throughput                              451.27 Gbyte/s
+  Memory Workload Analysis   Mem Busy                                       14.80 %
+  Memory Workload Analysis   Max Bandwidth                                  29.38 %
+  Memory Workload Analysis   L1/TEX Hit Rate                                49.90 %
+  Memory Workload Analysis   L2 Persisting Size                             25.17 Mbyte
+  Memory Workload Analysis   L2 Compression Success Rate                    0 %
+  Memory Workload Analysis   L2 Compression Ratio                           0 
+  Memory Workload Analysis   L2 Compression Input Sectors                   0 sector
+  Memory Workload Analysis   L2 Hit Rate                                    51.55 %
+  Memory Workload Analysis   Mem Pipes Busy                                 29.38 %
+  Scheduler Statistics       One or More Eligible                           60.31 %
+  Scheduler Statistics       Issued Warp Per Scheduler                      0.60 
+  Scheduler Statistics       No Eligible                                    39.69 %
+  Scheduler Statistics       Active Warps Per Scheduler                     9.45 warp
+  Scheduler Statistics       Eligible Warps Per Scheduler                   1.41 warp
+  Warp State Statistics      Warp Cycles Per Issued Instruction             15.67 cycle
+  Warp State Statistics      Warp Cycles Per Executed Instruction           15.67 cycle
+  Warp State Statistics      Avg. Active Threads Per Warp                   32 
+  Warp State Statistics      Avg. Not Predicated Off Threads Per Warp       28.98 
+  RULE CPIStall: On average, each warp of this workload spends 6.5 cycles being stalled waiting for a scoreboard dependency on a L1TEX (local, global, surface, texture) operation. Find the instruction producing the data being waited upon to identify the culprit. To reduce the number of cycles waiting on L1TEX data accesses verify the memory access patterns are optimal for the target architecture, attempt to increase cache hit rates by increasing data locality (coalescing), or by changing the cache configuration. Consider moving fre
+  RULE CPIStall: Check the Warp Stall Sampling (All Samples) table for the top stall locations in your source based on sampling data. The Profiling Guide (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#metrics-reference) provides more details on each stall reason.
+  RULE FPInstructions: This workload executes 327680 fused and 196608 non-fused FP32 instructions. By converting pairs of non-fused instructions to their fused (https://docs.nvidia.com/cuda/floating-point/#cuda-and-floating-point), higher-throughput equivalent, the achieved FP32 performance could be increased by up to 19% (relative to its current performance).
+  Launch Statistics          Block Size                                     256 
+  Launch Statistics          Cluster Scheduling Policy                      PolicySpread 
+  Launch Statistics          Cluster Size                                   0 
+  Launch Statistics          Function Cache Configuration                   CachePreferNone 
+  Launch Statistics          Grid Size                                      8,192 
+  Launch Statistics          Preferred Cluster Size                         0 
+  Launch Statistics          Registers Per Thread                           22 register/thread
+  Launch Statistics          Shared Memory Configuration Size               16.38 Kbyte
+  Launch Statistics          Driver Shared Memory Per Block                 1.02 Kbyte/block
+  Launch Statistics          Dynamic Shared Memory Per Block                0 byte/block
+  Launch Statistics          Static Shared Memory Per Block                 0 byte/block
+  Launch Statistics          # SMs                                          188 SM
+  Launch Statistics          Stack Size                                     1,024 
+  Launch Statistics          Threads                                        2,097,152 thread
+  Launch Statistics          # TPCs                                         94 
+  Launch Statistics          Enabled TPC IDs                                all 
+  Launch Statistics          Uses Green Context                             0 
+  Launch Statistics          Waves Per SM                                   7.26 
+  Occupancy                  Max Active Clusters                            0 cluster
+  Occupancy                  Max Cluster Size                               8 block
+  Occupancy                  Overall GPU Occupancy                          0 %
+  Occupancy                  Cluster Occupancy                              0 %
+  Occupancy                  Block Limit Barriers                           24 block
+  Occupancy                  Block Limit SM                                 24 block
+  Occupancy                  Block Limit Registers                          10 block
+  Occupancy                  Block Limit Shared Mem                         16 block
+  Occupancy                  Block Limit Warps                              6 block
+  Occupancy                  Theoretical Active Warps per SM                48 warp
+  Occupancy                  Theoretical Occupancy                          100 %
+  Occupancy                  Achieved Occupancy                             78.33 %
+  Occupancy                  Achieved Active Warps Per SM                   37.60 warp
+  RULE AchievedOccupancy: The difference between calculated theoretical (100.0%) and measured achieved occupancy (78.3%) can be the result of warp scheduling overheads or workload imbalances during the kernel execution. Load imbalances can occur between warps within a block as well as across blocks of the same kernel. See the CUDA Best Practices Guide (https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#occupancy) for more details on optimizing occupancy.
+===== $LANE/receipts-perf/ncul-f14/ncu-v41_gemm_f8_pipe_tiles_kernel_.details.csv
+  GPU Speed Of Light Through DRAM Frequency                                 13.35 Ghz
+  GPU Speed Of Light Through SM Frequency                                   1.45 Ghz
+  GPU Speed Of Light Through Elapsed Cycles                                 8,842,102 cycle
+  GPU Speed Of Light Through Memory Throughput                              53.46 %
+  GPU Speed Of Light Through DRAM Throughput                                24.13 %
+  GPU Speed Of Light Through Duration                                       6.06 ms
+  GPU Speed Of Light Through L1/TEX Cache Throughput                        41.61 %
+  GPU Speed Of Light Through L2 Cache Throughput                            53.46 %
+  GPU Speed Of Light Through SM Active Cycles                               8,753,637.30 cycle
+  GPU Speed Of Light Through Compute (SM) Throughput                        49.06 %
+  RULE SOLBottleneck: This workload exhibits low compute throughput and memory bandwidth utilization relative to the peak performance of this device. Achieved compute throughput and/or memory bandwidth below 60.0% of peak typically indicate latency issues. Look at Scheduler Statistics and Warp State Statistics for potential reasons.
+  RULE SOLFPRoofline: The ratio of peak float (FP32) to double (FP64) performance on this device is 64:1. The workload achieved 10% of this device's FP32 peak performance and 0% of its FP64 peak performance. See the Profiling Guide (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline) for more details on roofline analysis.
+  Compute Workload Analysis  Executed Ipc Active                            1.97 inst/cycle
+  Compute Workload Analysis  Executed Ipc Elapsed                           1.96 inst/cycle
+  Compute Workload Analysis  Issue Slots Busy                               49.06 %
+  Compute Workload Analysis  Issued Ipc Active                              1.97 inst/cycle
+  Compute Workload Analysis  SM Busy                                        49.06 %
+  RULE HighPipeUtilization: Shared FMA Heavy is the highest-utilized pipeline (34.5%) based on elapsed cycles in the workload, taking into account the rates of its different instructions. It is a physical pipe and shared by the logical pipes FMA Heavy and ALU Lite. It's dominated by its FMA Heavy sub-pipeline. It is well-utilized, but should not be a bottleneck. Based on the number of executed instructions, the highest utilized pipeline (35.4%) is LSU. It executes load/store memory operations. Comparing the two, the overall pipeline utilizati
+  Memory Workload Analysis   Local Memory Spilling Requests                 0 
+  Memory Workload Analysis   Local Memory Spilling Request Overhead         0 %
+  Memory Workload Analysis   L2 Sector Promotion Misses                     0 %
+  Memory Workload Analysis   Shared Memory Spilling Requests                0 
+  Memory Workload Analysis   Shared Memory Spilling Request Overhead        0 %
+  Memory Workload Analysis   Memory Throughput                              344.35 Gbyte/s
+  Memory Workload Analysis   Mem Busy                                       53.46 %
+  Memory Workload Analysis   Max Bandwidth                                  46.60 %
+  Memory Workload Analysis   L1/TEX Hit Rate                                46.17 %
+  Memory Workload Analysis   L2 Persisting Size                             25.17 Mbyte
+  Memory Workload Analysis   L2 Compression Success Rate                    0 %
+  Memory Workload Analysis   L2 Compression Ratio                           0 
+  Memory Workload Analysis   L2 Compression Input Sectors                   0 sector
+  Memory Workload Analysis   L2 Hit Rate                                    83.01 %
+  Memory Workload Analysis   Mem Pipes Busy                                 35.37 %
+  RULE MemoryCacheAccessPattern: The memory access pattern for global loads from L1TEX might not be optimal. On average, only 1.0 of the 32 bytes transmitted per sector are utilized by each thread. This could possibly be caused by a stride between threads. Check the Source Counters section for uncoalesced global loads.
+  RULE MemoryCacheAccessPattern: The memory access pattern for global stores to L1TEX might not be optimal. On average, only 8.0 of the 32 bytes transmitted per sector are utilized by each thread. This could possibly be caused by a stride between threads. Check the Source Counters section for uncoalesced global stores.
+  RULE SharedMemoryConflicts: The memory access pattern for shared stores might not be optimal and causes on average a 4.6 - way bank conflict across all 29859840 shared store requests.This results in 68086501 bank conflicts,  which represent 49.42% of the overall 137765158 wavefronts for shared stores. Check the Source Counters section for uncoalesced shared stores.
+  Scheduler Statistics       One or More Eligible                           49.31 %
+  Scheduler Statistics       Issued Warp Per Scheduler                      0.49 
+  Scheduler Statistics       No Eligible                                    50.69 %
+  Scheduler Statistics       Active Warps Per Scheduler                     3.97 warp
+  Scheduler Statistics       Eligible Warps Per Scheduler                   0.94 warp
+  RULE IssueSlotUtilization: Every scheduler is capable of issuing one instruction per cycle, but for this workload each scheduler only issues an instruction every 2.0 cycles. This might leave hardware resources underutilized and may lead to less optimal performance. Out of the maximum of 12 warps per scheduler, this workload allocates an average of 3.97 active warps per scheduler, but only an average of 0.94 warps were eligible per cycle. Eligible warps are the subset of active warps that are ready to issue their next instruction. Every cycle
+  Warp State Statistics      Warp Cycles Per Issued Instruction             8.04 cycle
+  Warp State Statistics      Warp Cycles Per Executed Instruction           8.04 cycle
+  Warp State Statistics      Avg. Active Threads Per Warp                   31.88 
+  Warp State Statistics      Avg. Not Predicated Off Threads Per Warp       30.59 
+  RULE FPInstructions: This workload executes 424673280 fused and 424673280 non-fused FP32 instructions. By converting pairs of non-fused instructions to their fused (https://docs.nvidia.com/cuda/floating-point/#cuda-and-floating-point), higher-throughput equivalent, the achieved FP32 performance could be increased by up to 25% (relative to its current performance).
+  Launch Statistics          Block Size                                     256 
+  Launch Statistics          Cluster Scheduling Policy                      PolicySpread 
+  Launch Statistics          Cluster Size                                   0 
+  Launch Statistics          Function Cache Configuration                   CachePreferNone 
+  Launch Statistics          Grid Size                                      30,720 
+  Launch Statistics          Preferred Cluster Size                         0 
+  Launch Statistics          Registers Per Thread                           118 register/thread
+  Launch Statistics          Shared Memory Configuration Size               102.40 Kbyte
+  Launch Statistics          Driver Shared Memory Per Block                 1.02 Kbyte/block
+  Launch Statistics          Dynamic Shared Memory Per Block                48.69 Kbyte/block
+  Launch Statistics          Static Shared Memory Per Block                 0 byte/block
+  Launch Statistics          # SMs                                          188 SM
+  Launch Statistics          Stack Size                                     1,024 
+  Launch Statistics          Threads                                        7,864,320 thread
+  Launch Statistics          # TPCs                                         94 
+  Launch Statistics          Enabled TPC IDs                                all 
+  Launch Statistics          Uses Green Context                             0 
+  Launch Statistics          Waves Per SM                                   81.70 
+  Occupancy                  Max Active Clusters                            0 cluster
+  Occupancy                  Max Cluster Size                               8 block
+  Occupancy                  Overall GPU Occupancy                          0 %
+  Occupancy                  Cluster Occupancy                              0 %
+  Occupancy                  Block Limit Barriers                           24 block
+  Occupancy                  Block Limit SM                                 24 block
+  Occupancy                  Block Limit Registers                          2 block
+  Occupancy                  Block Limit Shared Mem                         2 block
+  Occupancy                  Block Limit Warps                              6 block
+  Occupancy                  Theoretical Active Warps per SM                16 warp
+  Occupancy                  Theoretical Occupancy                          33.33 %
+  Occupancy                  Achieved Occupancy                             33.06 %
+  Occupancy                  Achieved Active Warps Per SM                   15.87 warp
+  RULE TheoreticalOccupancy: The 4.00 theoretical warps per scheduler this kernel can issue according to its occupancy are below the hardware maximum of 12. This kernel's theoretical occupancy (33.3%) is limited by the number of required registers, and the required amount of shared memory.
+  RULE UncoalescedGlobalAccess: This workload has uncoalesced global accesses resulting in a total of 385610880 excessive sectors (66% of the total 581272320 sectors). Check the L2 Theoretical Sectors Global Excessive table for the primary source locations. The CUDA Programming Guide (https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#device-memory-accesses) has additional information on reducing uncoalesced device memory accesses.
+  RULE UncoalescedSharedAccess: This workload has uncoalesced shared accesses resulting in a total of 417171680 excessive wavefronts (43% of the total 961288800 wavefronts). Check the L1 Wavefronts Shared Excessive table for the primary source locations. The CUDA Best Practices Guide (https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#shared-memory-in-matrix-multiplication-c-ab) has an example on optimizing shared memory accesses.
+===== $LANE/receipts-perf/ncul-f14/ncu-v41_hc_mixes_part_kernel_.details.csv
+  GPU Speed Of Light Through DRAM Frequency                                 13.35 Ghz
+  GPU Speed Of Light Through SM Frequency                                   1.85 Ghz
+  GPU Speed Of Light Through Elapsed Cycles                                 1,404,209 cycle
+  GPU Speed Of Light Through Memory Throughput                              59.89 %
+  GPU Speed Of Light Through DRAM Throughput                                13.62 %
+  GPU Speed Of Light Through Duration                                       756 us
+  GPU Speed Of Light Through L1/TEX Cache Throughput                        61.41 %
+  GPU Speed Of Light Through L2 Cache Throughput                            18.02 %
+  GPU Speed Of Light Through SM Active Cycles                               1,364,592.28 cycle
+  GPU Speed Of Light Through Compute (SM) Throughput                        68.09 %
+  RULE SOLBottleneck: Compute and Memory are well-balanced: To reduce runtime, both computation and memory traffic must be reduced. Check both the Compute Workload Analysis and Memory Workload Analysis sections.
+  RULE SOLFPRoofline: The ratio of peak float (FP32) to double (FP64) performance on this device is 64:1. The workload achieved 7% of this device's FP32 peak performance and 0% of its FP64 peak performance. See the Profiling Guide (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline) for more details on roofline analysis.
+  Compute Workload Analysis  Executed Ipc Active                            2.79 inst/cycle
+  Compute Workload Analysis  Executed Ipc Elapsed                           2.72 inst/cycle
+  Compute Workload Analysis  Issue Slots Busy                               68.09 %
+  Compute Workload Analysis  Issued Ipc Active                              2.79 inst/cycle
+  Compute Workload Analysis  SM Busy                                        68.09 %
+  RULE HighPipeUtilization: Shared FMA Heavy is the highest-utilized pipeline (40.4%) based on elapsed cycles in the workload, taking into account the rates of its different instructions. It is a physical pipe and shared by the logical pipes FMA Heavy and ALU Lite. It's dominated by its ALU Lite sub-pipeline. It is well-utilized, but should not be a bottleneck. Based on the number of executed instructions, the highest utilized pipeline (59.9%) is LSU. It executes load/store memory operations. Comparing the two, the overall pipeline utilizatio
+  Memory Workload Analysis   Local Memory Spilling Requests                 2,048,000 
+  Memory Workload Analysis   Local Memory Spilling Request Overhead         100 %
+  Memory Workload Analysis   L2 Sector Promotion Misses                     0 %
+  Memory Workload Analysis   Shared Memory Spilling Requests                0 
+  Memory Workload Analysis   Shared Memory Spilling Request Overhead        0 %
+  Memory Workload Analysis   Memory Throughput                              232.71 Gbyte/s
+  Memory Workload Analysis   Mem Busy                                       30.94 %
+  Memory Workload Analysis   Max Bandwidth                                  59.89 %
+  Memory Workload Analysis   L1/TEX Hit Rate                                34.16 %
+  Memory Workload Analysis   L2 Persisting Size                             25.17 Mbyte
+  Memory Workload Analysis   L2 Compression Success Rate                    0 %
+  Memory Workload Analysis   L2 Compression Ratio                           0 
+  Memory Workload Analysis   L2 Compression Input Sectors                   0 sector
+  Memory Workload Analysis   L2 Hit Rate                                    82.08 %
+  Memory Workload Analysis   Mem Pipes Busy                                 59.89 %
+  RULE LocalMemoryUsage: This workload accesses local memory (https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#device-memory-accesses), accounting for 42.92% of all sectors requested in L1TEX. Local memory refers to a memory space that is private to each thread. Although it is logically distinct, local memory resides in global memory. This can lead to higher memory latency compared to the usage of registers or shared memory, a decrease in available bandwidth to global memory, and an increase in executed instructions. All of
+  RULE MemoryCacheAccessPattern: The memory access pattern for global stores to L1TEX might not be optimal. On average, only 4.0 of the 32 bytes transmitted per sector are utilized by each thread. This could possibly be caused by a stride between threads. Check the Source Counters section for uncoalesced global stores.
+  RULE MemoryCacheAccessPattern: The memory access pattern for local loads from L1TEX might not be optimal. On average, only 1.0 of the 32 bytes transmitted per sector are utilized by each thread. This could possibly be caused by a stride between threads. Check the Source Counters section for uncoalesced local loads.
+  RULE MemoryCacheAccessPattern: The memory access pattern for local stores to L1TEX might not be optimal. On average, only 1.0 of the 32 bytes transmitted per sector are utilized by each thread. This could possibly be caused by a stride between threads. Check the Source Counters section for uncoalesced local stores.
+  Scheduler Statistics       One or More Eligible                           70.42 %
+  Scheduler Statistics       Issued Warp Per Scheduler                      0.70 
+  Scheduler Statistics       No Eligible                                    29.58 %
+  Scheduler Statistics       Active Warps Per Scheduler                     6.22 warp
+  Scheduler Statistics       Eligible Warps Per Scheduler                   1.35 warp
+  Warp State Statistics      Warp Cycles Per Issued Instruction             8.83 cycle
+  Warp State Statistics      Warp Cycles Per Executed Instruction           8.83 cycle
+  Warp State Statistics      Avg. Active Threads Per Warp                   31.54 
+  Warp State Statistics      Avg. Not Predicated Off Threads Per Warp       25.34 
+  RULE CPIStall: On average, each warp of this workload spends 3.0 cycles being stalled waiting on a fixed latency execution dependency. Typically, this stall reason should be very low and only shows up as a top contributor in already highly optimized kernels. Try to hide the corresponding instruction latencies by increasing the number of active warps, restructuring the code or unrolling loops. Furthermore, consider switching to lower-latency instructions, e.g. by making use of fast math compiler options. For example, FFMA-to-FFMA 
+  RULE CPIStall: Check the Warp Stall Sampling (All Samples) table for the top stall locations in your source based on sampling data. The Profiling Guide (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#metrics-reference) provides more details on each stall reason.
+  RULE FPInstructions: This workload executes 0 fused and 200704000 non-fused FP32 instructions. By converting pairs of non-fused instructions to their fused (https://docs.nvidia.com/cuda/floating-point/#cuda-and-floating-point), higher-throughput equivalent, the achieved FP32 performance could be increased by up to 50% (relative to its current performance).
+  Launch Statistics          Block Size                                     800 
+  Launch Statistics          Cluster Scheduling Policy                      PolicySpread 
+  Launch Statistics          Cluster Size                                   0 
+  Launch Statistics          Function Cache Configuration                   CachePreferNone 
+  Launch Statistics          Grid Size                                      2,048 
+  Launch Statistics          Preferred Cluster Size                         0 
+  Launch Statistics          Registers Per Thread                           72 register/thread
+  Launch Statistics          Shared Memory Configuration Size               32.77 Kbyte
+  Launch Statistics          Driver Shared Memory Per Block                 1.02 Kbyte/block
+  Launch Statistics          Dynamic Shared Memory Per Block                0 byte/block
+  Launch Statistics          Static Shared Memory Per Block                 16.38 Kbyte/block
+  Launch Statistics          # SMs                                          188 SM
+  Launch Statistics          Stack Size                                     1,024 
+  Launch Statistics          Threads                                        1,638,400 thread
+  Launch Statistics          # TPCs                                         94 
+  Launch Statistics          Enabled TPC IDs                                all 
+  Launch Statistics          Uses Green Context                             0 
+  Launch Statistics          Waves Per SM                                   10.89 
+  Occupancy                  Max Active Clusters                            0 cluster
+  Occupancy                  Max Cluster Size                               8 block
+  Occupancy                  Overall GPU Occupancy                          0 %
+  Occupancy                  Cluster Occupancy                              0 %
+  Occupancy                  Block Limit Barriers                           24 block
+  Occupancy                  Block Limit SM                                 24 block
+  Occupancy                  Block Limit Registers                          1 block
+  Occupancy                  Block Limit Shared Mem                         1 block
+  Occupancy                  Block Limit Warps                              1 block
+  Occupancy                  Theoretical Active Warps per SM                25 warp
+  Occupancy                  Theoretical Occupancy                          52.08 %
+  Occupancy                  Achieved Occupancy                             51.53 %
+  Occupancy                  Achieved Active Warps Per SM                   24.73 warp
+  RULE TheoreticalOccupancy: The 6.25 theoretical warps per scheduler this kernel can issue according to its occupancy are below the hardware maximum of 12. This kernel's theoretical occupancy (52.1%) is limited by the number of required registers, and the number of warps within each block.
+  RULE UncoalescedSharedAccess: This workload has uncoalesced shared accesses resulting in a total of 2621440 excessive wavefronts (4% of the total 70778880 wavefronts). Check the L1 Wavefronts Shared Excessive table for the primary source locations. The CUDA Best Practices Guide (https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#shared-memory-in-matrix-multiplication-c-ab) has an example on optimizing shared memory accesses.
+===== $LANE/receipts-perf/ncul-f14/ncu-v41_index_score_kernel_.details.csv
+  GPU Speed Of Light Through DRAM Frequency                                 13.35 Ghz
+  GPU Speed Of Light Through SM Frequency                                   1.95 Ghz
+  GPU Speed Of Light Through Elapsed Cycles                                 602,128 cycle
+  GPU Speed Of Light Through Memory Throughput                              68.26 %
+  GPU Speed Of Light Through DRAM Throughput                                6.53 %
+  GPU Speed Of Light Through Duration                                       307.90 us
+  GPU Speed Of Light Through L1/TEX Cache Throughput                        69.22 %
+  GPU Speed Of Light Through L2 Cache Throughput                            54.13 %
+  GPU Speed Of Light Through SM Active Cycles                               592,618.02 cycle
+  GPU Speed Of Light Through Compute (SM) Throughput                        68.26 %
+  RULE SOLBottleneck: Compute and Memory are well-balanced: To reduce runtime, both computation and memory traffic must be reduced. Check both the Compute Workload Analysis and Memory Workload Analysis sections.
+  RULE SOLFPRoofline: The ratio of peak float (FP32) to double (FP64) performance on this device is 64:1. The workload achieved 1% of this device's FP32 peak performance and 0% of its FP64 peak performance. See the Profiling Guide (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline) for more details on roofline analysis.
+  Compute Workload Analysis  Executed Ipc Active                            1.29 inst/cycle
+  Compute Workload Analysis  Executed Ipc Elapsed                           1.27 inst/cycle
+  Compute Workload Analysis  Issue Slots Busy                               31.71 %
+  Compute Workload Analysis  Issued Ipc Active                              1.29 inst/cycle
+  Compute Workload Analysis  SM Busy                                        31.71 %
+  RULE HighPipeUtilization: Tensor is the highest-utilized pipeline (30.6%) based on elapsed cycles in the workload, taking into account the rates of its different instructions. It is the logical aggregation of individual tensor pipelines. It's dominated by its Tensor (FP) sub-pipeline. It is well-utilized, but should not be a bottleneck. Based on the number of executed instructions, the highest utilized pipeline (68.3%) is LSU. It executes load/store memory operations. Comparing the two, the overall pipeline utilization appears to be caused 
+  Memory Workload Analysis   Local Memory Spilling Requests                 0 
+  Memory Workload Analysis   Local Memory Spilling Request Overhead         0 %
+  Memory Workload Analysis   L2 Sector Promotion Misses                     0 %
+  Memory Workload Analysis   Shared Memory Spilling Requests                0 
+  Memory Workload Analysis   Shared Memory Spilling Request Overhead        0 %
+  Memory Workload Analysis   Memory Throughput                              111.59 Gbyte/s
+  Memory Workload Analysis   Mem Busy                                       54.13 %
+  Memory Workload Analysis   Max Bandwidth                                  68.26 %
+  Memory Workload Analysis   L1/TEX Hit Rate                                3.62 %
+  Memory Workload Analysis   L2 Persisting Size                             25.17 Mbyte
+  Memory Workload Analysis   L2 Compression Success Rate                    0 %
+  Memory Workload Analysis   L2 Compression Ratio                           0 
+  Memory Workload Analysis   L2 Compression Input Sectors                   0 sector
+  Memory Workload Analysis   L2 Hit Rate                                    96.53 %
+  Memory Workload Analysis   Mem Pipes Busy                                 68.26 %
+  RULE MemoryCacheAccessPattern: The memory access pattern for global stores to L1TEX might not be optimal. On average, only 12.6 of the 32 bytes transmitted per sector are utilized by each thread. This could possibly be caused by a stride between threads. Check the Source Counters section for uncoalesced global stores.
+  RULE SharedMemoryConflicts: The memory access pattern for shared stores might not be optimal and causes on average a 1.2 - way bank conflict across all 67552 shared store requests.This results in 14083 bank conflicts,  which represent 17.21% of the overall 81818 wavefronts for shared stores. Check the Source Counters section for uncoalesced shared stores.
+  Scheduler Statistics       One or More Eligible                           32.16 %
+  Scheduler Statistics       Issued Warp Per Scheduler                      0.32 
+  Scheduler Statistics       No Eligible                                    67.84 %
+  Scheduler Statistics       Active Warps Per Scheduler                     2.87 warp
+  Scheduler Statistics       Eligible Warps Per Scheduler                   0.43 warp
+  RULE IssueSlotUtilization: Every scheduler is capable of issuing one instruction per cycle, but for this workload each scheduler only issues an instruction every 3.1 cycles. This might leave hardware resources underutilized and may lead to less optimal performance. Out of the maximum of 12 warps per scheduler, this workload allocates an average of 2.87 active warps per scheduler, but only an average of 0.43 warps were eligible per cycle. Eligible warps are the subset of active warps that are ready to issue their next instruction. Every cycle
+  Warp State Statistics      Warp Cycles Per Issued Instruction             8.91 cycle
+  Warp State Statistics      Warp Cycles Per Executed Instruction           8.91 cycle
+  Warp State Statistics      Avg. Active Threads Per Warp                   32 
+  Warp State Statistics      Avg. Not Predicated Off Threads Per Warp       28.49 
+  RULE FPInstructions: This workload executes 0 fused and 11956704 non-fused FP32 instructions. By converting pairs of non-fused instructions to their fused (https://docs.nvidia.com/cuda/floating-point/#cuda-and-floating-point), higher-throughput equivalent, the achieved FP32 performance could be increased by up to 50% (relative to its current performance).
+  Launch Statistics          Block Size                                     128 
+  Launch Statistics          Cluster Scheduling Policy                      PolicySpread 
+  Launch Statistics          Cluster Size                                   0 
+  Launch Statistics          Function Cache Configuration                   CachePreferNone 
+  Launch Statistics          Grid Size                                      32,768 
+  Launch Statistics          Preferred Cluster Size                         0 
+  Launch Statistics          Registers Per Thread                           66 register/thread
+  Launch Statistics          Shared Memory Configuration Size               102.40 Kbyte
+  Launch Statistics          Driver Shared Memory Per Block                 1.02 Kbyte/block
+  Launch Statistics          Dynamic Shared Memory Per Block                0 byte/block
+  Launch Statistics          Static Shared Memory Per Block                 26.24 Kbyte/block
+  Launch Statistics          # SMs                                          188 SM
+  Launch Statistics          Stack Size                                     1,024 
+  Launch Statistics          Threads                                        4,194,304 thread
+  Launch Statistics          # TPCs                                         94 
+  Launch Statistics          Enabled TPC IDs                                all 
+  Launch Statistics          Uses Green Context                             0 
+  Launch Statistics          Waves Per SM                                   58.10 
+  Occupancy                  Max Active Clusters                            0 cluster
+  Occupancy                  Max Cluster Size                               8 block
+  Occupancy                  Overall GPU Occupancy                          0 %
+  Occupancy                  Cluster Occupancy                              0 %
+  Occupancy                  Block Limit Barriers                           24 block
+  Occupancy                  Block Limit SM                                 24 block
+  Occupancy                  Block Limit Registers                          7 block
+  Occupancy                  Block Limit Shared Mem                         3 block
+  Occupancy                  Block Limit Warps                              12 block
+  Occupancy                  Theoretical Active Warps per SM                12 warp
+  Occupancy                  Theoretical Occupancy                          25 %
+  Occupancy                  Achieved Occupancy                             23.91 %
+  Occupancy                  Achieved Active Warps Per SM                   11.48 warp
+  RULE TheoreticalOccupancy: The 3.00 theoretical warps per scheduler this kernel can issue according to its occupancy are below the hardware maximum of 12. This kernel's theoretical occupancy (25.0%) is limited by the required amount of shared memory.
+  RULE UncoalescedGlobalAccess: This workload has uncoalesced global accesses resulting in a total of 12972032 excessive sectors (32% of the total 40386112 sectors). Check the L2 Theoretical Sectors Global Excessive table for the primary source locations. The CUDA Programming Guide (https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#device-memory-accesses) has additional information on reducing uncoalesced device memory accesses.
+  RULE UncoalescedSharedAccess: This workload has uncoalesced shared accesses resulting in a total of 10539776 excessive wavefronts (24% of the total 44114144 wavefronts). Check the L1 Wavefronts Shared Excessive table for the primary source locations. The CUDA Best Practices Guide (https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#shared-memory-in-matrix-multiplication-c-ab) has an example on optimizing shared memory accesses.
+===== $LANE/receipts-perf/ncul-f14/ncu-v41_sparse_attn_kernel_.details.csv
+  GPU Speed Of Light Through DRAM Frequency                                 13.35 Ghz
+  GPU Speed Of Light Through SM Frequency                                   1.93 Ghz
+  GPU Speed Of Light Through Elapsed Cycles                                 8,735,774 cycle
+  GPU Speed Of Light Through Memory Throughput                              45.30 %
+  GPU Speed Of Light Through DRAM Throughput                                7.12 %
+  GPU Speed Of Light Through Duration                                       4.50 ms
+  GPU Speed Of Light Through L1/TEX Cache Throughput                        43.91 %
+  GPU Speed Of Light Through L2 Cache Throughput                            45.30 %
+  GPU Speed Of Light Through SM Active Cycles                               8,581,867.95 cycle
+  GPU Speed Of Light Through Compute (SM) Throughput                        43.50 %
+  RULE SOLBottleneck: This workload exhibits low compute throughput and memory bandwidth utilization relative to the peak performance of this device. Achieved compute throughput and/or memory bandwidth below 60.0% of peak typically indicate latency issues. Look at Scheduler Statistics and Warp State Statistics for potential reasons.
+  RULE SOLFPRoofline: The ratio of peak float (FP32) to double (FP64) performance on this device is 64:1. The workload achieved 1% of this device's FP32 peak performance and 0% of its FP64 peak performance. See the Profiling Guide (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline) for more details on roofline analysis.
+  Compute Workload Analysis  Executed Ipc Active                            0.56 inst/cycle
+  Compute Workload Analysis  Executed Ipc Elapsed                           0.56 inst/cycle
+  Compute Workload Analysis  Issue Slots Busy                               13.91 %
+  Compute Workload Analysis  Issued Ipc Active                              0.56 inst/cycle
+  Compute Workload Analysis  SM Busy                                        20.60 %
+  RULE HighPipeUtilization: Tensor is the highest-utilized pipeline (20.6%) based on elapsed cycles in the workload, taking into account the rates of its different instructions. It is the logical aggregation of individual tensor pipelines. It's dominated by its Tensor (FP) sub-pipeline. It is well-utilized, but should not be a bottleneck. Based on the number of executed instructions, the highest utilized pipeline (43.5%) is LSU. It executes load/store memory operations. Comparing the two, the overall pipeline utilization appears to be caused 
+  Memory Workload Analysis   Local Memory Spilling Requests                 0 
+  Memory Workload Analysis   Local Memory Spilling Request Overhead         0 %
+  Memory Workload Analysis   L2 Sector Promotion Misses                     0 %
+  Memory Workload Analysis   Shared Memory Spilling Requests                0 
+  Memory Workload Analysis   Shared Memory Spilling Request Overhead        0 %
+  Memory Workload Analysis   Memory Throughput                              121.75 Gbyte/s
+  Memory Workload Analysis   Mem Busy                                       45.30 %
+  Memory Workload Analysis   Max Bandwidth                                  43.72 %
+  Memory Workload Analysis   L1/TEX Hit Rate                                3.93 %
+  Memory Workload Analysis   L2 Persisting Size                             25.17 Mbyte
+  Memory Workload Analysis   L2 Compression Success Rate                    0 %
+  Memory Workload Analysis   L2 Compression Ratio                           0 
+  Memory Workload Analysis   L2 Compression Input Sectors                   0 sector
+  Memory Workload Analysis   L2 Hit Rate                                    97.46 %
+  Memory Workload Analysis   Mem Pipes Busy                                 43.50 %
+  RULE MemoryCacheAccessPattern: The memory access pattern for global stores to L1TEX might not be optimal. On average, only 16.0 of the 32 bytes transmitted per sector are utilized by each thread. This could possibly be caused by a stride between threads. Check the Source Counters section for uncoalesced global stores.
+  Scheduler Statistics       One or More Eligible                           14.05 %
+  Scheduler Statistics       Issued Warp Per Scheduler                      0.14 
+  Scheduler Statistics       No Eligible                                    85.95 %
+  Scheduler Statistics       Active Warps Per Scheduler                     1.00 warp
+  Scheduler Statistics       Eligible Warps Per Scheduler                   0.14 warp
+  RULE IssueSlotUtilization: Every scheduler is capable of issuing one instruction per cycle, but for this workload each scheduler only issues an instruction every 7.1 cycles. This might leave hardware resources underutilized and may lead to less optimal performance. Out of the maximum of 12 warps per scheduler, this workload allocates an average of 1.00 active warps per scheduler, but only an average of 0.14 warps were eligible per cycle. Eligible warps are the subset of active warps that are ready to issue their next instruction. Every cycle
+  Warp State Statistics      Warp Cycles Per Issued Instruction             7.13 cycle
+  Warp State Statistics      Warp Cycles Per Executed Instruction           7.13 cycle
+  Warp State Statistics      Avg. Active Threads Per Warp                   32.00 
+  Warp State Statistics      Avg. Not Predicated Off Threads Per Warp       29.00 
+  RULE FPInstructions: This workload executes 47710208 fused and 81788928 non-fused FP32 instructions. By converting pairs of non-fused instructions to their fused (https://docs.nvidia.com/cuda/floating-point/#cuda-and-floating-point), higher-throughput equivalent, the achieved FP32 performance could be increased by up to 32% (relative to its current performance).
+  Launch Statistics          Block Size                                     128 
+  Launch Statistics          Cluster Scheduling Policy                      PolicySpread 
+  Launch Statistics          Cluster Size                                   0 
+  Launch Statistics          Function Cache Configuration                   CachePreferNone 
+  Launch Statistics          Grid Size                                      16,384 
+  Launch Statistics          Preferred Cluster Size                         0 
+  Launch Statistics          Registers Per Thread                           116 register/thread
+  Launch Statistics          Shared Memory Configuration Size               102.40 Kbyte
+  Launch Statistics          Driver Shared Memory Per Block                 1.02 Kbyte/block
+  Launch Statistics          Dynamic Shared Memory Per Block                88.58 Kbyte/block
+  Launch Statistics          Static Shared Memory Per Block                 0 byte/block
+  Launch Statistics          # SMs                                          188 SM
+  Launch Statistics          Stack Size                                     1,024 
+  Launch Statistics          Threads                                        2,097,152 thread
+  Launch Statistics          # TPCs                                         94 
+  Launch Statistics          Enabled TPC IDs                                all 
+  Launch Statistics          Uses Green Context                             0 
+  Launch Statistics          Waves Per SM                                   87.15 
+  Occupancy                  Max Active Clusters                            0 cluster
+  Occupancy                  Max Cluster Size                               8 block
+  Occupancy                  Overall GPU Occupancy                          0 %
+  Occupancy                  Cluster Occupancy                              0 %
+  Occupancy                  Block Limit Barriers                           24 block
+  Occupancy                  Block Limit SM                                 24 block
+  Occupancy                  Block Limit Registers                          4 block
+  Occupancy                  Block Limit Shared Mem                         1 block
+  Occupancy                  Block Limit Warps                              12 block
+  Occupancy                  Theoretical Active Warps per SM                4 warp
+  Occupancy                  Theoretical Occupancy                          8.33 %
+  Occupancy                  Achieved Occupancy                             8.34 %
+  Occupancy                  Achieved Active Warps Per SM                   4.01 warp
+  RULE TheoreticalOccupancy: The 1.00 theoretical warps per scheduler this kernel can issue according to its occupancy are below the hardware maximum of 12. This kernel's theoretical occupancy (8.3%) is limited by the required amount of shared memory.
+  RULE UncoalescedGlobalAccess: This workload has uncoalesced global accesses resulting in a total of 163020800 excessive sectors (34% of the total 482189312 sectors). Check the L2 Theoretical Sectors Global Excessive table for the primary source locations. The CUDA Programming Guide (https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#device-memory-accesses) has additional information on reducing uncoalesced device memory accesses.
+  RULE UncoalescedSharedAccess: This workload has uncoalesced shared accesses resulting in a total of 3407872 excessive wavefronts (1% of the total 391184384 wavefronts). Check the L1 Wavefronts Shared Excessive table for the primary source locations. The CUDA Best Practices Guide (https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#shared-memory-in-matrix-multiplication-c-ab) has an example on optimizing shared memory accesses.

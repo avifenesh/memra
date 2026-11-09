@@ -1,0 +1,28 @@
+==WARNING== Note: Running with unmodified GPU clocks. If not controlled otherwise, profiling results may be inconsistent.
+==PROF== Connected to process 2963300 ($LANE/perf-bins/f14/dsv41-bench)
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) gathers-only=true
+dsv41-bench: 4096 tokens, layers [20], reps 1, decode 0, chunk 8192, path group1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition
+==PROF== Profiling "v41_act_quant_kernel": 0%....50%....100% - 41 passes
+layer 0: load 0.5 s, block 2830.3 ms
+layer 1: load 0.5 s, block 33.3 ms
+layer 2: load 0.5 s, block 37.4 ms
+layer 3: load 0.5 s, block 35.1 ms
+layer 4: load 0.5 s, block 34.7 ms
+layer 5: load 0.5 s, block 34.1 ms
+layer 6: load 0.5 s, block 34.6 ms
+layer 7: load 0.5 s, block 35.9 ms
+layer 8: load 0.5 s, block 35.6 ms
+layer 9: load 0.5 s, block 33.5 ms
+layer 10: load 0.5 s, block 33.1 ms
+layer 11: load 0.5 s, block 34.1 ms
+layer 12: load 0.5 s, block 34.6 ms
+layer 13: load 0.5 s, block 35.4 ms
+layer 14: load 0.5 s, block 36.0 ms
+layer 15: load 0.5 s, block 36.0 ms
+layer 16: load 0.5 s, block 33.8 ms
+layer 17: load 0.5 s, block 34.8 ms
+layer 18: load 0.5 s, block 34.8 ms
+layer 19: load 0.5 s, block 36.6 ms
+layer 20: prefill 4096 tokens: first 35.450 ms, reps [35.443] ms, median 35.443 ms, 1/1 reruns byte-identical, engram NaN ms, out 4fee875bf63377e428d57c3a pre 3eb5421d9e34cc9f3b4987f9
+==PROF== Disconnected from process 2963300
+==PROF== Report: $LANE/receipts-perf/ncul-f14/ncu-v41_act_quant_kernel_.ncu-repz
