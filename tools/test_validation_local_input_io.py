@@ -214,6 +214,13 @@ class LocalInputIO(unittest.TestCase):
                           census(generating([], ['research/hidden/*.txt']), generating(['HIDDEN_DIR'], [])))
             self.assertNotIn('research/hidden/*.txt',
                              census(generating(['HIDDEN_DIR'], []), generating(['HIDDEN_DIR'], [])))
+            # With no reader pin at all, the name only the commit lists does not count either.
+            def unpinned(names):
+                registry = json.loads(generating(names, []))
+                registry['dynamic_includes'] = {}
+                return json.dumps(registry)
+            with self.assertRaisesRegex(module.Refused, 'HIDDEN_DIR'):
+                census(unpinned([]), unpinned(['HIDDEN_DIR']))
             # A changed build.rs that only the commit pins decides its own generated names, but the
             # running registry's pin for the unchanged reader still applies.
             changed = 'fn main() { }\n'
@@ -235,6 +242,9 @@ class LocalInputIO(unittest.TestCase):
                           census(external('memra-server', ['research/ext/*.txt']), external('memra-renamed', [])))
             with self.assertRaisesRegex(module.Refused, 'build-script input contract'):
                 census(external('memra-server', ['research/ext/*.txt']), None)
+            # A pin of the same bytes under the right name, but only at another path, does not admit.
+            with self.assertRaisesRegex(module.Refused, 'build-script input contract'):
+                census(external('memra-renamed', [], 'crates/memra-server/other.rs'), None)
             # The same bytes moved to another build script path keep the running pin's inputs too.
             self.fixture.put('crates/memra-server/build2.rs', build)
             text = manifest.read_text()
@@ -256,6 +266,9 @@ class LocalInputIO(unittest.TestCase):
                                               'inputs': inputs}}})
             self.assertIn('research/moved/*.txt',
                           census(reading(path, ['research/moved/*.txt']), reading(moved, [])))
+            # A pin of the reader's bytes only at its old path does not admit the moved reader.
+            with self.assertRaisesRegex(module.Refused, 'HIDDEN_DIR'):
+                census(reading(path, ['research/moved/*.txt']), None)
 
     def test_missing_and_noncanonical_paths_remain_refusals(self):
         for name in ('missing', '../outside', '/outside', 'a//b', './a', 'a\\b'):
