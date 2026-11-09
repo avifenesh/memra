@@ -1,0 +1,64 @@
+device NVIDIA GB10 sms 48 T 4096 reps 3
+kernel h2p      regs 255 local 8 B smem 98368 B blocks/SM 1
+kernel m3off    regs 255 local 8 B smem 98368 B blocks/SM 1
+kernel m3       regs 255 local 0 B smem 98368 B blocks/SM 1
+T 4096 Tkv   32768 h2p         37.911 ms  81.57 TFLOPS mismatch 0 nonfinite 0 (min 37.669 max 37.927)
+T 4096 Tkv   32768 m3off       37.434 ms  82.61 TFLOPS mismatch 0 nonfinite 0 (min 37.375 max 38.022)
+T 4096 Tkv   32768 m3          37.425 ms  82.63 TFLOPS mismatch 25165824 nonfinite 0 (min 37.410 max 37.450)
+T 4096 Tkv   65536 h2p         76.039 ms  84.05 TFLOPS mismatch 0 nonfinite 0 (min 76.026 max 76.394)
+T 4096 Tkv   65536 m3off       75.826 ms  84.28 TFLOPS mismatch 0 nonfinite 0 (min 75.774 max 75.844)
+T 4096 Tkv   65536 m3          75.790 ms  84.32 TFLOPS mismatch 25165824 nonfinite 0 (min 75.787 max 75.791)
+T 4096 Tkv  131072 h2p        153.143 ms  84.81 TFLOPS mismatch 0 nonfinite 0 (min 152.513 max 154.315)
+T 4096 Tkv  131072 m3off      153.009 ms  84.88 TFLOPS mismatch 0 nonfinite 0 (min 152.948 max 153.510)
+T 4096 Tkv  131072 m3         152.608 ms  85.11 TFLOPS mismatch 25165824 nonfinite 0 (min 152.569 max 152.695)
+T 4096 Tkv  262144 h2p        306.914 ms  85.31 TFLOPS mismatch 0 nonfinite 0 (min 306.140 max 307.531)
+T 4096 Tkv  262144 m3off      306.973 ms  85.29 TFLOPS mismatch 0 nonfinite 0 (min 306.227 max 307.578)
+T 4096 Tkv  262144 m3         306.217 ms  85.50 TFLOPS mismatch 25165824 nonfinite 0 (min 306.174 max 306.226)
+device NVIDIA GB10 sms 48 T 4096 reps 3
+kernel h2p      regs 255 local 8 B smem 98368 B blocks/SM 1
+kernel m3       regs 255 local 0 B smem 98368 B blocks/SM 1
+kernel m3off    regs 255 local 8 B smem 98368 B blocks/SM 1
+T 4096 Tkv   32768 h2p         37.824 ms  81.76 TFLOPS mismatch 0 nonfinite 0 (min 37.692 max 37.995)
+T 4096 Tkv   32768 m3          37.389 ms  82.71 TFLOPS mismatch 25165824 nonfinite 0 (min 37.380 max 37.394)
+T 4096 Tkv   32768 m3off       37.608 ms  82.23 TFLOPS mismatch 0 nonfinite 0 (min 37.601 max 37.664)
+T 4096 Tkv   65536 h2p         75.977 ms  84.12 TFLOPS mismatch 0 nonfinite 0 (min 75.881 max 76.232)
+T 4096 Tkv   65536 m3          75.788 ms  84.33 TFLOPS mismatch 25165824 nonfinite 0 (min 75.785 max 75.823)
+T 4096 Tkv   65536 m3off       76.172 ms  83.90 TFLOPS mismatch 0 nonfinite 0 (min 75.621 max 76.894)
+T 4096 Tkv  131072 h2p        152.728 ms  85.04 TFLOPS mismatch 0 nonfinite 0 (min 152.347 max 153.832)
+T 4096 Tkv  131072 m3         152.405 ms  85.22 TFLOPS mismatch 25165824 nonfinite 0 (min 152.404 max 152.459)
+T 4096 Tkv  131072 m3off      152.337 ms  85.26 TFLOPS mismatch 0 nonfinite 0 (min 152.247 max 153.041)
+T 4096 Tkv  262144 h2p        305.891 ms  85.59 TFLOPS mismatch 0 nonfinite 0 (min 305.876 max 307.073)
+T 4096 Tkv  262144 m3         305.813 ms  85.61 TFLOPS mismatch 25165824 nonfinite 0 (min 305.798 max 305.813)
+T 4096 Tkv  262144 m3off      305.863 ms  85.60 TFLOPS mismatch 0 nonfinite 0 (min 305.814 max 306.333)
+device NVIDIA GB10 sms 48 T 4096 reps 3
+kernel h2p      regs 255 local 8 B smem 98368 B blocks/SM 1
+kernel m3off    regs 255 local 8 B smem 98368 B blocks/SM 1
+kernel m3       regs 255 local 0 B smem 98368 B blocks/SM 1
+T 4096 Tkv   32768 h2p         37.847 ms  81.71 TFLOPS mismatch 0 nonfinite 0 (min 37.819 max 37.905)
+T 4096 Tkv   32768 m3off       37.611 ms  82.22 TFLOPS mismatch 0 nonfinite 0 (min 37.607 max 37.917)
+T 4096 Tkv   32768 m3          37.352 ms  82.79 TFLOPS mismatch 25165824 nonfinite 0 (min 37.330 max 37.420)
+T 4096 Tkv   65536 h2p         76.213 ms  83.86 TFLOPS mismatch 0 nonfinite 0 (min 75.624 max 76.273)
+T 4096 Tkv   65536 m3off       75.755 ms  84.36 TFLOPS mismatch 0 nonfinite 0 (min 75.695 max 76.749)
+T 4096 Tkv   65536 m3          75.712 ms  84.41 TFLOPS mismatch 25165824 nonfinite 0 (min 75.693 max 75.714)
+T 4096 Tkv  131072 h2p        152.727 ms  85.04 TFLOPS mismatch 0 nonfinite 0 (min 152.234 max 153.021)
+T 4096 Tkv  131072 m3off      152.231 ms  85.32 TFLOPS mismatch 0 nonfinite 0 (min 152.202 max 152.293)
+T 4096 Tkv  131072 m3         152.378 ms  85.24 TFLOPS mismatch 25165824 nonfinite 0 (min 152.373 max 152.413)
+T 4096 Tkv  262144 h2p        306.012 ms  85.56 TFLOPS mismatch 0 nonfinite 0 (min 305.759 max 306.844)
+T 4096 Tkv  262144 m3off      305.444 ms  85.72 TFLOPS mismatch 0 nonfinite 0 (min 305.298 max 305.866)
+T 4096 Tkv  262144 m3         305.787 ms  85.62 TFLOPS mismatch 25165824 nonfinite 0 (min 305.733 max 305.803)
+device NVIDIA GB10 sms 48 T 4096 reps 3
+kernel h2p      regs 255 local 8 B smem 98368 B blocks/SM 1
+kernel m3       regs 255 local 0 B smem 98368 B blocks/SM 1
+kernel m3off    regs 255 local 8 B smem 98368 B blocks/SM 1
+T 4096 Tkv   32768 h2p         37.815 ms  81.78 TFLOPS mismatch 0 nonfinite 0 (min 37.333 max 37.939)
+T 4096 Tkv   32768 m3          37.345 ms  82.81 TFLOPS mismatch 25165824 nonfinite 0 (min 37.344 max 37.388)
+T 4096 Tkv   32768 m3off       37.506 ms  82.45 TFLOPS mismatch 0 nonfinite 0 (min 37.506 max 37.619)
+T 4096 Tkv   65536 h2p         76.126 ms  83.95 TFLOPS mismatch 0 nonfinite 0 (min 75.579 max 76.505)
+T 4096 Tkv   65536 m3          75.693 ms  84.43 TFLOPS mismatch 25165824 nonfinite 0 (min 75.689 max 75.701)
+T 4096 Tkv   65536 m3off       75.594 ms  84.54 TFLOPS mismatch 0 nonfinite 0 (min 75.574 max 76.735)
+T 4096 Tkv  131072 h2p        152.272 ms  85.30 TFLOPS mismatch 0 nonfinite 0 (min 152.271 max 152.471)
+T 4096 Tkv  131072 m3         152.397 ms  85.23 TFLOPS mismatch 25165824 nonfinite 0 (min 152.396 max 152.400)
+T 4096 Tkv  131072 m3off      152.234 ms  85.32 TFLOPS mismatch 0 nonfinite 0 (min 152.157 max 152.807)
+T 4096 Tkv  262144 h2p        305.627 ms  85.67 TFLOPS mismatch 0 nonfinite 0 (min 305.511 max 305.987)
+T 4096 Tkv  262144 m3         305.789 ms  85.62 TFLOPS mismatch 25165824 nonfinite 0 (min 305.785 max 305.806)
+T 4096 Tkv  262144 m3off      305.620 ms  85.67 TFLOPS mismatch 0 nonfinite 0 (min 305.618 max 305.739)

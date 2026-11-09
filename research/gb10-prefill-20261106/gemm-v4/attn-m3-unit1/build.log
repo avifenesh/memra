@@ -1,0 +1,519 @@
+flash_attn.cu(848): warning #177-D: variable "alpha_self" was declared but never referenced
+              float alpha_self = 1.0f;
+                    ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+flash_attn.cu(1083): warning #177-D: variable "sMw" was declared but never referenced
+      float* sMw = sM + warp*16;
+             ^
+
+flash_attn.cu(3669): warning #177-D: variable "sSw" was declared but never referenced
+      float* sSw = sS + warp*16*32;
+             ^
+
+flash_attn.cu(3670): warning #177-D: variable "sMw" was declared but never referenced
+      float* sMw = sM + warp*16;
+             ^
+
+ptxas info    : 24 bytes gmem
+ptxas info    : Compiling entry function '_Z9init_bf16P13__nv_bfloat16mj' for 'sm_121a'
+ptxas info    : Function properties for _Z9init_bf16P13__nv_bfloat16mj
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 2.308 ms
+ptxas info    : Compiling entry function '_Z8init_f32Pfmj' for 'sm_121a'
+ptxas info    : Function properties for _Z8init_f32Pfmj
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 1.506 ms
+ptxas info    : Compiling entry function 'cand_m3' for 'sm_121a'
+ptxas info    : Function properties for cand_m3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers
+ptxas info    : Compile time = 105.751 ms
+ptxas info    : Compiling entry function 'cand_m3off' for 'sm_121a'
+ptxas info    : Function properties for cand_m3off
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 112.574 ms
+ptxas info    : Compiling entry function 'cand_ex2b' for 'sm_121a'
+ptxas info    : Function properties for cand_ex2b
+    72 bytes stack frame, 136 bytes spill stores, 136 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 72 bytes cumulative stack size
+ptxas info    : Compile time = 112.042 ms
+ptxas info    : Compiling entry function 'cand_ex2' for 'sm_121a'
+ptxas info    : Function properties for cand_ex2
+    64 bytes stack frame, 108 bytes spill stores, 108 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 64 bytes cumulative stack size
+ptxas info    : Compile time = 114.945 ms
+ptxas info    : Compiling entry function 'cand_ppv' for 'sm_121a'
+ptxas info    : Function properties for cand_ppv
+    56 bytes stack frame, 96 bytes spill stores, 96 bytes spill loads
+ptxas info    : Used 255 registers, used 16 barriers, 56 bytes cumulative stack size
+ptxas info    : Compile time = 112.272 ms
+ptxas info    : Compiling entry function 'cand_ppl' for 'sm_121a'
+ptxas info    : Function properties for cand_ppl
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 16 barriers
+ptxas info    : Compile time = 111.750 ms
+ptxas info    : Compiling entry function 'cand_ppg' for 'sm_121a'
+ptxas info    : Function properties for cand_ppg
+    16 bytes stack frame, 16 bytes spill stores, 16 bytes spill loads
+ptxas info    : Used 255 registers, used 16 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 111.607 ms
+ptxas info    : Compiling entry function 'cand_ppw' for 'sm_121a'
+ptxas info    : Function properties for cand_ppw
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 16 barriers
+ptxas info    : Compile time = 110.673 ms
+ptxas info    : Compiling entry function 'cand_pp0' for 'sm_121a'
+ptxas info    : Function properties for cand_pp0
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 109.186 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw_fa2_prime_table' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw_fa2_prime_table
+    40 bytes stack frame, 52 bytes spill stores, 60 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 40 bytes cumulative stack size
+ptxas info    : Compile time = 136.409 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw_fa2' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw_fa2
+    40 bytes stack frame, 48 bytes spill stores, 64 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 40 bytes cumulative stack size
+ptxas info    : Compile time = 136.509 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw_h2p_prime_table' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw_h2p_prime_table
+    24 bytes stack frame, 28 bytes spill stores, 28 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 24 bytes cumulative stack size
+ptxas info    : Compile time = 108.126 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw_h2_prime_table' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw_h2_prime_table
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 112.257 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw_db_prime_table' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw_db_prime_table
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 130.832 ms
+ptxas info    : Compiling entry function 'fa_dequant_kv_ws_bf16_prime_table' for 'sm_121a'
+ptxas info    : Function properties for fa_dequant_kv_ws_bf16_prime_table
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 21.707 ms
+ptxas info    : Compiling entry function 'append_quantize_kv_q8_0_q5_1_rows_prime_table' for 'sm_121a'
+ptxas info    : Function properties for append_quantize_kv_q8_0_q5_1_rows_prime_table
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 24 registers, used 0 barriers
+ptxas info    : Compile time = 7.414 ms
+ptxas info    : Compiling entry function 'append_quantize_kv_q8_0_q5_1_dcw' for 'sm_121a'
+ptxas info    : Function properties for append_quantize_kv_q8_0_q5_1_dcw
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 23 registers, used 0 barriers
+ptxas info    : Compile time = 6.983 ms
+ptxas info    : Compiling entry function 'qk_norm_rope_append_inc_dcw_rows' for 'sm_121a'
+ptxas info    : Function properties for qk_norm_rope_append_inc_dcw_rows
+    32 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 32 bytes cumulative stack size, 2176 bytes smem
+ptxas info    : Compile time = 20.695 ms
+ptxas info    : Compiling entry function 'qk_norm_rope_append_inc_dcw' for 'sm_121a'
+ptxas info    : Function properties for qk_norm_rope_append_inc_dcw
+    32 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 34 registers, used 1 barriers, 32 bytes cumulative stack size, 2176 bytes smem
+ptxas info    : Compile time = 19.060 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_v3_dcw_prof' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_v3_dcw_prof
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 33.078 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_v3_dcw' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_v3_dcw
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 31.170 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_v3_dcw_rows' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_v3_dcw_rows
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers
+ptxas info    : Compile time = 32.140 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_rows_v4_512_tb' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_rows_v4_512_tb
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 70 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 67.972 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_rows_dpl16_i2' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_rows_dpl16_i2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 70 registers, used 0 barriers
+ptxas info    : Compile time = 44.289 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_rows_dpl16' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_rows_dpl16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers
+ptxas info    : Compile time = 30.115 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_rows_reg_w' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_rows_reg_w
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 12.672 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_rows_v4_w_sp' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_rows_v4_w_sp
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 37.997 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_rows_v4_w' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_rows_v4_w
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 60 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 34.129 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_rows_v4_dc' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_rows_v4_dc
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 55 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 34.344 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_rows_v4' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_rows_v4
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 60 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 33.844 ms
+ptxas info    : Compiling entry function 'fa_decode_combine_seqs' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_combine_seqs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 9.223 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_seqs_v4_deep' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_seqs_v4_deep
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 74 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 40.545 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_v4_deep_dc' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_v4_deep_dc
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 70 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 39.081 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_v4_deep' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_v4_deep
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 62 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 38.712 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_v4_dc' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_v4_dc
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 60 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 33.394 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_v4' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_v4
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 57 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 32.274 ms
+ptxas info    : Compiling entry function 'fa_decode_combine_rows_w_q8_1' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_combine_rows_w_q8_1
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 13.337 ms
+ptxas info    : Compiling entry function 'fa_decode_combine_rows_dc_q8_1' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_combine_rows_dc_q8_1
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 13.253 ms
+ptxas info    : Compiling entry function 'fa_decode_combine_rows' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_combine_rows
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 9.158 ms
+ptxas info    : Compiling entry function 'fa_decode_combine_rows_w' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_combine_rows_w
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.993 ms
+ptxas info    : Compiling entry function 'fa_decode_combine_rows_dc' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_combine_rows_dc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.997 ms
+ptxas info    : Compiling entry function 'fa_decode_combine_q8_1' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_combine_q8_1
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 12.423 ms
+ptxas info    : Compiling entry function 'fa_decode_combine_f32' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_combine_f32
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 9.086 ms
+ptxas info    : Compiling entry function 'fa_decode_combine_gate_f32_s' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_combine_gate_f32_s
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 12.297 ms
+ptxas info    : Compiling entry function 'fa_decode_combine_gate_f32' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_combine_gate_f32
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 9.596 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_v3_dc' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_v3_dc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 30.380 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_rows_v3' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_rows_v3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers
+ptxas info    : Compile time = 30.622 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_v3' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_v3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 29.501 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_v2_dc' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_v2_dc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers
+ptxas info    : Compile time = 27.985 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_rows_v2' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_rows_v2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers
+ptxas info    : Compile time = 28.378 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_rows_v3_dc' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_rows_v3_dc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers
+ptxas info    : Compile time = 30.745 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_v2' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_v2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers
+ptxas info    : Compile time = 27.282 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_rows_smem_w' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_rows_smem_w
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers
+ptxas info    : Compile time = 11.071 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_dpl16_dc' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_dpl16_dc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers
+ptxas info    : Compile time = 30.378 ms
+ptxas info    : Compiling entry function 'fa_decode_vec_q_dpl16' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_vec_q_dpl16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers
+ptxas info    : Compile time = 29.090 ms
+ptxas info    : Compiling entry function 'fa_decode_f32' for 'sm_121a'
+ptxas info    : Function properties for fa_decode_f32
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 39 registers, used 1 barriers
+ptxas info    : Compile time = 8.261 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw_db_w_hd128' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw_db_w_hd128
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Compile time = 63.293 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw_db_hd128' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw_db_hd128
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 250 registers, used 1 barriers
+ptxas info    : Compile time = 56.160 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw_h2p' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw_h2p
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 113.449 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw_h2' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw_h2
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 115.373 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw_db' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw_db
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 132.911 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw_w_hd128' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw_w_hd128
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Compile time = 62.024 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw_hd128' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw_hd128
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Compile time = 64.898 ms
+ptxas info    : Compiling entry function 'fa_prefill_qw' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_qw
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 142.203 ms
+ptxas info    : Compiling entry function 'fa_dequant_kv_ws_f32' for 'sm_121a'
+ptxas info    : Function properties for fa_dequant_kv_ws_f32
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 28 registers, used 0 barriers
+ptxas info    : Compile time = 12.917 ms
+ptxas info    : Compiling entry function 'fa_dequant_kv_ws_bf16' for 'sm_121a'
+ptxas info    : Function properties for fa_dequant_kv_ws_bf16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 21.309 ms
+ptxas info    : Compiling entry function 'fa_prefill_q_hd128' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_q_hd128
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Compile time = 64.954 ms
+ptxas info    : Compiling entry function 'fa_prefill_q' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_q
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 134.382 ms
+ptxas info    : Compiling entry function 'fa_prefill_bf16kv_pp_hd128' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_bf16kv_pp_hd128
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 231 registers, used 1 barriers
+ptxas info    : Compile time = 58.233 ms
+ptxas info    : Compiling entry function 'fa_prefill_bf16kv_pp' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_bf16kv_pp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Compile time = 134.522 ms
+ptxas info    : Compiling entry function 'fa_prefill_f32_pp_w2_hd128' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_f32_pp_w2_hd128
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Compile time = 71.471 ms
+ptxas info    : Compiling entry function 'fa_prefill_f32_pp_w2' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_f32_pp_w2
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 136.300 ms
+ptxas info    : Compiling entry function 'fa_prefill_f32_pp_hd128' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_f32_pp_hd128
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Compile time = 71.689 ms
+ptxas info    : Compiling entry function 'fa_prefill_bf16_hd512_sp16' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_bf16_hd512_sp16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 215 registers, used 1 barriers
+ptxas info    : Compile time = 79.400 ms
+ptxas info    : Compiling entry function 'fa_prefill_bf16_hd512_sp16w4' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_bf16_hd512_sp16w4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 196 registers, used 1 barriers
+ptxas info    : Compile time = 63.835 ms
+ptxas info    : Compiling entry function 'fa_prefill_bf16_hd512_sp16h2' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_bf16_hd512_sp16h2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 247 registers, used 1 barriers
+ptxas info    : Compile time = 127.579 ms
+ptxas info    : Compiling entry function 'fa_mla_gathered_bf16' for 'sm_121a'
+ptxas info    : Function properties for fa_mla_gathered_bf16
+    96 bytes stack frame, 96 bytes spill stores, 96 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 96 bytes cumulative stack size
+ptxas info    : Compile time = 101.025 ms
+ptxas info    : Compiling entry function 'fa_prefill_bf16_hd512_sp' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_bf16_hd512_sp
+    16 bytes stack frame, 12 bytes spill stores, 12 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 102.610 ms
+ptxas info    : Compiling entry function 'fa_prefill_bf16_hd512' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_bf16_hd512
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Compile time = 110.165 ms
+ptxas info    : Compiling entry function 'f32_to_bf16_flat' for 'sm_121a'
+ptxas info    : Function properties for f32_to_bf16_flat
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 14 registers, used 0 barriers
+ptxas info    : Compile time = 1.494 ms
+ptxas info    : Compiling entry function 'fa_prefill_f32_hd512' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_f32_hd512
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Compile time = 106.653 ms
+ptxas info    : Compiling entry function 'fa_prefill_w_bf16_p1' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_w_bf16_p1
+    32 bytes stack frame, 64 bytes spill stores, 64 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 32 bytes cumulative stack size
+ptxas info    : Compile time = 168.687 ms
+ptxas info    : Compiling entry function 'fa_prefill_w_bf16_p1h2' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_w_bf16_p1h2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 229 registers, used 1 barriers
+ptxas info    : Compile time = 127.482 ms
+ptxas info    : Compiling entry function 'fa_prefill_w_f32_pp' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_w_f32_pp
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 139.994 ms
+ptxas info    : Compiling entry function 'fa_prefill_f32_pp' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_f32_pp
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 137.557 ms
+ptxas info    : Compiling entry function 'bf16_to_f16_flat' for 'sm_121a'
+ptxas info    : Function properties for bf16_to_f16_flat
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.223 ms
+ptxas info    : Compiling entry function 'f32_to_f16_flat' for 'sm_121a'
+ptxas info    : Function properties for f32_to_f16_flat
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 0 barriers
+ptxas info    : Compile time = 0.933 ms
+ptxas info    : Compiling entry function 'fa_prefill_w_f32' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_w_f32
+    120 bytes stack frame, 240 bytes spill stores, 240 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 120 bytes cumulative stack size
+ptxas info    : Compile time = 136.604 ms
+ptxas info    : Compiling entry function 'fa_prefill_f32_hd128' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_f32_hd128
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 252 registers, used 1 barriers
+ptxas info    : Compile time = 63.977 ms
+ptxas info    : Compiling entry function 'fa_prefill_f32' for 'sm_121a'
+ptxas info    : Function properties for fa_prefill_f32
+    120 bytes stack frame, 232 bytes spill stores, 232 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 120 bytes cumulative stack size
+ptxas info    : Compile time = 135.596 ms
+ptxas info    : Compiling entry function 'append_quantize_kv_q8_0_q5_1_dc' for 'sm_121a'
+ptxas info    : Function properties for append_quantize_kv_q8_0_q5_1_dc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 23 registers, used 0 barriers
+ptxas info    : Compile time = 7.445 ms
+ptxas info    : Compiling entry function 'append_quantize_kv_q8_0_q5_1_dc_inc' for 'sm_121a'
+ptxas info    : Function properties for append_quantize_kv_q8_0_q5_1_dc_inc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 34 registers, used 1 barriers
+ptxas info    : Compile time = 8.762 ms
+ptxas info    : Compiling entry function 'rms_norm_qkv_rope_append_f32' for 'sm_121a'
+ptxas info    : Function properties for rms_norm_qkv_rope_append_f32
+    32 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 1 barriers, 32 bytes cumulative stack size, 128 bytes smem
+ptxas info    : Compile time = 19.540 ms
+ptxas info    : Compiling entry function 'rms_norm_qkv_rope_append_dc_f32' for 'sm_121a'
+ptxas info    : Function properties for rms_norm_qkv_rope_append_dc_f32
+    32 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 30 registers, used 1 barriers, 32 bytes cumulative stack size, 128 bytes smem
+ptxas info    : Compile time = 19.511 ms
+ptxas info    : Compiling entry function 'append_quantize_kv_q8_0_q5_1_seqs' for 'sm_121a'
+ptxas info    : Function properties for append_quantize_kv_q8_0_q5_1_seqs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 25 registers, used 0 barriers
+ptxas info    : Compile time = 7.246 ms
+ptxas info    : Compiling entry function 'append_quantize_kv_q8_0_q5_1_rows_dc' for 'sm_121a'
+ptxas info    : Function properties for append_quantize_kv_q8_0_q5_1_rows_dc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 23 registers, used 0 barriers
+ptxas info    : Compile time = 7.032 ms
+ptxas info    : Compiling entry function 'append_quantize_kv_q8_0_q5_1_rows' for 'sm_121a'
+ptxas info    : Function properties for append_quantize_kv_q8_0_q5_1_rows
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 23 registers, used 0 barriers
+ptxas info    : Compile time = 7.046 ms
+ptxas info    : Compiling entry function 'append_quantize_kv_q8_0_q5_1' for 'sm_121a'
+ptxas info    : Function properties for append_quantize_kv_q8_0_q5_1
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 21 registers, used 0 barriers
+ptxas info    : Compile time = 6.833 ms

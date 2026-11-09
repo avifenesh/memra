@@ -122,3 +122,7 @@ two candidates (1, 2) that free no registers at all.
   (about 3.3 s at 131k, 6.5 s at 260k), and that is the ceiling for candidate 1. Everything above
   mode 3 is the stage compute under the 128-register cap, which no measured structure changes.
   140 TFLOPS is out of reach for the exact program on this tile.
+- h2p sizing (row 62): mode 3 (no K/V feed) matches h2p within 0.1% above 64k (+1.3% at 32k), and
+  ncu puts h2p's tensor pipe at 78.6% active against 79.7% in mode 3. The attention prime is
+  compute-bound. Its idle fifth is the dependency chain of 2 warps per scheduler at 255 registers;
+  no feed or wait lever exists there, and rows 47-49 found no exact schedule above it.
