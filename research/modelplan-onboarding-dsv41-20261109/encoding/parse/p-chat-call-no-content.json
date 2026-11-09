@@ -1,0 +1,19 @@
+{
+  "completion": "\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"get_weather\">\n<｜DSML｜ parameter name=\"location\" string=\"true\">Oslo</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls><｜end▁of▁sentence｜>",
+  "think": "chat",
+  "expected": {
+    "reasoning_content": "",
+    "content": "",
+    "tool_calls": [
+      {
+        "name": "get_weather",
+        "namespace": null,
+        "arguments": {
+          "location": "Oslo"
+        },
+        "arguments_text": "{\"location\": \"Oslo\"}"
+      }
+    ]
+  },
+  "reencodes_to_completion": true
+}

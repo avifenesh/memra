@@ -201,6 +201,14 @@ interpretation: fused versus separate gates, full versus partial rotary, windowe
 attention, block-local versus file-level heads, uniform versus mixed quant layouts, and pruned
 versus retained ids.
 
+A tiny oracle taken from the vendor's own code pins the program only if both sides evaluate their
+primitives the same way, once the source stores activations in bf16 and selects by top-k. One f32
+ulp of accumulation difference flips a bf16 rounding, the flip changes a selection, and later
+layers move by O(1), past any tolerance worth having. The `deepseek_v41` tiny gate evaluates
+GEMMs, reductions and transcendental functions in f64 and rounds once, on both the vendor side and
+the reference side, takes top-k ties in index order (the CUDA `topk` rule), and matches the
+vendor `model.py` to the bit (`research/modelplan-onboarding-dsv41-20261109/`).
+
 ## 4. Prove tokenizer, template, tools, and thinking
 
 Tokenizer and template work are separate gates:

@@ -1,5 +1,6 @@
 //! DeepSeek-V4.1-Flash (`deepseek_v41`) pack: config normalization, the typed CSA2 plan and the
-//! config-derived tensor schema. Inspect-only: no executor runs the plan yet.
+//! config-derived tensor schema. The reference executor (`memra-reference`) runs the plan
+//! (`NativeReference`, tiny gate only); no tuned surface implements it.
 //!
 //! Checkpoint namespaces (1017 artifact, 96,085 header tensors, names already in the vendor
 //! reference spelling):
@@ -45,12 +46,14 @@ pub static PACK: ModelPack = ModelPack {
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
     // The 1017 artifact ships its dialect as code (`encoding/encoding.py`, "DeepSeek-V4.1 Text and
     // Vision Encoding": DSML tag names, numeric reasoning effort, mid-conversation system turns,
-    // image blocks) and no template. It is not the DSv4 renderer; memra has no V4.1 renderer yet,
-    // so the TokenizerTemplate gate stays pending.
+    // image blocks) and no template. It is not the DSv4 renderer: memra-tokenizer's
+    // `chat::EngineDialect::Dsv41`, gated against that file in
+    // research/modelplan-onboarding-dsv41-20261109/encoding/.
     template: TemplateContract::EngineRenderer("encoding_dsv41"),
-    // Inspect-only: no reference executor implements CSA2, single-pass mHC or Engram, and no
-    // record in docs/support-records.toml claims a state for this family.
-    support: None,
+    // The reference executor runs the plan and the tiny gate passes against an oracle the
+    // vendor model.py produced (record `deepseek_v41-reference`). Checkpoint, rewrite and serve
+    // gates are pending.
+    support: Some(NativeSupport::NativeReference),
     gates: &[
         Gate::Config,
         Gate::TokenizerTemplate,
@@ -60,12 +63,36 @@ pub static PACK: ModelPack = ModelPack {
         Gate::RewriteParity,
         Gate::Serve,
     ],
-    checkpoint_parity: None,
+    // The reference and the vendor model.py (with correctly rounded primitives on both sides)
+    // agree to the bit on the tiny fixture: 6,549 oracle rows, max_abs 0
+    // (research/modelplan-onboarding-dsv41-20261109/tiny/). The bound only absorbs a last-ulp
+    // libm difference between machines; anything that moves a bf16, FP8 or FP4 rounding or a
+    // top-k selection moves later rows far past it.
+    checkpoint_parity: Some(CheckpointParityGate {
+        max_abs: 1e-5,
+        max_rel: 1e-5,
+        require_argmax: true,
+    }),
     matches_config: |config| matches!(config.arch, Arch::DeepSeekV41) && config.dsv41.is_some(),
     plan_builder,
     tensor_schema,
-    tiny_plan: None,
+    tiny_plan: Some(tiny_plan),
 };
+
+/// The tiny-gate config: every structural feature of the 1017 program at hidden 64. Ten trunk
+/// layers (window-only, two ratio-2 Full groups with a Reuse layer each, a ratio-1 Full layer
+/// that produces the candidate pool, two restricted Reindex layers and Reuse layers after each),
+/// Engram at two layers with small prime tables, single-pass mHC over 4 streams, FP8 32x32
+/// dense weights, FP4 experts (top-2 of 6 renormalized; the DSpark blocks top-1 of 4, which the
+/// vendor does not renormalize) and two DSpark blocks. Window 64 with 6 compressed picks makes
+/// every query cross the 64-entry block of the sparse-attention kernel.
+pub const TINY_CONFIG: &str = include_str!("fixtures/tiny-config.json");
+
+fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
+    plan_builder(&ModelConfig::from_hf(&crate::config::HfConfig::parse(
+        TINY_CONFIG,
+    )))
+}
 
 fn dsv41(config: &ModelConfig) -> Result<&DeepSeekV41Config, PlanCompileError> {
     config
@@ -650,8 +677,9 @@ fn tensor_owner(name: &str) -> TensorOwner {
 }
 
 /// Typed ids where an existing role is the same tensor role; family keys for V4.1-only tensors
-/// (index-key projection, Engram, the image-token router bias, the tower).
-fn semantic_tensor_id(name: &str, dspark: &DsparkPlan) -> TensorId {
+/// (index-key projection, Engram, the image-token router bias, the tower). The reference
+/// executor reads checkpoint tensors through this same mapping.
+pub fn semantic_tensor_id(name: &str, dspark: &DsparkPlan) -> TensorId {
     match name {
         "embed.weight" => return TensorId::TokenEmbedding,
         "head.weight" => return TensorId::OutputProjection,

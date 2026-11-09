@@ -1,0 +1,29 @@
+{
+  "source": "test_encoding.py::test_v41_rejects_ambiguous_tool_namespaces",
+  "messages": [
+    {
+      "role": "user",
+      "content": "question"
+    },
+    {
+      "role": "assistant",
+      "reasoning_content": "  reason  ",
+      "content": "summary",
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "search::lookup",
+            "arguments": "{\"query\":\"value\",\"limit\":2}"
+          },
+          "namespace": "files"
+        }
+      ]
+    }
+  ],
+  "req_tools": null,
+  "think": "thinking",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "error": "AssertionError: Conflicting tool namespaces: files != search"
+}

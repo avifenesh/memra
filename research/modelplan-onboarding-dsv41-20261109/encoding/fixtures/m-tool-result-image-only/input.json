@@ -1,0 +1,70 @@
+{
+  "source": "matrix",
+  "messages": [
+    {
+      "role": "user",
+      "content": "screenshot please"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "shot",
+            "arguments": "{}"
+          },
+          "id": "s1"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "s1",
+      "content": [
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "shot.png"
+          }
+        }
+      ]
+    }
+  ],
+  "req_tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the weather for a specific location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "The city name"
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "celsius",
+                "fahrenheit"
+              ]
+            }
+          },
+          "required": [
+            "location"
+          ]
+        }
+      }
+    }
+  ],
+  "think": "thinking",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [
+    "shot.png"
+  ],
+  "wire": false
+}

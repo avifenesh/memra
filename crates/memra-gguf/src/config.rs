@@ -1223,6 +1223,21 @@ impl DeepSeekV41Config {
             self.candidate_topk_blocks > 0 && self.candidate_block_size > 0,
             "candidate_topk_blocks and candidate_block_size must be positive".to_string(),
         )?;
+        // Every indexer after the candidate source masks its scores with the source's
+        // per-entry candidate mask, so it must score the same compressed entries.
+        let candidate_ratio = self.compress_ratio(self.candidate_source_layer_id);
+        for &source in &self.index_source_layer_ids {
+            expect(
+                source <= self.candidate_source_layer_id
+                    || self.compress_ratio(source) == candidate_ratio,
+                format!(
+                    "index source layer {source} after candidate source {} has ratio {}, not \
+                     the candidate ratio {candidate_ratio}",
+                    self.candidate_source_layer_id,
+                    self.compress_ratio(source)
+                ),
+            )?;
+        }
         for il in 0..trunk {
             let ratio = self.compress_ratio(il);
             if ratio == 0 {

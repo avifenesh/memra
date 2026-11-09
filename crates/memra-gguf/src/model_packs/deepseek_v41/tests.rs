@@ -181,6 +181,12 @@ fn every_topology_invariant_refuses_by_name() {
         &|c| c.candidate_source_layer_id = 24,
         "candidate_source_layer_id 24 is not a kv source",
     );
+    // A ratio-2 candidate source would mask the ratio-1 indexers after it with a mask over
+    // other entries (the vendor program would fail on the shapes).
+    check(
+        &|c| c.candidate_source_layer_id = 14,
+        "index source layer 20 after candidate source 14 has ratio 1, not the candidate ratio 2",
+    );
     check(
         &|c| c.compress_ratios[21] = 2,
         "layer 21 (ratio 2) has no kv source at or before it with the same ratio",

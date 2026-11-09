@@ -1,0 +1,60 @@
+{
+  "source": "matrix",
+  "messages": [
+    {
+      "role": "system",
+      "content": [
+        {
+          "type": "text",
+          "text": "reference:"
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "sys.png"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "compare"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "I drew"
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "drawn.png"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "user.png"
+          }
+        }
+      ]
+    }
+  ],
+  "req_tools": null,
+  "think": "chat",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [
+    "sys.png",
+    "drawn.png",
+    "user.png"
+  ],
+  "wire": false
+}
