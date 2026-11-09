@@ -43,8 +43,12 @@
 //! one thread per process to take a group stop, the main thread first; when that thread waits
 //! in vfork, the other threads are never told. So when no thread of a multithreaded member has
 //! stopped, the runner directs SIGSTOP at each of its live threads (tgkill) and reads again.
-//! Members are found by process group in /proc; a process that left the group is outside the
-//! group's signals and outside this check. OS scheduling and signal delivery control latency.
+//! Members are the processes listed in /proc whose process group (getpgid) is the job's; a
+//! process that left the group is outside the group's signals and outside this check. The scan
+//! reads nothing of a process outside the group, so no other process on the host can fail it;
+//! a member or leader whose threads cannot be read fails the job instead of yielding unread.
+//! Thread readings are parsed as bytes: a comm may hold any byte. OS scheduling and signal
+//! delivery control latency.
 //! Historical timing receipts live in `research/darktrain-20260807/`. Two consequences the
 //! operator must know:
 //!   * a SIGSTOPPED process KEEPS its memory — VRAM included, and so does a leader parked
@@ -414,29 +418,35 @@ fn proc_gone(err: &std::io::Error) -> bool {
     err.kind() == std::io::ErrorKind::NotFound || err.raw_os_error() == Some(libc::ESRCH)
 }
 
-/// The process group of a `/proc/<pid>/stat` line: the third field after the LAST ')' (comm
-/// may itself contain spaces and parentheses).
-fn proc_stat_pgrp(stat: &str) -> Option<u32> {
-    stat[stat.rfind(')')? + 1..]
-        .split_whitespace()
-        .nth(2)?
-        .parse()
-        .ok()
+/// The process group of `pid`, or None once it is gone. The kernel answers getpgid for any
+/// process: unlike `/proc/<pid>/stat` it needs no read access to another user's entry (a /proc
+/// mounted with hidepid refuses that) and no parse of a line that carries the process's comm,
+/// which may hold any byte.
+fn process_pgrp(pid: u32) -> std::io::Result<Option<u32>> {
+    let pgid = unsafe { libc::getpgid(pid as libc::pid_t) };
+    if pgid >= 0 {
+        return Ok(Some(pgid as u32));
+    }
+    let err = std::io::Error::last_os_error();
+    if proc_gone(&err) { Ok(None) } else { Err(err) }
 }
 
-/// The process group of `pid`, or None once it is gone.
-fn process_pgrp(pid: u32) -> std::io::Result<Option<u32>> {
-    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-        Ok(stat) => proc_stat_pgrp(&stat)
-            .map(Some)
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "unparsable stat")),
-        Err(err) if proc_gone(&err) => Ok(None),
+/// What the group scan does with the process-group answer for one listed process. The scan
+/// asks about every process on the host, so a process outside the job must not be able to fail
+/// the job's stop: one that is gone, in another group, or whose group the server is refused (a
+/// security module can deny getpgid; the kernel itself never does) is passed over. Any other
+/// error stays an error: a stop is never acknowledged on a scan that may have missed a member.
+fn scanned_member(group: std::io::Result<Option<u32>>, pgid: u32) -> std::io::Result<bool> {
+    match group {
+        Ok(group) => Ok(group == Some(pgid)),
+        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => Ok(false),
         Err(err) => Err(err),
     }
 }
 
-/// Every process in process group `pgid` except its leader, from a scan of /proc. A process
-/// that left the group is not found, and the group's signals do not reach it either.
+/// Every process in process group `pgid` except its leader: the processes listed in /proc
+/// whose process group is `pgid`. A process that left the group is not found, and the group's
+/// signals do not reach it either. Nothing of a listed process is read but its process group.
 fn group_members(pgid: u32) -> std::io::Result<Vec<u32>> {
     let mut members = Vec::new();
     for entry in std::fs::read_dir("/proc")? {
@@ -444,7 +454,7 @@ fn group_members(pgid: u32) -> std::io::Result<Vec<u32>> {
         let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse().ok()) else {
             continue; // Not a process directory.
         };
-        if pid != pgid && process_pgrp(pid)? == Some(pgid) {
+        if pid != pgid && scanned_member(process_pgrp(pid), pgid)? {
             members.push(pid);
         }
     }
@@ -462,22 +472,24 @@ struct ThreadStop {
     shared: bool,
 }
 
-/// Parse a `/proc/.../status` text into a [`ThreadStop`]; None when a field is missing.
-fn thread_stop(status: &str) -> Option<ThreadStop> {
-    let field = |name: &str| {
+/// Parse the bytes of a `/proc/.../status` into a [`ThreadStop`]; None when a field is missing.
+/// Bytes, not text: the `Name:` line carries the thread's comm, which may hold any byte. The
+/// kernel escapes a newline in it, so no comm can forge one of the lines read here.
+fn thread_stop(status: &[u8]) -> Option<ThreadStop> {
+    let field = |name: &[u8]| {
         status
-            .lines()
+            .split(|&b| b == b'\n')
             .find_map(|l| l.strip_prefix(name))
-            .map(str::trim)
+            .map(<[u8]>::trim_ascii)
     };
-    let sigstop = |name: &str| {
-        let mask = u64::from_str_radix(field(name)?, 16).ok()?;
+    let sigstop = |name: &[u8]| {
+        let mask = u64::from_str_radix(std::str::from_utf8(field(name)?).ok()?, 16).ok()?;
         Some(mask & (1u64 << (libc::SIGSTOP - 1)) != 0)
     };
     Some(ThreadStop {
-        state: field("State:")?.chars().next()?,
-        own: sigstop("SigPnd:")?,
-        shared: sigstop("ShdPnd:")?,
+        state: char::from(*field(b"State:")?.first()?),
+        own: sigstop(b"SigPnd:")?,
+        shared: sigstop(b"ShdPnd:")?,
     })
 }
 
@@ -524,7 +536,9 @@ fn classify_process_stop(threads: &[ThreadStop]) -> ProcessStop {
     }
 }
 
-/// A process's threads (tid and reading), or None once the process is gone.
+/// A process's threads (tid and reading), or None once the process is gone. Read only for the
+/// leader and for known members of the job's group, so every error but "gone" stays an error:
+/// a process of the job that cannot be read is never counted as stopped.
 fn process_threads(pid: u32) -> std::io::Result<Option<Vec<(libc::pid_t, ThreadStop)>>> {
     let tasks = match std::fs::read_dir(format!("/proc/{pid}/task")) {
         Ok(tasks) => tasks,
@@ -545,7 +559,7 @@ fn process_threads(pid: u32) -> std::io::Result<Option<Vec<(libc::pid_t, ThreadS
             .to_str()
             .and_then(|tid| tid.parse().ok())
             .ok_or_else(unparsable)?;
-        match std::fs::read_to_string(task.path().join("status")) {
+        match std::fs::read(task.path().join("status")) {
             Ok(status) => threads.push((tid, thread_stop(&status).ok_or_else(unparsable)?)),
             Err(err) if proc_gone(&err) => {} // The thread exited after the listing.
             Err(err) => return Err(err),
@@ -943,7 +957,8 @@ mod tests {
 
     /// `/proc/.../stat` fields after comm: (state, ppid, flags).
     fn proc_stat_fields(path: &std::path::Path) -> Option<(char, u32, i64)> {
-        let s = std::fs::read_to_string(path).ok()?;
+        // Lossy: comm may hold any byte, and the fields after it are ASCII.
+        let s = String::from_utf8_lossy(&std::fs::read(path).ok()?).into_owned();
         let rest: Vec<&str> = s[s.rfind(')')? + 1..].split_whitespace().collect();
         Some((
             rest.first()?.chars().next()?,
@@ -1571,8 +1586,9 @@ mod tests {
     /// the pending set; the second must never acknowledge. With more than one live thread a
     /// shared stop proves nothing: a blocked thread counts once a thread is stopped or the stop
     /// is in its own set, and a process with no stopped thread and a thread without its own stop
-    /// gets the stop directed at each thread. A process with no live thread is gone. Group
-    /// members are found by the process group in `/proc/<pid>/stat`.
+    /// gets the stop directed at each thread. A process with no live thread is gone. A status
+    /// is read as bytes (a comm may hold any byte), and the group scan passes over a process
+    /// whose group the server is refused, and over nothing else that fails.
     #[test]
     fn process_threads_classify_the_stop() {
         use ProcessStop::*;
@@ -1614,23 +1630,182 @@ mod tests {
             assert_eq!(classify_process_stop(&threads), want, "{threads:?}");
         }
         // The probe's parked dash leader: SIGCHLD and SIGSTOP shared.
-        let parked = "Name:\tsh\nState:\tD (disk sleep)\nSigPnd:\t0000000000000000\n\
-                      ShdPnd:\t0000000000050000\n";
+        let parked = b"Name:\tsh\nState:\tD (disk sleep)\nSigPnd:\t0000000000000000\n\
+                       ShdPnd:\t0000000000050000\n";
         assert_eq!(thread_stop(parked), Some(t('D', false, true)));
-        let directed = "State:\tD (disk sleep)\nSigPnd:\t0000000000040000\n\
-                        ShdPnd:\t0000000000050000\n";
+        let directed = b"State:\tD (disk sleep)\nSigPnd:\t0000000000040000\n\
+                         ShdPnd:\t0000000000050000\n";
         assert_eq!(thread_stop(directed), Some(t('D', true, true)));
-        let resumed = "State:\tS (sleeping)\nSigPnd:\t0000000000000000\n\
-                       ShdPnd:\t0000000000010000\n";
+        let resumed = b"State:\tS (sleeping)\nSigPnd:\t0000000000000000\n\
+                        ShdPnd:\t0000000000010000\n";
         assert_eq!(thread_stop(resumed), Some(t('S', false, false)));
-        assert_eq!(thread_stop("State:\tD (disk sleep)\nSigPnd:\t0\n"), None);
-        assert_eq!(thread_stop("SigPnd:\t0\nShdPnd:\t0\n"), None);
-        assert_eq!(
-            proc_stat_pgrp("4242 (a ) (b) T 4200 4100 4100 0"),
-            Some(4100)
+        assert_eq!(thread_stop(b"State:\tD (disk sleep)\nSigPnd:\t0\n"), None);
+        assert_eq!(thread_stop(b"SigPnd:\t0\nShdPnd:\t0\n"), None);
+        // A comm that is not UTF-8, and one that spells a field: the kernel prints the bytes
+        // as they are and escapes a newline, so the line stays one line.
+        let bytes = b"Name:\t\xff\xfe\\nState:\tR\nState:\tT (stopped)\n\
+                      SigPnd:\t0000000000000000\nShdPnd:\t0000000000000000\n";
+        assert_eq!(thread_stop(bytes), Some(t('T', false, false)));
+        // The group scan: a member, another group, gone, a refused answer, any other error.
+        let errno = std::io::Error::from_raw_os_error;
+        assert!(scanned_member(Ok(Some(4100)), 4100).unwrap());
+        assert!(!scanned_member(Ok(Some(4242)), 4100).unwrap());
+        assert!(!scanned_member(Ok(None), 4100).unwrap());
+        assert!(!scanned_member(Err(errno(libc::EPERM)), 4100).unwrap());
+        assert!(!scanned_member(Err(errno(libc::EACCES)), 4100).unwrap());
+        assert!(scanned_member(Err(errno(libc::EIO)), 4100).is_err());
+        // The process group comes from getpgid: this process's own, and none for no process.
+        let own = unsafe { libc::getpgid(0) } as u32;
+        assert_eq!(process_pgrp(std::process::id()).unwrap(), Some(own));
+        assert_eq!(process_pgrp(i32::MAX as u32).unwrap(), None);
+    }
+
+    /// A process that renamed itself to bytes that are not UTF-8 (`\xff\xfe` and a suffix),
+    /// blocked reading its stdin; dropping it ends it. The comm is in place when this returns.
+    struct ByteNamed(std::process::Child);
+
+    impl ByteNamed {
+        const COMM: &'static [u8] = b"\xff\xfedl";
+
+        /// A `sh -c` script: the shell writes its own comm, then runs `then` (which must not
+        /// exec). No quote in it, so a caller can wrap it in single quotes.
+        fn script(then: &str) -> String {
+            format!("printf \\\\377\\\\376dl > /proc/$$/comm; {then}")
+        }
+
+        fn named(pid: u32) -> bool {
+            std::fs::read(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+                std::str::from_utf8(&stat).is_err()
+                    && stat.windows(Self::COMM.len()).any(|w| w == Self::COMM)
+            })
+        }
+
+        fn spawn() -> Self {
+            let child = std::process::Command::new("sh")
+                .args(["-c", &Self::script("read hold")])
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            let pid = child.id();
+            let named = Self(child);
+            wait_acknowledged("the process outside the job carries its byte name", || {
+                Self::named(pid)
+            });
+            named
+        }
+    }
+
+    impl Drop for ByteNamed {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    /// The stop reading scans every process on the host for the job's group. A process outside
+    /// the job, here one whose comm is not UTF-8, must not be able to fail the job: read as text,
+    /// its `/proc/<pid>/stat` was an error, the stop was never acknowledged and the job was
+    /// marked failed for good. The job must yield and resume beside it.
+    #[test]
+    fn stop_is_acknowledged_beside_a_process_outside_the_job_whose_comm_is_not_utf8() {
+        let outside = ByteNamed::spawn();
+        let (sig, v, b) = sigs();
+        let h = spawn_runner(
+            cfg("while :; do sleep 0.01; done", YieldMode::Stop),
+            v,
+            b,
+            Arc::new(|| None),
         );
-        assert_eq!(proc_stat_pgrp("4242 (sh) S 1 4242 4242 0"), Some(4242));
-        assert_eq!(proc_stat_pgrp("4242 (sh) S 1"), None);
+        let st = h.state.clone();
+        let guard = RunnerGuard(Some(h));
+        sig.valley.store(true, Ordering::Release);
+        wait_acknowledged("launch", || st.state.load(Ordering::Acquire) == BG_RUNNING);
+        let pid = st.job_pid.load(Ordering::Acquire);
+        let outside_pid = outside.0.id();
+        assert_ne!(
+            unsafe { libc::getpgid(outside_pid as i32) },
+            pid as i32,
+            "the byte-named process must be outside the job's group"
+        );
+        wait_acknowledged("job running", || matches!(proc_state(pid), Some('R' | 'S')));
+        sig.valley.store(false, Ordering::Release);
+        sig.busy.store(true, Ordering::Release);
+        wait_acknowledged("the runner yields beside the byte-named process", || {
+            let state = st.state.load(Ordering::Acquire);
+            assert_ne!(
+                state, BG_FAILED,
+                "a process outside the job's group failed the job's stop"
+            );
+            state == BG_YIELDED
+        });
+        assert!(
+            ByteNamed::named(outside_pid),
+            "the byte-named process was alive through the stop"
+        );
+        wait_acknowledged("yield to T, or to D parked in vfork", || {
+            leader_stopped_or_vfork_parked(pid)
+        });
+        assert_eq!(st.yields.load(Ordering::Relaxed), 1);
+        sig.busy.store(false, Ordering::Release);
+        sig.valley.store(true, Ordering::Release);
+        wait_acknowledged("the runner resumes", || {
+            st.resumes.load(Ordering::Relaxed) == 1
+                && st.state.load(Ordering::Acquire) == BG_RUNNING
+        });
+        guard.shutdown();
+        drop(outside);
+    }
+
+    /// The job's own program may carry such a name too. It is a member of the job's group, so
+    /// its threads are read (`/proc/<pid>/task/<tid>/status`, whose `Name:` line holds the same
+    /// bytes): the yield is published once that member has stopped, and not before.
+    #[test]
+    fn stop_reads_a_group_member_whose_comm_is_not_utf8() {
+        // The runner's `sh -c` stays the leader; the inner shell is the member that renames
+        // itself and spawns.
+        let job = format!(
+            "sh -c '{}'",
+            ByteNamed::script("while :; do sleep 0.01; done")
+        );
+        let (sig, v, b) = sigs();
+        let h = spawn_runner(cfg(&job, YieldMode::Stop), v, b, Arc::new(|| None));
+        let st = h.state.clone();
+        let guard = RunnerGuard(Some(h));
+        sig.valley.store(true, Ordering::Release);
+        wait_acknowledged("launch", || st.state.load(Ordering::Acquire) == BG_RUNNING);
+        let pid = st.job_pid.load(Ordering::Acquire);
+        let member = || match children_of(pid)[..] {
+            [member] if ByteNamed::named(member) => Some(member),
+            _ => None,
+        };
+        wait_acknowledged("the job's program carries its byte name", || {
+            member().is_some()
+        });
+        let member = member().unwrap();
+        assert_eq!(unsafe { libc::getpgid(member as i32) }, pid as i32);
+        sig.valley.store(false, Ordering::Release);
+        sig.busy.store(true, Ordering::Release);
+        wait_acknowledged("the runner yields with the byte-named member read", || {
+            let state = st.state.load(Ordering::Acquire);
+            assert_ne!(
+                state, BG_FAILED,
+                "the member's byte name failed the job's stop"
+            );
+            state == BG_YIELDED
+        });
+        assert!(
+            leader_stopped_or_vfork_parked(member),
+            "the byte-named member was running at the yield: threads {:?}",
+            leader_tids(member)
+        );
+        assert_eq!(st.yields.load(Ordering::Relaxed), 1);
+        sig.busy.store(false, Ordering::Release);
+        sig.valley.store(true, Ordering::Release);
+        wait_acknowledged("the runner resumes", || {
+            st.resumes.load(Ordering::Relaxed) == 1
+                && st.state.load(Ordering::Acquire) == BG_RUNNING
+        });
+        guard.shutdown();
     }
 
     /// Set in the job's environment: this test binary then runs as the job leader below.

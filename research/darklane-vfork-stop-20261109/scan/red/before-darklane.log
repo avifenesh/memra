@@ -1,0 +1,209 @@
+warning: memra-engine@0.139.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+   Compiling memra-server v0.139.0 ($WORK/src-darklane/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.70s
+     Running unittests src/lib.rs ($WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e)
+
+running 22 tests
+[darklane] bg runner armed: cmd="true" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="trap '' HUP TERM USR1; sleep 600 & echo $! > '$WORK/tmp/darklane-descendant-3534173-checkpoint/descendant'; trap - TERM; trap 'exit 75' USR1; wait"owned checkpoint receipt dir=$WORK/tmp/darklane-expired-checkpoint-3534173
+ mode=checkpoint poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="while :; do :; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="n=$(cat $WORK/tmp/darklane-ckpt-3534173/counter 2>/dev/null || echo 0); trap 'echo $n > $WORK/tmp/darklane-ckpt-3534173/counter; exit 75' USR1; while :; do n=$((n+1)); echo $n > $WORK/tmp/darklane-ckpt-3534173/counter.live; sleep 0.005; done" mode=checkpoint poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="echo $$ > '$WORK/tmp/darklane-exit-window-3534173-7/ready'; while test ! -f '$WORK/tmp/darklane-exit-window-3534173-7/release'; do sleep 0.005; done; exit 7" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="trap '' HUP; sleep 600 & echo $! > '$WORK/tmp/darklane-leader-only-3534173/descendant'; wait" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="echo $$ > '$WORK/tmp/darklane-exit-window-3534173-0/ready'; while test ! -f '$WORK/tmp/darklane-exit-window-3534173-0/release'; do sleep 0.005; done; exit 0" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="trap '' HUP TERM USR1; sleep 600 & echo $! > '$WORK/tmp/darklane-descendant-3534173-normal/descendant'; trap - TERM; while test ! -f '$WORK/tmp/darklane-descendant-3534173-normal/release'; do sleep 0.005; done; exit 0" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 3534198, fresh)
+[darklane] job launched (pid 3534193, fresh)
+[darklane] bg runner armed: cmd="while :; do sleep 0.01; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="trap '' HUP TERM USR1; sleep 600 & echo $! > '$WORK/tmp/darklane-descendant-3534173-shutdown/descendant'; trap - TERM; wait" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 3534202, fresh)
+launch: acknowledged after 6ms
+owned checkpoint descendant ready: acknowledged after 2ms
+[darklane] job launched (pid 3534209, fresh)
+[darklane] job launched (pid 3534205, fresh)
+owned descendant ready: acknowledged after 6ms
+owned descendant ready: acknowledged after 9ms
+[darklane] job launched (pid 3534212, fresh)
+[darklane] job launched (pid 3534215, fresh)
+[darklane] bg runner armed: cmd="DARKLANE_TEST_VFORK_FIFO='$WORK/tmp/darklane-vfork-3534173/fifo' exec '$WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e' --exact darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec --nocapture > '$WORK/tmp/darklane-vfork-3534173/leader.log' 2>&1" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+owned descendant ready: acknowledged after 7ms
+[darklane] job COMPLETE (exit 0)
+[darklane] job launched (pid 3534218, fresh)
+[darklane] bg runner armed: cmd="while :; do sleep 0.01; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+checkpoint leader exited without reaping: acknowledged after 5ms
+[darklane] job checkpointed (exit 75) — relaunches next valley
+[darklane] job launched (pid 3534224, fresh)
+[darklane] job launched (pid 3534220, fresh)
+[darklane] bg runner armed: cmd=owned child ready: acknowledged after 10ms
+"DARKLANE_TEST_MAIN_LEADER_CASE=blocked DARKLANE_TEST_MAIN_LEADER_DIR='$WORK/tmp/darklane-main-blocked-3534173' exec '$WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e' > '$WORK/tmp/darklane-main-blocked-3534173/leader.log' 2>&1" mode=stop poll=5owned child ready: acknowledged after 10ms
+ms vram_budget=0MB (+2048MB serve headroom must stay free)
+launch: acknowledged after 6ms
+owned descendant ready: acknowledged after 6ms
+the process outside the job carries its byte name: acknowledged after 2ms
+[darklane] bg runner armed: cmd="while :; do sleep 0.01; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 3534231, fresh)
+[darklane] job launched (pid 3534229, fresh)
+owned checkpoint descendant terminated: acknowledged after 2ms
+launch: acknowledged after 2ms
+launch: acknowledged after 4ms
+test darklane::tests::expired_checkpoint_deadline_does_not_grant_descendant_term_grace ... ok
+[darklane] bg runner armed: cmd="DARKLANE_TEST_MAIN_LEADER_CASE=sleeper DARKLANE_TEST_MAIN_LEADER_DIR='$WORK/tmp/darklane-member-vfork-3534173' '$WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e' > '$WORK/tmp/darklane-member-vfork-3534173/leader.log' 2>&1; exit $?" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 3534233, fresh)
+owned child exited in stop window: acknowledged after 2ms
+[darklane] job launched (pid 3534237, fresh)
+launch: acknowledged after 4ms
+job running: acknowledged after 0ms
+owned child exited in stop window: acknowledged after 2ms
+launch: acknowledged after 4ms
+User defined signal 1
+[darklane] stop acknowledgement failed: stream did not contain valid UTF-8
+[darklane] stop acknowledgement failed: stream did not contain valid UTF-8
+[darklane] job COMPLETE (exit 0)
+[darklane] job checkpointed (exit 75) — relaunches next valley
+real exit classified and reaped: acknowledged after 10ms
+[darklane] job FAILED (exit status: 7) — not relaunching
+real exit classified and reaped: acknowledged after 12ms
+test darklane::tests::normal_exit_between_wait_and_stop_is_done_without_yield ... ok
+[darklane] bg runner armed: cmd="DARKLANE_TEST_MAIN_LEADER_CASE=sleeper DARKLANE_TEST_MAIN_LEADER_DIR='$WORK/tmp/darklane-main-vfork-3534173' exec '$WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e' > '$WORK/tmp/darklane-main-vfork-3534173/leader.log' 2>&1" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 3534242, fresh)
+test darklane::tests::failed_exit_between_wait_and_stop_is_failed_without_yield ... ok
+[darklane] bg runner armed: cmd="sh -c 'printf \\\\377\\\\376dl > /proc/$$/comm; while :; do sleep 0.01; done'" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+launch: acknowledged after 8ms
+[darklane] owned process group terminated at shutdown
+[darklane] job launched (pid 3534243, resume from checkpoint)
+[darklane] stop acknowledgement failed: stream did not contain valid UTF-8
+[darklane] owned process group terminated at shutdown
+[darklane] stop acknowledgement failed: stream did not contain valid UTF-8
+[darklane] job launched (pid 3534246, fresh)
+
+thread 'darklane::tests::stop_is_acknowledged_beside_a_process_outside_the_job_whose_comm_is_not_utf8' (3534210) panicked at crates/memra-server/src/darklane.rs:1641:13:
+assertion `left != right` failed: a process outside the job's group failed the job's stop
+  left: 5
+ right: 5
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+launch: acknowledged after 8ms
+[darklane] bg runner armed: cmd="exit 3" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] owned process group terminated at shutdown
+[darklane] job launched (pid 3534253, fresh)
+[darklane] owned process group terminated at shutdown
+test darklane::tests::checkpoint_mode_preempts_and_resumes_counter ... ok
+[darklane] bg runner armed: cmd="while :; do /bin/true; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 3534259, fresh)
+launch: acknowledged after 12ms
+job running: acknowledged after 0ms
+[darklane] job launched (pid 3534263, fresh)
+[darklane] owned process group terminated at shutdown
+launch: acknowledged after 4ms
+[darklane] job FAILED (exit status: 3) — not relaunching
+the job's program carries its byte name: acknowledged after 17ms
+owned runner assertion failed: state=failed pid=3534233 child_state=None threads=['T'] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::stop_is_acknowledged_beside_a_process_outside_the_job_whose_comm_is_not_utf8 ... FAILED
+spawning thread waits in vfork on a child opening the FIFO: acknowledged after 47ms
+test darklane::tests::a_busy_serve_route_is_not_a_valley ... ok
+[darklane] bg runner armed: cmd="true" mode=stop poll=5ms vram_budget=1000MB (+2048MB serve headroom must stay free)
+[darklane] REFUSED: vram budget 1000MB + serve headroom 2048MB > min free Some(2500)MB (fail-closed when unreadable); will retry next valley
+both threads wait in vfork on children opening FIFOs: acknowledged after 52ms
+[darklane] stop acknowledgement failed: stream did not contain valid UTF-8
+[darklane] stop acknowledgement failed: stream did not contain valid UTF-8
+[darklane] bg runner armed: cmd="true" mode=stop poll=5ms vram_budget=1MB (+2048MB serve headroom must stay free)
+[darklane] REFUSED: vram budget 1MB + serve headroom 2048MB > min free NoneMB (fail-closed when unreadable); will retry next valley
+the program's main thread waits in vfork on a child opening the FIFO: acknowledged after 52ms
+[darklane] bg runner armed: cmd="true" mode=stop poll=5ms vram_budget=1000MB (+2048MB serve headroom must stay free)
+[darklane] stop acknowledgement failed: stream did not contain valid UTF-8
+[darklane] job launched (pid 3534300, fresh)
+[darklane] stop acknowledgement failed: stream did not contain valid UTF-8
+
+thread 'darklane::tests::stop_reads_a_group_member_whose_comm_is_not_utf8' (3534244) panicked at crates/memra-server/src/darklane.rs:1696:13:
+assertion `left != right` failed: the member's byte name failed the job's stop
+  left: 5
+ right: 5
+[darklane] owned process group terminated at shutdown
+[darklane] owned process group terminated at shutdown
+[darklane] job COMPLETE (exit 0)
+main thread waits in vfork on a child opening the FIFO: acknowledged after 48ms
+stop acknowledged with both threads blocked: acknowledged after 12ms
+held FIFO writer opened: acknowledged after 0ms
+owned runner assertion failed: state=failed pid=3534246 child_state=Some('Z') threads=['T'] unexeced_children=[] yields=0 resumes=0
+the other thread stops, or runs job code: acknowledged after 2ms
+test darklane::tests::job_completion_and_failure_are_terminal ... ok
+test darklane::tests::vram_budget_refused_when_it_does_not_fit_and_fail_closed ... ok
+test darklane::tests::valley_signal_reads_worker_truth ... ok
+resumed, the other thread runs job code: acknowledged after 4ms
+FIFO writer opened: acknowledged after 0ms
+stop acknowledged with the program's main thread parked in vfork: acknowledged after 10ms
+[darklane] owned process group terminated at shutdown
+test darklane::tests::stop_reads_a_group_member_whose_comm_is_not_utf8 ... FAILED
+stop acknowledged with the main thread parked in vfork: acknowledged after 14ms
+main thread D, the other thread and the vfork child stopped: acknowledged after 6ms
+[darklane] job COMPLETE (exit 0)
+leader completed: acknowledged after 14ms
+resumed, the program's other thread and the vfork child running: acknowledged after 9ms
+FIFO writer opened: acknowledged after 0ms
+test darklane::tests::stop_holds_the_other_blocked_thread_of_a_leader_whose_main_thread_waits_in_vfork ... ok
+[darklane] job checkpointed (exit 75) — relaunches next valley
+checkpoint group completion: acknowledged after 105ms
+resumed, the other thread and the vfork child running: acknowledged after 10ms
+FIFO writer opened: acknowledged after 0ms
+TERM-ignoring owned descendant terminated: acknowledged after 0ms
+test darklane::tests::checkpoint_leader_exit_terminates_term_ignoring_descendant ... ok
+[darklane] job COMPLETE (exit 0)
+[darklane] job COMPLETE (exit 0)
+job completed: acknowledged after 14ms
+leader completed: acknowledged after 8ms
+test darklane::tests::stop_reaches_the_other_thread_of_a_group_member_whose_main_thread_waits_in_vfork ... ok
+test darklane::tests::stop_reaches_the_other_thread_of_a_leader_whose_main_thread_waits_in_vfork ... ok
+[darklane] owned process group terminated at shutdown
+TERM-ignoring owned descendant terminated: acknowledged after 2ms
+[darklane] job COMPLETE (exit 0)
+test darklane::tests::shutdown_terminates_descendant_after_leader_exits ... ok
+normal group completion: acknowledged after 2009ms
+TERM-ignoring owned descendant terminated: acknowledged after 0ms
+test darklane::tests::normal_leader_exit_terminates_term_ignoring_descendant ... ok
+[darklane] owned process group terminated at shutdown
+
+thread 'darklane::tests::killed_stopped_child_is_reaped_without_resume' (3534180) panicked at crates/memra-server/src/darklane.rs:1033:9:
+no acknowledgement within the 30 s guard: acknowledged stop
+owned runner assertion failed: state=failed pid=0 child_state=None threads=[] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::killed_stopped_child_is_reaped_without_resume ... FAILED
+
+thread 'darklane::tests::killing_only_yielded_leader_terminates_remaining_owned_group' (3534181) panicked at crates/memra-server/src/darklane.rs:1033:9:
+no acknowledgement within the 30 s guard: owned group stopped
+owned runner assertion failed: state=failed pid=0 child_state=None threads=[] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::killing_only_yielded_leader_terminates_remaining_owned_group ... FAILED
+
+thread 'darklane::tests::repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown' (3534189) panicked at crates/memra-server/src/darklane.rs:1033:9:
+no acknowledgement within the 30 s guard: fresh stop acknowledged
+owned runner assertion failed: state=failed pid=0 child_state=None threads=[] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown ... FAILED
+
+thread 'darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown' (3534213) panicked at crates/memra-server/src/darklane.rs:1033:9:
+no acknowledgement within the 30 s guard: the runner yields
+owned runner assertion failed: state=failed pid=0 child_state=None threads=[] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown ... FAILED
+
+thread 'darklane::tests::stop_resume_cycles_on_a_constantly_spawning_shell_job' (3534261) panicked at crates/memra-server/src/darklane.rs:1033:9:
+no acknowledgement within the 30 s guard: stop 1 acknowledged
+owned runner assertion failed: state=failed pid=0 child_state=None threads=[] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::stop_resume_cycles_on_a_constantly_spawning_shell_job ... FAILED
+
+thread 'darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec' (3534203) panicked at crates/memra-server/src/darklane.rs:1033:9:
+no acknowledgement within the 30 s guard: stop acknowledged with a thread parked in vfork
+owned runner assertion failed: state=failed pid=0 child_state=None threads=[] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec ... FAILED
+
+failures:
+
+failures:
+    darklane::tests::killed_stopped_child_is_reaped_without_resume
+    darklane::tests::killing_only_yielded_leader_terminates_remaining_owned_group
+    darklane::tests::repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown
+    darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec
+    darklane::tests::stop_is_acknowledged_beside_a_process_outside_the_job_whose_comm_is_not_utf8
+    darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown
+    darklane::tests::stop_reads_a_group_member_whose_comm_is_not_utf8
+    darklane::tests::stop_resume_cycles_on_a_constantly_spawning_shell_job
+
+test result: FAILED. 14 passed; 8 failed; 0 ignored; 0 measured; 1130 filtered out; finished in 30.06s
+
+error: test failed, to rerun pass `-p memra-server --lib`
