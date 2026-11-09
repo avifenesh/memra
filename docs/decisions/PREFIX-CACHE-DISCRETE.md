@@ -144,7 +144,9 @@ Greedy texts matched the cache-off run on every compared row of every mixed-shap
 - A partial admission reclaim at a large budget: (c), measured on the at-the-limit cell in
   `research/partial-reclaim-20261109/`. An RTX 5090 boot above the floor is measured there too (2026-11-09,
   Qwen3.5-9B NVFP4 at `MEMRA_MAX_SESSIONS=4`, a 4,949 MB budget, 4.6 times the floor): safe and flat, the parked pool
-  keeps the cache to a few entries on both arms. Still owed: steady traffic at the limit beyond back-to-back bursts.
+  keeps the cache to a few entries on both arms. Steady traffic at the limit is measured there as well (one RTX PRO
+  6000 Max-Q, 8 workers, every 4th request a repeat from 16 to 48 back): the flush hit 7 of 25 repeats, the partial
+  pass 27 of 29 on both arms (repeat TTFT p50 1.5 s against 53.7 s), with no OOM and a booking that never stuck.
 - GB10 keeps its own budget rule (the half share). One input moves: the budget is now read after the vision towers
   load, so a boot with a tower reads less free memory and gets a smaller half share. The sm_121a cell record of the
   landing commit covers a GB10 boot without a tower; no GB10 boot with a tower was measured.
