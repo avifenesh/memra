@@ -129,6 +129,20 @@ Conditions: the box's other cards ran another lane's training jobs during these 
 utilization). The decision metrics here are counts (flushes, evictions, hits, OOM lines); the TTFT comparison is
 interleaved on one card and both arms carry the same load.
 
+## Push-gate cell records for the landing commit
+
+`research/release-qualification/cells/6a9db1447dbd-rtxpro6000-battery-perf-serving/` and
+`.../6a9db1447dbd-gb10-battery-perf-serving/`: battery, perf A/B against main `0c25263389` and serve-smoke, for
+`6a9db1447d` (this change with both review rounds' fixes, on that main), on one RTX PRO 6000 Max-Q (sm_120a, wrx
+GPU 1) and one DGX Spark GB10 (sm_121a). Both pass.
+
+The rtxpro6000 record ran with the box's quiet flag set (2026-11-09, 06:36:45 to 06:45:17 Jerusalem) and no other
+compute on any card. Its phases: battery 06:36:56 to 06:40:18, serve-smoke 06:40:18 to 06:43:17, perf 06:43:17 to
+06:44:59. GPU 1's set limit is 250 W; power-cell ran the record at 280 W (the regime of the other PRO 6000 records)
+and restored 250 W. One telemetry sample, at 06:40:06, read 250 W after an outside reset and power-cell re-asserted
+280 W, so the timed perf phase ran entirely at 280 W; max 77 C, no throttle. Earlier records for `aabb3ae1b6` and
+`9e4dd573cf` also passed and are superseded by the review fixes and the rebase.
+
 ## Harness (`harness/`)
 
 - `mixed.py`: the spec-cache-mixed workload with every request streamed (TTFT per row, greedy text per
