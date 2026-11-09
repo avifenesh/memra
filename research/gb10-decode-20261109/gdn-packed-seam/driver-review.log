@@ -1,0 +1,53 @@
+waitfor: MET after 0m00s
+waitfor: MET after 0m00s
+2026-11-10T00:55:59+02:00 card 66 C
+2026-11-10T00:55:59+02:00 run-spec K=2 on Ornith-1.5-35B-A3B, verify-graph pool at vt_cap=3 start; 5090: free 
+2026-11-10T00:56:19+02:00 run-spec K=2 on Ornith-1.5-35B-A3B, verify-graph pool at vt_cap=3 rc=0 last: === SELF-CONSISTENCY PASS ===
+waitfor: MET after 0m00s
+waitfor: MET after 0m00s
+2026-11-10T00:56:19+02:00 card 69 C
+2026-11-10T00:56:19+02:00 run-spec K=4 on Ornith-1.5-35B-A3B, verify-graph pool at vt_cap=5 start; 5090: free 
+2026-11-10T00:56:41+02:00 run-spec K=4 on Ornith-1.5-35B-A3B, verify-graph pool at vt_cap=5 rc=0 last: === SELF-CONSISTENCY PASS ===
+waitfor: MET after 0m00s
+waitfor: MET after 0m00s
+2026-11-10T00:56:41+02:00 card 71 C
+2026-11-10T00:56:41+02:00 run-spec K=6 on Ornith-1.5-35B-A3B, verify-graph pool at vt_cap=7 start; 5090: free   waiting: claude-code for "memra GB10 round 5 lever 2 (verify rows kernel): kernel-check FA-VERIFY-ROWS with the routing floor and the timing grid on the 5090, cool start (one cell per lease)" since 0m, id claude-code-20261110T005621-2031527 
+2026-11-10T00:58:19+02:00 run-spec K=6 on Ornith-1.5-35B-A3B, verify-graph pool at vt_cap=7 rc=0 last: === SELF-CONSISTENCY PASS ===
+waitfor: MET after 0m00s
+waitfor: MET after 0m00s
+2026-11-10T00:58:19+02:00 card 73 C
+2026-11-10T00:58:19+02:00 run-spec K=8 on Ornith-1.5-35B-A3B, verify-graph pool at vt_cap=9 start; 5090: free 
+2026-11-10T00:58:38+02:00 run-spec K=8 on Ornith-1.5-35B-A3B, verify-graph pool at vt_cap=9 rc=0 last: === SELF-CONSISTENCY PASS ===
+waitfor: MET after 0m00s
+waitfor: MET after 0m00s
+2026-11-10T00:58:38+02:00 card 72 C
+2026-11-10T00:58:38+02:00 dspark_q38_gate with MEMRA_DSPARK_VERIFY_GRAPH=1 on Qwen3.8-27B start; 5090: free 
+2026-11-10T00:59:12+02:00 dspark_q38_gate with MEMRA_DSPARK_VERIFY_GRAPH=1 on Qwen3.8-27B rc=0 last: == dspark_q38_gate: ALL EXACT | mean plain 35.1 tok/s | mean spec 108.7 tok/s | 288 tokens ==
+2026-11-10T00:59:12+02:00 all cells done
+waitfor: MET after 0m00s
+waitfor: MET after 0m30s
+2026-11-10T01:02:02+02:00 card 71 C
+2026-11-10T01:02:02+02:00 dspark_q38_gate, DSpark agentic drafter, MEMRA_DSPARK_VT=ladder, MEMRA_DSPARK_VERIFY_GRAPH=1 start; 5090: held by claude-code (pid 2060535) for "memra round 5 lever 2 (verify rows kernel, routed) pooled-cohort cell on the 5090, cool start: pool-T2 (one boot per lease)", expires in 19m, id claude-code-20261110T010138-2060535   legacy /tmp/memra-5090.lock: held 
+2026-11-10T01:02:37+02:00 dspark_q38_gate, DSpark agentic drafter, MEMRA_DSPARK_VT=ladder, MEMRA_DSPARK_VERIFY_GRAPH=1 rc=0 last: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+waitfor: MET after 0m00s
+waitfor: MET after 0m00s
+2026-11-10T01:03:28+02:00 card 64 C
+2026-11-10T01:03:28+02:00 dspark_q38_gate, DSpark agentic drafter, MEMRA_DSPARK_VT=ladder, MEMRA_DSPARK_VERIFY_GRAPH=1 start; 5090: held by claude-code (pid 2080675) for "memra round 5 lever 2 (verify rows kernel, routed) pooled-cohort cell on the 5090, cool start: pool-B1 (one boot per lease)", expires in 19m, id claude-code-20261110T010224-2080675   legacy /tmp/memra-5090.lock: held 
+2026-11-10T01:04:52+02:00 dspark_q38_gate, DSpark agentic drafter, MEMRA_DSPARK_VT=ladder, MEMRA_DSPARK_VERIFY_GRAPH=1 rc=0 last: note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+waitfor: MET after 0m00s
+waitfor: MET after 0m00s
+2026-11-10T01:05:22+02:00 card 66 C
+2026-11-10T01:05:22+02:00 dspark_q38_gate, DSpark agentic drafter, MEMRA_DSPARK_VT=ladder, MEMRA_DSPARK_VERIFY_GRAPH=1 start; 5090: held by claude-code (pid 2126376) for "memra round 5 lever 2 (verify rows kernel, routed) pooled-cohort cell on the 5090, cool start: pool-T1 (one boot per lease)", expires in 19m, id claude-code-20261110T010424-2126376   legacy /tmp/memra-5090.lock: held 
+2026-11-10T01:07:08+02:00 dspark_q38_gate, DSpark agentic drafter, MEMRA_DSPARK_VT=ladder, MEMRA_DSPARK_VERIFY_GRAPH=1 rc=0 last: note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+waitfor: MET after 0m00s
+waitfor: MET after 0m00s
+2026-11-10T01:14:08+02:00 card 65 C
+2026-11-10T01:14:08+02:00 dspark_q38_gate at the stack parent 9390bd3755, DSpark agentic drafter, MEMRA_DSPARK_VT=ladder, eager, backtrace start; 5090: held by claude-code (pid 2177830) for "memra round 5 lever 2 (verify rows kernel, routed) pooled-cohort cell on the 5090, cool start: pool-B3 (one boot per lease)", expires in 19m, id claude-code-20261110T011328-2177830   legacy /tmp/memra-5090.lock: held 
+2026-11-10T01:15:42+02:00 dspark_q38_gate at the stack parent 9390bd3755, DSpark agentic drafter, MEMRA_DSPARK_VT=ladder, eager, backtrace rc=0 last: note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+waitfor: MET after 0m00s
+waitfor: MET after 0m00s
+2026-11-10T01:20:44+02:00 card 60 C
+2026-11-10T01:20:44+02:00 dspark-serve-smoke on Qwen3.8-27B + DFlash2, serve-route verify graphs (default ON) start; 5090: free 
+2026-11-10T01:22:05+02:00 dspark-serve-smoke on Qwen3.8-27B + DFlash2, serve-route verify graphs (default ON) rc=0 last: dspark-serve-smoke: ALL GREEN
+
+Note: the two 01:06-01:07 lines label the eager rerun with the graph wording (its script was derived by sed and kept the label); that run's command had no MEMRA_DSPARK_VERIFY_GRAPH (dspark-q38-agentic-ladder-eager.txt).
