@@ -986,7 +986,7 @@ def _contract_registry(raw):
     """{section: {path: contract}} of a v1 contract registry, or None when `raw` is not one."""
     try:
         data = json.loads(raw)
-    except ValueError:
+    except (ValueError, RecursionError):  # RecursionError: deeply nested JSON
         return None
     if type(data) is not dict or data.get('schema') != 'memra-validation-build-inputs-v1':
         return None
@@ -1109,8 +1109,10 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
                     if c['package'] == package and c['sha256'] == source_sha]
         if not matching:
             raise Refused('build-script input contract changed or missing: ' + path)
+        # A generated name lets the census skip an include, so it narrows: a name counts only
+        # when every matching contract lists it. Inputs widen, so they take the union.
+        generated[package].update(set.intersection(*(set(c['generated_env']) for c in matching)))
         for contract in matching:
-            generated[package].update(contract['generated_env'])
             for external in contract['external_inputs']:
                 inputs[external].add(package)
     options = ['--untracked'] if isinstance(tree, LocalTree) else []

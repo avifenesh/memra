@@ -192,9 +192,28 @@ class LocalInputIO(unittest.TestCase):
             self.assertIn('research/running/*.txt', census(registry(pin, ['research/running/*.txt']), None))
             # A link whose text is a valid registry, or a malformed registry, adds nothing.
             malformed = json.dumps({'schema': 'memra-validation-build-inputs-v1', 'dynamic_includes': {path: [pin]}})
-            for held, link in ((registry(pin, ['research/declared/*.txt']), True), (malformed, False)):
-                with self.subTest(link=link), self.assertRaisesRegex(module.Refused, 'unresolved include'):
+            for case, held, link in (('link', registry(pin, ['research/declared/*.txt']), True),
+                                     ('list entry', malformed, False), ('deep nesting', '[' * 100000, False)):
+                with self.subTest(case=case), self.assertRaisesRegex(module.Refused, 'unresolved include'):
                     census(registry(other, []), held, link)
+            # A generated name lets the census skip an include, so a commit's extra name for the
+            # same build.rs bytes cannot hide an input the running registry declares.
+            build = 'fn main() {}\n'
+            reader = 'pub const X: &str = include_str!(concat!(env!("HIDDEN_DIR"), "/x.txt"));\n'
+            self.fixture.put('crates/memra-server/build.rs', build)
+            self.fixture.put(path, reader)
+
+            def generating(names, inputs):
+                return json.dumps({'schema': 'memra-validation-build-inputs-v1', 'build_scripts': {
+                    'crates/memra-server/build.rs': {
+                        'sha256': hashlib.sha256(build.encode()).hexdigest(), 'package': 'memra-server',
+                        'generated_env': names, 'external_inputs': []}},
+                    'dynamic_includes': {path: {'sha256': hashlib.sha256(reader.encode()).hexdigest(),
+                                                'inputs': inputs}}})
+            self.assertIn('research/hidden/*.txt',
+                          census(generating([], ['research/hidden/*.txt']), generating(['HIDDEN_DIR'], [])))
+            self.assertNotIn('research/hidden/*.txt',
+                             census(generating(['HIDDEN_DIR'], []), generating(['HIDDEN_DIR'], [])))
 
     def test_missing_and_noncanonical_paths_remain_refusals(self):
         for name in ('missing', '../outside', '/outside', 'a//b', './a', 'a\\b'):
