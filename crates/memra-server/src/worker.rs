@@ -752,12 +752,20 @@ fn sampled_restore_load_admits(
 }
 
 /// The cost model's verdict for a sampled restore of `model` at `demand` (see
-/// `sampled_restore_load_admits`), at the cached-long rung a restored prefix serves at.
-fn spec_cost_restore_verdict(model: &str, demand: usize) -> Option<usize> {
+/// `sampled_restore_load_admits`), at the rung the restored request runs: a sampled request takes
+/// its cold twin's rung whatever it restored (`spec_k_cached_tokens`), so a prompt of
+/// `prompt_tokens` prices the cold-short or cold-long depth.
+fn spec_cost_restore_verdict(model: &str, demand: usize, prompt_tokens: usize) -> Option<usize> {
     if !spec_cost_gate_owns(*spec_gate_thresholds()) {
         return None;
     }
-    spec_cost_verdict(model, demand, spec_k_table().cached_long.max(1))
+    let table = spec_k_table();
+    let rung = if prompt_tokens >= SPEC_K_LONG_PROMPT_MIN {
+        table.cold_long
+    } else {
+        table.cold_short
+    };
+    spec_cost_verdict(model, demand, rung.max(1))
 }
 
 /// Whether a live DFlash2 row prevents admitting another session through the greedy LOW band:
@@ -7646,6 +7654,17 @@ fn choose_spec_k(
         },
         None => d,
     }
+}
+
+/// The cached length the spec K table reads for a request (memra#1093). The cached-long rung is a
+/// speed choice, and K holds the output only on a greedy request: a greedy verify accepts the
+/// target's argmax whatever the draft depth, so a resume at the cached-long K writes the cold
+/// stream byte for byte (`research/spec-k-resume-20261109/`, K=3, K=2 and K=3 again on the RTX
+/// 5090). A sampled verify draws its Philox events per round, so another K draws another stream:
+/// a sampled resume at K=2 left the text its cold twin wrote at K=3. A sampled request therefore
+/// reads no cached length and takes the rung its cold twin takes.
+fn spec_k_cached_tokens(greedy: bool, cached_tokens: usize) -> usize {
+    if greedy { cached_tokens } else { 0 }
 }
 
 #[allow(clippy::too_many_arguments)] // allow: the table plus the six policy inputs of choose_spec_k
@@ -27507,7 +27526,7 @@ fn admit(
             spec_gate_on(),
             *spec_gate_thresholds(),
             load_demand,
-            spec_cost_restore_verdict(&req.model, load_demand),
+            spec_cost_restore_verdict(&req.model, load_demand, prompt.len()),
         );
         if let Some(i) = prefix_pin.as_ref().and_then(|p| px.id_index(p)) {
             let fed_len = reused.as_ref().map_or(0, |e| e.fed.len());
@@ -29498,7 +29517,7 @@ fn admit(
             *spec_gate_thresholds(),
             projected_wave,
             n_prompt,
-            n_cached,
+            spec_k_cached_tokens(sampler.is_greedy(), n_cached),
             spec_trim_head(lm),
         );
     }
@@ -40598,6 +40617,41 @@ mod tests {
                 reason: SpecKReason::Concurrency
             },
         );
+    }
+
+    /// memra#1093: a sampled resume takes its cold twin's K. The shape is the 2026-11-09 RTX 5090
+    /// receipt's (`research/spec-k-resume-20261109/`): a 1,477-token turn restored 1,408 tokens
+    /// and ran the cached-long K=2, its cold twin the cold-long K=3, and the T=1 texts differed.
+    #[test]
+    fn a_sampled_resume_takes_the_cold_k() {
+        let single = resolve_spec_gate_thresholds(false, None, None);
+        let k = |greedy: bool, cached: usize| {
+            choose_spec_k_with(
+                SpecKTable::SHIPPED,
+                None,
+                true,
+                single,
+                1,
+                1_477,
+                super::spec_k_cached_tokens(greedy, cached),
+                false,
+            )
+        };
+        // Greedy keeps the cached-long rung: its verify writes the same tokens at any K.
+        assert_eq!(k(true, 1_408).reason, SpecKReason::CachedLong);
+        assert_eq!(k(true, 1_408).k, super::SPEC_K_CACHED_LONG);
+        // Sampled: the cold twin's rung, restored or not.
+        assert_eq!(k(false, 1_408), k(false, 0));
+        assert_eq!(k(false, 1_408).reason, SpecKReason::ColdLong);
+        assert_eq!(k(true, 0), k(false, 0));
+        // The admission's re-decision is the one site that reads the restored length.
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(squashed.contains(
+            "projected_wave, n_prompt, spec_k_cached_tokens(sampler.is_greedy(), n_cached), spec_trim_head(lm), );"
+        ));
+        assert!(!squashed.contains("projected_wave, n_prompt, n_cached, spec_trim_head(lm)"));
     }
 
     #[test]
