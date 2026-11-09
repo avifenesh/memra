@@ -132,8 +132,13 @@ resident heads retain the existing graph default. See [the capture receipt](../r
   c=1/2/4 cell. Within admitted single-card requests, the 2026-08-08 K policy uses `K=3`
   for cold prompts and `K=2` when a prompt of at least 1024 tokens actually resumes at
   least 1024 tokens. This is intentionally shallower on cached-long: K=2 beat K=3 on
-  both q9 and q27. `MEMRA_SPEC_K` remains the operator pin, including `0` for plain.
-  Receipts: `research/specplace-20260808/`, `research/kpolicy-20260808/`.
+  both q9 and q27. Since memra#1093 the cached-long rung serves greedy requests only: a greedy
+  verify writes the same tokens at any K, while a sampled verify draws its Philox events per
+  round, so a sampled resume at the cached-long K left the text its cold twin wrote at the
+  cold-long K. A sampled request takes its cold twin's rung whatever it restored
+  (`spec_k_cached_tokens`; `research/spec-k-resume-20261109/`). `MEMRA_SPEC_K` remains the
+  operator pin, including `0` for plain. Receipts: `research/specplace-20260808/`,
+  `research/kpolicy-20260808/`.
 - **Spec engages on prefix-cache hits** (v0.93.0, lane/spec-on-cache-hit — whole-entry
   restores only; **SAMPLED hits included since lane/sampled-hit-spec 2026-08-19**). A spec
   session's boundary capture publishes its prefix entry with the MTP draft plane and
