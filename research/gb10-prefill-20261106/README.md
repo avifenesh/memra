@@ -542,7 +542,10 @@ The phases of the request (timestamped server log, `ts-probe-main-unit1/`, unpro
   power budget (SM 2,099-2,132 MHz at 81-83 W against 2,158 MHz at 88 W; `clocks.txt`), so 260k
   counts as a tie. Four more 260k cells at full clock (row 56b) bring it to 7 per arm: 317.489 ->
   315.286 s over all cells (-0.69%, overlapping), and within the full-clock regime the arms
-  separate completely (317.440 -> 314.777 s, -0.84%). The answers are identical in every request.
+  separate completely (317.440 -> 314.777 s, -0.84%). On unit 2 (row 56c, B G G B B G, every
+  cell at full clock) the arms separate completely at all three lengths: 22.361 -> 22.050 s
+  (-1.39%), 119.132 -> 117.897 s (-1.04%), 315.880 -> 313.407 s (-0.78%). The answers are
+  identical in every request.
 
 ### Next (round 4)
 

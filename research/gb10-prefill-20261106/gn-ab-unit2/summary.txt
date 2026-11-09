@@ -1,0 +1,23 @@
+campaign gn-ab-unit2: 18 requests, arms ['B', 'G']
+
+target 32768
+  B        ttft 22.417, 22.361, 22.360                   median 22.361  cells ['01-B', '04-B', '05-B']
+  G        ttft 22.077, 22.047, 22.050                   median 22.050  cells ['02-G', '03-G', '06-G']
+  G vs B: -1.39%
+
+target 131072
+  B        ttft 119.183, 119.132, 119.036                median 119.132  cells ['01-B', '04-B', '05-B']
+  G        ttft 117.897, 117.918, 117.827                median 117.897  cells ['02-G', '03-G', '06-G']
+  G vs B: -1.04%
+
+target 260000
+  B        ttft 317.007, 315.880, 315.814                median 315.880  cells ['01-B', '04-B', '05-B']
+  G        ttft 313.407, 313.181, 313.417                median 313.407  cells ['02-G', '03-G', '06-G']
+  G vs B: -0.78%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+  target 260000 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL
