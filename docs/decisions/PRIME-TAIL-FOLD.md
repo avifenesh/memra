@@ -40,6 +40,17 @@ split already equals, and the two-part scan is that law inside one layer.
   per-run spread) and -0.28% / -0.36% on unit 1 (T under B in every cell): no regression. Identical
   answers; every request published its capture.
 
+## Follow-up: the tapped call keeps the fused out-norm (lever 8b, ledger rows 68-68d)
+
+The first form ran the tapped call's out-norm unfused and copied each part's scan output into one
+buffer: about 47 ms and 40 ms of the folded 131k call on GB10. Now each part's fused K4+K5 pass writes
+its rows of the call's one F8F4 activation (`gdn_chunk_state_output_norm_mma` takes the activation row
+its first scanned row lands at and the activation's row count; a whole call passes 0 and T, at 128
+registers and the same spill). Exact: GDN-K45-NORM with a two-part run, `prime-fold-gate`. The 131k
+end call falls 0.090 s on unit 2 and 0.080 s on unit 1 (spreads under 0.01 s); the trunk's other
+calls are not slower. A folded call under 2,048 rows (the 260k bench prompt's) keeps the unfused
+form, as the F8F4 v2 route does.
+
 ## Rejected
 
 - Extending the last call by the tail when the stop is on a call boundary (the 32k bench prompt):

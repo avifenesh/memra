@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Runs ON a GB10 host under the caller's lease: one step of lever 8 (the boundary tail fold).
 #   build: build B = main BS and T = the fold head TS (plus prime-fold-gate at TS)
+#   kc:    kernel-check's synthetic cells (MEMRA_KC_FAST=1) at TS, GDN-K45-NORM among them
 #   gate:  prime-fold-gate on the 27B (split against fold, bit for bit)
 #   NN-B / NN-T: one served cell of the A/B on that arm, 131k and 260k with the per-call trace
 #                (MEMRA_TICK_TRACE=1: `[prime-chunk] phase=mtp-trunk rows=N wall_ms=W`); 32k keeps
@@ -15,7 +16,7 @@ G8=$HOME/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.g
 B=$(ls -d "$D"/bins/tfb-"${BS:0:10}" 2>/dev/null | tail -n 1); T=$(ls -d "$D"/bins/tft-"${TS:0:10}" 2>/dev/null | tail -n 1)
 case "$NAME" in
   build)
-    git -C "$D/tree" fetch -q origin main perf/gb10-tail-fold || { echo TF-CELL-BUILD-FAIL >> "$CD/campaign.log"; exit 1; }
+    git -C "$D/tree" fetch -q origin main perf/gb10-tail-fold perf/gb10-tail-fold-8b || { echo TF-CELL-BUILD-FAIL >> "$CD/campaign.log"; exit 1; }
     if [ -z "$B" ]; then git -C "$D/tree" checkout -q --detach "$BS" && JOBS=16 NOTOUCH=1 bash "$D/box/build.sh" tfb > "$D/logs/build-tfb.out" 2>&1; fi
     if [ -z "$T" ]; then
       git -C "$D/tree" checkout -q --detach "$TS" && JOBS=16 NOTOUCH=1 bash "$D/box/build.sh" tft > "$D/logs/build-tft.out" 2>&1
@@ -25,6 +26,11 @@ case "$NAME" in
     fi
     B=$(ls -d "$D"/bins/tfb-"${BS:0:10}" 2>/dev/null | tail -n 1)
     if [ -n "$B" ] && [ -n "$T" ] && [ -x "$T/prime-fold-gate" ]; then echo "$(date -Is) built B=$B T=$T" >> "$CD/campaign.log"; else echo "TF-CELL-BUILD-FAIL" >> "$CD/campaign.log"; exit 1; fi
+    ;;
+  kc)
+    (cd "$D/tree" && MEMRA_KC_FAST=1 "$T/kernel-check" "$G8") > "$CD/kernel-check-fast.log" 2>&1
+    echo "kernel-check-fast rc=$? $(tail -n 1 "$CD/kernel-check-fast.log")" >> "$CD/campaign.log"
+    grep -E "GDN-K45-NORM|FAIL" "$CD/kernel-check-fast.log" | head -n 12 >> "$CD/campaign.log"
     ;;
   gate)
     (cd "$D/tree" && "$T/prime-fold-gate" "$G8") > "$CD/prime-fold-gate.log" 2>&1

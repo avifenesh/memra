@@ -10,7 +10,7 @@ L=$D/tf-driver-$UNIT.log
 C=runs/$CAMP/campaign.log
 for step in ${STEPS:-build gate 01-B 02-T 03-T 04-B 05-B 06-T}; do
   if [ -e "$D/tf-stop-$UNIT" ]; then echo "$(date -Is) $step: stop file, stopping" >> "$L"; exit 0; fi
-  ttl=25m; tmo=24m; [ "$step" = build ] && { ttl=40m; tmo=39m; }; [ "$step" = gate ] && { ttl=15m; tmo=14m; }
+  ttl=25m; tmo=24m; [ "$step" = build ] && { ttl=40m; tmo=39m; }; [ "$step" = gate ] && { ttl=15m; tmo=14m; }; [ "$step" = kc ] && { ttl=10m; tmo=9m; }
   id=$(sparklock acquire --unit "$UNIT" --ttl "$ttl" --for "memra GB10 prefill round 4 lever 8 (tail fold): $step (one step per lease)" --wait 3m 2>>"$L")
   if [ -z "$id" ]; then echo "$(date -Is) $step: $UNIT not free, stopping" >> "$L"; exit 0; fi
   echo "$(date -Is) $step: lease $id" >> "$L"
@@ -19,6 +19,9 @@ for step in ${STEPS:-build gate 01-B 02-T 03-T 04-B 05-B 06-T}; do
   sparklock release "$id" --unit "$UNIT" >> "$L" 2>&1
   echo "$(date -Is) $step: released" >> "$L"
   /usr/bin/ssh -n "$HOST" "grep -q TF-CELL-BUILD-FAIL ~/.cache/memra-gb10-r4/$C" && { echo "build failed" >> "$L"; exit 1; }
+  if [ "$step" = kc ] && ! /usr/bin/ssh -n "$HOST" "grep -q 'kernel-check-fast rc=0' ~/.cache/memra-gb10-r4/$C"; then
+    echo "$(date -Is) kernel-check did not pass, stopping" >> "$L"; exit 1
+  fi
   if [ "$step" = gate ] && ! /usr/bin/ssh -n "$HOST" "grep -q 'prime-fold-gate rc=0' ~/.cache/memra-gb10-r4/$C"; then
     echo "$(date -Is) prime-fold-gate did not pass, stopping" >> "$L"; exit 1
   fi

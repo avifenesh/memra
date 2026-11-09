@@ -1,0 +1,17 @@
+01-B n=131051: end calls [4075] 5.075 s, trunk 116.482 s, ttft 117.640 s
+01-B n=259951: end calls [1903] 4.422 s, trunk 311.219 s, ttft 313.561 s
+02-T n=131051: end calls [4075] 4.996 s, trunk 116.564 s, ttft 117.729 s
+02-T n=259951: end calls [1903] 4.427 s, trunk 312.025 s, ttft 314.372 s
+03-T n=131051: end calls [4075] 5.001 s, trunk 116.549 s, ttft 117.704 s
+03-T n=259951: end calls [1903] 4.428 s, trunk 310.874 s, ttft 313.188 s
+04-B n=131051: end calls [4075] 5.083 s, trunk 116.717 s, ttft 117.856 s
+04-B n=259951: end calls [1903] 4.415 s, trunk 311.329 s, ttft 313.638 s
+05-B n=131051: end calls [4075] 5.078 s, trunk 116.646 s, ttft 117.773 s
+05-B n=259951: end calls [1903] 4.429 s, trunk 311.497 s, ttft 313.786 s
+
+n=131051 B: end 5.078 s (spread 0.007), trunk 116.646 s, ttft 117.773 s (spread 0.216), N=3
+n=131051 T: end 4.998 s (spread 0.005), trunk 116.556 s, ttft 117.716 s (spread 0.025), N=2
+n=131051 T - B: end -0.080 s (spreads 0.007 / 0.005), ttft -0.056 s (-0.05%, spreads 0.216 / 0.025)
+n=259951 B: end 4.422 s (spread 0.014), trunk 311.329 s, ttft 313.638 s (spread 0.225), N=3
+n=259951 T: end 4.428 s (spread 0.001), trunk 311.449 s, ttft 313.780 s (spread 1.184), N=2
+n=259951 T - B: end +0.006 s (spreads 0.014 / 0.001), ttft +0.142 s (+0.05%, spreads 0.225 / 1.184)
