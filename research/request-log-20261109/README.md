@@ -87,6 +87,7 @@ The whole memra-server suite on the final tree: `server-suite.log` (1105 passed,
 ## Files
 
 - `ab.py`: the device A/B driver. `bank_ab.py`: copies a run here with the home directory as `~`.
-- `device-ab/run*/`: `summary.json`, and per boot `results.json` (normalized responses),
-  `*.body` (raw responses), `requests.jsonl` (B boots: the log itself) and `server.log`.
+- `device-ab/run*/`: `summary.json`, `raw-bodies.tar.gz` (every raw response, by boot), and per
+  boot `results.json` (normalized responses), `requests.jsonl` (B boots: the log itself) and
+  `server.log`.
 - `red_arm.py`: the two red arms. `*.log`: the CPU test output.
