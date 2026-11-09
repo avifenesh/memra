@@ -16,7 +16,9 @@
 //!   --ids FILE               prompt ids as raw little-endian i32 (instead of TOKEN args)
 //!   --last-logits FILE       the last token's fp32 logits, raw
 //!   --tf DIR                 teacher-forced scoring of every position: lse.f32, argmax.i32,
-//!                            nll.f32 (of the next prompt token), raw arrays plus meta.json
+//!                            nll.f32 (of the next prompt token), top_ids.i32 and top_vals.f32
+//!                            (the 32 largest logits, the oracle tape's top-32), raw arrays plus
+//!                            meta.json
 
 use memra_engine::dsv41_gpu::{
     self as v, Buf, Ctx, Geo, LayerState, LayerW, Shared, Trace, ck, ffi,
@@ -215,6 +217,8 @@ fn run() -> Result<(), String> {
         let mut lse = Vec::with_capacity(s);
         let mut top = Vec::with_capacity(s);
         let mut nll = Vec::with_capacity(s.saturating_sub(1));
+        let mut top_ids = Vec::with_capacity(s * TOPK);
+        let mut top_vals = Vec::with_capacity(s * TOPK);
         let rows = 1024;
         for r0 in (0..s).step_by(rows) {
             let n = rows.min(s - r0);
@@ -225,6 +229,10 @@ fn run() -> Result<(), String> {
                 let l = m + row.iter().map(|&x| (x as f64 - m).exp()).sum::<f64>().ln();
                 lse.push(l as f32);
                 top.push(argmax(row) as i32);
+                for (id, val) in top_k(row) {
+                    top_ids.push(id as i32);
+                    top_vals.push(val);
+                }
                 let p = r0 + i;
                 if p + 1 < s {
                     nll.push((l - row[ids[p + 1] as usize] as f64) as f32);
@@ -235,6 +243,10 @@ fn run() -> Result<(), String> {
         std::fs::write(dir.join("lse.f32"), v::f32_bytes(&lse)).map_err(|e| e.to_string())?;
         std::fs::write(dir.join("argmax.i32"), v::i32_bytes(&top)).map_err(|e| e.to_string())?;
         std::fs::write(dir.join("nll.f32"), v::f32_bytes(&nll)).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join("top_ids.i32"), v::i32_bytes(&top_ids))
+            .map_err(|e| e.to_string())?;
+        std::fs::write(dir.join("top_vals.f32"), v::f32_bytes(&top_vals))
+            .map_err(|e| e.to_string())?;
         let mean = nll.iter().map(|&x| x as f64).sum::<f64>() / nll.len().max(1) as f64;
         std::fs::write(
             dir.join("meta.json"),
@@ -249,6 +261,28 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
+/// Logits kept per teacher-forced position, as many as the oracle tape's `top_ids`/`top_vals`.
+const TOPK: usize = 32;
+
+/// The `TOPK` largest logits of a row, largest first (lower id first among equal values).
+fn top_k(x: &[f32]) -> Vec<(usize, f32)> {
+    let mut best: Vec<(usize, f32)> = x.iter().take(TOPK).cloned().enumerate().collect();
+    let worse = |a: &(usize, f32), b: &(usize, f32)| a.1 < b.1 || (a.1 == b.1 && a.0 > b.0);
+    let mut low = (0..best.len())
+        .reduce(|a, b| if worse(&best[b], &best[a]) { b } else { a })
+        .unwrap_or(0);
+    for (i, &v) in x.iter().enumerate().skip(TOPK) {
+        if v > best[low].1 {
+            best[low] = (i, v);
+            low = (0..TOPK)
+                .reduce(|a, b| if worse(&best[b], &best[a]) { b } else { a })
+                .unwrap_or(0);
+        }
+    }
+    best.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    best
+}
+
 fn argmax(x: &[f32]) -> usize {
     // the lowest index among equal maxima, like the oracle's argmax
     let mut b = 0;
@@ -258,4 +292,23 @@ fn argmax(x: &[f32]) -> usize {
         }
     }
     b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn top_k_is_the_sorted_largest_with_lower_ids_first_among_ties() {
+        let mut x: Vec<f32> = (0..200).map(|i| ((i * 37) % 101) as f32).collect();
+        x[150] = 1000.0;
+        x[7] = 1000.0;
+        let got = top_k(&x);
+        let mut want: Vec<(usize, f32)> = x.iter().cloned().enumerate().collect();
+        want.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        want.truncate(TOPK);
+        assert_eq!(got, want);
+        assert_eq!(got[0], (7, 1000.0));
+        assert_eq!(got[0].0, argmax(&x));
+    }
 }

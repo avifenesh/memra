@@ -1,0 +1,37 @@
+{
+ "tape": "tflong_he_haifa.pt",
+ "other": "tfk-tflong_he_haifa",
+ "positions": 30000,
+ "subsets": {
+  "all": {
+   "positions": 30000,
+   "mean_kl": 0.01636245276510147,
+   "p50_kl": 0.003972042018792574,
+   "p99_kl": 0.1675931665267675,
+   "max_kl": 1.8129805515475201,
+   "top1_agree": 0.9488,
+   "mean_vendor_entropy": 0.8488834589636923,
+   "mean_mass_on_shared_top32": 0.980627072561387
+  },
+  "entropy_gt_1nat": {
+   "positions": 10941,
+   "mean_kl": 0.032710849610835105,
+   "p50_kl": 0.018750156541329048,
+   "p99_kl": 0.23441732342199742,
+   "max_kl": 1.7391354080994268,
+   "top1_agree": 0.8767937117265332,
+   "mean_vendor_entropy": 1.9713770457163104,
+   "mean_mass_on_shared_top32": 0.9484680751164459
+  },
+  "entropy_top_decile": {
+   "positions": 3000,
+   "mean_kl": 0.029474502891208967,
+   "p50_kl": 0.019729152774421027,
+   "p99_kl": 0.16009787023964742,
+   "max_kl": 0.519302895582121,
+   "top1_agree": 0.815,
+   "mean_vendor_entropy": 2.705480876392223,
+   "mean_mass_on_shared_top32": 0.8740041506253563
+  }
+ }
+}

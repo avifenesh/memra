@@ -1,0 +1,37 @@
+{
+ "tape": "tf256k_en_moby.pt",
+ "other": "tf128k_en_moby.pt",
+ "positions": 131072,
+ "subsets": {
+  "all": {
+   "positions": 131072,
+   "mean_kl": 0.00878606764935855,
+   "p50_kl": 2.2562424204120376e-05,
+   "p99_kl": 0.2179126681735782,
+   "max_kl": 4.2960690743143,
+   "top1_agree": 0.99139404296875,
+   "mean_vendor_entropy": 0.05169701490636749,
+   "mean_mass_on_shared_top32": 0.9997459690940709
+  },
+  "entropy_gt_1nat": {
+   "positions": 1229,
+   "mean_kl": 0.187872576906471,
+   "p50_kl": 0.12182308170871406,
+   "p99_kl": 1.0961405773859738,
+   "max_kl": 2.4770196961460833,
+   "top1_agree": 0.7200976403580146,
+   "mean_vendor_entropy": 1.4545842455108673,
+   "mean_mass_on_shared_top32": 0.981817402113994
+  },
+  "entropy_top_decile": {
+   "positions": 13108,
+   "mean_kl": 0.08190403284462494,
+   "p50_kl": 0.018803135258710572,
+   "p99_kl": 0.8748618802579398,
+   "max_kl": 4.2960690743143,
+   "top1_agree": 0.9144034177601464,
+   "mean_vendor_entropy": 0.4605730497923436,
+   "mean_mass_on_shared_top32": 0.9976719903614579
+  }
+ }
+}

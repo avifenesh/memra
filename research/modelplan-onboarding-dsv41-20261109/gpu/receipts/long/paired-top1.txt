@@ -1,0 +1,32 @@
+## tflong_he_haifa: native vs schedule floor (global-max), every position
+all: 31859 positions, native agrees 94.8%, floor 95.0%, native-only 717, floor-only 765, sign test p=0.222
+entropy>1: 11387 positions, native agrees 87.4%, floor 87.6%, native-only 624, floor-only 652, sign test p=0.450
+top decile: 3186 positions, native agrees 81.6%, floor 81.9%, native-only 237, floor-only 245, sign test p=0.750
+## tf128k_en_moby: native vs schedule floor (global-max), every position
+all: 131072 positions, native agrees 99.1%, floor 99.1%, native-only 488, floor-only 499, sign test p=0.750
+entropy>1: 1322 positions, native agrees 71.5%, floor 71.5%, native-only 134, floor-only 134, sign test p=1.000
+top decile: 13108 positions, native agrees 90.6%, floor 90.7%, native-only 480, floor-only 497, sign test p=0.609
+## tf64k_he_cities: native vs schedule floor (global-max), every position
+all: 131072 positions, native agrees 95.5%, floor 95.5%, native-only 2742, floor-only 2802, sign test p=0.428
+entropy>1: 43069 positions, native agrees 88.0%, floor 88.1%, native-only 2352, floor-only 2398, sign test p=0.514
+top decile: 13108 positions, native agrees 82.1%, floor 82.5%, native-only 999, floor-only 1054, sign test p=0.233
+## tflong_he_haifa: native vs length floor (30k tape), its prefix
+all: 30000 positions, native agrees 94.9%, floor 94.9%, native-only 685, floor-only 688, sign test p=0.957
+entropy>1: 10941 positions, native agrees 87.7%, floor 87.8%, native-only 587, floor-only 600, sign test p=0.728
+top decile: 3000 positions, native agrees 81.5%, floor 82.4%, native-only 214, floor-only 242, sign test p=0.206
+## tf128k_en_moby: native vs length floor (120k tape), its prefix
+all: 120000 positions, native agrees 99.1%, floor 99.2%, native-only 475, floor-only 571, sign test p=0.003
+entropy>1: 1186 positions, native agrees 71.4%, floor 73.3%, native-only 130, floor-only 152, sign test p=0.211
+top decile: 12000 positions, native agrees 90.8%, floor 91.6%, native-only 473, floor-only 567, sign test p=0.004
+## tf64k_he_cities: native vs length floor (120k tape), its prefix
+all: 120000 positions, native agrees 95.4%, floor 95.5%, native-only 2505, floor-only 2589, sign test p=0.245
+entropy>1: 39542 positions, native agrees 88.0%, floor 88.2%, native-only 2169, floor-only 2235, sign test p=0.327
+top decile: 12000 positions, native agrees 82.0%, floor 82.5%, native-only 931, floor-only 989, sign test p=0.193
+## tf256k_en_moby: native vs schedule floor (global-max), every position
+all: 262144 positions, native agrees 99.0%, floor 98.9%, native-only 1182, floor-only 1104, sign test p=0.107
+entropy>1: 3057 positions, native agrees 70.6%, floor 69.2%, native-only 352, floor-only 309, sign test p=0.102
+top decile: 26215 positions, native agrees 89.8%, floor 89.5%, native-only 1167, floor-only 1097, sign test p=0.147
+## tf256k_en_moby: native vs length floor (131k tape), its prefix
+all: 131072 positions, native agrees 99.1%, floor 99.1%, native-only 565, floor-only 627, sign test p=0.077
+entropy>1: 1229 positions, native agrees 69.4%, floor 72.0%, native-only 138, floor-only 170, sign test p=0.077
+top decile: 13108 positions, native agrees 91.0%, floor 91.4%, native-only 559, floor-only 622, sign test p=0.071
