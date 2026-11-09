@@ -2044,6 +2044,7 @@ struct GdnK45Smem {
     float gk[32], bj[32];
 };
 
+// gdn_chunk_state_output_norm_mma below carries a copy of this body: mirror any edit there.
 extern "C" __global__ void __launch_bounds__(256, 2)
 gdn_chunk_state_output_mma(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gcum,
         const float* __restrict__ beta, const float* __restrict__ U,
@@ -2378,6 +2379,9 @@ __device__ __forceinline__ void gdn_k45_bar_out() {
 // v2 activation into vy ([T, H * ncols] e4m3, then the scale plane at row pitch tp), the bytes
 // gated_rmsnorm_e4m3v2_f32 writes from the pair's o; o itself is never stored. Grid (H, 2), a
 // cluster per head; dynamic shared memory GDN_K45_NORM_SMEM. ncols must be 128 (D).
+// The body is gdn_chunk_state_output_mma's, copied: a shared template moved that kernel's SASS
+// (sm_120a: 16 -> 20 B of spill), so the two are kept textually in step instead. Any edit to one
+// mirrors into the other; kernel-check GDN-K45-NORM pins this kernel's bytes against that one.
 extern "C" __global__ void __cluster_dims__(1, 2, 1) __launch_bounds__(256, 2)
 gdn_chunk_state_output_norm_mma(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gcum,
         const float* __restrict__ beta, const float* __restrict__ U,

@@ -2740,11 +2740,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .f8f4_take_seed()
                 .ok_or("GDN-K45-NORM: no reference seed")?;
             let q_r = e.dtoh_u8(&q_r.ok_or("GDN-K45-NORM: no reference scratch")?)?;
+            // the seeded entry, then the caller-buffer form into two buffers pre-filled with
+            // different bytes: a byte the norm should write but does not keeps its fill in one of
+            // them (the pool may hand the seeded call the reference's freed scratch)
+            let bytes = q_r.len();
             let mut so_n = e.zeros(s_v * s_v * h)?;
-            let fused = e.gdn_scan_prefill_norm_f8f4v2(
+            let mut runs: Vec<(Vec<u8>, Vec<f32>)> = Vec::new();
+            let mut fused: Result<(), Box<dyn std::error::Error>> = e.gdn_scan_prefill_norm_f8f4v2(
                 &qd, &kd, &vd, &gd, &bd, None, None, &sid, &mut so_n, h, t, scale, nk, &zv, &wd,
                 eps, key,
             );
+            if fused.is_ok() {
+                match e.f8f4_take_seed() {
+                    Some((Some(q), _)) => runs.push((e.dtoh_u8(&q)?, e.dtoh(&so_n)?)),
+                    _ => fused = Err("GDN-K45-NORM: no seed".into()),
+                }
+            }
+            for fill in [0xabu8, 0x54] {
+                if fused.is_err() {
+                    break;
+                }
+                let mut vy = e.htod_bytes(&vec![fill; bytes])?;
+                let mut so_f = e.zeros(s_v * s_v * h)?;
+                fused = e.gdn_scan_prefill_norm_f8f4v2_into(
+                    &qd, &kd, &vd, &gd, &bd, None, None, &sid, &mut so_f, h, t, scale, nk, &zv,
+                    &wd, eps, &mut vy,
+                );
+                if fused.is_ok() {
+                    runs.push((e.dtoh_u8(&vy)?, e.dtoh(&so_f)?));
+                }
+            }
             unsafe {
                 std::env::remove_var("MEMRA_GDN_MMA");
                 std::env::remove_var("MEMRA_GDN_WGMMA");
@@ -2753,8 +2778,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::env::remove_var("MEMRA_GDN_K2_32");
             }
             fused?;
-            let (q_n, _) = e.f8f4_take_seed().ok_or("GDN-K45-NORM: no seed")?;
-            let q_n = e.dtoh_u8(&q_n.ok_or("GDN-K45-NORM: no scratch")?)?;
             let in_f = h * s_v;
             let nvb = t * in_f;
             let tp = t.div_ceil(256) * 256;
@@ -2762,32 +2785,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (p8, r8) = ((tt & 63) >> 3, tt & 7);
                 (tt & !63) + ((p8 >> 1) * 4 + (r8 >> 1)) * 4 + (p8 & 1) * 2 + (r8 & 1)
             };
-            let mut bad = q_r[..nvb]
-                .iter()
-                .zip(&q_n[..nvb])
-                .filter(|(a, b)| a != b)
-                .count();
-            let mut zero_groups = 0usize;
-            for gq in 0..in_f / 32 {
-                for tt in 0..t {
-                    let off = nvb + (gq * tp + slot(tt)) * 4;
-                    if q_r[off..off + 4] != q_n[off..off + 4] {
-                        bad += 1;
-                    }
-                    if q_r[off..off + 4] == [0u8; 4] {
-                        zero_groups += 1;
+            let s_ref = e.dtoh(&so_r)?;
+            let (mut bad, mut bs, mut zero_groups) = (0usize, 0usize, 0usize);
+            for (i, (q_n, s_n)) in runs.iter().enumerate() {
+                bad += q_r[..nvb]
+                    .iter()
+                    .zip(&q_n[..nvb])
+                    .filter(|(a, b)| a != b)
+                    .count();
+                for gq in 0..in_f / 32 {
+                    for tt in 0..t {
+                        let off = nvb + (gq * tp + slot(tt)) * 4;
+                        if q_r[off..off + 4] != q_n[off..off + 4] {
+                            bad += 1;
+                        }
+                        if i == 0 && q_r[off..off + 4] == [0u8; 4] {
+                            zero_groups += 1;
+                        }
                     }
                 }
+                bs += s_ref
+                    .iter()
+                    .zip(s_n)
+                    .filter(|(a, b)| a.to_bits() != b.to_bits())
+                    .count();
             }
-            let bs = e
-                .dtoh(&so_r)?
-                .iter()
-                .zip(&e.dtoh(&so_n)?)
-                .filter(|(a, b)| a.to_bits() != b.to_bits())
-                .count();
+            let routed = routed && runs.len() == 3;
             println!(
                 "GDN-K45-NORM T={t:3} H={h} hk={nk}: route={routed} e4m3+scales bitdiff={bad} \
-                 state bitdiff={bs} (zero groups {zero_groups}) {}",
+                 state bitdiff={bs} over the seeded run and two pre-filled buffers (zero groups \
+                 {zero_groups}) {}",
                 if routed && bad == 0 && bs == 0 && zero_groups > 0 {
                     "OK"
                 } else {

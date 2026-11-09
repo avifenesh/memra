@@ -2861,21 +2861,10 @@ impl Engine {
         eps: f32,
         key_ptr: u64,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if !self.gdn_k45_norm_route(t) {
-            return Err("gdn_scan_prefill_norm_f8f4v2 off the fused K4+K5 route".into());
-        }
         let in_f = 128 * n_head;
-        if z.len() < t * in_f || w.len() < 128 {
-            return Err(format!(
-                "gdn_scan_prefill_norm_f8f4v2: z {} / w {} short of [{t}, {in_f}] / 128",
-                z.len(),
-                w.len()
-            )
-            .into());
-        }
         let bytes = unsafe { memra_mmq_nvfp4_f8f4_v2_act_bytes(in_f as i32, t as i32) };
         let mut scratch = self.alloc_uninit::<u8>(bytes)?;
-        self.gdn_scan_chunked_to(
+        self.gdn_scan_prefill_norm_f8f4v2_into(
             q,
             k,
             v,
@@ -2885,17 +2874,14 @@ impl Engine {
             qb16_pre,
             state_in,
             state_out,
-            crate::GdnScanOut::Norm {
-                z,
-                w,
-                vy: &mut scratch,
-                eps,
-            },
             n_head,
             t,
             scale,
-            Self::gdn_chunk_size(),
             hk,
+            z,
+            w,
+            eps,
+            &mut scratch,
         )?;
         *self.f8f4_act_seed.lock().unwrap() = Some(crate::F8f4ActGroup {
             x_ptr: key_ptr,
@@ -2908,6 +2894,67 @@ impl Engine {
             seeded_uses: 0,
         });
         Ok(())
+    }
+
+    /// `gdn_scan_prefill_norm_f8f4v2` into a caller's activation buffer `vy` (at least
+    /// `memra_mmq_nvfp4_f8f4_v2_act_bytes(128 * n_head, t)` bytes), no seed: kernel-check
+    /// pre-fills it to prove every byte the norm writes is written.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_scan_prefill_norm_f8f4v2_into(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &CudaSlice<f32>,
+        v: &CudaSlice<f32>,
+        g: &CudaSlice<f32>,
+        beta: &CudaSlice<f32>,
+        kb16_pre: Option<&CudaSlice<u8>>,
+        qb16_pre: Option<&CudaSlice<u8>>,
+        state_in: &CudaSlice<f32>,
+        state_out: &mut CudaSlice<f32>,
+        n_head: usize,
+        t: usize,
+        scale: f32,
+        hk: usize,
+        z: &cudarc::driver::CudaView<f32>,
+        w: &CudaSlice<f32>,
+        eps: f32,
+        vy: &mut CudaSlice<u8>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.gdn_k45_norm_route(t) {
+            return Err("gdn_scan_prefill_norm_f8f4v2 off the fused K4+K5 route".into());
+        }
+        let in_f = 128 * n_head;
+        let bytes = unsafe { memra_mmq_nvfp4_f8f4_v2_act_bytes(in_f as i32, t as i32) };
+        if z.len() < t * in_f || w.len() < 128 || vy.len() < bytes {
+            return Err(format!(
+                "gdn_scan_prefill_norm_f8f4v2: z {} / w {} / vy {} short of [{t}, {in_f}] / 128 / {bytes}",
+                z.len(),
+                w.len(),
+                vy.len()
+            )
+            .into());
+        }
+        // the epilogue reads z as float2
+        if !self.addr_f32v(z).is_multiple_of(8) {
+            return Err("gdn_scan_prefill_norm_f8f4v2: z is not 8-byte aligned".into());
+        }
+        self.gdn_scan_chunked_to(
+            q,
+            k,
+            v,
+            g,
+            beta,
+            kb16_pre,
+            qb16_pre,
+            state_in,
+            state_out,
+            crate::GdnScanOut::Norm { z, w, vy, eps },
+            n_head,
+            t,
+            scale,
+            Self::gdn_chunk_size(),
+            hk,
+        )
     }
 
     /// The attention out-gate (`sigmoid` then `mul`'s values) plus the F8F4 v2 activation of the

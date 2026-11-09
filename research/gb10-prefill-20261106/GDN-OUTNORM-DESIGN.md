@@ -72,8 +72,10 @@ DRAM latency behind the S4 hand-off and the output chain. Shared memory: the squ
 reuses `hand` (free between S4's read and the next chunk's S2 write); new: the partner's sums
 (2 parities x 2 groups x 32 rows), the local sums, the warp amax partials and two mbarriers,
 about 1.3 KB, 42 KB per CTA (2 CTAs/SM fit in GB10's 100 KB with the 1 KB per-CTA reserve).
-The shipped kernel is untouched: the fused form is a separate entry over a shared body template,
-and the shipped entry's SASS must stay identical (`cuobjdump -sass` diff).
+The shipped kernel is untouched and its SASS identical (`cuobjdump -sass` diff, sm_120a). A shared
+body template was tried first and moved the shipped entry's SASS (16 -> 20 B of spill), so the
+fused form is a copy of the shipped body plus the epilogue, kept in step by a comment on both and
+pinned by kernel-check `GDN-K45-NORM` against the shipped kernel's output.
 
 ## Gates
 
