@@ -1,20 +1,20 @@
 # Cold long prompts at K=2 against K=3 on the RTX 5090 (memra#1093 follow-up, 2026-11-09)
 
-Verdict: on the RTX 5090, K=2 beats the shipped cold-long K=3 on cold prompts of about 4,000 tokens
-and more, and does not on prompts of about 1,400.
+Verdict: K=2 beats the shipped cold-long K=3 on both cards measured, with TTFT unchanged. Nothing
+is flipped here; this receipt is the evidence the default decision needs.
 
-- **Sampled (T=1), 4k and 6k:** decode +5% to +6%.
-- **Greedy, 4k:** +9% to +12%.
-- **1.4k:** sampled and greedy are flat.
-- **TTFT:** unchanged at every length.
-
-Nothing is flipped. The cold-long rung covers every prompt of 1,024 tokens or more, and these
-numbers say its best depth depends on the length within that class. A default change needs a PRO
-6000 A/B as well (AGENTS.md: one-rig evidence sets a one-rig default at most).
+- **RTX 5090 Laptop**, from about 3,600 tokens: T=1 decode +5% to +7%, greedy +9% to +12%. At about
+  1,400 tokens it is flat for both.
+- **RTX PRO 6000 Blackwell Max-Q** (250 W cap), at every length measured (1,200 to 5,800 tokens):
+  T=1 +3.9% to +7.4% and greedy +1.6% to +9.6%, every class with complete separation.
+- **The cost model:** on the PRO 6000 it owns K, and it chose K=3 for these prompts. The measurement
+  says that choice is slower.
 
 Model and rig: Qwen3.8-27B NVFP4 + Q5_K GGUF with its untrimmed MTP head, no DFlash drafter, RTX
 5090 Laptop, context 8,192, two sessions, prefix cache at its derived size, every switch at the
-device default. Binary: main 1273a16f07 (the cell-evidence build, sha256 96ad59c39c4afdfb).
+device default. RTX 5090: main 1273a16f07, the cell-evidence build (sha256 96ad59c39c4afdfb). PRO
+6000: the same commit built on that box with the release kit's toolchain (295f47a1af68f9af,
+`pro6000-maxq/build.sh`), the same GGUF (15,705,922,304 bytes).
 
 ## The A/B
 
@@ -81,18 +81,66 @@ spec round emits its tokens as back-to-back chunks.
 The greedy texts are byte-equal across arms for every greedy prompt (one sha per prompt), as the
 K-invariance receipt in `research/spec-k-resume-20261109/` found.
 
+## RTX PRO 6000 Blackwell Max-Q (`pro6000-maxq/`)
+
+The same two prompt sets ran on one Max-Q card of a shared four-card box:
+- **Lease and pinning:** one boot per `tools/memra-gpu-run` lease (the card's lock and the box's
+  campaign lock), in the same k3 k2 k2 k3 x3 order (`ab_wrx.py`, `run-ab.sh`), pinned to eight
+  cores and their siblings.
+- **Power and neighbors:** the card's power limit was left at its 250 W; another tenant trained at a
+  steady load on two other cards. The card held 87 °C and 1,567-1,575 MHz after the first boot of
+  each run (boot 1: 75-78 °C, a k3 boot).
+- **No normalization:** the cost model owns K on this card (`[spec-k] ... source=cost-model`). It
+  picks the best K up to the rung from the acceptance history of the boot's own rounds. So in the
+  k2 arm it also priced K=2 for the short reference prompts, and those rows are not a fixed-K
+  reference here. This card's comparison is on raw rates. Its drift is small: the k3 boots of a run
+  sit within 0.4 tok/s of each other, except boot 1.
+- **Clean leases:** all 24 commands exited 0. Leases 2 and 3 of the long run are marked unclean
+  because a telemetry process outlived the server by a moment; the script waits for it since.
+
+| set | class | K default / k2 | n | per-boot median, default / K=2 (tok/s) | ratio | U | TTFT ratio (U) | acceptance |
+|---|---|---|---:|---|---:|---:|---|---|
+| base | T=1 1.2k | 3 / 2 | 24 | 100.63 / 105.14 | 1.045 | 36/36 | 1.003 (34) | 0.463 / 0.601 |
+| base | T=1 3.7k | 3 / 2 | 12 | 99.59 / 106.98 | 1.074 | 36/36 | 0.999 (14) | 0.472 / 0.647 |
+| base | greedy 1.2k | 3 / 2 | 12 | 110.11 / 111.86 | 1.016 | 36/36 | 0.998 (13.5) | 0.470 / 0.574 |
+| long | T=1 3.6k | 3 / 2 | 24 | 96.52 / 101.83 | 1.055 | 36/36 | 1.000 (17) | 0.440 / 0.585 |
+| long | T=1 5.8k | 3 / 2 | 12 | 98.75 / 102.63 | 1.039 | 36/36 | 1.000 (20) | 0.483 / 0.620 |
+| long | greedy 3.6k | 3 / 2 | 6 | 96.11 / 105.35 | 1.096 | 36/36 | 0.999 (16) | 0.380 / 0.531 |
+
+Pooled decode, default against K=2: base T=1 100.77 / 106.15, long T=1 98.20 / 102.25. TTFT p50 and
+p95 match to the millisecond (for example T=1 3.6k: 1.373 / 1.439 s against 1.374 / 1.439 s). The
+greedy texts are byte-equal across arms on every prompt.
+
+The cost model's calibration line reads `[spec-cost] model="q" depth=2048 ...`: its verify costs
+are measured at a context of 2,048. The prompts here, and their decode, run at 1,200 to 6,200. That
+may be why it prices K=3 above K=2 where K=2 is faster; it is not tested here.
+
+## Both cards
+
+| prompt length | RTX 5090, T=1 | RTX 5090, greedy | PRO 6000 Max-Q, T=1 | PRO 6000 Max-Q, greedy |
+|---|---|---|---|---|
+| 1,200-1,400 | x0.996, flat (16/36) | x1.008, flat (19/36) | x1.045 (36/36) | x1.016 (36/36) |
+| 3,600-3,700 | x1.056 / x1.070 (31/36, two runs) | x1.121 (36/36) | x1.055 / x1.074 (36/36) | x1.096 (36/36) |
+| 5,800 | x1.058 (36/36) | not run | x1.039 (36/36) | not run |
+
+(5090 ratios are drift-normalized per boot; PRO 6000 ratios are raw. TTFT does not move on either.)
+
 ## Reading
 
-- Prompts of about 1,400 tokens: K=2 and K=3 tie, for T=1 and for greedy. K=2's higher acceptance
-  per draft (0.61 against 0.47) does not pay for one draft less per round.
-- About 3,600 to 5,800 tokens: K=2 decodes 5% to 7% faster at T=1, on both runs and both lengths.
-  It meets the pre-set bar (complete separation, at least 3%) at 5.8k. At 3.6k to 3.7k it misses
-  it narrowly, U = 31/36 on both independent runs. Greedy at 3.6k gains 9% to 12% with complete
-  separation. Longer context makes each verify round dearer, so the shallower round wins.
-- TTFT does not move: K only shapes decode.
-- So the shipped split, K=3 for every cold prompt from 1,024 tokens up, is too coarse on this card.
-  A length-aware rung (K=2 from about 4,000 tokens) is the candidate. Where between 1.4k and 3.6k
-  the crossover sits is not measured. The PRO 6000 must decide too before any default moves. The
-  2026-08-08 matrix that set the table (`research/kpolicy-20260808/`, another rig, aggregate tok/s
-  with the prefill inside) had q27 cold-long at 5.4k with K=3 ahead of K=2 by 6%, so the card class
-  may well disagree.
+- K=2 is at least as fast as K=3 on every cold long prompt measured, on both cards, with greedy
+  texts unchanged and TTFT unchanged. Where it loses nothing (the 5090 at 1.4k) it ties. Its
+  acceptance per draft is higher (0.53-0.65 against 0.38-0.48), and the round it drops costs more
+  than it returns, more so as the context grows.
+- A cold-long rung of K=2 is therefore the candidate default for this model on these two cards: a
+  plain rung change, with no length split needed, since the 5090's 1.4k tie costs nothing.
+- Not covered:
+  - concurrency (all cells are single-stream; the spec gate demotes to plain from c=3 on a single
+    card either way);
+  - the GB10 (sm_121a shares the table; its own rung measurements live in
+    `research/gb10-tuning-20261102/`);
+  - other models (the 2026-08-08 matrix that set the table, `research/kpolicy-20260808/`, measured
+    q9 and q27 on another rig with the prefill inside the rate and had q27 cold-long at 5.4k with
+    K=3 6% ahead of K=2);
+  - the trimmed-head rung.
+- On the PRO 6000 the cost model owns K, and a rung of 2 caps its choice at 2. Its K=3 choice here
+  is the slower one, so the cap removes nothing it gets right on these prompts.

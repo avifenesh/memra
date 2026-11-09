@@ -50,7 +50,9 @@ if ORDER == ["-"]:
 BOOT_START = int(os.environ.get("BOOT_START", "1"))
 PORT = int(os.environ.get("CELL_PORT", "18193"))
 URL = f"http://127.0.0.1:{PORT}"
-MODEL = "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf"
+# CELL_MODEL overrides the model path (the same GGUF on another box); TELEMETRY_GPU restricts the
+# nvidia-smi telemetry to one card (`-i UUID`) on a multi-card box.
+MODEL = os.environ.get("CELL_MODEL", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf")
 COMMON = {"MEMRA_COMPAT": "openai", "MEMRA_MODELS": f"q={MODEL}", "MEMRA_ADDR": f"127.0.0.1:{PORT}",
           "MEMRA_CTX": "8192", "MEMRA_MAX_SESSIONS": "2"}
 ARMS = {"k3": {}, "k2": {"MEMRA_SPEC_K_COLD_LONG": "2"}}
@@ -170,7 +172,8 @@ for n, arm in enumerate(ORDER, BOOT_START):
         (OUT / "YIELDED").write_text(f"before boot {n} {time.strftime('%Y-%m-%dT%H:%M:%S')}\n")
         break
     log = OUT / f"server-{n}-{arm}.log"
-    tel = subprocess.Popen(["nvidia-smi", "--query-gpu=timestamp,temperature.gpu,clocks.sm,clocks.mem,power.draw,utilization.gpu",
+    sel = ["-i", os.environ["TELEMETRY_GPU"]] if os.environ.get("TELEMETRY_GPU") else []
+    tel = subprocess.Popen(["nvidia-smi", *sel, "--query-gpu=timestamp,temperature.gpu,clocks.sm,clocks.mem,power.draw,utilization.gpu",
                             "--format=csv", "-lms", "250"], stdout=open(OUT / f"telemetry-{n}-{arm}.csv", "w"),
                            stderr=subprocess.DEVNULL)
     p = boot(log, dict(COMMON, **ARMS[arm]))
@@ -203,6 +206,11 @@ for n, arm in enumerate(ORDER, BOOT_START):
     finally:
         stop(p)
         tel.terminate()
+        try:  # leave no straggler in the lease's process group
+            tel.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            tel.kill()
+            tel.wait()
 
 rows = [json.loads(l) for l in open(OUT / "runs.jsonl")] if (OUT / "runs.jsonl").exists() else rows
 summary = {"boots": sorted({(r["boot"], r["arm"]) for r in rows})}
