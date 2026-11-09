@@ -453,8 +453,8 @@ impl Drop for ExitLatch {
     }
 }
 
-/// The detokenized stream of one request and its stop rules (the DSv4 route's `Emit` law on an
-/// owned request: the same stop-string scan, EOS, stop ids and budget).
+/// The detokenized stream of one request and its stop rules: EOS, stop ids, the budget, and stop
+/// strings through the DSv4 route's scan, with a client's stop sent whole ([`stop_end`]).
 struct Stream {
     tok: Arc<Tokenizer>,
     tx: EventSender,
@@ -481,7 +481,7 @@ impl Stream {
         }
         self.ids.push(id);
         let full = self.tok.decode(&self.ids);
-        let cut = scan_stop_cut_with(&self.text, &full, &self.stops, &[DSML_V41_CLOSE]);
+        let cut = stop_end(&self.text, &full, &self.stops);
         let start = snap(&full, self.text.len());
         if let Some(abs) = cut {
             let delta = full[start..snap(&full, abs)].to_string();
@@ -519,6 +519,20 @@ impl Stream {
             spec: None,
         });
     }
+}
+
+/// Where the stream ends when a stop string completes in `full`, whose first `text.len()` bytes
+/// are already sent (None: no stop). A client's stop ends it after the whole token, the worker's
+/// law: the HTTP layer finds the complete stop text and cuts there (`truncate_at_stop`, the
+/// stream scrubber), so a stop that straddles two tokens leaves no prefix of itself in the
+/// answer. The parser-closing DSML stop alone ends the stream at its close.
+fn stop_end(text: &str, full: &str, stops: &[String]) -> Option<usize> {
+    let cut = scan_stop_cut_with(text, full, stops, &[DSML_V41_CLOSE])?;
+    let client = stops
+        .iter()
+        .filter(|s| s.as_str() != DSML_V41_CLOSE)
+        .any(|s| scan_stop_cut_with(text, full, std::slice::from_ref(s), &[]).is_some());
+    Some(if client { full.len() } else { cut })
 }
 
 /// A request the route is serving.
@@ -1375,7 +1389,28 @@ mod tests {
     fn the_v41_dsml_close_stays_in_the_stream() {
         let stops = vec![DSML_V41_CLOSE.to_string()];
         let full = format!("x{DSML_V41_CLOSE}tail");
-        let cut = scan_stop_cut_with("x", &full, &stops, &[DSML_V41_CLOSE]).unwrap();
+        let cut = stop_end("x", &full, &stops).unwrap();
         assert_eq!(&full[..cut], format!("x{DSML_V41_CLOSE}"));
+    }
+
+    #[test]
+    fn a_client_stop_across_two_tokens_reaches_the_http_cut_whole() {
+        // the served case: stop `:"A` over the tokens `:"` (already sent) and `Au`
+        let stops = vec![":\"A".to_string(), DSML_V41_CLOSE.to_string()];
+        let sent = "{\"gold\":\"";
+        let full = "{\"gold\":\"Au";
+        // the shared scan cannot take sent text back: cutting there leaves `:"` in the answer
+        // and hides the stop from the HTTP layer
+        assert_eq!(
+            scan_stop_cut_with(sent, full, &stops, &[DSML_V41_CLOSE]),
+            Some(sent.len())
+        );
+        // the stream ends after the whole token; the HTTP layer's cut is then exact
+        let end = stop_end(sent, full, &stops).unwrap();
+        assert_eq!(end, full.len());
+        let at = full[..end].find(stops[0].as_str()).unwrap();
+        assert_eq!(&full[..at], "{\"gold\"");
+        // no stop in the text: the stream goes on
+        assert_eq!(stop_end(sent, "{\"gold\":\"Fe", &stops), None);
     }
 }
