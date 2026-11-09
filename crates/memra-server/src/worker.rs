@@ -20336,9 +20336,9 @@ pub fn run(
                                 if !reclaim_booking {
                                     eprintln!(
                                         "[admit-oom] reclaim booking on: admission books what \
-                                         priming sessions owe (prime transients, and pending \
-                                         seeds capped at the cache's room) until nothing is owed \
-                                         (model {model_key})"
+                                         priming sessions owe (prime transients and pending \
+                                         seeds, capped together at the cache's room) until \
+                                         nothing is owed (model {model_key})"
                                     );
                                 }
                                 reclaim_booking = true;
