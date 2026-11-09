@@ -1,0 +1,74 @@
+2026-11-09T15:38:57+02:00 built B=~/.cache/memra-gb10-r4/bins/tfb-65fb297a59 T=~/.cache/memra-gb10-r4/bins/tft-d5f0644ef3
+TF-CELL-DONE build
+2026-11-09T15:39:16+02:00 cell 01-B bin=~/.cache/memra-gb10-r4/bins/tfb-65fb297a59
+2026-11-09T15:39:16+02:00 run_arm OUT=~/.cache/memra-gb10-r4/runs/tf2-unit1/01-B BIN=~/.cache/memra-gb10-r4/bins/tfb-65fb297a59 EXTRA=MEMRA_TICK_TRACE=1 TARGETS=131072 260000 REPS=1 1 WRAP=
+2026-11-09T15:41:23+02:00 ready
+2026-11-09T15:48:43+02:00 bench rc=0
+2026-11-09T15:48:58+02:00 done
+B {"tag": "01-B", "target": 131072, "rep": 0, "ttft_s": 118.119, "total_s": 120.848, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+B {"tag": "01-B", "target": 260000, "rep": 0, "ttft_s": 314.625, "total_s": 319.156, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+B 01-B: [prefix-cache] stable-boundary capture armed at 131008 of 131051 prompt tokens (model q38)
+B 01-B: [prefix-cache] insert (spec-boundary): 131008 tokens, 4290.5MB (resident 4290.5MB / 50258MB, model q38)
+B 01-B: [prefix-cache] stable-boundary capture armed at 259904 of 259951 prompt tokens (model q38)
+B 01-B: [prefix-cache] insert (spec-boundary): 259904 tokens, 8357.4MB (resident 12647.9MB / 50258MB, model q38)
+TF-CELL-DONE 01-B
+2026-11-09T15:49:31+02:00 cell 02-T bin=~/.cache/memra-gb10-r4/bins/tft-d5f0644ef3
+2026-11-09T15:49:31+02:00 run_arm OUT=~/.cache/memra-gb10-r4/runs/tf2-unit1/02-T BIN=~/.cache/memra-gb10-r4/bins/tft-d5f0644ef3 EXTRA=MEMRA_TICK_TRACE=1 TARGETS=131072 260000 REPS=1 1 WRAP=
+2026-11-09T15:51:38+02:00 ready
+2026-11-09T15:58:56+02:00 bench rc=0
+2026-11-09T15:59:11+02:00 done
+T {"tag": "02-T", "target": 131072, "rep": 0, "ttft_s": 117.783, "total_s": 120.508, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+T {"tag": "02-T", "target": 260000, "rep": 0, "ttft_s": 313.246, "total_s": 317.718, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+T 02-T: [prefix-cache] stable-boundary capture armed at 131008 of 131051 prompt tokens (model q38)
+T 02-T: [prefix-cache] insert (spec-boundary): 131008 tokens, 4290.5MB (resident 4290.5MB / 50556MB, model q38)
+T 02-T: [prefix-cache] stable-boundary capture armed at 259904 of 259951 prompt tokens (model q38)
+T 02-T: [prefix-cache] insert (spec-boundary): 259904 tokens, 8357.4MB (resident 12647.9MB / 50556MB, model q38)
+TF-CELL-DONE 02-T
+2026-11-09T15:59:15+02:00 cell 03-T bin=~/.cache/memra-gb10-r4/bins/tft-d5f0644ef3
+2026-11-09T15:59:15+02:00 run_arm OUT=~/.cache/memra-gb10-r4/runs/tf2-unit1/03-T BIN=~/.cache/memra-gb10-r4/bins/tft-d5f0644ef3 EXTRA=MEMRA_TICK_TRACE=1 TARGETS=131072 260000 REPS=1 1 WRAP=
+2026-11-09T16:01:22+02:00 ready
+2026-11-09T16:08:40+02:00 bench rc=0
+2026-11-09T16:08:55+02:00 done
+T {"tag": "03-T", "target": 131072, "rep": 0, "ttft_s": 117.756, "total_s": 120.472, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+T {"tag": "03-T", "target": 260000, "rep": 0, "ttft_s": 313.308, "total_s": 317.794, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+T 03-T: [prefix-cache] stable-boundary capture armed at 131008 of 131051 prompt tokens (model q38)
+T 03-T: [prefix-cache] insert (spec-boundary): 131008 tokens, 4290.5MB (resident 4290.5MB / 50553MB, model q38)
+T 03-T: [prefix-cache] stable-boundary capture armed at 259904 of 259951 prompt tokens (model q38)
+T 03-T: [prefix-cache] insert (spec-boundary): 259904 tokens, 8357.4MB (resident 12647.9MB / 50553MB, model q38)
+TF-CELL-DONE 03-T
+2026-11-09T16:40:41+02:00 cell 04-B bin=~/.cache/memra-gb10-r4/bins/tfb-65fb297a59
+2026-11-09T16:40:41+02:00 run_arm OUT=~/.cache/memra-gb10-r4/runs/tf2-unit1/04-B BIN=~/.cache/memra-gb10-r4/bins/tfb-65fb297a59 EXTRA=MEMRA_TICK_TRACE=1 TARGETS=131072 260000 REPS=1 1 WRAP=
+2026-11-09T16:42:48+02:00 ready
+2026-11-09T16:50:08+02:00 bench rc=0
+2026-11-09T16:50:23+02:00 done
+B {"tag": "04-B", "target": 131072, "rep": 0, "ttft_s": 118.167, "total_s": 120.889, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+B {"tag": "04-B", "target": 260000, "rep": 0, "ttft_s": 314.387, "total_s": 318.891, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+B 04-B: [prefix-cache] stable-boundary capture armed at 131008 of 131051 prompt tokens (model q38)
+B 04-B: [prefix-cache] insert (spec-boundary): 131008 tokens, 4290.5MB (resident 4290.5MB / 50550MB, model q38)
+B 04-B: [prefix-cache] stable-boundary capture armed at 259904 of 259951 prompt tokens (model q38)
+B 04-B: [prefix-cache] insert (spec-boundary): 259904 tokens, 8357.4MB (resident 12647.9MB / 50550MB, model q38)
+TF-CELL-DONE 04-B
+2026-11-09T16:50:28+02:00 cell 05-B bin=~/.cache/memra-gb10-r4/bins/tfb-65fb297a59
+2026-11-09T16:50:28+02:00 run_arm OUT=~/.cache/memra-gb10-r4/runs/tf2-unit1/05-B BIN=~/.cache/memra-gb10-r4/bins/tfb-65fb297a59 EXTRA=MEMRA_TICK_TRACE=1 TARGETS=131072 260000 REPS=1 1 WRAP=
+2026-11-09T16:52:35+02:00 ready
+2026-11-09T16:59:54+02:00 bench rc=0
+2026-11-09T17:00:09+02:00 done
+B {"tag": "05-B", "target": 131072, "rep": 0, "ttft_s": 118.016, "total_s": 120.738, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+B {"tag": "05-B", "target": 260000, "rep": 0, "ttft_s": 313.64, "total_s": 318.092, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+B 05-B: [prefix-cache] stable-boundary capture armed at 131008 of 131051 prompt tokens (model q38)
+B 05-B: [prefix-cache] insert (spec-boundary): 131008 tokens, 4290.5MB (resident 4290.5MB / 50617MB, model q38)
+B 05-B: [prefix-cache] stable-boundary capture armed at 259904 of 259951 prompt tokens (model q38)
+B 05-B: [prefix-cache] insert (spec-boundary): 259904 tokens, 8357.4MB (resident 12647.9MB / 50617MB, model q38)
+TF-CELL-DONE 05-B
+2026-11-09T17:00:12+02:00 cell 06-T bin=~/.cache/memra-gb10-r4/bins/tft-d5f0644ef3
+2026-11-09T17:00:12+02:00 run_arm OUT=~/.cache/memra-gb10-r4/runs/tf2-unit1/06-T BIN=~/.cache/memra-gb10-r4/bins/tft-d5f0644ef3 EXTRA=MEMRA_TICK_TRACE=1 TARGETS=131072 260000 REPS=1 1 WRAP=
+2026-11-09T17:02:20+02:00 ready
+2026-11-09T17:09:38+02:00 bench rc=0
+2026-11-09T17:09:53+02:00 done
+T {"tag": "06-T", "target": 131072, "rep": 0, "ttft_s": 117.814, "total_s": 120.545, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+T {"tag": "06-T", "target": 260000, "rep": 0, "ttft_s": 313.218, "total_s": 317.724, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+T 06-T: [prefix-cache] stable-boundary capture armed at 131008 of 131051 prompt tokens (model q38)
+T 06-T: [prefix-cache] insert (spec-boundary): 131008 tokens, 4290.5MB (resident 4290.5MB / 50621MB, model q38)
+T 06-T: [prefix-cache] stable-boundary capture armed at 259904 of 259951 prompt tokens (model q38)
+T 06-T: [prefix-cache] insert (spec-boundary): 259904 tokens, 8357.4MB (resident 12647.9MB / 50621MB, model q38)
+TF-CELL-DONE 06-T
