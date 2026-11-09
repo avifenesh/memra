@@ -1,0 +1,7 @@
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m11s
+{"tag": "05-B", "target": 131072, "rep": 0, "ttft_s": 117.378, "total_s": 120.125, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+waitfor: gone 1807069 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

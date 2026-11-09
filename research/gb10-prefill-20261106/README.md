@@ -469,7 +469,7 @@ model's budget of 1 (`tools/argmax-margin-gate.sh`, `tools/test_argmax_margin_ga
 
 ## Round 4 (2026-11-08/09): the request window, attention scheduling, the MTP draft fill, the GDN out-norm, the GEMM's last wave
 
-Base main `d6ef68f5a1`. Ledger rows 46-68d; the close against the base, and lever 8 after it, are at
+Base main `d6ef68f5a1`. Ledger rows 46-71; the close against the base, and lever 8 after it, are at
 the end of this section. Design notes: `ATTN-PINGPONG-DESIGN.md` (attention, rejected),
 `MTP-FILL-DESIGN.md`, `GDN-OUTNORM-DESIGN.md`, `GEMM-V4-DESIGN.md` and `TAIL-FOLD-DESIGN.md`.
 Harness: `harness/r4/`.
@@ -649,9 +649,32 @@ and T; 128 registers and the same spill as before). Exact (GDN-K45-NORM with a t
 route's 2,048 rows and keeps the unfused form, so it does not move. The rest of the trunk is not
 slower.
 
+### Where round 4 leaves the request (rows 69-71, `phases-r4-final/`)
+
+The phases of one cold request on lever 8b's binary, unit 2 (timestamped server log):
+
+| prompt tokens | host before the first call | trunk | draft fill | TTFT |
+|---:|---:|---:|---:|---:|
+| 32,784 | 0.116 s | 21.733 s | 0.189 s | 22.039 s |
+| 131,051 | 0.424 s | 116.210 s | 0.746 s | 117.391 s |
+| 259,951 | 0.782 s | 310.217 s | 1.478 s | 312.511 s |
+
+At 131k about 1.2 s of 117 s is outside the trunk. The draft fill runs only the draft KV's work (23
+ms per 4,096-row chunk: eh_proj on the K-quant MMQ, the K and V projections, norms, RoPE, the
+append), and the host time is mostly a fresh boot's pool growth and the tokenizer (row 58). Two last
+candidates were closed:
+
+- the K-quant MMQ at a 64-token tile on GB10 (two CTAs per SM, row 70): the fill got slower on both
+  units (+0.17 and +0.19 s at 131k); rejected;
+- the F8F4 tile's partial fragment double buffer (row 71): ptxas already interleaves each stage's
+  fragment loads among its 32 MMAs, and the exposed loads after each stage's wait would need about 16
+  registers the tile does not have; not pursued.
+
 ### Next (after round 4)
 
-- The MTP draft fill's own kernels, about 0.7 s at 131k.
-- The F8F4 tile and h2p stay at the register walls of rows 35-36, 47, 49 and 59-63. The one exact
-  GEMM idea left is the partial fragment double buffer (`GEMM-V4-DESIGN.md`, candidate 4), which
-  needs SASS evidence that ptxas does not already hoist those loads.
+- Inside the trunk, the F8F4 tile and h2p are at the register walls of rows 35-36, 47, 49 and 59-63
+  and 71. Moving them needs a different tile program (a non-exact one, judged on acceptance and argmax
+  gates), not another exact schedule.
+- Outside it: the draft fill's V projection runs Q6_K on the matvec-style GEMM (3.9 ms per chunk,
+  0.125 s at 131k); a Q6_K MMQ would change the draft KV's numbers, so it is an acceptance-row lever.
+  The fill's 0.15 s of host gaps between chunk launches could be graphed.

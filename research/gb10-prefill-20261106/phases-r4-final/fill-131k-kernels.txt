@@ -1,0 +1,27 @@
+draft fill: 1714 kernels, span 813.1 ms, kernel sum 660.5 ms, idle 152.6 ms
+     276.41 ms     60 x  void mul_mat_q_q45k<
+     122.10 ms     30 x  qmatvec_gemm_q6_K
+      75.05 ms    225 x  rms_norm_f32_v2
+      64.53 ms    471 x  qmatvec_nvfp4_mmvq_mr2_rp
+      45.04 ms     60 x  quantize_mmq_q8_1_ds4_kernel
+      22.53 ms     16 x  fa_decode_vec_q_seqs_v4_deep
+      18.76 ms    241 x  quantize_q8_1
+      12.61 ms     30 x  embed_gather_u32_t
+       6.23 ms     16 x  fa_decode_combine_seqs
+       5.83 ms     30 x  append_quantize_kv_q8_0_q5_1_rows
+       5.12 ms      1 x  qmatvec_q5_K_mmvq_il
+       2.00 ms     12 x  qmatvec_q4_K_mmvq
+       0.93 ms     64 x  rope_neox_f32
+       0.87 ms      4 x  qmatvec_q6_K_mmvq
+       0.78 ms     45 x  gdn_scan_s128_b
+       0.43 ms     61 x  add_rms_norm_f32_v2
+       0.26 ms      2 x  fa_decode_vec_q_v4_deep_dc
+       0.16 ms     63 x  silu_mul_f32
+       0.16 ms     65 x  add_f32
+       0.16 ms     45 x  ssm_conv1d_fused_decode_b_f32
+       0.13 ms     45 x  gated_rmsnorm_q8_1
+       0.12 ms      2 x  fa_decode_combine_f32
+       0.07 ms     16 x  append_quantize_kv_q8_0_q5_1_seqs
+       0.07 ms     45 x  gdn_prep_decode_b_f32
+       0.03 ms     18 x  mul_f32
+  memcpy: 390 copies, 67.97 ms, 7554.5 MB
