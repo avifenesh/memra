@@ -3,6 +3,7 @@
 //! This crate is a correctness oracle, not a serving backend. It has no CUDA dependency and no
 //! external engine fallback. Unsupported canonical operations return a named error.
 
+pub mod deepseek_v41;
 pub mod hidden_trace;
 pub mod mimo_audio;
 pub mod mimo_audio_attn;
@@ -82,6 +83,13 @@ pub struct ReferenceFixture {
     pub weights: ReferenceWeights,
     pub vision: Option<ReferenceVisionInput>,
     pub multimodal_token_ids: Option<Vec<u32>>,
+    /// Prefill `token_ids[..k]` as one chunk, then decode each later token one step at a time
+    /// (teacher-forced; [`execute_tokens`]). `None`: one prefill chunk.
+    pub decode_from: Option<usize>,
+    /// The fixture as checkpoint-format files (file name, bytes) an external oracle loads to
+    /// run the source program on the same weights. Empty when the weights were generated
+    /// directly in f32.
+    pub checkpoint_files: Vec<(String, Vec<u8>)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -156,6 +164,14 @@ pub enum ReferenceLayerState {
     },
     /// gemma4 KV-shared layer: no cache of its own; it attends `source_layer`'s.
     SharedKv { source_layer: u32 },
+    /// DeepSeek-V4.1 CSA2 layer: the window ring (`[window, head_dim]`, slot = position %
+    /// window) and, for a Full layer, its group's compressed KV and index-key rows.
+    Csa2 {
+        window: Vec<f32>,
+        head_dim: usize,
+        compressed: Vec<f32>,
+        index_keys: Vec<f32>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -173,6 +189,20 @@ pub struct ReferenceOutput {
     /// here compares directly against a forward hook on decoder layer i of the
     /// upstream Python implementation.
     pub layer_hidden: Vec<Vec<f32>>,
+    /// Set when the request ran as a prefill chunk followed by decode steps
+    /// ([`execute_tokens`]).
+    pub decode: Option<ReferenceDecodeTrace>,
+}
+
+/// How [`execute_tokens`] split a request, and the drafts its decode steps proposed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReferenceDecodeTrace {
+    /// `logits` rows `0..prefill_tokens` came from one prefill chunk; every later row from one
+    /// teacher-forced decode step at that position.
+    pub prefill_tokens: usize,
+    /// DSpark drafts, one after each decode step but the last: `drafts[i]` follows the step at
+    /// position `prefill_tokens + i` and drafts from `token_ids[prefill_tokens + i + 1]`.
+    pub drafts: Vec<ReferenceDraftOutput>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -256,21 +286,22 @@ impl std::fmt::Display for ReferenceError {
 
 impl std::error::Error for ReferenceError {}
 
-/// DeepSeek-V4.1 plans (CSA2, single-pass mHC, Engram) have no reference implementation yet.
-/// Refused at every entry point by the plan's own numerics marker, before any fixture or
-/// weight is touched.
-fn refuse_deepseek_v41(plan: &ModelPlan) -> Result<(), ReferenceError> {
+/// DeepSeek-V4.1 plans run only through [`deepseek_v41`] (text, with DSpark); the generic
+/// entry points that have no V4.1 program refuse them by the plan's own numerics marker.
+fn refuse_deepseek_v41(plan: &ModelPlan, operation: &'static str) -> Result<(), ReferenceError> {
     if plan.deepseek_v41.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
-            operation: "DeepSeek-V4.1 CSA2 / single-pass mHC / Engram reference execution",
+            operation,
         });
     }
     Ok(())
 }
 
 pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, ReferenceError> {
-    refuse_deepseek_v41(plan)?;
+    if plan.deepseek_v41.is_some() {
+        return deepseek_v41::fixture(plan);
+    }
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
@@ -604,6 +635,8 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
         weights,
         vision,
         multimodal_token_ids,
+        decode_from: None,
+        checkpoint_files: Vec::new(),
     })
 }
 
@@ -2072,12 +2105,35 @@ fn add_gemma_parallel_moe_fixture(
     Ok(())
 }
 
+/// Runs `token_ids` as one request: `token_ids[..decode_from]` prefilled as one chunk, then
+/// every later token decoded one step at a time (teacher-forced). `None` prefills every token,
+/// the same as [`execute`]. Only DeepSeek-V4.1 plans have a reference decode program.
+pub fn execute_tokens(
+    plan: &ModelPlan,
+    weights: &ReferenceWeights,
+    token_ids: &[u32],
+    decode_from: Option<usize>,
+) -> Result<ReferenceOutput, ReferenceError> {
+    if plan.deepseek_v41.is_some() {
+        return deepseek_v41::execute(plan, weights, token_ids, decode_from);
+    }
+    match decode_from {
+        None => execute(plan, weights, token_ids),
+        Some(_) => Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "teacher-forced reference decode",
+        }),
+    }
+}
+
 pub fn execute(
     plan: &ModelPlan,
     weights: &ReferenceWeights,
     token_ids: &[u32],
 ) -> Result<ReferenceOutput, ReferenceError> {
-    refuse_deepseek_v41(plan)?;
+    if plan.deepseek_v41.is_some() {
+        return deepseek_v41::execute(plan, weights, token_ids, None);
+    }
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
@@ -2100,7 +2156,7 @@ pub fn execute_multimodal(
     token_ids: &[u32],
     vision_input: &ReferenceVisionInput,
 ) -> Result<ReferenceMultimodalOutput, ReferenceError> {
-    refuse_deepseek_v41(plan)?;
+    refuse_deepseek_v41(plan, "DeepSeek-V4.1 multimodal reference execution")?;
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
@@ -2387,6 +2443,7 @@ fn execute_embedded(
         mtp,
         draft,
         layer_hidden,
+        decode: None,
     })
 }
 
@@ -2602,6 +2659,7 @@ impl<'a> StreamedTrunkExecution<'a> {
             // layer's residual would defeat the memory bound. Parity localization
             // uses the in-memory [`execute`] path.
             layer_hidden: Vec::new(),
+            decode: None,
         })
     }
 }
@@ -5900,7 +5958,7 @@ pub fn execute_mtp_standalone(
     token_ids: &[u32],
     trunk_hidden: &[f32],
 ) -> Result<Vec<ReferenceMtpOutput>, ReferenceError> {
-    refuse_deepseek_v41(plan)?;
+    refuse_deepseek_v41(plan, "DeepSeek-V4.1 standalone MTP reference execution")?;
     let hidden = plan.hidden_size as usize;
     let vocab = plan.vocab_size as usize;
     let tokens = token_ids.len();

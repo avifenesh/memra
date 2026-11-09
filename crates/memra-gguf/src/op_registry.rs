@@ -439,7 +439,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
         | OperationKind::DsparkFusion
         | OperationKind::DsparkMarkovHead
         | OperationKind::DsparkConfidenceHead
-        // DeepSeek-V4.1: no reference executor or tuned surface implements these yet.
+        // DeepSeek-V4.1: the reference executor (memra-reference `deepseek_v41`) runs these;
+        // no tuned surface implements them.
         | OperationKind::Fp8Block32Linear
         | OperationKind::Csa2Attention
         | OperationKind::Csa2Compressor

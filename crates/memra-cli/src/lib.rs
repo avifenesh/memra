@@ -14,7 +14,7 @@ use memra_gguf::source::{
     census_from_safetensors_headers,
 };
 use memra_gguf::tensor_contract::{BoundTensorContract, CheckpointDialect, TensorId, TensorOwner};
-use memra_reference::{deterministic_fixture, execute, execute_multimodal, execute_vision};
+use memra_reference::{deterministic_fixture, execute_multimodal, execute_tokens, execute_vision};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -171,11 +171,38 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
             let out_dir = request.out_dir.ok_or("verify tiny requires --out")?;
             let plan = pack.compile_tiny_plan()?;
             let fixture = deterministic_fixture(&plan)?;
-            let first = execute(&plan, &fixture.weights, &fixture.token_ids)?;
-            let second = execute(&plan, &fixture.weights, &fixture.token_ids)?;
+            let run = || {
+                execute_tokens(
+                    &plan,
+                    &fixture.weights,
+                    &fixture.token_ids,
+                    fixture.decode_from,
+                )
+            };
+            let first = run()?;
+            let second = run()?;
             if first != second {
                 return Err("native reference fixture is not bit-deterministic".into());
             }
+            // The fixture, its checkpoint image and this run's oracle land before the pinned
+            // comparison, so a failed gate leaves what it compared, and an external oracle can
+            // load the same checkpoint bytes.
+            std::fs::create_dir_all(&out_dir)?;
+            write_atomic(
+                &out_dir.join("tiny-fixture.txt"),
+                format_tiny_fixture(&plan, &fixture).as_bytes(),
+            )?;
+            if !fixture.checkpoint_files.is_empty() {
+                let checkpoint = out_dir.join("tiny-checkpoint");
+                std::fs::create_dir_all(&checkpoint)?;
+                for (name, bytes) in &fixture.checkpoint_files {
+                    write_atomic(&checkpoint.join(name), bytes)?;
+                }
+            }
+            write_atomic(
+                &out_dir.join("reference-oracle.tsv"),
+                format_reference_oracle(&first).as_bytes(),
+            )?;
             // Bit-determinism above only proves the executor agrees with itself; it is
             // vacuous against a wrong numerical program because a bug reproduces identically
             // on both calls. The oracle below is a git-committed, reviewed value pinned in a
@@ -298,15 +325,6 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                     }
                 }
             }
-            std::fs::create_dir_all(&out_dir)?;
-            write_atomic(
-                &out_dir.join("tiny-fixture.txt"),
-                format_tiny_fixture(&plan, &fixture).as_bytes(),
-            )?;
-            write_atomic(
-                &out_dir.join("reference-oracle.tsv"),
-                format_reference_oracle(&first).as_bytes(),
-            )?;
             if let Some(vision) = vision.as_ref() {
                 write_atomic(
                     &out_dir.join("reference-vision-oracle.tsv"),
@@ -2346,6 +2364,17 @@ fn format_tiny_fixture(
     if let Some(token_ids) = fixture.multimodal_token_ids.as_ref() {
         writeln!(output, "multimodal_tokens={token_ids:?}").unwrap();
     }
+    if let Some(decode_from) = fixture.decode_from {
+        writeln!(output, "decode_from={decode_from}").unwrap();
+    }
+    for (name, bytes) in &fixture.checkpoint_files {
+        writeln!(
+            output,
+            "checkpoint_file={name}\tsha256={}",
+            hex_sha256(bytes)
+        )
+        .unwrap();
+    }
     output
 }
 
@@ -2377,6 +2406,11 @@ fn pinned_tiny_oracle(family: &str) -> Option<&'static str> {
         )),
         "deepseek_v4_dspark" => Some(include_str!(
             "../tests/fixtures/tiny-oracle/deepseek_v4_dspark.tsv"
+        )),
+        // Produced by the vendor model.py over the fixture's checkpoint image, not by memra:
+        // research/modelplan-onboarding-dsv41-20261109/tiny/make_tiny_oracle.py.
+        "deepseek_v41" => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/deepseek_v41.tsv"
         )),
         _ => None,
     }
@@ -2560,6 +2594,34 @@ fn format_reference_oracle(output: &memra_reference::ReferenceOutput) -> String 
             .unwrap();
         }
     }
+    // Teacher-forced decode (DeepSeek-V4.1): one DSpark draft after each decode step, keyed by
+    // the step's position.
+    if let Some(decode) = output.decode.as_ref() {
+        for (step, draft) in decode.drafts.iter().enumerate() {
+            let at = decode.prefill_tokens + step;
+            append_oracle_rows(
+                &mut text,
+                &format!("dspark@{at}"),
+                &draft.logits,
+                draft.block_size,
+                output.vocab,
+            );
+            for (position, (&token, &confidence)) in draft
+                .output_ids
+                .iter()
+                .skip(1)
+                .zip(&draft.confidence)
+                .enumerate()
+            {
+                writeln!(
+                    text,
+                    "dspark-confidence@{at}\t{position}\t{token}\t{:08x}",
+                    confidence.to_bits()
+                )
+                .unwrap();
+            }
+        }
+    }
     text
 }
 
@@ -2632,6 +2694,7 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use memra_reference::execute;
 
     #[test]
     fn hf_template_lock_uses_decoded_json_and_refuses_malformed_sidecars() {
