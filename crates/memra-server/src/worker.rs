@@ -759,12 +759,19 @@ fn spec_cost_restore_verdict(model: &str, demand: usize, prompt_tokens: usize) -
     if !spec_cost_gate_owns(*spec_gate_thresholds()) {
         return None;
     }
-    let table = spec_k_table();
-    let rung = if prompt_tokens >= SPEC_K_LONG_PROMPT_MIN {
-        table.cold_long
-    } else {
-        table.cold_short
-    };
+    // The cold half of the table, through the table's own rule (no gate, no cached length): the
+    // rung a sampled restore runs, kept in step with `choose_spec_k_with` by construction.
+    let rung = choose_spec_k_with(
+        spec_k_table(),
+        None,
+        false,
+        *spec_gate_thresholds(),
+        demand,
+        prompt_tokens,
+        0,
+        false,
+    )
+    .k;
     spec_cost_verdict(model, demand, rung.max(1))
 }
 
@@ -7835,7 +7842,8 @@ fn log_spec_gate_policy() {
     let table = spec_k_table();
     eprintln!(
         "[spec-k] automatic table: prompt<{} -> K={}; cold-long -> K={}; \
-         prompt>= {} and cached>= {} -> K={} (K={} when the loaded MTP head is rank-trimmed){}",
+         prompt>= {} and cached>= {} -> K={} (K={} when the loaded MTP head is rank-trimmed), \
+         greedy only: a sampled request takes its cold rung{}",
         SPEC_K_LONG_PROMPT_MIN,
         table.cold_short,
         table.cold_long,
