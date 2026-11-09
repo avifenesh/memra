@@ -2342,6 +2342,513 @@ gdn_chunk_state_output_mma(const __nv_bfloat16* __restrict__ kb16, const float* 
 }
 
 
+// The out-norm epilogue's shared memory (the NORM form), after GdnK45Smem: the two mbarriers the
+// partner CTA arrives on (one per chunk parity), the partner's group sums, this CTA's own, and
+// the output warps' amax partials.
+struct GdnK45NormSmem {
+    unsigned long long mbar[2];
+    float sx[2][2][32];                // partner's sums [chunk parity][group][row]
+    float sl[2][32];                   // own sums [group][row]
+    float am[4][32];                   // |x| max per [mh][row]
+};
+// the launch's dynamic shared memory (lib.rs GDN_K45_NORM_SMEM)
+static_assert(sizeof(GdnK45Smem) + sizeof(GdnK45NormSmem) == 42000, "GDN_K45_NORM_SMEM");
+static_assert(sizeof(GdnK45Smem) % 16 == 0, "GdnK45NormSmem must start 16-byte aligned");
+
+__device__ __forceinline__ unsigned gdn_k45_cluster_rank() {
+    unsigned r;
+    asm volatile("mov.u32 %0, %%cluster_ctarank;" : "=r"(r));
+    return r;
+}
+__device__ __forceinline__ unsigned gdn_k45_mapa(const void* p, unsigned rank) {
+    unsigned d, a = (unsigned)__cvta_generic_to_shared(p);
+    asm volatile("mapa.shared::cluster.u32 %0, %1, %2;" : "=r"(d) : "r"(a), "r"(rank));
+    return d;
+}
+__device__ __forceinline__ void gdn_k45_cluster_sync() {
+    asm volatile("barrier.cluster.arrive.release.aligned;\n\tbarrier.cluster.wait.acquire.aligned;" ::: "memory");
+}
+// bar.sync 1 over the four output warps (nq = 1); __syncthreads keeps barrier 0
+__device__ __forceinline__ void gdn_k45_bar_out() {
+    asm volatile("bar.sync 1, 128;" ::: "memory");
+}
+
+// The fused pass with the GDN out-norm (GB10 prefill lane, round 4): the gated RMSNorm of o
+// (weight w over the 128 columns of a head row, gate z: [T, H * 128]) and the ssm_out GEMM's F8F4
+// v2 activation into vy ([T, H * ncols] e4m3, then the scale plane at row pitch tp), the bytes
+// gated_rmsnorm_e4m3v2_f32 writes from the pair's o; o itself is never stored. Grid (H, 2), a
+// cluster per head; dynamic shared memory GDN_K45_NORM_SMEM. ncols must be 128 (D).
+extern "C" __global__ void __cluster_dims__(1, 2, 1) __launch_bounds__(256, 2)
+gdn_chunk_state_output_norm_mma(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gcum,
+        const float* __restrict__ beta, const float* __restrict__ U,
+        const __nv_bfloat16* __restrict__ Wb16, const float* __restrict__ q,
+        const float* __restrict__ P, const float* __restrict__ zg, const float* __restrict__ wn,
+        uint8_t* __restrict__ vy, const float* __restrict__ state_in, float* __restrict__ state_out,
+        int H, int T, int C, float scale, int hk, int ncols, long long tp, float eps) {
+    constexpr int D = GDN_D;
+    extern __shared__ __align__(16) unsigned char gdn_k45_raw[];
+    GdnK45Smem& sm = *reinterpret_cast<GdnK45Smem*>(gdn_k45_raw);
+    const int h = blockIdx.x, col0 = blockIdx.y * 64;
+    const int tid = threadIdx.x, warp = tid >> 5, lane = tid & 31;
+    const int fr = lane >> 2, fc = (lane & 3) * 2;
+    const int mh = warp >> 1, nq = warp & 1;
+    GdnK45NormSmem* nx = reinterpret_cast<GdnK45NormSmem*>(gdn_k45_raw + sizeof(GdnK45Smem));
+    const unsigned partner = gdn_k45_cluster_rank() ^ 1u;
+    {
+        if (tid == 0) {
+            #pragma unroll
+            for (int p = 0; p < 2; p++) {
+                unsigned a = (unsigned)__cvta_generic_to_shared(&nx->mbar[p]);
+                asm volatile("mbarrier.init.shared::cta.b64 [%0], 16;" :: "r"(a) : "memory");
+            }
+            asm volatile("fence.mbarrier_init.release.cluster;" ::: "memory");
+        }
+        gdn_k45_cluster_sync();      // both CTAs' barriers initialized before any remote arrive
+    }
+    CTile Macc[8];
+    #pragma unroll
+    for (int t = 0; t < 8; t++)
+        #pragma unroll
+        for (int l = 0; l < 4; l++) {
+            int col = mh * 16 + fr + ((l < 2) ? 0 : 8);
+            int i = nq * 64 + t * 8 + fc + (l & 1);
+            Macc[t].x[l] = state_in[((size_t)h * D + col0 + col) * D + i];
+        }
+    const int NC = (T + C - 1) / C;
+    const int hq = h % hk;
+    auto stage_w = [&](int c_) {
+        for (int idx = tid; idx < 32 * D / 8; idx += 256) {
+            int r = idx / (D / 8), seg = idx % (D / 8);
+            cp_async16_g(&sm.Wb[r * D + seg * 8], Wb16 + (((size_t)c_ * H + h) * C + r) * D + seg * 8, 16);
+        }
+    };
+    auto stage_k = [&](int c_) {
+        int t0_ = c_ * C;
+        for (int idx = tid; idx < 32 * D / 8; idx += 256) {
+            int r = idx / (D / 8), seg = idx % (D / 8);
+            cp_async16_g(&sm.kb[r * D + seg * 8], kb16 + ((size_t)(t0_ + r) * hk + hq) * D + seg * 8,
+                         (t0_ + r < T) ? 16 : 0);
+        }
+    };
+    // register prefetch of the next chunk's q (16 floats), P (4) and gate/beta (tid < 32)
+    float4 qpre[4], ppre;
+    float gpre = 0.f, bpre = 0.f, gCpre = 0.f;
+    auto prefetch = [&](int c_) {
+        const int t0_ = c_ * C, Cc_ = min(C, T - t0_);
+        #pragma unroll
+        for (int u = 0; u < 4; u++) {
+            int idx = tid + u * 256;                 // 1024 float4 = 32 rows x 32 float4
+            int r = idx >> 5, d4 = idx & 31;
+            qpre[u] = (r < Cc_) ? *(const float4*)(q + ((size_t)(t0_ + r) * hk + hq) * D + d4 * 4)
+                                : make_float4(0.f, 0.f, 0.f, 0.f);
+        }
+        {
+            int r = tid >> 3, i4 = tid & 7;          // 256 float4 = 32 rows x 8 float4
+            ppre = (r < Cc_) ? *(const float4*)(P + (((size_t)c_ * H + h) * C + r) * C + i4 * 4)
+                             : make_float4(0.f, 0.f, 0.f, 0.f);
+        }
+        gCpre = gcum[(size_t)(t0_ + Cc_ - 1) * H + h];
+        if (tid < Cc_) {
+            gpre = gcum[(size_t)(t0_ + tid) * H + h];
+            bpre = beta[(size_t)(t0_ + tid) * H + h];
+        }
+    };
+    prefetch(0);
+    stage_w(0);
+    cp_commit();
+    for (int c = 0; c < NC; c++) {
+        const int t0 = c * C;
+        const int Cc = min(C, T - t0);
+        // ---- chunk top: q / P tiles (K5's f16 conversions and masks), gk, b_j; k tile for step B
+        #pragma unroll
+        for (int u = 0; u < 4; u++) {
+            int idx = tid + u * 256, r = idx >> 5, d4 = idx & 31;
+            __half* qd = &sm.qs[r * GDN_K45_QS + d4 * 4];
+            qd[0] = __float2half(qpre[u].x); qd[1] = __float2half(qpre[u].y);
+            qd[2] = __float2half(qpre[u].z); qd[3] = __float2half(qpre[u].w);
+        }
+        {
+            int r = tid >> 3, i4 = tid & 7;
+            float pv[4] = {ppre.x, ppre.y, ppre.z, ppre.w};
+            #pragma unroll
+            for (int e = 0; e < 4; e++) {
+                int i = i4 * 4 + e;
+                float v = (r < Cc && i < Cc && i <= r) ? pv[e] : 0.0f;
+                sm.ps[r * 40 + i] = __float2half(v);
+            }
+        }
+        const float gC = gCpre;
+        if (tid < 32) {
+            sm.gk[tid] = (tid < Cc) ? expf(gC - gpre) * bpre : 0.0f;
+            sm.bj[tid] = (tid < Cc) ? expf(gpre) : 0.0f;
+        }
+        stage_k(c);
+        cp_commit();
+        cp_wait<1>();                // W(c) landed; k(c) may still be in flight
+        __syncthreads();             // S1
+        if (c + 1 < NC) prefetch(c + 1);
+        // this chunk's z rows (32 x 64 floats, 64 lines) toward L2 for the out-norm epilogue
+        if (nq == 1 && lane < 16) {
+            const int line = mh * 16 + lane, r = line >> 1;
+            if (r < Cc)
+                asm volatile("prefetch.global.L2 [%0];"
+                             :: "l"(zg + ((size_t)(t0 + r) * H + h) * D + col0 + (line & 1) * 32));
+        }
+
+        // ---- step A and phase 1, k16 blocks 0..3 on nq = 0 (from zero), 4..7 on nq = 1
+        CTile CA[2][2], CP[2][2];
+        #pragma unroll
+        for (int a = 0; a < 2; a++)
+            #pragma unroll
+            for (int b2 = 0; b2 < 2; b2++)
+                #pragma unroll
+                for (int l = 0; l < 4; l++) { CA[a][b2].x[l] = 0.0f; CP[a][b2].x[l] = 0.0f; }
+        float uval[2][2][4];
+        if (nq == 1) {
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++)
+                    #pragma unroll
+                    for (int l = 0; l < 4; l++) {
+                        int j = jt * 16 + fr + ((l < 2) ? 0 : 8);
+                        int col = mh * 16 + hf * 8 + fc + (l & 1);
+                        uval[jt][hf][l] = (j < Cc) ? U[(((size_t)c * H + h) * C + j) * D + col0 + col] : 0.0f;
+                    }
+        }
+        auto chain = [&](int kb0) {
+            #pragma unroll
+            for (int kl = 0; kl < 4; kl++) {
+                const int kb = kb0 + kl;
+                const unsigned bb0 = gdn_k45_pack_bf16(Macc[2 * kl].x[0], Macc[2 * kl].x[1]);
+                const unsigned bb1 = gdn_k45_pack_bf16(Macc[2 * kl + 1].x[0], Macc[2 * kl + 1].x[1]);
+                const unsigned bb2 = gdn_k45_pack_bf16(Macc[2 * kl].x[2], Macc[2 * kl].x[3]);
+                const unsigned bb3 = gdn_k45_pack_bf16(Macc[2 * kl + 1].x[2], Macc[2 * kl + 1].x[3]);
+                const unsigned bh0 = gdn_k45_pack_f16(Macc[2 * kl].x[0], Macc[2 * kl].x[1]);
+                const unsigned bh1 = gdn_k45_pack_f16(Macc[2 * kl + 1].x[0], Macc[2 * kl + 1].x[1]);
+                const unsigned bh2 = gdn_k45_pack_f16(Macc[2 * kl].x[2], Macc[2 * kl].x[3]);
+                const unsigned bh3 = gdn_k45_pack_f16(Macc[2 * kl + 1].x[2], Macc[2 * kl + 1].x[3]);
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++) {
+                    ATile A;
+                    ld_A(A, sm.Wb + (jt * 16) * D + kb * 16, D / 2, lane);
+                    gdn_k45_mma_bf16(CA[jt][0], A, bb0, bb1);
+                    gdn_k45_mma_bf16(CA[jt][1], A, bb2, bb3);
+                    ATile Aq;
+                    ld_A(Aq, (const __nv_bfloat16*)(sm.qs + (jt * 16) * GDN_K45_QS + kb * 16), GDN_K45_QS / 2, lane);
+                    gdn_k45_mma_f16(CP[jt][0], Aq, bh0, bh1);
+                    gdn_k45_mma_f16(CP[jt][1], Aq, bh2, bh3);
+                }
+            }
+        };
+        if (nq == 0) {
+            chain(0);
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++)
+                    sm.hand[mh][jt * 2 + hf][lane] = make_float4(CA[jt][hf].x[0], CA[jt][hf].x[1], CA[jt][hf].x[2], CA[jt][hf].x[3]);
+        }
+        __syncthreads();             // S2
+        unsigned yh[2][2][2];        // f16 Y pairs (nq = 1): [jt][hf][row half]
+        if (nq == 1) {
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++) {
+                    float4 v = sm.hand[mh][jt * 2 + hf][lane];
+                    CA[jt][hf].x[0] = v.x; CA[jt][hf].x[1] = v.y; CA[jt][hf].x[2] = v.z; CA[jt][hf].x[3] = v.w;
+                }
+            // The chain continues on the hand-off: zero-start CP here would break phase 1's order,
+            // so phase 1's partials come over after this step (below); step A runs blocks 4..7 now.
+            #pragma unroll
+            for (int kl = 0; kl < 4; kl++) {
+                const int kb = 4 + kl;
+                const unsigned bb0 = gdn_k45_pack_bf16(Macc[2 * kl].x[0], Macc[2 * kl].x[1]);
+                const unsigned bb1 = gdn_k45_pack_bf16(Macc[2 * kl + 1].x[0], Macc[2 * kl + 1].x[1]);
+                const unsigned bb2 = gdn_k45_pack_bf16(Macc[2 * kl].x[2], Macc[2 * kl].x[3]);
+                const unsigned bb3 = gdn_k45_pack_bf16(Macc[2 * kl + 1].x[2], Macc[2 * kl + 1].x[3]);
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++) {
+                    ATile A;
+                    ld_A(A, sm.Wb + (jt * 16) * D + kb * 16, D / 2, lane);
+                    gdn_k45_mma_bf16(CA[jt][0], A, bb0, bb1);
+                    gdn_k45_mma_bf16(CA[jt][1], A, bb2, bb3);
+                }
+            }
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++) {
+                    float yv[4];
+                    #pragma unroll
+                    for (int l = 0; l < 4; l++) {
+                        int j = jt * 16 + fr + ((l < 2) ? 0 : 8);
+                        int col = mh * 16 + hf * 8 + fc + (l & 1);
+                        float y = uval[jt][hf][l] - CA[jt][hf].x[l];
+                        yv[l] = (j < Cc) ? y : 0.0f;
+                        sm.ys[j * GDN_K45_YS + col] = (j < Cc) ? __float2bfloat16(y * sm.gk[j]) : __float2bfloat16(0.0f);
+                    }
+                    // K4 stores Y = __float2half(y); K5 reads rows past Cc as 0 (zero-filled)
+                    yh[jt][hf][0] = gdn_k45_pack_f16(yv[0], yv[1]);
+                    yh[jt][hf][1] = gdn_k45_pack_f16(yv[2], yv[3]);
+                }
+        }
+        cp_wait<0>();                // k(c) landed
+        __syncthreads();             // S3: ys visible, hand free, Wb free
+        if (c + 1 < NC) { stage_w(c + 1); cp_commit(); }
+        if (nq == 0) {
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++)
+                    sm.hand[mh][jt * 2 + hf][lane] = make_float4(CP[jt][hf].x[0], CP[jt][hf].x[1], CP[jt][hf].x[2], CP[jt][hf].x[3]);
+        }
+        __syncthreads();             // S4
+        if (nq == 1) {
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++) {
+                    float4 v = sm.hand[mh][jt * 2 + hf][lane];
+                    CP[jt][hf].x[0] = v.x; CP[jt][hf].x[1] = v.y; CP[jt][hf].x[2] = v.z; CP[jt][hf].x[3] = v.w;
+                }
+            #pragma unroll
+            for (int kl = 0; kl < 4; kl++) {
+                const int kb = 4 + kl;
+                const unsigned bh0 = gdn_k45_pack_f16(Macc[2 * kl].x[0], Macc[2 * kl].x[1]);
+                const unsigned bh1 = gdn_k45_pack_f16(Macc[2 * kl + 1].x[0], Macc[2 * kl + 1].x[1]);
+                const unsigned bh2 = gdn_k45_pack_f16(Macc[2 * kl].x[2], Macc[2 * kl].x[3]);
+                const unsigned bh3 = gdn_k45_pack_f16(Macc[2 * kl + 1].x[2], Macc[2 * kl + 1].x[3]);
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++) {
+                    ATile Aq;
+                    ld_A(Aq, (const __nv_bfloat16*)(sm.qs + (jt * 16) * GDN_K45_QS + kb * 16), GDN_K45_QS / 2, lane);
+                    gdn_k45_mma_f16(CP[jt][0], Aq, bh0, bh1);
+                    gdn_k45_mma_f16(CP[jt][1], Aq, bh2, bh3);
+                }
+            }
+            // o *= exp(G_j) (rows past Cc scaled by 0, as K5), then the P . Y chain over j' blocks 0, 1
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++) {
+                const float b_lo = sm.bj[jt * 16 + fr], b_hi = sm.bj[jt * 16 + fr + 8];
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++) {
+                    CP[jt][hf].x[0] *= b_lo; CP[jt][hf].x[1] *= b_lo;
+                    CP[jt][hf].x[2] *= b_hi; CP[jt][hf].x[3] *= b_hi;
+                }
+            }
+            #pragma unroll
+            for (int k16 = 0; k16 < 2; k16++) {
+                // B[k = j'][n = col] of the j' block k16: the transposes of Y's two 8-row halves
+                const unsigned y00 = gdn_k45_trans(yh[k16][0][0]), y01 = gdn_k45_trans(yh[k16][0][1]);
+                const unsigned y10 = gdn_k45_trans(yh[k16][1][0]), y11 = gdn_k45_trans(yh[k16][1][1]);
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++) {
+                    ATile Ap;
+                    ld_A(Ap, (const __nv_bfloat16*)(sm.ps + (jt * 16) * 40 + k16 * 16), 20, lane);
+                    gdn_k45_mma_f16(CP[jt][0], Ap, y00, y01);
+                    gdn_k45_mma_f16(CP[jt][1], Ap, y10, y11);
+                }
+            }
+            {
+                // ---- the gated out-norm of this chunk's o rows (GDN-OUTNORM-DESIGN.md). Register
+                // [jt][hf][l] is row jt * 16 + fr + (l >> 1) * 8, CTA column mh * 16 + hf * 8 + fc + (l & 1).
+                // o as the pair's store wrote it, and the norm's squares (its `sum = 0; sum += v * v`)
+                float ov[2][2][4], sq[2][2][4];
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++)
+                    #pragma unroll
+                    for (int hf = 0; hf < 2; hf++)
+                        #pragma unroll
+                        for (int l = 0; l < 4; l++) {
+                            ov[jt][hf][l] = scale * CP[jt][hf].x[l];
+                            float a = 0.0f;
+                            a += ov[jt][hf][l] * ov[jt][hf][l];
+                            sq[jt][hf][l] = a;
+                        }
+                // the gate of each element (L2-prefetched at the chunk top); its latency runs
+                // under the sum tree and the cluster exchange. [jt][hf][row half]
+                float2 zr[2][2][2];
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++)
+                    #pragma unroll
+                    for (int hf = 0; hf < 2; hf++)
+                        #pragma unroll
+                        for (int rh = 0; rh < 2; rh++) {
+                            const int j = jt * 16 + fr + rh * 8;
+                            const int col = mh * 16 + hf * 8 + fc;
+                            zr[jt][hf][rh] = (j < Cc)
+                                ? *(const float2*)(zg + ((size_t)(t0 + j) * H + h) * D + col0 + col)
+                                : make_float2(0.0f, 0.0f);
+                        }
+                const int g = mh >> 1;       // the 32-column group: warps mh = 2g, 2g + 1
+                const int par = c & 1;
+                // The norm's warp tree on a group's 32 squares (shfl_down 16, 8, 4, 2, 1 from lane 0):
+                // b_i = a_i + a_{i+16} pairs a register of warp 2g with the same register of warp
+                // 2g + 1, which hands its squares over in its own hand slot (it read that slot at S4;
+                // no other warp reads it before S5).
+                if (mh & 1) {
+                    #pragma unroll
+                    for (int jt = 0; jt < 2; jt++)
+                        #pragma unroll
+                        for (int hf = 0; hf < 2; hf++)
+                            sm.hand[mh][jt * 2 + hf][lane] =
+                                make_float4(sq[jt][hf][0], sq[jt][hf][1], sq[jt][hf][2], sq[jt][hf][3]);
+                }
+                gdn_k45_bar_out();
+                if (!(mh & 1)) {
+                    float b[2][2][4];
+                    #pragma unroll
+                    for (int jt = 0; jt < 2; jt++)
+                        #pragma unroll
+                        for (int hf = 0; hf < 2; hf++) {
+                            const float4 p = sm.hand[mh + 1][jt * 2 + hf][lane];
+                            b[jt][hf][0] = sq[jt][hf][0] + p.x; b[jt][hf][1] = sq[jt][hf][1] + p.y;
+                            b[jt][hf][2] = sq[jt][hf][2] + p.z; b[jt][hf][3] = sq[jt][hf][3] + p.w;
+                        }
+                    // group column i = hf * 8 + 2q + e (q = lane & 3, e = l & 1): c_i = b_i + b_{i+8}
+                    // (hf 0 and 1 of one lane), d_i = c_i + c_{i+4} (lane q + 2), e_i = d_i + d_{i+2}
+                    // (lane q + 1), the warp sum e_0 + e_1 (lane q = 0, e = 0 and 1)
+                    #pragma unroll
+                    for (int jt = 0; jt < 2; jt++)
+                        #pragma unroll
+                        for (int rh = 0; rh < 2; rh++) {
+                            float c0 = b[jt][0][rh * 2 + 0] + b[jt][1][rh * 2 + 0];
+                            float c1 = b[jt][0][rh * 2 + 1] + b[jt][1][rh * 2 + 1];
+                            c0 += __shfl_down_sync(0xffffffffu, c0, 2);
+                            c1 += __shfl_down_sync(0xffffffffu, c1, 2);
+                            c0 += __shfl_down_sync(0xffffffffu, c0, 1);
+                            c1 += __shfl_down_sync(0xffffffffu, c1, 1);
+                            const float f = c0 + c1;
+                            if ((lane & 3) == 0) {
+                                const int j = jt * 16 + fr + rh * 8;
+                                nx->sl[g][j] = f;
+                                asm volatile("st.shared::cluster.f32 [%0], %1;"
+                                             :: "r"(gdn_k45_mapa(&nx->sx[par][g][j], partner)), "f"(f) : "memory");
+                            }
+                        }
+                    // 16 arrivals per CTA and chunk (lane q = 0 of the two group warps); release
+                    // orders this lane's sums before its arrive
+                    if ((lane & 3) == 0)
+                        asm volatile("mbarrier.arrive.release.cluster.shared::cluster.b64 _, [%0];"
+                                     :: "r"(gdn_k45_mapa(&nx->mbar[par], partner)) : "memory");
+                }
+                gdn_k45_bar_out();           // own sums visible to the output warps
+                {
+                    const unsigned a = (unsigned)__cvta_generic_to_shared(&nx->mbar[par]);
+                    const unsigned ph = (unsigned)((c >> 1) & 1);
+                    unsigned done = 0;
+                    while (!done)
+                        asm volatile("{\n\t.reg .pred p;\n\t"
+                                     "mbarrier.try_wait.parity.acquire.cluster.shared::cta.b64 p, [%1], %2;\n\t"
+                                     "selp.u32 %0, 1, 0, p;\n}"
+                                     : "=r"(done) : "r"(a), "r"(ph) : "memory");
+                }
+                // the block combine: total = (s0 + s2) + (s1 + s3), s0 s1 from columns 0-63 (the CTA
+                // with blockIdx.y = 0), s2 s3 from 64-127; then the norm's scale
+                const bool low = blockIdx.y == 0;
+                float rs[2][2];
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++)
+                    #pragma unroll
+                    for (int rh = 0; rh < 2; rh++) {
+                        const int j = jt * 16 + fr + rh * 8;
+                        const float m0 = nx->sl[0][j], m1 = nx->sl[1][j];
+                        const float p0 = nx->sx[par][0][j], p1 = nx->sx[par][1][j];
+                        const float s0 = low ? m0 : p0, s1 = low ? m1 : p1;
+                        const float s2 = low ? p0 : m0, s3 = low ? p1 : m1;
+                        const float total = (s0 + s2) + (s1 + s3);
+                        rs[jt][rh] = rsqrtf(total / ncols + eps);
+                    }
+                // x per element (the norm's expression), and |x| max per row over this lane's four
+                float xv[2][2][4], am[2][2];
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++)
+                    #pragma unroll
+                    for (int hf = 0; hf < 2; hf++)
+                        #pragma unroll
+                        for (int l = 0; l < 4; l++) {
+                            const int rh = l >> 1, e = l & 1;
+                            const int col = col0 + mh * 16 + hf * 8 + fc + e;
+                            const float zz = e ? zr[jt][hf][rh].y : zr[jt][hf][rh].x;
+                            const float x = (ov[jt][hf][l] * rs[jt][rh] * wn[col]) * (zz / (1.0f + expf(-zz)));
+                            xv[jt][hf][l] = x;
+                            am[jt][rh] = (hf == 0 && e == 0) ? fabsf(x) : fmaxf(am[jt][rh], fabsf(x));
+                        }
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++)
+                    #pragma unroll
+                    for (int rh = 0; rh < 2; rh++) {
+                        float m = am[jt][rh];
+                        m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, 1));
+                        m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, 2));
+                        am[jt][rh] = m;
+                        if ((lane & 3) == 0) nx->am[mh][jt * 16 + fr + rh * 8] = m;
+                    }
+                gdn_k45_bar_out();
+                // per 32-column group: d_inv = 448 / amax, e4m3 of x * d_inv, the scale amax / 448
+                const int in_f = H * ncols;
+                float* sc = (float*)(vy + (size_t)T * in_f);
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++)
+                    #pragma unroll
+                    for (int rh = 0; rh < 2; rh++) {
+                        const int j = jt * 16 + fr + rh * 8;
+                        const float amax = fmaxf(am[jt][rh], nx->am[mh ^ 1][j]);
+                        const float d_inv = amax == 0.0f ? 0.0f : 448.0f / amax;
+                        if (j < Cc) {
+                            const long long t = t0 + j;
+                            uint8_t* vals = vy + (size_t)t * in_f + h * ncols + col0;
+                            #pragma unroll
+                            for (int hf = 0; hf < 2; hf++) {
+                                const unsigned lo8 = gdn_cvt_e4m3(xv[jt][hf][rh * 2 + 0] * d_inv);
+                                const unsigned hi8 = gdn_cvt_e4m3(xv[jt][hf][rh * 2 + 1] * d_inv);
+                                *(uint16_t*)(vals + mh * 16 + hf * 8 + fc) = (uint16_t)(lo8 | (hi8 << 8));
+                            }
+                            if (!(mh & 1) && (lane & 3) == 0)
+                                sc[(long long)((h * ncols + col0 + 32 * g) / 32) * tp + gdn_f8f4v2_act_slot(t)] =
+                                    amax == 0.0f ? 0.0f : amax / 448.0f;
+                        }
+                    }
+            }
+        }
+        // ---- step B (all warps): S <- bC S + (gk y)^T k
+        const float bC = expf(gC);
+        #pragma unroll
+        for (int t = 0; t < 8; t++)
+            #pragma unroll
+            for (int l = 0; l < 4; l++) Macc[t].x[l] *= bC;
+        #pragma unroll
+        for (int k16 = 0; k16 < 2; k16++) {
+            ATile A;
+            ld_A_trans(A, sm.ys + (k16 * 16) * GDN_K45_YS + mh * 16, GDN_K45_YS / 2, lane);
+            #pragma unroll
+            for (int p2 = 0; p2 < 4; p2++) {
+                ATile Bt;
+                ld_A_trans(Bt, sm.kb + (k16 * 16) * D + nq * 64 + p2 * 16, D / 2, lane);
+                BTile Blo, Bhi;
+                Blo.x[0] = Bt.x[0]; Blo.x[1] = Bt.x[2];
+                Bhi.x[0] = Bt.x[1]; Bhi.x[1] = Bt.x[3];
+                mma_bf16(Macc[p2 * 2 + 0], A, Blo);
+                mma_bf16(Macc[p2 * 2 + 1], A, Bhi);
+            }
+        }
+        __syncthreads();             // S5 (W(c + 1) is waited on at the next chunk top)
+    }
+    #pragma unroll
+    for (int t = 0; t < 8; t++)
+        #pragma unroll
+        for (int l = 0; l < 4; l++) {
+            int col = mh * 16 + fr + ((l < 2) ? 0 : 8);
+            int i = nq * 64 + t * 8 + fc + (l & 1);
+            state_out[((size_t)h * D + col0 + col) * D + i] = Macc[t].x[l];
+        }
+    gdn_k45_cluster_sync();      // no CTA leaves while its partner may still address it
+}
+
+
+
 // ---- v2: coupled form — St and Y arrive as BF16 (written by K4-mma directly; identical
 // numerics to v1 which rounds them anyway) through a cp.async ring. P stays f32->bf16.
 __device__ __forceinline__ void cp_async16_k5(void* dst, const void* src, int src_size) {

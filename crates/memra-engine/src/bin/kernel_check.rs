@@ -2674,6 +2674,130 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // --- GDN-K45-NORM: gdn_scan_prefill_norm_f8f4v2 (the GDN out-norm inside the fused K4+K5
+    //     pass, gdn_chunk_state_output_norm_mma: a cluster of two CTAs per head trading their
+    //     row sums) must equal the fused pass's o through gated_rmsnorm_f8f4v2 with no f32
+    //     output (the prime's seeded arm) byte for byte: the e4m3 values, every written scale
+    //     slot and the state. The 27B shape (48 value / 16 key heads), T = 300 (a partial last
+    //     chunk), 64 and 20 (one partial chunk), a nonzero initial state, z with exact zeros and
+    //     one all-zero 32-column group (amax = 0). ---
+    if env!("MEMRA_BUILT_CUDA_ARCH") == "120a" {
+        let (s_v, h, nk, c, eps) = (128usize, 48usize, 16usize, 32usize, 1e-6f32);
+        for &t in &[300usize, 64, 20] {
+            let mut qc = vec![0f32; s_v * nk * t];
+            let mut kc = vec![0f32; s_v * nk * t];
+            for row in 0..nk * t {
+                let (mut nq, mut nkk) = (0f32, 0f32);
+                for i in 0..s_v {
+                    let a = pr(row * s_v + i + 141);
+                    let b = pr(row * s_v + i + 143);
+                    qc[row * s_v + i] = a;
+                    kc[row * s_v + i] = b;
+                    nq += a * a;
+                    nkk += b * b;
+                }
+                for i in 0..s_v {
+                    qc[row * s_v + i] /= nq.sqrt();
+                    kc[row * s_v + i] /= nkk.sqrt();
+                }
+            }
+            let n = s_v * h * t;
+            let v: Vec<f32> = (0..n).map(|i| pr(i + 147)).collect();
+            let g: Vec<f32> = (0..h * t)
+                .map(|i| -0.02 - pr(i + 153).abs() * 0.5)
+                .collect();
+            let beta: Vec<f32> = (0..h * t).map(|i| 0.3 + pr(i + 159).abs() * 0.6).collect();
+            let st0: Vec<f32> = (0..s_v * s_v * h).map(|i| pr(i + 161) * 0.5).collect();
+            let mut zh: Vec<f32> = (0..n)
+                .map(|i| if i % 997 == 0 { 0.0 } else { pr(i + 167) * 6.0 })
+                .collect();
+            // token 3, head 5, columns 64..96: z = 0 makes the whole group 0 (silu(0) = 0)
+            for x in zh.iter_mut().skip((3 * h + 5) * s_v + 64).take(32) {
+                *x = 0.0;
+            }
+            let w: Vec<f32> = (0..s_v).map(|i| 1.0 + pr(i + 171) * 0.4).collect();
+            let scale = 1.0 / (s_v as f32).sqrt();
+            let (qd, kd, vd, gd) = (e.htod(&qc)?, e.htod(&kc)?, e.htod(&v)?, e.htod(&g)?);
+            let (bd, sid, zd, wd) = (e.htod(&beta)?, e.htod(&st0)?, e.htod(&zh)?, e.htod(&w)?);
+            let zv = zd.slice(0..n);
+            // SAFETY: single-threaded gate binary; the seams read the env per call.
+            unsafe {
+                std::env::set_var("MEMRA_GDN_MMA", "1");
+                std::env::set_var("MEMRA_GDN_WGMMA", "0");
+                std::env::set_var("MEMRA_GDN_TRAFFIC", "1");
+                std::env::set_var("MEMRA_GDN_K45", "1");
+                std::env::set_var("MEMRA_GDN_K2_32", "1");
+            }
+            let routed = e.gdn_k45_norm_route(t);
+            let mut so_r = e.zeros(s_v * s_v * h)?;
+            let mut o = e.zeros(n)?;
+            e.gdn_scan_chunked(
+                &qd, &kd, &vd, &gd, &bd, None, None, &sid, &mut so_r, &mut o, h, t, scale, c, nk,
+            )?;
+            let key = e.addr_f32(&o);
+            e.gated_rmsnorm_f8f4v2(&o, &wd, &zv, None, key, s_v, h, t, eps)?;
+            let (q_r, _) = e
+                .f8f4_take_seed()
+                .ok_or("GDN-K45-NORM: no reference seed")?;
+            let q_r = e.dtoh_u8(&q_r.ok_or("GDN-K45-NORM: no reference scratch")?)?;
+            let mut so_n = e.zeros(s_v * s_v * h)?;
+            let fused = e.gdn_scan_prefill_norm_f8f4v2(
+                &qd, &kd, &vd, &gd, &bd, None, None, &sid, &mut so_n, h, t, scale, nk, &zv, &wd,
+                eps, key,
+            );
+            unsafe {
+                std::env::remove_var("MEMRA_GDN_MMA");
+                std::env::remove_var("MEMRA_GDN_WGMMA");
+                std::env::remove_var("MEMRA_GDN_TRAFFIC");
+                std::env::remove_var("MEMRA_GDN_K45");
+                std::env::remove_var("MEMRA_GDN_K2_32");
+            }
+            fused?;
+            let (q_n, _) = e.f8f4_take_seed().ok_or("GDN-K45-NORM: no seed")?;
+            let q_n = e.dtoh_u8(&q_n.ok_or("GDN-K45-NORM: no scratch")?)?;
+            let in_f = h * s_v;
+            let nvb = t * in_f;
+            let tp = t.div_ceil(256) * 256;
+            let slot = |tt: usize| -> usize {
+                let (p8, r8) = ((tt & 63) >> 3, tt & 7);
+                (tt & !63) + ((p8 >> 1) * 4 + (r8 >> 1)) * 4 + (p8 & 1) * 2 + (r8 & 1)
+            };
+            let mut bad = q_r[..nvb]
+                .iter()
+                .zip(&q_n[..nvb])
+                .filter(|(a, b)| a != b)
+                .count();
+            let mut zero_groups = 0usize;
+            for gq in 0..in_f / 32 {
+                for tt in 0..t {
+                    let off = nvb + (gq * tp + slot(tt)) * 4;
+                    if q_r[off..off + 4] != q_n[off..off + 4] {
+                        bad += 1;
+                    }
+                    if q_r[off..off + 4] == [0u8; 4] {
+                        zero_groups += 1;
+                    }
+                }
+            }
+            let bs = e
+                .dtoh(&so_r)?
+                .iter()
+                .zip(&e.dtoh(&so_n)?)
+                .filter(|(a, b)| a.to_bits() != b.to_bits())
+                .count();
+            println!(
+                "GDN-K45-NORM T={t:3} H={h} hk={nk}: route={routed} e4m3+scales bitdiff={bad} \
+                 state bitdiff={bs} (zero groups {zero_groups}) {}",
+                if routed && bad == 0 && bs == 0 && zero_groups > 0 {
+                    "OK"
+                } else {
+                    fails += 1;
+                    "FAIL"
+                }
+            );
+        }
+    }
+
     // --- Q2_K Stage-A GPU path vs the CPU dequant oracle on deterministic synthetic blocks. ---
     // Q2_K intentionally has no dp4a fast path yet, but mixed expert artifacts rely on this
     // generic staged path. Keep this model-independent so every target-rig gate exercises it.

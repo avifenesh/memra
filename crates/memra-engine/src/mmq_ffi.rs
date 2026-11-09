@@ -2834,6 +2834,82 @@ impl Engine {
         Ok(())
     }
 
+    /// `gdn_scan_prefill` then `gated_rmsnorm_f8f4v2` with no f32 output, in one pass: the fused
+    /// K4+K5 scan computes the gated RMSNorm of its chunk output and writes the ssm_out GEMM's
+    /// F8F4 v2 activation itself (`gdn_chunk_state_output_norm_mma`), so `o` is never stored
+    /// (research/gb10-prefill-20261106/GDN-OUTNORM-DESIGN.md). The same bytes, the same seed
+    /// (keyed `key_ptr`, `x_written = false`), the same state. Only on `gdn_k45_norm_route(t)`;
+    /// an error elsewhere. `n_head` is the value head count, the head row 128 wide.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_scan_prefill_norm_f8f4v2(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &CudaSlice<f32>,
+        v: &CudaSlice<f32>,
+        g: &CudaSlice<f32>,
+        beta: &CudaSlice<f32>,
+        kb16_pre: Option<&CudaSlice<u8>>,
+        qb16_pre: Option<&CudaSlice<u8>>,
+        state_in: &CudaSlice<f32>,
+        state_out: &mut CudaSlice<f32>,
+        n_head: usize,
+        t: usize,
+        scale: f32,
+        hk: usize,
+        z: &cudarc::driver::CudaView<f32>,
+        w: &CudaSlice<f32>,
+        eps: f32,
+        key_ptr: u64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.gdn_k45_norm_route(t) {
+            return Err("gdn_scan_prefill_norm_f8f4v2 off the fused K4+K5 route".into());
+        }
+        let in_f = 128 * n_head;
+        if z.len() < t * in_f || w.len() < 128 {
+            return Err(format!(
+                "gdn_scan_prefill_norm_f8f4v2: z {} / w {} short of [{t}, {in_f}] / 128",
+                z.len(),
+                w.len()
+            )
+            .into());
+        }
+        let bytes = unsafe { memra_mmq_nvfp4_f8f4_v2_act_bytes(in_f as i32, t as i32) };
+        let mut scratch = self.alloc_uninit::<u8>(bytes)?;
+        self.gdn_scan_chunked_to(
+            q,
+            k,
+            v,
+            g,
+            beta,
+            kb16_pre,
+            qb16_pre,
+            state_in,
+            state_out,
+            crate::GdnScanOut::Norm {
+                z,
+                w,
+                vy: &mut scratch,
+                eps,
+            },
+            n_head,
+            t,
+            scale,
+            Self::gdn_chunk_size(),
+            hk,
+        )?;
+        *self.f8f4_act_seed.lock().unwrap() = Some(crate::F8f4ActGroup {
+            x_ptr: key_ptr,
+            in_f,
+            m: t,
+            scratch: Some(scratch),
+            v2: true,
+            q8: None,
+            x_written: false,
+            seeded_uses: 0,
+        });
+        Ok(())
+    }
+
     /// The attention out-gate (`sigmoid` then `mul`'s values) plus the F8F4 v2 activation of the
     /// [t, in_f] product in one kernel (`sig_mul_e4m3v2_f32`), seeded for the next quantize-once
     /// scope over the buffer at `key_ptr`. `dst = None` skips the f32 product. Bit-identical to

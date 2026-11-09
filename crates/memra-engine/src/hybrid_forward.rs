@@ -9851,6 +9851,50 @@ impl HybridModel {
         let prep =
             self.linear_attn_gdn_prep(e, la, qkv_mixed, beta_raw, alpha, t, cache, il, pad_len)?;
 
+        // The seeded gated-norm arm below with the norm inside the fused K4+K5 scan
+        // (GDN-OUTNORM-DESIGN.md, round 4): the same activation bytes, seed and state, `o`
+        // never stored. `gn` is only the seed's key, as in that arm.
+        if seed_out
+            && pad_len.is_none()
+            && d_state == 128
+            && !Self::f16out_on(e, t)
+            && Self::prime_norm_fuse_on()
+            && e.f8f4_v2_direct(&la.ssm_out, t)
+            && e.gdn_k45_norm_route(t)
+        {
+            let gn = e.uninit(d_state * num_v * t)?;
+            let key = e.addr_f32(&gn);
+            let rl = cache.recur[il].as_mut().unwrap();
+            {
+                let crate::cache::RecurLayer {
+                    ssm_state,
+                    ssm_state_alt,
+                    ..
+                } = rl;
+                e.gdn_scan_prefill_norm_f8f4v2(
+                    &prep.q_l2,
+                    &prep.k_l2,
+                    &prep.v_g,
+                    &prep.g_log,
+                    &prep.beta,
+                    prep.kb16.as_ref(),
+                    prep.qb16.as_ref(),
+                    ssm_state,
+                    ssm_state_alt,
+                    num_v,
+                    t,
+                    scale,
+                    prep.hk,
+                    z,
+                    la.ssm_norm.float_data(),
+                    eps,
+                    key,
+                )?;
+            }
+            std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
+            return Ok((gn, None));
+        }
+
         // ONE gdn_scan over T from the cache's CURRENT state (zero at fresh prime); the final
         // state lands in the spare buffer and ping-pongs back (stable resident pointers, the
         // decode-determinism discipline from linear_attn_decode_inner). A4: `gdn_scan_prefill`

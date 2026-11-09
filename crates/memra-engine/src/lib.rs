@@ -1912,6 +1912,19 @@ pub struct GdnConvL2<'a> {
     pub eps: f32,
 }
 
+/// Where the chunked GDN scan puts its output: `o` itself, or (`Norm`, the fused K4+K5 route
+/// only) the gated RMSNorm of `o` with weight `w` and gate `z` as the ssm_out GEMM's F8F4 v2
+/// activation in `vy`, `o` never stored (`Engine::gdn_scan_prefill_norm_f8f4v2`).
+pub(crate) enum GdnScanOut<'a, 'z> {
+    O(&'a mut CudaSlice<f32>),
+    Norm {
+        z: &'a cudarc::driver::CudaView<'z, f32>,
+        w: &'a CudaSlice<f32>,
+        vy: &'a mut CudaSlice<u8>,
+        eps: f32,
+    },
+}
+
 /// One quantize-once scope: the activation buffer it covers and, after the first F8F4 weight,
 /// that activation's e4m3 scratch (block_e4m3_mmq, the bytes the quantizer would write again).
 pub(crate) struct F8f4ActGroup {
@@ -33963,12 +33976,81 @@ impl Engine {
         c: usize,
         hk: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gdn_scan_chunked_to(
+            q,
+            k,
+            v,
+            g,
+            beta,
+            kb16_pre,
+            qb16_pre,
+            state_in,
+            state_out,
+            GdnScanOut::O(o),
+            n_head,
+            t,
+            scale,
+            c,
+            hk,
+        )
+    }
+
+    /// Whether `gdn_scan_chunked` at chunk size `c` takes the fused K4+K5 mma.sync pass
+    /// (`gdn_chunk_state_output_mma`), the only route the out-norm form has: the mma config at
+    /// C = 32, no Hopper wgmma pass, `gdn_k45_on`, and no prime-table graph (which keeps the
+    /// pair). The same reads, in the same order, as the dispatch below.
+    pub fn gdn_k45_route(&self, c: usize) -> bool {
+        let gdn_mma = !portable_mma_gated()
+            && c == 32
+            && match std::env::var("MEMRA_GDN_MMA").as_deref() {
+                Ok("1") => true,
+                Ok("0") => false,
+                _ => gdn_mma_default_on(),
+            };
+        let gdn_wgmma = cfg!(memra_hopper_mma)
+            && gdn_mma
+            && std::env::var("MEMRA_GDN_WGMMA").as_deref() != Ok("0");
+        gdn_mma && !gdn_wgmma && self.gdn_k45_on() && crate::qwen_prime_graph::current().is_none()
+    }
+
+    /// Whether `gdn_scan_prefill` of `t` rows reaches the fused K4+K5 pass (`gdn_k45_route`
+    /// behind its chunked dispatch), so the out-norm form
+    /// (`gdn_scan_prefill_norm_f8f4v2`) can stand in for the scan and the gated norm.
+    pub fn gdn_k45_norm_route(&self, t: usize) -> bool {
+        std::env::var("MEMRA_GDN_DIFF").is_err()
+            && Self::gdn_chunked_enabled()
+            && t >= 16
+            && self.gdn_k45_route(Self::gdn_chunk_size())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn gdn_scan_chunked_to(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &CudaSlice<f32>,
+        v: &CudaSlice<f32>,
+        g: &CudaSlice<f32>,
+        beta: &CudaSlice<f32>,
+        kb16_pre: Option<&CudaSlice<u8>>,
+        qb16_pre: Option<&CudaSlice<u8>>,
+        state_in: &CudaSlice<f32>,
+        state_out: &mut CudaSlice<f32>,
+        out: GdnScanOut<'_, '_>,
+        n_head: usize,
+        t: usize,
+        scale: f32,
+        c: usize,
+        hk: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         const D: usize = 128;
         const NSPLIT: u32 = 4;
         assert!(
             (1..=128).contains(&c),
             "gdn_scan_chunked: C must be in 1..=128"
         );
+        if matches!(out, GdnScanOut::Norm { .. }) && !self.gdn_k45_route(c) {
+            return Err("the GDN out-norm form needs the fused K4+K5 route (gdn_k45_route)".into());
+        }
         let h = n_head;
         #[allow(clippy::manual_div_ceil)]
         // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
@@ -34087,6 +34169,9 @@ impl Engine {
             // chunked-continuation IDENTICAL, kernel-check + decode-batch gates green,
             // official prefill lane +0.74% interleaved x5 (5/5 rounds). =0 reverts.
             if gdn_wgmma_pre {
+                let GdnScanOut::O(o) = out else {
+                    return Err("GDN out-norm form on the wgmma route".into());
+                };
                 // qb16/pb16 pre-built above K123 (K2-wgmma wrote the masked Pb16).
                 let qb16 = qb16_ref0.unwrap();
                 let pb16 = pb16.as_ref().unwrap();
@@ -34128,6 +34213,56 @@ impl Engine {
             // GDN-DB-GQA pins it against the pair). The prime-table graph keeps the pair; the grid
             // capture re-runs the plain K4 over the prefix as before.
             if self.gdn_k45_on() && crate::qwen_prime_graph::current().is_none() {
+                let o = match out {
+                    GdnScanOut::O(o) => o,
+                    GdnScanOut::Norm { z, w, vy, eps } => {
+                        // The same pass with the GDN out-norm in place of the o store
+                        // (research/gb10-prefill-20261106/GDN-OUTNORM-DESIGN.md): the gated
+                        // RMSNorm and the ssm_out GEMM's F8F4 v2 activation, the bytes
+                        // gated_rmsnorm_e4m3v2_f32 writes from this pass's o. One cluster of two
+                        // CTAs per head; kernel-check GDN-K45-NORM pins it against the pair.
+                        let f = self.func("gdn_chunk_state_output_norm_mma");
+                        // cu/hybrid.cu static_asserts the struct sizes against this
+                        const K45_NORM_SMEM: u32 = 42_000;
+                        f.set_attribute(
+                            CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+                            K45_NORM_SMEM as i32,
+                        )?;
+                        let cfg = LaunchConfig {
+                            grid_dim: (h as u32, (D / 64) as u32, 1),
+                            block_dim: (256, 1, 1),
+                            shared_mem_bytes: K45_NORM_SMEM,
+                        };
+                        let (hki, ncols) = (hk as i32, D as i32);
+                        let tp: i64 = (t as i64 + 255) / 256 * 256;
+                        let __s_b = self.gpu.stream();
+                        let mut b = __s_b.launch_builder(&f);
+                        b.arg(kb16_ref)
+                            .arg(&gcum)
+                            .arg(beta)
+                            .arg(&u)
+                            .arg(&wb16)
+                            .arg(q)
+                            .arg(&p)
+                            .arg(z)
+                            .arg(w)
+                            .arg(vy)
+                            .arg(state_in)
+                            .arg(&mut *state_out)
+                            .arg(&hi)
+                            .arg(&ti)
+                            .arg(&ci)
+                            .arg(&scale)
+                            .arg(&hki)
+                            .arg(&ncols)
+                            .arg(&tp)
+                            .arg(&eps);
+                        unsafe {
+                            b.launch(cfg)?;
+                        }
+                        return Ok(());
+                    }
+                };
                 let f = self.func("gdn_chunk_state_output_mma");
                 const K45_SMEM: u32 = 40_704;
                 f.set_attribute(
@@ -34164,6 +34299,9 @@ impl Engine {
                 }
                 return Ok(());
             }
+            let GdnScanOut::O(o) = out else {
+                return Err("GDN out-norm form off the fused K4+K5 route".into());
+            };
             // COUPLED PAIR: K4-mma writes Y and Ssnap as bf16 (their only consumer is
             // K5-mma, which rounds to bf16 regardless — identical numerics, half the
             // traffic; harness K5 63.0 -> 35.3us). Fresh bf16 buffers replace the f32 ones.
@@ -34240,6 +34378,9 @@ impl Engine {
             }
             return Ok(());
         }
+        let GdnScanOut::O(o) = out else {
+            return Err("GDN out-norm form off the fused K4+K5 route".into());
+        };
         // f32 pair buffers (the mma branches above return before reaching here)
         let mut y = self.uninit(nc * h * c * D)?;
         let mut ssnap = self.uninit(nc * h * D * D)?; // chunk-start state snapshots (K5 phase 1)
