@@ -447,7 +447,7 @@ TOOL_CONTRACTS = {
         'required': True,
         'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py', 'tools/crates_publish.py',
                    'tools/test_crates_publish.py'],
-        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_crates_publish.py', '21'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_crates_publish.py', '25'],
         'native': [],
     },
     'support-records': {

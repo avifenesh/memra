@@ -525,7 +525,8 @@ That's it. Two workflows fire on the tag:
   when memra-server resolved it, and both publishes stopped half way (memra-server and
   memra-cli never got 0.138.0). A dependent that still misses a just-published crate
   waits until the index lists it and retries; when the index already listed it (cargo was
-  served an older copy), it backs off 30 s, growing per retry, for up to 20 minutes. The step is idempotent — rerunning a partly-published tag
+  served an older copy), it backs off 30 s, growing per retry, for up to 20 minutes in all.
+  A new crate's first release gets the same retry (cargo then says "no matching package"). The step is idempotent — rerunning a partly-published tag
   finishes the remainder. Dry-run first without tagging: Actions → publish → Run workflow
   (`workflow_dispatch` runs the full package+verify, then a read-only registry pass over
   the publish list, with no upload and no token); the dispatch `publish=true` input is the

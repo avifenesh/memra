@@ -10,6 +10,7 @@ from the index when memra-server resolved it seconds later) and its recovery run
 live, memra-engine still lagging). PUBLISH_WORKFLOW_UNDER_TEST runs the same cases against another copy of the
 workflow, the before/after check of the fix.
 """
+import http.client
 import http.server
 import json
 import os
@@ -126,12 +127,15 @@ class PublishRetryTests(unittest.TestCase):
 
         def run(name):
             calls.append(self.c.now)
+            self.c.now += 1  # a cargo run takes time: a retry loop that never sleeps still ends
+            if len(calls) > 200:
+                raise AssertionError("cargo ran 200 times: the retry does not back off")
             if cargo_lag is not None:
                 return (0, "Uploaded") if self.c.now >= cargo_lag else (101, LAG)
             return outs.pop(0)
 
-        def wait(n, v):
-            self.waited.append((n, v))
+        def wait(n, v, timeout=None):
+            self.waited.append((n, v, timeout))
             self.c.now += index_wait
             return index_wait
 
@@ -147,7 +151,7 @@ class PublishRetryTests(unittest.TestCase):
     def test_a_dependency_missing_from_the_index_is_waited_for_then_retried(self):
         result, calls = self.publish((101, LAG), (0, "Uploaded"), index_wait=40)
         self.assertEqual((result, len(calls)), ("published", 2))
-        self.assertEqual(self.waited, [("memra-engine", VERSION)])
+        self.assertEqual(self.waited, [("memra-engine", VERSION, 1200)])
         self.assertEqual(self.c.sleeps, [], "the index wait already covered the lag; no extra back-off")
 
     def test_cargo_missing_a_dependency_the_index_lists_backs_off_until_it_resolves(self):
@@ -156,11 +160,28 @@ class PublishRetryTests(unittest.TestCase):
         self.assertEqual(result, "published")
         self.assertEqual(self.c.sleeps, [30, 60, 90], "no growing back-off between the retries")
         self.assertGreaterEqual(calls[-1], 100)
+        timeouts = [t for _, _, t in self.waited]
+        self.assertEqual(timeouts[0], 1200)
+        self.assertTrue(all(b < a for a, b in zip(timeouts, timeouts[1:])),
+                        f"the index wait does not share the lag window: {timeouts}")
+
+    def test_a_crate_missing_from_cargos_index_copy_is_lag_too(self):
+        # a workspace crate's first release: cargo's copy of the index has no entry for it at all
+        result, calls = self.publish((101, "error: no matching package named `memra-reference` found"),
+                                     (0, "Uploaded"), index_wait=20)
+        self.assertEqual((result, len(calls)), ("published", 2))
+        self.assertEqual(self.waited[0][:2], ("memra-reference", VERSION))
+
+    def test_a_rate_limit_between_two_misses_starts_a_new_lag_window(self):
+        os.environ["CRATES_PUBLISH_INDEX_WAIT_S"] = "100"
+        self.addCleanup(os.environ.pop, "CRATES_PUBLISH_INDEX_WAIT_S", None)
+        result, _ = self.publish((101, LAG), (101, "429 Too Many Requests"), (101, LAG), (0, "Uploaded"))
+        self.assertEqual(result, "published", "the 620 s rate-limit wait used up the lag window")
 
     def test_cargo_missing_a_listed_dependency_is_bounded(self):
         with self.assertRaisesRegex(cp.PublishError, "cargo still cannot resolve memra-engine@0.139.0 .* after 1200 s"):
             self.publish(cargo_lag=10 ** 6)
-        self.assertLessEqual(self.c.now, 1200)
+        self.assertLessEqual(self.c.now, 1200 + 2, "a retry started after the lag window")  # + the last cargo run
 
     def test_a_dependency_at_another_version_is_a_real_failure(self):
         with self.assertRaisesRegex(cp.PublishError, "other than a rate limit"):
@@ -184,6 +205,27 @@ class PublishRetryTests(unittest.TestCase):
         self.assertIsNone(cp.api_live("memra-tier", VERSION, get=FakeIndex(OSError("down")), sleep=self.c.sleep))
         self.assertIsNone(cp.api_live("memra-tier", VERSION, get=FakeIndex((503, [])), sleep=self.c.sleep))
         self.assertIs(cp.api_live("memra-tier", VERSION, get=FakeIndex((404, [])), sleep=self.c.sleep), False)
+        answers = [OSError("reset"), (200, json.dumps({"version": {"num": VERSION}}))]
+
+        def flaky(_url):
+            answer = answers.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+        self.assertIs(cp.api_live("memra-tier", VERSION, get=flaky, sleep=self.c.sleep), True,
+                      "one failed query is not retried")
+
+    def test_a_broken_http_read_is_a_failed_read(self):
+        real = cp.urllib.request.urlopen
+
+        def broken(*_a, **_k):
+            raise http.client.IncompleteRead(b"partial")
+        cp.urllib.request.urlopen = broken
+        try:
+            with self.assertRaises(OSError):
+                cp.http_get("https://index.crates.io/me/mr/memra-engine")
+        finally:
+            cp.urllib.request.urlopen = real
 
     def test_a_long_wait_says_it_is_still_waiting(self):
         logs = []
@@ -313,7 +355,8 @@ class WorkflowStepTests(unittest.TestCase):
         self.env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", CARGO_REGISTRY_TOKEN="fake",
                         FAKE_REGISTRY_STATE=str(self.state), FAKE_REGISTRY_URL=self.url,
                         CRATES_PUBLISH_REGISTRY=self.url, CRATES_PUBLISH_POLL_S="0.1",
-                        CRATES_PUBLISH_INDEX_WAIT_S="30", CRATES_PUBLISH_RATE_WAIT_S="0")
+                        CRATES_PUBLISH_INDEX_WAIT_S="30", CRATES_PUBLISH_RATE_WAIT_S="0",
+                        CRATES_PUBLISH_API_RETRY_S="0")
         self.crates = cp.workflow_crates(WORKFLOW)
 
     def tearDown(self):
@@ -356,6 +399,17 @@ class WorkflowStepTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.registry.load()["order"], self.crates)
         self.assertIn("is listed here but not to cargo", r.stdout)
+        self.assertLessEqual(r.stdout.count("could not resolve"), 5, "the retry did not back off")
+
+    def test_a_real_run_with_no_api_answer_tries_the_upload(self):
+        self.state.write_text(json.dumps({"version": VERSION, "deps": self.deps, "order": [], "uploaded": {},
+                                          "lag": {}, "api_down": True}))
+        script = publish_step(WORKFLOW).replace("/tmp/", f"{self.tmp}/")
+        r = subprocess.run(["bash", "-e", "-c", script], cwd=ROOT, env=self.env, capture_output=True, text=True,
+                           timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.registry.load()["order"], self.crates)
+        self.assertEqual(r.stdout.count("the crates.io API did not answer"), len(self.crates))
 
     def test_an_index_that_never_lists_the_crate_fails_by_name(self):
         self.env["CRATES_PUBLISH_INDEX_WAIT_S"] = "1"

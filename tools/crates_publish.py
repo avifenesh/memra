@@ -15,9 +15,10 @@ checks. For each crate:
 Why the poll: cargo waits only 60 s after an upload (`publish.timeout` is still unstable, `-Zpublish-timeout`,
 nightly only) and then exits 0 with a warning. On the v0.138.0 and v0.139.0 tags memra-engine was still missing
 from the index the CDN served when memra-server resolved `memra-engine = "=X"` seconds later, and the publish
-stopped half way. A dependent that still fails that way waits until the index lists the named crate here; when it
-already did (the index answered here but not to cargo), it backs off LAG_RETRY_S, growing per retry, and retries,
-for up to INDEX_WAIT_S from the first miss.
+stopped half way. A dependent that still fails that way (or with "no matching package named", when cargo's copy
+has no entry for a new crate at all) waits until the index lists the named crate here; when it already did (the
+index answered here but not to cargo), it backs off LAG_RETRY_S, growing per retry, and retries. The whole lag,
+index waits included, stays within INDEX_WAIT_S of the first miss; a 429 in between starts a new window.
 
 --dry-run uploads nothing and never runs cargo: it reports which versions are live, checks each live one in the
 index and says which it would publish; a crate whose state the API does not answer fails it. The workflow's
@@ -26,6 +27,7 @@ reads). CPU contract: tools/test_crates_publish.py (a fake registry; CRATES_PUBL
 variables are its seams).
 """
 import argparse
+import http.client
 import json
 import os
 import re
@@ -47,6 +49,9 @@ RATE_LIMIT_WAIT_S = 620  # crates.io's new-crate burst window refills at one cra
 ATTEMPTS = 6
 API_TRIES = 3
 MISSING_DEP = re.compile(r'failed to select a version for the requirement `([A-Za-z0-9_-]+) = "=([^"]+)"`')
+# cargo says this instead when the index copy it got has no entry for the crate at all (its first release; the
+# index CDN caches a 404 too). The pinned version of a workspace crate is the one being published.
+MISSING_CRATE = re.compile(r"no matching package named `(memra-[A-Za-z0-9_-]+)` found")
 ALREADY_UPLOADED = re.compile(r"crate version `[^`]+` is already uploaded|already exists on crates\.io index")
 
 
@@ -88,6 +93,8 @@ def http_get(url):
             return resp.status, resp.read().decode()
     except urllib.error.HTTPError as err:
         return err.code, ""
+    except http.client.HTTPException as err:  # IncompleteRead, BadStatusLine: a failed read like any other
+        raise OSError(f"{type(err).__name__}: {err}") from err
 
 
 def api_live(name, version, get=http_get, sleep=time.sleep):
@@ -96,7 +103,7 @@ def api_live(name, version, get=http_get, sleep=time.sleep):
     api, _ = registry()
     for attempt in range(API_TRIES):
         if attempt:
-            sleep(2)
+            sleep(seconds("CRATES_PUBLISH_API_RETRY_S", 2))
         try:
             status, body = get(f"{api}/{name}/{version}")
         except OSError:
@@ -182,6 +189,7 @@ def publish(name, version, run=cargo_publish, wait=wait_visible, sleep=time.slee
             log(f"{name}@{version} is already on crates.io")
             return "live"
         if "429 Too Many Requests" in out:
+            lag_since, lag_retries = None, 0  # cargo got past resolution: a later miss starts a new window
             rate_limited += 1
             if rate_limited >= ATTEMPTS:
                 raise PublishError(f"{name} still rate-limited after {ATTEMPTS} attempts")
@@ -191,9 +199,12 @@ def publish(name, version, run=cargo_publish, wait=wait_visible, sleep=time.slee
             sleep(wait_s)
             continue
         missing = MISSING_DEP.search(out)
-        if not (missing and missing[2] == version):
+        if missing and missing[2] == version:
+            dep = missing[1]
+        elif MISSING_CRATE.search(out):
+            dep = MISSING_CRATE.search(out)[1]
+        else:
             raise PublishError(f"{name} failed for a reason other than a rate limit or index lag; see the log above")
-        dep = missing[1]
         bound = seconds("CRATES_PUBLISH_INDEX_WAIT_S", INDEX_WAIT_S)
         if lag_since is None:
             lag_since = clock()
@@ -204,7 +215,8 @@ def publish(name, version, run=cargo_publish, wait=wait_visible, sleep=time.slee
         lag_retries += 1
         log(f"::warning::{name} could not resolve {dep}@{version} (retry {lag_retries}); waiting for the index to "
             "list it")
-        waited = wait(dep, version)
+        # the index wait shares the window: the whole lag stays within INDEX_WAIT_S of the first miss
+        waited = wait(dep, version, timeout=max(bound - (clock() - lag_since), 0))
         if waited < seconds("CRATES_PUBLISH_POLL_S", POLL_S):
             # The index already listed it here, so cargo was served an older copy: give that copy time to expire.
             back_off = min(seconds("CRATES_PUBLISH_LAG_RETRY_S", LAG_RETRY_S) * lag_retries,
