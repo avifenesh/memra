@@ -293,6 +293,24 @@ which changes the F8F4 v3 GEMM's partial last wave (a launch-shape change its co
 GB10's 640-tile grids) and nothing in admission or the prefix cache, so the counts stand as behavior evidence for the
 rebased head.
 
+## Landing rerun on the final code (2026-11-09): `pro6000-maxq/landing-rerun/`
+
+The at-the-limit cell once more, counts only, after the last code commit (the reclaim booking's log line) and the
+rebase onto main `65fb297a59` (lever 7 and c8r2 in). A = main `65fb297a59`, B = `28fa3f01d8`, whose code equals the
+landing head `09487630e6` (the commits after it are docs and research only). One A arm and one B arm on wrx GPU 1
+at the box's 250 W cap (the earlier acceptance arms ran at 280 W), Qwen3.8-27B at `MEMRA_CTX=32768`,
+`MEMRA_MAX_SESSIONS=12`. Table: `harness/reclaim_table.py limit pro6000-maxq/landing-rerun`.
+
+| arm | reclaims (partial, still short) | entries / GB freed | OOM lines | pressure: errors, TTFT p50 / max s | repeats: hits, cached tokens, TTFT p50 s |
+|---|---|---|---|---|---|
+| A | 1 (0, 0): the flush | 57 / 54.2 | 0 | 5 of 12, 45.3 / 82.0 | 0 of 16, 0, 11.21 |
+| B | 6 (6, 0): all covered | 19 / 18.2 | 0 | 5 of 12, 45.4 / 82.3 | 16 of 16, 425,984, 0.13 |
+
+The same result as the acceptance cell on `ab21e254a6`: no flush on B, every pass covered, 16 of 16 repeats, no OOM.
+Every row that completed on both arms has the same greedy text. The two rows that differ are pressure requests that
+reached the 90 s first-token deadline on one arm only (pressure-6 on B, pressure-7 on A). At 250 W the prefills run
+slower, so five pressure requests per arm hit that deadline, against four at 280 W.
+
 ## Acceptance plan (one RTX PRO 6000 Max-Q, untimed)
 
 - Arms: A = #1090's head (the flush), B = this change. Interleaved A B B A, `harness/limit.py` through the lane's arm

@@ -1,0 +1,985 @@
+[server] build: memra-0.139.0-cfe8750c3109 (id: source-tree, git: 28fa3f01d8f8)
+[server] starting; models config = [("gate", "<models>/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "gate" <- <models>/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=12 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 54277MB (54277046272 B, derived: 2 x 1129971712 B max entry for model "gate" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 28578938880 B (24 resident sessions x 1190789120 B served-context session), requested 54277046272 B; boot driver free 86614081536 B, post-reserve clamp 85003468800 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[fa-pool] grow #0 dev=0 o_len 0 -> 202752 ml_len 0 -> 792 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 202752 -> 405504 ml_len 792 -> 1584 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 405504 -> 811008 ml_len 1584 -> 3168 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 811008 -> 1622016 ml_len 3168 -> 6336 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 35MB (max of parked delta 35MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[fa-pool] grow #5 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":8757706752,"still_owned_bytes":16509783872,"pool_reserved_bytes":16676552704,"pool_cached_bytes":166768832,"driver_free_bytes":84766490624,"synchronization_errors":[]}
+[spec-cost] model="gate" depth=2048 pooled=true plain_cap=16 round_overhead=4.49ms pooled_overhead=Some((4, 1.123239135135135)) verify_ms[1..16]=[14.3 14.6 15.6 16.9 18.3 19.8 21.4 23.0 25.0 27.0 28.9 30.9 32.3 33.6 34.9 36.3] plain_ms[1..]=[13.7 15.2 17.1 19.1 20.5 21.8 23.2 24.6 26.4 28.3 30.1 31.9 33.7 35.6 37.4 39.2] (20.2s)
+[prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1644167168,"still_owned_bytes":17239592768,"pool_reserved_bytes":17448304640,"pool_cached_bytes":208711872,"driver_free_bytes":83994738688,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1568MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 1536MB (static was 1536MB; measured 1405MB; probe kv charge 127MB, draft-state 35MB, drafted 63 accepted 42; [dev0 peak-mapped 18208MB rest-mapped 16640MB charged 162MB -> 1405MB]; 2.0s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18291
+[meter] admit id=cmpl-72d70c1469d5b62624aa7642d667fde2 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-fededd540c73603147abd8ddcebe234d tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-11d992145d1f07f8e75ddb42922c50e6 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-eb5c7abf9f5268ad16b2d1120df62bf7 tenant=default lane=interactive model="gate"
+[spec-cost] model="gate" n=4 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="gate" +37MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=25617 path=spec = 31552 B/token x ctx + 2317MB prefill-workspace + 0MB fixed = 3125MB
+[spec-k] model="gate" tenant="ns-f0" K=3 source=cost-model prompt=25489 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 355MB (observed 1162MB at ctx 25561 path=spec)
+[spec-cost] model="gate" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1449.993 max_chunk_ms=1449.993
+[admission] per-session draft-state charge: model="gate" +37MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=25617 path=spec = 31552 B/token x ctx + 2317MB prefill-workspace + 355MB fixed = 3481MB
+[spec-k] model="gate" tenant="ns-f1" K=3 source=cost-model prompt=25489 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f2" K=3 source=cost-model prompt=25489 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f3" K=3 source=cost-model prompt=25489 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1461.807 max_chunk_ms=1461.807
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1475.096 max_chunk_ms=1475.096
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1477.883 max_chunk_ms=1477.883
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1533.301 max_chunk_ms=1533.301
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1532.498 max_chunk_ms=1532.498
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1534.863 max_chunk_ms=1534.863
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1534.480 max_chunk_ms=1534.480
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1589.101 max_chunk_ms=1589.101
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1590.707 max_chunk_ms=1590.707
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1592.782 max_chunk_ms=1592.782
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1648.967 max_chunk_ms=1648.967
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1594.425 max_chunk_ms=1594.425
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1650.180 max_chunk_ms=1650.180
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1704.051 max_chunk_ms=1704.051
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1651.065 max_chunk_ms=1651.065
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1651.110 max_chunk_ms=1651.110
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1761.179 max_chunk_ms=1761.179
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1708.634 max_chunk_ms=1708.634
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1709.418 max_chunk_ms=1709.418
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1710.807 max_chunk_ms=1710.807
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1764.629 max_chunk_ms=1764.629
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1765.991 max_chunk_ms=1765.991
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1765.090 max_chunk_ms=1765.090
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=412.377 max_chunk_ms=412.377
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=412.929 max_chunk_ms=412.929
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=412.501 max_chunk_ms=412.501
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=126.341 max_chunk_ms=126.341
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=408.986 max_chunk_ms=408.986
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=127.737 max_chunk_ms=127.737
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.070 max_chunk_ms=4.070
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=125.791 max_chunk_ms=125.791
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=125.917 max_chunk_ms=125.917
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.002 max_chunk_ms=4.002
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=3.993 max_chunk_ms=3.993
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=3.982 max_chunk_ms=3.982
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=3.990 max_chunk_ms=3.990
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=3.988 max_chunk_ms=3.988
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=3.984 max_chunk_ms=3.984
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=3.983 max_chunk_ms=3.983
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=3.992 max_chunk_ms=3.992
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=3.996 max_chunk_ms=3.996
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.011 max_chunk_ms=4.011
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.015 max_chunk_ms=4.015
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.016 max_chunk_ms=4.016
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.027 max_chunk_ms=4.027
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.041 max_chunk_ms=4.041
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.160 max_chunk_ms=4.160
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.151 max_chunk_ms=4.151
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.143 max_chunk_ms=4.143
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.150 max_chunk_ms=4.150
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.238 max_chunk_ms=4.238
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.307 max_chunk_ms=4.307
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.307 max_chunk_ms=4.307
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.302 max_chunk_ms=4.302
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.303 max_chunk_ms=4.303
+[prefix-cache] insert (spec-boundary): 25472 tokens, 960.6MB (resident 960.6MB / 54277MB, model gate, ns "ns-f0")
+[prefix-cache] insert (spec-boundary): 25472 tokens, 960.6MB (resident 1921.2MB / 54277MB, model gate, ns "ns-f1")
+[prefix-cache] insert (spec-boundary): 25472 tokens, 960.6MB (resident 2881.8MB / 54277MB, model gate, ns "ns-f2")
+[prefix-cache] insert (spec-boundary): 25472 tokens, 960.6MB (resident 3842.4MB / 54277MB, model gate, ns "ns-f3")
+[spec-pool] pooled MTP cohort engaged: 4 sessions (model gate)
+[spec-acc] ctx=25490 burst=24/27 cum=24/27=0.889
+[fa-pool] grow #6 dev=0 o_len 6488064 -> 15974400 ml_len 25344 -> 62400 (retired kept, zero=false)
+[fa-pool] grow #7 dev=0 o_len 15974400 -> 31948800 ml_len 62400 -> 124800 (retired kept, zero=false)
+[spec-acc] ctx=25492 burst=22/30 cum=22/30=0.733
+[spec-acc] ctx=25491 burst=23/33 cum=23/33=0.697
+[spec-acc] ctx=25524 burst=19/33 cum=43/60=0.717
+[spec-acc] ctx=25491 burst=23/30 cum=23/30=0.767
+[meter] admit id=cmpl-67180c4e07fcf5f9cd9ee19a8db5c588 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f4" K=3 source=cost-model prompt=25489 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[spec-pool] pooled MTP cohort engaged: 3 sessions (model gate)
+[spec-pool] pooled rows draft engaged: 3 members (arms [GraphGreedy, GraphGreedy, GraphGreedy])
+[spec-acc] ctx=25525 burst=19/27 cum=41/57=0.719
+[spec-acc] ctx=25526 burst=18/27 cum=41/60=0.683
+[spec-acc] ctx=25525 burst=19/27 cum=42/57=0.737
+[meter] admit id=cmpl-281c1fc892f7cd026d8399f1a86a3b3b tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-95778a9aa40ef612ed0fa2e89fc09b7c tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-1d53c97ee8ffa9812544a7ee673da2ce tenant=default lane=interactive model="gate"
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1495.308 max_chunk_ms=1495.308
+[spec-k] model="gate" tenant="ns-f5" K=3 source=cost-model prompt=25489 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f6" K=3 source=cost-model prompt=25489 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f7" K=3 source=cost-model prompt=25489 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1484.913 max_chunk_ms=1484.913
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1498.134 max_chunk_ms=1498.134
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1497.485 max_chunk_ms=1497.485
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1552.759 max_chunk_ms=1552.759
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1607.110 max_chunk_ms=1607.110
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1551.906 max_chunk_ms=1551.906
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1552.702 max_chunk_ms=1552.702
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1555.546 max_chunk_ms=1555.546
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1610.632 max_chunk_ms=1610.632
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1610.172 max_chunk_ms=1610.172
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1609.904 max_chunk_ms=1609.904
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1664.224 max_chunk_ms=1664.224
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1663.101 max_chunk_ms=1663.101
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1663.239 max_chunk_ms=1663.239
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1717.635 max_chunk_ms=1717.635
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1662.565 max_chunk_ms=1662.565
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1717.780 max_chunk_ms=1717.780
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1773.398 max_chunk_ms=1773.398
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1718.493 max_chunk_ms=1718.493
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1718.354 max_chunk_ms=1718.354
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=415.293 max_chunk_ms=415.293
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1773.522 max_chunk_ms=1773.522
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1774.468 max_chunk_ms=1774.468
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1773.287 max_chunk_ms=1773.287
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=415.190 max_chunk_ms=415.190
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=415.323 max_chunk_ms=415.323
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=415.655 max_chunk_ms=415.655
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=129.249 max_chunk_ms=129.249
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=126.484 max_chunk_ms=126.484
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=126.021 max_chunk_ms=126.021
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.234 max_chunk_ms=4.234
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=126.683 max_chunk_ms=126.683
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.011 max_chunk_ms=4.011
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.014 max_chunk_ms=4.014
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.022 max_chunk_ms=4.022
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.010 max_chunk_ms=4.010
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.011 max_chunk_ms=4.011
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.011 max_chunk_ms=4.011
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.016 max_chunk_ms=4.016
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.014 max_chunk_ms=4.014
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.016 max_chunk_ms=4.016
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.016 max_chunk_ms=4.016
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.015 max_chunk_ms=4.015
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.011 max_chunk_ms=4.011
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.012 max_chunk_ms=4.012
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.011 max_chunk_ms=4.011
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.015 max_chunk_ms=4.015
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.066 max_chunk_ms=4.066
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.141 max_chunk_ms=4.141
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.137 max_chunk_ms=4.137
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.135 max_chunk_ms=4.135
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.151 max_chunk_ms=4.151
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.317 max_chunk_ms=4.317
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.328 max_chunk_ms=4.328
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.322 max_chunk_ms=4.322
+[prefix-cache] insert (spec-boundary): 25472 tokens, 960.6MB (resident 4803.0MB / 54277MB, model gate, ns "ns-f4")
+[prefix-cache] insert (spec-boundary): 25472 tokens, 960.6MB (resident 5763.6MB / 54277MB, model gate, ns "ns-f5")
+[prefix-cache] insert (spec-boundary): 25472 tokens, 960.6MB (resident 6724.2MB / 54277MB, model gate, ns "ns-f6")
+[prefix-cache] insert (spec-boundary): 25472 tokens, 960.6MB (resident 7684.8MB / 54277MB, model gate, ns "ns-f7")
+[spec-acc] ctx=25490 burst=21/30 cum=21/30=0.700
+[spec-acc] ctx=25492 burst=23/27 cum=23/27=0.852
+[spec-acc] ctx=25522 burst=23/33 cum=44/63=0.698
+[spec-acc] ctx=25491 burst=22/36 cum=22/36=0.611
+[spec-acc] ctx=25491 burst=23/30 cum=23/30=0.767
+[meter] admit id=cmpl-295804db421bbdb2db7784ca9d60ec28 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f8" K=3 source=cost-model prompt=25489 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[spec-acc] ctx=25525 burst=19/27 cum=42/54=0.778
+[spec-acc] ctx=25526 burst=17/30 cum=39/66=0.591
+[spec-acc] ctx=25525 burst=19/27 cum=42/57=0.737
+[meter] admit id=cmpl-617adea4740cc9402dc99101422ecde9 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-a3efb9652e6e871eb655f7f6452d36fd tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-a5884cae5d0f8535d43ebe25c5f1a804 tenant=default lane=interactive model="gate"
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1499.329 max_chunk_ms=1499.329
+[spec-k] model="gate" tenant="ns-f9" K=3 source=cost-model prompt=25489 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="gate" +37MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=26772 path=spec = 31552 B/token x ctx + 2341MB prefill-workspace + 355MB fixed = 3541MB
+[spec-k] model="gate" tenant="ns-f10" K=3 source=cost-model prompt=26644 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 357MB (observed 1200MB at ctx 26716 path=spec)
+[admission] per-session draft-state charge: model="gate" +37MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=26772 path=spec = 31552 B/token x ctx + 2341MB prefill-workspace + 357MB fixed = 3543MB
+[spec-k] model="gate" tenant="ns-f11" K=3 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1488.596 max_chunk_ms=1488.596
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1503.265 max_chunk_ms=1503.265
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1503.012 max_chunk_ms=1503.012
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1556.309 max_chunk_ms=1556.309
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1555.657 max_chunk_ms=1555.657
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1611.056 max_chunk_ms=1611.056
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1557.401 max_chunk_ms=1557.401
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1556.492 max_chunk_ms=1556.492
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1666.783 max_chunk_ms=1666.783
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1612.451 max_chunk_ms=1612.451
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1612.276 max_chunk_ms=1612.276
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1613.077 max_chunk_ms=1613.077
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1667.713 max_chunk_ms=1667.713
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1666.861 max_chunk_ms=1666.861
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1667.257 max_chunk_ms=1667.257
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1722.295 max_chunk_ms=1722.295
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1722.050 max_chunk_ms=1722.050
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1721.681 max_chunk_ms=1721.681
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1777.100 max_chunk_ms=1777.100
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1721.779 max_chunk_ms=1721.779
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1776.651 max_chunk_ms=1776.651
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=417.952 max_chunk_ms=417.952
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1777.863 max_chunk_ms=1777.863
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1776.661 max_chunk_ms=1776.661
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=128.676 max_chunk_ms=128.676
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=409.986 max_chunk_ms=409.986
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=925.385 max_chunk_ms=925.385
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=923.961 max_chunk_ms=923.961
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=128.638 max_chunk_ms=128.638
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=128.146 max_chunk_ms=128.146
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=126.951 max_chunk_ms=126.951
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.263 max_chunk_ms=4.263
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.022 max_chunk_ms=4.022
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.022 max_chunk_ms=4.022
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.033 max_chunk_ms=4.033
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.016 max_chunk_ms=4.016
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.019 max_chunk_ms=4.019
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.019 max_chunk_ms=4.019
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.024 max_chunk_ms=4.024
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.025 max_chunk_ms=4.025
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.028 max_chunk_ms=4.028
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.021 max_chunk_ms=4.021
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.020 max_chunk_ms=4.020
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.061 max_chunk_ms=4.061
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.052 max_chunk_ms=4.052
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.066 max_chunk_ms=4.066
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.064 max_chunk_ms=4.064
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.053 max_chunk_ms=4.053
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.137 max_chunk_ms=4.137
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.202 max_chunk_ms=4.202
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.214 max_chunk_ms=4.214
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.193 max_chunk_ms=4.193
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.257 max_chunk_ms=4.257
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.348 max_chunk_ms=4.348
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.374 max_chunk_ms=4.374
+[prefix-cache] insert (spec-boundary): 25472 tokens, 960.6MB (resident 8645.5MB / 54277MB, model gate, ns "ns-f8")
+[prefix-cache] insert (spec-boundary): 25472 tokens, 960.6MB (resident 9606.1MB / 54277MB, model gate, ns "ns-f9")
+[prefix-cache] insert (spec-boundary): 26624 tokens, 997.0MB (resident 10603.0MB / 54277MB, model gate, ns "ns-f10")
+[prefix-cache] insert (spec-boundary): 26624 tokens, 997.0MB (resident 11600.0MB / 54277MB, model gate, ns "ns-f11")
+[spec-acc] ctx=26645 burst=24/27 cum=24/27=0.889
+[spec-cost] model="gate" realized n=4 K=3: 113.7 tok/s (now priced from serving)
+[spec-acc] ctx=25492 burst=22/30 cum=22/30=0.733
+[spec-acc] ctx=25491 burst=23/27 cum=23/27=0.852
+[spec-acc] ctx=26646 burst=23/30 cum=23/30=0.767
+[spec-acc] ctx=26679 burst=20/27 cum=44/54=0.815
+[meter] admit id=cmpl-07ceba36a16045c7c5a5f06c11e8c133 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f12" K=3 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[spec-acc] ctx=25525 burst=19/27 cum=41/57=0.719
+[spec-acc] ctx=25524 burst=20/33 cum=43/60=0.717
+[spec-acc] ctx=26680 burst=20/27 cum=43/57=0.754
+[meter] admit id=cmpl-4ef0d2804fe3d58b19e62096a4bf1b71 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-e7d0acf6326cfa08e85e64c59c3ee729 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-2e960cc8b6496446c603e7674498ad71 tenant=default lane=interactive model="gate"
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=1503.975 max_chunk_ms=1503.975
+[spec-cost] model="gate" n=4 rung=3 -> K=0 (predicted 113.7 vs plain 209.6 tok/s; pooled=true)
+[admission] request cost: model="gate" ctx=26772 path=plain = 29696 B/token x ctx + 2341MB prefill-workspace + 357MB fixed = 3493MB
+[spec-k] model="gate" tenant="ns-f14" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f13" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f15" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=1547.252 max_chunk_ms=1547.252
+[prime-batch] B=3 tokens=3072 carried=0 partial=3 in 1145.0ms
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=1614.882 max_chunk_ms=1614.882
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1154.4ms
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=1673.986 max_chunk_ms=1673.986
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1168.5ms
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=1730.027 max_chunk_ms=1730.027
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1180.9ms
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=1783.677 max_chunk_ms=1783.677
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1192.8ms
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=932.328 max_chunk_ms=932.328
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1205.1ms
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=129.037 max_chunk_ms=129.037
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1213.5ms
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=4.498 max_chunk_ms=4.498
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1229.3ms
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=4.498 max_chunk_ms=4.498
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1241.8ms
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=4.476 max_chunk_ms=4.476
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1253.9ms
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=4.492 max_chunk_ms=4.492
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1266.7ms
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=4.471 max_chunk_ms=4.471
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1279.3ms
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=4.562 max_chunk_ms=4.562
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1291.2ms
+[spec-acc] ctx=26644 burst=20/33 cum=20/33=0.606
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1304.2ms
+[prefix-cache] insert (spec-boundary): 26624 tokens, 997.0MB (resident 12596.9MB / 54277MB, model gate, ns "ns-f12")
+[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model gate, committed 26676, generated 32, greedy)
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1318.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1326.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1339.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1353.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1359.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1377.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1389.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1402.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1413.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1425.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1437.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1451.2ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 13544.4MB / 54277MB, model gate, ns "ns-f14")
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 14492.0MB / 54277MB, model gate, ns "ns-f13")
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 15439.5MB / 54277MB, model gate, ns "ns-f15")
+[prime-batch] B=3 tokens=60 carried=3 partial=0 in 200.3ms
+[spec-cost] model="gate" realized n=4 K=0: 173.7 tok/s (now priced from serving)
+[meter] admit id=cmpl-4caaa1e1c74d350e5b89d40f5990d0af tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f16" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 16387.0MB / 54277MB, model gate, ns "ns-f16")
+[meter] admit id=cmpl-1816b77c8519037048711714efc060cb tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-011cdb9888bb1fb3b112bddf690f15b4 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-7f53b2ef40081b01756556619f1261b4 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f17" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f18" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f19" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 745.5ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 1153.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1165.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1177.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1191.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1203.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1214.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1225.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1237.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1249.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1261.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1273.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1287.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1299.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1311.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1324.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1336.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1350.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1362.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1374.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1387.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1398.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1410.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1423.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1435.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1448.3ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 17334.5MB / 54277MB, model gate, ns "ns-f17")
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 18282.0MB / 54277MB, model gate, ns "ns-f18")
+[prime-batch] B=3 tokens=1064 carried=3 partial=1 in 592.9ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 19229.6MB / 54277MB, model gate, ns "ns-f19")
+[meter] admit id=cmpl-933444ac8cc181d84805a3a9216a263c tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f20" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 20177.1MB / 54277MB, model gate, ns "ns-f20")
+[meter] admit id=cmpl-125b69e6e0fcc0be999c7ad8d6e1d8a6 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-359313c87ebde96a5f2f5e582fb8be7d tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f22" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-f21" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-69b9fc788dc2ad73f6f29312cb633ddb tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f23" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 759.9ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 1158.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1171.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1182.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1195.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1208.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1219.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1232.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1244.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1256.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1269.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1282.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1294.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1306.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1317.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1329.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1342.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1355.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1368.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1379.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1393.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1404.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1417.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1430.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1442.2ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 21124.6MB / 54277MB, model gate, ns "ns-f22")
+[prime-batch] B=3 tokens=2068 carried=3 partial=2 in 1032.6ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 22072.1MB / 54277MB, model gate, ns "ns-f21")
+[prime-batch] B=2 tokens=1044 carried=2 partial=1 in 553.9ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 23019.6MB / 54277MB, model gate, ns "ns-f23")
+[meter] admit id=cmpl-ed78b3f05e1473d708b32f76f14a4b27 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f24" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 23967.2MB / 54277MB, model gate, ns "ns-f24")
+[meter] admit id=cmpl-385627ee87aacb7ea0d5cb049f148f37 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f25" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-e85e5adbdfcf79ffbced227714ea5505 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f26" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-f1438956a1da9ec66b4949b226b30d5a tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f27" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 758.5ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 1157.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1169.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1181.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1192.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1205.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1216.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1229.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1241.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1253.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1265.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1277.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1290.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1302.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1314.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1326.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1338.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1352.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1362.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1375.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1388.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1400.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1411.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1424.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1437.0ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 24914.7MB / 54277MB, model gate, ns "ns-f25")
+[prime-batch] B=3 tokens=2068 carried=3 partial=2 in 1031.3ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 25862.2MB / 54277MB, model gate, ns "ns-f26")
+[prime-batch] B=2 tokens=1044 carried=2 partial=1 in 552.9ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 26809.7MB / 54277MB, model gate, ns "ns-f27")
+[meter] admit id=cmpl-04cedc72508bd147e0b8de7aac6d35d4 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f28" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 27757.2MB / 54277MB, model gate, ns "ns-f28")
+[meter] admit id=cmpl-fbb134ad20a9989432cb6352cb56702e tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f29" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-015952a4afb301f013f2e25835cd9581 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f30" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-9fba6cf9c72c5b3473f940ac5c2ab65b tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f31" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 755.5ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 1155.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1168.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1180.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1192.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1204.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1215.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1227.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1240.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1253.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1265.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1276.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1287.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1300.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1311.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1324.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1338.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1349.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1363.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1375.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1387.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1400.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1411.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1424.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1437.6ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 28704.8MB / 54277MB, model gate, ns "ns-f29")
+[prime-batch] B=3 tokens=2068 carried=3 partial=2 in 1030.5ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 29652.3MB / 54277MB, model gate, ns "ns-f30")
+[prime-batch] B=2 tokens=1044 carried=2 partial=1 in 551.9ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 30599.8MB / 54277MB, model gate, ns "ns-f31")
+[meter] admit id=cmpl-36a4d9f8bbb2381f6940db0f8d8477d4 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f32" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 31547.3MB / 54277MB, model gate, ns "ns-f32")
+[meter] admit id=cmpl-6dfc1592a34a9aa649522091039e6b1c tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f33" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-fb5b37c635041ed1373e57a03b39bcb9 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f34" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-2a50ece69283fbf340125f05dad79a4b tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f35" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 754.0ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 1152.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1164.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1176.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1188.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1201.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1214.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1225.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1237.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1249.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1262.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1274.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1286.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1299.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1312.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1324.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1337.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1348.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1360.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1373.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1387.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1399.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1411.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1424.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1437.2ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 32494.8MB / 54277MB, model gate, ns "ns-f33")
+[prime-batch] B=3 tokens=2068 carried=3 partial=2 in 1030.0ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 33442.4MB / 54277MB, model gate, ns "ns-f34")
+[prime-batch] B=2 tokens=1044 carried=2 partial=1 in 552.3ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 34389.9MB / 54277MB, model gate, ns "ns-f35")
+[meter] admit id=cmpl-9ee7bfceb63544bab5f96507e874f2bc tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f36" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 35337.4MB / 54277MB, model gate, ns "ns-f36")
+[meter] admit id=cmpl-b97b8a303ef648bdd8ec97d36cea7f61 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f37" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-7bd1c72dbb0b35c55cc808b21c9e3f90 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f38" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-094b085bc8a816704a528f4e8990b00a tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f39" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 756.1ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 1154.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1166.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1177.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1189.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1202.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1215.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1226.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1239.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1250.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1263.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1276.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1289.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1301.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1314.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1327.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1339.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1351.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1364.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1376.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1389.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1401.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1416.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1423.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1434.9ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 36284.9MB / 54277MB, model gate, ns "ns-f37")
+[prime-batch] B=3 tokens=2068 carried=3 partial=2 in 1032.6ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 37232.4MB / 54277MB, model gate, ns "ns-f38")
+[prime-batch] B=2 tokens=1044 carried=2 partial=1 in 553.3ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 38180.0MB / 54277MB, model gate, ns "ns-f39")
+[meter] admit id=cmpl-9c7071d0c3c31f4ec630a9e8272d1cbd tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f40" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 39127.5MB / 54277MB, model gate, ns "ns-f40")
+[meter] admit id=cmpl-f735819bec4c3b51ddb11cd5f5d16337 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f41" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-e5bc787764596bf50bb340a8be32379b tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f42" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-a06e979bea6e9ed56c1ec1f816b45ebb tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f43" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 757.5ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 1155.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1168.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1181.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1193.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1205.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1217.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1229.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1242.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1254.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1266.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1279.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1292.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1304.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1314.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1325.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1338.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1351.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1364.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1376.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1388.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1400.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1412.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1425.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1437.8ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 40075.0MB / 54277MB, model gate, ns "ns-f41")
+[prime-batch] B=3 tokens=2068 carried=3 partial=2 in 1032.7ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 41022.5MB / 54277MB, model gate, ns "ns-f42")
+[prime-batch] B=2 tokens=1044 carried=2 partial=1 in 553.1ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 41970.0MB / 54277MB, model gate, ns "ns-f43")
+[meter] admit id=cmpl-bb56eca7e1500d47c13522e8b9fc828c tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f44" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 42917.5MB / 54277MB, model gate, ns "ns-f44")
+[meter] admit id=cmpl-699ad5b5f949db24bcc1216b0c5314ba tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f45" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-ccfad89fb3c9617e6da59dddd51e65fb tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f46" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-4b31702cc4de5a0d40aaa890a905b6ea tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f47" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 754.6ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 1154.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1167.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1179.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1191.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1204.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1216.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1228.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1241.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1253.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1264.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1277.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1290.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1303.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1316.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1329.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1341.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1353.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1364.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1378.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1389.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1402.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1416.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1428.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1441.2ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 43865.1MB / 54277MB, model gate, ns "ns-f45")
+[prime-batch] B=3 tokens=2068 carried=3 partial=2 in 1034.7ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 44812.6MB / 54277MB, model gate, ns "ns-f46")
+[prime-batch] B=2 tokens=1044 carried=2 partial=1 in 555.0ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 45760.1MB / 54277MB, model gate, ns "ns-f47")
+[meter] admit id=cmpl-3ae3408c5527972011ff833c868599e0 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f48" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 46707.6MB / 54277MB, model gate, ns "ns-f48")
+[meter] admit id=cmpl-d5f1e4c4500d336ca51c44137fc73e79 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f49" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-39bcde81e43a32b12092734ed4dc296d tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f50" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-214208bbd0525235c7e3907e586e8889 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f51" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 758.2ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 1155.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1168.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1181.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1193.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1205.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1216.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1228.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1241.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1255.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1267.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1280.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1293.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1305.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1317.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1330.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1342.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1356.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1368.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1380.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1393.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1405.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1418.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1430.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1443.9ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 47655.1MB / 54277MB, model gate, ns "ns-f49")
+[prime-batch] B=3 tokens=2068 carried=3 partial=2 in 1035.5ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 48602.7MB / 54277MB, model gate, ns "ns-f50")
+[prime-batch] B=2 tokens=1044 carried=2 partial=1 in 554.5ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 49550.2MB / 54277MB, model gate, ns "ns-f51")
+[meter] admit id=cmpl-4bba887aba0611845b803326c4920c30 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f52" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 50497.7MB / 54277MB, model gate, ns "ns-f52")
+[meter] admit id=cmpl-a34b70bd45f364462aca5220f59d6b5f tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f53" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-e24a48287548a963bd8e3a9196485539 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f54" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-1ff0d48d9b732880ae45ccb0b93ce138 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f55" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 759.3ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 1157.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1169.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1182.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1194.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1207.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1220.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1232.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1245.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1257.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1269.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1281.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1293.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1305.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1318.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1331.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1344.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1356.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1369.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1380.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1393.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1406.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1419.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1432.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1443.9ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 51445.2MB / 54277MB, model gate, ns "ns-f53")
+[prime-batch] B=3 tokens=2068 carried=3 partial=2 in 1035.8ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 52392.7MB / 54277MB, model gate, ns "ns-f54")
+[prime-batch] B=2 tokens=1044 carried=2 partial=1 in 555.9ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 53340.3MB / 54277MB, model gate, ns "ns-f55")
+[meter] admit id=cmpl-1cc9b4f56118bccc5306500db4f33609 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f56" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight, LRU): 25472 tokens, 960.6MB (model gate, ns "ns-f0")
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 53327.2MB / 54277MB, model gate, ns "ns-f56")
+[meter] admit id=cmpl-0d029b90cb2fdbaab9584b7e778cf480 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f57" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-3d2f06a18fda4c1ce5524fe28e3958f4 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f58" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-b39cd7bf9d60a02901085274b695f275 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f59" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 756.9ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 1158.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1171.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1183.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1196.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1207.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1220.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1233.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1245.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1258.1ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1271.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1283.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1295.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1308.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1320.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1333.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1346.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1357.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1371.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1382.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1394.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1406.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1419.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1433.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1445.1ms
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 54274.7MB / 54277MB, model gate, ns "ns-f57")
+[prime-batch] B=3 tokens=2068 carried=3 partial=2 in 1036.0ms
+[prefix-cache] evict (snapshot preflight, LRU): 25472 tokens, 960.6MB (model gate, ns "ns-f1")
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 54261.6MB / 54277MB, model gate, ns "ns-f58")
+[prime-batch] B=2 tokens=1044 carried=2 partial=1 in 555.2ms
+[prefix-cache] evict (snapshot preflight, LRU): 25472 tokens, 960.6MB (model gate, ns "ns-f2")
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 54248.5MB / 54277MB, model gate, ns "ns-f59")
+[meter] admit id=cmpl-cdc6cd551ce0f74197acc447bde33afe tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f60" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight, LRU): 25472 tokens, 960.6MB (model gate, ns "ns-f3")
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 54235.4MB / 54277MB, model gate, ns "ns-f60")
+[meter] admit id=cmpl-81767763463e1559c6d05ec5b6b8756d tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f61" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-17b0b4a77c1718d77ff12cf2ea410b68 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f62" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-c11e1c55dd35e77af79d5e39a307d042 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="ns-f63" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 758.9ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 1159.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1172.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1185.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1197.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1210.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1222.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1234.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1247.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1258.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1271.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1284.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1296.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1310.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1323.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1336.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1348.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1360.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1371.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1384.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1397.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1411.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1423.7ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1434.5ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 1446.5ms
+[prefix-cache] evict (snapshot preflight, LRU): 25472 tokens, 960.6MB (model gate, ns "ns-f4")
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 54222.3MB / 54277MB, model gate, ns "ns-f61")
+[prime-batch] B=3 tokens=2068 carried=3 partial=2 in 1037.5ms
+[prefix-cache] evict (snapshot preflight, LRU): 25472 tokens, 960.6MB (model gate, ns "ns-f5")
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 54209.3MB / 54277MB, model gate, ns "ns-f62")
+[prime-batch] B=2 tokens=1044 carried=2 partial=1 in 555.3ms
+[prefix-cache] evict (snapshot preflight, LRU): 25472 tokens, 960.6MB (model gate, ns "ns-f6")
+[prefix-cache] insert (seed): 26624 tokens, 947.5MB (resident 54196.2MB / 54277MB, model gate, ns "ns-f63")
+[spec-cost] model="gate" realized n=3 K=0: 130.3 tok/s (now priced from serving)
+[meter] admit id=cmpl-49d18a2d1049680ac8bfb87ad2c6cf20 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-64f2c0638940151086678cd9a92f160f tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-b6fc17ab74707e2c93d5b333fca40c25 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-180816dc67021272b68226d80aba0b04 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-349230d19d20dee8ee835e575f2e5eff tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-267d005bd049326d9efb6d6a0ea15e7a tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-aef1f53a0a1d87bb326d5a31e0159458 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-25aee8c9b44c8bcbfc5758200bedf862 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-55fee909ce88a8d6e98d772d3d6ccad5 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-d5b0da5dd80e5989c186294b01c75d7a tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-cd961d8e1f4f07e9c158a054c3a1de47 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-819413ecdbf41d5856c492c0ac95819d tenant=default lane=interactive model="gate"
+[spec-cost] model="gate" n=12 rung=3 -> K=0 (predicted 0.0 vs plain 268.2 tok/s; pooled=true)
+[admission] request cost: model="gate" ctx=25617 path=plain = 29696 B/token x ctx + 2317MB prefill-workspace + 357MB fixed = 3435MB
+[spec-k] model="gate" tenant="ns-p0" K=0 source=cost-model prompt=25489 cached=0 lcp=0 active=1 wave=12 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-p1" K=0 source=cost-model prompt=25489 cached=0 lcp=0 active=2 wave=12 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-p2" K=0 source=cost-model prompt=25489 cached=0 lcp=0 active=3 wave=12 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-p3" K=0 source=cost-model prompt=25489 cached=0 lcp=0 active=4 wave=12 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-p5" K=0 source=cost-model prompt=25489 cached=0 lcp=0 active=5 wave=12 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="ns-p4" K=0 source=cost-model prompt=25489 cached=0 lcp=0 active=6 wave=12 placement=single-or-non-pp2
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=7767719936 pool_cached_gain_bytes=7767597056 trim_released_bytes=7113539584 driver_free_bytes 4437180416 -> 11550720000 pool_reserved_bytes 97005862912 -> 89892323328 pool_used_bytes 96836726264 -> 89069129208 pool_retained_bytes=654057472 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 8 prefix entries (7768MB, oldest first) for 7553MB (7114MB of it owed by 6 priming sessions and the arrival's own entry); kept 49 unleased entries (46428MB); effective free 4606MB -> 12374MB; covered (model gate)
+[admit-oom] reclaim booking on: admission books what priming sessions owe (prime transients and pending seeds, capped together at the cache's room) until nothing is owed (model gate)
+[admit-oom] reclaim-on-defer: evicted 8 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4606MB -> 12374MB
+[spec-k] model="gate" tenant="ns-p7" K=0 source=cost-model prompt=25489 cached=0 lcp=0 active=7 wave=12 placement=single-or-non-pp2
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1895038976 pool_cached_gain_bytes=1895038976 trim_released_bytes=1845493760 driver_free_bytes 10778968064 -> 12624461824 pool_reserved_bytes 90664075264 -> 88818581504 pool_used_bytes 90183518348 -> 88288479372 pool_retained_bytes=49545216 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 2 prefix entries (1895MB, oldest first) for 1861MB (8074MB of it owed by 7 priming sessions and the arrival's own entry); kept 47 unleased entries (44533MB); effective free 4099MB -> 5994MB; covered (model gate)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4099MB -> 5994MB
+[spec-k] model="gate" tenant="ns-p6" K=0 source=cost-model prompt=25489 cached=0 lcp=0 active=8 wave=12 placement=single-or-non-pp2
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=2842558464 pool_cached_gain_bytes=2842558464 trim_released_bytes=2684354560 driver_free_bytes 11617828864 -> 14302183424 pool_reserved_bytes 89825214464 -> 87140859904 pool_used_bytes 89402868512 -> 86560310048 pool_retained_bytes=158203904 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 3 prefix entries (2843MB, oldest first) for 2041MB (9035MB of it owed by 8 priming sessions and the arrival's own entry); kept 44 unleased entries (41691MB); effective free 3919MB -> 6762MB; covered (model gate)
+[admit-oom] reclaim-on-defer: evicted 3 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3919MB -> 6762MB
+[spec-k] model="gate" tenant="ns-p8" K=0 source=cost-model prompt=25489 cached=0 lcp=0 active=9 wave=12 placement=single-or-non-pp2
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1895038976 pool_cached_gain_bytes=1895038976 trim_released_bytes=1778384896 driver_free_bytes 13295550464 -> 15073935360 pool_reserved_bytes 88147492864 -> 86369107968 pool_used_bytes 87674699188 -> 85779660212 pool_retained_bytes=116654080 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 2 prefix entries (1895MB, oldest first) for 1273MB (9995MB of it owed by 9 priming sessions and the arrival's own entry); kept 42 unleased entries (39796MB); effective free 4687MB -> 6582MB; covered (model gate)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4687MB -> 6582MB
+[spec-k] model="gate" tenant="ns-p9" K=0 source=cost-model prompt=25489 cached=0 lcp=0 active=10 wave=12 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=26772 path=plain = 29696 B/token x ctx + 2341MB prefill-workspace + 357MB fixed = 3493MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1895038976 pool_cached_gain_bytes=1895038976 trim_released_bytes=1778384896 driver_free_bytes 14134411264 -> 15912796160 pool_reserved_bytes 87308632064 -> 85530247168 pool_used_bytes 86894049352 -> 84999010376 pool_retained_bytes=116654080 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 2 prefix entries (1895MB, oldest first) for 1545MB (10990MB of it owed by 10 priming sessions and the arrival's own entry); kept 40 unleased entries (37901MB); effective free 4507MB -> 6402MB; covered (model gate)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4507MB -> 6402MB
+[spec-k] model="gate" tenant="ns-p11" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=11 wave=12 placement=single-or-non-pp2
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1895038976 pool_cached_gain_bytes=1895038976 trim_released_bytes=1811939328 driver_free_bytes 14872608768 -> 16684548096 pool_reserved_bytes 86570434560 -> 84758495232 pool_used_bytes 86149842076 -> 84254803100 pool_retained_bytes=83099648 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer (partial): evicted 2 prefix entries (1895MB, oldest first) for 1798MB (11987MB of it owed by 11 priming sessions and the arrival's own entry); kept 38 unleased entries (36006MB); effective free 4254MB -> 6149MB; covered (model gate)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4254MB -> 6149MB
+[spec-k] model="gate" tenant="ns-p10" K=0 source=cost-model prompt=26644 cached=0 lcp=0 active=12 wave=12 placement=single-or-non-pp2
+[prefill-order] earliest deadline first: a prefill would miss its first-token deadline under the round robin (measured prefill 2029 tok/s)
+[prime-batch] B=2 tokens=1920 carried=1 partial=2 in 791.0ms
+[prefix-cache] insert (seed): 25472 tokens, 913.3MB (resident 36919.1MB / 54277MB, model gate, ns "ns-p0")
+[prime-batch] B=2 tokens=1041 carried=2 partial=1 in 463.6ms
+[prime-batch] B=2 tokens=1920 carried=1 partial=2 in 791.1ms
+[prefix-cache] insert (seed): 25472 tokens, 913.3MB (resident 37832.4MB / 54277MB, model gate, ns "ns-p1")
+[prime-batch] B=2 tokens=1041 carried=2 partial=1 in 463.1ms
+[prime-batch] B=2 tokens=1920 carried=1 partial=2 in 791.7ms
+[prefix-cache] insert (seed): 25472 tokens, 913.3MB (resident 38745.7MB / 54277MB, model gate, ns "ns-p2")
+[prime-batch] B=2 tokens=1041 carried=2 partial=1 in 462.9ms
+[prefill-order] round robin (measured prefill 2221 tok/s)
+[prefill-order] earliest deadline first: a prefill would miss its first-token deadline under the round robin (measured prefill 2221 tok/s)
+[prime-batch] B=2 tokens=1920 carried=1 partial=2 in 791.0ms
+[prefix-cache] insert (seed): 25472 tokens, 913.3MB (resident 39659.0MB / 54277MB, model gate, ns "ns-p3")
+[prime-batch] B=2 tokens=1041 carried=2 partial=1 in 462.9ms
+[prefill-order] round robin (measured prefill 2244 tok/s)
+[prefill-order] earliest deadline first: a prefill would miss its first-token deadline under the round robin (measured prefill 2244 tok/s)
+[prime-batch] B=2 tokens=1920 carried=1 partial=2 in 792.5ms
+[prefix-cache] insert (seed): 25472 tokens, 913.3MB (resident 40572.3MB / 54277MB, model gate, ns "ns-p5")
+[prime-batch] B=2 tokens=1041 carried=2 partial=1 in 463.6ms
+[prefill-order] round robin (measured prefill 2264 tok/s)
+[prefill-order] earliest deadline first: a prefill would miss its first-token deadline under the round robin (measured prefill 2264 tok/s)
+[prime-batch] B=2 tokens=1920 carried=1 partial=2 in 791.2ms
+[prefix-cache] insert (seed): 25472 tokens, 913.3MB (resident 41485.6MB / 54277MB, model gate, ns "ns-p4")
+[prime-batch] B=2 tokens=1041 carried=2 partial=1 in 462.3ms
+[prefill-order] round robin (measured prefill 2263 tok/s)
+[prefill-order] earliest deadline first: a prefill would miss its first-token deadline under the round robin (measured prefill 2263 tok/s)
+[prefill-order] round robin (measured prefill 2123 tok/s)
+[prime-batch] B=6 tokens=6016 carried=1 partial=6 in 2282.3ms
+[prefix-cache] insert (seed): 25472 tokens, 913.3MB (resident 42398.9MB / 54277MB, model gate, ns "ns-p7")
+[prime-batch] B=6 tokens=5137 carried=6 partial=5 in 2014.4ms
+[prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1927.8ms
+[prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1947.5ms
+[prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1970.0ms
+[prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1991.6ms
+[abort] client disconnected: model "gate", prompt 25489 (0 cached, 6144 fed), 0 generated — billed to abort point, 90.09s
+[abort] client disconnected: model "gate", prompt 25489 (0 cached, 6144 fed), 0 generated — billed to abort point, 90.07s
+[abort] client disconnected: model "gate", prompt 25489 (0 cached, 6144 fed), 0 generated — billed to abort point, 90.05s
+[abort] client disconnected: model "gate", prompt 26644 (0 cached, 6144 fed), 0 generated — billed to abort point, 90.03s
+[abort] client disconnected: model "gate", prompt 26644 (0 cached, 6144 fed), 0 generated — billed to abort point, 90.01s
+[spec-cost] model="gate" realized n=2 K=0: 102.8 tok/s (now priced from serving)
+[spec-cost] model="gate" realized n=1 K=0: 60.7 tok/s (now priced from serving)
+[meter] admit id=cmpl-1f6e273e0706ebeac5c097452f5b0a56 tenant=default lane=interactive model="gate"
+[spec-cost] model="gate" n=1 rung=3 -> K=0 (predicted 54.3 vs plain 61.1 tok/s; pooled=true)
+[admit-oom] reclaim booking off: no session owes prime or seed bytes (model gate)
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 26644 prompt tokens; model gate)
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f63" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-0a5372d0cf2caa01177053394cbc2f9a tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 26644 prompt tokens; model gate)
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f62" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-3a3725885eaaedcdc38d69e99741b747 tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 26644 prompt tokens; model gate)
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f61" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-3280c62ded54866329167620ecf83744 tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 26644 prompt tokens; model gate)
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f60" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-a1e75933e7b8b664b34db3481a5d9a49 tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 26644 prompt tokens; model gate)
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f59" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-f6b2ec9b0fbb119921a4657dbc67fe85 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f58" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-ea6f075e84854550d26d9635f0fd98eb tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f57" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-f53ed0a3744f287e99069e5bc7154f2c tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f56" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-ce1429c75389bb7bf8b0e8866520dbd2 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f55" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-5fbb5a009590afd144a195a8043a5633 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f54" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-33309090ac2ff6e05740d1a11655931a tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f53" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-0ba0154598a41bb815370e35e1fdf739 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f52" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-ecd721ebc781273d04fbcaf13346dcd3 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f51" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-106da4b46ec6cb48b93a5a5a3767b3a1 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f50" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-17ab223c6be640c6705d2d520a729592 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f49" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[meter] admit id=cmpl-beeb1afd23179ee7bb4b687476d31ba6 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 26624 of 26644 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="ns-f48" K=0 source=cost-model prompt=26644 cached=26624 lcp=26624 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 26624 tokens, model gate)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
