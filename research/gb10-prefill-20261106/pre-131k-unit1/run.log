@@ -1,0 +1,13 @@
+2026-11-09T07:13:40+02:00 profile_arm OUT=~/.cache/memra-gb10-r4/runs/pre-131k-unit1 BIN=~/.cache/memra-gb10-r4/bins/gnf-98709201d8 EXTRA= TARGET=131072
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 20m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m05s
+2026-11-09T07:15:50+02:00 ready
+{"tag": "pre-131k-unit1", "target": 131072, "rep": 0, "ttft_s": 118.298, "total_s": 121.042, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+2026-11-09T07:17:51+02:00 bench rc=0
+waitfor: until test -f ~/.cache/memra-gb10-r4/runs/pre-131k-unit1/prof.nsys-rep && ! kill -0 2027997 2>/dev/null && exit 0 || exit 1 (deadline 20m00s, every 10s)
+waitfor: not yet
+waitfor: MET after 0m20s
+-rw-rw-r-- 1 user user 54428065 Nov  9 07:18 ~/.cache/memra-gb10-r4/runs/pre-131k-unit1/prof.nsys-rep
+
+2026-11-09T07:18:14+02:00 done

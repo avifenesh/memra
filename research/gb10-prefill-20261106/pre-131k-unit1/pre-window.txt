@@ -1,0 +1,33 @@
+anchor: first kernel after the longest idle (2.164 s): embed_gather_u32_t at 129.997 s
+window: 0.800 s before it
+
+CUDA API in the window (calls, seconds):
+    0.2847 s     202 x  cuMemAllocAsync
+    0.0013 s     180 x  cuMemsetD8Async
+    0.0004 s      20 x  cuMemcpyHtoDAsync_v2
+    0.0001 s       4 x  cuMemGetInfo_v2
+    0.0000 s       1 x  cuLaunchKernel
+    0.0000 s       6 x  cuMemPoolGetAttribute
+    0.0000 s       3 x  cuDeviceGetDefaultMemPool
+    0.0000 s       1 x  cuDeviceGetGraphMemAttribute
+
+OS runtime in the window (calls, seconds):
+    2.3287 s      20 x  futex
+    1.5992 s      12 x  epoll_wait
+    0.8000 s       1 x  pthread_cond_timedwait
+    0.8000 s       1 x  clock_nanosleep
+    0.7997 s       9 x  poll
+    0.2797 s     443 x  ioctl
+    0.0003 s      12 x  recv
+    0.0001 s       1 x  writev
+    0.0001 s      11 x  write
+    0.0001 s       3 x  open64
+    0.0001 s       4 x  accept4
+    0.0000 s       1 x  shutdown
+    0.0000 s       4 x  read
+    0.0000 s       3 x  close
+    0.0000 s       3 x  epoll_ctl
+    0.0000 s       2 x  statx
+
+no CPU sampling tables
+PRE-DONE rc=0
