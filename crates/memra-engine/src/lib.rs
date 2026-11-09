@@ -911,6 +911,7 @@ mod dsv4_ep;
 pub use dsv4_doors::{
     arm_reference_expert_program_for_gate, disarm_reference_expert_program_for_gate,
 };
+pub mod dsv41_gpu;
 pub mod dsv4_ffi;
 pub mod dsv4_gpu;
 mod dsv4_graph;

@@ -27,6 +27,8 @@ sha2 = "0.10"
 # vision input lane: image decode + resize for the Qwen3.8 ViT preprocessor
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp"] }
 base64 = "0.22"
+# dsv41 lane: the vendor Engram constants dump and gate fixture indexes are JSON
+serde_json = "1"
 
 [[bin]]
 name = "storage-bench"
@@ -59,6 +61,10 @@ path = "src/bin/tp_ar_bench.rs"
 [[bin]]
 name = "dsv4-gpu-gate"
 path = "src/bin/dsv4_gpu_gate.rs"
+
+[[bin]]
+name = "dsv41-gate"
+path = "src/bin/dsv41_gate.rs"
 
 [[bin]]
 name = "dsv4-native-gemm-gate"

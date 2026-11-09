@@ -82,3 +82,7 @@ the upstream MXFP4 trunk experts against the pack's NVFP4 house-mint contract.
   `crates/memra-gguf/src/model_packs/deepseek_v41/fixtures/census-classes.tsv` and refuses to
   write unless the fixture expands back to every name, dtype and shape.
 - `inspect/`: the inspect outputs listed above, `normalized-config.txt` included.
+
+## Step 2 (GPU)
+
+Single-card kernels for every V4.1 operation and real-checkpoint layers on one card: `gpu/README.md`.

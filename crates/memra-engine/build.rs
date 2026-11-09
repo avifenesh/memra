@@ -626,6 +626,9 @@ fn main() {
             // arithmetic from the oracle contract.
             "cu/dsv4_gpu.cu",
             "cu/dsv4_sampler.cu",
+            // DeepSeek-V4.1 sibling route: its own TU, -fmad=false below (reference products and
+            // sums stay separate), no symbol shared with dsv4_gpu.cu.
+            "cu/dsv41_gpu.cu",
             // Pinned MiMo source QKV shard outputs gathered on-device.
             "cu/mimo_qkv_gather.cu",
             // Bounded f32 MiMo attention reference component with learned sink.
@@ -784,6 +787,10 @@ fn main() {
                 } else {
                     args.push("-fmad=false".into());
                 }
+            }
+            if mmq_src.ends_with("dsv41_gpu.cu") {
+                // The V4.1 kernels mirror the reference's separate fp32 products and sums.
+                args.push("-fmad=false".into());
             }
             if mmq_src.ends_with("mimo_audio_codec_rvq.cu") {
                 // Keep the source's separate F32 products and sums.

@@ -1,0 +1,12 @@
+{
+ "gate": "layer", "capture": "captures-v2/needle", "tokens": 3761, "mint": false, "layers": [{"layer": 35, "rel_l2": 1.4910922265309187e-4, "cos": 0.9999999888933971, "worst_tok": 9.381421122801349e-2}, {"layer": 36, "rel_l2": 3.975196057952473e-3, "cos": 0.9999920989713474, "worst_tok": 9.6281404187384e-2}, {"layer": 37, "rel_l2": 5.003734935945585e-3, "cos": 0.9999874873302289, "worst_tok": 8.957335476644704e-2}],
+ "checks": [
+  {"name": "layer35/out_stream", "pass": true, "rule": "rel_l2 <= 2e-2 (no floor)", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=1.491e-4 maxabs/max=4.223e-4 worst_tok=9.381e-2 cos=0.99999999 load 0.5s fwd 0.16s"},
+  {"name": "layer35/out_pre_mix", "pass": true, "rule": "rel_l2 <= 2e-2 (no floor)", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=2.920e-4 max_abs=2.672e-3"},
+  {"name": "layer36/out_stream", "pass": true, "rule": "rel_l2 <= 2e-2 (no floor)", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=3.975e-3 maxabs/max=4.032e-4 worst_tok=9.628e-2 cos=0.99999210 load 0.5s fwd 0.16s"},
+  {"name": "layer36/out_pre_mix", "pass": true, "rule": "rel_l2 <= 2e-2 (no floor)", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=4.718e-4 max_abs=4.353e-3"},
+  {"name": "layer37/out_stream", "pass": true, "rule": "rel_l2 <= 2e-2 (no floor)", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=5.004e-3 maxabs/max=6.048e-3 worst_tok=8.957e-2 cos=0.99998749 load 0.5s fwd 0.15s"},
+  {"name": "layer37/out_pre_mix", "pass": true, "rule": "rel_l2 <= 2e-2 (no floor)", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=3.154e-4 max_abs=1.775e-3"}
+ ],
+ "total": 6, "failed": 0
+}
