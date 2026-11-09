@@ -529,6 +529,18 @@ The phases of the request (timestamped server log, `ts-probe-main-unit1/`, unpro
   23.133 -> 22.728 s at 32k (-1.75%), 122.112 -> 120.453 s at 131k (-1.36%), 322.021 -> 318.783 s
   at 260k (-1.01%), the same answers; kernel-check ALL GREEN with the new fill-shape cells,
   argmax-margin PASS, run-spec acceptance identical to the base.
+- **GDN out-norm inside the fused K4+K5 pass** (rows 55-56, adopted on the seeded route;
+  `GDN-OUTNORM-DESIGN.md`): `gdn_chunk_state_output_norm_mma` computes the gated RMSNorm and the
+  ssm_out GEMM's F8F4 v2 activation in place of the o store, so the 100.7 MB `o` of each 4,096-row
+  call is never written or read back. The norm kernel's shuffle tree maps onto the mma fragment
+  layout, and the two column-half CTAs of a head are a cluster of 2 that trade their row sums
+  through distributed shared memory. Probe: the activation bytes, scale plane and state are
+  bit-identical to the pair, and a call takes 1.71 ms against 2.61 (-0.89 ms). Served on unit 1
+  (B G G B B G, plus four 260k-only cells): 22.433 -> 22.133 s at 32k (-1.34%) and 119.565 ->
+  118.359 s at 131k (-1.01%), both completely separated. At 260k the medians are 318.038 ->
+  315.286 s (-0.87%), but the arms overlap: three cells, B and G alike, ran under a lower platform
+  power budget (SM 2,099-2,132 MHz at 81-83 W against 2,158 MHz at 88 W; `clocks.txt`), so 260k
+  counts as a tie. The answers are identical in every request.
 
 ### Next (round 4)
 
