@@ -17,7 +17,9 @@ for c in sorted(p for p in d.iterdir() if p.is_dir() and re.match(r"\d\d-[BT]$",
              for l in (c / "server.log").read_text().splitlines() if (m := ts.match(l))]
     for r in (json.loads(l) for l in f.read_text().splitlines() if l.strip()):
         t0, t1 = r["send_unix"], r["send_unix"] + r["total_s"] + 0.05
-        g = [t for t in ticks if t0 <= t[0] <= t1 and t[3] > t[2]]
+        # a burst belongs to the request whose window holds its whole wall (its end stamp alone can tie
+        # with the next request's send time)
+        g = [t for t in ticks if t0 <= t[0] - t[1] / 1000 + 0.001 and t[0] <= t1 and t[3] > t[2]]
         last = g[-1] if g else None
         dec = r["total_s"] - r["ttft_s"]
         rows.setdefault(r["req"], []).append((c.name, r["total_s"], dec, r["text_sha256"][:12], r["completion_tokens"],
