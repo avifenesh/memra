@@ -10,6 +10,8 @@
 //!   dsv41-gate kernels FIXTURE_ROOT [--out RECEIPT.json]
 //!   dsv41-gate layer CKPT_DIR CAPTURE_DIR --layers 1,2,20 [--mint] [--chain N]
 //!                    [--token-map FILE] [--floor CPU_FLOOR_DIR] [--out RECEIPT.json]
+//!   dsv41-gate decode CKPT_DIR CAPTURE_DIR --layers 1,2,20 --token-map FILE [--out RECEIPT.json]
+//!                    (the decode program's integer outcomes byte for byte, with a re-prefill red arm)
 
 use memra_engine::dsv41_gpu::{
     self as v, Buf, Ctx, Dp, Geo, LayerState, LayerW, Ops, QFmt, QW, Shared, Trace, bf16_to_f32,
@@ -2014,6 +2016,242 @@ fn layer_gate(
 
 /// Byte identity of an N-rank tensor against the single-card one; on a mismatch the bf16 or f32
 /// distance is reported too (diagnosis, not a band).
+/// One decode step's integer outcome against the vendor's: equal bytes (width included), or where
+/// they first differ.
+fn int_rows(got: &[i32], want: &[i64]) -> (bool, String) {
+    if got.len() != want.len() {
+        return (
+            false,
+            format!("{} entries against the vendor's {}", got.len(), want.len()),
+        );
+    }
+    match got.iter().zip(want).position(|(&a, &b)| a as i64 != b) {
+        None => (true, format!("{} entries identical", want.len())),
+        Some(i) => (
+            false,
+            format!(
+                "first difference at entry {i} of {} ({} against {})",
+                want.len(),
+                got[i],
+                want[i]
+            ),
+        ),
+    }
+}
+
+/// The decode program below and across the window, per layer, at the integer level the two
+/// programs differ in: each decode step from the capture's inputs (stream, pre-mix, the CSA2 state
+/// of the sources it reads) with this layer's own ring and compressor pair carried from its
+/// prefill, then the step's attention index row (window ring, oldest slot first, -1 for empty
+/// slots, then the compressed selection; width and order), the compressor's emission on a ratio-2
+/// kv source, the indexer's selection on an index source and the Engram hash ids, each against the
+/// vendor decode program's own bytes. The red arm runs the same position under prefill semantics
+/// (one prefill of every position up to it, the program a loop that re-prefills would run) on the
+/// layers that hold all their CSA2 state themselves, and asserts the byte check rejects it at every
+/// position where the vendor's own prefill row is not its decode row: everywhere but `window - 1`
+/// (below it the prefill row is narrower, past it the ring row holds slots, not positions). Streams are reported (rel L2 against the vendor), not gated: below the
+/// window the two programs sit equally far from the vendor there (`decode/README.md`).
+fn decode_gate(
+    ckpt: &Path,
+    cap: &Path,
+    layers: &[usize],
+    token_map: &Path,
+    rep: &mut Report,
+) -> Result<String, String> {
+    let e = memra_engine::Engine::new(0).map_err(|e| e.to_string())?;
+    let st: Arc<cudarc::driver::CudaStream> = e.stream();
+    let mc = memra_gguf::config::ModelConfig::from_config_json(&ckpt.join("config.json"))
+        .map_err(|e| e.to_string())?;
+    let g = Geo::from_config(&mc)?;
+    let stm = memra_gguf::safetensors::StModel::open(ckpt).map_err(|e| e.to_string())?;
+    let mut f = Fx::open(cap)?;
+    f.ckpt = ckpt.to_path_buf();
+    let ec = v::engram::EngramConsts::derive(&g, v::engram::token_map_from_file(token_map)?)?;
+    let ids: Vec<u32> = f
+        .i64s("prompt_ids")?
+        .into_iter()
+        .map(|x| x as u32)
+        .collect();
+    let fed: Vec<u32> = f.i64s("gen_ids")?.into_iter().map(|x| x as u32).collect();
+    let p = ids.len();
+    let l0 = *layers.first().ok_or("no layers")?;
+    let steps = (1..=fed.len())
+        .take_while(|k| f.has(&format!("s{k}/L{l0}/out/x")))
+        .count();
+    if steps == 0 {
+        return Err("the capture holds no decode steps".into());
+    }
+    let win = g.window;
+    let mut cx = Ctx::new(st.clone(), g.clone(), (p + steps + 64).max(1024))?;
+    cx.trace = true;
+    let row = g.hc * g.dim * 2;
+    // the Engram hash columns of layer `li` for positions `from..` of `seq`
+    let cols_of = |seq: &[u32], from: usize, li: usize| -> Result<Vec<i64>, String> {
+        let all = ec.hash_span(seq, from)?;
+        let sl = ec
+            .layer_ids
+            .iter()
+            .position(|&x| x == li)
+            .ok_or("engram layer not in the constants")?;
+        let (nl, cols) = (ec.layer_ids.len(), ec.cols());
+        Ok((0..seq.len() - from)
+            .flat_map(|t| all[(t * nl + sl) * cols..(t * nl + sl + 1) * cols].to_vec())
+            .collect())
+    };
+    let mut seq: Vec<u32> = ids.clone();
+    seq.extend_from_slice(&fed[..steps]);
+    let mut red_layers = Vec::new();
+    for &l in layers {
+        let lw = LayerW::load(&cx.ops, &stm, &g, l, false)?;
+        let engram = lw.engram.is_some();
+        let in_key = |k: usize| {
+            if engram {
+                format!("s{k}/L{l}/engram/x")
+            } else {
+                format!("s{k}/L{l}/in/x")
+            }
+        };
+        // the prefill from the capture's inputs seeds this layer's ring and compressor pair
+        let mut sh = Shared::default();
+        load_shared(&f, &format!("s0/L{l}"), l, &g, p, &mut sh, &cx.ops)?;
+        let mut h_rows = f.bytes(&in_key(0))?;
+        let mut pre_rows = f.bytes(&format!("s0/L{l}/in/pre_mix"))?;
+        let h = Buf::from_bytes(&st, &h_rows)?;
+        let pre = Buf::from_bytes(&st, &pre_rows)?;
+        let mut tr = Trace::default();
+        if engram {
+            cx.engram(&stm, &lw, &h, &cols_of(&ids, 0, l)?, p, &mut tr)?;
+        }
+        let mut ls = LayerState::default();
+        cx.block_forward(&lw, &h, &pre, 0, p, &mut sh, &mut ls, &mut tr)?;
+        // the red arm runs on layers whose CSA2 state is all their own at prefill
+        let ratio = g.compress_ratios[l];
+        let red = ratio == 0 || (lw.kv_source && lw.index_source);
+        if red {
+            red_layers.push(l);
+        }
+        for k in 1..=steps {
+            let pos = p + k - 1;
+            let ps = format!("s{k}/L{l}");
+            load_shared(&f, &ps, l, &g, 1, &mut sh, &cx.ops)?;
+            let hb = f.bytes(&in_key(k))?;
+            let pb = f.bytes(&format!("{ps}/in/pre_mix"))?;
+            let h = Buf::from_bytes(&st, &hb)?;
+            let pre = Buf::from_bytes(&st, &pb)?;
+            let mut tr = Trace::default();
+            if engram {
+                let mine = cols_of(&seq[..pos + 1], pos, l)?;
+                let want = f.i64s(&format!("{ps}/engram/hash"))?;
+                let diff = mine.iter().zip(&want).filter(|(a, b)| a != b).count()
+                    + mine.len().abs_diff(want.len());
+                rep.raw(
+                    &format!("layer{l}/decode{k}/engram_hash"),
+                    diff == 0,
+                    "the vendor NgramHashState's ids for the new token, exactly",
+                    format!("pos {pos}: {} ids, {diff} differ", want.len()),
+                );
+                cx.engram(&stm, &lw, &h, &mine, 1, &mut tr)?;
+            }
+            let (h2, _p2) = cx.block_forward(&lw, &h, &pre, pos, 1, &mut sh, &mut ls, &mut tr)?;
+            let want_idx = f.i64s(&format!("{ps}/sattn/idx"))?;
+            let got_idx = bytes_i32(
+                &tr.idx_all
+                    .as_ref()
+                    .ok_or("no index row traced")?
+                    .host(&st)?,
+            );
+            let (same, extra) = int_rows(&got_idx, &want_idx);
+            rep.raw(
+                &format!("layer{l}/decode{k}/attn_idx"),
+                same,
+                "the vendor decode program's attention index row, byte for byte (window ring oldest slot first, -1 for empty slots, then the compressed selection)",
+                format!("pos {pos}: {extra}"),
+            );
+            if lw.kv_source && ratio == 2 {
+                let mine = tr.latent.is_some();
+                let want = f.has(&format!("{ps}/comp/out"));
+                rep.raw(
+                    &format!("layer{l}/decode{k}/compressor_emits"),
+                    mine == want,
+                    "the ratio-2 compressor pools exactly when the vendor's does (a pair completes)",
+                    format!("pos {pos}: memra {mine}, vendor {want}"),
+                );
+            }
+            if lw.index_source && f.has(&format!("{ps}/out/topk_idxs")) {
+                let got = bytes_i32(&sh.topk.as_ref().ok_or("no selection")?.host(&st)?);
+                let want = f.i64s(&format!("{ps}/out/topk_idxs"))?;
+                let (same, extra) = int_rows(&got, &want);
+                rep.raw(
+                    &format!("layer{l}/decode{k}/selection"),
+                    same,
+                    "the indexer's decode selection, byte for byte",
+                    format!("pos {pos}: {extra}"),
+                );
+            }
+            let want_x = f.f32s(&format!("{ps}/out/x"))?;
+            let (r, _, _, c) = stream_metrics(&bf(&cx.ops, &h2)?, &want_x, 1);
+            rep.raw(
+                &format!("layer{l}/decode{k}/stream"),
+                true,
+                "reported: rel L2 against the vendor's decode output",
+                format!("pos {pos}: rel_l2={r:.3e} cos={c:.8}"),
+            );
+            h_rows.extend_from_slice(&hb[..row]);
+            pre_rows.extend_from_slice(&pb);
+            if !red {
+                continue;
+            }
+            // red arm: position `pos` under prefill semantics, one prefill of positions 0..=pos
+            let s = pos + 1;
+            let hr = Buf::from_bytes(&st, &h_rows)?;
+            let pr = Buf::from_bytes(&st, &pre_rows)?;
+            let mut tr2 = Trace::default();
+            if engram {
+                cx.engram(&stm, &lw, &hr, &cols_of(&seq[..s], 0, l)?, s, &mut tr2)?;
+            }
+            let (mut sh2, mut ls2) = (Shared::default(), LayerState::default());
+            let (hx, _) = cx.block_forward(&lw, &hr, &pr, 0, s, &mut sh2, &mut ls2, &mut tr2)?;
+            let all = bytes_i32(
+                &tr2.idx_all
+                    .as_ref()
+                    .ok_or("no index rows traced")?
+                    .host(&st)?,
+            );
+            let w = all.len() / s;
+            let last = &all[(s - 1) * w..];
+            let (same, extra) = int_rows(last, &want_idx);
+            // the vendor's two rows are the same bytes at one position only: window - 1, where the
+            // prefill row lists positions 0..window and the full ring lists slots 0..window
+            // (below it the prefill row is narrower; past it the ring holds slots, not positions)
+            let expect_same = pos + 1 == win;
+            rep.raw(
+                &format!("layer{l}/decode{k}/red_prefill_attn_idx"),
+                same == expect_same,
+                "red arm (re-prefill): the byte check rejects the prefill program's row at every position where the vendor's prefill row is not its decode row (all but position window - 1, where both list 0..window)",
+                format!(
+                    "pos {pos}: {} ({extra})",
+                    if same { "accepted" } else { "rejected" }
+                ),
+            );
+            let hx_last = bf(&cx.ops, &hx)?;
+            let n = hx_last.len() / s;
+            let (r2, _, _, _) = stream_metrics(&hx_last[(s - 1) * n..], &want_x, 1);
+            rep.raw(
+                &format!("layer{l}/decode{k}/red_prefill_stream"),
+                true,
+                "reported: the re-prefill's rel L2 against the vendor's decode output",
+                format!("pos {pos}: rel_l2={r2:.3e} (decode program {r:.3e})"),
+            );
+        }
+        eprintln!("layer {l}: {steps} decode steps from position {p}");
+    }
+    Ok(format!(
+        "\"prompt\": {p}, \"decode_steps\": {steps}, \"positions\": [{}, {}], \"window\": {win}, \"layers\": {layers:?}, \"red_arm_layers\": {red_layers:?}",
+        p,
+        p + steps - 1
+    ))
+}
+
 fn same_bytes(rep: &mut Report, name: &str, got: &[u8], want: &[u8], dtype: &str) {
     let diff =
         got.iter().zip(want).filter(|(a, b)| a != b).count() + got.len().abs_diff(want.len());
@@ -2591,6 +2829,14 @@ fn main() {
             layer_gate(Path::new(&a[2]), Path::new(&a[3]), &layers, has("--mint"), chain, token_map.as_deref(), tol, floor.as_deref(), decode, save.as_deref(), has("--head"), &mut rep)
                 .map(|s| format!("\"gate\": \"layer\", \"capture\": {:?}, {s}", a[3]))
         }
+        Some("decode") if a.len() > 3 => {
+            let layers: Vec<usize> = flag("--layers").unwrap_or_default().split(',').filter_map(|x| x.parse().ok()).collect();
+            match flag("--token-map") {
+                Some(tm) => decode_gate(Path::new(&a[2]), Path::new(&a[3]), &layers, Path::new(&tm), &mut rep)
+                    .map(|s| format!("\"gate\": \"decode\", \"capture\": {:?}, {s}", a[3])),
+                None => Err("decode: --token-map FILE (the Engram hash of each new token)".into()),
+            }
+        }
         Some("tp") if a.len() > 3 => {
             let layers: Vec<usize> = flag("--layers").unwrap_or_default().split(',').filter_map(|x| x.parse().ok()).collect();
             let devices: Vec<usize> = flag("--devices").unwrap_or_else(|| "0,1".into()).split(',').filter_map(|x| x.parse().ok()).collect();
@@ -2610,7 +2856,7 @@ fn main() {
             idx_gate(Path::new(&a[2]), Path::new(&a[3]), layer, &devices, slice, reps, rows, last, &mut rep)
                 .map(|s| format!("\"gate\": \"idx\", \"capture\": {:?}, {s}", a[3]))
         }
-        _ => Err("usage: dsv41-gate kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json]".into()),
+        _ => Err("usage: dsv41-gate kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | decode CKPT CAPTURE --layers L,.. --token-map FILE [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json]".into()),
     };
     let header = match r {
         Ok(h) => h,

@@ -10,8 +10,11 @@ steps where the two GPU schedules coincide; at 257,185 tokens its two decode ste
 the floor. Free-running greedy generation reproduces the vendor's tokens exactly on 11 of 18 tapes
 (every needle, 3.7k to 257k, included) and parts from them on the other 7 at a vendor near-tie each
 time, 5 of them at a step where another valid run of the vendor program picks memra's token too.
-Replaying a generation layer by layer gives every saved step back byte for byte, and N = 2 ranks
-give the one-rank bytes. The support state stays as it is: this is the decode
+Per layer, below and across the window, every decode step's attention index row, selection,
+compressor emission and Engram hash ids equal the vendor decode program's bytes (122 index rows over
+positions 16 to 131), and the same check rejects a loop that re-runs prefill semantics at every
+position where the vendor's two programs differ. Replaying a generation layer by layer gives every
+saved step back byte for byte, and N = 2 ranks give the one-rank bytes. The support state stays as it is: this is the decode
 surface, not a serving path.
 
 Hardware: RTX PRO 6000 Blackwell Max-Q (sm_120a, 96 GB), CUDA 13.4, rustc 1.97.1; the chat cases on
@@ -61,6 +64,7 @@ time below is a single run with the weights streamed from the page cache, not ti
 | memra's teacher-forced decode against memra's greedy run, on the steps fed the same tokens (separate processes, other batches of sequences) | byte-identical on all 203 shared steps of the 18 tapes (`forced_vs_greedy_identical` in `receipts/gates/{chat,long}.json`) |
 | the committed binary against the receipts' runs (the chat greedy replay, and the chat teacher-forced run into a fresh directory) | byte-identical: the committed build (`dsv41-run` sha256 `b17478ec...`) replays the 523 chat greedy steps and rewrites all 65 chat step files that the earlier builds wrote (`receipts/runs/final-check.log`). The runs span three builds of this branch that differ by formatting, two loops rewritten as iterators and `Ctx::window_row_decode` factored out; the long and 257k verify runs also ran on the committed build |
 | a decode run's step 0 against the step-4 runner's last-token logits (`--last-logits`) | identical at 18,343, 73,520, 128,745 and 257,185 tokens (`receipts/gates/step0-vs-banked-prefill.txt`) |
+| the decode program's integer outcomes per layer against the vendor's (index rows, selections, compressor emissions, Engram ids) at positions 16 to 131, and a re-prefill red arm | 0 of 540 checks failed; the red arm rejected wherever the vendor's two programs differ (next sections) |
 | N = 2 ranks on one card against N = 1, teacher-forced capital, gsm, hebrew (25 steps; every step file) | byte-identical (`receipts/runs/native-chat.log`, no `TP2 DIFFERS` line) |
 | decode steps above the window against memra's own prefill of the same tokens (`decode_vs_prefill.py`) | 96 / 96 and 92 / 92 steps with bitwise-equal top-32 at 41k and 64k (`receipts/gates/decode-vs-prefill-*.json`) |
 
@@ -105,7 +109,7 @@ Pooled per group, every step (the KL lower bound of `decode_gate.py`; `receipts/
 |---|---|---|---|---|---|---|---|---|---|
 | chat, 16 to 18,343 tokens | 13 | 517 | 1.63e-02 | 1.43e-02 | 1.14 | 97.3% | 97.5% | KL <= 2.86e-02, top-1 >= 96.1% | PASS |
 | chat, vendor entropy > 1 nat | | 22 | 9.84e-02 | 9.50e-02 | 1.04 | 77.3% | 81.8% | KL <= 1.90e-01, top-1 >= 65.4% | PASS |
-| long, 41,098 to 128,745 tokens | 4 | 194 | 3.68e-02 | 3.05e-02 | 1.21 | 93.8% | 96.4% | KL <= 6.10e-02, top-1 >= 93.7% | PASS |
+| long, 41,098 to 128,745 tokens | 4 | 194 | 3.68e-02 | 3.05e-02 | 1.21 | 93.8% | 96.4% | KL <= 6.10e-02, top-1 >= 93.7% | PASS, by 0.1 point on top-1 |
 | long, vendor entropy > 1 nat | | 9 | 3.96e-01 | 3.83e-01 | 1.03 | 33.3% | 44.4% | KL <= 7.66e-01, top-1 >= 11.3% | PASS |
 | 257k needle (needle16800), 257,185 tokens | 1 | 3 | 1.62e-04 | 3.64e-05 | 4.44 | 100% | 100% | KL <= 7.29e-05, top-1 >= 99.0% | over the KL bar on its prefill row; see below |
 
@@ -229,15 +233,51 @@ each token would run. Both arms against the vendor's decode program, split at th
 
 Below the window the two programs never give the same bits (0 of 427 steps; the vendor's two
 programs differ there too), yet at the logit level they sit equally far from the vendor's decode:
-these logit gates cannot tell the vendor's decode program from its prefill program. The decode
-loop is pinned to the decode program by construction and by the byte-level checks instead: the
-ring row is the vendor's `get_window_topk_idxs` (unit test
-`decode_rows_read_the_ring_oldest_slot_first`), the per-layer decode gates of step 2 matched the
-vendor's decode selection (Jaccard 1.0) and stream at every checked layer (at 3,761 tokens, past
-the window), and the replay and forced-vs-greedy identities above hold the loop to one program per
-sequence. The 6 equal steps above the window
+these logit gates cannot tell the vendor's decode program from its prefill program. The per-layer
+byte gate below does, and it is what pins the loop to the decode program, with the ring-row unit
+test (`decode_rows_read_the_ring_oldest_slot_first`) and the replay and forced-vs-greedy identities
+above, which hold the loop to one program per sequence. The 6 equal steps above the window
 are the two needles, whose prompts are past it; on `story` and `hebrew_para` the rows past 128
 still read KV written below it.
+
+## The decode program, per layer, byte for byte
+
+`dsv41-gate decode` (`receipts/gates/bytegate-*.{json,log}`). The vendor program runs the
+checkpoint with hooks on chosen layers (`../gpu/capture_layers.py`, the tapes' own oracle) through a
+prefill and decode steps; memra runs each captured layer alone from the capture's inputs (stream,
+pre-mix, the CSA2 state of the sources it reads), its own window ring and compressor pair seeded by
+its own prefill of the prompt, then each decode step at its position: the per-layer program the
+loop runs. Per step it compares the integer outcomes where a decode program and a prefill program
+differ, byte for byte, with the vendor's: the attention index row (width and order: the window
+ring oldest slot first with -1 for empty slots, then the compressed selection shifted by the
+window), the indexer's selection on an index source, whether the ratio-2 compressor pools, and the
+Engram hash ids of the new token. Three captures: `capital` (decode at 16 and 17, the ratio-2 pair
+opening and closing), `gsm` (42 to 47) and `straddle126` (the story prompt plus the vendor's first
+104 story tokens as a 126-token prompt, decode at 126 to 131: below the window, at it and past it;
+`make_dec_tapes.py`). The capture of `gsm` reproduces the tape's logits bit for bit on all 7 steps.
+
+| capture | positions | layers | attention index rows | selections | compressor emissions | Engram hash rows | failed |
+|---|---|---|---|---|---|---|---|
+| capital | 16-17 | 1, 2, 3, 14, 20, 21, 24 | 14 / 14 | 8 / 8 | 4 / 4 | 4 / 4 | 0 of 60 |
+| gsm | 42-47 | 0, 1, 2, 3, 8, 14, 20, 21, 24 | 54 / 54 | 30 / 30 | 18 / 18 | 12 / 12 | 0 of 240 |
+| straddle126 | 126-131 | 0, 1, 2, 3, 8, 14, 20, 21, 24 | 54 / 54 | 30 / 30 | 18 / 18 | 12 / 12 | 0 of 240 |
+
+The red arm runs the same position under prefill semantics: one prefill of every position up to
+it, the program a loop that re-prefills each token would run, on the six layers that hold all their
+CSA2 state themselves (those of 0, 1, 2, 8, 14 and 20 each capture holds). The check must reject it wherever the vendor's own
+prefill row is not its decode row, which by the vendor's `get_window_topk_idxs` is every position
+but 127: below it the prefill row is narrower (positions 0..p, no empty slots), past it the ring row
+holds slots, not positions, and the compressed entries are offset by the window instead of by the
+prefill's length. At 127 both list 0..127 and the two programs read the same keys in the same order. Result:
+rejected at all 74 layer-steps of positions 16-17, 42-47, 126 and 128-131, accepted at the 6 of
+position 127, as required (part of each capture's check count above).
+
+The streams are reported, not gated. Per layer the decode program sits closer to the vendor's
+decode output than the re-prefill does below 127 (median rel L2 1.1e-03 against 9.0e-03 over 50
+layer-steps, the re-prefill farther on 35 of them and equal on 14, where every valid key falls into
+one 64-key block in both orders), and the two are bit-equal from 127 on (30 of 30). Through the 40
+layers to the head that per-layer gap stays inside the realization noise (the prefill arm above);
+the integer outcomes keep it visible.
 
 ## What remains for serve
 
@@ -299,6 +339,13 @@ python3 cpu_floor_kl.py TAPES cpu-floor floor native gsm,story,code,sys_json --j
 python3 prefill_arm.py --tapes TAPES --ref ref --native native --arm prefill-arm --cases capital,... --json prefill-arm.json
 python3 decode_vs_prefill.py native/decode32k_he_summary GPU_LANE/dectf-decode32k_he_summary 41098
 python3 tables_decode.py chat.json long.json
+# the per-layer byte gate: vendor captures of decode steps, then memra per layer with the re-prefill red arm
+python3 make_dec_tapes.py TAPES captape
+python3 ../gpu/capture_layers.py ORACLE_DIR CKPT REF captape captures --ids gsm,straddle126 \
+  --layers 0,1,2,3,8,14,20,21,24 --ops 0,1,2,3,8,14,20,21,24 --decode 6 --max-seq 270000 --index-qchunk 512
+dsv41-gate decode CKPT captures/straddle126 --layers 0,1,2,3,8,14,20,21,24 --token-map TOKEN_MAP \
+  --out bytegate-straddle126.json
+dsv41-gate decode CKPT GPU_LANE_CAPTURES/capital --layers 1,2,3,14,20,21,24 --token-map TOKEN_MAP
 ```
 
 Every GPU step ran as one lease through `memra-gpu-run` on one card with that card's box lock,
@@ -314,6 +361,7 @@ cores 24-31/56-63. Paths in the receipts are relative to the lane's run director
 - `decode_vs_prefill.py`: memra's decode steps against memra's prefill rows.
 - `prefill_arm.py`: the decode loop against the re-prefill arm, split at the window.
 - `tables_decode.py`: the tables above from the gate receipts.
+- `make_dec_tapes.py`: the two capture prompts of the byte gate (`gsm`, `straddle126`).
 - `receipts/gates/`: gate JSON and logs. `receipts/runs/`: every `dsv41-run` log, the vendor runs'
   summary lines (with the oracle files' sha256), the smoke hashes, the unit tests. `receipts/native/`,
   `receipts/greedy/`, `receipts/native-tp2/`: memra's per-step files (top-32, lse, argmax, tokens,
