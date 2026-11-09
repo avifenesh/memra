@@ -2009,6 +2009,565 @@ fn layer_gate(
     ))
 }
 
+// ------------------------------------------------------------------------------------------------
+// N-rank gates
+
+/// Byte identity of an N-rank tensor against the single-card one; on a mismatch the bf16 or f32
+/// distance is reported too (diagnosis, not a band).
+fn same_bytes(rep: &mut Report, name: &str, got: &[u8], want: &[u8], dtype: &str) {
+    let diff =
+        got.iter().zip(want).filter(|(a, b)| a != b).count() + got.len().abs_diff(want.len());
+    let extra = if diff == 0 {
+        format!("{} bytes identical", want.len())
+    } else {
+        let st = match dtype {
+            "bf16" => stat(&bf16_to_f32(got), &bf16_to_f32(want), true),
+            "f32" => stat(&bytes_f32(got), &bytes_f32(want), false),
+            _ => Stat::default(),
+        };
+        format!(
+            "{diff} of {} bytes differ (rel_l2 {:.3e}, max_abs {:.3e})",
+            want.len(),
+            st.rel_l2,
+            st.max_abs
+        )
+    };
+    rep.raw(
+        name,
+        diff == 0,
+        "byte-identical to the single-card block_forward",
+        extra,
+    );
+}
+
+fn opt_host(ops: &Ops, b: Option<&Buf>) -> Result<Option<Vec<u8>>, String> {
+    b.map(|x| x.host(&ops.st)).transpose()
+}
+
+/// One step's outputs and state: (stream, pre-mix, trace, CSA2 state, layer state), per rank.
+type RankOut<'a> = (
+    &'a [Buf],
+    &'a [Buf],
+    &'a [Trace],
+    &'a [Shared],
+    &'a [LayerState],
+);
+
+/// Compare every rank's replicated state and outputs with the single-card run of the same step.
+#[allow(clippy::too_many_arguments)]
+fn tp_compare(
+    rep: &mut Report,
+    tag: &str,
+    cx: &Ctx,
+    grp: &v::tp::Group,
+    want: (&Buf, &Buf, &Trace, &Shared, &LayerState),
+    got: RankOut<'_>,
+) -> Result<(), String> {
+    let (h2, p2, tr, sh, ls) = want;
+    let (h2s, p2s, trs, shs, lss) = got;
+    let o = &cx.ops;
+    let wh = h2.host(&o.st)?;
+    let wp = p2.host(&o.st)?;
+    let wa = opt_host(o, tr.attn_out.as_ref())?;
+    let wm = opt_host(o, tr.moe_out.as_ref())?;
+    let rows_c = |b: Option<&Buf>, n: usize, rb: usize| -> Result<Option<Vec<u8>>, String> {
+        Ok(opt_host(o, b)?.map(|mut v| {
+            v.truncate(n * rb);
+            v
+        }))
+    };
+    let g = &cx.g;
+    let wkv = rows_c(sh.compress_kv.as_ref(), sh.n_c, g.head_dim * 2)?;
+    let wik = rows_c(sh.index_k.as_ref(), sh.n_c, g.index_dim * 2)?;
+    let wtk = opt_host(o, sh.topk.as_ref())?;
+    let wcand = opt_host(o, sh.cand.as_ref())?;
+    let wring = opt_host(o, ls.ring.as_ref())?;
+    let wckv = opt_host(o, ls.c_kv.as_ref())?;
+    let wcsc = opt_host(o, ls.c_sc.as_ref())?;
+    for r in 0..grp.n() {
+        let ro = &grp.cx[r].ops;
+        let pre = format!("{tag}/rank{r}");
+        same_bytes(
+            rep,
+            &format!("{pre}/out_stream"),
+            &h2s[r].host(&ro.st)?,
+            &wh,
+            "bf16",
+        );
+        same_bytes(
+            rep,
+            &format!("{pre}/out_pre_mix"),
+            &p2s[r].host(&ro.st)?,
+            &wp,
+            "f32",
+        );
+        if let (Some(w), Some(b)) = (wa.as_ref(), trs[r].attn_out.as_ref()) {
+            same_bytes(rep, &format!("{pre}/attn_out"), &b.host(&ro.st)?, w, "bf16");
+        }
+        if let (Some(w), Some(b)) = (wm.as_ref(), trs[r].moe_out.as_ref()) {
+            same_bytes(rep, &format!("{pre}/moe_out"), &b.host(&ro.st)?, w, "bf16");
+        }
+        let gh = |b: Option<&Buf>, n: usize, rb: usize| -> Result<Option<Vec<u8>>, String> {
+            Ok(opt_host(ro, b)?.map(|mut v| {
+                v.truncate(n * rb);
+                v
+            }))
+        };
+        let pairs = [
+            (
+                "compress_kv",
+                wkv.clone(),
+                gh(shs[r].compress_kv.as_ref(), shs[r].n_c, g.head_dim * 2)?,
+                "bf16",
+            ),
+            (
+                "index_k",
+                wik.clone(),
+                gh(shs[r].index_k.as_ref(), shs[r].n_c, g.index_dim * 2)?,
+                "bf16",
+            ),
+            (
+                "topk",
+                wtk.clone(),
+                opt_host(ro, shs[r].topk.as_ref())?,
+                "i32",
+            ),
+            (
+                "candidates",
+                wcand.clone(),
+                opt_host(ro, shs[r].cand.as_ref())?,
+                "u8",
+            ),
+            (
+                "window_ring",
+                wring.clone(),
+                opt_host(ro, lss[r].ring.as_ref())?,
+                "bf16",
+            ),
+            (
+                "pair_kv",
+                wckv.clone(),
+                opt_host(ro, lss[r].c_kv.as_ref())?,
+                "f32",
+            ),
+            (
+                "pair_score",
+                wcsc.clone(),
+                opt_host(ro, lss[r].c_sc.as_ref())?,
+                "f32",
+            ),
+        ];
+        for (nm, w, gt, dt) in pairs {
+            match (w, gt) {
+                (Some(w), Some(gt)) => same_bytes(rep, &format!("{pre}/state/{nm}"), &gt, &w, dt),
+                (None, None) => {}
+                (w, gt) => rep.raw(
+                    &format!("{pre}/state/{nm}"),
+                    false,
+                    "the same state exists on both sides",
+                    format!("single-card {}, rank {}", w.is_some(), gt.is_some()),
+                ),
+            }
+        }
+    }
+    if !tr.route_sel.is_empty() {
+        let same = trs[0].route_sel == tr.route_sel && trs[0].route_w == tr.route_w;
+        rep.raw(
+            &format!("{tag}/route"),
+            same,
+            "identical expert ids and weights",
+            format!("{} selections", tr.route_sel.len()),
+        );
+    }
+    Ok(())
+}
+
+/// `dsv41-gate tp`: the N-rank program (`dsv41_gpu::tp`) against the single-card `block_forward`
+/// on the same captured inputs, per layer, prefill and decode, byte for byte; plus the N-rank
+/// output against the vendor capture (reported, the single-card gate owns that band).
+// allow: the rank loops walk several per-rank vectors in step
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+fn tp_gate(
+    ckpt: &Path,
+    cap: &Path,
+    layers: &[usize],
+    devices: &[usize],
+    token_map: Option<&Path>,
+    decode: usize,
+    chunk: Option<usize>,
+    rep: &mut Report,
+) -> Result<String, String> {
+    let mc = memra_gguf::config::ModelConfig::from_config_json(&ckpt.join("config.json"))
+        .map_err(|e| e.to_string())?;
+    let g = Geo::from_config(&mc)?;
+    let stm = memra_gguf::safetensors::StModel::open(ckpt).map_err(|e| e.to_string())?;
+    let mut f = Fx::open(cap)?;
+    f.ckpt = ckpt.to_path_buf();
+    let ids: Vec<u32> = f
+        .i64s("prompt_ids")?
+        .into_iter()
+        .map(|x| x as u32)
+        .collect();
+    let s = ids.len();
+    let max_pos = (s + 64).max(1024);
+    let mut grp = v::tp::Group::new(devices, &g, max_pos)?;
+    grp.trace = true;
+    let e = memra_engine::Engine::new(devices[0]).map_err(|e| e.to_string())?;
+    let mut cx = Ctx::new(e.stream(), g.clone(), max_pos)?;
+    cx.trace = true;
+    if let Some(c) = chunk {
+        cx.chunk = c;
+        for c2 in grp.cx.iter_mut() {
+            c2.chunk = c;
+        }
+    }
+    let n = grp.n();
+    let mut summary = Vec::new();
+    for &l in layers {
+        let pfx = format!("s0/L{l}");
+        if !f.has(&format!("{pfx}/out/x")) {
+            return Err(format!("capture has no layer {l}"));
+        }
+        let h_key = if g.engram_layers.contains(&l) && f.has(&format!("{pfx}/engram/x")) {
+            format!("{pfx}/engram/x")
+        } else {
+            format!("{pfx}/in/x")
+        };
+        let t0 = std::time::Instant::now();
+        let lw = LayerW::load(&cx.ops, &stm, &g, l, false)?;
+        let lws = grp.load_layer(&stm, &g, l, false)?;
+        let load_s = t0.elapsed().as_secs_f64();
+        let mut sh = Shared::default();
+        load_shared(&f, &pfx, l, &g, s, &mut sh, &cx.ops)?;
+        let h = f.dev(&cx.ops, &h_key)?;
+        let pre = f.dev(&cx.ops, &format!("{pfx}/in/pre_mix"))?;
+        let mut shs: Vec<Shared> = (0..n).map(|_| Shared::default()).collect();
+        let mut hs = Vec::with_capacity(n);
+        let mut pres = Vec::with_capacity(n);
+        for r in 0..n {
+            let ops = &grp.cx[r].ops;
+            load_shared(&f, &pfx, l, &g, s, &mut shs[r], ops)?;
+            hs.push(f.dev(ops, &h_key)?);
+            pres.push(f.dev(ops, &format!("{pfx}/in/pre_mix"))?);
+        }
+        let mut tr = Trace::default();
+        let mut trs: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
+        if lw.engram.is_some() {
+            let hashes = engram_hashes(&f, token_map, &ids, l, &format!("{pfx}/engram/hash"), rep)?;
+            cx.engram(&stm, &lw, &h, &hashes, s, &mut tr)?;
+            for r in 0..n {
+                grp.cx[r].engram(&stm, &lws[r], &hs[r], &hashes, s, &mut trs[r])?;
+            }
+            let want = h.host(&cx.ops.st)?;
+            for r in 0..n {
+                same_bytes(
+                    rep,
+                    &format!("layer{l}/prefill/rank{r}/engram_out"),
+                    &hs[r].host(&grp.cx[r].ops.st)?,
+                    &want,
+                    "bf16",
+                );
+            }
+        }
+        let mut ls = LayerState::default();
+        let mut lss: Vec<LayerState> = (0..n).map(|_| LayerState::default()).collect();
+        let t1 = std::time::Instant::now();
+        let (h2, p2) = cx.block_forward(&lw, &h, &pre, 0, s, &mut sh, &mut ls, &mut tr)?;
+        let ref_s = t1.elapsed().as_secs_f64();
+        grp.stats = Default::default();
+        let t2 = std::time::Instant::now();
+        let (h2s, p2s) = grp.block_forward(&lws, &hs, &pres, 0, s, &mut shs, &mut lss, &mut trs)?;
+        let tp_s = t2.elapsed().as_secs_f64();
+        let st = grp.stats;
+        tp_compare(
+            rep,
+            &format!("layer{l}/prefill"),
+            &cx,
+            &grp,
+            (&h2, &p2, &tr, &sh, &ls),
+            (&h2s, &p2s, &trs, &shs, &lss),
+        )?;
+        // the vendor capture, reported (the single-card layer gate holds the band)
+        let want = f.f32s(&format!("{pfx}/out/x"))?;
+        let (r_tp, _, _, c_tp) = stream_metrics(&bf(&grp.cx[0].ops, &h2s[0])?, &want, s);
+        let (r_1, _, _, _) = stream_metrics(&bf(&cx.ops, &h2)?, &want, s);
+        rep.raw(
+            &format!("layer{l}/prefill/vs_vendor"),
+            true,
+            "reported: the N-rank stream against the vendor capture, next to the single-card one",
+            format!("rel_l2 N-rank {r_tp:.3e} / single-card {r_1:.3e}, cos {c_tp:.8}"),
+        );
+        println!(
+            "layer {l}: load {load_s:.1}s single-card {ref_s:.2}s {n}-rank {tp_s:.2}s, {} gathers {} copies {:.1} MB",
+            st.collectives,
+            st.copies,
+            st.bytes as f64 / 1e6
+        );
+        let mut dec = Vec::new();
+        if decode > 0 {
+            let gen_ids: Vec<u32> = f.i64s("gen_ids")?.into_iter().map(|x| x as u32).collect();
+            for step in 1..=decode.min(gen_ids.len()) {
+                let ps = format!("s{step}/L{l}");
+                if !f.has(&format!("{ps}/out/x")) {
+                    break;
+                }
+                let pos = s + step - 1;
+                load_shared(&f, &ps, l, &g, 1, &mut sh, &cx.ops)?;
+                for r in 0..n {
+                    load_shared(&f, &ps, l, &g, 1, &mut shs[r], &grp.cx[r].ops)?;
+                }
+                let key = if lw.engram.is_some() {
+                    format!("{ps}/engram/x")
+                } else {
+                    format!("{ps}/in/x")
+                };
+                let mut tr = Trace::default();
+                let mut trs: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
+                let h = f.dev(&cx.ops, &key)?;
+                let hs: Vec<Buf> = (0..n)
+                    .map(|r| f.dev(&grp.cx[r].ops, &key))
+                    .collect::<Result<_, _>>()?;
+                if lw.engram.is_some() {
+                    let mut ext = ids.clone();
+                    ext.extend_from_slice(&gen_ids[..step]);
+                    let all =
+                        engram_hashes(&f, token_map, &ext, l, &format!("{ps}/engram/hash"), rep)?;
+                    let last = all[all.len() - g.engram_cols()..].to_vec();
+                    cx.engram(&stm, &lw, &h, &last, 1, &mut tr)?;
+                    for r in 0..n {
+                        grp.cx[r].engram(&stm, &lws[r], &hs[r], &last, 1, &mut trs[r])?;
+                    }
+                }
+                let pre = f.dev(&cx.ops, &format!("{ps}/in/pre_mix"))?;
+                let pres: Vec<Buf> = (0..n)
+                    .map(|r| f.dev(&grp.cx[r].ops, &format!("{ps}/in/pre_mix")))
+                    .collect::<Result<_, _>>()?;
+                let (h2, p2) =
+                    cx.block_forward(&lw, &h, &pre, pos, 1, &mut sh, &mut ls, &mut tr)?;
+                let (h2s, p2s) =
+                    grp.block_forward(&lws, &hs, &pres, pos, 1, &mut shs, &mut lss, &mut trs)?;
+                tp_compare(
+                    rep,
+                    &format!("layer{l}/decode{step}"),
+                    &cx,
+                    &grp,
+                    (&h2, &p2, &tr, &sh, &ls),
+                    (&h2s, &p2s, &trs, &shs, &lss),
+                )?;
+                dec.push(pos.to_string());
+            }
+        }
+        summary.push(format!(
+            "{{\"layer\": {l}, \"single_card_s\": {ref_s:.3}, \"tp_s\": {tp_s:.3}, \"gathers\": {}, \"gather_bytes\": {}, \"decode_positions\": [{}]}}",
+            st.collectives,
+            st.bytes,
+            dec.join(", ")
+        ));
+    }
+    Ok(format!(
+        "\"tokens\": {s}, \"ranks\": {n}, \"devices\": {devices:?}, \"transport\": {:?}, \"layers\": [{}]",
+        grp.transport.name(),
+        summary.join(", ")
+    ))
+}
+
+/// `dsv41-gate idx`: the indexer choice at N ranks on a captured prefill layer. Arms: the model's
+/// replicated indexer on one rank (the reference), the same indexer with the query rows split
+/// across ranks plus a gather of the selection, and the head split (each rank scores its index
+/// heads into fp32 partials, the partials gathered, added, rounded, masked) plus the top-k on
+/// every rank. Reports time per arm (`--reps` runs, median), bytes moved and selection agreement.
+// allow: the rank loops walk several per-rank vectors in step
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+fn idx_gate(
+    ckpt: &Path,
+    cap: &Path,
+    layer: usize,
+    devices: &[usize],
+    slice: usize,
+    reps: usize,
+    rows_cap: Option<usize>,
+    last: Option<usize>,
+    rep: &mut Report,
+) -> Result<String, String> {
+    let mc = memra_gguf::config::ModelConfig::from_config_json(&ckpt.join("config.json"))
+        .map_err(|e| e.to_string())?;
+    let g = Geo::from_config(&mc)?;
+    if !g.index_sources.contains(&layer) {
+        return Err(format!("layer {layer} is not an index source"));
+    }
+    let stm = memra_gguf::safetensors::StModel::open(ckpt).map_err(|e| e.to_string())?;
+    let mut f = Fx::open(cap)?;
+    f.ckpt = ckpt.to_path_buf();
+    let s_full = f.i64s("prompt_ids")?.len();
+    let s = rows_cap.unwrap_or(s_full).min(s_full);
+    let ratio = g.compress_ratios[layer];
+    let mut grp = v::tp::Group::new(devices, &g, (s_full + 64).max(1024))?;
+    let n = grp.n();
+    let lws = grp.load_layer(&stm, &g, layer, false)?;
+    if lws[0].uses_cand {
+        return Err(format!(
+            "layer {layer} rescoring inside a candidate pool: not benched"
+        ));
+    }
+    let pfx = format!("s0/L{layer}");
+    // the attention input from the capture: attn_norm(hc_pre(stream, pre_mix)), then qr; index
+    // keys: the capture's (a Reindex layer) or this layer's own from its latent (a kv source)
+    let mut xs = Vec::new();
+    let mut qrs = Vec::new();
+    let mut iks = Vec::new();
+    let mut n_c = 0;
+    for r in 0..n {
+        let c = &mut grp.cx[r];
+        let st = c.ops.st.clone();
+        let h = f.dev(&c.ops, &format!("{pfx}/in/x"))?;
+        let pre = f.dev(&c.ops, &format!("{pfx}/in/pre_mix"))?;
+        let mut tr = Trace::default();
+        if lws[r].engram.is_some() {
+            return Err("an Engram layer is not an index bench layer".into());
+        }
+        let x = c.hc_pre_norm(&h, &pre, &lws[r].attn_norm, s_full)?;
+        let qr = c.ops.buf(s_full * g.q_lora * 2)?;
+        c.ops.linear_q(
+            x.p(&st),
+            g.dim,
+            s_full,
+            &lws[r].wq_a,
+            qr.p(&st),
+            g.q_lora,
+            false,
+            &mut c.scr,
+        )?;
+        c.ops.rmsnorm(
+            qr.p(&st),
+            g.q_lora,
+            &lws[r].q_norm,
+            qr.p(&st),
+            g.q_lora,
+            s_full,
+            g.q_lora,
+            g.norm_eps,
+        )?;
+        let mut sh = Shared::default();
+        load_shared(&f, &pfx, layer, &g, s_full, &mut sh, &c.ops)?;
+        if sh.index_k.is_none() {
+            // a kv source: run the layer once to produce its keys (one rank's replicated state)
+            let mut ls = LayerState::default();
+            c.keys_only(&lws[r], &x, s_full, &mut sh, &mut ls, &mut tr)?;
+        }
+        n_c = s / ratio;
+        iks.push(sh.index_k.take().ok_or("no index keys")?);
+        xs.push(x);
+        qrs.push(qr);
+    }
+    let tw = g.index_topk.min(n_c);
+    // `--last N`: only the last N rows (N = 1 is one decode-shaped row over every key)
+    let first = last.map(|k| s.saturating_sub(k)).unwrap_or(0);
+    let med = |v: &mut Vec<f64>| {
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        v[v.len() / 2]
+    };
+    let (mut t_rep, mut t_rows, mut t_split, mut t_gather) = (vec![], vec![], vec![], vec![]);
+    let (mut s_rep, mut s_rows, mut s_split) = (vec![], vec![], vec![]);
+    for it in 0..reps.max(1) + 1 {
+        let (a, ta) = grp.cx[0]
+            .index_replicated_bench(&lws[0], &xs[0], &qrs[0], &iks[0], n_c, s, slice, first)?;
+        let (b, tb) = grp.index_rows_bench(&lws, &xs, &qrs, &iks, n_c, s, slice, first)?;
+        grp.stats = Default::default();
+        grp.timed = true;
+        let (c, tc) =
+            grp.index_split_bench(&lws, &xs, &qrs, &iks, n_c, s, ratio, tw, slice, first)?;
+        grp.timed = false;
+        if it > 0 {
+            t_gather.push(grp.stats.secs);
+        }
+        if it > 0 {
+            t_rep.push(ta);
+            t_rows.push(tb);
+            t_split.push(tc);
+        }
+        s_rep = a;
+        s_rows = b;
+        s_split = c;
+    }
+    let split_bytes = grp.stats.bytes;
+    let rows_bytes = ((s - first) * tw * 4 * (n - 1)) as u64;
+    rep.raw(
+        &format!("layer{layer}/index/rows_split_selection"),
+        s_rows == s_rep,
+        "row split = replicated indexer, byte for byte",
+        format!("{} selection words", s_rep.len()),
+    );
+    // head split vs replicated: rows whose selected set is identical, and the mean Jaccard
+    let (mut same_rows, mut jac) = (0usize, 0f64);
+    for t in first..s {
+        let mut a: Vec<i32> = s_rep[t * tw..(t + 1) * tw]
+            .iter()
+            .copied()
+            .filter(|&x| x >= 0)
+            .collect();
+        let mut b: Vec<i32> = s_split[t * tw..(t + 1) * tw]
+            .iter()
+            .copied()
+            .filter(|&x| x >= 0)
+            .collect();
+        a.sort_unstable();
+        b.sort_unstable();
+        if a == b {
+            same_rows += 1;
+        }
+        let inter = a.iter().filter(|x| b.binary_search(x).is_ok()).count();
+        let uni = a.len() + b.len() - inter;
+        jac += if uni == 0 {
+            1.0
+        } else {
+            inter as f64 / uni as f64
+        };
+    }
+    let (tr_, tro, ts, tg) = (
+        med(&mut t_rep),
+        med(&mut t_rows),
+        med(&mut t_split),
+        med(&mut t_gather),
+    );
+    rep.raw(
+        &format!("layer{layer}/index/head_split_selection"),
+        true,
+        "reported: the head split adds the head sum in another order, so its bf16 score and top-k can move",
+        format!(
+            "{same_rows}/{} rows with the identical set, mean Jaccard {:.6}",
+            s - first,
+            jac / (s - first).max(1) as f64
+        ),
+    );
+    rep.raw(
+        &format!("layer{layer}/index/time"),
+        true,
+        "reported: median of the timed runs (first run is warm-up), host wall time with device syncs",
+        format!(
+            "replicated {:.2} ms, rows split {:.2} ms ({} B gathered), head split {:.2} ms ({} B gathered in {:.2} ms, {:.1} GB/s), {} rows, {n_c} keys, {n} ranks, {}",
+            tr_ * 1e3,
+            tro * 1e3,
+            rows_bytes,
+            ts * 1e3,
+            split_bytes,
+            tg * 1e3,
+            split_bytes as f64 / tg.max(1e-12) / 1e9,
+            s - first,
+            grp.transport.name()
+        ),
+    );
+    Ok(format!(
+        "\"layer\": {layer}, \"rows\": {}, \"first_row\": {first}, \"keys\": {n_c}, \"ranks\": {n}, \"devices\": {devices:?}, \"transport\": {:?}, \"slice\": {slice}, \"ms\": {{\"replicated\": {:.3}, \"rows_split\": {:.3}, \"head_split\": {:.3}}}, \"head_split_gather_ms\": {:.3}, \"bytes\": {{\"rows_split\": {rows_bytes}, \"head_split\": {split_bytes}}}, \"head_split_same_rows\": {same_rows}, \"head_split_mean_jaccard\": {:.6}",
+        s - first,
+        grp.transport.name(),
+        tr_ * 1e3,
+        tro * 1e3,
+        ts * 1e3,
+        tg * 1e3,
+        jac / (s - first).max(1) as f64
+    ))
+}
+
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     let flag = |k: &str| {
@@ -2032,7 +2591,26 @@ fn main() {
             layer_gate(Path::new(&a[2]), Path::new(&a[3]), &layers, has("--mint"), chain, token_map.as_deref(), tol, floor.as_deref(), decode, save.as_deref(), has("--head"), &mut rep)
                 .map(|s| format!("\"gate\": \"layer\", \"capture\": {:?}, {s}", a[3]))
         }
-        _ => Err("usage: dsv41-gate kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json]".into()),
+        Some("tp") if a.len() > 3 => {
+            let layers: Vec<usize> = flag("--layers").unwrap_or_default().split(',').filter_map(|x| x.parse().ok()).collect();
+            let devices: Vec<usize> = flag("--devices").unwrap_or_else(|| "0,1".into()).split(',').filter_map(|x| x.parse().ok()).collect();
+            let token_map = flag("--token-map").map(PathBuf::from);
+            let decode = flag("--decode").and_then(|x| x.parse().ok()).unwrap_or(0);
+            let chunk = flag("--chunk").and_then(|x| x.parse().ok());
+            tp_gate(Path::new(&a[2]), Path::new(&a[3]), &layers, &devices, token_map.as_deref(), decode, chunk, &mut rep)
+                .map(|s| format!("\"gate\": \"tp\", \"capture\": {:?}, {s}", a[3]))
+        }
+        Some("idx") if a.len() > 3 => {
+            let layer = flag("--layer").and_then(|x| x.parse().ok()).unwrap_or(20);
+            let devices: Vec<usize> = flag("--devices").unwrap_or_else(|| "0,1".into()).split(',').filter_map(|x| x.parse().ok()).collect();
+            let slice = flag("--slice").and_then(|x| x.parse().ok()).unwrap_or(2048);
+            let reps = flag("--reps").and_then(|x| x.parse().ok()).unwrap_or(3);
+            let rows = flag("--rows").and_then(|x| x.parse().ok());
+            let last = flag("--last").and_then(|x| x.parse().ok());
+            idx_gate(Path::new(&a[2]), Path::new(&a[3]), layer, &devices, slice, reps, rows, last, &mut rep)
+                .map(|s| format!("\"gate\": \"idx\", \"capture\": {:?}, {s}", a[3]))
+        }
+        _ => Err("usage: dsv41-gate kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json]".into()),
     };
     let header = match r {
         Ok(h) => h,

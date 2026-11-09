@@ -17,9 +17,12 @@
 //!   --last-logits FILE       the last token's fp32 logits, raw
 //!   --tf DIR                 teacher-forced scoring of every position: lse.f32, argmax.i32,
 //!                            nll.f32 (of the next prompt token), raw arrays plus meta.json
+//!   --devices 0,1            run on N ranks (`dsv41_gpu::tp`: heads, output groups, `wo_b` rows,
+//!                            experts and head rows split; gathers only, so the logits are the
+//!                            one-card bytes); ranks may repeat a device
 
 use memra_engine::dsv41_gpu::{
-    self as v, Buf, Ctx, Geo, LayerState, LayerW, Shared, Trace, ck, ffi,
+    self as v, Buf, Ctx, Geo, LayerState, LayerW, Shared, Trace, ck, ffi, tp::Group,
 };
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -78,8 +81,8 @@ fn run() -> Result<(), String> {
     let chunk: usize = flag("--chunk").and_then(|x| x.parse().ok()).unwrap_or(8192);
 
     let t0 = Instant::now();
-    let e = memra_engine::Engine::new(0).map_err(|e| e.to_string())?;
-    let st = e.stream();
+    let devices: Option<Vec<usize>> =
+        flag("--devices").map(|x| x.split(',').filter_map(|d| d.trim().parse().ok()).collect());
     let mc = memra_gguf::config::ModelConfig::from_config_json(&ckpt.join("config.json"))
         .map_err(|e| e.to_string())?;
     let g = Geo::from_config(&mc)?;
@@ -93,13 +96,7 @@ fn run() -> Result<(), String> {
     let ec =
         v::engram::EngramConsts::derive(&g, v::engram::token_map_from_file(Path::new(&tmap))?)?;
     let s = ids.len();
-    let mut cx = Ctx::new(st.clone(), g.clone(), (s + 16).max(1024))?;
-    cx.chunk = chunk;
     let (hc, d) = (g.hc, g.dim);
-    eprintln!(
-        "dsv41-run: {s} tokens, {n_layers} layers, chunk {chunk}, {} on device",
-        e.ctx().name().unwrap_or_default()
-    );
 
     // embed, then hc copies of every row; the carried pre-mix starts one-hot on copy 0
     let (ei, eb) = stm.raw("embed.weight").ok_or("embed.weight missing")?;
@@ -117,73 +114,135 @@ fn run() -> Result<(), String> {
             hb[(t * hc + k) * d * 2..(t * hc + k + 1) * d * 2].copy_from_slice(row);
         }
     }
-    let mut h = Buf::from_bytes(&st, &hb)?;
-    drop(hb);
     let mut pm = vec![0f32; s * hc];
     for t in 0..s {
         pm[t * hc] = 1.0;
     }
-    let mut pre = Buf::from_f32(&st, &pm)?;
-    drop(pm);
     let hashes = if g.engram_layers.iter().any(|&l| l < n_layers) {
         Some(ec.hash_prefill(&ids)?)
     } else {
         None
     };
-
-    let mut sh = Shared::default();
-    let mut tr = Trace::default();
-    for li in 0..n_layers {
-        let tl = Instant::now();
-        let lw = LayerW::load(&cx.ops, &stm, &g, li, false)?;
-        let load_s = tl.elapsed().as_secs_f64();
-        if lw.engram.is_some() {
-            let all = hashes.as_ref().unwrap();
-            let slot = ec
-                .layer_ids
-                .iter()
-                .position(|&x| x == li)
-                .ok_or("engram layer not in the constants")?;
-            let (nl, cols) = (ec.layer_ids.len(), ec.cols());
-            let mine: Vec<i64> = (0..s)
-                .flat_map(|t| all[(t * nl + slot) * cols..(t * nl + slot + 1) * cols].to_vec())
-                .collect();
-            cx.engram(&stm, &lw, &h, &mine, s, &mut tr)?;
-        }
-        let mut ls = LayerState::default();
-        let (h2, p2) = cx.block_forward(&lw, &h, &pre, 0, s, &mut sh, &mut ls, &mut tr)?;
-        h = h2;
-        pre = p2;
-        drop(lw);
-        eprintln!(
-            "layer {li}: load {load_s:.1}s total {:.1}s",
-            tl.elapsed().as_secs_f64()
-        );
-    }
-
-    // the head: collapse with the carried pre-mix, the final norm, F.linear in fp32
-    let nw = v::load_vec_bf16(&cx.ops, &stm, "norm.weight", d)?;
-    let hw = v::load_bf16(&cx.ops, &stm, "head.weight", g.vocab, d)?;
-    let ops = &cx.ops;
-    let head_rows = |r0: usize, n: usize| -> Result<Vec<f32>, String> {
-        let x = ops.buf(n * d * 2)?;
-        ck("hc_pre", unsafe {
-            ffi::memra_v41_hc_pre(
-                h.at(&st, r0 * hc * d * 2).m(),
-                pre.at(&st, r0 * hc * 4).f(),
-                n as i32,
-                hc as i32,
-                d as i32,
-                x.p(&st).m(),
-                d as i64,
-                ops.sv(),
-            )
-        })?;
-        ops.rmsnorm(x.p(&st), d, &nw, x.p(&st), d, n, d, g.norm_eps)?;
-        let lg = ops.buf(n * g.vocab * 4)?;
-        ops.linear_bf16(x.p(&st), d, n, &hw, lg.p(&st), g.vocab, true)?;
-        Ok(v::bytes_f32(&lg.host(&st)?))
+    // this layer's hash columns of every token
+    let engram_cols = |li: usize| -> Result<Vec<i64>, String> {
+        let all = hashes.as_ref().unwrap();
+        let slot = ec
+            .layer_ids
+            .iter()
+            .position(|&x| x == li)
+            .ok_or("engram layer not in the constants")?;
+        let (nl, cols) = (ec.layer_ids.len(), ec.cols());
+        Ok((0..s)
+            .flat_map(|t| all[(t * nl + slot) * cols..(t * nl + slot + 1) * cols].to_vec())
+            .collect())
     };
+
+    let mut head: Box<dyn FnMut(usize, usize) -> Result<Vec<f32>, String>>;
+    // keeps the one-card engine alive behind the head closure
+    let _engine;
+    if let Some(devices) = devices {
+        let mut grp = Group::new(&devices, &g, (s + 16).max(1024))?;
+        for c in grp.cx.iter_mut() {
+            c.chunk = chunk;
+        }
+        let n = grp.n();
+        eprintln!(
+            "dsv41-run: {s} tokens, {n_layers} layers, chunk {chunk}, {n} ranks on devices {devices:?}, transport {}",
+            grp.transport.name()
+        );
+        let mut h: Vec<Buf> = Vec::with_capacity(n);
+        let mut pre: Vec<Buf> = Vec::with_capacity(n);
+        for c in &grp.cx {
+            h.push(Buf::from_bytes(&c.ops.st, &hb)?);
+            pre.push(Buf::from_f32(&c.ops.st, &pm)?);
+        }
+        drop(hb);
+        let mut sh: Vec<Shared> = (0..n).map(|_| Shared::default()).collect();
+        let mut tr: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
+        for li in 0..n_layers {
+            let tl = Instant::now();
+            let lw = grp.load_layer(&stm, &g, li, false)?;
+            let load_s = tl.elapsed().as_secs_f64();
+            if lw[0].engram.is_some() {
+                let mine = engram_cols(li)?;
+                for r in 0..n {
+                    grp.cx[r].engram(&stm, &lw[r], &h[r], &mine, s, &mut tr[r])?;
+                }
+            }
+            let mut ls: Vec<LayerState> = (0..n).map(|_| LayerState::default()).collect();
+            let (h2, p2) = grp.block_forward(&lw, &h, &pre, 0, s, &mut sh, &mut ls, &mut tr)?;
+            h = h2;
+            pre = p2;
+            drop(lw);
+            eprintln!(
+                "layer {li}: load {load_s:.1}s total {:.1}s, gathers {} ({:.1} MB so far)",
+                tl.elapsed().as_secs_f64(),
+                grp.stats.collectives,
+                grp.stats.bytes as f64 / 1e6
+            );
+        }
+        let (nw, hw) = grp.load_head(&stm, &g)?;
+        head = Box::new(move |r0, n| grp.head_logits(&h, &pre, r0, n, &nw, &hw));
+        _engine = None;
+    } else {
+        let e = memra_engine::Engine::new(0).map_err(|e| e.to_string())?;
+        let st = e.stream();
+        let mut cx = Ctx::new(st.clone(), g.clone(), (s + 16).max(1024))?;
+        cx.chunk = chunk;
+        eprintln!(
+            "dsv41-run: {s} tokens, {n_layers} layers, chunk {chunk}, {} on device",
+            e.ctx().name().unwrap_or_default()
+        );
+        let mut h = Buf::from_bytes(&st, &hb)?;
+        drop(hb);
+        let mut pre = Buf::from_f32(&st, &pm)?;
+        let mut sh = Shared::default();
+        let mut tr = Trace::default();
+        for li in 0..n_layers {
+            let tl = Instant::now();
+            let lw = LayerW::load(&cx.ops, &stm, &g, li, false)?;
+            let load_s = tl.elapsed().as_secs_f64();
+            if lw.engram.is_some() {
+                let mine = engram_cols(li)?;
+                cx.engram(&stm, &lw, &h, &mine, s, &mut tr)?;
+            }
+            let mut ls = LayerState::default();
+            let (h2, p2) = cx.block_forward(&lw, &h, &pre, 0, s, &mut sh, &mut ls, &mut tr)?;
+            h = h2;
+            pre = p2;
+            drop(lw);
+            eprintln!(
+                "layer {li}: load {load_s:.1}s total {:.1}s",
+                tl.elapsed().as_secs_f64()
+            );
+        }
+        // the head: collapse with the carried pre-mix, the final norm, F.linear in fp32
+        let nw = v::load_vec_bf16(&cx.ops, &stm, "norm.weight", d)?;
+        let hw = v::load_bf16(&cx.ops, &stm, "head.weight", g.vocab, d)?;
+        let gg = g.clone();
+        head = Box::new(move |r0: usize, n: usize| -> Result<Vec<f32>, String> {
+            let ops = &cx.ops;
+            let x = ops.buf(n * d * 2)?;
+            ck("hc_pre", unsafe {
+                ffi::memra_v41_hc_pre(
+                    h.at(&st, r0 * hc * d * 2).m(),
+                    pre.at(&st, r0 * hc * 4).f(),
+                    n as i32,
+                    hc as i32,
+                    d as i32,
+                    x.p(&st).m(),
+                    d as i64,
+                    ops.sv(),
+                )
+            })?;
+            ops.rmsnorm(x.p(&st), d, &nw, x.p(&st), d, n, d, gg.norm_eps)?;
+            let lg = ops.buf(n * gg.vocab * 4)?;
+            ops.linear_bf16(x.p(&st), d, n, &hw, lg.p(&st), gg.vocab, true)?;
+            Ok(v::bytes_f32(&lg.host(&st)?))
+        });
+        _engine = Some(e);
+    }
+    let mut head_rows = |r0: usize, n: usize| head(r0, n);
     let last = head_rows(s - 1, 1)?;
     if last.iter().any(|x| !x.is_finite()) {
         return Err("non-finite logits".into());

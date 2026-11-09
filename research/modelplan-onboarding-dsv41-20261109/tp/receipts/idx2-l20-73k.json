@@ -1,0 +1,9 @@
+{
+ "gate": "idx", "capture": "captures-v2/needle4800", "layer": 20, "rows": 73520, "first_row": 0, "keys": 73520, "ranks": 2, "devices": [0, 1], "transport": "peer-pull", "slice": 2048, "ms": {"replicated": 537.117, "rows_split": 261.599, "head_split": 801.200}, "head_split_gather_ms": 437.366, "bytes": {"rows_split": 150568960, "head_split": 43241523200}, "head_split_same_rows": 73520, "head_split_mean_jaccard": 1.000000,
+ "checks": [
+  {"name": "layer20/index/rows_split_selection", "pass": true, "rule": "row split = replicated indexer, byte for byte", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "37642240 selection words"},
+  {"name": "layer20/index/head_split_selection", "pass": true, "rule": "reported: the head split adds the head sum in another order, so its bf16 score and top-k can move", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "73520/73520 rows with the identical set, mean Jaccard 1.000000"},
+  {"name": "layer20/index/time", "pass": true, "rule": "reported: median of the timed runs (first run is warm-up), host wall time with device syncs", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "replicated 537.12 ms, rows split 261.60 ms (150568960 B gathered), head split 801.20 ms (43241523200 B gathered in 437.37 ms, 98.9 GB/s), 73520 rows, 73520 keys, 2 ranks, peer-pull"}
+ ],
+ "total": 3, "failed": 0
+}

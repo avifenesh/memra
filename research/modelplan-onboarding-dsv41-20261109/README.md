@@ -240,3 +240,11 @@ consumer.
 # Step 3 (GPU): single-card kernels and checkpoint layers (2026-11-09)
 
 Single-card kernels for every V4.1 operation and real-checkpoint layers on one card, then (step 4) the whole trunk on one card as the native checkpoint runner, CheckpointParity on a pack-declared probe, and long-context gates to 257k tokens: `gpu/README.md`.
+
+# Step 5 (GPU, N ranks): the TP/EP partition, gated at N=2 (2026-11-09)
+
+The V4.1 layer split across N ranks (heads, output groups, `wo_b` rows, routed experts, head rows;
+gathers only, so the N-rank program writes the one-card bytes): byte-identical to the one-card
+`block_forward` on six real layers at prefill and decode on two cards, the whole trunk on two cards
+gives the one-card logits bit for bit up to 128,745 tokens, the indexer splits its query rows at
+prefill (measured against a head split), and the list of what the 4-card stage adds: `tp/README.md`.

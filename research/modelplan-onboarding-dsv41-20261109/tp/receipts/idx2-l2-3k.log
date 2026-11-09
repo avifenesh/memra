@@ -1,0 +1,5 @@
+[dsv41-tp] ranks=2 devices=[0, 1] transport=peer-pull (MEMRA_TP_TRANSPORT) gathers-only=true
+PASS layer2/index/rows_split_selection: 1925632 selection words [row split = replicated indexer, byte for byte]
+PASS layer2/index/head_split_selection: 3761/3761 rows with the identical set, mean Jaccard 1.000000 [reported: the head split adds the head sum in another order, so its bf16 score and top-k can move]
+PASS layer2/index/time: replicated 1.30 ms, rows split 0.78 ms (7702528 B gathered), head split 1.61 ms (56565440 B gathered in 0.60 ms, 94.0 GB/s), 3761 rows, 1880 keys, 2 ranks, peer-pull [reported: median of the timed runs (first run is warm-up), host wall time with device syncs]
+dsv41-gate: 3 checks, 0 failed

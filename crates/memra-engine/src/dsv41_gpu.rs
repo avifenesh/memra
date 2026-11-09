@@ -10,8 +10,10 @@
 //! vendor `inference/model.py` at rev 1bae0e10; `crates/memra-gguf/src/model_plan/deepseek_v41.rs`
 //! is the typed plan these kernels execute.
 //!
-//! Scope today: every V4.1 operation as a kernel plus a prefill layer (`Layer::prefill`) fed from
-//! the safetensors checkpoint. Multi-card placement, decode state and serving are not here yet.
+//! Scope today: every V4.1 operation as a kernel plus the prefill/decode layer
+//! ([`Ctx::block_forward`]) fed from the safetensors checkpoint, and the same layer split across
+//! N ranks ([`tp`]: tensor-parallel attention, expert-parallel MoE, a vocab-parallel head; gathers
+//! only, so the N-rank program writes these bytes). Serving is not here yet.
 
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr};
 use memra_gguf::safetensors::StModel;
@@ -19,6 +21,7 @@ use std::os::raw::c_void;
 use std::sync::Arc;
 
 pub mod engram;
+pub mod tp;
 
 pub mod ffi {
     use std::os::raw::c_void;
@@ -307,6 +310,67 @@ pub mod ffi {
             to_f32: i32,
             stream: *mut c_void,
         ) -> i32;
+        /// `grp`: device array of `ng` groups `{i64 row0, i32 rows, f32 scale2, u64 w, u64 s}`.
+        pub fn memra_v41_gemm_f8_grouped(
+            a: *const c_void,
+            lda: i64,
+            a_s: *const c_void,
+            ldas: i64,
+            grp: *const c_void,
+            ng: i32,
+            max_rows: i32,
+            ldb: i64,
+            ldbs: i64,
+            wfmt: i32,
+            c: *mut c_void,
+            ldc: i64,
+            out_f32: i32,
+            n: i32,
+            k: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_v41_moe_combine(
+            slots: *const c_void,
+            lds: i64,
+            order: *const i32,
+            topk: i32,
+            shared: *const c_void,
+            ldsh: i64,
+            out: *mut c_void,
+            ldo: i64,
+            rows: i32,
+            d: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_v41_index_score_part(
+            q: *const c_void,
+            ldq: i64,
+            k: *const c_void,
+            t: i32,
+            w: *const c_void,
+            ldw: i64,
+            wscale: f32,
+            heads: i32,
+            part: *mut f32,
+            ldo: i64,
+            rows: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_v41_index_score_finish(
+            parts: *const c_void,
+            n: i32,
+            ldp: i64,
+            t: i32,
+            start_pos: i32,
+            ratio: i32,
+            cand: *const u8,
+            ldc: i64,
+            cb: i32,
+            out: *mut c_void,
+            ldo: i64,
+            rows: i32,
+            stream: *mut c_void,
+        ) -> i32;
     }
 }
 
@@ -470,7 +534,12 @@ impl Ops {
     pub fn new(st: Arc<CudaStream>) -> Self {
         Self { st }
     }
+    /// The stream handle for a launch, with its context made current first: the launchers use the
+    /// runtime API, which launches on the current device, and a rank's kernels must land on its card.
     pub fn sv(&self) -> *mut c_void {
+        // a failed bind leaves the previous context current and the launch then fails on the
+        // stream/device mismatch, so the error is not lost
+        let _ = self.st.context().bind_to_thread();
         self.st.cu_stream() as *mut c_void
     }
     pub fn sync(&self) -> Result<(), String> {
@@ -932,6 +1001,42 @@ pub fn load_fp8(ops: &Ops, stm: &StModel, p: &str, n: usize, k: usize) -> Result
     })
 }
 
+/// Rows `rows` of the FP8 32x32 dense weight `{p}` (`[n][k]` in the checkpoint): the weight rows
+/// and their scale-block rows, so `rows` starts on a 32-row block and ends on one or at `n`.
+pub fn load_fp8_rows(
+    ops: &Ops,
+    stm: &StModel,
+    p: &str,
+    n: usize,
+    k: usize,
+    rows: std::ops::Range<usize>,
+) -> Result<QW, String> {
+    if rows == (0..n) {
+        return load_fp8(ops, stm, p, n, k);
+    }
+    if !rows.start.is_multiple_of(32)
+        || (!rows.end.is_multiple_of(32) && rows.end != n)
+        || rows.end > n
+    {
+        return Err(format!("{p}: rows {rows:?} cut a 32-row scale block"));
+    }
+    let (iw, bw) = raw(stm, &format!("{p}.weight"))?;
+    want(iw, p, "F8_E4M3", &[n as u64, k as u64])?;
+    let (is, bs) = raw(stm, &format!("{p}.scale"))?;
+    let kb = k.div_ceil(32);
+    want(is, p, "F8_E8M0", &[n.div_ceil(32) as u64, kb as u64])?;
+    Ok(QW {
+        w: Buf::from_bytes(&ops.st, &bw[rows.start * k..rows.end * k])?,
+        s: Buf::from_bytes(
+            &ops.st,
+            &bs[rows.start / 32 * kb..rows.end.div_ceil(32) * kb],
+        )?,
+        n: rows.len(),
+        k,
+        fmt: QFmt::Fp8Block32,
+    })
+}
+
 /// FP4 expert weight `{p}.weight` (I8 pairs) / `{p}.scale` (ue8m0 per 32), optionally minted.
 pub fn load_fp4(
     ops: &Ops,
@@ -1009,6 +1114,26 @@ pub fn load_bf16(ops: &Ops, stm: &StModel, name: &str, n: usize, k: usize) -> Re
         k,
     })
 }
+/// Rows `rows` of the bf16 weight `name` `[n][k]` (the vocab-parallel head).
+pub fn load_bf16_rows(
+    ops: &Ops,
+    stm: &StModel,
+    name: &str,
+    n: usize,
+    k: usize,
+    rows: std::ops::Range<usize>,
+) -> Result<BW, String> {
+    let (i, b) = raw(stm, name)?;
+    want(i, name, "BF16", &[n as u64, k as u64])?;
+    if rows.end > n {
+        return Err(format!("{name}: rows {rows:?} past {n}"));
+    }
+    Ok(BW {
+        w: Buf::from_bytes(&ops.st, &b[rows.start * k * 2..rows.end * k * 2])?,
+        n: rows.len(),
+        k,
+    })
+}
 pub fn load_vec_bf16(ops: &Ops, stm: &StModel, name: &str, n: usize) -> Result<Buf, String> {
     let (i, b) = raw(stm, name)?;
     if i.dtype != "BF16" || i.shape.iter().product::<u64>() != n as u64 {
@@ -1018,6 +1143,23 @@ pub fn load_vec_bf16(ops: &Ops, stm: &StModel, name: &str, n: usize) -> Result<B
         ));
     }
     Buf::from_bytes(&ops.st, b)
+}
+/// Elements `r` of the F32 vector `name` of `n`.
+pub fn load_vec_f32_range(
+    ops: &Ops,
+    stm: &StModel,
+    name: &str,
+    n: usize,
+    r: std::ops::Range<usize>,
+) -> Result<Buf, String> {
+    let (i, b) = raw(stm, name)?;
+    if i.dtype != "F32" || i.shape.iter().product::<u64>() != n as u64 || r.end > n {
+        return Err(format!(
+            "{name}: {} {:?}, want F32 of {n}",
+            i.dtype, i.shape
+        ));
+    }
+    Buf::from_bytes(&ops.st, &b[r.start * 4..r.end * 4])
 }
 pub fn load_vec_f32(ops: &Ops, stm: &StModel, name: &str, n: usize) -> Result<Buf, String> {
     let (i, b) = raw(stm, name)?;
@@ -1033,6 +1175,21 @@ pub fn load_vec_f32(ops: &Ops, stm: &StModel, name: &str, n: usize) -> Result<Bu
 /// `wo_a`: FP8 32x32 in the checkpoint, dequantized to bf16 at load like the reference
 /// (`[n_groups * o_lora_rank][heads * head_dim / n_groups]`; each product is exact in bf16).
 pub fn load_wo_a(ops: &Ops, stm: &StModel, p: &str, n: usize, k: usize) -> Result<BW, String> {
+    load_wo_a_rows(ops, stm, p, n, k, 0..n)
+}
+
+/// Rows `rows` of `wo_a`, dequantized like [`load_wo_a`].
+pub fn load_wo_a_rows(
+    ops: &Ops,
+    stm: &StModel,
+    p: &str,
+    n: usize,
+    k: usize,
+    rows: std::ops::Range<usize>,
+) -> Result<BW, String> {
+    if rows.end > n {
+        return Err(format!("{p}: rows {rows:?} past {n}"));
+    }
     let (iw, bw) = raw(stm, &format!("{p}.weight"))?;
     want(iw, p, "F8_E4M3", &[n as u64, k as u64])?;
     let (is, bs) = raw(stm, &format!("{p}.scale"))?;
@@ -1044,8 +1201,8 @@ pub fn load_wo_a(ops: &Ops, stm: &StModel, p: &str, n: usize, k: usize) -> Resul
     )?;
     let kb = k.div_ceil(32);
     let lut: Vec<f32> = (0..=255u8).map(e4m3_to_f32).collect();
-    let mut out = Vec::with_capacity(n * k * 2);
-    for r in 0..n {
+    let mut out = Vec::with_capacity(rows.len() * k * 2);
+    for r in rows.clone() {
         for c in 0..k {
             let v = lut[bw[r * k + c] as usize] * e8m0_to_f32(bs[(r / 32) * kb + c / 32]);
             let bits = f32_to_bf16_bits(v);
@@ -1059,7 +1216,7 @@ pub fn load_wo_a(ops: &Ops, stm: &StModel, p: &str, n: usize, k: usize) -> Resul
     }
     Ok(BW {
         w: Buf::from_bytes(&ops.st, &out)?,
-        n,
+        n: rows.len(),
         k,
     })
 }
@@ -1188,9 +1345,69 @@ pub struct EngramW {
     pub rows: usize,
 }
 
-/// One V4.1 trunk layer's weights on the device.
+/// One rank's share of a layer under N-rank tensor and expert parallelism (`n` = 1: the whole layer
+/// on one card). Attention heads, output groups, `wo_b` output rows, routed experts and head rows
+/// split into `n` equal contiguous ranges; everything else is replicated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Part {
+    pub rank: usize,
+    pub n: usize,
+}
+
+impl Part {
+    pub const WHOLE: Part = Part { rank: 0, n: 1 };
+    /// This rank's range of `total` items (`total` divisible by `n`, checked by [`Part::check`]).
+    pub fn range(&self, total: usize) -> std::ops::Range<usize> {
+        let p = total / self.n;
+        self.rank * p..(self.rank + 1) * p
+    }
+    /// The partition laws of the V4.1 layer at `n` ranks: whole heads per rank in sparse-attention
+    /// tiles of 16, whole output groups, `wo_b` rows in 32-row scale blocks, whole experts and an
+    /// even vocabulary. A degree that breaks one is refused, never forced.
+    pub fn check(g: &Geo, n: usize) -> Result<(), String> {
+        let fail = |what: String| Err(format!("{n} ranks: {what}"));
+        if n == 0 {
+            return fail("no ranks".into());
+        }
+        if !g.heads.is_multiple_of(n) || !(g.heads / n).is_multiple_of(16) {
+            return fail(format!(
+                "{} attention heads do not split into whole 16-head tiles",
+                g.heads
+            ));
+        }
+        if !g.o_groups.is_multiple_of(n) || !g.heads.is_multiple_of(g.o_groups) {
+            return fail(format!("{} output groups do not split evenly", g.o_groups));
+        }
+        if !g.dim.is_multiple_of(n) || !(g.dim / n).is_multiple_of(32) {
+            return fail(format!(
+                "wo_b rows {} do not split into 32-row scale blocks",
+                g.dim
+            ));
+        }
+        if !g.n_experts.is_multiple_of(n) {
+            return fail(format!("{} experts do not split evenly", g.n_experts));
+        }
+        if !g.vocab.is_multiple_of(n) {
+            return fail(format!("vocabulary {} does not split evenly", g.vocab));
+        }
+        Ok(())
+    }
+}
+
+/// One V4.1 trunk layer's weights on the device (one rank's share under [`Part`]).
 pub struct LayerW {
     pub id: usize,
+    pub part: Part,
+    /// this card's attention heads `[head0, head0 + heads_l)`
+    pub head0: usize,
+    pub heads_l: usize,
+    /// this card's output groups `[group0, group0 + groups_l)`
+    pub group0: usize,
+    pub groups_l: usize,
+    /// this card's `wo_b` output rows start (`wo_b.n` of them)
+    pub dim0: usize,
+    /// `experts[i]` is routed expert `expert0 + i`
+    pub expert0: usize,
     pub ratio: usize,
     pub kv_source: bool,
     pub index_source: bool,
@@ -1223,6 +1440,23 @@ pub struct LayerW {
 
 impl LayerW {
     pub fn load(ops: &Ops, stm: &StModel, g: &Geo, id: usize, mint: bool) -> Result<Self, String> {
+        Self::load_part(ops, stm, g, id, mint, Part::WHOLE)
+    }
+
+    /// This rank's share of layer `id` (see [`Part`]).
+    pub fn load_part(
+        ops: &Ops,
+        stm: &StModel,
+        g: &Geo,
+        id: usize,
+        mint: bool,
+        part: Part,
+    ) -> Result<Self, String> {
+        Part::check(g, part.n)?;
+        let heads = part.range(g.heads);
+        let groups = part.range(g.o_groups);
+        let dims = part.range(g.dim);
+        let experts = part.range(g.n_experts);
         let p = format!("layers.{id}");
         let ratio = g.compress_ratios[id];
         let kv_source = g.kv_sources.contains(&id);
@@ -1300,10 +1534,11 @@ impl LayerW {
         } else {
             None
         };
-        let mut experts = Vec::with_capacity(g.n_experts);
-        for e in 0..g.n_experts {
+        let expert0 = experts.start;
+        let mut experts_w = Vec::with_capacity(experts.len());
+        for e in experts {
             let ep = format!("{p}.ffn.experts.{e}");
-            experts.push([
+            experts_w.push([
                 load_fp4(ops, stm, &format!("{ep}.w1"), g.moe_inter, g.dim, mint)?,
                 load_fp4(ops, stm, &format!("{ep}.w2"), g.dim, g.moe_inter, mint)?,
                 load_fp4(ops, stm, &format!("{ep}.w3"), g.moe_inter, g.dim, mint)?,
@@ -1344,8 +1579,17 @@ impl LayerW {
         } else {
             None
         };
+        let hd = g.head_dim;
+        let gin = g.heads * hd / g.o_groups;
         Ok(Self {
             id,
+            part,
+            head0: heads.start,
+            heads_l: heads.len(),
+            group0: groups.start,
+            groups_l: groups.len(),
+            dim0: dims.start,
+            expert0,
             ratio,
             kv_source,
             index_source,
@@ -1361,30 +1605,33 @@ impl LayerW {
             ffn_norm: load_vec_bf16(ops, stm, &format!("{p}.ffn_norm.weight"), g.dim)?,
             wq_a: load_fp8(ops, stm, &format!("{p}.attn.wq_a"), g.q_lora, g.dim)?,
             q_norm: load_vec_bf16(ops, stm, &format!("{p}.attn.q_norm.weight"), g.q_lora)?,
-            wq_b: load_fp8(
+            wq_b: load_fp8_rows(
                 ops,
                 stm,
                 &format!("{p}.attn.wq_b"),
-                g.heads * g.head_dim,
+                g.heads * hd,
                 g.q_lora,
+                heads.start * hd..heads.end * hd,
             )?,
             wkv: load_fp8(ops, stm, &format!("{p}.attn.wkv"), g.head_dim, g.dim)?,
             kv_norm: load_vec_bf16(ops, stm, &format!("{p}.attn.kv_norm.weight"), g.head_dim)?,
-            wo_a: load_wo_a(
+            wo_a: load_wo_a_rows(
                 ops,
                 stm,
                 &format!("{p}.attn.wo_a"),
                 g.o_groups * g.o_lora,
-                g.heads * g.head_dim / g.o_groups,
+                gin,
+                groups.start * g.o_lora..groups.end * g.o_lora,
             )?,
-            wo_b: load_fp8(
+            wo_b: load_fp8_rows(
                 ops,
                 stm,
                 &format!("{p}.attn.wo_b"),
                 g.dim,
                 g.o_groups * g.o_lora,
+                dims,
             )?,
-            sink: load_vec_f32(ops, stm, &format!("{p}.attn.attn_sink"), g.heads)?,
+            sink: load_vec_f32_range(ops, stm, &format!("{p}.attn.attn_sink"), g.heads, heads)?,
             comp,
             idx,
             gate_w: load_bf16(
@@ -1395,7 +1642,7 @@ impl LayerW {
                 g.dim,
             )?,
             gate_b: load_vec_f32(ops, stm, &format!("{p}.ffn.gate.bias"), g.n_experts)?,
-            experts,
+            experts: experts_w,
             shared,
             engram,
         })
@@ -1471,6 +1718,19 @@ pub struct Trace {
     pub engram_out: Option<Buf>,
 }
 
+/// What the keys side of one attention call hands its query side: `qr`, the KV rows the heads
+/// read (`[window part | compressed part]`) and the selection width; the selection itself stays in
+/// the [`Shared`] state the keys side wrote.
+pub struct AttnKeys {
+    pub qr: Buf,
+    pub kv_all: Buf,
+    pub ww: usize,
+    pub tw: usize,
+    pub tot: usize,
+    pub win: usize,
+    pub comp: bool,
+}
+
 /// Runtime pieces shared by every layer on the card.
 pub struct Ctx {
     pub ops: Ops,
@@ -1485,6 +1745,10 @@ pub struct Ctx {
     /// prefill tokens per query-side slice (attention, indexer selection, MoE, Engram); every
     /// sliced step acts per row, so the slice size never changes a result
     pub chunk: usize,
+    /// the query rows this card's indexer selects (None: all of them). An N-rank prefill gives
+    /// each rank a contiguous range and gathers the selection rows (`dsv41_gpu::tp`); the
+    /// selection is per row, so the split never changes a result
+    pub index_rows: Option<std::ops::Range<usize>>,
 }
 
 impl Ctx {
@@ -1518,6 +1782,7 @@ impl Ctx {
             trace: false,
             max_pos,
             chunk: 8192,
+            index_rows: None,
         })
     }
 
@@ -1924,8 +2189,62 @@ impl Ctx {
     ) -> Result<Buf, String> {
         let g = self.g.clone();
         let st = self.ops.st.clone();
+        let k = self.attn_keys(lw, x, sp, s, sh, ls, tr)?;
+        let qdim = lw.heads_l * g.head_dim;
+        let c = self.chunk.min(s).max(1);
+        let out = self.ops.buf(s * g.dim * 2)?;
+        let q = self.ops.buf(c * qdim * 2)?;
+        let o = self.ops.buf(c * qdim * 2)?;
+        let oa_ld = g.o_groups * g.o_lora;
+        let oa = self.ops.buf(c * oa_ld * 2)?;
+        let single = c == s;
+        for r0 in (0..s).step_by(c) {
+            let rows = c.min(s - r0);
+            self.attn_heads(
+                lw,
+                &k,
+                sh,
+                sp,
+                r0,
+                rows,
+                &q,
+                &o,
+                oa.p(&st),
+                oa_ld,
+                single,
+                tr,
+            )?;
+            self.attn_wo_b(
+                lw,
+                oa.p(&st),
+                oa_ld,
+                rows,
+                out.at(&st, r0 * g.dim * 2),
+                g.dim,
+            )?;
+            // the host index rows are rebuilt next chunk
+            self.ops.sync()?;
+        }
+        Ok(out)
+    }
+
+    /// The keys side of [`Self::attention`], identical on every rank: `qr`, this call's window KV
+    /// into the ring, the compressor and index keys on a source, the indexer's selection, the
+    /// compressed KV append, and the KV rows `[window part | compressed part]` the heads read.
+    #[allow(clippy::too_many_arguments)]
+    fn attn_keys(
+        &mut self,
+        lw: &LayerW,
+        x: &Buf,
+        sp: usize,
+        s: usize,
+        sh: &mut Shared,
+        ls: &mut LayerState,
+        tr: &mut Trace,
+    ) -> Result<AttnKeys, String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
         let hd = g.head_dim;
-        let qdim = g.heads * hd;
         let ratio = lw.ratio;
         let win = g.window;
         let comp = ratio > 0;
@@ -2045,8 +2364,9 @@ impl Ctx {
                         sh.cand = Some(self.ops.buf(s * nb)?);
                         sh.cand_ld = nb;
                     }
-                    for r0 in (0..s).step_by(c) {
-                        let r1 = (r0 + c).min(s);
+                    let span = self.index_rows.clone().unwrap_or(0..s);
+                    for r0 in (span.start..span.end.min(s)).step_by(c) {
+                        let r1 = (r0 + c).min(span.end.min(s));
                         self.index_select(lw, x, &qr, r0, r1, sp, s, win_rows, sh)?;
                     }
                 }
@@ -2098,139 +2418,183 @@ impl Ctx {
         }
         let tw = if ratio > 0 && n_c > 0 { sh.topk_w } else { 0 };
         let tot = ww + tw;
-        let gk = qdim / g.o_groups; // 4096 inputs per group
+        if tw > 0 && sh.topk.is_none() {
+            return Err("attention: no selection from the index source".into());
+        }
+        Ok(AttnKeys {
+            qr,
+            kv_all,
+            ww,
+            tw,
+            tot,
+            win,
+            comp,
+        })
+    }
+
+    /// The query side of [`Self::attention`] for rows `[r0, r0 + rows)` over this card's heads
+    /// (`lw.heads_l` from `lw.head0`; all of them on one card): q, RoPE, the selection rows, sparse
+    /// attention, inverse RoPE, the fp8 quantize-dequantize of o and the grouped `wo_a` of this
+    /// card's output groups, written at element column `lw.group0 * o_lora` of `oa` (row pitch
+    /// `oa_ld` elements). Every step is per row and per head.
+    #[allow(clippy::too_many_arguments)]
+    fn attn_heads(
+        &mut self,
+        lw: &LayerW,
+        k: &AttnKeys,
+        sh: &Shared,
+        sp: usize,
+        r0: usize,
+        rows: usize,
+        q: &Buf,
+        o: &Buf,
+        oa: Dp,
+        oa_ld: usize,
+        single: bool,
+        tr: &mut Trace,
+    ) -> Result<(), String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let hd = g.head_dim;
+        let heads = lw.heads_l;
+        let qdim = heads * hd;
+        let gk = g.heads * hd / g.o_groups; // 4096 inputs per group
         let scale = (hd as f64).powf(-0.5) as f32;
-        let out = self.ops.buf(s * g.dim * 2)?;
-        let q = self.ops.buf(c * qdim * 2)?;
-        let o = self.ops.buf(c * qdim * 2)?;
-        let oa = self.ops.buf(c * g.o_groups * g.o_lora * 2)?;
-        let single = c == s;
-        for r0 in (0..s).step_by(c) {
-            let rows = c.min(s - r0);
-            self.ops.linear_q(
-                qr.at(&st, r0 * g.q_lora * 2),
-                g.q_lora,
-                rows,
-                &lw.wq_b,
-                q.p(&st),
-                qdim,
-                false,
-                &mut self.scr,
-            )?;
-            self.ops.rope(
-                q.p(&st),
-                qdim,
-                rows,
-                g.heads,
-                hd,
-                if comp {
-                    &self.rope_comp
-                } else {
-                    &self.rope_base
-                },
-                sp + r0,
-                1,
-                false,
-            )?;
-            // index rows: the window part from the host, the compressed part from the selection
-            let mut idx_host = vec![-1i32; rows * tot];
-            for i in 0..rows {
-                let row = &mut idx_host[i * tot..i * tot + ww];
-                if sp == 0 {
-                    Self::window_row(r0 + i, win, row);
-                } else {
-                    // decode: the whole ring, oldest slot first, -1 for slots not reached yet
-                    let oldest = sp % win + 1;
-                    for (v, slot) in row.iter_mut().zip((oldest..win).chain(0..oldest)) {
-                        *v = if slot > sp { -1 } else { slot as i32 };
-                    }
+        let (ww, tw, tot, win) = (k.ww, k.tw, k.tot, k.win);
+        self.ops.linear_q(
+            k.qr.at(&st, r0 * g.q_lora * 2),
+            g.q_lora,
+            rows,
+            &lw.wq_b,
+            q.p(&st),
+            qdim,
+            false,
+            &mut self.scr,
+        )?;
+        self.ops.rope(
+            q.p(&st),
+            qdim,
+            rows,
+            heads,
+            hd,
+            if k.comp {
+                &self.rope_comp
+            } else {
+                &self.rope_base
+            },
+            sp + r0,
+            1,
+            false,
+        )?;
+        // index rows: the window part from the host, the compressed part from the selection
+        let mut idx_host = vec![-1i32; rows * tot];
+        for i in 0..rows {
+            let row = &mut idx_host[i * tot..i * tot + ww];
+            if sp == 0 {
+                Self::window_row(r0 + i, win, row);
+            } else {
+                // decode: the whole ring, oldest slot first, -1 for slots not reached yet
+                let oldest = sp % win + 1;
+                for (v, slot) in row.iter_mut().zip((oldest..win).chain(0..oldest)) {
+                    *v = if slot > sp { -1 } else { slot as i32 };
                 }
             }
-            let idx = Buf::from_i32(&st, &idx_host)?;
-            if tw > 0 {
-                let sel = sh
-                    .topk
-                    .as_ref()
-                    .ok_or("attention: no selection from the index source")?;
-                copy_2d(
-                    &self.ops,
-                    sel,
-                    r0,
-                    tw * 4,
-                    &idx,
-                    ww * 4,
-                    tot * 4,
-                    tw * 4,
-                    rows,
-                )?;
-            }
-            self.ops.sparse_attn(
-                q.p(&st),
-                qdim,
-                kv_all.p(&st),
-                idx.p(&st),
-                tot,
-                tot,
-                lw.sink.p(&st),
-                scale,
-                o.p(&st),
-                qdim,
-                rows,
-                g.heads,
-            )?;
-            if self.trace && single {
-                tr.qr = Some(clone_buf(&self.ops, &qr)?);
-                tr.q = Some(clone_buf(&self.ops, &q)?);
-                tr.kv_all = Some(clone_buf(&self.ops, &kv_all)?);
-                tr.idx_all = Some(clone_buf(&self.ops, &idx)?);
-                tr.attn_o = Some(clone_buf(&self.ops, &o)?);
-            }
-            self.ops.rope(
-                o.p(&st),
-                qdim,
-                rows,
-                g.heads,
-                hd,
-                if comp {
-                    &self.rope_comp
-                } else {
-                    &self.rope_base
-                },
-                sp + r0,
-                1,
-                true,
-            )?;
-            self.ops.fp8_qdq(o.p(&st), qdim, rows, qdim)?;
-            self.ops.gemm_bf16(
-                o.p(&st),
-                qdim,
-                gk,
-                lw.wo_a.w.p(&st),
-                gk,
-                g.o_lora * gk,
-                oa.p(&st),
-                g.o_groups * g.o_lora,
-                g.o_lora,
-                false,
-                rows,
-                g.o_lora,
-                gk,
-                g.o_groups,
-            )?;
-            self.ops.linear_q(
-                oa.p(&st),
-                g.o_groups * g.o_lora,
-                rows,
-                &lw.wo_b,
-                out.at(&st, r0 * g.dim * 2),
-                g.dim,
-                false,
-                &mut self.scr,
-            )?;
-            // the host index rows are rebuilt next chunk
-            self.ops.sync()?;
         }
-        Ok(out)
+        let idx = Buf::from_i32(&st, &idx_host)?;
+        if tw > 0 {
+            let sel = sh
+                .topk
+                .as_ref()
+                .ok_or("attention: no selection from the index source")?;
+            copy_2d(
+                &self.ops,
+                sel,
+                r0,
+                tw * 4,
+                &idx,
+                ww * 4,
+                tot * 4,
+                tw * 4,
+                rows,
+            )?;
+        }
+        self.ops.sparse_attn(
+            q.p(&st),
+            qdim,
+            k.kv_all.p(&st),
+            idx.p(&st),
+            tot,
+            tot,
+            lw.sink.p(&st),
+            scale,
+            o.p(&st),
+            qdim,
+            rows,
+            heads,
+        )?;
+        if self.trace && single {
+            tr.qr = Some(clone_buf(&self.ops, &k.qr)?);
+            tr.q = Some(clone_buf(&self.ops, q)?);
+            tr.kv_all = Some(clone_buf(&self.ops, &k.kv_all)?);
+            tr.idx_all = Some(clone_buf(&self.ops, &idx)?);
+            tr.attn_o = Some(clone_buf(&self.ops, o)?);
+        }
+        self.ops.rope(
+            o.p(&st),
+            qdim,
+            rows,
+            heads,
+            hd,
+            if k.comp {
+                &self.rope_comp
+            } else {
+                &self.rope_base
+            },
+            sp + r0,
+            1,
+            true,
+        )?;
+        self.ops.fp8_qdq(o.p(&st), qdim, rows, qdim)?;
+        self.ops.gemm_bf16(
+            o.p(&st),
+            qdim,
+            gk,
+            lw.wo_a.w.p(&st),
+            gk,
+            g.o_lora * gk,
+            Dp(oa.addr() + (lw.group0 * g.o_lora * 2) as u64),
+            oa_ld,
+            g.o_lora,
+            false,
+            rows,
+            g.o_lora,
+            gk,
+            lw.groups_l,
+        )?;
+        Ok(())
+    }
+
+    /// `wo_b` over the gathered `oa` rows (pitch `oa_ld` elements): this card's output rows
+    /// `[lw.dim0, lw.dim0 + lw.wo_b.n)` written at that column of `out` (row pitch `ldc` elements).
+    fn attn_wo_b(
+        &mut self,
+        lw: &LayerW,
+        oa: Dp,
+        oa_ld: usize,
+        rows: usize,
+        out: Dp,
+        ldc: usize,
+    ) -> Result<(), String> {
+        self.ops.linear_q(
+            oa,
+            oa_ld,
+            rows,
+            &lw.wo_b,
+            Dp(out.addr() + (lw.dim0 * 2) as u64),
+            ldc,
+            false,
+            &mut self.scr,
+        )
     }
 
     /// MoE (vendor `MoE.forward`): the sqrtsoftplus gate with its selection bias, routed MXFP4
@@ -2380,6 +2744,98 @@ impl Ctx {
         self.ops.sync()
     }
 
+    /// Single-pass mHC mixes of the stream `x` `[s][hc][dim]`: `(mixes, pre, post, comb)`.
+    pub fn hc_mix(
+        &mut self,
+        fn_: &Buf,
+        sc: &Buf,
+        base: &Buf,
+        x: &Buf,
+        s: usize,
+    ) -> Result<(Buf, Buf, Buf, Buf), String> {
+        let g = &self.g;
+        let st = self.ops.st.clone();
+        let (hc, d) = (g.hc, g.dim);
+        let nmix = (2 + hc) * hc;
+        let mixes = self.ops.buf(s * nmix * 4)?;
+        let pre = self.ops.buf(s * hc * 4)?;
+        let post = self.ops.buf(s * hc * 4)?;
+        let comb = self.ops.buf(s * hc * hc * 4)?;
+        ck("hc_mixes", unsafe {
+            ffi::memra_v41_hc_mixes(
+                x.p(&st).m(),
+                fn_.p(&st).f(),
+                sc.p(&st).f(),
+                base.p(&st).f(),
+                s as i32,
+                hc as i32,
+                d as i32,
+                g.sinkhorn_iters as i32,
+                g.norm_eps,
+                g.hc_eps,
+                mixes.p(&st).fm(),
+                pre.p(&st).fm(),
+                post.p(&st).fm(),
+                comb.p(&st).fm(),
+                self.ops.sv(),
+            )
+        })?;
+        Ok((mixes, pre, post, comb))
+    }
+
+    /// The collapse of the stream `h` with `mix` `[s][hc]`, then RMSNorm with `norm`: `[s][dim]`.
+    pub fn hc_pre_norm(&mut self, h: &Buf, mix: &Buf, norm: &Buf, s: usize) -> Result<Buf, String> {
+        let g = &self.g;
+        let st = self.ops.st.clone();
+        let (hc, d) = (g.hc, g.dim);
+        let x = self.ops.buf(s * d * 2)?;
+        ck("hc_pre", unsafe {
+            ffi::memra_v41_hc_pre(
+                h.p(&st).m(),
+                mix.p(&st).f(),
+                s as i32,
+                hc as i32,
+                d as i32,
+                x.p(&st).m(),
+                d as i64,
+                self.ops.sv(),
+            )
+        })?;
+        self.ops
+            .rmsnorm(x.p(&st), d, norm, x.p(&st), d, s, d, g.norm_eps)?;
+        Ok(x)
+    }
+
+    /// The expansion of a sublayer output `f` `[s][dim]` into the residual stream `res`.
+    pub fn hc_post(
+        &mut self,
+        f: &Buf,
+        res: &Buf,
+        post: &Buf,
+        comb: &Buf,
+        s: usize,
+    ) -> Result<Buf, String> {
+        let g = &self.g;
+        let st = self.ops.st.clone();
+        let (hc, d) = (g.hc, g.dim);
+        let out = self.ops.buf(s * hc * d * 2)?;
+        ck("hc_post", unsafe {
+            ffi::memra_v41_hc_post(
+                f.p(&st).m(),
+                d as i64,
+                res.p(&st).m(),
+                post.p(&st).f(),
+                comb.p(&st).f(),
+                s as i32,
+                hc as i32,
+                d as i32,
+                out.p(&st).m(),
+                self.ops.sv(),
+            )
+        })?;
+        Ok(out)
+    }
+
     /// One trunk block (vendor `Block.forward`) for `s` tokens from position `sp`: a prefill chunk
     /// at 0 or one decode token. `h` is the bf16 stream `[s][hc][dim]` after this layer's Engram
     /// (if any), `pre_mix` the carried f32 `[s][hc]` from the previous FFN; `ls` is this layer's
@@ -2397,95 +2853,26 @@ impl Ctx {
         ls: &mut LayerState,
         tr: &mut Trace,
     ) -> Result<(Buf, Buf), String> {
+        if lw.part.n != 1 {
+            return Err(
+                "block_forward runs a whole layer; a rank's share runs in dsv41_gpu::tp".into(),
+            );
+        }
         let g = self.g.clone();
         let st = self.ops.st.clone();
-        let (hc, d) = (g.hc, g.dim);
-        let nmix = (2 + hc) * hc;
-        let mix = |c: &mut Self,
-                   fn_: &Buf,
-                   sc: &Buf,
-                   base: &Buf,
-                   x: &Buf|
-         -> Result<(Buf, Buf, Buf, Buf), String> {
-            let mixes = c.ops.buf(s * nmix * 4)?;
-            let pre = c.ops.buf(s * hc * 4)?;
-            let post = c.ops.buf(s * hc * 4)?;
-            let comb = c.ops.buf(s * hc * hc * 4)?;
-            ck("hc_mixes", unsafe {
-                ffi::memra_v41_hc_mixes(
-                    x.p(&st).m(),
-                    fn_.p(&st).f(),
-                    sc.p(&st).f(),
-                    base.p(&st).f(),
-                    s as i32,
-                    hc as i32,
-                    d as i32,
-                    g.sinkhorn_iters as i32,
-                    g.norm_eps,
-                    g.hc_eps,
-                    mixes.p(&st).fm(),
-                    pre.p(&st).fm(),
-                    post.p(&st).fm(),
-                    comb.p(&st).fm(),
-                    c.ops.sv(),
-                )
-            })?;
-            Ok((mixes, pre, post, comb))
-        };
+        let d = g.dim;
         let (amix, a_pre, a_post, a_comb) =
-            mix(self, &lw.hc_attn_fn, &lw.hc_attn_scale, &lw.hc_attn_base, h)?;
-        let x = self.ops.buf(s * d * 2)?;
-        ck("hc_pre", unsafe {
-            ffi::memra_v41_hc_pre(
-                h.p(&st).m(),
-                pre_mix.p(&st).f(),
-                s as i32,
-                hc as i32,
-                d as i32,
-                x.p(&st).m(),
-                d as i64,
-                self.ops.sv(),
-            )
-        })?;
-        self.ops
-            .rmsnorm(x.p(&st), d, &lw.attn_norm, x.p(&st), d, s, d, g.norm_eps)?;
+            self.hc_mix(&lw.hc_attn_fn, &lw.hc_attn_scale, &lw.hc_attn_base, h, s)?;
+        let x = self.hc_pre_norm(h, pre_mix, &lw.attn_norm, s)?;
         if self.trace {
             tr.attn_mix = Some(amix);
             tr.attn_in = Some(clone_buf(&self.ops, &x)?);
         }
         let a = self.attention(lw, &x, sp, s, sh, ls, tr)?;
-        let h1 = self.ops.buf(s * hc * d * 2)?;
-        ck("hc_post", unsafe {
-            ffi::memra_v41_hc_post(
-                a.p(&st).m(),
-                d as i64,
-                h.p(&st).m(),
-                a_post.p(&st).f(),
-                a_comb.p(&st).f(),
-                s as i32,
-                hc as i32,
-                d as i32,
-                h1.p(&st).m(),
-                self.ops.sv(),
-            )
-        })?;
+        let h1 = self.hc_post(&a, h, &a_post, &a_comb, s)?;
         let (_fmix, f_pre, f_post, f_comb) =
-            mix(self, &lw.hc_ffn_fn, &lw.hc_ffn_scale, &lw.hc_ffn_base, &h1)?;
-        let x2 = self.ops.buf(s * d * 2)?;
-        ck("hc_pre", unsafe {
-            ffi::memra_v41_hc_pre(
-                h1.p(&st).m(),
-                a_pre.p(&st).f(),
-                s as i32,
-                hc as i32,
-                d as i32,
-                x2.p(&st).m(),
-                d as i64,
-                self.ops.sv(),
-            )
-        })?;
-        self.ops
-            .rmsnorm(x2.p(&st), d, &lw.ffn_norm, x2.p(&st), d, s, d, g.norm_eps)?;
+            self.hc_mix(&lw.hc_ffn_fn, &lw.hc_ffn_scale, &lw.hc_ffn_base, &h1, s)?;
+        let x2 = self.hc_pre_norm(&h1, &a_pre, &lw.ffn_norm, s)?;
         // the MoE runs `chunk` tokens at a time: each token's experts still add in ascending id order
         let m = self.ops.buf(s * d * 2)?;
         // larger slices here: the per-expert loop runs once per slice
@@ -2494,21 +2881,7 @@ impl Ctx {
             let rows = cm.min(s - r0);
             self.moe(lw, x2.at(&st, r0 * d * 2), rows, m.at(&st, r0 * d * 2), tr)?;
         }
-        let h2 = self.ops.buf(s * hc * d * 2)?;
-        ck("hc_post", unsafe {
-            ffi::memra_v41_hc_post(
-                m.p(&st).m(),
-                d as i64,
-                h1.p(&st).m(),
-                f_post.p(&st).f(),
-                f_comb.p(&st).f(),
-                s as i32,
-                hc as i32,
-                d as i32,
-                h2.p(&st).m(),
-                self.ops.sv(),
-            )
-        })?;
+        let h2 = self.hc_post(&m, &h1, &f_post, &f_comb, s)?;
         if self.trace {
             tr.attn_out = Some(a);
             tr.mid = Some(h1);
@@ -2546,7 +2919,7 @@ pub fn copy_d2d(
             dst.p(&ops.st).addr() + doff as u64,
             src.p(&ops.st).addr() + soff as u64,
             n,
-            ops.st.cu_stream(),
+            ops.sv() as cudarc::driver::sys::CUstream,
         )
     };
     if r != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
@@ -2591,7 +2964,7 @@ pub fn copy_2d(
         WidthInBytes: width,
         Height: rows,
     };
-    let r = unsafe { cuMemcpy2DAsync_v2(&p, ops.st.cu_stream()) };
+    let r = unsafe { cuMemcpy2DAsync_v2(&p, ops.sv() as CUstream) };
     if r != CUresult::CUDA_SUCCESS {
         return Err(format!("memcpy2d: {r:?}"));
     }
