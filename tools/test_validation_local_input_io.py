@@ -220,6 +220,21 @@ class LocalInputIO(unittest.TestCase):
             self.fixture.put('crates/memra-server/build.rs', changed)
             self.assertIn('research/hidden/*.txt',
                           census(generating([], ['research/hidden/*.txt']), generating(['HIDDEN_DIR'], [], changed)))
+            # Renaming the package keeps every pin of the same build.rs bytes: the commit's pin under
+            # the new name admits it, and the running pin's external inputs still apply.
+            def external(package, names):
+                return json.dumps({'schema': 'memra-validation-build-inputs-v1', 'build_scripts': {
+                    'crates/memra-server/build.rs': {
+                        'sha256': hashlib.sha256(build.encode()).hexdigest(), 'package': package,
+                        'generated_env': [], 'external_inputs': names}}})
+            self.fixture.put('crates/memra-server/build.rs', build)
+            self.fixture.put(path, 'pub fn f() {}\n')
+            manifest = self.root / 'crates/memra-server/Cargo.toml'
+            manifest.write_text(manifest.read_text().replace('name = "memra-server"', 'name = "memra-renamed"'))
+            self.assertIn('research/ext/*.txt',
+                          census(external('memra-server', ['research/ext/*.txt']), external('memra-renamed', [])))
+            with self.assertRaisesRegex(module.Refused, 'build-script input contract'):
+                census(external('memra-server', ['research/ext/*.txt']), None)
 
     def test_missing_and_noncanonical_paths_remain_refusals(self):
         for name in ('missing', '../outside', '/outside', 'a//b', './a', 'a\\b'):

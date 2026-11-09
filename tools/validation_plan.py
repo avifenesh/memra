@@ -1105,9 +1105,10 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
                 raise Refused('declared build script missing')
             continue
         source_sha = hashlib.sha256(tree.read(path).encode()).hexdigest()
-        matching = [c for c in contracts['build_scripts'].get(path, ())
-                    if c['package'] == package and c['sha256'] == source_sha]
-        if not matching:
+        matching = [c for c in contracts['build_scripts'].get(path, ()) if c['sha256'] == source_sha]
+        # Admission needs a pin that names the package. Every pin of these bytes still applies,
+        # so renaming the package cannot drop what another pin declares for them.
+        if not any(c['package'] == package for c in matching):
             raise Refused('build-script input contract changed or missing: ' + path)
         # A generated name lets the census skip an include, so it narrows: a name counts only
         # when every matching contract lists it. Inputs widen, so they take the union.
