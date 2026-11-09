@@ -27,9 +27,8 @@ as prompt tokens.
 ## Buffered chat and text completion jobs
 
 `POST /v1/chat/completions` and `POST /v1/completions` accept the boolean
-`background` extension. It defaults to false. With the existing
-`MEMRA_BACKGROUND_RESPONSES` switch OFF, `background: true` is a named HTTP 400.
-Combining background and streaming is also a named HTTP 400; malformed boolean
+`background` extension. It defaults to false, and `background: true` needs no
+server switch. Combining background and streaming is a named HTTP 400; malformed boolean
 values return a named HTTP 400 for `background`. Existing decoding defaults still apply
 when the request omits decoding fields.
 
@@ -46,8 +45,8 @@ Worker and ledger errors remain failed jobs. Repeated GETs retain the same body.
 Background delivery uses normal admission/model limits and the deployment's
 JobStore seam. It clears the worker wire deadline and bypasses the synchronous
 feasibility gate; `timeout_ms` does not bound generation. Synchronous requests
-retain their deadline and partial-error behavior. Retention/capacity and the
-background default remain unchanged. See the [delivery contract](SERVING.md#background-delivery-for-long-non-streaming-requests-background-true).
+retain their deadline and partial-error behavior. Retention and capacity keep
+their defaults. See the [delivery contract](SERVING.md#background-delivery-for-long-non-streaming-requests-background-true).
 
 ## OpenAI chat/completions streaming usage
 
@@ -165,15 +164,14 @@ described above.
 `POST /v1/responses`. Streaming and blocking. Auth: `Authorization: Bearer <key>`, same
 tenant rules as every surface.
 
-This is the **stateless** Responses API: nothing is stored server-side, and the client
-resends the full conversation in `input` each turn (`store:false` semantics: exactly
-what Responses-only agent CLIs do against custom providers). Stateful features refuse
-with a clear 400 naming the field:
+This is the **stateless** Responses API: no conversation state is stored server-side, and
+the client resends the full conversation in `input` each turn (`store:false` semantics:
+exactly what Responses-only agent CLIs do against custom providers). Stateful features
+refuse with a clear 400 naming the field:
 
 - `previous_response_id`
 - `store: true` (`false`/absent are fine)
 - `conversation`
-- `background: true`
 - `truncation: "auto"` (no server-side context trimming; the honest value is `"disabled"`)
 - `prompt` (stored prompt templates)
 - `input` items of type `item_reference`
@@ -192,6 +190,7 @@ with a clear 400 naming the field:
 | `timeout_ms` | request deadline in milliseconds. Non-streaming accepts `1000`..=`90000`, default `90000`; streaming uses the deployment's `MEMRA_STREAM_TTFT_MS_MAX` (normally the same 90000). The SAME semantics as the chat surface and `/v1/messages`: complete-response deadline when blocking, first-generated-token deadline when streaming. A pre-header miss is HTTP `408`; an extended stream already committed for prefill keepalives ends with `response.failed` and `code: "deadline_exceeded"`. Both cancel generation and bill zero. See SERVING.md "Request deadlines and the billing promise". |
 | `reasoning.effort` | mapped to the model's native thinking control through the ONE canonical table every surface shares (`none`/`minimal`/`low`/`medium`/`high`; `xhigh`/`max`/`ultra` clamp to `high`; anything else 400s; identical acceptance on the chat surface's `reasoning_effort` and `/v1/messages`' `output_config.effort`, issue #31). On a model with no graded ladder a graded value translates to reasoning ON, byte-identical to `reasoning:{"enabled":true}`, documented in SERVING.md, so stock codex/Claude Code effort values work on every served model. `reasoning.summary` accepts only `"auto"`, this server returns reasoning verbatim and does not summarise, so a summary mode it cannot perform is a 400; any other `reasoning` key, and a non-object `reasoning`, are 400s matching the chat surface exactly |
 | `text.format` | `text` no-op; `json_object` / `json_schema` → the same constrained decoder as the chat surface's `response_format` |
+| `background` | `true` returns `status: "queued"` and holds this one request's result until it is collected or expires: poll `GET /v1/responses/{id}`, cancel `POST /v1/responses/{id}/cancel`. With `stream: true` it is a 400. [Delivery contract](SERVING.md#background-delivery-for-long-non-streaming-requests-background-true) |
 | `prompt_cache_key` | session-affinity nomination. It is deliberately NOT a cache salt: prefix-cache isolation stays tenant-scoped, so a shared instructions prefix keeps its cross-session cache hits |
 | everything else | accepted and ignored (`include`, `parallel_tool_calls`, `stream_options`, `client_metadata`, `metadata`, `service_tier`, `text.verbosity`) |
 

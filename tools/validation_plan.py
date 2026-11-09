@@ -476,7 +476,7 @@ TOOL_CONTRACTS = {
                    'tools/background-chat-text-gate.py', 'tools/test_background_chat_text_gate.py', 'tools/cache_qualification.py',
                    'research/background-chat-text-20261002/tools/vendor-profile.toml'],
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_background_chat_text_gate.py', '9'],
-        'native': ['Pinned-artifact fresh OFF/ON identity and bare-default probes; paired real chat/text delivery beyond 90 seconds, tenant isolation, native-progress cancellation and exactly-one final callback'],
+        'native': ['Pinned-artifact fresh-boot sync/background identity and bare-default probes; paired real chat/text delivery beyond 90 seconds, tenant isolation, native-progress cancellation and exactly-one final callback'],
     },
     'sampled-mtp': {
         'presence': ['tools/collect-sampled-mtp.py', 'tools/test_collect_sampled_mtp.py',

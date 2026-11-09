@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 """Bounded native background endpoint acceptance under an inherited GPU lock.
 
-Build the background_accounting_gate example first. Run OFF and ON as paired arms.
+Build the background_accounting_gate example first. Background delivery has no switch.
 This observes endpoint behavior and accounting callbacks, not model qualification.
 """
-import argparse, hashlib, json, os, pathlib, signal, socket, subprocess, sys, threading, time, urllib.request, urllib.error
+import argparse, hashlib, json, os, pathlib, signal, socket, subprocess, threading, time, urllib.request, urllib.error
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--out', type=pathlib.Path, required=True)
 parser.add_argument('--binary', type=pathlib.Path, required=True)
 parser.add_argument('--model', type=pathlib.Path, required=True)
 parser.add_argument('--port', type=int, default=18130)
 parser.add_argument('--external-lock', type=int, required=True)
-parser.add_argument('--door-off', action='store_true')
 args = parser.parse_args()
 out = args.out
 out.mkdir(parents=True, exist_ok=True)
-door = '0' if args.door_off else '1'
 lock = pathlib.Path(os.environ['MEMRA_GPU_LOCK'])
 assert os.path.samefile(f'/proc/self/fd/{args.external_lock}', lock), 'inherited lock must match MEMRA_GPU_LOCK'
 with socket.socket() as probe:
@@ -30,10 +28,10 @@ def digest(p):
         for b in iter(lambda: f.read(1024 * 1024), b''):
             h.update(b)
     return h.hexdigest()
-manifest = {'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'diff_sha256': hashlib.sha256(subprocess.check_output(['git', 'diff', 'HEAD'])).hexdigest(), 'binary_sha256': digest(binary), 'model': str(model), 'model_sha256': digest(model), 'gpu': subprocess.check_output(['nvidia-smi', '--query-gpu=name,uuid,driver_version,memory.total', '--format=csv,noheader'], text=True), 'context': 32768, 'temperature': 0, 'cache': 'MEMRA_PREFIX_CACHE_MB=0', 'port': args.port, 'background_door': door}
+manifest = {'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'diff_sha256': hashlib.sha256(subprocess.check_output(['git', 'diff', 'HEAD'])).hexdigest(), 'binary_sha256': digest(binary), 'model': str(model), 'model_sha256': digest(model), 'gpu': subprocess.check_output(['nvidia-smi', '--query-gpu=name,uuid,driver_version,memory.total', '--format=csv,noheader'], text=True), 'context': 32768, 'temperature': 0, 'cache': 'MEMRA_PREFIX_CACHE_MB=0', 'port': args.port}
 (out / 'manifest.json').write_text(json.dumps(manifest, indent=2))
 env = {k: v for k, v in os.environ.items() if not k.startswith('MEMRA_') or k in {'MEMRA_GPU_LOCK', 'MEMRA_CI_LOCK', 'MEMRA_CI_LOCK_HELD', 'MEMRA_RIG_LOCK_FD'}}
-env.update(MEMRA_MODELS='q9=' + str(model), MEMRA_CTX='32768', MEMRA_ADDR=f'127.0.0.1:{args.port}', MEMRA_BACKGROUND_RESPONSES=door, MEMRA_PREFIX_CACHE_MB='0', MEMRA_API_KEYS='acme:' + hashlib.sha256(b'gate-owner').hexdigest() + ',blue:' + hashlib.sha256(b'gate-foreign').hexdigest())
+env.update(MEMRA_MODELS='q9=' + str(model), MEMRA_CTX='32768', MEMRA_ADDR=f'127.0.0.1:{args.port}', MEMRA_PREFIX_CACHE_MB='0', MEMRA_API_KEYS='acme:' + hashlib.sha256(b'gate-owner').hexdigest() + ',blue:' + hashlib.sha256(b'gate-foreign').hexdigest())
 ready = threading.Event()
 listening = threading.Event()
 settled = {}
@@ -87,11 +85,6 @@ try:
     status, sync = request('POST', '/v1/responses', short)
     assert status == 200 and sync['status'] == 'completed', (status, sync)
     status, short_bg = request('POST', '/v1/responses', dict(short, background=True))
-    if door == '0':
-        assert status == 400 and short_bg['error']['param'] == 'background', (status, short_bg)
-        (out / 'summary.json').write_text(json.dumps({'pass': True, 'door_off_refuses': True, 'synchronous_control': sync}, indent=2))
-        print('PASS door OFF refusal and synchronous control', flush=True)
-        sys.exit(0)
     assert status == 200 and short_bg['status'] == 'queued', (status, short_bg)
     short_id = short_bg['id']
     for sample in range(100):

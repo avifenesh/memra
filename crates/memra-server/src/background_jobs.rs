@@ -56,9 +56,6 @@ pub(crate) fn validate(value: &Value, stream: bool) -> Result<(), &'static str> 
         // default so an explicit null is distinguishable and refused.
         _ => return Err("background must be a boolean"),
     };
-    if background && !crate::responses_api::background_door_open() {
-        return Err("background delivery is disabled; MEMRA_BACKGROUND_RESPONSES is off");
-    }
     if background && stream {
         return Err("background and stream cannot both be true");
     }

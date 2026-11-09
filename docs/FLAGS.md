@@ -1640,6 +1640,32 @@ boundary. A gate that arms the M1 tensor-core or half2 down tail keeps precedenc
 `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail reference arm in one loaded model for
 the component test and the DSpark gate's historical arm.
 
+## Removed doors, 2026-11-09 (`MEMRA_BACKGROUND_RESPONSES`: the measured ON path is the only path)
+
+`MEMRA_BACKGROUND_RESPONSES` is no longer read. `background: true` on `/v1/responses`,
+`/v1/chat/completions` and `/v1/completions` is always accepted. Before, it was a named HTTP 400
+unless the switch was `1` or `true`. The decide-by date (2026-10-12) passed with two PASS
+receipts and no negative one:
+
+- `research/background-responses-20261002/RESULTS.md`, Responses on Qwen3.5-9B Q8_0 and one RTX
+  5090 Laptop GPU: a 600-item JSON result completed after 246.917 s and 18,001 tokens, a cancel
+  kept its 244-token prefix, five accepted requests settled exactly once, foreign tenants got 404.
+- `research/background-chat-text-20261002/RESULTS.md`, chat and text on two pinned Qwen3.5-9B
+  artifacts: background output equal to the synchronous or streaming reference, past 90 s on
+  Q8_0 (303.290 s chat, 412.057 s text), cancellation partials kept, 22 requests settled once.
+
+The switch had nothing to roll back. No launcher or deployment tool sets it; only the background
+gates turned it on. Background delivery is a per-request opt-in over the same worker stream as a
+synchronous request, so a request without `background: true` runs as before, and the choice is
+not keyed on a card. Deleted: the env read, the two refusals (`responses_api::translate` and
+`background_jobs::validate`), the door-OFF tests, the env lock those tests needed, and the OFF
+boots of `tools/background-responses-gate.py` and `tools/background-chat-text-gate.py`. The
+retention and capacity parameters stay as runtime parameters (the job store rows). The boot
+refuses the retired name (`[env-audit] REFUSED ... retired`): unset it. Research launchers that
+set it are receipts of their runs and need the name removed to run again. Decision:
+`docs/decisions/BACKGROUND-DELIVERY-DEFAULT.md`. History:
+[the row before removal](FLAGS-HISTORY.md#memra_background_responses).
+
 ## Removed doors, 2026-11-07 (DFlash restore doors folded into one switch)
 
 `MEMRA_DSPARK_PARTIAL_RESTORE` (the strict-prefix DFlash restore, lane/dspark-partial-restore
@@ -4066,11 +4092,11 @@ the additional one-card restriction described in [Release qualification](RELEASE
 Background results (#550, PR #910) use a tenant-scoped `JobStore`. The stock store
 is bounded and process-local; deployment binaries can replace it with
 `ServerWiring::with_job_store`. Responses, chat and text completion dialects have
-background routes. The switch remains default OFF.
+background routes. Background delivery has no switch since 2026-11-09 (Removed doors,
+2026-11-09); the two rows below are its runtime parameters.
 
 | flag | default | what it does |
 | --- | --- | --- |
-| `MEMRA_BACKGROUND_RESPONSES` | **OFF (unset), decide-by: 2026-10-12** | `1`/`true` enables boolean `background: true` on `/v1/responses`, `/v1/chat/completions` and `/v1/completions`; OFF refuses it explicitly. Background plus `stream: true` is refused. Normal tenant, budget, queue and model admission remains active; the synchronous feasibility/wire deadline does not bound background generation. Responses poll/cancel through `/v1/responses/{id}`; chat/text through `/v1/jobs/{id}`. Polling retains the original dialect result. Cancel closes the worker channel and publishes an explicit partial/cancelled result with one terminal receipt. Foreign tenant ids return 404; rotated keys within a tenant share access. `ServerWiring::with_job_store` remains deployment-owned; shared storage does not transfer live cancellation. The owner retains the retention/cap decision. Rollback: unset. Gate: `cargo test -p memra-server --lib -- background translate_refuses_stateful` (every test that takes `background_env_lock`, the setters and both `translate()` readers; `background_env_lock_takers_are_named_for_the_gate_filter` keeps their names inside this filter). Historical Responses receipt: `research/background-responses-20261002/RESULTS.md`. #914 records chat/text proof; #550 remains open. |
 | `MEMRA_BACKGROUND_JOB_TTL_SECS` | **900 (15 minutes after a job goes terminal), owner-tunable** | How long `job_store::InMemoryJobStore` keeps a finished job's buffered output before the lazy sweep evicts it. Read once per store construction; `0`, unset, empty, or unparsable falls back to the default. This is a conservative starting point the design doc explicitly left to the owner (COMPLETE-RESULT-PATH-V1.md, "Owed" item 4), not a measured number; the owner may change it at any time without a code change. Non-terminal (queued or in-progress) jobs are never TTL-evicted regardless of age. Rollback: unset restores 900. Gate: `cargo test -p memra-server job_store::tests::ttl_eviction_removes_finished_jobs_only`. |
 | `MEMRA_BACKGROUND_JOB_MAX_BYTES` | **67108864 (64 MiB total), owner-tunable** | Resident-byte cap across every job in `job_store::InMemoryJobStore`, terminal or not; a `put` that would push the store over the cap is refused with `JobStoreError::CapacityExceeded` rather than admitted and silently grown. `0`, unset, empty, or unparsable falls back to the default. Also a conservative placeholder, not a measured number (design doc "Owed" item 4); the owner may raise or lower it once the store is actually taking traffic. Rollback: unset restores 67108864. Gate: `cargo test -p memra-server job_store::tests::byte_cap_refuses_a_record_that_would_exceed_it`. |
 

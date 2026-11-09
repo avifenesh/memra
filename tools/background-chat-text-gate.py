@@ -67,7 +67,7 @@ def verify_progress(id,progress):
     require(progress and progress[0]['id']==id and progress[0]['completion_tokens']==32,'cancel lacked native progress')
 
 class Server:
-    def __init__(self,args,out,port,door=True,compat='native',context=32768,cache=False):
+    def __init__(self,args,out,port,compat='native',context=32768,cache=False):
         self.args,self.out,self.port=args,Path(out),port;self.out.mkdir(parents=True)
         self.base=f'http://127.0.0.1:{port}'
         self.cv=threading.Condition();self.receipts={};self.stored={};self.progress={};self.unsettled=[];self.lines=[]
@@ -75,7 +75,7 @@ class Server:
         self.keys={name:secrets.token_hex(24) for name in ['owner','rotated','foreign']}
         env={k:v for k,v in os.environ.items() if not k.startswith('MEMRA_') or k in {'MEMRA_GPU_LOCK','MEMRA_CI_LOCK','MEMRA_CI_LOCK_HELD','MEMRA_RIG_LOCK_FD'}}
         ring=','.join(('acme' if k!='foreign' else 'blue')+':'+hashlib.sha256(v.encode()).hexdigest() for k,v in self.keys.items())
-        env.update(MEMRA_MODELS='q9='+str(args.model.resolve()),MEMRA_CTX=str(context),MEMRA_ADDR=f'127.0.0.1:{port}',MEMRA_BACKGROUND_RESPONSES='1' if door else '0',MEMRA_PREFIX_CACHE_MB='2048' if cache else '0',MEMRA_REUSE_POOL='0',MEMRA_AFFINITY='0',MEMRA_API_KEYS=ring,MEMRA_COMPAT=compat,MEMRA_MODEL_METADATA=str(args.metadata.resolve()),MEMRA_SKEY_PROBE='1',MEMRA_DEBUG_SPEC='1')
+        env.update(MEMRA_MODELS='q9='+str(args.model.resolve()),MEMRA_CTX=str(context),MEMRA_ADDR=f'127.0.0.1:{port}',MEMRA_PREFIX_CACHE_MB='2048' if cache else '0',MEMRA_REUSE_POOL='0',MEMRA_AFFINITY='0',MEMRA_API_KEYS=ring,MEMRA_COMPAT=compat,MEMRA_MODEL_METADATA=str(args.metadata.resolve()),MEMRA_SKEY_PROBE='1',MEMRA_DEBUG_SPEC='1')
         self.env=env
         public={k:('fixture credentials omitted' if k=='MEMRA_API_KEYS' else v) for k,v in env.items() if k.startswith('MEMRA_')}
         (self.out/'environment.json').write_text(json.dumps(public,indent=2)+'\n')
@@ -207,10 +207,6 @@ def main(args):
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     summary=[]
     if args.phase=='short':
-        with Server(args,out/'off',args.port,door=False,context=context) as server:
-            for chat in [False,True]:
-                path='/v1/chat/completions' if chat else '/v1/completions'
-                status,value,_,_=server.request('POST',path,short_body(chat,True));require(status==400 and value['error']['param']=='background','OFF did not explicitly refuse')
         for compat,offset in [('native',1),('openai',2)]:
             with Server(args,out/compat,args.port+offset,compat=compat,context=context) as server:
                 for chat in ([False,True] if compat=='native' else [False]):

@@ -32,7 +32,7 @@ p.add_argument('--vision-kind', choices=('gemma', 'qwen'), default='gemma')
 p.add_argument('--context', type=int, default=8192)
 p.add_argument('--transport-only', action='store_true', help='No vision qualification; test HTTP controls with the text-only trunk')
 p.add_argument('--test-binary', type=Path)
-p.add_argument('--with-background', action='store_true', help='Exercise remote image admission with the background Responses switch enabled')
+p.add_argument('--with-background', action='store_true', help='Also exercise remote image admission through background Responses')
 a = p.parse_args()
 a.out.mkdir(parents=True, exist_ok=True)
 assert os.path.samefile(f'/proc/self/fd/{a.external_lock}', os.environ['MEMRA_GPU_LOCK'])
@@ -142,8 +142,6 @@ manifest = {'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text
 env = {k: v for k, v in os.environ.items() if not k.startswith('MEMRA_') or k in {'MEMRA_GPU_LOCK', 'MEMRA_CI_LOCK', 'MEMRA_CI_LOCK_HELD', 'MEMRA_RIG_LOCK_FD'}}
 env.update(MEMRA_MODELS='vision=' + str(a.model), MEMRA_GEMMA_VISION='1', MEMRA_GEMMA_MMPROJ=str(a.mmproj), MEMRA_CTX=str(a.context), MEMRA_ADDR=f'127.0.0.1:{a.server_port}', MEMRA_PREFIX_CACHE_MB='0', MEMRA_FETCH_URLS='0' if a.door_off else '1', MEMRA_FETCH_URLS_ALLOWED_HOSTS='127.0.0.1', MEMRA_API_KEY='image-gate-token')
 env['MEMRA_SPEC'] = '0'
-if a.with_background:
-    env['MEMRA_BACKGROUND_RESPONSES'] = '1'
 if a.vision_kind == 'qwen':
     env.pop('MEMRA_GEMMA_VISION', None)
     env.pop('MEMRA_GEMMA_MMPROJ', None)

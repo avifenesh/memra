@@ -2114,9 +2114,7 @@ struct AppState {
     /// always exists: the stock binary wires the in-memory reference implementation
     /// (`job_store::InMemoryJobStore::from_env`). A deployment can replace it through
     /// `ServerWiring::with_job_store`. Stored keys include authenticated tenant ownership.
-    /// Only reachable
-    /// when MEMRA_BACKGROUND_RESPONSES is on: with the door closed, `responses_api::translate`
-    /// refuses `background: true` before any handler touches this.
+    /// Reached only by a request that sets `background: true`.
     job_store: Arc<dyn metering::JobStore>,
     /// Per-job cancellation signal for a background job with a live task on a worker
     /// (memra#550). The spawned task holding that job's `EventReceiver` races this against
@@ -6740,7 +6738,7 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         // `?beta=true` query some clients append arrives here too.
         .route("/v1/messages", post(anthropic::messages_admitted))
         .route("/v1/responses", post(responses_api::responses_admitted))
-        // Background job poll/cancel (memra#550, MEMRA_BACKGROUND_RESPONSES): a plain
+        // Background job poll/cancel (memra#550): a plain
         // segment param is enough: job ids are `resp_<hex128>`, never contain a slash, unlike
         // the model-id wildcard above.
         .route("/v1/responses/:id", get(responses_api::poll_admitted))
@@ -25553,69 +25551,8 @@ temperature = 0.6
 
     // ---- background job route wiring (memra#550, docs/decisions/COMPLETE-RESULT-PATH-V1.md) --
 
-    /// Serializes every test that flips `MEMRA_BACKGROUND_RESPONSES`: the on-arm mutates
-    /// process-global env and the door-off tests would observe that mutation if they ran in
-    /// parallel. Same shape as `gate_env_lock`, a different flag. Most setters return with the
-    /// variable still set and acquiring the lock is what clears it, so every reader takes the lock,
-    /// not only one that runs beside a setter: `responses_api`'s tests that call `translate` (which
-    /// reads the variable) with `background: true` included.
-    static BACKGROUND_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// Every test that takes this lock carries `background` in its name (the one reader that does
-    /// not is `translate_refuses_stateful_features_with_clear_messages`), so the gate filter in
-    /// docs/FLAGS.md's `MEMRA_BACKGROUND_RESPONSES` row selects it; pinned by
-    /// `background_env_lock_takers_are_named_for_the_gate_filter`.
-    pub(crate) fn background_env_lock() -> std::sync::MutexGuard<'static, ()> {
-        let guard = BACKGROUND_ENV_LOCK.lock().unwrap_or_else(|poisoned| {
-            BACKGROUND_ENV_LOCK.clear_poison();
-            poisoned.into_inner()
-        });
-        unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
-        guard
-    }
-
-    /// docs/FLAGS.md's gate for `MEMRA_BACKGROUND_RESPONSES` filters on `background` and
-    /// `translate_refuses_stateful` (libtest matches substrings): every test that takes
-    /// `background_env_lock` must contain one of them, or the gate silently skips a setter or a
-    /// reader.
-    #[test]
-    fn background_env_lock_takers_are_named_for_the_gate_filter() {
-        let mut takers = Vec::new();
-        for src in [include_str!("lib.rs"), include_str!("responses_api.rs")] {
-            // The test a lock call belongs to: the fn after the last test attribute (a helper fn
-            // nested inside a test does not rename it).
-            let (mut name, mut attribute) = ("", false);
-            for line in src.lines() {
-                let code = line.trim_start();
-                if code.starts_with("#[test]") || code.starts_with("#[tokio::test") {
-                    attribute = true;
-                }
-                if let Some(rest) = code
-                    .strip_prefix("async fn ")
-                    .or_else(|| code.strip_prefix("fn "))
-                    && attribute
-                {
-                    name = rest.split('(').next().unwrap_or("");
-                    attribute = false;
-                }
-                if code.contains(concat!("background_env_lock", "()"))
-                    && !code.contains("fn background_env_lock")
-                {
-                    takers.push(name);
-                }
-            }
-        }
-        assert!(takers.len() >= 18, "found {} lock takers", takers.len());
-        for name in takers {
-            assert!(
-                name.contains("background") || name.contains("translate_refuses_stateful"),
-                "{name} takes background_env_lock but the FLAGS.md gate filter does not select it"
-            );
-        }
-    }
-
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // allow: existing drain/env guards serialize handler tests against global writers
+    #[allow(clippy::await_holding_lock)] // allow: the drain guard serializes handler tests against global writers
     async fn background_http_ack_is_separate_from_generation_and_polling() {
         use metering::{JobRecord, JobStore, JobStoreError, Metering, Receipt, UsageCounts};
         use tower::ServiceExt;
@@ -25750,8 +25687,6 @@ temperature = 0.6
                 .unwrap_or(0.0)
         }
         let _drain = drain_lock();
-        let _env = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
         for cancelled in [false, true] {
             let model = if cancelled {
                 "metrics-background-cancel"
@@ -25967,41 +25902,16 @@ temperature = 0.6
                 if cancelled { 1.0 } else { 2.0 }
             );
         }
-        unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
     }
 
-    /// Door OFF: a route-level `background: true` request refuses exactly like before this
-    /// lane, and never reaches the JobStore (no id is created, so a follow-up poll on any id
-    /// this request could plausibly have gotten is still a 404, not a stale record).
-    #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
-    async fn background_door_off_route_refuses_and_creates_no_job() {
-        let _env_lock = background_env_lock();
-        let st = fake_worker_state();
-        let resp = responses_api::responses(
-            State(st.clone()),
-            axum::http::HeaderMap::new(),
-            None,
-            axum::body::Bytes::from(
-                json!({"model": "m", "input": "hi", "background": true}).to_string(),
-            ),
-        )
-        .await;
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-        let body = body_value(resp).await;
-        assert_eq!(body["error"]["param"], "background");
-    }
-
-    /// Door ON: `background: true` is admitted, answers immediately with a queued envelope
+    /// `background: true` is admitted, answers immediately with a queued envelope
     /// carrying the request id, and the worker's actual output later shows up on `GET
     /// /v1/responses/{id}`, the same accumulator a synchronous call would have rendered,
     /// never a resummarized answer.
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    #[allow(clippy::await_holding_lock)] // allow: drain_lock serializes handler tests against global writers; holding it across awaits is the point
     async fn background_submit_returns_queued_then_poll_reaches_completed() {
         let _l = drain_lock();
-        let _env_lock = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
 
         let st = fake_worker_state_with_steps(3, std::time::Duration::from_millis(2));
         let resp = responses_api::responses(
@@ -26066,11 +25976,9 @@ temperature = 0.6
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // allow: shared drain/env controls must remain held through handler awaits
+    #[allow(clippy::await_holding_lock)] // allow: the shared drain control must remain held through handler awaits
     async fn background_tenant_isolation_on_submit_poll_and_cancel() {
         let _l = drain_lock();
-        let _env_lock = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
         let mut st = fake_worker_state_with_steps(100, std::time::Duration::from_millis(2));
         let spec = format!(
             "acme:{},acme:{},blue:{}",
@@ -26204,11 +26112,9 @@ temperature = 0.6
     /// A cancel after the job already completed is refused (409), not a silent no-op: the
     /// caller must be able to tell "too late, it already finished" from "cancelled".
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    #[allow(clippy::await_holding_lock)] // allow: drain_lock serializes handler tests against global writers; holding it across awaits is the point
     async fn background_cancel_after_completion_is_conflict_not_a_silent_noop() {
         let _l = drain_lock();
-        let _env_lock = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
 
         let st = fake_worker_state_with_steps(1, std::time::Duration::ZERO);
         let resp = responses_api::responses(
@@ -26265,11 +26171,9 @@ temperature = 0.6
     /// `complete` and never left unfinalized on `Drop`), and the store carries the partial
     /// text under `status: "cancelled"`.
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    #[allow(clippy::await_holding_lock)] // allow: drain_lock serializes handler tests against global writers; holding it across awaits is the point
     async fn background_cancel_mid_run_stops_the_worker_and_writes_one_cancelled_row() {
         let _l = drain_lock();
-        let _env_lock = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
 
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
         let health = health::WorkerHealth::new();
@@ -26402,11 +26306,9 @@ temperature = 0.6
     /// answer an empty output while the receipt billed every token; a held partial tag
     /// went the same way. The cancel arm now flushes the parser as the Done arm does.
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    #[allow(clippy::await_holding_lock)] // allow: drain_lock serializes handler tests against global writers; holding it across awaits is the point
     async fn background_cancel_mid_run_delivers_the_gemma_opening_the_parser_held() {
         let _l = drain_lock();
-        let _env_lock = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
 
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
         let health = health::WorkerHealth::new();
@@ -26534,10 +26436,9 @@ temperature = 0.6
     /// refused at SUBMIT, before any worker time is spent, with the same 503 shape a deployment
     /// can already recognize by its `code`.
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    #[allow(clippy::await_holding_lock)] // allow: drain_lock serializes handler tests against global writers; holding it across awaits is the point
     async fn background_byte_cap_refuses_submission_before_any_worker_time_is_spent() {
-        let _env_lock = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+        let _l = drain_lock();
 
         let mut st = fake_worker_state();
         // Tight enough that the Queued placeholder itself does not fit.
@@ -26586,11 +26487,9 @@ temperature = 0.6
     /// (which `Drop` would price as an abandoned client) and must not answer the job
     /// `Completed` when it was never actually billed.
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    #[allow(clippy::await_holding_lock)] // allow: drain_lock serializes handler tests against global writers; holding it across awaits is the point
     async fn background_complete_ledger_failure_rejects_the_receipt_and_fails_the_job() {
         let _l = drain_lock();
-        let _env_lock = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
 
         struct FailCompleteReceipt {
             events: Arc<std::sync::Mutex<Vec<&'static str>>>,
@@ -26718,11 +26617,9 @@ temperature = 0.6
     /// TTL-evicted). `finalize_terminal_job`'s fallback must land a small `Failed` record
     /// instead, so the job still reaches a terminal, pollable state.
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    #[allow(clippy::await_holding_lock)] // allow: drain_lock serializes handler tests against global writers; holding it across awaits is the point
     async fn background_terminal_write_the_byte_cap_refuses_falls_back_to_failed_not_stuck() {
         let _l = drain_lock();
-        let _env_lock = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
 
         let mut st = fake_worker_state_with_steps(50, std::time::Duration::from_millis(1));
         let mock = MockMetering::admit_all();
@@ -26823,11 +26720,9 @@ temperature = 0.6
     /// the 60 tok/s decode floor estimates ~3333 s, which does not fit the default 90 s
     /// deadline even at the gate's 150% margin: infeasible under the OLD code path.
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    #[allow(clippy::await_holding_lock)] // allow: drain_lock serializes handler tests against global writers; holding it across awaits is the point
     async fn background_bypasses_the_nonstream_deadline_feasibility_gate() {
         let _l = drain_lock();
-        let _env_lock = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
 
         let st = fake_worker_state();
         let resp = responses_api::responses(
@@ -27018,10 +26913,9 @@ temperature = 0.6
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
     async fn background_chat_text_explicit_refusals_precede_generation() {
         let _drain = drain_lock();
-        let _env = background_env_lock();
         for chat in [false, true] {
             let (st, mock, _, rx) = bg914_fixture(None);
             let app = bg914_router(st.clone());
@@ -27030,17 +26924,6 @@ temperature = 0.6
             } else {
                 "/v1/completions"
             };
-            let response = bg914_http(
-                app.clone(),
-                "POST",
-                path,
-                Some("owner-key"),
-                bg914_body(chat),
-            )
-            .await;
-            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-            assert_eq!(body_value(response).await["error"]["param"], "background");
-            unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
             let mut body = bg914_body(chat);
             body["stream"] = json!(true);
             assert_eq!(
@@ -27063,16 +26946,13 @@ temperature = 0.6
             }
             assert!(rx.try_recv().is_err());
             assert!(mock.events().is_empty());
-            unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
         }
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
     async fn background_chat_text_complete_after_deadline_preserves_native_data_and_defaults() {
         let _drain = drain_lock();
-        let _env = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
         for chat in [false, true] {
             let (st, mock, _, rx) = bg914_fixture(None);
             let app = bg914_router(st.clone());
@@ -27182,11 +27062,9 @@ temperature = 0.6
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
     async fn background_chat_text_cancel_is_tenant_bound_and_retains_partial() {
         let _drain = drain_lock();
-        let _env = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
         for chat in [false, true] {
             for partial in [false, true] {
                 let (st, mock, progress, rx) = bg914_fixture(None);
@@ -27309,11 +27187,9 @@ temperature = 0.6
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
     async fn background_chat_text_worker_failures_remain_explicit_and_settle_once() {
         let _drain = drain_lock();
-        let _env = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
         for chat in [false, true] {
             for close in [false, true] {
                 let (st, mock, _, rx) = bg914_fixture(None);
@@ -27362,11 +27238,9 @@ temperature = 0.6
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
     async fn background_chat_text_oversized_worker_errors_are_bounded_and_unbilled() {
         let _drain = drain_lock();
-        let _env = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
         for chat in [false, true] {
             let (st, mock, _, rx) = bg914_fixture(Some(1024));
             let app = bg914_router(st.clone());
@@ -27460,11 +27334,9 @@ temperature = 0.6
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
     async fn background_chat_text_storage_refusal_and_terminal_fallback_are_settled() {
         let _drain = drain_lock();
-        let _env = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
         for chat in [false, true] {
             for cap in [8, 256] {
                 let (st, mock, _, rx) = bg914_fixture(Some(cap));
@@ -27541,10 +27413,9 @@ temperature = 0.6
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // shared drain/env guards serialize real handlers
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
     async fn background_chat_text_synchronous_deadline_control_still_delivers_explicit_partial() {
         let _drain = drain_lock();
-        let _env = background_env_lock();
         for chat in [false, true] {
             let (st, mock, progress, rx) = bg914_fixture(None);
             let app = bg914_router(st);
@@ -27601,11 +27472,9 @@ temperature = 0.6
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // existing drain/env guards serialize real HTTP ingress against global writers
+    #[allow(clippy::await_holding_lock)] // the drain guard serializes real HTTP ingress against global writers
     async fn choice_background_combination_refuses_before_worker_or_receipt() {
         let _drain = drain_lock();
-        let _env = background_env_lock();
-        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
         for chat in [false, true] {
             let (mut state, mock, _, rx) = bg914_fixture(None);
             state.caps = Arc::new(HashMap::from([(
@@ -27643,7 +27512,6 @@ temperature = 0.6
                 assert!(state.background_cancel.lock().unwrap().is_empty());
             }
         }
-        unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
     }
 
     #[tokio::test]

@@ -7,6 +7,11 @@ wiring lane (memra#550), the `JobStore`, its reference implementation, and the
 `GET`/`POST /v1/responses/{id}` routes exist and are wired; a GPU box run and the owner's
 TTL/byte-cap call remain outstanding.
 
+**Update, 2026-11-09:** background delivery has no switch. `MEMRA_BACKGROUND_RESPONSES` is
+deleted and `background: true` is always accepted on all three routes
+([BACKGROUND-DELIVERY-DEFAULT.md](BACKGROUND-DELIVERY-DEFAULT.md)). The owner's TTL/byte-cap
+call (Owed item 4) is still open.
+
 **Original status line:** interface frozen, design only. Nothing in this document is
 built, wired, or gated. Issue: `avifenesh/memra#550`. Scope: a supported way for a request
 whose valid workload cannot finish inside the synchronous non-streaming deadline to
@@ -171,7 +176,8 @@ rather than hardwiring storage into the handler:
    `ServerWiring::with_job_store`. Shared results do not transfer live cancellation
    across processes; that routing remains deployment-owned.
 2. DONE (PR #905): `MEMRA_BACKGROUND_RESPONSES`, `MEMRA_BACKGROUND_JOB_TTL_SECS`, and
-   `MEMRA_BACKGROUND_JOB_MAX_BYTES`, all in `docs/FLAGS.md`.
+   `MEMRA_BACKGROUND_JOB_MAX_BYTES`, all in `docs/FLAGS.md`. The first was deleted on
+   2026-11-09 (BACKGROUND-DELIVERY-DEFAULT.md); the other two remain.
 3. DONE for the named local scope: the native endpoint run in
    `research/background-responses-20261002/RESULTS.md` covers completion beyond 90 s,
    cancellation, tenant isolation and terminal accounting on Qwen3.5-9B Q8_0 and one

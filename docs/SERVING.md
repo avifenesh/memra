@@ -1192,8 +1192,9 @@ billed. Everything that is OUR fault bills zero (the census below).
 
 ### Background delivery for long non-streaming requests (`background: true`)
 
-`MEMRA_BACKGROUND_RESPONSES` (default OFF) enables background delivery on
-`POST /v1/responses`, `POST /v1/chat/completions` and `POST /v1/completions`.
+Background delivery is a per-request opt-in on `POST /v1/responses`,
+`POST /v1/chat/completions` and `POST /v1/completions`; it has no server switch
+(`MEMRA_BACKGROUND_RESPONSES` was removed on 2026-11-09, `docs/FLAGS.md`).
 Set `background: true` and omit `stream` or set it to false. The response returns
 `status: "queued"` with the original request id. Poll `GET /v1/responses/{id}`
 for the original output. Terminal states are `completed`, `incomplete`, `cancelled`
@@ -1202,8 +1203,8 @@ and `failed`; an output-token or context limit remains an explicit incomplete re
 Background requests keep normal authentication, budget, capacity, queue and model
 limits. They bypass synchronous deadline feasibility and have no wire deadline or
 90-second wall-clock limit. `timeout_ms` does not limit background generation.
-`stream: true` together with `background: true` is a 400. The default-OFF control
-still refuses background requests before job creation.
+`stream: true` together with `background: true` is a 400. A request that omits
+`background` or sets it to false keeps the synchronous path.
 
 Poll and cancel resolve the authenticated tenant on every request. A different tenant
 gets the same 404 as an unknown or expired id, including after the job finishes.

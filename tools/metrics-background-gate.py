@@ -13,7 +13,7 @@ def sha(path):
 (a.out/'identity.json').write_text(json.dumps({'source':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'source_diff_sha256':hashlib.sha256(subprocess.check_output(['git','diff','HEAD','--binary'])).hexdigest(),'binary_sha256':sha(a.binary),'model_sha256':sha(a.model),'driver_sha256':sha(__file__),'model_bytes':a.model.stat().st_size,'context':8192,'sampling':'explicit temperature 0','cache':'disabled; reuse and affinity disabled','external_lock':a.external_lock},indent=2))
 api,operator=secrets.token_hex(24),secrets.token_hex(24);model='metrics-bg';base=f'http://127.0.0.1:{a.port}'
 env={k:v for k,v in os.environ.items() if not k.startswith('MEMRA_') or k in {'MEMRA_GPU_LOCK','MEMRA_CI_LOCK','MEMRA_CI_LOCK_HELD','MEMRA_RIG_LOCK_FD'}}
-env.update(MEMRA_MODELS=model+'='+str(a.model.resolve()),MEMRA_ADDR=f'127.0.0.1:{a.port}',MEMRA_CTX='8192',MEMRA_MAX_SESSIONS='1',MEMRA_PREFIX_CACHE_MB='0',MEMRA_REUSE_POOL='0',MEMRA_AFFINITY='0',MEMRA_BACKGROUND_RESPONSES='1',MEMRA_API_KEY=api,MEMRA_METRICS_TOKEN=operator)
+env.update(MEMRA_MODELS=model+'='+str(a.model.resolve()),MEMRA_ADDR=f'127.0.0.1:{a.port}',MEMRA_CTX='8192',MEMRA_MAX_SESSIONS='1',MEMRA_PREFIX_CACHE_MB='0',MEMRA_REUSE_POOL='0',MEMRA_AFFINITY='0',MEMRA_API_KEY=api,MEMRA_METRICS_TOKEN=operator)
 (a.out/'environment.json').write_text(json.dumps({k:('fixture credential omitted' if k in {'MEMRA_API_KEY','MEMRA_METRICS_TOKEN'} else v) for k,v in env.items() if k.startswith('MEMRA_')},indent=2))
 condition=threading.Condition();records={};progress=set();stored={};unsettled=[];listening=False;ended=False
 log=open(a.out/'server.log','w');telemetry=open(a.out/'gpu-250ms.csv','w')
