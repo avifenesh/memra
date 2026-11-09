@@ -371,6 +371,15 @@ pub mod ffi {
             rows: i32,
             stream: *mut c_void,
         ) -> i32;
+        /// Instruction ceilings (measurement, `dsv41-bench ceil`).
+        pub fn memra_v41_peak(
+            kind: i32,
+            blocks: i32,
+            threads: i32,
+            iters: i32,
+            out: *mut f32,
+            stream: *mut c_void,
+        ) -> i32;
     }
 }
 
@@ -1749,6 +1758,9 @@ pub struct Ctx {
     /// each rank a contiguous range and gathers the selection rows (`dsv41_gpu::tp`); the
     /// selection is per row, so the split never changes a result
     pub index_rows: Option<std::ops::Range<usize>>,
+    /// NVTX ranges around each op (set by `dsv41-bench --nvtx` for an nsys profile; off, the
+    /// range calls are skipped)
+    pub nvtx: bool,
 }
 
 impl Ctx {
@@ -1783,7 +1795,21 @@ impl Ctx {
             max_pos,
             chunk: 8192,
             index_rows: None,
+            nvtx: false,
         })
+    }
+
+    /// Open an NVTX range (profiling only; a no-op unless `nvtx` is set).
+    pub fn nv(&self, name: &'static std::ffi::CStr) {
+        if self.nvtx {
+            unsafe { crate::dsv4_ffi::memra_dsv4_nvtx_push(name.as_ptr()) };
+        }
+    }
+    /// Close the innermost NVTX range opened by [`Self::nv`].
+    pub fn nv_end(&self) {
+        if self.nvtx {
+            unsafe { crate::dsv4_ffi::memra_dsv4_nvtx_pop() };
+        }
     }
 
     /// One prefill row of the window selection (vendor `get_window_topk_idxs`, start_pos 0): the
@@ -1829,6 +1855,7 @@ impl Ctx {
             ));
         }
         let c = self.chunk.min(s).max(1);
+        self.nv(c"engram");
         if self.stage.as_ref().is_none_or(|x| x.cap < c * cols) {
             self.stage = Some(engram::Stage::new(&self.ops, (c * cols).max(4096), hd)?);
         }
@@ -1886,6 +1913,7 @@ impl Ctx {
             // the staging buffers are refilled next chunk: the copies and kernels must be done
             self.ops.sync()?;
         }
+        self.nv_end();
         if self.trace {
             tr.engram_out = Some(clone_buf(&self.ops, h)?);
         }
@@ -1976,6 +2004,7 @@ impl Ctx {
             .as_ref()
             .ok_or("indexer: no index keys from a kv source")?;
         let qd = g.index_heads * g.index_dim;
+        self.nv(c"index_q");
         let q = self.ops.buf(rows * qd * 2)?;
         self.ops.linear_q(
             qr.at(&st, r0 * g.q_lora * 2),
@@ -2011,6 +2040,8 @@ impl Ctx {
         )?;
         // the kernel applies weights * (index_head_dim^-0.5 * index_heads^-0.5) as a bf16 product
         let wscale = ((g.index_dim as f64).powf(-0.5) * (g.index_heads as f64).powf(-0.5)) as f32;
+        self.nv_end();
+        self.nv(c"index_score");
         let score = self.ops.buf(rows * n_c * 2)?;
         let (cand, ldc) = if lw.uses_cand {
             let c = sh.cand.as_ref().ok_or("indexer: candidate pool missing")?;
@@ -2038,7 +2069,9 @@ impl Ctx {
                 self.ops.sv(),
             )
         })?;
+        self.nv_end();
         if lw.cand_source {
+            self.nv(c"candidates");
             let keep = sh
                 .cand
                 .as_ref()
@@ -2058,7 +2091,9 @@ impl Ctx {
                     self.ops.sv(),
                 )
             })?;
+            self.nv_end();
         }
+        self.nv(c"topk");
         let tw = sh.topk_w;
         let out = sh.topk.as_ref().ok_or("indexer: selection not allocated")?;
         ck("topk", unsafe {
@@ -2075,6 +2110,7 @@ impl Ctx {
                 self.ops.sv(),
             )
         })?;
+        self.nv_end();
         Ok(())
     }
 
@@ -2189,7 +2225,9 @@ impl Ctx {
     ) -> Result<Buf, String> {
         let g = self.g.clone();
         let st = self.ops.st.clone();
+        self.nv(c"attn_keys");
         let k = self.attn_keys(lw, x, sp, s, sh, ls, tr)?;
+        self.nv_end();
         let qdim = lw.heads_l * g.head_dim;
         let c = self.chunk.min(s).max(1);
         let out = self.ops.buf(s * g.dim * 2)?;
@@ -2223,7 +2261,9 @@ impl Ctx {
                 g.dim,
             )?;
             // the host index rows are rebuilt next chunk
+            self.nv(c"attn_sync");
             self.ops.sync()?;
+            self.nv_end();
         }
         Ok(out)
     }
@@ -2251,6 +2291,7 @@ impl Ctx {
         if sp > 0 && s != 1 {
             return Err("attention: chunked decode is not implemented".into());
         }
+        self.nv(c"qr");
         let qr = self.ops.buf(s * g.q_lora * 2)?;
         self.ops.linear_q(
             x.p(&st),
@@ -2272,7 +2313,9 @@ impl Ctx {
             g.q_lora,
             g.norm_eps,
         )?;
+        self.nv_end();
         // this call's window KV: kv_norm(wkv(x)), RoPE, fp8 per-32 quant-dequant
+        self.nv(c"kv_window");
         let kvw = self.ops.buf(s * hd * 2)?;
         self.ops.linear_q(
             x.p(&st),
@@ -2335,10 +2378,14 @@ impl Ctx {
             copy_d2d(&self.ops, ring, 0, &kv_all, 0, win * hd * 2)?;
         }
         drop(kvw);
+        self.nv_end();
         let c = self.chunk.min(s).max(1);
         if ratio > 0 {
             let latent = if lw.kv_source {
-                self.compressor(lw, x, sp, s, ls)?
+                self.nv(c"compressor");
+                let l = self.compressor(lw, x, sp, s, ls)?;
+                self.nv_end();
+                l
             } else {
                 None
             };
@@ -2354,7 +2401,9 @@ impl Ctx {
                     sh.topk_w = 0;
                 } else {
                     if let Some((lat, row0, nrows)) = latent.as_ref() {
+                        self.nv(c"index_keys");
                         self.index_keys(lw, lat, *row0, *nrows, sh)?;
+                        self.nv_end();
                     }
                     let tw = g.index_topk.min(n_c);
                     sh.topk = Some(self.ops.buf(s * tw * 4)?);
@@ -2371,6 +2420,7 @@ impl Ctx {
                     }
                 }
             }
+            self.nv(c"kv_append");
             if let Some((lat, row0, nrows)) = latent {
                 self.ops.rope(
                     lat.p(&st),
@@ -2415,6 +2465,7 @@ impl Ctx {
                 }
                 copy_d2d(&self.ops, ckv, 0, &kv_all, win_rows * hd * 2, n_c * hd * 2)?;
             }
+            self.nv_end();
         }
         let tw = if ratio > 0 && n_c > 0 { sh.topk_w } else { 0 };
         let tot = ww + tw;
@@ -2461,6 +2512,7 @@ impl Ctx {
         let gk = g.heads * hd / g.o_groups; // 4096 inputs per group
         let scale = (hd as f64).powf(-0.5) as f32;
         let (ww, tw, tot, win) = (k.ww, k.tw, k.tot, k.win);
+        self.nv(c"q_b");
         self.ops.linear_q(
             k.qr.at(&st, r0 * g.q_lora * 2),
             g.q_lora,
@@ -2486,7 +2538,9 @@ impl Ctx {
             1,
             false,
         )?;
+        self.nv_end();
         // index rows: the window part from the host, the compressed part from the selection
+        self.nv(c"attn_idx_rows");
         let mut idx_host = vec![-1i32; rows * tot];
         for i in 0..rows {
             let row = &mut idx_host[i * tot..i * tot + ww];
@@ -2518,6 +2572,8 @@ impl Ctx {
                 rows,
             )?;
         }
+        self.nv_end();
+        self.nv(c"sparse_attn");
         self.ops.sparse_attn(
             q.p(&st),
             qdim,
@@ -2532,6 +2588,7 @@ impl Ctx {
             rows,
             heads,
         )?;
+        self.nv_end();
         if self.trace && single {
             tr.qr = Some(clone_buf(&self.ops, &k.qr)?);
             tr.q = Some(clone_buf(&self.ops, q)?);
@@ -2539,6 +2596,7 @@ impl Ctx {
             tr.idx_all = Some(clone_buf(&self.ops, &idx)?);
             tr.attn_o = Some(clone_buf(&self.ops, o)?);
         }
+        self.nv(c"wo_a");
         self.ops.rope(
             o.p(&st),
             qdim,
@@ -2571,6 +2629,7 @@ impl Ctx {
             gk,
             lw.groups_l,
         )?;
+        self.nv_end();
         Ok(())
     }
 
@@ -2585,7 +2644,8 @@ impl Ctx {
         out: Dp,
         ldc: usize,
     ) -> Result<(), String> {
-        self.ops.linear_q(
+        self.nv(c"wo_b");
+        let r = self.ops.linear_q(
             oa,
             oa_ld,
             rows,
@@ -2594,7 +2654,9 @@ impl Ctx {
             ldc,
             false,
             &mut self.scr,
-        )
+        );
+        self.nv_end();
+        r
     }
 
     /// MoE (vendor `MoE.forward`): the sqrtsoftplus gate with its selection bias, routed MXFP4
@@ -2603,6 +2665,7 @@ impl Ctx {
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let ne = g.n_experts;
+        self.nv(c"router");
         let raw = self.ops.buf(s * ne * 4)?;
         self.ops
             .linear_bf16(x, g.dim, s, &lw.gate_w, raw.p(&st), ne, true)?;
@@ -2623,6 +2686,8 @@ impl Ctx {
                 self.ops.sv(),
             )
         })?;
+        self.nv_end();
+        self.nv(c"moe_plan");
         let sel_h = bytes_i32(&sel.host(&st)?);
         let selw_h = bytes_f32(&selw.host(&st)?);
         let mut rows_of: Vec<Vec<(i32, f32)>> = vec![Vec::new(); ne];
@@ -2639,6 +2704,8 @@ impl Ctx {
             tr.route_sel.extend_from_slice(&sel_h);
             tr.route_w.extend_from_slice(&selw_h);
         }
+        self.nv_end();
+        self.nv(c"experts");
         let y = self.ops.buf(s * g.dim * 4)?;
         let inter = g.moe_inter;
         let maxn = rows_of.iter().map(|v| v.len()).max().unwrap_or(0).max(s);
@@ -2703,6 +2770,8 @@ impl Ctx {
             // the per-expert index and weight buffers must outlive their kernels
             self.ops.sync()?;
         }
+        self.nv_end();
+        self.nv(c"shared_expert");
         let [s1, s2, s3] = &lw.shared;
         self.ops
             .linear_q(x, g.dim, s, s1, gb.p(&st), inter, false, &mut self.scr)?;
@@ -2741,7 +2810,11 @@ impl Ctx {
                 self.ops.sv(),
             )
         })?;
-        self.ops.sync()
+        self.nv_end();
+        self.nv(c"moe_sync");
+        let r = self.ops.sync();
+        self.nv_end();
+        r
     }
 
     /// Single-pass mHC mixes of the stream `x` `[s][hc][dim]`: `(mixes, pre, post, comb)`.
@@ -2861,18 +2934,22 @@ impl Ctx {
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let d = g.dim;
+        self.nv(c"hc_attn_pre");
         let (amix, a_pre, a_post, a_comb) =
             self.hc_mix(&lw.hc_attn_fn, &lw.hc_attn_scale, &lw.hc_attn_base, h, s)?;
         let x = self.hc_pre_norm(h, pre_mix, &lw.attn_norm, s)?;
+        self.nv_end();
         if self.trace {
             tr.attn_mix = Some(amix);
             tr.attn_in = Some(clone_buf(&self.ops, &x)?);
         }
         let a = self.attention(lw, &x, sp, s, sh, ls, tr)?;
+        self.nv(c"hc_ffn_pre");
         let h1 = self.hc_post(&a, h, &a_post, &a_comb, s)?;
         let (_fmix, f_pre, f_post, f_comb) =
             self.hc_mix(&lw.hc_ffn_fn, &lw.hc_ffn_scale, &lw.hc_ffn_base, &h1, s)?;
         let x2 = self.hc_pre_norm(&h1, &a_pre, &lw.ffn_norm, s)?;
+        self.nv_end();
         // the MoE runs `chunk` tokens at a time: each token's experts still add in ascending id order
         let m = self.ops.buf(s * d * 2)?;
         // larger slices here: the per-expert loop runs once per slice
@@ -2881,14 +2958,18 @@ impl Ctx {
             let rows = cm.min(s - r0);
             self.moe(lw, x2.at(&st, r0 * d * 2), rows, m.at(&st, r0 * d * 2), tr)?;
         }
+        self.nv(c"hc_post");
         let h2 = self.hc_post(&m, &h1, &f_post, &f_comb, s)?;
+        self.nv_end();
         if self.trace {
             tr.attn_out = Some(a);
             tr.mid = Some(h1);
             tr.moe_in = Some(x2);
             tr.moe_out = Some(m);
         }
+        self.nv(c"block_sync");
         self.ops.sync()?;
+        self.nv_end();
         Ok((h2, f_pre))
     }
 }

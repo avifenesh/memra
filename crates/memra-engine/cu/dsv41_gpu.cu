@@ -1628,3 +1628,89 @@ extern "C" int memra_v41_cast(const void* x, void* y, long n, int to_f32, void* 
     else v41_f2bf_kernel<<<b, 256, 0, (cudaStream_t)stream>>>((const float*)x, (v41_bf*)y, n);
     V41_ERR();
 }
+
+// ---------------------------------------------------------------------------------------------
+// Instruction ceilings (measurement only, `dsv41-bench ceil`): `iters` rounds per warp on register
+// operands with no memory traffic in the loop; every result escapes through `out`.
+//   0: four independent e4m3 m16n8k32 MMAs accumulating (the tensor pipe's e4m3 rate)
+//   1: four e4m3 MMAs from zero, each scaled into its own accumulator as the GEMMs do
+//      (acc + (d * sa) * sb): the reference per-32-block schedule's instruction mix
+//   2: the same with one fused multiply-add per element (acc = fma(d, s, acc))
+//   3: four independent bf16 m16n8k16 MMAs accumulating
+//   4: eight independent fp32 fma chains per thread
+
+__device__ __forceinline__ void v41_mma_e4m3_acc(float c[4], const uint32_t a[4], uint32_t b0, uint32_t b1) {
+    asm volatile(
+        "mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, "
+        "{%0,%1,%2,%3};\n"
+        : "+f"(c[0]), "+f"(c[1]), "+f"(c[2]), "+f"(c[3])
+        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
+}
+
+template <int KIND>
+__global__ void v41_peak_kernel(int iters, float* __restrict__ out) {
+    int lane = threadIdx.x & 31;
+    uint32_t a[4];
+#pragma unroll
+    for (int i = 0; i < 4; ++i) a[i] = 0x38383838u ^ ((uint32_t)(threadIdx.x + i) & 0x07070707u);
+    uint32_t b0 = 0x30303030u ^ (uint32_t)(lane & 7), b1 = 0x34343434u ^ (uint32_t)(lane & 3);
+    float acc[4][4];
+#pragma unroll
+    for (int j = 0; j < 4; ++j)
+#pragma unroll
+        for (int e = 0; e < 4; ++e) acc[j][e] = 0.f;
+    float sa = 1.0f + (float)(lane & 1), sb = 0.5f;
+    if (KIND == 0) {
+        for (int it = 0; it < iters; ++it)
+#pragma unroll
+            for (int j = 0; j < 4; ++j) v41_mma_e4m3_acc(acc[j], a, b0, b1);
+    } else if (KIND == 1 || KIND == 2) {
+        float s = __fmul_rn(sa, sb);
+        for (int it = 0; it < iters; ++it) {
+            float d[4][4];
+#pragma unroll
+            for (int j = 0; j < 4; ++j) v41_mma_e4m3(d[j], a, b0, b1);
+#pragma unroll
+            for (int j = 0; j < 4; ++j)
+#pragma unroll
+                for (int e = 0; e < 4; ++e) {
+                    if (KIND == 1) acc[j][e] = __fadd_rn(acc[j][e], __fmul_rn(__fmul_rn(d[j][e], sa), sb));
+                    else acc[j][e] = __fmaf_rn(d[j][e], s, acc[j][e]);
+                }
+        }
+    } else if (KIND == 3) {
+        for (int it = 0; it < iters; ++it)
+#pragma unroll
+            for (int j = 0; j < 4; ++j) v41_mma_bf16(acc[j], a, b0, b1);
+    } else {
+        float x[8];
+#pragma unroll
+        for (int j = 0; j < 8; ++j) x[j] = 1.0f + (float)j * 1e-3f + (float)lane * 1e-5f;
+        float y = 0.999f, z = 1e-3f;
+        for (int it = 0; it < iters; ++it)
+#pragma unroll
+            for (int j = 0; j < 8; ++j) x[j] = __fmaf_rn(x[j], y, z);
+#pragma unroll
+        for (int j = 0; j < 8; ++j) acc[j & 3][j >> 2] = x[j];
+    }
+    float t = 0.f;
+#pragma unroll
+    for (int j = 0; j < 4; ++j)
+#pragma unroll
+        for (int e = 0; e < 4; ++e) t = __fadd_rn(t, acc[j][e]);
+    out[(long)blockIdx.x * blockDim.x + threadIdx.x] = t;
+}
+
+extern "C" int memra_v41_peak(int kind, int blocks, int threads, int iters, float* out, void* stream) {
+    if (blocks <= 0 || threads <= 0 || threads % 32 || threads > 1024 || iters <= 0) return 41024;
+    cudaStream_t st = (cudaStream_t)stream;
+    switch (kind) {
+        case 0: v41_peak_kernel<0><<<blocks, threads, 0, st>>>(iters, out); break;
+        case 1: v41_peak_kernel<1><<<blocks, threads, 0, st>>>(iters, out); break;
+        case 2: v41_peak_kernel<2><<<blocks, threads, 0, st>>>(iters, out); break;
+        case 3: v41_peak_kernel<3><<<blocks, threads, 0, st>>>(iters, out); break;
+        case 4: v41_peak_kernel<4><<<blocks, threads, 0, st>>>(iters, out); break;
+        default: return 41024;
+    }
+    V41_ERR();
+}

@@ -460,6 +460,7 @@ impl Group {
         }
         let d = self.cx[0].g.dim;
         let (mut a_pre, mut a_post, mut a_comb, mut xs) = (vec![], vec![], vec![], vec![]);
+        self.cx[0].nv(c"hc_attn_pre");
         for r in 0..n {
             let c = &mut self.cx[r];
             let w = &lw[r];
@@ -470,10 +471,12 @@ impl Group {
             a_post.push(po);
             a_comb.push(co);
         }
+        self.cx[0].nv_end();
         let a = self.attention(lw, &xs, sp, s, sh, ls, tr)?;
         drop(xs);
         let (mut h1, mut f_pre, mut f_post, mut f_comb, mut x2) =
             (vec![], vec![], vec![], vec![], vec![]);
+        self.cx[0].nv(c"hc_ffn_pre");
         for r in 0..n {
             let c = &mut self.cx[r];
             let w = &lw[r];
@@ -486,6 +489,7 @@ impl Group {
             f_post.push(po);
             f_comb.push(co);
         }
+        self.cx[0].nv_end();
         let mut m = Vec::with_capacity(n);
         for c in &self.cx {
             m.push(c.ops.buf(s * d * 2)?);
@@ -496,16 +500,20 @@ impl Group {
             self.moe(lw, &x2, r0, rows, &m, tr)?;
         }
         let mut h2 = Vec::with_capacity(n);
+        self.cx[0].nv(c"hc_post");
         for r in 0..n {
             h2.push(self.cx[r].hc_post(&m[r], &h1[r], &f_post[r], &f_comb[r], s)?);
         }
+        self.cx[0].nv_end();
         if self.trace {
             for (r, (aa, mm)) in a.into_iter().zip(m).enumerate() {
                 tr[r].attn_out = Some(aa);
                 tr[r].moe_out = Some(mm);
             }
         }
+        self.cx[0].nv(c"block_sync");
         self.sync_all()?;
+        self.cx[0].nv_end();
         Ok((h2, f_pre))
     }
 
@@ -532,12 +540,14 @@ impl Group {
         let per = s.div_ceil(n);
         let span = |r: usize| (r * per).min(s)..((r + 1) * per).min(s);
         let mut keys: Vec<AttnKeys> = Vec::with_capacity(n);
+        self.cx[0].nv(c"attn_keys");
         for r in 0..n {
             self.cx[r].index_rows = split.then(|| span(r));
             let k = self.cx[r].attn_keys(&lw[r], &xs[r], sp, s, &mut sh[r], &mut ls[r], &mut tr[r]);
             self.cx[r].index_rows = None;
             keys.push(k?);
         }
+        self.cx[0].nv_end();
         if split && sh[0].topk.is_some() {
             let tw = sh[0].topk_w;
             let refs: Vec<&Buf> = sh.iter().map(|x| x.topk.as_ref().unwrap()).collect();
@@ -625,6 +635,7 @@ impl Group {
         let n = self.n();
         let g = self.cx[0].g.clone();
         let (ne, topk, d) = (g.n_experts, g.topk, g.dim);
+        self.cx[0].nv(c"router");
         let (sel_h, selw_h) = {
             let c = &mut self.cx[0];
             let st = c.ops.st.clone();
@@ -651,11 +662,14 @@ impl Group {
             })?;
             (bytes_i32(&sel.host(&st)?), bytes_f32(&selw.host(&st)?))
         };
+        self.cx[0].nv_end();
         if self.trace {
             tr[0].route_sel.extend_from_slice(&sel_h);
             tr[0].route_w.extend_from_slice(&selw_h);
         }
+        self.cx[0].nv(c"moe_plan");
         let plan = MoePlan::new(&sel_h, &selw_h, rows, topk, ne)?;
+        self.cx[0].nv_end();
         let np = plan.ptok.len();
         let mut slots = Vec::with_capacity(n);
         let mut shared_out = Vec::with_capacity(n);
@@ -668,14 +682,19 @@ impl Group {
             let x = x2[r].at(&st, r0 * d * 2);
             let sl = c.ops.buf(np * d * 2)?;
             if p1 > p0 {
+                c.nv(c"experts");
                 c.experts_grouped(&lw[r], x, &plan, er, sl.at(&st, p0 * d * 2))?;
+                c.nv_end();
             }
+            c.nv(c"shared_expert");
             shared_out.push(c.shared_expert(&lw[r], x, rows)?);
+            c.nv_end();
             slots.push(sl);
             blks.push(Blk::flat(p0 * d * 2, (p1 - p0) * d * 2));
         }
         let refs: Vec<&Buf> = slots.iter().collect();
         self.allgather(&refs, &blks)?;
+        self.cx[0].nv(c"combine");
         for r in 0..n {
             let c = &mut self.cx[r];
             let st = c.ops.st.clone();
@@ -696,8 +715,12 @@ impl Group {
                 )
             })?;
         }
+        self.cx[0].nv_end();
         // the plan's device copies and the slot buffers are freed next: drain before they go
-        self.sync_all()
+        self.cx[0].nv(c"moe_sync");
+        let r = self.sync_all();
+        self.cx[0].nv_end();
+        r
     }
 
     /// Logits of rows `[r0, r0 + rows)`: the collapse with the carried pre-mix and the final norm
