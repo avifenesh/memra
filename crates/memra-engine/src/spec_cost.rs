@@ -11,8 +11,11 @@
 //! - `plain_ms[B-1]`: one plain batched decode step over B sessions (B = 1..=P, P the model's
 //!   decode wave cap: 8 on a trunk without the exact-16 tier such as a MoE, 16, or 32 on the b32
 //!   tier), the serving tick's lean device-sampled step;
-//! - `round_overhead_ms`: what a speculative round costs a session beyond its verify forward
-//!   (drafting, accept walk, commit, host syncs), from a real session burst.
+//! - `round_overhead_ms` and `draft_step_ms`: what a speculative round costs a session beyond its
+//!   verify forward, split into a part every round pays (accept walk, commit, host syncs) and one
+//!   draft step, which a round at draft length k pays k times; fitted from real session bursts at
+//!   K=1 and K=3 (memra#1093: one K=3 figure charged K=3's drafting to every K and priced K=2
+//!   below K=3 on an RTX PRO 6000 where K=2 decodes 4-7% faster).
 //!
 //! Each table is measured at one fixed depth with the engine in the serving numeric class. Rows
 //! not measured directly are linearly interpolated between measured neighbours.
@@ -32,25 +35,66 @@ pub struct SpecCostTable {
     pub verify_ms: Vec<f64>,
     /// Plain batched decode step ms for B = 1..=P sessions (index B-1), P = the plain wave cap.
     pub plain_ms: Vec<f64>,
-    /// Per-session, per-round speculative cost beyond the verify forward (one session).
+    /// Per-session, per-round speculative cost beyond the verify forward and the draft steps
+    /// (one session).
     pub round_overhead_ms: f64,
-    /// The same per-session cost measured on a pooled lockstep cohort of `.0` sessions
-    /// (batched draft, shared verify), when the model pools. Between 1 and `.0` sessions the
-    /// gate interpolates; past `.0` it holds the cohort figure.
+    /// Per-session cost of one draft step (one session); a round at draft length k pays k.
+    pub draft_step_ms: f64,
+    /// The per-round cost beyond verify and drafting, per session, measured on a pooled lockstep
+    /// cohort of `.0` sessions (batched draft, shared verify), when the model pools. Between 1
+    /// and `.0` sessions the gate interpolates; past `.0` it holds the cohort figure.
     pub pooled_overhead_ms: Option<(usize, f64)>,
+    /// The per-session cost of one batched draft step on that cohort.
+    pub pooled_draft_step_ms: Option<f64>,
 }
 
 impl SpecCostTable {
-    /// Per-session round overhead at `n` lockstep sessions.
+    /// Per-session round overhead beyond verify and drafting at `n` lockstep sessions.
     pub fn overhead_at(&self, n: usize) -> f64 {
         match self.pooled_overhead_ms {
-            Some((m, o)) if n >= m => o,
-            Some((m, o)) if n > 1 => {
-                self.round_overhead_ms
-                    + (o - self.round_overhead_ms) * (n - 1) as f64 / (m - 1) as f64
-            }
-            _ => self.round_overhead_ms,
+            Some((m, o)) => interpolate_cohort(self.round_overhead_ms, o, m, n),
+            None => self.round_overhead_ms,
         }
+    }
+
+    /// Per-session cost of one draft step at `n` lockstep sessions.
+    pub fn draft_step_at(&self, n: usize) -> f64 {
+        match (self.pooled_overhead_ms, self.pooled_draft_step_ms) {
+            (Some((m, _)), Some(step)) => interpolate_cohort(self.draft_step_ms, step, m, n),
+            _ => self.draft_step_ms,
+        }
+    }
+
+    /// Per-session cost of one round beyond its verify forward at `n` lockstep sessions and
+    /// draft length `k`: the fixed part plus `k` draft steps.
+    pub fn round_cost_at(&self, n: usize, k: usize) -> f64 {
+        self.overhead_at(n) + k as f64 * self.draft_step_at(n)
+    }
+}
+
+/// `solo` at one session, `cohort` from `m` sessions on, linear between.
+fn interpolate_cohort(solo: f64, cohort: f64, m: usize, n: usize) -> f64 {
+    if n >= m {
+        cohort
+    } else if n > 1 {
+        solo + (cohort - solo) * (n - 1) as f64 / (m - 1) as f64
+    } else {
+        solo
+    }
+}
+
+/// Split the per-round cost beyond the verify, measured at K=1 (`o1`) and K=3 (`o3`), into the
+/// part every round pays and one draft step: `fixed + k * step` reproduces both measurements.
+/// A K=3 cost below K=1's (noise) prices no drafting; one above three times K=1's (a fixed part
+/// that would go negative) puts all of it in the draft steps, keeping the K=3 figure.
+pub fn split_round_overhead(o1: f64, o3: f64) -> (f64, f64) {
+    let (o1, o3) = (o1.max(0.0), o3.max(0.0));
+    let step = ((o3 - o1) / 2.0).max(0.0);
+    let fixed = o1 - step;
+    if fixed < 0.0 {
+        (0.0, o3 / 3.0)
+    } else {
+        (fixed, step)
     }
 }
 
@@ -353,18 +397,22 @@ impl HybridModel {
         }
         let verify_ms = interpolate_16(&verify);
         let plain_ms = interpolate_n(&plain, plain_cap);
-        // ---- per-round overhead beyond the verify, from a real session burst ----
-        let k = 3usize;
-        let mut sess = self.new_session(e, depth + 160)?;
-        let _ = self.generate_spec_session_sampled(e, &mut sess, &prompt(99), 8, k, None, None)?;
-        let before = sess.telemetry();
-        let t0 = Instant::now();
-        let _ = self.generate_spec_session_sampled(e, &mut sess, &[], 96, k, None, None)?;
-        let wall = t0.elapsed().as_secs_f64() * 1e3;
-        let rounds = sess.telemetry().delta_since(&before).rounds.max(1) as f64;
-        let round_overhead_ms = (wall / rounds - verify_ms[k]).max(0.0);
+        // ---- per-round cost beyond the verify, from real session bursts at K=1 and K=3 ----
+        let solo_round = |k: usize, salt: u32| -> Result<f64, Box<dyn std::error::Error>> {
+            let mut sess = self.new_session(e, depth + 160)?;
+            let _ =
+                self.generate_spec_session_sampled(e, &mut sess, &prompt(salt), 8, k, None, None)?;
+            let before = sess.telemetry();
+            let t0 = Instant::now();
+            let _ = self.generate_spec_session_sampled(e, &mut sess, &[], 96, k, None, None)?;
+            let wall = t0.elapsed().as_secs_f64() * 1e3;
+            let rounds = sess.telemetry().delta_since(&before).rounds.max(1) as f64;
+            Ok(wall / rounds - verify_ms[k])
+        };
+        let (round_overhead_ms, draft_step_ms) =
+            split_round_overhead(solo_round(1, 98)?, solo_round(3, 99)?);
         // ---- the same on a pooled lockstep cohort ----
-        let pooled_overhead_ms = if self.spec_pool_capable() {
+        let pooled_round = |k: usize, salt: u32| -> Result<f64, Box<dyn std::error::Error>> {
             let m = POOLED_OVERHEAD_COHORT;
             let mut sessions = Vec::with_capacity(m);
             for i in 0..m {
@@ -372,7 +420,7 @@ impl HybridModel {
                 let _ = self.generate_spec_session_sampled(
                     e,
                     &mut s,
-                    &prompt(200 + i as u32),
+                    &prompt(salt + i as u32),
                     8,
                     k,
                     None,
@@ -404,17 +452,22 @@ impl HybridModel {
                 .unwrap_or(1)
                 .max(1) as f64;
             let rows = (m * (k + 1)).min(16);
-            let per_session = (wall / rounds - verify_ms[rows - 1]) / m as f64;
-            Some((m, per_session.max(0.0)))
+            Ok((wall / rounds - verify_ms[rows - 1]) / m as f64)
+        };
+        let (pooled_overhead_ms, pooled_draft_step_ms) = if self.spec_pool_capable() {
+            let (fixed, step) = split_round_overhead(pooled_round(1, 300)?, pooled_round(3, 200)?);
+            (Some((POOLED_OVERHEAD_COHORT, fixed)), Some(step))
         } else {
-            None
+            (None, None)
         };
         Ok(SpecCostTable {
             depth,
             verify_ms,
             plain_ms,
             round_overhead_ms,
+            draft_step_ms,
             pooled_overhead_ms,
+            pooled_draft_step_ms,
         })
     }
 }
@@ -483,7 +536,9 @@ mod tests {
             verify_ms: vec![1.0; 16],
             plain_ms: vec![1.0; 16],
             round_overhead_ms: 4.0,
+            draft_step_ms: 0.0,
             pooled_overhead_ms: Some((4, 1.0)),
+            pooled_draft_step_ms: None,
         };
         assert_eq!(t.overhead_at(1), 4.0);
         assert_eq!(t.overhead_at(2), 3.0);
@@ -491,9 +546,38 @@ mod tests {
         assert_eq!(t.overhead_at(9), 1.0);
         let serial_only = super::SpecCostTable {
             pooled_overhead_ms: None,
-            ..t
+            ..t.clone()
         };
         assert_eq!(serial_only.overhead_at(8), 4.0);
+        // The draft step interpolates the same way, and a round pays one per draft position.
+        let stepped = super::SpecCostTable {
+            draft_step_ms: 1.0,
+            pooled_draft_step_ms: Some(0.4),
+            ..t
+        };
+        assert_eq!(stepped.draft_step_at(1), 1.0);
+        assert!((stepped.draft_step_at(2) - 0.8).abs() < 1e-12);
+        assert_eq!(stepped.draft_step_at(4), 0.4);
+        assert_eq!(stepped.round_cost_at(1, 3), 7.0);
+        assert!((stepped.round_cost_at(4, 2) - 1.8).abs() < 1e-12);
+    }
+
+    /// memra#1093: the per-round cost is fitted from bursts at K=1 and K=3, so each draft length
+    /// pays its own drafting. Both measurements are reproduced; noise never prices a negative part.
+    #[test]
+    fn the_round_cost_splits_into_a_fixed_part_and_draft_steps() {
+        let (fixed, step) = super::split_round_overhead(1.88, 3.84);
+        assert!((step - 0.98).abs() < 1e-12);
+        assert!((fixed - 0.90).abs() < 1e-12);
+        assert!((fixed + step - 1.88).abs() < 1e-12);
+        assert!((fixed + 3.0 * step - 3.84).abs() < 1e-12);
+        // K=3 below K=1 (noise): no drafting cost, the K=1 figure for every K.
+        assert_eq!(super::split_round_overhead(2.0, 1.5), (2.0, 0.0));
+        // K=3 above three times K=1: all of it is drafting, the K=3 figure kept.
+        let (fixed, step) = super::split_round_overhead(0.5, 3.0);
+        assert_eq!(fixed, 0.0);
+        assert!((3.0 * step - 3.0).abs() < 1e-12);
+        assert_eq!(super::split_round_overhead(-1.0, -1.0), (0.0, 0.0));
     }
 
     /// The calibration's plain table is measured at `plain_points(plain_cap)` and filled to

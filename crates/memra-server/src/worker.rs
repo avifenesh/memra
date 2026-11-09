@@ -7349,10 +7349,11 @@ fn spec_round_ms(
     } else {
         n as f64 * t.verify_ms[rows.min(16) - 1]
     };
+    // Each draft length pays its own drafting (memra#1093): the fixed part plus `k` draft steps.
     let overhead = if pooled {
-        t.overhead_at(n)
+        t.round_cost_at(n, k)
     } else {
-        t.round_overhead_ms
+        t.round_overhead_ms + k as f64 * t.draft_step_ms
     };
     verify + n as f64 * overhead
 }
@@ -34509,11 +34510,13 @@ fn run_spec_cost_calibration(
                 };
                 eprintln!(
                     "[spec-cost] model={name:?} depth={} pooled={pooled} plain_cap={plain_cap} \
-                     round_overhead={:.2}ms pooled_overhead={:?} verify_ms[1..16]=[{}] \
-                     plain_ms[1..]=[{}] ({:.1}s)",
+                     round_overhead={:.2}ms draft_step={:.2}ms pooled_overhead={:?} \
+                     pooled_draft_step={:?} verify_ms[1..16]=[{}] plain_ms[1..]=[{}] ({:.1}s)",
                     table.depth,
                     table.round_overhead_ms,
+                    table.draft_step_ms,
                     table.pooled_overhead_ms,
+                    table.pooled_draft_step_ms,
                     fmt(&table.verify_ms),
                     fmt(&table.plain_ms),
                     t0.elapsed().as_secs_f64()
@@ -35290,7 +35293,9 @@ mod tests {
                 verify_ms: verify,
                 plain_ms: plain,
                 round_overhead_ms: 6.0,
+                draft_step_ms: 0.0,
                 pooled_overhead_ms: None,
+                pooled_draft_step_ms: None,
             },
             pooled: true,
             plain_cap: 8,
@@ -35311,6 +35316,61 @@ mod tests {
         let mut short = *t;
         short.rounds = super::SPEC_COST_MIN_ROUNDS - 1;
         assert_eq!(super::spec_expected_tokens(&short, 1), None);
+    }
+
+    /// memra#1093: each draft length pays its own drafting. The table is the RTX PRO 6000 Max-Q's
+    /// boot calibration of Qwen3.8-27B at depth 2048 (2026-11-09,
+    /// `research/spec-k-cold-long-20261109/pro6000-maxq/`), and the acceptance is what its
+    /// cold-long prompts realized (expected tokens 2.20 at K=2, 2.41 at K=3). Charged one K=3
+    /// round's 3.84 ms to every K, the model picks K=3; with the same 3.84 ms split into a fixed
+    /// part and three draft steps it picks K=2, the depth that decoded 4-7% faster there.
+    #[test]
+    fn each_draft_length_pays_its_own_drafting() {
+        let entry = |fixed: f64, step: f64| {
+            let verify = vec![
+                13.9, 14.3, 15.3, 16.5, 17.9, 19.4, 20.8, 22.2, 24.1, 26.1, 28.0, 30.0, 31.2, 32.5,
+                33.8, 35.1,
+            ];
+            let plain = vec![
+                13.4, 14.8, 16.8, 18.8, 20.2, 21.6, 23.0, 24.5, 26.3, 28.2, 30.1, 32.0, 33.9, 35.8,
+                37.7, 39.5,
+            ];
+            let mut t = memra_engine::spec::SpecTelemetry {
+                rounds: 1000,
+                ..Default::default()
+            };
+            for (j, a) in [0.70, 0.50, 0.21].iter().enumerate() {
+                t.pos_drafted[j] = 1000;
+                t.pos_accepted[j] = (a * 1000.0) as u64;
+            }
+            super::SpecCostEntry {
+                table: memra_engine::spec_cost::SpecCostTable {
+                    depth: 2048,
+                    verify_ms: verify,
+                    plain_ms: plain,
+                    round_overhead_ms: fixed,
+                    draft_step_ms: step,
+                    pooled_overhead_ms: None,
+                    pooled_draft_step_ms: None,
+                },
+                pooled: true,
+                plain_cap: 16,
+                accept: Some(t),
+                realized: HashMap::new(),
+            }
+        };
+        let flat = entry(3.84, 0.0);
+        assert_eq!(super::spec_cost_best_k(&flat, 1, 3).map(|v| v.0), Some(3));
+        let (fixed, step) = memra_engine::spec_cost::split_round_overhead(1.88, 3.84);
+        let split = entry(fixed, step);
+        // The K=3 round costs what it did; K=2 no longer pays a third draft step.
+        assert!(
+            (super::spec_round_ms(&split.table, 1, 3, true)
+                - super::spec_round_ms(&flat.table, 1, 3, true))
+            .abs()
+                < 1e-9
+        );
+        assert_eq!(super::spec_cost_best_k(&split, 1, 3).map(|v| v.0), Some(2));
     }
 
     /// Pooled rounds chunk at 16 verify rows; serial rounds pay one verify per session.
@@ -35516,7 +35576,9 @@ mod tests {
                         verify_ms: verify,
                         plain_ms: plain,
                         round_overhead_ms: 3.0,
+                        draft_step_ms: 0.0,
                         pooled_overhead_ms: None,
+                        pooled_draft_step_ms: None,
                     },
                     pooled: true,
                     plain_cap: 16,
@@ -35606,7 +35668,9 @@ mod tests {
                     verify_ms: verify,
                     plain_ms: plain,
                     round_overhead_ms: 3.0,
+                    draft_step_ms: 0.0,
                     pooled_overhead_ms: None,
+                    pooled_draft_step_ms: None,
                 },
                 pooled: true,
                 plain_cap: 8,
