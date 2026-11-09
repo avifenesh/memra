@@ -3094,9 +3094,11 @@ mod tests {
     #[test]
     fn every_engine_renderer_pack_names_an_implemented_renderer() {
         let mut named = Vec::new();
+        // `.iter()` on both lists: tools/test_check_support_states.py finds the hosted tiny
+        // loop by its bare `.chain(model_packs::ONBOARDING_PROFILES)` line, which stays unique.
         for pack in model_packs::PACKS
             .iter()
-            .chain(model_packs::ONBOARDING_PROFILES)
+            .chain(model_packs::ONBOARDING_PROFILES.iter())
         {
             if let TemplateContract::EngineRenderer(renderer) = pack.template {
                 assert!(
