@@ -2098,9 +2098,26 @@ __device__ __forceinline__ int v41_scan_count(int v, int* wsum, int* total) {
     return off + inc - v;
 }
 
-// selects up to k keys; emit(pos, slot) for each selected position in ascending order; returns count
+// cum[q] = the number of set bits in bal[0 .. q) for q in [0, nq); returns the total (256 threads; the
+// caller puts a barrier before, for bal, and after, for cum)
+__device__ __forceinline__ int v41_prefix_popc(const uint32_t* bal, int* cum, int nq, int* wsum) {
+    int per = (nq + 255) / 256;
+    int q0 = min(nq, (int)threadIdx.x * per), q1 = min(nq, q0 + per);
+    int loc = 0;
+    for (int q = q0; q < q1; ++q) loc += __popc(bal[q]);
+    int tot;
+    int pre = v41_scan_count(loc, wsum, &tot);
+    for (int q = q0; q < q1; ++q) {
+        cum[q] = pre;
+        pre += __popc(bal[q]);
+    }
+    return tot;
+}
+
+// selects up to k keys; emit(pos, slot) for each selected position in ascending order; returns count.
+// tab: 3 words per warp of every 256 keys (8 x ceil(n / 256) warp slots), or null.
 template <typename Emit>
-__device__ int v41_select(const V41Keys& K, int k, int* hist, int* wsum, Emit emit) {
+__device__ int v41_select(const V41Keys& K, int k, int* hist, int* wsum, uint32_t* tab, Emit emit) {
     int tid = threadIdx.x;
     // count finite
     __shared__ int s_cnt, s_thr, s_need, s_gt;
@@ -2153,11 +2170,55 @@ __device__ int v41_select(const V41Keys& K, int k, int* hist, int* wsum, Emit em
         thr = s_thr;
         eq_need = s_need;
     }
-    // emit in position order: thread t owns the contiguous keys [t * per, (t + 1) * per), counts what
-    // it takes (the keys above the threshold, and its share of the first eq_need keys equal to it),
-    // and two block scans give its first equal key's rank and its first output slot
     if (need == 0) return 0;
     bool all = need >= nvalid;
+    if (tab) {
+        // Emit in position order with the keys read once more, strided (a warp reads 32 neighbours):
+        // warp w of key block j ballots which of its keys are above the threshold and which equal
+        // it; a prefix over the equal ballots ranks every equal key, so the warp can ballot what it
+        // takes; a prefix over those gives every taken key its output slot. Six barriers for the
+        // row, whatever its length.
+        int nb = (K.n + 255) / 256, nq = nb * 8;
+        int w = tid >> 5, lane = tid & 31;
+        uint32_t below = (1u << lane) - 1u;
+        uint32_t* tA = tab;                 // above the threshold, then: taken
+        uint32_t* tE = tab + nq;            // equal to the threshold
+        int* tC = (int*)(tab + 2 * nq);     // set bits before the slot: of tE, then of tA
+        for (int j = 0; j < nb; ++j) {
+            int i = j * 256 + tid;
+            int key = i < K.n ? K.get(i) : -1;
+            bool gt = key >= 0 && (all || key > thr);
+            bool eq = key >= 0 && !gt && key == thr;
+            uint32_t bg = __ballot_sync(0xffffffffu, gt), be = __ballot_sync(0xffffffffu, eq);
+            if (lane == 0) {
+                tA[j * 8 + w] = bg;
+                tE[j * 8 + w] = be;
+            }
+        }
+        __syncthreads();
+        v41_prefix_popc(tE, tC, nq, wsum);
+        __syncthreads();
+        for (int j = 0; j < nb; ++j) {
+            int q = j * 8 + w;
+            uint32_t bg = tA[q], be = tE[q];
+            int eq_rank = tC[q] + __popc(be & below);
+            bool sel = ((bg >> lane) & 1u) || (((be >> lane) & 1u) && eq_rank < eq_need);
+            uint32_t bs = __ballot_sync(0xffffffffu, sel);
+            if (lane == 0) tA[q] = bs;
+        }
+        __syncthreads();
+        int total = v41_prefix_popc(tA, tC, nq, wsum);
+        __syncthreads();
+        for (int j = 0; j < nb; ++j) {
+            int q = j * 8 + w;
+            uint32_t bs = tA[q];
+            if ((bs >> lane) & 1u) emit(j * 256 + tid, tC[q] + __popc(bs & below));
+        }
+        return total;
+    }
+    // without the tables: thread t owns the contiguous keys [t * per, (t + 1) * per), counts what it
+    // takes (the keys above the threshold, and its share of the first eq_need keys equal to it), and
+    // two block scans give its first equal key's rank and its first output slot
     int per = (K.n + 255) / 256;
     int i0 = min(K.n, tid * per), i1 = min(K.n, i0 + per);
     // a thread with at most 32 keys remembers each key's class (a block-maximum key is a loop of loads)
@@ -2200,14 +2261,24 @@ __device__ int v41_select(const V41Keys& K, int k, int* hist, int* wsum, Emit em
     return total;
 }
 
+// the emit tables of a row of n keys: 12 bytes per warp of every 256 keys; 0 (the scan form) when
+// they would not fit a block with room to spare
+static int v41_sel_tab_bytes(int n) {
+    long b = (long)((n + 255) / 256) * 8 * 12;
+    return b > 0 && b <= 40 * 1024 ? (int)b : 0;
+}
+
 __global__ void __launch_bounds__(256) v41_topk_kernel(const v41_bf* __restrict__ score, long lds, int T, int k,
-                                                       int out_w, int offset, int* __restrict__ out, long ldo) {
+                                                       int out_w, int offset, int* __restrict__ out, long ldo,
+                                                       int tabs) {
     __shared__ int hist[256];
     __shared__ int wsum[8];
+    extern __shared__ uint32_t v41_sel_tab[];
     int row = blockIdx.x;
     V41Keys K{score + (long)row * lds, T, 0, T, -1};
     int* orow = out + (long)row * ldo;
-    int n = v41_select(K, k, hist, wsum, [&](int pos, int slot) { orow[slot] = pos + offset; });
+    int n = v41_select(K, k, hist, wsum, tabs ? v41_sel_tab : nullptr,
+                       [&](int pos, int slot) { orow[slot] = pos + offset; });
     __syncthreads();
     for (int i = n + threadIdx.x; i < out_w; i += 256) orow[i] = -1;
 }
@@ -2216,7 +2287,12 @@ extern "C" int memra_v41_topk(const void* score, long lds, int T, int k, int out
                               int rows, void* stream) {
     if (rows <= 0) return rows < 0 ? 41010 : 0;
     if (k > out_w || T < 0) return 41010;
-    v41_topk_kernel<<<rows, 256, 0, (cudaStream_t)stream>>>((const v41_bf*)score, lds, T, k, out_w, offset, out, ldo);
+    // A few rows (decode) run the contiguous form: with the card to itself a block reads its row
+    // fastest that way (0.040 against 0.062 ms on a 32,768-key row); many rows at once want the
+    // strided table form (10.1 against 4.3 ms for 8,192 such rows).
+    int tb = rows <= 4 ? 0 : v41_sel_tab_bytes(T);
+    v41_topk_kernel<<<rows, 256, tb, (cudaStream_t)stream>>>((const v41_bf*)score, lds, T, k, out_w, offset, out, ldo,
+                                                             tb > 0);
     V41_ERR();
 }
 
@@ -2224,9 +2300,10 @@ extern "C" int memra_v41_topk(const void* score, long lds, int T, int k, int out
 // visible position pinned to +inf, top-k blocks kept when finite. keep [rows][nb] u8.
 __global__ void __launch_bounds__(256) v41_candidates_kernel(const v41_bf* __restrict__ score, long lds, int T,
                                                              int cb, int kblocks, int start_pos, int ratio,
-                                                             uint8_t* __restrict__ keep, long ldk) {
+                                                             uint8_t* __restrict__ keep, long ldk, int tabs) {
     __shared__ int hist[256];
     __shared__ int wsum[8];
+    extern __shared__ uint32_t v41_sel_tab[];
     int row = blockIdx.x;
     int nb = (T + cb - 1) / cb;
     int visible = (start_pos + row + 1) / ratio;
@@ -2235,15 +2312,16 @@ __global__ void __launch_bounds__(256) v41_candidates_kernel(const v41_bf* __res
     uint8_t* krow = keep + (long)row * ldk;
     for (int i = threadIdx.x; i < nb; i += 256) krow[i] = 0;
     __syncthreads();
-    v41_select(K, kblocks, hist, wsum, [&](int pos, int) { krow[pos] = 1; });
+    v41_select(K, kblocks, hist, wsum, tabs ? v41_sel_tab : nullptr, [&](int pos, int) { krow[pos] = 1; });
 }
 
 extern "C" int memra_v41_candidates(const void* score, long lds, int T, int cb, int kblocks, int start_pos, int ratio,
                                     uint8_t* keep, long ldk, int rows, void* stream) {
     if (rows <= 0) return rows < 0 ? 41011 : 0;
     if (cb <= 0 || ratio <= 0) return 41011;
-    v41_candidates_kernel<<<rows, 256, 0, (cudaStream_t)stream>>>((const v41_bf*)score, lds, T, cb, kblocks, start_pos,
-                                                                  ratio, keep, ldk);
+    int tb = v41_sel_tab_bytes((T + cb - 1) / cb);
+    v41_candidates_kernel<<<rows, 256, tb, (cudaStream_t)stream>>>((const v41_bf*)score, lds, T, cb, kblocks, start_pos,
+                                                                   ratio, keep, ldk, tb > 0);
     V41_ERR();
 }
 

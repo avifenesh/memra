@@ -1,8 +1,8 @@
 # DeepSeek-V4.1-Flash onboarding: kernel speed on one card, bytes unchanged (2026-11-09)
 
 Verdict: the V4.1 layer kernels of `crates/memra-engine/cu/dsv41_gpu.cu` run a decode step in
-0.62 / 0.59 / 0.50 ms per layer (from 3.99 / 3.39 / 2.97 ms at the lane's start) and a 4,096-token
-prefill in 34.5 / 32.5 / 31.4 ms per layer (from 57.5 / 55.6 / 53.6 ms), on layers 2, 20 and 21 of the
+0.62 / 0.60 / 0.50 ms per layer (from 3.99 / 3.39 / 2.97 ms at the lane's start) and a 4,096-token
+prefill in 34.1 / 32.1 / 31.0 ms per layer (from 57.5 / 55.6 / 53.6 ms), on layers 2, 20 and 21 of the
 real checkpoint on one RTX PRO 6000. Every change is a schedule change: `dsv41-gate kernels` proves each dispatched
 kernel byte-identical to the reference schedule on the fixtures, the layer gate's saved tensors are
 byte-identical between the binaries before and after, the N=2 partition gate still writes the
@@ -26,18 +26,19 @@ candidate pool and the indexer, layer 21 a Reuse layer.
 
 | | lane start `26f82ae0aa` | base `aec3b0b401` | now | now / base |
 |---|---|---|---|---|
-| decode, ms per layer (layers 2, 20, 21; position 4,096) | 3.993, 3.392, 2.966 | 0.694, 0.683, 0.569 | 0.618, 0.594, 0.504 | 0.891, 0.870, 0.885 |
-| decode step through layers 20 + 21, one wait, ms | - | 1.244 | 1.092 | 0.877 |
-| prefill 4,096 tokens, ms per layer | 57.46, 55.56, 53.64 | 43.56, 41.22, 39.73 | 34.47, 32.48, 31.35 | 0.791, 0.788, 0.789 |
-| prefill 4,096 tokens, tokens/s per layer | 71.3k, 73.7k, 76.4k | 94.0k, 99.4k, 103.1k | 118.8k, 126.1k, 130.7k | |
-| prefill 32,768 tokens, ms per layer | 500.6, 541.1, 435.9 | 370.4, 383.3, 313.4 | 286.1, 297.4, 242.9 | 0.773, 0.776, 0.775 |
-| prefill 32,768 tokens, tokens/s per layer | 65.5k, 60.6k, 75.2k | 88.5k, 85.5k, 104.5k | 114.5k, 110.2k, 134.9k | |
+| decode, ms per layer (layers 2, 20, 21; position 4,096) | 3.993, 3.392, 2.966 | 0.694, 0.682, 0.568 | 0.619, 0.597, 0.503 | 0.891, 0.875, 0.886 |
+| decode step through layers 20 + 21, one wait, ms | - | 1.244 | 1.090 | 0.876 |
+| prefill 4,096 tokens, ms per layer | 57.46, 55.56, 53.64 | 43.04, 40.62, 39.24 | 34.14, 32.13, 31.02 | 0.793, 0.791, 0.791 |
+| prefill 4,096 tokens, tokens/s per layer | 71.3k, 73.7k, 76.4k | 95.2k, 100.8k, 104.4k | 120.0k, 127.5k, 132.0k | |
+| prefill 32,768 tokens, ms per layer | 500.6, 541.1, 435.9 | 365.5, 377.5, 308.8 | 280.4, 286.1, 240.0 | 0.767, 0.758, 0.777 |
+| prefill 32,768 tokens, tokens/s per layer | 65.5k, 60.6k, 75.2k | 89.7k, 86.8k, 106.1k | 116.9k, 114.5k, 136.6k | |
 
-Base and now are the arm medians of the interleaved runs (`receipts/multi-f24` at 4,096: three runs
-per arm, ranges do not overlap, spread at most 2.3%; `receipts/multi-f24g/pfx2` at 32,768). The
-lane-start column is the A arm of `receipts/ab-6e8bf3b41f-4k` and, at 32,768, the single profile
-run of `receipts/base`. Card at 99..101 W median, 78..82 C median (89 C peak), SM clock 2,272 MHz
-median over the runs; output hashes identical in every run of both arms.
+Base and now are the arm medians of the interleaved runs (`receipts/multi-f34` at 4,096: three runs
+per arm, ranges do not overlap, spread at most 1.2%; `receipts/multi-f34g/pfx2` at 32,768, spread at
+most 1.6%). The lane-start column is the A arm of `receipts/ab-6e8bf3b41f-4k` and, at 32,768, the
+single profile run of `receipts/base`. Card at 102 W median, 72 C median over the 4,096 runs and
+127 W, 80 C (86 C peak) over the 32,768 runs, SM clock 2,272 MHz median; output hashes identical in
+every run of both arms.
 
 The model has 40 layers. Three layers do not make a model number; as a scale, the mean of the three
 times 40, without the head, Engram and the host:
@@ -45,68 +46,68 @@ times 40, without the head, Engram and the host:
 | | base | now |
 |---|---|---|
 | decode step | 25.9 ms | 22.9 ms |
-| prefill 4,096 tokens | 1.66 s (2,468 tokens/s) | 1.31 s (3,125 tokens/s) |
-| prefill 32,768 tokens | 14.2 s (2,303 tokens/s) | 11.0 s (2,974 tokens/s) |
+| prefill 4,096 tokens | 1.64 s (2,499 tokens/s) | 1.30 s (3,158 tokens/s) |
+| prefill 32,768 tokens | 14.0 s (2,337 tokens/s) | 10.8 s (3,047 tokens/s) |
 
 ## What changed, per op
 
 `prof_ab_summary.py` over interleaved nsys profiles (A B B A, NVTX range per op) gives each op's
 GPU time in both binaries; an op only one change touches moves, the rest show the noise.
 
-Base `aec3b0b401` (A) against this head (B), 4,096 tokens, layer 20 (`receipts/profab-f24-4k`, all six ranges in its `summary.md`):
+Base `aec3b0b401` (A) against this head (B), 4,096 tokens, layer 20 (`receipts/profab-f34-4k`, all six ranges in its `summary.md`):
 
-### L20/prefill: GPU busy 43.233 -> 33.903 ms, wall 43.347 -> 34.030 ms (A n=2, B n=2 profiles)
-
-| op | A runs ms | B runs ms | A mean | B mean | B / A |
-|---|---|---|---|---|---|
-| experts | 22.195, 22.070 | 16.685, 16.639 | 22.133 | 16.662 | 0.75 |
-| sparse_attn | 5.175, 5.123 | 4.349, 4.337 | 5.149 | 4.343 | 0.84 |
-| wo_a | 2.713, 2.698 | 2.533, 2.520 | 2.705 | 2.527 | 0.93 |
-| q_b | 1.999, 1.992 | 1.728, 1.723 | 1.995 | 1.726 | 0.86 |
-| shared_expert | 1.980, 1.967 | 1.675, 1.670 | 1.974 | 1.673 | 0.85 |
-| wo_b | 1.905, 1.895 | 1.629, 1.625 | 1.900 | 1.627 | 0.86 |
-| hc_ffn_pre | 1.744, 1.734 | 1.200, 1.201 | 1.739 | 1.200 | 0.69 |
-| hc_attn_pre | 1.177, 1.170 | 0.904, 0.902 | 1.173 | 0.903 | 0.77 |
-| router | 0.828, 0.825 | 0.739, 0.740 | 0.827 | 0.740 | 0.89 |
-| attn_keys/index_score | 0.740, 0.733 | 0.399, 0.397 | 0.737 | 0.398 | 0.54 |
-| attn_keys/index_q | 0.652, 0.650 | 0.607, 0.605 | 0.651 | 0.606 | 0.93 |
-| hc_post | 0.506, 0.501 | 0.239, 0.239 | 0.504 | 0.239 | 0.47 |
-| attn_keys/qr | 0.435, 0.433 | 0.373, 0.373 | 0.434 | 0.373 | 0.86 |
-| moe_plan | 0.411, 0.410 | 0.017, 0.017 | 0.411 | 0.017 | 0.04 |
-| attn_keys/kv_window | 0.260, 0.258 | 0.234, 0.233 | 0.259 | 0.234 | 0.90 |
-| attn_keys/compressor | 0.232, 0.233 | 0.212, 0.212 | 0.232 | 0.212 | 0.91 |
-| combine | 0.207, 0.205 | 0.207, 0.207 | 0.206 | 0.207 | 1.00 |
-| attn_keys/topk | 0.101, 0.099 | 0.088, 0.089 | 0.100 | 0.088 | 0.88 |
-| attn_keys/index_keys | 0.039, 0.039 | 0.051, 0.049 | 0.039 | 0.050 | 1.28 |
-| attn_keys/kv_append | 0.035, 0.035 | 0.038, 0.039 | 0.035 | 0.039 | 1.10 |
-| attn_keys/candidates | 0.021, 0.020 | 0.031, 0.031 | 0.021 | 0.031 | 1.51 |
-| attn_idx_rows | 0.009, 0.009 | 0.009, 0.009 | 0.009 | 0.009 | 1.00 |
-
-### L20/decode: GPU busy 0.660 -> 0.573 ms, wall 0.696 -> 0.610 ms (A n=2, B n=2 profiles)
+### L20/prefill: GPU busy 42.668 -> 33.589 ms, wall 42.775 -> 71.220 ms (A n=2, B n=2 profiles)
 
 | op | A runs ms | B runs ms | A mean | B mean | B / A |
 |---|---|---|---|---|---|
-| experts | 0.158, 0.157 | 0.157, 0.157 | 0.158 | 0.157 | 1.00 |
-| wo_b | 0.065, 0.066 | 0.044, 0.044 | 0.065 | 0.044 | 0.67 |
-| wo_a | 0.048, 0.048 | 0.049, 0.049 | 0.048 | 0.049 | 1.03 |
-| sparse_attn | 0.047, 0.047 | 0.036, 0.036 | 0.047 | 0.036 | 0.76 |
-| shared_expert | 0.044, 0.044 | 0.045, 0.045 | 0.044 | 0.045 | 1.01 |
-| attn_keys/index_q | 0.043, 0.043 | 0.034, 0.034 | 0.043 | 0.034 | 0.79 |
-| hc_ffn_pre | 0.036, 0.036 | 0.021, 0.021 | 0.036 | 0.021 | 0.57 |
-| router | 0.035, 0.035 | 0.029, 0.029 | 0.035 | 0.029 | 0.83 |
-| attn_keys/compressor | 0.032, 0.032 | 0.023, 0.024 | 0.032 | 0.023 | 0.73 |
-| q_b | 0.032, 0.031 | 0.031, 0.032 | 0.032 | 0.031 | 1.00 |
+| experts | 21.753, 21.985 | 16.483, 16.482 | 21.869 | 16.482 | 0.75 |
+| sparse_attn | 4.973, 5.090 | 4.313, 4.307 | 5.032 | 4.310 | 0.86 |
+| wo_a | 2.659, 2.683 | 2.499, 2.505 | 2.671 | 2.502 | 0.94 |
+| q_b | 1.972, 1.987 | 1.720, 1.696 | 1.979 | 1.708 | 0.86 |
+| shared_expert | 1.938, 1.961 | 1.658, 1.659 | 1.949 | 1.659 | 0.85 |
+| wo_b | 1.870, 1.891 | 1.608, 1.610 | 1.880 | 1.609 | 0.86 |
+| hc_ffn_pre | 1.710, 1.728 | 1.186, 1.190 | 1.719 | 1.188 | 0.69 |
+| hc_attn_pre | 1.161, 1.172 | 0.897, 0.896 | 1.167 | 0.896 | 0.77 |
+| router | 0.809, 0.820 | 0.733, 0.730 | 0.814 | 0.731 | 0.90 |
+| attn_keys/index_score | 0.713, 0.728 | 0.398, 0.395 | 0.721 | 0.397 | 0.55 |
+| attn_keys/index_q | 0.638, 0.651 | 0.602, 0.605 | 0.645 | 0.603 | 0.94 |
+| hc_post | 0.490, 0.500 | 0.238, 0.238 | 0.495 | 0.238 | 0.48 |
+| attn_keys/qr | 0.425, 0.430 | 0.373, 0.372 | 0.427 | 0.372 | 0.87 |
+| moe_plan | 0.410, 0.411 | 0.017, 0.017 | 0.410 | 0.017 | 0.04 |
+| attn_keys/kv_window | 0.257, 0.259 | 0.231, 0.232 | 0.258 | 0.231 | 0.90 |
+| attn_keys/compressor | 0.229, 0.232 | 0.214, 0.211 | 0.230 | 0.213 | 0.92 |
+| combine | 0.203, 0.204 | 0.204, 0.206 | 0.204 | 0.205 | 1.01 |
+| attn_keys/topk | 0.095, 0.098 | 0.101, 0.103 | 0.096 | 0.102 | 1.06 |
+| attn_keys/index_keys | 0.038, 0.039 | 0.049, 0.050 | 0.039 | 0.049 | 1.28 |
+| attn_keys/kv_append | 0.035, 0.035 | 0.038, 0.038 | 0.035 | 0.038 | 1.09 |
+| attn_keys/candidates | 0.019, 0.020 | 0.028, 0.028 | 0.020 | 0.028 | 1.42 |
+| attn_idx_rows | 0.009, 0.009 | 0.009, 0.010 | 0.009 | 0.010 | 1.04 |
+
+### L20/decode: GPU busy 0.658 -> 0.573 ms, wall 0.694 -> 0.612 ms (A n=2, B n=2 profiles)
+
+| op | A runs ms | B runs ms | A mean | B mean | B / A |
+|---|---|---|---|---|---|
+| experts | 0.157, 0.157 | 0.158, 0.157 | 0.157 | 0.157 | 1.00 |
+| wo_b | 0.065, 0.065 | 0.044, 0.044 | 0.065 | 0.044 | 0.68 |
+| wo_a | 0.047, 0.047 | 0.049, 0.048 | 0.047 | 0.048 | 1.02 |
+| sparse_attn | 0.046, 0.047 | 0.036, 0.036 | 0.047 | 0.036 | 0.76 |
+| shared_expert | 0.044, 0.044 | 0.045, 0.045 | 0.044 | 0.045 | 1.02 |
+| attn_keys/index_q | 0.043, 0.042 | 0.034, 0.034 | 0.043 | 0.034 | 0.79 |
+| hc_ffn_pre | 0.036, 0.036 | 0.021, 0.021 | 0.036 | 0.021 | 0.58 |
+| router | 0.034, 0.034 | 0.029, 0.029 | 0.034 | 0.029 | 0.83 |
+| attn_keys/compressor | 0.032, 0.032 | 0.023, 0.023 | 0.032 | 0.023 | 0.73 |
+| q_b | 0.031, 0.032 | 0.032, 0.032 | 0.031 | 0.032 | 1.01 |
 | hc_attn_pre | 0.028, 0.028 | 0.017, 0.017 | 0.028 | 0.017 | 0.60 |
-| attn_keys/topk | 0.014, 0.014 | 0.013, 0.012 | 0.014 | 0.013 | 0.88 |
-| attn_keys/kv_window | 0.013, 0.013 | 0.014, 0.014 | 0.013 | 0.014 | 1.09 |
-| moe_plan | 0.012, 0.013 | 0.012, 0.012 | 0.012 | 0.012 | 0.97 |
-| attn_keys/qr | 0.012, 0.012 | 0.014, 0.014 | 0.012 | 0.014 | 1.09 |
-| attn_keys/index_keys | 0.010, 0.010 | 0.011, 0.011 | 0.010 | 0.011 | 1.04 |
-| attn_keys/kv_append | 0.009, 0.009 | 0.009, 0.009 | 0.009 | 0.009 | 1.01 |
-| hc_post | 0.007, 0.007 | 0.003, 0.003 | 0.007 | 0.003 | 0.36 |
+| attn_keys/topk | 0.014, 0.014 | 0.013, 0.013 | 0.014 | 0.013 | 0.89 |
+| attn_keys/kv_window | 0.013, 0.013 | 0.014, 0.014 | 0.013 | 0.014 | 1.10 |
+| moe_plan | 0.012, 0.012 | 0.012, 0.012 | 0.012 | 0.012 | 0.98 |
+| attn_keys/qr | 0.012, 0.012 | 0.013, 0.013 | 0.012 | 0.013 | 1.09 |
+| attn_keys/index_keys | 0.010, 0.010 | 0.011, 0.011 | 0.010 | 0.011 | 1.03 |
+| attn_keys/kv_append | 0.009, 0.009 | 0.009, 0.009 | 0.009 | 0.009 | 1.03 |
+| hc_post | 0.007, 0.008 | 0.003, 0.003 | 0.008 | 0.003 | 0.34 |
 | attn_keys/index_score | 0.006, 0.006 | 0.003, 0.003 | 0.006 | 0.003 | 0.52 |
-| combine | 0.004, 0.004 | 0.004, 0.004 | 0.004 | 0.004 | 1.03 |
-| attn_keys/candidates | 0.003, 0.003 | 0.003, 0.003 | 0.003 | 0.003 | 1.04 |
+| combine | 0.004, 0.004 | 0.004, 0.004 | 0.004 | 0.004 | 1.02 |
+| attn_keys/candidates | 0.003, 0.003 | 0.004, 0.004 | 0.003 | 0.004 | 1.26 |
 
 ## The changes
 
@@ -145,11 +146,21 @@ per-op tables above unless a line says otherwise.
    the block-scaled kernel loads 10 K blocks ahead when a warp's share of K is longer than 8 blocks
    (20 blocks: two rounds, not three) and loads its tile entry together with the tile count.
 9. **Small kernels.** The router loads its logits and bias together and keeps a lane's values in
-   registers (`v41_route_kernel<12>` up to 384 experts); the top-k emit gives each thread a
-   contiguous run of the row and places it with two block scans; the MoE placement is one thread
-   per token over a per-expert token bitmap (`moe_plan` 0.41 to 0.017 ms at 4,096 tokens); RMSNorm keeps a thread's values and
-   weights in registers for both passes; the fp32-FMA tile GEMM stages a K tile with one 16-byte
-   load per operand.
+   registers (`v41_route_kernel<12>` up to 384 experts); the MoE placement is one thread per token
+   over a per-expert token bitmap (`moe_plan` 0.41 to 0.017 ms at 4,096 tokens); RMSNorm keeps a
+   thread's values and weights in registers for both passes; the fp32-FMA tile GEMM stages a K tile
+   with one 16-byte load per operand.
+10. **The top-k emit has two forms.** Many rows at once (prefill): the keys are read strided, each
+    warp ballots its keys above and equal to the threshold into a table, a prefix over the equal
+    ballots ranks the ties and a prefix over the taken ballots gives the output slots; six barriers a
+    row whatever its length, where the first form ran four per 256 keys. A launch of at most 4 rows
+    (decode): each thread owns a contiguous run of the row and two block scans place it. The
+    contiguous form alone (the first commit of this half, `a29d1db474`) was 2x slower than the base
+    on 131,072-token prefills (`receipts/profab-f24-128k`: top-k 126 to 257 ms, candidates 100 to
+    179 ms on layer 20); at 32,768 tokens the table form takes
+    4.3 ms where the contiguous form took 10.1 and the base 5.2 on layer 20, and 2.2 against 4.5 ms
+    for the candidates (`receipts/profab-f30-32k`, `receipts/prof-aec3b0b401`). At 4,096 tokens
+    the tables cost 0.006 ms (top-k) and 0.008 ms (candidates) a layer over the base.
 
 ## What did not work
 
@@ -165,6 +176,13 @@ Kept here so nobody runs them again. Each has its raw runs under `receipts/`.
 | mHC partial pass with each chain's fn chunk in shared memory instead of registers (no spills) | flat at prefill; the register form stays | `multi-f18` |
 | The router's selection unrolled to 32 experts per lane | 15.1 us against 13.0 us; unrolled to the 12 a 384-expert router needs instead | `profab-f9`, `profab-f20` |
 | The largest shared-memory split for the 61..86 KB pipelined blocks | nothing to gain: an SM has 102 KB, one such block fits either way | `ncu-524c0e693f`, `look-s5` |
+| 16 warps per block splitting K in the small-M block-scaled GEMM (512 threads) | decode 1.09..1.10x slower per layer | `multi-f28` (arm `f25x`) |
+| The small-M block-scaled GEMM with every load unconditional and what a lane lacks selected away afterwards (no per-lane branches) | decode 1.12..1.17x slower with it; the same arm without it is within 2.5% of its base. A lane that loads nothing is cheaper than a branch | `multi-f28` (arm `f28`), `multi-f30` |
+| The indexer score with a block's Q rows serving 8 key tiles (71 KB, one block per SM) | `index_score` 1.39..1.47x slower at 32,768 tokens; the one-tile form with five blocks per SM stays | `profab-f30-32k` |
+| A tighter sparse-attention gather loop (addresses by shifts) | 0.99 at prefill, 1.00 at decode; dropped | `profab-f30-32k` |
+| The table top-k emit for a single row | 0.040 to 0.062 ms on a 32,768-key row; a launch of at most 4 rows keeps the contiguous form | `profab-f30-32k` |
+| Fragment loads hoisted ahead of the MMA chain in the small-M bf16 GEMM, and the next chunk loaded ahead of the fma chain in the narrow fp32-FMA kernel | flat (20.3 to 20.8 us, 21.9 to 21.6 us): both kernels already sit on their chains | `multi-f33a`, `profab-f33a-4k` |
+| Row addresses hoisted out of the small-M block-scaled GEMM's load loop | flat on every shape and in the layer: the compiler had hoisted them | `multi-f33b` |
 
 ## Arms
 
@@ -183,7 +201,13 @@ listed changes.
 | `f18` | `f17` plus the mHC fn chunks in shared memory and the indexer with its keys in registers |
 | `f20` | `f18` plus the 8-warp sparse attention and the two-stage ring of 3 / 4 K blocks |
 | `f21x` | `f20` plus the 10-block load-ahead of the small-M block-scaled GEMM and the tile entry loaded with the count |
-| `f24` | this commit: `f21x` without the 8-warp sparse attention and the shared-memory fn chunks, with the ldmatrix fragment loads and the load-ahead keyed on K |
+| `f24` | `a29d1db474`: `f21x` without the 8-warp sparse attention and the shared-memory fn chunks, with the ldmatrix fragment loads and the load-ahead keyed on K |
+| `f25x` | `f24` with 16 warps per block in the small-M block-scaled GEMM |
+| `f28` | `f24` plus the small-M block-scaled GEMM's unconditional loads, the tighter sparse-attention gather and the table top-k emit |
+| `f30` | `f28` without the unconditional loads; plus the indexer with 8 key tiles per block |
+| `f33a` | `f24` plus the table top-k emit above 4 rows, the hoisted fragment loads of the small-M bf16 GEMM and the look-ahead load of the narrow fp32-FMA kernel |
+| `f33b` | `f33a` plus the hoisted row addresses of the small-M block-scaled GEMM |
+| `f34` | this head: `f24` plus the table top-k emit above 4 rows |
 
 ## What the profiler said
 
@@ -196,7 +220,14 @@ listed changes.
   is an array indexed with a runtime value or a spilled register.
 - Per-lane fragment loads from global memory are not slow by themselves: the small-M block-scaled
   GEMM that loads 4 bytes per lane straight into registers beat both staged versions on every
-  shape but one.
+  shape but one. A lane that skips a load behind a branch is cheaper than a lane that loads and
+  discards.
+- Two decode kernels sit on a dependency chain and nothing around it helps: the small-M bf16 GEMM
+  runs K / 16 accumulating MMAs one after another (320 for K = 5,120: 20 us, about 62 ns each), the
+  narrow fp32-FMA kernel K fmas (5,120: 22 us). Both chains are the reference's order.
+- A kernel alone on the card and the same kernel with every SM full want different schedules: a
+  thread reading its own contiguous run is the fastest top-k emit for one row and the slowest for
+  8,192 rows at once.
 
 ## What is left, with the expected gain
 
