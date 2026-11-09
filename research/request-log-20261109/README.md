@@ -38,11 +38,13 @@ names, with a session key that holds across turns?
 |---|---|---|---|---|---|---|
 | `device-ab/run1-32598d3947` | 32598d3947 (first push) | 4 | 8 | 0 | 0 | PASS |
 | `device-ab/run2-124665c83a` | 124665c83a (after the review fixes) | 4 | 8 | 0 | 0 | PASS |
+| `device-ab/run3-f23bb093e4` | f23bb093e4 (rebased on main 65fb297a59, v0.139.0) | 4 | 8 | 0 | 0 | PASS |
 
-Run 2's eight normalized digests are also equal to run 1's: the review fixes changed what the log
-records, not what the server answers.
+Run 2's eight normalized digests are equal to run 1's, and run 3's to run 2's: the review fixes
+changed what the log records, not what the server answers, and the rebase changed neither on
+this request set.
 
-Per request (boot 1 line of either run; normalized response digest equal in all eight boots):
+Per request (boot 1 line of either run; normalized response digest equal in all twelve boots):
 
 | request | normalized sha256 | end_reason | generated | session_key_source | tool calls |
 |---|---|---|---|---|---|
@@ -81,8 +83,8 @@ Red arms (`red_arm.py`), each on the final tree:
 | none | | ok | ok | `green.log` |
 
 Against the base commit 958ae32fed the two-turn test does not compile: there is no request log.
-The whole memra-server suite on the final tree: `server-suite.log` (1105 passed, 0 failed,
-10 ignored).
+The whole memra-server suite: `server-suite.log` (1105 passed, 0 failed, 10 ignored, before
+the rebase); on the rebased head 1116 passed, 0 failed, 10 ignored (`server-suite-rebased.log`).
 
 ## Files
 
