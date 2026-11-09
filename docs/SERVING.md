@@ -1333,8 +1333,11 @@ change is which prime calls run concatenated and which run alone, the batched-pr
   per tick over the wall from one prefill phase to the next, smoothed; an idle wait drops the sample)
   and each request's wire first-token deadline. When a session would miss its deadline under the round
   robin but would make it served alone, the tick advances sessions in earliest-deadline order until one
-  chunk of tokens is used. When nothing is at risk, the round robin resumes. With requests waiting for
-  admission, the estimate assumes a finishing peer is replaced at once. Only sessions the tick can
+  chunk of tokens is used. When nothing is at risk, the round robin resumes. The estimate counts the
+  takes a session still needs, one per tick. With requests waiting for admission, a finishing peer is
+  replaced at once by a request that can be as long as any, so every take is a full chunk. With none
+  waiting, the tick keeps the takes it has now: in a closed loop a finishing peer is replaced by the
+  next arrival, and one that leaves for good only shortens the tick. Only sessions the tick can
   advance count: n>1 choice members and fanout rows still forming are left out and never held back. A
   request without a deadline orders by its arrival plus the default streaming deadline. Every row still
   takes its usual chunk. `[prefill-order]` logs each switch, and `/metrics` `prefill_deadline_ticks`

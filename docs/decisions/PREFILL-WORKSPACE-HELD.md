@@ -70,6 +70,18 @@ allocates beside the resident slab (`PrimeWorkspaceShape::held_bytes`, `admissio
     The need is the cold charge of the call's rows (`prime_call_need`): 470 MB at a 1024-row
     take, where the probe measured at most 297 MB, and 1.96 GB at the 8192-row solo widening,
     whose 4096-row calls peak near 1.2 GB. The read takes no fence unless it is short.
+- **The deadline order's estimate, on every card** (`deadline_prefill_rows`). With the held charge
+  a burst of cold prompts is admitted at once instead of queueing. The deadline order read that as
+  no backlog and estimated the round robin as if finishing peers left, which the c8 record had
+  measured 2x short. The prime pass's slowest first token sat at 85-89 s in nine of nine runs
+  against the 90 s deadline: a 17,101-token prompt was admitted 0.05 s after it arrived, then
+  shared prefill eight ways.
+  - Without waiting requests the estimate now keeps the tick's current takes for every take the
+    row still needs. Its first token comes in the tick of its last take.
+  - In a closed loop a finishing peer is replaced, and one that leaves only shortens the tick.
+  - On the c8 cell's sharing (one run) it gives 69-87 s against the 69 s measured.
+  - With requests waiting nothing changes.
+  - A rescue whose fill would take every row holds nobody back and keeps the round robin.
 - **Unchanged:** the reserve is sized from the cold charge as before. Every other card, unified
   memory, multi-device placements, the gemma and Step35 programs, monolithic primes and chunks
   wider than 4096 or set explicitly (`MEMRA_PRIME_CHUNK`) keep the cold charge, byte for byte. A

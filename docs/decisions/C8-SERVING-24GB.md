@@ -27,6 +27,11 @@ at c8, the prefix cache cost throughput and doubled batch TTFT against the cache
    still forming are left out and never held back). A row without a wire deadline orders by its arrival
    plus the default streaming deadline. The cause it removes: a 12k-17k prompt shared the device four or
    five ways for its whole prompt (42-68 s of priming).
+   Update, 2026-11-09: with no request waiting, the estimate no longer lets finishing peers leave. It
+   keeps the tick's current takes for every take the row still needs
+   ([`PREFILL-WORKSPACE-HELD.md`](PREFILL-WORKSPACE-HELD.md)). The held prefill charge admits a cold
+   burst instead of queueing it, so the old form was in use there, and the slowest first token sat at
+   85-89 s in nine of nine runs.
 3. **Concat rows take the single prime's take** (`batch_row_take`). A cold session whose grid-aligned seed
    lies inside its prompt used to prime alone for the whole prompt; it now joins the concat batch with its
    take ending on the seed. The cause it removes: at c8, eight unique 100-token prompts each primed alone

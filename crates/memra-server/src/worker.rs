@@ -280,17 +280,32 @@ struct PrefillDeadlineRow {
 /// 95.8 s in two runs against the 90 s deadline (`research/c8-serving-20261107/`).
 ///
 /// Returns None to keep the round robin, which is the answer whenever every row can finish
-/// under it. Under round robin a row with `q` tokens left finishes after `sum_j min(q_j, q)`
-/// tokens at `rate_tok_s` when finishing peers leave, or after `q x rows` tokens when requests
-/// wait for admission (`backlog`) (each finishing peer is replaced at once: the closed-loop c8
-/// cell above primed its 17k prompt for 60-69 s, not the 31 s the first form predicts). Its
-/// first token comes one round-robin tick later (the `decode_wait` of the TTFT trace). When
-/// some row would miss its deadline that way but would make it served alone (its own tokens
-/// plus one chunk at the full rate), this returns the
-/// rows to advance this tick: earliest deadline first, rows the deadline cannot fit even
-/// alone after them (serving those first spends time the others need), rows without a
-/// deadline last, taking rows until one chunk of tokens is used. Each row still takes its
-/// usual chunk, so no prime call boundary changes; only which rows advance in this tick does.
+/// under it. Under round robin a row with `q` tokens left still needs `k` takes of one chunk
+/// (`prefill_tick_take` folds a tail under `PRIME_MIN_T` into the take before it), one per tick,
+/// and its first token is sampled in the decode phase of the tick that runs its last take. A tick
+/// primes every row's take (`sum_j min(q_j, chunk)` tokens) at `rate_tok_s`, the rate measured
+/// over whole ticks, decode included.
+///
+/// - **No request waiting:** the tick keeps the takes it has now for all `k` ticks. In a closed
+///   loop a finishing peer is replaced by the next arrival as soon as it leaves, and a peer that
+///   leaves for good only shortens the tick. The form that let finishing peers leave
+///   (`sum_j min(q_j, q)` tokens) predicted 31 s for the 17,101-token prompt that the closed-loop
+///   c8 cell above primed for 69 s at four- to five-way sharing (one run, `phaseE/e1-cand3-c8`).
+///   17 ticks of four to five 1024-row takes at that cell's median measured rate (1,004 tok/s,
+///   N=210 lines) are 69-87 s. Once the held prefill charge (research/c8-workspace-20261108)
+///   admitted the burst instead of queueing it, the old form was the one in use, and the
+///   slowest prime-pass first token landed at 85-89 s in nine of nine runs against the 90 s
+///   deadline.
+/// - **Requests waiting** (`backlog`): a finishing peer is replaced at once by a request that can
+///   be as long as any, so every take counts as a full chunk (`q x rows` tokens), plus one tick.
+///
+/// When some row would miss its deadline that way but would make it served alone (its own
+/// tokens plus one chunk at the full rate), this returns the rows to advance this tick: earliest
+/// deadline first, rows the deadline cannot fit even alone after them (serving those first
+/// spends time the others need), rows without a deadline last, taking rows until one chunk of
+/// tokens is used. A fill that takes every row holds nobody back and returns None. Each row
+/// still takes its usual chunk, so no prime call boundary changes; only which rows advance in
+/// this tick does.
 /// With every relative deadline equal, earliest deadline first is oldest first, the order
 /// vLLM and SGLang serve prefill in.
 fn deadline_prefill_rows(
@@ -304,11 +319,19 @@ fn deadline_prefill_rows(
     }
     let secs = |tokens: usize| tokens as f64 / rate_tok_s;
     let tick_s = secs(rows.iter().map(|r| r.queued.min(chunk)).sum());
-    let shared_finish_s = |q: usize| {
-        if backlog {
-            secs(q.saturating_mul(rows.len()))
+    let takes = |q: usize| {
+        let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+        if q < chunk + floor {
+            1
         } else {
-            secs(rows.iter().map(|r| r.queued.min(q)).sum())
+            1 + (q - chunk - floor + 1).div_ceil(chunk)
+        }
+    };
+    let shared_first_token_s = |q: usize| {
+        if backlog {
+            secs(q.saturating_mul(rows.len())) + tick_s
+        } else {
+            takes(q) as f64 * tick_s
         }
     };
     let alone_s = |q: usize| secs(q + chunk);
@@ -316,7 +339,7 @@ fn deadline_prefill_rows(
     let rescue = rows.iter().any(|r| {
         fits_alone(r)
             && r.slack_s
-                .is_some_and(|s| shared_finish_s(r.queued) + tick_s > s)
+                .is_some_and(|s| shared_first_token_s(r.queued) > s)
     });
     if !rescue {
         return None;
@@ -342,7 +365,7 @@ fn deadline_prefill_rows(
         out.push(r.idx);
         used += r.queued.min(chunk);
     }
-    Some(out)
+    (out.len() < rows.len()).then_some(out)
 }
 
 /// Smoothing weight of a new tick prefill-rate sample (`prefill_rate_update`).
@@ -44715,10 +44738,10 @@ mod tests {
         assert_eq!(deadline_prefill_rows(&easy[..1], 1000.0, 1024, false), None);
         assert_eq!(deadline_prefill_rows(&easy, 0.0, 1024, false), None);
         assert_eq!(deadline_prefill_rows(&easy, f64::NAN, 1024, false), None);
-        // The c8 shape: a 17k prompt with 70 s left beside four peers. Round robin finishes it
-        // after 28,000 tokens (28 s at 1000 tok/s) plus a 5.1 s tick: fine. At 300 tok/s it needs
-        // 93 s plus a 17 s tick shared but 60 s alone, so it goes first and alone (its chunk
-        // fills the tick).
+        // The c8 shape: a 17k prompt with 70 s left beside four peers. Round robin gives it 17
+        // ticks of five 1024-row takes (87 s at 1000 tok/s), past its 70 s, while alone it needs
+        // 18 s: it goes first and alone (its chunk fills the tick). The form that let finishing
+        // peers leave said 28 s; the closed loop replaces them. The same at 300 tok/s.
         let c8 = [
             row(0, 3000, Some(85.0)),
             row(1, 17_000, Some(70.0)),
@@ -44726,17 +44749,33 @@ mod tests {
             row(3, 4000, Some(80.0)),
             row(4, 1500, Some(89.0)),
         ];
-        assert_eq!(deadline_prefill_rows(&c8, 1000.0, 1024, false), None);
+        assert_eq!(
+            deadline_prefill_rows(&c8, 1000.0, 1024, false),
+            Some(vec![1])
+        );
         assert_eq!(
             deadline_prefill_rows(&c8, 300.0, 1024, false),
             Some(vec![1])
         );
-        // With requests waiting, a finishing peer is replaced at once: the 17k row shares
-        // with four peers for its whole prompt (85 s at 1000 tok/s plus the tick), so it goes
-        // first even at the full rate, while without waiting requests it is fine.
         assert_eq!(
             deadline_prefill_rows(&c8, 1000.0, 1024, true),
             Some(vec![1])
+        );
+        // Short peers keep short takes: beside two 500-token rows the 17k row's 17 ticks are
+        // 2,024 tokens each (34 s), inside 45 s. With requests waiting, a peer can be replaced by
+        // a long one (51 s plus a tick): it goes first.
+        let short_peers = [
+            row(0, 17_000, Some(45.0)),
+            row(1, 500, Some(85.0)),
+            row(2, 500, Some(88.0)),
+        ];
+        assert_eq!(
+            deadline_prefill_rows(&short_peers, 1000.0, 1024, false),
+            None
+        );
+        assert_eq!(
+            deadline_prefill_rows(&short_peers, 1000.0, 1024, true),
+            Some(vec![0])
         );
         // A row that cannot make its deadline even alone does not take the device from the
         // others; it is ordered after the rows that can still make theirs.
@@ -44770,8 +44809,8 @@ mod tests {
             row(2, 100, Some(0.05)),
             row(3, 100, Some(0.3)),
         ];
-        // Row 1 is at risk (9,300 shared tokens plus a 1.3 s tick, past its 10.1 s) and fits
-        // alone (10.02 s); it takes the whole chunk, so nothing else advances this tick.
+        // Row 1 is at risk (9 ticks of 1,324 tokens, 11.9 s, past its 10.1 s) and fits alone
+        // (10.02 s); it takes the whole chunk, so nothing else advances this tick.
         assert_eq!(
             deadline_prefill_rows(&tail, 1000.0, 1024, false),
             Some(vec![1])
@@ -44783,18 +44822,36 @@ mod tests {
         ];
         // Row 1 (300 + 1024 tokens alone = 1.3 s) cannot fit 0.6 s, nor row 2: no rescue.
         assert_eq!(deadline_prefill_rows(&small, 1000.0, 1024, false), None);
+        // Row 1's one take ends the 1.0 s tick that samples its first token, inside its 1.8 s:
+        // no rescue.
         let mixed2 = [
             row(0, 100, None),
             row(1, 700, Some(1.8)),
             row(2, 200, Some(0.01)),
         ];
-        // Row 1 fits alone (1.72 s) and is at risk (1.0 s shared plus a 1.0 s tick): it goes
-        // first, then the infeasible row 2, then the no-deadline row 0, until the chunk is used
-        // (700 + 200 + 100 < 1024).
+        assert_eq!(deadline_prefill_rows(&mixed2, 1000.0, 1024, false), None);
+        // A tail under PRIME_MIN_T rides the take before it: 1,030 tokens are one take (2.0 s,
+        // inside 3 s), 1,040 are two (4.0 s) and fit alone (2.1 s).
+        let folded = [row(0, 1030, Some(3.0)), row(1, 1000, Some(80.0))];
+        assert_eq!(deadline_prefill_rows(&folded, 1000.0, 1024, false), None);
+        let two = [row(0, 1040, Some(3.0)), row(1, 1000, Some(80.0))];
         assert_eq!(
-            deadline_prefill_rows(&mixed2, 1000.0, 1024, false),
-            Some(vec![1, 2, 0])
+            deadline_prefill_rows(&two, 1000.0, 1024, false),
+            Some(vec![0])
         );
+        // The 4,096-token row is at risk (4 ticks of 2,824 tokens, 11.3 s, past 6 s) and fits
+        // alone (5.1 s); the 900-token row with the earlier deadline goes first, and the third
+        // row waits. Without it the fill would take every row, which holds nobody back: None.
+        let held = [
+            row(0, 900, Some(5.5)),
+            row(1, 4096, Some(6.0)),
+            row(2, 900, Some(50.0)),
+        ];
+        assert_eq!(
+            deadline_prefill_rows(&held, 1000.0, 1024, false),
+            Some(vec![0, 1])
+        );
+        assert_eq!(deadline_prefill_rows(&held[..2], 1000.0, 1024, false), None);
     }
 
     /// The head-of-line hold sits after every refusal that needs no memory (slot capacity, the
