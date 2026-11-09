@@ -492,7 +492,7 @@ impl Group {
         self.cx[0].nv_end();
         let mut m = Vec::with_capacity(n);
         for c in &self.cx {
-            m.push(c.ops.buf(s * d * 2)?);
+            m.push(c.ops.tmp(s * d * 2)?);
         }
         let cm = self.cx[0].chunk.min(s).max(1);
         for r0 in (0..s).step_by(cm) {
@@ -572,10 +572,10 @@ impl Group {
         let (mut q, mut o, mut oa, mut out) = (vec![], vec![], vec![], vec![]);
         for r in 0..n {
             let ops = &self.cx[r].ops;
-            q.push(ops.buf(c * lw[r].heads_l * hd * 2)?);
-            o.push(ops.buf(c * lw[r].heads_l * hd * 2)?);
-            oa.push(ops.buf(c * oa_ld * 2)?);
-            out.push(ops.buf(s * d * 2)?);
+            q.push(ops.tmp(c * lw[r].heads_l * hd * 2)?);
+            o.push(ops.tmp(c * lw[r].heads_l * hd * 2)?);
+            oa.push(ops.tmp(c * oa_ld * 2)?);
+            out.push(ops.tmp(s * d * 2)?);
         }
         for r0 in (0..s).step_by(c) {
             let rows = c.min(s - r0);
@@ -694,7 +694,7 @@ impl Group {
             let c = &mut self.cx[r];
             let st = c.ops.st.clone();
             let x = x2[r].at(&st, r0 * d * 2);
-            let sl = c.ops.buf(np * d * 2)?;
+            let sl = c.ops.tmp(np * d * 2)?;
             c.nv(c"experts");
             c.experts_tiles(&lw[r], x, &plans[r], p0, p1, &sl)?;
             c.nv_end();
@@ -1171,10 +1171,10 @@ impl Ctx {
         let st = self.ops.st.clone();
         let (d, inter) = (g.dim, g.moe_inter);
         let [s1, s2, s3] = &lw.shared;
-        let gb = self.ops.buf(rows * inter * 2)?;
-        let ub = self.ops.buf(rows * inter * 2)?;
-        let hb = self.ops.buf(rows * inter * 2)?;
-        let out = self.ops.buf(rows * d * 2)?;
+        let gb = self.ops.tmp(rows * inter * 2)?;
+        let ub = self.ops.tmp(rows * inter * 2)?;
+        let hb = self.ops.tmp(rows * inter * 2)?;
+        let out = self.ops.tmp(rows * d * 2)?;
         self.ops
             .linear_q(x, d, rows, s1, gb.p(&st), inter, false, &mut self.scr)?;
         self.ops
