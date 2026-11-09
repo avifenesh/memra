@@ -105,7 +105,7 @@
       "model": "Qwen3.8-27B",
       "class": "dense hybrid (GDN + gated attention)",
       "quants": "both paths tuned: safetensors NVFP4 · NVFP4+Q5_K GGUF; performance receipts are not interchangeable",
-      "drafter": "DFlash2 block-diffusion drafter (MEMRA_DSPARK_SPEC=1, q4 default + FR-Spec trim — HF Avifenesh/Qwen3.8-27B-DFlash2-memra; the qualified serving route since v0.113.0, beats the MTP arm on every rung of the vendor sampled shape) · MTP + own-gen FR-Spec masked ranks (safetensors: MEMRA_FRSPEC_TRIM; GGUF: pre-trimmed head — HF Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF)",
+      "drafter": "DFlash2 block-diffusion drafter (MEMRA_DSPARK_SPEC=1, q4 default + FR-Spec trim — HF tiyuvta/Qwen3.8-27B-DFlash2-memra; the qualified serving route since v0.113.0, beats the MTP arm on every rung of the vendor sampled shape) · MTP + own-gen FR-Spec masked ranks (safetensors: MEMRA_FRSPEC_TRIM; GGUF: pre-trimmed head — HF tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF)",
       "since": "v0.82.2 (MTP) / v0.113.0 (DFlash2 serving default)"
     },
     {
@@ -167,7 +167,7 @@
     {
       "model": "Ornith-1.5-35B-A3B",
       "class": "MoE hybrid (GDN + gated attention)",
-      "quants": "NVFP4+Q5_K GGUF (own-published: HF Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF, first NVFP4 of this model) · image input via the checkpoint ViT (MEMRA_VISION_DIR, parity-gated)",
+      "quants": "NVFP4+Q5_K GGUF (own-published: HF tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF, first NVFP4 of this model) · image input via the checkpoint ViT (MEMRA_VISION_DIR, parity-gated)",
       "drafter": "continued-trained MTP head + FR-Spec self-trim (MEMRA_FRSPEC_TRIM; v0.105 serves cached-long at K=5 with a trimmed head, v0.108 replays the verify trunk as a captured graph by default — +19.7% on a current-generation host, and much less host-CPU-sensitive than before) — artifacts on HF",
       "since": "v0.97.0"
     },
