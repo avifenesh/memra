@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Teeth for tools/changelog.sh: the tag walk, the skip list, the explicit FROM, and the
-# history-root baseline (2026-09-02), each forced in a throwaway repo under mktemp.
+# history-root baseline (2026-09-02) and the release-notes cap (2026-11-09), each forced in a
+# throwaway repo under mktemp.
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
@@ -131,5 +132,52 @@ out=$(cd "$tmp/shallow" && "$cl" 2>"$tmp/shallow.err")
 grep -q 'shallow checkout' "$tmp/shallow.err" || bad "arm10: no shallow NOTE on stderr: $(cat "$tmp/shallow.err")"
 printf '%s\n' "$out" | grep -q 'Before the snapshot' && bad "arm10: baseline applied in a shallow clone"
 ok "arm10 shallow clone announces itself, baseline not applied"
+
+# arm 11: a draft over the cap is cut by section priority, says so and links the full range
+# (v0.139.0: 328,884 bytes for 3,866 commits, over GitHub's 125,000-character limit)
+: > "$tmp/tools/changelog-baseline.txt"
+cap=$tmp/cap; git init -q "$cap"
+gc() { git -C "$cap" "$@"; }
+gc config user.email t@t; gc config user.name t
+cc() { echo "$RANDOM" >> "$cap/f"; gc add f; gc commit -q -m "$1"; }
+cc "chore: root"; gc tag v1.0.0
+long=$(printf 'x%.0s' $(seq 1 60))
+for n in 1 2 3 4 5 6 7 8; do cc "fix: fix number $n $long"; done
+cc "perf: the one perf change"
+cc "config(server): the default that moved"
+for n in 1 2 3 4 5; do cc "docs: doc number $n $long"; done
+cc "feat: the one feature"
+full=$(cd "$cap" && "$cl")
+printf '%s\n' "$full" | grep -q 'cut to fit' && bad "arm11: a draft under the default cap must not be cut: $full"
+out=$(cd "$cap" && CHANGELOG_MAX_BYTES=900 GITHUB_REPOSITORY=o/r "$cl"; printf x); out=${out%x}
+bytes=$(printf '%s' "$out" | LC_ALL=C wc -c)
+[ "$bytes" -le 900 ] || bad "arm11: capped draft is $bytes bytes, over 900: $out"
+printf '%s\n' "$out" | grep -q '^Changes since v1.0.0:' || bad "arm11: header lost: $out"
+printf '%s\n' "$out" | grep -qF 'https://github.com/o/r/compare/v1.0.0...' || bad "arm11: no compare link: $out"
+printf '%s\n' "$out" | grep -qF 'git log --no-merges v1.0.0..' || bad "arm11: no git log range: $out"
+printf '%s\n' "$out" | grep -q '^- the default that moved' || bad "arm11: configuration must be kept first: $out"
+printf '%s\n' "$out" | grep -q '^- the one perf change' || bad "arm11: performance must be kept: $out"
+printf '%s\n' "$out" | grep -q '^- the one feature' || bad "arm11: features must be kept: $out"
+printf '%s\n' "$out" | grep -qE '^- [0-9]+ more not listed' || bad "arm11: the cut section must count what it leaves out: $out"
+printf '%s\n' "$out" | grep -A1 '^## Documentation' | grep -q '^- 5 entries not listed' || bad "arm11: an omitted section must name its count: $out"
+printf '%s\n' "$out" | grep -q 'doc number' && bad "arm11: documentation listed ahead of the fixes it ranks below: $out"
+printf '%s' "$out" | tail -n 1 | grep -q '^Boards + reproduction artifacts' || bad "arm11: footer lost: $out"
+ok "arm11 over the cap: priority cut, counts, compare link, $bytes bytes"
+
+# arm 12: the real v0.138.0..v0.139.0 range (3,866 commits) fits GitHub's limit under the
+# default cap (needs both tags; a checkout without them says so)
+if git -C "$here" rev-parse -q --verify v0.138.0^{commit} >/dev/null && git -C "$here" rev-parse -q --verify v0.139.0^{commit} >/dev/null; then
+    out=$(cd "$here" && "$here/tools/changelog.sh" v0.138.0 v0.139.0; printf x); out=${out%x}
+    bytes=$(printf '%s' "$out" | LC_ALL=C wc -c)
+    chars=$(printf '%s' "$out" | python3 -c 'import sys; print(len(sys.stdin.buffer.read().decode()))')
+    [ "$bytes" -le 120000 ] && [ "$chars" -le 125000 ] || bad "arm12: v0.139.0 notes are $bytes bytes / $chars characters"
+    # here-strings, not pipes: grep -q exits at its first match and pipefail would count the
+    # writer's SIGPIPE on a 120 kB draft as a failure
+    grep -qF '/compare/v0.138.0...v0.139.0' <<<"$out" || bad "arm12: no compare link for the real range"
+    grep -q '^## Configuration' <<<"$out" || bad "arm12: configuration section lost"
+    ok "arm12 real v0.138.0..v0.139.0: $bytes bytes, $chars characters"
+else
+    echo "note arm12: v0.138.0/v0.139.0 tags not in this checkout; the real-range check runs where they are"
+fi
 
 echo "test_changelog: $pass arms PASS"

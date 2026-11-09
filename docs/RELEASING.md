@@ -135,6 +135,7 @@ release time was not exercised at merge time.** That is the shape this section e
 | No new public-boundary violation | `tools/check-public-boundary.py check` | pre-push · `ci.yml` | 117 s |
 | Every grandfathered boundary grant still describes a live finding | `tools/check-public-boundary.py verify-allowlist` | `ci.yml` | 45.9 s |
 | Release notes measure from the last tag that actually shipped | `tools/changelog.sh` + `tools/changelog-skip-tags.txt` | `release.yml` | <1 s |
+| Release notes fit GitHub's 125,000-character limit, so `gh release create` cannot refuse them | `tools/changelog.sh` caps the draft at 120,000 bytes: whole sections in priority order (configuration, performance, features, fixes, documentation, other), the cut section's remainder and every omitted section counted, a compare link to the full range; teeth `tools/test_changelog.sh` arms 11-12 (arm 12 runs the real v0.138.0..v0.139.0 range, 3,866 commits) | `release.yml` · `ci.yml` | 0.2 s |
 
 ### CI wall time, and what a push actually pays (2026-09-02)
 
@@ -473,7 +474,7 @@ Two mechanics changed so the release paperwork stays honest on a tagless history
   archive notes are appended, demoted one heading level, under "Before the snapshot". An explicit
   FROM argument bypasses it, like it bypasses the skip list. A baseline row for another root is
   ignored; a missing archive file is a loud RECORD MISSING line, never silence. Teeth:
-  `tools/test_changelog.sh` (10 arms, incl. one that resolves the REAL row against the REAL root, one that proves rig timing rows stop at the bookkeeping marker, and one that proves a shallow clone announces itself instead of dropping the record).
+  `tools/test_changelog.sh` (12 arms, incl. one that resolves the REAL row against the REAL root, one that proves rig timing rows stop at the bookkeeping marker, one that proves a shallow clone announces itself instead of dropping the record, and two that hold the draft under the release-notes cap).
 - **`tools/install.sh` and the README release badge read GitHub Releases of THIS repository.**
   Between the swap and v0.124.0 there were none, so the one-line installer failed with
   "could not resolve latest release" for every visitor. Cutting the first release is what closes
@@ -556,7 +557,11 @@ The publish itself is per crate and skip-if-live, so a re-run after a refusal up
 - Publishing is irreversible (yank ≠ delete): the tag must already have passed the on-rig
   gate battery like any release.
 
-Preview the draft locally before tagging:
+Preview the draft locally before tagging. A draft over 120,000 bytes is cut to fit GitHub's
+125,000-character release limit (v0.139.0's uncut draft was 328,884 for 3,866 commits, and
+"Publish release" failed on it); the cut keeps whole sections in priority order, counts what it
+leaves out and links the full range. The 5,000-character margin is room for the headline an
+owner adds afterwards.
 
 ```bash
 bash tools/changelog.sh            # previous tag -> HEAD

@@ -1,7 +1,8 @@
 #!/bin/bash
 # Draft release notes from conventional-commit history: changelog.sh [FROM_TAG] [TO_REF]
 # Defaults: FROM = previous tag, TO = HEAD. Groups by prefix; data()/chore() and merge
-# commits are dropped (research log rows and plumbing are not user-facing changes).
+# commits are dropped (research log rows and plumbing are not user-facing changes). The draft
+# is capped under GitHub's release-notes limit (CHANGELOG_MAX_BYTES, see the cap below).
 set -euo pipefail
 TO=${2:-HEAD}
 
@@ -56,42 +57,125 @@ elif [ -z "${1:-}" ] && [ -f "$baseline_file" ]; then
     fi
 fi
 
-section() { # section <title> <grep-prefix-regex>
-  local body
-  body=$(git log --no-merges --format='- %s' "$FROM..$TO" | grep -E "^- $2" \
-         | sed -E "s/^- $2(\([^)]*\))?!?: /- /" || true)
-  [ -n "$body" ] && printf '## %s\n%s\n\n' "$1" "$body"
-  return 0   # an empty section is not an error (set -e)
+collect() { # collect <grep-prefix-regex>: the section's bullets, one per line, no trailing newline
+  git log --no-merges --format='- %s' "$FROM..$TO" | grep -E "^- $1" \
+    | sed -E "s/^- $1(\([^)]*\))?!?: /- /" || true   # an empty section is not an error (set -e)
 }
+blen() { local LC_ALL=C; REPLY=${#1}; }  # bytes, not characters: a byte bound also bounds characters
+
+titles=(Performance Features Fixes Configuration Documentation Other)
+bodies=("$(collect perf)" "$(collect feat)" "$(collect fix)" "$(collect config)" "$(collect docs)"
+        # anything not matching a known prefix (and not data/chore) lands under Other
+        "$(git log --no-merges --format='- %s' "$FROM..$TO" \
+           | grep -vE '^- (perf|feat|fix|config|docs|data|chore|wip|probe)(\([^)]*\))?!?:' || true)")
 
 if [ -n "$baseline_tag" ]; then
-    echo "Changes since ${baseline_tag} (the last release on the old history; this history starts at snapshot ${FROM:0:9} = old ${baseline_old}):"
+    header="Changes since ${baseline_tag} (the last release on the old history; this history starts at snapshot ${FROM:0:9} = old ${baseline_old}):"$'\n\n'
 else
-    echo "Changes since ${FROM}:"
+    header="Changes since ${FROM}:"$'\n\n'
 fi
-echo
-section "Performance"    "perf"
-section "Features"       "feat"
-section "Fixes"          "fix"
-section "Configuration"  "config"
-section "Documentation"  "docs"
-# anything not matching a known prefix (and not data/chore) lands under Other
-other=$(git log --no-merges --format='- %s' "$FROM..$TO" \
-        | grep -vE '^- (perf|feat|fix|config|docs|data|chore|wip|probe)(\([^)]*\))?!?:' || true)
-[ -n "$other" ] && printf '## Other\n%s\n\n' "$other" || true
+footer="Boards + reproduction artifacts: https://huggingface.co/Avifenesh/memra-bench · full experiment log in research/tune-data/"$'\n'
 
+archive=""; archive_short=""
 if [ -n "$baseline_tag" ]; then
     notes_path=$(dirname "$0")/../$baseline_notes
     if [ -f "$notes_path" ]; then
-        printf '## Before the snapshot: %s to %s (old history)\n' "$baseline_tag" "$baseline_old"
         # The archive file's own preamble ends at its "Changes since" line; emit the sections
         # that follow it, demoted one heading level so they nest under this one. EVERY
         # "Changes since" line is dropped, not only the first: a duplicated header in the
-        # archive leaked into the v0.124.0 draft (revuto finding on PR #63).
-        awk 'found && /^<!-- bookkeeping -->/ { exit } /^Changes since / { found = 1; next } found { print }' "$notes_path" | sed -E 's/^## /### /'
-        printf 'Full pre-snapshot record: %s\n\n' "$baseline_notes"
+        # archive leaked into the v0.124.0 draft (revuto finding on PR #63). The trailing x keeps
+        # the block's final newlines through the command substitution.
+        archive=$(printf '## Before the snapshot: %s to %s (old history)\n' "$baseline_tag" "$baseline_old"
+                  awk 'found && /^<!-- bookkeeping -->/ { exit } /^Changes since / { found = 1; next } found { print }' "$notes_path" | sed -E 's/^## /### /'
+                  printf 'Full pre-snapshot record: %s\n\nx' "$baseline_notes")
+        archive=${archive%x}
+        archive_short=$(printf '## Before the snapshot: %s to %s (old history)\nNot listed here. Full pre-snapshot record: %s\n\nx' "$baseline_tag" "$baseline_old" "$baseline_notes")
+        archive_short=${archive_short%x}
     else
-        printf '## Before the snapshot: %s to %s (old history)\nRECORD MISSING: %s is named by tools/changelog-baseline.txt but is not in the tree.\n\n' "$baseline_tag" "$baseline_old" "$baseline_notes"
+        archive=$(printf '## Before the snapshot: %s to %s (old history)\nRECORD MISSING: %s is named by tools/changelog-baseline.txt but is not in the tree.\n\nx' "$baseline_tag" "$baseline_old" "$baseline_notes")
+        archive=${archive%x}; archive_short=$archive
     fi
 fi
-echo "Boards + reproduction artifacts: https://huggingface.co/Avifenesh/memra-bench · full experiment log in research/tune-data/"
+
+out=$header
+for i in "${!titles[@]}"; do
+    [ -n "${bodies[$i]}" ] && out+="## ${titles[$i]}"$'\n'"${bodies[$i]}"$'\n\n'
+done
+out+=$archive$footer
+
+# GitHub refuses release notes over 125,000 characters, and `gh release create` then fails the
+# whole release step: the v0.139.0 draft was 328,884 for 3,866 commits. The draft is capped at
+# CHANGELOG_MAX_BYTES (default 120,000 bytes, so at most 120,000 characters), which leaves room
+# for the headline and context an owner adds on GitHub afterwards (docs/RELEASING.md). A draft
+# that fits is emitted unchanged. One that does not keeps whole sections in priority order
+# (configuration, performance, features, fixes, documentation, other: defaults and speed first,
+# the research-log tail last), lists as many bullets of the first section that does not fit as
+# the budget allows, names the count of every bullet it leaves out, and links the full range.
+cap=${CHANGELOG_MAX_BYTES:-120000}
+blen "$out"
+if [ "$REPLY" -gt "$cap" ]; then
+    to_ref=$(git tag --points-at "$TO" --sort=-v:refname 2>/dev/null | head -1)
+    [ -n "$to_ref" ] || to_ref=$(git rev-parse "$TO")
+    compare="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-avifenesh/memra}/compare/${FROM}...${to_ref}"
+    total=0; declare -a count
+    for i in "${!titles[@]}"; do
+        if [ -n "${bodies[$i]}" ]; then count[$i]=$(printf '%s\n' "${bodies[$i]}" | wc -l); else count[$i]=0; fi
+        total=$((total + count[i]))
+    done
+    notice() { # notice <listed>: sets NOTICE
+        printf -v NOTICE 'These notes are cut to fit the GitHub release limit of 125,000 characters: %s of %s entries are listed, whole sections in priority order (configuration, performance, features, fixes, documentation, other). Every commit: %s or `git log --no-merges %s..%s`.\n\n' \
+            "$1" "$total" "$compare" "$FROM" "$to_ref"
+    }
+    omitted() { printf -v OMIT '## %s\n- %s entries not listed (full list linked above)\n\n' "$1" "$2"; }
+    # Reserve the smallest form of everything (the notice sized for its largest count), then
+    # upgrade sections in priority order while the budget lasts.
+    notice "$total"; blen "$header$NOTICE$footer"; used=$REPLY
+    declare -a state small full
+    for i in "${!titles[@]}"; do
+        state[$i]=empty; small[$i]=0; full[$i]=0
+        [ "${count[$i]}" -gt 0 ] || continue
+        state[$i]=omitted
+        omitted "${titles[$i]}" "${count[$i]}"; blen "$OMIT"; small[$i]=$REPLY
+        blen "## ${titles[$i]}"$'\n'"${bodies[$i]}"$'\n\n'; full[$i]=$REPLY
+        used=$((used + small[i]))
+    done
+    if [ -n "$archive" ]; then blen "$archive_short"; used=$((used + REPLY)); fi
+    left=$((cap - used))
+    [ "$left" -ge 0 ] || { echo "changelog: the section headings alone exceed $cap bytes" >&2; exit 1; }
+    partial=-1; keep=0; archive_out=$archive_short
+    for i in 3 0 1 2 4 5; do
+        [ "${state[$i]}" = omitted ] || continue
+        if [ $((full[i] - small[i])) -le "$left" ]; then
+            state[$i]=full; left=$((left - full[i] + small[i])); continue
+        fi
+        # The first section that does not fit lists what fits; every later one is omitted.
+        blen "## ${titles[$i]}"$'\n'"- ${count[$i]} more not listed (full list linked above)"$'\n\n'
+        budget=$((left + small[i] - REPLY))
+        while IFS= read -r line; do
+            blen "$line"
+            [ $((REPLY + 1)) -le "$budget" ] || break
+            budget=$((budget - REPLY - 1)); keep=$((keep + 1))
+        done <<< "${bodies[$i]}"
+        [ "$keep" -gt 0 ] && { partial=$i; state[$i]=partial; }
+        break
+    done
+    if [ "$partial" -lt 0 ] && [ -n "$archive" ]; then
+        blen "$archive"; a=$REPLY; blen "$archive_short"
+        [ $((a - REPLY)) -le "$left" ] && archive_out=$archive
+    fi
+    listed=0; body=""
+    for i in "${!titles[@]}"; do
+        case "${state[$i]}" in
+            full) body+="## ${titles[$i]}"$'\n'"${bodies[$i]}"$'\n\n'; listed=$((listed + count[i])) ;;
+            partial) body+="## ${titles[$i]}"$'\n'"$(printf '%s\n' "${bodies[$i]}" | head -n "$keep")"$'\n'
+                     body+="- $((count[i] - keep)) more not listed (full list linked above)"$'\n\n'
+                     listed=$((listed + keep)) ;;
+            omitted) omitted "${titles[$i]}" "${count[$i]}"; body+=$OMIT ;;
+        esac
+    done
+    notice "$listed"
+    out=$header$NOTICE$body$archive_out$footer
+    blen "$out"
+    [ "$REPLY" -le "$cap" ] || { echo "changelog: capped draft is still $REPLY bytes (cap $cap)" >&2; exit 1; }
+fi
+printf '%s' "$out"
