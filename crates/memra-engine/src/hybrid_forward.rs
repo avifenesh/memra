@@ -7720,14 +7720,21 @@ impl HybridModel {
 
     /// The boundary tail fold (research/gb10-prefill-20261106/TAIL-FOLD-DESIGN.md): whether a
     /// cold prime of `n` rows can run as one walk with a GDN tap at row `b` instead of a prime
-    /// split at `b`. It needs the eager serial walk of a GDN model (no gemma, hyper, sliding
-    /// gated, ring or pipeline-parallel program), both sides at least `PRIME_MIN_T` rows (so the
-    /// split's tail is a batched prime too), `b` on the GDN chunk grid of the walk call that
-    /// contains it, and the batched prime.
+    /// split at `b`. It needs the eager serial walk of a dense GDN model (no MoE, gemma, hyper,
+    /// sliding-gated, ring or pipeline-parallel program, no explicit `MEMRA_PRIME_CHUNK`), both
+    /// sides at least `PRIME_MIN_T` rows (so the split's tail is a batched prime too), and `b`
+    /// strictly inside a walk call, on its GDN chunk grid with at least `PRIME_MIN_T` rows of the
+    /// call after it. A stop at a call boundary gains nothing: the split already ends a call there.
+    /// MoE layers are out because their small-row expert program differs from the grouped one.
     pub fn prime_tail_fold_ok(&self, e: &Engine, n: usize, b: usize) -> bool {
         let _numeric = self.enter_numeric();
         let c = Engine::gdn_chunk_size();
         if c == 0
+            || std::env::var_os("MEMRA_PRIME_CHUNK").is_some()
+            || self
+                .layers
+                .iter()
+                .any(|l| !matches!(l.ffn, crate::hybrid::Ffn::Dense { .. }))
             || self.uses_gemma_program()
             || self.uses_sliding_gated_moe_program()
             || self.hyper.is_some()
@@ -7766,7 +7773,13 @@ impl HybridModel {
             self.swa_ring_on(),
         )
         .iter()
-        .any(|&(s, end)| s <= b && b < end && (b - s).is_multiple_of(c))
+        .any(|&(s, end)| {
+            s < b
+                && b < end
+                && (b - s).is_multiple_of(c)
+                && b - s >= PRIME_MIN_T
+                && end - b >= PRIME_MIN_T
+        })
     }
 
     /// Post-final-norm hidden state of one row of a prime-returned hidden stack — the
@@ -10022,9 +10035,8 @@ impl HybridModel {
         if tap_r == Some(0) {
             self.gdn_tap_fill(e, cache, il)?;
         }
-        let d_conv = geometry.conv_kernel as usize;
         let tapped = tap_r.filter(|&r| {
-            r > 0 && r % Engine::gdn_chunk_size() == 0 && r >= d_conv - 1 && t - r >= d_conv - 1
+            r > 0 && r % Engine::gdn_chunk_size() == 0 && r >= PRIME_MIN_T && t - r >= PRIME_MIN_T
         });
         let o = if let Some(r) = tapped {
             self.gdn_scan_prefill_tapped(e, la, qkv_mixed, beta_raw, alpha, t, r, cache, il, scale)?
@@ -10183,10 +10195,10 @@ impl HybridModel {
 
     /// The GDN prep and chunked scan of one prime call in two parts, rows [0, r) and [r, t),
     /// with the state at row `r` copied into the cache's tap between them (the boundary tail
-    /// fold). Each part runs the prep and `gdn_scan_prefill` a call of that many rows runs, so
-    /// the scan output (returned, `[t, num_v, d_state]`) and the final state equal the split
-    /// prime's. The out-norm is left to the caller, unfused.
-    #[allow(clippy::too_many_arguments)]
+    /// fold). Each part runs the prep and `gdn_scan_prefill` a call of that many rows runs; by
+    /// the prime split law on the chunk grid the scan output (returned, `[t, num_v, d_state]`)
+    /// and the final state equal the split prime's. The out-norm is left to the caller, unfused.
+    #[allow(clippy::too_many_arguments)] // allow: the mixer inputs plus the split row and the cache; the same contract as the layer body that calls it
     fn gdn_scan_prefill_tapped(
         &self,
         e: &Engine,

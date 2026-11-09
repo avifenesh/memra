@@ -3402,9 +3402,19 @@ impl Cache {
                     if kvl.ring.is_some() {
                         return Err("gdn tap snapshot: ring KV layers are not row-for-row".into());
                     }
-                    kv_len.push(Some(kvl.len.checked_sub(back).ok_or(
-                        "gdn tap snapshot: a KV layer holds fewer rows than the tap's distance",
-                    )?));
+                    // A layer the trunk walk advances holds every row up to `pos`; one it does
+                    // not advance (an MTP block's plane) keeps the length `snapshot()` would read.
+                    kv_len.push(Some(if kvl.len == self.pos {
+                        kvl.len - back
+                    } else if kvl.len <= at {
+                        kvl.len
+                    } else {
+                        return Err(format!(
+                            "gdn tap snapshot: KV layer {il} holds {} rows, neither the cache's {} nor at most the tap's {at}",
+                            kvl.len, self.pos
+                        )
+                        .into());
+                    }));
                 }
                 None => kv_len.push(None),
             }

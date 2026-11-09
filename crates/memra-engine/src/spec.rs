@@ -13220,15 +13220,14 @@ impl HybridModel {
             let tap = cache.gdn_tap.take();
             let (l, _h_seed, h_all) = primed?;
             prime_logits = l;
-            let recurrent = cache.recur.iter().flatten().count();
-            let mut snap = tap
-                .filter(|tap| tap.taken == recurrent)
-                .and_then(|tap| cache.snapshot_from_tap(tap).ok());
-            if snap.is_none() {
-                eprintln!(
-                    "[spec-prime] tail fold at {b}: the GDN tap is incomplete; no boundary capture"
-                );
-            }
+            let mut snap = match tap.map(|tap| cache.snapshot_from_tap(tap)) {
+                Some(Ok(snap)) => Some(snap),
+                Some(Err(err)) => {
+                    eprintln!("[spec-prime] tail fold at {b}: no boundary capture: {err}");
+                    None
+                }
+                None => None,
+            };
             let want_ckpt = ckpt_rel == Some(b);
             let want_slot = sess_capture
                 .as_ref()

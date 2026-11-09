@@ -417,15 +417,14 @@ impl MtpPrimeWalker<'_> {
             drop(seed);
             s.logits = logits;
             if let Some(b) = fold {
-                let recurrent = self.sess.cache.recur.iter().flatten().count();
-                let mut snap = tap
-                    .filter(|tap| tap.taken == recurrent)
-                    .and_then(|tap| self.sess.cache.snapshot_from_tap(tap).ok());
-                if snap.is_none() {
-                    eprintln!(
-                        "[prime-walk] tail fold at {b}: the GDN tap is incomplete; no boundary capture"
-                    );
-                }
+                let mut snap = match tap.map(|tap| self.sess.cache.snapshot_from_tap(tap)) {
+                    Some(Ok(snap)) => Some(snap),
+                    Some(Err(err)) => {
+                        eprintln!("[prime-walk] tail fold at {b}: no boundary capture: {err}");
+                        None
+                    }
+                    None => None,
+                };
                 let want_ckpt = s.ckpt_rel == Some(b);
                 if s.capture_at == Some(b) || want_ckpt {
                     let logits_b = self.model.prime_row_logits(self.e, h_all, b - 1).ok();
