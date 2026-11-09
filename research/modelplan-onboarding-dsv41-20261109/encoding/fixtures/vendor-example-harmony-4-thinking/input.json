@@ -1,0 +1,27 @@
+{
+  "source": "inference/examples/example_harmony.json",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant."
+    },
+    {
+      "role": "user",
+      "content": "Hello"
+    },
+    {
+      "role": "assistant",
+      "content": "Hi there! How can I help you?"
+    },
+    {
+      "role": "system",
+      "content": "Mid-conversation instruction update: reply in Chinese only. (deepseek_v41 only)"
+    }
+  ],
+  "req_tools": null,
+  "think": "thinking",
+  "reasoning_effort": "75",
+  "add_generation_prompt": true,
+  "expected_images": [],
+  "wire": false
+}

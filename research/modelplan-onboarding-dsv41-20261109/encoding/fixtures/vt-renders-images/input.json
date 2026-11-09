@@ -1,0 +1,28 @@
+{
+  "source": "test_encoding.py::test_v41_renders_images",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "inspect"
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "/unused/image.png"
+          }
+        }
+      ]
+    }
+  ],
+  "req_tools": null,
+  "think": "chat",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [
+    "/unused/image.png"
+  ],
+  "wire": false
+}

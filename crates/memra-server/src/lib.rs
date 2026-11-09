@@ -104,6 +104,8 @@ mod background_jobs;
 #[allow(dead_code)] // one implementation, two callers: each uses a subset.
 mod build_id;
 mod capacity_metrics;
+#[cfg(test)]
+mod dsv41_encoding_tests;
 mod dsv4_admit;
 mod dsv4_serve;
 mod embed_api;
@@ -5959,6 +5961,34 @@ fn prepare_tools(
     Ok((tools_json, tools_struct, schemas))
 }
 
+/// deepseek-v4.1 content parts: a content array's text parts, in order. encoding.py joins a
+/// message's parts with `"\n\n"` where every other dialect here concatenates them, so the V4.1
+/// renderer needs the parts, not the flattened text. Image parts refuse by name: memra has no
+/// V4.1 vision program, and a placeholder with no image behind it is a prompt the model was
+/// never trained on. String or null content is not parts (`None`).
+fn dsv41_content_parts(v: &serde_json::Value) -> Result<Option<Vec<chat::ContentPart>>, String> {
+    let serde_json::Value::Array(parts) = v else {
+        return Ok(None);
+    };
+    parts
+        .iter()
+        .map(|p| match p.get("type").and_then(|t| t.as_str()) {
+            Some("text") | None => p
+                .get("text")
+                .and_then(|t| t.as_str())
+                .map(|t| chat::ContentPart::Text(t.to_string()))
+                .ok_or_else(|| "content part has no text field".to_string()),
+            Some(kind @ ("image_url" | "image" | "input_image" | "video_url")) => Err(format!(
+                "{kind} parts are not served on deepseek_v41: memra has no V4.1 vision program"
+            )),
+            Some(other) => Err(format!(
+                "unsupported content part type {other:?} (text only)"
+            )),
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
 /// Re-render an assistant-history tool call for the template. Value law mirrors the
 /// template's `args_value | tojson if mapping/sequence else | string`: strings raw,
 /// objects/arrays python-style JSON; scalars use their JSON text (`true`/`3`/`null` —
@@ -5997,6 +6027,9 @@ fn render_req_tool_call(tc: &ReqToolCall) -> Result<TmplToolCall, String> {
         params,
         args,
         id: tc.id.clone(),
+        // The OpenAI wire has no namespace field; a deepseek-v4.1 client spells a namespaced
+        // call `ns::name`, which the V4.1 renderer splits itself.
+        namespace: None,
     })
 }
 
@@ -9502,7 +9535,15 @@ fn build_chat_request_with_trace(
     let mut glm5_images: Vec<PendingGlm5Image> = Vec::new();
     let mut step_images: Vec<PendingStepImage> = Vec::new();
     let mut next_video = 0usize;
+    let is_dsv41 = caps.is_some_and(|c| c.dsv41);
     for msg in &req.messages {
+        // deepseek-v4.1 keeps text parts as parts (and refuses image parts) BEFORE the shared
+        // vision walker can admit an image this model has no program for.
+        let parts = if is_dsv41 {
+            dsv41_content_parts(&msg.content).map_err(|e| format!("{} message: {e}", msg.role))?
+        } else {
+            None
+        };
         let content = content_to_text_vision(
             &msg.content,
             &mut images,
@@ -9541,6 +9582,11 @@ fn build_chat_request_with_trace(
             // turn by the dsv4 arm); every other dialect ignores both.
             task: None,
             tools: Vec::new(),
+            // dsv4.1-only fields: content parts (above), and neither a per-message
+            // response_format nor an unterminated assistant prefill exists on this surface.
+            parts,
+            response_format: None,
+            wo_eos: false,
         });
     }
 
@@ -9613,7 +9659,12 @@ fn build_chat_request_with_trace(
     } else if is_hy3 && (hy3_tools || hy3_think_open) {
         Some(ToolStreamParser::hy3(schemas, hy3_think_open))
     } else if is_dsv4 && (dsv4_tools || dsv4_think_open) {
-        Some(ToolStreamParser::dsv4(dsv4_think_open))
+        // V4.1 rides the same arm with its spaced DSML tags (`ModelCaps::dsv41`).
+        Some(if is_dsv41 {
+            ToolStreamParser::dsv41(dsv4_think_open)
+        } else {
+            ToolStreamParser::dsv4(dsv4_think_open)
+        })
     } else if gemma_tools {
         Some(gemma_hold(ToolStreamParser::gemma_tools()))
     } else if !tools_json.is_empty() {
@@ -9675,7 +9726,12 @@ fn build_chat_request_with_trace(
                 // (scoped to dsv4 tool requests, never global; the close stays in the stream so
                 // the parser finishes the span — same law as gemma's `<tool_call|>`).
                 if dsv4_tools {
-                    stops.push("</\u{ff5c}DSML\u{ff5c}tool_calls>".to_string());
+                    let dsml = if is_dsv41 {
+                        &toolcall::DSML_V41
+                    } else {
+                        &toolcall::DSML_V4
+                    };
+                    stops.push(dsml.close.to_string());
                 }
                 // HY3 tool requests: stop on the native suffixed tool_calls close. Keep the
                 // marker in the stream so the parser can close and emit every call.
@@ -13913,6 +13969,7 @@ mod tests {
                 tool_responses,
                 task: None,
                 tools: Vec::new(),
+                ..Default::default()
             });
         }
         chat::apply_chat_template_tools_ex(
@@ -14783,6 +14840,7 @@ mod tests {
             tool_responses: Vec::new(),
             task: msg.get("task").and_then(|s| s.as_str()).map(String::from),
             tools,
+            ..Default::default()
         }
     }
 
@@ -30082,6 +30140,7 @@ temperature = 0.6
             gemma_think: false,
             gemma_unopened_thought: false,
             dsv4: false,
+            dsv41: false,
             glm5: false,
             chat_temperature_default: None,
             chat_top_p_default: None,

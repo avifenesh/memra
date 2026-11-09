@@ -1,0 +1,39 @@
+{
+  "source": "test_encoding.py::test_v41_renders_namespaced_tool_schemas[obj-function]",
+  "messages": [
+    {
+      "role": "system",
+      "content": "system",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup",
+            "description": "Look up a value",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "integer"
+                }
+              }
+            },
+            "namespace": {
+              "name": "search",
+              "description": "Search tools."
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "req_tools": null,
+  "think": "chat",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [],
+  "wire": false
+}

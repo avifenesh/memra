@@ -1,0 +1,102 @@
+{
+  "source": "matrix",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Use tools."
+    },
+    {
+      "role": "user",
+      "content": "Weather and calc."
+    },
+    {
+      "role": "assistant",
+      "reasoning_content": "two calls",
+      "content": "Calling both.",
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"location\": \"Beijing\"}"
+          },
+          "id": "cA"
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "calculate",
+            "arguments": "{\"expr\": \"2+2\"}"
+          },
+          "id": "cB"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "cB",
+      "content": "4"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "cA",
+      "content": "sunny"
+    },
+    {
+      "role": "user",
+      "content": "And tomorrow?"
+    }
+  ],
+  "req_tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the weather for a specific location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "The city name"
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "celsius",
+                "fahrenheit"
+              ]
+            }
+          },
+          "required": [
+            "location"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "calculate",
+        "description": "Evaluate an arithmetic expression \"exactly\"\nReturns a number.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "expr": {
+              "type": "string",
+              "description": "表达式"
+            }
+          },
+          "required": [
+            "expr"
+          ]
+        }
+      }
+    }
+  ],
+  "think": "thinking",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [],
+  "wire": true
+}

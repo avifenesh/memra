@@ -1,0 +1,40 @@
+{
+  "source": "matrix",
+  "messages": [
+    {
+      "role": "system",
+      "content": "s",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup",
+            "description": "Look up a value",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "integer"
+                }
+              }
+            },
+            "namespace": null
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "q"
+    }
+  ],
+  "req_tools": null,
+  "think": "chat",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [],
+  "wire": false
+}

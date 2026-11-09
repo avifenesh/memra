@@ -6,6 +6,11 @@ and TensorCensus pass at inspect. The pack's support stays none: no executor run
 single-pass mHC or Engram, so TinyParity, CheckpointParity, RewriteParity and Serve are pending.
 No GPU was used.
 
+Step 2 (same day, `encoding/README.md`): the `encoding_dsv41` chat dialect renders and parses
+byte for byte as the vendor's `encoding/encoding.py` across 166 render, 17 refusal and 15 parse
+fixtures, with the artifact tokenizer's ids for every render. The pack's renderer now resolves,
+and the TokenizerTemplate gate exercises it on the artifact (`inspect/tokenizer-contract.tsv`).
+
 ## Artifact
 
 `deepseek-ai/DeepSeek-V4.1-Flash-1017@1bae0e1088993b9b82de08f59de5be5a34e42170`: 48 safetensors
@@ -82,3 +87,5 @@ the upstream MXFP4 trunk experts against the pack's NVFP4 house-mint contract.
   `crates/memra-gguf/src/model_packs/deepseek_v41/fixtures/census-classes.tsv` and refuses to
   write unless the fixture expands back to every name, dtype and shape.
 - `inspect/`: the inspect outputs listed above, `normalized-config.txt` included.
+  `tokenizer-contract.tsv` is step 2's: the same contract plus the renderer probe.
+- `encoding/`: step 2, the chat dialect (oracle files, fixture generator, fixtures, receipts).

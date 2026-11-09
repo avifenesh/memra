@@ -1,0 +1,56 @@
+{
+  "source": "matrix",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Weather?"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "\"{\\\"location\\\": \\\"Oslo\\\"}\""
+          },
+          "id": "c1"
+        }
+      ]
+    }
+  ],
+  "req_tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the weather for a specific location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "The city name"
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "celsius",
+                "fahrenheit"
+              ]
+            }
+          },
+          "required": [
+            "location"
+          ]
+        }
+      }
+    }
+  ],
+  "think": "chat",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [],
+  "wire": false
+}

@@ -1236,6 +1236,31 @@ struct TokenizerEvidence {
     /// vendor ships the dialect as code has no template to find, and a loader that
     /// refuses there refuses a correct artifact forever.
     template: Option<TemplateEvidence>,
+    /// Where the tokenizer files came from, so the gate can load the tokenizer an
+    /// engine-owned renderer is exercised under (`exercise_engine_renderer`).
+    origin: TokenizerOrigin,
+}
+
+enum TokenizerOrigin {
+    Gguf,
+    Dir(PathBuf),
+    Remote {
+        base: String,
+        tokenizer_json: String,
+        tokenizer_config: Option<String>,
+    },
+}
+
+/// What the TokenizerTemplate gate learned by exercising an `EngineRenderer` pack's renderer on
+/// the artifact's own files: the renderer the name resolved to, the encoding the artifact's
+/// config.json census selected, and the digests of a fixed probe conversation rendered through
+/// it and tokenized with the artifact's tokenizer.
+struct RendererProbe {
+    dialect: memra_tokenizer::chat::EngineDialect,
+    encoding: memra_tokenizer::chat::Dsv4Encoding,
+    probe_sha256: String,
+    probe_tokens: usize,
+    probe_ids_sha256: String,
 }
 
 struct TemplateEvidence {
@@ -1312,16 +1337,10 @@ pub fn inspect_model(
     if let Some(binding) = binding.as_ref() {
         write_checkpoint_placement_candidates(&request.out_dir, &plan, binding, &plan_hash)?;
     }
-    let tokenizer_error = match &source.tokenizer {
-        Ok(evidence) if !pack.tokenizer_sources.contains(&evidence.source) => Some(format!(
-            "model pack {} does not accept tokenizer source {:?}",
-            pack.family, evidence.source
-        )),
-        Ok(evidence) => template_contract_error(pack, evidence.template.is_some()),
-        Err(error) => Some(error.clone()),
-    };
+    let verdict = tokenizer_verdict(pack, &source);
+    let tokenizer_error = verdict.as_ref().err().cloned();
     if let Ok(evidence) = &source.tokenizer
-        && tokenizer_error.is_none()
+        && let Ok(probe) = &verdict
     {
         let (dialect, sha, bytes) = match (&evidence.template, pack.template) {
             (Some(template), _) => ("artifact", template.sha256.clone(), template.bytes),
@@ -1330,13 +1349,25 @@ pub fn inspect_model(
             }
             (None, TemplateContract::ArtifactRequired) => unreachable!("gated above"),
         };
+        let mut contract = format!(
+            "status\tpassed\nsource\t{:?}\ntokenizer_sha256\t{}\ndialect\t{}\ntemplate_sha256\t{}\ntemplate_bytes\t{}\n",
+            evidence.source, evidence.tokenizer_sha256, dialect, sha, bytes,
+        );
+        if let Some(probe) = probe {
+            write!(
+                contract,
+                "renderer\t{}\nrenderer_encoding\t{:?}\nrenderer_probe_sha256\t{}\nrenderer_probe_tokens\t{}\nrenderer_probe_ids_sha256\t{}\n",
+                probe.dialect.renderer_name(),
+                probe.encoding,
+                probe.probe_sha256,
+                probe.probe_tokens,
+                probe.probe_ids_sha256,
+            )
+            .unwrap();
+        }
         write_atomic(
             &request.out_dir.join("tokenizer-contract.tsv"),
-            format!(
-                "status\tpassed\nsource\t{:?}\ntokenizer_sha256\t{}\ndialect\t{}\ntemplate_sha256\t{}\ntemplate_bytes\t{}\n",
-                evidence.source, evidence.tokenizer_sha256, dialect, sha, bytes,
-            )
-            .as_bytes(),
+            contract.as_bytes(),
         )?;
     }
     write_atomic(
@@ -1353,6 +1384,7 @@ pub fn inspect_model(
             } else {
                 "passed"
             },
+            verdict.is_ok(),
         )
         .as_bytes(),
     )?;
@@ -1626,6 +1658,7 @@ fn inspect_gguf_tokenizer(gguf: &GgufFile) -> Result<TokenizerEvidence, String> 
             sha256: hex_sha256(template.as_bytes()),
             bytes: template.len(),
         }),
+        origin: TokenizerOrigin::Gguf,
     })
 }
 
@@ -1641,6 +1674,7 @@ fn inspect_hf_tokenizer_dir(path: &Path) -> Result<TokenizerEvidence, String> {
             sha256: hex_sha256(template.as_bytes()),
             bytes: template.len(),
         }),
+        origin: TokenizerOrigin::Dir(path.to_path_buf()),
     })
 }
 
@@ -1676,6 +1710,116 @@ fn template_contract_error(pack: &ModelPack, artifact_has_template: bool) -> Opt
             pack.family
         )),
     }
+}
+
+/// The whole TokenizerTemplate judgment, made once and read by both the gate and the lock: the
+/// artifact's tokenizer evidence, the pack's accepted sources, the two-sided template contract
+/// and, for an `EngineRenderer` pack, the renderer exercised on the artifact
+/// (`exercise_engine_renderer`). `Ok(Some(probe))` is a passed renderer gate.
+fn tokenizer_verdict(
+    pack: &ModelPack,
+    source: &SourceData,
+) -> Result<Option<RendererProbe>, String> {
+    let evidence = source.tokenizer.as_ref().map_err(Clone::clone)?;
+    if !pack.tokenizer_sources.contains(&evidence.source) {
+        return Err(format!(
+            "model pack {} does not accept tokenizer source {:?}",
+            pack.family, evidence.source
+        ));
+    }
+    if let Some(error) = template_contract_error(pack, evidence.template.is_some()) {
+        return Err(error);
+    }
+    match pack.template {
+        TemplateContract::ArtifactRequired => Ok(None),
+        TemplateContract::EngineRenderer(renderer) => {
+            exercise_engine_renderer(pack.family, renderer, evidence, &source.config_bytes)
+                .map(Some)
+        }
+    }
+}
+
+/// An `EngineRenderer` pack passes only when the renderer it names exists and owns this artifact:
+/// the name resolves in the tokenizer crate's dialect table, the artifact's config.json census
+/// selects an encoding that renderer covers, every control string the renderer emits encodes as
+/// one id under the artifact's tokenizer, and a fixed probe conversation renders through it.
+/// Before this the gate recorded the name and passed on it alone, so a pack could name a
+/// renderer that did not exist (deepseek_v41's `encoding_dsv41`, until its renderer landed).
+fn exercise_engine_renderer(
+    family: &str,
+    renderer: &str,
+    evidence: &TokenizerEvidence,
+    config_bytes: &[u8],
+) -> Result<RendererProbe, String> {
+    use memra_tokenizer::chat::EngineDialect;
+    let dialect = EngineDialect::from_renderer_name(renderer).ok_or_else(|| {
+        format!(
+            "model pack {} names the engine renderer {renderer}, which this engine does not \
+             implement",
+            family
+        )
+    })?;
+    let tok = match &evidence.origin {
+        TokenizerOrigin::Dir(dir) => memra_tokenizer::Tokenizer::from_hf_dir(dir)?,
+        TokenizerOrigin::Remote {
+            base,
+            tokenizer_json,
+            tokenizer_config,
+        } => {
+            let generation_config = http_text(&format!("{base}/generation_config.json"))
+                .map_err(|error| error.to_string())?;
+            let config = std::str::from_utf8(config_bytes)
+                .map_err(|error| format!("config.json is not UTF-8: {error}"))?;
+            memra_tokenizer::Tokenizer::from_hf_files(&memra_tokenizer::HfTokenizerFiles {
+                origin: Path::new(base),
+                tokenizer_json,
+                tokenizer_config: tokenizer_config.as_deref(),
+                generation_config: generation_config.as_deref(),
+                chat_template_jinja: None,
+                config: Some(config),
+            })?
+        }
+        TokenizerOrigin::Gguf => {
+            return Err(format!(
+                "model pack {}: the engine renderer {renderer} is keyed on an HF config.json \
+                 census, which a GGUF does not carry",
+                family
+            ));
+        }
+    };
+    let encoding = tok.dsv4_encoding().ok_or_else(|| {
+        format!(
+            "model pack {} names the engine renderer {renderer}, but the artifact's config.json \
+             selects no DeepSeek encoding",
+            family
+        )
+    })?;
+    if !dialect.covers(encoding) {
+        return Err(format!(
+            "model pack {} names the engine renderer {renderer}, but the artifact's config.json \
+             selects the {encoding:?} encoding, which {renderer} does not render",
+            family
+        ));
+    }
+    for marker in dialect.markers() {
+        let ids = tok.encode(marker, false);
+        if ids.len() != 1 || tok.id_of(marker) != Some(ids[0]) {
+            return Err(format!(
+                "the artifact's tokenizer encodes the {renderer} control string {marker} as \
+                 {ids:?}, not as its one id"
+            ));
+        }
+    }
+    let probe = dialect.render_probe(encoding)?;
+    let ids = tok.encode(&probe, true);
+    let id_bytes: Vec<u8> = ids.iter().flat_map(|id| id.to_le_bytes()).collect();
+    Ok(RendererProbe {
+        dialect,
+        encoding,
+        probe_sha256: hex_sha256(probe.as_bytes()),
+        probe_tokens: ids.len(),
+        probe_ids_sha256: hex_sha256(&id_bytes),
+    })
 }
 
 fn local_hf_template(path: &Path) -> Result<Option<String>, String> {
@@ -1723,6 +1867,11 @@ fn inspect_remote_hf_tokenizer(base: &str) -> Result<TokenizerEvidence, String> 
             sha256: hex_sha256(template.as_bytes()),
             bytes: template.len(),
         }),
+        origin: TokenizerOrigin::Remote {
+            base: base.to_string(),
+            tokenizer_json: tokenizer,
+            tokenizer_config: config,
+        },
     })
 }
 
@@ -2089,6 +2238,9 @@ fn format_execution_rewrites(
     output
 }
 
+// allow: the lock is a flat record of every gate input; the tokenizer verdict joined it so the
+// lock reads the gate's one judgment instead of re-deriving it.
+#[allow(clippy::too_many_arguments)]
 fn format_lock(
     pack: &ModelPack,
     source: &SourceData,
@@ -2097,6 +2249,7 @@ fn format_lock(
     plan: &str,
     rewrites: &str,
     binding: &str,
+    tokenizer_passed: bool,
 ) -> String {
     let mut output = String::from("format_version=2\n");
     writeln!(output, "source={}", lock_value(&source.label)).unwrap();
@@ -2116,13 +2269,12 @@ fn format_lock(
     writeln!(output, "plan_sha256={plan}").unwrap();
     writeln!(output, "rewrite_manifest_sha256={rewrites}").unwrap();
     writeln!(output, "binding={binding}").unwrap();
-    // The lock records the SAME judgment the gate made, through the same function: a lock
-    // that said `passed` on its own accounting once let a gate failure out of sight.
+    // The lock records the SAME judgment the gate made (`tokenizer_verdict`, computed once by
+    // the caller): a lock that said `passed` on its own accounting once let a gate failure out
+    // of sight. The renderer probe lives in tokenizer-contract.tsv, so a passing lock keeps the
+    // bytes it had before the renderer was exercised.
     match &source.tokenizer {
-        Ok(evidence)
-            if pack.tokenizer_sources.contains(&evidence.source)
-                && template_contract_error(pack, evidence.template.is_some()).is_none() =>
-        {
+        Ok(evidence) if tokenizer_passed => {
             writeln!(output, "tokenizer=passed").unwrap();
             writeln!(output, "tokenizer_source={:?}", evidence.source).unwrap();
             writeln!(output, "tokenizer_sha256={}", evidence.tokenizer_sha256).unwrap();
@@ -2766,6 +2918,89 @@ mod tests {
             "{franken}"
         );
         assert!(franken.contains("encoding_dsv4"), "{franken}");
+    }
+
+    /// Every `EngineRenderer` name a pack declares resolves to a renderer the tokenizer crate
+    /// implements, the onboarding profiles included. A pack naming a renderer that does not exist
+    /// would otherwise fail every artifact at inspect, which this pins at build time instead.
+    #[test]
+    fn every_engine_renderer_pack_names_an_implemented_renderer() {
+        let mut named = Vec::new();
+        for pack in model_packs::PACKS
+            .iter()
+            .chain(model_packs::ONBOARDING_PROFILES)
+        {
+            if let TemplateContract::EngineRenderer(renderer) = pack.template {
+                assert!(
+                    memra_tokenizer::chat::EngineDialect::from_renderer_name(renderer).is_some(),
+                    "{} names {renderer}",
+                    pack.family
+                );
+                named.push(renderer);
+            }
+        }
+        assert!(
+            named.contains(&"encoding_dsv4") && named.contains(&"encoding_dsv41"),
+            "{named:?}"
+        );
+    }
+
+    fn hf_dir_evidence(dir: &Path) -> TokenizerEvidence {
+        inspect_hf_tokenizer_dir(dir).expect("tokenizer evidence")
+    }
+
+    /// The TokenizerTemplate gate exercises the renderer a pack names on the artifact's own
+    /// files: the V4.1 artifact files (tokenizer.json, tokenizer_config.json, config.json at the
+    /// pinned revision) pass `encoding_dsv41` and are refused by `encoding_dsv4`; a tokenizer
+    /// with no config census, and a renderer name nothing implements, are refused by name.
+    #[test]
+    fn the_tokenizer_gate_exercises_the_named_renderer_on_the_artifact() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let v41 = root.join("research/modelplan-onboarding-dsv41-20261109/encoding/ref");
+        let config = std::fs::read(v41.join("config.json")).unwrap();
+        let evidence = hf_dir_evidence(&v41);
+        assert!(
+            evidence.template.is_none(),
+            "the V4.1 artifact ships no template"
+        );
+
+        let probe = exercise_engine_renderer("deepseek_v41", "encoding_dsv41", &evidence, &config)
+            .unwrap_or_else(|e| panic!("the V4.1 artifact must pass encoding_dsv41: {e}"));
+        assert_eq!(probe.encoding, memra_tokenizer::chat::Dsv4Encoding::V41);
+        assert_eq!(probe.dialect.renderer_name(), "encoding_dsv41");
+        assert!(probe.probe_tokens > 100, "{}", probe.probe_tokens);
+        // deterministic: the same files give the same probe digests.
+        let again =
+            exercise_engine_renderer("deepseek_v41", "encoding_dsv41", &evidence, &config).unwrap();
+        assert_eq!(
+            (&again.probe_sha256, &again.probe_ids_sha256),
+            (&probe.probe_sha256, &probe.probe_ids_sha256)
+        );
+
+        let wrong = exercise_engine_renderer("deepseek_v4", "encoding_dsv4", &evidence, &config)
+            .err()
+            .expect("the DSv4 renderer must refuse a V4.1 artifact");
+        assert!(
+            wrong.contains("V41") && wrong.contains("does not render"),
+            "{wrong}"
+        );
+
+        let missing = exercise_engine_renderer("x", "encoding_nope", &evidence, &config)
+            .err()
+            .expect("an unimplemented renderer must refuse");
+        assert!(missing.contains("does not implement"), "{missing}");
+
+        // the DSv4 template research ref carries tokenizer.json but no config.json: no census.
+        let no_census = root.join("research/dsv4-template-20260818/ref");
+        let none = exercise_engine_renderer(
+            "deepseek_v41",
+            "encoding_dsv41",
+            &hf_dir_evidence(&no_census),
+            b"{}",
+        )
+        .err()
+        .expect("no census must refuse");
+        assert!(none.contains("selects no DeepSeek encoding"), "{none}");
     }
 
     /// The deepseek-v4 packs are the reason `EngineRenderer` exists: upstream
