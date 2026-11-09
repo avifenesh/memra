@@ -3193,28 +3193,6 @@ extern "C" __global__ void copy_batch_uniform_kv_u8_set_len(
     if (threadIdx.x == 0) *len_dst = logical_len;
 }
 
-// ---- Indirect-source copy (engine-bundle slice 3) ----
-// src address is read from a device pointer-table entry at RUN time — the gdn ping-pong
-// redirects through the same 6-entry table the scan kernels consume, so a CAPTURED graph
-// stays parity-correct after the canonical/alt handles swap between rounds (a baked
-// memcpy node would keep reading the capture-time physical buffer — the slice-3 smoke
-// divergence). dst is a direct (static slab) address. Same body as copy_batch_uniform.
-extern "C" __global__ void copy_indirect_src_f32(
-        const unsigned long long* __restrict__ src_entry, float* __restrict__ dst, int words) {
-    const float* __restrict__ src = (const float*)(size_t)src_entry[0];
-    const int stride = gridDim.x * blockDim.x;
-    const bool aligned = (((size_t)src | (size_t)dst) & 15) == 0 && (words & 3) == 0;
-    if (aligned) {
-        const float4* __restrict__ s4 = (const float4*)src;
-        float4* __restrict__ d4 = (float4*)dst;
-        const int vec = words >> 2;
-        for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < vec; i += stride) d4[i] = s4[i];
-    } else {
-        for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < words; i += stride)
-            dst[i] = src[i];
-    }
-}
-
 // =====================================================================================
 // qwen4_exp eager-arm kernels (qwen4exp-bringup-20260829, GPU-EAGER phase 7).
 // Correctness-class oracles for the gated-residual/QSA/GDN/PLE program — geometry-generic,

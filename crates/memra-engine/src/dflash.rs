@@ -6558,8 +6558,9 @@ impl crate::hybrid::HybridModel {
     /// cache-reuse-pool the old bin-arm-only note asked for). Sharing is sound because
     /// every per-session-varying address the captured bodies touch is indirect:
     /// conv/ssm state and the ckpt stash resolve through the per-verify refreshed
-    /// pointer table (refresh_tables + copy_indirect_src_f32 — the slice-3
-    /// parity/lifetime law; a baked address is the known 12/12-divergence class), kv
+    /// pointer table (refresh_tables, read at replay by the packed conv and scan kernels,
+    /// which also write the stash: the slice-3 parity/lifetime law; a baked address is the
+    /// known 12/12-divergence class), kv
     /// bases through fa_table, residual/pos/tap through ctx-owned staging rewritten
     /// every round; per-row t_kv derives in-kernel from pos_seq, and the per-round
     /// host bookkeeping (parity swap, len bump) runs on THIS session's cache.

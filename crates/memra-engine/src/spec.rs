@@ -275,18 +275,6 @@ pub(crate) fn spec_lean() -> bool {
 /// t=2 batched linear-attn verify, rode `linear_attn_verify_t` and went with the round-stream
 /// door (docs/FLAGS.md "Removed doors", 2026-11-03).
 /// Gates arbitrate: run-spec K=1..8 self-consistency (35B+9B), kernel-check, run-gen argmax.
-/// `MEMRA_SPEC_GDN_PACKED` (lane/dspark-gdn-packed, 2026-09-08): the batched-class linear verify
-/// (`qwen35_tparallel_linear_layer`) runs its three per-row state kernels as one packed launch
-/// each (T rows, state resident, the same per-row program), instead of 3 launches per draft
-/// row per layer. Default ON since 2026-09-08 on the 5090 receipt (memra#341: bin oracle ALL
-/// EXACT at vt 3/5/8 and the ladder, served chain 15 of 15 turns byte-identical over three
-/// boots, served ladder 140.6 -> 153.2 tok/s sampled and 147.4 -> 160.7 greedy; verify at 8
-/// rows 23.1 -> 19.5 ms/round). `0` is the rollback seam: the per-row program exactly.
-pub(crate) fn spec_gdn_packed() -> bool {
-    static P: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *P.get_or_init(|| std::env::var("MEMRA_SPEC_GDN_PACKED").as_deref() != Ok("0"))
-}
-
 pub(crate) fn spec_m2() -> bool {
     static M: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     // DEFAULT ON since 2026-07-09 (MEMRA_SPEC_M2=0 reverts): launch-structure only — MoE
@@ -2924,14 +2912,15 @@ pub(crate) struct DsparkVerifyCkpt(VerifyCkpt);
 /// pool addresses stay stable); the warmups EXECUTE, so segment conv/ssm state is saved
 /// before and restored after — the graph's first real launch starts from the exact
 /// pre-round state. The ckpt column stash rides persistent slabs (written inside the
-/// graph as memcpy nodes); commit reads them via `dspark_commit_prefix_slab`.
+/// graph by the packed conv and scan kernels' snapshots); commit reads them via
+/// `dspark_commit_prefix_slab`.
 /// `MEMRA_DSPARK_VERIFY_GRAPH=0` reverts to the eager walk (byte-identical body).
 pub(crate) struct DsparkVerifyGraphs {
     /// Linear-attention layer indices ascending; `lin_pos[il]` = index into the vecs.
     lin: Vec<usize>,
     lin_pos: std::collections::HashMap<usize, usize>,
-    /// [n_lin x 6] pointer table (conv, s0, s1, conv, s1, s0 per layer), refreshed per
-    /// verify from the live handles; layer il's slice starts at lin_pos[il]*6.
+    /// [n_lin x 3] pointer table (conv, canonical ssm, alt ssm per layer), refreshed per
+    /// verify from the live handles; layer il's slice starts at lin_pos[il]*3.
     table_all: CudaSlice<u64>,
     host_table: Vec<u64>,
     /// Persistent per-layer ckpt stash slabs: row r of the verify at slab offset
@@ -3085,7 +3074,7 @@ impl DsparkVerifyGraphs {
             stash_conv.push(e.uninit(rows * conv_words)?);
             stash_ssm.push(e.uninit(rows * ssm_words)?);
         }
-        let host_table = vec![0u64; n * 6];
+        let host_table = vec![0u64; n * 3];
         let table_all = e.htod_u64(&host_table)?;
         // slice 4c: full-attention census for the full-verify graphs.
         let fa: Vec<usize> = (0..cache.kv.len())
@@ -3158,13 +3147,10 @@ impl DsparkVerifyGraphs {
                 let (pc, _g0) = rl.conv_state.device_ptr(s);
                 let (p0, _g1) = rl.ssm_state.device_ptr(s);
                 let (p1, _g2) = rl.ssm_state_alt.device_ptr(s);
-                let o = k * 6;
+                let o = k * 3;
                 self.host_table[o] = pc;
                 self.host_table[o + 1] = p0;
                 self.host_table[o + 2] = p1;
-                self.host_table[o + 3] = pc;
-                self.host_table[o + 4] = p1;
-                self.host_table[o + 5] = p0;
             }
             for (k, &il) in self.fa.iter().enumerate() {
                 let kvl = cache.kv[il].as_ref().unwrap();
@@ -3348,7 +3334,7 @@ impl DsparkVerifyGraphs {
                                 cache_ref,
                                 None,
                                 Some((&mut stash_conv[k], &mut stash_ssm[k])),
-                                Some((table_all, k * 6)),
+                                Some((table_all, k * 3)),
                             )?
                         } else if let Some(&kf) = fa_pos.get(&il) {
                             let mut no_rows: Option<Vec<CudaSlice<i32>>> = None;
@@ -3536,7 +3522,7 @@ impl DsparkVerifyGraphs {
                             cache_ref,
                             None,
                             Some((&mut stash_conv[k], &mut stash_ssm[k])),
-                            Some((table_all, k * 6)),
+                            Some((table_all, k * 3)),
                         )?;
                         xc = Some(nx);
                     }
@@ -7036,7 +7022,7 @@ impl HybridModel {
     ///   projections, FFN) hoist to m=T through the exact-tier batched kernels whose per-row
     ///   program IS the m=1 program (`matmul_pre == fused2 per (tensor,row); _bN mmvq per-row
     ///   == m=1` — decode_batch.rs v2 note), while the state ops (conv ring, gdn scan, KV
-    ///   append, fa decode) stay a per-row loop running the b_n=1 serving kernels with each
+    ///   append, fa decode) keep the b_n=1 serving kernels' per-row program with each
     ///   row's own t_kv-driven arm pick (the straddle law: every row executes the exact
     ///   program its isolated serving step would). One weight read per layer per round
     ///   instead of T — this is what makes MTP profitable in the exact class (the per-row
@@ -7151,7 +7137,7 @@ impl HybridModel {
 
     /// T-PARALLEL VERIFY IN THE SERVING NUMERIC CLASS (lane/tparallel-verify, 2026-08-15).
     ///
-    /// The weight ops run ONCE per layer at m=T; the state ops run per row through the same
+    /// The weight ops run ONCE per layer at m=T; the state ops keep the per-row program of the
     /// b_n=1 serving kernels the rowwise replay uses. Per-row bit-identity rests on the two
     /// pins the serving batch tier already carries:
     ///   * `matmul_pre` / `_bN` mmvq: per-row program == m=1 program (decode_batch.rs v2 note,
@@ -7161,15 +7147,15 @@ impl HybridModel {
     ///     `gated_rmsnorm[_q8_1]`, `silu_mul`, `rope_neox` with per-row positions): the T-row
     ///     launch is the per-row program (same pin the generic verify's fused norms rely on).
     ///     The sequential dependencies keep their exact serving order: the conv ring / gdn scan
-    ///     chain state row -> row through the `_b` kernels at b_n=1 (ping-pong via a 6-entry
-    ///     alternating pointer table, host handles swapped per row so VerifyCkpt copies the
-    ///     canonical state into its column slab exactly as the rowwise arm does), and each row's KV append + fa decode
+    ///     chain state row -> row inside one packed launch per kernel (the b_n=1 program
+    ///     iterated in-kernel, its post-row snapshots the VerifyCkpt columns; a one-row verify
+    ///     runs the `_b` kernels at b_n=1), and each row's KV append + fa decode
     ///     picks its arm from ITS OWN t_kv (append: format-only; fa: `fa_seqs_eligible` + its own
     ///     `fa_split_keys` rung at b_n=1) — the straddle law per row, so every row executes the
     ///     program its isolated B=1 serving step would.
     ///
-    /// Cost: 1 weight read per layer per round + T state micro-launches, vs the rowwise arm's
-    /// T weight reads. Gated bit-identical vs the rowwise arm by spec-serve-gate + canary.
+    /// Cost: 1 weight read per layer per round + 3 GDN state launches per linear layer, vs the
+    /// rowwise arm's T weight reads. Gated bit-identical vs the rowwise arm by spec-serve-gate + canary.
     #[allow(clippy::too_many_arguments)]
     fn qwen35_verify_tparallel(
         &self,
@@ -7384,7 +7370,6 @@ impl HybridModel {
             && !self.sliding_gated_moe_batch_program()
             && !self.gemma_batch_program()
             && crate::pp::pp_cuts(self.layers.len()).is_none()
-            && spec_gdn_packed()
             && dspark_fa_rows_on()
             && self.cfg.m3.is_none()
             && (1..=16).contains(&r_total)
@@ -7590,7 +7575,6 @@ impl HybridModel {
             && !self.sliding_gated_moe_batch_program()
             && !self.gemma_batch_program()
             && crate::pp::pp_cuts(self.layers.len()).is_none()
-            && spec_gdn_packed()
             && dspark_fa_rows_on()
             && self.cfg.m3.is_none()
             && std::env::var("MEMRA_SPEC_VERIFY_ROWWISE").as_deref() != Ok("1")
@@ -7965,7 +7949,6 @@ impl HybridModel {
             && !self.sliding_gated_moe_batch_program()
             && !self.gemma_batch_program()
             && crate::pp::pp_cuts(self.layers.len()).is_none()
-            && spec_gdn_packed()
             && dspark_fa_rows_on()
             && self.cfg.m3.is_none()
             && !spec_verify_graph_env().unwrap_or_else(|| self.vgraph_family_default())
@@ -9652,17 +9635,17 @@ impl HybridModel {
     /// ONE t-parallel LINEAR layer (attn_norm + gdn mixer + post_attn_norm + FFN + tap) —
     /// the exact body the old in-loop Linear arm ran, extracted so the eager walk and the
     /// slice-3 captured segments execute the SAME code (a second copy is how dispatch
-    /// mirrors drift — the verify_layers extraction lesson). Two deliberate changes, both
-    /// bit-identical by construction:
-    /// - the gdn ping-pong host swap moves from per-row to ONE end-of-body swap (t odd):
-    ///   the device sequence is driven entirely by the 6-entry pointer table, which
-    ///   already encodes both parities; the ckpt stash reads name row r's out buffer
-    ///   directly (r even -> alt handle, odd -> canonical) — the same physical bytes the
-    ///   legacy post-swap clone read.
-    /// - `stash` (slice-3 ctx): persistent per-layer slabs written by copy_into instead of
-    ///   per-row clone_dtod allocs — same bytes, capture-legal (no per-round host objects).
-    ///   `table_src` = (persistent pointer table, offset) when the ctx owns the tables;
-    ///   None builds the per-verify table exactly as before.
+    /// mirrors drift — the verify_layers extraction lesson). The GDN state chain:
+    /// - t >= 2: the packed kernels (lane/dspark-gdn-packed), one launch each over all T
+    ///   rows with the state resident. They write the post-row snapshots the rollback reads
+    ///   into `stash` or into slabs that become the checkpoint's columns.
+    /// - t == 1 (a one-token verify, such as `decode_step_t` on one token): the b_n=1 serving
+    ///   kernels on row 0. One row leaves no column state and writes no stash.
+    /// - The device sequence is driven by the `[conv, canonical ssm, alt ssm]` pointer table;
+    ///   the host handles swap once at the end of the body when t is odd.
+    /// - `stash` (slice-3 ctx): persistent per-layer slabs, capture-legal (no per-round host
+    ///   objects). `table_src` = (persistent pointer table, offset) when the ctx owns the
+    ///   tables; None builds the per-verify table.
     #[allow(clippy::too_many_arguments)]
     fn qwen35_tparallel_linear_layer(
         &self,
@@ -9727,9 +9710,9 @@ impl HybridModel {
         let alpha_w = la.ssm_alpha.out_features();
         let qkv_w = la.wqkv.out_features();
 
-        // ---- per-row state chain through the b_n=1 serving kernels ----
-        // 6-entry alternating pointer table expresses the ping-pong without a rebuild per
-        // row: even rows scan s0 -> s1, odd rows s1 -> s0.
+        // ---- GDN state chain ----
+        // [conv, canonical ssm, alt ssm] pointer table: the packed kernels resolve the parity
+        // from it at replay (odd T writes alt, even T in place); one row scans canonical -> alt.
         let table_local: Option<CudaSlice<u64>> = match table_src {
             Some(_) => None,
             None => {
@@ -9738,7 +9721,7 @@ impl HybridModel {
                 let (pc, _g0) = rl.conv_state.device_ptr(s);
                 let (p0, _g1) = rl.ssm_state.device_ptr(s);
                 let (p1, _g2) = rl.ssm_state_alt.device_ptr(s);
-                Some(e.htod_u64(&[pc, p0, p1, pc, p1, p0])?)
+                Some(e.htod_u64(&[pc, p0, p1])?)
             }
         };
         let (table, toff): (&CudaSlice<u64>, usize) = match table_src {
@@ -9746,10 +9729,9 @@ impl HybridModel {
             None => (table_local.as_ref().unwrap(), 0),
         };
         let mut o_all = e.uninit(t * value_dim)?;
-        let want_cols = ckpt.is_some() && stash.is_none() && t >= 2;
         let mut col_states: Option<ColStates> = None;
         let mut stash = stash;
-        if spec_gdn_packed() && t >= 2 {
+        if t >= 2 {
             // PACKED (lane/dspark-gdn-packed): one launch per state kernel over all T rows, the
             // per-row program iterated in-kernel with the state resident. Parity matches the
             // per-row ping-pong exactly (odd T lands in the alt buffer and the shared tail swap
@@ -9841,111 +9823,51 @@ impl HybridModel {
                 });
             }
         } else {
-            if want_cols {
-                let rl = cache.recur[il]
-                    .as_ref()
-                    .ok_or("qwen35 linear verify layer has no recurrent state")?;
-                col_states = Some(ColStates::with_cols(
-                    e,
-                    t - 1,
-                    rl.conv_state.len(),
-                    rl.ssm_state.len(),
-                )?);
-            }
-            // Per-row scratch reused across rows (uninit is cheap but not free at
-            // 48 layers x T rows); row inputs/outputs pass as VIEWS into the packed
-            // [T, ...] buffers — zero arithmetic-free copies in this loop.
+            // ONE row: the b_n=1 serving kernels on the table's [conv, canonical, alt] entries
+            // (canonical in, alt out; the tail swap below makes alt canonical). The row views
+            // keep each launch identical to the per-row program's.
+            let conv_view = table.slice(toff..toff + 1);
+            let in_view = table.slice(toff + 1..toff + 2);
+            let out_view = table.slice(toff + 2..toff + 3);
             let mut conv_out = e.uninit(conv_dim)?;
             let mut q_l2 = e.uninit(value_dim)?;
             let mut k_l2 = e.uninit(value_dim)?;
             let mut v_gd = e.uninit(value_dim)?;
             let mut beta_b = e.uninit(num_v)?;
             let mut g_log = e.uninit(num_v)?;
-            for r in 0..t {
-                let base = toff + if r % 2 == 0 { 0 } else { 3 };
-                let conv_view = table.slice(base..base + 1);
-                let in_view = table.slice(base + 1..base + 2);
-                let out_view = table.slice(base + 2..base + 3);
-                e.ssm_conv1d_fused_decode_b_view(
-                    &qkv_mixed.slice(r * qkv_w..(r + 1) * qkv_w),
-                    &conv_view,
-                    la.ssm_conv1d.float_data(),
-                    &mut conv_out,
-                    conv_dim,
-                    d_conv,
-                    1,
-                )?;
-                e.gdn_prep_decode_b_view(
-                    &conv_out,
-                    &beta_raw.slice(r * beta_w..(r + 1) * beta_w),
-                    &alpha.slice(r * alpha_w..(r + 1) * alpha_w),
-                    la.ssm_dt.float_data(),
-                    la.ssm_a.float_data(),
-                    &mut q_l2,
-                    &mut k_l2,
-                    &mut v_gd,
-                    &mut beta_b,
-                    &mut g_log,
-                    d_state,
-                    num_v,
-                    num_k,
-                    key_dim,
-                    eps,
-                    conv_dim,
-                    1,
-                )?;
-                let mut o_row = o_all.slice_mut(r * value_dim..(r + 1) * value_dim);
-                e.gdn_scan_s128_batched_view(
-                    &q_l2, &k_l2, &v_gd, &g_log, &beta_b, &in_view, &out_view, &mut o_row, num_v,
-                    1, gdn_scale,
-                )?;
-                if r + 1 < t {
-                    // Row r's out buffer: even rows write s1 (the alt handle — no swaps ran),
-                    // odd rows write s0 — the same physical state the legacy post-swap
-                    // canonical clone read.
-                    let rl = cache.recur[il]
-                        .as_ref()
-                        .ok_or("qwen35 linear verify layer has no recurrent state")?;
-                    let ssm_src = if r % 2 == 0 {
-                        &rl.ssm_state_alt
-                    } else {
-                        &rl.ssm_state
-                    };
-                    match stash.as_mut() {
-                        Some((conv_slab, ssm_slab)) => {
-                            // BOTH stash reads go through the pointer table at run time: the
-                            // ssm handles ping-pong between rounds, and the ctx (with its
-                            // captured graphs) outlives the Cache — a fresh generation's
-                            // conv/ssm buffers land at new addresses that only the per-round
-                            // table refresh knows. A baked direct copy would read freed
-                            // memory (parity was the slice-3 smoke divergence; cache
-                            // lifetime is the cross-generation twin).
-                            e.copy_indirect_src_f32(
-                                &conv_view,
-                                conv_slab,
-                                r * conv_dim * (d_conv - 1),
-                                conv_dim * (d_conv - 1),
-                            )?;
-                            // The ssm handles PING-PONG between rounds: a captured direct
-                            // copy would bake the capture-time physical buffer and read the
-                            // wrong parity after any odd-vt round (the slice-3 smoke
-                            // divergence). Read the src address from row r's OUT table
-                            // entry at run time — the same entry the scan just wrote.
-                            e.copy_indirect_src_f32(
-                                &out_view,
-                                ssm_slab,
-                                r * d_state * d_state * num_v,
-                                d_state * d_state * num_v,
-                            )?;
-                        }
-                        None => {
-                            if let Some(states) = col_states.as_mut() {
-                                states.put(e, r, &rl.conv_state, ssm_src)?;
-                            }
-                        }
-                    }
-                }
-            }
+            e.ssm_conv1d_fused_decode_b_view(
+                &qkv_mixed.slice(0..qkv_w),
+                &conv_view,
+                la.ssm_conv1d.float_data(),
+                &mut conv_out,
+                conv_dim,
+                d_conv,
+                1,
+            )?;
+            e.gdn_prep_decode_b_view(
+                &conv_out,
+                &beta_raw.slice(0..beta_w),
+                &alpha.slice(0..alpha_w),
+                la.ssm_dt.float_data(),
+                la.ssm_a.float_data(),
+                &mut q_l2,
+                &mut k_l2,
+                &mut v_gd,
+                &mut beta_b,
+                &mut g_log,
+                d_state,
+                num_v,
+                num_k,
+                key_dim,
+                eps,
+                conv_dim,
+                1,
+            )?;
+            let mut o_row = o_all.slice_mut(0..value_dim);
+            e.gdn_scan_s128_batched_view(
+                &q_l2, &k_l2, &v_gd, &g_log, &beta_b, &in_view, &out_view, &mut o_row, num_v, 1,
+                gdn_scale,
+            )?;
         }
         // ONE end-of-body parity swap (t odd) — the legacy loop swapped per row; the net
         // handle motion is identical and the device sequence never read the handles.
@@ -17200,8 +17122,8 @@ impl HybridModel {
             // committed columns).
             let j = base + n_acc;
             // VERIFY-GRAPH SLAB COMMIT: when the captured trunk ran, the linear layers'
-            // column stash was written into the graphs ctx's persistent slabs as in-graph
-            // memcpy nodes, NOT into the per-column VerifyCkpt the cols arm reads — so the
+            // column stash was written into the graphs ctx's persistent slabs by the in-graph
+            // packed kernels, NOT into the per-column VerifyCkpt the cols arm reads, so the
             // commit must take the slab twin (same semantics, slab-addressed sources). The
             // ctx states which of the two this round produced via `round_slab`; trusting the
             // flag rather than the env keeps a round that fell back to the eager walk (a
