@@ -7416,6 +7416,22 @@ fn spec_expected_tokens(t: &memra_engine::spec::SpecTelemetry, k: usize) -> Opti
     Some(e)
 }
 
+/// Whether the boot calibration fits a draft step on this device (memra#1093), so that each draft
+/// length pays its own drafting. On for the RTX PRO 6000 Blackwell Max-Q, where it was measured
+/// (`research/spec-cost-draft-step-20261109/`): the K=3 burst's cost charged to every draft
+/// length priced K=3 above K=2 on cold long prompts, where K=2 decodes 4-7% faster. Every other
+/// device keeps the K=3 burst's cost for every draft length until a cell of its own prices the
+/// change. GB10 in particular: its own cold-long cell has K=3 ahead of K=2 by 1 to 3%
+/// (`research/gb10-decode-20261109/kcl-unit1/`), which is what its model picks with the older
+/// pricing, and the two extra calibration bursts were not timed there.
+fn spec_cost_fits_draft_step(device_name: &str) -> bool {
+    use memra_engine::parallel::HardwareTarget;
+    matches!(
+        HardwareTarget::from_device_name(device_name),
+        Ok(HardwareTarget::RtxPro6000Blackwell)
+    ) && device_name.contains("Max-Q")
+}
+
 /// One speculative round's wall for `n` sessions at draft length `k`.
 fn spec_round_ms(
     t: &memra_engine::spec_cost::SpecCostTable,
@@ -7436,10 +7452,11 @@ fn spec_round_ms(
     } else {
         n as f64 * t.verify_ms[rows.min(16) - 1]
     };
+    // Each draft length pays its own drafting (memra#1093): the fixed part plus `k` draft steps.
     let overhead = if pooled {
-        t.overhead_at(n)
+        t.round_cost_at(n, k)
     } else {
-        t.round_overhead_ms
+        t.round_overhead_ms + k as f64 * t.draft_step_ms
     };
     verify + n as f64 * overhead
 }
@@ -34596,15 +34613,16 @@ fn run_spec_cost_calibration(
         eprintln!("[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate");
         return;
     }
+    let fit_draft_step = spec_cost_fits_draft_step(&engine.ctx().name().unwrap_or_default());
     for (name, lm) in loaded {
         if dspark_drafts.contains_key(name) || !mtp_spec_capable(lm) {
             continue;
         }
         let t0 = Instant::now();
         let plain_cap = decode_chunk_policy(lm, engine, loaded).wave_cap;
-        let result = lm
-            .model
-            .spec_cost_calibrate(engine, SPEC_COST_DEPTH, plain_cap);
+        let result =
+            lm.model
+                .spec_cost_calibrate(engine, SPEC_COST_DEPTH, plain_cap, fit_draft_step);
         oom_teardown_fence(engine, loaded);
         trim_model_device_pools(engine, loaded, "spec-cost-calibration");
         match result {
@@ -34618,11 +34636,13 @@ fn run_spec_cost_calibration(
                 };
                 eprintln!(
                     "[spec-cost] model={name:?} depth={} pooled={pooled} plain_cap={plain_cap} \
-                     round_overhead={:.2}ms pooled_overhead={:?} verify_ms[1..16]=[{}] \
-                     plain_ms[1..]=[{}] ({:.1}s)",
+                     round_overhead={:.2}ms draft_step={:.2}ms pooled_overhead={:?} \
+                     pooled_draft_step={:?} verify_ms[1..16]=[{}] plain_ms[1..]=[{}] ({:.1}s)",
                     table.depth,
                     table.round_overhead_ms,
+                    table.draft_step_ms,
                     table.pooled_overhead_ms,
+                    table.pooled_draft_step_ms,
                     fmt(&table.verify_ms),
                     fmt(&table.plain_ms),
                     t0.elapsed().as_secs_f64()
@@ -35399,7 +35419,9 @@ mod tests {
                 verify_ms: verify,
                 plain_ms: plain,
                 round_overhead_ms: 6.0,
+                draft_step_ms: 0.0,
                 pooled_overhead_ms: None,
+                pooled_draft_step_ms: None,
             },
             pooled: true,
             plain_cap: 8,
@@ -35420,6 +35442,89 @@ mod tests {
         let mut short = *t;
         short.rounds = super::SPEC_COST_MIN_ROUNDS - 1;
         assert_eq!(super::spec_expected_tokens(&short, 1), None);
+    }
+
+    /// memra#1093: each draft length pays its own drafting. The table is the RTX PRO 6000 Max-Q's
+    /// boot calibration of Qwen3.8-27B at depth 2048 (2026-11-09,
+    /// `research/spec-k-cold-long-20261109/pro6000-maxq/`), and the acceptance is what its
+    /// cold-long prompts realized (expected tokens 2.20 at K=2, 2.41 at K=3). Charged one K=3
+    /// round's 3.84 ms to every K, the model picks K=3; with the same 3.84 ms split into a fixed
+    /// part and three draft steps it picks K=2, the depth that decoded 4-7% faster there. The
+    /// K=1 figure of 1.88 ms is illustrative (that boot measured K=3 only); the card's later
+    /// boots fit a fixed part of 0.35 to 1.08 ms and a draft step of 1.09 to 1.39 ms.
+    #[test]
+    fn each_draft_length_pays_its_own_drafting() {
+        let entry = |fixed: f64, step: f64| {
+            let verify = vec![
+                13.9, 14.3, 15.3, 16.5, 17.9, 19.4, 20.8, 22.2, 24.1, 26.1, 28.0, 30.0, 31.2, 32.5,
+                33.8, 35.1,
+            ];
+            let plain = vec![
+                13.4, 14.8, 16.8, 18.8, 20.2, 21.6, 23.0, 24.5, 26.3, 28.2, 30.1, 32.0, 33.9, 35.8,
+                37.7, 39.5,
+            ];
+            let mut t = memra_engine::spec::SpecTelemetry {
+                rounds: 1000,
+                ..Default::default()
+            };
+            for (j, a) in [0.70, 0.50, 0.21].iter().enumerate() {
+                t.pos_drafted[j] = 1000;
+                t.pos_accepted[j] = (a * 1000.0) as u64;
+            }
+            super::SpecCostEntry {
+                table: memra_engine::spec_cost::SpecCostTable {
+                    depth: 2048,
+                    verify_ms: verify,
+                    plain_ms: plain,
+                    round_overhead_ms: fixed,
+                    draft_step_ms: step,
+                    pooled_overhead_ms: None,
+                    pooled_draft_step_ms: None,
+                },
+                pooled: true,
+                plain_cap: 16,
+                accept: Some(t),
+                realized: HashMap::new(),
+            }
+        };
+        let flat = entry(3.84, 0.0);
+        assert_eq!(super::spec_cost_best_k(&flat, 1, 3).map(|v| v.0), Some(3));
+        let (fixed, step) = memra_engine::spec_cost::split_round_overhead(1.88, 3.84);
+        let split = entry(fixed, step);
+        // The K=3 round costs what it did; K=2 no longer pays a third draft step.
+        assert!(
+            (super::spec_round_ms(&split.table, 1, 3, true)
+                - super::spec_round_ms(&flat.table, 1, 3, true))
+            .abs()
+                < 1e-9
+        );
+        assert_eq!(super::spec_cost_best_k(&split, 1, 3).map(|v| v.0), Some(2));
+        // Only the card it was measured on fits the draft step; every other keeps the flat cost.
+        assert!(super::spec_cost_fits_draft_step(
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+        ));
+        for name in [
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA GB10",
+            "NVIDIA B200",
+            "NVIDIA H100 80GB HBM3",
+            "",
+        ] {
+            assert!(!super::spec_cost_fits_draft_step(name), "{name}");
+        }
+        let src = include_str!("worker.rs");
+        let cal = src
+            .find("\nfn run_spec_cost_calibration(")
+            .expect("the calibration");
+        let body = &src[cal..cal + src[cal..].find("\n}\n").expect("its end")];
+        let flat: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(
+            flat.contains("spec_cost_fits_draft_step(&engine.ctx().name().unwrap_or_default());")
+        );
+        assert!(body.contains("plain_cap, fit_draft_step)"));
     }
 
     /// Pooled rounds chunk at 16 verify rows; serial rounds pay one verify per session.
@@ -35625,7 +35730,9 @@ mod tests {
                         verify_ms: verify,
                         plain_ms: plain,
                         round_overhead_ms: 3.0,
+                        draft_step_ms: 0.0,
                         pooled_overhead_ms: None,
+                        pooled_draft_step_ms: None,
                     },
                     pooled: true,
                     plain_cap: 16,
@@ -35715,7 +35822,9 @@ mod tests {
                     verify_ms: verify,
                     plain_ms: plain,
                     round_overhead_ms: 3.0,
+                    draft_step_ms: 0.0,
                     pooled_overhead_ms: None,
+                    pooled_draft_step_ms: None,
                 },
                 pooled: true,
                 plain_cap: 8,
