@@ -123,6 +123,7 @@ release time was not exercised at merge time.** That is the shape this section e
 | CI never silently stops covering a release arch | `tools/arch-matrix-census.sh` | pre-push · `ci.yml` · `release.yml` guard | 0.01 s |
 | Every fail-closed stub still mirrors its real twin's ABI | `tools/stub-abi-census.py` | pre-push · `ci.yml` · both tag workflows | 0.08 s |
 | crates.io can publish the whole workspace | `tools/workspace-publish-census.sh` (members vs `publish.yml` list, topological order, no `publish = false` dependency) | pre-push · `ci.yml` · both tag workflows | 0.06 s |
+| A tag publish finishes on its own: each crate is in the crates.io index before a dependent resolves it | `tools/crates_publish.py`, called per crate by `publish.yml`; `tools/test_crates_publish.py` runs the real publish step against a fake registry whose index lags (the v0.139.0 tag run and its recovery) and fails on the step it replaced | `ci.yml` | 12 s |
 | Those three censuses can actually fail | `tools/test_releasability_census.sh` — 15 arms, every refusal forced, plus wiring and the advisory invariant | `ci.yml` | 0.7 s |
 | **Every crate packages from its own tarball** (nothing reaching outside a crate root, `Cargo.lock` still resolves) | `cargo publish --workspace --exclude memra-probe --locked --dry-run` | `ci.yml` `publish-dryrun` (parallel) | 372 s, **0 s added wall time** |
 | **Every kernel the Rust side looks up is IN the fatbins for that arch** | `tools/fatbin-lookup-census.py` — `cuobjdump --list-text` vs `Engine::func` literals | `ci.yml` `arch-coverage`, per arch | seconds, inside a cell already running |
@@ -513,14 +514,21 @@ That's it. Two workflows fire on the tag:
   `tools/install.sh` target), and publishes the GitHub release. Edit notes on GitHub
   afterwards if the draft needs headline or context — draft is floor, not ceiling.
 - `publish` — per-crate `cargo publish -p <crate> --locked` to crates.io in dependency
-  order, skipping versions already live (registry API check) and waiting out crates.io's
-  new-crate burst limit on 429 (~1 new crate/10 min; learned on the v0.69.0 first publish,
-  which shipped 5/9 before a 429 and could not resume under the old all-or-nothing
-  `--workspace` form). The step is idempotent — rerunning a partly-published tag finishes
-  the remainder. Dry-run first without tagging: Actions → publish → Run workflow
-  (`workflow_dispatch` runs the full package+verify with no upload and no token); the
-  dispatch `publish=true` input is the recovery door that runs the REAL publish on a ref
-  when a tag's run needs finishing.
+  order (`tools/crates_publish.py`), skipping versions already live (registry API check) and
+  waiting out crates.io's new-crate burst limit on 429 (~1 new crate/10 min; learned on the
+  v0.69.0 first publish, which shipped 5/9 before a 429 and could not resume under the old
+  all-or-nothing `--workspace` form). After each crate, uploaded or skipped, it polls the
+  sparse index cargo resolves against until that exact version is listed, for up to 20
+  minutes, and fails by name after that. cargo itself waits 60 s and then exits 0 with a
+  warning (its `publish.timeout` key is nightly-only), and the index is served with a
+  600 s cache lifetime: on the v0.138.0 and v0.139.0 tags memra-engine was not listed yet
+  when memra-server resolved it, and both publishes stopped half way (memra-server and
+  memra-cli never got 0.138.0). A dependent that still misses a just-published crate
+  waits for it and retries. The step is idempotent — rerunning a partly-published tag
+  finishes the remainder. Dry-run first without tagging: Actions → publish → Run workflow
+  (`workflow_dispatch` runs the full package+verify, then a read-only registry pass over
+  the publish list, with no upload and no token); the dispatch `publish=true` input is the
+  recovery door that runs the REAL publish on a ref when a tag's run needs finishing.
 
 ### Re-running the publish on a tag (learned on v0.124.0, 2026-09-02)
 

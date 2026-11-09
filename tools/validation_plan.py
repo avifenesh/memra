@@ -442,6 +442,13 @@ TOOL_CONTRACTS = {
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_memra_gpu_run.py', '14'],
         'native': ['A release capture under the wrapper on one leased RTX PRO 6000 (docs/RELEASE-QUALIFICATION.md)'],
     },
+    'crates-publish': {
+        'required': True,
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py', 'tools/crates_publish.py',
+                   'tools/test_crates_publish.py'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_crates_publish.py', '15'],
+        'native': [],
+    },
     'support-records': {
         'required': True,
         'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',

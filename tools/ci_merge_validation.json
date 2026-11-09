@@ -218,6 +218,11 @@
     },
     {
       "job": "gates",
+      "step": "Releasability, crates.io publish order and index wait (fake registry)",
+      "sha256": "ff3063005d79cbe8ac7d28d80a08523114f05cfe02ad47a5e52a97e5d28d1ba7"
+    },
+    {
+      "job": "gates",
       "step": "Fatbin-lookup census teeth",
       "sha256": "bd0a205b04a19182a06a02468f0263694f88ad0c90b5f457f92def6aef091849"
     },
@@ -563,6 +568,7 @@
   "contracts": [
     "background-chat-text",
     "cache-meter",
+    "crates-publish",
     "expert-tier-caller",
     "gpu-lease-wrapper",
     "metrics-live",
@@ -577,6 +583,6 @@
     "support-records",
     "tool-choice"
   ],
-  "full_workflow_sha256": "496a71cd1f90690906d56f2d6000ee9a689c6e968792a798d10eabcaed8b2698",
+  "full_workflow_sha256": "d525e63da04a502cf9ed9f4a136479e0e2f84a6442df904688ff02061392522f",
   "public_workflow_sha256": "91d87261da2d857d3c1bb70a799495d05b0bad8d4340375303d506b1cd40f825"
 }
