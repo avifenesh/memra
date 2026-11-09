@@ -137,7 +137,14 @@ resident heads retain the existing graph default. See [the capture receipt](../r
   round, so a sampled resume at the cached-long K left the text its cold twin wrote at the
   cold-long K. A sampled request takes its cold twin's rung whatever it restored
   (`spec_k_cached_tokens`; `research/spec-k-resume-20261109/`): on the RTX 5090 such resumes
-  decode about 3% slower at K=3 (59.6 against 61.5 tok/s, n = 24 turns per arm), TTFT unchanged. `MEMRA_SPEC_K` remains the
+  decode about 3% slower at K=3 (59.6 against 61.5 tok/s, n = 24 turns per arm), TTFT unchanged.
+  Since 2026-11-09 a cold prompt of 1,024+ tokens takes `K=2` on the two cards whose cell has it
+  ahead, the RTX 5090 Laptop GPU and the RTX PRO 6000 Blackwell Max-Q (by device name), where
+  Qwen3.8-27B decodes up to 12% faster than at `K=3` (4 to 7% at T=1 from 3.6k tokens; flat at
+  about 1.2k on the RTX 5090 with one request) with the first token unchanged
+  (`research/spec-k-cold-long-20261109/`, `docs/decisions/SPEC-K-COLD-LONG-K2.md`); on those cards
+  a sampled resume therefore runs the depth a greedy one does. GB10, whose cell has `K=3` ahead,
+  and every other card keep `K=3` there. `MEMRA_SPEC_K` remains the
   operator pin, including `0` for plain. Receipts: `research/specplace-20260808/`,
   `research/kpolicy-20260808/`.
 - **Spec engages on prefix-cache hits** (v0.93.0, lane/spec-on-cache-hit — whole-entry

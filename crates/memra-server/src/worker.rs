@@ -7076,6 +7076,32 @@ const SPEC_K_LONG_PROMPT_MIN: usize = 1024;
 const SPEC_K_LONG_CACHE_MIN: usize = 1024;
 const SPEC_K_COLD_SHORT: usize = 3;
 const SPEC_K_COLD_LONG: usize = 3;
+/// Cold-long depth on the two cards whose cell has K=2 ahead. A cold prompt of 1,024+ tokens
+/// decodes faster at K=2 than at K=3 on Qwen3.8-27B with its MTP head
+/// (`research/spec-k-cold-long-20261109/`, 12 boots k3 k2 k2 k3 x3 per card): RTX 5090 Laptop
+/// T=1 flat at 1.2k tokens, +5.6 to +7.0% at 3.6k, +5.8% at 5.8k, greedy +12% at 3.6k; RTX PRO
+/// 6000 Max-Q T=1 +4.5%, +5.5 to +7.4%, +3.9%, greedy +1.6% and +9.6%; TTFT unchanged, greedy
+/// text byte-equal. Two requests at once on the RTX 5090 Laptop keep the lead
+/// (`research/spec-k-cold-long-c2-20261109/`).
+const SPEC_K_COLD_LONG_MEASURED: usize = 2;
+
+/// The two cards memra#1093's cold-long cells ran on, by device name: the RTX 5090 Laptop GPU
+/// and the RTX PRO 6000 Blackwell Max-Q. They take [`SPEC_K_COLD_LONG_MEASURED`], and the Max-Q
+/// (the one of the two that calibrates the measured model, Qwen3.8-27B) takes the cost model's
+/// draft-step fit ([`spec_cost_fits_draft_step`]). A smaller model does calibrate on the RTX
+/// 5090 Laptop (Qwen3.5-9B) and there takes this rung with the older pricing, unmeasured. Every other device keeps [`SPEC_K_COLD_LONG`] and the older
+/// calibration until a cell of its own says otherwise: the desktop RTX 5090 and the other RTX
+/// PRO 6000 editions have none, and GB10, which shares the `120a` build family, has K=3 ahead on
+/// the same cell (K=2 over K=3 at T=1: 0.987 at 1.3k tokens, 0.969 at 3.6k, 0.968 at 5.8k;
+/// `research/gb10-decode-20261109/kcl-unit1/`). An unreadable name keeps the older values.
+fn spec_k_cold_long_measured(device_name: &str) -> bool {
+    use memra_engine::parallel::HardwareTarget;
+    match HardwareTarget::from_device_name(device_name) {
+        Ok(HardwareTarget::Rtx5090) => device_name.contains("Laptop"),
+        Ok(HardwareTarget::RtxPro6000Blackwell) => device_name.contains("Max-Q"),
+        _ => false,
+    }
+}
 const SPEC_K_CACHED_LONG: usize = 2;
 /// Cached-long depth when the loaded MTP head is rank-TRIMMED (d2t present): the trim drops
 /// the draft lm_head from 248,320 to 32,768 rows (~221 -> ~29 us per draft step), which
@@ -7152,8 +7178,8 @@ fn spec_trim_head(lm: &LoadedModel) -> bool {
 /// its own env override (`MEMRA_SPEC_K_COLD_SHORT`, `MEMRA_SPEC_K_COLD_LONG`,
 /// `MEMRA_SPEC_K_CACHED_LONG`, `MEMRA_SPEC_K_CACHED_LONG_TRIM`) for re-pricing a rung on a new
 /// device or head without `MEMRA_SPEC_K`, which pins every request and disables the
-/// concurrency gate and automatic demotion. Unset rungs keep the shipped values, so existing
-/// devices are unchanged.
+/// concurrency gate and automatic demotion. Unset rungs keep the device's shipped values
+/// ([`SpecKTable::shipped_on`]: the cold-long rung is device-keyed).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct SpecKTable {
     cold_short: usize,
@@ -7169,13 +7195,45 @@ impl SpecKTable {
         cached_long: SPEC_K_CACHED_LONG,
         cached_long_trim: SPEC_K_CACHED_LONG_TRIM,
     };
+
+    /// The shipped table on the device of that name.
+    fn shipped_on(device_name: &str) -> Self {
+        Self {
+            cold_long: if spec_k_cold_long_measured(device_name) {
+                SPEC_K_COLD_LONG_MEASURED
+            } else {
+                SPEC_K_COLD_LONG
+            },
+            ..Self::SHIPPED
+        }
+    }
+}
+
+/// The serving device's shipped table. `run` binds it once the engine exists, before the boot
+/// policy line and the first request; a process that never binds one (unit tests) reads
+/// [`SpecKTable::SHIPPED`].
+static SPEC_K_DEVICE_TABLE: std::sync::OnceLock<SpecKTable> = std::sync::OnceLock::new();
+
+fn bind_spec_k_device(engine: &Engine) {
+    let device_name = engine.ctx().name().unwrap_or_default();
+    let _ = SPEC_K_DEVICE_TABLE.set(SpecKTable::shipped_on(&device_name));
+}
+
+fn spec_k_shipped() -> SpecKTable {
+    SPEC_K_DEVICE_TABLE
+        .get()
+        .copied()
+        .unwrap_or(SpecKTable::SHIPPED)
 }
 
 /// Pure half of [`spec_k_table`]: `get(name)` returns the raw env value. A rung must be a
 /// positive integer (K=0 is plain decode, which the gate and `MEMRA_SPEC_K=0` already own); an
 /// invalid value keeps that rung's shipped depth and is reported, never silently substituted.
-fn parse_spec_k_table(get: impl Fn(&str) -> Option<String>) -> (SpecKTable, Vec<String>) {
-    let mut table = SpecKTable::SHIPPED;
+fn parse_spec_k_table(
+    shipped: SpecKTable,
+    get: impl Fn(&str) -> Option<String>,
+) -> (SpecKTable, Vec<String>) {
+    let mut table = shipped;
     let mut errors = Vec::new();
     for (name, rung) in [
         ("MEMRA_SPEC_K_COLD_SHORT", &mut table.cold_short),
@@ -7198,7 +7256,7 @@ fn parse_spec_k_table(get: impl Fn(&str) -> Option<String>) -> (SpecKTable, Vec<
 fn spec_k_table() -> SpecKTable {
     static T: std::sync::OnceLock<SpecKTable> = std::sync::OnceLock::new();
     *T.get_or_init(|| {
-        let (table, errors) = parse_spec_k_table(|name| std::env::var(name).ok());
+        let (table, errors) = parse_spec_k_table(spec_k_shipped(), |name| std::env::var(name).ok());
         for err in errors {
             eprintln!("[spec-k] WARN: {err}");
         }
@@ -7868,7 +7926,7 @@ fn log_spec_gate_policy() {
         SPEC_K_LONG_CACHE_MIN,
         table.cached_long,
         table.cached_long_trim,
-        if table == SpecKTable::SHIPPED {
+        if table == spec_k_shipped() {
             ""
         } else {
             " [rungs overridden by MEMRA_SPEC_K_* env]"
@@ -17855,6 +17913,7 @@ pub fn run(
     }
     // After every load: MEMRA_PARALLEL=auto writes MEMRA_PP_STAGES/MEMRA_PP_DEVICES inside the
     // load, and this first read freezes the placement-keyed spec-gate thresholds.
+    bind_spec_k_device(&engine);
     log_spec_gate_policy();
     // Template capability probe (serve-tools lane): same substring laws the renderer uses.
     // + /v1/models metadata (serve-tail lane): context length from the model config,
@@ -39156,6 +39215,11 @@ mod tests {
             "the spec-gate policy read precedes a model load"
         );
         assert_eq!(body.matches("log_spec_gate_policy();").count(), 1);
+        // The device's table is bound before that line prints it and before any request.
+        let bind = body
+            .find("bind_spec_k_device(&engine);")
+            .expect("run binds the device's spec K table");
+        assert!(bind < policy, "the spec K table is read before it is bound");
     }
 
     /// TOOTH for the wave-admission K mismatch (hermes 48ad6c1b66bb2fa6 class): the K
@@ -40969,11 +41033,14 @@ mod tests {
             }
         };
         // Unset: the shipped table, so every existing device keeps its depths.
-        let (table, errors) = parse_spec_k_table(env(&[]));
+        let (table, errors) = parse_spec_k_table(SpecKTable::SHIPPED, env(&[]));
         assert_eq!(table, SpecKTable::SHIPPED);
         assert!(errors.is_empty());
         // One rung: the owner's measured masked-MTP depth on cached long prompts.
-        let (table, errors) = parse_spec_k_table(env(&[("MEMRA_SPEC_K_CACHED_LONG_TRIM", "2")]));
+        let (table, errors) = parse_spec_k_table(
+            SpecKTable::SHIPPED,
+            env(&[("MEMRA_SPEC_K_CACHED_LONG_TRIM", "2")]),
+        );
         assert!(errors.is_empty());
         assert_eq!(
             table,
@@ -41023,12 +41090,15 @@ mod tests {
             SPEC_K_COLD_SHORT
         );
         // All four, and invalid values (0, garbage) keep the shipped rung and are reported.
-        let (table, errors) = parse_spec_k_table(env(&[
-            ("MEMRA_SPEC_K_COLD_SHORT", "4"),
-            ("MEMRA_SPEC_K_COLD_LONG", " 5 "),
-            ("MEMRA_SPEC_K_CACHED_LONG", "0"),
-            ("MEMRA_SPEC_K_CACHED_LONG_TRIM", "two"),
-        ]));
+        let (table, errors) = parse_spec_k_table(
+            SpecKTable::SHIPPED,
+            env(&[
+                ("MEMRA_SPEC_K_COLD_SHORT", "4"),
+                ("MEMRA_SPEC_K_COLD_LONG", " 5 "),
+                ("MEMRA_SPEC_K_CACHED_LONG", "0"),
+                ("MEMRA_SPEC_K_CACHED_LONG_TRIM", "two"),
+            ]),
+        );
         assert_eq!(
             table,
             SpecKTable {
@@ -41044,6 +41114,71 @@ mod tests {
         );
         // The process-wide resolver reads no override in this test binary.
         assert_eq!(spec_k_table(), SpecKTable::SHIPPED);
+    }
+
+    /// memra#1093: the cold-long rung is K=2 on the two cards its lead was measured on, the RTX
+    /// 5090 Laptop GPU and the RTX PRO 6000 Blackwell Max-Q, by device name, and stays K=3 on
+    /// GB10 (whose cell has K=3 ahead) and on every other card. Only that rung is device-keyed;
+    /// an override still replaces it and the gate still demotes.
+    #[test]
+    fn the_cold_long_rung_is_k2_on_the_two_measured_cards() {
+        let discrete = SpecKTable::shipped_on("NVIDIA GeForce RTX 5090 Laptop GPU");
+        assert_eq!(
+            discrete,
+            SpecKTable {
+                cold_long: 2,
+                ..SpecKTable::SHIPPED
+            }
+        );
+        assert_eq!(
+            SpecKTable::shipped_on("NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"),
+            discrete
+        );
+        for name in [
+            "NVIDIA GB10",
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "NVIDIA B200",
+            "NVIDIA H100 80GB HBM3",
+            "",
+        ] {
+            assert_eq!(SpecKTable::shipped_on(name), SpecKTable::SHIPPED, "{name}");
+        }
+        let single = resolve_spec_gate_thresholds(false, None, None);
+        let k = |table: SpecKTable, prompt: usize, cached: usize| {
+            choose_spec_k_with(table, None, true, single, 1, prompt, cached, false)
+        };
+        assert_eq!(
+            k(discrete, SPEC_K_LONG_PROMPT_MIN, 0),
+            SpecKDecision {
+                k: 2,
+                reason: SpecKReason::ColdLong
+            }
+        );
+        assert_eq!(k(SpecKTable::SHIPPED, SPEC_K_LONG_PROMPT_MIN, 0).k, 3);
+        // The short and cached rungs do not move with the device.
+        assert_eq!(k(discrete, SPEC_K_LONG_PROMPT_MIN - 1, 0).k, 3);
+        assert_eq!(
+            k(discrete, SPEC_K_LONG_PROMPT_MIN, SPEC_K_LONG_CACHE_MIN),
+            SpecKDecision {
+                k: SPEC_K_CACHED_LONG,
+                reason: SpecKReason::CachedLong
+            }
+        );
+        // The rung's override reads the device's table as its base.
+        let (table, errors) = parse_spec_k_table(discrete, |name| {
+            (name == "MEMRA_SPEC_K_COLD_LONG").then(|| "3".to_string())
+        });
+        assert!(errors.is_empty());
+        assert_eq!(table, SpecKTable::SHIPPED);
+        let (table, _) = parse_spec_k_table(discrete, |_| None);
+        assert_eq!(table.cold_long, 2);
+        // The process-wide resolver starts from the bound device's table, not from `SHIPPED`.
+        let src = include_str!("worker.rs");
+        let resolver = src.find("\nfn spec_k_table() ").expect("the resolver");
+        let body = &src[resolver..resolver + src[resolver..].find("\n}\n").expect("its end")];
+        assert!(body.contains("parse_spec_k_table(spec_k_shipped(),"));
     }
 
     #[test]

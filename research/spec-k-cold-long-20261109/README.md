@@ -4,7 +4,7 @@ Verdict: K=2 beats the shipped cold-long K=3 on both cards measured, with TTFT u
 is flipped here; this receipt is the evidence the default decision needs.
 
 - **RTX 5090 Laptop**, from about 3,600 tokens: T=1 decode +5% to +7%, greedy +9% to +12%. At about
-  1,400 tokens it is flat for both.
+  1,240 tokens it is flat for both.
 - **RTX PRO 6000 Blackwell Max-Q** (250 W cap), at every length measured (1,200 to 5,800 tokens):
   T=1 +3.9% to +7.4% and greedy +1.6% to +9.6%, every class with complete separation.
 - **The cost model:** on the PRO 6000 it owns K, and it chose K=3 for these prompts. The measurement
@@ -48,12 +48,12 @@ Per-request medians and spreads (`run1/analysis.md`, `run2/analysis.md`):
 
 | run | class | arm (K) | n | TTFT p50 / p95 (s) | decode median, range (tok/s) | pooled (tok/s) | acceptance |
 |---|---|---|---:|---|---|---:|---:|
-| 1 | T=1 1.4k | k3 (3) | 24 | 1.149 / 1.290 | 65.31, 55.45-69.97 | 64.44 | 0.471 |
-| 1 | T=1 1.4k | k2 (2) | 24 | 1.177 / 1.464 | 63.19, 53.09-70.68 | 62.92 | 0.614 |
+| 1 | T=1 1.2k | k3 (3) | 24 | 1.149 / 1.290 | 65.31, 55.45-69.97 | 64.44 | 0.471 |
+| 1 | T=1 1.2k | k2 (2) | 24 | 1.177 / 1.464 | 63.19, 53.09-70.68 | 62.92 | 0.614 |
 | 1 | T=1 3.7k | k3 (3) | 12 | 3.465 / 4.166 | 59.73, 51.89-63.55 | 59.08 | 0.472 |
 | 1 | T=1 3.7k | k2 (2) | 12 | 3.596 / 4.188 | 63.30, 55.93-68.66 | 62.61 | 0.647 |
-| 1 | greedy 1.4k | k3 (3) | 12 | 1.252 / 1.427 | 65.28, 57.73-73.93 | 65.32 | 0.470 |
-| 1 | greedy 1.4k | k2 (2) | 12 | 1.298 / 1.423 | 66.69, 58.70-69.47 | 65.00 | 0.578 |
+| 1 | greedy 1.2k | k3 (3) | 12 | 1.252 / 1.427 | 65.28, 57.73-73.93 | 65.32 | 0.470 |
+| 1 | greedy 1.2k | k2 (2) | 12 | 1.298 / 1.423 | 66.69, 58.70-69.47 | 65.00 | 0.578 |
 | 2 | T=1 3.6k | k3 (3) | 24 | 3.247 / 3.817 | 58.83, 50.31-67.83 | 58.58 | 0.440 |
 | 2 | T=1 3.6k | k2 (2) | 24 | 3.310 / 3.824 | 60.84, 54.25-67.97 | 61.07 | 0.585 |
 | 2 | T=1 5.8k | k3 (3) | 12 | 5.809 / 6.178 | 57.67, 49.79-67.52 | 57.44 | 0.483 |
@@ -65,9 +65,9 @@ Per boot (each boot's median; 6 boots per arm; ratio = k2 median over k3 median)
 
 | run | class | normalized decode ratio | U normalized | raw decode ratio | U raw | TTFT ratio | U TTFT |
 |---|---|---:|---:|---:|---:|---:|---:|
-| 1 | T=1 1.4k | 0.996 | 16/36 | 0.984 | 19/36 | 1.041 | 24/36 |
+| 1 | T=1 1.2k | 0.996 | 16/36 | 0.984 | 19/36 | 1.041 | 24/36 |
 | 1 | T=1 3.7k | 1.070 | 31/36 | 1.069 | 26/36 | 1.038 | 21/36 |
-| 1 | greedy 1.4k | 1.008 | 19/36 | 1.009 | 19/36 | 1.024 | 21/36 |
+| 1 | greedy 1.2k | 1.008 | 19/36 | 1.009 | 19/36 | 1.024 | 21/36 |
 | 2 | T=1 3.6k | 1.056 | 31/36 | 1.064 | 28/36 | 0.976 | 19/36 |
 | 2 | T=1 5.8k | 1.058 | **36/36** | 1.057 | 28/36 | 0.998 | 16/36 |
 | 2 | T=1 all | 1.049 | 31.5/36 | 1.045 | 27/36 | 1.006 | 18/36 |
@@ -119,7 +119,7 @@ may be why it prices K=3 above K=2 where K=2 is faster; it is not tested here.
 
 | prompt length | RTX 5090, T=1 | RTX 5090, greedy | PRO 6000 Max-Q, T=1 | PRO 6000 Max-Q, greedy |
 |---|---|---|---|---|
-| 1,200-1,400 | x0.996, flat (16/36) | x1.008, flat (19/36) | x1.045 (36/36) | x1.016 (36/36) |
+| 1,240-1,290 | x0.996, flat (16/36) | x1.008, flat (19/36) | x1.045 (36/36) | x1.016 (36/36) |
 | 3,600-3,700 | x1.056 / x1.070 (31/36, two runs) | x1.121 (36/36) | x1.055 / x1.074 (36/36) | x1.096 (36/36) |
 | 5,800 | x1.058 (36/36) | not run | x1.039 (36/36) | not run |
 
@@ -128,11 +128,11 @@ may be why it prices K=3 above K=2 where K=2 is faster; it is not tested here.
 ## Reading
 
 - K=2 is at least as fast as K=3 on every cold long prompt measured, on both cards, with greedy
-  texts unchanged and TTFT unchanged. Where it loses nothing (the 5090 at 1.4k) it ties. Its
+  texts unchanged and TTFT unchanged. Where it loses nothing (the 5090 at 1.2k) it ties. Its
   acceptance per draft is higher (0.53-0.65 against 0.38-0.48), and the round it drops costs more
   than it returns, more so as the context grows.
 - A cold-long rung of K=2 is therefore the candidate default for this model on these two cards: a
-  plain rung change, with no length split needed, since the 5090's 1.4k tie costs nothing.
+  plain rung change, with no length split needed, since the 5090's 1.2k tie costs nothing.
 - Not covered:
   - concurrency (all cells are single-stream; the spec gate demotes to plain from c=3 on a single
     card either way);
