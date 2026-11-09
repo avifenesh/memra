@@ -37,8 +37,12 @@ names, with a session key that holds across turns?
 | run | commit | boots | requests | byte diffs | log failures | verdict |
 |---|---|---|---|---|---|---|
 | `device-ab/run1-32598d3947` | 32598d3947 (first push) | 4 | 8 | 0 | 0 | PASS |
+| `device-ab/run2-124665c83a` | 124665c83a (after the review fixes) | 4 | 8 | 0 | 0 | PASS |
 
-Per request (run 1, boot 1 line; normalized response digest equal in all four boots):
+Run 2's eight normalized digests are also equal to run 1's: the review fixes changed what the log
+records, not what the server answers.
+
+Per request (boot 1 line of either run; normalized response digest equal in all eight boots):
 
 | request | normalized sha256 | end_reason | generated | session_key_source | tool calls |
 |---|---|---|---|---|---|
