@@ -35,9 +35,10 @@ split already equals, and the two-part scan is that law inside one layer.
   boundary logits, the snapshot, the final GDN state, the K/V bytes); the call-boundary stop refused.
 - Served on GB10, B = main, T = the fold, B T T B B T, 3 per arm, the per-call trace (ledger rows
   67b-67c): the trunk's end calls (B: the boundary call plus the tail call; T: the folded call) fall
-  by 0.228 s at 131,051 tokens and 0.511 s at 259,951 on unit 2, against end-call spreads of at most
-  0.011 s. TTFT moves -0.20% / -0.15%, inside its per-run spread: no regression. Identical answers;
-  every request published its capture.
+  by 0.228 s at 131,051 tokens and 0.511 s at 259,951 on unit 2 and by 0.235 s and 0.514 s on unit 1,
+  against end-call spreads of at most 0.022 s. TTFT moves -0.20% / -0.15% on unit 2 (inside its
+  per-run spread) and -0.28% / -0.36% on unit 1 (T under B in every cell): no regression. Identical
+  answers; every request published its capture.
 
 ## Rejected
 

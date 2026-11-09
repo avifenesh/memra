@@ -469,9 +469,10 @@ model's budget of 1 (`tools/argmax-margin-gate.sh`, `tools/test_argmax_margin_ga
 
 ## Round 4 (2026-11-08/09): the request window, attention scheduling, the MTP draft fill, the GDN out-norm, the GEMM's last wave
 
-Base main `d6ef68f5a1`. Ledger rows 46-66b; the close against the base is at the end of this
-section. Design notes: `ATTN-PINGPONG-DESIGN.md` (attention, rejected), `MTP-FILL-DESIGN.md`,
-`GDN-OUTNORM-DESIGN.md` and `GEMM-V4-DESIGN.md`. Harness: `harness/r4/`.
+Base main `d6ef68f5a1`. Ledger rows 46-67c; the close against the base, and lever 8 after it, are at
+the end of this section. Design notes: `ATTN-PINGPONG-DESIGN.md` (attention, rejected),
+`MTP-FILL-DESIGN.md`, `GDN-OUTNORM-DESIGN.md`, `GEMM-V4-DESIGN.md` and `TAIL-FOLD-DESIGN.md`.
+Harness: `harness/r4/`.
 
 ### Fresh per-part profile, one cold 131,051-token served prefill (`profile-r4-main-131k/`)
 
@@ -612,10 +613,33 @@ MUFU.EX2 exponential (rows 47-49); the host time before the first kernel (row 58
 on a fresh boot); a persistent GEMM tile walk and per-group slot release (rows 60, 63); h2p's feed
 (row 62, compute-bound at 79% tensor-active).
 
+### Lever 8 (after the close): the boundary tail fold (rows 67-67c, `TAIL-FOLD-DESIGN.md`, `tail-fold/`)
+
+A cold prime with one stop for the prefix-cache capture or the turn checkpoint used to run as two
+prime calls, so the GDN states could be snapshotted where the first ended; the second primed the 16
+to 47 rows after the render-stable boundary. Now the walk runs unsegmented: the call that contains
+the stop runs each GDN layer's conv prep and chunked scan in two parts there and copies the conv ring
+and SSM state into a tap, and the capture is built from the tap. A stop on a 4,096-row call boundary
+keeps the split, which already ends a call there; the 32k bench prompt (stop 32,768) is one.
+
+`prime-fold-gate` (the 27B, split against fold) is bit-identical on unit 2 and on the RTX 5090 in
+every case: every hidden row, the final and boundary logits, the snapshot, the final GDN state and
+the K/V bytes. Served, B T T B B T, 131k and 260k with the per-call trace; the signal is the trunk's
+end calls (on B the boundary call plus the tail call, on T the one folded call):
+
+| unit | prompt tokens | B end calls | T end calls | change (spreads B / T) | TTFT change |
+|---|---:|---:|---:|---:|---:|
+| 2 | 131,051 | 5.283 s | 5.055 s | -0.228 s (0.011 / 0.006) | -0.241 s (-0.20%), inside the noise |
+| 2 | 259,951 | 4.933 s | 4.422 s | -0.511 s (0.005 / 0.003) | -0.480 s (-0.15%), inside the noise |
+| 1 | 131,051 | 5.315 s | 5.080 s | -0.235 s (0.022 / 0.016) | -0.336 s (-0.28%) |
+| 1 | 259,951 | 4.934 s | 4.420 s | -0.514 s (0.010 / 0.007) | -1.141 s (-0.36%) |
+The saving is 10 to 100 times the end calls' own spread on both units, and TTFT shows no regression
+(on unit 2 it moves inside its per-run spread; on unit 1 T is under B in every cell); the answers are
+identical, and every T request published its capture. Unit 1's cells ran in two parts around another
+landing's record (01-B to 03-T, then 04-B to 06-T), every one at full clock.
+
 ### Next (after round 4)
 
-- The trunk boundary tail chunk (0.46 s at 131k, 16 or 43 rows on the prefix cache's stable
-  boundary): fold it into the last full chunk when the prefix cache allows.
 - The MTP draft fill's own kernels, about 0.7 s at 131k.
 - The F8F4 tile and h2p stay at the register walls of rows 35-36, 47, 49 and 59-63. The one exact
   GEMM idea left is the partial fragment double buffer (`GEMM-V4-DESIGN.md`, candidate 4), which

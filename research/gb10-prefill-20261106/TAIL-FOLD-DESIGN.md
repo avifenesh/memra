@@ -97,7 +97,26 @@ prompts.
   hidden row, the final logits, the logits at `b - 1`, the KV bytes of every layer's rows, the
   capture's conv and SSM bytes, `kv_len` and `pos`, and the final recurrent state; and check that a
   stop on a call boundary is refused.
-- Served A/B B T T B B T at 32k / 131k / 260k with the text fingerprints, plus the prefix-cache
-  restore: a second turn that extends the first, restored from each arm's capture, gives the same
-  answer.
+- Served A/B B T T B B T at 131k and 260k with the text fingerprints and the per-call trace; the
+  signal is the trunk's end calls (TTFT alone cannot resolve 0.2-0.5 s at N=3). A restore from the
+  capture reads only the fields the gate compares (conv, SSM, KV rows below `pos`, logits, last
+  hidden), so the gate's equality makes it the split's restore.
 - The device battery and serve-smoke in the cell records.
+
+## Measured (ledger rows 67-67c, `tail-fold/`)
+
+`prime-fold-gate` is bit-identical on GB10 unit 2 and on the RTX 5090 in all seven folded cases, and
+refuses the call-boundary stop. Its first run caught the capture refusing on the MTP block's KV
+plane, which the trunk never advances (`snapshot_from_tap` now keeps a layer's length when it is not
+the cache's position).
+
+Served on unit 2, B = main `65fb297a59`, T = the fold, 3 per arm: the trunk's end calls go from
+5.283 to 5.055 s at 131,051 tokens (-0.228 s; spreads 0.011 / 0.006 s) and from 4.933 to 4.422 s at
+259,951 (-0.511 s; spreads 0.005 / 0.003 s). TTFT moves -0.20% and -0.15%, inside its per-run spread.
+Per call (B / T medians): at 131k the split's 4,032-row boundary call takes 4.841 s and its 43-row
+tail call 0.446 s, the folded 4,075-row call 5.055 s; at 260k 4.238 s and 0.695 s against 4.422 s.
+The folded call is 0.21 / 0.18 s longer than the split's boundary call: its extra rows (about 0.05 s
+at 131k), the unfused out-norm in 48 layers, the copy of each part's scan output into one buffer and
+the 48 state copies. The last three are the part a later change can remove (a row offset for the
+fused out-norm, the scan writing into views of one buffer). Unit 1 confirms it: -0.235 s (spreads 0.022 / 0.016 s) and -0.514 s (0.010 / 0.007
+s), TTFT -0.28% / -0.36% with T under B in every cell.
