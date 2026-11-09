@@ -4,6 +4,7 @@ fabricated in a temporary repository and are never GPU evidence."""
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -39,6 +40,14 @@ fn main() {
     );
 }
 '''
+# A golden reader shaped like crates/memra-tokenizer/src/chat.rs: `$n` leaves the include path
+# unresolved, so only a dynamic-include contract in tools/validation_inputs.json admits it.
+CHAT_V1 = '''macro_rules! golden {
+    ($n:literal) => { include_str!(concat!("../../../research/goldens/", $n, ".txt")) };
+}
+pub fn plain() -> &'static str { golden!("plain") }
+'''
+CHAT_V2 = CHAT_V1.replace("pub fn plain()", "pub fn plain_default()")
 DEVICE = {"name": "NVIDIA GeForce RTX 5090 Laptop GPU", "uuid_sha256": "0" * 64,
           "compute_cap": "12.0", "driver": "CPU fixture"}
 BATCH_LOG = "  SUMMARY flips=0 bad=0\n  SERVED-SUMMARY served=MATCH\n  PASS: CPU fixture calibrated verdict\n"
@@ -599,6 +608,66 @@ class CellGate(unittest.TestCase):
         self.f.write("docs/guide.md", "# guide\n")
         c = self.f.commit("docs")
         self.assertEqual(ce.research_drift(self.f.repo, b, c), ("docs/guide.md",))
+
+    def pin_tokenizer(self, chat, message):
+        """Commit a tokenizer crate whose include the census cannot resolve, pinned by this
+        commit's own tools/validation_inputs.json, as crates/memra-tokenizer/src/chat.rs is."""
+        f = self.f
+        f.write("Cargo.toml", '[workspace]\nmembers = ["crates/memra-engine", "crates/memra-server", '
+                              '"crates/memra-tokenizer"]\n')
+        f.write("crates/memra-tokenizer/Cargo.toml",
+                '[package]\nname = "memra-tokenizer"\nversion = "0.1.0"\nedition = "2021"\n')
+        f.write("crates/memra-tokenizer/src/chat.rs", chat)
+        f.write("research/goldens/plain.txt", "golden\n")
+        f.write("tools/validation_inputs.json", json.dumps({
+            "schema": "memra-validation-build-inputs-v1", "build_scripts": {},
+            "dynamic_includes": {"crates/memra-tokenizer/src/chat.rs": {
+                "sha256": hashlib.sha256(chat.encode()).hexdigest(),
+                # The second input is declared here only; no source line spells it.
+                "inputs": ["research/goldens/*.txt", "research/schema/*.json"]}}}, indent=1) + "\n")
+        return f.commit(message)
+
+    def test_research_drift_reads_each_commits_own_build_input_contracts(self):
+        # #1136: the lane head re-pinned chat.rs in tools/validation_inputs.json. Its tools ran
+        # the census of two main commits under that pin, refused main's chat.rs, and so refused
+        # a perf base that differed from the push base in research and docs only. The running
+        # tools' registry (this checkout's) pins other chat.rs bytes than these commits, as the
+        # lane head's did.
+        f = self.f
+        old = self.pin_tokenizer(CHAT_V1, "main: tokenizer pinned")
+        f.write("research/lane/run.log", "raw\n")
+        f.write("docs/guide.md", "# guide\n")
+        new = f.commit("main: research and docs")
+        self.assertEqual(ce.research_drift(f.repo, old, new), ("docs/guide.md", "research/lane/run.log"))
+        # Red arms. The code really differs: the lane changes chat.rs and re-pins it.
+        lane = self.pin_tokenizer(CHAT_V2, "lane: chat.rs changed and re-pinned")
+        self.assertIsNone(ce.research_drift(f.repo, new, lane))
+        # A file the commit's own contract declares as an input of chat.rs is a crate input.
+        f.git("checkout", "-q", "--detach", new)
+        f.write("research/schema/reasoning.json", "{}\n")
+        declared = f.commit("main: a declared chat.rs input")
+        self.assertIsNone(ce.research_drift(f.repo, new, declared))
+        # A commit whose chat.rs no longer matches its own pin: its census cannot answer.
+        f.git("checkout", "-q", "--detach", new)
+        f.write("crates/memra-tokenizer/src/chat.rs", CHAT_V2)
+        stale = f.commit("chat.rs changed without its pin")
+        f.write("research/lane/run2.log", "raw\n")
+        self.assertIsNone(ce.research_drift(f.repo, stale, f.commit("research on the stale pin")))
+
+    def test_a_perf_base_research_behind_the_push_base_survives_a_repin(self):
+        # The visible #1136 refusal: a perf record whose base is main before a research-only
+        # main commit, on a lane that re-pins chat.rs.
+        f = self.f
+        f.base = self.pin_tokenizer(CHAT_V1, "main: tokenizer pinned")
+        f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 4; }\n")
+        kernel = f.commit("lane: kernel")
+        code = self.pin_tokenizer(CHAT_V2, "lane: chat.rs changed and re-pinned")
+        f.record(code, ["battery", "perf"])
+        banked = f.head()
+        main_tip, head = self.rebase_onto({"research/other-lane/README.md": "# x\n"}, kernel, code, banked)
+        out = f.push(oid=head, base=main_tip)
+        self.assertIn("CELL-QUALIFIED", out)
+        self.assertIn("research or docs paths", out)
 
     def test_research_drift_names_only_unread_research_paths(self):
         a = self.f.head()

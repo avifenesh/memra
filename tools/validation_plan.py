@@ -978,6 +978,35 @@ def include_argument(argument, package_root, generated_env=()):
     raise Refused('unresolved include expression')
 
 
+BUILD_INPUT_CONTRACTS = 'tools/validation_inputs.json'
+
+
+def build_input_contracts(tree):
+    """The build-script and dynamic-include contracts for the tree the census reads.
+
+    The contracts pin source hashes of one tree. A commit's census reads the commit's own
+    registry, so a re-pin in the running tool cannot refuse an older commit whose sources
+    match its own pins. The working tree (and any reader that is not a commit Tree of this
+    module) reads the running tool's own registry with the local-input checks. A commit
+    without a registry has no contracts: every build script and unresolved include then
+    refuses, so a missing registry only expands validation.
+    """
+    if not isinstance(tree, Tree) or isinstance(tree, LocalTree):
+        text = read_local_input(Path(__file__).parent, 'validation_inputs.json')
+    else:
+        mode = tree.input_modes(BUILD_INPUT_CONTRACTS, recursive=False).get(BUILD_INPUT_CONTRACTS)
+        if mode is None:
+            return {'schema': 'memra-validation-build-inputs-v1', 'build_scripts': {}, 'dynamic_includes': {}}
+        # Git holds no FIFO or device; a link, gitlink or directory is not a registry.
+        if mode not in ('100644', '100755'):
+            raise Refused('build input contracts are not a regular file: ' + BUILD_INPUT_CONTRACTS)
+        text = tree.read(BUILD_INPUT_CONTRACTS)
+    contracts = json.loads(text)
+    if type(contracts) is not dict or contracts.get('schema') != 'memra-validation-build-inputs-v1':
+        raise Refused('unrecognized build input contracts')
+    return contracts
+
+
 def included_inputs(tree, owners, *, code_views=None):
     """Literal includes, including old-tree consumers of deleted/renamed fixtures.
 
@@ -1030,9 +1059,7 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
         # Source module resolution through symlinks depends on both lexical and
         # physical locations. Until that transitive graph is modelled, expand.
         raise Refused('crate symlink needs a transitive input contract: ' + path)
-    contracts = json.loads(read_local_input(Path(__file__).parent, 'validation_inputs.json'))
-    if contracts.get('schema') != 'memra-validation-build-inputs-v1':
-        raise Refused('unrecognized build input contracts')
+    contracts = build_input_contracts(tree)
     generated = defaultdict(set)
     for prefix, package in owners.items():
         manifest = tomllib.loads(tree.read(prefix + '/Cargo.toml'))

@@ -126,7 +126,8 @@ qualifies. A rebase changes the inputs and needs a new record, with one exceptio
 input that differs between the record's tested commit and the candidate may be a research or
 documentation path that the impact classifier calls research or docs
 (`cell_evidence.research_drift`; `.gitattributes` never, since it can change the bytes a checkout
-gives the build): no crate reads it (the CI include census, which must answer at both commits;
+gives the build): no crate reads it (the CI include census, which must answer at both commits,
+each under its own `tools/validation_inputs.json`;
 build.rs reading `docs/FLAGS.md` makes that file code; its literal check ignores paths spelled in
 data files and `#` comments under `crates/`) and no gate tool reads it (a
 `gate` rule; `tools/test_change_impact.py` keeps those rules complete against the research paths

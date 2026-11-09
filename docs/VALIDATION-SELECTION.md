@@ -32,7 +32,9 @@ crate, transitively. Rust source outside crates and referenced symlinks expand v
 until their module-resolution graph has an explicit contract. Whitespace and comments between
 macro tokens do not hide an include. The
 reviewed build-script and dynamic-include contracts in `tools/validation_inputs.json` are
-source-hash bound. For example, `docs/FLAGS.md` generates engine code and is not merely prose.
+source-hash bound. The census of a commit reads that commit's contracts, so a later re-pin
+cannot refuse an older commit; the working-tree census reads the running tool's own.
+For example, `docs/FLAGS.md` generates engine code and is not merely prose.
 A producer edit invalidates its declaration until the changed dependency is reviewed.
 Unreferenced research receipts do not rebuild the engine. A standalone research probe retains
 its own experiment requirement; it does not imply that every engine program changed.

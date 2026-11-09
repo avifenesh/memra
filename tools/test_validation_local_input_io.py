@@ -1,4 +1,6 @@
 """Real local planning input types and caller outcomes; no native execution."""
+import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -150,6 +152,25 @@ class LocalInputIO(unittest.TestCase):
         snapshot = vp.Tree(self.root, self.fixture.base)
         self.assertEqual(snapshot.read_bytes('Cargo.toml'), original)
         self.assertEqual(snapshot.read('Cargo.toml').encode(), original)
+
+    def test_snapshot_census_reads_the_commits_own_regular_registry(self):
+        # The running tool's registry pins other sources; the commit's own pin admits its include.
+        source = 'macro_rules! g { ($n:literal) => { include_str!(concat!("../../../research/g/", $n)) }; }\n'
+        self.fixture.put('crates/memra-server/src/lib.rs', source)
+        registry = json.dumps({'schema': 'memra-validation-build-inputs-v1', 'build_scripts': {},
+                               'dynamic_includes': {'crates/memra-server/src/lib.rs': {
+                                   'sha256': hashlib.sha256(source.encode()).hexdigest(),
+                                   'inputs': ['research/declared/*.txt']}}})
+        self.fixture.put('tools/validation_inputs.json', registry)
+        pinned = vp.Tree(self.root, self.fixture.commit())
+        self.assertIn('research/declared/*.txt', vp.included_inputs(pinned, vp.workspace(pinned)[1]))
+        # A registry the commit holds as a link is refused, as a linked local registry is.
+        (self.root / 'tools/validation_inputs.json').unlink()
+        self.fixture.put('tools/registry.json', registry)
+        (self.root / 'tools/validation_inputs.json').symlink_to('registry.json')
+        linked = vp.Tree(self.root, self.fixture.commit())
+        with self.assertRaisesRegex(vp.Refused, 'not a regular file'):
+            vp.included_inputs(linked, vp.workspace(linked)[1])
 
     def test_missing_and_noncanonical_paths_remain_refusals(self):
         for name in ('missing', '../outside', '/outside', 'a//b', './a', 'a\\b'):
