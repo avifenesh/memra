@@ -43,17 +43,19 @@
 //! one thread per process to take a group stop, the main thread first; when that thread waits
 //! in vfork, the other threads are never told. So when no thread of a multithreaded member has
 //! stopped, the runner directs SIGSTOP at each of its live threads (tgkill) and reads again.
-//! It does the same for a member other than the leader whose one live thread has not stopped
-//! and carries the stop in neither pending set: the group's stop never reached it (it entered
-//! the group after the stop was sent, or was continued from outside the job).
-//! Members are the processes listed in /proc whose process group (getpgid) is the job's; a
-//! process that left the group is outside the group's signals and outside this check. The scan
-//! reads nothing of a process outside the group, so such a process cannot fail the job by its
-//! name or its /proc permissions; a member or leader whose threads cannot be read fails the job
-//! instead of yielding unread. One gap is accepted: a process whose process group a security
-//! module refuses to tell the server is passed over, so a member confined that way is not
-//! waited for (a refusal for the leader itself fails the job). Thread readings are parsed as
-//! bytes: a comm may hold any byte. OS scheduling and signal delivery control latency.
+//! It does the same for a process whose one live thread has not stopped and carries the stop
+//! in neither pending set: the stop is not on it any more, or never was (it entered the group
+//! after the stop was sent, or was continued from outside the job).
+//! Members are the processes listed in /proc whose process group (getpgid) is the job's. The
+//! scan reads nothing of a process outside the group, so such a process cannot fail the job by
+//! its name or its /proc permissions; a member or leader whose threads cannot be read, or
+//! cannot be signaled, fails the job instead of yielding unread. Outside this check: a process
+//! that left the group (the group's signals do not reach it either), a member the server
+//! cannot see in /proc (a hidepid mount), and, the one gap the scan itself accepts, a process
+//! whose process group a security module refuses to tell the server: it is passed over, so a
+//! member confined that way is not waited for (a refusal for the leader itself fails the job).
+//! Thread readings are parsed as bytes: a comm may hold any byte. OS scheduling and signal
+//! delivery control latency.
 //! Historical timing receipts live in `research/darktrain-20260807/`. Two consequences the
 //! operator must know:
 //!   * a SIGSTOPPED process KEEPS its memory — VRAM included, and so does a leader parked
@@ -514,16 +516,12 @@ enum ProcessStop {
     /// under way, the one live thread still has the stop to take, or every live thread already
     /// carries the stop in its own pending set.
     NotYet,
-    /// No thread has taken the stop, more than one is live, and some live thread does not carry
-    /// it in its own pending set. The stop must be directed at each live thread.
+    /// No thread has taken the stop, and it must be directed at each live thread. Either more
+    /// than one thread is live and some live thread does not carry the stop in its own pending
+    /// set, or the one live thread carries it in neither set: the stop is not on the process
+    /// any more, or never was (it entered the group after the stop was sent, or was continued
+    /// from outside the job).
     Unclaimed,
-    /// The one live thread has not stopped and carries the stop in neither pending set. On a
-    /// member other than the leader the group's stop never reached the process: it entered the
-    /// group after the stop was sent, or was continued from outside the job. The stop must be
-    /// directed at it. A thread that has just taken the stop off its queue reads the same for
-    /// an instant, and the leader, which was in the group when the stop was sent, is only read
-    /// again.
-    Unreached,
     /// No live thread: the process is exiting, or is gone.
     Gone,
 }
@@ -547,10 +545,8 @@ fn classify_process_stop(threads: &[ThreadStop]) -> ProcessStop {
     };
     if live.iter().all(bound_to_stop) {
         ProcessStop::TookEffect
-    } else if !stopped && !single && live.iter().any(|t| !t.own) {
+    } else if !stopped && live.iter().any(|t| !t.own) && !(single && live[0].shared) {
         ProcessStop::Unclaimed
-    } else if !stopped && single && !live[0].own && !live[0].shared {
-        ProcessStop::Unreached
     } else {
         ProcessStop::NotYet
     }
@@ -604,13 +600,13 @@ fn process_threads(pid: u32) -> std::io::Result<Option<Vec<(libc::pid_t, ThreadS
 /// So when no thread is stopped and more than one is live, the stop is directed at each live
 /// thread (tgkill), which flags each one, and read again. A flagged sleeping or running thread
 /// starts the group stop, and a flagged blocked one carries the stop in its own pending set.
-/// A member other than the leader with one live thread gets the same when that thread has not
-/// stopped and the stop is in neither of its pending sets: the group's stop never reached it,
-/// because it entered the group after the stop was sent or was continued from outside the job,
-/// and no later tick would see it stop. A thread that has just taken the stop off its queue and
-/// is about to stop reads the same for an instant; the extra stop sent to it then is flushed
-/// with the rest by SIGCONT. The leader was in the group when the stop was sent, so that
-/// reading of the leader is the instant, and it is only read again.
+/// A process with one live thread gets the same when that thread has not stopped and the stop
+/// is in neither of its pending sets: the stop is not on it, because it entered the group after
+/// the stop was sent or was continued from outside the job, and no later tick would see it
+/// stop. A thread that stops while its status is read can show the same for one reading (the
+/// state is sampled before the pending sets); the extra stop sent to it then is flushed with
+/// the rest by SIGCONT. The stop is sent only here, after a group SIGSTOP: a reading taken with
+/// no stop requested would stop a running job.
 /// tgkill checks the thread group, so a stale tid cannot reach another process, and SIGCONT
 /// flushes thread-directed stops with the group's. A member other than the leader is checked to
 /// be still in group `pgid` right before: pids are allocated cyclically, so one that exited since
@@ -623,11 +619,9 @@ fn process_stop(pid: u32, pgid: u32) -> std::io::Result<ProcessStop> {
     let Some(threads) = process_threads(pid)? else {
         return Ok(ProcessStop::Gone);
     };
-    match reading(&threads) {
-        ProcessStop::Unclaimed => {}
-        ProcessStop::Unreached if pid != pgid => {}
-        ProcessStop::Unreached => return Ok(ProcessStop::NotYet),
-        first => return Ok(first),
+    let first = reading(&threads);
+    if first != ProcessStop::Unclaimed {
+        return Ok(first);
     }
     if pid != pgid && process_pgrp(pid)? != Some(pgid) {
         return Ok(ProcessStop::Gone); // It exited, or left the group, since the scan.
@@ -649,7 +643,7 @@ fn process_stop(pid: u32, pgid: u32) -> std::io::Result<ProcessStop> {
         None => ProcessStop::Gone,
         Some(threads) => match reading(&threads) {
             // Every live thread now carries the stop, unless it already took it and stopped.
-            ProcessStop::Unclaimed | ProcessStop::Unreached => ProcessStop::NotYet,
+            ProcessStop::Unclaimed => ProcessStop::NotYet,
             again => again,
         },
     })
@@ -1594,8 +1588,10 @@ mod tests {
                     st.resumes.load(Ordering::Relaxed) == 1
                         && matches!(proc_state(pid), Some('R' | 'S'))
                 });
+                // waitid's own view, not the runner's reading: with no stop requested the
+                // reading would direct one at the resumed job.
                 assert!(
-                    !child_stop_acknowledged(pid).unwrap(),
+                    !leader_reports_stopped(pid),
                     "the first stop must not acknowledge a resumed child"
                 );
             }
@@ -1613,8 +1609,8 @@ mod tests {
     /// pending set, SIGSTOP in the shared set). The single-threaded parked shell (D with SIGSTOP
     /// shared) and a running shell inside an ordinary vfork (D, nothing pending) differ only in
     /// the pending set; the second must never acknowledge. One live thread that has not stopped
-    /// and carries the stop nowhere is a process the group's stop never reached. With more than
-    /// one live thread a shared stop proves nothing: a blocked thread counts once a
+    /// and carries the stop nowhere is a process the stop is not on: it is directed at it. With
+    /// more than one live thread a shared stop proves nothing: a blocked thread counts once a
     /// thread is stopped or the stop is in its own set, and a process with no stopped thread and
     /// a thread without its own stop gets the stop directed at each thread. A process with no
     /// live thread is gone. A status is read as bytes (a comm may hold any byte), and the group
@@ -1639,17 +1635,15 @@ mod tests {
             ),
             // The parked dash leader, and a running one inside an ordinary vfork.
             (vec![t('D', false, true)], TookEffect),
-            (vec![t('D', false, false)], Unreached),
+            (vec![t('D', false, false)], Unclaimed),
             (vec![t('Z', false, false), t('D', false, true)], TookEffect),
             (vec![t('R', false, true)], NotYet),
-            // One live thread the group's stop never reached, then with the stop directed at it.
-            (vec![t('S', false, false)], Unreached),
-            (vec![t('R', false, false)], Unreached),
-            (vec![t('Z', false, false), t('S', false, false)], Unreached),
+            // One live thread the stop is not on, then with the stop directed at it.
+            (vec![t('S', false, false)], Unclaimed),
+            (vec![t('R', false, false)], Unclaimed),
+            (vec![t('Z', false, false), t('S', false, false)], Unclaimed),
             (vec![t('S', true, false)], NotYet),
             (vec![t('D', true, false)], TookEffect),
-            // More than one live thread is never read as unreached.
-            (vec![t('S', false, false), t('S', false, false)], Unclaimed),
             // The main thread parked in vfork, the other thread sleeping or blocked elsewhere:
             // the kernel flagged the main thread only.
             (vec![t('D', false, true), t('S', false, true)], Unclaimed),
@@ -1792,67 +1786,106 @@ mod tests {
         drop(outside);
     }
 
-    /// A process can enter the job's group after the group stop was sent (setpgid), and a
-    /// stopped member can be continued from outside the job. The stop is then pending nowhere
-    /// on it, and with one thread it was read as "not yet" on every tick: the job never yielded
-    /// and never resumed. The shape without the race: only the leader is stopped, so the member
-    /// is in the group, running, with no stop pending. The reading must direct the stop at the
-    /// member, and acknowledge only once it has stopped.
-    #[test]
-    fn stop_is_directed_at_a_member_the_group_stop_never_reached() {
-        use std::os::unix::process::CommandExt;
-        struct Group(u32, Vec<std::process::Child>);
-        impl Drop for Group {
-            fn drop(&mut self) {
-                kill_group(self.0, libc::SIGKILL);
-                for child in &mut self.1 {
-                    let _ = child.wait();
-                }
+    /// Two `sleep` processes in one process group, the first its leader; dropping it kills and
+    /// reaps both. They outlive the 30 s guard, so a missing acknowledgement fails at the guard
+    /// and not on a member that exited.
+    struct SleepGroup {
+        pgid: u32,
+        member: u32,
+        children: Vec<std::process::Child>,
+    }
+
+    impl SleepGroup {
+        fn spawn() -> Self {
+            use std::os::unix::process::CommandExt;
+            let sleeper = |pgid: i32| {
+                std::process::Command::new("sleep")
+                    .arg("600")
+                    .process_group(pgid)
+                    .spawn()
+                    .unwrap()
+            };
+            let leader = sleeper(0);
+            let pgid = leader.id();
+            let mut group = Self {
+                pgid,
+                member: 0,
+                children: vec![leader],
+            };
+            let member = sleeper(pgid as i32);
+            group.member = member.id();
+            group.children.push(member);
+            wait_acknowledged("the member sleeps in the leader's group", || {
+                group.states() == (Some('S'), Some('S'))
+                    && unsafe { libc::getpgid(group.member as i32) } == pgid as i32
+            });
+            group
+        }
+
+        /// The states of the leader and of the member.
+        fn states(&self) -> (Option<char>, Option<char>) {
+            (proc_state(self.pgid), proc_state(self.member))
+        }
+    }
+
+    impl Drop for SleepGroup {
+        fn drop(&mut self) {
+            kill_group(self.pgid, libc::SIGKILL);
+            for child in &mut self.children {
+                let _ = child.wait();
             }
         }
-        let sleeper = |pgid: i32| {
-            std::process::Command::new("sleep")
-                .arg("30")
-                .process_group(pgid)
-                .spawn()
-                .unwrap()
-        };
-        let leader = sleeper(0);
-        let pgid = leader.id();
-        let mut group = Group(pgid, vec![leader]);
-        let member = sleeper(pgid as i32);
-        let member_pid = member.id();
-        group.1.push(member);
-        wait_acknowledged("the member sleeps in the leader's group", || {
-            proc_state(member_pid) == Some('S')
-                && proc_state(pgid) == Some('S')
-                && unsafe { libc::getpgid(member_pid as i32) } == pgid as i32
-        });
-        // The leader was in the group when any stop was sent: the same reading of the leader
-        // directs nothing at it.
-        assert_eq!(process_stop(pgid, pgid).unwrap(), ProcessStop::NotYet);
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        assert_eq!(
-            proc_state(pgid),
-            Some('S'),
-            "the reading stopped the leader"
-        );
+    }
+
+    /// A process can enter the job's group after the group stop was sent (setpgid). The stop is
+    /// then pending nowhere on it, and with one thread it was read as "not yet" on every tick:
+    /// the job never yielded and never resumed. The shape without the race: only the leader is
+    /// stopped, so the member is in the group, asleep, with no stop pending. The reading must
+    /// direct the stop at the member, and acknowledge only once it has stopped.
+    #[test]
+    fn stop_is_directed_at_a_member_the_group_stop_never_reached() {
+        let group = SleepGroup::spawn();
         // To the leader only: the group's stop never reaches the member.
-        assert_eq!(unsafe { libc::kill(pgid as i32, libc::SIGSTOP) }, 0);
+        assert_eq!(unsafe { libc::kill(group.pgid as i32, libc::SIGSTOP) }, 0);
         wait_acknowledged("the leader alone is stopped", || {
-            leader_reports_stopped(pgid)
+            leader_reports_stopped(group.pgid)
         });
-        assert_eq!(proc_state(member_pid), Some('S'), "the member has no stop");
+        assert_eq!(group.states().1, Some('S'), "the member has no stop");
         wait_acknowledged(
             "the stop is directed at the member and acknowledged",
-            || child_stop_acknowledged(pgid).unwrap(),
+            || child_stop_acknowledged(group.pgid).unwrap(),
         );
         assert_eq!(
-            proc_state(member_pid),
-            Some('T'),
+            group.states(),
+            (Some('T'), Some('T')),
             "acknowledged with the member running"
         );
-        drop(group);
+    }
+
+    /// A stopped job can be continued from outside (`kill -CONT` at its group) before the
+    /// runner has acknowledged the stop. The stop is then on no process of the job, the leader
+    /// included, and nothing would bring it back: the stop was never acknowledged and the job
+    /// never resumed by the runner. The reading must direct the stop at the leader and at the
+    /// member again, and acknowledge once both have stopped.
+    #[test]
+    fn stop_is_directed_again_at_a_job_continued_from_outside() {
+        let group = SleepGroup::spawn();
+        assert!(signal_group(group.pgid, libc::SIGSTOP).is_ok());
+        wait_acknowledged("the group is stopped", || {
+            group.states() == (Some('T'), Some('T'))
+        });
+        assert!(signal_group(group.pgid, libc::SIGCONT).is_ok());
+        wait_acknowledged("the group was continued from outside", || {
+            group.states() == (Some('S'), Some('S')) && !leader_reports_stopped(group.pgid)
+        });
+        wait_acknowledged("the stop is directed again and acknowledged", || {
+            child_stop_acknowledged(group.pgid).unwrap()
+        });
+        assert_eq!(
+            group.states(),
+            (Some('T'), Some('T')),
+            "acknowledged with the job running"
+        );
     }
 
     /// Set in the job's environment: this test binary then runs as the job leader below.
