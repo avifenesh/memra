@@ -1,0 +1,38 @@
+2026-11-09T02:46:44+02:00
+0a4d6d58a perf(gdn): the GDN out-norm inside the fused K4+K5 prime pass, o never stored
+00cfb8fde3a0f3f2bfa34c8da9e196c0830dc60a9a3fc4e860380f471f3e4514  ~/.cache/memra-gb10-r4/tree/crates/memra-engine/cu/hybrid.cu
+70ce79dde2fdde0caf2eed7591ba32f2bfdbd64fce979df1d16322541e61442f  ~/.cache/memra-gb10-r4/probe-gn/probe_gdn_norm.cu
+Build cuda_13.0.r13.0/compiler.36424714_0
+ptxas info    : Function properties for gdn_chunk_state_output_norm_mma
+    40 bytes stack frame, 48 bytes spill stores, 44 bytes spill loads
+ptxas info    : Used 128 registers, used 2 barriers, 40 bytes cumulative stack size
+ptxas info    : Function properties for gdn_chunk_state_output_mma
+    16 bytes stack frame, 20 bytes spill stores, 20 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Function properties for gated_rmsnorm_e4m3v2_f32
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 36 registers, used 1 barriers, 128 bytes smem
+nvcc rc=0
+NVIDIA GB10, 208 MHz, 3003 MHz, 46, 4.57 W
+T 4096: activation bytes 0 differ (of 28311552, first -1), state_out 0 differ (of 786432, first -1)
+T 4096: scale plane zero groups 0, nan/inf 0
+T 4096 pass 0: pair 2.612 ms (k45 1.669 + norm 0.943), fused 1.711 ms, saved 0.901 ms
+T 4096 pass 1: pair 2.607 ms (k45 1.715 + norm 0.947), fused 1.729 ms, saved 0.879 ms
+probe T=4096 rc=0
+T 4032: activation bytes 0 differ (of 27918336, first -1), state_out 0 differ (of 786432, first -1)
+T 4032: scale plane zero groups 0, nan/inf 0
+T 4032 pass 0: pair 2.636 ms (k45 1.652 + norm 0.931), fused 1.727 ms, saved 0.909 ms
+T 4032 pass 1: pair 2.580 ms (k45 1.655 + norm 0.933), fused 1.705 ms, saved 0.874 ms
+probe T=4032 rc=0
+T 43: activation bytes 0 differ (of 460800, first -1), state_out 0 differ (of 786432, first -1)
+T 43: scale plane zero groups 0, nan/inf 0
+T 43 pass 0: pair 0.040 ms (k45 0.031 + norm 0.010), fused 0.041 ms, saved -0.001 ms
+T 43 pass 1: pair 0.040 ms (k45 0.032 + norm 0.011), fused 0.042 ms, saved -0.002 ms
+probe T=43 rc=0
+T 16: activation bytes 0 differ (of 294912, first -1), state_out 0 differ (of 786432, first -1)
+T 16: scale plane zero groups 0, nan/inf 0
+T 16 pass 0: pair 0.030 ms (k45 0.024 + norm 0.006), fused 0.031 ms, saved -0.001 ms
+T 16 pass 1: pair 0.030 ms (k45 0.023 + norm 0.007), fused 0.030 ms, saved 0.000 ms
+probe T=16 rc=0
+NVIDIA GB10, 2190 MHz, 48, 12.09 W
+2026-11-09T02:46:54+02:00

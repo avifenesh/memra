@@ -1,0 +1,35 @@
+2026-11-09T02:46:44+02:00 unit_gn all start
+B=c160717125293e75052cb02a9286a4a4a13c45ed G=0a4d6d58a85fbfdc741a38c67be207cf1b8fed4e
+GN-PROBE-DONE
+==> ~/.cache/memra-gb10-r4/logs/build-gnb.out <==
+BANK gnb c160717125 ~/.cache/memra-gb10-r4/bins/gnb-c160717125 compiled_memra_crates=12 foreign=0
+
+==> ~/.cache/memra-gb10-r4/logs/build-gn.out <==
+BANK gn 0a4d6d58a8 ~/.cache/memra-gb10-r4/bins/gn-0a4d6d58a8 compiled_memra_crates=2 foreign=0
+GN-BUILD-DONE
+GATED-RMSNORM-E4M3V2 T=300: f32=0 e4m3+scales=0 (f32 skipped: 0) OK
+GATED-RMSNORM-E4M3V2 T=1024: f32=0 e4m3+scales=0 (f32 skipped: 0) OK
+sdpa_naive_w_lo[longctx Tkv=16392 win=2048]: legacy_launch=FAILS(expected) clipped_maxdiff=4.19e-9 OK
+sdpa_naive_gmem[longctx Tkv=16392]: legacy_launch=FAILS(expected) gmem_maxdiff=4.19e-9 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set, K4/K5 pair: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic off, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=6 broadcast, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set, fused K4+K5, K2 64-row: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set, K4/K5 pair: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic off, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=6 broadcast, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set, fused K4+K5, K2 64-row: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=2 compact, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=2 compact, traffic set, K4/K5 pair: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=2 compact, traffic off, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=6 broadcast, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=2 compact, traffic set, fused K4+K5, K2 64-row: out bitdiff=0 state bitdiff=0 OK
+GDN-K45-NORM T=300 H=48 hk=16: route=true e4m3+scales bitdiff=0 state bitdiff=0 (zero groups 1) OK
+GDN-K45-NORM T= 64 H=48 hk=16: route=true e4m3+scales bitdiff=0 state bitdiff=0 (zero groups 1) OK
+GDN-K45-NORM T= 20 H=48 hk=16: route=true e4m3+scales bitdiff=0 state bitdiff=0 (zero groups 1) OK
+ALL GREEN (106 cells, 22 skipped)
+kernel-check rc=0
+GN-KC-DONE
+2026-11-09T02:56:56+02:00 unit_gn all end
