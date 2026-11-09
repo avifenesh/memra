@@ -639,7 +639,8 @@ class CellGate(unittest.TestCase):
         f.write("docs/guide.md", "# guide\n")
         new = f.commit("main: research and docs")
         self.assertEqual(ce.research_drift(f.repo, old, new), ("docs/guide.md", "research/lane/run.log"))
-        # Red arms. The code really differs: the lane changes chat.rs and re-pins it.
+        # Red arms. The code really differs: the lane changes chat.rs and re-pins it (the name
+        # prefilter refuses the crates/ path before the census runs).
         lane = self.pin_tokenizer(CHAT_V2, "lane: chat.rs changed and re-pinned")
         self.assertIsNone(ce.research_drift(f.repo, new, lane))
         # A file the commit's own contract declares as an input of chat.rs is a crate input.
@@ -653,6 +654,33 @@ class CellGate(unittest.TestCase):
         stale = f.commit("chat.rs changed without its pin")
         f.write("research/lane/run2.log", "raw\n")
         self.assertIsNone(ce.research_drift(f.repo, stale, f.commit("research on the stale pin")))
+
+    def test_research_drift_keeps_an_input_the_running_registry_declares(self):
+        # The running tools can know more about the same bytes: a later registry declares one
+        # more chat.rs input without touching chat.rs. The commits' own registries cannot drop it.
+        import validation_plan as vp
+        f = self.f
+        old = self.pin_tokenizer(CHAT_V1, "main: tokenizer pinned")
+        f.write("research/running/table.txt", "2\n")
+        new = f.commit("main: edit a file only the running registry declares")
+        running = json.dumps({"schema": "memra-validation-build-inputs-v1", "build_scripts": {},
+                              "dynamic_includes": {"crates/memra-tokenizer/src/chat.rs": {
+                                  "sha256": hashlib.sha256(CHAT_V1.encode()).hexdigest(),
+                                  "inputs": ["research/running/*.txt"]}}})
+        real, tools = vp.read_local_input, Path(vp.__file__).resolve().parent
+
+        def read(root, name, **kwargs):
+            if name == "validation_inputs.json" and Path(root).resolve() == tools:
+                return running
+            return real(root, name, **kwargs)
+        ce.research_drift.cache_clear()
+        try:
+            with mock.patch.object(vp, "read_local_input", side_effect=read):
+                self.assertIsNone(ce.research_drift(f.repo, old, new))
+            ce.research_drift.cache_clear()
+            self.assertEqual(ce.research_drift(f.repo, old, new), ("research/running/table.txt",))
+        finally:
+            ce.research_drift.cache_clear()
 
     def test_a_perf_base_research_behind_the_push_base_survives_a_repin(self):
         # The visible #1136 refusal: a perf record whose base is main before a research-only

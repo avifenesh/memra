@@ -153,24 +153,48 @@ class LocalInputIO(unittest.TestCase):
         self.assertEqual(snapshot.read_bytes('Cargo.toml'), original)
         self.assertEqual(snapshot.read('Cargo.toml').encode(), original)
 
-    def test_snapshot_census_reads_the_commits_own_regular_registry(self):
-        # The running tool's registry pins other sources; the commit's own pin admits its include.
+    def test_snapshot_census_adds_the_commits_own_regular_registry(self):
+        import importlib.util
+        path = 'crates/memra-server/src/lib.rs'
         source = 'macro_rules! g { ($n:literal) => { include_str!(concat!("../../../research/g/", $n)) }; }\n'
-        self.fixture.put('crates/memra-server/src/lib.rs', source)
-        registry = json.dumps({'schema': 'memra-validation-build-inputs-v1', 'build_scripts': {},
-                               'dynamic_includes': {'crates/memra-server/src/lib.rs': {
-                                   'sha256': hashlib.sha256(source.encode()).hexdigest(),
-                                   'inputs': ['research/declared/*.txt']}}})
-        self.fixture.put('tools/validation_inputs.json', registry)
-        pinned = vp.Tree(self.root, self.fixture.commit())
-        self.assertIn('research/declared/*.txt', vp.included_inputs(pinned, vp.workspace(pinned)[1]))
-        # A registry the commit holds as a link is refused, as a linked local registry is.
-        (self.root / 'tools/validation_inputs.json').unlink()
-        self.fixture.put('tools/registry.json', registry)
-        (self.root / 'tools/validation_inputs.json').symlink_to('registry.json')
-        linked = vp.Tree(self.root, self.fixture.commit())
-        with self.assertRaisesRegex(vp.Refused, 'not a regular file'):
-            vp.included_inputs(linked, vp.workspace(linked)[1])
+        self.fixture.put(path, source)
+        pin, other = hashlib.sha256(source.encode()).hexdigest(), '0' * 64
+
+        def registry(sha, inputs):
+            return json.dumps({'schema': 'memra-validation-build-inputs-v1', 'build_scripts': {},
+                               'dynamic_includes': {path: {'sha256': sha, 'inputs': inputs}}})
+        with tempfile.TemporaryDirectory(prefix='memra-running-registry-') as owned:
+            tools = Path(owned)
+            for name in ('validation_plan.py', 'skip-census.py'):
+                shutil.copyfile(Path(vp.__file__).with_name(name), tools / name)
+            spec = importlib.util.spec_from_file_location('running_registry', tools / 'validation_plan.py')
+            module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+            committed = self.root / 'tools/validation_inputs.json'
+
+            def census(running, held, link=False):
+                (tools / 'validation_inputs.json').write_text(running)
+                committed.unlink(missing_ok=True)
+                committed.parent.mkdir(exist_ok=True)
+                if link:
+                    committed.symlink_to(held)  # the link's own text is the registry
+                elif held is not None:
+                    committed.write_text(held)
+                self.fixture.g('add', '-A'); self.fixture.g('commit', '-q', '--allow-empty', '-m', 'case')
+                tree = module.Tree(self.root, self.fixture.g('rev-parse', 'HEAD'))
+                return module.included_inputs(tree, module.workspace(tree)[1])
+            # #1136: the running tool re-pinned; the commit's own pin admits the commit's bytes.
+            self.assertIn('research/declared/*.txt',
+                          census(registry(other, []), registry(pin, ['research/declared/*.txt'])))
+            # Both pin the same bytes: the commit cannot drop an input the running registry declares.
+            both = census(registry(pin, ['research/running/*.txt']), registry(pin, ['research/declared/*.txt']))
+            self.assertLessEqual({'research/running/*.txt', 'research/declared/*.txt'}, set(both))
+            # No registry at the commit: the running registry answers, as before.
+            self.assertIn('research/running/*.txt', census(registry(pin, ['research/running/*.txt']), None))
+            # A link whose text is a valid registry, or a malformed registry, adds nothing.
+            malformed = json.dumps({'schema': 'memra-validation-build-inputs-v1', 'dynamic_includes': {path: [pin]}})
+            for held, link in ((registry(pin, ['research/declared/*.txt']), True), (malformed, False)):
+                with self.subTest(link=link), self.assertRaisesRegex(module.Refused, 'unresolved include'):
+                    census(registry(other, []), held, link)
 
     def test_missing_and_noncanonical_paths_remain_refusals(self):
         for name in ('missing', '../outside', '/outside', 'a//b', './a', 'a\\b'):

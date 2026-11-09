@@ -979,32 +979,63 @@ def include_argument(argument, package_root, generated_env=()):
 
 
 BUILD_INPUT_CONTRACTS = 'tools/validation_inputs.json'
+_CONTRACT_LISTS = {'build_scripts': ('generated_env', 'external_inputs'), 'dynamic_includes': ('inputs',)}
+
+
+def _contract_registry(raw):
+    """{section: {path: contract}} of a v1 contract registry, or None when `raw` is not one."""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if type(data) is not dict or data.get('schema') != 'memra-validation-build-inputs-v1':
+        return None
+    registry = {}
+    for section, lists in _CONTRACT_LISTS.items():
+        rows = data.get(section, {})
+        if type(rows) is not dict or any(
+                type(c) is not dict or type(c.get('sha256')) is not str
+                or (section == 'build_scripts' and type(c.get('package')) is not str)
+                or any(type(c.get(k)) is not list or any(type(v) is not str for v in c[k]) for k in lists)
+                for c in rows.values()):
+            return None
+        registry[section] = rows
+    return registry
 
 
 def build_input_contracts(tree):
-    """The build-script and dynamic-include contracts for the tree the census reads.
+    """The contracts that may admit a build script or dynamic include of `tree`, as
+    {section: {path: [contract, ...]}}. A contract admits a source whose sha256 it pins.
 
-    The contracts pin source hashes of one tree. A commit's census reads the commit's own
-    registry, so a re-pin in the running tool cannot refuse an older commit whose sources
-    match its own pins. The working tree (and any reader that is not a commit Tree of this
-    module) reads the running tool's own registry with the local-input checks. A commit
-    without a registry has no contracts: every build script and unresolved include then
-    refuses, so a missing registry only expands validation.
+    The running tool's own registry always applies, read with the local-input checks. A
+    commit Tree adds the commit's own registry. A re-pin in the running tool then cannot
+    refuse an older commit whose sources match their own pins, and a commit cannot drop an
+    input the running registry declares for the same bytes. The commit's registry counts
+    only as a regular blob holding a v1 registry; otherwise it adds nothing and the running
+    tool's answer stands.
     """
-    if not isinstance(tree, Tree) or isinstance(tree, LocalTree):
-        text = read_local_input(Path(__file__).parent, 'validation_inputs.json')
-    else:
-        mode = tree.input_modes(BUILD_INPUT_CONTRACTS, recursive=False).get(BUILD_INPUT_CONTRACTS)
-        if mode is None:
-            return {'schema': 'memra-validation-build-inputs-v1', 'build_scripts': {}, 'dynamic_includes': {}}
-        # Git holds no FIFO or device; a link, gitlink or directory is not a registry.
-        if mode not in ('100644', '100755'):
-            raise Refused('build input contracts are not a regular file: ' + BUILD_INPUT_CONTRACTS)
-        text = tree.read(BUILD_INPUT_CONTRACTS)
-    contracts = json.loads(text)
-    if type(contracts) is not dict or contracts.get('schema') != 'memra-validation-build-inputs-v1':
+    running = _contract_registry(read_local_input(Path(__file__).parent, 'validation_inputs.json'))
+    if running is None:
         raise Refused('unrecognized build input contracts')
-    return contracts
+    registries = [running]
+    if isinstance(tree, Tree) and not isinstance(tree, LocalTree):
+        entry = git(tree.repo, '--literal-pathspecs', 'ls-tree', '-z', tree.ref, '--',
+                    BUILD_INPUT_CONTRACTS).split(b'\0')[0]
+        meta, _, name = entry.partition(b'\t')
+        fields = meta.split()
+        # Git holds no FIFO or device; a link, gitlink or directory is not a registry. Reading
+        # the blob id ls-tree named keeps a moving ref from swapping the bytes.
+        if (name == BUILD_INPUT_CONTRACTS.encode() and len(fields) == 3
+                and fields[0] in (b'100644', b'100755') and fields[1] == b'blob'):
+            own = _contract_registry(git(tree.repo, 'cat-file', 'blob', fields[2].decode()))
+            if own is not None:
+                registries.append(own)
+    merged = {section: defaultdict(list) for section in _CONTRACT_LISTS}
+    for registry in registries:
+        for section, rows in registry.items():
+            for path, contract in rows.items():
+                merged[section][path].append(contract)
+    return merged
 
 
 def included_inputs(tree, owners, *, code_views=None):
@@ -1073,12 +1104,15 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
             if build != 'build.rs':
                 raise Refused('declared build script missing')
             continue
-        contract = contracts['build_scripts'].get(path)
-        if not contract or contract.get('package') != package or hashlib.sha256(tree.read(path).encode()).hexdigest() != contract['sha256']:
+        source_sha = hashlib.sha256(tree.read(path).encode()).hexdigest()
+        matching = [c for c in contracts['build_scripts'].get(path, ())
+                    if c['package'] == package and c['sha256'] == source_sha]
+        if not matching:
             raise Refused('build-script input contract changed or missing: ' + path)
-        generated[package].update(contract['generated_env'])
-        for external in contract['external_inputs']:
-            inputs[external].add(package)
+        for contract in matching:
+            generated[package].update(contract['generated_env'])
+            for external in contract['external_inputs']:
+                inputs[external].add(package)
     options = ['--untracked'] if isinstance(tree, LocalTree) else []
     refs = [] if isinstance(tree, LocalTree) else [tree.ref]
     result = subprocess.run(['git', '-C', str(tree.repo), 'grep', '-l', '-z', *options, '-E',
@@ -1128,10 +1162,12 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
             try:
                 literal = include_argument(source[start:end - 1], prefix, generated[package])
             except Refused as error:
-                contract = contracts.get('dynamic_includes', {}).get(path)
-                if contract and hashlib.sha256(source.encode()).hexdigest() == contract['sha256']:
-                    for input_pattern in contract['inputs']:
-                        inputs[input_pattern].add(package)
+                source_sha = hashlib.sha256(source.encode()).hexdigest()
+                matching = [c for c in contracts['dynamic_includes'].get(path, ()) if c['sha256'] == source_sha]
+                if matching:
+                    for contract in matching:
+                        for input_pattern in contract['inputs']:
+                            inputs[input_pattern].add(package)
                     continue
                 raise Refused(f'{path}:{source.count(chr(10), 0, start) + 1}: {error}') from error
             if literal.startswith('\0GENERATED'):
