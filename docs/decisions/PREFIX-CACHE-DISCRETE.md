@@ -62,8 +62,10 @@ short after the settle, the rest of the unleased cache goes as before. A pass th
 door-off gate books what the priming sessions owe (the transients, and the seeds capped at the cache's room) until
 nothing is owed, so a later arrival of the same burst cannot pass on those bytes. The door's demoting flush, unified
 memory, a per-device reading, an operator budget and the floor (every measured RTX 5090 configuration, the Max-Q at
-the default caps) keep the flush. Acceptance: the at-the-limit cell, interleaved against #1090's head; its numbers
-are in the lane README.
+the default caps) keep the flush. Measured on one RTX PRO 6000 Max-Q (2026-11-09, the at-the-limit cell, A B B A
+against #1090's head): no flush, six partial passes per B arm freeing 18.2 GB of the 54.2 GB, the 16 repeats hit
+16/16 (TTFT p50 116 ms against 10.46 s), no OOM line, every greedy row identical, pressure TTFT within 0.73 s of A
+at every rank (seven of eight ranks faster); the mixed shape never reached the reclaim and its counts are identical.
 
 ## Measured
 
@@ -137,7 +139,8 @@ Greedy texts matched the cache-off run on every compared row of every mixed-shap
   re-time is planned). Still owed: the default caps, where a Max-Q keeps the two-entry floor and still missed 0/18
   repeats.
 - A partial admission reclaim at a large budget: (c), measured on the at-the-limit cell in
-  `research/partial-reclaim-20261109/`.
+  `research/partial-reclaim-20261109/`. Still owed there: an RTX 5090 boot that derives a budget above the floor,
+  and other burst shapes at the limit.
 - GB10 keeps its own budget rule (the half share). One input moves: the budget is now read after the vision towers
   load, so a boot with a tower reads less free memory and gets a smaller half share. The sm_121a cell record of the
   landing commit covers a GB10 boot without a tower; no GB10 boot with a tower was measured.

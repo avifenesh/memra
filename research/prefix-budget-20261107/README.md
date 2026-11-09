@@ -123,7 +123,7 @@ What it shows:
   read nothing (`/metrics` answers JSON without an `Accept` header), so the table comes from the serve.log lines.
 - The cost of the flush is the cache, not latency: a partial reclaim that frees only the arrival's shortfall,
   oldest first, would have kept the repeats' entries. That lever is owed in the decision record, with this cell as
-  its acceptance test.
+  its acceptance test. Measured 2026-11-09 in `research/partial-reclaim-20261109/`: no flush, 16 of 16 repeats.
 
 Conditions: the box's other cards ran another lane's training jobs during these arms (about 28 GB each, full
 utilization). The decision metrics here are counts (flushes, evictions, hits, OOM lines); the TTFT comparison is
