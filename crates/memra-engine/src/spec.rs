@@ -2689,9 +2689,9 @@ impl MtpScratch {
 /// #1 spec cost at long ctx: the partial-accept replay was a DUPLICATE trunk pass — ~0.54 extra
 /// full weight reads per round — recomputing columns the verify had already produced
 /// bit-identically). Holds, per linear layer, everything needed to rebuild its recurrent state
-/// to "after the first j verify columns" WITHOUT re-running the trunk: dtod clones of
-/// (conv_state, ssm_state) taken after each column 0..t-2 (`cols`) — pure copies of the actual
-/// chain states (the last column is never a rebuild target: j <= t-1).
+/// to "after the first j verify columns" WITHOUT re-running the trunk: the
+/// (conv_state, ssm_state) after each column 0..t-2 (`cols`, a [`ColStates`] pair of slabs) —
+/// the actual chain states' bytes (the last column is never a rebuild target: j <= t-1).
 /// Full-attn layers need nothing: their verify KV rows are bit-identical to eager's (the
 /// decode-exact contract; verify-probe pins it), so rollback = len truncation.
 /// One session's slice of a pooled cross-session verify (`verify_pooled_dev`): its cache, the
@@ -2831,6 +2831,10 @@ impl ColStates {
         conv: &CudaSlice<f32>,
         ssm: &CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // A short source would leave the column's tail uninitialized for a later restore.
+        debug_assert_eq!(conv.len(), self.conv_words);
+        debug_assert_eq!(ssm.len(), self.ssm_words);
+        debug_assert!((c + 1) * self.conv_words <= self.conv.len());
         e.dtod_copy_into(conv, &mut self.conv, c * self.conv_words)?;
         e.dtod_copy_into(ssm, &mut self.ssm, c * self.ssm_words)
     }
@@ -7100,8 +7104,8 @@ impl HybridModel {
     ///     launch is the per-row program (same pin the generic verify's fused norms rely on).
     ///     The sequential dependencies keep their exact serving order: the conv ring / gdn scan
     ///     chain state row -> row through the `_b` kernels at b_n=1 (ping-pong via a 6-entry
-    ///     alternating pointer table, host handles swapped per row so VerifyCkpt clones the
-    ///     canonical state exactly as the rowwise arm does), and each row's KV append + fa decode
+    ///     alternating pointer table, host handles swapped per row so VerifyCkpt copies the
+    ///     canonical state into its column slab exactly as the rowwise arm does), and each row's KV append + fa decode
     ///     picks its arm from ITS OWN t_kv (append: format-only; fa: `fa_seqs_eligible` + its own
     ///     `fa_split_keys` rung at b_n=1) — the straddle law per row, so every row executes the
     ///     program its isolated B=1 serving step would.
@@ -9662,8 +9666,8 @@ impl HybridModel {
             // per-row ping-pong exactly (odd T lands in the alt buffer and the shared tail swap
             // below normalises the handles, even T runs the scan in place), so the graph path's
             // per-replay handle swap stays correct. The post-row snapshots the checkpoint needs
-            // land in the caller's slabs (stash) or in temporaries split into the per-column
-            // clones the rollback reads; the same bytes either way. Resolve state through
+            // land in the caller's slabs (stash) or in slabs that become the checkpoint's
+            // ColStates as they are; the same bytes either way. Resolve state through
             // the per-round table so graph replay follows parity and new cache allocations.
             debug_assert_eq!(
                 qkv_w, conv_dim,
@@ -10257,7 +10261,7 @@ impl HybridModel {
     ///   The verify's appended rows for those columns are bit-identical to what an eager T=1
     ///   chain writes (the decode-exact contract the verify-probe gates), so keeping them ==
     ///   replaying them.
-    /// - Linear layers: restore the cloned actual state after column j-1.
+    /// - Linear layers: restore the actual state after column j-1 from its `ColStates` view.
     ///   Caller guarantees 1 <= j <= t-1 (j==0 rounds take the legacy rollback; j==t is full accept).
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn commit_verified_prefix(
@@ -15475,7 +15479,8 @@ impl HybridModel {
         };
         let base = if pending.is_some() { 1 } else { 0 };
         // ckpt (REPLAY-FREE partial accept): retain per-layer state-rebuild inputs alongside
-        // the verify. Pure buffer keep-alives + dtod clones — kernel work is unchanged.
+        // the verify. Pure buffer keep-alives (the packed scan's own snapshot slabs; a dtod copy
+        // per column on the per-row arms) — kernel work is unchanged.
         let ckpt = if spec_replay {
             None
         } else {

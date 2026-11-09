@@ -7272,7 +7272,7 @@ impl crate::hybrid::HybridModel {
             // Verify, then finish, one forward at a time: a pooled forward over consecutive
             // pool-ready rounds (at most 16 rows), or one round's serial verify. Finishing a
             // forward's rounds before the next forward runs bounds the live verify checkpoints
-            // (each round's per-column GDN state copies, ~1 GB per round on a 27B) to one
+            // (each round's per-column GDN state slabs, ~1 GB per round on a 27B) to one
             // forward's members, where a serial burst holds one round's.
             let col_bytes = self.dspark_verify_ckpt_col_bytes();
             let n_vocab = self.output.out_features();
