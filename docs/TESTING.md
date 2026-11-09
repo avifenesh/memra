@@ -238,6 +238,13 @@ parallel threads race each other (measured flake, `research/local-ci-one-card-20
 Pair-only tests announce `SKIP-PAIR` on a rig with fewer than two CUDA devices and run
 unchanged on the pair box.
 
+The boundary tail fold's gate (`prime-fold-gate <model.gguf>`, a `memra-engine` bin,
+`docs/decisions/PRIME-TAIL-FOLD.md`) primes deterministic prompts split at a stop (two prime
+calls, the split it replaces) and folded (one walk with the GDN state tap) and bit-compares every
+hidden row, the final and boundary logits, the capture snapshot, the final GDN state and the K/V
+bytes; it also requires a stop on a call boundary to be refused. Run it on a device of each build
+target a change to the prime walk, the GDN prime layer or `Cache::snapshot_from_tap` reaches.
+
 The prime continuation gate (`qwen-a4-continuation-gate`, in tier 2 after prime-gate on the
 9B NVFP4 GDN hybrid) primes a 9,296-token repo-text prompt once and as head + tail at the
 grid-aligned tails 16, 48 and 80, and requires the tail call's logits to be bitwise the one-call
