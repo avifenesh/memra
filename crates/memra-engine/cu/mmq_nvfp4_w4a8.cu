@@ -50,6 +50,7 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 
@@ -1897,127 +1898,17 @@ static __device__ __forceinline__ void f8f4v3_tma2d(const unsigned dst, const CU
                  :: "r"(dst), "l"(map), "r"(c0), "r"(c1), "r"(bar) : "memory");
 }
 
-template <int BM, int BN, int WM, int WN, int KS, int STAGES, int EPI>
-__launch_bounds__(WM * WN * 32, 1)
-static __global__ void mul_mat_f8f4v3(
-        const __grid_constant__ F8F4V3Maps maps, float * __restrict__ dst,
-        const int out_f, const int K, const int n_tokens, const int nty, const float out_scale, const int G,
-        uint8_t * __restrict__ act_out, const float out_scale2, const float * __restrict__ res) {
-    using LY = f8f4v2_layout<BM, BN, KS>;
-    constexpr int NW  = WM * WN;
-    constexpr int WRS = BM / WM;
-    constexpr int WCS = BN / WN;
-    constexpr int TM  = WRS / 16;
-    constexpr int TN  = WCS / 8;
-    constexpr int KSTEPS = KS / 32;
-    static_assert(KS == 64, "TMA SWIZZLE_64B reproduces f8f4v2_layout::swz for 64-byte rows");
-    static_assert(WRS == F8F4V2_WR, "the image scale permutation assumes 32-row warp spans");
-    static_assert(TN % 2 == 0, "B ldmatrix.x4 loads n8 tiles in pairs");
-    static_assert(WCS == 32 || WCS == 64, "the activation scale permutation is per 64 tokens");
-    static_assert(F8F4V2_ROW_ALIGN % BM == 0, "row tiles stay inside the image's Mp rows");
-    static_assert(256 % BN == 0, "token tiles stay inside the activation scale plane's Tp slots");
-    static_assert(LY::STAGE % 512 == 0, "every stage starts on a 64-byte swizzle period");
-
-    // SWIZZLE_64B repeats every 512 bytes from a 512-byte-aligned stage base; the dynamic window is
-    // declared 1024-aligned (the compiler folds a runtime check of it away).
-    extern __shared__ __align__(1024) uint8_t f8f4v3_smem[];
-    const unsigned smem0 = (unsigned) __cvta_generic_to_shared(f8f4v3_smem);
-    const unsigned bars = smem0 + STAGES * LY::STAGE;   // full[STAGES] then empty[STAGES]
-
-    const int ntx = (n_tokens + BN - 1) / BN;
-    const int Lb = blockIdx.x;
-    const int group_size = G * ntx;
-    const int grp = Lb / group_size;
-    const int first = grp * G;
-    const int gsz = min(nty - first, G);
-    const int local = Lb - grp * group_size;
-    const int it = first + local % gsz;
-    const int jt = local / gsz;
-    const int row0 = it * BM;
-    const int tok0 = jt * BN;
-    const int nk = K / KS;
-
-    const int tid  = threadIdx.x;
-    const int warp = tid >> 5, lane = tid & 31;
-    const int wm = warp / WN, wn = warp % WN;
-    const int g = lane >> 2, tig = lane & 3;
-
-    if (tid == 0) {
-#pragma unroll
-        for (int s = 0; s < STAGES; ++s) {
-            asm volatile("mbarrier.init.shared::cta.b64 [%0], %1;\n" :: "r"(bars + 8u * s), "r"(1));
-            asm volatile("mbarrier.init.shared::cta.b64 [%0], %1;\n" :: "r"(bars + 8u * (STAGES + s)), "r"(NW));
-        }
-        asm volatile("fence.mbarrier_init.release.cluster;\n" ::: "memory");
-    }
-    __syncthreads();
-
-    auto issue = [&](const int slot, const int kt) {
-        const unsigned sA  = smem0 + slot * LY::STAGE;
-        const unsigned sB  = sA + LY::A_BYTES;
-        const unsigned sSA = sB + LY::B_BYTES;
-        const unsigned sSB = sSA + LY::SA_BYTES;
-        const unsigned full = bars + 8u * slot;
-        asm volatile("mbarrier.arrive.expect_tx.shared::cta.b64 _, [%0], %1;\n" :: "r"(full), "r"((unsigned) LY::STAGE) : "memory");
-        f8f4v3_tma2d(sA,  &maps.a,  kt * KS, row0, full);
-        f8f4v3_tma2d(sB,  &maps.b,  kt * KS, tok0, full);
-        f8f4v3_tma2d(sSA, &maps.sa, row0, kt * KSTEPS, full);
-        f8f4v3_tma2d(sSB, &maps.sb, tok0, kt * KSTEPS, full);
-    };
-    if (tid == 0) {
-#pragma unroll
-        for (int s = 0; s < STAGES; ++s) { if (s < nk) { issue(s, s); } }
-    }
-    __syncwarp();
-
-    float acc[TM][TN][4];
-#pragma unroll
-    for (int m = 0; m < TM; ++m) {
-#pragma unroll
-        for (int p = 0; p < TN; ++p) {
-#pragma unroll
-            for (int l = 0; l < 4; ++l) { acc[m][p][l] = 0.0f; }
-        }
-    }
-    const int ar = wm * WRS + (lane & 15), ac = lane >> 4;
-    const int br = wn * WCS + (lane >> 4) * 8 + (lane & 7), bc = (lane >> 3) & 1;
-
-    for (int kt = 0; kt < nk; ++kt) {
-        const int slot = kt % STAGES;
-        f8f4v3_wait(bars + 8u * slot, (unsigned) (kt / STAGES) & 1u);
-        f8f4v2_compute_stage<BM, BN, WM, WN, KS, true>(
-            acc, smem0 + slot * LY::STAGE,
-            (const float *) (f8f4v3_smem + slot * LY::STAGE + LY::A_BYTES + LY::B_BYTES),
-            ar, ac, br, bc, wm, wn, g, tig);
-        __syncwarp();
-        if (lane == 0) {
-            asm volatile("mbarrier.arrive.shared::cta.b64 _, [%0];\n" :: "r"(bars + 8u * (STAGES + slot)) : "memory");
-        }
-        if (tid == 0) {
-            const int nx = kt + STAGES;
-            if (nx < nk) {
-                f8f4v3_wait(bars + 8u * (STAGES + slot), (unsigned) ((nx / STAGES) - 1) & 1u);
-                issue(slot, nx);
-            }
-        }
-        __syncwarp();
-    }
-
-    f8f4v2_epilogue<BM, BN, WM, WN, EPI>(acc, f8f4v3_smem, row0, tok0, wm, wn, g, tig, out_f, n_tokens,
-                                          dst, out_scale, act_out, out_scale2, res);
-}
-
-
-// The half-height last wave (GB10 prefill lane, round 4, lever 7; research/gb10-prefill-20261106/
-// GEMM-V4-DESIGN.md, ledger rows 64-64b): a launch whose tile count leaves a partial last wave runs
-// its last `rem` tiles (the raster's last, so the same tiles) as 2 x rem tiles of 128 rows when they
-// fit one wave, instead of rem full tiles on rem SMs. Half tile h is rows (h % 2) * BM of the parent
-// tile lb0 + h / 2 in the parent raster (PBM-row tiles, nty parent row tiles, groups of G). Every
-// tile keeps its own full k order and runs the shipped stage compute and epilogue, so each output is
-// the full tile's bit for bit (kernel-check's MMQ-F8F4-V2 cells at the 640-tile shapes take it).
+// PBM > BM is the half-height last wave (GB10 prefill lane, round 4, lever 7; research/
+// gb10-prefill-20261106/GEMM-V4-DESIGN.md, ledger rows 64-65b): a launch whose tile count leaves a
+// partial last wave runs its last `rem` PBM-row tiles (the raster's last, so the same tiles) as
+// (PBM / BM) x rem tiles of BM rows when they fit one wave, instead of rem full tiles on rem SMs.
+// Block h is rows (h % (PBM / BM)) * BM of the parent tile lb0 + h / (PBM / BM) in the parent raster
+// (PBM-row tiles, nty parent row tiles, groups of G). Every tile keeps its own full k order and runs
+// the same stage compute and epilogue, so each output is the full tile's bit for bit. At PBM == BM
+// (every full launch) lb0 is unused and the tile mapping is the plain raster.
 template <int BM, int BN, int WM, int WN, int KS, int STAGES, int EPI, int PBM>
 __launch_bounds__(WM * WN * 32, 1)
-static __global__ void mul_mat_f8f4v3t(
+static __global__ void mul_mat_f8f4v3(
         const __grid_constant__ F8F4V3Maps maps, float * __restrict__ dst,
         const int out_f, const int K, const int n_tokens, const int nty, const float out_scale, const int G,
         uint8_t * __restrict__ act_out, const float out_scale2, const float * __restrict__ res, const int lb0) {
@@ -2028,19 +1919,24 @@ static __global__ void mul_mat_f8f4v3t(
     constexpr int TM  = WRS / 16;
     constexpr int TN  = WCS / 8;
     constexpr int KSTEPS = KS / 32;
+    constexpr int SPLIT = PBM / BM;
     static_assert(KS == 64, "TMA SWIZZLE_64B reproduces f8f4v2_layout::swz for 64-byte rows");
     static_assert(WRS == F8F4V2_WR, "the image scale permutation assumes 32-row warp spans");
     static_assert(TN % 2 == 0, "B ldmatrix.x4 loads n8 tiles in pairs");
     static_assert(WCS == 32 || WCS == 64, "the activation scale permutation is per 64 tokens");
-    static_assert(PBM % BM == 0 && F8F4V2_ROW_ALIGN % PBM == 0, "half tiles split a parent tile inside Mp");
+    static_assert(PBM % BM == 0 && F8F4V2_ROW_ALIGN % PBM == 0, "row tiles (and half tiles) stay inside the image's Mp rows");
+    static_assert(256 % BN == 0, "token tiles stay inside the activation scale plane's Tp slots");
     static_assert(LY::STAGE % 512 == 0, "every stage starts on a 64-byte swizzle period");
+
+    // SWIZZLE_64B repeats every 512 bytes from a 512-byte-aligned stage base; the dynamic window is
+    // declared 1024-aligned (the compiler folds a runtime check of it away).
     extern __shared__ __align__(1024) uint8_t f8f4v3_smem[];
     const unsigned smem0 = (unsigned) __cvta_generic_to_shared(f8f4v3_smem);
-    const unsigned bars = smem0 + STAGES * LY::STAGE;
+    const unsigned bars = smem0 + STAGES * LY::STAGE;   // full[STAGES] then empty[STAGES]
 
     const int ntx = (n_tokens + BN - 1) / BN;
     const int h = blockIdx.x;
-    const int Lb = lb0 + h / (PBM / BM);
+    const int Lb = (SPLIT == 1 ? 0 : lb0) + h / SPLIT;
     const int group_size = G * ntx;
     const int grp = Lb / group_size;
     const int first = grp * G;
@@ -2048,7 +1944,7 @@ static __global__ void mul_mat_f8f4v3t(
     const int local = Lb - grp * group_size;
     const int it = first + local % gsz;
     const int jt = local / gsz;
-    const int row0 = it * PBM + (h % (PBM / BM)) * BM;
+    const int row0 = it * PBM + (h % SPLIT) * BM;
     const int tok0 = jt * BN;
     const int nk = K / KS;
 
@@ -2122,19 +2018,25 @@ static __global__ void mul_mat_f8f4v3t(
                                           dst, out_scale, act_out, out_scale2, res);
 }
 
-// SMs of the current device, read once (the tail split's wave arithmetic).
+// SMs of the current device, read once per device (the tail split's wave arithmetic; a process may
+// drive several devices). The wave is one CTA per SM: the v3 tile's 81 KB ring and 16 warps.
 static int f8f4v3_sm_count() {
-    static const int n = [] {
-        int dev = 0, v = 0;
-        cudaGetDevice(&dev);
-        cudaDeviceGetAttribute(&v, cudaDevAttrMultiProcessorCount, dev);
-        return v;
-    }();
+    static std::atomic<int> cache[64];
+    int dev = 0;
+    if (cudaGetDevice(&dev) != cudaSuccess || dev < 0) { return 0; }
+    if (dev >= 64) {
+        int v = 0;
+        return cudaDeviceGetAttribute(&v, cudaDevAttrMultiProcessorCount, dev) == cudaSuccess ? v : 0;
+    }
+    int n = cache[dev].load(std::memory_order_relaxed);
+    if (n == 0 && cudaDeviceGetAttribute(&n, cudaDevAttrMultiProcessorCount, dev) == cudaSuccess) {
+        cache[dev].store(n, std::memory_order_relaxed);
+    }
     return n;
 }
 
-// The tail of a BM x BN launch over nty x ntx tiles: rem > 0 tiles that would run as a partial last
-// wave, when their 2 x rem half tiles fit one wave; 0 otherwise.
+// The tail of a launch over nty x ntx tiles: rem > 0 tiles that would run as a partial last wave,
+// when their 2 x rem half tiles fit one wave; 0 otherwise.
 static int f8f4v3_tail_rem(const int nty, const int ntx) {
     const int nsm = f8f4v3_sm_count();
     const int ntiles = nty * ntx;
@@ -2188,6 +2090,21 @@ static bool f8f4v3_maps(F8F4V3Maps * mp, const uint8_t * vals, const float * sca
                         (uint64_t) Tp * 4, BN, KS / 32, CU_TENSOR_MAP_SWIZZLE_NONE);
 }
 
+// The half-height last wave's maps for a BM-row launch (`mp`): the image and its scale plane in
+// BM / 2-row boxes; the activation maps are the launch's own.
+template <int BM, int KS>
+static bool f8f4v3_tail_maps(F8F4V3Maps * mpt, const F8F4V3Maps & mp, const uint8_t * vals, const float * scales,
+                             const int Mp, const int K) {
+    mpt->b  = mp.b;
+    mpt->sb = mp.sb;
+    return f8f4v3_map2d(&mpt->a, CU_TENSOR_MAP_DATA_TYPE_UINT8, vals, (uint64_t) K, (uint64_t) Mp, (uint64_t) K,
+                        KS, BM / 2, CU_TENSOR_MAP_SWIZZLE_64B) &&
+           f8f4v3_map2d(&mpt->sa, CU_TENSOR_MAP_DATA_TYPE_FLOAT32, scales, (uint64_t) Mp, (uint64_t) (K / 32),
+                        (uint64_t) Mp * 4, BM / 2, KS / 32, CU_TENSOR_MAP_SWIZZLE_NONE);
+}
+
+// `tail`, when not null, holds f8f4v3_tail_maps<BM, KS> of `mp`; the launch then splits a partial last
+// wave that f8f4v3_tail_rem accepts into half-height tiles.
 template <int BM, int BN, int WM, int WN, int KS, int STAGES, int EPI>
 static cudaError_t f8f4v3_launch(const F8F4V3Maps & mp, float * y, const int out_f, const int K,
                                  const int n_tokens, const float out_scale, const int G, cudaStream_t st,
@@ -2196,31 +2113,31 @@ static cudaError_t f8f4v3_launch(const F8F4V3Maps & mp, float * y, const int out
     using LY = f8f4v2_layout<BM, BN, KS>;
     constexpr size_t smem = (size_t) STAGES * LY::STAGE + 16 * STAGES;
     static_assert(EPI != 1 || (size_t) WM * BN * sizeof(float) <= (size_t) STAGES * LY::STAGE, "epilogue amax fits the ring");
-    auto kern = mul_mat_f8f4v3<BM, BN, WM, WN, KS, STAGES, EPI>;
+    auto kern = mul_mat_f8f4v3<BM, BN, WM, WN, KS, STAGES, EPI, BM>;
     cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) smem);
     if (e != cudaSuccess) { return e; }
     const int nty = (out_f + BM - 1) / BM;
     const int ntx = (n_tokens + BN - 1) / BN;
     const int g = G < 1 ? 1 : (G > nty ? nty : G);
-    // The half-height last wave (mul_mat_f8f4v3t): `tail` holds the 128-row-box maps when the call
-    // site found a tail (f8f4v3_tail_rem).
-    if constexpr (EPI != 1 && BM == 256) {
+    // The half-height last wave: the gate/up launch (EPI 1) never passes tail maps.
+    if constexpr (EPI != 1 && WM % 2 == 0) {
         const int rem = tail != nullptr ? f8f4v3_tail_rem(nty, ntx) : 0;
         if (rem > 0) {
-            kern<<<(unsigned) (nty * ntx - rem), WM * WN * 32, smem, st>>>(mp, y, out_f, K, n_tokens, nty, out_scale,
-                                                                         g, act_out, out_scale2, res);
-            using LT = f8f4v2_layout<128, BN, KS>;
+            using LT = f8f4v2_layout<BM / 2, BN, KS>;
             constexpr size_t tsmem = (size_t) STAGES * LT::STAGE + 16 * STAGES;
-            auto tk = mul_mat_f8f4v3t<128, BN, 4, WN, KS, STAGES, EPI, BM>;
+            auto tk = mul_mat_f8f4v3<BM / 2, BN, WM / 2, WN, KS, STAGES, EPI, BM>;
             e = cudaFuncSetAttribute(tk, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) tsmem);
             if (e != cudaSuccess) { return e; }
-            tk<<<(unsigned) (2 * rem), 4 * WN * 32, tsmem, st>>>(*tail, y, out_f, K, n_tokens, nty, out_scale, g,
-                                                                act_out, out_scale2, res, nty * ntx - rem);
+            const int lb0 = nty * ntx - rem;
+            kern<<<(unsigned) lb0, WM * WN * 32, smem, st>>>(mp, y, out_f, K, n_tokens, nty, out_scale, g, act_out,
+                                                             out_scale2, res, 0);
+            tk<<<(unsigned) (2 * rem), (WM / 2) * WN * 32, tsmem, st>>>(*tail, y, out_f, K, n_tokens, nty, out_scale,
+                                                                       g, act_out, out_scale2, res, lb0);
             return cudaGetLastError();
         }
     }
     kern<<<(unsigned) (nty * ntx), WM * WN * 32, smem, st>>>(mp, y, out_f, K, n_tokens, nty, out_scale, g, act_out,
-                                                             out_scale2, res);
+                                                             out_scale2, res, 0);
     return cudaGetLastError();
 }
 
@@ -2271,16 +2188,17 @@ static int f8f4v2_preq_run(const void * W_nvfp4_blocks, const void * act_scratch
     // v3 (GB10): the same tile fed by TMA under mbarriers (research/gb10-prefill-20261106/
     // GEMM-V3-DESIGN.md); bit-identical to this v2 mainloop, which also runs when a tensor map
     // cannot be encoded.
-    // The half-height last wave: the 128-row maps, encoded only when the launch has a tail.
+    // The half-height last wave: its maps are encoded only when the launch has a tail.
+    constexpr int BM = 256, BN = 128, KS = 64;
     F8F4V3Maps mp, mpt;
-    const bool tma = v3 && f8f4v3_maps<256, 128, 64>(&mp, vals, scales, act, act_sc, Mp, in_f, n_tokens, Tp);
+    const bool tma = v3 && f8f4v3_maps<BM, BN, KS>(&mp, vals, scales, act, act_sc, Mp, in_f, n_tokens, Tp);
     if (v3 == 2 && !tma) { return 3000 + (int) cudaErrorInvalidValue; }   // v3 required (kernel-check)
-    const bool tail = tma && f8f4v3_tail_rem((out_f + 255) / 256, (n_tokens + 127) / 128) > 0 &&
-                      f8f4v3_maps<128, 128, 64>(&mpt, vals, scales, act, act_sc, Mp, in_f, n_tokens, Tp);
+    const bool tail = tma && f8f4v3_tail_rem((out_f + BM - 1) / BM, (n_tokens + BN - 1) / BN) > 0 &&
+                      f8f4v3_tail_maps<BM, KS>(&mpt, mp, vals, scales, Mp, in_f);
     const cudaError_t e = tma
-        ? f8f4v3_launch<256, 128, 8, 2, 64, 3, EPI>(mp, y, out_f, in_f, n_tokens, out_scale, /*G=*/4, st, nullptr,
-                                                    1.0f, res, tail ? &mpt : nullptr)
-        : f8f4v2_launch<256, 128, 8, 2, 64, 3, 1, EPI>(
+        ? f8f4v3_launch<BM, BN, 8, 2, KS, 3, EPI>(mp, y, out_f, in_f, n_tokens, out_scale, /*G=*/4, st, nullptr,
+                                                  1.0f, res, tail ? &mpt : nullptr)
+        : f8f4v2_launch<BM, BN, 8, 2, KS, 3, 1, EPI>(
               vals, scales, act, act_sc, y, out_f, Mp, in_f, n_tokens, Tp, out_scale, /*G=*/4, st,
               nullptr, 1.0f, res);
     if (e != cudaSuccess) { return 3000 + (int) e; }

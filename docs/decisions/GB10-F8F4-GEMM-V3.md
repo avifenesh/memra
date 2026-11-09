@@ -128,6 +128,26 @@ Against the v2 mainloop, N is -5.54 / -4.35 / -3.40%. The answer text is identic
 boots, needles found, no request error. The gains over L (1.01 / 4.16 / 8.25 s) are at least 16 times
 the largest within-arm spread of the L and N arms at each length (0.035 / 0.011 / 0.506 s).
 
+## Follow-up: the half-height last wave (2026-11-09, ledger rows 64-65b)
+
+A v3 launch with more tiles than SMs whose last wave is partial runs that wave on `rem` of the SMs.
+When `2 x rem <= SMs`, the launch now runs its last `rem` tiles in the raster's order as `2 x rem`
+128 x 128 tiles: the same template at `PBM = 256`, 4 x 2 warps of the full tile's 32 x 64 span, with
+the image and its scale plane in 128-row boxes. Each tile keeps its own k order and runs the same
+stage compute and epilogue, so every output is bit-identical. On GB10 the measured case is the 640-tile
+grids at T 4,096 (down, its residual twin, ssm_out, wo: 13 full waves and 16 left over). The 1,280-tile wqkv
+grid and gate/up do not split at T 4,096.
+
+- Probe on unit 2, launch-interleaved (`research/gb10-prefill-20261106/gemm-v4/p4b-unit2/`): down
+  +1.67..+1.77%, down with the residual epilogue +1.37..+1.47%, ssm_out +0.67..+1.46%; bytes identical.
+- kernel-check `MMQ-F8F4-V2` and `MMQ-F8F4-V2-RESID` at the 640-tile shapes, and `MMQ-F8F4-V2-TAIL` at
+  1,152 rows with a token count picked per SM count (its second half tiles lie wholly past the last row).
+- Served cold TTFT against the commit before it, B T T B B T, 3 per arm: unit 2 22.066 -> 22.021 s
+  (-0.20%) and 117.949 -> 117.704 s (-0.21%), both separated, 260k a tie; unit 1's medians -0.28% /
+  -0.23% / -0.69%, overlapping through two reduced-clock cells. Identical answers.
+
+`MEMRA_MMQ_F8F4_V3=0` turns the split off with the rest of v3.
+
 ## Rejected
 
 - v3 for the fused gate/up silu launch with `.shared::cluster` copies: slower than v2 (above);

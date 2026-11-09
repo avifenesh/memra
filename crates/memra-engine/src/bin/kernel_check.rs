@@ -9877,6 +9877,24 @@ fn f8f4_v2_cells(
     Ok(bad)
 }
 
+/// A token count for which the v3 GEMM grid over `rows` output rows (256 x 128 tiles, raster
+/// groups of 4 row tiles) leaves a partial last wave that the half-height split takes on `nsm` SMs
+/// (more tiles than SMs, rem = tiles % nsm with 2 x rem <= nsm), all of it in the last row tile,
+/// with a partial last token tile. None when the last raster group is not that row tile alone.
+fn f8f4v3_tail_tokens(rows: usize, nsm: usize) -> Option<usize> {
+    let nty = rows.div_ceil(256);
+    if nsm == 0 || nty % 4 != 1 {
+        return None;
+    }
+    (1..=256usize)
+        .find(|&ntx| {
+            let n = nty * ntx;
+            let rem = n % nsm;
+            n > nsm && rem >= 1 && 2 * rem <= nsm && rem <= ntx
+        })
+        .map(|ntx| ntx * 128 - 3)
+}
+
 fn f8f4_v2_cells_mainloop(
     e: &Engine,
     g: &memra_gguf::GgufFile,
@@ -9934,11 +9952,14 @@ fn f8f4_v2_cells_mainloop(
     }
     // Row tails and a partial raster group: the first N rows of the first shape's weight, with N
     // off the 256-row image alignment (the image repeats row N-1, the epilogue drops those rows)
-    // and N/256 row tiles that leave the last raster group short.
+    // and N/256 row tiles that leave the last raster group short. At N = 1,152 one more token count,
+    // picked for this device's SM count, makes v3 split a partial last wave into half-height tiles
+    // whose second half lies wholly past N (f8f4v3_tail_tokens).
     if let Some((in_f, out_f, name)) = shapes.first().cloned() {
         let t = g.find(&name).ok_or("v2 tail tensor vanished")?;
         let raw = g.tensor_data(t);
         let row_bytes = raw.len() / out_f;
+        let nsm = e.sm_count().max(0) as usize;
         for rows in [200usize, 1000, 1152] {
             if rows > out_f {
                 continue;
@@ -9946,7 +9967,9 @@ fn f8f4_v2_cells_mainloop(
             let part = &raw[..rows * row_bytes];
             let wd = e.htod_bytes(part)?;
             let wd_rp = e.htod_bytes(&repack_nvfp4_split(part, rows))?;
-            for tt in [16usize, 130, 1024] {
+            let mut tts = vec![16usize, 130, 1024];
+            tts.extend(f8f4v3_tail_tokens(rows, nsm));
+            for tt in tts {
                 let x: Vec<f32> = (0..tt * in_f).map(|i| pr(i + 113) - 0.5).collect();
                 let xd = e.htod(&x)?;
                 let y1 = e.dtoh(
