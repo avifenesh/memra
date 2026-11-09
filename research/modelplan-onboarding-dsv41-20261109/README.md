@@ -257,3 +257,11 @@ compressed KV, index keys and token history carried as the vendor carries them (
 inside the vendor program's own decode floor on 711 steps of 17 tapes (16 to 128,745 tokens of
 context); greedy generation, the identity gates (layer-by-layer replay against token-by-token
 generation, N=2 against N=1) and what serving still needs: `decode/README.md`.
+
+# Step 7 (GPU): the serving route on one card (2026-11-09)
+
+memra-server's deepseek-v4.1 route over the decode loop, every layer's own weights on the card and the
+routed experts in pinned host memory behind a device LRU cache that writes the streamed runner's bytes;
+CheckpointParity again on that residency, `memra model verify serve` passing, served greedy answers
+equal to the native runner's, batched equal to solo, the decode rate, and the support record that makes
+the pack NativeQualified on this topology: `serve/README.md`.

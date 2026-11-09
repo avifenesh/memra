@@ -1,0 +1,21 @@
+b84f7cad9115517339317612399e8b88ac03adde7ffec474b905c88bd4b800be  target-serve/release/memra-server
+c7f4d63672d79d0394b69af101ff4ee218250057f22ba9459639ae42a7865e13  target-serve/release/memra
+MemAvailable:   998059104 kB
+lease bench -> leases/serve-bench-20261109T223617
+b84f7cad9115517339317612399e8b88ac03adde7ffec474b905c88bd4b800be  target-serve/release/memra-server
+bc0807de721eeec64f96e0a7acbb615b53524d5ba89cd295883ddba5a2871c08  bench/harness/bench.py
+995eaba4a656af90b52129b98939b585dcad79edbc06d2b8e3047b8fa12ae291  bench/data/workloads.json
+0, 250.00 W, 76, 2 MiB
+server ready after 22 s
+22:36:40 label memra-1card-wiring engine memra model v41 seed 1107754336 plan ['smoke', 'chat_c1', 'decode_c1', 'prefill4k']
+22:36:41 smoke capital -> 'Paris' PASS
+22:38:26 chat_c1 0 {'prompt_tokens': 36, 'completion_tokens': 384, 'cached_tokens': 0, 'ttft_s': 1.1914, 'decode_tok_s': 7.47, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None
+22:39:19 chat_c1 1 {'prompt_tokens': 41, 'completion_tokens': 384, 'cached_tokens': 0, 'ttft_s': 1.1631, 'decode_tok_s': 7.4, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None
+22:41:42 decode_c1 0 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 6.5104, 'decode_tok_s': 7.18, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None
+22:42:59 decode_c1 1 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 6.2649, 'decode_tok_s': 7.27, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None
+22:43:14 prefill4k 0 {'prompt_tokens': 4096, 'completion_tokens': 1, 'cached_tokens': 0, 'ttft_s': 6.8667, 'decode_tok_s': None, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None
+22:43:23 prefill4k 1 {'prompt_tokens': 4096, 'completion_tokens': 1, 'cached_tokens': 0, 'ttft_s': 8.7207, 'decode_tok_s': None, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None
+22:43:23 DONE memra-1card-wiring elapsed 403 s quality pass: True
+bench client rc 0
+bench rc 0
+SERVE-GATE-DONE

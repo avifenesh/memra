@@ -1,0 +1,4 @@
+#!/bin/bash
+# The checkpoint gate's native runner on the serving route's residency: dsv41-run with the routed experts in pinned
+# host memory behind the device LRU cache (`--experts-host`), every other argument as the CLI passes it.
+exec "${DSV41_RUN:?DSV41_RUN names the dsv41-run binary}" "$@" --experts-host
