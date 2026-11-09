@@ -1,0 +1,19 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[fa-pool] grow #0 dev=0 o_len 0 -> 104448 ml_len 0 -> 408 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 104448 -> 393216 ml_len 408 -> 1536 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 30MB (max of parked delta 30MB and capture-time pool peak 7MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 393216 -> 786432 ml_len 1536 -> 3072 (retired kept, zero=false)
+turn 1: 50 tok generated, committed=177 -> MATCH
+[fa-pool] grow #3 dev=0 o_len 786432 -> 1572864 ml_len 3072 -> 6144 (retired kept, zero=false)
+turn 2: 51 tok generated, committed=293 -> MISMATCH
+  session:   [220, 201, 248044, 248044, 2, 188, 188, 188, 188, 188, 188, 188]
+  reference: [220, 201, 248044, 248044, 197, 197, 188, 188, 188, 188, 188, 188]
+turn 3: 49 tok generated, committed=376 -> MATCH
+turn 4: 51 tok generated, committed=427 -> MATCH
+SESSION GATE: FAIL

@@ -2912,6 +2912,12 @@ neither number scales with `MEMRA_SPEC_BURST` anymore.
   The cost lives at c=8 saturation only: −3.4% agg tok/s for 3.8x better p50
   (newcomer-first vs lockstep-fair; p95 tail pays); c=1 parity. `MEMRA_ADMIT_YIELD=0`
   selects lockstep fairness (both pieces) on tiers that want it. Receipts: `research/admission-20260806/VERDICT.md`.
+- **The burst ends with the public stream** (GB10 decode round 5, 2026-11-09): the round hook
+  also ends the burst at the round that commits EOS, a stop id or the last budgeted token. Before
+  that, a request's last burst ran out to its full target on tokens nobody sees, and the response's
+  end waited for it. The visible stream is unchanged, and so is a round's cost. Measured served
+  B/T: up to -0.8 s per ~100-token answer on GB10 (-2.4 s at 131k), -0.3 to -0.5 s on the RTX
+  5090. Receipts: `research/gb10-decode-20261109/`.
 
 Burst default stays **B32** by the strict flip criterion, but the two old flip-blockers are
 gone: B128 buys +8.4% (c=1) / +8.5% (c=8) and now trails B32's contended first text by one

@@ -1,0 +1,34 @@
+decode window 8223.5 ms (48475 kernels), kernels 7813.9 ms, idle 409.5 ms, 42 rounds: 195.80 ms per round
+  attention                                   4390.5 ms  104.536 ms/round
+  matvec/gemm NVFP4                           2804.6 ms   66.777 ms/round
+  matvec/gemm k-quant (LM head, draft)         402.6 ms    9.586 ms/round
+  gdn scan/conv                                 91.8 ms    2.186 ms/round
+  rope/glue/adds                                68.9 ms    1.640 ms/round
+  norms                                         42.1 ms    1.002 ms/round
+  quantize                                      11.6 ms    0.276 ms/round
+  argmax/sampling                                1.9 ms    0.044 ms/round
+top kernels:
+     3811.4 ms    675 x  fa_decode_vec_q_seqs_v4_deep   90.748 ms/round, 16.1/round
+     1225.0 ms   2704 x  qmatvec_nvfp4_mmvq_dual_b4_rpr2   29.167 ms/round, 64.4/round
+      956.9 ms   5408 x  qmatvec_nvfp4_mmvq_b4_rp   22.784 ms/round, 128.8/round
+      570.6 ms   2703 x  qmatvec_nvfp4_mmvq_group4_b4_rp   13.585 ms/round, 64.4/round
+      374.0 ms    675 x  fa_decode_combine_seqs   8.904 ms/round, 16.1/round
+      213.9 ms     42 x  qmatvec_q5_K_mmvq_b4_r2   5.092 ms/round, 1.0/round
+      180.9 ms    126 x  fa_decode_vec_q_v4_deep_dc   4.306 ms/round, 3.0/round
+      122.3 ms    776 x  qmatvec_q4_K_mmvq   2.911 ms/round, 18.5/round
+       78.7 ms   2028 x  gdn_scan_s128_tsnap   1.873 ms/round, 48.3/round
+       55.3 ms    262 x  qmatvec_q6_K_mmvq   1.316 ms/round, 6.2/round
+       52.1 ms    126 x  qmatvec_nvfp4_mmvq_mr2_rp   1.240 ms/round, 3.0/round
+       41.6 ms     60 x  copy_batch_uniform_f32   0.991 ms/round, 1.4/round
+       24.3 ms    126 x  fa_decode_combine_f32   0.578 ms/round, 3.0/round
+       19.0 ms   5145 x  rms_norm_f32_v2   0.452 ms/round, 122.5/round
+       17.8 ms   2704 x  add_rms_norm_f32_v2   0.424 ms/round, 64.4/round
+       11.6 ms   7007 x  quantize_q8_1   0.276 ms/round, 166.8/round
+       11.0 ms   2704 x  silu_mul_scaled_q8_1   0.263 ms/round, 64.4/round
+        9.4 ms   2028 x  ssm_conv1d_fused_decode_tloop_f32   0.223 ms/round, 48.3/round
+        6.2 ms   2956 x  add_f32   0.148 ms/round, 70.4/round
+        5.3 ms   2028 x  gated_rmsnorm_q8_1   0.126 ms/round, 48.3/round
+        4.3 ms   1644 x  rope_neox_f32   0.102 ms/round, 39.1/round
+        3.8 ms   2028 x  gdn_prep_decode_b_f32   0.089 ms/round, 48.3/round
+memcpy: 21201 copies, 236.3 ms, 31098.0 MB
+idle by gap size (ms): {'<100us': 171.7, '<1ms': 4.4, '<20us': 2.1, '<5us': 69.2, '>=1ms': 163.2}

@@ -1,0 +1,18 @@
+[mtp-draft] loading external MTP draft: ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1393.432
+[prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1403.147
+[prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1391.267
+[prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1396.004
+[prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1393.066
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17280532480,"still_owned_bytes":18448529344,"pool_reserved_bytes":18522046464,"pool_cached_bytes":73517120,"driver_free_bytes":25238683648,"synchronization_errors":[]}
+[spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=13.76ms pooled_overhead=Some((4, 5.8398427864583375)) verify_ms[1..16]=[77.1 74.9 75.3 76.0 76.9 77.8 78.9 80.1 83.0 85.8 88.6 91.4 93.4 95.3 97.2 99.2] plain_ms[1..]=[76.5 78.2 82.6 87.0 90.7 94.4 98.1 101.8 106.9 111.9 117.0 122.1 127.1 132.2 137.3 142.4 147.8 153.3 158.7 164.2 169.7 175.1 180.6 186.0 191.5 197.0 202.4 207.9 213.3 218.8 224.2 229.7] (67.2s)
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2568.028
+[spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1036 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-chunk] phase=mtp-trunk rows=1036 wall_ms=1104.133
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=1991.580 generated=0->34 rounds=10 drafted=30 accepted=23 k=3
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=1341.683 generated=34->66 rounds=15 drafted=45 accepted=17 k=3
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=1074.239 generated=66->98 rounds=12 drafted=36 accepted=20 k=3
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.009 gap_ms=0.009 wall_ms=1527.274 generated=98->107 rounds=17 drafted=51 accepted=15 k=3

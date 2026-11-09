@@ -1,0 +1,26 @@
+arch qwen35 block_count 65 {'qwen35.embedding_length': 5120, 'qwen35.feed_forward_length': 17408, 'qwen35.attention.head_count': 24, 'qwen35.attention.head_count_kv': 4, 'qwen35.attention.key_length': 256, 'qwen35.attention.value_length': 256, 'qwen35.nextn_predict_layers': 1, 'qwen35.ssm.state_size': 128, 'qwen35.ssm.group_count': 16, 'qwen35.ssm.time_step_rank': 48, 'qwen35.ssm.inner_size': 6144, 'qwen35.full_attention_interval': 4}
+   0.8741 GB  token_embd.weight
+   0.2633 GB  mtp
+   0.0944 GB  output.weight
+   0.0001 GB  d2t
+   0.0000 GB  output_norm.weight
+by group and type id: {'mtp/0': 0.0001, 'mtp/12': 0.1858, 'mtp/14': 0.0774, 'other/0': 0.0, 'other/13': 0.8741, 'other/26': 0.0001, 'other/40': 0.0944}
+  d2t                                              type  26 dims [32768] 0.131 MB
+  output.weight                                    type  40 dims [5120, 32768] 94.372 MB
+  output_norm.weight                               type   0 dims [5120] 0.020 MB
+  token_embd.weight                                type  13 dims [5120, 248320] 874.086 MB
+  blk.64.attn_k.weight                             type  12 dims [5120, 1024] 2.949 MB
+  blk.64.attn_k_norm.weight                        type   0 dims [256] 0.001 MB
+  blk.64.attn_norm.weight                          type   0 dims [5120] 0.020 MB
+  blk.64.attn_output.weight                        type  12 dims [6144, 5120] 17.695 MB
+  blk.64.attn_q.weight                             type  12 dims [5120, 12288] 35.389 MB
+  blk.64.attn_q_norm.weight                        type   0 dims [256] 0.001 MB
+  blk.64.attn_v.weight                             type  14 dims [5120, 1024] 4.301 MB
+  blk.64.ffn_down.weight                           type  14 dims [17408, 5120] 73.114 MB
+  blk.64.ffn_gate.weight                           type  12 dims [5120, 17408] 50.135 MB
+  blk.64.ffn_up.weight                             type  12 dims [5120, 17408] 50.135 MB
+  blk.64.nextn.eh_proj.weight                      type  12 dims [10240, 5120] 29.491 MB
+  blk.64.nextn.enorm.weight                        type   0 dims [5120] 0.020 MB
+  blk.64.nextn.hnorm.weight                        type   0 dims [5120] 0.020 MB
+  blk.64.nextn.shared_head_norm.weight             type   0 dims [5120] 0.020 MB
+  blk.64.post_attention_norm.weight                type   0 dims [5120] 0.020 MB
