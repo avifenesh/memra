@@ -63,10 +63,12 @@ door-off gate books what the priming sessions owe (prime transients and pending 
 until nothing is owed, so a later arrival of the same burst cannot pass on the freed bytes; once seeds refill the
 cache the booking is 0. The door's demoting flush, unified
 memory, a per-device reading, an operator budget and the floor (every measured RTX 5090 configuration, the Max-Q at
-the default caps) keep the flush. Measured on one RTX PRO 6000 Max-Q (2026-11-09, the at-the-limit cell, A B B A
-against #1090's head): no flush, six partial passes per B arm freeing 18.2 GB of the 54.2 GB, the 16 repeats hit
-16/16 (TTFT p50 116 ms against 10.46 s), no OOM line, every greedy row identical, pressure TTFT within 0.73 s of A
-at every rank (seven of eight ranks faster); the mixed shape never reached the reclaim and its counts are identical.
+the default caps) keep the flush. Measured on the RTX PRO 6000 Max-Q (2026-11-09, the final code ab21e254a6 against
+main, A B B A per card): at the at-the-limit cell no flush, six covered partial passes per B arm freeing 18.2 GB of
+the 54.2 GB, the 16 repeats hit 16/16 (TTFT p50 116 ms against 10.4 s), no OOM line, every greedy row identical, and
+pressure TTFT within run-to-run variation (under 0.7 s at every rank, in both directions across two runs).
+With three pressure waves back to back B never flushed (7 or 8 covered passes, 34.3 GB, against A's one 54.2 GB
+flush), its repeats hit 16/16 against 0/16, no OOM, and every wave's TTFT matched A at 280 W and at 250 W. The mixed shape never reached the reclaim; its counts are identical on both cards.
 
 ## Measured
 

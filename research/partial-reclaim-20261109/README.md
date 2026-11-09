@@ -72,75 +72,143 @@ acceptance run was stopped in its first B arm so that the measured binary is the
 booking at the cache's room came from the second review (of d6c81127e7): without it the booking would hold every
 prime transient for as long as some session primes, which on steady traffic is the whole busy period.
 
-## Results (one RTX PRO 6000 Max-Q, 2026-11-09): pass
+## Results (one RTX PRO 6000 Max-Q card class, 2026-11-09): pass
 
-A = #1090's head 6a9db1447d (the flush; main's code since #1090 landed), B = d6c81127e7 (this change). Release builds of
-both from one clone and one target dir (sha256 `fdc65efbd4d2c716...` and `d2b96ff49a940906...`, in each `arm.txt`).
-Four fresh boots interleaved A B B A on one card, then the mixed shape A B B A A B on the same card, 280 W, no thermal
-throttle (max 91 C, fans at most 91 %), every process on 16 of the box's 64 threads. Untimed: the box's other cards
-ran another lane's jobs throughout. Tables: `harness/reclaim_table.py` (`pro6000-maxq/limit-table.md`,
-`mixed-table.md`); campaign scripts and power logs in `pro6000-maxq/campaign/`.
+The final code is ab21e254a6; the head after it (52c1389828) changes one log string. A = main d35337f51a (#1090
+landed: the flush), B = ab21e254a6. Release builds of both from one fresh clone and one target dir (sha256
+`5274863eec2ecd95...` and `a00d86e9b365e46c...`, in each `arm.txt`). Every arm is a fresh boot at
+`MEMRA_CTX=32768`, `MEMRA_MAX_SESSIONS=12`, 280 W (no thermal throttle: max 91 C, fans at most 92 %), every process
+on 16 of the box's 64 threads. Each A/B pair ran on one card. Untimed: the box's other cards ran another lane's jobs,
+and from 10:06 this lane's second card ran beside the first. The waves cell's later pairs ran at 250 W (below). Tables: `harness/reclaim_table.py`; campaign scripts,
+power and thermal logs under `pro6000-maxq/*/campaign/` and `pro6000-maxq/campaign/`.
 
-### The at-the-limit cell (`pro6000-maxq/limit/`, `harness/limit.py` from the #1090 lane)
+### The at-the-limit cell (`pro6000-maxq/limit/`, GPU 0, A B B A, `harness/limit.py` from the #1090 lane)
 
 | arm | budget MB | reclaims (partial, still short) | entries / GB freed (largest) | booking on / off | evictions preflight / LRU | OOM lines | pressure: errors, TTFT p50 / max s | repeats: hits, cached tokens, TTFT p50 s | greedy texts = A |
 |---|---|---|---|---|---|---|---|---|---|
-| limit-1-A | 54277 | 1 (0, 0) | 57 / 54.2 (57 / 54.2) | 0 / 0 | 7 / 0 | 0 | 4 of 12, 52.5 / 87.4 | 0 of 16, 0, 10.46 | 92/92 |
-| limit-2-B | 54277 | 6 (6, 0) | 19 / 18.2 (8 / 7.8) | 1 / 1 | 7 / 0 | 0 | 4 of 12, 52.0 / 88.1 | 16 of 16, 425984, 0.12 | 92/92 |
-| limit-3-B | 54277 | 6 (6, 0) | 19 / 18.2 (8 / 7.8) | 1 / 1 | 7 / 0 | 0 | 4 of 12, 52.0 / 88.0 | 16 of 16, 425984, 0.12 | 92/92 |
-| limit-4-A | 54277 | 1 (0, 0) | 57 / 54.2 (57 / 54.2) | 0 / 0 | 7 / 0 | 0 | 4 of 12, 52.6 / 87.5 | 0 of 16, 0, 10.47 | 92/92 |
+| limit-1-A | 54277 | 1 (0, 0) | 57 / 54.2 (57 / 54.2) | 0 / 0 | 7 / 0 | 0 | 4 of 12, 52.2 / 88.3 | 0 of 16, 0, 10.37 | 92/92 |
+| limit-2-B | 54277 | 6 (6, 0) | 19 / 18.2 (8 / 7.8) | 1 / 1 | 7 / 0 | 0 | 4 of 12, 52.5 / 87.7 | 16 of 16, 425984, 0.12 | 92/92 |
+| limit-3-B | 54277 | 6 (6, 0) | 19 / 18.2 (8 / 7.8) | 1 / 1 | 7 / 0 | 0 | 4 of 12, 52.8 / 87.9 | 16 of 16, 425984, 0.12 | 92/92 |
+| limit-4-A | 54277 | 1 (0, 0) | 57 / 54.2 (57 / 54.2) | 0 / 0 | 7 / 0 | 0 | 4 of 12, 52.4 / 87.3 | 0 of 16, 0, 10.44 | 92/92 |
 
-- **The flush is gone.** On B every arrival from the seventh on deferred and ran its own partial pass: 8, 2, 3, 2, 2
-  and 2 entries, 18.2 GB in all, each covered on the re-read. No fallback flush ran. The cache kept 38 of its 57
-  entries (36.0 GB); the oldest fill prompts went. A flushed 57 entries (54.2 GB) at the seventh arrival on both
-  arms, as in #1090's cell. The first pass freed 7,768 MB against a need of 7,553 MB, of which 7,114 MB was owed
-  (six priming sessions' seeds and transients, and the arrival's own entry); each later pass freed one arrival's
-  share. Every pass is listed in `limit-table.md`. The design note expected 15 to 25 GB over the burst.
-- **The repeats hit.** B: 16 of 16, 425,984 of 426,304 prompt tokens cached, TTFT p50 116 ms against 10.46 s on A.
-  The repeat phase took 17 s against 183 s.
+- **The flush is gone.** On B each arrival from the seventh on deferred and ran its own partial pass: 8, 2, 3, 2, 2
+  and 2 entries, 18.2 GB in all, each covered on the re-read, no fallback. The cache kept 38 of its 57 entries
+  (36.0 GB); the oldest fill prompts went. A flushed 57 entries (54.2 GB) at the seventh arrival on both arms, as in
+  #1090's cell. The first pass freed 7,768 MB against a need of 7,553 MB, of which 7,114 MB was owed (six priming
+  sessions' seeds and transients, and the arrival's own entry); each later pass freed one arrival's share
+  (`limit-table.md` lists them). The design note expected 15 to 25 GB over the burst.
+- **The repeats hit.** B: 16 of 16, 425,984 of 426,304 prompt tokens cached, TTFT p50 116 to 117 ms against 10.37 to
+  10.44 s on A. The repeat phase takes 17 s against 183 s.
 - **Same texts.** All 92 compared greedy rows match A on both B arms, the 16 repeats B restored from the cache
   included (A primed them cold).
 - **No OOM.** No `out of memory` line, no `snapshot failed`, no step-OOM reclaim on any arm. The device free floor
-  is 4,968 MiB on every arm (the fill phase). The booking armed at the first pass and ended once the burst had
-  landed (one on and one off line per B arm).
-- **Pressure TTFT.** By rank, B against A (two arms each, averaged): -0.18, -0.26, -0.33, -0.43, -0.53, -0.63,
-  -0.73 and +0.55 s; the two A arms agree within 0.10 s at every rank. p50 52.0 s against 52.5 to 52.6 s, max 88.0
-  to 88.1 s against 87.4 to 87.5 s, mean 47.5 s against 47.8 s. The rank-8 request shares its prefill with the four
-  that miss the 90 s first-token deadline (HTTP 408 on every arm, as in #1090's cell), and which request ends up there
-  differs (pressure-6 on A, pressure-7 on B): B admits arrivals 7 to 12 one pass at a time, A all at once after its
-  flush. The fill phase, where neither arm reclaims, also reads B 0.15 to 0.24 s under A at p50, so differences
-  under a second here sit near what the two binaries show without the mechanism.
+  is 4,936 MiB on B and 4,968 MiB on A, both in the fill phase, where neither arm reclaims. The booking armed at the
+  first pass and ended once the burst had landed (one on and one off line per B arm). The room cap never bound here:
+  the passes are the same, byte for byte, as in the run before the cap (below).
+- **Pressure TTFT is within run-to-run variation.** By rank, B against A (two arms each, averaged): 0.00, +0.10,
+  +0.20, +0.30, +0.38, +0.59, +0.65 and +0.02 s; the A arms themselves spread up to 0.32 s at ranks 1 to 7 and
+  1.0 s at rank 8. The run before the cap, with the same six passes, read B 0.18 to 0.73 s faster at ranks 1 to 7 and
+  0.55 s slower at rank 8. The sign flips between runs whose reclaim work is identical, so these sub-second
+  differences are not the mechanism. Four of twelve pressure requests miss the 90 s first-token deadline (HTTP 408)
+  on every arm, as in #1090's cell.
 
-### Regression: the mixed shape (`pro6000-maxq/mixed/`, counts only)
+### Repeated pressure waves (`harness/limit_waves.py`): one A/B pair per card and power regime
+
+The same fill, then three pressure waves of 12 fresh unique prompts back to back, then the 16 repeats
+(`harness/limit_waves.py`; tables `pro6000-maxq/waves-*/*/waves-table.md`). Each A/B pair ran on one card in one power
+regime. The first pair ran at 280 W on GPU 1. At 10:58 the box's GPUs 0 and 1 went back to their 250 W cap while
+another lane's timed blocks ran: the two arms then running were stopped (kept as `.stopped`, out of the tables), and
+one pair per card was run again at 250 W with no power raise. GPU 0's 280 W B arm (`waves-280w/gpu0/`) has no A
+partner and is shown alone.
+
+280 W, GPU 1 (`waves-280w/gpu1/`):
+
+| arm | reclaims (partial, still short) | entries / GB freed (largest) | booking on / off | OOM lines | pressure waves: errors, TTFT p50 / max s | repeats: hits, cached tokens, TTFT p50 s | greedy texts = A |
+|---|---|---|---|---|---|---|---|
+| waves-1-A | 1 (0, 0) | 57 / 54.2 (57 / 54.2) | 0 / 0 | 0 | 5, 46.9 / 88.3; 5, 46.7 / 88.1; 5, 46.8 / 88.1 | 0 of 16, 0, 10.56 | 116/116 |
+| waves-2-B | 7 (7, 0) | 36 / 34.3 (15 / 14.2) | 2 / 2 | 0 | 5, 46.8 / 88.2; 5, 46.7 / 88.4; 5, 46.8 / 88.2 | 16 of 16, 425984, 0.12 | 114/116 |
+
+250 W, GPU 1 (`waves-250w/gpu1/`) and GPU 0 (`waves-250w/gpu0/`):
+
+| arm | reclaims (partial, still short) | entries / GB freed (largest) | booking on / off | OOM lines | pressure waves: errors, TTFT p50 / max s | repeats: hits, cached tokens, TTFT p50 s | greedy texts = A |
+|---|---|---|---|---|---|---|---|
+| waves-1-B | 7 (7, 0) | 36 / 34.3 (15 / 14.2) | 2 / 2 | 0 | 5, 49.8 / 88.6; 5, 49.9 / 88.7; 5, 49.9 / 88.6 | 16 of 16, 425984, 0.12 | 114/116 |
+| waves-2-A | 1 (0, 0) | 57 / 54.2 (57 / 54.2) | 0 / 0 | 0 | 5, 49.9 / 88.6; 5, 49.9 / 88.8; 5, 49.8 / 88.6 | 0 of 16, 0, 11.28 | 116/116 |
+
+| arm | reclaims (partial, still short) | entries / GB freed (largest) | booking on / off | OOM lines | pressure waves: errors, TTFT p50 / max s | repeats: hits, cached tokens, TTFT p50 s | greedy texts = A |
+|---|---|---|---|---|---|---|---|
+| waves-1-A | 1 (0, 0) | 57 / 54.2 (57 / 54.2) | 0 / 0 | 0 | 5, 49.5 / 89.4; 5, 49.4 / 89.4; 5, 49.4 / 89.3 | 0 of 16, 0, 11.09 | 116/116 |
+| waves-2-B | 7 (7, 0) | 36 / 34.3 (15 / 14.2) | 2 / 2 | 0 | 5, 49.4 / 89.0; 5, 49.3 / 89.2; 5, 49.6 / 89.5 | 16 of 16, 425984, 0.12 | 114/116 |
+
+280 W, GPU 0, unpaired (`waves-280w/gpu0/`):
+
+| arm | reclaims (partial, still short) | entries / GB freed (largest) | booking on / off | OOM lines | pressure waves: errors, TTFT p50 / max s | repeats: hits, cached tokens, TTFT p50 s | greedy texts = A |
+|---|---|---|---|---|---|---|---|
+| waves-1-B | 8 (8, 0) | 36 / 34.3 (13 / 12.3) | 2 / 2 | 0 | 5, 46.2 / 88.9; 5, 46.2 / 89.2; 5, 46.6 / 87.7 | 16 of 16, 425984, 0.12 | 0/0 |
+
+- **Across three bursts B never flushed and never ran short.** Every B arm ran 7 or 8 covered passes freeing 36
+  entries (34.3 GB) in all. Wave 1 took six passes, as in the single-burst cell. In wave 2 the first defer came with
+  11 sessions priming and one pass freed 15 entries (13 and 2 in two passes on GPU 0's unpaired arm); wave 3
+  needed none. The booking armed and ended once per
+  wave that reclaimed (two on and two off lines). A flushed 57 entries (54.2 GB) once per arm, in wave 1, and had
+  room for waves 2 and 3.
+- **The repeats still hit.** B: 16 of 16 on every arm (425,984 cached tokens, TTFT p50 0.12 s). A: 0 of 16 (10.6 to
+  11.3 s).
+- **No OOM** line on any arm, in either regime.
+- **Each wave's TTFT matches A.** At 280 W, p50 46.7 to 46.9 s on both arms and max 88.1 to 88.4 s. At 250 W, p50
+  49.3 to 49.9 s and max 88.6 to 89.5 s, B within 0.4 s of its own pair's A in every wave. Five of twelve requests
+  per wave miss the 90 s first-token deadline on every arm.
+- **Texts.** Every row that completed on both arms of a pair matches. The two rows per B arm that differ are one
+  request that missed the deadline on one arm and completed on the other; within each pair they swap places.
+
+### Regression: the mixed shape (counts only), A B B A A B on each card
+
+GPU 1 (`pro6000-maxq/gpu1/mixed/`):
 
 | arm | budget MB | repeats hit | repeat TTFT median ms | batch tok/s | batch TTFT p50 ms | reclaims (partial) | evict lines | OOM lines | greedy texts = A |
 |---|---|---|---|---|---|---|---|---|---|
-| mixed-1-A | 54277 | 6 of 6 | 443 | 220.78 | 598 | 0 (0) | 0 | 0 | 131/131 |
-| mixed-2-B | 54277 | 6 of 6 | 265 | 225.84 | 587 | 0 (0) | 0 | 0 | 127/127 |
-| mixed-3-B | 54277 | 6 of 6 | 193 | 224.94 | 588 | 0 (0) | 0 | 0 | 127/127 |
-| mixed-4-A | 54277 | 6 of 6 | 447 | 226.58 | 596 | 0 (0) | 0 | 0 | 130/130 |
-| mixed-5-A | 54277 | 6 of 6 | 403 | 227.02 | 588 | 0 (0) | 0 | 0 | 130/130 |
-| mixed-6-B | 54277 | 6 of 6 | 188 | 225.32 | 595 | 0 (0) | 0 | 0 | 127/127 |
+| mixed-1-A | 54277 | 6 of 6 | 291 | 235.04 | 604 | 0 (0) | 0 | 0 | 135/135 |
+| mixed-2-B | 54277 | 6 of 6 | 287 | 235.38 | 586 | 0 (0) | 0 | 0 | 135/135 |
+| mixed-3-B | 54277 | 6 of 6 | 230 | 228.48 | 616 | 0 (0) | 0 | 0 | 134/134 |
+| mixed-4-A | 54277 | 6 of 6 | 387 | 229.71 | 616 | 0 (0) | 0 | 0 | 135/135 |
+| mixed-5-A | 54277 | 6 of 6 | 336 | 231.56 | 598 | 0 (0) | 0 | 0 | 135/135 |
+| mixed-6-B | 54277 | 6 of 6 | 346 | 230.82 | 600 | 0 (0) | 0 | 0 | 135/135 |
 
-No reclaim ran on any arm: the cache never filled (as in #1090's mixed cells), so the change is not reached. Every
-arm hit 6 of 6 repeats with no eviction and no OOM line, and every compared greedy row matches A. The repeat TTFT is
-bimodal per request (about 185 ms, or about 700 ms when a batch prefill is in flight), and the spec scheduler's
-cohort choices vary per boot on both arms (mixed-4-A demoted a cohort to batched decode, mixed-6-B did not; #1090's
-own B arms on one build split the same way), so the medians in that column carry no A/B signal.
+GPU 0, after the acceptance cell (`pro6000-maxq/gpu0/mixed/`):
 
-### The first version's stopped run (`pro6000-maxq/stopped-24f0f95825/`)
+| arm | budget MB | repeats hit | repeat TTFT median ms | batch tok/s | batch TTFT p50 ms | reclaims (partial) | evict lines | OOM lines | greedy texts = A |
+|---|---|---|---|---|---|---|---|---|---|
+| mixed-1-A | 54277 | 6 of 6 | 364 | 230.79 | 586 | 0 (0) | 0 | 0 | 135/135 |
+| mixed-2-B | 54277 | 6 of 6 | 357 | 231.0 | 584 | 0 (0) | 0 | 0 | 135/135 |
+| mixed-3-B | 54277 | 6 of 6 | 366 | 230.62 | 586 | 0 (0) | 0 | 0 | 135/135 |
+| mixed-4-A | 54277 | 6 of 6 | 349 | 231.1 | 590 | 0 (0) | 0 | 0 | 135/135 |
+| mixed-5-A | 54277 | 6 of 6 | 365 | 230.32 | 592 | 0 (0) | 0 | 0 | 135/135 |
+| mixed-6-B | 54277 | 6 of 6 | 343 | 230.9 | 589 | 0 (0) | 0 | 0 | 135/135 |
 
-The campaign of the first version (24f0f95825) ran one A arm and was stopped 90 seconds into its first B arm, after
-the independent review found the gaps d6c81127e7 closes (the arrival's own entry, the booking's prime term). Its A arm
-reads like the other two: one flush of 57 entries, 0 of 16 repeats, pressure 52.0 / 88.0 s. The B arm has only its
-boot and the start of its fill, and nothing is concluded from it.
+No reclaim ran on any arm: the cache never filled (as in #1090's mixed cells), so the change is not reached. Every arm
+hit 6 of 6 repeats with no eviction and no OOM line, and every compared greedy row matches A. The repeat TTFT is
+bimodal per request (about 185 ms, or about 700 ms when a batch prefill is in flight) and the spec scheduler's cohort
+choices vary per boot on both arms, so that column carries no A/B signal.
+
+### Earlier runs
+
+- **Before the room cap (`pro6000-maxq/run-d6c81127e7/`, d6c81127e7 against 6a9db1447d, same campaign on GPU 0).**
+  The same counts: six covered passes per B arm freeing 18.2 GB, 38 entries kept, 16 of 16 repeats at 116 ms against
+  10.46 s, no OOM line, 92 of 92 texts, pressure p50 52.0 s against 52.5 to 52.6 s. Its mixed arms reached no reclaim.
+  The second independent review then capped the booking at the cache's room (ab21e254a6), and the cells above were
+  rerun on that code.
+- **The first version's stopped run (`pro6000-maxq/stopped-24f0f95825/`).** The campaign of 24f0f95825 ran one A arm
+  and was stopped 90 seconds into its first B arm, after the first independent review found the gaps d6c81127e7
+  closes (the arrival's own entry, the booking's prime term). Its A arm reads like the others: one flush of 57
+  entries, 0 of 16 repeats, pressure 52.0 / 88.0 s. The B arm has only its boot and the start of its fill, and
+  nothing is concluded from it.
 
 ### Scope
 
-One card, one model (Qwen3.8-27B NVFP4 + Q5_K with its MTP head), one served context (32,768), one cap
-(`MEMRA_MAX_SESSIONS=12`), two shapes. Unmeasured: an RTX 5090 boot that derives a budget above the floor, and other
-burst shapes at the limit. Unchanged by construction: the floor, unified memory (GB10), per-device readings,
-operator budgets and the door-armed path.
+One card class, one model (Qwen3.8-27B NVFP4 + Q5_K with its MTP head), one served context (32,768), one cap
+(`MEMRA_MAX_SESSIONS=12`), three shapes, two power regimes for the waves (280 and 250 W). Unmeasured: an RTX 5090
+boot that derives a budget above the floor, and steady traffic at the limit beyond back-to-back bursts. Unchanged by construction: the floor, unified memory (GB10),
+per-device readings, operator budgets and the door-armed path.
 
 ## Acceptance plan (one RTX PRO 6000 Max-Q, untimed)
 

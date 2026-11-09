@@ -1,0 +1,63 @@
+2026-11-09 09:22:29 build d35337f51a start
+2026-11-09 09:28:02 built d35337f51a 5274863eec2ecd95
+2026-11-09 09:28:04 build ab21e254a6 start
+2026-11-09 09:30:14 built ab21e254a6 a00d86e9b365e46c
+2026-11-09 09:30:14 reclaim: start on GPU 0; affinity  24-31,56-63; 0, 2 MiB, 0 %, 39 1, 2 MiB, 0 %, 33 2, 38376 MiB, 0 %, 42 3, 38376 MiB, 0 %, 38 
+2026-11-09 09:30:14 reclaim: limit 1 A start
+2026-11-09 09:47:07 reclaim: limit 1 A rc=0 oom_lines=0 reclaim_on_defer_lines=2 admit_oom_lines=3  {"items_per_prompt": 1154, "tokens_per_item": 20.78, "fill": {"rows": 64, "errors": 0, "hits": 0, "cached_tokens": 0, "prompt_tokens": 1693666, "ttft_ms_p50": 31562.9, "ttft_ms_max": 42229.4}, "pressure": {"rows": 12, "errors": 4, "hits": 0, "cached_tokens": 0, "prompt_tokens": 203912, "ttft_ms_p50"
+2026-11-09 09:47:07 reclaim: limit 2 B start
+2026-11-09 10:01:20 reclaim: limit 2 B rc=0 oom_lines=0 reclaim_on_defer_lines=18 admit_oom_lines=21  {"items_per_prompt": 1154, "tokens_per_item": 20.78, "fill": {"rows": 64, "errors": 0, "hits": 0, "cached_tokens": 0, "prompt_tokens": 1693666, "ttft_ms_p50": 31823.1, "ttft_ms_max": 42646.8}, "pressure": {"rows": 12, "errors": 4, "hits": 0, "cached_tokens": 0, "prompt_tokens": 203912, "ttft_ms_p50"
+2026-11-09 10:01:20 reclaim: limit 3 B start
+2026-11-09 10:06:54 reclaim-gpu1: start; affinity  24-31,56-63; 0, 65846 MiB, 100 %, 87 1, 2 MiB, 0 %, 37 2, 35396 MiB, 100 %, 88 3, 35406 MiB, 100 %, 77 
+2026-11-09 10:06:54 reclaim-gpu1: mixed 1 A start
+2026-11-09 10:08:14 reclaim-gpu1: mixed 1 A rc=0 oom_lines=0 reclaim_on_defer_lines=0 admit_oom_lines=1 
+2026-11-09 10:08:14 reclaim-gpu1: mixed 2 B start
+2026-11-09 10:09:35 reclaim-gpu1: mixed 2 B rc=0 oom_lines=0 reclaim_on_defer_lines=0 admit_oom_lines=1 
+2026-11-09 10:09:35 reclaim-gpu1: mixed 3 B start
+2026-11-09 10:10:55 reclaim-gpu1: mixed 3 B rc=0 oom_lines=0 reclaim_on_defer_lines=0 admit_oom_lines=1 
+2026-11-09 10:10:55 reclaim-gpu1: mixed 4 A start
+2026-11-09 10:12:15 reclaim-gpu1: mixed 4 A rc=0 oom_lines=0 reclaim_on_defer_lines=0 admit_oom_lines=1 
+2026-11-09 10:12:15 reclaim-gpu1: mixed 5 A start
+2026-11-09 10:13:36 reclaim-gpu1: mixed 5 A rc=0 oom_lines=0 reclaim_on_defer_lines=0 admit_oom_lines=1 
+2026-11-09 10:13:36 reclaim-gpu1: mixed 6 B start
+2026-11-09 10:14:56 reclaim-gpu1: mixed 6 B rc=0 oom_lines=0 reclaim_on_defer_lines=0 admit_oom_lines=1 
+2026-11-09 10:14:56 reclaim-gpu1: done OUT=<lane>/out-gpu1
+2026-11-09 10:15:00 reclaim-gpu1: start; affinity  24-31,56-63; 0, 85494 MiB, 100 %, 87 1, 2 MiB, 0 %, 68 2, 35396 MiB, 0 %, 79 3, 35406 MiB, 0 %, 73 
+2026-11-09 10:15:00 reclaim-gpu1: waves 1 A start
+2026-11-09 10:15:32 reclaim: limit 3 B rc=0 oom_lines=0 reclaim_on_defer_lines=18 admit_oom_lines=21  {"items_per_prompt": 1154, "tokens_per_item": 20.78, "fill": {"rows": 64, "errors": 0, "hits": 0, "cached_tokens": 0, "prompt_tokens": 1693666, "ttft_ms_p50": 31755.0, "ttft_ms_max": 42307.1}, "pressure": {"rows": 12, "errors": 4, "hits": 0, "cached_tokens": 0, "prompt_tokens": 203912, "ttft_ms_p50"
+2026-11-09 10:15:32 reclaim: limit 4 A start
+2026-11-09 10:32:25 reclaim: limit 4 A rc=0 oom_lines=0 reclaim_on_defer_lines=2 admit_oom_lines=3  {"items_per_prompt": 1154, "tokens_per_item": 20.78, "fill": {"rows": 64, "errors": 0, "hits": 0, "cached_tokens": 0, "prompt_tokens": 1693666, "ttft_ms_p50": 31809.8, "ttft_ms_max": 42393.7}, "pressure": {"rows": 12, "errors": 4, "hits": 0, "cached_tokens": 0, "prompt_tokens": 203912, "ttft_ms_p50"
+2026-11-09 10:32:25 reclaim: mixed 1 A start
+2026-11-09 10:33:46 reclaim: mixed 1 A rc=0 oom_lines=0 reclaim_on_defer_lines=0 admit_oom_lines=1  {"window_s": 33.28, "batch_rows": 128, "batch_agg_tok_s": 230.79, "repeat_cached": [480, 480, 480, 480, 480, 480], "repeat_hits": 6, "repeat_ttft_ms": [179.3, 576.2, 190.3, 538.1, 188.7, 629.5], "batch_ttft_ms_p50": 585.5050086975098, "metrics_delta": {}, "metrics_end": {}}
+2026-11-09 10:33:46 reclaim: mixed 2 B start
+2026-11-09 10:35:04 reclaim-gpu1: waves 1 A rc=0 oom_lines=0 reclaim_on_defer_lines=2 admit_oom_lines=3 
+2026-11-09 10:35:04 reclaim-gpu1: waves 2 B start
+2026-11-09 10:35:06 reclaim: mixed 2 B rc=0 oom_lines=0 reclaim_on_defer_lines=0 admit_oom_lines=1  {"window_s": 33.25, "batch_rows": 128, "batch_agg_tok_s": 231.0, "repeat_cached": [480, 480, 480, 480, 480, 480], "repeat_hits": 6, "repeat_ttft_ms": [195.0, 543.9, 196.3, 518.3, 188.4, 620.1], "batch_ttft_ms_p50": 583.5800170898438, "metrics_delta": {}, "metrics_end": {}}
+2026-11-09 10:35:06 reclaim: mixed 3 B start
+2026-11-09 10:36:26 reclaim: mixed 3 B rc=0 oom_lines=0 reclaim_on_defer_lines=0 admit_oom_lines=1  {"window_s": 33.3, "batch_rows": 128, "batch_agg_tok_s": 230.62, "repeat_cached": [480, 480, 480, 480, 480, 480], "repeat_hits": 6, "repeat_ttft_ms": [180.4, 586.3, 187.3, 539.4, 192.2, 621.6], "batch_ttft_ms_p50": 586.4455699920654, "metrics_delta": {}, "metrics_end": {}}
+2026-11-09 10:36:26 reclaim: mixed 4 A start
+2026-11-09 10:37:47 reclaim: mixed 4 A rc=0 oom_lines=0 reclaim_on_defer_lines=0 admit_oom_lines=1  {"window_s": 33.23, "batch_rows": 128, "batch_agg_tok_s": 231.1, "repeat_cached": [480, 480, 480, 480, 480, 480], "repeat_hits": 6, "repeat_ttft_ms": [184.8, 605.0, 190.8, 500.0, 197.7, 599.9], "batch_ttft_ms_p50": 590.0900363922119, "metrics_delta": {}, "metrics_end": {}}
+2026-11-09 10:37:47 reclaim: mixed 5 A start
+2026-11-09 10:39:07 reclaim: mixed 5 A rc=0 oom_lines=0 reclaim_on_defer_lines=0 admit_oom_lines=1  {"window_s": 33.35, "batch_rows": 128, "batch_agg_tok_s": 230.32, "repeat_cached": [480, 480, 480, 480, 480, 480], "repeat_hits": 6, "repeat_ttft_ms": [182.7, 646.4, 184.9, 538.0, 192.3, 616.2], "batch_ttft_ms_p50": 592.3984050750732, "metrics_delta": {}, "metrics_end": {}}
+2026-11-09 10:39:07 reclaim: mixed 6 B start
+2026-11-09 10:40:28 reclaim: mixed 6 B rc=0 oom_lines=0 reclaim_on_defer_lines=0 admit_oom_lines=1  {"window_s": 33.26, "batch_rows": 128, "batch_agg_tok_s": 230.9, "repeat_cached": [480, 480, 480, 480, 480, 480], "repeat_hits": 6, "repeat_ttft_ms": [187.8, 594.0, 184.6, 498.7, 180.6, 634.2], "batch_ttft_ms_p50": 589.3328189849854, "metrics_delta": {}, "metrics_end": {}}
+2026-11-09 10:40:28 reclaim: done OUT=<lane>/out
+2026-11-09 10:40:29 reclaim-gpu0: start; affinity  24-31,56-63; 0, 2 MiB, 0 %, 72 1, 64150 MiB, 100 %, 85 2, 2 MiB, 0 %, 60 3, 2 MiB, 0 %, 46 
+2026-11-09 10:40:29 reclaim-gpu0: waves 1 B start
+2026-11-09 10:52:27 reclaim-gpu1: waves 2 B rc=0 oom_lines=0 reclaim_on_defer_lines=21 admit_oom_lines=26 
+2026-11-09 10:52:27 reclaim-gpu1: waves 3 B start
+2026-11-09 10:57:43 reclaim-gpu0: waves 1 B rc=0 oom_lines=0 reclaim_on_defer_lines=24 admit_oom_lines=29 
+2026-11-09 10:57:43 reclaim-gpu0: waves 2 A start
+2026-11-09 10:59:34 reclaim: waves campaigns stopped for the 250 W cap
+2026-11-09 11:02:59 reclaim-gpu1: start; affinity  24-31,56-63; 0, 2 MiB, 0 %, 60 1, 2 MiB, 0 %, 47 2, 38370 MiB, 100 %, 85 3, 38370 MiB, 100 %, 83 
+2026-11-09 11:02:59 reclaim-gpu1: waves 1 B start
+2026-11-09 11:02:59 reclaim-gpu0: start; affinity  24-31,56-63; 0, 2 MiB, 0 %, 60 1, 2 MiB, 0 %, 47 2, 38370 MiB, 100 %, 85 3, 38370 MiB, 100 %, 83 
+2026-11-09 11:02:59 reclaim-gpu0: waves 1 A start
+2026-11-09 11:21:02 reclaim-gpu1: waves 1 B rc=0 oom_lines=0 reclaim_on_defer_lines=21 admit_oom_lines=26 
+2026-11-09 11:21:02 reclaim-gpu1: waves 2 A start
+2026-11-09 11:23:53 reclaim-gpu0: waves 1 A rc=0 oom_lines=0 reclaim_on_defer_lines=2 admit_oom_lines=3 
+2026-11-09 11:23:53 reclaim-gpu0: waves 2 B start
+2026-11-09 11:41:57 reclaim-gpu0: waves 2 B rc=0 oom_lines=0 reclaim_on_defer_lines=21 admit_oom_lines=26 
+2026-11-09 11:41:57 reclaim-gpu0: waves done OUT=<lane>/out-gpu0-250
+2026-11-09 11:42:07 reclaim-gpu1: waves 2 A rc=0 oom_lines=0 reclaim_on_defer_lines=2 admit_oom_lines=3 
+2026-11-09 11:42:07 reclaim-gpu1: waves done OUT=<lane>/out-gpu1-250

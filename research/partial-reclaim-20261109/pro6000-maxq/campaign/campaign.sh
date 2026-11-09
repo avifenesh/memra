@@ -1,6 +1,6 @@
 #!/bin/bash
 # Partial-reclaim acceptance on one RTX PRO 6000 Max-Q (nohup, run under taskset -c 24-31,56-63):
-# A = #1090's head 6a9db1447d (the reclaim flush), B = fix/partial-reclaim-discrete d6c81127e7, both release builds
+# A = main d35337f51a (#1090 landed: the reclaim flush), B = fix/partial-reclaim-discrete ab21e254a6, both release builds
 # from one clone and one target dir.
 #   1. limit: A B B A, harness/limit.py (fill the cache and the parked pool, pressure at the interactive cap, repeat)
 #   2. mixed (regression, counts only): A B B A A B, harness/mixed.py
@@ -14,8 +14,8 @@ R=<lane>
 export TMPDIR=$R/tmp
 G=$1; O=$2; S=$R/status.txt
 case $G in 0) UUID=$GPU0_UUID ;; 1) UUID=$GPU1_UUID ;; *) echo "GPU must be 0 or 1"; exit 2 ;; esac
-A=$R/bins/memra-server-6a9db1447d
-B=$R/bins/memra-server-d6c81127e7
+A=$R/bins/memra-server-d35337f51a
+B=$R/bins/memra-server-ab21e254a6
 for b in "$A" "$B"; do [ -x "$b" ] || { echo "missing $b"; exit 3; }; done
 mkdir -p "$O/limit" "$O/mixed" "$O/power"
 log() { echo "$(TZ=Asia/Jerusalem date '+%F %T') $*" | tee -a "$O/campaign.log" >> "$S"; }

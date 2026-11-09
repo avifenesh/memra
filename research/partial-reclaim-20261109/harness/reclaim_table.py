@@ -2,6 +2,7 @@
 
   python3 reclaim_table.py limit LIMIT_DIR    the at-the-limit cell (fill, pressure, repeat)
   python3 reclaim_table.py mixed MIXED_DIR    the mixed shape (regression, counts only)
+  python3 reclaim_table.py waves WAVES_DIR    the at-the-limit cell with repeated pressure waves (limit_waves.py)
 
 Every reclaim is one `reclaim-on-defer: evicted N prefix entries` line; a partial pass also prints a
 `reclaim-on-defer (partial)` line ("covered" or "still short", the latter followed by the flush of the rest), and
@@ -17,7 +18,8 @@ def order(p):
     return (int(m.group(1)) if m else 0, p.name)
 
 
-arms = sorted((p for p in root.iterdir() if (p / "rows.json").is_file()), key=order)
+# An arm stopped mid-run keeps its receipts under a `.stopped` suffix and stays out of the tables.
+arms = sorted((p for p in root.iterdir() if (p / "rows.json").is_file() and not p.name.endswith(".stopped")), key=order)
 ref = next((p for p in arms if p.name.endswith("-A")), None)
 ref_text = {r["tag"]: r["text"] for r in json.loads((ref / "rows.json").read_text())["rows"]} if ref else {}
 
@@ -90,6 +92,23 @@ elif kind == "mixed":
         print(f"| {d.name} | {st['budget']} | {s['repeat_hits']} of {len(s['repeat_cached'])} | "
               f"{statistics.median(rep):.0f} | {s['batch_agg_tok_s']} | {s['batch_ttft_ms_p50']:.0f} | "
               f"{len(st['reclaims'])} ({len(st['partial'])}) | {st['preflight'] + st['lru']} | {st['oom']} | {same}/{n} |")
+elif kind == "waves":
+    print("| arm | reclaims (partial, still short) | entries / GB freed (largest) | booking on / off | OOM lines "
+          "| pressure waves: errors, TTFT p50 / max s | repeats: hits, cached tokens, TTFT p50 s | greedy texts = A |")
+    print("|---|---|---|---|---|---|---|---|")
+    for d in arms:
+        st = logstats((d / "serve.log").read_text(errors="replace"))
+        j = json.loads((d / "rows.json").read_text())
+        s, rows = j["summary"], j["rows"]
+        r = s["repeat"]
+        big = max(zip(st["reclaims"], st["settled"]), key=lambda x: x[1], default=(0, 0))
+        same, n, differ = same_texts(rows)
+        differs[d.name] = [(t, next((x.get("error") or "" for x in rows if x["tag"] == t), "")[:60]) for t in differ]
+        w = "; ".join(f"{x['errors']}, {x['ttft_ms_p50'] / 1000:.1f} / {x['ttft_ms_max'] / 1000:.1f}" for x in s["waves"])
+        print(f"| {d.name} | {len(st['reclaims'])} ({len(st['partial'])}, {st['short']}) | "
+              f"{sum(st['reclaims'])} / {sum(st['settled']) / 1e9:.1f} ({big[0]} / {big[1] / 1e9:.1f}) | "
+              f"{st['booking_on']} / {st['booking_off']} | {st['oom']} | {w} | "
+              f"{r['hits']} of {r['rows']}, {r['cached_tokens']}, {r['ttft_ms_p50'] / 1000:.2f} | {same}/{n} |")
 else:
     sys.exit(f"unknown table {kind}")
 print()

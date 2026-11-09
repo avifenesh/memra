@@ -1,5 +1,5 @@
 #!/bin/bash
-# Partial-reclaim lane (the Max-Q box): build one memra-server release binary.
+# Partial-reclaim lane (wrx): build one memra-server release binary.
 #   build-arm.sh REF SHA
 # Shallow, blobless, sparse clone under <lane>/repo (crates, tools, docs and the one
 # research dir the sources include), one target dir for both arms so B rebuilds only what its diff touches.
