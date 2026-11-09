@@ -1,0 +1,266 @@
+{
+ "errors": [],
+ "t1-4k": {
+  "per_boot": {
+   "decode": {
+    "base": 59.4025,
+    "flip": 62.895,
+    "ratio": 1.0588,
+    "U_flip_gt_base": 32.0,
+    "pairs": 36
+   },
+   "norm": {
+    "base": 0.9447,
+    "flip": 0.9248,
+    "ratio": 0.9789,
+    "U_flip_gt_base": 13.0,
+    "pairs": 36
+   },
+   "agg": {
+    "base": 90.4775,
+    "flip": 94.93,
+    "ratio": 1.0492,
+    "U_flip_gt_base": 30.0,
+    "pairs": 36
+   },
+   "ttft": {
+    "base": 2.0274,
+    "flip": 2.0372,
+    "ratio": 1.0048,
+    "U_flip_gt_base": 23.0,
+    "pairs": 36
+   }
+  },
+  "k": {
+   "base": [
+    "3"
+   ],
+   "flip": [
+    "2"
+   ]
+  },
+  "acceptance_median": {
+   "base": 0.4796149124507333,
+   "flip": 0.6138379509667131
+  },
+  "itl_p95_ms_median": {
+   "base": 34.86,
+   "flip": 37.405
+  }
+ },
+ "t1-6k": {
+  "per_boot": {
+   "decode": {
+    "base": 59.4975,
+    "flip": 59.92,
+    "ratio": 1.0071,
+    "U_flip_gt_base": 20.5,
+    "pairs": 36
+   },
+   "norm": {
+    "base": 0.9417,
+    "flip": 0.8888,
+    "ratio": 0.9439,
+    "U_flip_gt_base": 9.0,
+    "pairs": 36
+   },
+   "agg": {
+    "base": 70.135,
+    "flip": 70.565,
+    "ratio": 1.0061,
+    "U_flip_gt_base": 20.0,
+    "pairs": 36
+   },
+   "ttft": {
+    "base": 4.4283,
+    "flip": 4.4342,
+    "ratio": 1.0013,
+    "U_flip_gt_base": 26.0,
+    "pairs": 36
+   }
+  },
+  "k": {
+   "base": [
+    "3"
+   ],
+   "flip": [
+    "2"
+   ]
+  },
+  "acceptance_median": {
+   "base": 0.5555555555555556,
+   "flip": 0.6045777426992898
+  },
+  "itl_p95_ms_median": {
+   "base": 16.93,
+   "flip": 16.990000000000002
+  }
+ },
+ "t1-1k": {
+  "per_boot": {
+   "decode": {
+    "base": 62.8525,
+    "flip": 72.5675,
+    "ratio": 1.1546,
+    "U_flip_gt_base": 36.0,
+    "pairs": 36
+   },
+   "norm": {
+    "base": 0.9812,
+    "flip": 1.0741,
+    "ratio": 1.0946,
+    "U_flip_gt_base": 36.0,
+    "pairs": 36
+   },
+   "agg": {
+    "base": 109.44,
+    "flip": 125.77,
+    "ratio": 1.1492,
+    "U_flip_gt_base": 36.0,
+    "pairs": 36
+   },
+   "ttft": {
+    "base": 0.9086,
+    "flip": 0.7732,
+    "ratio": 0.851,
+    "U_flip_gt_base": 16.0,
+    "pairs": 36
+   }
+  },
+  "k": {
+   "base": [
+    "0",
+    "3"
+   ],
+   "flip": [
+    "2"
+   ]
+  },
+  "acceptance_median": {
+   "base": 0.4832049636285837,
+   "flip": 0.6712121212121211
+  },
+  "itl_p95_ms_median": {
+   "base": 26.66,
+   "flip": 35.86
+  }
+ },
+ "greedy-4k": {
+  "per_boot": {
+   "decode": {
+    "base": 61.9925,
+    "flip": 68.97,
+    "ratio": 1.1126,
+    "U_flip_gt_base": 30.0,
+    "pairs": 36
+   },
+   "norm": {
+    "base": 0.9605,
+    "flip": 1.0234,
+    "ratio": 1.0655,
+    "U_flip_gt_base": 25.0,
+    "pairs": 36
+   },
+   "agg": {
+    "base": 89.51,
+    "flip": 100.505,
+    "ratio": 1.1228,
+    "U_flip_gt_base": 30.0,
+    "pairs": 36
+   },
+   "ttft": {
+    "base": 2.2066,
+    "flip": 2.0766,
+    "ratio": 0.9411,
+    "U_flip_gt_base": 18.0,
+    "pairs": 36
+   }
+  },
+  "k": {
+   "base": [
+    "0",
+    "2",
+    "3"
+   ],
+   "flip": [
+    "2"
+   ]
+  },
+  "acceptance_median": {
+   "base": 0.5063291139240507,
+   "flip": 0.586200237670826
+  },
+  "itl_p95_ms_median": {
+   "base": 21.46,
+   "flip": 27.125
+  }
+ },
+ "short": {
+  "per_boot": {
+   "decode": {
+    "base": 62.615,
+    "flip": 67.4925,
+    "ratio": 1.0779,
+    "U_flip_gt_base": 30.0,
+    "pairs": 36
+   },
+   "norm": {
+    "base": 1.0,
+    "flip": 1.0,
+    "ratio": 1.0,
+    "U_flip_gt_base": 20.5,
+    "pairs": 36
+   },
+   "agg": {
+    "base": 117.195,
+    "flip": 131.705,
+    "ratio": 1.1238,
+    "U_flip_gt_base": 30.0,
+    "pairs": 36
+   },
+   "ttft": {
+    "base": 0.1231,
+    "flip": 0.1464,
+    "ratio": 1.1892,
+    "U_flip_gt_base": 24.5,
+    "pairs": 36
+   }
+  },
+  "k": {
+   "base": [
+    "0",
+    "2",
+    "3"
+   ],
+   "flip": [
+    "2"
+   ]
+  },
+  "acceptance_median": {
+   "base": 0.5489130434782609,
+   "flip": 0.5605676328502416
+  },
+  "itl_p95_ms_median": {
+   "base": 27.47,
+   "flip": 39.335
+  }
+ },
+ "greedy_shas": {
+  "deserts-4k": {
+   "base": [
+    "de407fdef1983a03"
+   ],
+   "flip": [
+    "de407fdef1983a03"
+   ]
+  },
+  "forests-4k": {
+   "base": [
+    "e923e7db50e84c31"
+   ],
+   "flip": [
+    "e923e7db50e84c31"
+   ]
+  }
+ }
+}
