@@ -222,9 +222,9 @@ class LocalInputIO(unittest.TestCase):
                           census(generating([], ['research/hidden/*.txt']), generating(['HIDDEN_DIR'], [], changed)))
             # Renaming the package keeps every pin of the same build.rs bytes: the commit's pin under
             # the new name admits it, and the running pin's external inputs still apply.
-            def external(package, names):
+            def external(package, names, script='crates/memra-server/build.rs'):
                 return json.dumps({'schema': 'memra-validation-build-inputs-v1', 'build_scripts': {
-                    'crates/memra-server/build.rs': {
+                    script: {
                         'sha256': hashlib.sha256(build.encode()).hexdigest(), 'package': package,
                         'generated_env': [], 'external_inputs': names}}})
             self.fixture.put('crates/memra-server/build.rs', build)
@@ -235,6 +235,27 @@ class LocalInputIO(unittest.TestCase):
                           census(external('memra-server', ['research/ext/*.txt']), external('memra-renamed', [])))
             with self.assertRaisesRegex(module.Refused, 'build-script input contract'):
                 census(external('memra-server', ['research/ext/*.txt']), None)
+            # The same bytes moved to another build script path keep the running pin's inputs too.
+            self.fixture.put('crates/memra-server/build2.rs', build)
+            text = manifest.read_text()
+            self.assertIn('name = "memra-renamed"\n', text)
+            manifest.write_text(text.replace('name = "memra-renamed"\n', 'name = "memra-renamed"\nbuild = "build2.rs"\n'))
+            self.assertIn('research/ext/*.txt', census(
+                external('memra-server', ['research/ext/*.txt']),
+                external('memra-renamed', [], 'crates/memra-server/build2.rs')))
+            # A reader moved to another path keeps what the running pin of its bytes declares.
+            moved = 'crates/memra-server/src/moved.rs'
+            self.fixture.put(moved, reader)
+
+            def reading(at, inputs):
+                return json.dumps({'schema': 'memra-validation-build-inputs-v1', 'build_scripts': {
+                    'crates/memra-server/build2.rs': {
+                        'sha256': hashlib.sha256(build.encode()).hexdigest(), 'package': 'memra-renamed',
+                        'generated_env': [], 'external_inputs': []}},
+                    'dynamic_includes': {at: {'sha256': hashlib.sha256(reader.encode()).hexdigest(),
+                                              'inputs': inputs}}})
+            self.assertIn('research/moved/*.txt',
+                          census(reading(path, ['research/moved/*.txt']), reading(moved, [])))
 
     def test_missing_and_noncanonical_paths_remain_refusals(self):
         for name in ('missing', '../outside', '/outside', 'a//b', './a', 'a\\b'):

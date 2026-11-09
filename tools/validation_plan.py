@@ -1105,11 +1105,13 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
                 raise Refused('declared build script missing')
             continue
         source_sha = hashlib.sha256(tree.read(path).encode()).hexdigest()
-        matching = [c for c in contracts['build_scripts'].get(path, ()) if c['sha256'] == source_sha]
-        # Admission needs a pin that names the package. Every pin of these bytes still applies,
-        # so renaming the package cannot drop what another pin declares for them.
-        if not any(c['package'] == package for c in matching):
+        # Admission needs a pin of these bytes at this path that names the package. Every pin of
+        # these bytes still applies, at any path and under any name, so moving the script or
+        # renaming the package cannot drop what another pin declares for them.
+        if not any(c['sha256'] == source_sha and c['package'] == package
+                   for c in contracts['build_scripts'].get(path, ())):
             raise Refused('build-script input contract changed or missing: ' + path)
+        matching = [c for pins in contracts['build_scripts'].values() for c in pins if c['sha256'] == source_sha]
         # A generated name lets the census skip an include, so it narrows: a name counts only
         # when every matching contract lists it. Inputs widen, so they take the union.
         generated[package].update(set.intersection(*(set(c['generated_env']) for c in matching)))
@@ -1128,19 +1130,21 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
                for raw in result.stdout.split(b'\0') if raw]
     if type(tree) is Tree:
         tree.prefetch_text(matches)
+    reader_pins = defaultdict(list)
+    for pins in contracts['dynamic_includes'].values():
+        for contract in pins:
+            reader_pins[contract['sha256']].append(contract)
     for path in matches:
         package = owner(path, owners)
         if package is None:
             raise Refused('include has no package owner')
         source = tree.read(path)
-        pinned = contracts['dynamic_includes'].get(path, ())
-        if pinned:
-            source_sha = hashlib.sha256(source.encode()).hexdigest()
-            pinned = [c for c in pinned if c['sha256'] == source_sha]
-        # A contract that pins this reader's bytes declares what it reads. Its inputs apply even
-        # when an include resolves another way, as through a generated name that only a changed
-        # build script's own pin declares.
-        for contract in pinned:
+        source_sha = hashlib.sha256(source.encode()).hexdigest() if reader_pins else None
+        # A pin at this path admits the reader's unresolved includes. Every pin of these bytes, at
+        # any path, declares what the reader reads, and its inputs apply even when an include
+        # resolves another way, as through a generated name only a changed build script declares.
+        pinned = any(c['sha256'] == source_sha for c in contracts['dynamic_includes'].get(path, ()))
+        for contract in reader_pins.get(source_sha, ()):
             for input_pattern in contract['inputs']:
                 inputs[input_pattern].add(package)
         string_spans = []
