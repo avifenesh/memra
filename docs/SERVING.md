@@ -2913,9 +2913,11 @@ neither number scales with `MEMRA_SPEC_BURST` anymore.
   (newcomer-first vs lockstep-fair; p95 tail pays); c=1 parity. `MEMRA_ADMIT_YIELD=0`
   selects lockstep fairness (both pieces) on tiers that want it. Receipts: `research/admission-20260806/VERDICT.md`.
 - **The burst ends with the public stream** (GB10 decode round 5, 2026-11-09): the round hook
-  also ends the burst at the round that commits EOS, a stop id or the last budgeted token. Before
-  that, a request's last burst ran out to its full target on tokens nobody sees, and the response's
-  end waited for it. The visible stream is unchanged, and so is a round's cost. Measured served
+  also ends the burst at the round that commits EOS or a stop id, and when the client is gone.
+  Before that, such a request's last burst ran out to its full target on tokens nobody sees, and
+  the response's end waited for it. The visible stream is unchanged, and so is a round's cost.
+  Acceptance telemetry reads higher for the same text, because the rounds after EOS no longer
+  run, so figures from before and after do not compare. Measured served
   B/T: up to -0.8 s per ~100-token answer on GB10 (-2.4 s at 131k), -0.3 to -0.5 s on the RTX
   5090. Receipts: `research/gb10-decode-20261109/`.
 

@@ -52,7 +52,7 @@ KV bytes are 1,856 per token per full-attention layer (q8_0 K, q5_1 V). At the m
 
 | # | lever | exactness | expected gain | size |
 |---|---|---|---|---|
-| 1 | the burst ends at the round its public stream ends (EOS, stop id, budget) | visible stream identical; burst size is content-neutral | about 6 rounds per request on average, 11-13 measured | small, server |
+| 1 | the burst ends at the round its public stream ends (EOS or a stop id; a gone client too) | visible stream identical: it is already complete | about 6 rounds per request on average, 11-13 measured | small, server |
 | 2 | multi-row verify attention: one block reads each KV tile once for all verify rows | bit-identical per row (same walk, same split partition) | 131k: -55 to -80 ms per round; 260k: -110 to -160 | kernel |
 | 3a | per-column state snapshots stay in the scan's slab (no clones) | bit-identical (same bytes) | -471 MB, about -2.8 ms per round | small |
 | 3b | a per-layer state slot ring selected through the state pointer table (no snapshot, no restore) | bit-identical | about -2.6 ms more | medium |
@@ -62,7 +62,21 @@ KV bytes are 1,856 per token per full-attention layer (q8_0 K, q5_1 V). At the m
 
 ## Lever 1: the burst ends at the round its public stream ends
 
-`SpecBurstEmit::flush`, the MTP burst's round hook, answered only the admission yield. After the round that committed EOS, a stop id or the last budgeted token, it kept answering "continue", so every request's last burst ran to its full 32-token target on tokens nobody sees, and the response's end waited for it. `spec_round_continues` now ends the burst at that round, the exit the admission yield already takes. Burst size is content-neutral, so the visible stream cannot move. The single-session and pooled bursts share the hook, so both stop early.
+`SpecBurstEmit::flush`, the MTP burst's round hook, answered only the admission yield. After the round that committed EOS or a stop id it kept answering "continue", so every such request's last burst ran to its full 32-token target on tokens nobody sees, and the response's end waited for it. `spec_round_continues` now ends the burst at that round, through the exit a reached burst count and the admission yield already take. The public stream is complete at that point, so no visible token can move. A gone client ends the burst the same way. The single-session and pooled bursts share the hook, so both stop early. A request that ends on its token budget saves nothing: the burst target never exceeds the request's room, so the engine's own count already ends that burst.
+
+### Was running past EOS a guard?
+
+No. It was an omission that one later mechanism leaned on, and that mechanism no longer does.
+
+- **History.** The hook's verdict was added for the admission yield alone (`MEMRA_ADMIT_YIELD`, 2026-08-06; its FLAGS.md row and `research/admission-20260806/VERDICT.md` list the empty flushes it polls and say nothing about EOS). The lines predate the repository's history import (49d1d6f659, 2026-09-01). The three later commits that touched them moved or trimmed them without a reason to continue: 392863ff9d (the round-cadence twin on this route), 4fbf093c2a (the extraction into `SpecBurstEmit` for the pooled cohort) and adbc1a1539 (the per-burst seam's removal; "poll-only" had named that seam). The sibling routes end at EOS on purpose (`glm_spec.rs`, `dflash.rs`).
+- **What runs after the burst is the same.** The post-burst settle reads the returned burst through `spec_visible_prefix`, and the burst always holds the EOS round. Usage, finish reason, the fed and sampler mirrors and the tool-call tail are unchanged. Stop strings are checked after the burst and still let it run to its target. Logprobs requests never reach this route, and n > 1 waits outside it.
+- **No new end state.** The admission yield could already end a burst at any round, the EOS round included, and EOS could already land in a burst's last round (GB10 g1k below).
+- **The one thing that leaned on it: the spec pool's exact probe.** The parked session keeps every committed token. With about 25 tokens of overshoot after EOS the probe missed, and the turn took the affinity rewind. A removed door that trimmed the overshoot for budget-ended turns (`MEMRA_SPEC_BUDGET_CLAMP`, FLAGS.md "Removed doors, 2026-11-04") showed what a hit cost then: resumes at the parked end of a recurrent trunk, and warm turns that left the cold text. main 1991314b86 (memra#1093, landed with #1139) closed that: an exact or text hit on a recurrent trunk rewinds to the on-grid turn checkpoint or primes cold, and every pool resume starts the request's sampler counters as a cold session does. So the length of the parked tail no longer decides what a resumed turn computes. The warm == cold pair cells below check it at this lever's head.
+
+### What else moves
+
+- **Acceptance telemetry.** The rounds after EOS drafted on a finished answer and accepted little. They no longer run, so a request's `usage.spec` and the /metrics acceptance windows read higher for the same text (RTX 5090 g1k: 72 of 177 drafted tokens accepted over 59 rounds before, 65 of 126 over 42 rounds after). Acceptance figures from before and after this change do not compare. Where the cost model owns K (GB10), its acceptance input no longer includes those rounds.
+- **A response whose first token is EOS** runs no round, so it carries no `usage.spec` block.
 
 Served B/T, B = main a8a980a017, T = the lever, one fresh server per cell, B T T B B T, one cell per lease. GB10 is unit 2 (`eos-unit2/`). The RTX 5090 runs the same model and draft at a 32k context (`eos-5090/`). Requests per cell:
 
@@ -87,4 +101,47 @@ Medians of 3 per arm. The spread is max minus min.
 - **The gain depends on where EOS lands.** It is the rounds after the EOS round. The GB10 g1k answer ended in its burst's last round, so it has nothing to save.
 - **A round costs the same.** Inside full bursts it is 146.5 / 146.4 ms on GB10 and 30.8 / 31.2 ms on the 5090 (`*/rounds.txt`), each change inside its spread.
 
-The session-gate oracle is an engine gate, and the lever does not touch the engine. On GB10 it passes at its defaults (K=2, 24 tokens per turn) on both builds. At K=3 with 48 tokens per turn it reports the same turn-2 mismatch on both builds, main included (`eos-unit2/session-gate-*.log`). So that mismatch is main's, not the lever's. Its reference re-primes the whole history, while the session continues from decoded state; the served path never resumes a recurrent trunk at its parked end (the grid law, memra#1093). The mismatch is filed for triage as its own item.
+The session-gate oracle is an engine gate, and the lever does not touch the engine. On GB10 it passes at its defaults (K=2, 24 tokens per turn) on both builds. At K=3 with 48 tokens per turn it reports the same turn-2 mismatch on both builds, main included (`eos-unit2/session-gate-*.log`). So that mismatch is main's, not the lever's. Its reference re-primes the whole history, while the session continues from decoded state; since main 1991314b86 the served path never resumes a recurrent trunk at its parked end (the grid law, memra#1093). The mismatch is filed as memra#1146.
+
+## The cold-long rung on GB10: K=2 against K=3 (lever 4's first cell, for memra#1093)
+
+memra#1144 found that a cold sampled prompt of 1,024 tokens or more decodes faster at K=2 than at the cold-long rung's K=3 on the RTX 5090 (from 3.6k) and on the RTX PRO 6000 Max-Q (every length). This cell asks the same on GB10, with that lane's harness plus a GB10 prompt set and the served route's draft (`tools/cold_long_ab.py`, `PROMPT_SET=gb10`, `CELL_EXTRA`; the per-boot telemetry table is `research/spec-k-cold-long-20261109/analyze.py`).
+
+- **Binary and route:** main a8a980a017, the served GB10 route (NVFP4 trunk, Q5_K head, the masked MTP draft, `MEMRA_PREFIX_STABLE_BOUNDARY=1`). Arm k3 is the default; arm k2 sets `MEMRA_SPEC_K_COLD_LONG=2`, the existing measurement door.
+- **Boots:** 12, in the order k3 k2 k2 k3 three times, one boot per lease, unit 1. The first driver stopped at boot 7 with one request served; that boot was rerun whole, and `kcl-unit1/runs.jsonl` holds complete boots only.
+- **Requests per boot:** nine cold prompts, one at a time. T=1 with a fixed seed per prompt: two of about 1.24k tokens, two of 3.6k, two of 5.8k. One greedy prompt of 3.6k. Two T=1 prompts of 34 tokens. Thinking off, `max_tokens` 400, and every answer reached the cap. TTFT is the first content chunk; the decode rate is the tokens after it over the time after it.
+- **Clock:** the SM clock read 2,184 MHz in every boot and the GPU 65-69 °C (`kcl-unit1/analysis.md`). GB10 did not throttle, so the raw rates compare directly.
+
+Per class, each boot's median, then the median over the arm's six boots (`tools/kcl_u.py`). U counts, over the 36 pairs of a k2 boot and a k3 boot, how often the k2 boot is faster (for TTFT, lower):
+
+| class | k3 decode (median of boot medians, range) | k2 decode | k2/k3 raw | U raw | TTFT k2/k3 | U TTFT (k2 lower) |
+|---|---|---|---:|---:|---:|---:|
+| T=1 1.3k | 23.37 (23.05-23.44) | 23.06 (23.04-23.07) | 0.987 | 4/36 | 1.002 | 9/36 |
+| T=1 3.6k | 23.62 (23.28-23.66) | 22.88 (22.88-22.90) | 0.969 | 0/36 | 1.000 | 15/36 |
+| T=1 5.8k | 23.46 (23.44-23.50) | 22.71 (22.70-22.73) | 0.968 | 0/36 | 1.001 | 8.5/36 |
+| T=1 all long | 23.46 (23.40-23.50) | 22.98 (22.97-23.00) | 0.980 | 0/36 | 1.000 | 15/36 |
+| greedy 3.6k | 26.34 (26.31-26.36) | 26.29 (26.27-26.29) | 0.998 | 0/36 | 0.999 | 22/36 |
+| T=1 short (reference) | 21.77 (21.75-21.79) | 22.72 (22.70-22.73) | 1.044 | 36/36 | 1.000 | 19/36 |
+
+Per prompt (`kcl-unit1/per-prompt.md`):
+
+| prompt | class | prompt tokens | k3 decode, median (range) tok/s | k2 decode | k2/k3 | k3 / k2 acceptance | texts per arm (6 boots) |
+|---|---|---:|---|---|---:|---|---|
+| rivers-1k | t1-long | 1,239 | 22.88 (22.57-22.96) | 22.94 (22.92-22.96) | 1.002 | 0.404 / 0.540 | 1 / 1 |
+| bridges-1k | t1-long | 1,240 | 23.85 (23.52-23.91) | 23.18 (23.15-23.19) | 0.972 | 0.434 / 0.557 | 1 / 1 |
+| glaciers-4k | t1-long | 3,566 | 22.23 (21.91-22.29) | 22.38 (22.37-22.39) | 1.007 | 0.395 / 0.535 | 1 / 1 |
+| harbors-4k | t1-long | 3,697 | 25.01 (24.65-25.04) | 23.38 (23.37-23.41) | 0.935 | 0.499 / 0.593 | 1 / 1 |
+| volcanoes-6k | t1-long | 5,727 | 23.30 (23.28-23.34) | 22.39 (22.38-22.41) | 0.961 | 0.453 / 0.557 | 1 / 1 |
+| canyons-6k | t1-long | 5,928 | 23.62 (23.59-23.66) | 23.02 (23.02-23.05) | 0.975 | 0.455 / 0.587 | 1 / 1 |
+| islands-4k | greedy-long | 3,565 | 26.34 (26.31-26.36) | 26.29 (26.27-26.29) | 0.998 | 0.460 / 0.617 | 1 / 1 |
+| comets-short | t1-short | 34 | 22.30 (22.28-22.33) | 22.73 (22.69-22.74) | 1.019 | 0.383 / 0.535 | 1 / 1 |
+| tides-short | t1-short | 34 | 21.24 (21.22-21.27) | 22.72 (22.70-22.74) | 1.069 | 0.346 / 0.535 | 1 / 1 |
+
+- **K=2 does not win on GB10.** Four of the six long sampled prompts are 2.5% to 6.5% slower at K=2, two are flat (+0.2%, +0.7%), and the greedy prompt is flat (-0.2%). By class the 3.6k and 5.8k prompts lose 3.1% and 3.2% with K=3 faster in 36 of 36 pairs, and the 1.3k prompts lose 1.3% (32 of 36).
+- **A reading of why it differs from sm_120a.** A K=2 round drafts one token less, and acceptance per drafted token rises from 0.40-0.50 to 0.54-0.59. On GB10 the draft is about 6% of a round and the trunk verify dominates (the roofline table above), so the extra verified row of K=3 costs little and its extra accepted tokens pay.
+- **What the 36 pairs measure.** Seeds are fixed, so every boot of an arm serves the same text for a prompt (one text hash per prompt and arm). The pairs show that the machine repeats to 0.1-0.3%; the sample of texts is six sampled prompts and one greedy.
+- **The greedy text is K-invariant:** one hash across both arms.
+- **TTFT does not move** (ratios 0.999 to 1.002).
+- **The door reaches further on GB10.** Every `[spec-k]` line on GB10 reads `source=cost-model`, and with the door at 2 the 34-token prompts ran K=2 as well. Those two prompts were 1.9% and 6.9% faster at K=2. So the short prompts are not a same-K reference here, and the harness's normalized columns are left out. It is also a lead for the GB10 cost model's short-prompt K, not a result: two prompts.
+
+For memra#1093's flip: the cold-long K=2 default does not carry to GB10. GB10 keeps K=3 on that rung.

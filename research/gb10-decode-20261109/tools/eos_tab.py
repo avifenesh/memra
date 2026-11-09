@@ -14,7 +14,8 @@ for c in sorted(p for p in d.iterdir() if p.is_dir() and re.match(r"\d\d-[BT]$",
     if not f.exists():
         continue
     ticks = [(float(m.group(1)), float(m.group(2)), int(m.group(3)), int(m.group(4)), int(m.group(5)))
-             for l in (c / "server.log").read_text().splitlines() if (m := ts.match(l))]
+             for l in (c / ("server.log" if (c / "server.log").exists() else "trace.txt")).read_text().splitlines()
+             if (m := ts.match(l))]
     for r in (json.loads(l) for l in f.read_text().splitlines() if l.strip()):
         t0, t1 = r["send_unix"], r["send_unix"] + r["total_s"] + 0.05
         # a burst belongs to the request whose window holds its whole wall (its end stamp alone can tie
