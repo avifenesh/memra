@@ -232,6 +232,7 @@ pub mod ffi {
             iters: i32,
             norm_eps: f32,
             hc_eps: f32,
+            parts: *mut f32,
             mixes: *mut f32,
             pre: *mut f32,
             post: *mut f32,
@@ -2834,6 +2835,8 @@ impl Ctx {
         let pre = self.ops.buf(s * hc * 4)?;
         let post = self.ops.buf(s * hc * 4)?;
         let comb = self.ops.buf(s * hc * hc * 4)?;
+        // the partial pass's 8 virtual-warp sums of each mix and of the square sum
+        let parts = self.ops.buf(s * 8 * (nmix + 1) * 4)?;
         ck("hc_mixes", unsafe {
             ffi::memra_v41_hc_mixes(
                 x.p(&st).m(),
@@ -2846,6 +2849,7 @@ impl Ctx {
                 g.sinkhorn_iters as i32,
                 g.norm_eps,
                 g.hc_eps,
+                parts.p(&st).fm(),
                 mixes.p(&st).fm(),
                 pre.p(&st).fm(),
                 post.p(&st).fm(),

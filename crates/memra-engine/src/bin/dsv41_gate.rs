@@ -553,6 +553,7 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
         let pre = ops.buf(s * hc * 4)?;
         let post = ops.buf(s * hc * 4)?;
         let comb = ops.buf(s * hc * hc * 4)?;
+        let parts = ops.buf(s * 8 * (nm + 1) * 4)?;
         ck("hc_mixes", unsafe {
             ffi::memra_v41_hc_mixes(
                 x.p(&st).m(),
@@ -565,6 +566,7 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
                 20,
                 1e-20,
                 1e-6,
+                parts.p(&st).fm(),
                 mixes.p(&st).fm(),
                 pre.p(&st).fm(),
                 post.p(&st).fm(),
