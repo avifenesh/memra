@@ -1,0 +1,6 @@
+arm=status-text darklane.rs sha256 118ef756f8aed6f1309048f22467caa79f4d9109c8117f1f3b91a6ee3d8fde11 crates/ digest c0862ef667d6c298fffba520467520ec7638d6d14d68f321192c15c4370c3045
+rc=101 test result: FAILED. 23 passed; 1 failed; 0 ignored; 0 measured; 1130 filtered out; finished in 7.41s
+assertion `left != right` failed: reading the program failed the job's stop
+owned runner assertion failed: state=failed pid=4088634 child_state=None threads=['T'] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::stop_reaches_the_other_thread_of_a_group_member_whose_comm_is_not_utf8 ... FAILED
+stops acknowledged with the leader parked in vfork: 147 of 300

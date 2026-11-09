@@ -158,6 +158,35 @@ Verification of the fix, same host ([`scan/verify/`](scan/verify/summary.txt), [
 
 The stated limits stay: a process that left the group gets neither the group's signals nor this check, and a member the server cannot see in /proc (a `hidepid` mount that hides it) is outside the scan.
 
+## Late members, and the review of the scan round
+
+Two reviews are answered here: an earlier review comment on this PR ([late members](https://github.com/avifenesh/memra/pull/1130#discussion_r4516293834)) and the clean-context review of the scan round ([comment](https://github.com/avifenesh/memra/pull/1130#issuecomment-6753223068)).
+
+Late members. A process the group's stop never reached was read as "not yet" on every tick when it had one thread: the stop was pending nowhere on it, nothing would ever make it stop, and the runner only directed a stop at processes with more than one live thread. The job then never yielded and never resumed, the same end state as the first finding of this lane. A forked child cannot be such a process, because a group signal that arrives during fork is delivered to the child as well. The ways in are `setpgid` into the job's group after the stop was sent (a process of the job that had left the group, or a child a member moves in) and a SIGCONT from outside the job to a member that had stopped. Fix: a member other than the leader whose one live thread has not stopped and carries SIGSTOP in neither pending set (`Unreached`) gets the stop directed at it, like the threads of an unclaimed multithreaded process. A thread that has just taken the stop off its queue reads the same for an instant; the extra stop it then gets is flushed by SIGCONT with every other stop signal. The leader is left out: it was in the group when the stop was sent, and directing a stop at it on that reading would stop a running job whenever the reading is taken with no stop pending (the first draft did, and `repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown` caught it in the status-text arm of this round's first run: [`late/first-draft/`](late/first-draft/status-text.txt), darklane.rs `d00acb1ae76c10f59665fa8243578a1de98b2912b86382e50923377821fe7f73`).
+
+Review of the scan round, all six points taken:
+
+- A refused `getpgid` was passed over for every process, so a refusal for all of them (a filter on the server's own `getpgid`) read as "no members". The scan now asks for the leader first, the server's own unreaped child, and fails the stop when that answer is refused.
+- The gap that stays is named in the module header and the `MEMRA_BG_YIELD_MODE` row: a process whose process group a security module refuses to tell the server is passed over, so a member confined that way is not waited for. SELinux and Smack have that hook.
+- "No other process on the host can fail it" said more than the code does. An error listing /proc, or reading a known member, still fails the job, on purpose: the sentence now reads "cannot fail the job by its name or its /proc permissions".
+- The byte-named member test used a shell loop that stops by itself, so it passed whether or not the member was read, and its red arm failed on the stat scan, not on the status parse. It is replaced by `stop_reaches_the_other_thread_of_a_group_member_whose_comm_is_not_utf8`: the vfork program of the group-member round with its comm set to `\xff\xfedl` (`prctl`), whose other thread runs on unless the runner reads the member and directs the stop. The job line ends in `exit $?`, so no shell execs it.
+- The `status-text` arm isolates the byte parse: the fixed file with one line changed back, a thread's `status` read as text.
+- The `crates/` digest sorts paths in the host's locale, en_US.UTF-8, in every round; the harness now says so.
+
+New test for late members: `stop_is_directed_at_a_member_the_group_stop_never_reached` builds the shape without the race. Two `sleep` processes share a group, the stop is sent to the leader alone, and the member stays asleep with no stop pending. The same reading of the leader directs nothing at it; then the acknowledgement must direct the stop at the member and come only once the member reads stopped.
+
+Red controls ([`late/harness/gen-before.py`](late/harness/gen-before.py), [`late/harness/red.sh`](late/harness/red.sh)), same host and pinning as the earlier rounds. `before` is the production half of e47a3bbf04's `darklane.rs` (sha256 `2314b608c4b5818fa70fbe7989e166f2f59768c6ef87810fa3167c73b3bca38e`) with this round's tests, minus the pure-logic test:
+
+| run | tree | result | darklane module |
+|---|---|---|---|
+| [before](late/red/before.txt) | previous runner: darklane.rs `fe7c161ac42de6110ada59d30e6ed344aa332520916f3904c59d48da229a0718`, crates/ `593f4b59b43338306f85e55a105f49106a5567bfeb9c9348dce733b7832f380d` | FAIL: the member the stop never reached is not acknowledged within the 30 s guard | 22 passed, 1 failed |
+| [status-text](late/red/status-text.txt) | fix with a thread's status read as text: darklane.rs `118ef756f8aed6f1309048f22467caa79f4d9109c8117f1f3b91a6ee3d8fde11`, crates/ `c0862ef667d6c298fffba520467520ec7638d6d14d68f321192c15c4370c3045` | FAIL: the byte-named member's job ends in state `failed` | 23 passed, 1 failed |
+| [final](late/red/final.txt) | fix: darklane.rs `1b1332e9250758035532950ebd846295acd1c5e6864c83ebdb9d0ac8773261db`, crates/ `72ac4a50add90f4e368a3c91240ccfd123f03c30783abef87147f17f8262542f` | PASS | 24 passed |
+
+Verification of the fix, same host ([`late/verify/`](late/verify/summary.txt), [`late/harness/verify.sh`](late/harness/verify.sh)): 20 runs of `darklane::` with the stress test, 24 of 24 passed each time, 6,000 stops acknowledged, 2,392 of them with the leader parked in vfork (15 to 151 per run; the share follows the box's load, which was higher for part of this run). The complete memra-server suite passed twice: 1,143 passed, 0 failed, 11 ignored in the library, 7 integration tests. `cargo fmt --all -- --check` and release all-target Clippy with warnings denied are clean, and `darklane.rs` had the same sha256 at the end.
+
+Limits after this round: a process that left the group gets neither the group's signals nor this check; a member the server cannot see in /proc (a `hidepid` mount that hides it) or whose process group a security module refuses is outside the scan; and a leader continued from outside the job with its stop still unacknowledged is read again, not stopped again.
+
 ## Scope
 
 Platforms: the first round's probe and every round's tests ran on one x86_64 Ubuntu 26.04.1 host. A second x86_64 26.04 host has the same dash, kernel and glibc; both reviews' probes ran there, the first round's probe did not. DGX Spark: Ubuntu 24.04.5, dash 0.5.12-6ubuntu5, aarch64, kernel 7.0.0-1019-nvidia, glibc 2.39; read, not run. arm64 has no vfork syscall; glibc implements vfork with clone and `CLONE_VFORK`, the kernel's wait is the same, and so are the /proc formats.

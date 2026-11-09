@@ -43,12 +43,17 @@
 //! one thread per process to take a group stop, the main thread first; when that thread waits
 //! in vfork, the other threads are never told. So when no thread of a multithreaded member has
 //! stopped, the runner directs SIGSTOP at each of its live threads (tgkill) and reads again.
+//! It does the same for a member other than the leader whose one live thread has not stopped
+//! and carries the stop in neither pending set: the group's stop never reached it (it entered
+//! the group after the stop was sent, or was continued from outside the job).
 //! Members are the processes listed in /proc whose process group (getpgid) is the job's; a
 //! process that left the group is outside the group's signals and outside this check. The scan
-//! reads nothing of a process outside the group, so no other process on the host can fail it;
-//! a member or leader whose threads cannot be read fails the job instead of yielding unread.
-//! Thread readings are parsed as bytes: a comm may hold any byte. OS scheduling and signal
-//! delivery control latency.
+//! reads nothing of a process outside the group, so such a process cannot fail the job by its
+//! name or its /proc permissions; a member or leader whose threads cannot be read fails the job
+//! instead of yielding unread. One gap is accepted: a process whose process group a security
+//! module refuses to tell the server is passed over, so a member confined that way is not
+//! waited for (a refusal for the leader itself fails the job). Thread readings are parsed as
+//! bytes: a comm may hold any byte. OS scheduling and signal delivery control latency.
 //! Historical timing receipts live in `research/darktrain-20260807/`. Two consequences the
 //! operator must know:
 //!   * a SIGSTOPPED process KEEPS its memory — VRAM included, and so does a leader parked
@@ -434,8 +439,10 @@ fn process_pgrp(pid: u32) -> std::io::Result<Option<u32>> {
 /// What the group scan does with the process-group answer for one listed process. The scan
 /// asks about every process on the host, so a process outside the job must not be able to fail
 /// the job's stop: one that is gone, in another group, or whose group the server is refused (a
-/// security module can deny getpgid; the kernel itself never does) is passed over. Any other
-/// error stays an error: a stop is never acknowledged on a scan that may have missed a member.
+/// security module can deny getpgid; the kernel itself never does) is passed over. That is
+/// the one accepted gap: a member of the job confined so that the server is refused its group
+/// is not waited for. Any other error stays an error: a stop is never acknowledged on a scan
+/// that may have missed a member.
 fn scanned_member(group: std::io::Result<Option<u32>>, pgid: u32) -> std::io::Result<bool> {
     match group {
         Ok(group) => Ok(group == Some(pgid)),
@@ -448,6 +455,10 @@ fn scanned_member(group: std::io::Result<Option<u32>>, pgid: u32) -> std::io::Re
 /// whose process group is `pgid`. A process that left the group is not found, and the group's
 /// signals do not reach it either. Nothing of a listed process is read but its process group.
 fn group_members(pgid: u32) -> std::io::Result<Vec<u32>> {
+    // The leader is the server's own unreaped child, so the kernel answers for it. A refusal
+    // here (a filter on the server's own getpgid) would be a refusal for every process, and
+    // the scan would read it as "no members".
+    process_pgrp(pgid)?;
     let mut members = Vec::new();
     for entry in std::fs::read_dir("/proc")? {
         let entry = entry?;
@@ -500,12 +511,19 @@ enum ProcessStop {
     /// returns to user space.
     TookEffect,
     /// Not yet, and a later tick reads again: a thread can still run while a group stop is
-    /// under way, the process has one live thread, or every live thread already carries the stop
-    /// in its own pending set.
+    /// under way, the one live thread still has the stop to take, or every live thread already
+    /// carries the stop in its own pending set.
     NotYet,
     /// No thread has taken the stop, more than one is live, and some live thread does not carry
     /// it in its own pending set. The stop must be directed at each live thread.
     Unclaimed,
+    /// The one live thread has not stopped and carries the stop in neither pending set. On a
+    /// member other than the leader the group's stop never reached the process: it entered the
+    /// group after the stop was sent, or was continued from outside the job. The stop must be
+    /// directed at it. A thread that has just taken the stop off its queue reads the same for
+    /// an instant, and the leader, which was in the group when the stop was sent, is only read
+    /// again.
+    Unreached,
     /// No live thread: the process is exiting, or is gone.
     Gone,
 }
@@ -531,6 +549,8 @@ fn classify_process_stop(threads: &[ThreadStop]) -> ProcessStop {
         ProcessStop::TookEffect
     } else if !stopped && !single && live.iter().any(|t| !t.own) {
         ProcessStop::Unclaimed
+    } else if !stopped && single && !live[0].own && !live[0].shared {
+        ProcessStop::Unreached
     } else {
         ProcessStop::NotYet
     }
@@ -584,6 +604,13 @@ fn process_threads(pid: u32) -> std::io::Result<Option<Vec<(libc::pid_t, ThreadS
 /// So when no thread is stopped and more than one is live, the stop is directed at each live
 /// thread (tgkill), which flags each one, and read again. A flagged sleeping or running thread
 /// starts the group stop, and a flagged blocked one carries the stop in its own pending set.
+/// A member other than the leader with one live thread gets the same when that thread has not
+/// stopped and the stop is in neither of its pending sets: the group's stop never reached it,
+/// because it entered the group after the stop was sent or was continued from outside the job,
+/// and no later tick would see it stop. A thread that has just taken the stop off its queue and
+/// is about to stop reads the same for an instant; the extra stop sent to it then is flushed
+/// with the rest by SIGCONT. The leader was in the group when the stop was sent, so that
+/// reading of the leader is the instant, and it is only read again.
 /// tgkill checks the thread group, so a stale tid cannot reach another process, and SIGCONT
 /// flushes thread-directed stops with the group's. A member other than the leader is checked to
 /// be still in group `pgid` right before: pids are allocated cyclically, so one that exited since
@@ -596,9 +623,11 @@ fn process_stop(pid: u32, pgid: u32) -> std::io::Result<ProcessStop> {
     let Some(threads) = process_threads(pid)? else {
         return Ok(ProcessStop::Gone);
     };
-    let first = reading(&threads);
-    if first != ProcessStop::Unclaimed {
-        return Ok(first);
+    match reading(&threads) {
+        ProcessStop::Unclaimed => {}
+        ProcessStop::Unreached if pid != pgid => {}
+        ProcessStop::Unreached => return Ok(ProcessStop::NotYet),
+        first => return Ok(first),
     }
     if pid != pgid && process_pgrp(pid)? != Some(pgid) {
         return Ok(ProcessStop::Gone); // It exited, or left the group, since the scan.
@@ -620,7 +649,7 @@ fn process_stop(pid: u32, pgid: u32) -> std::io::Result<ProcessStop> {
         None => ProcessStop::Gone,
         Some(threads) => match reading(&threads) {
             // Every live thread now carries the stop, unless it already took it and stopped.
-            ProcessStop::Unclaimed => ProcessStop::NotYet,
+            ProcessStop::Unclaimed | ProcessStop::Unreached => ProcessStop::NotYet,
             again => again,
         },
     })
@@ -1583,12 +1612,14 @@ mod tests {
     /// The /proc reading, case by case. A reading is (state, SIGSTOP in the thread's own
     /// pending set, SIGSTOP in the shared set). The single-threaded parked shell (D with SIGSTOP
     /// shared) and a running shell inside an ordinary vfork (D, nothing pending) differ only in
-    /// the pending set; the second must never acknowledge. With more than one live thread a
-    /// shared stop proves nothing: a blocked thread counts once a thread is stopped or the stop
-    /// is in its own set, and a process with no stopped thread and a thread without its own stop
-    /// gets the stop directed at each thread. A process with no live thread is gone. A status
-    /// is read as bytes (a comm may hold any byte), and the group scan passes over a process
-    /// whose group the server is refused, and over nothing else that fails.
+    /// the pending set; the second must never acknowledge. One live thread that has not stopped
+    /// and carries the stop nowhere is a process the group's stop never reached. With more than
+    /// one live thread a shared stop proves nothing: a blocked thread counts once a
+    /// thread is stopped or the stop is in its own set, and a process with no stopped thread and
+    /// a thread without its own stop gets the stop directed at each thread. A process with no
+    /// live thread is gone. A status is read as bytes (a comm may hold any byte), and the group
+    /// scan passes over a process whose group the server is refused, and over nothing else that
+    /// fails.
     #[test]
     fn process_threads_classify_the_stop() {
         use ProcessStop::*;
@@ -1608,9 +1639,17 @@ mod tests {
             ),
             // The parked dash leader, and a running one inside an ordinary vfork.
             (vec![t('D', false, true)], TookEffect),
-            (vec![t('D', false, false)], NotYet),
+            (vec![t('D', false, false)], Unreached),
             (vec![t('Z', false, false), t('D', false, true)], TookEffect),
             (vec![t('R', false, true)], NotYet),
+            // One live thread the group's stop never reached, then with the stop directed at it.
+            (vec![t('S', false, false)], Unreached),
+            (vec![t('R', false, false)], Unreached),
+            (vec![t('Z', false, false), t('S', false, false)], Unreached),
+            (vec![t('S', true, false)], NotYet),
+            (vec![t('D', true, false)], TookEffect),
+            // More than one live thread is never read as unreached.
+            (vec![t('S', false, false), t('S', false, false)], Unclaimed),
             // The main thread parked in vfork, the other thread sleeping or blocked elsewhere:
             // the kernel flagged the main thread only.
             (vec![t('D', false, true), t('S', false, true)], Unclaimed),
@@ -1660,29 +1699,26 @@ mod tests {
         assert_eq!(process_pgrp(i32::MAX as u32).unwrap(), None);
     }
 
-    /// A process that renamed itself to bytes that are not UTF-8 (`\xff\xfe` and a suffix),
-    /// blocked reading its stdin; dropping it ends it. The comm is in place when this returns.
+    /// A process that renamed itself to bytes that are not UTF-8, blocked reading its stdin;
+    /// dropping it ends it. The comm is in place when `spawn` returns.
     struct ByteNamed(std::process::Child);
 
     impl ByteNamed {
-        const COMM: &'static [u8] = b"\xff\xfedl";
+        /// The name: `\xff\xfe` and a suffix. The shell below writes the same bytes.
+        const NAME: &'static std::ffi::CStr = c"\xff\xfedl";
 
-        /// A `sh -c` script: the shell writes its own comm, then runs `then` (which must not
-        /// exec). No quote in it, so a caller can wrap it in single quotes.
-        fn script(then: &str) -> String {
-            format!("printf \\\\377\\\\376dl > /proc/$$/comm; {then}")
-        }
-
+        /// Whether `pid` carries the name: its stat line holds the bytes and is not UTF-8.
         fn named(pid: u32) -> bool {
+            let name = Self::NAME.to_bytes();
             std::fs::read(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
-                std::str::from_utf8(&stat).is_err()
-                    && stat.windows(Self::COMM.len()).any(|w| w == Self::COMM)
+                std::str::from_utf8(&stat).is_err() && stat.windows(name.len()).any(|w| w == name)
             })
         }
 
         fn spawn() -> Self {
+            // The shell writes its own comm, then blocks in `read` (it does not exec).
             let child = std::process::Command::new("sh")
-                .args(["-c", &Self::script("read hold")])
+                .args(["-c", "printf \\\\377\\\\376dl > /proc/$$/comm; read hold"])
                 .stdin(std::process::Stdio::piped())
                 .spawn()
                 .unwrap();
@@ -1756,56 +1792,67 @@ mod tests {
         drop(outside);
     }
 
-    /// The job's own program may carry such a name too. It is a member of the job's group, so
-    /// its threads are read (`/proc/<pid>/task/<tid>/status`, whose `Name:` line holds the same
-    /// bytes): the yield is published once that member has stopped, and not before.
+    /// A process can enter the job's group after the group stop was sent (setpgid), and a
+    /// stopped member can be continued from outside the job. The stop is then pending nowhere
+    /// on it, and with one thread it was read as "not yet" on every tick: the job never yielded
+    /// and never resumed. The shape without the race: only the leader is stopped, so the member
+    /// is in the group, running, with no stop pending. The reading must direct the stop at the
+    /// member, and acknowledge only once it has stopped.
     #[test]
-    fn stop_reads_a_group_member_whose_comm_is_not_utf8() {
-        // The runner's `sh -c` stays the leader; the inner shell is the member that renames
-        // itself and spawns.
-        let job = format!(
-            "sh -c '{}'",
-            ByteNamed::script("while :; do sleep 0.01; done")
-        );
-        let (sig, v, b) = sigs();
-        let h = spawn_runner(cfg(&job, YieldMode::Stop), v, b, Arc::new(|| None));
-        let st = h.state.clone();
-        let guard = RunnerGuard(Some(h));
-        sig.valley.store(true, Ordering::Release);
-        wait_acknowledged("launch", || st.state.load(Ordering::Acquire) == BG_RUNNING);
-        let pid = st.job_pid.load(Ordering::Acquire);
-        let member = || match children_of(pid)[..] {
-            [member] if ByteNamed::named(member) => Some(member),
-            _ => None,
+    fn stop_is_directed_at_a_member_the_group_stop_never_reached() {
+        use std::os::unix::process::CommandExt;
+        struct Group(u32, Vec<std::process::Child>);
+        impl Drop for Group {
+            fn drop(&mut self) {
+                kill_group(self.0, libc::SIGKILL);
+                for child in &mut self.1 {
+                    let _ = child.wait();
+                }
+            }
+        }
+        let sleeper = |pgid: i32| {
+            std::process::Command::new("sleep")
+                .arg("30")
+                .process_group(pgid)
+                .spawn()
+                .unwrap()
         };
-        wait_acknowledged("the job's program carries its byte name", || {
-            member().is_some()
+        let leader = sleeper(0);
+        let pgid = leader.id();
+        let mut group = Group(pgid, vec![leader]);
+        let member = sleeper(pgid as i32);
+        let member_pid = member.id();
+        group.1.push(member);
+        wait_acknowledged("the member sleeps in the leader's group", || {
+            proc_state(member_pid) == Some('S')
+                && proc_state(pgid) == Some('S')
+                && unsafe { libc::getpgid(member_pid as i32) } == pgid as i32
         });
-        let member = member().unwrap();
-        assert_eq!(unsafe { libc::getpgid(member as i32) }, pid as i32);
-        sig.valley.store(false, Ordering::Release);
-        sig.busy.store(true, Ordering::Release);
-        wait_acknowledged("the runner yields with the byte-named member read", || {
-            let state = st.state.load(Ordering::Acquire);
-            assert_ne!(
-                state, BG_FAILED,
-                "the member's byte name failed the job's stop"
-            );
-            state == BG_YIELDED
-        });
-        assert!(
-            leader_stopped_or_vfork_parked(member),
-            "the byte-named member was running at the yield: threads {:?}",
-            leader_tids(member)
+        // The leader was in the group when any stop was sent: the same reading of the leader
+        // directs nothing at it.
+        assert_eq!(process_stop(pgid, pgid).unwrap(), ProcessStop::NotYet);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert_eq!(
+            proc_state(pgid),
+            Some('S'),
+            "the reading stopped the leader"
         );
-        assert_eq!(st.yields.load(Ordering::Relaxed), 1);
-        sig.busy.store(false, Ordering::Release);
-        sig.valley.store(true, Ordering::Release);
-        wait_acknowledged("the runner resumes", || {
-            st.resumes.load(Ordering::Relaxed) == 1
-                && st.state.load(Ordering::Acquire) == BG_RUNNING
+        // To the leader only: the group's stop never reaches the member.
+        assert_eq!(unsafe { libc::kill(pgid as i32, libc::SIGSTOP) }, 0);
+        wait_acknowledged("the leader alone is stopped", || {
+            leader_reports_stopped(pgid)
         });
-        guard.shutdown();
+        assert_eq!(proc_state(member_pid), Some('S'), "the member has no stop");
+        wait_acknowledged(
+            "the stop is directed at the member and acknowledged",
+            || child_stop_acknowledged(pgid).unwrap(),
+        );
+        assert_eq!(
+            proc_state(member_pid),
+            Some('T'),
+            "acknowledged with the member running"
+        );
+        drop(group);
     }
 
     /// Set in the job's environment: this test binary then runs as the job leader below.
@@ -1944,11 +1991,12 @@ mod tests {
     /// group stop. The main thread blocks SIGCHLD and starts a second thread, which inherits
     /// the mask (as helper threads that block signals do): the CLD_STOPPED notice of the
     /// stopped vfork child then cannot wake it to take the stop by accident. `sleeper`: the
-    /// second thread sleeps in a loop. `blocked`: it first waits in vfork itself, on a child
-    /// that leaves the job's process group (the group stop does not reach it) and blocks opening
-    /// `held` before exec; when that wait ends it creates `ran`, then sleeps in a loop. The main
-    /// thread posix_spawns a child that blocks opening `fifo` before exec, waits for it and
-    /// exits 0. Raw libc only: the Rust runtime is not set up yet.
+    /// second thread sleeps in a loop. `named`: the same, after the main thread set its comm to
+    /// bytes that are not UTF-8, which the second thread inherits. `blocked`: it first waits in
+    /// vfork itself, on a child that leaves the job's process group (the group stop does not
+    /// reach it) and blocks opening `held` before exec; when that wait ends it creates `ran`,
+    /// then sleeps in a loop. The main thread posix_spawns a child that blocks opening `fifo`
+    /// before exec, waits for it and exits 0. Raw libc only: the Rust runtime is not set up yet.
     extern "C" fn main_thread_leader() {
         use std::ffi::{CStr, CString};
         let dir = unsafe { libc::getenv(MAIN_LEADER_DIR.as_ptr()) };
@@ -1958,7 +2006,8 @@ mod tests {
         let dir = unsafe { CStr::from_ptr(dir) }.to_bytes();
         let path = |name: &str| CString::new([dir, &b"/"[..], name.as_bytes()].concat()).unwrap();
         let case = unsafe { libc::getenv(MAIN_LEADER_CASE.as_ptr()) };
-        let blocked = !case.is_null() && unsafe { CStr::from_ptr(case) } == c"blocked";
+        let case_is = |name: &CStr| !case.is_null() && unsafe { CStr::from_ptr(case) } == name;
+        let blocked = case_is(c"blocked");
         let second: &'static SecondThread = Box::leak(Box::new(SecondThread {
             held: blocked.then(|| path("held")),
             ran: path("ran"),
@@ -1969,6 +2018,9 @@ mod tests {
             libc::sigemptyset(&mut chld);
             libc::sigaddset(&mut chld, libc::SIGCHLD);
             libc::pthread_sigmask(libc::SIG_BLOCK, &chld, std::ptr::null_mut());
+            if case_is(c"named") {
+                libc::prctl(libc::PR_SET_NAME, ByteNamed::NAME.as_ptr());
+            }
             let mut thread: libc::pthread_t = std::mem::zeroed();
             let arg = second as *const SecondThread as *mut libc::c_void;
             if libc::pthread_create(&mut thread, std::ptr::null(), second_thread, arg) != 0 {
@@ -2234,11 +2286,24 @@ mod tests {
     /// asserted right at the acknowledgement, with no wait.
     #[test]
     fn stop_reaches_the_other_thread_of_a_group_member_whose_main_thread_waits_in_vfork() {
+        group_member_vfork_case("sleeper");
+    }
+
+    /// The same member with a comm that is not UTF-8. Its threads' `status` carries the bytes in
+    /// the `Name:` line, and the yield still waits for its other thread: a reading that failed
+    /// on the name would fail the job, and one that skipped the member would publish the yield
+    /// with that thread running.
+    #[test]
+    fn stop_reaches_the_other_thread_of_a_group_member_whose_comm_is_not_utf8() {
+        group_member_vfork_case("named");
+    }
+
+    fn group_member_vfork_case(case: &str) {
         let path =
-            std::env::temp_dir().join(format!("darklane-member-vfork-{}", std::process::id()));
+            std::env::temp_dir().join(format!("darklane-member-{case}-{}", std::process::id()));
         std::fs::create_dir(&path).unwrap();
         let dir = TestDir(path);
-        let cmd = main_thread_leader_job("sleeper", &dir, false);
+        let cmd = main_thread_leader_job(case, &dir, false);
         let (sig, v, b) = sigs();
         let h = spawn_runner(cfg(&cmd, YieldMode::Stop), v, b, Arc::new(|| None));
         let st = h.state.clone();
@@ -2262,13 +2327,18 @@ mod tests {
         );
         let prog = program().unwrap();
         assert_eq!(unsafe { libc::getpgid(prog as i32) }, pid as i32);
+        assert_eq!(ByteNamed::named(prog), case == "named");
         sig.valley.store(false, Ordering::Release);
         sig.busy.store(true, Ordering::Release);
         wait_acknowledged(
             "stop acknowledged with the program's main thread parked in vfork",
             || {
-                st.state.load(Ordering::Acquire) == BG_YIELDED
-                    && st.yields.load(Ordering::Relaxed) == 1
+                let state = st.state.load(Ordering::Acquire);
+                assert_ne!(
+                    state, BG_FAILED,
+                    "reading the program failed the job's stop"
+                );
+                state == BG_YIELDED && st.yields.load(Ordering::Relaxed) == 1
             },
         );
         assert_eq!(proc_state(pid), Some('T'), "the shell stops at once");
