@@ -10,8 +10,9 @@
 //! `response.completed`).
 //!
 //! SUBSET LAW (honesty gate): stateful features this server cannot honor refuse with a
-//! clear 400 — `previous_response_id`, `store: true`, `conversation`, `background`,
-//! `item_reference` input items, `truncation: "auto"`. A stateless client that resends
+//! clear 400 — `previous_response_id`, `store: true`, `conversation`,
+//! `item_reference` input items, `truncation: "auto"`. `background: true` is served: it
+//! holds this one request's result, not conversation state. A stateless client that resends
 //! full context each turn (`store: false`, the Codex custom-provider posture) is fully
 //! supported. Accepted-and-ignored (non-semantic here): `include`,
 //! `reasoning.summary`, `stream_options`, `client_metadata`, `metadata`, `service_tier`,
@@ -119,7 +120,7 @@ fn refuse(field: &str, why: &str) -> String {
 /// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`): `previous_response_id`, `store`, and
 /// `conversation` are CROSS-REQUEST state (asking the server to remember a prior turn) and
 /// stay refused. `background` is SINGLE-REQUEST state (the server already owns this one
-/// request; the only ask is where its own result is held until collected), so
+/// request; the only ask is where its own result is held until its TTL expires), so
 /// `background: true` is accepted by this translation step. The caller reads the delivery
 /// mode before translation and sends the admitted worker stream to the background task.
 /// Background delivery has no switch since 2026-11-09
@@ -861,9 +862,9 @@ async fn responses_with_admission(
 
 // ---- background jobs (memra#550, docs/decisions/COMPLETE-RESULT-PATH-V1.md) ------------
 //
-// The route wiring PR #900/#905 named as owed: `background: true` with the door open no
-// longer runs synchronously. It is admitted exactly like any other request (budget, capacity,
-// deadline-feasibility gates all run unchanged), then handed to a spawned task that drives
+// The route wiring PR #900/#905 named as owed: `background: true` does not run
+// synchronously. It is admitted like any other request (budget and capacity gates run
+// unchanged; the synchronous deadline-feasibility gate is skipped), then handed to a spawned task that drives
 // the worker's event stream with NO wall-clock bound instead of being awaited inline, while
 // the handler answers immediately with a queued envelope carrying the request id. `GET
 // /v1/responses/{id}` polls `JobStore::get`; `POST /v1/responses/{id}/cancel` signals the

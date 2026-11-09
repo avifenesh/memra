@@ -2114,7 +2114,8 @@ struct AppState {
     /// always exists: the stock binary wires the in-memory reference implementation
     /// (`job_store::InMemoryJobStore::from_env`). A deployment can replace it through
     /// `ServerWiring::with_job_store`. Stored keys include authenticated tenant ownership.
-    /// Reached only by a request that sets `background: true`.
+    /// Written only for a request that sets `background: true`; the poll and cancel routes
+    /// read it.
     job_store: Arc<dyn metering::JobStore>,
     /// Per-job cancellation signal for a background job with a live task on a worker
     /// (memra#550). The spawned task holding that job's `EventReceiver` races this against
@@ -3641,7 +3642,7 @@ struct StreamOptions {
 #[derive(Deserialize)]
 struct CompletionReq {
     model: String,
-    /// Buffered complete-result delivery. Uses the default-OFF background door.
+    /// Buffered complete-result delivery. Incompatible with streaming.
     #[serde(default = "background_jobs::default_background")]
     background: serde_json::Value,
     #[serde(default)]
@@ -26926,11 +26927,13 @@ temperature = 0.6
             };
             let mut body = bg914_body(chat);
             body["stream"] = json!(true);
-            assert_eq!(
-                bg914_http(app.clone(), "POST", path, Some("owner-key"), body)
-                    .await
-                    .status(),
-                StatusCode::BAD_REQUEST
+            let response = bg914_http(app.clone(), "POST", path, Some("owner-key"), body).await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let error = body_value(response).await["error"].clone();
+            assert_eq!(error["param"], "background");
+            assert!(
+                error["message"].as_str().unwrap().contains("stream"),
+                "got: {error}"
             );
             for invalid in [json!("true"), json!(1), serde_json::Value::Null] {
                 let mut body = bg914_body(chat);

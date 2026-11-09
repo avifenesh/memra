@@ -18,6 +18,18 @@ delivery for long non-streaming requests", and [COMPLETE-RESULT-PATH-V1.md](COMP
   request on every card. Its only effect was a named 400, and its env read forced a shared
   lock on 21 tests. Two test fixes on 2026-11-08 (`69eff3e360`, `e75dfb012d`) were about that
   lock.
+- Flipping the default ON and keeping `=0` as a rollback seam for two weeks, the usual path
+  for a winner. A rollback seam protects traffic whose output the flip changes. This flip
+  changes only the answer to `background: true`, from a 400 to a served job; every other
+  request runs the same code as before. So `=0` would have nothing to restore, and keeping it
+  keeps the 21-test lock.
+
+**What operators give up:** a server-side way to refuse background jobs. Unlike a stream, which
+retires when its client hangs up (`docs/SERVING.md`, "Disconnect abort"), a background job runs
+until it finishes, is cancelled, or reaches its token or context budget. It still passes the
+same tenant budget, capacity and queue admission, holds its in-flight slot inside the spawned
+task, and stores its result under the stock store's 64 MiB cap. A deployment that wants no background jobs can
+refuse the field at its proxy.
 
 **Measurement that settled it:**
 
