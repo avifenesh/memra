@@ -38,6 +38,9 @@ serde = { version = "1", features = ["derive"] }
 # `tool | tojson` — key order must be the CLIENT's order (the training-time convention),
 # not BTreeMap-alphabetical. The loader's manifest decoder does not depend on map order.
 serde_json = { version = "1", features = ["preserve_order"] }
+# The JSON body extractors' rejections carry this error (axum 0.7 deserializes through it):
+# its path names the refused field, so a type error answers a 400 with `param`.
+serde_path_to_error = "0.1"
 async-stream = "0.3"
 futures-core = "0.3"
 llguidance = "1.7.6"

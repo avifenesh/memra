@@ -17,6 +17,14 @@ The house law applies on both: a semantic feature the engine cannot honor is a *
 400 naming the field**, never a silent downgrade. Cosmetic or client-telemetry fields are
 accepted and ignored.
 
+A JSON body that does not parse into the request type gets the OpenAI error object on the
+routes that parse through the server's JSON extractor: chat and text completions,
+embeddings, rerank, tokenize, detokenize, audio transcriptions and audio sessions. A type or
+syntax error is a 400 `invalid_request_error`. A type error names `param` when the parser
+has a path for it (`stream`, `stop_token_ids[0]`), and the message carries no line or
+column. A missing or non-JSON content type is a 415 in the same shape. `/v1/messages` and
+`/v1/responses` parse their own bodies.
+
 Two further OpenAI/Cohere-shaped routes exist outside this document's scope because they
 do not generate: `POST /v1/embeddings` and `POST /v1/rerank` are prefill-only **capture
 surfaces** over a causal LM, with their own schemas, caps and worker semantics, see

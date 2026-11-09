@@ -282,13 +282,102 @@ impl Drop for BodyAdmissionLease {
 
 pub(crate) struct AdmittedJson<T>(pub(crate) T, pub(crate) BodyAdmissionLease);
 
+/// The one shape for a JSON body an extractor refuses (`AdmittedJson`, `ShapedJson`): the
+/// OpenAI error object, as every other refusal here. axum's own answer is plain text, a 422 for
+/// a type error, with serde's line and column in it.
+///
+/// - A type error (wrong type, null on a non-nullable field, missing or duplicate field) and a
+///   syntax error (malformed or truncated JSON) answer 400 `invalid_request_error`. The message
+///   is serde's description without its position. A type error names `param` when serde has a
+///   path for it (`stream`, `messages[0].content`); a syntax error names none.
+/// - A missing or non-JSON content type keeps its 415, in the same JSON shape.
+/// - A 413 passes through unchanged: `shape_payload_too_large` shapes every 413 in one place.
+///
+/// The path and the position come from the structured error axum deserializes through
+/// (`serde_path_to_error`), not from parsing axum's text.
+pub(crate) fn json_rejection_response(
+    rejection: axum::extract::rejection::JsonRejection,
+) -> Response {
+    use axum::extract::rejection::JsonRejection;
+    match &rejection {
+        JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
+            let syntax = matches!(rejection, JsonRejection::JsonSyntaxError(_));
+            let (message, param) = json_error_parts(&rejection, syntax);
+            bad_request(&message, param.as_deref())
+        }
+        JsonRejection::MissingJsonContentType(_) => error_response(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            &rejection.body_text(),
+            "invalid_request_error",
+            None,
+        ),
+        _ if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => rejection.into_response(),
+        _ => error_response(
+            rejection.status(),
+            &rejection.body_text(),
+            "invalid_request_error",
+            None,
+        ),
+    }
+}
+
+/// serde's description (without " at line L column C") and the field path of a JSON body
+/// error. Falls back to axum's text when the structured error is not in the source chain.
+fn json_error_parts(
+    rejection: &axum::extract::rejection::JsonRejection,
+    syntax: bool,
+) -> (String, Option<String>) {
+    let mut source = std::error::Error::source(rejection);
+    while let Some(err) = source {
+        if let Some(err) = err.downcast_ref::<serde_path_to_error::Error<serde_json::Error>>() {
+            let inner = err.inner();
+            let full = inner.to_string();
+            let position = format!(" at line {} column {}", inner.line(), inner.column());
+            let description = full.strip_suffix(&position).unwrap_or(&full);
+            let named = !syntax
+                && err.path().iter().next().is_some()
+                && !err
+                    .path()
+                    .iter()
+                    .any(|segment| matches!(segment, serde_path_to_error::Segment::Unknown));
+            return if named {
+                let path = err.path().to_string();
+                (format!("{path}: {description}"), Some(path))
+            } else {
+                (description.to_string(), None)
+            };
+        }
+        source = err.source();
+    }
+    (rejection.body_text(), None)
+}
+
+/// `axum::Json` with this server's rejection shape, for routes outside body admission.
+pub(crate) struct ShapedJson<T>(pub(crate) T);
+
+#[axum::async_trait]
+impl<S, T> FromRequest<S> for ShapedJson<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned,
+{
+    type Rejection = Response;
+
+    async fn from_request(req: AxumRequest, state: &S) -> Result<Self, Self::Rejection> {
+        Json::<T>::from_request(req, state)
+            .await
+            .map(|Json(value)| Self(value))
+            .map_err(json_rejection_response)
+    }
+}
+
 #[axum::async_trait]
 impl<S, T> FromRequest<S> for AdmittedJson<T>
 where
     S: Send + Sync,
     T: DeserializeOwned,
 {
-    type Rejection = axum::extract::rejection::JsonRejection;
+    type Rejection = Response;
 
     async fn from_request(req: AxumRequest, state: &S) -> Result<Self, Self::Rejection> {
         let admission = req.extensions().get::<BodyAdmissionGuard>().cloned();
@@ -305,12 +394,14 @@ where
         });
         let req = AxumRequest::from_parts(parts, Body::from_stream(stream));
         let parsed = Json::<T>::from_request(req, state).await;
-        parsed.map(|Json(value)| {
-            Self(
-                value,
-                BodyAdmissionLease(admission, bytes.load(std::sync::atomic::Ordering::Relaxed)),
-            )
-        })
+        parsed
+            .map(|Json(value)| {
+                Self(
+                    value,
+                    BodyAdmissionLease(admission, bytes.load(std::sync::atomic::Ordering::Relaxed)),
+                )
+            })
+            .map_err(json_rejection_response)
     }
 }
 
@@ -11421,7 +11512,7 @@ fn token_api_tokenizer(st: &AppState, model: &str) -> Result<Arc<Tokenizer>, Box
 async fn tokenize_admitted(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
-    body: Result<AdmittedJson<TokenizeReq>, axum::extract::rejection::JsonRejection>,
+    body: Result<AdmittedJson<TokenizeReq>, Response>,
 ) -> Response {
     let env = token_api_envelope(&headers);
     let id = env.id.clone();
@@ -11431,16 +11522,8 @@ async fn tokenize_admitted(
     };
     let AdmittedJson(mut req, _admission) = match body {
         Ok(body) => body,
-        Err(err) => {
-            // Preserve extractor 413s so the common body-limit layer can shape them;
-            // malformed JSON remains the endpoint's OpenAI-shaped named 400.
-            let response = if err.status() == StatusCode::PAYLOAD_TOO_LARGE {
-                err.into_response()
-            } else {
-                bad_request(&err.body_text(), None)
-            };
-            return with_request_id(&id, response);
-        }
+        // Already shaped (`json_rejection_response`); a 413 is shaped by the body-limit layer.
+        Err(response) => return with_request_id(&id, response),
     };
     req.model = match canonical_model_id(&st.models, &req.model) {
         Some(model) => model,
@@ -11493,7 +11576,7 @@ async fn tokenize_admitted(
 async fn detokenize_admitted(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
-    body: Result<AdmittedJson<DetokenizeReq>, axum::extract::rejection::JsonRejection>,
+    body: Result<AdmittedJson<DetokenizeReq>, Response>,
 ) -> Response {
     let env = token_api_envelope(&headers);
     let id = env.id.clone();
@@ -11503,16 +11586,8 @@ async fn detokenize_admitted(
     };
     let AdmittedJson(req, _admission) = match body {
         Ok(body) => body,
-        Err(err) => {
-            // Preserve extractor 413s so the common body-limit layer can shape them;
-            // malformed JSON remains the endpoint's OpenAI-shaped named 400.
-            let response = if err.status() == StatusCode::PAYLOAD_TOO_LARGE {
-                err.into_response()
-            } else {
-                bad_request(&err.body_text(), None)
-            };
-            return with_request_id(&id, response);
-        }
+        // Already shaped (`json_rejection_response`); a 413 is shaped by the body-limit layer.
+        Err(response) => return with_request_id(&id, response),
     };
     let model = match canonical_model_id(&st.models, &req.model) {
         Some(model) => model,
@@ -25058,11 +25133,14 @@ temperature = 0.6
                     )
                     .await
                     .unwrap();
-                assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
                 let body = axum::body::to_bytes(response.into_body(), 4096)
                     .await
                     .unwrap();
-                let message = String::from_utf8(body.to_vec()).unwrap();
+                let error =
+                    serde_json::from_slice::<serde_json::Value>(&body).unwrap()["error"].clone();
+                assert_eq!(error["type"], "invalid_request_error", "{error}");
+                let message = error["message"].as_str().unwrap();
                 assert!(message.contains("duplicate field `model`"), "{message}");
                 assert_eq!(
                     entered.load(Ordering::SeqCst),
@@ -26949,6 +27027,150 @@ temperature = 0.6
             }
             assert!(rx.try_recv().is_err());
             assert!(mock.events().is_empty());
+        }
+    }
+
+    /// Chat and text completions answer a JSON body their extractor refuses with the OpenAI
+    /// error object: 400 for a type or syntax error, 415 (kept) for a missing content type.
+    /// axum's default answered plain text, a 422 for a type error, with serde's line and column.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
+    async fn json_body_errors_answer_the_openai_error_on_chat_and_text() {
+        use tower::ServiceExt;
+        let _drain = drain_lock();
+        let (st, mock, _, rx) = bg914_fixture(None);
+        let app = Router::new()
+            .route("/v1/completions", post(completions_admitted))
+            .route("/v1/chat/completions", post(chat_completions_admitted))
+            .with_state(st);
+        for (path, valid) in [
+            (
+                "/v1/chat/completions",
+                r#"{"model":"bg914","messages":[{"role":"user","content":"hi"}]"#,
+            ),
+            ("/v1/completions", r#"{"model":"bg914","prompt":"hi""#),
+        ] {
+            // (case, body, content type, status, param)
+            let cases = [
+                (
+                    "wrong type",
+                    format!(r#"{valid},"stream":"true"}}"#),
+                    true,
+                    400,
+                    Some("stream"),
+                ),
+                (
+                    "null",
+                    format!(r#"{valid},"stream":null}}"#),
+                    true,
+                    400,
+                    Some("stream"),
+                ),
+                (
+                    "nested",
+                    format!(r#"{valid},"stop_token_ids":["x"]}}"#),
+                    true,
+                    400,
+                    Some("stop_token_ids[0]"),
+                ),
+                (
+                    "malformed",
+                    format!(r#"{valid},"stream":tru}}"#),
+                    true,
+                    400,
+                    None,
+                ),
+                ("truncated", valid.to_string(), true, 400, None),
+                ("no content type", format!("{valid}}}"), false, 415, None),
+            ];
+            for (case, body, json_type, status, param) in cases {
+                let mut req = axum::http::Request::builder()
+                    .method("POST")
+                    .uri(path)
+                    .header("authorization", "Bearer owner-key");
+                if json_type {
+                    req = req.header("content-type", "application/json");
+                }
+                let response = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    app.clone().oneshot(req.body(Body::from(body)).unwrap()),
+                )
+                .await
+                .unwrap_or_else(|_| panic!("{path} {case}: no answer"))
+                .unwrap();
+                assert_eq!(response.status().as_u16(), status, "{path} {case}");
+                let content_type = response.headers()[axum::http::header::CONTENT_TYPE]
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+                assert!(
+                    content_type.starts_with("application/json"),
+                    "{path} {case}: {content_type}"
+                );
+                let error = body_value(response).await["error"].clone();
+                assert_eq!(error["type"], "invalid_request_error", "{path} {case}");
+                assert_eq!(error["param"].as_str(), param, "{path} {case}: {error}");
+                let message = error["message"].as_str().unwrap();
+                assert!(
+                    !message.contains("line ") && !message.contains("column "),
+                    "{path} {case}: {message}"
+                );
+                if let Some(param) = param {
+                    assert!(
+                        message.starts_with(&format!("{param}: ")),
+                        "{path} {case}: {message}"
+                    );
+                }
+            }
+        }
+        assert!(rx.try_recv().is_err());
+        assert!(mock.events().is_empty());
+    }
+
+    /// The other JSON body routes share the chat/text shape: `AdmittedJson` (embeddings,
+    /// tokenize), `ShapedJson` (audio sessions) and the deferred rejection of transcriptions.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
+    async fn json_body_errors_share_one_shape_across_json_routes() {
+        use tower::ServiceExt;
+        let _drain = drain_lock();
+        let (st, _mock, _, _rx) = bg914_fixture(None);
+        let app = Router::new()
+            .route("/v1/embeddings", post(embed_api::embeddings_admitted))
+            .route("/v1/tokenize", post(tokenize_admitted))
+            .route("/v1/audio/sessions", post(audio_api::open_session))
+            .route("/v1/audio/transcriptions", post(audio_api::transcriptions))
+            .with_state(st);
+        for path in [
+            "/v1/embeddings",
+            "/v1/tokenize",
+            "/v1/audio/sessions",
+            "/v1/audio/transcriptions",
+        ] {
+            for (case, json_type, status) in
+                [("malformed", true, 400), ("no content type", false, 415)]
+            {
+                let mut req = axum::http::Request::builder()
+                    .method("POST")
+                    .uri(path)
+                    .header("authorization", "Bearer owner-key");
+                if json_type {
+                    req = req.header("content-type", "application/json");
+                }
+                let response = app
+                    .clone()
+                    .oneshot(req.body(Body::from(r#"{"model":"#)).unwrap())
+                    .await
+                    .unwrap();
+                assert_eq!(response.status().as_u16(), status, "{path} {case}");
+                let error = body_value(response).await["error"].clone();
+                assert_eq!(
+                    error["type"], "invalid_request_error",
+                    "{path} {case}: {error}"
+                );
+                let message = error["message"].as_str().unwrap();
+                assert!(!message.contains("line "), "{path} {case}: {message}");
+            }
         }
     }
 

@@ -203,10 +203,7 @@ pub(crate) async fn transcriptions(
     let req = match body {
         Ok(Json(req)) => req,
         Err(rejection) => {
-            return crate::with_request_id(
-                &env.id,
-                crate::bad_request(&rejection.body_text(), None),
-            );
+            return crate::with_request_id(&env.id, crate::json_rejection_response(rejection));
         }
     };
     let mut model = req.model.clone();
@@ -315,7 +312,7 @@ pub(crate) struct OpenSessionReq {
 pub(crate) async fn open_session(
     State(st): State<AppState>,
     headers: HeaderMap,
-    Json(req): Json<OpenSessionReq>,
+    crate::ShapedJson(req): crate::ShapedJson<OpenSessionReq>,
 ) -> Response {
     let env = Envelope::new(false);
     // AUTHENTICATE FIRST, same reason as `transcriptions`: 404 and 400 on an unauthenticated
@@ -401,7 +398,7 @@ pub(crate) async fn append_frames(
     State(st): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-    Json(req): Json<FramesReq>,
+    crate::ShapedJson(req): crate::ShapedJson<FramesReq>,
 ) -> Response {
     let env = Envelope::new(false);
     if let Err(resp) = crate::authenticate(&st.api_auth, &headers) {
@@ -976,7 +973,7 @@ mod tests {
             let resp = open_session(
                 State(st.clone()),
                 HeaderMap::new(),
-                Json(OpenSessionReq {
+                crate::ShapedJson(OpenSessionReq {
                     model: model.into(),
                 }),
             )
@@ -997,7 +994,7 @@ mod tests {
         let resp = open_session(
             State(asr_state()),
             HeaderMap::new(),
-            Json(OpenSessionReq {
+            crate::ShapedJson(OpenSessionReq {
                 model: "asr".into(),
             }),
         )
@@ -1016,7 +1013,7 @@ mod tests {
             State(asr_state()),
             HeaderMap::new(),
             Path("ghost".into()),
-            Json(FramesReq { frames: 1 }),
+            crate::ShapedJson(FramesReq { frames: 1 }),
         )
         .await;
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -1045,7 +1042,7 @@ mod tests {
         let opened = open_session(
             State(st.clone()),
             HeaderMap::new(),
-            Json(OpenSessionReq {
+            crate::ShapedJson(OpenSessionReq {
                 model: "asr".into(),
             }),
         )
@@ -1062,7 +1059,7 @@ mod tests {
             State(st.clone()),
             HeaderMap::new(),
             Path(id.clone()),
-            Json(FramesReq { frames: 2 }),
+            crate::ShapedJson(FramesReq { frames: 2 }),
         )
         .await;
         assert_eq!(ok.status(), StatusCode::OK);
@@ -1072,7 +1069,7 @@ mod tests {
             State(st.clone()),
             HeaderMap::new(),
             Path(id.clone()),
-            Json(FramesReq { frames: 1 }),
+            crate::ShapedJson(FramesReq { frames: 1 }),
         )
         .await;
         assert_eq!(shed.status(), StatusCode::TOO_MANY_REQUESTS);
@@ -1091,7 +1088,7 @@ mod tests {
         let full = open_session(
             State(st.clone()),
             HeaderMap::new(),
-            Json(OpenSessionReq {
+            crate::ShapedJson(OpenSessionReq {
                 model: "asr".into(),
             }),
         )
@@ -1133,7 +1130,7 @@ mod tests {
         let opened = open_session(
             State(st.clone()),
             HeaderMap::new(),
-            Json(OpenSessionReq {
+            crate::ShapedJson(OpenSessionReq {
                 model: "asr".into(),
             }),
         )
@@ -1144,7 +1141,7 @@ mod tests {
             State(st.clone()),
             HeaderMap::new(),
             Path(id),
-            Json(FramesReq { frames: 5 }),
+            crate::ShapedJson(FramesReq { frames: 5 }),
         )
         .await;
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
@@ -1281,7 +1278,7 @@ mod tests {
                 State(asr_state()),
                 HeaderMap::new(),
                 Path("x".into()),
-                Json(FramesReq { frames: n }),
+                crate::ShapedJson(FramesReq { frames: n }),
             )
             .await;
             assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "frames={n}");
