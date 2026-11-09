@@ -1,0 +1,5 @@
+after group STOP, 200 ms: {3088048: 'D', 3088049: 'S'} counter moving: True
+after tgkill: {3088048: 'D', 3088049: 'T'} counter frozen: True
+after group CONT: {3088048: 'D', 3088049: 'S'} counter moving: True SIGSTOP pending shared/main/worker: False False False
+after FIFO writer: main thread Z (left the vfork wait)
+leader exit: 0

@@ -1,0 +1,5 @@
+{"arm": "before-stop", "t_ms": 0, "pr_ack": false, "pr_path": "Blocked", "threads": {"main": "D", "3044626": "D"}, "shdpnd": "0000000000000000", "sigstop_in_shdpnd": false, "unexeced_children": [[3044627, "S"], [3044628, "S"]], "worker_counter": 0, "event": "pre"}
+{"arm": "tgkill", "event": "tgkill", "tid": 3044626, "rc": 0}
+{"arm": "group-sigstop", "t_ms": 10, "pr_ack": true, "pr_path": "Blocked", "threads": {"main": "D", "3044626": "D"}, "shdpnd": "0000000000040000", "sigstop_in_shdpnd": true, "unexeced_children": [[3044627, "S"], [3044628, "T"]], "worker_counter": 0, "event": "first-ack"}
+{"arm": "group-sigstop", "t_ms": 1431, "pr_ack": true, "pr_path": "Stopping", "threads": {"main": "D", "3044626": "T"}, "shdpnd": "0000000000040000", "sigstop_in_shdpnd": true, "unexeced_children": [[3044628, "T"]], "worker_counter": 0, "event": "change"}
+{"arm": "group-sigstop", "t_ms": 3012, "pr_ack": true, "pr_path": "Stopping", "threads": {"main": "D", "3044626": "T"}, "shdpnd": "0000000000040000", "sigstop_in_shdpnd": true, "unexeced_children": [[3044628, "T"]], "worker_counter": 0, "event": "end-3s", "first_ack_ms": 10, "counter_at_first_ack": 0}
