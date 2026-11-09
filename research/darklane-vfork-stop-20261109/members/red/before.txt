@@ -1,0 +1,6 @@
+arm=before darklane.rs sha256 60f3a80ec94d25dfd90fdc6fc8de71875419f30505ab7a589e53b6c0b5acf255 crates/ digest 510f810186c1674505e1aa717b482d3955dbf02eac29f5a62330a790a1021f46
+rc=101 test result: FAILED. 19 passed; 1 failed; 0 ignored; 0 measured; 1111 filtered out; finished in 4.67s
+assertion `left == right` failed: the program's other thread was running at the yield: threads [(2275089, 'D'), (2275130, 'S')]
+owned runner assertion failed: state=yielded pid=2275086 child_state=Some('T') threads=['T'] unexeced_children=[] yields=1 resumes=0
+test darklane::tests::stop_reaches_the_other_thread_of_a_group_member_whose_main_thread_waits_in_vfork ... FAILED
+stops acknowledged with the leader parked in vfork: 13 of 300
