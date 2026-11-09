@@ -1724,8 +1724,44 @@ impl EngineDialect {
         }
     }
 
+    /// The control strings in `text`, by the DeepSeek dialects' own spelling: a run between two
+    /// fullwidth bars (U+FF5C), with its angle brackets when both enclose it (`<｜User｜>`) and
+    /// bare otherwise (the DSML tag token inside `<｜DSML｜ calls>`). Bars pair in order of
+    /// appearance; an unpaired bar is returned alone. [`Self::markers`] must hold every one a
+    /// render emits: the onboarding gate checks the probe render, and the dialect's fixture gates
+    /// check every vendor render.
+    pub fn control_strings(text: &str) -> Vec<&str> {
+        const BAR: char = '\u{ff5c}';
+        let bars: Vec<usize> = text.match_indices(BAR).map(|(i, _)| i).collect();
+        bars.chunks(2)
+            .map(|pair| {
+                let open = pair[0];
+                let Some(&last) = pair.get(1) else {
+                    return &text[open..open + BAR.len_utf8()];
+                };
+                let close = last + BAR.len_utf8();
+                if text[..open].ends_with('<') && text[close..].starts_with('>') {
+                    &text[open - 1..close + 1]
+                } else {
+                    &text[open..close]
+                }
+            })
+            .collect()
+    }
+
+    /// The control strings of `text` ([`Self::control_strings`]) that [`Self::markers`] does not
+    /// list, in order.
+    pub fn unlisted_control_strings(self, text: &str) -> Vec<&str> {
+        let markers = self.markers();
+        Self::control_strings(text)
+            .into_iter()
+            .filter(|span| !markers.contains(span))
+            .collect()
+    }
+
     /// Every control string the renderer emits. The artifact's tokenizer must encode each as one
-    /// id, or the rendered prompt tokenizes into pieces the model never saw.
+    /// id, or the rendered prompt tokenizes into pieces the model never saw. The task tokens come
+    /// from the renderer's own table, `DS_TASK_TOKENS`.
     pub fn markers(self) -> &'static [&'static str] {
         const DSV4: &[&str] = &[
             DS_BOS,
@@ -1736,12 +1772,12 @@ impl EngineDialect {
             DS_THINK_START,
             DS_THINK_END,
             DS_DSML,
-            "<\u{ff5c}action\u{ff5c}>",
-            "<\u{ff5c}query\u{ff5c}>",
-            "<\u{ff5c}authority\u{ff5c}>",
-            "<\u{ff5c}domain\u{ff5c}>",
-            "<\u{ff5c}title\u{ff5c}>",
-            "<\u{ff5c}read_url\u{ff5c}>",
+            DS_TASK_TOKENS[0].1,
+            DS_TASK_TOKENS[1].1,
+            DS_TASK_TOKENS[2].1,
+            DS_TASK_TOKENS[3].1,
+            DS_TASK_TOKENS[4].1,
+            DS_TASK_TOKENS[5].1,
         ];
         const DSV41: &[&str] = &[
             DS_BOS,
@@ -1754,12 +1790,12 @@ impl EngineDialect {
             DS_THINK_END,
             DS_DSML,
             DS_IMAGE,
-            "<\u{ff5c}action\u{ff5c}>",
-            "<\u{ff5c}query\u{ff5c}>",
-            "<\u{ff5c}authority\u{ff5c}>",
-            "<\u{ff5c}domain\u{ff5c}>",
-            "<\u{ff5c}title\u{ff5c}>",
-            "<\u{ff5c}read_url\u{ff5c}>",
+            DS_TASK_TOKENS[0].1,
+            DS_TASK_TOKENS[1].1,
+            DS_TASK_TOKENS[2].1,
+            DS_TASK_TOKENS[3].1,
+            DS_TASK_TOKENS[4].1,
+            DS_TASK_TOKENS[5].1,
         ];
         match self {
             Self::Dsv4 => DSV4,
@@ -2444,17 +2480,24 @@ fn dsv4_effort_prefix(
     }
 }
 
-/// encoding_dsv4 DS_TASK_SP_TOKENS (E:28-35). The task token for a quick-instruction head.
+/// encoding_dsv4 DS_TASK_SP_TOKENS (E:28-35), shared by encoding_dsv41: (task, token). One table
+/// for the renderer and [`EngineDialect::markers`], so a task token the renderer emits is a
+/// marker the onboarding gate checks.
+const DS_TASK_TOKENS: [(&str, &str); 6] = [
+    ("action", "<\u{ff5c}action\u{ff5c}>"),
+    ("query", "<\u{ff5c}query\u{ff5c}>"),
+    ("authority", "<\u{ff5c}authority\u{ff5c}>"),
+    ("domain", "<\u{ff5c}domain\u{ff5c}>"),
+    ("title", "<\u{ff5c}title\u{ff5c}>"),
+    ("read_url", "<\u{ff5c}read_url\u{ff5c}>"),
+];
+
+/// The task token for a quick-instruction head.
 fn ds_task_token(task: &str) -> Option<&'static str> {
-    match task {
-        "action" => Some("<\u{ff5c}action\u{ff5c}>"),
-        "query" => Some("<\u{ff5c}query\u{ff5c}>"),
-        "authority" => Some("<\u{ff5c}authority\u{ff5c}>"),
-        "domain" => Some("<\u{ff5c}domain\u{ff5c}>"),
-        "title" => Some("<\u{ff5c}title\u{ff5c}>"),
-        "read_url" => Some("<\u{ff5c}read_url\u{ff5c}>"),
-        _ => None,
-    }
+    DS_TASK_TOKENS
+        .iter()
+        .find(|(name, _)| *name == task)
+        .map(|(_, token)| *token)
 }
 
 /// python `json.dumps(v, ensure_ascii=False)` over a `Val` (encoding_dsv4 `to_json`, E:101-106):
@@ -3095,14 +3138,10 @@ fn dsv41_qualified_name(name: &str, namespace: Option<&str>) -> Result<String, S
     })
 }
 
-/// encoding.py `tools_from_openai_format` (E:84-98) for one tool `function` object. A tool-level
-/// `namespace` is the caller's to fold into the function object (the vendor reads the tool level
-/// first, so a caller folding it overrides a function-level one); the key itself never renders.
-/// A namespace is a string or an object with `name` and an optional `description`, which is
-/// prepended to the tool's description across a newline.
-fn dsv41_tool_schema(func: &Val) -> Result<Val, String> {
-    let obj = as_obj(func).ok_or("deepseek-v4.1 tool function must be a JSON object")?;
-    let (ns_name, ns_desc) = match val_get(obj, "namespace") {
+/// A tool function object's namespace: a string, or an object with a string `name` and an
+/// optional `description` (an empty one is none). `(name, description)`.
+fn dsv41_tool_namespace(obj: &[(String, Val)]) -> Result<(Option<&str>, Option<&str>), String> {
+    Ok(match val_get(obj, "namespace") {
         None | Some(Val::Null) => (None, None),
         Some(Val::Str(s)) => (Some(s.as_str()), None),
         Some(Val::Obj(ns)) => {
@@ -3121,12 +3160,31 @@ fn dsv41_tool_schema(func: &Val) -> Result<Val, String> {
             (Some(name), desc)
         }
         Some(_) => return Err("deepseek-v4.1 tool namespace must be a string or an object".into()),
-    };
-    let name = match val_get(obj, "name") {
-        Some(Val::Str(s)) => s.as_str(),
-        _ => return Err("deepseek-v4.1 tool function needs a string name".into()),
-    };
-    let qualified = dsv41_qualified_name(name, ns_name)?;
+    })
+}
+
+/// The name a tool function object declares to the model (encoding.py `_tool_name_for_encoding`):
+/// `namespace::name` when the object carries a namespace (string or `{name}`), the bare name
+/// otherwise, refusing a qualified name that disagrees with the namespace. A tool-level
+/// namespace is the caller's to fold into the object first, as for [`apply_dsv41_template_media`].
+pub fn dsv41_tool_name(func: &Val) -> Result<String, String> {
+    let obj = as_obj(func).ok_or("deepseek-v4.1 tool function must be a JSON object")?;
+    let (ns_name, _) = dsv41_tool_namespace(obj)?;
+    match val_get(obj, "name") {
+        Some(Val::Str(name)) => dsv41_qualified_name(name, ns_name),
+        _ => Err("deepseek-v4.1 tool function needs a string name".into()),
+    }
+}
+
+/// encoding.py `tools_from_openai_format` (E:84-98) for one tool `function` object. A tool-level
+/// `namespace` is the caller's to fold into the function object (the vendor reads the tool level
+/// first, so a caller folding it overrides a function-level one); the key itself never renders.
+/// A namespace is a string or an object with `name` and an optional `description`, which is
+/// prepended to the tool's description across a newline.
+fn dsv41_tool_schema(func: &Val) -> Result<Val, String> {
+    let obj = as_obj(func).ok_or("deepseek-v4.1 tool function must be a JSON object")?;
+    let (_, ns_desc) = dsv41_tool_namespace(obj)?;
+    let qualified = dsv41_tool_name(func)?;
     let prefixed = |own: Option<&Val>| -> Result<Val, String> {
         let own = match own {
             None | Some(Val::Null) => "",
@@ -4960,7 +5018,71 @@ mod tests {
             for m in [DS_BOS, DS_USER, DS_ASSISTANT, DS_THINK_END, DS_EOS] {
                 assert!(probe.contains(m) && d.markers().contains(&m), "{d:?} {m}");
             }
+            assert_eq!(
+                d.unlisted_control_strings(probe),
+                Vec::<&str>::new(),
+                "{d:?}"
+            );
         }
+        // Every task head renders a listed marker under both dialects.
+        for (task, token) in DS_TASK_TOKENS {
+            let turns = [Turn {
+                role: "user".into(),
+                content: "q".into(),
+                task: Some(task.into()),
+                ..Default::default()
+            }];
+            for (d, encoding) in [
+                (EngineDialect::Dsv4, Dsv4Encoding::V0731),
+                (EngineDialect::Dsv41, Dsv4Encoding::V41),
+            ] {
+                let out = apply_dsv4_template(
+                    &turns,
+                    true,
+                    &[],
+                    ThinkMode::NoThink,
+                    None,
+                    Some(encoding),
+                )
+                .unwrap();
+                assert!(out.contains(token), "{d:?} {task}: {out:?}");
+                assert_eq!(
+                    d.unlisted_control_strings(&out),
+                    Vec::<&str>::new(),
+                    "{d:?}"
+                );
+            }
+        }
+    }
+
+    /// The control-string scan finds every bar-delimited span the way the dialects spell them,
+    /// and flags what the marker list does not hold: a new or misspelled control string cannot
+    /// pass the single-id check by being absent from it.
+    #[test]
+    fn control_string_scan_flags_unlisted_markers() {
+        let text = "<\u{ff5c}begin\u{2581}of\u{2581}sentence\u{ff5c}><\u{ff5c}User\u{ff5c}>q\
+                    <\u{ff5c}Assistant\u{ff5c}>\n\n<\u{ff5c}DSML\u{ff5c} calls>\
+                    </\u{ff5c}DSML\u{ff5c} calls>";
+        assert_eq!(
+            EngineDialect::control_strings(text),
+            [DS_BOS, DS_USER, DS_ASSISTANT, DS_DSML, DS_DSML]
+        );
+        assert!(
+            EngineDialect::Dsv41
+                .unlisted_control_strings(text)
+                .is_empty()
+        );
+        let typo = format!("{DS_USER}q<\u{ff5c}Asistant\u{ff5c}>");
+        assert_eq!(
+            EngineDialect::Dsv41.unlisted_control_strings(&typo),
+            ["<\u{ff5c}Asistant\u{ff5c}>"]
+        );
+        // The V4.1 system and image markers are not DSv4's.
+        assert_eq!(
+            EngineDialect::Dsv4.unlisted_control_strings(&format!("{DS_SYSTEM}{DS_IMAGE}")),
+            [DS_SYSTEM, DS_IMAGE]
+        );
+        assert_eq!(EngineDialect::control_strings("a \u{ff5c} b"), ["\u{ff5c}"]);
     }
 
     // ================= QWEN3.8 REASONING-EFFORT LADDER (lane/reasoning-schema-20260823) ======

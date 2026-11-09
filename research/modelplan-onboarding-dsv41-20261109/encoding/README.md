@@ -1,12 +1,17 @@
 # DeepSeek-V4.1-Flash onboarding, step 2: the `encoding_dsv41` chat dialect (2026-11-09)
 
 Verdict: memra renders DeepSeek-V4.1's chat dialect byte for byte as the vendor's
-`encoding/encoding.py` does on all 166 render cases, and refuses the 17 inputs the vendor refuses.
-Its tokenizer gives the artifact tokenizer's ids for every render (24,521 ids). The serve path's
-parser reproduces the vendor's parse of the 11 completions the vendor accepts, and keeps the house
-malformed policy on the 4 it refuses. The `deepseek_v41` pack's `encoding_dsv41` now resolves to
-this renderer, and the TokenizerTemplate gate exercises it on the artifact's own files. DSv4 0731
-renders, receipts and its artifact lock are unchanged. No GPU was used.
+`encoding/encoding.py` does on all 172 render cases (80 of them through the OpenAI surface), and
+refuses the 18 inputs the vendor refuses. Its tokenizer gives the artifact tokenizer's ids for
+every render (27,480 ids). The serve path's parser reproduces the vendor's parse of the 11
+completions the vendor accepts, and keeps the house malformed policy on the 4 it refuses. The
+`deepseek_v41` pack's `encoding_dsv41` now resolves to this renderer, and the TokenizerTemplate
+gate exercises it on the artifact's own files. DSv4 0731 renders and its artifact lock are
+unchanged; its tokenizer contract gains the renderer lines of the new check (Results below). No
+GPU was used.
+
+(Counts as of the review-fix pass, step 2c in `../README.md`: 166 renders, 67 on the wire and 17
+refusals at first; the namespaced wire cases and the vendor's float-effort refusal were added.)
 
 ## Oracle
 
@@ -51,9 +56,18 @@ It is its own dialect, not a third DSv4 ladder (`chat::Dsv4Encoding::V41`, censu
 
 | source | renders | refusals |
 |---|---:|---:|
-| every case of `test_encoding.py` (`vt-*`) | 31 | 11 |
+| `test_encoding.py` (`vt-*`), every case but three (below) | 31 | 12 |
 | the vendor's `encoding/tests` pairs and `inference/examples` (`vendor-*`) | 17 | 0 |
 | the generated matrix (`m-*`) | 118 | 6 |
+| namespaces on memra's wire (`w-*`) | 6 | 0 |
+
+The three `test_encoding.py` cases with no fixture are documented divergences (Where memra
+departs): `test_v41_rejects_out_of_range_or_unknown_reasoning_effort["medium"]`, which memra
+renders at the default budget instead of refusing, and
+`test_v41_rejects_non_string_non_integer_effort_types[True]` and `[False]`, whose bool effort
+cannot reach memra's renderer (the OpenAI surface carries `reasoning_effort` as a string and
+refuses a JSON bool at deserialization). The same test's `[1.5]` is a fixture: the float reaches
+memra as the string `"1.5"`, which the renderer refuses as the vendor refuses the float.
 
 Branches reached:
 
@@ -70,6 +84,10 @@ Branches reached:
 - tool calls: typed arguments (int, bool, float, null, list, object, escapes, non-ASCII), empty
   arguments, double-encoded arguments, non-object arguments (a string and an array), two calls,
   namespaced by call, by function and by name;
+- namespaces on the wire: request tools namespaced at the tool level (string and object with a
+  description) and the function level, same-named tools in three namespaces, and a history whose
+  calls are the vendor parser's own output (`function.name` bare, `namespace` beside it) or
+  memra's (`ns::name`), with their tool results, in both modes;
 - tool results: sorted by call id, an unknown id, merged into a user turn, followed by a user
   turn, an image-only result;
 - drop-thinking: multi-turn, the current turn kept across tool results, disabled by tools,
@@ -91,12 +109,19 @@ Four gates read the fixtures (`crates/memra-server/src/dsv41_encoding_tests.rs`)
 2. every render through the `Tokenizer` loaded from `ref/` (census, no template), against the ids
    transformers' `AutoTokenizer.encode` gives (the call the vendor's `inference/generate.py`
    makes; the generator cross-checks the `tokenizers` library), and every dialect marker as one id;
-3. the 67 cases the OpenAI surface can express, through `build_chat_request`;
-4. the 15 completions through `ToolStreamParser::dsv41`, whole and one char at a time.
+   Every control string a render spells (`<｜…｜>` and the bare `｜DSML｜`) and every special
+   token its ids hold must be a listed marker, so the single-id check covers what the renderer
+   emits;
+3. the 80 cases the OpenAI surface can express, through `build_chat_request`, 13 of them
+   namespaced;
+4. the 15 completions through the parser `build_chat_request` arms for a V4.1 request, whole and
+   one char at a time.
 
 The test also checks the five vendor golden files are fixtures verbatim, an agent turn re-renders
-to exactly what the model generated (the parked-prefix law the DSv4 arm pins), and the V4 and
-V4.1 tag sets never parse each other.
+to exactly what the model generated (the parked-prefix law the DSv4 arm pins), with namespaced
+calls sent back in memra's shape or the vendor's, same-named tools in two namespaces keep two
+schemas, the V4 and V4.1 tag sets never parse each other, and each caps set arms its own
+dialect's parser (swapping the arms fails it and gate 4).
 
 ## Results
 
@@ -116,8 +141,9 @@ step 1 byte-identical except `../inspect/tokenizer-contract.tsv`, which now reco
 renderer: `renderer_encoding V41`, a 380-token probe. Against
 `deepseek-ai/DeepSeek-V4-Flash-0731@7872f01b1d1fe23eabc4c98b48bffcef5a386062` --against
 `deepseek_v4_dspark` the lock, census, plan, gates and refusal are byte-identical to step 1
-(`inspect-dsv4-0731/artifact-lock-sha256.txt`) and the gate exercises `encoding_dsv4` under the
-`V0731` census (`inspect-dsv4-0731/tokenizer-contract.tsv`).
+(`inspect-dsv4-0731/artifact-lock-sha256.txt`). Its `tokenizer-contract.tsv` is not: it gains the
+five renderer lines of the new check (`renderer`, `renderer_encoding V0731`, and the probe's
+digests and token count; `inspect-dsv4-0731/tokenizer-contract.tsv`), the step-1 lines unchanged.
 
 ## Where memra departs from the vendor
 
@@ -128,12 +154,17 @@ renderer: `renderer_encoding V41`, a 380-token probe. Against
   tolerance, and the serve surface keeps refusing non-object arguments with a 400, as it does on
   every dialect.
 - A level name the vendor does not define (`medium`) renders the default budget, 75, where the
-  vendor asserts. The DSv4 arm renders its default for the same request.
+  vendor asserts (its `test_v41_rejects_out_of_range_or_unknown_reasoning_effort["medium"]`). The
+  DSv4 arm renders its default for the same request.
 - An unknown role or task is an `Err` where the vendor raises.
-- The OpenAI wire has no namespace field. A call named `ns::name` renders as the vendor renders
-  it, and the parser returns `ns::name` as the call name where the vendor returns the name and the
-  namespace apart; the renderer accepts that spelling back, so the round trip holds. A
-  function-level `namespace` on a request tool renders; a tool-level one is not read.
+- The parser returns `ns::name` as the call name where the vendor returns the name and the
+  namespace apart. The surface reads both spellings back: a history call named `ns::name`, or one
+  in the vendor's shape (`function.name` bare, `namespace` beside it or in `function`), renders
+  as the vendor renders it. Request tools carry their namespace at the tool level (folded into the
+  function object, as `tools_from_openai_format` does) or the function level. A history call
+  namespace that is not a string is a 400 where the vendor also reads an object's `name`.
+- `reasoning_effort` `"medium"` renders the default budget where the vendor asserts (above), and
+  a bool effort cannot be sent (the wire field is a string).
 - The renderer emits image placeholders and their prompt order; the serve surface refuses image
   parts on V4.1 by name until a V4.1 vision program exists.
 - Malformed model output: the vendor raises; memra surfaces the block verbatim as content (the
@@ -155,4 +186,6 @@ cargo test -p memra-server --lib dsv41
 ```
 
 `generated.json` records the counts and versions (Python 3.14.4). Two regenerations give
-byte-identical fixtures; the one vendor message that lists a Python set is normalized.
+byte-identical fixtures; the one vendor message that lists a Python set is normalized. Adding
+the step 2c cases left every earlier fixture's `expected.txt` and ids byte-identical; only the
+`wire` flag of the seven namespaced-call cases moved (memra's surface now carries them).

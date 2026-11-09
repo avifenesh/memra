@@ -286,6 +286,18 @@ for effort in (-1, 0, 101):
         effort,
         source=T + f"test_v41_rejects_out_of_range_or_unknown_reasoning_effort[{effort}]",
     )
+# Of the vendor's [-1, 0, 101, "medium"] and [True, False, 1.5], "medium" renders the default
+# budget in memra (the never-corrupt clamp the encoding_dsv4 arm applies; README "Where memra
+# departs") and no bool reaches memra's renderer (the wire carries reasoning_effort as a string
+# and refuses a JSON bool), so those three are documented divergences, not fixtures. The float
+# reaches memra as its decimal string, which the renderer refuses as the vendor refuses 1.5.
+add(
+    "vt-rejects-effort-type-1.5",
+    [{"role": "user", "content": "question"}],
+    "thinking",
+    1.5,
+    source=T + "test_v41_rejects_non_string_non_integer_effort_types[1.5]",
+)
 add(
     "vt-leading-system-token",
     [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "hello"}],
@@ -901,20 +913,24 @@ def memra_effort(effort):
 
 
 WIRE_ROLES = {"system", "user", "assistant", "tool"}
-VENDOR_ONLY_KEYS = {"task", "wo_eos", "response_format", "tools", "content_blocks", "mask", "namespace"}
+VENDOR_ONLY_KEYS = {"task", "wo_eos", "response_format", "tools", "content_blocks", "mask"}
+
+
+def string_or_absent(container, key):
+    return container.get(key) is None or isinstance(container[key], str)
 
 
 def on_wire(case):
     """Expressible on memra's OpenAI chat surface: plain roles, string or text-part content (no
     images: memra has no V4.1 vision program and refuses image parts), no vendor-only fields,
-    no namespaces, arguments that are JSON objects, a reasoning_effort the surface names."""
+    arguments that are JSON objects, a reasoning_effort the surface names. Namespaces ride the
+    wire as the vendor spells them: a request tool's `namespace` (tool or function level, string
+    or object), and a history call's `ns::name`, call-level or function-level string namespace
+    (memra refuses a non-string call namespace by name)."""
     if case["effort"] not in (None, "low", "high", "max"):
         return False
     if case["think"] == "chat" and case["effort"] is not None:
         return False  # the surface turns reasoning off with a level, so chat carries none
-    for tool in case["req_tools"] or []:
-        if "namespace" in tool or "namespace" in tool["function"]:
-            return False
     for m in case["messages"]:
         if m["role"] not in WIRE_ROLES or VENDOR_ONLY_KEYS & set(m):
             return False
@@ -926,7 +942,7 @@ def on_wire(case):
         if IMG in (m.get("reasoning_content") or ""):
             return False
         for tc in m.get("tool_calls", []):
-            if "namespace" in tc or "namespace" in tc["function"] or "::" in tc["function"]["name"]:
+            if not (string_or_absent(tc, "namespace") and string_or_absent(tc["function"], "namespace")):
                 return False
             try:
                 args = json.loads(tc["function"]["arguments"])
@@ -1045,6 +1061,59 @@ PARSES = [
     ("p-rejects-duplicate-param", "</think>" + dsml_block(("f", [("a", "true", "1"), ("a", "true", "2")])) + EOS, "thinking"),
     ("p-rejects-nested-namespace", "</think>" + dsml_block(("a::b::c", [("q", "true", "v")])) + EOS, "thinking"),
 ]
+
+
+# ---- namespaces on memra's wire --------------------------------------------------------------
+# Request tools carrying namespaces (tool level as the vendor README leads with, an object with a
+# description, a string, and the function-level spelling), same-named tools in three namespaces,
+# and a history whose calls are the vendor parser's own output (`function.name` bare, `namespace`
+# beside it), with their results: the next turn must re-render the names the model generated.
+_ns_tools = []
+for _ns in (None, {"name": "search", "description": "Search tools."}, "files"):
+    _t = make_tool()
+    if _ns is not None:
+        _t["namespace"] = copy.deepcopy(_ns)
+    _ns_tools.append(_t)
+_fn_ns_tool = make_tool()
+_fn_ns_tool["function"]["namespace"] = "docs"
+add(
+    "w-namespaced-request-tools",
+    [{"role": "user", "content": "question"}],
+    "thinking",
+    req_tools=_ns_tools + [_fn_ns_tool],
+)
+add(
+    "w-namespaced-request-tools-chat",
+    [{"role": "system", "content": "system"}, {"role": "user", "content": "question"}],
+    "chat",
+    req_tools=_ns_tools,
+)
+for _mode in ("thinking", "chat"):
+    _completion = ("Pick the right lookup.</think>" if _mode == "thinking" else "") + "Looking." + dsml_block(
+        ("search::lookup", [("query", "true", "x")]),
+        ("files::lookup", [("query", "true", "y"), ("limit", "false", "2")]),
+        ("lookup", [("query", "true", "z")]),
+    ) + EOS
+    _parsed = enc.parse_message_from_completion_text(_completion, thinking_mode=_mode)
+    _calls = copy.deepcopy(_parsed["tool_calls"])
+    assert [c.get("namespace") for c in _calls] == ["search", "files", None], _calls
+    for _i, _c in enumerate(_calls):
+        _c["id"] = f"call_{_i}"
+    _history = [
+        {"role": "user", "content": "question"},
+        {
+            "role": "assistant",
+            "content": _parsed["content"],
+            "reasoning_content": _parsed["reasoning_content"],
+            "tool_calls": _calls,
+        },
+    ] + [{"role": "tool", "tool_call_id": f"call_{_i}", "content": f"result {_i}"} for _i in range(3)]
+    add(f"w-vendor-shape-namespaced-history-{_mode}", _history, _mode, req_tools=_ns_tools)
+    _qualified = copy.deepcopy(_history)
+    for _c in _qualified[1]["tool_calls"]:
+        if _c.get("namespace"):
+            _c["function"]["name"] = f"{_c.pop('namespace')}::{_c['function']['name']}"
+    add(f"w-qualified-namespaced-history-{_mode}", _qualified, _mode, req_tools=_ns_tools)
 
 
 def parse_case(text_, mode):

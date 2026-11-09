@@ -1,0 +1,159 @@
+# PR #1128 review fixes, serve-path red arms (cargo test -p memra-server --lib dsv41).
+# Each arm reverts one fix in a scratch copy; the libtest output of the run follows its patch.
+# The compile output before "running" is dropped and the scratch tree's absolute path is cut from
+# the fixture paths; nothing else is edited.
+
+## arm parser-swap: build_chat_request arms ToolStreamParser::dsv4 for V4.1 caps and dsv41 for DSv4 caps
+```diff
+-            ToolStreamParser::dsv41(dsv4_think_open)
++            ToolStreamParser::dsv4(dsv4_think_open)
+         } else {
+-            ToolStreamParser::dsv4(dsv4_think_open)
++            ToolStreamParser::dsv41(dsv4_think_open)
+```
+```
+running 12 tests
+test dsv41_encoding_tests::dsv41_parser_matches_the_vendor_parse ... FAILED
+test dsv41_encoding_tests::dsv41_agent_tool_call_turn_rerenders_to_what_the_model_generated ... ok
+test dsv41_encoding_tests::dsv41_namespaced_tool_call_turn_rerenders_to_what_the_model_generated ... FAILED
+test dsv41_encoding_tests::dsv41_caps_select_the_spaced_dsml_stop_and_keep_dsv4_unchanged ... FAILED
+test dsv41_encoding_tests::dsv41_and_dsv4_tags_do_not_cross ... ok
+test dsv41_encoding_tests::dsv41_wire_refuses_images_and_non_object_arguments ... ok
+test dsv41_encoding_tests::dsv41_vendor_goldens_are_fixtures_verbatim ... ok
+test dsv41_encoding_tests::dsv41_refuses_a_non_string_call_namespace ... ok
+test dsv41_encoding_tests::dsv41_keeps_same_named_tools_in_separate_namespaces ... ok
+test dsv41_encoding_tests::dsv41_fixtures_match_the_vendor_encoding ... ok
+test dsv41_encoding_tests::dsv41_wire_fixtures_render_through_the_serve_pipeline ... ok
+test dsv41_encoding_tests::dsv41_token_ids_match_the_artifact_tokenizer ... ok
+
+failures:
+
+---- dsv41_encoding_tests::dsv41_parser_matches_the_vendor_parse stdout ----
+
+thread 'dsv41_encoding_tests::dsv41_parser_matches_the_vendor_parse' (480086) panicked at crates/memra-server/src/dsv41_encoding_tests.rs:619:17:
+assertion `left == right` failed: "research/modelplan-onboarding-dsv41-20261109/encoding/parse/p-chat-call-no-content.json"
+  left: "\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"get_weather\">\n<｜DSML｜ parameter name=\"location\" string=\"true\">Oslo</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls>"
+ right: ""
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- dsv41_encoding_tests::dsv41_namespaced_tool_call_turn_rerenders_to_what_the_model_generated stdout ----
+
+thread 'dsv41_encoding_tests::dsv41_namespaced_tool_call_turn_rerenders_to_what_the_model_generated' (480085) panicked at crates/memra-server/src/dsv41_encoding_tests.rs:854:5:
+assertion `left == right` failed
+  left: []
+ right: ["search::lookup", "files::lookup", "lookup"]
+
+---- dsv41_encoding_tests::dsv41_caps_select_the_spaced_dsml_stop_and_keep_dsv4_unchanged stdout ----
+
+thread 'dsv41_encoding_tests::dsv41_caps_select_the_spaced_dsml_stop_and_keep_dsv4_unchanged' (480082) panicked at crates/memra-server/src/dsv41_encoding_tests.rs:543:9:
+assertion `left == right` failed: dsv41=true: its own dialect's call
+  left: ("\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"f\">\n</｜DSML｜ invoke>\n</｜DSML｜ calls>", 0)
+ right: ("", 1)
+
+
+failures:
+    dsv41_encoding_tests::dsv41_caps_select_the_spaced_dsml_stop_and_keep_dsv4_unchanged
+    dsv41_encoding_tests::dsv41_namespaced_tool_call_turn_rerenders_to_what_the_model_generated
+    dsv41_encoding_tests::dsv41_parser_matches_the_vendor_parse
+
+test result: FAILED. 9 passed; 3 failed; 0 ignored; 0 measured; 1112 filtered out; finished in 0.85s
+
+error: test failed, to rerun pass `-p memra-server --lib`
+
+```
+
+## arm no-tool-namespace: prepare_tools no longer folds a tool-level namespace into the function object
+```diff
+-            if let Some(ns) = t.get("namespace").filter(|ns| !ns.is_null()) {
++            if let Some(ns) = t.get("namespace").filter(|_| false) {
+```
+```
+running 12 tests
+test dsv41_encoding_tests::dsv41_caps_select_the_spaced_dsml_stop_and_keep_dsv4_unchanged ... ok
+test dsv41_encoding_tests::dsv41_vendor_goldens_are_fixtures_verbatim ... ok
+test dsv41_encoding_tests::dsv41_wire_refuses_images_and_non_object_arguments ... ok
+test dsv41_encoding_tests::dsv41_agent_tool_call_turn_rerenders_to_what_the_model_generated ... ok
+test dsv41_encoding_tests::dsv41_keeps_same_named_tools_in_separate_namespaces ... FAILED
+test dsv41_encoding_tests::dsv41_and_dsv4_tags_do_not_cross ... ok
+test dsv41_encoding_tests::dsv41_parser_matches_the_vendor_parse ... ok
+test dsv41_encoding_tests::dsv41_refuses_a_non_string_call_namespace ... ok
+test dsv41_encoding_tests::dsv41_namespaced_tool_call_turn_rerenders_to_what_the_model_generated ... ok
+test dsv41_encoding_tests::dsv41_wire_fixtures_render_through_the_serve_pipeline ... FAILED
+test dsv41_encoding_tests::dsv41_fixtures_match_the_vendor_encoding ... ok
+test dsv41_encoding_tests::dsv41_token_ids_match_the_artifact_tokenizer ... ok
+
+failures:
+
+---- dsv41_encoding_tests::dsv41_keeps_same_named_tools_in_separate_namespaces stdout ----
+
+thread 'dsv41_encoding_tests::dsv41_keeps_same_named_tools_in_separate_namespaces' (480576) panicked at crates/memra-server/src/dsv41_encoding_tests.rs:765:5:
+assertion `left == right` failed
+  left: ["lookup"]
+ right: ["files::lookup", "lookup", "search::lookup"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- dsv41_encoding_tests::dsv41_wire_fixtures_render_through_the_serve_pipeline stdout ----
+
+thread 'dsv41_encoding_tests::dsv41_wire_fixtures_render_through_the_serve_pipeline' (480582) panicked at crates/memra-server/src/dsv41_encoding_tests.rs:444:9:
+assertion `left == right` failed: w-namespaced-request-tools diverged from encoding.py through the serve pipeline
+  left: Some("<｜begin▁of▁sentence｜><｜System｜>Reasoning Effort: 75 (range 1-100, the higher the value, the more thorough the reasoning)\n\n\n\n## Tools\n\nYou have access to a set of tools to help answer the user's question. You can invoke tools by writing a \"<｜DSML｜ calls>\" block like the following:\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"$TOOL_NAME\">\n<｜DSML｜ parameter name=\"$PARAMETER_NAME\" string=\"true|false\">$PARAMETER_VALUE</｜DSML｜ parameter>\n...\n</｜DSML｜ invoke>\n<｜DSML｜ invoke name=\"$TOOL_NAME2\">\n...\n</｜DSML｜ invoke>\n</｜DSML｜ calls>\n\nString parameters should be specified as is and set `string=\"true\"`. For all other types (numbers, booleans, arrays, objects), pass the value in JSON format and set `string=\"false\"`.\n\nIf thinking_mode is enabled (triggered by <think>), you MUST output your complete reasoning inside <think>...</think> BEFORE any tool calls or final response.\n\nOtherwise, output directly after </think> with tool calls or final response.\n\n### Available Tool Schemas\n\n{\"name\": \"lookup\", \"description\": \"Look up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}, \"limit\": {\"type\": \"integer\"}}}}\n{\"name\": \"lookup\", \"description\": \"Look up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}, \"limit\": {\"type\": \"integer\"}}}}\n{\"name\": \"lookup\", \"description\": \"Look up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}, \"limit\": {\"type\": \"integer\"}}}}\n{\"name\": \"docs::lookup\", \"description\": \"Look up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}, \"limit\": {\"type\": \"integer\"}}}}\n\nYou MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.\n<｜User｜>question<｜Assistant｜><think>")
+ right: Some("<｜begin▁of▁sentence｜><｜System｜>Reasoning Effort: 75 (range 1-100, the higher the value, the more thorough the reasoning)\n\n\n\n## Tools\n\nYou have access to a set of tools to help answer the user's question. You can invoke tools by writing a \"<｜DSML｜ calls>\" block like the following:\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"$TOOL_NAME\">\n<｜DSML｜ parameter name=\"$PARAMETER_NAME\" string=\"true|false\">$PARAMETER_VALUE</｜DSML｜ parameter>\n...\n</｜DSML｜ invoke>\n<｜DSML｜ invoke name=\"$TOOL_NAME2\">\n...\n</｜DSML｜ invoke>\n</｜DSML｜ calls>\n\nString parameters should be specified as is and set `string=\"true\"`. For all other types (numbers, booleans, arrays, objects), pass the value in JSON format and set `string=\"false\"`.\n\nIf thinking_mode is enabled (triggered by <think>), you MUST output your complete reasoning inside <think>...</think> BEFORE any tool calls or final response.\n\nOtherwise, output directly after </think> with tool calls or final response.\n\n### Available Tool Schemas\n\n{\"name\": \"lookup\", \"description\": \"Look up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}, \"limit\": {\"type\": \"integer\"}}}}\n{\"name\": \"search::lookup\", \"description\": \"Search tools.\\nLook up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}, \"limit\": {\"type\": \"integer\"}}}}\n{\"name\": \"files::lookup\", \"description\": \"Look up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}, \"limit\": {\"type\": \"integer\"}}}}\n{\"name\": \"docs::lookup\", \"description\": \"Look up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}, \"limit\": {\"type\": \"integer\"}}}}\n\nYou MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.\n<｜User｜>question<｜Assistant｜><think>")
+
+
+failures:
+    dsv41_encoding_tests::dsv41_keeps_same_named_tools_in_separate_namespaces
+    dsv41_encoding_tests::dsv41_wire_fixtures_render_through_the_serve_pipeline
+
+test result: FAILED. 10 passed; 2 failed; 0 ignored; 0 measured; 1112 filtered out; finished in 0.83s
+
+error: test failed, to rerun pass `-p memra-server --lib`
+
+```
+
+## arm no-call-namespace: render_req_tool_call drops the history call namespace (the pre-fix namespace: None)
+```diff
+-            dsv41_call_namespace(tc)?
++            dsv41_call_namespace(tc)?.filter(|_| false)
+```
+```
+running 12 tests
+test dsv41_encoding_tests::dsv41_caps_select_the_spaced_dsml_stop_and_keep_dsv4_unchanged ... ok
+test dsv41_encoding_tests::dsv41_and_dsv4_tags_do_not_cross ... ok
+test dsv41_encoding_tests::dsv41_agent_tool_call_turn_rerenders_to_what_the_model_generated ... ok
+test dsv41_encoding_tests::dsv41_namespaced_tool_call_turn_rerenders_to_what_the_model_generated ... FAILED
+test dsv41_encoding_tests::dsv41_vendor_goldens_are_fixtures_verbatim ... ok
+test dsv41_encoding_tests::dsv41_refuses_a_non_string_call_namespace ... ok
+test dsv41_encoding_tests::dsv41_wire_refuses_images_and_non_object_arguments ... ok
+test dsv41_encoding_tests::dsv41_parser_matches_the_vendor_parse ... ok
+test dsv41_encoding_tests::dsv41_keeps_same_named_tools_in_separate_namespaces ... ok
+test dsv41_encoding_tests::dsv41_wire_fixtures_render_through_the_serve_pipeline ... FAILED
+test dsv41_encoding_tests::dsv41_fixtures_match_the_vendor_encoding ... ok
+test dsv41_encoding_tests::dsv41_token_ids_match_the_artifact_tokenizer ... ok
+
+failures:
+
+---- dsv41_encoding_tests::dsv41_namespaced_tool_call_turn_rerenders_to_what_the_model_generated stdout ----
+
+thread 'dsv41_encoding_tests::dsv41_namespaced_tool_call_turn_rerenders_to_what_the_model_generated' (480995) panicked at crates/memra-server/src/dsv41_encoding_tests.rs:888:9:
+turn 2 stopped extending the generation:
+  parked: "<｜begin▁of▁sentence｜><｜System｜>Reasoning Effort: 75 (range 1-100, the higher the value, the more thorough the reasoning)\n\n\n\n## Tools\n\nYou have access to a set of tools to help answer the user's question. You can invoke tools by writing a \"<｜DSML｜ calls>\" block like the following:\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"$TOOL_NAME\">\n<｜DSML｜ parameter name=\"$PARAMETER_NAME\" string=\"true|false\">$PARAMETER_VALUE</｜DSML｜ parameter>\n...\n</｜DSML｜ invoke>\n<｜DSML｜ invoke name=\"$TOOL_NAME2\">\n...\n</｜DSML｜ invoke>\n</｜DSML｜ calls>\n\nString parameters should be specified as is and set `string=\"true\"`. For all other types (numbers, booleans, arrays, objects), pass the value in JSON format and set `string=\"false\"`.\n\nIf thinking_mode is enabled (triggered by <think>), you MUST output your complete reasoning inside <think>...</think> BEFORE any tool calls or final response.\n\nOtherwise, output directly after </think> with tool calls or final response.\n\n### Available Tool Schemas\n\n{\"name\": \"lookup\", \"description\": \"Look up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}}}}\n{\"name\": \"search::lookup\", \"description\": \"Search tools.\\nLook up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}}}}\n{\"name\": \"files::lookup\", \"description\": \"Look up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}}}}\n\nYou MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.\n<｜User｜>Find the value in both stores.<｜Assistant｜><think>Two stores.</think>Looking.\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"search::lookup\">\n<｜DSML｜ parameter name=\"query\" string=\"true\">x</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n<｜DSML｜ invoke name=\"files::lookup\">\n<｜DSML｜ parameter name=\"query\" string=\"true\">y</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n<｜DSML｜ invoke name=\"lookup\">\n<｜DSML｜ parameter name=\"query\" string=\"true\">z</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls><｜end▁of▁sentence｜>"
+  turn 2: "<｜begin▁of▁sentence｜><｜System｜>Reasoning Effort: 75 (range 1-100, the higher the value, the more thorough the reasoning)\n\n\n\n## Tools\n\nYou have access to a set of tools to help answer the user's question. You can invoke tools by writing a \"<｜DSML｜ calls>\" block like the following:\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"$TOOL_NAME\">\n<｜DSML｜ parameter name=\"$PARAMETER_NAME\" string=\"true|false\">$PARAMETER_VALUE</｜DSML｜ parameter>\n...\n</｜DSML｜ invoke>\n<｜DSML｜ invoke name=\"$TOOL_NAME2\">\n...\n</｜DSML｜ invoke>\n</｜DSML｜ calls>\n\nString parameters should be specified as is and set `string=\"true\"`. For all other types (numbers, booleans, arrays, objects), pass the value in JSON format and set `string=\"false\"`.\n\nIf thinking_mode is enabled (triggered by <think>), you MUST output your complete reasoning inside <think>...</think> BEFORE any tool calls or final response.\n\nOtherwise, output directly after </think> with tool calls or final response.\n\n### Available Tool Schemas\n\n{\"name\": \"lookup\", \"description\": \"Look up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}}}}\n{\"name\": \"search::lookup\", \"description\": \"Search tools.\\nLook up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}}}}\n{\"name\": \"files::lookup\", \"description\": \"Look up a value\", \"parameters\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}}}}\n\nYou MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.\n<｜User｜>Find the value in both stores.<｜Assistant｜><think>Two stores.</think>Looking.\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"lookup\">\n<｜DSML｜ parameter name=\"query\" string=\"true\">x</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n<｜DSML｜ invoke name=\"lookup\">\n<｜DSML｜ parameter name=\"query\" string=\"true\">y</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n<｜DSML｜ invoke name=\"lookup\">\n<｜DSML｜ parameter name=\"query\" string=\"true\">z</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls><｜end▁of▁sentence｜><｜User｜><tool_result>found</tool_result>\n\n<tool_result>found</tool_result>\n\n<tool_result>found</tool_result><｜Assistant｜><think>"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- dsv41_encoding_tests::dsv41_wire_fixtures_render_through_the_serve_pipeline stdout ----
+
+thread 'dsv41_encoding_tests::dsv41_wire_fixtures_render_through_the_serve_pipeline' (481000) panicked at crates/memra-server/src/dsv41_encoding_tests.rs:444:9:
+assertion `left == right` failed: m-namespace-call-function-level diverged from encoding.py through the serve pipeline
+  left: Some("<｜begin▁of▁sentence｜><｜User｜>q<｜Assistant｜></think>\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"lookup\">\n<｜DSML｜ parameter name=\"query\" string=\"true\">x</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls><｜end▁of▁sentence｜>")
+ right: Some("<｜begin▁of▁sentence｜><｜User｜>q<｜Assistant｜></think>\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"search::lookup\">\n<｜DSML｜ parameter name=\"query\" string=\"true\">x</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls><｜end▁of▁sentence｜>")
+
+
+failures:
+    dsv41_encoding_tests::dsv41_namespaced_tool_call_turn_rerenders_to_what_the_model_generated
+    dsv41_encoding_tests::dsv41_wire_fixtures_render_through_the_serve_pipeline
+
+test result: FAILED. 10 passed; 2 failed; 0 ignored; 0 measured; 1112 filtered out; finished in 0.89s
+
+error: test failed, to rerun pass `-p memra-server --lib`
+
+```

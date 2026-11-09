@@ -10,8 +10,9 @@
 //!    bytes and its image order, and every refusal fixture refused;
 //! 2. the token ids of every render under the artifact's own tokenizer.json, rendered through the
 //!    `Tokenizer` loaded from the artifact files (the census-detected encoding, no template);
-//! 3. the fixtures memra's OpenAI surface can express, through `build_chat_request`;
-//! 4. the vendor's parse of each completion, through the serve path's stream parser.
+//! 3. the fixtures memra's OpenAI surface can express, through `build_chat_request`, namespaced
+//!    request tools and the vendor parser's call shape included;
+//! 4. the vendor's parse of each completion, through the parser `build_chat_request` arms.
 
 use super::*;
 use memra_tokenizer::chat::{ContentPart, Dsv4Encoding, Val};
@@ -272,7 +273,7 @@ fn dsv41_fixtures_match_the_vendor_encoding() {
         }
     }
     assert!(
-        renders >= 160 && refusals >= 15,
+        renders >= 172 && refusals >= 18,
         "{renders} renders, {refusals} refusals"
     );
 }
@@ -297,7 +298,8 @@ fn dsv41_vendor_goldens_are_fixtures_verbatim() {
 /// AutoTokenizer, as the vendor's generate.py encodes). Rendered through the `Tokenizer` loaded
 /// from the artifact's files, so the census (config.json `model_type`), the template-less
 /// dispatch and the deepseek-v3 pre-tokenizer are all under test, and every dialect marker must
-/// land on its one id.
+/// land on its one id. Every control string a vendor render spells must be a listed marker, and
+/// every special token its ids hold too, so the single-id check covers what the renderer emits.
 #[test]
 fn dsv41_token_ids_match_the_artifact_tokenizer() {
     let tok = memra_tokenizer::Tokenizer::from_hf_dir(&base().join("ref"))
@@ -341,6 +343,23 @@ fn dsv41_token_ids_match_the_artifact_tokenizer() {
             .map(|v| v.as_u64().unwrap() as u32)
             .collect();
         assert_eq!(tok.encode(&rendered, true), want, "{}: token ids", f.name);
+        assert_eq!(
+            chat::EngineDialect::Dsv41.unlisted_control_strings(&rendered),
+            Vec::<&str>::new(),
+            "{}: unlisted control strings",
+            f.name
+        );
+        let markers = chat::EngineDialect::Dsv41.markers();
+        for &id in &want {
+            if tok.token_is_special(id) {
+                let piece = tok.decode(&[id]);
+                assert!(
+                    markers.contains(&piece.as_str()),
+                    "{}: special token {piece:?} is not a listed marker",
+                    f.name
+                );
+            }
+        }
     }
 }
 
@@ -375,12 +394,36 @@ fn render_plan(plan: &ChatPlan) -> String {
     .unwrap()
 }
 
+/// A request tool or a history call with a namespace, at either level, or a `ns::name` call.
+fn carries_a_namespace(input: &serde_json::Value) -> bool {
+    let tools = input["req_tools"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|t| !t["namespace"].is_null() || !t["function"]["namespace"].is_null());
+    let calls = input["messages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|m| m["tool_calls"].as_array().into_iter().flatten())
+        .any(|c| {
+            !c["namespace"].is_null()
+                || !c["function"]["namespace"].is_null()
+                || c["function"]["name"]
+                    .as_str()
+                    .is_some_and(|n| n.contains("::"))
+        });
+    tools || calls
+}
+
 /// Gate 3: the fixtures the OpenAI chat surface can express (the generator marks them `wire`),
 /// from the wire through `build_chat_request`: role mapping, request tools, reasoning switches,
-/// text content parts (joined by `"\n\n"`, not concatenated), assistant reasoning and calls.
+/// text content parts (joined by `"\n\n"`, not concatenated), assistant reasoning and calls,
+/// tool namespaces (request tools at the tool or function level, same-named tools in separate
+/// namespaces, history calls spelled `ns::name` or in the vendor parser's own output shape).
 #[test]
 fn dsv41_wire_fixtures_render_through_the_serve_pipeline() {
-    let mut n = 0;
+    let (mut n, mut namespaced) = (0, 0);
     for f in fixtures() {
         if f.input.get("wire").and_then(|w| w.as_bool()) != Some(true) {
             continue;
@@ -409,8 +452,13 @@ fn dsv41_wire_fixtures_render_through_the_serve_pipeline() {
             f.input["think"].as_str() == Some("thinking") || f.input["req_tools"].is_array();
         assert_eq!(plan.parser.is_some(), armed, "{}: parser arming", f.name);
         n += 1;
+        namespaced += usize::from(carries_a_namespace(&f.input));
     }
-    assert!(n >= 60, "only {n} wire fixtures");
+    assert!(n >= 80, "only {n} wire fixtures");
+    assert!(
+        namespaced >= 13,
+        "only {namespaced} namespaced wire fixtures"
+    );
 }
 
 /// The surface refuses what memra cannot serve on V4.1, by name: an image part (no vision
@@ -438,7 +486,8 @@ fn dsv41_wire_refuses_images_and_non_object_arguments() {
 }
 
 /// The V4.1 parser, the `</｜DSML｜ calls>` stop and the dsv4 arm stay apart: a V4.1 tools request
-/// stops on the spaced close, a DSv4 one on its own, and only V4.1 joins text parts.
+/// stops on the spaced close, a DSv4 one on its own, only V4.1 joins text parts, and each caps
+/// set arms its own dialect's parser (a swapped arm parses neither dialect's calls).
 #[test]
 fn dsv41_caps_select_the_spaced_dsml_stop_and_keep_dsv4_unchanged() {
     let tools = json!([{"type": "function", "function": {"name": "f", "parameters": {}}}]);
@@ -471,6 +520,39 @@ fn dsv41_caps_select_the_spaced_dsml_stop_and_keep_dsv4_unchanged() {
         "DSv4 keeps the flattened text"
     );
     assert_eq!(plan.request.chat_turns[0].content, "ab");
+
+    let v4_block = "\n\n<\u{ff5c}DSML\u{ff5c}tool_calls>\n<\u{ff5c}DSML\u{ff5c}invoke name=\"f\">\n\
+                    </\u{ff5c}DSML\u{ff5c}invoke>\n</\u{ff5c}DSML\u{ff5c}tool_calls>";
+    let v41_block = "\n\n<\u{ff5c}DSML\u{ff5c} calls>\n<\u{ff5c}DSML\u{ff5c} invoke name=\"f\">\n\
+                     </\u{ff5c}DSML\u{ff5c} invoke>\n</\u{ff5c}DSML\u{ff5c} calls>";
+    let served = |caps: &ModelCaps| {
+        let body = json!({"model": "m", "tools": tools, "reasoning_effort": "none",
+            "messages": [{"role": "user", "content": "q"}]});
+        let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
+        let (tx, _rx) = worker::event_channel();
+        build_chat_request(req, Some(caps), tx, lanes::Lane::Interactive, None)
+            .unwrap()
+            .parser
+            .unwrap()
+    };
+    for (caps, own, other) in [
+        (dsv41_caps(), v41_block, v4_block),
+        (dsv4, v4_block, v41_block),
+    ] {
+        let (content, _, calls) = parse_all(&mut served(&caps), &[own]);
+        assert_eq!(
+            (content.as_str(), calls.len()),
+            ("", 1),
+            "dsv41={}: its own dialect's call",
+            caps.dsv41
+        );
+        let (_, _, calls) = parse_all(&mut served(&caps), &[other]);
+        assert!(
+            calls.is_empty(),
+            "dsv41={}: the other dialect's call",
+            caps.dsv41
+        );
+    }
 }
 
 fn parse_all(
@@ -493,11 +575,27 @@ fn parse_all(
     (content, reasoning, calls)
 }
 
-/// Gate 4: the vendor's parse of each completion, through `ToolStreamParser::dsv41` whole and
-/// one char at a time. The worker never streams the end-of-sentence id, so it is cut first. Call
-/// names keep the `ns::name` spelling the vendor splits into name and namespace; arguments compare
-/// as JSON (memra writes them compact). Where the vendor refuses, the house policy holds instead:
-/// no call is fabricated and every byte comes back as content or reasoning.
+/// The parser `build_chat_request` arms for a V4.1 tools request in `think` mode (`"thinking"` or
+/// `"chat"`): the one the serve path runs, not one built by hand.
+fn served_parser(think: &str) -> ToolStreamParser {
+    let mut body = json!({"model": "dsv41",
+        "tools": [{"type": "function", "function": {"name": "f", "parameters": {}}}],
+        "messages": [{"role": "user", "content": "question"}]});
+    if think == "chat" {
+        body["reasoning_effort"] = json!("none");
+    }
+    wire_plan(body)
+        .unwrap()
+        .parser
+        .expect("a V4.1 tools request arms a parser")
+}
+
+/// Gate 4: the vendor's parse of each completion, through the parser the request builder arms
+/// for V4.1 (`served_parser`), whole and one char at a time. The worker never streams the
+/// end-of-sentence id, so it is cut first. Call names keep the `ns::name` spelling the vendor
+/// splits into name and namespace; arguments compare as JSON (memra writes them compact). Where
+/// the vendor refuses, the house policy holds instead: no call is fabricated and every byte comes
+/// back as content or reasoning.
 #[test]
 fn dsv41_parser_matches_the_vendor_parse() {
     let dir = base().join("parse");
@@ -511,11 +609,11 @@ fn dsv41_parser_matches_the_vendor_parse() {
         let fx = read_json(&path);
         let completion = fx["completion"].as_str().unwrap();
         let text = completion.strip_suffix(EOS).unwrap_or(completion);
-        let thinking = fx["think"].as_str() == Some("thinking");
+        let think = fx["think"].as_str().unwrap();
         let chars: Vec<String> = text.chars().map(String::from).collect();
         let chars: Vec<&str> = chars.iter().map(String::as_str).collect();
         for chunks in [vec![text], chars] {
-            let mut parser = ToolStreamParser::dsv41(thinking);
+            let mut parser = served_parser(think);
             let (content, reasoning, calls) = parse_all(&mut parser, &chunks);
             if let Some(expected) = fx.get("expected") {
                 assert_eq!(content, expected["content"].as_str().unwrap(), "{path:?}");
@@ -634,4 +732,188 @@ fn dsv41_and_dsv4_tags_do_not_cross() {
     let (content, _, calls) = parse_all(&mut ToolStreamParser::dsv41(false), &[v41_block]);
     assert_eq!((content.as_str(), calls.len()), ("", 1));
     assert_eq!(calls[0].arguments, "{}");
+}
+
+fn namespaced_tools() -> serde_json::Value {
+    let tool = |namespace: serde_json::Value| {
+        let mut t = json!({"type": "function", "function": {
+            "name": "lookup",
+            "description": "Look up a value",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}}}});
+        if !namespace.is_null() {
+            t["namespace"] = namespace;
+        }
+        t
+    };
+    json!([
+        tool(serde_json::Value::Null),
+        tool(json!({"name": "search", "description": "Search tools."})),
+        tool(json!("files")),
+    ])
+}
+
+/// Same-named tools in separate namespaces are separate tools on the V4.1 surface: each renders
+/// under the name the model sees, and each keeps its own schema entry. The DSv4 surface reads
+/// `function` alone, as before namespaces existed.
+#[test]
+fn dsv41_keeps_same_named_tools_in_separate_namespaces() {
+    let tools = namespaced_tools();
+    let tools = tools.as_array().unwrap();
+    let (_, functions, schemas) = prepare_tools(tools, true).unwrap();
+    let mut keys: Vec<&str> = schemas.keys().map(String::as_str).collect();
+    keys.sort();
+    assert_eq!(keys, ["files::lookup", "lookup", "search::lookup"]);
+    assert_eq!(functions.len(), 3);
+    let (_, _, schemas) = prepare_tools(tools, false).unwrap();
+    assert_eq!(schemas.keys().collect::<Vec<_>>(), ["lookup"]);
+
+    let body = |extra: serde_json::Value| {
+        let mut body = json!({"model": "m", "messages": [{"role": "user", "content": "q"}]});
+        body["tools"] = extra;
+        body
+    };
+    let rendered = render_plan(&wire_plan(body(json!(tools))).unwrap());
+    for line in [
+        "{\"name\": \"lookup\", \"description\": \"Look up a value\"",
+        "{\"name\": \"search::lookup\", \"description\": \"Search tools.\\nLook up a value\"",
+        "{\"name\": \"files::lookup\", \"description\": \"Look up a value\"",
+    ] {
+        assert!(rendered.contains(line), "{line} not in {rendered}");
+    }
+    // A namespace that conflicts with a qualified name is the renderer's refusal, as a 400.
+    let mut conflicting = tools[1].clone();
+    conflicting["function"]["name"] = json!("files::lookup");
+    let err = wire_plan(body(json!([conflicting]))).err().unwrap();
+    assert!(err.contains("Conflicting tool namespaces"), "{err}");
+
+    // DSv4 0731: a tool-level namespace is not part of its dialect and renders as before.
+    let dsv4 = ModelCaps {
+        dsv41: false,
+        ..dsv41_caps()
+    };
+    let dsv4_render = |tools: serde_json::Value| {
+        let req: ChatCompletionReq = serde_json::from_value(body(tools)).unwrap();
+        let (tx, _rx) = worker::event_channel();
+        let plan =
+            build_chat_request(req, Some(&dsv4), tx, lanes::Lane::Interactive, None).unwrap();
+        chat::apply_chat_template_tools_ex(
+            None,
+            &plan.request.chat_turns,
+            true,
+            &plan.request.tools_json,
+            &plan.request.tools_struct,
+            plan.request.think,
+            plan.request.reasoning_effort.as_deref(),
+            Some(Dsv4Encoding::V0731),
+        )
+        .unwrap()
+    };
+    let mut plain = tools[1].clone();
+    plain.as_object_mut().unwrap().remove("namespace");
+    assert_eq!(
+        dsv4_render(json!([tools[1].clone()])),
+        dsv4_render(json!([plain]))
+    );
+}
+
+/// The agent law on namespaced tools: the model generates `ns::name` invokes, the client sends
+/// the calls back either as memra returned them (`function.name` = `ns::name`) or in the vendor
+/// parser's own output shape (`function.name` bare, `namespace` beside it), and both re-render to
+/// exactly what the model generated.
+#[test]
+fn dsv41_namespaced_tool_call_turn_rerenders_to_what_the_model_generated() {
+    const D: &str = "<\u{ff5c}DSML\u{ff5c}";
+    const DE: &str = "</\u{ff5c}DSML\u{ff5c}";
+    let tools = namespaced_tools();
+    let render = |messages: serde_json::Value| -> String {
+        render_plan(
+            &wire_plan(json!({"model": "dsv41", "messages": messages, "tools": tools})).unwrap(),
+        )
+    };
+    let user = "Find the value in both stores.";
+    let turn1 = render(json!([{"role": "user", "content": user}]));
+    let generated = [
+        "Two stores.</think>Looking.".to_string(),
+        String::new(),
+        format!("{D} calls>"),
+        format!("{D} invoke name=\"search::lookup\">"),
+        format!("{D} parameter name=\"query\" string=\"true\">x{DE} parameter>"),
+        format!("{DE} invoke>"),
+        format!("{D} invoke name=\"files::lookup\">"),
+        format!("{D} parameter name=\"query\" string=\"true\">y{DE} parameter>"),
+        format!("{DE} invoke>"),
+        format!("{D} invoke name=\"lookup\">"),
+        format!("{D} parameter name=\"query\" string=\"true\">z{DE} parameter>"),
+        format!("{DE} invoke>"),
+        format!("{DE} calls>"),
+    ]
+    .join("\n");
+    let mut parser = served_parser("thinking");
+    let (content, reasoning, calls) = parse_all(&mut parser, &[&generated]);
+    let names: Vec<&str> = calls.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["search::lookup", "files::lookup", "lookup"]);
+    let parked = format!("{turn1}{generated}{EOS}");
+    let memra_shape: Vec<serde_json::Value> = calls
+        .iter()
+        .map(|c| {
+            json!({"id": c.id, "type": "function",
+                        "function": {"name": c.name, "arguments": c.arguments}})
+        })
+        .collect();
+    let vendor_shape: Vec<serde_json::Value> = calls
+        .iter()
+        .map(|c| {
+            let mut call = json!({"id": c.id, "type": "function",
+                                  "function": {"arguments": c.arguments}});
+            match c.name.split_once("::") {
+                Some((ns, bare)) => {
+                    call["function"]["name"] = json!(bare);
+                    call["namespace"] = json!(ns);
+                }
+                None => call["function"]["name"] = json!(c.name),
+            }
+            call
+        })
+        .collect();
+    for history in [memra_shape, vendor_shape] {
+        let mut messages = vec![
+            json!({"role": "user", "content": user}),
+            json!({"role": "assistant", "content": content, "reasoning_content": reasoning,
+                   "tool_calls": history}),
+        ];
+        for c in &calls {
+            messages.push(json!({"role": "tool", "tool_call_id": c.id, "content": "found"}));
+        }
+        let turn2 = render(serde_json::Value::Array(messages));
+        assert!(
+            turn2.starts_with(&parked),
+            "turn 2 stopped extending the generation:\n  parked: {parked:?}\n  turn 2: {turn2:?}"
+        );
+    }
+}
+
+/// A call namespace memra cannot read as encoding.py does is a 400 on V4.1, never dropped; the
+/// field stays ignored on every other dialect.
+#[test]
+fn dsv41_refuses_a_non_string_call_namespace() {
+    let messages = json!([
+        {"role": "user", "content": "q"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "c", "type": "function",
+            "namespace": {"name": "search"},
+            "function": {"name": "lookup", "arguments": "{}"}}]}]);
+    let err = wire_plan(json!({"model": "dsv41", "messages": messages}))
+        .err()
+        .unwrap();
+    assert!(
+        err.contains("tool_calls namespace must be a string"),
+        "{err}"
+    );
+    let dsv4 = ModelCaps {
+        dsv41: false,
+        ..dsv41_caps()
+    };
+    let req: ChatCompletionReq =
+        serde_json::from_value(json!({"model": "m", "messages": messages})).unwrap();
+    let (tx, _rx) = worker::event_channel();
+    assert!(build_chat_request(req, Some(&dsv4), tx, lanes::Lane::Interactive, None).is_ok());
 }
