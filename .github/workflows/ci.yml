@@ -325,7 +325,7 @@ jobs:
       # stopped half way when memra-server resolved a memra-engine the index did not list yet.
       # The real publish step runs against a fake registry whose index lags; no network.
       - name: Releasability, crates.io publish order and index wait (fake registry)
-        run: tools/unittest-floor.sh tools test_crates_publish.py 15
+        run: tools/unittest-floor.sh tools test_crates_publish.py 21
 
       # Teeth for the fatbin-vs-lookup census. The census itself runs per arch in the
       # arch-coverage job (it needs a build); its refusals are proven here with a stub

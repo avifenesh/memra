@@ -4,7 +4,8 @@
 usage: memra-gpu-run --gpus UUID[,UUID...] --receipt DIR [--box-lock PATH] [--timeout S] [--wait S] -- CMD...
 
 docs/RELEASE-QUALIFICATION.md "Produce a record" runs tools/qualify-release.py capture under it (one card);
-tools/qualify-model-device-memory.py runs its one- and two-card stages under it.
+tools/qualify-model-device-memory.py runs its one- and two-card stages under it. --wait bounds the wait for each
+lock on its own (the box lock, then each card's), so a lease of N cards with a box lock waits at most N+1 times it.
 
 It takes the box's campaign lock when --box-lock names one, then an exclusive flock on each card's canonical lock
 /tmp/memra-gpu-locks/<UUID>.lock in sorted UUID order (two wrappers asking for overlapping cards cannot deadlock),

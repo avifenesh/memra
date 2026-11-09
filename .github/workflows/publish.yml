@@ -116,7 +116,8 @@ jobs:
       # with a warning: on the v0.138.0 and v0.139.0 tags memra-engine was still missing from
       # the index when memra-server resolved `memra-engine = "=X"`, and both publishes stopped
       # half way. tools/crates_publish.py polls the index for the exact version (bounded,
-      # named error) and retries a dependent that still misses one.
+      # named error) and retries a dependent that still misses one, backing off when the
+      # index already lists it but cargo was served an older copy.
       #
       # THE LIST IS A CENSUS, NOT A CONVENIENCE. It must name EVERY publishable workspace
       # member, in topological order. It said 9 names while the workspace had 11 publishable

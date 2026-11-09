@@ -136,7 +136,7 @@ release time was not exercised at merge time.** That is the shape this section e
 | No new public-boundary violation | `tools/check-public-boundary.py check` | pre-push · `ci.yml` | 117 s |
 | Every grandfathered boundary grant still describes a live finding | `tools/check-public-boundary.py verify-allowlist` | `ci.yml` | 45.9 s |
 | Release notes measure from the last tag that actually shipped | `tools/changelog.sh` + `tools/changelog-skip-tags.txt` | `release.yml` | <1 s |
-| Release notes fit GitHub's 125,000-character limit, so `gh release create` cannot refuse them | `tools/changelog.sh` caps the draft at 120,000 bytes: whole sections in priority order (configuration, performance, features, fixes, documentation, other), the cut section's remainder and every omitted section counted, a compare link to the full range; teeth `tools/test_changelog.sh` arms 11-12 (arm 12 runs the real v0.138.0..v0.139.0 range, 3,866 commits) | `release.yml` · `ci.yml` | 0.2 s |
+| Release notes fit GitHub's 125,000-character limit, so `gh release create` cannot refuse them | `tools/changelog.sh` caps the draft at 120,000 bytes: whole sections in priority order (configuration, performance, features, fixes, documentation, other), the cut section's remainder and every omitted section counted, a compare link to the full range; teeth `tools/test_changelog.sh` arms 11-12 (arm 12 runs the real v0.138.0..v0.139.0 range, 3,870 commits) | `release.yml` · `ci.yml` | 0.2 s |
 
 ### CI wall time, and what a push actually pays (2026-09-02)
 
@@ -524,7 +524,8 @@ That's it. Two workflows fire on the tag:
   600 s cache lifetime: on the v0.138.0 and v0.139.0 tags memra-engine was not listed yet
   when memra-server resolved it, and both publishes stopped half way (memra-server and
   memra-cli never got 0.138.0). A dependent that still misses a just-published crate
-  waits for it and retries. The step is idempotent — rerunning a partly-published tag
+  waits until the index lists it and retries; when the index already listed it (cargo was
+  served an older copy), it backs off 30 s, growing per retry, for up to 20 minutes. The step is idempotent — rerunning a partly-published tag
   finishes the remainder. Dry-run first without tagging: Actions → publish → Run workflow
   (`workflow_dispatch` runs the full package+verify, then a read-only registry pass over
   the publish list, with no upload and no token); the dispatch `publish=true` input is the
@@ -566,7 +567,7 @@ The publish itself is per crate and skip-if-live, so a re-run after a refusal up
   gate battery like any release.
 
 Preview the draft locally before tagging. A draft over 120,000 bytes is cut to fit GitHub's
-125,000-character release limit (v0.139.0's uncut draft was 328,884 for 3,866 commits, and
+125,000-character release limit (v0.139.0's uncut draft was 328,884 for 3,870 commits, and
 "Publish release" failed on it); the cut keeps whole sections in priority order, counts what it
 leaves out and links the full range. The 5,000-character margin is room for the headline an
 owner adds afterwards.

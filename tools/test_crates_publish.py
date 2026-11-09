@@ -106,22 +106,37 @@ class IndexWaitTests(unittest.TestCase):
         self.assertGreaterEqual(cp.INDEX_WAIT_S, 600, "shorter than the index CDN's max-age=600")
 
 
+LAG = 'failed to select a version for the requirement `memra-engine = "=0.139.0"`'
+
+
 class PublishRetryTests(unittest.TestCase):
     def setUp(self):
+        for name in ("CRATES_PUBLISH_INDEX_WAIT_S", "CRATES_PUBLISH_POLL_S", "CRATES_PUBLISH_LAG_RETRY_S",
+                     "CRATES_PUBLISH_RATE_WAIT_S"):
+            os.environ.pop(name, None)
         self.c = FakeClock()
         self.waited = []
         self.logs = []
 
-    def publish(self, *outcomes):
+    def publish(self, *outcomes, index_wait=0.0, cargo_lag=None):
+        """OUTCOMES are cargo's answers in order; CARGO_LAG (s) instead makes cargo miss memra-engine until that
+        much fake time has passed. The fake index wait takes INDEX_WAIT s."""
         outs = list(outcomes)
         calls = []
 
         def run(name):
-            calls.append(name)
+            calls.append(self.c.now)
+            if cargo_lag is not None:
+                return (0, "Uploaded") if self.c.now >= cargo_lag else (101, LAG)
             return outs.pop(0)
 
-        result = cp.publish("memra-server", VERSION, run=run, wait=lambda n, v: self.waited.append((n, v)),
-                            sleep=self.c.sleep, log=self.logs.append)
+        def wait(n, v):
+            self.waited.append((n, v))
+            self.c.now += index_wait
+            return index_wait
+
+        result = cp.publish("memra-server", VERSION, run=run, wait=wait, sleep=self.c.sleep, clock=self.c.clock,
+                            log=self.logs.append)
         return result, calls
 
     def test_rate_limit_waits_the_new_crate_window_and_retries(self):
@@ -130,10 +145,22 @@ class PublishRetryTests(unittest.TestCase):
         self.assertEqual(self.c.sleeps, [cp.RATE_LIMIT_WAIT_S])
 
     def test_a_dependency_missing_from_the_index_is_waited_for_then_retried(self):
-        lag = 'failed to select a version for the requirement `memra-engine = "=0.139.0"`'
-        result, calls = self.publish((101, lag), (0, "Uploaded"))
+        result, calls = self.publish((101, LAG), (0, "Uploaded"), index_wait=40)
         self.assertEqual((result, len(calls)), ("published", 2))
         self.assertEqual(self.waited, [("memra-engine", VERSION)])
+        self.assertEqual(self.c.sleeps, [], "the index wait already covered the lag; no extra back-off")
+
+    def test_cargo_missing_a_dependency_the_index_lists_backs_off_until_it_resolves(self):
+        # the index lists memra-engine here from the start; cargo is served an older copy for 100 s
+        result, calls = self.publish(cargo_lag=100)
+        self.assertEqual(result, "published")
+        self.assertEqual(self.c.sleeps, [30, 60, 90], "no growing back-off between the retries")
+        self.assertGreaterEqual(calls[-1], 100)
+
+    def test_cargo_missing_a_listed_dependency_is_bounded(self):
+        with self.assertRaisesRegex(cp.PublishError, "cargo still cannot resolve memra-engine@0.139.0 .* after 1200 s"):
+            self.publish(cargo_lag=10 ** 6)
+        self.assertLessEqual(self.c.now, 1200)
 
     def test_a_dependency_at_another_version_is_a_real_failure(self):
         with self.assertRaisesRegex(cp.PublishError, "other than a rate limit"):
@@ -149,9 +176,21 @@ class PublishRetryTests(unittest.TestCase):
     def test_other_failures_stop_and_attempts_are_bounded(self):
         with self.assertRaisesRegex(cp.PublishError, "other than a rate limit"):
             self.publish((101, "error: failed to verify package tarball"))
-        with self.assertRaisesRegex(cp.PublishError, "after 6 attempts"):
+        with self.assertRaisesRegex(cp.PublishError, "still rate-limited after 6 attempts"):
             self.publish(*[(101, "429 Too Many Requests")] * cp.ATTEMPTS)
-        self.assertEqual(len(self.c.sleeps), cp.ATTEMPTS)
+        self.assertEqual(len(self.c.sleeps), cp.ATTEMPTS - 1, "slept after the last attempt")
+
+    def test_an_unanswered_api_is_unknown_not_absent(self):
+        self.assertIsNone(cp.api_live("memra-tier", VERSION, get=FakeIndex(OSError("down")), sleep=self.c.sleep))
+        self.assertIsNone(cp.api_live("memra-tier", VERSION, get=FakeIndex((503, [])), sleep=self.c.sleep))
+        self.assertIs(cp.api_live("memra-tier", VERSION, get=FakeIndex((404, [])), sleep=self.c.sleep), False)
+
+    def test_a_long_wait_says_it_is_still_waiting(self):
+        logs = []
+        get = FakeIndex(*[(200, ["0.138.0"])] * 13, (200, [VERSION]))
+        cp.wait_visible("memra-engine", VERSION, timeout=1200, poll=10, get=get, clock=self.c.clock,
+                        sleep=self.c.sleep, log=logs.append)
+        self.assertEqual(len([l for l in logs if l.startswith("waiting for memra-engine@0.139.0")]), 2, logs)
 
 
 # --- the workflow step against a fake registry ----------------------------------------------------------------
@@ -187,7 +226,9 @@ def serve(registry):
             parts = self.path.strip("/").split("/")
             s = registry.load()
             body, code = "", 404
-            if parts[:3] == ["api", "v1", "crates"] and len(parts) == 5:
+            if parts[:3] == ["api", "v1", "crates"] and s.get("api_down"):
+                code = 503
+            elif parts[:3] == ["api", "v1", "crates"] and len(parts) == 5:
                 if parts[3] in s["uploaded"] and parts[4] == s["version"]:
                     body, code = json.dumps({"version": {"num": s["version"]}}), 200
             elif parts[0] == "index" and registry.visible(parts[-1]):
@@ -215,6 +256,8 @@ FAKE_CARGO = textwrap.dedent("""\
     for dep in s["deps"][name]:  # cargo resolves each internal dependency against the index
         try:
             urllib.request.urlopen(f"{base}/index/x/y/{dep}", timeout=5).read()
+            # cargo_lag: cargo is served an older copy than the poll sees, for that long after the upload
+            assert time.time() >= s["uploaded"][dep] + s.get("cargo_lag", {}).get(dep, 0)
         except Exception:
             print("error: failed to prepare local package for uploading\\n\\nCaused by:\\n"
                   f"  failed to select a version for the requirement `{dep} = \\"={s['version']}\\"`")
@@ -278,10 +321,11 @@ class WorkflowStepTests(unittest.TestCase):
         self.server.server_close()
         subprocess.run(["rm", "-rf", str(self.tmp)], check=False)
 
-    def run_step(self, uploaded=(), lag=None):
+    def run_step(self, uploaded=(), lag=None, cargo_lag=None):
         now = time.time()
         self.state.write_text(json.dumps({"version": VERSION, "deps": self.deps, "order": [],
-                                          "uploaded": {n: now for n in uploaded}, "lag": lag or {}}))
+                                          "uploaded": {n: now for n in uploaded}, "lag": lag or {},
+                                          "cargo_lag": cargo_lag or {}}))
         # the old step logged to /tmp; keep every byte of this test under its own directory
         script = publish_step(WORKFLOW).replace("/tmp/", f"{self.tmp}/")
         return subprocess.run(["bash", "-e", "-c", script], cwd=ROOT, env=self.env, capture_output=True, text=True,
@@ -297,12 +341,21 @@ class WorkflowStepTests(unittest.TestCase):
         self.assertEqual(s["order"], self.crates, "not every crate was uploaded, in order")
         self.assertGreaterEqual(s["uploaded"]["memra-server"], s["uploaded"]["memra-engine"] + 3,
                                 "memra-server went up before memra-engine was in the index")
+        self.assertNotIn("could not resolve", r.stdout, "the dependent ran before the wait, and only the retry saved it")
 
     def test_a_rerun_skips_live_crates_and_waits_for_the_lagging_one(self):
         live = self.crates[:self.crates.index("memra-lanes") + 1]
         r = self.run_step(uploaded=live, lag={"memra-engine": 3})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.registry.load()["order"], ["memra-server", "memra-cli"])
+        self.assertNotIn("could not resolve", r.stdout, "the live crate was not waited for before its dependent")
+
+    def test_cargo_served_an_older_index_than_the_poll_backs_off_and_finishes(self):
+        self.env["CRATES_PUBLISH_LAG_RETRY_S"] = "0.5"
+        r = self.run_step(cargo_lag={"memra-engine": 2})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.registry.load()["order"], self.crates)
+        self.assertIn("is listed here but not to cargo", r.stdout)
 
     def test_an_index_that_never_lists_the_crate_fails_by_name(self):
         self.env["CRATES_PUBLISH_INDEX_WAIT_S"] = "1"
@@ -310,6 +363,16 @@ class WorkflowStepTests(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("memra-engine@0.139.0 is not in the crates.io index after 1 s", r.stdout)
         self.assertNotIn("memra-lanes", self.registry.load()["order"], "the publish went on past the missing crate")
+
+    def test_a_dry_run_that_cannot_reach_the_api_fails(self):
+        self.state.write_text(json.dumps({"version": VERSION, "deps": self.deps, "order": [], "uploaded": {},
+                                          "lag": {}, "api_down": True}))
+        r = subprocess.run([sys.executable, str(TOOLS / "crates_publish.py"), "--version", VERSION, "--dry-run",
+                            "--workflow", str(WORKFLOW)], cwd=ROOT, env=self.env, capture_output=True, text=True,
+                           timeout=120)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("the crates.io API did not answer for memra-tier@0.139.0", r.stdout)
+        self.assertNotIn("would upload", r.stdout)
 
     def test_the_dry_run_uploads_nothing(self):
         now = time.time()

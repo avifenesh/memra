@@ -104,7 +104,7 @@ done
 out+=$archive$footer
 
 # GitHub refuses release notes over 125,000 characters, and `gh release create` then fails the
-# whole release step: the v0.139.0 draft was 328,884 for 3,866 commits. The draft is capped at
+# whole release step: the v0.139.0 draft was 328,884 for 3,870 commits. The draft is capped at
 # CHANGELOG_MAX_BYTES (default 120,000 bytes, so at most 120,000 characters), which leaves room
 # for the headline and context an owner adds on GitHub afterwards (docs/RELEASING.md). A draft
 # that fits is emitted unchanged. One that does not keeps whole sections in priority order
@@ -114,7 +114,7 @@ out+=$archive$footer
 cap=${CHANGELOG_MAX_BYTES:-120000}
 blen "$out"
 if [ "$REPLY" -gt "$cap" ]; then
-    to_ref=$(git tag --points-at "$TO" --sort=-v:refname 2>/dev/null | head -1)
+    to_ref=$(git tag --points-at "$TO" --sort=-v:refname 2>/dev/null || true); to_ref=${to_ref%%$'\n'*}
     [ -n "$to_ref" ] || to_ref=$(git rev-parse "$TO")
     compare="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-avifenesh/memra}/compare/${FROM}...${to_ref}"
     total=0; declare -a count
@@ -167,7 +167,9 @@ if [ "$REPLY" -gt "$cap" ]; then
     for i in "${!titles[@]}"; do
         case "${state[$i]}" in
             full) body+="## ${titles[$i]}"$'\n'"${bodies[$i]}"$'\n\n'; listed=$((listed + count[i])) ;;
-            partial) body+="## ${titles[$i]}"$'\n'"$(printf '%s\n' "${bodies[$i]}" | head -n "$keep")"$'\n'
+            # a here-string, not a pipe: head stops reading after KEEP lines, and under pipefail the
+            # writer's SIGPIPE (anything past the 64 KiB pipe buffer) would end the script silently
+            partial) body+="## ${titles[$i]}"$'\n'"$(head -n "$keep" <<< "${bodies[$i]}")"$'\n'
                      body+="- $((count[i] - keep)) more not listed (full list linked above)"$'\n\n'
                      listed=$((listed + keep)) ;;
             omitted) omitted "${titles[$i]}" "${count[$i]}"; body+=$OMIT ;;

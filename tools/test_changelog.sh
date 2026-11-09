@@ -134,7 +134,7 @@ printf '%s\n' "$out" | grep -q 'Before the snapshot' && bad "arm10: baseline app
 ok "arm10 shallow clone announces itself, baseline not applied"
 
 # arm 11: a draft over the cap is cut by section priority, says so and links the full range
-# (v0.139.0: 328,884 bytes for 3,866 commits, over GitHub's 125,000-character limit)
+# (v0.139.0: 328,884 bytes for 3,870 commits, over GitHub's 125,000-character limit)
 : > "$tmp/tools/changelog-baseline.txt"
 cap=$tmp/cap; git init -q "$cap"
 gc() { git -C "$cap" "$@"; }
@@ -149,7 +149,8 @@ for n in 1 2 3 4 5; do cc "docs: doc number $n $long"; done
 cc "feat: the one feature"
 full=$(cd "$cap" && "$cl")
 printf '%s\n' "$full" | grep -q 'cut to fit' && bad "arm11: a draft under the default cap must not be cut: $full"
-out=$(cd "$cap" && CHANGELOG_MAX_BYTES=900 GITHUB_REPOSITORY=o/r "$cl"; printf x); out=${out%x}
+out=$(cd "$cap" && CHANGELOG_MAX_BYTES=900 GITHUB_REPOSITORY=o/r "$cl" && printf x) || bad "arm11: changelog.sh exited $?"
+out=${out%x}
 bytes=$(printf '%s' "$out" | LC_ALL=C wc -c)
 [ "$bytes" -le 900 ] || bad "arm11: capped draft is $bytes bytes, over 900: $out"
 printf '%s\n' "$out" | grep -q '^Changes since v1.0.0:' || bad "arm11: header lost: $out"
@@ -164,10 +165,11 @@ printf '%s\n' "$out" | grep -q 'doc number' && bad "arm11: documentation listed 
 printf '%s' "$out" | tail -n 1 | grep -q '^Boards + reproduction artifacts' || bad "arm11: footer lost: $out"
 ok "arm11 over the cap: priority cut, counts, compare link, $bytes bytes"
 
-# arm 12: the real v0.138.0..v0.139.0 range (3,866 commits) fits GitHub's limit under the
+# arm 12: the real v0.138.0..v0.139.0 range (3,870 commits) fits GitHub's limit under the
 # default cap (needs both tags; a checkout without them says so)
 if git -C "$here" rev-parse -q --verify v0.138.0^{commit} >/dev/null && git -C "$here" rev-parse -q --verify v0.139.0^{commit} >/dev/null; then
-    out=$(cd "$here" && "$here/tools/changelog.sh" v0.138.0 v0.139.0; printf x); out=${out%x}
+    out=$(cd "$here" && "$here/tools/changelog.sh" v0.138.0 v0.139.0 && printf x) || bad "arm12: changelog.sh exited $?"
+    out=${out%x}
     bytes=$(printf '%s' "$out" | LC_ALL=C wc -c)
     chars=$(printf '%s' "$out" | python3 -c 'import sys; print(len(sys.stdin.buffer.read().decode()))')
     [ "$bytes" -le 120000 ] && [ "$chars" -le 125000 ] || bad "arm12: v0.139.0 notes are $bytes bytes / $chars characters"
@@ -176,8 +178,31 @@ if git -C "$here" rev-parse -q --verify v0.138.0^{commit} >/dev/null && git -C "
     grep -qF '/compare/v0.138.0...v0.139.0' <<<"$out" || bad "arm12: no compare link for the real range"
     grep -q '^## Configuration' <<<"$out" || bad "arm12: configuration section lost"
     ok "arm12 real v0.138.0..v0.139.0: $bytes bytes, $chars characters"
+    # a cut section whose left-out part is larger than a pipe buffer (documentation here, 151 kB):
+    # the draft must still come out, under the cap, with a zero exit (review of #1121: exit 141)
+    out=$(cd "$here" && CHANGELOG_MAX_BYTES=175000 "$here/tools/changelog.sh" v0.138.0 v0.139.0 && printf x) \
+        || bad "arm12: changelog.sh exited $? at a 175,000-byte cap"
+    out=${out%x}
+    bytes=$(printf '%s' "$out" | LC_ALL=C wc -c)
+    [ "$bytes" -le 175000 ] || bad "arm12: the 175,000-byte draft is $bytes bytes"
+    grep -qE '^- [0-9]+ more not listed' <<<"$out" || bad "arm12: the cut section lost its count"
+    ok "arm12 real range at a 175,000-byte cap: $bytes bytes"
 else
     echo "note arm12: v0.138.0/v0.139.0 tags not in this checkout; the real-range check runs where they are"
 fi
+
+# arm 13: the same shape without the tags: a cut section that leaves out about 300 kB, well past a
+# 64 KiB pipe buffer (the previous script exits 141 here every time)
+big=$tmp/big; git init -q "$big"
+git -C "$big" config user.email t@t; git -C "$big" config user.name t
+git -C "$big" commit -q --allow-empty -m "chore: root"; git -C "$big" tag v1.0.0
+pad=$(printf 'y%.0s' $(seq 1 240))
+for n in $(seq 1 1200); do git -C "$big" commit -q --allow-empty -m "fix: fix number $n $pad"; done
+out=$(cd "$big" && CHANGELOG_MAX_BYTES=20000 "$cl" && printf x) || bad "arm13: changelog.sh exited $? on a large cut section"
+out=${out%x}
+bytes=$(printf '%s' "$out" | LC_ALL=C wc -c)
+[ "$bytes" -le 20000 ] || bad "arm13: capped draft is $bytes bytes, over 20000"
+grep -qE '^- [0-9]+ more not listed' <<<"$out" || bad "arm13: the cut section lost its count"
+ok "arm13 a cut section past the pipe buffer: exit 0, $bytes bytes"
 
 echo "test_changelog: $pass arms PASS"

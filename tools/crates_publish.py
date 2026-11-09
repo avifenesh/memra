@@ -15,13 +15,15 @@ checks. For each crate:
 Why the poll: cargo waits only 60 s after an upload (`publish.timeout` is still unstable, `-Zpublish-timeout`,
 nightly only) and then exits 0 with a warning. On the v0.138.0 and v0.139.0 tags memra-engine was still missing
 from the index the CDN served when memra-server resolved `memra-engine = "=X"` seconds later, and the publish
-stopped half way. A dependent that still fails that way (the index answered here but not to cargo) waits for the
-named crate again and retries within the same attempt budget.
+stopped half way. A dependent that still fails that way waits until the index lists the named crate here; when it
+already did (the index answered here but not to cargo), it backs off LAG_RETRY_S, growing per retry, and retries,
+for up to INDEX_WAIT_S from the first miss.
 
 --dry-run uploads nothing and never runs cargo: it reports which versions are live, checks each live one in the
-index and says which it would publish. The workflow's dry-run dispatch runs it over the publish list
-(--workflow parses the same `for crate in ... ; do` list the census reads). CPU contract:
-tools/test_crates_publish.py (a fake registry; CRATES_PUBLISH_REGISTRY and the *_S variables are its seams).
+index and says which it would publish; a crate whose state the API does not answer fails it. The workflow's
+dry-run dispatch runs it over the publish list (--workflow parses the same `for crate in ... ; do` list the census
+reads). CPU contract: tools/test_crates_publish.py (a fake registry; CRATES_PUBLISH_REGISTRY and the *_S
+variables are its seams).
 """
 import argparse
 import json
@@ -39,14 +41,21 @@ USER_AGENT = "memra-publish-workflow (github.com/avifenesh/memra)"
 # cached before the upload can be served for up to 600 s after it. Twice that also covers the index job's own lag.
 INDEX_WAIT_S = 1200
 POLL_S = 10
+HEARTBEAT_S = 60  # a long wait says it is still waiting
+LAG_RETRY_S = 30  # cargo missed a dependency the index already lists here: back off 30 s, 60 s, 90 s, ...
 RATE_LIMIT_WAIT_S = 620  # crates.io's new-crate burst window refills at one crate per 10 minutes
 ATTEMPTS = 6
+API_TRIES = 3
 MISSING_DEP = re.compile(r'failed to select a version for the requirement `([A-Za-z0-9_-]+) = "=([^"]+)"`')
 ALREADY_UPLOADED = re.compile(r"crate version `[^`]+` is already uploaded|already exists on crates\.io index")
 
 
 class PublishError(RuntimeError):
     pass
+
+
+def log(message):
+    print(message, flush=True)  # Actions buffers a pipe: a warning before a 10-minute sleep must show before it
 
 
 def seconds(name, default):
@@ -72,7 +81,7 @@ def index_path(name):
 
 
 def http_get(url):
-    """(status, body). A 404 is an answer; a network failure raises OSError."""
+    """(status, body). An HTTP error status is an answer; a network failure raises OSError."""
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
@@ -81,20 +90,26 @@ def http_get(url):
         return err.code, ""
 
 
-def api_live(name, version, get=http_get):
-    """True when the crates.io API has NAME@VERSION. An unanswered query counts as not live: the upload then
-    meets crates.io's own refusal, which publish() treats as live."""
+def api_live(name, version, get=http_get, sleep=time.sleep):
+    """True or False when the crates.io API answers for NAME@VERSION; None when it does not (a network failure or
+    an error status, after API_TRIES tries)."""
     api, _ = registry()
-    try:
-        status, body = get(f"{api}/{name}/{version}")
-    except OSError:
-        return False
-    if status != 200:
-        return False
-    try:
-        return json.loads(body).get("version", {}).get("num") == version
-    except (ValueError, AttributeError):
-        return False
+    for attempt in range(API_TRIES):
+        if attempt:
+            sleep(2)
+        try:
+            status, body = get(f"{api}/{name}/{version}")
+        except OSError:
+            continue
+        if status == 404:
+            return False
+        if status != 200:
+            continue
+        try:
+            return json.loads(body).get("version", {}).get("num") == version
+        except (ValueError, AttributeError):
+            continue
+    return None
 
 
 def index_versions(name, get=http_get):
@@ -113,13 +128,14 @@ def index_versions(name, get=http_get):
 
 
 def wait_visible(name, version, timeout=None, poll=None, get=http_get, clock=time.monotonic, sleep=time.sleep,
-                 log=print):
+                 log=log):
     """Poll the index until it lists NAME@VERSION; return the seconds waited. Raises PublishError at TIMEOUT."""
     timeout = seconds("CRATES_PUBLISH_INDEX_WAIT_S", INDEX_WAIT_S) if timeout is None else timeout
     poll = seconds("CRATES_PUBLISH_POLL_S", POLL_S) if poll is None else poll
     _, index = registry()
     url = f"{index}/{index_path(name)}"
     start = clock()
+    said = start
     last = "not listed yet"
     while True:
         try:
@@ -130,10 +146,15 @@ def wait_visible(name, version, timeout=None, poll=None, get=http_get, clock=tim
             last = "not listed yet"
         except (OSError, ValueError, KeyError) as err:  # a failed read is retried within the same bound
             last = f"index read failed: {err}"
-        if clock() - start >= timeout:
+        now = clock()
+        if now - start >= timeout:
             raise PublishError(f"{name}@{version} is not in the crates.io index after {timeout:.0f} s ({last}; {url}). "
-                               "The crates after it need it. Rerun the publish on the tag once the index lists it "
-                               "(docs/RELEASING.md, \"Re-running the publish on a tag\"); live crates are skipped.")
+                               "A crate that depends on it cannot publish until it is listed. Rerun the publish on "
+                               "the tag once the index lists it (docs/RELEASING.md, \"Re-running the publish on a "
+                               "tag\"); live crates are skipped.")
+        if now - said >= HEARTBEAT_S:
+            log(f"waiting for {name}@{version} in the crates.io index: {now - start:.0f} s of {timeout:.0f} s ({last})")
+            said = now
         sleep(poll)
 
 
@@ -144,14 +165,16 @@ def cargo_publish(name):
     lines = []
     for line in proc.stdout:
         sys.stdout.write(line)
+        sys.stdout.flush()
         lines.append(line)
-    sys.stdout.flush()
     return proc.wait(), "".join(lines)
 
 
-def publish(name, version, run=cargo_publish, wait=wait_visible, sleep=time.sleep, log=print):
-    """Upload NAME@VERSION, retrying a 429 and a dependency the index has not caught up with."""
-    for attempt in range(1, ATTEMPTS + 1):
+def publish(name, version, run=cargo_publish, wait=wait_visible, sleep=time.sleep, clock=time.monotonic, log=log):
+    """Upload NAME@VERSION, retrying a 429 and a dependency cargo cannot resolve yet."""
+    rate_limited = lag_retries = 0
+    lag_since = None
+    while True:
         code, out = run(name)
         if code == 0:
             return "published"
@@ -159,19 +182,35 @@ def publish(name, version, run=cargo_publish, wait=wait_visible, sleep=time.slee
             log(f"{name}@{version} is already on crates.io")
             return "live"
         if "429 Too Many Requests" in out:
+            rate_limited += 1
+            if rate_limited >= ATTEMPTS:
+                raise PublishError(f"{name} still rate-limited after {ATTEMPTS} attempts")
             wait_s = seconds("CRATES_PUBLISH_RATE_WAIT_S", RATE_LIMIT_WAIT_S)
-            log(f"::warning::{name} rate-limited (attempt {attempt}/{ATTEMPTS}); waiting {wait_s:.0f} s for the "
-                "new-crate window")
+            log(f"::warning::{name} rate-limited (attempt {rate_limited}/{ATTEMPTS}); waiting {wait_s:.0f} s for "
+                "the new-crate window")
             sleep(wait_s)
             continue
         missing = MISSING_DEP.search(out)
-        if missing and missing[2] == version:
-            log(f"::warning::{name} could not resolve {missing[1]}@{missing[2]} (attempt {attempt}/{ATTEMPTS}); "
-                "waiting for the index to list it")
-            wait(missing[1], missing[2])
-            continue
-        raise PublishError(f"{name} failed for a reason other than a rate limit or index lag; see the log above")
-    raise PublishError(f"{name} still not published after {ATTEMPTS} attempts")
+        if not (missing and missing[2] == version):
+            raise PublishError(f"{name} failed for a reason other than a rate limit or index lag; see the log above")
+        dep = missing[1]
+        bound = seconds("CRATES_PUBLISH_INDEX_WAIT_S", INDEX_WAIT_S)
+        if lag_since is None:
+            lag_since = clock()
+        elif clock() - lag_since >= bound:
+            raise PublishError(f"cargo still cannot resolve {dep}@{version} for {name} after {bound:.0f} s, although "
+                               "the crates.io index lists it here. Rerun the publish on the tag; live crates are "
+                               "skipped.")
+        lag_retries += 1
+        log(f"::warning::{name} could not resolve {dep}@{version} (retry {lag_retries}); waiting for the index to "
+            "list it")
+        waited = wait(dep, version)
+        if waited < seconds("CRATES_PUBLISH_POLL_S", POLL_S):
+            # The index already listed it here, so cargo was served an older copy: give that copy time to expire.
+            back_off = min(seconds("CRATES_PUBLISH_LAG_RETRY_S", LAG_RETRY_S) * lag_retries,
+                           max(bound - (clock() - lag_since), 0))
+            log(f"{dep}@{version} is listed here but not to cargo; retrying {name} in {back_off:.0f} s")
+            sleep(back_off)
 
 
 def workflow_crates(path):
@@ -198,16 +237,23 @@ def main(argv=None):
         ap.error("no crate named")
     try:
         for name in crates:
-            if api_live(name, a.version):
-                print(f"{name}@{a.version} already on crates.io; skipping the upload")
+            live = api_live(name, a.version)
+            if live is None and a.dry_run:
+                raise PublishError(f"the crates.io API did not answer for {name}@{a.version}; a dry run cannot "
+                                   "tell whether it is live")
+            if live:
+                log(f"{name}@{a.version} already on crates.io; skipping the upload")
             elif a.dry_run:
-                print(f"{name}@{a.version} is not on crates.io; a publish would upload it")
+                log(f"{name}@{a.version} is not on crates.io; a publish would upload it")
                 continue
-            elif publish(name, a.version) == "published":
-                print(f"{name}@{a.version} uploaded")
+            else:  # not live, or the API did not answer: crates.io itself refuses a version it has
+                if live is None:
+                    log(f"::warning::the crates.io API did not answer for {name}@{a.version}; trying the upload")
+                if publish(name, a.version) == "published":
+                    log(f"{name}@{a.version} uploaded")
             wait_visible(name, a.version)
     except PublishError as err:
-        print(f"::error::{err}")
+        log(f"::error::{err}")
         return 1
     return 0
 

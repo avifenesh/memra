@@ -130,10 +130,10 @@ CHILD = textwrap.dedent("""\
 def alive(pid):
     try:
         os.kill(pid, 0)
-    except ProcessLookupError:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except (ProcessLookupError, FileNotFoundError):  # it may exit between the two reads
         return False
-    stat = Path(f"/proc/{pid}/stat").read_text() if Path(f"/proc/{pid}/stat").exists() else ""
-    return bool(stat) and stat.split(") ")[-1][:1] != "Z"
+    return stat.split(") ")[-1][:1] != "Z"
 
 
 def held(path):
