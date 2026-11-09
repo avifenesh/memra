@@ -3206,9 +3206,52 @@ byte-equal to cold in 9 of 9 pair cells (greedy, T=1 and penalized, chat, raw an
 chains), and its TTFT drops from 2.462 s (a cold re-prime) to 0.275 s; on the agentic workload the
 memory floor, the refused cells and the generated text match main. Turning the restore switch on
 instead wins the same turn (0.277 s) but refuses one concurrency step sooner on this card.
+
+**A rewound session grows to the next turn's cap (memra#1093, the agentic shape).** A rewound
+session holds planes allocated for the cap of the request that primed it (prompt + max_tokens +
+8), and an agentic client sends the same `max_tokens` on a prompt that grows every turn, so the
+next turn's cap is always larger. Until this change the exact tier skipped such a session and the
+turn primed cold: on the agentic workload 47 to 50 sessions per boot parked rewound and none
+resumed. Three causes,
+by frequency at c1 on the RTX 5090: the admission reclaim evicted the turn's own parked session
+before the probe ran (a parked DFlash session frees about 0.8 GB, and the turn's cold cost needed
+it), the turn's cap outgrew the session, and the cache-preferred veto sent the turn plain on the
+boundary entry the session itself published. The change:
+- Grow first, then seat. The exact tier (`dspark_exact_pick`) takes a rewound session whatever the
+  cap, and after every cheaper refusal (sampler, the prime floor, the grid backstop) the resume arm
+  reallocates it at the request's cold allocation and carries the state over unchanged
+  (`HybridModel::dspark_grow_session`): a fresh `Cache::new` at the cap holding the full-attention
+  rows `[0, g)` and the recurrent planes, the drafter's cap raised and its planes grown to the cold
+  size when that is larger, the batched-snapshot tables rebuilt at the first round as on a cold
+  session. The seat then decides; a CUDA OOM retries once after freeing the unleased prefix
+  entries, and a grow or seat that fails serves cold and the entry goes.
+- The cache-preferred veto yields to the entry the probe would take (`pool_resumable`): rewound,
+  with the request's sampler, at least as deep as the hit or with a decode that repays the
+  difference. The resume brings the trunk and the drafter back and primes only the suffix, so the
+  veto's trade is not on the table.
+- The plain pool asks its grid rewind first (`grid_rewind_plain_refusal`): a compacted recurrent
+  entry the rewind would drop is dropped before the park-compact grow pays its allocation, snapshot
+  and copies. Same output by construction, less work.
+
+Counter: `dspark_pool_grid_rewind_grows` (resumes that grew the session first, a subset of
+`dspark_pool_grid_rewind_resumes`). Measured on the RTX 5090 at the device default
+(`research/pool-grow-dspark-20261108/`): 15 of 15 pair cells byte-equal to cold on the expected
+path (greedy, T=1 and penalized; chat, raw and chains; the agentic shape, where every resume grows,
+and the cache-preferred shape, where the base's warm turn at T=1 was not the cold text); #1103's
+turn 3 unchanged (0.263 / 0.258 s) and its turn 2 from 2.319 to 0.273 s; on the agentic workload
+the 3 cap-refused second turns at c1 resume (2.6-3.0 s to 0.45-0.83 s TTFT) with the memory floor,
+refusals and output unchanged, and with the held prefill-workspace charge underneath all 11 do.
+Tried and dropped: evicting the arriving prompt's own rewound session last in the admission
+reclaim; on the agentic workload it never changed which session survived (the reclaim needed the
+memory either way).
 STILL OPEN (memra#1093): the spec pool resumes an exact extension on its parked stream (no cell
 has reached it at the default: the prefix cache's on-grid spec restore claims those turns first);
-the plain-affinity rewind primes a suffix of 1..15 rows token by token.
+the plain-affinity rewind primes a suffix of 1..15 rows token by token. That suffix stays: a
+batched prime under `PRIME_MIN_T` rows needs a GEMM dispatch below m = 16 and a conv call below
+`d_conv - 1` rows, and the cold prime folds such a tail into the range before it, so even a batched
+short call would be another program; the exact alternative, the prime floor, primes the whole turn
+cold instead. No agentic or pair-cell receipt has reached it (0 of the 14 affinity rewinds on the
+agentic workload).
 
 **The DFlash capture and the hit site follow the same law since 2026-11-07.** The DFlash prompt-end
 capture was the one capture site left off the grid: with no render-stable cut armed, the tail (or
