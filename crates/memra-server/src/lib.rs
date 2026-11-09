@@ -289,7 +289,8 @@ pub(crate) struct AdmittedJson<T>(pub(crate) T, pub(crate) BodyAdmissionLease);
 /// - A type error (wrong type, null on a non-nullable field, missing or duplicate field) and a
 ///   syntax error (malformed or truncated JSON) answer 400 `invalid_request_error`. The message
 ///   is serde's description without its position. A type error names `param` when serde has a
-///   path for it (`stream`, `messages[0].content`); a syntax error names none.
+///   path for it (`stream`, `messages[0].content`); a syntax error names none and reads
+///   `invalid JSON: <description>`, as `/v1/responses` does.
 /// - A missing or non-JSON content type keeps its 415, in the same JSON shape.
 /// - A 413 passes through unchanged: `shape_payload_too_large` shapes every 413 in one place.
 ///
@@ -343,6 +344,9 @@ fn json_error_parts(
             return if named {
                 let path = err.path().to_string();
                 (format!("{path}: {description}"), Some(path))
+            } else if syntax {
+                // The lead-in `/v1/responses` uses for the same failure.
+                (format!("invalid JSON: {description}"), None)
             } else {
                 (description.to_string(), None)
             };
@@ -27059,12 +27063,13 @@ temperature = 0.6
                     400,
                     Some("stream"),
                 ),
+                // null on a field that is non-nullable here and has no upstream nullable form
                 (
                     "null",
-                    format!(r#"{valid},"stream":null}}"#),
+                    format!(r#"{valid},"stop_token_ids":null}}"#),
                     true,
                     400,
-                    Some("stream"),
+                    Some("stop_token_ids"),
                 ),
                 (
                     "nested",
@@ -27115,6 +27120,12 @@ temperature = 0.6
                     !message.contains("line ") && !message.contains("column "),
                     "{path} {case}: {message}"
                 );
+                if matches!(case, "malformed" | "truncated") {
+                    assert!(
+                        message.starts_with("invalid JSON: "),
+                        "{path} {case}: {message}"
+                    );
+                }
                 if let Some(param) = param {
                     assert!(
                         message.starts_with(&format!("{param}: ")),
@@ -27157,11 +27168,14 @@ temperature = 0.6
                 if json_type {
                     req = req.header("content-type", "application/json");
                 }
-                let response = app
-                    .clone()
-                    .oneshot(req.body(Body::from(r#"{"model":"#)).unwrap())
-                    .await
-                    .unwrap();
+                let response = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    app.clone()
+                        .oneshot(req.body(Body::from(r#"{"model":"#)).unwrap()),
+                )
+                .await
+                .unwrap_or_else(|_| panic!("{path} {case}: no answer"))
+                .unwrap();
                 assert_eq!(response.status().as_u16(), status, "{path} {case}");
                 let error = body_value(response).await["error"].clone();
                 assert_eq!(
@@ -27170,6 +27184,12 @@ temperature = 0.6
                 );
                 let message = error["message"].as_str().unwrap();
                 assert!(!message.contains("line "), "{path} {case}: {message}");
+                if json_type {
+                    assert!(
+                        message.starts_with("invalid JSON: "),
+                        "{path} {case}: {message}"
+                    );
+                }
             }
         }
     }

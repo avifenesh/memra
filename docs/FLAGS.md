@@ -2622,6 +2622,13 @@ layers keep `d2_windowed_attn`. An fa arm returns only with a fixed kernel and i
 receipt. Git history is the archive. Ledger: `VERDICT:dflash-fa-door-removed` (darklanes
 `agent-knowledge/gpu/verdicts-ledger.md`).
 
+**Correction, 2026-11-09:** the "broken" reading above was withdrawn on 2026-07-13, the day it
+was made. The later "fa arm ADOPTED" row of `research/gemma4-bringup/rig5090-gemma4.jsonl`
+found the 0.34 maxdiff was the kernel's bf16 mma class against an f32 oracle, not a mask bug.
+The removal stands on door hygiene: no decide-by date, never served, no bf16-class parity
+receipt. An fa arm returns with that parity receipt; no kernel fix is owed. The note in
+`dflash.rs` says the same.
+
 ## Removed doors, 2026-11-03 (engine kernel sweep: orphaned and lapsed doors)
 
 Each row lost its door without a receipt that kept it: either the env read was already gone
