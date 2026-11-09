@@ -2376,8 +2376,10 @@ __device__ __forceinline__ void gdn_k45_bar_out() {
 
 // The fused pass with the GDN out-norm (GB10 prefill lane, round 4): the gated RMSNorm of o
 // (weight w over the 128 columns of a head row, gate z: [T, H * 128]) and the ssm_out GEMM's F8F4
-// v2 activation into vy ([T, H * ncols] e4m3, then the scale plane at row pitch tp), the bytes
-// gated_rmsnorm_e4m3v2_f32 writes from the pair's o; o itself is never stored. Grid (H, 2), a
+// v2 activation into vy ([t_plane, H * ncols] e4m3, then the scale plane at row pitch tp), the bytes
+// gated_rmsnorm_e4m3v2_f32 writes from the pair's o; o itself is never stored. The T rows this
+// launch scans land at activation rows tok0.. (0 and T for a whole call; a part of a prime call
+// split by the GDN state tap passes its first row and the call's rows). Grid (H, 2), a
 // cluster per head; dynamic shared memory GDN_K45_NORM_SMEM. ncols must be 128 (D).
 // The body is gdn_chunk_state_output_mma's, copied: a shared template moved that kernel's SASS
 // (sm_120a: 16 -> 20 B of spill), so the two are kept textually in step instead. Any edit to one
@@ -2388,7 +2390,8 @@ gdn_chunk_state_output_norm_mma(const __nv_bfloat16* __restrict__ kb16, const fl
         const __nv_bfloat16* __restrict__ Wb16, const float* __restrict__ q,
         const float* __restrict__ P, const float* __restrict__ zg, const float* __restrict__ wn,
         uint8_t* __restrict__ vy, const float* __restrict__ state_in, float* __restrict__ state_out,
-        int H, int T, int C, float scale, int hk, int ncols, long long tp, float eps) {
+        int H, int T, int C, float scale, int hk, int ncols, long long tp, float eps, long long tok0,
+        long long t_plane) {
     constexpr int D = GDN_D;
     extern __shared__ __align__(16) unsigned char gdn_k45_raw[];
     GdnK45Smem& sm = *reinterpret_cast<GdnK45Smem*>(gdn_k45_raw);
@@ -2793,7 +2796,7 @@ gdn_chunk_state_output_norm_mma(const __nv_bfloat16* __restrict__ kb16, const fl
                 gdn_k45_bar_out();
                 // per 32-column group: d_inv = 448 / amax, e4m3 of x * d_inv, the scale amax / 448
                 const int in_f = H * ncols;
-                float* sc = (float*)(vy + (size_t)T * in_f);
+                float* sc = (float*)(vy + (size_t)t_plane * in_f);
                 #pragma unroll
                 for (int jt = 0; jt < 2; jt++)
                     #pragma unroll
@@ -2802,7 +2805,7 @@ gdn_chunk_state_output_norm_mma(const __nv_bfloat16* __restrict__ kb16, const fl
                         const float amax = fmaxf(am[jt][rh], nx->am[mh ^ 1][j]);
                         const float d_inv = amax == 0.0f ? 0.0f : 448.0f / amax;
                         if (j < Cc) {
-                            const long long t = t0 + j;
+                            const long long t = tok0 + t0 + j;
                             uint8_t* vals = vy + (size_t)t * in_f + h * ncols + col0;
                             #pragma unroll
                             for (int hf = 0; hf < 2; hf++) {

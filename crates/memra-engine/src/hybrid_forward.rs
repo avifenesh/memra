@@ -10038,6 +10038,22 @@ impl HybridModel {
         let tapped = tap_r.filter(|&r| {
             r > 0 && r % Engine::gdn_chunk_size() == 0 && r >= PRIME_MIN_T && t - r >= PRIME_MIN_T
         });
+        // The tapped call keeps the fused out-norm when the seeded arm below would take it: each
+        // part's K4+K5 pass writes its rows of the call's one F8F4 v2 activation, `o` never stored.
+        if let Some(r) = tapped
+            && seed_out
+            && d_state == 128
+            && !Self::f16out_on(e, t)
+            && Self::prime_norm_fuse_on()
+            && e.f8f4_v2_direct(&la.ssm_out, t)
+            && e.gdn_k45_norm_route(r)
+            && e.gdn_k45_norm_route(t - r)
+        {
+            let gn = self.gdn_scan_prefill_norm_tapped(
+                e, la, qkv_mixed, z, beta_raw, alpha, t, r, cache, il, scale,
+            )?;
+            return Ok((gn, None));
+        }
         let o = if let Some(r) = tapped {
             self.gdn_scan_prefill_tapped(e, la, qkv_mixed, beta_raw, alpha, t, r, cache, il, scale)?
         } else {
@@ -10183,14 +10199,100 @@ impl HybridModel {
         let rl = cache.recur[il]
             .as_ref()
             .ok_or("gdn tap: not a recurrent layer")?;
-        let conv = e.clone_dtod(&rl.conv_state)?;
-        let ssm = e.clone_dtod(&rl.ssm_state)?;
+        let copy = |src: &CudaSlice<f32>| -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+            let mut dst = e.uninit(src.len())?;
+            e.copy_into(&mut dst, 0, src, src.len())?;
+            Ok(dst)
+        };
+        let conv = copy(&rl.conv_state)?;
+        let ssm = copy(&rl.ssm_state)?;
         if let Some(tap) = cache.gdn_tap.as_mut() {
             tap.conv[il] = Some(conv);
             tap.ssm[il] = Some(ssm);
             tap.taken += 1;
         }
         Ok(())
+    }
+
+    /// The tapped call's GDN layer on the fused K4+K5 out-norm route: the prep and the fused pass of
+    /// rows [0, r) and [r, t) each write their rows of the call's one F8F4 v2 activation
+    /// (`gdn_scan_prefill_norm_f8f4v2_at`), the state at row `r` goes to the tap between them, and
+    /// the activation seeds the ssm_out GEMM's scope under the returned buffer's address, as the
+    /// seeded K4+K5 arm does. Each part runs what the split prime's call of that many rows runs.
+    #[allow(clippy::too_many_arguments)] // allow: the mixer inputs plus the split row and the cache; the same contract as the layer body that calls it
+    fn gdn_scan_prefill_norm_tapped(
+        &self,
+        e: &Engine,
+        la: &LinearAttnLayer,
+        qkv_mixed: &cudarc::driver::CudaView<f32>,
+        z: &cudarc::driver::CudaView<f32>,
+        beta_raw: &cudarc::driver::CudaView<f32>,
+        alpha: &cudarc::driver::CudaView<f32>,
+        t: usize,
+        r: usize,
+        cache: &mut Cache,
+        il: usize,
+        scale: f32,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let geometry = la.geometry;
+        let d_state = geometry.key_head_dim as usize;
+        let num_k = geometry.key_heads as usize;
+        let num_v = geometry.value_heads as usize;
+        let value_dim = geometry.value_head_dim as usize * num_v;
+        let conv_dim = d_state * num_k * 2 + value_dim;
+        let in_f = d_state * num_v;
+        let gn = e.uninit(in_f * t)?;
+        let key = e.addr_f32(&gn);
+        let mut act = e.alloc_u8_uninit(Engine::f8f4v2_act_bytes(in_f, t))?;
+        for (lo, hi) in [(0, r), (r, t)] {
+            let n = hi - lo;
+            let prep = self.linear_attn_gdn_prep(
+                e,
+                la,
+                &qkv_mixed.slice(lo * conv_dim..hi * conv_dim),
+                &beta_raw.slice(lo * num_v..hi * num_v),
+                &alpha.slice(lo * num_v..hi * num_v),
+                n,
+                cache,
+                il,
+                None,
+            )?;
+            let rl = cache.recur[il].as_mut().unwrap();
+            {
+                let crate::cache::RecurLayer {
+                    ssm_state,
+                    ssm_state_alt,
+                    ..
+                } = rl;
+                e.gdn_scan_prefill_norm_f8f4v2_at(
+                    &prep.q_l2,
+                    &prep.k_l2,
+                    &prep.v_g,
+                    &prep.g_log,
+                    &prep.beta,
+                    prep.kb16.as_ref(),
+                    prep.qb16.as_ref(),
+                    ssm_state,
+                    ssm_state_alt,
+                    num_v,
+                    n,
+                    scale,
+                    prep.hk,
+                    &z.slice(lo * value_dim..hi * value_dim),
+                    la.ssm_norm.float_data(),
+                    self.cfg.rms_eps,
+                    &mut act,
+                    lo,
+                    t,
+                )?;
+            }
+            std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
+            if lo == 0 {
+                self.gdn_tap_fill(e, cache, il)?;
+            }
+        }
+        e.f8f4v2_seed_activation(key, in_f, t, act);
+        Ok(gn)
     }
 
     /// The GDN prep and chunked scan of one prime call in two parts, rows [0, r) and [r, t),

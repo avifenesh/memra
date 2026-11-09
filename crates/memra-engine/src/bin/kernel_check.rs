@@ -2680,7 +2680,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     output (the prime's seeded arm) byte for byte: the e4m3 values, every written scale
     //     slot and the state. The 27B shape (48 value / 16 key heads), T = 300 (a partial last
     //     chunk), 64 and 20 (one partial chunk), a nonzero initial state, z with exact zeros and
-    //     one all-zero 32-column group (amax = 0). ---
+    //     one all-zero 32-column group (amax = 0); at T >= 64 also in two parts writing their rows
+    //     of one activation (gdn_scan_prefill_norm_f8f4v2_at, the tail fold's tapped call). ---
     if env!("MEMRA_BUILT_CUDA_ARCH") == "120a" {
         let (s_v, h, nk, c, eps) = (128usize, 48usize, 16usize, 32usize, 1e-6f32);
         for &t in &[300usize, 64, 20] {
@@ -2770,6 +2771,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     runs.push((e.dtoh_u8(&vy)?, e.dtoh(&so_f)?));
                 }
             }
+            // The two-part form (the boundary tail fold's tapped call): rows [0, r) then [r, t)
+            // of one activation, the state handed over between them; r = 160 at T 300 puts the
+            // split between two 64-row tiles of the scale plane's slot permutation.
+            let two_part = t >= 64;
+            if fused.is_ok() && two_part {
+                let r = if t >= 192 { 160 } else { 32 };
+                let in_f = h * s_v;
+                let up = |x: &[f32], w: usize, lo: usize, hi: usize| e.htod(&x[lo * w..hi * w]);
+                let mut vy = e.htod_bytes(&vec![0x5au8; bytes])?;
+                let mut so_m = e.zeros(s_v * s_v * h)?;
+                let mut so_2 = e.zeros(s_v * s_v * h)?;
+                for (lo, hi) in [(0, r), (r, t)] {
+                    let (qp, kp) = (up(&qc, s_v * nk, lo, hi)?, up(&kc, s_v * nk, lo, hi)?);
+                    let (vp, gp, bp) = (
+                        up(&v, s_v * h, lo, hi)?,
+                        up(&g, h, lo, hi)?,
+                        up(&beta, h, lo, hi)?,
+                    );
+                    let zp = zd.slice(lo * in_f..hi * in_f);
+                    let (st_in, st_out) = if lo == 0 {
+                        (&sid, &mut so_m)
+                    } else {
+                        (&so_m, &mut so_2)
+                    };
+                    let st_in = e.clone_dtod(st_in)?;
+                    fused = e.gdn_scan_prefill_norm_f8f4v2_at(
+                        &qp,
+                        &kp,
+                        &vp,
+                        &gp,
+                        &bp,
+                        None,
+                        None,
+                        &st_in,
+                        st_out,
+                        h,
+                        hi - lo,
+                        scale,
+                        nk,
+                        &zp,
+                        &wd,
+                        eps,
+                        &mut vy,
+                        lo,
+                        t,
+                    );
+                    if fused.is_err() {
+                        break;
+                    }
+                }
+                if fused.is_ok() {
+                    runs.push((e.dtoh_u8(&vy)?, e.dtoh(&so_2)?));
+                }
+            }
             unsafe {
                 std::env::remove_var("MEMRA_GDN_MMA");
                 std::env::remove_var("MEMRA_GDN_WGMMA");
@@ -2810,11 +2865,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .filter(|(a, b)| a.to_bits() != b.to_bits())
                     .count();
             }
-            let routed = routed && runs.len() == 3;
+            let routed = routed && runs.len() == 3 + usize::from(two_part);
             println!(
                 "GDN-K45-NORM T={t:3} H={h} hk={nk}: route={routed} e4m3+scales bitdiff={bad} \
-                 state bitdiff={bs} over the seeded run and two pre-filled buffers (zero groups \
+                 state bitdiff={bs} over the seeded run, two pre-filled buffers{} (zero groups \
                  {zero_groups}) {}",
+                if two_part {
+                    " and the two-part run"
+                } else {
+                    ""
+                },
                 if routed && bad == 0 && bs == 0 && zero_groups > 0 {
                     "OK"
                 } else {
