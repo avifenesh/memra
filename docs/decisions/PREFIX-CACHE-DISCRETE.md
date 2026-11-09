@@ -56,13 +56,14 @@ won one shape and lost or tied another on the 5090; the owner's rule keeps only 
 
 **(c) Admission reclaim above the floor: partial (2026-11-09, `research/partial-reclaim-20261109/`).** With the memory
 door off, on a discrete card whose derived budget is above its two-entry floor and a single primary reading, a
-deferred arrival frees its unbooked shortfall plus what the priming sessions still owe (prime transients and their
-uncapped pending seeds), oldest entry first, and the rest of the cache stays. Still short after the settle, the rest
-of the unleased cache goes as before. A pass that kept cache bytes arms a booking: the door-off gate books the seeds
-the priming sessions will publish, capped at the cache's room, until none is pending, so a later arrival of the same
-burst cannot pass on those bytes. The door's demoting flush, unified memory, a per-device reading, an operator
-budget and the floor (every RTX 5090 configuration, the Max-Q at the default caps) keep the flush. Its acceptance
-cell is the at-the-limit cell (the README there has the numbers).
+deferred arrival frees its unbooked shortfall, the entry it will itself publish and what the priming sessions still
+owe (prime transients and their uncapped pending seeds), oldest entry first, and the rest of the cache stays. Still
+short after the settle, the rest of the unleased cache goes as before. A pass that freed bytes arms a booking: the
+door-off gate books what the priming sessions owe (the transients, and the seeds capped at the cache's room) until
+nothing is owed, so a later arrival of the same burst cannot pass on those bytes. The door's demoting flush, unified
+memory, a per-device reading, an operator budget and the floor (every measured RTX 5090 configuration, the Max-Q at
+the default caps) keep the flush. Acceptance: the at-the-limit cell, interleaved against #1090's head; its numbers
+are in the lane README.
 
 ## Measured
 

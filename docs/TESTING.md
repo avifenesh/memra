@@ -1653,11 +1653,13 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
   `kv_flex_shed_reaches_the_floor_through_reused_entries_and_warns_only_when_all_is_leased`; for
   the partial admission reclaim (memory door off, a discrete card with a derived budget above its
   floor: it frees the arrival's need oldest first, falls back to the flush when still short and
-  books pending seeds after it kept bytes, `research/partial-reclaim-20261109/`)
+  then books what priming sessions owe, `research/partial-reclaim-20261109/`)
   `partial_reclaim_applies_only_door_off_discrete_primary_above_the_floor`,
   `partial_reclaim_floor_key_is_a_derived_budget_above_two_entries`,
   `partial_reclaim_frees_the_need_oldest_first_and_keeps_the_newest`,
-  `reclaim_booking_books_capped_seeds_while_armed_and_ends_when_none_is_pending` and
+  `partial_reclaim_counts_the_arrivals_own_entry_from_the_seed_floor`,
+  `partial_reclaim_flushes_the_rest_only_when_short_with_bytes_kept`,
+  `reclaim_booking_books_what_priming_sessions_owe_until_nothing_is` and
   `partial_reclaim_and_its_booking_are_wired_into_the_reclaim_site`. The
   eviction contract is stated in `docs/SERVING.md` ("Eviction (plain global LRU ...)"): every
   unleased byte is reclaimable for the newest turn, oldest first; only leases are untouchable.
