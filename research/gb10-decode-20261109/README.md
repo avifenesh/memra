@@ -137,6 +137,10 @@ Served B/T, B = main a8a980a017, T = the lever (c482d10f58, before the restack o
 - **Exact.** Every request served the same text in every cell of both arms, in all three campaigns: greedy, sampled, the resumed second turn and the 131k request.
 - **GB10: about 3 ms a round, at every context.** Every T cell is faster than every B cell on the round cost in both campaigns, and the saving is 2 to 20 times the larger spread. The one wide T spread (1.36 ms, s1k 0.102 s) is cell 06-T of the first campaign, which ran 1 ms a round slower than its two twins and still under every B cell; the second campaign's six cells repeat the saving with spreads under 0.35 ms. The scout priced the copies at 2.75 ms a round.
 - **RTX 5090: no change.** The copies are a small share of a 32 ms round at four times the bandwidth, and the card's clock moved more between cells (1.6-1.7 ms of spread) than the lever could. Nothing regressed.
+- **The fill sites the battery does not reach** (RTX 5090, at the stacked head's code, 3ab0a686a1; `cols-extra-5090/`):
+  - the per-row fill: `run-spec` K=1..8 on Qwen3.8-27B with `MEMRA_SPEC_GDN_PACKED=0`, 8 of 8 identical to plain;
+  - the rowwise fill: the same with `MEMRA_SPEC_VERIFY_ROWWISE=1`, 8 of 8;
+  - the pooled cohort's slab take: `battery/pool_cell.py` (q9, waves of 2, 4 and 8 concurrent requests, greedy and sampled) on the stack parent and on the head, all 14 streams identical.
 - **Engine gates at the lever's first commit:** the RTX 5090 device battery passes (kernel-check all green, the argmax gates, `run-spec` K=1..8 identical to plain on both roster models; `cols-5090/battery.txt`). Its Qwen3.8-27B K=3 run accepts 17 of 42 drafted tokens, so partial accepts restore from the slabs there.
 
 ## The cold-long rung on GB10: K=2 against K=3 (lever 4's first cell, for memra#1093)

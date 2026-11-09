@@ -4,13 +4,13 @@
 #   seam-unpacked / seam-rowwise: run-spec K=1..8 on Qwen3.8-27B with MEMRA_SPEC_GDN_PACKED=0 and
 #     with MEMRA_SPEC_VERIFY_ROWWISE=1 (the per-row and rowwise ColStates fills);
 #   pool-B / pool-T: research/batch-spec-20261101/battery/pool_cell.py (q9, c = 2, 4, 8 pooled
-#     cohorts, greedy and sampled) on main's binary and on the head's; every stream must match.
-# usage: cols5090_extra.sh HEAD_SHA
+#     cohorts, greedy and sampled) on the stack parent and on the head; every stream must match.
+# usage: cols5090_extra.sh HEAD_SHA [BASE_SHA]   (the base is the stack parent, lever 1 on main)
 set -u
 export PATH=/usr/bin:$PATH
 D=$HOME/.cache/memra-gb10-r4
 H=$1
-B=$D/cells-work/rtx5090/bins/a8a980a017aa8541fe5ed10c63f6784c30896009-120a
+B=$D/cells-work/rtx5090/bins/${2:-e0887334a04c385a450fbdfcd3114f523624935d}-120a
 T=$D/cells-work/rtx5090/bins/$H-120a
 Q38=/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
 CD=$D/scout/cols-extra-5090; mkdir -p "$CD"
