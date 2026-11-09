@@ -7811,6 +7811,13 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
             "dspark_pool_grid_park_skips": m.dspark_pool_grid_park_skips,
             "dspark_pool_grid_rewind_resumes": m.dspark_pool_grid_rewind_resumes,
             "dspark_pool_grid_rewind_grows": m.dspark_pool_grid_rewind_grows,
+            // memra#1093: the spec pool under the grid law: exact or text hits on a recurrent
+            // trunk rewound to an on-grid turn checkpoint (subset of spec_pool_hits), hits refused
+            // with no such checkpoint (the request primes cold), and recurrent retires freed
+            // instead of parked.
+            "spec_pool_grid_rewinds": m.spec_pool_grid_rewinds,
+            "spec_pool_grid_declines": m.spec_pool_grid_declines,
+            "spec_pool_grid_park_skips": m.spec_pool_grid_park_skips,
             "served_dspark": m.served_dspark,
             "served_spec": m.served_spec,
             "served_plain": m.served_plain,

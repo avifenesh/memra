@@ -2883,10 +2883,10 @@ pub struct Metrics {
     /// PLAIN-SESSION AFFINITY (lane/plain-affinity): continuation-pool resumes that rewound to a
     /// prompt-end checkpoint on a rewritten-history turn (subset of continuation_pool_hits).
     pub plain_affinity_rewinds: u64,
-    /// THE POOL GRID LAW (memra#1091): exact-extension hits rewound to their grid checkpoint, and
-    /// those whose parked end was refused (no checkpoint, under the prime floor, or a failed
-    /// restore). Rewinds are a subset of continuation_pool_hits; refusals are not hits. Recurrent
-    /// caches always, every cache under MEMRA_RESUME_GRID_REWIND=1, none under MEMRA_RESUME_EXACT=1.
+    /// THE POOL GRID LAW (memra#1091): exact-extension hits on a recurrent cache rewound to their
+    /// grid checkpoint, and those whose parked end was refused (no checkpoint, under the prime
+    /// floor, or a failed restore). Rewinds are a subset of continuation_pool_hits; refusals are
+    /// not hits.
     pub continuation_pool_grid_rewinds: u64,
     pub continuation_pool_grid_declines: u64,
     /// DSpark-pool hits refused by the grid law (memra#1093): a recurrent trunk not rewound (a
@@ -2900,6 +2900,13 @@ pub struct Metrics {
     pub dspark_pool_grid_park_skips: u64,
     pub dspark_pool_grid_rewind_resumes: u64,
     pub dspark_pool_grid_rewind_grows: u64,
+    /// The spec pool under the grid law (memra#1093): exact or text hits on a recurrent trunk
+    /// rewound to the session's on-grid turn checkpoint (a subset of spec_pool_hits); hits refused
+    /// because no on-grid checkpoint serves the prompt (the request primes cold); recurrent spec
+    /// retires freed instead of parked, holding no on-grid checkpoint.
+    pub spec_pool_grid_rewinds: u64,
+    pub spec_pool_grid_declines: u64,
+    pub spec_pool_grid_park_skips: u64,
     pub spec_pool_hits: u64,
     pub spec_pool_misses: u64,
     pub spec_pool_affinity_rewinds: u64,
@@ -3351,12 +3358,10 @@ struct ReuseMetrics {
     /// resumed via a rewind checkpoint (rewritten-history turn) rather than exact extension.
     /// Subset of `continuation_hits`; the per-turn resume count the affinity gate reads out.
     plain_affinity_rewinds: u64,
-    /// THE POOL GRID LAW (memra#1091, memra#1093 item 6): exact-extension hits that took the grid
-    /// rewind (every recurrent cache, and every cache under MEMRA_RESUME_GRID_REWIND=1) and
-    /// rewound to the session's grid checkpoint, and those whose parked end was refused (no
+    /// THE POOL GRID LAW (memra#1091, memra#1093 item 6): exact-extension hits on a recurrent
+    /// cache rewound to the session's grid checkpoint, and those whose parked end was refused (no
     /// checkpoint, the floor, or a failed restore; the affinity tier or the prefix cache may still
-    /// serve the request). A refused hit is not a continuation hit. MEMRA_RESUME_EXACT=1 has its
-    /// own resume and counts here neither way.
+    /// serve the request). A refused hit is not a continuation hit.
     continuation_grid_rewinds: u64,
     continuation_grid_declines: u64,
     /// DSpark-pool exact or text hits refused under the grid law (memra#1093): a recurrent trunk
@@ -3371,6 +3376,14 @@ struct ReuseMetrics {
     /// session to the request's cap (`HybridModel::dspark_grow_session`).
     dspark_grid_rewind_resumes: u64,
     dspark_grid_rewind_grows: u64,
+    /// The spec pool under the grid law (memra#1093): exact or text hits on a recurrent trunk
+    /// rewound to the session's on-grid turn checkpoint (a subset of `spec_hits`); exact, text
+    /// or affinity hits refused because the session holds no on-grid checkpoint the prompt
+    /// extends by the prime floor (the request primes cold; not hits); and recurrent spec
+    /// retires freed instead of parked because they hold no on-grid checkpoint at all.
+    spec_grid_rewinds: u64,
+    spec_grid_declines: u64,
+    spec_grid_park_skips: u64,
 }
 
 /// Workspace-aware admission for hyper-trunk prefill (lane/glm5-gpf-workspace, 2026-08-30).
@@ -4185,6 +4198,58 @@ fn cache_carries_recurrent(cache: &Cache) -> bool {
     cache.recur.iter().any(Option::is_some)
 }
 
+/// Why a parked spec session with a recurrent trunk holds nothing it can resume exactly
+/// (memra#1093), or `None` when its turn checkpoint can serve a resume. The parked end holds
+/// rows that verify and decode wrote, off the prime grid, so the only state a cold prime also
+/// computes is the turn checkpoint, and only when it sits on the grid: the engine captures it at
+/// a prime stop, and every prime a resumable spec session runs starts on the grid (0, an on-grid
+/// prefix-cache entry, or a checkpoint that passed this check), so an on-grid stop holds the
+/// state a cold prime of those tokens leaves. A checkpoint off the grid is the prompt-end capture
+/// a prompt too short for a stable boundary takes, or a stop inside a suffix primed from an
+/// off-grid start. `resident` is `SpecSession::rewind_is_resident`.
+fn spec_checkpoint_grid_refusal(ckpt_pos: Option<usize>, resident: bool) -> Option<String> {
+    let Some(pos) = ckpt_pos.filter(|&p| p > 0) else {
+        return Some("no turn checkpoint".into());
+    };
+    let c = memra_engine::Engine::gdn_chunk_size();
+    if !pos.is_multiple_of(c) {
+        return Some(format!(
+            "the checkpoint {pos} is off the {c}-token prime grid"
+        ));
+    }
+    if !resident {
+        return Some(format!("the ring lapped the checkpoint {pos}"));
+    }
+    None
+}
+
+/// Why a spec-pool hit on a recurrent trunk cannot rewind to its turn checkpoint for `prompt`
+/// (memra#1093), or `None` when it rewinds: the checkpoint must pass
+/// `spec_checkpoint_grid_refusal`, the prompt must reproduce `committed` through it, and at least
+/// `PRIME_MIN_T` prompt rows must remain to prime past it (a shorter suffix primes token by token,
+/// a program the cold prime does not run). A refused hit primes cold.
+fn spec_pool_grid_refusal(
+    ckpt_pos: Option<usize>,
+    resident: bool,
+    committed: &[u32],
+    prompt: &[u32],
+) -> Option<String> {
+    if let Some(why) = spec_checkpoint_grid_refusal(ckpt_pos, resident) {
+        return Some(why);
+    }
+    let pos = ckpt_pos.expect("checked above");
+    if pos > committed.len()
+        || prompt.len() < pos + memra_engine::hybrid_forward::PRIME_MIN_T
+        || prompt[..pos] != committed[..pos]
+    {
+        return Some(format!(
+            "the prompt diverges before the checkpoint {pos} or extends it by fewer than the \
+             prime floor"
+        ));
+    }
+    None
+}
+
 /// The boot-wide reasons a DFlash retire never rewinds (`dspark_park_rewind`). With the restore
 /// switch on, the next DFlash turn restores from the prefix cache, which the pool probe yields
 /// to, so a parked session would hold its planes for a resume that never runs. Under
@@ -4343,6 +4408,64 @@ fn grid_rewind_plain(
         committed - pos
     );
     Some(e)
+}
+
+/// What the spec pool's exact or text tier does with the parked session it matched (memra#1093).
+enum SpecExtensionTake {
+    /// An attention-only trunk resumes at its parked end, as before the grid law.
+    ParkedEnd(memra_engine::spec::SpecSession),
+    /// A recurrent trunk rewound to its on-grid turn checkpoint: the session, its parked
+    /// committed length and the checkpoint. The request primes the rest of its own prompt.
+    Rewound(memra_engine::spec::SpecSession, usize, usize),
+    /// Refused by the grid law: the session is dropped and the request primes cold.
+    Declined,
+}
+
+/// The spec pool's grid rewind (memra#1093, the plain pool's `grid_rewind_plain` for a spec
+/// session): a recurrent trunk's parked end holds rows verify and decode wrote, so an exact or
+/// text hit rewinds to the session's turn checkpoint (`spec_rewind_to_checkpoint`) when
+/// `spec_pool_grid_refusal` admits it, and is declined otherwise. A text hit that rewinds then
+/// primes the prompt's own tokens past the checkpoint, so the resumed stream is the one a cold
+/// prime of the prompt sees.
+fn spec_pool_take_extension(
+    engine: &Engine,
+    lm: &LoadedModel,
+    mut sess: memra_engine::spec::SpecSession,
+    prompt: &[u32],
+    model: &str,
+) -> SpecExtensionTake {
+    if !cache_carries_recurrent(sess.cache_ref()) {
+        return SpecExtensionTake::ParkedEnd(sess);
+    }
+    let committed = sess.committed.len();
+    let decline = |why: &str| {
+        eprintln!(
+            "[kv-reuse] grid-rewind: spec declined ({why}; {committed} committed rows, {} prompt \
+             tokens); cold (model {model})",
+            prompt.len()
+        );
+        SpecExtensionTake::Declined
+    };
+    if let Some(why) = spec_pool_grid_refusal(
+        sess.rewind_pos(),
+        sess.rewind_is_resident(),
+        &sess.committed,
+        prompt,
+    ) {
+        return decline(&why);
+    }
+    match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {
+        Ok(Some(pos)) => {
+            eprintln!(
+                "[kv-reuse] grid-rewind: spec extension of {committed} committed rows rewound to \
+                 {pos} (re-priming {} rows; model {model})",
+                prompt.len() - pos
+            );
+            SpecExtensionTake::Rewound(sess, committed, pos)
+        }
+        Ok(None) => decline("the checkpoint vanished"),
+        Err(err) => decline(&format!("restore failed: {err}")),
+    }
 }
 
 /// ROLLBACK SEAM (flags doctrine: the winner is the default; this exists to *disable* it).
@@ -23983,6 +24106,25 @@ pub fn run(
                 continue;
             }
             if let Some(mut sess) = s.spec {
+                // THE GRID LAW (memra#1093): a recurrent trunk resumes only from an on-grid turn
+                // checkpoint (`spec_pool_grid_refusal`), so a session that holds none is freed
+                // here rather than parked: it would hold its trunk and draft planes for a resume
+                // that cannot run. Checked before the pending flush, which it would waste.
+                if reuse_pool_per_namespace() > 0
+                    && sess.committed.len() >= REUSE_MIN_PREFIX
+                    && cache_carries_recurrent(sess.cache_ref())
+                    && let Some(why) =
+                        spec_checkpoint_grid_refusal(sess.rewind_pos(), sess.rewind_is_resident())
+                {
+                    eprintln!(
+                        "[worker] spec-park SKIPPED (grid law): a recurrent trunk's {} rows hold \
+                         no resumable state ({why}); freed (model {})",
+                        sess.committed.len(),
+                        s.model
+                    );
+                    reuse_metrics.spec_grid_park_skips += 1;
+                    continue;
+                }
                 // PENDING-CARRY flush before parking: a parked session must be fully committed
                 // (committed_text drives the text-prefix resume match — an uncommitted pending
                 // would double-feed on resume). One T=1 pass per RETIRED request, not per burst.
@@ -24534,6 +24676,9 @@ pub fn run(
             m.dspark_pool_grid_park_skips = reuse_metrics.dspark_grid_park_skips;
             m.dspark_pool_grid_rewind_resumes = reuse_metrics.dspark_grid_rewind_resumes;
             m.dspark_pool_grid_rewind_grows = reuse_metrics.dspark_grid_rewind_grows;
+            m.spec_pool_grid_rewinds = reuse_metrics.spec_grid_rewinds;
+            m.spec_pool_grid_declines = reuse_metrics.spec_grid_declines;
+            m.spec_pool_grid_park_skips = reuse_metrics.spec_grid_park_skips;
             m.spec_pool_hits = reuse_metrics.spec_hits;
             m.spec_pool_misses = reuse_metrics.spec_misses;
             m.spec_pool_affinity_rewinds = reuse_metrics.spec_affinity_rewinds;
@@ -28124,7 +28269,12 @@ fn admit(
         // CONSTRAINED requests never resume parked spec sessions: the park's stashed
         // next_pred/pending is unconstrained state, and the grammar must own generation
         // from token 1. Cold spec session instead (still spec — just no pool hit).
+        // THE GRID LAW (memra#1093): a recurrent trunk never resumes at its parked end. An exact
+        // or text hit rewinds to the session's on-grid turn checkpoint and primes the rest of the
+        // prompt from there, or primes cold (`spec_pool_grid_refusal`); the affinity tier takes
+        // only an on-grid checkpoint too. Attention-only trunks resume where they stand.
         let mut affinity_rewound: Option<(usize, &'static str)> = None;
+        let mut grid_rewound: Option<(usize, usize)> = None;
         enum SpecResumeProbe {
             Exact(usize),
             Text {
@@ -28194,6 +28344,7 @@ fn admit(
                     let req_fp =
                         conversation_fingerprint(&prompt, &|t| lm.tok.token_is_control(t), true);
                     let mut why: String = "empty pool".into();
+                    let mut affinity_grid_refused = false;
                     let cand = pool.iter().enumerate().rev().find_map(|(index, e)| {
                         let Some(pos) = e.sess.rewind_pos() else {
                             why = "no turn checkpoint retained".into();
@@ -28220,6 +28371,20 @@ fn admit(
                             identity_matches,
                         ) {
                             Ok(target_cap) => {
+                                // THE GRID LAW (memra#1093): a recurrent trunk rewinds only to an
+                                // on-grid checkpoint with at least the prime floor to prime.
+                                if cache_carries_recurrent(e.sess.cache_ref())
+                                    && let Some(law) = spec_pool_grid_refusal(
+                                        Some(pos),
+                                        true,
+                                        &e.sess.committed,
+                                        &prompt,
+                                    )
+                                {
+                                    why = format!("grid law: {law}");
+                                    affinity_grid_refused = true;
+                                    return None;
+                                }
                                 // SAMPLER PREDICATE, after the bytes and the identity: an
                                 // affinity candidate that fails only on the sampler declines
                                 // through the SAME `why` line the other declines use, naming the
@@ -28258,28 +28423,40 @@ fn admit(
                             prompt.len(),
                             req.model
                         );
+                        if affinity_grid_refused {
+                            reuse_metrics.spec_grid_declines += 1;
+                        }
                     }
                     probe = cand;
                 }
             }
 
             match probe {
-                Some(SpecResumeProbe::Exact(index)) => Some(
-                    spec_reuse
+                Some(hit @ (SpecResumeProbe::Exact(_) | SpecResumeProbe::Text { .. })) => {
+                    let (index, suffix) = match hit {
+                        SpecResumeProbe::Exact(index) => (index, None),
+                        SpecResumeProbe::Text { index, suffix } => (index, Some(suffix)),
+                        SpecResumeProbe::Affinity { .. } => unreachable!("matched above"),
+                    };
+                    let sess = spec_reuse
                         .get_mut(&pool_key)
-                        .expect("spec exact candidate pool vanished")
+                        .expect("spec extension candidate pool vanished")
                         .remove(index)
-                        .sess,
-                ),
-                Some(SpecResumeProbe::Text { index, suffix }) => {
-                    text_suffix = Some(suffix);
-                    Some(
-                        spec_reuse
-                            .get_mut(&pool_key)
-                            .expect("spec text candidate pool vanished")
-                            .remove(index)
-                            .sess,
-                    )
+                        .sess;
+                    match spec_pool_take_extension(engine, lm, sess, &prompt, &req.model) {
+                        SpecExtensionTake::ParkedEnd(sess) => {
+                            text_suffix = suffix;
+                            Some(sess)
+                        }
+                        SpecExtensionTake::Rewound(sess, committed, pos) => {
+                            grid_rewound = Some((committed, pos));
+                            Some(sess)
+                        }
+                        SpecExtensionTake::Declined => {
+                            reuse_metrics.spec_grid_declines += 1;
+                            None
+                        }
+                    }
                 }
                 Some(SpecResumeProbe::Affinity {
                     index,
@@ -28401,21 +28578,33 @@ fn admit(
                 if affinity_rewound.is_some() {
                     reuse_metrics.spec_affinity_rewinds += 1;
                 }
+                if grid_rewound.is_some() {
+                    reuse_metrics.spec_grid_rewinds += 1;
+                }
                 // Q2 (audit 2026-08-05): a parked session carries its draft-graph failure
                 // memoization; a NEW request gets a fresh capture chance (transient VRAM
                 // pressure at park time must not become permanent coverage loss).
                 sess.reset_graph_fallback_on_resume();
+                // A RESUME IS A NEW REQUEST'S STREAM (memra#1093): the Philox event counters are
+                // (0,0) at admit, as on a cold session, so the boundary draw and every round draw
+                // the counters a cold prime of this prompt draws. Carrying the parked request's
+                // counters made a sampled warm turn leave the cold text even from an on-grid
+                // checkpoint (`research/spec-pool-grid-20261109/`, chat-story-open-t1).
+                sess.sctr = 0;
+                sess.uctr = 0;
                 spec_resumed = sess.committed.len();
-                match affinity_rewound {
-                    Some((pos, tier)) => eprintln!(
+                match (affinity_rewound, grid_rewound) {
+                    (Some((pos, tier)), _) => eprintln!(
                         "[worker] spec-affinity: rewound to {pos} of {} prompt tokens \
                          ({tier}; priming {} suffix; model {})",
                         prompt.len(),
                         prompt.len() - pos,
                         req.model
                     ),
+                    // `spec_pool_take_extension` printed the rewind.
+                    (None, Some(_)) => {}
                     // The sampler tag says the resume passed the sampler predicate.
-                    None => eprintln!(
+                    (None, None) => eprintln!(
                         "[worker] spec-reuse: {} committed tokens resumed{} [sampler=equivalent] \
                          (model {})",
                         spec_resumed,
@@ -41771,6 +41960,63 @@ mod tests {
         ));
         assert!(squashed.contains(
             "if let Some(why) = grid_rewind_plain_refusal(&e, prompt) { eprintln!(\"[kv-reuse] grid-rewind: plain declined ({why}); cold\"); return None; }"
+        ));
+    }
+
+    /// memra#1093 item 1: the spec pool obeys the grid law, in the default test set. The shapes are
+    /// the 2026-11-09 RTX 5090 probe's (`research/spec-pool-grid-20261109/`): a 17-token chat turn
+    /// parked at 49 committed rows with its prompt-end checkpoint at 17, resumed by a 69-token turn
+    /// on the exact tier; a 30-token turn whose prompt-end checkpoint the affinity tier rewound to
+    /// for a 306-token turn; and an on-grid chain (checkpoints at 32, then 64).
+    #[test]
+    fn the_spec_pool_resume_obeys_the_grid_law() {
+        let committed: Vec<u32> = (0..49).collect();
+        let prompt: Vec<u32> = (0..69).collect();
+        // A prompt-end checkpoint off the grid serves nothing; the parked end never resumes.
+        assert!(super::spec_checkpoint_grid_refusal(Some(17), true).is_some());
+        assert!(super::spec_pool_grid_refusal(Some(17), true, &committed, &prompt).is_some());
+        assert!(super::spec_checkpoint_grid_refusal(Some(30), true).is_some());
+        assert!(super::spec_checkpoint_grid_refusal(None, true).is_some());
+        assert!(super::spec_checkpoint_grid_refusal(Some(0), true).is_some());
+        // An on-grid, resident checkpoint the prompt extends by the prime floor rewinds.
+        assert_eq!(super::spec_checkpoint_grid_refusal(Some(32), true), None);
+        assert_eq!(
+            super::spec_pool_grid_refusal(Some(32), true, &committed, &prompt),
+            None
+        );
+        // A lapped ring, a prompt that diverges before the checkpoint, or fewer than PRIME_MIN_T
+        // rows to prime past it: refused.
+        assert!(super::spec_pool_grid_refusal(Some(32), false, &committed, &prompt).is_some());
+        let mut diverged = prompt.clone();
+        diverged[5] = 9_999;
+        assert!(super::spec_pool_grid_refusal(Some(32), true, &committed, &diverged).is_some());
+        assert!(super::spec_pool_grid_refusal(Some(32), true, &committed, &prompt[..47]).is_some());
+        assert_eq!(
+            super::spec_pool_grid_refusal(Some(32), true, &committed, &prompt[..48]),
+            None
+        );
+        // A checkpoint past the committed rows is not a resume point.
+        assert!(super::spec_pool_grid_refusal(Some(64), true, &committed, &prompt).is_some());
+        // The admit site sends every exact and text hit through the rewind, the affinity tier
+        // asks the same law of a recurrent trunk, and a retire with nothing to resume is freed.
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(squashed.contains(
+            "match spec_pool_take_extension(engine, lm, sess, &prompt, &req.model) { SpecExtensionTake::ParkedEnd(sess) => { text_suffix = suffix; Some(sess) } SpecExtensionTake::Rewound(sess, committed, pos) => { grid_rewound = Some((committed, pos)); Some(sess) } SpecExtensionTake::Declined => { reuse_metrics.spec_grid_declines += 1; None } }"
+        ));
+        assert!(squashed.contains(
+            "if !cache_carries_recurrent(sess.cache_ref()) { return SpecExtensionTake::ParkedEnd(sess); }"
+        ));
+        assert!(squashed.contains(
+            "if cache_carries_recurrent(e.sess.cache_ref()) && let Some(law) = spec_pool_grid_refusal( Some(pos), true, &e.sess.committed, &prompt, ) { why = format!(\"grid law: {law}\"); affinity_grid_refused = true; return None; }"
+        ));
+        assert!(squashed.contains(
+            "&& cache_carries_recurrent(sess.cache_ref()) && let Some(why) = spec_checkpoint_grid_refusal(sess.rewind_pos(), sess.rewind_is_resident())"
+        ));
+        // Every pool resume starts the request's Philox stream where a cold session does.
+        assert!(squashed.contains(
+            "sess.sctr = 0; sess.uctr = 0; spec_resumed = sess.committed.len(); match (affinity_rewound, grid_rewound) {"
         ));
     }
 
