@@ -312,14 +312,70 @@ pub mod ffi {
             stream: *mut c_void,
         ) -> i32;
         /// `grp`: device array of `ng` groups `{i64 row0, i32 rows, f32 scale2, u64 w, u64 s}`.
-        pub fn memra_v41_gemm_f8_grouped(
+        /// The reference schedule of the block-scaled GEMM (gates only).
+        pub fn memra_v41_gemm_f8_ref(
             a: *const c_void,
             lda: i64,
             a_s: *const c_void,
             ldas: i64,
-            grp: *const c_void,
-            ng: i32,
-            max_rows: i32,
+            b: *const c_void,
+            ldb: i64,
+            bs: *const c_void,
+            ldbs: i64,
+            bscale2: f32,
+            wfmt: i32,
+            c: *mut c_void,
+            ldc: i64,
+            out_f32: i32,
+            m: i32,
+            n: i32,
+            k: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// The sparse attention's index rows (window part, then selection rows).
+        pub fn memra_v41_attn_idx(
+            sel: *const i32,
+            tw: i32,
+            r0: i32,
+            rows: i32,
+            sp: i32,
+            win: i32,
+            ww: i32,
+            tot: i32,
+            out: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// The MoE dispatch plan on the device (`MoePlanDev`).
+        pub fn memra_v41_moe_plan(
+            sel: *const i32,
+            selw: *const f32,
+            rows: i32,
+            topk: i32,
+            ne: i32,
+            bm: i32,
+            e0: i32,
+            e1: i32,
+            counts: *mut i32,
+            off: *mut i32,
+            ptok: *mut i32,
+            pw: *mut f32,
+            order: *mut i32,
+            tiles: *mut c_void,
+            ntiles: *mut i32,
+            err: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// The grouped expert GEMMs over a device tile list and the rank's expert weight table.
+        pub fn memra_v41_gemm_f8_tiles(
+            a: *const c_void,
+            lda: i64,
+            a_s: *const c_void,
+            ldas: i64,
+            tiles: *const c_void,
+            ntiles: *const i32,
+            max_tiles: i32,
+            ew: *const c_void,
+            proj: i32,
             ldb: i64,
             ldbs: i64,
             wfmt: i32,
@@ -328,6 +384,7 @@ pub mod ffi {
             out_f32: i32,
             n: i32,
             k: i32,
+            bm: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_v41_moe_combine(
@@ -1444,6 +1501,9 @@ pub struct LayerW {
     pub gate_w: BW,
     pub gate_b: Buf,
     pub experts: Vec<[QW; 3]>,
+    /// the routed experts' weight table for the device-planned dispatch (`V41ExpW` per expert:
+    /// w1, w2, w3 weight and scale pointers and minted scale2)
+    pub exp_tab: Buf,
     pub shared: [QW; 3],
     pub engram: Option<EngramW>,
 }
@@ -1554,6 +1614,7 @@ impl LayerW {
                 load_fp4(ops, stm, &format!("{ep}.w3"), g.moe_inter, g.dim, mint)?,
             ]);
         }
+        let exp_tab = Buf::from_bytes(&ops.st, &expert_table(ops, &experts_w))?;
         let sp = format!("{p}.ffn.shared_experts");
         let shared = [
             load_fp8(ops, stm, &format!("{sp}.w1"), g.moe_inter, g.dim)?,
@@ -1653,10 +1714,59 @@ impl LayerW {
             )?,
             gate_b: load_vec_f32(ops, stm, &format!("{p}.ffn.gate.bias"), g.n_experts)?,
             experts: experts_w,
+            exp_tab,
             shared,
             engram,
         })
     }
+}
+
+/// The `V41ExpW` records (64 bytes each, `cu/dsv41_gpu.cu`) of `experts`.
+fn expert_table(ops: &Ops, experts: &[[QW; 3]]) -> Vec<u8> {
+    let mut t = Vec::with_capacity(experts.len() * 64);
+    for ws in experts {
+        for w in ws {
+            t.extend_from_slice(&w.w.p(&ops.st).addr().to_le_bytes());
+        }
+        for w in ws {
+            t.extend_from_slice(&w.s.p(&ops.st).addr().to_le_bytes());
+        }
+        for w in ws {
+            let s2 = match w.fmt {
+                QFmt::Nvfp4Minted { scale2 } => scale2,
+                _ => 1.0f32,
+            };
+            t.extend_from_slice(&s2.to_le_bytes());
+        }
+        t.extend_from_slice(&0i32.to_le_bytes());
+    }
+    t
+}
+
+/// Rows of a GEMM that the small-M kernels take (`V41_SM_MAX` in `cu/dsv41_gpu.cu`).
+pub const SMALL_M: usize = 4;
+
+/// The MoE dispatch plan of one slice on the device (`memra_v41_moe_plan`): the order of the host
+/// [`tp::MoePlan`] (pairs sorted by expert, tokens ascending inside one; each token's pairs in
+/// ascending expert id) and the tile list of one rank's experts for the grouped GEMMs, built from
+/// the router's selection without a host round trip.
+pub struct MoePlanDev {
+    pub rows: usize,
+    pub np: usize,
+    /// tile rows of the grouped GEMMs (`SMALL_M`: the small-M kernel, one tile per expert)
+    pub bm: usize,
+    pub max_tiles: usize,
+    /// i32 `[ne + 1]`: each expert's first pair
+    pub off: Buf,
+    /// i32 / f32 `[np]`: each pair's token (row in the slice) and routing weight
+    pub ptok: Buf,
+    pub pw: Buf,
+    /// i32 `[rows][topk]`: each token's pair indices in ascending expert id
+    pub order: Buf,
+    pub tiles: Buf,
+    pub ntiles: Buf,
+    /// i32: expert ids outside the router's range (counted and skipped)
+    pub err: Buf,
 }
 
 /// The CSA2 state one layer hands down the stack (vendor `SharedAttentionRuntime`): the group's
@@ -2261,10 +2371,6 @@ impl Ctx {
                 out.at(&st, r0 * g.dim * 2),
                 g.dim,
             )?;
-            // the host index rows are rebuilt next chunk
-            self.nv(c"attn_sync");
-            self.ops.sync()?;
-            self.nv_end();
         }
         Ok(out)
     }
@@ -2540,39 +2646,32 @@ impl Ctx {
             false,
         )?;
         self.nv_end();
-        // index rows: the window part from the host, the compressed part from the selection
+        // index rows on the device: the window part (`window_row`, or the decode ring oldest slot
+        // first), then the selection rows
         self.nv(c"attn_idx_rows");
-        let mut idx_host = vec![-1i32; rows * tot];
-        for i in 0..rows {
-            let row = &mut idx_host[i * tot..i * tot + ww];
-            if sp == 0 {
-                Self::window_row(r0 + i, win, row);
-            } else {
-                // decode: the whole ring, oldest slot first, -1 for slots not reached yet
-                let oldest = sp % win + 1;
-                for (v, slot) in row.iter_mut().zip((oldest..win).chain(0..oldest)) {
-                    *v = if slot > sp { -1 } else { slot as i32 };
-                }
-            }
-        }
-        let idx = Buf::from_i32(&st, &idx_host)?;
-        if tw > 0 {
-            let sel = sh
-                .topk
+        let idx = self.ops.buf(rows * tot * 4)?;
+        let sel = if tw > 0 {
+            sh.topk
                 .as_ref()
-                .ok_or("attention: no selection from the index source")?;
-            copy_2d(
-                &self.ops,
-                sel,
-                r0,
-                tw * 4,
-                &idx,
-                ww * 4,
-                tot * 4,
-                tw * 4,
-                rows,
-            )?;
-        }
+                .ok_or("attention: no selection from the index source")?
+                .p(&st)
+        } else {
+            Dp::NULL
+        };
+        ck("attn_idx", unsafe {
+            ffi::memra_v41_attn_idx(
+                sel.i(),
+                tw as i32,
+                r0 as i32,
+                rows as i32,
+                sp as i32,
+                win as i32,
+                ww as i32,
+                tot as i32,
+                idx.p(&st).im(),
+                self.ops.sv(),
+            )
+        })?;
         self.nv_end();
         self.nv(c"sparse_attn");
         self.ops.sparse_attn(
@@ -2661,17 +2760,77 @@ impl Ctx {
     }
 
     /// MoE (vendor `MoE.forward`): the sqrtsoftplus gate with its selection bias, routed MXFP4
-    /// (or minted NVFP4) experts in ascending id order, the shared FP8 expert, bf16 out.
-    fn moe(&mut self, lw: &LayerW, x: Dp, s: usize, out: Dp, tr: &mut Trace) -> Result<(), String> {
+    /// (or minted NVFP4) experts, the shared FP8 expert, bf16 out. The dispatch is planned on the
+    /// device and runs as one grouped launch per projection; each token's expert rows are added in
+    /// ascending expert id into an fp32 zero, then the shared expert, then rounded, which is the
+    /// per-expert loop's order (the N-rank gates compare the two byte for byte). Nothing here waits
+    /// on the host: every buffer is stream-ordered.
+    pub fn moe(
+        &mut self,
+        lw: &LayerW,
+        x: Dp,
+        s: usize,
+        out: Dp,
+        tr: &mut Trace,
+    ) -> Result<(), String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let d = g.dim;
+        self.nv(c"router");
+        let (sel, selw) = self.moe_route(lw, x, s)?;
+        self.nv_end();
+        if self.trace {
+            tr.route_sel.extend_from_slice(&bytes_i32(&sel.host(&st)?));
+            tr.route_w.extend_from_slice(&bytes_f32(&selw.host(&st)?));
+        }
+        self.nv(c"moe_plan");
+        let ex = lw.expert0..lw.expert0 + lw.experts.len();
+        let plan = self.moe_plan(&sel, &selw, s, ex)?;
+        self.nv_end();
+        self.nv(c"experts");
+        let slots = self.ops.buf(plan.np * d * 2)?;
+        self.experts_tiles(lw, x, &plan, 0, plan.np, &slots)?;
+        self.nv_end();
+        self.nv(c"shared_expert");
+        let shared = self.shared_expert(lw, x, s)?;
+        self.nv_end();
+        self.nv(c"combine");
+        ck("moe_combine", unsafe {
+            ffi::memra_v41_moe_combine(
+                slots.p(&st).c(),
+                d as i64,
+                plan.order.p(&st).i(),
+                g.topk as i32,
+                shared.p(&st).c(),
+                d as i64,
+                out.m(),
+                d as i64,
+                s as i32,
+                d as i32,
+                self.ops.sv(),
+            )
+        })?;
+        self.nv_end();
+        if self.trace {
+            let err = bytes_i32(&plan.err.host(&st)?)[0];
+            if err != 0 {
+                return Err(format!("route: {err} expert ids out of range"));
+            }
+        }
+        Ok(())
+    }
+
+    /// The router of `rows` rows of `x` (the fp32 gate linear, then sqrtsoftplus with the selection
+    /// bias, normalized top-k weights): `(sel i32 [rows][topk], selw f32 [rows][topk])` on the device.
+    pub fn moe_route(&mut self, lw: &LayerW, x: Dp, rows: usize) -> Result<(Buf, Buf), String> {
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let ne = g.n_experts;
-        self.nv(c"router");
-        let raw = self.ops.buf(s * ne * 4)?;
+        let raw = self.ops.buf(rows * ne * 4)?;
         self.ops
-            .linear_bf16(x, g.dim, s, &lw.gate_w, raw.p(&st), ne, true)?;
-        let sel = self.ops.buf(s * g.topk * 4)?;
-        let selw = self.ops.buf(s * g.topk * 4)?;
+            .linear_bf16(x, g.dim, rows, &lw.gate_w, raw.p(&st), ne, true)?;
+        let sel = self.ops.buf(rows * g.topk * 4)?;
+        let selw = self.ops.buf(rows * g.topk * 4)?;
         ck("route", unsafe {
             ffi::memra_v41_route(
                 raw.p(&st).f(),
@@ -2683,139 +2842,171 @@ impl Ctx {
                 g.route_scale,
                 sel.p(&st).im(),
                 selw.p(&st).fm(),
-                s as i32,
+                rows as i32,
                 self.ops.sv(),
             )
         })?;
-        self.nv_end();
-        self.nv(c"moe_plan");
-        let sel_h = bytes_i32(&sel.host(&st)?);
-        let selw_h = bytes_f32(&selw.host(&st)?);
-        let mut rows_of: Vec<Vec<(i32, f32)>> = vec![Vec::new(); ne];
-        for t in 0..s {
-            for j in 0..g.topk {
-                let e = sel_h[t * g.topk + j];
-                if e < 0 || e as usize >= ne {
-                    return Err(format!("route: expert {e}"));
-                }
-                rows_of[e as usize].push((t as i32, selw_h[t * g.topk + j]));
-            }
+        Ok((sel, selw))
+    }
+
+    /// Tile rows of the grouped expert GEMMs for a slice of `rows` tokens: the small-M kernel
+    /// when no expert can hold more than `SMALL_M` rows (a token picks an expert once), else the
+    /// pipelined tile, 128 rows once the mean expert holds that many.
+    pub fn moe_bm(&self, rows: usize) -> usize {
+        if rows <= SMALL_M {
+            SMALL_M
+        } else if rows * self.g.topk >= 128 * self.g.n_experts {
+            128
+        } else {
+            64
         }
-        if self.trace {
-            tr.route_sel.extend_from_slice(&sel_h);
-            tr.route_w.extend_from_slice(&selw_h);
+    }
+
+    /// The device dispatch plan of a slice from its routing, with the tile list of experts `ex`.
+    pub fn moe_plan(
+        &mut self,
+        sel: &Buf,
+        selw: &Buf,
+        rows: usize,
+        ex: std::ops::Range<usize>,
+    ) -> Result<MoePlanDev, String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let (ne, topk) = (g.n_experts, g.topk);
+        let np = rows * topk;
+        let bm = self.moe_bm(rows);
+        let max_tiles = np.div_ceil(bm) + ex.len().min(np);
+        let counts = self.ops.buf(rows.div_ceil(256) * ne * 4)?;
+        let plan = MoePlanDev {
+            rows,
+            np,
+            bm,
+            max_tiles,
+            off: self.ops.buf((ne + 1) * 4)?,
+            ptok: self.ops.buf(np * 4)?,
+            pw: self.ops.buf(np * 4)?,
+            order: self.ops.buf(np * 4)?,
+            tiles: self.ops.buf(max_tiles * 16)?,
+            ntiles: self.ops.buf(4)?,
+            err: self.ops.buf(4)?,
+        };
+        ck("moe_plan", unsafe {
+            ffi::memra_v41_moe_plan(
+                sel.p(&st).i(),
+                selw.p(&st).f(),
+                rows as i32,
+                topk as i32,
+                ne as i32,
+                bm as i32,
+                ex.start as i32,
+                ex.end as i32,
+                counts.p(&st).im(),
+                plan.off.p(&st).im(),
+                plan.ptok.p(&st).im(),
+                plan.pw.p(&st).fm(),
+                plan.order.p(&st).im(),
+                plan.tiles.p(&st).m(),
+                plan.ntiles.p(&st).im(),
+                plan.err.p(&st).im(),
+                self.ops.sv(),
+            )
+        })?;
+        Ok(plan)
+    }
+
+    /// The routed experts of `lw` over pairs `[p0, p1)` of a device plan whose tile list holds
+    /// exactly this rank's experts (all pairs at N = 1): the pairs' rows of `x` quantized, `w1` and
+    /// `w3` as one tile-list launch each, the weighted clamped SwiGLU, `w2` into `slots` (bf16
+    /// `[np][dim]`, each pair's row at its plan index). Per row, the per-expert loop's arithmetic.
+    pub fn experts_tiles(
+        &mut self,
+        lw: &LayerW,
+        x: Dp,
+        plan: &MoePlanDev,
+        p0: usize,
+        p1: usize,
+        slots: &Buf,
+    ) -> Result<(), String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let (d, inter, np) = (g.dim, g.moe_inter, plan.np);
+        let n = p1 - p0;
+        if n == 0 {
+            return Ok(());
         }
-        self.nv_end();
-        self.nv(c"experts");
-        let y = self.ops.buf(s * g.dim * 4)?;
-        let inter = g.moe_inter;
-        let maxn = rows_of.iter().map(|v| v.len()).max().unwrap_or(0).max(s);
-        let gb = self.ops.buf(maxn * inter * 2)?;
-        let ub = self.ops.buf(maxn * inter * 2)?;
-        let hb = self.ops.buf(maxn * inter * 2)?;
-        let db = self.ops.buf(maxn * g.dim * 2)?;
-        let aq = self.ops.buf(maxn * g.dim)?;
-        let as_ = self.ops.buf(maxn * g.dim / 32)?;
-        for (e, rows) in rows_of.iter().enumerate() {
-            if rows.is_empty() {
-                continue;
-            }
-            let n = rows.len();
-            let ridx: Vec<i32> = rows.iter().map(|r| r.0).collect();
-            let rw: Vec<f32> = rows.iter().map(|r| r.1).collect();
-            let dri = Buf::from_i32(&st, &ridx)?;
-            let drw = Buf::from_f32(&st, &rw)?;
-            let [w1, w2, w3] = &lw.experts[e];
-            self.ops
-                .act_quant(x, g.dim, dri.p(&st), n, g.dim, aq.p(&st), as_.p(&st))?;
-            self.ops
-                .gemm_q(aq.p(&st), as_.p(&st), n, w1, gb.p(&st), inter, false)?;
-            self.ops
-                .gemm_q(aq.p(&st), as_.p(&st), n, w3, ub.p(&st), inter, false)?;
-            ck("swiglu", unsafe {
-                ffi::memra_v41_swiglu(
-                    gb.p(&st).m(),
-                    ub.p(&st).m(),
-                    inter as i64,
-                    drw.p(&st).f(),
-                    g.swiglu_limit,
-                    hb.p(&st).m(),
-                    inter as i64,
-                    n as i32,
-                    inter as i32,
-                    self.ops.sv(),
+        let wfmt = match lw.experts[0][0].fmt {
+            QFmt::Mxfp4 => 1,
+            QFmt::Nvfp4Minted { .. } => 2,
+            QFmt::Fp8Block32 => return Err("routed experts are FP4".into()),
+        };
+        let kdiv = if wfmt == 1 { 32 } else { 16 };
+        let aq = self.ops.buf(np * d)?;
+        let as_ = self.ops.buf(np * d / 32)?;
+        self.ops.act_quant(
+            x,
+            d,
+            plan.ptok.at(&st, p0 * 4),
+            n,
+            d,
+            aq.at(&st, p0 * d),
+            as_.at(&st, p0 * d / 32),
+        )?;
+        let gb = self.ops.buf(np * inter * 2)?;
+        let ub = self.ops.buf(np * inter * 2)?;
+        let hb = self.ops.buf(np * inter * 2)?;
+        let tiles = |ops: &Ops, a: &Buf, a_s: &Buf, k: usize, proj: i32, c: Dp, nout: usize| {
+            ck("gemm_f8_tiles", unsafe {
+                ffi::memra_v41_gemm_f8_tiles(
+                    a.p(&st).c(),
+                    k as i64,
+                    a_s.p(&st).c(),
+                    (k / 32) as i64,
+                    plan.tiles.p(&st).c(),
+                    plan.ntiles.p(&st).i(),
+                    plan.max_tiles as i32,
+                    lw.exp_tab.p(&st).c(),
+                    proj,
+                    (k / 2) as i64,
+                    (k / kdiv) as i64,
+                    wfmt,
+                    c.m(),
+                    nout as i64,
+                    0,
+                    nout as i32,
+                    k as i32,
+                    plan.bm as i32,
+                    ops.sv(),
                 )
-            })?;
-            self.ops.linear_q(
-                hb.p(&st),
-                inter,
-                n,
-                w2,
-                db.p(&st),
-                g.dim,
-                false,
-                &mut self.scr,
-            )?;
-            ck("scatter_add", unsafe {
-                ffi::memra_v41_scatter_add(
-                    db.p(&st).m(),
-                    g.dim as i64,
-                    dri.p(&st).i(),
-                    y.p(&st).fm(),
-                    g.dim as i64,
-                    n as i32,
-                    g.dim as i32,
-                    self.ops.sv(),
-                )
-            })?;
-            // the per-expert index and weight buffers must outlive their kernels
-            self.ops.sync()?;
-        }
-        self.nv_end();
-        self.nv(c"shared_expert");
-        let [s1, s2, s3] = &lw.shared;
-        self.ops
-            .linear_q(x, g.dim, s, s1, gb.p(&st), inter, false, &mut self.scr)?;
-        self.ops
-            .linear_q(x, g.dim, s, s3, ub.p(&st), inter, false, &mut self.scr)?;
+            })
+        };
+        tiles(&self.ops, &aq, &as_, d, 0, gb.p(&st), inter)?;
+        tiles(&self.ops, &aq, &as_, d, 2, ub.p(&st), inter)?;
         ck("swiglu", unsafe {
             ffi::memra_v41_swiglu(
-                gb.p(&st).m(),
-                ub.p(&st).m(),
+                gb.at(&st, p0 * inter * 2).m(),
+                ub.at(&st, p0 * inter * 2).m(),
                 inter as i64,
-                std::ptr::null(),
+                plan.pw.at(&st, p0 * 4).f(),
                 g.swiglu_limit,
-                hb.p(&st).m(),
+                hb.at(&st, p0 * inter * 2).m(),
                 inter as i64,
-                s as i32,
+                n as i32,
                 inter as i32,
                 self.ops.sv(),
             )
         })?;
-        self.ops.linear_q(
-            hb.p(&st),
+        let aq2 = self.ops.buf(np * inter)?;
+        let as2 = self.ops.buf(np * inter / 32)?;
+        self.ops.act_quant(
+            hb.at(&st, p0 * inter * 2),
             inter,
-            s,
-            s2,
-            db.p(&st),
-            g.dim,
-            false,
-            &mut self.scr,
+            Dp::NULL,
+            n,
+            inter,
+            aq2.at(&st, p0 * inter),
+            as2.at(&st, p0 * inter / 32),
         )?;
-        ck("add_cast", unsafe {
-            ffi::memra_v41_add_cast(
-                y.p(&st).f(),
-                db.p(&st).m(),
-                out.m(),
-                (s * g.dim) as i64,
-                self.ops.sv(),
-            )
-        })?;
-        self.nv_end();
-        self.nv(c"moe_sync");
-        let r = self.ops.sync();
-        self.nv_end();
-        r
+        tiles(&self.ops, &aq2, &as2, inter, 1, slots.p(&st), d)
     }
 
     /// Single-pass mHC mixes of the stream `x` `[s][hc][dim]`: `(mixes, pre, post, comb)`.
@@ -2971,9 +3162,7 @@ impl Ctx {
             tr.moe_in = Some(x2);
             tr.moe_out = Some(m);
         }
-        self.nv(c"block_sync");
-        self.ops.sync()?;
-        self.nv_end();
+        // no drain: every buffer this layer made is freed stream-ordered and nothing waits on the host
         Ok((h2, f_pre))
     }
 }

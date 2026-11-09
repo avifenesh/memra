@@ -71,12 +71,16 @@ def main():
             r = parent[gtid][r]
         return out[::-1]
 
-    # launches: correlation id -> (host time, thread)
+    # launches: correlation id -> (host time, thread); host API calls per thread for the host-time table
     launch = {}
+    api = []
     for tbl in ("CUPTI_ACTIVITY_KIND_RUNTIME", "CUPTI_ACTIVITY_KIND_DRIVER"):
         if table_exists(cur, tbl):
-            for st, gtid, cid in cur.execute(f"select start, globalTid, correlationId from {tbl}"):
+            for st, en, gtid, cid, nid in cur.execute(
+                f"select start, end, globalTid, correlationId, nameId from {tbl}"
+            ):
                 launch[cid] = (st, gtid)
+                api.append((st, en, gtid, strings.get(nid, "?")))
 
     ops = []
     if table_exists(cur, "CUPTI_ACTIVITY_KIND_KERNEL"):
@@ -118,6 +122,21 @@ def main():
         d["gpu_first"] = st if d["gpu_first"] is None else min(d["gpu_first"], st)
         d["gpu_last"] = en if d["gpu_last"] is None else max(d["gpu_last"], en)
 
+    # host API time per outer instance, by call name
+    host = {}
+    for st, en, gtid, name in api:
+        stk = stack_at(gtid, st)
+        outer = None
+        for r in stk:
+            if OUTER.match(r[2]):
+                outer = r
+        if outer is None:
+            continue
+        key = (outer[2], outer[0])
+        h = host.setdefault(key, defaultdict(lambda: [0.0, 0]))
+        h[name][0] += en - st
+        h[name][1] += 1
+
     # per outer name: mean over its instances
     agg = defaultdict(list)
     for (name, _), d in sorted(inst.items(), key=lambda x: x[0][1]):
@@ -136,6 +155,12 @@ def main():
                 kern_mean[(op, kn)][1] += cnt / n
         wall = sum(d["wall_ns"] for d in lst) / n
         busy = sum(ops_mean.values())
+        hmean = defaultdict(lambda: [0.0, 0.0])
+        keys = [k for k in inst if k[0] == name]
+        for k in keys:
+            for nm, (ns, cnt) in host.get(k, {}).items():
+                hmean[nm][0] += ns / len(keys)
+                hmean[nm][1] += cnt / len(keys)
         report[name] = {
             "instances": n,
             "wall_ms": wall / 1e6,
@@ -145,12 +170,20 @@ def main():
                 {"op": op, "kernel": kn, "ms": ns / 1e6, "launches": cnt}
                 for (op, kn), (ns, cnt) in sorted(kern_mean.items(), key=lambda x: -x[1][0])
             ],
+            "host_api": [
+                {"call": nm, "ms": ns / 1e6, "calls": cnt}
+                for nm, (ns, cnt) in sorted(hmean.items(), key=lambda x: -x[1][0])
+            ],
         }
         md.append(f"### {name} ({n} instances): wall {wall / 1e6:.3f} ms, GPU busy {busy / 1e6:.3f} ms\n")
         md.append("| op | GPU ms | share of busy |")
         md.append("|---|---|---|")
         for op, ns in sorted(ops_mean.items(), key=lambda x: -x[1]):
             md.append(f"| {op} | {ns / 1e6:.3f} | {100 * ns / max(busy, 1):.1f}% |")
+        hs = sorted(hmean.items(), key=lambda x: -x[1][0])
+        md.append("")
+        md.append(f"host API calls: {sum(c for _, (_, c) in hs):.0f} calls, {sum(ns for _, (ns, _) in hs) / 1e6:.3f} ms; top: "
+                  + ", ".join(f"{nm} {ns / 1e6:.3f} ms x{c:.0f}" for nm, (ns, c) in hs[:6]))
         md.append("")
     text = "\n".join(md)
     print(text)

@@ -19,8 +19,8 @@
 //! runs through `tp::Group` at N = 1 (the decode runner's path) unless `--path onecard` selects
 //! `Ctx::block_forward`. `--nvtx` opens a range per op for an nsys profile (`perf/prof_attr.py`).
 //!
-//! `gemm` times the block-scaled GEMMs at the trunk's shapes (dense FP8 at M = 1, 64, 4096; the
-//! grouped MXFP4 experts at decode and at a 4k prefill's mean rows per expert) on inputs from a
+//! `gemm` times the block-scaled GEMMs at the trunk's shapes (dense FP8 at M = 1, 64, 4096, 8192; the
+//! grouped MXFP4 experts at decode and at a 4k and a 32k prefill's mean rows per expert) on inputs from a
 //! fixed seed, with each output's sha256. `ceil` measures the per-SM instruction ceilings the
 //! GEMMs and attention run on (`memra_v41_peak`): e4m3 and bf16 MMA throughput, the reference
 //! per-32-block schedule (one MMA from zero, then the scale epilogue), and fp32 FMA.
@@ -545,7 +545,6 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
     let st = e.stream();
     let dev = e.ctx().name().unwrap_or_default();
     let ops = Ops::new(st.clone());
-    let mut rng = Lcg(0x5eed_d541);
     let mut out = Vec::new();
     // the trunk's dense FP8 linears: (name, n, k)
     let dense = [
@@ -558,6 +557,7 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
         ("shared_w2", 5120, 2304),
     ];
     for &(name, n, k) in &dense {
+        let mut rng = Lcg(0x5eed_d541 ^ ((n * 1_000_003 + k) as u64));
         let w = QW {
             w: Buf::from_bytes(&st, &rng.e4m3(n * k))?,
             s: Buf::from_bytes(&st, &rng.e8m0(n.div_ceil(32) * (k / 32), 110, 122))?,
@@ -565,7 +565,8 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
             k,
             fmt: QFmt::Fp8Block32,
         };
-        for m in [1usize, 64, 4096] {
+        for m in [1usize, 64, 4096, 8192] {
+            let mut rng = Lcg(rng.0 ^ (m as u64) << 20);
             let aq = Buf::from_bytes(&st, &rng.e4m3(m * k))?;
             let as_ = Buf::from_bytes(&st, &rng.e8m0(m * (k / 32), 118, 130))?;
             let c = ops.buf(m * n * 2)?;
@@ -588,36 +589,62 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
             ));
         }
     }
-    // grouped MXFP4 experts: w1/w3 (n 2304, k 5120) and w2 (n 5120, k 2304), `ng` experts of `rows`
-    for &(ng, rows) in &[(6usize, 1usize), (64, 64), (384, 64)] {
+    // grouped MXFP4 experts through the tile-list dispatch: w1/w3 (n 2304, k 5120) and w2 (n 5120,
+    // k 2304), `ng` experts of `rows` rows, tiles as `Ctx::moe_bm` picks them for that slice
+    for &(ng, rows) in &[(6usize, 1usize), (64, 64), (384, 64), (384, 512)] {
+        let bm = if rows <= v::SMALL_M {
+            v::SMALL_M
+        } else if rows >= 128 {
+            128
+        } else {
+            64
+        };
         for &(name, n, k) in &[("exp_w13", 2304usize, 5120usize), ("exp_w2", 5120, 2304)] {
+            // every shape draws its own inputs, so adding a shape never changes another's bytes
+            let mut rng = Lcg(0x5eed_d541 ^ ((ng * 1_000_003 + rows * 7919 + n) as u64));
             let mut wts = Vec::with_capacity(ng);
-            let mut tab = Vec::new();
+            let mut ew = Vec::with_capacity(ng * 64);
+            let mut tiles = Vec::new();
             for z in 0..ng {
                 let w = Buf::from_bytes(&st, &rng.bytes(n * k / 2))?;
                 let s = Buf::from_bytes(&st, &rng.e8m0(n * (k / 32), 112, 124))?;
-                tab.extend_from_slice(&((z * rows) as i64).to_le_bytes());
-                tab.extend_from_slice(&(rows as i32).to_le_bytes());
-                tab.extend_from_slice(&1.0f32.to_le_bytes());
-                tab.extend_from_slice(&w.p(&st).addr().to_le_bytes());
-                tab.extend_from_slice(&s.p(&st).addr().to_le_bytes());
+                for _ in 0..3 {
+                    ew.extend_from_slice(&w.p(&st).addr().to_le_bytes());
+                }
+                for _ in 0..3 {
+                    ew.extend_from_slice(&s.p(&st).addr().to_le_bytes());
+                }
+                for _ in 0..3 {
+                    ew.extend_from_slice(&1.0f32.to_le_bytes());
+                }
+                ew.extend_from_slice(&0i32.to_le_bytes());
+                for m0 in (0..rows).step_by(bm) {
+                    for x in [(z * rows) as i32, rows as i32, m0 as i32, z as i32] {
+                        tiles.extend_from_slice(&x.to_le_bytes());
+                    }
+                }
                 wts.push((w, s));
             }
+            let ntiles = tiles.len() / 16;
             let m = ng * rows;
-            let tabd = Buf::from_bytes(&st, &tab)?;
+            let ewd = Buf::from_bytes(&st, &ew)?;
+            let tld = Buf::from_bytes(&st, &tiles)?;
+            let ntd = Buf::from_i32(&st, &[ntiles as i32])?;
             let aq = Buf::from_bytes(&st, &rng.e4m3(m * k))?;
             let as_ = Buf::from_bytes(&st, &rng.e8m0(m * (k / 32), 118, 130))?;
             let c = ops.buf(m * n * 2)?;
             let ms = time_ms(&ops, reps, || {
-                ck("gemm_f8_grouped", unsafe {
-                    ffi::memra_v41_gemm_f8_grouped(
+                ck("gemm_f8_tiles", unsafe {
+                    ffi::memra_v41_gemm_f8_tiles(
                         aq.p(&st).c(),
                         k as i64,
                         as_.p(&st).c(),
                         (k / 32) as i64,
-                        tabd.p(&st).c(),
-                        ng as i32,
-                        rows as i32,
+                        tld.p(&st).c(),
+                        ntd.p(&st).i(),
+                        ntiles as i32,
+                        ewd.p(&st).c(),
+                        0,
                         (k / 2) as i64,
                         (k / 32) as i64,
                         1,
@@ -626,6 +653,7 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
                         0,
                         n as i32,
                         k as i32,
+                        bm as i32,
                         ops.sv(),
                     )
                 })
@@ -635,13 +663,13 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
             let bytes = (ng * n * k / 2 + m * k + m * n * 2) as f64;
             let flops = 2.0 * (m * n * k) as f64;
             eprintln!(
-                "gemm mxfp4 grouped {name} experts {ng} rows {rows}: median {:.4} ms ({:.0} GB/s, {:.1} TFLOPS) sha {hsh}",
+                "gemm mxfp4 tiles {name} experts {ng} rows {rows} bm {bm}: median {:.4} ms ({:.0} GB/s, {:.1} TFLOPS) sha {hsh}",
                 med,
                 bytes / med / 1e6,
                 flops / med / 1e9
             );
             out.push(format!(
-                "{{\"op\": \"mxfp4_grouped\", \"name\": \"{name}\", \"experts\": {ng}, \"rows\": {rows}, \"n\": {n}, \"k\": {k}, \"median_ms\": {med:.5}, \"ms\": {}, \"sha\": \"{hsh}\"}}",
+                "{{\"op\": \"mxfp4_tiles\", \"name\": \"{name}\", \"experts\": {ng}, \"rows\": {rows}, \"bm\": {bm}, \"n\": {n}, \"k\": {k}, \"median_ms\": {med:.5}, \"ms\": {}, \"sha\": \"{hsh}\"}}",
                 fmt_list(&ms)
             ));
         }

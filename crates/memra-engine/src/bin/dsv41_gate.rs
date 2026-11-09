@@ -1110,6 +1110,381 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
         })?;
         rep.close("engram/gate", &bf(&ops, &h)?, &f.f32s("y")?, 2e-4, 0.03);
     }
+    schedules(&ops, rep)?;
+    Ok(())
+}
+
+/// Deterministic test bytes for the schedule checks (no fixture: the reference is in this binary).
+struct Lcg(u64);
+impl Lcg {
+    fn next(&mut self) -> u32 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (self.0 >> 33) as u32
+    }
+    fn e4m3(&mut self, n: usize) -> Vec<u8> {
+        (0..n)
+            .map(|_| {
+                let b = (self.next() & 0xFF) as u8;
+                if b & 0x7F == 0x7F { b ^ 1 } else { b }
+            })
+            .collect()
+    }
+    fn bytes(&mut self, n: usize) -> Vec<u8> {
+        (0..n).map(|_| (self.next() & 0xFF) as u8).collect()
+    }
+    fn range(&mut self, n: usize, lo: u8, hi: u8) -> Vec<u8> {
+        (0..n)
+            .map(|_| lo + (self.next() % (hi - lo + 1) as u32) as u8)
+            .collect()
+    }
+    fn bf16(&mut self, n: usize) -> Vec<u8> {
+        // bf16 values of magnitude 2^-8 .. 2^4 with random sign and mantissa
+        let mut v = Vec::with_capacity(2 * n);
+        for _ in 0..n {
+            let r = self.next();
+            let e = 119 + (r % 13);
+            let b = ((r >> 8) & 0x8000) as u16 | ((e as u16) << 7) | ((r >> 16) as u16 & 0x7F);
+            v.extend_from_slice(&b.to_le_bytes());
+        }
+        v
+    }
+}
+
+/// The dispatched schedules against the reference schedule, byte for byte: the block-scaled GEMM
+/// (small-M and pipelined, every weight format, scale codes inside and outside the fused
+/// epilogue's range), the tile-list dispatch over a device plan, the device plan against the host
+/// `MoePlan`, and the small-M bf16 and fp32-FMA kernels against their tile kernels on the same
+/// rows. Each check is a byte comparison: these kernels change the schedule, never the program.
+fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+    use memra_engine::dsv41_gpu::tp::MoePlan;
+    let st = ops.st.clone();
+    let sv = st.cu_stream() as *mut std::os::raw::c_void;
+    let mut rng = Lcg(0xd541_5c4e);
+    let same = |rep: &mut Report, name: &str, a: &[u8], b: &[u8]| {
+        let eq = a.len() == b.len() && a == b;
+        let diff = a.iter().zip(b).filter(|(x, y)| x != y).count();
+        rep.raw(
+            name,
+            eq,
+            "byte-identical to the reference schedule",
+            format!("{} bytes, {diff} differ", a.len()),
+        );
+    };
+    // (m, n, k, weight format, activation scale code range)
+    let cases: [(usize, usize, usize, i32, (u8, u8)); 12] = [
+        (1, 1280, 5120, 0, (118, 130)),
+        (3, 4096, 1280, 0, (118, 130)),
+        (4, 2304, 5120, 1, (118, 130)),
+        (5, 512, 5120, 0, (118, 130)),
+        (64, 2304, 5120, 1, (118, 130)),
+        (77, 1280, 5120, 0, (118, 130)),
+        (200, 5120, 2304, 1, (118, 130)),
+        (300, 1280, 5120, 0, (118, 130)),
+        (130, 2304, 5120, 2, (118, 130)),
+        (2, 2304, 5120, 2, (118, 130)),
+        // scale codes across the whole e8m0 range, the fused epilogue's guard included
+        (96, 1280, 5120, 0, (0, 254)),
+        (160, 2304, 5120, 1, (0, 254)),
+    ];
+    for (ci, &(m, n, k, wf, (slo, shi))) in cases.iter().enumerate() {
+        let a = Buf::from_bytes(&st, &rng.e4m3(m * k))?;
+        let a_s = Buf::from_bytes(&st, &rng.range(m * (k / 32), slo, shi))?;
+        let (w, ws, ldb, ldbs, s2) = match wf {
+            0 => (
+                rng.e4m3(n * k),
+                rng.range(n.div_ceil(32) * (k / 32), 100, 127),
+                k,
+                k / 32,
+                1.0f32,
+            ),
+            1 => (
+                rng.bytes(n * k / 2),
+                rng.range(n * (k / 32), 112, 124),
+                k / 2,
+                k / 32,
+                1.0,
+            ),
+            _ => {
+                // minted NVFP4: equal e4m3 scale pairs, a power-of-two global scale
+                let mut sc = rng.range(n * (k / 32), 0x30, 0x50);
+                sc = sc.iter().flat_map(|&b| [b, b]).collect();
+                (rng.bytes(n * k / 2), sc, k / 2, k / 16, 2f32.powi(-9))
+            }
+        };
+        let w = Buf::from_bytes(&st, &w)?;
+        let ws = Buf::from_bytes(&st, &ws)?;
+        for out_f32 in [0, 1] {
+            let eb = if out_f32 == 1 { 4 } else { 2 };
+            let got = ops.buf(m * n * eb)?;
+            let want = ops.buf(m * n * eb)?;
+            for (c, refk) in [(&got, false), (&want, true)] {
+                let f = if refk {
+                    ffi::memra_v41_gemm_f8_ref
+                } else {
+                    ffi::memra_v41_gemm_f8
+                };
+                ck("gemm_f8 schedule", unsafe {
+                    f(
+                        a.p(&st).c(),
+                        k as i64,
+                        a_s.p(&st).c(),
+                        (k / 32) as i64,
+                        w.p(&st).c(),
+                        ldb as i64,
+                        ws.p(&st).c(),
+                        ldbs as i64,
+                        s2,
+                        wf,
+                        c.p(&st).m(),
+                        n as i64,
+                        out_f32,
+                        m as i32,
+                        n as i32,
+                        k as i32,
+                        sv,
+                    )
+                })?;
+            }
+            same(
+                rep,
+                &format!("schedule/gemm_f8/{ci}_m{m}_n{n}_k{k}_wf{wf}_f32{out_f32}"),
+                &got.host(&st)?,
+                &want.host(&st)?,
+            );
+        }
+    }
+
+    // the device plan against the host plan, then the tile-list dispatch against the reference
+    // GEMM run per expert, on a 16-expert slice
+    for &(rows, ne, topk, bm) in &[
+        (1usize, 16usize, 6usize, 4usize),
+        (3, 16, 6, 4),
+        (700, 16, 6, 64),
+        (900, 16, 6, 128),
+    ] {
+        let mut sel = Vec::with_capacity(rows * topk);
+        let mut selw = Vec::with_capacity(rows * topk);
+        for _ in 0..rows {
+            let mut picked: Vec<i32> = Vec::new();
+            while picked.len() < topk {
+                let e = (rng.next() % ne as u32) as i32;
+                if !picked.contains(&e) {
+                    picked.push(e);
+                }
+            }
+            for e in picked {
+                sel.push(e);
+                selw.push((rng.next() % 1000) as f32 / 997.0);
+            }
+        }
+        let host = MoePlan::new(&sel, &selw, rows, topk, ne)?;
+        let np = rows * topk;
+        let max_tiles = np.div_ceil(bm) + ne.min(np);
+        let dsel = Buf::from_i32(&st, &sel)?;
+        let dselw = Buf::from_f32(&st, &selw)?;
+        let counts = ops.buf(rows.div_ceil(256) * ne * 4)?;
+        let off = ops.buf((ne + 1) * 4)?;
+        let ptok = ops.buf(np * 4)?;
+        let pw = ops.buf(np * 4)?;
+        let order = ops.buf(np * 4)?;
+        let tiles = ops.buf(max_tiles * 16)?;
+        let ntiles = ops.buf(4)?;
+        let err = ops.buf(4)?;
+        ck("moe_plan", unsafe {
+            ffi::memra_v41_moe_plan(
+                dsel.p(&st).i(),
+                dselw.p(&st).f(),
+                rows as i32,
+                topk as i32,
+                ne as i32,
+                bm as i32,
+                0,
+                ne as i32,
+                counts.p(&st).im(),
+                off.p(&st).im(),
+                ptok.p(&st).im(),
+                pw.p(&st).fm(),
+                order.p(&st).im(),
+                tiles.p(&st).m(),
+                ntiles.p(&st).im(),
+                err.p(&st).im(),
+                sv,
+            )
+        })?;
+        let hoff: Vec<i32> = host.off.iter().map(|&x| x as i32).collect();
+        let ok = bytes_i32(&off.host(&st)?) == hoff
+            && bytes_i32(&ptok.host(&st)?) == host.ptok
+            && bytes_f32(&pw.host(&st)?) == host.pw
+            && bytes_i32(&order.host(&st)?) == host.order
+            && bytes_i32(&err.host(&st)?)[0] == 0;
+        rep.raw(
+            &format!("schedule/moe_plan/rows{rows}_bm{bm}"),
+            ok,
+            "device plan == host MoePlan (offsets, pair tokens, weights, per-token order)",
+            format!("{np} pairs, {} tiles", bytes_i32(&ntiles.host(&st)?)[0]),
+        );
+        // w1-shaped MXFP4 experts (n 2304, k 5120) through the tile list vs the reference per expert
+        let (n, k) = (2304usize, 5120usize);
+        let a = Buf::from_bytes(&st, &rng.e4m3(np * k))?;
+        let a_s = Buf::from_bytes(&st, &rng.range(np * (k / 32), 118, 130))?;
+        let mut wts = Vec::with_capacity(ne);
+        let mut tab = Vec::with_capacity(ne * 64);
+        for _ in 0..ne {
+            let w = Buf::from_bytes(&st, &rng.bytes(n * k / 2))?;
+            let s = Buf::from_bytes(&st, &rng.range(n * (k / 32), 112, 124))?;
+            for _ in 0..3 {
+                tab.extend_from_slice(&w.p(&st).addr().to_le_bytes());
+            }
+            for _ in 0..3 {
+                tab.extend_from_slice(&s.p(&st).addr().to_le_bytes());
+            }
+            for _ in 0..3 {
+                tab.extend_from_slice(&1.0f32.to_le_bytes());
+            }
+            tab.extend_from_slice(&0i32.to_le_bytes());
+            wts.push((w, s));
+        }
+        let tabd = Buf::from_bytes(&st, &tab)?;
+        let got = ops.buf(np * n * 2)?;
+        ck("gemm_f8_tiles", unsafe {
+            ffi::memra_v41_gemm_f8_tiles(
+                a.p(&st).c(),
+                k as i64,
+                a_s.p(&st).c(),
+                (k / 32) as i64,
+                tiles.p(&st).c(),
+                ntiles.p(&st).i(),
+                max_tiles as i32,
+                tabd.p(&st).c(),
+                0,
+                (k / 2) as i64,
+                (k / 32) as i64,
+                1,
+                got.p(&st).m(),
+                n as i64,
+                0,
+                n as i32,
+                k as i32,
+                bm as i32,
+                sv,
+            )
+        })?;
+        let want = ops.buf(np * n * 2)?;
+        for e in 0..ne {
+            let (p0, p1) = (host.off[e], host.off[e + 1]);
+            if p1 == p0 {
+                continue;
+            }
+            ck("gemm_f8_ref", unsafe {
+                ffi::memra_v41_gemm_f8_ref(
+                    a.at(&st, p0 * k).c(),
+                    k as i64,
+                    a_s.at(&st, p0 * (k / 32)).c(),
+                    (k / 32) as i64,
+                    wts[e].0.p(&st).c(),
+                    (k / 2) as i64,
+                    wts[e].1.p(&st).c(),
+                    (k / 32) as i64,
+                    1.0,
+                    1,
+                    want.at(&st, p0 * n * 2).m(),
+                    n as i64,
+                    0,
+                    (p1 - p0) as i32,
+                    n as i32,
+                    k as i32,
+                    sv,
+                )
+            })?;
+        }
+        same(
+            rep,
+            &format!("schedule/gemm_f8_tiles/rows{rows}_bm{bm}"),
+            &got.host(&st)?,
+            &want.host(&st)?,
+        );
+    }
+
+    // small-M bf16 and fp32-FMA kernels: rows 0..m of an 8-row tile-kernel run
+    for &(m, n, k, batch) in &[
+        (1usize, 1024usize, 4096usize, 8usize),
+        (3, 32, 5120, 1),
+        (4, 512, 5120, 1),
+    ] {
+        let a = Buf::from_bytes(&st, &rng.bf16(8 * k * batch))?;
+        let b = Buf::from_bytes(&st, &rng.bf16(n * k * batch))?;
+        for out_f32 in [0, 1] {
+            let eb = if out_f32 == 1 { 4 } else { 2 };
+            let small = ops.buf(m * n * eb * batch)?;
+            let full = ops.buf(8 * n * eb * batch)?;
+            for (c, rows) in [(&small, m), (&full, 8)] {
+                let ldc = n;
+                let s_cz = rows * n;
+                ck("gemm_bf16", unsafe {
+                    ffi::memra_v41_gemm_bf16(
+                        a.p(&st).c(),
+                        k as i64,
+                        (8 * k) as i64,
+                        b.p(&st).c(),
+                        k as i64,
+                        (n * k) as i64,
+                        c.p(&st).m(),
+                        ldc as i64,
+                        s_cz as i64,
+                        out_f32,
+                        rows as i32,
+                        n as i32,
+                        k as i32,
+                        batch as i32,
+                        sv,
+                    )
+                })?;
+            }
+            let sh = small.host(&st)?;
+            let fh = full.host(&st)?;
+            let mut want = Vec::with_capacity(sh.len());
+            for z in 0..batch {
+                let base = z * 8 * n * eb;
+                want.extend_from_slice(&fh[base..base + m * n * eb]);
+            }
+            same(
+                rep,
+                &format!("schedule/gemm_bf16/m{m}_n{n}_k{k}_b{batch}_f32{out_f32}"),
+                &sh,
+                &want,
+            );
+        }
+        if batch == 1 {
+            let small = ops.buf(m * n * 4)?;
+            let full = ops.buf(8 * n * 4)?;
+            for (c, rows) in [(&small, m), (&full, 8)] {
+                ck("gemm_ffma", unsafe {
+                    ffi::memra_v41_gemm_ffma(
+                        a.p(&st).c(),
+                        k as i64,
+                        b.p(&st).c(),
+                        k as i64,
+                        c.p(&st).fm(),
+                        n as i64,
+                        rows as i32,
+                        n as i32,
+                        k as i32,
+                        sv,
+                    )
+                })?;
+            }
+            let fh = full.host(&st)?;
+            same(
+                rep,
+                &format!("schedule/gemm_ffma/m{m}_n{n}_k{k}"),
+                &small.host(&st)?,
+                &fh[..m * n * 4],
+            );
+        }
+    }
     Ok(())
 }
 
