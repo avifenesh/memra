@@ -382,9 +382,14 @@ the card. A SIGHUP or SIGINT the wrapper inherited as ignored stays ignored, so 
 capture alive through a dropped connection. `validate_lease` judges `exit_code`, which the wrapper
 fails for a group that left processes behind (`process_group_lingered`); it does not read
 `box_lock`, so on a pair box the recipe's `--box-lock` is the only control that a capture and a
-campaign exclude each other. `tools/test_memra_gpu_run.py` runs capture's own `live_lease` check
-inside the wrapped command and judges each finished lease with `validate_lease`, including dirty
-runs that must be refused.
+campaign exclude each other. The wrapper leases several cards the same way (`--gpus UUID,UUID`):
+it takes each card's lock in sorted UUID order, so two wrappers asking for overlapping cards cannot
+deadlock, refuses if any of them runs compute, sets `CUDA_VISIBLE_DEVICES` in the order given and
+checks every leased card for lingering compute. `tools/qualify-model-device-memory.py` runs its one-
+and two-card stages under it; capture refuses a lease of more than one card.
+`tools/test_memra_gpu_run.py` runs capture's own `live_lease` check and the device-memory tool's
+lease check inside the wrapped command and judges each finished lease with `validate_lease`,
+including dirty runs that must be refused.
 
 **The generic battery qualifies one leased RTX PRO 6000 Blackwell at any NVML index.**
 `release-battery.sh` resolves CUDA device 0 to its physical UUID

@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""CPU contract for tools/memra-gpu-run, the physical-card lease wrapper release capture runs under.
+"""CPU contract for tools/memra-gpu-run, the physical-card lease wrapper release capture and the per-card
+qualification tools run under.
 
 No GPU touches this file. A planted nvidia-smi answers the two queries the wrapper makes (the device list and
 the compute processes, read from files the test and the child write), and --lock-dir points the per-UUID lock at
 a temporary directory. Each case runs the real wrapper as a subprocess and checks what qualify-release.py capture
 and seal rely on: the child passes capture's own live_lease (its lock-dir seam pointed at the test's directory),
 sees its own pid, its parent and its card in the lease, runs in its own process group with the box lock held and
-the default SIGPIPE/SIGXFSZ dispositions, with an inherited ignored SIGHUP/SIGINT left ignored; the command never
+the default SIGPIPE/SIGXFSZ dispositions, with an inherited ignored SIGHUP/SIGINT left ignored; a two-card lease
+locks both cards in sorted order, passes qualify-model-device-memory.py's lease check, is refused by capture's and
+refuses a busy or unknown second card or a repeated one; the command never
 runs without a lease (a receipt dir that refuses it, a lease write that fails, a wrapper killed or signalled
 before the go byte); a missing command says why; a timeout or a signal stops the command's whole process group
 (SIGKILL for one that ignores SIGTERM) before the lease is finished and the locks released; the lock outlives a
@@ -52,9 +55,11 @@ FAKE_SMI = textwrap.dedent("""\
         sys.exit("unexpected nvidia-smi call: " + args)
     """)
 
-# The child: passes capture's own live-lease check, checks what that check does not (exact pids, its own process
-# group, the box lock), then follows its mode. (A Python child ignores SIGPIPE and SIGXFSZ itself at startup, so
-# the dispositions are checked with a shell command instead.)
+# The child: a one-card lease passes capture's own live-lease check and a multi-card one is refused by it, while
+# both pass qualify-model-device-memory.py's lease check against the live ancestry; then it checks what those do not
+# (exact pids, its own process group, every card's lock and the box lock held by the wrapper) and follows its mode.
+# (A Python child ignores SIGPIPE and SIGXFSZ itself at startup, so the dispositions are checked with a shell
+# command instead.)
 CHILD = textwrap.dedent("""\
     import fcntl, importlib.util, json, os, subprocess, sys, time
     from pathlib import Path
@@ -64,19 +69,39 @@ CHILD = textwrap.dedent("""\
     spec = importlib.util.spec_from_file_location("qualify_release", tools / "qualify-release.py")
     qr = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(qr)
-    # one card, CUDA_VISIBLE_DEVICES, wrapper/child ancestry, the lock file and its FLOCK owned by the wrapper
-    lease = qr.live_lease(lock_dir=Path(os.environ["GPU_RUN_TEST_LOCKS"]))
+    spec = importlib.util.spec_from_file_location("qualify_model_device_memory", tools / "qualify-model-device-memory.py")
+    mm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mm)
+    lease = json.load(open(os.environ["MEMRA_GPU_LEASE_FILE"]))
+    ids = lease["requested_uuids"]
+    if len(ids) == 1:
+        # one card, CUDA_VISIBLE_DEVICES, wrapper/child ancestry, the lock file and its FLOCK owned by the wrapper
+        assert qr.live_lease(lock_dir=Path(os.environ["GPU_RUN_TEST_LOCKS"])) == lease
+    else:
+        try:
+            qr.live_lease(lock_dir=Path(os.environ["GPU_RUN_TEST_LOCKS"]))
+            sys.exit("capture accepted a multi-card lease")
+        except qr.q.GateError:
+            pass
+    # the per-card qualification tool's own check: order, stable lock order, live ancestry (its canonical lock
+    # directory stands in for the test's)
+    canonical = {u: f"/tmp/memra-gpu-locks/{u}.lock" for u in ids}
+    mm.lease_locks(ids, dict(lease, lock_files=canonical), mm.ancestors())
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == ",".join(ids), os.environ["CUDA_VISIBLE_DEVICES"]
     assert lease["child_pid"] == os.getpid(), lease
     assert lease["wrapper_pid"] == os.getppid(), lease
     assert os.getpgid(0) == os.getpid(), "the command runs in its own process group"
-    if lease.get("box_lock"):
-        fd = os.open(lease["box_lock"], os.O_RDONLY)
+    flocks = [l.split() for l in open("/proc/locks") if " FLOCK " in l]
+    for path in [lease["lock_files"][u] for u in ids] + ([lease["box_lock"]] if lease.get("box_lock") else []):
+        fd = os.open(path, os.O_RDONLY)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            sys.exit("the box lock was not held during the child")
+            sys.exit("a lock was not held during the child: " + path)
         except BlockingIOError:
             pass
         os.close(fd)
+        ino = str(os.stat(path).st_ino)
+        assert any(f[4] == str(lease["wrapper_pid"]) and f[5].split(":")[2] == ino for f in flocks), path
     open(marker, "w").write("ran")
     if mode == "exit":
         sys.exit(int(arg))
@@ -85,7 +110,7 @@ CHILD = textwrap.dedent("""\
         open(arg, "w").write(str(g.pid))
         time.sleep(300)
     if mode == "linger":  # leave a compute process on the card behind
-        open(arg, "a").write(lease["requested_uuids"][0] + ", " + str(os.getpid()) + "\\n")
+        open(arg, "a").write(lease["requested_uuids"][-1] + ", " + str(os.getpid()) + "\\n")
         sys.exit(0)
     if mode == "sleep":
         time.sleep(float(arg))
@@ -190,8 +215,8 @@ class WrapperTests(unittest.TestCase):
         subprocess.run(["chmod", "-R", "u+w", str(self.tmp)], check=False)
         subprocess.run(["rm", "-rf", str(self.tmp)], check=False)
 
-    def argv(self, mode="exit", arg="0", extra=(), linger="1"):
-        return [sys.executable, str(WRAPPER), "--gpus", UUID, "--receipt", str(self.receipt),
+    def argv(self, mode="exit", arg="0", extra=(), linger="1", gpus=UUID):
+        return [sys.executable, str(WRAPPER), "--gpus", gpus, "--receipt", str(self.receipt),
                 "--lock-dir", str(self.locks), "--wait", "5", "--linger-wait", linger, *extra, "--",
                 sys.executable, str(self.child), str(self.marker), mode, arg]
 
@@ -491,6 +516,45 @@ class WrapperTests(unittest.TestCase):
             self.assertTrue(module.group_alive(424242), "an unsignallable group must count as alive")
         finally:
             os.killpg = real
+
+    def test_two_cards_are_locked_in_sorted_order_and_capture_refuses_them(self):
+        r = subprocess.run(self.argv(gpus=f"{OTHER},{UUID}"), env=self.env, capture_output=True, text=True,
+                           timeout=180)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.marker.read_text(), "ran")
+        lease = self.lease()
+        self.assertEqual(lease["requested_uuids"], [OTHER, UUID])
+        self.assertEqual(lease["lock_order"], [UUID, OTHER])
+        self.assertEqual(list(lease["lock_files"]), [UUID, OTHER], "locks not taken in sorted order")
+        self.assertEqual(sorted(lease["lock_inodes"]), [UUID, OTHER])
+        self.assertEqual([d["uuid"] for d in lease["devices"]], [OTHER, UUID])
+        self.assertEqual(lease["exit_code"], 0)
+        self.assertFalse(held(self.lock) or held(self.locks / f"{OTHER}.lock"), "a lock outlived a clean lease")
+
+    def test_a_two_card_lease_refuses_a_busy_second_card_and_fails_on_its_lingering_compute(self):
+        self.apps.write_text(f"{OTHER}, 4242\n")
+        r = subprocess.run(self.argv(gpus=f"{UUID},{OTHER}"), env=self.env, capture_output=True, text=True,
+                           timeout=180)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("already runs compute", r.stderr)
+        self.assertFalse(self.marker.exists())
+        self.apps.write_text("")
+        # the child leaves a process on the second card (linger writes the lease's last UUID)
+        r = subprocess.run(self.argv("linger", str(self.apps), gpus=f"{UUID},{OTHER}"), env=self.env,
+                           capture_output=True, text=True, timeout=180)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        lease = self.lease()
+        self.assertEqual([p["gpu_uuid"] for p in lease["lingering_compute"]], [OTHER])
+        self.assertEqual(lease["exit_code"], 1)
+
+    def test_refuses_a_repeated_or_unknown_card(self):
+        for gpus, why in ((f"{UUID},{UUID}", "distinct physical card UUIDs"), (f"{UUID},", "distinct physical card"),
+                          (f"{UUID},GPU-deadbeef-0000-0000-0000-000000000000", "no such GPU")):
+            r = subprocess.run(self.argv(gpus=gpus), env=self.env, capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(r.returncode, 0, gpus)
+            self.assertIn(why, r.stderr, gpus)
+            self.assertFalse(self.marker.exists(), gpus)
+            self.assertFalse((self.receipt / "lease.json").exists(), gpus)
 
     def test_refuses_a_reused_receipt_and_an_unknown_card(self):
         self.assertEqual(self.wrap().returncode, 0)

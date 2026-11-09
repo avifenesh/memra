@@ -1,27 +1,30 @@
 #!/usr/bin/env python3
-"""memra-gpu-run: the physical-card lease wrapper that tools/qualify-release.py capture runs under.
+"""memra-gpu-run: the physical-card lease wrapper release capture and the per-card qualification tools run under.
 
-usage: memra-gpu-run --gpus UUID --receipt DIR [--box-lock PATH] [--timeout SECONDS] [--wait SECONDS] -- CMD...
+usage: memra-gpu-run --gpus UUID[,UUID...] --receipt DIR [--box-lock PATH] [--timeout S] [--wait S] -- CMD...
 
-docs/RELEASE-QUALIFICATION.md "Produce a record" runs tools/qualify-release.py capture under it.
+docs/RELEASE-QUALIFICATION.md "Produce a record" runs tools/qualify-release.py capture under it (one card);
+tools/qualify-model-device-memory.py runs its one- and two-card stages under it.
 
-It takes an exclusive flock on the canonical per-UUID lock /tmp/memra-gpu-locks/<UUID>.lock (and on the box's
-campaign lock when --box-lock names one), refuses a card that already runs a compute process, and creates
-DIR/lease.json exclusively once it holds the locks. The command runs in its own process group with
-CUDA_VISIBLE_DEVICES set to the UUID and MEMRA_GPU_LEASE_FILE pointing at the lease (both paths absolute), and
+It takes the box's campaign lock when --box-lock names one, then an exclusive flock on each card's canonical lock
+/tmp/memra-gpu-locks/<UUID>.lock in sorted UUID order (two wrappers asking for overlapping cards cannot deadlock),
+refuses a card that already runs a compute process, and creates DIR/lease.json exclusively once it holds the
+locks. The command runs in its own process group with CUDA_VISIBLE_DEVICES set to the UUIDs in the order given
+and MEMRA_GPU_LEASE_FILE pointing at the lease (both paths absolute), and
 with the default SIGPIPE and SIGXFSZ dispositions; a SIGTERM, SIGINT or SIGHUP the wrapper inherited as ignored
 (nohup, a background job) stays ignored, for the wrapper and the command. It starts only after the lease names its
 pid: a child that does not get the go byte exits without running anything, and a signal that arrives before the
 go byte is recorded and keeps the command from starting. The lock descriptors are inheritable, so the command
-holds the card's lock too and a killed wrapper leaves the card locked while the command runs. A descendant holds
+holds the cards' locks too and a killed wrapper leaves the cards locked while the command runs. A descendant holds
 it only while it keeps those descriptors: Python's subprocess closes them unless close_fds=False, so under
 capture a dead wrapper's lock lasts as long as qualify-release.py itself, not a battery it leaves behind (that
 lease also stays "running", which seal refuses). A timeout or a forwarded signal stops the whole group (SIGTERM,
 then SIGKILL after a grace period), and the lease is finished only when the group is empty: the child's exit code,
 timeout, signal, whether the group left processes behind (which also fails exit_code) and any compute process left
-on the card. It never evicts another process and never changes the card. Format: the lease.json of the banked
+on a leased card. It never evicts another process and never changes a card. Format: the lease.json of the banked
 records under research/release-qualification/ (schema_version 1). CPU contract: tools/test_memra_gpu_run.py
-(--lock-dir, --linger-wait and --grace are its seams; capture accepts only the canonical directory).
+(--lock-dir, --linger-wait and --grace are its seams; capture accepts only the canonical directory and one
+card).
 """
 import argparse
 import csv
@@ -52,8 +55,8 @@ def devices():
     return [{"index": int(r[0]), "uuid": r[1], "name": r[2], "memory_mib": int(r[3]), "pci_bus_id": r[4]} for r in rows]
 
 
-def compute_on(uuid):
-    return [{"gpu_uuid": r[0], "pid": int(r[1])} for r in smi("compute-apps=gpu_uuid,pid") if r[0] == uuid]
+def compute_on(uuids):
+    return [{"gpu_uuid": r[0], "pid": int(r[1])} for r in smi("compute-apps=gpu_uuid,pid") if r[0] in uuids]
 
 
 def write(path, value):
@@ -126,14 +129,15 @@ def main():
     a = ap.parse_args()
     cmd = a.cmd[1:] if a.cmd[:1] == ["--"] else a.cmd
     uuids = a.gpus.split(",")
-    if len(uuids) != 1 or not cmd:
-        sys.exit("memra-gpu-run: one physical card UUID and a command are required")
-    uuid = uuids[0]
+    if not all(uuids) or len(set(uuids)) != len(uuids) or not cmd:
+        sys.exit("memra-gpu-run: distinct physical card UUIDs and a command are required")
     receipt, box_lock, lock_dir = absolute(a.receipt), absolute(a.box_lock), absolute(a.lock_dir)
     all_devices = devices()
-    leased = [d for d in all_devices if d["uuid"] == uuid]
-    if not leased:
-        sys.exit(f"memra-gpu-run: no such GPU {uuid}")
+    by_uuid = {d["uuid"]: d for d in all_devices}
+    for uuid in uuids:
+        if uuid not in by_uuid:
+            sys.exit(f"memra-gpu-run: no such GPU {uuid}")
+    leased = [by_uuid[u] for u in uuids]
     receipt.mkdir(parents=True, exist_ok=True)
     lease_path = receipt / "lease.json"
     lock_dir.mkdir(exist_ok=True)
@@ -141,15 +145,19 @@ def main():
         os.chmod(lock_dir, 0o1777)  # the umask would leave 1755; other accounts lock here too
     except PermissionError:
         pass
-    held = []
+    held, lock_files, lock_inodes = [], {}, {}
     if box_lock:
         held.append(take(box_lock, a.wait)[0])
-    lock = lock_dir / f"{uuid}.lock"
-    fd, st = take(lock, a.wait)
-    held.append(fd)
-    busy = compute_on(uuid)
+    for uuid in sorted(uuids):  # one stable order, so two multi-card wrappers cannot deadlock
+        lock = lock_dir / f"{uuid}.lock"
+        fd, st = take(lock, a.wait)
+        held.append(fd)
+        lock_files[uuid] = str(lock)
+        lock_inodes[uuid] = {"inode": st.st_ino, "device_major": os.major(st.st_dev),
+                             "device_minor": os.minor(st.st_dev)}
+    busy = compute_on(uuids)
     if busy:
-        sys.exit(f"memra-gpu-run: {uuid} already runs compute {busy}; not disturbing it")
+        sys.exit(f"memra-gpu-run: a leased card already runs compute {busy}; not disturbing it")
     try:
         os.close(os.open(lease_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644))
     except FileExistsError:
@@ -157,13 +165,12 @@ def main():
     except OSError as exc:
         sys.exit(f"memra-gpu-run: cannot create the lease ({exc}); the command did not run")
     lease = {"schema_version": 1, "wrapper_pid": os.getpid(), "child_pid": None,
-             "requested_uuids": [uuid], "lock_order": [uuid], "lock_files": {uuid: str(lock)},
-             "lock_inodes": {uuid: {"inode": st.st_ino, "device_major": os.major(st.st_dev),
-                                    "device_minor": os.minor(st.st_dev)}},
+             "requested_uuids": uuids, "lock_order": sorted(uuids), "lock_files": lock_files,
+             "lock_inodes": lock_inodes,
              "box_lock": str(box_lock) if box_lock else None,
              "devices": leased, "all_devices": all_devices, "command": cmd,
              "started_unix": time.time(), "state": "running"}
-    env = dict(os.environ, CUDA_VISIBLE_DEVICES=uuid, MEMRA_GPU_LEASE_FILE=str(lease_path))
+    env = dict(os.environ, CUDA_VISIBLE_DEVICES=",".join(uuids), MEMRA_GPU_LEASE_FILE=str(lease_path))
     state = {"sig": None, "pgid": None, "go": False}
     # A signal the wrapper inherited as ignored stays ignored, here and in the command (nohup keeps its meaning).
     watched = tuple(s for s in FORWARDED if signal.getsignal(s) != signal.SIG_IGN)
@@ -253,7 +260,7 @@ def main():
         signal.signal(s, signal.SIG_DFL)
     end = time.monotonic() + a.linger_wait
     while True:  # a dying CUDA context can take a moment to leave the card
-        lingering = compute_on(uuid)
+        lingering = compute_on(uuids)
         if not lingering or time.monotonic() >= end:
             break
         time.sleep(min(3.0, max(a.linger_wait, 0.1)))
