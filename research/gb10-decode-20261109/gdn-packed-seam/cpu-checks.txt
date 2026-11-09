@@ -1,0 +1,51 @@
+== rig worktree: cargo fmt --all -- --check rc=0; git diff --check rc=0
+
+== tools/check-flags.sh rc=0
+check-flags: runtime literal reads=874
+check-flags: no uncovered runtime names
+check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+flags-row-shape: 1045 rows within 4000 chars, default cells within 300, one decide-by each, 55 history sections all linked
+
+== clippy (DOCS_RS stub build, CARGO_TARGET_DIR=~/.cache/memra-gb10-r4-tf/target)
+    Checking memra-gguf v0.139.0 (~/.cache/memra-gb10-r5-seam/src/crates/memra-gguf)
+    Checking memra-tier v0.139.0 (~/.cache/memra-gb10-r5-seam/src/crates/memra-tier)
+   Compiling memra-engine v0.139.0 (~/.cache/memra-gb10-r5-seam/src/crates/memra-engine)
+    Checking memra-sampling v0.139.0 (~/.cache/memra-gb10-r5-seam/src/crates/memra-sampling)
+    Checking memra-validate v0.139.0 (~/.cache/memra-gb10-r5-seam/src/crates/memra-validate)
+   Compiling memra-server v0.139.0 (~/.cache/memra-gb10-r5-seam/src/crates/memra-server)
+    Checking memra-lanes v0.139.0 (~/.cache/memra-gb10-r5-seam/src/crates/memra-lanes)
+    Checking memra-net-guard v0.139.0 (~/.cache/memra-gb10-r5-seam/src/crates/memra-net-guard)
+    Checking memra-tokenizer v0.139.0 (~/.cache/memra-gb10-r5-seam/src/crates/memra-tokenizer)
+    Checking memra-kv v0.139.0 (~/.cache/memra-gb10-r5-seam/src/crates/memra-kv)
+    Checking memra-runtime v0.139.0 (~/.cache/memra-gb10-r5-seam/src/crates/memra-runtime)
+    Checking memra-reference v0.139.0 (~/.cache/memra-gb10-r5-seam/src/crates/memra-reference)
+    Finished `release` profile [optimized] target(s) in 46.54s
+
+== memra-server suite (nvcc 13.1, MEMRA_CUDA_ARCH=120a, cargo test --release --locked -p memra-server --no-fail-fast)
+     Running unittests src/lib.rs (~/.cache/memra-gb10-r5-seam/target/release/deps/memra_server-a03cadf5b02289cb)
+test job_store::tests::failed_or_panicked_settlement_does_not_expose_output ... ok
+test result: ok. 1146 passed; 0 failed; 11 ignored; 0 measured; 0 filtered out; finished in 13.68s
+     Running unittests src/bin/kv_handoff_gate.rs (~/.cache/memra-gb10-r5-seam/target/release/deps/kv_handoff_gate-ebf6ca0cf19b358b)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (~/.cache/memra-gb10-r5-seam/target/release/deps/memra_server-0c15bcb6e4893327)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/argv_boot.rs (~/.cache/memra-gb10-r5-seam/target/release/deps/argv_boot-d1517acad451f442)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+== engine env_audit (cargo test --release --locked -p memra-engine --lib env_audit)
+test env_audit::tests::a_retired_door_refuses_with_its_ledger ... ok
+test env_audit::tests::os_audit_classifies_raw_prefixes_before_rendering_and_keeps_utf8_distinct ... ok
+test env_audit::tests::registry_is_populated_sorted_and_disjoint ... ok
+test env_audit::tests::every_legal_name_passes ... ok
+test env_audit::tests::os_audit_all_legal_names_accept_uninterpretable_values ... ok
+test env_audit::tests::unknown_names_refuse_inside_owned_families_and_warn_outside ... ok
+test env_audit::tests::os_audit_refuses_owned_bytes_and_summarizes_deduplicated_unowned_names ... ok
+test env_audit::tests::os_audit_preserves_utf8_retired_wildcard_and_value_ignorance ... ok
+test env_audit::tests::retired_names_are_not_read_at_runtime ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 756 filtered out; finished in 0.05s
+
+== job status
+clippy rc=0
+suite rc=0
+env_audit rc=0
