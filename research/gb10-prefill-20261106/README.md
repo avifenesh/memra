@@ -546,6 +546,26 @@ The phases of the request (timestamped server log, `ts-probe-main-unit1/`, unpro
   cell at full clock) the arms separate completely at all three lengths: 22.361 -> 22.050 s
   (-1.39%), 119.132 -> 117.897 s (-1.04%), 315.880 -> 313.407 s (-0.78%). The answers are
   identical in every request.
+- **Host time before the first kernel** (row 58, scouting): at 131k, 202 `cuMemAllocAsync` calls take
+  0.285 s, which is the stream-ordered pool growing on a fresh boot. The pool keeps freed blocks
+  (release threshold u64::MAX), so a repeat request does not pay it. Tokenization is 0.12 s at 131k
+  and 0.24 s at 260k. Not pursued.
+- **The F8F4 GEMM tile after v3** (rows 59-63, `GEMM-V4-DESIGN.md`, `gemm-v4/`): ncu on the
+  shipped v3 puts the tensor pipe at 48-58% active. QMMA carries 45% of the stall samples
+  (math-pipe throttle), and four FMUL plus four FFMA per QMMA (the exact epilogue) are 65% of the
+  instructions. Mode 3 (no feed after the prologue) is only 6-10% faster on gate/up and down, so a
+  perfect feed is worth about 6% of GEMM time. Both designs aimed at that ceiling were exact and
+  slower on every shape: a persistent tile walk with cross-tile prefetch, and per-group slot release
+  (8 A and 2 B groups). Above the ceiling the 128-register cap rules, because the exact program needs
+  64 f32 accumulators per thread at 16 warps. v3 stands.
+- **h2p sized** (row 62): its mode-3 twin (no K/V feed) runs at h2p's speed, with 79% of the tensor
+  pipe active and 2 warps per scheduler at 255 registers. Compute-bound, no feed lever.
+- **Half-height last wave** (rows 64-65b, adopted): a v3 launch whose last wave is partial (the
+  640-tile grids: down, its residual twin, ssm_out, wo) runs its last tiles as twice as many 128-row
+  tiles (`mul_mat_f8f4v3t`). Each tile keeps its own k order, so the result is bit-identical. It is
+  +1.4..+1.8% on those launches. Served on unit 2: 22.066 -> 22.021 s (-0.20%) and 117.949 ->
+  117.704 s (-0.21%), separated; 260k a tie. Unit 1's medians are -0.28% / -0.23% / -0.69%,
+  overlapping through two reduced-clock cells.
 
 ### Next (round 4)
 
