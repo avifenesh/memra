@@ -1,0 +1,23 @@
+campaign ns-ab-unit2: 18 requests, arms ['B', 'N']
+
+target 32768
+  B        ttft 22.630, 22.632, 22.624                   median 22.630  cells ['01-B', '04-B', '05-B']
+  N        ttft 22.402, 22.420, 22.384                   median 22.402  cells ['02-N', '03-N', '06-N']
+  N vs B: -1.01%
+
+target 131072
+  B        ttft 120.128, 120.164, 120.097                median 120.128  cells ['01-B', '04-B', '05-B']
+  N        ttft 119.172, 119.149, 119.222                median 119.172  cells ['02-N', '03-N', '06-N']
+  N vs B: -0.80%
+
+target 260000
+  B        ttft 317.818, 317.734, 317.827                median 317.818  cells ['01-B', '04-B', '05-B']
+  N        ttft 317.244, 315.936, 316.444                median 316.444  cells ['02-N', '03-N', '06-N']
+  N vs B: -0.43%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+  target 260000 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL
