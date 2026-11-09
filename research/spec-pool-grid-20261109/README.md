@@ -5,14 +5,17 @@ warm == cold. The fix ships. On main 65fb297a59, 12 of 22 three-turn pair cells 
 one greedy (an affinity rewind to an off-grid checkpoint) and eleven sampled (T=1 and penalized,
 on-grid rewinds included). On the fix, 22 of 22 are byte-equal. The cost is about +0.1 s TTFT on
 the turns main resumed at the parked end (turn 2 of a short chat: 0.120 s to 0.216 s rewound, 0.222
-s cold), because every exact path primes with a checkpoint stop. Turns that already rewound on the
-grid, or that the prefix cache serves, are unchanged.
+s cold). Measured at a fixed prompt length, that is the cost of a prime that stops at the turn
+checkpoint (0.272 s against 0.162 s, n = 48 each), which the inexact resume skipped. Turns that
+already rewound on the grid, or that the prefix cache serves, are unchanged.
 
 Model and rig for every cell: Qwen3.8-27B NVFP4 + Q5_K GGUF with its MTP head, no DFlash drafter
 (the MTP spec route serves), RTX 5090 Laptop, context 8,192, two sessions, prefix cache at its
 derived size (800 MB), every switch at the device default unless a row names one. Binaries: main
-65fb297a59 (sha256 82645099dc93c91d, the cell-evidence build) and the fix (e992559fe295d782, built
-from this lane's first commit before `cargo fmt`, which changed one line's wrapping).
+65fb297a59 (sha256 82645099dc93c91d, the cell-evidence build); the fix as first committed
+(e992559fe295d782, `pairs-fix/run1` to `run3`, `cost/`, `cost-exact/`); and the PR head after the
+review fix, rebased on main 0626f6d260 (bb4f8c5b7d, 891c478fe0188685, `pairs-fix/head/`, all 22
+cases again, and `stop-cost/`).
 
 ## Is the path reachable at the device default?
 
@@ -53,8 +56,9 @@ presence 0.2. Shapes:
 
 `open` means `max_tokens` omitted. `pairs-base/run1` to `run4` are main (run 1 yielded to a landing
 record after eight cases; its chat-story rows carry the `offgrid` expectation they were registered
-with before they became on-grid controls). `pairs-fix/run1` to `run3` are the fix. `TABLE.md` is
-`summarize.py` over all of them:
+with before they became on-grid controls). `pairs-fix/run1` to `run3` are the first fix binary and
+`pairs-fix/head/` the PR head: the same 22 of 22, on the same paths. `TABLE.md` is `summarize.py`
+over main and the head:
 
 | case | sampling | main bytes (t2/t3) | main warm path | fix bytes (t2/t3) | fix warm path |
 |---|---|---|---|---|---|
@@ -156,19 +160,31 @@ with `MEMRA_REUSE_POOL=0`, so turn 2 primes cold as a decline does; n = 4 per ce
 | 2 | 0.120 (0.119-0.120) | 0.216 (0.215-0.216) | 0.222 (0.222-0.222) |
 | 3 | 0.221 (0.220-0.221) | 0.222 (0.222-0.223) | 0.223 (0.222-0.223) |
 
-The rewind beats the decline by 6 ms on this 101-token turn. The gap to main is not the prime
-length, and not session setup: the rewound session keeps its allocation and draft graph and still
-takes 0.216 s. Every prime here that stops at a checkpoint takes about 0.22 s or more (turn 3 on
-both arms, `raw-long-nopc` priming 69 rows from 928). A prime with no stop takes about 0.12 s (turn
-1's 17 tokens, main's parked-end suffix). The fixed cost is in the checkpointed prime; it is not
-traced here.
+The rewind beats the decline by 6 ms on this 101-token turn. The gap to main is not session
+setup: the rewound session keeps its allocation and draft graph and still takes 0.216 s. In these
+cells every prime of 53 rows or more took about 0.22 s and also stopped at a turn checkpoint, and
+every prime of 37 rows or fewer took about 0.12 s with no stop, so `stop_cost.py` separates the two
+at one prompt length (`stop-cost/`): cold chat prompts of 70 to 72 tokens with a `user` id, each
+distinct, at the device default against `MEMRA_AFFINITY=0`, boots in ABBA order, 4 boots per arm
+and 12 prompts per boot:
+
+| arm | what the prime does | TTFT median (s) | range (s) | n |
+|---|---|---:|---|---:|
+| stop (default) | split at 32, turn checkpoint snapshot, 157.9 MB `spec-boundary` entry | 0.272 | 0.220-0.305 | 48 |
+| nostop (`MEMRA_AFFINITY=0`) | one call, no checkpoint, no entry | 0.162 | 0.126-0.179 | 48 |
+
+So a checkpoint stop costs about 0.11 s of TTFT on this card, at a fixed length. The three parts
+(the split, the snapshot, the boundary entry's copy and, once the budget is full, an eviction) are
+not separated. The `spec-boundary` entry is 32 tokens, under the cache's 64-token floor that the
+seed obeys.
 
 ## Left open
 
 - The 1..15-row plain-affinity suffix (item 3) is unchanged here. The spec-affinity tier applies
   the prime floor to a recurrent trunk as part of this law.
-- The checkpointed prime's fixed cost on the RTX 5090 (about 0.1 s over a stop-free prime of the
-  same turn, above). The grid law makes more turns pay it; finding where it goes (the snapshot,
-  the boundary capture or the split prime's MTP walk) needs a trace.
+- The checkpoint stop's cost on the RTX 5090 (about 0.11 s at a fixed length, above). The grid law
+  makes the turns main resumed inexactly pay it. Which part costs it (the split, the snapshot or
+  the 157.9 MB boundary entry the cold spec session publishes under the 64-token floor) needs a
+  trace.
 - Long resumes where the cached prefix reaches 1,024 tokens pick `cached_long` K (K=2 against the
   cold K=3). No cell here crossed it; at T=1 such a resume could draw differently from cold.

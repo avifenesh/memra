@@ -3290,8 +3290,10 @@ default (`research/spec-pool-grid-20261109/`): 22 of 22 three-turn pair cells by
 (greedy, T=1 and penalized; chat, raw, thinking on, short, long and story shapes, the exact tier's
 on-grid rewind among them), against 12 of 22 that left the cold text on the base. The price is
 about +0.1 s TTFT on the turns the base resumed at the parked end (turn 2 of a short chat: 0.120 s
-to 0.216 s rewound, 0.222 s cold); turns that already rewound on the grid or restore from the
-prefix cache are unchanged.
+to 0.216 s rewound, 0.222 s cold): a prime that stops at the turn checkpoint costs that much on
+this card (0.272 against 0.162 s at a fixed 70-72-token length, n = 48 each), and the parked-end
+resume skipped it. Turns that already rewound on the grid or restore from the prefix cache are
+unchanged.
 
 STILL OPEN (memra#1093): the plain-affinity rewind primes a suffix of 1..15 rows token by token
 (the spec-affinity tier now applies the prime floor to a recurrent trunk). That suffix stays: a
