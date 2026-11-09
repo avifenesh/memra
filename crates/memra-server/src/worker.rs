@@ -32358,14 +32358,14 @@ impl<'t> SpecBurstEmit<'t> {
         if self.eos_seen || self.emit_remaining == 0 || slice.is_empty() {
             // Nothing to publish: the public stream already ended (its later tokens are never
             // visible; accounting happens post-burst) or nothing new committed this round.
-            return spec_round_continues(keep, self.eos_seen, self.emit_remaining);
+            return spec_round_continues(keep, !self.eos_seen && self.send_ok);
         }
         if let Some(trace) = ttft {
             trace.mark_prime_end();
             trace.mark_first_decode();
         }
         if !self.send_ok {
-            return keep; // client already gone — keep the cursor honest, stop sending
+            return false; // client already gone: nobody reads this burst
         }
         let emitted = emit_spec_token_events(
             slice,
@@ -32383,21 +32383,23 @@ impl<'t> SpecBurstEmit<'t> {
         // `tokens_emitted`; advance it at the send so a post-flush OOM never replays.
         *tokens_emitted += emitted.sent;
         self.send_ok = emitted.send_ok;
-        spec_round_continues(keep, self.eos_seen, self.emit_remaining)
+        spec_round_continues(keep, !self.eos_seen && self.send_ok)
     }
 }
 
 /// A spec burst's continue-verdict at a round boundary. `false` ends the burst at this round,
-/// exactly as if its burst count had been reached; burst size is content-neutral (spec-levers
-/// battery), so the verdict moves when control returns, never what the tokens say.
+/// through the exit a reached burst count takes.
 /// - `admit_keep` is false while a request waits for admission (ADMISSION YIELD above).
-/// - The burst also ends at the round where its public stream ends: an EOS or stop id
-///   (`eos_seen`) or a spent request budget. Every later round committed only tokens nobody
-///   sees, and the last burst used to run them out to its full target (up to 32 tokens' worth
-///   of rounds, about a fifth of a 100-token answer's decode on GB10,
-///   research/gb10-decode-20261109).
-fn spec_round_continues(admit_keep: bool, eos_seen: bool, emit_remaining: usize) -> bool {
-    admit_keep && !eos_seen && emit_remaining > 0
+/// - `stream_open` is false once the public stream has ended: an EOS or stop id was committed,
+///   or the client is gone. Every later round commits only tokens nobody sees, and the last
+///   burst used to run them out to its full target (up to 32 tokens' worth of rounds, about a
+///   fifth of a 100-token answer's decode on GB10, research/gb10-decode-20261109). Ending
+///   there moves no visible token: the stream is already complete.
+///
+/// A spent request budget needs no clause: the burst target never exceeds the request's room,
+/// so the engine's own count ends that burst.
+fn spec_round_continues(admit_keep: bool, stream_open: bool) -> bool {
+    admit_keep && stream_open
 }
 
 /// Everything `step_session`'s spec arm does after the engine burst call: telemetry, the
@@ -36022,8 +36024,10 @@ mod tests {
         Event, async_chain_devsample, cached_hit_needs_first_token, carried_prime_batch_eligible,
         emit_spec_token_events, interactive_prefill_budget, interactive_prime_batch_take,
         legacy_async_chain_width, prefill_tick_take, record_output_progress, record_output_tokens,
-        solo_widen_fresh, spec_visible_prefix, stop_token_reason, summarize_confidence, utf8_delta,
+        solo_widen_fresh, spec_round_continues, spec_visible_prefix, stop_token_reason,
+        summarize_confidence, utf8_delta,
     };
+    use super::{EventSender, SpecBurstEmit};
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
     use super::{
         HostPrefixCache, HostPrefixEntry, PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION,
@@ -38318,53 +38322,80 @@ mod tests {
         assert_eq!(remaining, requested_max - burst.len());
     }
 
-    /// A burst ends at the round its public stream ends: the round that commits EOS (or a stop
-    /// id) answers false, and so does every later flush, so the engine runs no post-EOS rounds.
+    /// A burst ends at the round its public stream ends, through the real round hook: the flush
+    /// that commits EOS (or a stop id) answers false, and so does every later flush, so the
+    /// engine runs no rounds after it. A gone client ends it too. Before this verdict the hook
+    /// answered only the admission yield, and each of these flushes said "continue".
     #[test]
     fn spec_burst_ends_at_the_round_that_commits_eos() {
-        let (eos, stop) = (7u32, 9u32);
-        let mut remaining = 64usize;
-        let (mut decoded, mut cursor, mut eos_seen) = (Vec::new(), 0usize, false);
-        let mut round = |slice: &[u32], remaining: &mut usize, eos_seen: &mut bool| {
-            if !*eos_seen && *remaining > 0 && !slice.is_empty() {
-                emit_spec_token_events(
-                    slice,
-                    remaining,
-                    &mut decoded,
-                    &mut cursor,
-                    &[eos],
-                    &[stop],
-                    eos_seen,
-                    ascii_decode,
-                    |_| true,
-                );
-            }
-            spec_round_continues(true, *eos_seen, *remaining)
+        let tok = chatml_fixture_tokenizer("spec-burst-eos");
+        let (a, nl, stop, eos) = (0u32, 1u32, 2u32, tok.eos_id());
+        // `admit_yield: false`: PENDING_ADMITS is process-global and other tests move it.
+        let emit = |tx: EventSender| SpecBurstEmit {
+            admit_yield: false,
+            tok: &tok,
+            decoded_visible: Vec::new(),
+            cursor: 0,
+            emit_remaining: 64,
+            eos_seen: false,
+            send_ok: true,
+            token_events: 0,
+            flush_tx: tx,
+            eos_ids: vec![eos],
+            stop_ids: vec![stop],
         };
-        assert!(round(&[1, 2, 3], &mut remaining, &mut eos_seen));
+        let mut clock = crate::hybrid_telemetry::EmissionClock::default();
+        let mut sent = 0usize;
+        let mut flush = |e: &mut SpecBurstEmit, slice: &[u32], sent: &mut usize| {
+            e.flush(
+                slice,
+                None,
+                "m",
+                crate::lanes::Lane::Interactive,
+                &mut clock,
+                sent,
+            )
+        };
+
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx);
         assert!(
-            !round(&[4, eos, 5], &mut remaining, &mut eos_seen),
+            flush(&mut e, &[a, nl], &mut sent),
+            "an open stream continues"
+        );
+        assert!(flush(&mut e, &[], &mut sent), "an empty round continues");
+        assert!(
+            !flush(&mut e, &[a, eos, a], &mut sent),
             "the EOS round ends it"
         );
         assert!(
-            !round(&[6, 8], &mut remaining, &mut eos_seen),
+            !flush(&mut e, &[a, nl], &mut sent),
             "and no later round restarts it"
         );
-        let (mut remaining, mut eos_seen) = (64usize, false);
+        assert!(!flush(&mut e, &[], &mut sent));
+        assert_eq!(
+            sent, 4,
+            "the tokens through EOS are the whole public stream"
+        );
+
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx);
         assert!(
-            !round(&[4, stop], &mut remaining, &mut eos_seen),
+            !flush(&mut e, &[a, stop], &mut sent),
             "a stop id ends it too"
         );
-        let (mut remaining, mut eos_seen) = (2usize, false);
+
+        let (tx, rx) = event_channel();
+        let mut e = emit(tx);
+        drop(rx);
+        assert!(!flush(&mut e, &[a], &mut sent), "a gone client ends it");
+        assert!(!flush(&mut e, &[a], &mut sent));
+
         assert!(
-            !round(&[1, 2, 3], &mut remaining, &mut eos_seen),
-            "so does a spent budget"
-        );
-        assert!(
-            !spec_round_continues(false, false, 5),
+            !spec_round_continues(false, true),
             "the admission yield still ends it"
         );
-        assert!(spec_round_continues(true, false, 5));
+        assert!(spec_round_continues(true, true));
     }
 
     /// memra#659: the open door's budget is its charged output, leaving CTX_SLACK rows past it as
@@ -49003,19 +49034,10 @@ mod tests {
         assert_eq!(*w.last().unwrap(), 46);
     }
 
-    /// REGRESSION for the battery blocker (darklanes
-    /// `research/kv-fastband-20260830/battery-20260831/pause-gates/RESULTS.md`, FINDING 1):
-    /// with `MEMRA_KV_PAUSE_DEMOTE=1`, the host tier armed, and tools declared, 6 of 6
-    /// natural qwen3.8 `finish_reason:"tool_calls"` turns armed ZERO pause candidates,
-    /// because the generation tape ends `...</tool_call>\n<eos>` and the decoded tail
-    /// therefore did not END with the close marker; the identical requests with
-    /// `stop:["</tool_call>"]` armed 2/2. This test replays that exact tape shape through
-    /// a real tokenizer (the eos as an added special token, exactly the chatml layout) and
-    /// asserts the raw decode reproduces the miss while the `pause_tail_window` trim arms.
-    #[test]
-    fn pause_tail_arms_on_the_battery_eos_after_close_tape() {
-        let dir =
-            std::env::temp_dir().join(format!("memra-pause-tail-fixture-{}", std::process::id()));
+    /// A four-token chatml-shaped tokenizer on disk: "a" = 0, "\n" = 1, `</tool_call>` = 2 and the
+    /// eos `<|im_end|>` = 3 as an added special token.
+    fn chatml_fixture_tokenizer(tag: &str) -> memra_tokenizer::Tokenizer {
+        let dir = std::env::temp_dir().join(format!("memra-{tag}-fixture-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
@@ -49042,6 +49064,22 @@ mod tests {
         )
         .unwrap();
         let tok = memra_tokenizer::Tokenizer::from_hf_dir(&dir).expect("fixture tokenizer");
+        let _ = std::fs::remove_dir_all(&dir);
+        tok
+    }
+
+    /// REGRESSION for the battery blocker (darklanes
+    /// `research/kv-fastband-20260830/battery-20260831/pause-gates/RESULTS.md`, FINDING 1):
+    /// with `MEMRA_KV_PAUSE_DEMOTE=1`, the host tier armed, and tools declared, 6 of 6
+    /// natural qwen3.8 `finish_reason:"tool_calls"` turns armed ZERO pause candidates,
+    /// because the generation tape ends `...</tool_call>\n<eos>` and the decoded tail
+    /// therefore did not END with the close marker; the identical requests with
+    /// `stop:["</tool_call>"]` armed 2/2. This test replays that exact tape shape through
+    /// a real tokenizer (the eos as an added special token, exactly the chatml layout) and
+    /// asserts the raw decode reproduces the miss while the `pause_tail_window` trim arms.
+    #[test]
+    fn pause_tail_arms_on_the_battery_eos_after_close_tape() {
+        let tok = chatml_fixture_tokenizer("pause-tail");
         assert_eq!(tok.eos_id(), 3);
         // The natural-finish tape: "a", "</tool_call>", "\n", eos; the stop id is pushed
         // into `generated` before the stop check fires, so it IS in the tape.
@@ -49060,7 +49098,6 @@ mod tests {
         let truncated = vec![0u32, 2];
         let tail = tok.decode_special(super::pause_tail_window(&truncated, &stop), true);
         assert!(crate::toolcall::tail_ends_with_tool_call(&tail));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// THE PROMOTE-VS-DEMOTE RACE, decision half: a pause demote must LOSE to the session's
