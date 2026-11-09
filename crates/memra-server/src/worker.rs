@@ -1968,6 +1968,12 @@ impl EventReceiver {
         }
     }
 
+    /// Request log: this request's entry, for a consumer that merges receivers or builds its
+    /// own parsers (the n > 1 choice group). None unless the log is bound.
+    pub(crate) fn request_log(&self) -> Option<crate::request_log::Entry> {
+        self.log.as_ref().map(|log| log.entry().clone())
+    }
+
     #[cfg(test)]
     pub fn try_recv(&mut self) -> Result<Event, tokio::sync::mpsc::error::TryRecvError> {
         let event = self.inner.try_recv()?;

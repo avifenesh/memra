@@ -2760,13 +2760,17 @@ the default and needs no flag). Receipts, byte-identity gate, and TTFT curves:
 generation routes (`/v1/completions`, `/v1/chat/completions`, `/v1/responses`,
 `/v1/messages`), streaming and blocking, refusals included. It exists to train a model that
 predicts when a session's next request arrives, so each line carries the request's timing, its
-token counts, the tool calls in its reply and a session key that holds across turns. Content
-appears only as sha256 digests: no prompt or reply text is written, and the file is safe to
-keep. Unset, the middleware is not installed and nothing is written.
+token counts, the tool calls in its reply and a session key that holds across turns. No prompt
+or reply text is written: content, identities and tool arguments appear only as sha256
+digests. The digests are unsalted, so the log is pseudonymous, not anonymous: a short or
+guessable `user`, `session_id` or argument string can be recovered by hashing guesses. Send
+opaque identifiers if that matters. Unset, the middleware is not installed and nothing is
+written.
 
 The file is opened for append at boot (created 0640). A path that cannot be opened stops the
 boot. Each line is one `O_APPEND` write, so rotate with `copytruncate` (the server keeps its
-descriptor).
+descriptor). Lines of requests still running when the process exits (a drain-killed stream, a
+background job) are not written.
 
 | field | meaning |
 | --- | --- |
@@ -2779,51 +2783,68 @@ descriptor).
 | `session_key_source` | `session_id`, `user` or `x-session-id` (the explicit tiers, in the session-affinity priority order), `fingerprint`, or `null` |
 | `t_arrival` | Unix seconds, float with microseconds, when the request reached the server |
 | `t_first_token` | when the first generated token reached the HTTP layer; `null` when none was generated |
-| `t_end` | when the response ended: the last SSE frame, or the blocking body ready to send. A `background` request ends when its generation does |
+| `t_end` | when the response ended: the last SSE frame, or the blocking body ready to send. A `background` request, or one cut before its terminal event, ends when its generation stopped |
 | `end_reason` | `stop`, `length`, `error`, `cancelled` or `deadline`, see below |
 | `http_status` | the response status; `499` when the client left before a response head existed |
 | `prompt_tokens`, `cached_tokens` | the worker's prompt accounting, the same numbers as `usage.prompt_tokens` and `usage.prompt_tokens_details.cached_tokens` |
 | `generated_tokens` | the worker's completion count; for a request cut before its terminal event, the tokens it had produced |
-| `tool_calls` | `[{"name", "arguments_sha256"}]` in emission order, the sha256 over the `arguments` string as sent; `[]` when the reply had none; `null` on `/v1/completions`, which returns raw text memra does not parse |
+| `tool_calls` | `[{"name", "arguments_sha256"}]` in emission order; `[]` when the reply had none; `null` on `/v1/completions`, which returns raw text memra does not parse. The digest is over the call's `arguments` string as the OpenAI-shaped surfaces send it; on `/v1/messages` that string is the compact JSON of the call's `input` in key order |
 | `prompt_sha256` | sha256 of the prompt token ids the model was fed (template and tools rendered), as little-endian u32; reproduce it with `/v1/tokenize` |
 
-Fields are `null` when the request never reached the stage that produces them (a 400 has no
-token counts, a request refused before its handler bound a model has `model: null`).
+Times come from one wall-clock reading at arrival plus monotonic offsets, so a clock step
+during a request does not distort its own durations. Fields are `null` when the request never
+reached the stage that produces them: a 400 has no token counts, and a request refused before
+its handler bound a model has `model: null`.
 
-**The session key.** An explicit identity wins: `session_key` is the sha256 of the
-`session_id`, `user` or `x-session-id` value as the server resolved it (trimmed), in the order
+**The session key.** An explicit identity wins, resolved and trimmed in the order
 [Session affinity](#session-affinity--resuming-a-rewritten-conversation-lanesession-affinity-2026-08-05)
-honors them. It is hashed, not copied, so a `user` that names a person is not republished; a
-client joins its own ids by hashing them the same way. Without one, the key is the implicit
-affinity tier's identity: the first three entries (`FP_MIN_SEGMENTS`) of the conversation
-fingerprint chain over the fed prompt, live tail dropped, hashed as little-endian u64. Two
-requests share that key exactly when the worker would nominate one's parked session for the
-other. It needs three closed template segments before the turn being generated: on ChatML
-templates that is a system prompt plus the first user turn. A first turn with no system prompt
-has no key yet (`null`); its later turns have one.
+honors it: `session_id`, then `user`, then the `x-session-id` header. Responses passes
+`prompt_cache_key` as `session_id` and Messages passes `metadata.user_id` as `user`. Without
+one, the key comes from the implicit affinity tier: the first three entries (`FP_MIN_SEGMENTS`)
+of the conversation fingerprint chain over the fed prompt, live tail dropped, as little-endian
+u64. Two requests to one model share that key exactly when the hybrid worker's implicit tier
+would nominate one's parked session for the other. Segments split at the tokenizer's control
+tokens and each contributes only its first and last 8 tokens, so two sessions that open with the
+same system prompt and the same first user turn share a key, as they share a nomination. The
+chain needs three closed segments before the turn being generated: on ChatML templates
+(`<|im_start|>` and `<|im_end|>` both split) a system prompt plus the first user turn already
+make three, while a first turn with no system prompt has no key yet (`null`) and its later turns
+have one. The key is the sha256 of the identity bytes (the id string, or the 24 chain bytes).
+When the request has a cache namespace (a `cache_salt` or a keyring tenant, the scope affinity
+lives in) the material is `<namespace> 0x1f <identity>` instead, so two tenants that both name
+a session `1` do not share a key. With no namespace a client reproduces its key as
+`sha256(session_id)`.
 
-**The end reason.** `stop` and `length` come from the worker's terminal stop reason (`length`
-is `max_tokens` or the context, `stop` covers end of turn, stop strings and ids, and a reply that
-ends in tool calls). `deadline` is `timeout_ms`: an HTTP 408, the in-band deadline error of a
-committed stream, or a blocking partial. `error` is any HTTP error status, an engine error or a
-stream the worker closed without a terminal event. `cancelled` means the consumer let go first:
-the client hung up, or a background request was cancelled. With `n` above 1 the line describes
-choice 0.
+**The end reason.** The consumer's own verdict comes first: `deadline` when `timeout_ms` cut
+the request (a committed stream's in-band deadline error, or a blocking partial), `cancelled`
+when a background request was cancelled, `error` when a stream ended with an in-band accounting
+error. Then what the client was told: no response head is `cancelled`, an HTTP 408 of any cause
+(the request deadline, or a body that did not arrive in time) is `deadline`, any other error
+status is `error`. Then the worker's terminal event: `length` for `max_tokens` or the context,
+`stop` for end of turn, stop strings and ids, and a reply that ends in tool calls; an engine
+error or a stream the worker closed without a terminal event is `error`. A success head whose
+generation stopped without a terminal event is a consumer that let go (the client hung up):
+`cancelled`. With `n` above 1 the line describes choice 0: its receiver, its parser's tool
+calls and the group's deadline.
 
 **What it costs.** Every hook observes; none changes an event, a parsed piece or a frame, and
 generated bytes are identical with the log set and unset
 (`request_log_on_and_off_serve_identical_bytes`; the device A/B is in
 `research/request-log-20261109/`). The GPU worker makes one copy of the prompt ids per request,
-only when the log is set. Per received token event the HTTP side pays one branch and one
+only when the log is set. Per received token event the HTTP side pays a few branches and one
 integer add, with no lock, allocation or I/O. Hashing, serialization and the write run on a
-dedicated thread behind a queue bounded at 4096 lines and 64 MiB; a line that does not fit is
-dropped and counted (`memra_request_log_lines_total{outcome="dropped_queue_full"}`) and serving
-never waits for it.
+dedicated thread behind a queue bounded at 4096 lines and 64 MiB. A line pins its prompt ids
+(4 bytes per token) until it is written, so for short prompts the line bound comes first (about
+40 s of disk stall at 100 requests per second) and for long ones the byte bound does (16M
+prompt tokens, about 160 requests of 100k tokens). A line that does not fit is dropped and
+counted (`memra_request_log_lines_total{outcome="dropped_queue_full"}`) and serving never waits
+for it.
 
-A sample line, two turns into a fingerprint-keyed chat session:
+A real line, from the device A/B (Qwen3.5-9B, an unnamed chat session's first turn, which
+called a tool):
 
 ```json
-{"v":1,"request_id":"chatcmpl-5d1c2e0f9a7b4c3d8e6f1a2b3c4d5e6f","route":"/v1/chat/completions","model":"qwen3.8-27b","stream":true,"session_key":"8f0a6c1e93d24b7a5e0c9d8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b","session_key_source":"fingerprint","t_arrival":1762696041.112093,"t_first_token":1762696041.398871,"t_end":1762696043.004417,"end_reason":"stop","http_status":200,"prompt_tokens":1873,"cached_tokens":1536,"generated_tokens":64,"tool_calls":[{"name":"read_file","arguments_sha256":"3b7e1f0c6d2a9e8b5c4f1a0d7e6b3c2a9f8e5d4c1b0a7f6e3d2c9b8a5f4e1d0c"}],"prompt_sha256":"e4c1a9b7d3f2e0c8b6a5d4f3e2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3"}
+{"v":1,"request_id":"chatcmpl-f946dd69c47663b1a9c6f3ff2cca5cb9","route":"/v1/chat/completions","model":"m","stream":false,"session_key":"d25d7a17bd4bf7772bad1f45675bcb2d66e0b692dc40dedd8048b46d99f16aec","session_key_source":"fingerprint","t_arrival":1794181690.737148,"t_first_token":1794181690.799047,"t_end":1794181691.087214,"end_reason":"stop","http_status":200,"prompt_tokens":295,"cached_tokens":256,"generated_tokens":56,"tool_calls":[{"name":"get_weather","arguments_sha256":"6e1e312d537bc71b5410b0599f5a508142149e13174c6ee0d1671658845bc67d"}],"prompt_sha256":"3cb76adf31b02bf26debfe59be0f8b771e6184d2d1e2100c343b995c22ca4830"}
 ```
 
 ## Multi-tenant QoS — the x-lane SLO gate (lane/qos-p95, 2026-08-02)

@@ -5,8 +5,8 @@
 //! WHAT IT IS FOR. Arrival, first token and end times, the token counts, the tool calls in the
 //! reply and a session key that is stable across a session's turns are what a model needs to
 //! predict when a session's next request arrives. The log carries no prompt or reply text:
-//! content appears only as sha256 digests, so the file is safe to keep. The field contract is
-//! `docs/SERVING.md` "Per-request timing log".
+//! content, identities and tool arguments appear only as unsalted sha256 digests (pseudonymous,
+//! not anonymous). The field contract is `docs/SERVING.md` "Per-request timing log".
 //!
 //! CONFIG, NOT A DOOR. With the variable unset the middleware is not installed, no request
 //! carries a link, and each hook below is one `None` check. The log observes; no hook changes an
@@ -29,8 +29,8 @@
 //! its generation, not for the response that queued it.
 //!
 //! OFF THE HOT PATH. The GPU worker does one copy of the prompt ids per request, and only when
-//! the log is set. Per received token event the cost is one branch and one integer add: no lock,
-//! allocation or I/O. Hashing and serialization run on the writer thread. The queue in between
+//! the log is set. Per received token event the cost is a few branches and one integer add: no
+//! lock, allocation or I/O. Hashing and serialization run on the writer thread. The queue in between
 //! is bounded in lines and bytes; a line that does not fit is dropped and counted
 //! (`memra_request_log_lines_total`), never waited for.
 
@@ -41,7 +41,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::task::{Context, Poll};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::body::{Body, Bytes};
 use axum::extract::{Request, State};
@@ -57,11 +57,12 @@ use crate::worker::Event;
 pub(crate) const ENV: &str = "MEMRA_REQUEST_LOG";
 /// Version of the line schema, written as `"v"` on every line.
 pub(crate) const SCHEMA_VERSION: u32 = 1;
-/// Lines the writer may lag behind. The queue only has to ride out a slow disk: at 100 requests
-/// per second this is about 40 s of stall before a line drops.
+/// Lines the writer may lag behind. The queue only has to ride out a slow disk: for short prompts
+/// at 100 requests per second this is about 40 s of stall before a line drops.
 const QUEUE_LINES: usize = 4096;
 /// Bytes the queued lines may pin, prompt-id copies included (4 bytes per prompt token): a stalled
-/// disk costs at most this much RAM before lines drop.
+/// disk costs at most this much RAM before lines drop. For long prompts this bound comes first
+/// (16M prompt tokens, about 160 requests of 100k tokens).
 const QUEUE_BYTES: usize = 64 << 20;
 /// Charged per line on top of its prompt ids and tool-call text: the record itself.
 const LINE_BYTES: usize = 1024;
@@ -163,16 +164,23 @@ impl std::fmt::Debug for PromptSlot {
 #[derive(Default)]
 struct Rec {
     route: &'static str,
+    /// The one wall-clock reading per request. Every later stamp is a monotonic instant, rendered
+    /// as this reading plus its offset from `arrival_mono`, so a clock step mid-request cannot
+    /// distort a request's own durations.
     arrival: Option<SystemTime>,
+    arrival_mono: Option<Instant>,
     request_id: Option<String>,
     model: Option<String>,
     stream: bool,
     status: Option<u16>,
     session: Option<(String, SessionSource)>,
-    first_token: Option<SystemTime>,
-    http_end: Option<SystemTime>,
-    generation_end: Option<SystemTime>,
-    dropped_at: Option<SystemTime>,
+    /// The request's cache namespace (`cache_salt`, or the keyring tenant's): the scope the
+    /// session key is hashed in, as affinity is scoped.
+    namespace: String,
+    first_token: Option<Instant>,
+    http_end: Option<Instant>,
+    generation_end: Option<Instant>,
+    dropped_at: Option<Instant>,
     reached_worker: bool,
     prompt_tokens: Option<u64>,
     cached_tokens: Option<u64>,
@@ -187,9 +195,23 @@ struct Rec {
 }
 
 impl Rec {
+    /// The consumer's own mark, then what the client was told (no head, an error status), then
+    /// the worker's terminal event. A success head whose generation stopped without a terminal
+    /// event is a consumer that let go: a stream's client hung up, or a background job was
+    /// cancelled.
     fn end_reason(&self) -> EndReason {
         if let Some(mark) = self.mark {
             return mark;
+        }
+        match self.status {
+            // No response head: the client left while the handler was still working.
+            None => return EndReason::Cancelled,
+            // Any 408: the request deadline, or a body that did not arrive in time.
+            Some(408) => return EndReason::Deadline,
+            // An error status outranks a terminal event the client never received as a
+            // success (a blocking response whose accounting failed after the worker finished).
+            Some(status) if status >= 400 => return EndReason::Error,
+            Some(_) => {}
         }
         if let Some(stop) = self.stop_reason.as_deref() {
             return match crate::stop_reason_to_finish(stop) {
@@ -200,15 +222,7 @@ impl Rec {
         if self.engine_error || self.worker_closed {
             return EndReason::Error;
         }
-        match self.status {
-            // No response head: the client left while the handler was still working.
-            None => EndReason::Cancelled,
-            Some(408) => EndReason::Deadline,
-            Some(status) if status >= 400 => EndReason::Error,
-            // A success head whose generation stopped without a terminal event: the stream's
-            // client hung up, or a background job was cancelled.
-            Some(_) => EndReason::Cancelled,
-        }
+        EndReason::Cancelled
     }
 }
 
@@ -401,27 +415,44 @@ fn epoch_s(t: SystemTime) -> f64 {
 fn render(p: Pending) -> String {
     let Pending { rec, prompt, .. } = p;
     // Explicit identity first (hashed: a client-chosen id, not ours to republish); otherwise the
-    // implicit affinity tier's key over the prompt the worker fed.
+    // implicit affinity tier's key over the prompt the worker fed. Either is hashed inside the
+    // request's cache namespace when it has one, as affinity itself is scoped.
+    let scoped = |identity: &[u8]| {
+        if rec.namespace.is_empty() {
+            sha256_hex(identity)
+        } else {
+            let mut material = rec.namespace.as_bytes().to_vec();
+            material.push(0x1f);
+            material.extend_from_slice(identity);
+            sha256_hex(&material)
+        }
+    };
     let (session_key, session_key_source) = match &rec.session {
-        Some((key, source)) => (Some(sha256_hex(key.as_bytes())), Some(source.as_str())),
+        Some((key, source)) => (Some(scoped(key.as_bytes())), Some(source.as_str())),
         None => match prompt.as_ref().and_then(|p| {
             crate::worker::implicit_affinity_key(&p.ids, &|t| p.controls.is_control(t))
         }) {
             Some(chain) => {
                 let bytes: Vec<u8> = chain.iter().flat_map(|h| h.to_le_bytes()).collect();
-                (Some(sha256_hex(&bytes)), Some("fingerprint"))
+                (Some(scoped(&bytes)), Some("fingerprint"))
             }
             None => (None, None),
         },
     };
     let arrival = rec.arrival.unwrap_or(UNIX_EPOCH);
+    let arrival_s = epoch_s(arrival);
+    let arrival_mono = rec.arrival_mono.unwrap_or_else(Instant::now);
+    let at = |i: Instant| {
+        let micros = i.saturating_duration_since(arrival_mono).as_micros();
+        (arrival_s * 1e6 + micros as f64).round() / 1e6
+    };
     let end = rec
         .http_end
         .into_iter()
         .chain(rec.generation_end)
         .max()
         .or(rec.dropped_at)
-        .unwrap_or(arrival);
+        .unwrap_or(arrival_mono);
     let generated_tokens = rec
         .done_tokens
         .or(rec.reached_worker.then_some(rec.seen_tokens));
@@ -442,9 +473,9 @@ fn render(p: Pending) -> String {
         stream: rec.stream,
         session_key,
         session_key_source,
-        t_arrival: epoch_s(arrival),
-        t_first_token: rec.first_token.map(epoch_s),
-        t_end: epoch_s(end),
+        t_arrival: arrival_s,
+        t_first_token: rec.first_token.map(at),
+        t_end: at(end),
         end_reason: rec.end_reason().as_str(),
         // 499: the client left before a response head existed (the /metrics convention).
         http_status: rec.status.unwrap_or(499),
@@ -471,7 +502,7 @@ struct Inner {
 impl Drop for Inner {
     fn drop(&mut self) {
         let mut rec = std::mem::take(self.rec.get_mut().unwrap_or_else(|e| e.into_inner()));
-        rec.dropped_at = Some(SystemTime::now());
+        rec.dropped_at = Some(Instant::now());
         let prompt = self.prompt.take();
         self.sink.submit(rec, prompt);
     }
@@ -488,6 +519,7 @@ impl Entry {
             rec: Mutex::new(Rec {
                 route,
                 arrival: Some(SystemTime::now()),
+                arrival_mono: Some(Instant::now()),
                 ..Rec::default()
             }),
             prompt: PromptSlot::default(),
@@ -496,6 +528,16 @@ impl Entry {
 
     fn with(&self, f: impl FnOnce(&mut Rec)) {
         f(&mut self.0.rec.lock().unwrap_or_else(|e| e.into_inner()));
+    }
+
+    /// The consumer's own verdict on how the request ended. First mark wins; the generation's
+    /// end is stamped here when nothing stamped it before.
+    pub(crate) fn mark(&self, reason: EndReason) {
+        let now = Instant::now();
+        self.with(|r| {
+            r.mark.get_or_insert(reason);
+            r.generation_end.get_or_insert(now);
+        });
     }
 
     /// A tool call the reply's parser emitted. Hashed later, on the writer thread.
@@ -560,9 +602,9 @@ impl Link {
             Event::Token { .. } => {
                 if !self.first_seen {
                     self.first_seen = true;
-                    let now = SystemTime::now();
+                    let now = Instant::now();
                     self.entry.with(|r| {
-                        r.first_token = Some(now);
+                        r.first_token.get_or_insert(now);
                         r.reached_worker = true;
                     });
                 }
@@ -581,7 +623,7 @@ impl Link {
                 ..
             } => {
                 self.terminal = true;
-                let now = SystemTime::now();
+                let now = Instant::now();
                 self.entry.with(|r| {
                     r.reached_worker = true;
                     r.stop_reason = Some(stop_reason.clone());
@@ -593,7 +635,7 @@ impl Link {
             }
             Event::Error(_) => {
                 self.terminal = true;
-                let now = SystemTime::now();
+                let now = Instant::now();
                 self.entry.with(|r| {
                     r.engine_error = true;
                     r.generation_end = Some(now);
@@ -609,23 +651,38 @@ impl Link {
     pub(crate) fn closed(&mut self) {
         if self.observe && !self.terminal {
             self.terminal = true;
-            self.entry.with(|r| r.worker_closed = true);
+            let now = Instant::now();
+            self.entry.with(|r| {
+                r.worker_closed = true;
+                r.generation_end.get_or_insert(now);
+            });
         }
     }
 
     /// The consumer's own verdict (a deadline it enforced, a cancel it honored). First mark wins.
     pub(crate) fn mark(&self, reason: EndReason) {
-        self.entry.with(|r| {
-            r.mark.get_or_insert(reason);
-        });
+        self.entry.mark(reason);
+    }
+
+    /// The request's entry, for a consumer that merges receivers (the n > 1 choice group).
+    pub(crate) fn entry(&self) -> &Entry {
+        &self.entry
     }
 }
 
 impl Drop for Link {
+    /// The original receiver going away ends the generation as far as the request is concerned:
+    /// a consumer that let go before a terminal event (a hang-up, a background cancel) ends here.
     fn drop(&mut self) {
-        if self.observe && self.tokens > 0 {
-            let tokens = self.tokens;
-            self.entry.with(|r| r.seen_tokens += tokens);
+        if self.observe && (self.tokens > 0 || !self.terminal) {
+            let (tokens, open) = (self.tokens, !self.terminal);
+            let now = Instant::now();
+            self.entry.with(|r| {
+                r.seen_tokens += tokens;
+                if open {
+                    r.generation_end.get_or_insert(now);
+                }
+            });
         }
     }
 }
@@ -669,8 +726,10 @@ pub(crate) fn bind(
     let session = request.affinity.clone().zip(source);
     let request_id = request.request_id.clone();
     let model = request.model.clone();
+    let namespace = request.cache_ns.clone();
     entry.with(|r| {
         r.session = session;
+        r.namespace = namespace;
         r.request_id.get_or_insert(request_id);
         r.model.get_or_insert(model);
         if parses_tools {
@@ -716,7 +775,7 @@ pub(crate) async fn observe(State(sink): State<Arc<Sink>>, req: Request, next: N
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
     let status = response.status().as_u16();
-    let now = SystemTime::now();
+    let now = Instant::now();
     entry.with(|r| {
         r.status = Some(status);
         r.stream = stream;
@@ -750,7 +809,7 @@ struct LoggedBody {
 impl LoggedBody {
     fn end(&mut self) {
         if let Some(entry) = self.entry.take() {
-            let now = SystemTime::now();
+            let now = Instant::now();
             entry.with(|r| r.http_end = Some(now));
         }
     }
@@ -857,10 +916,13 @@ pub(crate) fn render_metrics() -> String {
 mod tests {
     use super::*;
 
+    const ARRIVAL_US: u64 = 1_794_180_000_123_456;
+
     fn rec(route: &'static str) -> Rec {
         Rec {
             route,
-            arrival: Some(UNIX_EPOCH + Duration::from_micros(1_762_700_000_123_456)),
+            arrival: Some(UNIX_EPOCH + Duration::from_micros(ARRIVAL_US)),
+            arrival_mono: Some(Instant::now()),
             ..Rec::default()
         }
     }
@@ -896,6 +958,37 @@ mod tests {
         assert_eq!(r.end_reason(), EndReason::Cancelled);
         r.status = Some(200);
         assert_eq!(r.end_reason(), EndReason::Cancelled);
+
+        // What the client was told outranks a terminal event it never received as a success:
+        // a blocking 500 after the worker finished is an error, and no head is a cancel.
+        let mut r = rec("/v1/chat/completions");
+        r.stop_reason = Some("Eos".into());
+        r.status = Some(500);
+        assert_eq!(r.end_reason(), EndReason::Error);
+        r.status = None;
+        assert_eq!(r.end_reason(), EndReason::Cancelled);
+    }
+
+    #[test]
+    fn the_session_key_is_scoped_to_the_cache_namespace() {
+        let line = |namespace: &str| {
+            let mut r = rec("/v1/chat/completions");
+            r.status = Some(200);
+            r.session = Some(("1".into(), SessionSource::SessionId));
+            r.namespace = namespace.into();
+            let v: serde_json::Value = serde_json::from_str(&render(Pending {
+                rec: r,
+                prompt: None,
+                bytes: 0,
+            }))
+            .unwrap();
+            v["session_key"].as_str().unwrap().to_string()
+        };
+        // Unscoped (no cache_salt, no keyring): sha256 of the id itself, reproducible by a client.
+        assert_eq!(line(""), sha256_hex(b"1"));
+        // Two tenants that both call their session "1" do not share a key.
+        assert_eq!(line("t:alpha\x1f"), sha256_hex(b"t:alpha\x1f\x1f1"));
+        assert_ne!(line("t:alpha\x1f"), line("t:beta\x1f"));
     }
 
     #[test]
@@ -908,7 +1001,7 @@ mod tests {
         r.done_tokens = Some(7);
         r.prompt_tokens = Some(40);
         r.cached_tokens = Some(32);
-        r.http_end = Some(UNIX_EPOCH + Duration::from_micros(1_762_700_001_000_000));
+        r.http_end = Some(r.arrival_mono.unwrap() + Duration::from_micros(876_544));
         struct NoMarkers;
         impl ControlTokens for NoMarkers {
             fn is_control(&self, _: u32) -> bool {
@@ -937,8 +1030,9 @@ mod tests {
             line["tool_calls"][0]["arguments_sha256"],
             sha256_hex(b"{\"city\":\"Paris\"}")
         );
-        assert_eq!(line["t_arrival"], 1_762_700_000.123_456);
-        assert_eq!(line["t_end"], 1_762_700_001.0);
+        // Wall clock once at arrival, monotonic offsets after it.
+        assert_eq!(line["t_arrival"], 1_794_180_000.123_456);
+        assert_eq!(line["t_end"], 1_794_180_001.0);
         assert_eq!(line["end_reason"], "stop");
         assert_eq!(line["generated_tokens"], 7);
         let text = line.to_string();

@@ -579,8 +579,14 @@ pub(crate) async fn respond(
         include_usage,
         env,
         deadline,
-        parsers,
+        mut parsers,
     } = reply;
+    // Request log (`MEMRA_REQUEST_LOG`): the line describes choice 0, whose receiver is the
+    // request's original one; its parser notes the calls and the deadline paths below mark.
+    let log = rx.request_log();
+    if let (Some(entry), Some(Some(parser))) = (&log, parsers.first_mut()) {
+        parser.link_request_log(entry.clone());
+    }
     let count = parsers.len();
     let lane = request.lane;
     let route = if chat {
@@ -824,7 +830,7 @@ pub(crate) async fn respond(
         }
         if committed {
             let shared = crate::prefill_receipt::SharedReceipt::wrap(&mut receipt);
-            input = commit_until_first_delivery(input, deadline, shared);
+            input = commit_until_first_delivery(input, deadline, shared, log.clone());
         }
         let response = stream_reply(
             input,
@@ -860,6 +866,9 @@ pub(crate) async fn respond(
                 );
             }
             Err(_) => {
+                if let Some(log) = &log {
+                    log.mark(crate::request_log::EndReason::Deadline);
+                }
                 rows.finalize_partial();
                 let usage = rows.usage();
                 if usage.completion_tokens == 0 {
@@ -926,6 +935,7 @@ fn commit_until_first_delivery(
     mut input: IndexedStream,
     deadline: crate::RequestDeadline,
     mut receipt: Option<crate::prefill_receipt::SharedReceipt>,
+    log: Option<crate::request_log::Entry>,
 ) -> IndexedStream {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(usize, Event)>();
     tokio::spawn(async move {
@@ -941,6 +951,9 @@ fn commit_until_first_delivery(
                             receipt.settle_unbilled("deadline_exceeded", 408, "deadline_exceeded")
                     {
                         eprintln!("[ledger] ERROR: choice deadline settlement failed: {error}");
+                    }
+                    if let Some(log) = &log {
+                        log.mark(crate::request_log::EndReason::Deadline);
                     }
                     let _ = tx.send((0, Event::DeadlineExceeded { ms: deadline.ms }));
                     return; // dropping `input` closes every row's channel
@@ -1507,6 +1520,7 @@ mod tests {
             multiplex(receivers),
             crate::RequestDeadline::starting_now(300),
             shared,
+            None,
         );
         let counts = Arc::new(std::array::from_fn(|_| AtomicUsize::new(0)));
         let tenants = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));

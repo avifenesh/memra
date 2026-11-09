@@ -12117,6 +12117,8 @@ fn sse_response_for_format(
                         // bookkeeping failure as a billable client abandon.
                         let _ = receipt.reject(500, "request_ledger_unavailable");
                         if let Some(observation) = &http_observation { observation.failed(); }
+                        // The client reads an in-band error, whatever the worker sent.
+                        rx.mark_end(request_log::EndReason::Error);
                         let payload = request_ledger_error_body().to_string();
                         if openai {
                             yield Ok(SseEvent::default().data(payload));
@@ -12165,6 +12167,8 @@ fn sse_response_for_format(
                         );
                         let _ = receipt.reject(500, "request_ledger_unavailable");
                         if let Some(observation) = &http_observation { observation.failed(); }
+                        // The client reads an in-band error, whatever the worker sent.
+                        rx.mark_end(request_log::EndReason::Error);
                         let payload = request_ledger_error_body().to_string();
                         if openai {
                             yield Ok(SseEvent::default().data(payload));
@@ -12255,6 +12259,8 @@ fn sse_response_for_format(
                         // the append itself already latched) so Drop cannot bill it.
                         let _ = receipt.reject(500, "request_ledger_unavailable");
                         if let Some(observation) = &http_observation { observation.failed(); }
+                        // The client reads an in-band error, whatever the worker sent.
+                        rx.mark_end(request_log::EndReason::Error);
                         let payload = request_ledger_error_body().to_string();
                         if openai {
                             yield Ok(SseEvent::default().data(payload));
@@ -27916,7 +27922,8 @@ temperature = 0.6
     /// A worker for the request-log tests: deterministic tokenize-then-generate. Each chat turn
     /// renders as `[1, role, content bytes.., 2]` plus the generation prompt `[1, 12]`; that prompt
     /// is handed to the log exactly as `prepare_request` hands the real one. A conversation's first
-    /// user turn is answered with text, a later one with a single qwen tool call.
+    /// user turn is answered with text, a later one with a single qwen tool call. The raw prompt
+    /// `slow` gets five tokens 300 ms apart, for the cut paths (a hang-up, a deadline).
     fn request_log_test_state() -> AppState {
         let mut st = fake_worker_state();
         st.caps = Arc::new(HashMap::from([("m".to_string(), tool_caps())]));
@@ -27954,7 +27961,10 @@ temperature = 0.6
                     n_cached: 3,
                 });
                 let later_turn = req.chat_turns.iter().filter(|t| t.role == "user").count() > 1;
-                let pieces: &[&str] = if later_turn {
+                let slow = req.prompt_text == "slow";
+                let pieces: &[&str] = if slow {
+                    &["a", "b", "c", "d", "e"]
+                } else if later_turn {
                     &[
                         "plan</think>\n\n",
                         "<tool_call>\n<function=get_weather>\n",
@@ -27964,6 +27974,9 @@ temperature = 0.6
                     &["plan</think>\n\n", "Sunny", " today."]
                 };
                 for (i, text) in pieces.iter().enumerate() {
+                    if slow && i > 0 {
+                        std::thread::sleep(std::time::Duration::from_millis(300));
+                    }
                     let _ = req.tx.send(Event::Token {
                         id: i as u32 + 1,
                         text: (*text).into(),
@@ -27986,6 +27999,8 @@ temperature = 0.6
         let app = Router::new()
             .route("/v1/completions", post(completions_admitted))
             .route("/v1/chat/completions", post(chat_completions_admitted))
+            .route("/v1/responses", post(responses_api::responses_admitted))
+            .route("/v1/messages", post(anthropic::messages_admitted))
             .with_state(request_log_test_state())
             .layer(middleware::from_fn(http_metrics::observe));
         match sink {
@@ -28049,13 +28064,35 @@ temperature = 0.6
         (id, status, content_type, bytes.to_vec())
     }
 
+    /// The log's lines by request id; a request with two lines fails here.
     fn request_log_lines(path: &std::path::Path) -> HashMap<String, serde_json::Value> {
-        std::fs::read_to_string(path)
+        let raw: Vec<serde_json::Value> = std::fs::read_to_string(path)
             .unwrap()
             .lines()
             .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
-            .map(|v| (v["request_id"].as_str().unwrap().to_string(), v))
-            .collect()
+            .collect();
+        let by_id: HashMap<String, serde_json::Value> = raw
+            .iter()
+            .map(|v| (v["request_id"].as_str().unwrap().to_string(), v.clone()))
+            .collect();
+        assert_eq!(
+            by_id.len(),
+            raw.len(),
+            "a request was logged twice: {raw:?}"
+        );
+        by_id
+    }
+
+    /// Wait for the writer off the runtime thread: the forwarders that still hold a request's
+    /// original receiver are tasks on this (current-thread) runtime, so a blocking wait here would
+    /// keep them from ever dropping it.
+    async fn request_log_wait(sink: &Arc<request_log::Sink>, lines: u64) -> bool {
+        let sink = sink.clone();
+        tokio::task::spawn_blocking(move || {
+            sink.wait_for(lines, std::time::Duration::from_secs(20))
+        })
+        .await
+        .unwrap()
     }
 
     fn hex_sha256(bytes: &[u8]) -> String {
@@ -28068,8 +28105,11 @@ temperature = 0.6
 
     /// MEMRA_REQUEST_LOG, the integration gate: two turns of one session through the real
     /// handlers, middleware stack and writer thread, once with an explicit `session_id` and once
-    /// with no identity (the fingerprint tier), plus a raw completion keyed by `user`. Every
-    /// field of every line is checked, and the session key must match across turns.
+    /// with no identity (the fingerprint tier), plus a raw completion keyed by `user`, one request
+    /// each on Responses and Messages, a refusal, a blocking request cut by its deadline and a
+    /// stream whose client hangs up. Every field of every line is checked, and the session key
+    /// must match across turns. The test worker taps its own prompt; the worker's real tap
+    /// (`prepare_request`) is checked by the device A/B, which requires `prompt_sha256`.
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: serializes the process-wide admission counters
     async fn request_log_two_turns_of_one_session_share_a_key_and_fill_every_field() {
@@ -28131,13 +28171,19 @@ temperature = 0.6
                    "temperature": 0}),
         )
         .await;
-        let (implicit2, ..) = request_log_post(
+        let (implicit2, _, _, body) = request_log_post(
             &app,
             "/v1/chat/completions",
             json!({"model": "m", "messages": turn_two("Weather in Paris?"), "tools": tools,
-                   "temperature": 0, "stream": true}),
+                   "temperature": 0}),
         )
         .await;
+        let blocking: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let blocking_arguments =
+            blocking["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+                .as_str()
+                .unwrap()
+                .to_string();
         let (other1, ..) = request_log_post(
             &app,
             "/v1/chat/completions",
@@ -28162,10 +28208,81 @@ temperature = 0.6
         )
         .await;
         assert_eq!(status, 400);
+        // The translated surfaces: Responses names its session with prompt_cache_key, Messages
+        // with metadata.user_id (memra's `user` tier).
+        let (responses, status, _, _) = request_log_post(
+            &app,
+            "/v1/responses",
+            json!({"model": "m", "input": "Weather in Paris?", "prompt_cache_key": "resp-sess"}),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let (messages, status, _, _) = request_log_post(
+            &app,
+            "/v1/messages",
+            json!({"model": "m", "max_tokens": 64, "metadata": {"user_id": "msg-user"},
+                   "messages": [{"role": "user", "content": "Weather in Paris?"}]}),
+        )
+        .await;
+        assert_eq!(status, 200);
+        // Cut paths. A blocking request whose deadline (1 s) falls between its tokens returns
+        // the partial; then a stream whose client reads one frame and hangs up.
+        let (deadline_cut, status, _, body) = request_log_post(
+            &app,
+            "/v1/completions",
+            json!({"model": "m", "prompt": "slow", "temperature": 0, "timeout_ms": 1000}),
+        )
+        .await;
+        assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
+        let hangup = {
+            use futures_util::StreamExt as _;
+            use tower::ServiceExt as _;
+            let response = app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri("/v1/completions")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            json!({"model": "m", "prompt": "slow", "temperature": 0,
+                                   "stream": true})
+                            .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let id = response.headers()["x-request-id"]
+                .to_str()
+                .unwrap()
+                .to_string();
+            let mut frames = response.into_body().into_data_stream();
+            let first = tokio::time::timeout(std::time::Duration::from_secs(10), frames.next())
+                .await
+                .expect("a first frame");
+            assert!(matches!(first, Some(Ok(_))), "{first:?}");
+            drop(frames);
+            id
+        };
 
         assert!(
-            sink.wait_for(7, std::time::Duration::from_secs(20)),
-            "the writer did not finish 7 lines"
+            request_log_wait(&sink, 11).await,
+            "the writer did not finish 11 lines; ids {:?}, log:\n{}",
+            [
+                &explicit1,
+                &explicit2,
+                &implicit1,
+                &implicit2,
+                &other1,
+                &raw,
+                &refused,
+                &responses,
+                &messages,
+                &deadline_cut,
+                &hangup
+            ],
+            std::fs::read_to_string(&path).unwrap_or_default()
         );
         let after = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -28173,14 +28290,14 @@ temperature = 0.6
             .as_secs_f64()
             + 1e-3;
         let lines = request_log_lines(&path);
-        assert_eq!(lines.len(), 7, "{lines:?}");
+        assert_eq!(lines.len(), 11, "{lines:?}");
 
         let hex64 = |v: &serde_json::Value| {
             v.as_str()
                 .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
         };
         for id in [
-            &explicit1, &explicit2, &implicit1, &implicit2, &other1, &raw,
+            &explicit1, &explicit2, &implicit1, &implicit2, &other1, &raw, &responses, &messages,
         ] {
             let l = &lines[id];
             assert_eq!(l["v"], 1, "{l}");
@@ -28235,6 +28352,46 @@ temperature = 0.6
         assert_ne!(i1["session_key"], o1["session_key"]);
         assert_eq!(i1["prompt_sha256"], e1["prompt_sha256"]);
         assert_eq!(i2["prompt_sha256"], e2["prompt_sha256"]);
+        // A blocking reply's tool call is noted the same way as a streamed one.
+        assert_eq!(i2["stream"], false);
+        assert_eq!(
+            i2["tool_calls"],
+            json!([{"name": "get_weather",
+                    "arguments_sha256": hex_sha256(blocking_arguments.as_bytes())}])
+        );
+
+        // The translated surfaces bind like the chat surface does.
+        let (rs, ms) = (&lines[&responses], &lines[&messages]);
+        assert_eq!(rs["route"], "/v1/responses");
+        assert_eq!(rs["session_key"], hex_sha256(b"resp-sess"));
+        assert_eq!(rs["session_key_source"], "session_id");
+        assert_eq!(rs["tool_calls"], json!([]));
+        assert_eq!(ms["route"], "/v1/messages");
+        assert_eq!(ms["session_key"], hex_sha256(b"msg-user"));
+        assert_eq!(ms["session_key_source"], "user");
+        assert_eq!(ms["tool_calls"], json!([]));
+
+        // The deadline cut: a 200 carrying the partial, logged as a deadline with what it had.
+        let d = &lines[&deadline_cut];
+        assert_eq!(d["http_status"], 200, "{d}");
+        assert_eq!(d["end_reason"], "deadline", "{d}");
+        let produced = d["generated_tokens"].as_u64().unwrap();
+        assert!((1..5).contains(&produced), "{d}");
+        assert!(
+            d["t_end"].as_f64().unwrap() - d["t_arrival"].as_f64().unwrap() >= 0.9,
+            "{d}"
+        );
+        // The hang-up: the stream's head was a 200, the client left before the terminal event.
+        let h = &lines[&hangup];
+        assert_eq!(h["stream"], true, "{h}");
+        assert_eq!(h["http_status"], 200, "{h}");
+        assert_eq!(h["end_reason"], "cancelled", "{h}");
+        let produced = h["generated_tokens"].as_u64().unwrap();
+        assert!((1..5).contains(&produced), "{h}");
+        assert!(
+            h["t_first_token"].as_f64().unwrap() <= h["t_end"].as_f64().unwrap(),
+            "{h}"
+        );
 
         // The raw completion: keyed by `user`, and memra does not parse its text for calls.
         let r = &lines[&raw];
@@ -28346,7 +28503,7 @@ temperature = 0.6
         }
         assert_eq!(runs[0], runs[1], "the request log changed a response");
         // And the logged run did log every request.
-        assert!(sink.wait_for(requests.len() as u64, std::time::Duration::from_secs(20)));
+        assert!(request_log_wait(&sink, requests.len() as u64).await);
         assert_eq!(request_log_lines(&path).len(), requests.len());
         std::fs::remove_dir_all(&dir).unwrap();
     }
