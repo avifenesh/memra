@@ -864,7 +864,9 @@ impl Group {
         let n = self.n();
         let g = self.cx[0].g.clone();
         let (ne, topk, d) = (g.n_experts, g.topk, g.dim);
-        if n == 1 {
+        // one rank with its experts on the card: the one-card MoE, no host round trip. One rank
+        // with the experts behind its cache takes the path below (the cache resolves on the host).
+        if n == 1 && !lw[0].experts.is_empty() {
             let c = &mut self.cx[0];
             let st = c.ops.st.clone();
             return c.moe(
@@ -888,8 +890,9 @@ impl Group {
                     trr.route_w
                         .extend_from_slice(&bytes_f32(&host_timed(&selw, &st)?));
                 }
-                let ex = lw[r].expert0..lw[r].expert0 + lw[r].experts.len();
-                c.moe_plan(&sel, &selw, rows, ex)
+                // the rank's range, on the card or behind its cache (an off-card share holds
+                // no expert, so its own list would be empty)
+                c.moe_plan(&sel, &selw, rows, Part { rank: r, n }.range(ne))
             })?
         };
         let off: Vec<usize> = bytes_i32(&host_timed(&plans[0].off, &self.cx[0].ops.st)?)
