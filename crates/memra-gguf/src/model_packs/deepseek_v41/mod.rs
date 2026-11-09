@@ -94,6 +94,17 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
     )))
 }
 
+/// [`TINY_CONFIG`] at the 1017 window, 128 (and room for its longer token stream): the window
+/// spans two 64-entry blocks of the sparse-attention kernel, which the main tiny config's window
+/// of 64 never does. The tiny gate runs it as a variant pinned to its own vendor oracle.
+pub const TINY_WINDOW128_CONFIG: &str = include_str!("fixtures/tiny-config-window128.json");
+
+pub fn tiny_window128_plan() -> Result<ModelPlan, PlanCompileError> {
+    plan_builder(&ModelConfig::from_hf(&crate::config::HfConfig::parse(
+        TINY_WINDOW128_CONFIG,
+    )))
+}
+
 fn dsv41(config: &ModelConfig) -> Result<&DeepSeekV41Config, PlanCompileError> {
     config
         .dsv41

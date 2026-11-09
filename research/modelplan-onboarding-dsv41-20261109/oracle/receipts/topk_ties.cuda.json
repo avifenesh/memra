@@ -1,0 +1,50 @@
+{
+ "device": "cuda",
+ "torch": "2.14.1+cu132",
+ "gpu": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+ "run": "2026-11-09",
+ "cases": [
+  {
+   "rows": 4,
+   "width": 64,
+   "k": 6,
+   "lowest_index_wins": true,
+   "rows_matching": 4
+  },
+  {
+   "rows": 8,
+   "width": 1024,
+   "k": 512,
+   "lowest_index_wins": true,
+   "rows_matching": 8
+  },
+  {
+   "rows": 8,
+   "width": 4096,
+   "k": 512,
+   "lowest_index_wins": true,
+   "rows_matching": 8
+  },
+  {
+   "rows": 4,
+   "width": 16384,
+   "k": 512,
+   "lowest_index_wins": true,
+   "rows_matching": 4
+  },
+  {
+   "rows": 2,
+   "width": 131072,
+   "k": 512,
+   "lowest_index_wins": true,
+   "rows_matching": 2
+  },
+  {
+   "rows": 1,
+   "width": 262144,
+   "k": 512,
+   "lowest_index_wins": true,
+   "rows_matching": 1
+  }
+ ]
+}

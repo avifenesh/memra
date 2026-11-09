@@ -4,9 +4,11 @@
 //! `deepseek-ai/DeepSeek-V4.1-Flash-1017` at revision 1bae0e1088993b9b82de08f59de5be5a34e42170.
 //! This is a sibling of [`crate::dsv4_forward`], not a parameterization of it: the DSv4 module
 //! runs its fixtures in f32 and treats every bf16 cast as identity, while V4.1 is gated against
-//! the vendor program run unchanged, whose activations are bf16 between operations. So this
-//! module rounds to bf16 at every point the vendor program stores a bf16 tensor, and applies the
-//! vendor quantize-dequantize steps exactly:
+//! the vendor `model.py` (run with torch stand-ins for its tilelang kernels, `topk`, the Engram
+//! fp8 gather and the per-position logits; see the research README), whose activations are bf16
+//! between operations. So this module rounds to bf16 at every point the vendor program stores a
+//! bf16 tensor, and applies the vendor quantize-dequantize steps exactly. On the 1017 program
+//! (the reference reads each step from the plan as a [`QuantStep`]):
 //!
 //! - every FP8/FP4 linear input: `act_quant(x, 32, "ue8m0")`, a power-of-two scale per 32
 //!   elements (amax floored at 1e-4, `2^ceil(log2(amax / 448))`), clamp to +-448, e4m3 with
@@ -36,6 +38,7 @@ use crate::dsv4::e8m0_to_f32;
 use crate::dsv4_forward::{
     FreqsCis, act_quant as dsv4_act_quant, dot, e2m1_rne, matmul, pow2_ceil,
 };
+use crate::model_plan::{BlockElement, BlockQuant, BlockScale};
 use crate::nvfp4_repack::{f32_to_fp8_e4m3, fp8_e4m3_to_f32};
 
 // ============================ element formats ============================
@@ -70,9 +73,15 @@ pub fn f32_to_bf16_bits(x: f32) -> u16 {
     (bf16(x).to_bits() >> 16) as u16
 }
 
-/// e4m3 byte -> f32 (the vendor `float8_e4m3fn`).
+/// e4m3 byte -> f32 (torch `float8_e4m3fn`: no infinities, `S.1111.111` is NaN). The shared
+/// `fp8_e4m3_to_f32` maps the NaN codes 0x7f and 0xff to 0.0 (the modelopt convention); torch
+/// carries them as NaN, and so does this, so a NaN weight or Engram byte reaches the loader's
+/// non-finite refusal instead of loading as zero.
 #[inline]
 pub fn e4m3(byte: u8) -> f32 {
+    if byte & 0x7f == 0x7f {
+        return f32::NAN;
+    }
     fp8_e4m3_to_f32(byte)
 }
 
@@ -129,6 +138,53 @@ pub fn to_e2m1(x: f32) -> u8 {
 
 // ============================ quantize-dequantize ============================
 
+/// One quantize-dequantize step of the V4.1 program, resolved from a plan's [`BlockQuant`]
+/// (`element`, `scale`, `block`). These are the forms the vendor kernels define; an FP8 step
+/// with an e4m3 scale has no vendor kernel and is not one of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuantStep {
+    /// `act_quant(x, block, "ue8m0")`: e4m3 with a power-of-two scale per `block`.
+    Fp8Ue8m0(usize),
+    /// `fp4_act_quant(x, block)`: e2m1 with a power-of-two scale per `block`.
+    Fp4Ue8m0(usize),
+    /// `fp4_act_quant(x, block, scale_dtype=float8_e4m3fn)`: e2m1 with an e4m3 scale per `block`.
+    Fp4E4m3(usize),
+}
+
+impl QuantStep {
+    /// The step for `quant`, or why it is not implemented.
+    pub fn of(quant: BlockQuant) -> Result<Self, &'static str> {
+        let block = quant.block as usize;
+        if block == 0 {
+            return Err("a quantize-dequantize block is at least one element");
+        }
+        match (quant.element, quant.scale) {
+            (BlockElement::Fp8E4m3, BlockScale::Ue8m0) => Ok(Self::Fp8Ue8m0(block)),
+            (BlockElement::Fp4E2m1, BlockScale::Ue8m0) => Ok(Self::Fp4Ue8m0(block)),
+            (BlockElement::Fp4E2m1, BlockScale::E4m3) => Ok(Self::Fp4E4m3(block)),
+            (BlockElement::Fp8E4m3, BlockScale::E4m3) => {
+                Err("FP8 e4m3 with an e4m3 block scale has no implemented quantize-dequantize")
+            }
+        }
+    }
+
+    pub fn block(self) -> usize {
+        match self {
+            Self::Fp8Ue8m0(block) | Self::Fp4Ue8m0(block) | Self::Fp4E4m3(block) => block,
+        }
+    }
+
+    /// Quantize-dequantize `x` in place, group by group of [`Self::block`] contiguous values
+    /// (the caller keeps rows a multiple of the block).
+    pub fn apply(self, x: &mut [f32]) {
+        match self {
+            Self::Fp8Ue8m0(block) => act_quant_fp8(x, block),
+            Self::Fp4Ue8m0(block) => fp4_quant_ue8m0(x, block),
+            Self::Fp4E4m3(block) => fp4_quant_e4m3(x, block),
+        }
+    }
+}
+
 /// Vendor `act_quant(x, 32, "ue8m0", inplace=True)` on contiguous groups of `block`.
 /// Identical arithmetic to the DSv4 reference variant (`ActQuantVariant::RefFp8Round`).
 pub fn act_quant_fp8(x: &mut [f32], block: usize) {
@@ -168,11 +224,19 @@ pub fn linear_bf16(x: &[f32], rows: usize, k: usize, w: &[f32], n: usize) -> Vec
     out
 }
 
-/// Vendor `linear()` over an FP8 or FP4 weight (`w` dequantized): the input is quantized per 32
-/// (`act_quant`), the GEMM accumulates in f32 and the output is bf16.
-pub fn linear_quant(x: &[f32], rows: usize, k: usize, w: &[f32], n: usize) -> Vec<f32> {
+/// Vendor `linear()` over an FP8 or FP4 weight (`w` dequantized): the input goes through the
+/// plan's activation step (`act_quant(x, 32, "ue8m0")` on the 1017 program), the GEMM
+/// accumulates in f32 and the output is bf16.
+pub fn linear_quant(
+    x: &[f32],
+    rows: usize,
+    k: usize,
+    w: &[f32],
+    n: usize,
+    activation: QuantStep,
+) -> Vec<f32> {
     let mut quantized = x.to_vec();
-    act_quant_fp8(&mut quantized, 32);
+    activation.apply(&mut quantized);
     linear_bf16(&quantized, rows, k, w, n)
 }
 
@@ -642,9 +706,10 @@ pub fn expert(
     w3: &[f32],
     limit: f32,
     weights: Option<&[f32]>,
+    activation: QuantStep,
 ) -> Vec<f32> {
-    let gate = linear_quant(x, rows, hidden, w1, inter);
-    let up = linear_quant(x, rows, hidden, w3, inter);
+    let gate = linear_quant(x, rows, hidden, w1, inter, activation);
+    let up = linear_quant(x, rows, hidden, w3, inter, activation);
     let mut act = vec![0f32; rows * inter];
     for row in 0..rows {
         for i in 0..inter {
@@ -661,7 +726,7 @@ pub fn expert(
             act[row * inter + i] = bf16(value);
         }
     }
-    linear_quant(&act, rows, inter, w2, hidden)
+    linear_quant(&act, rows, inter, w2, hidden, activation)
 }
 
 // ============================ Engram ============================
@@ -1042,6 +1107,28 @@ mod tests {
         assert_eq!(bf16(1.0 + 3.0 * 2f32.powi(-8)), 1.0 + 2.0 * 2f32.powi(-7));
         assert_eq!(f32_to_bf16_bits(-2.0), 0xc000);
         assert_eq!(bf16_bits_to_f32(0x3f80), 1.0);
+    }
+
+    /// torch `float8_e4m3fn`: 0x7f and 0xff are NaN (never 0.0), 0x7e is the largest finite
+    /// value 448, and the encoder never produces a NaN code.
+    #[test]
+    fn e4m3_decodes_the_nan_codes_as_nan() {
+        assert!(e4m3(0x7f).is_nan());
+        assert!(e4m3(0xff).is_nan());
+        assert_eq!(e4m3(0x7e), 448.0);
+        assert_eq!(e4m3(0xfe), -448.0);
+        assert_eq!(e4m3(0x01), 2f32.powi(-9));
+        for code in 0..=255u8 {
+            if code & 0x7f != 0x7f {
+                assert_eq!(to_e4m3(e4m3(code)) & 0x7f, code & 0x7f, "{code:#04x}");
+            }
+        }
+        assert_ne!(to_e4m3(f32::NAN) & 0x7f, 0x7f);
+        // dequant reads the NaN through, scale and all.
+        let mut codes = vec![0x38u8; 32];
+        codes[3] = 0x7f;
+        let out = dequant_fp8(&codes, &[127], 1, 32, 1);
+        assert!(out[3].is_nan() && out[0] == 1.0);
     }
 
     /// numpy `default_rng(10007 * layer).integers(0, bound, size=4, dtype=int64) * 2 + 1` for

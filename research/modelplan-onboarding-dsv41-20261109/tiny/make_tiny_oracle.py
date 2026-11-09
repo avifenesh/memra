@@ -1,17 +1,20 @@
 """Tiny-gate oracle for the deepseek_v41 pack, produced by the vendor DeepSeek-V4.1 reference program itself.
 
 The vendor `inference/model.py` and `engram.py` (deepseek-ai/DeepSeek-V4.1-Flash-1017 at revision
-1bae0e1088993b9b82de08f59de5be5a34e42170, sha256-pinned below) run unchanged on CPU, with the torch stand-ins in
-../oracle/kernel.py shadowing the tilelang kernel module. The weights are the checkpoint image memra writes for its
-tiny fixture (`memra model verify tiny --against deepseek_v41 --out OUT` -> OUT/tiny-checkpoint/: model.safetensors
-in checkpoint storage, model-args.json with the vendor ModelArgs the plan corresponds to, fixture.json with the token
-stream, the prefill/decode split and the compressed token map).
+1bae0e1088993b9b82de08f59de5be5a34e42170, sha256-pinned below, no line edited) run on CPU with memra-written torch
+stand-ins for what they call outside torch: ../oracle/kernel.py shadows the tilelang kernel module (act_quant,
+fp4_act_quant, fp8_gemm, fp4_gemm, sparse_attn, hc_split_sinkhorn), and the patches listed below replace Tensor.topk,
+the Engram fp8 gather and torch's primitives. The weights are the checkpoint image memra writes for its tiny fixture
+(`memra model verify tiny --against deepseek_v41 --out OUT` -> OUT/tiny-checkpoint/: model.safetensors in checkpoint
+storage, model-args.json with the vendor ModelArgs the plan corresponds to, fixture.json with the token stream, the
+prefill/decode split and the compressed token map), and one more image per tiny variant (OUT/tiny-checkpoint-split60/,
+OUT/tiny-checkpoint-window128/: the same weights at another split or window).
 
 Protocol (the same as memra's `execute_tokens`): prefill token_ids[:decode_from] at position 0 and seed the DSpark
 windows (forward_spec at position 0), then one decode step per later token, each followed (except the last) by a
 DSpark draft from the next token. Logits for every position come from the trunk's final norm output times the head,
 the same product the vendor head computes for the last position. Writes the TSV memra's tiny gate pins
-(crates/memra-cli/tests/fixtures/tiny-oracle/deepseek_v41.tsv).
+(crates/memra-cli/tests/fixtures/tiny-oracle/deepseek_v41.tsv, or deepseek_v41-<variant>.tsv for a variant's image).
 
 Around the vendor code: a forward hook on the final norm (observation only); ../oracle/exact.py, which evaluates every
 GEMM, reduction and transcendental op to correct rounding (the free choices of the vendor program, pinned the way

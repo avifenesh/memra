@@ -234,6 +234,69 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                     }
                 }
             }
+            // The family's variants beside the main fixture (DeepSeek-V4.1: splits below the
+            // window and a two-block window, which the main fixture never runs), each with its
+            // fixture, checkpoint image and oracle written first and pinned the same way.
+            let mut variant_texts = Vec::new();
+            for variant in memra_reference::tiny_variants(&plan)? {
+                let run = || {
+                    execute_tokens(
+                        &variant.plan,
+                        &variant.fixture.weights,
+                        &variant.fixture.token_ids,
+                        variant.fixture.decode_from,
+                    )
+                };
+                let output = run()?;
+                if output != run()? {
+                    return Err(format!(
+                        "native reference tiny variant {} is not bit-deterministic",
+                        variant.name
+                    )
+                    .into());
+                }
+                write_atomic(
+                    &out_dir.join(format!("tiny-fixture-{}.txt", variant.name)),
+                    format_tiny_fixture(&variant.plan, &variant.fixture).as_bytes(),
+                )?;
+                let checkpoint = out_dir.join(format!("tiny-checkpoint-{}", variant.name));
+                std::fs::create_dir_all(&checkpoint)?;
+                for (name, bytes) in &variant.fixture.checkpoint_files {
+                    write_atomic(&checkpoint.join(name), bytes)?;
+                }
+                let text = format_reference_oracle(&output);
+                write_atomic(
+                    &out_dir.join(format!("reference-oracle-{}.tsv", variant.name)),
+                    text.as_bytes(),
+                )?;
+                variant_texts.push((variant.name, text));
+            }
+            let mut variant_receipts = String::new();
+            for (name, text) in &variant_texts {
+                let path = pinned_tiny_variant_oracle_path(pack.family, name);
+                let pinned = pinned_tiny_variant_oracle(pack.family, name).ok_or_else(|| {
+                    format!(
+                        "tiny parity requires a pinned oracle for the {} variant {name}; add {path} (reviewed, committed); no fallback is allowed",
+                        pack.family
+                    )
+                })?;
+                let gate = pack.checkpoint_parity.expect(
+                    "a NativeReference pack with a pinned tiny oracle always declares a checkpoint-parity tolerance",
+                );
+                if let Err(reason) = oracle_matches_within_tolerance(pinned, text, &gate) {
+                    return Err(format!(
+                        "tiny parity diverges from the pinned oracle at {path}: {reason} (textual diff for context: {:?})",
+                        first_diff_line(pinned, text),
+                    )
+                    .into());
+                }
+                writeln!(
+                    variant_receipts,
+                    "pinned_oracle_sha256_{name}\t{}",
+                    hex_sha256(text.as_bytes())
+                )
+                .unwrap();
+            }
             let vision = fixture
                 .vision
                 .as_ref()
@@ -340,7 +403,7 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
             write_atomic(
                 &out_dir.join("tiny-gate.tsv"),
                 format!(
-                    "status\tpassed\nfamily\t{}\npinned_oracle_sha256\t{}\n",
+                    "status\tpassed\nfamily\t{}\npinned_oracle_sha256\t{}\n{variant_receipts}",
                     pack.family,
                     hex_sha256(oracle_text.as_bytes())
                 )
@@ -1829,7 +1892,28 @@ fn exercise_engine_renderer(
         }
     }
     let probe = dialect.render_probe(encoding)?;
+    // The single-id check above covers the listed markers; these two make the list complete
+    // for what the renderer emits: every control string the probe render spells is listed, and
+    // every special token its ids hold is a listed marker.
+    let unlisted = dialect.unlisted_control_strings(&probe);
+    if !unlisted.is_empty() {
+        return Err(format!(
+            "the {renderer} probe render emits control strings its marker list does not hold: \
+             {unlisted:?}"
+        ));
+    }
     let ids = tok.encode(&probe, true);
+    for &id in &ids {
+        if tok.token_is_special(id) {
+            let piece = tok.decode(&[id]);
+            if !dialect.markers().contains(&piece.as_str()) {
+                return Err(format!(
+                    "the {renderer} probe render holds the special token {piece:?} (id {id}), \
+                     which its marker list does not hold"
+                ));
+            }
+        }
+    }
     let id_bytes: Vec<u8> = ids.iter().flat_map(|id| id.to_le_bytes()).collect();
     Ok(RendererProbe {
         dialect,
@@ -2570,6 +2654,27 @@ fn pinned_tiny_oracle(family: &str) -> Option<&'static str> {
 
 fn pinned_tiny_oracle_path(family: &str) -> String {
     format!("crates/memra-cli/tests/fixtures/tiny-oracle/{family}.tsv")
+}
+
+/// Pinned oracles of a family's tiny variants (`memra_reference::tiny_variants`), same
+/// discipline as [`pinned_tiny_oracle`]: each generated once by the family's external oracle on
+/// the variant's checkpoint image (`tiny-checkpoint-<variant>/`), reviewed and committed.
+fn pinned_tiny_variant_oracle(family: &str, variant: &str) -> Option<&'static str> {
+    match (family, variant) {
+        // The vendor model.py on each variant's checkpoint image, through
+        // research/modelplan-onboarding-dsv41-20261109/tiny/make_tiny_oracle.py.
+        ("deepseek_v41", "split60") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/deepseek_v41-split60.tsv"
+        )),
+        ("deepseek_v41", "window128") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/deepseek_v41-window128.tsv"
+        )),
+        _ => None,
+    }
+}
+
+fn pinned_tiny_variant_oracle_path(family: &str, variant: &str) -> String {
+    format!("crates/memra-cli/tests/fixtures/tiny-oracle/{family}-{variant}.tsv")
 }
 
 /// Pinned vision-stream oracle, same discipline as [`pinned_tiny_oracle`]. Only families whose
@@ -3323,6 +3428,22 @@ mod tests {
                         .join("reference-oracle.tsv")
                         .is_file()
                 );
+                // Every variant ran against its own pinned oracle and left its receipt.
+                let gate =
+                    std::fs::read_to_string(root.join(pack.family).join("tiny-gate.tsv")).unwrap();
+                let plan = pack.compile_tiny_plan().unwrap();
+                for variant in memra_reference::tiny_variants(&plan).unwrap() {
+                    assert!(
+                        root.join(pack.family)
+                            .join(format!("reference-oracle-{}.tsv", variant.name))
+                            .is_file()
+                    );
+                    assert!(
+                        gate.contains(&format!("pinned_oracle_sha256_{}\t", variant.name)),
+                        "{}: {gate}",
+                        pack.family
+                    );
+                }
                 // A tiny plan with a tower pins its vision and multimodal oracles too; the
                 // E4B fixture is text-only.
                 if pack.compile_tiny_plan().unwrap().vision.is_some() {

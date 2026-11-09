@@ -1315,14 +1315,22 @@ impl DeepSeekV41Config {
                 && self.dspark_num_experts_per_tok <= self.dspark_n_routed_experts,
             "DSpark needs blocks, a block size, a markov rank and a valid expert top-k".to_string(),
         )?;
+        // The vendor (`Transformer.forward`) appends a target's tap as the trunk passes its
+        // layer, so `main_proj` reads the taps in layer order; the plan places each tap at its
+        // index in this list. Only a strictly ascending list makes the two orders one.
         expect(
             !self.dspark_target_layer_ids.is_empty()
                 && self
                     .dspark_target_layer_ids
                     .iter()
-                    .all(|&layer| layer < trunk),
+                    .all(|&layer| layer < trunk)
+                && self
+                    .dspark_target_layer_ids
+                    .windows(2)
+                    .all(|pair| pair[0] < pair[1]),
             format!(
-                "dspark_target_layer_ids {:?} must be non-empty trunk layers",
+                "dspark_target_layer_ids {:?} must be non-empty trunk layers in strictly \
+                 ascending order",
                 self.dspark_target_layer_ids
             ),
         )?;

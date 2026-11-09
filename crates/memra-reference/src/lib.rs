@@ -2105,6 +2105,24 @@ fn add_gemma_parallel_moe_fixture(
     Ok(())
 }
 
+/// A tiny-gate run beside a family's main fixture: its own plan and fixture, pinned to its own
+/// oracle (`crates/memra-cli/tests/fixtures/tiny-oracle/<family>-<name>.tsv`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TinyVariant {
+    pub name: &'static str,
+    pub plan: ModelPlan,
+    pub fixture: ReferenceFixture,
+}
+
+/// The tiny-gate variants of `plan`'s family (DeepSeek-V4.1: below-window splits and a
+/// two-block window). Every other family has none.
+pub fn tiny_variants(plan: &ModelPlan) -> Result<Vec<TinyVariant>, ReferenceError> {
+    if plan.deepseek_v41.is_some() {
+        return deepseek_v41::tiny_variants(plan);
+    }
+    Ok(Vec::new())
+}
+
 /// Runs `token_ids` as one request: `token_ids[..decode_from]` prefilled as one chunk, then
 /// every later token decoded one step at a time (teacher-forced). `None` prefills every token,
 /// the same as [`execute`]. Only DeepSeek-V4.1 plans have a reference decode program.

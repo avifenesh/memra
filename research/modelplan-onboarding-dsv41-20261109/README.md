@@ -10,9 +10,12 @@ No GPU was used.
 the plan, TinyParity passes and the pack is `NativeReference`. The step-1 numbers below stand.)
 
 Step 2b (same day, `encoding/README.md`): the `encoding_dsv41` chat dialect renders and parses
-byte for byte as the vendor's `encoding/encoding.py` across 166 render, 17 refusal and 15 parse
-fixtures, with the artifact tokenizer's ids for every render. The pack's renderer now resolves,
-and the TokenizerTemplate gate exercises it on the artifact (`inspect/tokenizer-contract.tsv`).
+byte for byte as the vendor's `encoding/encoding.py` across 172 render (80 through the OpenAI
+surface), 18 refusal and 15 parse fixtures (166, 67 and 17 before step 2c), with the artifact
+tokenizer's ids for every render. The pack's renderer now resolves, and the TokenizerTemplate
+gate exercises it on the artifact (`inspect/tokenizer-contract.tsv`).
+
+Step 2c (same day, at the end of this file): fixes from the independent review of PR #1128.
 
 ## Artifact
 
@@ -78,11 +81,13 @@ New plan operations, all registry rows with no implemented surface:
 ## DeepSeek-V4 is unchanged
 
 The 0731 artifact (`deepseek-ai/DeepSeek-V4-Flash-0731@7872f01b1d1fe23eabc4c98b48bffcef5a386062`)
-inspected `--against deepseek_v4_dspark` with the base binary and with this commit writes
+inspected `--against deepseek_v4_dspark` with the base binary and with the step-1 commit writes
 byte-identical `artifact.lock`, `model-plan.txt`, `tensor-census.tsv`, `execution-rewrites.tsv`,
 `gates.txt` and `tokenizer-contract.tsv`. Only the refusal text moved: the base refuses the
 output head (`head.weight` was not a recognized spelling), this commit names the next refusal,
-the upstream MXFP4 trunk experts against the pack's NVFP4 house-mint contract.
+the upstream MXFP4 trunk experts against the pack's NVFP4 house-mint contract. (From step 2b on,
+`tokenizer-contract.tsv` gains the renderer lines of the TokenizerTemplate check; see the step 2
+inspect section.)
 
 ## Files
 
@@ -98,9 +103,12 @@ the upstream MXFP4 trunk experts against the pack's NVFP4 house-mint contract.
 Verdict: the `deepseek_v41` plan runs in memra's reference executor, prefill and decode, every
 one of the ten V4.1 operations, DSpark drafting included. `memra model verify tiny --against
 deepseek_v41` passes against an oracle the vendor `model.py` produced on the fixture's own
-checkpoint bytes, and memra's run equals that oracle byte for byte: 6,549 rows, max_abs 0. The
-pack is `NativeReference` <!-- support: deepseek_v41-reference --> (record
-`deepseek_v41-reference`); checkpoint, rewrite and serve gates are pending. No GPU was used.
+checkpoint bytes (with torch stand-ins for what it calls outside torch, named under Oracle), and
+memra's run equals that oracle byte for byte: 6,549 rows, max_abs 0, plus two variants (step 2c)
+at 9,084 and 17,860 rows. The pack is `NativeReference` <!-- support: deepseek_v41-reference -->
+(record `deepseek_v41-reference`); checkpoint, rewrite and serve gates are pending. The pack,
+the reference and the oracle runs used no GPU; one check did: torch's CUDA `topk` tie rule, on an
+RTX PRO 6000 Blackwell Max-Q (Oracle below).
 
 ## What runs
 
@@ -157,13 +165,29 @@ hashes.
 ## Oracle
 
 `tiny/make_tiny_oracle.py` runs the vendor `inference/model.py` and `engram.py` at the pinned
-revision (sha256-checked), unchanged, on CPU over `OUT/tiny-checkpoint/` (which `verify tiny`
-writes: `model.safetensors`, the vendor `model-args.json` the plan corresponds to, and
-`fixture.json` with the tokens, the split and the compressed token map). Around it:
-`oracle/kernel.py` stand-ins for the tilelang kernels (the sparse-attention stand-in now walks
-the 64-entry blocks the kernel walks; before, it took one global max), `oracle/exact.py`, a
-CUDA-rule `topk`, the uint8-view Engram gather, and a stand-in tokenizer the vendor
-`build_compressed_token_map` turns into the fixture's map.
+revision (sha256-checked, no line of them edited) on CPU over `OUT/tiny-checkpoint/` (which
+`verify tiny` writes: `model.safetensors`, the vendor `model-args.json` the plan corresponds to,
+and `fixture.json` with the tokens, the split and the compressed token map). The vendor code
+does not run alone: everything it calls outside torch, and three things inside it, are
+memra-written torch stand-ins:
+
+- the tilelang kernels `act_quant`, `fp4_act_quant`, `fp8_gemm`, `fp4_gemm`, `sparse_attn` and
+  `hc_split_sinkhorn` (`oracle/kernel.py`, which shadows the vendor's `kernel` module; the
+  sparse-attention stand-in walks the 64-entry blocks the kernel walks);
+- torch's GEMMs, reductions and transcendental functions, evaluated in f64 and rounded once
+  (`oracle/exact.py`);
+- `Tensor.topk`, replaced by the CUDA tie rule;
+- the Engram fp8 gather (`ParallelEngramEmbedding.forward`, replaced by a uint8-view gather with
+  the vendor's dequantization, since CPU `F.embedding` has no fp8 kernel);
+- the logits of every position but the last, taken as the final norm output (a forward hook)
+  times the head, the product the vendor head computes for the last one;
+- a stand-in tokenizer the vendor `build_compressed_token_map` turns into the fixture's map.
+
+`oracle/test_kernel.py` checks the kernel stand-ins against themselves only (the blocked
+attention against its direct form). The independent review of PR #1128 read them side by side
+against the tilelang source and found no semantic difference (act_quant floor and power-of-two
+ceiling, both FP4 scale paths, GEMM scale grids and nibble order, sparse_attn sink and masking,
+Sinkhorn eps and iteration order); the stand-ins are still memra's code, not the vendor's.
 
 Two free choices of the vendor program had to be pinned, and both are pinned the same way on
 both sides:
@@ -179,6 +203,11 @@ both sides:
   the 1,338 top-k rows of this run had one. torch's CUDA `topk` (the vendor runtime) takes ties
   in index order, so the lowest index wins; torch's CPU `topk` decides by libstdc++
   `nth_element`. The oracle's `topk` stand-in and memra both use the CUDA rule.
+  `oracle/topk_ties.py` checks it at the vendor indexer's shapes, bf16 scores with eight distinct
+  values, widths 64 to 262,144, k up to 512: on an RTX PRO 6000 Blackwell Max-Q (torch
+  2.14.1+cu132) the lowest index wins in every row of every case
+  (`oracle/receipts/topk_ties.cuda.json`); on CPU it does not below width 131,072
+  (`oracle/receipts/topk_ties.cpu.json`). Run: `python3 oracle/topk_ties.py cuda` (or `cpu`).
 
 Environment: Python 3.14.4, torch 2.15.0+cu132 on CPU, numpy 2.5.4, sympy 1.14.0, tokenizers
 0.23.3. `oracle/test_kernel.py` prints `KERNEL-SELFTEST-OK` (it now also checks the multi-block
@@ -203,18 +232,22 @@ measures 0. The bound only absorbs a last-ulp libm difference between machines; 
 moves a bf16, FP8 or FP4 rounding or a selection moves later rows far past it.
 
 Unit tests beside it: the plan census equals the pack census; a prefill of every token and a
-prefill-then-decode split agree bit for bit at splits 70, 73 and 80; confusion guards (zeroing an
-Engram table moves its layer and not the one before; lifting layer 7's candidate restriction moves
-layer 7 and not layer 6; DSpark weights move the drafts and never the trunk); the PCG64 port
-reproduces the vendor multipliers; the prime layout reproduces the 1017 table rows.
+prefill-then-decode split agree bit for bit at splits at or past the window (64, 70, 73 and 80 at
+window 64; 128, 130, 137 and 144 at the variant's window 128), and differ below it (step 2c);
+confusion guards (zeroing an Engram table moves its layer and not the one before; lifting layer
+7's candidate restriction moves layer 7 and not layer 6; DSpark weights move the drafts and never
+the trunk); the PCG64 port reproduces the vendor multipliers; the prime layout reproduces the
+1017 table rows.
 
 ## DeepSeek-V4 and V4.1 inspect after step 2
 
 Re-inspecting the 0731 artifact `--against deepseek_v4_dspark` at this commit writes the same
-`artifact.lock`, `model-plan.txt`, `tensor-census.tsv`, `execution-rewrites.tsv`, `gates.txt`,
-`tokenizer-contract.tsv` and refusal text as step 1. Re-inspecting the 1017 artifact writes the
-same plan, census, rewrites, gates, tokenizer contract and normalized config; the lock gains only
-`support=NativeReference` and the three `checkpoint_*` tolerance lines.
+`artifact.lock`, `model-plan.txt`, `tensor-census.tsv`, `execution-rewrites.tsv`, `gates.txt`
+and refusal text as step 1. Its `tokenizer-contract.tsv` gains the five renderer lines of the
+TokenizerTemplate check (step 2b; `encoding/README.md`, `encoding/inspect-dsv4-0731/`), the
+step-1 lines unchanged. Re-inspecting the 1017 artifact writes the same plan, census, rewrites,
+gates and normalized config; the lock gains `support=NativeReference` and the three
+`checkpoint_*` tolerance lines, and the tokenizer contract the renderer lines.
 
 ## Checkpoint tape, for the checkpoint gate
 
@@ -236,3 +269,105 @@ consumer.
   case with `prompt_ids` [1, 2, 3, 4].
 - No V4.1 native checkpoint runner exists yet; it has to stream the 510 GB checkpoint (the
   reference holds dequantized f32) and write the same numeric class.
+
+# Step 2c: review fixes (2026-11-09)
+
+The independent review of PR #1128 (at `b5d18a0954`) found eight items. Each is fixed here; the
+support state does not move.
+
+## Tiny variants: splits below the window and a two-block window
+
+The main fixture splits past the window (73 of 64), so it never decodes while the window ring
+fills, never drafts from a short DSpark ring and never runs a window that spans two of the
+sparse-attention kernel's 64-entry blocks. Below the window the vendor's prefill and decode are
+different numeric programs for the same row: `get_window_topk_idxs` (`model.py`) lays a prefill
+row out `min(seqlen, window)` wide with its empty slots last, a decode row as the ring oldest
+first with its empty slots first, and `sparse_attn` rounds probabilities to bf16 per 64-entry
+block, so where a row's valid entries fall in those blocks changes its numbers. The prefill
+width also moves where the compressed entries start, so even rows a shorter prefill computes
+differ.
+
+`verify tiny` now runs two variants beside the main fixture, each pinned to an oracle the vendor
+`model.py` produced on the variant's own checkpoint image (`tiny-checkpoint-<variant>/`), through
+the same `make_tiny_oracle.py`, exact arithmetic and tie rule:
+
+| variant | config | tokens | split | decode steps (ring filling) | drafts | rows | oracle sha256 |
+|---|---|---:|---:|---:|---:|---:|---|
+| main | tiny, window 64 | 81 | 73 | 8 (0) | 7 | 6,549 | `8131074d` |
+| `split60` | tiny, window 64 | 81 | 60 | 21 (4) | 20 | 9,084 | `c3bb258e` |
+| `window128` | tiny at window 128 | 145 | 100 | 45 (28) | 44 | 17,860 | `8eff857f` |
+
+memra matches all three to the bit; `tiny/tiny-gate.tsv` records the three pinned digests,
+`tiny/hashes.tsv` every checkpoint file and oracle, `tiny/generator-run-<variant>.json` the
+generator's output line. The window-128 config
+(`crates/memra-gguf/src/model_packs/deepseek_v41/fixtures/tiny-config-window128.json`) is the tiny
+config with `sliding_window` 128 and `max_position_embeddings` 512 and nothing else (a pack test
+pins that). The reviewer's scratch run of the same two splits gave the same two digests.
+
+```bash
+memra model verify tiny --against deepseek_v41 --out OUT
+for v in split60 window128; do
+  uv run --with torch==2.15.0 --with numpy==2.5.4 --with sympy==1.14.0 --with tokenizers==0.23.3 \
+    --with pillow python3 -I research/modelplan-onboarding-dsv41-20261109/tiny/make_tiny_oracle.py \
+    OUT/tiny-checkpoint-$v VENDOR/inference crates/memra-cli/tests/fixtures/tiny-oracle/deepseek_v41-$v.tsv
+done
+```
+
+The unit test that compared a full prefill with a prefill-then-decode split now claims only what
+holds: at or past the window the two agree to the bit (splits 64, 70, 73, 80 at window 64; 128,
+130, 137, 144 at window 128). A second test pins that below it they do not: split 60 at window 64
+moves every row from row 0, splits 70 and 100 at window 128 every row from row 64.
+
+Constraint for the serve route, from this: below the window, a V4.1 request split differently
+(prime versus decode, other chunk lengths) runs a different numeric program for those rows.
+Under "one numeric program per request" a serve route must fix the split it uses below the window
+or prove the rows it emits equal, and no serve gate may cite the at-or-past-window test for a
+split below it.
+
+## The other fixes
+
+- The reference reads the plan's numerics. Each activation, cache and table step
+  (`linear_activation`, `window_kv_quant`, `output_quant`, `latent_quant`, `query_quant`,
+  `key_quant`) is resolved from the plan as a `dsv41_forward::QuantStep` and applied as named; a
+  form with no vendor kernel (FP8 with an e4m3 scale), a block that does not divide its row, a
+  storage the loader does not decode (`dense_weight_block`, `expert_weight`, `table_quant`), a
+  program switch it does not implement (`routed_weight_before_down`,
+  `output_lora_a_dequantized_bf16`), a state plan that is not its attention's (`partial_group`)
+  or a gated shared expert refuses by name before a tensor is read.
+  `vendor_model_args` derives `dtype`, `expert_dtype` and `n_shared_experts` from the plan and
+  refuses any step the vendor's module constants do not fix, so no oracle is exported for another
+  program. Test: `the_plan_numerics_are_read_or_refused_by_name`.
+- Tool namespaces on the V4.1 serve path (`encoding/README.md`): a request tool's tool-level
+  namespace is folded into the function object the renderer reads, schemas key by `ns::name`,
+  and a history call in the vendor parser's own shape (`namespace` beside `function`) re-renders
+  as the vendor does. 13 namespaced cases are now on the wire (gate 3), vendor bytes. DSv4 0731
+  reads neither field, as before (pinned).
+- Gate 4 parses through the parser `build_chat_request` arms, and a test pins that V4.1 caps arm
+  the V4.1 parser and DSv4 caps the DSv4 one. The TokenizerTemplate gate also requires every
+  control string the probe render spells, and every special token its ids hold, to be a listed
+  marker; the gate-2 test applies the same check to all 172 vendor renders. The task tokens are
+  one table for the renderer and the marker list.
+- `dspark_target_layer_ids` must be strictly ascending (the vendor concatenates the taps in layer
+  order). `dsv41_forward::e4m3` decodes 0x7f and 0xff as NaN, as torch `float8_e4m3fn` does, so a
+  NaN weight or Engram byte reaches the loader's non-finite refusal instead of loading as zero.
+- Wording: the stand-ins are named wherever a record said the vendor `model.py` ran unchanged;
+  the CUDA `topk` tie check and its receipts are in `oracle/`; the 0731 tokenizer contract is
+  called out as gaining the renderer lines; the three `test_encoding.py` cases with no fixture
+  are listed as divergences (`encoding/README.md`).
+- `docs/models/deepseek-v41-flash.md` is the model card; `docs/MODELS.md` links it.
+- Red arms on the serve path (`step2c-red-arms.txt`, each reverting one fix in a scratch copy):
+  swapping the request builder's V4.1 and DSv4 parser arms fails gate 4, the namespaced agent
+  test and the caps test; dropping the tool-level namespace fold fails gate 3 and the
+  same-named-tools test; dropping the history call namespace fails gate 3 and the namespaced
+  agent test.
+
+Not changed: adding `ModelConfig::dsv41` moves `config_sha256` (the `Debug` text of the
+normalized config) for every GGUF and Hy3-repack source on its next inspect, as earlier family
+fields did (documented in `docs/ONBOARDING.md`); HF-source locks do not move.
+
+Re-inspect at step 2c (`step2c-reinspect.tsv`, sha256 of every receipt against the step-2b
+inspect): the 1017 artifact writes the same plan (`plan_sha256` `c4d9ad3b`), census, rewrites,
+gates, placements, normalized config and tokenizer contract (the probe passes the new
+control-string and special-token checks), and the lock differs from step 2b's only by the step-2
+lines; the 0731 artifact `--against deepseek_v4_dspark` writes every receipt byte for byte as
+step 2b (lock `000ce525`, the same as step 1).

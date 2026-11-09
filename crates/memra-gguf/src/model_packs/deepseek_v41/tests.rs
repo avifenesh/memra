@@ -218,6 +218,16 @@ fn every_topology_invariant_refuses_by_name() {
         &|c| c.dspark_target_layer_ids = vec![40],
         "dspark_target_layer_ids",
     );
+    // The vendor concatenates the taps in layer order; an unsorted or repeated list would feed
+    // `main_proj` another column order.
+    check(
+        &|c| c.dspark_target_layer_ids = vec![39, 37, 38],
+        "dspark_target_layer_ids [39, 37, 38] must be non-empty trunk layers in strictly ascending",
+    );
+    check(
+        &|c| c.dspark_target_layer_ids = vec![37, 38, 38],
+        "strictly ascending",
+    );
 }
 
 #[test]
@@ -721,4 +731,50 @@ fn expected_census_reproduces_the_pinned_artifact_and_the_contract_binds_it() {
         contract.bind(&long),
         Err(TensorContractError::Extra { .. })
     ));
+}
+
+/// The tiny gate's window-128 variant is the tiny config with the 1017 window and nothing else
+/// (plus the context its longer token stream needs): every layer, DSpark blocks included,
+/// attends and keeps a 128-row window, so the window spans two 64-entry attention blocks.
+#[test]
+fn the_window128_tiny_config_moves_only_the_window() {
+    let base: Vec<&str> = TINY_CONFIG.lines().collect();
+    let wide: Vec<&str> = TINY_WINDOW128_CONFIG.lines().collect();
+    assert_eq!(base.len(), wide.len());
+    let changed: Vec<(&str, &str)> = base
+        .iter()
+        .zip(&wide)
+        .filter(|(a, b)| a != b)
+        .map(|(a, b)| (a.trim(), b.trim()))
+        .collect();
+    assert_eq!(
+        changed,
+        [
+            (
+                "\"max_position_embeddings\": 128,",
+                "\"max_position_embeddings\": 512,"
+            ),
+            ("\"sliding_window\": 64,", "\"sliding_window\": 128,"),
+        ]
+    );
+    let base = PACK.compile_tiny_plan().unwrap();
+    let wide = tiny_window128_plan().unwrap();
+    let windows = |plan: &ModelPlan| -> Vec<(u32, u32)> {
+        let Some(DrafterPlan::Dspark(dspark)) = plan.drafter.as_ref() else {
+            panic!("no DSpark drafter");
+        };
+        plan.layers
+            .iter()
+            .chain(&dspark.blocks)
+            .map(|layer| match (&layer.attention, &layer.state) {
+                (AttentionPlan::Csa2(attention), StatePlan::Csa2(state)) => {
+                    (attention.window, state.window)
+                }
+                other => panic!("layer {} is {other:?}", layer.index),
+            })
+            .collect()
+    };
+    assert!(windows(&base).iter().all(|&w| w == (64, 64)));
+    assert!(windows(&wide).iter().all(|&w| w == (128, 128)));
+    assert_eq!(wide.context_length, 512);
 }

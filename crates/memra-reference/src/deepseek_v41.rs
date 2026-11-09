@@ -27,9 +27,10 @@ use memra_gguf::dsv4_forward::FreqsCis;
 use memra_gguf::dsv41_forward as f;
 use memra_gguf::model_packs::deepseek_v41 as pack;
 use memra_gguf::model_plan::{
-    ActivationPlan, AttentionPlan, Csa2AttentionPlan, Csa2Candidates, Csa2Mode, Csa2Pooling,
-    DrafterPlan, DsparkPlan, EngramPlan, LayerPlan, MlpPlan, ModelPlan, MoeMlpPlan,
-    ResidualTopology, RopeFactors, RopePlan, RouterPlan, SinglePassHcPlan,
+    ActivationPlan, AttentionPlan, BlockQuant, Csa2AttentionPlan, Csa2Candidates,
+    Csa2CompressedState, Csa2Mode, Csa2Pooling, DrafterPlan, DsparkPlan, EngramPlan, LayerPlan,
+    MlpPlan, ModelPlan, MoeMlpPlan, ResidualTopology, RopeFactors, RopePlan, RouterPlan,
+    SinglePassHcPlan, StatePlan,
 };
 use memra_gguf::tensor_contract::{DsparkTensor, ExpertTensor, LayerTensor, TensorId};
 use std::fmt::Write as _;
@@ -94,6 +95,22 @@ fn moe_of(layer: &LayerPlan) -> Result<&MoeMlpPlan, ReferenceError> {
     }
 }
 
+/// The shared expert's intermediate width (vendor `MLP(dim, n_shared_experts * moe_inter_dim)`,
+/// ungated: its output adds to the routed sum).
+fn shared_width(layer: &LayerPlan, moe: &MoeMlpPlan) -> Result<usize, ReferenceError> {
+    let shared = moe.shared.as_ref().ok_or(invalid(
+        Some(layer.index),
+        "deepseek_v41 MoE has a shared expert",
+    ))?;
+    if shared.gated {
+        return Err(invalid(
+            Some(layer.index),
+            "deepseek_v41 shared experts are ungated; a gated shared expert is not implemented",
+        ));
+    }
+    Ok(shared.intermediate_size as usize)
+}
+
 fn hc_of(layer: &LayerPlan) -> Result<&SinglePassHcPlan, ReferenceError> {
     match &layer.residual {
         ResidualTopology::SinglePassHyperConnections(hc) => Ok(hc),
@@ -111,6 +128,220 @@ fn prefix_of(plan_trunk: usize, layer: &LayerPlan) -> String {
     } else {
         format!("mtp.{}.", index - plan_trunk)
     }
+}
+
+// ============================ numerics ============================
+
+/// The plan's checkpoint numerics, checked against what this executor implements before a tensor
+/// is read. Storage fields name the one layout the loader decodes (FP8 dense weights in 32x32
+/// ue8m0 blocks, e2m1 experts with a ue8m0 scale per 32, FP8 Engram rows with a ue8m0 scale per
+/// 32). The activation, cache and table steps are read from the plan and applied as named
+/// ([`f::QuantStep`]); each block must divide the row it quantizes. The two program switches
+/// must name the program implemented, and each layer's state plan must be the state its
+/// attention plan keeps. Anything else refuses by name.
+#[derive(Debug, Clone, Copy)]
+struct Numerics {
+    /// The step on every quantized linear's input.
+    linear: f::QuantStep,
+}
+
+const WINDOW_KV_QUANT: &str =
+    "window_kv_quant names an unimplemented step or a block that does not divide head_dim";
+const OUTPUT_QUANT: &str =
+    "output_quant names an unimplemented step or a block that does not divide head_dim";
+const LATENT_QUANT: &str =
+    "latent_quant names an unimplemented step or a block that does not divide head_dim";
+const KEY_QUANT: &str =
+    "key_quant names an unimplemented step or a block that does not divide the index head_dim";
+const QUERY_QUANT: &str =
+    "query_quant names an unimplemented step or a block that does not divide the index head_dim";
+
+fn step(
+    quant: BlockQuant,
+    layer: Option<u32>,
+    reason: &'static str,
+) -> Result<f::QuantStep, ReferenceError> {
+    f::QuantStep::of(quant).map_err(|_| invalid(layer, reason))
+}
+
+fn row_step(
+    quant: BlockQuant,
+    width: u32,
+    layer: Option<u32>,
+    reason: &'static str,
+) -> Result<f::QuantStep, ReferenceError> {
+    let step = step(quant, layer, reason)?;
+    if !(width as usize).is_multiple_of(step.block()) {
+        return Err(invalid(layer, reason));
+    }
+    Ok(step)
+}
+
+fn numerics(plan: &ModelPlan) -> Result<Numerics, ReferenceError> {
+    let numerics = plan.deepseek_v41.as_ref().ok_or(invalid(
+        None,
+        "a deepseek_v41 plan carries its checkpoint numerics",
+    ))?;
+    if numerics.dense_weight_block != 32 {
+        return Err(invalid(
+            None,
+            "dense_weight_block: the loader decodes FP8 dense weights in 32x32 e8m0 blocks only",
+        ));
+    }
+    if numerics.expert_weight != BlockQuant::FP4_32_UE8M0 {
+        return Err(invalid(
+            None,
+            "expert_weight: the loader decodes e2m1 experts with a ue8m0 scale per 32 only",
+        ));
+    }
+    if !numerics.routed_weight_before_down {
+        return Err(invalid(
+            None,
+            "routed_weight_before_down: only the vendor order (routing weight before w2's \
+             activation step) is implemented",
+        ));
+    }
+    if !numerics.output_lora_a_dequantized_bf16 {
+        return Err(invalid(
+            None,
+            "output_lora_a_dequantized_bf16: only wo_a as a bf16 einsum on the dequantized \
+             weight is implemented",
+        ));
+    }
+    let linear = step(
+        numerics.linear_activation,
+        None,
+        "linear_activation names a quantize-dequantize this executor does not implement",
+    )?;
+    if !matches!(linear, f::QuantStep::Fp8Ue8m0(_)) {
+        return Err(invalid(
+            None,
+            "linear_activation: quantized linears take FP8 ue8m0 activations (vendor linear()); \
+             another activation GEMM is not implemented",
+        ));
+    }
+    let dspark = dspark_of(plan)?;
+    let hidden = plan.hidden_size;
+    let mut linear_inputs = vec![hidden, hidden * dspark.target_layer_ids.len() as u32];
+    for layer in plan.layers.iter().chain(&dspark.blocks) {
+        let i = Some(layer.index);
+        let csa2 = csa2_of(layer)?;
+        let moe = moe_of(layer)?;
+        linear_inputs.extend([
+            csa2.q_lora_rank,
+            csa2.output_groups * csa2.output_lora_rank,
+            moe.expert_intermediate_size,
+        ]);
+        if let Some(shared) = moe.shared.as_ref() {
+            linear_inputs.push(shared.intermediate_size);
+        }
+        row_step(csa2.window_kv_quant, csa2.head_dim, i, WINDOW_KV_QUANT)?;
+        row_step(csa2.output_quant, csa2.head_dim, i, OUTPUT_QUANT)?;
+        let indexer = match csa2.mode {
+            Csa2Mode::Full {
+                compressor,
+                indexer,
+                ..
+            } => {
+                row_step(compressor.latent_quant, csa2.head_dim, i, LATENT_QUANT)?;
+                row_step(indexer.key_quant, indexer.head_dim, i, KEY_QUANT)?;
+                Some(indexer)
+            }
+            Csa2Mode::Reindex {
+                kv_source, indexer, ..
+            } => {
+                // A Reindex layer scores the keys its kv source wrote; its own key step is the
+                // source's or the plan names two programs for one key cache.
+                let source = plan
+                    .layers
+                    .get(kv_source as usize)
+                    .ok_or(invalid(i, "a Reindex layer's kv source is a trunk layer"))?;
+                let Csa2Mode::Full {
+                    indexer: source_indexer,
+                    ..
+                } = csa2_of(source)?.mode
+                else {
+                    return Err(invalid(i, "a Reindex layer's kv source is a Full layer"));
+                };
+                if source_indexer.key_quant != indexer.key_quant {
+                    return Err(invalid(
+                        i,
+                        "key_quant: a Reindex layer reads its kv source's index keys, so its key \
+                         step is the source's",
+                    ));
+                }
+                Some(indexer)
+            }
+            Csa2Mode::Window | Csa2Mode::Reuse { .. } => None,
+        };
+        if let Some(indexer) = indexer {
+            row_step(indexer.query_quant, indexer.head_dim, i, QUERY_QUANT)?;
+        }
+        check_state(layer, csa2)?;
+        if let Some(engram) = hc_of(layer)?.engram {
+            if engram.table_quant != BlockQuant::FP8_32_UE8M0 {
+                return Err(invalid(
+                    i,
+                    "table_quant: the loader decodes Engram tables as FP8 rows with a ue8m0 \
+                     scale per 32 only",
+                ));
+            }
+            linear_inputs.push(engram.hash_columns * engram.head_dim);
+        }
+    }
+    if linear_inputs
+        .iter()
+        .any(|&width| !(width as usize).is_multiple_of(linear.block()))
+    {
+        return Err(invalid(
+            None,
+            "linear_activation: its block does not divide every quantized linear's input",
+        ));
+    }
+    Ok(Numerics { linear })
+}
+
+/// The layer's state plan must be the state its attention plan keeps: the window ring of
+/// `window` rows of `head_dim`, and the compressed state of its mode (a Full layer owns its
+/// group's KV and index keys and, above ratio 1, carries the partial group across decode steps;
+/// Reindex and Reuse layers read their kv source's).
+fn check_state(layer: &LayerPlan, csa2: &Csa2AttentionPlan) -> Result<(), ReferenceError> {
+    let i = Some(layer.index);
+    let StatePlan::Csa2(state) = &layer.state else {
+        return Err(invalid(i, "deepseek_v41 layers keep CSA2 state"));
+    };
+    if state.window != csa2.window || state.head_dim != csa2.head_dim {
+        return Err(invalid(
+            i,
+            "the CSA2 state ring is the attention window of head_dim rows",
+        ));
+    }
+    let expected = match csa2.mode {
+        Csa2Mode::Window => Csa2CompressedState::None,
+        Csa2Mode::Full { ratio, indexer, .. } => Csa2CompressedState::Own {
+            ratio,
+            index_head_dim: indexer.head_dim,
+            partial_group: ratio > 1,
+        },
+        Csa2Mode::Reindex {
+            ratio, kv_source, ..
+        }
+        | Csa2Mode::Reuse {
+            ratio, kv_source, ..
+        } => Csa2CompressedState::Shared {
+            ratio,
+            source_layer: kv_source,
+        },
+    };
+    if state.compressed != expected {
+        return Err(invalid(
+            i,
+            "partial_group / compressed state: only the vendor state is implemented (a ratio > 1 \
+             Full layer carries its partial group, ratio 1 does not; shared layers read their \
+             kv source)",
+        ));
+    }
+    Ok(())
 }
 
 // ============================ checkpoint census ============================
@@ -167,6 +398,7 @@ impl CheckpointTensor {
 /// vision tower, aligner, image-span embeddings and image-token router bias are not read.
 pub fn checkpoint_tensors(plan: &ModelPlan) -> Result<Vec<CheckpointTensor>, ReferenceError> {
     use CheckpointStorage::{Bf16, F32, Fp4, Fp8Block32, Fp8Row32};
+    numerics(plan)?;
     let dspark = dspark_of(plan)?;
     let hidden = plan.hidden_size as usize;
     let vocab = plan.vocab_size as usize;
@@ -298,14 +530,7 @@ pub fn checkpoint_tensors(plan: &ModelPlan) -> Result<Vec<CheckpointTensor>, Ref
             put(format!("{e}w2.weight"), Fp4, vec![hidden, inter]);
             put(format!("{e}w3.weight"), Fp4, vec![inter, hidden]);
         }
-        let shared = moe
-            .shared
-            .as_ref()
-            .ok_or(invalid(
-                Some(layer.index),
-                "deepseek_v41 MoE has one shared expert",
-            ))?
-            .intermediate_size as usize;
+        let shared = shared_width(layer, moe)?;
         put(
             format!("{p}ffn.shared_experts.w1.weight"),
             Fp8Block32,
@@ -560,6 +785,15 @@ fn json_list<T: std::fmt::Display>(values: impl IntoIterator<Item = T>) -> Strin
 /// The vendor `ModelArgs` the plan corresponds to, as the JSON the vendor reads
 /// (`inference/config.json` field names), so an external oracle runs exactly this program.
 pub fn vendor_model_args(plan: &ModelPlan) -> Result<String, ReferenceError> {
+    numerics(plan)?;
+    let (dtype, expert_dtype) = vendor_dtypes(plan)?;
+    let n_shared_experts = vendor_shared_experts(plan)?;
+    if plan.vision.is_some() {
+        return Err(invalid(
+            None,
+            "the vendor arguments describe the text program; the plan carries a vision tower",
+        ));
+    }
     let dspark = dspark_of(plan)?;
     let trunk = &plan.layers;
     let first = trunk.first().ok_or(ReferenceError::EmptyInput)?;
@@ -647,7 +881,7 @@ pub fn vendor_model_args(plan: &ModelPlan) -> Result<String, ReferenceError> {
     field("n_mtp_layers", dspark.blocks.len().to_string());
     field("n_heads", csa2.query_heads.to_string());
     field("n_routed_experts", moe.expert_count.to_string());
-    field("n_shared_experts", "1".into());
+    field("n_shared_experts", n_shared_experts.to_string());
     field("n_activated_experts", moe.experts_per_token.to_string());
     field("score_func", "\"sqrtsoftplus\"".into());
     field("norm_topk_prob", norm_topk_prob.to_string());
@@ -695,8 +929,8 @@ pub fn vendor_model_args(plan: &ModelPlan) -> Result<String, ReferenceError> {
         "engram_compressed_vocab_size",
         engram_first.compressed_vocab_size.to_string(),
     );
-    field("dtype", "\"fp8\"".into());
-    field("expert_dtype", "\"fp4\"".into());
+    field("dtype", format!("\"{dtype}\""));
+    field("expert_dtype", format!("\"{expert_dtype}\""));
     field("vision_n_layers", "0".into());
     field("dspark_block_size", dspark.block_size.to_string());
     field("dspark_noise_token_id", dspark.noise_token_id.to_string());
@@ -718,12 +952,121 @@ pub fn vendor_model_args(plan: &ModelPlan) -> Result<String, ReferenceError> {
     Ok(json)
 }
 
+/// The vendor program's quantize-dequantize steps are module constants of `model.py`
+/// (`fp8_block_size = fp4_block_size = 32`, `scale_fmt = "ue8m0"`, the compressed KV at 16 with an
+/// e4m3 scale), and its `ModelArgs` selects only the storage dtypes: `dtype` "fp8" (FP8 dense
+/// weights in 32x32 blocks, FP8 activations into every quantized linear) or "bf16" (no
+/// quantization, which a V4.1 plan cannot express), and `expert_dtype` "fp4". A plan whose
+/// numerics differ anywhere describes a program the vendor arguments cannot carry, so it refuses
+/// by field name rather than exporting an oracle for another program.
+fn vendor_dtypes(plan: &ModelPlan) -> Result<(&'static str, &'static str), ReferenceError> {
+    let numerics = plan.deepseek_v41.as_ref().ok_or(invalid(
+        None,
+        "a deepseek_v41 plan carries its checkpoint numerics",
+    ))?;
+    if numerics.dense_weight_block != 32 || numerics.linear_activation != BlockQuant::FP8_32_UE8M0 {
+        return Err(invalid(
+            None,
+            "dense_weight_block / linear_activation: ModelArgs dtype \"fp8\" is 32x32 FP8 \
+             weights with FP8 ue8m0 activations per 32; the vendor program has no other",
+        ));
+    }
+    if numerics.expert_weight != BlockQuant::FP4_32_UE8M0 {
+        return Err(invalid(
+            None,
+            "expert_weight: ModelArgs expert_dtype \"fp4\" is e2m1 with a ue8m0 scale per 32; \
+             the vendor program has no other",
+        ));
+    }
+    let dspark = dspark_of(plan)?;
+    for layer in plan.layers.iter().chain(&dspark.blocks) {
+        let i = Some(layer.index);
+        let csa2 = csa2_of(layer)?;
+        if csa2.window_kv_quant != BlockQuant::FP8_32_UE8M0 {
+            return Err(invalid(
+                i,
+                "window_kv_quant: the vendor program fixes it at FP8 per 32 with a ue8m0 scale",
+            ));
+        }
+        if csa2.output_quant != BlockQuant::FP8_32_UE8M0 {
+            return Err(invalid(
+                i,
+                "output_quant: the vendor program fixes it at FP8 per 32 with a ue8m0 scale",
+            ));
+        }
+        let indexer = match csa2.mode {
+            Csa2Mode::Full {
+                compressor,
+                indexer,
+                ..
+            } => {
+                if compressor.latent_quant != BlockQuant::FP4_16_E4M3 {
+                    return Err(invalid(
+                        i,
+                        "latent_quant: the vendor program fixes it at FP4 per 16 with an e4m3 scale",
+                    ));
+                }
+                Some(indexer)
+            }
+            Csa2Mode::Reindex { indexer, .. } => Some(indexer),
+            Csa2Mode::Window | Csa2Mode::Reuse { .. } => None,
+        };
+        if let Some(indexer) = indexer
+            && (indexer.query_quant != BlockQuant::FP4_32_UE8M0
+                || indexer.key_quant != BlockQuant::FP4_32_UE8M0)
+        {
+            return Err(invalid(
+                i,
+                "query_quant / key_quant: the vendor program fixes them at FP4 per 32 with a \
+                 ue8m0 scale",
+            ));
+        }
+    }
+    Ok(("fp8", "fp4"))
+}
+
+/// `n_shared_experts`: the shared expert's width over `moe_inter_dim`, one value for the trunk
+/// and the DSpark blocks (the vendor builds every `MoE` from the same `ModelArgs`).
+fn vendor_shared_experts(plan: &ModelPlan) -> Result<u32, ReferenceError> {
+    let dspark = dspark_of(plan)?;
+    let mut count = None;
+    for layer in plan.layers.iter().chain(&dspark.blocks) {
+        let moe = moe_of(layer)?;
+        let shared = shared_width(layer, moe)?;
+        let inter = moe.expert_intermediate_size as usize;
+        if inter == 0 || !shared.is_multiple_of(inter) || shared == 0 {
+            return Err(invalid(
+                Some(layer.index),
+                "n_shared_experts: the shared expert is a whole number of moe_inter_dim widths",
+            ));
+        }
+        let n = (shared / inter) as u32;
+        if *count.get_or_insert(n) != n {
+            return Err(invalid(
+                Some(layer.index),
+                "n_shared_experts: ModelArgs carries one shared-expert count for every block",
+            ));
+        }
+    }
+    count.ok_or(ReferenceError::EmptyInput)
+}
+
 /// The tiny-gate fixture: seeded weights in checkpoint storage, dequantized through
 /// [`dequantize`]; a token stream whose prefill crosses the sliding window by 9 positions, then
 /// 8 teacher-forced decode steps; the compressed token map `t -> t % compressed_vocab`; and the
 /// checkpoint image (`model.safetensors`, the vendor `model-args.json`, `fixture.json`) an
 /// external oracle loads to run the vendor program on the same bytes.
 pub fn fixture(plan: &ModelPlan) -> Result<ReferenceFixture, ReferenceError> {
+    let window = csa2_of(plan.layers.first().ok_or(ReferenceError::EmptyInput)?)?.window as usize;
+    fixture_split(plan, window + 9)
+}
+
+/// [`fixture`]'s weights and token stream (`window + 17` tokens) with the prefill/decode split
+/// at `decode_from` instead.
+pub fn fixture_split(
+    plan: &ModelPlan,
+    decode_from: usize,
+) -> Result<ReferenceFixture, ReferenceError> {
     let tensors = checkpoint_tensors(plan)?;
     let mut weights = ReferenceWeights::new();
     let mut entries = Vec::new();
@@ -758,8 +1101,14 @@ pub fn fixture(plan: &ModelPlan) -> Result<ReferenceFixture, ReferenceError> {
         ReferenceTensor::new_i64(vec![vocab], token_map.clone())?,
     );
     let window = csa2_of(&plan.layers[0])?.window as usize;
-    let prefill = window + 9;
-    let tokens = fixture_tokens(vocab, prefill + 8, engram.pad_token_id);
+    let tokens = fixture_tokens(vocab, window + 17, engram.pad_token_id);
+    if decode_from == 0 || decode_from >= tokens.len() {
+        return Err(invalid(
+            None,
+            "the fixture's prefill is a non-empty proper prefix of its tokens",
+        ));
+    }
+    let prefill = decode_from;
     let fixture_json = format!(
         "{{\n  \"token_ids\": {},\n  \"decode_from\": {prefill},\n  \"engram_token_map\": {}\n}}\n",
         json_list(&tokens),
@@ -780,6 +1129,36 @@ pub fn fixture(plan: &ModelPlan) -> Result<ReferenceFixture, ReferenceError> {
             ("fixture.json".into(), fixture_json.into_bytes()),
         ],
     })
+}
+
+/// The tiny gate's variants beside [`fixture`], each pinned to its own vendor oracle, for the
+/// splits the main fixture never runs. Below the window the vendor's prefill and decode programs
+/// differ for the same row (`get_window_topk_idxs`: a prefill row is `min(seqlen, window)` wide
+/// with its empty slots last, a decode row the ring oldest first with its empty slots first, and
+/// `sparse_attn` rounds probabilities to bf16 per 64-entry block), so these pin that memra runs
+/// both programs the vendor runs:
+///
+/// - `split60`: the tiny plan split at 60 of its window of 64: 21 decode steps, the first 4 while
+///   the ring still fills, and 20 DSpark drafts, the first with 61 of its 64 ring rows filled;
+/// - `window128`: the tiny plan at the 1017 window of 128 (two 64-entry blocks), split at 100:
+///   45 decode steps, 28 while the ring fills, then a full two-block ring.
+pub fn tiny_variants(plan: &ModelPlan) -> Result<Vec<crate::TinyVariant>, ReferenceError> {
+    let wide = pack::tiny_window128_plan()
+        .map_err(|_| invalid(None, "the deepseek_v41 window-128 tiny config compiles"))?;
+    let fixture = fixture_split(plan, 60)?;
+    let wide_fixture = fixture_split(&wide, 100)?;
+    Ok(vec![
+        crate::TinyVariant {
+            name: "split60",
+            plan: plan.clone(),
+            fixture,
+        },
+        crate::TinyVariant {
+            name: "window128",
+            plan: wide,
+            fixture: wide_fixture,
+        },
+    ])
 }
 
 // ============================ execution ============================
@@ -869,6 +1248,7 @@ struct Shared {
 
 struct Session<'a> {
     plan: &'a ModelPlan,
+    numerics: Numerics,
     weights: &'a ReferenceWeights,
     dspark: &'a DsparkPlan,
     hidden: usize,
@@ -902,6 +1282,7 @@ impl<'a> Session<'a> {
         weights: &'a ReferenceWeights,
         positions: usize,
     ) -> Result<Self, ReferenceError> {
+        let numerics = numerics(plan)?;
         let dspark = dspark_of(plan)?;
         let first = plan.layers.first().ok_or(ReferenceError::EmptyInput)?;
         let streams = hc_of(first)?.streams as usize;
@@ -976,6 +1357,7 @@ impl<'a> Session<'a> {
             .collect::<Result<_, _>>()?;
         Ok(Self {
             plan,
+            numerics,
             weights,
             dspark,
             hidden: plan.hidden_size as usize,
@@ -1232,7 +1614,14 @@ impl<'a> Session<'a> {
                 gathered.extend_from_slice(&table[bucket * dim..(bucket + 1) * dim]);
             }
         }
-        let kv = f::linear_quant(&gathered, s, columns * dim, wkv, hidden * (streams + 1));
+        let kv = f::linear_quant(
+            &gathered,
+            s,
+            columns * dim,
+            wkv,
+            hidden * (streams + 1),
+            self.numerics.linear,
+        );
         let weight: Vec<f32> = q_weight.iter().zip(k_weight).map(|(q, k)| q * k).collect();
         let width = hidden * (streams + 1);
         let mut out = vec![0f32; x.len()];
@@ -1279,6 +1668,7 @@ impl<'a> Session<'a> {
                 hidden,
                 self.lt(i, LayerTensor::MlaQueryDown, &[q_lora, hidden])?,
                 q_lora,
+                self.numerics.linear,
             ),
             self.lt(i, LayerTensor::MlaQueryDownNorm, &[q_lora])?,
             layer.pre_attention_norm.epsilon,
@@ -1289,6 +1679,7 @@ impl<'a> Session<'a> {
             q_lora,
             self.lt(i, LayerTensor::MlaQueryUp, &[heads * head_dim, q_lora])?,
             heads * head_dim,
+            self.numerics.linear,
         );
         f::rope_bf16(&mut q, head_dim, rd, heads, positions, freqs, false);
         Ok((qr, q))
@@ -1311,6 +1702,7 @@ impl<'a> Session<'a> {
                 self.hidden,
                 self.lt(i, LayerTensor::MlaKvDown, &[head_dim, self.hidden])?,
                 head_dim,
+                self.numerics.linear,
             ),
             self.lt(i, LayerTensor::MlaKvDownNorm, &[head_dim])?,
             layer.pre_attention_norm.epsilon,
@@ -1324,7 +1716,7 @@ impl<'a> Session<'a> {
             self.ropes.get(&csa2.rope),
             false,
         );
-        f::act_quant_fp8(&mut kv, 32);
+        step(csa2.window_kv_quant, Some(i), WINDOW_KV_QUANT)?.apply(&mut kv);
         Ok(kv)
     }
 
@@ -1361,7 +1753,7 @@ impl<'a> Session<'a> {
             self.ropes.get(&csa2.rope),
             true,
         );
-        f::act_quant_fp8(&mut o, 32);
+        step(csa2.output_quant, Some(i), OUTPUT_QUANT)?.apply(&mut o);
         let group_width = heads * head_dim / groups;
         let wo_a = self.lt(
             i,
@@ -1388,6 +1780,7 @@ impl<'a> Session<'a> {
             groups * o_lora,
             self.lt(i, LayerTensor::MlaOutput, &[hidden, groups * o_lora])?,
             hidden,
+            self.numerics.linear,
         ))
     }
 
@@ -1488,9 +1881,14 @@ impl<'a> Session<'a> {
         let index = layer.index as usize;
         let compress_len = (start + s) / ratio;
         let (kv_source, latent, indexer) = match csa2.mode {
-            Csa2Mode::Full { indexer, .. } => (
+            Csa2Mode::Full {
+                indexer,
+                compressor,
+                ..
+            } => (
                 index,
-                self.compressor(layer, csa2, x, s, start)?,
+                self.compressor(layer, csa2, x, s, start)?
+                    .map(|latent| (latent, compressor.latent_quant)),
                 Some(indexer),
             ),
             Csa2Mode::Reindex {
@@ -1507,7 +1905,7 @@ impl<'a> Session<'a> {
                 &indexer,
                 x,
                 qr,
-                latent.as_deref(),
+                latent.as_ref().map(|(latent, _)| latent.as_slice()),
                 s,
                 start,
                 offset,
@@ -1522,7 +1920,7 @@ impl<'a> Session<'a> {
         if indexer.is_some() {
             shared.topk = Some((indices.clone(), k));
         }
-        if let Some(mut latent) = latent {
+        if let Some((mut latent, latent_quant)) = latent {
             let groups = latent.len() / head_dim;
             let positions: Vec<usize> = if start == 0 {
                 (0..groups).map(|group| group * ratio).collect()
@@ -1538,7 +1936,7 @@ impl<'a> Session<'a> {
                 self.ropes.get(&csa2.rope),
                 false,
             );
-            f::fp4_quant_e4m3(&mut latent, 16);
+            step(latent_quant, Some(layer.index), LATENT_QUANT)?.apply(&mut latent);
             let state = &mut self.layers[index];
             if state.compressed.len() != (start / ratio) * head_dim {
                 return Err(invalid(
@@ -1676,7 +2074,7 @@ impl<'a> Session<'a> {
                 eps,
             );
             f::rope_bf16(&mut keys, index_dim, rd, 1, &positions, freqs, false);
-            f::fp4_quant_ue8m0(&mut keys, 32);
+            step(plan.key_quant, Some(layer.index), KEY_QUANT)?.apply(&mut keys);
             self.layers[layer.index as usize]
                 .index_keys
                 .extend_from_slice(&keys);
@@ -1701,9 +2099,10 @@ impl<'a> Session<'a> {
                 &[heads * index_dim, q_lora],
             )?,
             heads * index_dim,
+            self.numerics.linear,
         );
         f::rope_bf16(&mut q, index_dim, rd, heads, &positions, freqs, false);
-        f::fp4_quant_ue8m0(&mut q, 32);
+        step(plan.query_quant, Some(layer.index), QUERY_QUANT)?.apply(&mut q);
         let head_scale = ((index_dim as f64).powf(-0.5) * (heads as f64).powf(-0.5)) as f32;
         let weights: Vec<f32> = f::linear_bf16(
             x,
@@ -1873,6 +2272,7 @@ impl<'a> Session<'a> {
                 self.t(&e(ExpertTensor::Up), &[inter, hidden])?,
                 limit,
                 Some(&weights),
+                self.numerics.linear,
             );
             for (row, &token) in rows.iter().enumerate() {
                 for d in 0..hidden {
@@ -1880,11 +2280,7 @@ impl<'a> Session<'a> {
                 }
             }
         }
-        let shared = moe
-            .shared
-            .as_ref()
-            .ok_or(invalid(Some(i), "deepseek_v41 MoE has one shared expert"))?
-            .intermediate_size as usize;
+        let shared = shared_width(layer, moe)?;
         let out = f::expert(
             x,
             s,
@@ -1895,6 +2291,7 @@ impl<'a> Session<'a> {
             self.lt(i, LayerTensor::SharedMlpUp, &[shared, hidden])?,
             limit,
             None,
+            self.numerics.linear,
         );
         for (value, &shared) in y.iter_mut().zip(&out) {
             *value = f::bf16(*value + shared);
@@ -1917,6 +2314,7 @@ impl<'a> Session<'a> {
                     &[hidden, targets * hidden],
                 )?,
                 hidden,
+                self.numerics.linear,
             ),
             self.t(&TensorId::Dspark(DsparkTensor::MainNorm), &[hidden])?,
             eps,
@@ -2206,19 +2604,317 @@ mod tests {
         assert_eq!(trace.drafts.len(), 7);
     }
 
-    /// The decode step at a position runs the program the prefill runs for that position's row
-    /// (same window entries in the same order, same compressed rows, same selections), so a
-    /// prefill of every token and a prefill-then-decode split agree to the bit.
+    /// At or past the window, a decode step runs the program the prefill runs for that
+    /// position's row (the same window entries in the same order, the same compressed rows and
+    /// selections; the prefill's extra empty slots sit after them and add nothing), so a prefill
+    /// of every token and a prefill-then-decode split agree to the bit, for a one-block window
+    /// (64) and a two-block one (128). Below the window they do not:
+    /// [`below_the_window_prefill_and_decode_are_different_programs`].
     #[test]
-    fn decode_continues_the_prefill_program_bit_for_bit() {
+    fn decode_at_or_past_the_window_continues_the_prefill_program_bit_for_bit() {
+        let narrow = pack::PACK.compile_tiny_plan().unwrap();
+        let wide = pack::tiny_window128_plan().unwrap();
+        for (plan, splits) in [(narrow, [64, 70, 73, 80]), (wide, [128, 130, 137, 144])] {
+            let fixture = fixture(&plan).unwrap();
+            let tokens = &fixture.token_ids;
+            let all = execute(&plan, &fixture.weights, tokens, None).unwrap();
+            for split in splits {
+                let stepped = execute(&plan, &fixture.weights, tokens, Some(split)).unwrap();
+                assert_eq!(all.logits, stepped.logits, "split {split}");
+                assert_eq!(all.layer_hidden, stepped.layer_hidden, "split {split}");
+            }
+        }
+    }
+
+    /// Below the window the vendor's prefill and decode are different numeric programs for the
+    /// same row: `get_window_topk_idxs` lays a prefill row out `min(seqlen, window)` wide with
+    /// its empty slots last and a decode row as the ring oldest first with its empty slots
+    /// first, and `sparse_attn` rounds probabilities to bf16 per 64-entry block, so where a
+    /// row's valid entries fall in those blocks changes its numbers. memra runs both programs
+    /// as the vendor does (the `split60` and `window128` tiny variants are pinned to vendor
+    /// oracles); this pins that the split itself moves the rows, a constraint any serve route
+    /// that primes, chunks or splits a request below the window inherits.
+    #[test]
+    fn below_the_window_prefill_and_decode_are_different_programs() {
+        let narrow = pack::PACK.compile_tiny_plan().unwrap();
+        let wide = pack::tiny_window128_plan().unwrap();
+        let vocab = narrow.vocab_size as usize;
+        for (plan, split, first_moved) in [(narrow, 60, 0), (wide.clone(), 70, 64), (wide, 100, 64)]
+        {
+            let fixture = fixture(&plan).unwrap();
+            let tokens = &fixture.token_ids;
+            let all = execute(&plan, &fixture.weights, tokens, None).unwrap();
+            let stepped = execute(&plan, &fixture.weights, tokens, Some(split)).unwrap();
+            let moved: Vec<usize> = (0..tokens.len())
+                .filter(|&p| {
+                    all.logits[p * vocab..(p + 1) * vocab]
+                        != stepped.logits[p * vocab..(p + 1) * vocab]
+                })
+                .collect();
+            assert_eq!(moved.first(), Some(&first_moved), "split {split}");
+            assert_eq!(moved.last(), Some(&(tokens.len() - 1)), "split {split}");
+        }
+    }
+
+    type PlanEdit<'a> = Box<dyn Fn(&mut ModelPlan) + 'a>;
+
+    fn refusal(result: Result<impl std::fmt::Debug, ReferenceError>) -> &'static str {
+        match result {
+            Err(ReferenceError::InvalidPlan { reason, .. }) => reason,
+            other => panic!("expected a named refusal, got {other:?}"),
+        }
+    }
+
+    fn csa2_mut(layer: &mut LayerPlan) -> &mut Csa2AttentionPlan {
+        match &mut layer.attention {
+            AttentionPlan::Csa2(csa2) => csa2,
+            _ => unreachable!("deepseek_v41 layers are CSA2"),
+        }
+    }
+
+    /// The executor reads every quant field of the plan: a step it implements changes the run
+    /// (and the vendor arguments refuse it, since `model.py` fixes its steps as constants); a
+    /// step, storage or program switch it does not implement refuses by name. Nothing runs the
+    /// 1017 program under another plan's numerics.
+    #[test]
+    fn the_plan_numerics_are_read_or_refused_by_name() {
+        use memra_gguf::model_plan::{BlockElement, BlockScale};
         let plan = pack::PACK.compile_tiny_plan().unwrap();
         let fixture = fixture(&plan).unwrap();
         let tokens = &fixture.token_ids;
-        let all = execute(&plan, &fixture.weights, tokens, None).unwrap();
-        for split in [70, 73, 80] {
-            let stepped = execute(&plan, &fixture.weights, tokens, Some(split)).unwrap();
-            assert_eq!(all.logits, stepped.logits, "split {split}");
-            assert_eq!(all.layer_hidden, stepped.layer_hidden, "split {split}");
+        let decode = fixture.decode_from;
+        let base = execute(&plan, &fixture.weights, tokens, decode).unwrap();
+        let args = vendor_model_args(&plan).unwrap();
+        for line in [
+            "\"dtype\": \"fp8\",",
+            "\"expert_dtype\": \"fp4\",",
+            "\"n_shared_experts\": 1,",
+        ] {
+            assert!(args.contains(line), "{line} not in {args}");
+        }
+        let run = |plan: &ModelPlan| execute(plan, &fixture.weights, tokens, decode);
+        let fp8 = |block| BlockQuant {
+            element: BlockElement::Fp8E4m3,
+            block,
+            scale: BlockScale::Ue8m0,
+        };
+        let all_layers = |plan: &mut ModelPlan, edit: &dyn Fn(&mut Csa2AttentionPlan)| {
+            let DrafterPlan::Dspark(dspark) = plan.drafter.as_mut().unwrap() else {
+                unreachable!()
+            };
+            for layer in plan.layers.iter_mut().chain(dspark.blocks.iter_mut()) {
+                edit(csa2_mut(layer));
+            }
+        };
+        // Implemented steps the plan can name: each moves the run, and the vendor arguments
+        // refuse to describe the result as the vendor program.
+        let implemented: Vec<(&str, PlanEdit<'_>)> = vec![
+            (
+                "window_kv_quant",
+                Box::new(move |p| all_layers(p, &|c| c.window_kv_quant = BlockQuant::FP4_32_UE8M0)),
+            ),
+            (
+                "output_quant",
+                Box::new(move |p| all_layers(p, &|c| c.output_quant = BlockQuant::FP4_32_UE8M0)),
+            ),
+            (
+                "latent_quant",
+                Box::new(move |p| {
+                    all_layers(p, &|c| {
+                        if let Csa2Mode::Full { compressor, .. } = &mut c.mode {
+                            compressor.latent_quant = BlockQuant::FP4_32_UE8M0;
+                        }
+                    })
+                }),
+            ),
+            (
+                "query_quant",
+                Box::new(|p| {
+                    if let Csa2Mode::Full { indexer, .. } = &mut csa2_mut(&mut p.layers[1]).mode {
+                        indexer.query_quant = fp8(32);
+                    }
+                }),
+            ),
+            (
+                // Layer 1's keys feed only its own group (no Reindex layer reads them).
+                "key_quant",
+                Box::new(|p| {
+                    if let Csa2Mode::Full { indexer, .. } = &mut csa2_mut(&mut p.layers[1]).mode {
+                        indexer.key_quant = BlockQuant::FP4_16_E4M3;
+                    }
+                }),
+            ),
+        ];
+        for (field, edit) in &implemented {
+            let mut edited = plan.clone();
+            edit(&mut edited);
+            assert_ne!(edited, plan, "{field}: the edit changes the plan");
+            let moved = run(&edited).unwrap_or_else(|e| panic!("{field}: {e:?}"));
+            assert_ne!(
+                moved.logits, base.logits,
+                "{field}: the run reads the field"
+            );
+            assert!(
+                refusal(vendor_model_args(&edited)).contains(field),
+                "{field}: the vendor arguments refuse it"
+            );
+        }
+        // The linear activation step is read the same way. Its only implemented alternatives are
+        // other FP8 ue8m0 blocks, and a power-of-two scale leaves every e4m3 value in the normal
+        // range where it was, so the run barely moves; the resolved step shows the read.
+        let mut edited = plan.clone();
+        edited.deepseek_v41.as_mut().unwrap().linear_activation = fp8(16);
+        assert_eq!(numerics(&plan).unwrap().linear, f::QuantStep::Fp8Ue8m0(32));
+        assert_eq!(
+            numerics(&edited).unwrap().linear,
+            f::QuantStep::Fp8Ue8m0(16)
+        );
+        run(&edited).unwrap();
+        assert!(refusal(vendor_model_args(&edited)).contains("linear_activation"));
+        // Steps, storage and program switches it does not implement refuse by name, before a
+        // tensor is read and before any fixture or vendor argument is written.
+        let refused: Vec<(&str, PlanEdit<'_>)> = vec![
+            (
+                "window_kv_quant names an unimplemented step",
+                Box::new(move |p| {
+                    all_layers(p, &|c| {
+                        c.window_kv_quant = BlockQuant {
+                            scale: BlockScale::E4m3,
+                            ..BlockQuant::FP8_32_UE8M0
+                        }
+                    })
+                }),
+            ),
+            (
+                "output_quant names an unimplemented step or a block that does not divide",
+                Box::new(move |p| all_layers(p, &|c| c.output_quant = fp8(48))),
+            ),
+            (
+                "key_quant: a Reindex layer reads its kv source's index keys",
+                Box::new(|p| {
+                    if let Csa2Mode::Full { indexer, .. } = &mut csa2_mut(&mut p.layers[5]).mode {
+                        indexer.key_quant = fp8(32);
+                    }
+                }),
+            ),
+            (
+                "dense_weight_block",
+                Box::new(|p| p.deepseek_v41.as_mut().unwrap().dense_weight_block = 64),
+            ),
+            (
+                "expert_weight",
+                Box::new(|p| {
+                    p.deepseek_v41.as_mut().unwrap().expert_weight = BlockQuant::FP4_16_E4M3
+                }),
+            ),
+            (
+                "linear_activation: quantized linears take FP8",
+                Box::new(|p| {
+                    p.deepseek_v41.as_mut().unwrap().linear_activation = BlockQuant::FP4_32_UE8M0
+                }),
+            ),
+            (
+                "linear_activation: its block does not divide",
+                Box::new(move |p| p.deepseek_v41.as_mut().unwrap().linear_activation = fp8(64)),
+            ),
+            (
+                "routed_weight_before_down",
+                Box::new(|p| p.deepseek_v41.as_mut().unwrap().routed_weight_before_down = false),
+            ),
+            (
+                "output_lora_a_dequantized_bf16",
+                Box::new(|p| {
+                    p.deepseek_v41
+                        .as_mut()
+                        .unwrap()
+                        .output_lora_a_dequantized_bf16 = false
+                }),
+            ),
+            (
+                "table_quant",
+                Box::new(move |p| {
+                    let ResidualTopology::SinglePassHyperConnections(hc) =
+                        &mut p.layers[1].residual
+                    else {
+                        unreachable!()
+                    };
+                    hc.engram.as_mut().unwrap().table_quant = fp8(16);
+                }),
+            ),
+            (
+                "partial_group",
+                Box::new(|p| {
+                    let StatePlan::Csa2(state) = &mut p.layers[1].state else {
+                        unreachable!()
+                    };
+                    state.compressed = Csa2CompressedState::Own {
+                        ratio: 2,
+                        index_head_dim: 32,
+                        partial_group: false,
+                    };
+                }),
+            ),
+            (
+                "shared experts are ungated",
+                Box::new(|p| {
+                    let MlpPlan::Moe(moe) = &mut p.layers[0].mlp else {
+                        unreachable!()
+                    };
+                    moe.shared.as_mut().unwrap().gated = true;
+                }),
+            ),
+        ];
+        for (needle, edit) in &refused {
+            let mut edited = plan.clone();
+            edit(&mut edited);
+            assert_ne!(edited, plan, "{needle}: the edit changes the plan");
+            for (what, reason) in [
+                ("execute", refusal(run(&edited))),
+                ("fixture", refusal(super::fixture(&edited))),
+                ("vendor_model_args", refusal(vendor_model_args(&edited))),
+            ] {
+                assert!(
+                    reason.contains(needle),
+                    "{what}: {needle:?} not in {reason:?}"
+                );
+            }
+        }
+    }
+
+    /// The loader's refusal of non-finite values reaches the FP8 NaN codes (torch
+    /// `float8_e4m3fn` 0x7f / 0xff) and a NaN e8m0 scale (0xff), on dense and Engram storage.
+    #[test]
+    fn dequantize_refuses_fp8_nan_codes_and_nan_scales() {
+        for storage in [CheckpointStorage::Fp8Block32, CheckpointStorage::Fp8Row32] {
+            let tensor = CheckpointTensor {
+                name: "probe.weight".into(),
+                id: family_id("probe.", "weight"),
+                storage,
+                shape: vec![32, 32],
+            };
+            let scales = if storage == CheckpointStorage::Fp8Block32 {
+                1
+            } else {
+                32
+            };
+            let codes = vec![0x38u8; 32 * 32];
+            assert!(dequantize(&tensor, &codes, Some(&vec![127u8; scales])).is_ok());
+            for nan in [0x7fu8, 0xff] {
+                let mut codes = codes.clone();
+                codes[100] = nan;
+                assert_eq!(
+                    refusal(dequantize(&tensor, &codes, Some(&vec![127u8; scales]))),
+                    "checkpoint tensor holds or dequantizes to a non-finite value",
+                    "{storage:?} code {nan:#04x}"
+                );
+            }
+            let mut nan_scale = vec![127u8; scales];
+            nan_scale[0] = 0xff;
+            assert_eq!(
+                refusal(dequantize(&tensor, &codes, Some(&nan_scale))),
+                "checkpoint tensor holds or dequantizes to a non-finite value",
+                "{storage:?} NaN scale"
+            );
         }
     }
 

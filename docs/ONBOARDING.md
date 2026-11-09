@@ -207,7 +207,10 @@ ulp of accumulation difference flips a bf16 rounding, the flip changes a selecti
 layers move by O(1), past any tolerance worth having. The `deepseek_v41` tiny gate evaluates
 GEMMs, reductions and transcendental functions in f64 and rounds once, on both the vendor side and
 the reference side, takes top-k ties in index order (the CUDA `topk` rule), and matches the
-vendor `model.py` to the bit (`research/modelplan-onboarding-dsv41-20261109/`).
+vendor `model.py`, run with torch stand-ins for its tilelang kernels, to the bit
+(`research/modelplan-onboarding-dsv41-20261109/`). A fixture also pins only the splits it runs:
+where the source's prefill and decode lay a row out differently (V4.1 below its window), a split
+there is another numeric program, so the gate pins one variant per layout.
 
 ## 4. Prove tokenizer, template, tools, and thinking
 
