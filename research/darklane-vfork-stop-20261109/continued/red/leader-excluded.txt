@@ -1,0 +1,8 @@
+arm=leader-excluded darklane.rs sha256 dd147674c6f83e28e8cf7512158d6831100c23b7d6c279048aec4a9ce14afe5f crates/ digest 4c1e4379b369465e61b61a84585638da73de2c0d3bae7b110cb04331f22dc41b
+rc=101 test result: FAILED. 23 passed; 1 failed; 0 ignored; 0 measured; 1130 filtered out; finished in 30.02s
+stop acknowledged with the main thread parked in vfork: acknowledged after 8ms
+stop acknowledged with the program's main thread parked in vfork: acknowledged after 8ms
+stop acknowledged with the program's main thread parked in vfork: acknowledged after 10ms
+stops acknowledged with the leader parked in vfork: 15 of 300
+no acknowledgement within the 30 s guard: the stop is directed again and acknowledged
+test darklane::tests::stop_is_directed_again_at_a_job_continued_from_outside ... FAILED

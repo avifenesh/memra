@@ -1,0 +1,26 @@
+arm=before darklane.rs sha256 d759f6babf4deb7c0018fdaf01c4a2df8c3845b962335742510acf72d6b45ff7 crates/ digest fc4cc7d8362f7032750b5fe8549a65394c8307d2ba7d757536915e2292459f1f
+rc=101 test result: FAILED. 14 passed; 8 failed; 0 ignored; 0 measured; 1130 filtered out; finished in 30.06s
+assertion `left != right` failed: a process outside the job's group failed the job's stop
+owned runner assertion failed: state=failed pid=3534233 child_state=None threads=['T'] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::stop_is_acknowledged_beside_a_process_outside_the_job_whose_comm_is_not_utf8 ... FAILED
+assertion `left != right` failed: the member's byte name failed the job's stop
+owned runner assertion failed: state=failed pid=3534246 child_state=Some('Z') threads=['T'] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::stop_reads_a_group_member_whose_comm_is_not_utf8 ... FAILED
+no acknowledgement within the 30 s guard: acknowledged stop
+owned runner assertion failed: state=failed pid=0 child_state=None threads=[] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::killed_stopped_child_is_reaped_without_resume ... FAILED
+no acknowledgement within the 30 s guard: owned group stopped
+owned runner assertion failed: state=failed pid=0 child_state=None threads=[] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::killing_only_yielded_leader_terminates_remaining_owned_group ... FAILED
+no acknowledgement within the 30 s guard: fresh stop acknowledged
+owned runner assertion failed: state=failed pid=0 child_state=None threads=[] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown ... FAILED
+no acknowledgement within the 30 s guard: the runner yields
+owned runner assertion failed: state=failed pid=0 child_state=None threads=[] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown ... FAILED
+no acknowledgement within the 30 s guard: stop 1 acknowledged
+owned runner assertion failed: state=failed pid=0 child_state=None threads=[] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::stop_resume_cycles_on_a_constantly_spawning_shell_job ... FAILED
+no acknowledgement within the 30 s guard: stop acknowledged with a thread parked in vfork
+owned runner assertion failed: state=failed pid=0 child_state=None threads=[] unexeced_children=[] yields=0 resumes=0
+test darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec ... FAILED
