@@ -1,0 +1,6 @@
+copy-in 6.50 GiB (one thread, page cache -> anonymous) in 1.50 s = 4.3 GiB/s
+register 6.50 GiB in 0.13 s = 49.8 GiB/s
+H2D pinned 1 GiB copies: 6 GiB in 0.11 s = 53.1 GiB/s
+H2D 48 experts as six pieces each: 16.2 ms = 52.0 GiB/s, 0.34 ms per expert
+H2D pageable 256 MiB straight from the file mmap: 10.1 ms = 24.9 GiB/s
+ok

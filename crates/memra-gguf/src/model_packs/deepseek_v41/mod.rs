@@ -1,6 +1,7 @@
 //! DeepSeek-V4.1-Flash (`deepseek_v41`) pack: config normalization, the typed CSA2 plan and the
-//! config-derived tensor schema. The reference executor (`memra-reference`) runs the plan
-//! (`NativeReference`, tiny gate only); no tuned surface implements it.
+//! config-derived tensor schema. The reference executor (`memra-reference`) runs the plan, and
+//! memra-server's deepseek-v4.1 route serves it on one RTX PRO 6000 (`dsv41_serve`, the GPU decode
+//! loop with the routed experts in pinned host memory); no tuned rewrite implements it.
 //!
 //! Checkpoint namespaces (1017 artifact, 96,085 header tensors, names already in the vendor
 //! reference spelling):
@@ -51,9 +52,10 @@ pub static PACK: ModelPack = ModelPack {
     // research/modelplan-onboarding-dsv41-20261109/encoding/.
     template: TemplateContract::EngineRenderer("encoding_dsv41"),
     // The reference executor runs the plan and the tiny gate passes against an oracle the
-    // vendor model.py produced (record `deepseek_v41-reference`). Checkpoint, rewrite and serve
-    // gates are pending.
-    support: Some(NativeSupport::NativeReference),
+    // vendor model.py produced (record `deepseek_v41-reference`); on one RTX PRO 6000 the GPU route
+    // passes CheckpointParity and the serve gate (record `deepseek_v41-gpu-1x-pro6000`,
+    // research/modelplan-onboarding-dsv41-20261109/serve). No rewrite is qualified.
+    support: Some(NativeSupport::NativeQualified),
     gates: &[
         Gate::Config,
         Gate::TokenizerTemplate,
