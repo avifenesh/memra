@@ -35,3 +35,10 @@ research/gemma-unopened-thought-census-20261104/raw/** -text whitespace=-blank-a
 
 # Raw gate logs, kept byte-exact.
 research/gate-sizing-lock-20261104/raw/** -text whitespace=-blank-at-eol,-trailing-space
+
+# DeepSeek-V4.1 encoding oracle: the vendor files at their pinned revision (ref/SHA256SUMS pins
+# their bytes, the vendor LICENSE has CRLF line ends) and the byte-parity fixtures rendered from
+# them. Stored byte for byte, never normalized.
+research/modelplan-onboarding-dsv41-20261109/encoding/ref/** -text -whitespace
+research/modelplan-onboarding-dsv41-20261109/encoding/fixtures/** -text -whitespace
+research/modelplan-onboarding-dsv41-20261109/encoding/parse/** -text -whitespace

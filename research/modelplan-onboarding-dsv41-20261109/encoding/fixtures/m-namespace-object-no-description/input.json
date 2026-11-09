@@ -1,0 +1,43 @@
+{
+  "source": "matrix",
+  "messages": [
+    {
+      "role": "system",
+      "content": "s",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup",
+            "description": "Look up a value",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "namespace": {
+            "name": "files",
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "q"
+    }
+  ],
+  "req_tools": null,
+  "think": "thinking",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [],
+  "wire": false
+}

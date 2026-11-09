@@ -1,0 +1,66 @@
+{
+  "source": "matrix",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant."
+    },
+    {
+      "role": "user",
+      "content": "Weather in Beijing?"
+    },
+    {
+      "role": "assistant",
+      "reasoning_content": "Use get_weather.",
+      "content": "",
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"location\": \"Beijing\", \"unit\": \"celsius\"}"
+          },
+          "id": "call_001"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_001",
+      "content": "{\"temperature\": 22, \"condition\": \"sunny\"}"
+    }
+  ],
+  "req_tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the weather for a specific location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "The city name"
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "celsius",
+                "fahrenheit"
+              ]
+            }
+          },
+          "required": [
+            "location"
+          ]
+        }
+      }
+    }
+  ],
+  "think": "thinking",
+  "reasoning_effort": "low",
+  "add_generation_prompt": true,
+  "expected_images": [],
+  "wire": true
+}

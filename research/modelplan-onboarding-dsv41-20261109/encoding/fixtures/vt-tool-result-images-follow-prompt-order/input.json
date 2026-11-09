@@ -1,0 +1,79 @@
+{
+  "source": "test_encoding.py::test_v41_tool_result_images_follow_prompt_order[tool_messages]",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "history.png"
+          }
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "a",
+            "arguments": "{}"
+          },
+          "id": "a"
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "b",
+            "arguments": "{}"
+          },
+          "id": "b"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "b",
+      "content": [
+        {
+          "type": "text",
+          "text": "result b"
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "b.png"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "a",
+      "content": [
+        {
+          "type": "text",
+          "text": "result a"
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "a.png"
+          }
+        }
+      ]
+    }
+  ],
+  "req_tools": null,
+  "think": "chat",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [
+    "history.png",
+    "a.png",
+    "b.png"
+  ],
+  "wire": false
+}

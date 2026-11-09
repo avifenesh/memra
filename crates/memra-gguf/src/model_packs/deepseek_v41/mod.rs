@@ -46,8 +46,9 @@ pub static PACK: ModelPack = ModelPack {
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
     // The 1017 artifact ships its dialect as code (`encoding/encoding.py`, "DeepSeek-V4.1 Text and
     // Vision Encoding": DSML tag names, numeric reasoning effort, mid-conversation system turns,
-    // image blocks) and no template. It is not the DSv4 renderer; memra has no V4.1 renderer yet,
-    // so the TokenizerTemplate gate stays pending.
+    // image blocks) and no template. It is not the DSv4 renderer: memra-tokenizer's
+    // `chat::EngineDialect::Dsv41`, gated against that file in
+    // research/modelplan-onboarding-dsv41-20261109/encoding/.
     template: TemplateContract::EngineRenderer("encoding_dsv41"),
     // The reference executor runs the plan and the tiny gate passes against an oracle the
     // vendor model.py produced (record `deepseek_v41-reference`). Checkpoint, rewrite and serve

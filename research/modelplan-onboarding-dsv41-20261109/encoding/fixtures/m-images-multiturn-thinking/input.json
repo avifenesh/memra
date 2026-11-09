@@ -1,0 +1,49 @@
+{
+  "source": "matrix",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "one.png"
+          }
+        },
+        {
+          "type": "text",
+          "text": "describe"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "reasoning_content": "look",
+      "content": "A cat."
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "and this?"
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "two.png"
+          }
+        }
+      ]
+    }
+  ],
+  "req_tools": null,
+  "think": "thinking",
+  "reasoning_effort": null,
+  "add_generation_prompt": true,
+  "expected_images": [
+    "one.png",
+    "two.png"
+  ],
+  "wire": false
+}
