@@ -56,7 +56,7 @@ the model through the `hf` CLI:
 
 ```bash
 pip install -U 'huggingface_hub[cli]'
-MEMRA_MODELS="q38=hf:Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp" \
+MEMRA_MODELS="q38=hf:tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp" \
 memra-server
 ```
 
