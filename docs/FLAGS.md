@@ -1674,8 +1674,9 @@ served for two months, so the winner's seam goes.
   against. The rowwise verify (`MEMRA_SPEC_VERIFY_ROWWISE=1`, or T > 16) keeps its own
   `ColStates::put` fill.
 - The boot refuses the retired name (`[env-audit] REFUSED ... retired`): unset it. The engine
-  bins do not audit the environment, so lever 3a's `research/gb10-decode-20261109/tools/
-  cols5090_extra.sh` now runs its unpacked cell on the packed path; it is a receipt of its run.
+  bins do not audit the environment, so lever 3a's script
+  `research/gb10-decode-20261109/tools/cols5090_extra.sh` now refuses its unpacked cell with a
+  one-line message instead of running it on the packed path.
 - Receipts for the removal: `research/gb10-decode-20261109/gdn-packed-seam/`. History:
   [the row before removal](FLAGS-HISTORY.md#memra_spec_gdn_packed).
 

@@ -7047,7 +7047,7 @@ impl HybridModel {
         graphs: Option<&mut DsparkVerifyGraphs>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         // Qwen35Moe admitted 2026-08-20 (lane/draftcost-moe): the t-parallel arm already
-        // carries the MoE FFN (`moe_ffn_il_zq8` at m=T) and the GDN per-row state loop; the
+        // carries the MoE FFN (`moe_ffn_il_zq8` at m=T) and the GDN state chain; the
         // arch fence was a qualification gate, not a mechanism gap. Measured disease on the
         // 35B-A3B class: rowwise verify ~= 5.6 ms per drafted token (one full trunk step
         // each) — the same (K+1)-plain-steps wall the dense admission fixed on 2026-08-15.
@@ -9666,6 +9666,10 @@ impl HybridModel {
         let Mixer::Linear(la) = &layer.mixer else {
             return Err("qwen35_tparallel_linear_layer on a non-linear layer".into());
         };
+        // The state chain below has two arms, packed (t >= 2) and one row (t == 1).
+        if t == 0 {
+            return Err("qwen35_tparallel_linear_layer: a verify has at least one row".into());
+        }
         // ---- attn_norm + q8_1 quantize at m=T (row-indexed == per-row) ----
         let anorm = layer.attn_norm.float_data();
         let mut xn = e.uninit(t * n_embd)?;
@@ -9740,12 +9744,14 @@ impl HybridModel {
             // land in the caller's slabs (stash) or in slabs that become the checkpoint's
             // ColStates as they are; the same bytes either way. Resolve state through
             // the per-round table so graph replay follows parity and new cache allocations.
-            debug_assert_eq!(
-                qkv_w, conv_dim,
-                "packed conv reads qkv_mixed as [t, conv_dim]"
-            );
-            debug_assert_eq!(beta_w, num_v);
-            debug_assert_eq!(alpha_w, num_v);
+            // The packed kernels read qkv_mixed as [t, conv_dim] and beta/alpha as [t, num_v].
+            if qkv_w != conv_dim || beta_w != num_v || alpha_w != num_v {
+                return Err(format!(
+                    "qwen35 packed GDN verify: projection widths qkv {qkv_w}, beta {beta_w}, \
+                     alpha {alpha_w} do not match conv_dim {conv_dim} and num_v {num_v}"
+                )
+                .into());
+            }
             let conv_words = conv_dim * (d_conv - 1);
             let ssm_words = d_state * d_state * num_v;
             // Captured graph bodies have no host checkpoint, but rollback still reads stash.

@@ -6556,11 +6556,11 @@ impl crate::hybrid::HybridModel {
     /// keys — (segment, vt) and (vt, rung, hi) — carry NOTHING session-scoped, so ANY
     /// session whose round matches a key replays the same capture (this is the
     /// cache-reuse-pool the old bin-arm-only note asked for). Sharing is sound because
-    /// every per-session-varying address the captured bodies touch is indirect:
-    /// conv/ssm state and the ckpt stash resolve through the per-verify refreshed
-    /// pointer table (refresh_tables, read at replay by the packed conv and scan kernels,
-    /// which also write the stash: the slice-3 parity/lifetime law; a baked address is the
-    /// known 12/12-divergence class), kv
+    /// every per-session-varying address the captured bodies touch is indirect or
+    /// ctx-owned: conv/ssm state resolves through the per-verify refreshed pointer table
+    /// (refresh_tables, read at replay by the packed conv and scan kernels: the slice-3
+    /// parity/lifetime law; a baked address is the known 12/12-divergence class), the
+    /// ckpt stash is a ctx-owned slab the packed kernels write as their snapshot target, kv
     /// bases through fa_table, residual/pos/tap through ctx-owned staging rewritten
     /// every round; per-row t_kv derives in-kernel from pos_seq, and the per-round
     /// host bookkeeping (parity swap, len bump) runs on THIS session's cache.
