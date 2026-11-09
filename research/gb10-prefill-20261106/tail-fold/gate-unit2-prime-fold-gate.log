@@ -1,0 +1,11 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+prime-fold-gate: qwen35 (64 layers), gdn chunk 32
+PRIME-FOLD n=8171 b=8128 tail=43: fold_ok=true tapped 48/48 | hidden 0/41835520 final-logits 0 boundary-logits 0 snapshot 0 state 0 kv 0 OK
+PRIME-FOLD n=8139 b=8096 tail=43: fold_ok=true tapped 48/48 | hidden 0/41671680 final-logits 0 boundary-logits 0 snapshot 0 state 0 kv 0 OK
+PRIME-FOLD n=4171 b=4128 tail=43: fold_ok=true tapped 48/48 | hidden 0/21355520 final-logits 0 boundary-logits 0 snapshot 0 state 0 kv 0 OK
+PRIME-FOLD n=4396 b=4352 tail=44: fold_ok=true tapped 48/48 | hidden 0/22507520 final-logits 0 boundary-logits 0 snapshot 0 state 0 kv 0 OK
+PRIME-FOLD n=4176 b=4160 tail=16: fold_ok=true tapped 48/48 | hidden 0/21381120 final-logits 0 boundary-logits 0 snapshot 0 state 0 kv 0 OK
+PRIME-FOLD n=1000 b=960 tail=40: fold_ok=true tapped 48/48 | hidden 0/5120000 final-logits 0 boundary-logits 0 snapshot 0 state 0 kv 0 OK
+PRIME-FOLD n=8232 b=8160 tail=72: fold_ok=true tapped 48/48 | hidden 0/42147840 final-logits 0 boundary-logits 0 snapshot 0 state 0 kv 0 OK
+PRIME-FOLD n=8292 b=8192: the stop is a call boundary, fold_ok=false OK (refused)
+prime-fold-gate: 8 cases, 0 failed ALL GREEN
