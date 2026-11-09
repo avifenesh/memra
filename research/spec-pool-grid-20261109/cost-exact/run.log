@@ -1,0 +1,93 @@
+gpulock: 5090 leased as claude-code-20261109T161249-3051672 for 20m
+chat-exact-open base 0 1 0.1227 {}
+chat-exact-open base 0 2 0.1198 {'parked_end': [('64',)]}
+chat-exact-open base 0 3 0.2212 {'affinity': [('84', '137')]}
+chat-exact-open fix 0 1 0.1232 {}
+chat-exact-open fix 0 2 0.2159 {'grid_rewind': [('64', '32')]}
+chat-exact-open fix 0 3 0.2228 {'affinity': [('64', '137')]}
+chat-exact-open nopool 0 1 0.1229 {}
+chat-exact-open nopool 0 2 0.2223 {}
+chat-exact-open nopool 0 3 0.2229 {'prefix_hit': [('64', '137')]}
+chat-exact-open nopool 0 1 0.1225 {}
+chat-exact-open nopool 0 2 0.2216 {}
+chat-exact-open nopool 0 3 0.2226 {'prefix_hit': [('64', '137')]}
+chat-exact-open fix 0 1 0.1232 {}
+chat-exact-open fix 0 2 0.2159 {'grid_rewind': [('64', '32')]}
+chat-exact-open fix 0 3 0.2222 {'affinity': [('64', '137')]}
+chat-exact-open base 0 1 0.1221 {}
+chat-exact-open base 0 2 0.1197 {'parked_end': [('64',)]}
+chat-exact-open base 0 3 0.221 {'affinity': [('84', '137')]}
+chat-exact-open base 0 1 0.1235 {}
+chat-exact-open base 0 2 0.1198 {'parked_end': [('64',)]}
+chat-exact-open base 0 3 0.2206 {'affinity': [('84', '137')]}
+chat-exact-open fix 0 1 0.1219 {}
+chat-exact-open fix 0 2 0.2159 {'grid_rewind': [('64', '32')]}
+chat-exact-open fix 0 3 0.2215 {'affinity': [('64', '137')]}
+chat-exact-open nopool 0 1 0.1223 {}
+chat-exact-open nopool 0 2 0.2219 {}
+chat-exact-open nopool 0 3 0.2225 {'prefix_hit': [('64', '137')]}
+chat-exact-open nopool 0 1 0.1219 {}
+chat-exact-open nopool 0 2 0.2215 {}
+chat-exact-open nopool 0 3 0.2221 {'prefix_hit': [('64', '137')]}
+chat-exact-open fix 0 1 0.1229 {}
+chat-exact-open fix 0 2 0.2152 {'grid_rewind': [('64', '32')]}
+chat-exact-open fix 0 3 0.2217 {'affinity': [('64', '137')]}
+chat-exact-open base 0 1 0.1222 {}
+chat-exact-open base 0 2 0.1185 {'parked_end': [('64',)]}
+chat-exact-open base 0 3 0.2202 {'affinity': [('84', '137')]}
+{
+ "chat-exact-open/base/t1": {
+  "n": 4,
+  "ttft_median_s": 0.1225,
+  "ttft_min_s": 0.1221,
+  "ttft_max_s": 0.1235
+ },
+ "chat-exact-open/base/t2": {
+  "n": 4,
+  "ttft_median_s": 0.1197,
+  "ttft_min_s": 0.1185,
+  "ttft_max_s": 0.1198
+ },
+ "chat-exact-open/base/t3": {
+  "n": 4,
+  "ttft_median_s": 0.2208,
+  "ttft_min_s": 0.2202,
+  "ttft_max_s": 0.2212
+ },
+ "chat-exact-open/fix/t1": {
+  "n": 4,
+  "ttft_median_s": 0.123,
+  "ttft_min_s": 0.1219,
+  "ttft_max_s": 0.1232
+ },
+ "chat-exact-open/fix/t2": {
+  "n": 4,
+  "ttft_median_s": 0.2159,
+  "ttft_min_s": 0.2152,
+  "ttft_max_s": 0.2159
+ },
+ "chat-exact-open/fix/t3": {
+  "n": 4,
+  "ttft_median_s": 0.222,
+  "ttft_min_s": 0.2215,
+  "ttft_max_s": 0.2228
+ },
+ "chat-exact-open/nopool/t1": {
+  "n": 4,
+  "ttft_median_s": 0.1224,
+  "ttft_min_s": 0.1219,
+  "ttft_max_s": 0.1229
+ },
+ "chat-exact-open/nopool/t2": {
+  "n": 4,
+  "ttft_median_s": 0.2218,
+  "ttft_min_s": 0.2215,
+  "ttft_max_s": 0.2223
+ },
+ "chat-exact-open/nopool/t3": {
+  "n": 4,
+  "ttft_median_s": 0.2225,
+  "ttft_min_s": 0.2221,
+  "ttft_max_s": 0.2229
+ }
+}

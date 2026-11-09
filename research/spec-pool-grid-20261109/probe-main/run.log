@@ -1,0 +1,171 @@
+gpulock: 5090 leased as claude-code-20261109T145238-2484666 for 45m
+chat-short-nothink-256 1 stop 17 []
+chat-short-nothink-256 2 stop 69 ['[worker] spec-affinity: grew parked session 281 -> 389 rows (request-owned need)', '[worker] spec-affinity: rewound to 17 of 69 prompt tokens (fingerprint; priming 52 suffix; model q)']
+chat-short-nothink-256 3 stop 122 ['[worker] spec-affinity: grew parked session 389 -> 442 rows (request-owned need)', '[worker] spec-affinity: rewound to 49 of 122 prompt tokens (fingerprint; priming 73 suffix; model q)']
+chat-short-nothink-open 1 stop 17 ['[worker] spec-affinity: declined (history diverged at 17 of checkpoint 81; 1 parked, 17 prompt tokens; model q)']
+chat-short-nothink-open 2 stop 69 ['[worker] spec-reuse: 49 committed tokens resumed [sampler=equivalent] (model q)']
+chat-short-nothink-open 3 stop 122 ['[worker] spec-affinity: grew parked session 8192 -> 8256 rows (request-owned need)', '[worker] spec-affinity: rewound to 69 of 122 prompt tokens (fingerprint; priming 53 suffix; model q)']
+chat-short-think-open-reasoning 1 stop 57 ['[worker] spec-affinity: declined (history diverged at 1 of checkpoint 81; 2 parked, 57 prompt tokens; model q)', '[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 157.9MB / 800MB, model q)']
+chat-short-think-open-reasoning 2 stop 85 ['[worker] spec-affinity: grew parked session 1089 -> 1173 rows (request-owned need)', '[worker] spec-affinity: rewound to 32 of 85 prompt tokens (fingerprint; priming 53 suffix; model q)']
+chat-short-think-open-reasoning 3 stop 116 ['[worker] spec-affinity: grew parked session 1173 -> 1204 rows (request-owned need)', '[worker] spec-affinity: rewound to 64 of 116 prompt tokens (fingerprint; priming 52 suffix; model q)']
+chat-short-nothink-user 1 stop 17 ['[worker] spec-affinity: declined (history diverged at 17 of checkpoint 101; 2 parked, 17 prompt tokens; model q)']
+chat-short-nothink-user 2 stop 69 ['[worker] spec-affinity: grew parked session 281 -> 389 rows (request-owned need)', '[worker] spec-affinity: rewound to 17 of 69 prompt tokens (explicit; priming 52 suffix; model q)']
+chat-short-nothink-user 3 stop 122 ['[worker] spec-affinity: grew parked session 389 -> 442 rows (request-owned need)', '[worker] spec-affinity: rewound to 49 of 122 prompt tokens (explicit; priming 73 suffix; model q)']
+chat-mid-nothink-open 1 stop 30 ['[worker] spec-affinity: declined (history diverged at 1 of checkpoint 96; 2 parked, 30 prompt tokens; model q)']
+chat-mid-nothink-open 2 stop 306 ['[worker] spec-affinity: grew parked session 8192 -> 8256 rows (request-owned need)', '[worker] spec-affinity: rewound to 30 of 306 prompt tokens (fingerprint; priming 276 suffix; model q)']
+chat-mid-nothink-open 3 stop 583 ['[worker] spec-affinity: rewound to 286 of 583 prompt tokens (fingerprint; priming 297 suffix; model q)']
+raw-tmpl-short-open 1 stop 17 ['[worker] spec-affinity: declined (history diverged at 17 of checkpoint 81; 2 parked, 17 prompt tokens; model q)']
+raw-tmpl-short-open 2 stop 69 ['[worker] spec-reuse: 49 committed tokens resumed [sampler=equivalent] (model q)']
+raw-tmpl-short-open 3 stop 122 ['[worker] spec-affinity: grew parked session 8192 -> 8256 rows (request-owned need)', '[worker] spec-affinity: rewound to 69 of 122 prompt tokens (fingerprint; priming 53 suffix; model q)']
+raw-tmpl-short-256 1 stop 17 ['[worker] spec-affinity: declined (history diverged at 3 of checkpoint 542; 2 parked, 17 prompt tokens; model q)']
+raw-tmpl-short-256 2 stop 69 ['[worker] spec-affinity: grew parked session 281 -> 389 rows (request-owned need)', '[worker] spec-affinity: rewound to 17 of 69 prompt tokens (fingerprint; priming 52 suffix; model q)']
+raw-tmpl-short-256 3 stop 122 ['[worker] spec-affinity: grew parked session 389 -> 442 rows (request-owned need)', '[worker] spec-affinity: rewound to 49 of 122 prompt tokens (fingerprint; priming 73 suffix; model q)']
+raw-tmpl-short-desc 1 stop 17 ['[worker] spec-affinity: declined (history diverged at 17 of checkpoint 101; 2 parked, 17 prompt tokens; model q)']
+raw-tmpl-short-desc 2 stop 69 ['[worker] spec-reuse: 49 committed tokens resumed [sampler=equivalent] (model q)']
+raw-tmpl-short-desc 3 stop 122 ['[worker] spec-affinity: rewound to 69 of 122 prompt tokens (fingerprint; priming 53 suffix; model q)']
+raw-tmpl-mid-open 1 stop 30 ['[worker] spec-affinity: declined (history diverged at 3 of checkpoint 81; 2 parked, 30 prompt tokens; model q)']
+raw-tmpl-mid-open 2 stop 306 ['[worker] spec-affinity: grew parked session 8192 -> 8256 rows (request-owned need)', '[worker] spec-affinity: rewound to 30 of 306 prompt tokens (fingerprint; priming 276 suffix; model q)']
+raw-tmpl-mid-open 3 stop 583 ['[worker] spec-affinity: rewound to 286 of 583 prompt tokens (fingerprint; priming 297 suffix; model q)']
+raw-text-short-64 1 length 7 ['[worker] spec-affinity: declined (history diverged at 0 of checkpoint 101; 2 parked, 7 prompt tokens; model q)']
+raw-text-short-64 2 length 74 ['[worker] spec-affinity: declined (history diverged at 0 of checkpoint 542; 2 parked, 74 prompt tokens; model q)', ' prompt 74 tokens is off the 32-token prime grid and its aligned boundary 32 is under the 64 token entry floor; no entry published (model q)']
+raw-text-short-64 3 length 140 ['[worker] spec-affinity: declined (identity did not nominate; 2 parked, 140 prompt tokens; model q)', '[prefix-cache] insert (spec-boundary): 96 tokens, 159.9MB (resident 317.9MB / 800MB, model q)']
+chat-long-nothink-open 1 stop 973 ['[worker] spec-affinity: declined (history diverged at 0 of checkpoint 74; 2 parked, 973 prompt tokens; model q)', '[prefix-cache] insert (spec-boundary): 928 tokens, 186.2MB (resident 504.1MB / 800MB, model q)']
+chat-long-nothink-open 2 stop 1001 ['[prefix-cache] hit: 928 of 1001 prompt tokens from cache (model q)', '[prefix-cache] spec restore: 928 of 1001 prompt tokens + draft plane from cache [suffix queued] (model q)', '[prefix-cache] insert (spec-boundary): 960 tokens, 187.2MB (resident 691.3MB / 800MB, model q)']
+chat-long-nothink-open 3 stop 1032 ['[prefix-cache] hit: 960 of 1032 prompt tokens from cache (model q)', '[prefix-cache] spec restore: 960 of 1032 prompt tokens + draft plane from cache [suffix queued] (model q)', '[prefix-cache] insert (spec-boundary): 992 tokens, 188.2MB (resident 879.5MB / 800MB, model q)']
+raw-tmpl-long-open 1 stop 969 ['[worker] spec-affinity: declined (history diverged at 1 of checkpoint 960; 2 parked, 969 prompt tokens; model q)', '[prefix-cache] insert (spec-boundary): 928 tokens, 186.2MB (resident 907.7MB / 800MB, model q)']
+raw-tmpl-long-open 2 stop 997 ['[prefix-cache] hit: 928 of 997 prompt tokens from cache (model q)', '[prefix-cache] spec restore: 928 of 997 prompt tokens + draft plane from cache [suffix queued] (model q)', '[prefix-cache] insert (spec-boundary): 960 tokens, 187.2MB (resident 935.0MB / 800MB, model q)']
+raw-tmpl-long-open 3 stop 1028 ['[prefix-cache] hit: 960 of 1028 prompt tokens from cache (model q)', '[prefix-cache] spec restore: 960 of 1028 prompt tokens + draft plane from cache [suffix queued] (model q)', '[prefix-cache] insert (spec-boundary): 992 tokens, 188.2MB (resident 937.0MB / 800MB, model q)']
+{
+ "chat-short-nothink-256": {
+  "spec_pool": 0,
+  "spec_pool_text": 0,
+  "spec_affinity": 2,
+  "spec_affinity_declined": 0,
+  "spec_restore": 0,
+  "prefix_hit": 0,
+  "spec_refused": 0,
+  "grid_decline": 0,
+  "pool_evict": 0
+ },
+ "chat-short-nothink-open": {
+  "spec_pool": 1,
+  "spec_pool_text": 0,
+  "spec_affinity": 1,
+  "spec_affinity_declined": 1,
+  "spec_restore": 0,
+  "prefix_hit": 0,
+  "spec_refused": 0,
+  "grid_decline": 0,
+  "pool_evict": 0
+ },
+ "chat-short-think-open-reasoning": {
+  "spec_pool": 0,
+  "spec_pool_text": 0,
+  "spec_affinity": 2,
+  "spec_affinity_declined": 1,
+  "spec_restore": 0,
+  "prefix_hit": 0,
+  "spec_refused": 0,
+  "grid_decline": 0,
+  "pool_evict": 0
+ },
+ "chat-short-nothink-user": {
+  "spec_pool": 0,
+  "spec_pool_text": 0,
+  "spec_affinity": 2,
+  "spec_affinity_declined": 1,
+  "spec_restore": 0,
+  "prefix_hit": 0,
+  "spec_refused": 0,
+  "grid_decline": 0,
+  "pool_evict": 0
+ },
+ "chat-mid-nothink-open": {
+  "spec_pool": 0,
+  "spec_pool_text": 0,
+  "spec_affinity": 2,
+  "spec_affinity_declined": 1,
+  "spec_restore": 0,
+  "prefix_hit": 0,
+  "spec_refused": 0,
+  "grid_decline": 0,
+  "pool_evict": 0
+ },
+ "raw-tmpl-short-open": {
+  "spec_pool": 1,
+  "spec_pool_text": 0,
+  "spec_affinity": 1,
+  "spec_affinity_declined": 1,
+  "spec_restore": 0,
+  "prefix_hit": 0,
+  "spec_refused": 0,
+  "grid_decline": 0,
+  "pool_evict": 0
+ },
+ "raw-tmpl-short-256": {
+  "spec_pool": 0,
+  "spec_pool_text": 0,
+  "spec_affinity": 2,
+  "spec_affinity_declined": 1,
+  "spec_restore": 0,
+  "prefix_hit": 0,
+  "spec_refused": 0,
+  "grid_decline": 0,
+  "pool_evict": 0
+ },
+ "raw-tmpl-short-desc": {
+  "spec_pool": 1,
+  "spec_pool_text": 0,
+  "spec_affinity": 1,
+  "spec_affinity_declined": 1,
+  "spec_restore": 0,
+  "prefix_hit": 0,
+  "spec_refused": 0,
+  "grid_decline": 0,
+  "pool_evict": 0
+ },
+ "raw-tmpl-mid-open": {
+  "spec_pool": 0,
+  "spec_pool_text": 0,
+  "spec_affinity": 2,
+  "spec_affinity_declined": 1,
+  "spec_restore": 0,
+  "prefix_hit": 0,
+  "spec_refused": 0,
+  "grid_decline": 0,
+  "pool_evict": 0
+ },
+ "raw-text-short-64": {
+  "spec_pool": 0,
+  "spec_pool_text": 0,
+  "spec_affinity": 0,
+  "spec_affinity_declined": 3,
+  "spec_restore": 0,
+  "prefix_hit": 0,
+  "spec_refused": 0,
+  "grid_decline": 0,
+  "pool_evict": 0
+ },
+ "chat-long-nothink-open": {
+  "spec_pool": 0,
+  "spec_pool_text": 0,
+  "spec_affinity": 0,
+  "spec_affinity_declined": 1,
+  "spec_restore": 2,
+  "prefix_hit": 2,
+  "spec_refused": 0,
+  "grid_decline": 0,
+  "pool_evict": 0
+ },
+ "raw-tmpl-long-open": {
+  "spec_pool": 0,
+  "spec_pool_text": 0,
+  "spec_affinity": 0,
+  "spec_affinity_declined": 1,
+  "spec_restore": 2,
+  "prefix_hit": 2,
+  "spec_refused": 0,
+  "grid_decline": 0,
+  "pool_evict": 0
+ }
+}
