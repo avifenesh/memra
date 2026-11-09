@@ -2264,7 +2264,9 @@ conversation for no soundness gain (pinned by `seed_alone_does_not_refuse` in me
 `seed_alone_still_rekeys_the_draft_graph` in memra-engine). `/metrics` counts the refusals as
 `spec_pool_sampler_refusals`, a subset of `spec_pool_misses`; it answers whether real traffic
 changes sampler mid-session. Receipts: darklanes
-`research/spec-cache-20260818/SESSION-RESUME-PREDICATE.md`.
+`research/spec-cache-20260818/SESSION-RESUME-PREDICATE.md`. Since memra#1093 the Philox stream
+position no longer carries over: every pool resume starts the request's counters at (0, 0), as a
+cold session does (`research/spec-pool-grid-20261109/`).
 
 **Accounting:** every response shape carries OpenAI-schema usage with the worker-truth split —
 `usage.prompt_tokens`, `completion_tokens`, `total_tokens`, and
@@ -3358,9 +3360,36 @@ refusals and output unchanged, and with the held prefill-workspace charge undern
 Tried and dropped: evicting the arriving prompt's own rewound session last in the admission
 reclaim; on the agentic workload it never changed which session survived (the reclaim needed the
 memory either way).
-STILL OPEN (memra#1093): the spec pool resumes an exact extension on its parked stream (no cell
-has reached it at the default: the prefix cache's on-grid spec restore claims those turns first);
-the plain-affinity rewind primes a suffix of 1..15 rows token by token. That suffix stays: a
+
+**The MTP spec pool follows the same law since memra#1093 item 1.** A short chat reached it at the
+RTX 5090 default, from two tiers. The prefix cache publishes no entry for a prompt under the floor
+plus 16 tokens, so turn 2 of such a chat goes to the spec pool. A 17-token turn with `max_tokens`
+omitted parked at 49 committed rows, and the exact tier resumed the 69-token turn 2 there. A prompt
+too short for a stable boundary keeps the engine's prompt-end checkpoint, and the affinity tier
+rewound to it off the grid (17, 30, 49, 69, then 286 = 30 + 256 down the chain). On the base, a
+greedy turn rewound to 30 left the cold text (1,204 against 1,050 characters). Every sampled resume
+left it too, on-grid rewinds included: the resumed session kept the parked request's Philox
+counters, and a cold session starts at (0, 0). The law, for a recurrent trunk:
+- an exact or text hit rewinds to the session's turn checkpoint and primes the rest of the prompt
+  from there, when that checkpoint is on the grid, the prompt matches the committed tokens through
+  it, and at least `PRIME_MIN_T` rows remain to prime (`spec_pool_grid_refusal`,
+  `spec_pool_take_extension`); otherwise the request primes cold. A text hit that rewinds primes
+  the prompt's own tokens, not the re-tokenized remainder;
+- the affinity tier takes only such a checkpoint;
+- a retiring session with no on-grid checkpoint is freed, not parked;
+- every pool resume starts the request's Philox stream at (0, 0).
+
+Attention-only trunks resume where they stand, as before. Counters: `spec_pool_grid_rewinds`,
+`spec_pool_grid_declines`, `spec_pool_grid_park_skips`. Measured on the RTX 5090 at the device
+default (`research/spec-pool-grid-20261109/`): 22 of 22 three-turn pair cells byte-equal to cold
+(greedy, T=1 and penalized; chat, raw, thinking on, short, long and story shapes, the exact tier's
+on-grid rewind among them), against 12 of 22 that left the cold text on the base. The price is
+about +0.1 s TTFT on the turns the base resumed at the parked end (turn 2 of a short chat: 0.120 s
+to 0.216 s rewound, 0.222 s cold); turns that already rewound on the grid or restore from the
+prefix cache are unchanged.
+
+STILL OPEN (memra#1093): the plain-affinity rewind primes a suffix of 1..15 rows token by token
+(the spec-affinity tier now applies the prime floor to a recurrent trunk). That suffix stays: a
 batched prime under `PRIME_MIN_T` rows needs a GEMM dispatch below m = 16 and a conv call below
 `d_conv - 1` rows, and the cold prime folds such a tail into the range before it, so even a batched
 short call would be another program; the exact alternative, the prime floor, primes the whole turn
