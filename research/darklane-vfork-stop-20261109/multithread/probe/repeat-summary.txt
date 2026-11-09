@@ -1,0 +1,35 @@
+run 1 main-spawn-nocldstop         first_ack_ms=None counter pre=52 at_ack=None at_3s=2872 threads_3s={'main': 'D', '3043765': 'S'} sigstop_in_shdpnd_3s=True
+run 1 main-spawn-maskchld          first_ack_ms=None counter pre=46 at_ack=None at_3s=2840 threads_3s={'main': 'D', '3044150': 'S'} sigstop_in_shdpnd_3s=True
+run 1 two-block-nocldstop          first_ack_ms=7 counter pre=0 at_ack=0 at_3s=1502 threads_3s={'main': 'D', '3044318': 'S'} sigstop_in_shdpnd_3s=True
+run 1 two-block-nocldstop+tgkill   first_ack_ms=10 counter pre=0 at_ack=0 at_3s=0 threads_3s={'main': 'D', '3044626': 'T'} sigstop_in_shdpnd_3s=True
+run 1 main-spawn-nocldstop+tgkill  first_ack_ms=11 counter pre=47 at_ack=47 at_3s=47 threads_3s={'main': 'D', '3045131': 'T'} sigstop_in_shdpnd_3s=True
+run 1 single                       first_ack_ms=11 counter pre=0 at_ack=0 at_3s=0 threads_3s={'main': 'D'} sigstop_in_shdpnd_3s=True
+run 1 thread-spawn                 first_ack_ms=45 counter pre=35 at_ack=35 at_3s=35 threads_3s={'main': 'T', '3046749': 'T', '3046750': 'D'} sigstop_in_shdpnd_3s=False
+run 2 main-spawn-nocldstop         first_ack_ms=None counter pre=47 at_ack=None at_3s=2867 threads_3s={'main': 'D', '3047149': 'S'} sigstop_in_shdpnd_3s=True
+run 2 main-spawn-maskchld          first_ack_ms=None counter pre=45 at_ack=None at_3s=2885 threads_3s={'main': 'D', '3047458': 'S'} sigstop_in_shdpnd_3s=True
+run 2 two-block-nocldstop          first_ack_ms=8 counter pre=0 at_ack=0 at_3s=1458 threads_3s={'main': 'D', '3047798': 'S'} sigstop_in_shdpnd_3s=True
+run 2 two-block-nocldstop+tgkill   first_ack_ms=7 counter pre=0 at_ack=0 at_3s=0 threads_3s={'main': 'D', '3048151': 'T'} sigstop_in_shdpnd_3s=True
+run 2 main-spawn-nocldstop+tgkill  first_ack_ms=12 counter pre=48 at_ack=49 at_3s=49 threads_3s={'main': 'D', '3048985': 'T'} sigstop_in_shdpnd_3s=True
+run 2 single                       first_ack_ms=11 counter pre=0 at_ack=0 at_3s=0 threads_3s={'main': 'D'} sigstop_in_shdpnd_3s=True
+run 2 thread-spawn                 first_ack_ms=12 counter pre=23 at_ack=24 at_3s=24 threads_3s={'main': 'T', '3051121': 'T', '3051122': 'D'} sigstop_in_shdpnd_3s=False
+run 3 main-spawn-nocldstop         first_ack_ms=None counter pre=42 at_ack=None at_3s=2873 threads_3s={'main': 'D', '3051736': 'S'} sigstop_in_shdpnd_3s=True
+run 3 main-spawn-maskchld          first_ack_ms=None counter pre=48 at_ack=None at_3s=2887 threads_3s={'main': 'D', '3052201': 'S'} sigstop_in_shdpnd_3s=True
+run 3 two-block-nocldstop          first_ack_ms=9 counter pre=0 at_ack=0 at_3s=1463 threads_3s={'main': 'D', '3052865': 'S'} sigstop_in_shdpnd_3s=True
+run 3 two-block-nocldstop+tgkill   first_ack_ms=12 counter pre=0 at_ack=0 at_3s=0 threads_3s={'main': 'D', '3053241': 'T'} sigstop_in_shdpnd_3s=True
+run 3 main-spawn-nocldstop+tgkill  first_ack_ms=9 counter pre=43 at_ack=43 at_3s=43 threads_3s={'main': 'D', '3053759': 'T'} sigstop_in_shdpnd_3s=True
+run 3 single                       first_ack_ms=12 counter pre=0 at_ack=0 at_3s=0 threads_3s={'main': 'D'} sigstop_in_shdpnd_3s=True
+run 3 thread-spawn                 first_ack_ms=46 counter pre=33 at_ack=33 at_3s=33 threads_3s={'main': 'T', '3054430': 'T', '3054431': 'D'} sigstop_in_shdpnd_3s=False
+run 4 main-spawn-nocldstop         first_ack_ms=None counter pre=45 at_ack=None at_3s=2884 threads_3s={'main': 'D', '3054673': 'S'} sigstop_in_shdpnd_3s=True
+run 4 main-spawn-maskchld          first_ack_ms=None counter pre=53 at_ack=None at_3s=2884 threads_3s={'main': 'D', '3055435': 'S'} sigstop_in_shdpnd_3s=True
+run 4 two-block-nocldstop          first_ack_ms=9 counter pre=0 at_ack=0 at_3s=1471 threads_3s={'main': 'D', '3055782': 'S'} sigstop_in_shdpnd_3s=True
+run 4 two-block-nocldstop+tgkill   first_ack_ms=8 counter pre=0 at_ack=0 at_3s=0 threads_3s={'main': 'D', '3055985': 'T'} sigstop_in_shdpnd_3s=True
+run 4 main-spawn-nocldstop+tgkill  first_ack_ms=12 counter pre=52 at_ack=52 at_3s=52 threads_3s={'main': 'D', '3056182': 'T'} sigstop_in_shdpnd_3s=True
+run 4 single                       first_ack_ms=10 counter pre=0 at_ack=0 at_3s=0 threads_3s={'main': 'D'} sigstop_in_shdpnd_3s=True
+run 4 thread-spawn                 first_ack_ms=45 counter pre=35 at_ack=35 at_3s=35 threads_3s={'main': 'T', '3056811': 'T', '3056812': 'D'} sigstop_in_shdpnd_3s=False
+run 5 main-spawn-nocldstop         first_ack_ms=None counter pre=48 at_ack=None at_3s=2864 threads_3s={'main': 'D', '3057282': 'S'} sigstop_in_shdpnd_3s=True
+run 5 main-spawn-maskchld          first_ack_ms=None counter pre=47 at_ack=None at_3s=2857 threads_3s={'main': 'D', '3057473': 'S'} sigstop_in_shdpnd_3s=True
+run 5 two-block-nocldstop          first_ack_ms=12 counter pre=0 at_ack=0 at_3s=1468 threads_3s={'main': 'D', '3058333': 'S'} sigstop_in_shdpnd_3s=True
+run 5 two-block-nocldstop+tgkill   first_ack_ms=10 counter pre=0 at_ack=0 at_3s=0 threads_3s={'main': 'D', '3058790': 'T'} sigstop_in_shdpnd_3s=True
+run 5 main-spawn-nocldstop+tgkill  first_ack_ms=11 counter pre=49 at_ack=49 at_3s=49 threads_3s={'main': 'D', '3059156': 'T'} sigstop_in_shdpnd_3s=True
+run 5 single                       first_ack_ms=12 counter pre=0 at_ack=0 at_3s=0 threads_3s={'main': 'D'} sigstop_in_shdpnd_3s=True
+run 5 thread-spawn                 first_ack_ms=46 counter pre=35 at_ack=35 at_3s=35 threads_3s={'main': 'T', '3059739': 'T', '3059740': 'D'} sigstop_in_shdpnd_3s=False

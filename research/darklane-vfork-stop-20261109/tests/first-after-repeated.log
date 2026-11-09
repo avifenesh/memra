@@ -1,0 +1,18 @@
+start 2026-11-09T15:07:07+02:00 args: --lib -- --exact darklane::tests::repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown --nocapture
+warning: memra-engine@0.139.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src/lib.rs ($WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e)
+
+running 1 test
+[darklane] bg runner armed: cmd="while :; do sleep 0.01; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 3981937, fresh)
+launch: acknowledged after 8ms
+fresh stop acknowledged: acknowledged after 10ms
+first resume: acknowledged after 5ms
+fresh stop acknowledged: acknowledged after 10ms
+[darklane] owned process group terminated at shutdown
+test darklane::tests::repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1121 filtered out; finished in 0.05s
+
+exit 0 2026-11-09T15:07:08+02:00

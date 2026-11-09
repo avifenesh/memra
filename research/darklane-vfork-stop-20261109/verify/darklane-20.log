@@ -1,0 +1,722 @@
+warning: memra-engine@0.139.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running unittests src/lib.rs ($WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e)
+
+running 18 tests
+[darklane] bg runner armed: cmd="DARKLANE_TEST_VFORK_FIFO='$WORK/tmp/darklane-vfork-4050453/fifo' exec '$WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e' --exact darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec --nocapture > '$WORK/tmp/darklane-vfork-4050453/leader.log' 2>&1" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="while :; do sleep 0.01; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="n=$(cat $WORK/tmp/darklane-ckpt-4050453/counter 2>/dev/null || echo 0); trap 'echo $n > $WORK/tmp/darklane-ckpt-4050453/counter; exit 75' USR1; while :; do n=$((n+1)); echo $n > $WORK/tmp/darklane-ckpt-4050453/counter.live; sleep 0.005; done" mode=checkpoint poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="while :; do /bin/true; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="trap '' HUP TERM USR1; sleep 600 & echo $! > '$WORK/tmp/darklane-descendant-4050453-checkpoint/descendant'; trap - TERM; trap 'exit 75' USR1; wait" mode=checkpoint poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="echo $$ > '$WORK/tmp/darklane-exit-window-4050453-7/ready'; while test ! -f '$WORK/tmp/darklane-exit-window-4050453-7/release'; do sleep 0.005; done; exit 7" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="echo $$ > '$WORK/tmp/darklane-exit-window-4050453-0/ready'; while test ! -f '$WORK/tmp/darklane-exit-window-4050453-0/release'; do sleep 0.005; done; exit 0" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="trap '' HUP TERM USR1; sleep 600 & echo $! > '$WORK/tmp/darklane-descendant-4050453-normal/descendant'; trap - TERM; while test ! -f '$WORK/tmp/darklane-descendant-4050453-normal/release'; do sleep 0.005; done; exit 0" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="trap '' HUP TERM USR1; sleep 600 & echo $! > '$WORK/tmp/darklane-descendant-4050453-shutdown/descendant'; trap - TERM; wait" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 4050470, fresh)
+test darklane::tests::leader_thread_states_classify_the_stop ... ok
+[darklane] bg runner armed: cmd="while :; do :; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="true" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+owned checkpoint receipt dir=$WORK/tmp/darklane-expired-checkpoint-4050453
+[darklane] bg runner armed: cmd="trap '' HUP; sleep 600 & echo $! > '$WORK/tmp/darklane-leader-only-4050453/descendant'; wait" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="while :; do sleep 0.01; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+owned checkpoint descendant ready: acknowledged after 3ms
+[darklane] job launched (pid 4050483, fresh)
+launch: acknowledged after 10ms
+checkpoint leader exited without reaping: acknowledged after 5ms
+[darklane] job checkpointed (exit 75) — relaunches next valley
+[darklane] job launched (pid 4050484, fresh)
+launch: acknowledged after 27ms
+[darklane] job launched (pid 4050492, fresh)
+[darklane] job launched (pid 4050494, fresh)
+[darklane] job launched (pid 4050497, fresh)
+owned checkpoint descendant terminated: acknowledged after 3ms
+owned child ready: acknowledged after 13ms
+owned descendant ready: acknowledged after 18ms
+stop 1 acknowledged: acknowledged after 10ms
+[darklane] job launched (pid 4050501, fresh)
+owned descendant ready: acknowledged after 10ms
+User defined signal 1
+[darklane] job checkpointed (exit 75) — relaunches next valley
+test darklane::tests::expired_checkpoint_deadline_does_not_grant_descendant_term_grace ... ok
+[darklane] job launched (pid 4050506, fresh)
+owned child exited in stop window: acknowledged after 3ms
+[darklane] job launched (pid 4050509, fresh)
+owned descendant ready: acknowledged after 12ms
+owned child ready: acknowledged after 17ms
+fresh stop acknowledged: acknowledged after 11ms
+[darklane] bg runner armed: cmd="true" mode=stop poll=5ms vram_budget=1000MB (+2048MB serve headroom must stay free)
+resume 1: acknowledged after 7ms
+[darklane] job launched (pid 4050514, fresh)
+[darklane] job launched (pid 4050512, fresh)
+[darklane] job FAILED (exit status: 7) — not relaunching
+[darklane] REFUSED: vram budget 1000MB + serve headroom 2048MB > min free Some(2500)MB (fail-closed when unreadable); will retry next valley
+[darklane] job launched (pid 4050516, fresh)
+launch: acknowledged after 12ms
+owned descendant ready: acknowledged after 9ms
+real exit classified and reaped: acknowledged after 12ms
+[darklane] job COMPLETE (exit 0)
+launch: acknowledged after 14ms
+[darklane] job launched (pid 4050523, resume from checkpoint)
+first resume: acknowledged after 6ms
+test darklane::tests::failed_exit_between_wait_and_stop_is_failed_without_yield ... ok
+[darklane] bg runner armed: cmd="true" mode=stop poll=5ms vram_budget=1MB (+2048MB serve headroom must stay free)
+[darklane] REFUSED: vram budget 1MB + serve headroom 2048MB > min free NoneMB (fail-closed when unreadable); will retry next valley
+stop 2 acknowledged: acknowledged after 8ms
+owned child exited in stop window: acknowledged after 6ms
+acknowledged stop: acknowledged after 14ms
+owned group stopped: acknowledged after 15ms
+fresh stop acknowledged: acknowledged after 11ms
+[darklane] job COMPLETE (exit 0)
+[darklane] bg runner armed: cmd="true" mode=stop poll=5ms vram_budget=1000MB (+2048MB serve headroom must stay free)
+[darklane] job FAILED (signal: 9 (SIGKILL)) — not relaunching
+killed child reaped: acknowledged after 5ms
+[darklane] job launched (pid 4050531, fresh)
+[darklane] job launched (pid 4050529, fresh)
+real exit classified and reaped: acknowledged after 26ms
+test darklane::tests::a_busy_serve_route_is_not_a_valley ... ok
+test darklane::tests::valley_signal_reads_worker_truth ... ok
+test darklane::tests::normal_exit_between_wait_and_stop_is_done_without_yield ... ok
+launch: acknowledged after 15ms
+job running: acknowledged after 0ms
+test darklane::tests::killed_stopped_child_is_reaped_without_resume ... ok
+[darklane] owned process group terminated at shutdown
+test darklane::tests::checkpoint_mode_preempts_and_resumes_counter ... ok
+[darklane] job COMPLETE (exit 0)
+resume 2: acknowledged after 2ms
+[darklane] job FAILED (signal: 9 (SIGKILL)) — not relaunching
+[darklane] owned process group terminated at shutdown
+killed leader classified: acknowledged after 17ms
+remaining owned descendant terminated: acknowledged after 0ms
+test darklane::tests::repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown ... [darklane] bg runner armed: cmd=ok"
+exit 3" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+test darklane::tests::vram_budget_refused_when_it_does_not_fit_and_fail_closed ... ok
+the runner yields: acknowledged after 11ms
+yield to T, or to D parked in vfork: acknowledged after 3ms
+test darklane::tests::killing_only_yielded_leader_terminates_remaining_owned_group ... ok
+the runner resumes: acknowledged after 2ms
+resume: acknowledged after 0ms
+[darklane] job launched (pid 4050535, fresh)
+stop 3 acknowledged: acknowledged after 13ms
+[darklane] job FAILED (exit status: 3) — not relaunching
+resume 3: acknowledged after 5ms
+[darklane] owned process group terminated at shutdown
+job reaped: acknowledged after 0ms
+test darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown ... ok
+spawning thread waits in vfork on a child opening the FIFO: acknowledged after 57ms
+stop 4 acknowledged: acknowledged after 10ms
+resume 4: acknowledged after 4ms
+stop acknowledged with a thread parked in vfork: acknowledged after 8ms
+stop 5 acknowledged: acknowledged after 10ms
+resume 5: acknowledged after 4ms
+test darklane::tests::job_completion_and_failure_are_terminal ... ok
+stop 6 acknowledged: acknowledged after 10ms
+resume 6: acknowledged after 4ms
+[darklane] job checkpointed (exit 75) — relaunches next valley
+checkpoint group completion: acknowledged after 108ms
+TERM-ignoring owned descendant terminated: acknowledged after 0ms
+test darklane::tests::checkpoint_leader_exit_terminates_term_ignoring_descendant ... ok
+resumed, the vfork child back in its open: acknowledged after 14ms
+FIFO writer opened: acknowledged after 0ms
+stop 7 acknowledged: acknowledged after 10ms
+resume 7: acknowledged after 6ms
+stop 8 acknowledged: acknowledged after 9ms
+resume 8: acknowledged after 4ms
+[darklane] job COMPLETE (exit 0)
+leader completed: acknowledged after 24ms
+test darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec ... ok
+stop 9 acknowledged: acknowledged after 10ms
+resume 9: acknowledged after 6ms
+stop 10 acknowledged: acknowledged after 9ms
+resume 10: acknowledged after 6ms
+stop 11 acknowledged: acknowledged after 8ms
+resume 11: acknowledged after 6ms
+stop 12 acknowledged: acknowledged after 10ms
+resume 12: acknowledged after 2ms
+stop 13 acknowledged: acknowledged after 8ms
+resume 13: acknowledged after 6ms
+stop 14 acknowledged: acknowledged after 9ms
+resume 14: acknowledged after 4ms
+stop 15 acknowledged: acknowledged after 10ms
+resume 15: acknowledged after 6ms
+stop 16 acknowledged: acknowledged after 10ms
+resume 16: acknowledged after 2ms
+stop 17 acknowledged: acknowledged after 10ms
+resume 17: acknowledged after 6ms
+stop 18 acknowledged: acknowledged after 10ms
+resume 18: acknowledged after 4ms
+stop 19 acknowledged: acknowledged after 10ms
+resume 19: acknowledged after 4ms
+stop 20 acknowledged: acknowledged after 10ms
+resume 20: acknowledged after 6ms
+stop 21 acknowledged: acknowledged after 10ms
+resume 21: acknowledged after 4ms
+stop 22 acknowledged: acknowledged after 10ms
+resume 22: acknowledged after 6ms
+stop 23 acknowledged: acknowledged after 10ms
+resume 23: acknowledged after 4ms
+stop 24 acknowledged: acknowledged after 10ms
+resume 24: acknowledged after 4ms
+stop 25 acknowledged: acknowledged after 10ms
+resume 25: acknowledged after 4ms
+stop 26 acknowledged: acknowledged after 10ms
+resume 26: acknowledged after 4ms
+stop 27 acknowledged: acknowledged after 10ms
+resume 27: acknowledged after 4ms
+stop 28 acknowledged: acknowledged after 10ms
+resume 28: acknowledged after 4ms
+stop 29 acknowledged: acknowledged after 10ms
+resume 29: acknowledged after 2ms
+stop 30 acknowledged: acknowledged after 10ms
+resume 30: acknowledged after 6ms
+stop 31 acknowledged: acknowledged after 10ms
+resume 31: acknowledged after 4ms
+stop 32 acknowledged: acknowledged after 10ms
+resume 32: acknowledged after 6ms
+stop 33 acknowledged: acknowledged after 10ms
+resume 33: acknowledged after 4ms
+stop 34 acknowledged: acknowledged after 10ms
+resume 34: acknowledged after 4ms
+stop 35 acknowledged: acknowledged after 10ms
+resume 35: acknowledged after 6ms
+stop 36 acknowledged: acknowledged after 11ms
+resume 36: acknowledged after 6ms
+stop 37 acknowledged: acknowledged after 10ms
+resume 37: acknowledged after 4ms
+stop 38 acknowledged: acknowledged after 10ms
+resume 38: acknowledged after 6ms
+stop 39 acknowledged: acknowledged after 8ms
+resume 39: acknowledged after 4ms
+stop 40 acknowledged: acknowledged after 10ms
+resume 40: acknowledged after 6ms
+stop 41 acknowledged: acknowledged after 8ms
+resume 41: acknowledged after 6ms
+stop 42 acknowledged: acknowledged after 10ms
+resume 42: acknowledged after 4ms
+stop 43 acknowledged: acknowledged after 12ms
+resume 43: acknowledged after 6ms
+stop 44 acknowledged: acknowledged after 8ms
+resume 44: acknowledged after 6ms
+stop 45 acknowledged: acknowledged after 10ms
+resume 45: acknowledged after 4ms
+stop 46 acknowledged: acknowledged after 10ms
+resume 46: acknowledged after 4ms
+stop 47 acknowledged: acknowledged after 14ms
+resume 47: acknowledged after 4ms
+stop 48 acknowledged: acknowledged after 10ms
+resume 48: acknowledged after 4ms
+stop 49 acknowledged: acknowledged after 13ms
+resume 49: acknowledged after 4ms
+stop 50 acknowledged: acknowledged after 10ms
+resume 50: acknowledged after 6ms
+stop 51 acknowledged: acknowledged after 10ms
+resume 51: acknowledged after 4ms
+stop 52 acknowledged: acknowledged after 10ms
+resume 52: acknowledged after 4ms
+stop 53 acknowledged: acknowledged after 10ms
+resume 53: acknowledged after 7ms
+stop 54 acknowledged: acknowledged after 8ms
+resume 54: acknowledged after 6ms
+stop 55 acknowledged: acknowledged after 10ms
+resume 55: acknowledged after 4ms
+stop 56 acknowledged: acknowledged after 10ms
+resume 56: acknowledged after 6ms
+stop 57 acknowledged: acknowledged after 10ms
+resume 57: acknowledged after 2ms
+stop 58 acknowledged: acknowledged after 11ms
+resume 58: acknowledged after 4ms
+stop 59 acknowledged: acknowledged after 9ms
+resume 59: acknowledged after 6ms
+stop 60 acknowledged: acknowledged after 12ms
+resume 60: acknowledged after 4ms
+stop 61 acknowledged: acknowledged after 10ms
+resume 61: acknowledged after 6ms
+stop 62 acknowledged: acknowledged after 10ms
+resume 62: acknowledged after 4ms
+stop 63 acknowledged: acknowledged after 10ms
+resume 63: acknowledged after 4ms
+stop 64 acknowledged: acknowledged after 12ms
+resume 64: acknowledged after 2ms
+stop 65 acknowledged: acknowledged after 11ms
+resume 65: acknowledged after 4ms
+stop 66 acknowledged: acknowledged after 8ms
+resume 66: acknowledged after 6ms
+stop 67 acknowledged: acknowledged after 10ms
+resume 67: acknowledged after 4ms
+stop 68 acknowledged: acknowledged after 11ms
+resume 68: acknowledged after 4ms
+stop 69 acknowledged: acknowledged after 10ms
+resume 69: acknowledged after 6ms
+stop 70 acknowledged: acknowledged after 10ms
+resume 70: acknowledged after 2ms
+stop 71 acknowledged: acknowledged after 10ms
+resume 71: acknowledged after 4ms
+stop 72 acknowledged: acknowledged after 8ms
+resume 72: acknowledged after 6ms
+stop 73 acknowledged: acknowledged after 10ms
+resume 73: acknowledged after 2ms
+stop 74 acknowledged: acknowledged after 10ms
+resume 74: acknowledged after 6ms
+stop 75 acknowledged: acknowledged after 10ms
+resume 75: acknowledged after 4ms
+stop 76 acknowledged: acknowledged after 10ms
+resume 76: acknowledged after 4ms
+stop 77 acknowledged: acknowledged after 10ms
+resume 77: acknowledged after 6ms
+stop 78 acknowledged: acknowledged after 10ms
+resume 78: acknowledged after 7ms
+stop 79 acknowledged: acknowledged after 8ms
+resume 79: acknowledged after 4ms
+stop 80 acknowledged: acknowledged after 10ms
+resume 80: acknowledged after 8ms
+stop 81 acknowledged: acknowledged after 8ms
+resume 81: acknowledged after 4ms
+stop 82 acknowledged: acknowledged after 10ms
+resume 82: acknowledged after 4ms
+stop 83 acknowledged: acknowledged after 10ms
+resume 83: acknowledged after 4ms
+stop 84 acknowledged: acknowledged after 10ms
+resume 84: acknowledged after 6ms
+stop 85 acknowledged: acknowledged after 10ms
+resume 85: acknowledged after 4ms
+stop 86 acknowledged: acknowledged after 10ms
+resume 86: acknowledged after 4ms
+stop 87 acknowledged: acknowledged after 10ms
+resume 87: acknowledged after 4ms
+stop 88 acknowledged: acknowledged after 11ms
+resume 88: acknowledged after 4ms
+stop 89 acknowledged: acknowledged after 9ms
+resume 89: acknowledged after 8ms
+stop 90 acknowledged: acknowledged after 10ms
+resume 90: acknowledged after 4ms
+stop 91 acknowledged: acknowledged after 10ms
+resume 91: acknowledged after 6ms
+stop 92 acknowledged: acknowledged after 10ms
+resume 92: acknowledged after 3ms
+stop 93 acknowledged: acknowledged after 12ms
+resume 93: acknowledged after 7ms
+stop 94 acknowledged: acknowledged after 8ms
+resume 94: acknowledged after 4ms
+stop 95 acknowledged: acknowledged after 10ms
+resume 95: acknowledged after 6ms
+stop 96 acknowledged: acknowledged after 10ms
+resume 96: acknowledged after 4ms
+stop 97 acknowledged: acknowledged after 10ms
+resume 97: acknowledged after 6ms
+stop 98 acknowledged: acknowledged after 10ms
+resume 98: acknowledged after 2ms
+stop 99 acknowledged: acknowledged after 10ms
+resume 99: acknowledged after 4ms
+stop 100 acknowledged: acknowledged after 10ms
+resume 100: acknowledged after 2ms
+stop 101 acknowledged: acknowledged after 10ms
+resume 101: acknowledged after 6ms
+stop 102 acknowledged: acknowledged after 10ms
+resume 102: acknowledged after 4ms
+stop 103 acknowledged: acknowledged after 10ms
+resume 103: acknowledged after 4ms
+stop 104 acknowledged: acknowledged after 10ms
+resume 104: acknowledged after 6ms
+stop 105 acknowledged: acknowledged after 10ms
+resume 105: acknowledged after 6ms
+stop 106 acknowledged: acknowledged after 13ms
+resume 106: acknowledged after 4ms
+stop 107 acknowledged: acknowledged after 9ms
+resume 107: acknowledged after 6ms
+stop 108 acknowledged: acknowledged after 10ms
+resume 108: acknowledged after 4ms
+[darklane] job COMPLETE (exit 0)
+normal group completion: acknowledged after 2003ms
+stop 109 acknowledged: acknowledged after 10ms
+[darklane] owned process group terminated at shutdown
+TERM-ignoring owned descendant terminated: acknowledged after 0ms
+TERM-ignoring owned descendant terminated: acknowledged after 0ms
+test darklane::tests::normal_leader_exit_terminates_term_ignoring_descendant ... ok
+test darklane::tests::shutdown_terminates_descendant_after_leader_exits ... ok
+resume 109: acknowledged after 4ms
+stop 110 acknowledged: acknowledged after 10ms
+resume 110: acknowledged after 4ms
+stop 111 acknowledged: acknowledged after 10ms
+resume 111: acknowledged after 5ms
+stop 112 acknowledged: acknowledged after 10ms
+resume 112: acknowledged after 4ms
+stop 113 acknowledged: acknowledged after 10ms
+resume 113: acknowledged after 6ms
+stop 114 acknowledged: acknowledged after 10ms
+resume 114: acknowledged after 4ms
+stop 115 acknowledged: acknowledged after 10ms
+resume 115: acknowledged after 6ms
+stop 116 acknowledged: acknowledged after 8ms
+resume 116: acknowledged after 4ms
+stop 117 acknowledged: acknowledged after 10ms
+resume 117: acknowledged after 6ms
+stop 118 acknowledged: acknowledged after 9ms
+resume 118: acknowledged after 6ms
+stop 119 acknowledged: acknowledged after 10ms
+resume 119: acknowledged after 4ms
+stop 120 acknowledged: acknowledged after 10ms
+resume 120: acknowledged after 5ms
+stop 121 acknowledged: acknowledged after 10ms
+resume 121: acknowledged after 4ms
+stop 122 acknowledged: acknowledged after 9ms
+resume 122: acknowledged after 2ms
+stop 123 acknowledged: acknowledged after 10ms
+resume 123: acknowledged after 4ms
+stop 124 acknowledged: acknowledged after 9ms
+resume 124: acknowledged after 4ms
+stop 125 acknowledged: acknowledged after 10ms
+resume 125: acknowledged after 6ms
+stop 126 acknowledged: acknowledged after 8ms
+resume 126: acknowledged after 6ms
+stop 127 acknowledged: acknowledged after 10ms
+resume 127: acknowledged after 2ms
+stop 128 acknowledged: acknowledged after 10ms
+resume 128: acknowledged after 6ms
+stop 129 acknowledged: acknowledged after 10ms
+resume 129: acknowledged after 2ms
+stop 130 acknowledged: acknowledged after 10ms
+resume 130: acknowledged after 4ms
+stop 131 acknowledged: acknowledged after 10ms
+resume 131: acknowledged after 4ms
+stop 132 acknowledged: acknowledged after 11ms
+resume 132: acknowledged after 4ms
+stop 133 acknowledged: acknowledged after 10ms
+resume 133: acknowledged after 4ms
+stop 134 acknowledged: acknowledged after 10ms
+resume 134: acknowledged after 6ms
+stop 135 acknowledged: acknowledged after 9ms
+resume 135: acknowledged after 4ms
+stop 136 acknowledged: acknowledged after 10ms
+resume 136: acknowledged after 6ms
+stop 137 acknowledged: acknowledged after 10ms
+resume 137: acknowledged after 6ms
+stop 138 acknowledged: acknowledged after 8ms
+resume 138: acknowledged after 4ms
+stop 139 acknowledged: acknowledged after 10ms
+resume 139: acknowledged after 5ms
+stop 140 acknowledged: acknowledged after 12ms
+resume 140: acknowledged after 2ms
+stop 141 acknowledged: acknowledged after 10ms
+resume 141: acknowledged after 2ms
+stop 142 acknowledged: acknowledged after 10ms
+resume 142: acknowledged after 4ms
+stop 143 acknowledged: acknowledged after 10ms
+resume 143: acknowledged after 6ms
+stop 144 acknowledged: acknowledged after 10ms
+resume 144: acknowledged after 4ms
+stop 145 acknowledged: acknowledged after 10ms
+resume 145: acknowledged after 2ms
+stop 146 acknowledged: acknowledged after 10ms
+resume 146: acknowledged after 2ms
+stop 147 acknowledged: acknowledged after 10ms
+resume 147: acknowledged after 4ms
+stop 148 acknowledged: acknowledged after 10ms
+resume 148: acknowledged after 4ms
+stop 149 acknowledged: acknowledged after 10ms
+resume 149: acknowledged after 5ms
+stop 150 acknowledged: acknowledged after 10ms
+resume 150: acknowledged after 2ms
+stop 151 acknowledged: acknowledged after 10ms
+resume 151: acknowledged after 3ms
+stop 152 acknowledged: acknowledged after 10ms
+resume 152: acknowledged after 4ms
+stop 153 acknowledged: acknowledged after 11ms
+resume 153: acknowledged after 4ms
+stop 154 acknowledged: acknowledged after 10ms
+resume 154: acknowledged after 4ms
+stop 155 acknowledged: acknowledged after 10ms
+resume 155: acknowledged after 6ms
+stop 156 acknowledged: acknowledged after 10ms
+resume 156: acknowledged after 4ms
+stop 157 acknowledged: acknowledged after 10ms
+resume 157: acknowledged after 2ms
+stop 158 acknowledged: acknowledged after 10ms
+resume 158: acknowledged after 4ms
+stop 159 acknowledged: acknowledged after 10ms
+resume 159: acknowledged after 4ms
+stop 160 acknowledged: acknowledged after 10ms
+resume 160: acknowledged after 2ms
+stop 161 acknowledged: acknowledged after 10ms
+resume 161: acknowledged after 3ms
+stop 162 acknowledged: acknowledged after 8ms
+resume 162: acknowledged after 4ms
+stop 163 acknowledged: acknowledged after 10ms
+resume 163: acknowledged after 6ms
+stop 164 acknowledged: acknowledged after 15ms
+resume 164: acknowledged after 2ms
+stop 165 acknowledged: acknowledged after 10ms
+resume 165: acknowledged after 4ms
+stop 166 acknowledged: acknowledged after 10ms
+resume 166: acknowledged after 4ms
+stop 167 acknowledged: acknowledged after 10ms
+resume 167: acknowledged after 6ms
+stop 168 acknowledged: acknowledged after 10ms
+resume 168: acknowledged after 4ms
+stop 169 acknowledged: acknowledged after 10ms
+resume 169: acknowledged after 6ms
+stop 170 acknowledged: acknowledged after 8ms
+resume 170: acknowledged after 6ms
+stop 171 acknowledged: acknowledged after 10ms
+resume 171: acknowledged after 4ms
+stop 172 acknowledged: acknowledged after 10ms
+resume 172: acknowledged after 5ms
+stop 173 acknowledged: acknowledged after 10ms
+resume 173: acknowledged after 4ms
+stop 174 acknowledged: acknowledged after 8ms
+resume 174: acknowledged after 6ms
+stop 175 acknowledged: acknowledged after 10ms
+resume 175: acknowledged after 4ms
+stop 176 acknowledged: acknowledged after 10ms
+resume 176: acknowledged after 6ms
+stop 177 acknowledged: acknowledged after 10ms
+resume 177: acknowledged after 4ms
+stop 178 acknowledged: acknowledged after 10ms
+resume 178: acknowledged after 4ms
+stop 179 acknowledged: acknowledged after 10ms
+resume 179: acknowledged after 4ms
+stop 180 acknowledged: acknowledged after 10ms
+resume 180: acknowledged after 6ms
+stop 181 acknowledged: acknowledged after 10ms
+resume 181: acknowledged after 4ms
+stop 182 acknowledged: acknowledged after 10ms
+resume 182: acknowledged after 4ms
+stop 183 acknowledged: acknowledged after 10ms
+resume 183: acknowledged after 2ms
+stop 184 acknowledged: acknowledged after 12ms
+resume 184: acknowledged after 4ms
+stop 185 acknowledged: acknowledged after 10ms
+resume 185: acknowledged after 4ms
+stop 186 acknowledged: acknowledged after 10ms
+resume 186: acknowledged after 5ms
+stop 187 acknowledged: acknowledged after 10ms
+resume 187: acknowledged after 4ms
+stop 188 acknowledged: acknowledged after 10ms
+resume 188: acknowledged after 6ms
+stop 189 acknowledged: acknowledged after 10ms
+resume 189: acknowledged after 5ms
+stop 190 acknowledged: acknowledged after 10ms
+resume 190: acknowledged after 4ms
+stop 191 acknowledged: acknowledged after 10ms
+resume 191: acknowledged after 4ms
+stop 192 acknowledged: acknowledged after 10ms
+resume 192: acknowledged after 6ms
+stop 193 acknowledged: acknowledged after 8ms
+resume 193: acknowledged after 4ms
+stop 194 acknowledged: acknowledged after 10ms
+resume 194: acknowledged after 5ms
+stop 195 acknowledged: acknowledged after 10ms
+resume 195: acknowledged after 5ms
+stop 196 acknowledged: acknowledged after 10ms
+resume 196: acknowledged after 4ms
+stop 197 acknowledged: acknowledged after 10ms
+resume 197: acknowledged after 6ms
+stop 198 acknowledged: acknowledged after 10ms
+resume 198: acknowledged after 4ms
+stop 199 acknowledged: acknowledged after 10ms
+resume 199: acknowledged after 4ms
+stop 200 acknowledged: acknowledged after 10ms
+resume 200: acknowledged after 4ms
+stop 201 acknowledged: acknowledged after 10ms
+resume 201: acknowledged after 6ms
+stop 202 acknowledged: acknowledged after 10ms
+resume 202: acknowledged after 4ms
+stop 203 acknowledged: acknowledged after 10ms
+resume 203: acknowledged after 2ms
+stop 204 acknowledged: acknowledged after 10ms
+resume 204: acknowledged after 6ms
+stop 205 acknowledged: acknowledged after 8ms
+resume 205: acknowledged after 6ms
+stop 206 acknowledged: acknowledged after 10ms
+resume 206: acknowledged after 6ms
+stop 207 acknowledged: acknowledged after 10ms
+resume 207: acknowledged after 4ms
+stop 208 acknowledged: acknowledged after 10ms
+resume 208: acknowledged after 6ms
+stop 209 acknowledged: acknowledged after 8ms
+resume 209: acknowledged after 6ms
+stop 210 acknowledged: acknowledged after 10ms
+resume 210: acknowledged after 4ms
+stop 211 acknowledged: acknowledged after 10ms
+resume 211: acknowledged after 4ms
+stop 212 acknowledged: acknowledged after 10ms
+resume 212: acknowledged after 7ms
+stop 213 acknowledged: acknowledged after 8ms
+resume 213: acknowledged after 4ms
+stop 214 acknowledged: acknowledged after 10ms
+resume 214: acknowledged after 6ms
+stop 215 acknowledged: acknowledged after 10ms
+resume 215: acknowledged after 4ms
+stop 216 acknowledged: acknowledged after 10ms
+resume 216: acknowledged after 4ms
+stop 217 acknowledged: acknowledged after 10ms
+resume 217: acknowledged after 6ms
+stop 218 acknowledged: acknowledged after 10ms
+resume 218: acknowledged after 6ms
+stop 219 acknowledged: acknowledged after 10ms
+resume 219: acknowledged after 4ms
+stop 220 acknowledged: acknowledged after 10ms
+resume 220: acknowledged after 3ms
+stop 221 acknowledged: acknowledged after 8ms
+resume 221: acknowledged after 3ms
+stop 222 acknowledged: acknowledged after 8ms
+resume 222: acknowledged after 2ms
+stop 223 acknowledged: acknowledged after 10ms
+resume 223: acknowledged after 6ms
+stop 224 acknowledged: acknowledged after 10ms
+resume 224: acknowledged after 4ms
+stop 225 acknowledged: acknowledged after 10ms
+resume 225: acknowledged after 6ms
+stop 226 acknowledged: acknowledged after 12ms
+resume 226: acknowledged after 2ms
+stop 227 acknowledged: acknowledged after 10ms
+resume 227: acknowledged after 4ms
+stop 228 acknowledged: acknowledged after 11ms
+resume 228: acknowledged after 4ms
+stop 229 acknowledged: acknowledged after 10ms
+resume 229: acknowledged after 4ms
+stop 230 acknowledged: acknowledged after 10ms
+resume 230: acknowledged after 4ms
+stop 231 acknowledged: acknowledged after 8ms
+resume 231: acknowledged after 6ms
+stop 232 acknowledged: acknowledged after 10ms
+resume 232: acknowledged after 2ms
+stop 233 acknowledged: acknowledged after 10ms
+resume 233: acknowledged after 4ms
+stop 234 acknowledged: acknowledged after 10ms
+resume 234: acknowledged after 6ms
+stop 235 acknowledged: acknowledged after 10ms
+resume 235: acknowledged after 4ms
+stop 236 acknowledged: acknowledged after 10ms
+resume 236: acknowledged after 4ms
+stop 237 acknowledged: acknowledged after 10ms
+resume 237: acknowledged after 2ms
+stop 238 acknowledged: acknowledged after 10ms
+resume 238: acknowledged after 6ms
+stop 239 acknowledged: acknowledged after 10ms
+resume 239: acknowledged after 4ms
+stop 240 acknowledged: acknowledged after 10ms
+resume 240: acknowledged after 4ms
+stop 241 acknowledged: acknowledged after 10ms
+resume 241: acknowledged after 6ms
+stop 242 acknowledged: acknowledged after 8ms
+resume 242: acknowledged after 6ms
+stop 243 acknowledged: acknowledged after 10ms
+resume 243: acknowledged after 4ms
+stop 244 acknowledged: acknowledged after 10ms
+resume 244: acknowledged after 6ms
+stop 245 acknowledged: acknowledged after 9ms
+resume 245: acknowledged after 6ms
+stop 246 acknowledged: acknowledged after 10ms
+resume 246: acknowledged after 4ms
+stop 247 acknowledged: acknowledged after 10ms
+resume 247: acknowledged after 4ms
+stop 248 acknowledged: acknowledged after 10ms
+resume 248: acknowledged after 6ms
+stop 249 acknowledged: acknowledged after 10ms
+resume 249: acknowledged after 4ms
+stop 250 acknowledged: acknowledged after 10ms
+resume 250: acknowledged after 6ms
+stop 251 acknowledged: acknowledged after 10ms
+resume 251: acknowledged after 5ms
+stop 252 acknowledged: acknowledged after 8ms
+resume 252: acknowledged after 6ms
+stop 253 acknowledged: acknowledged after 10ms
+resume 253: acknowledged after 4ms
+stop 254 acknowledged: acknowledged after 10ms
+resume 254: acknowledged after 4ms
+stop 255 acknowledged: acknowledged after 11ms
+resume 255: acknowledged after 4ms
+stop 256 acknowledged: acknowledged after 10ms
+resume 256: acknowledged after 4ms
+stop 257 acknowledged: acknowledged after 10ms
+resume 257: acknowledged after 4ms
+stop 258 acknowledged: acknowledged after 10ms
+resume 258: acknowledged after 6ms
+stop 259 acknowledged: acknowledged after 10ms
+resume 259: acknowledged after 4ms
+stop 260 acknowledged: acknowledged after 10ms
+resume 260: acknowledged after 6ms
+stop 261 acknowledged: acknowledged after 10ms
+resume 261: acknowledged after 4ms
+stop 262 acknowledged: acknowledged after 10ms
+resume 262: acknowledged after 4ms
+stop 263 acknowledged: acknowledged after 10ms
+resume 263: acknowledged after 6ms
+stop 264 acknowledged: acknowledged after 10ms
+resume 264: acknowledged after 4ms
+stop 265 acknowledged: acknowledged after 10ms
+resume 265: acknowledged after 2ms
+stop 266 acknowledged: acknowledged after 10ms
+resume 266: acknowledged after 6ms
+stop 267 acknowledged: acknowledged after 10ms
+resume 267: acknowledged after 4ms
+stop 268 acknowledged: acknowledged after 10ms
+resume 268: acknowledged after 4ms
+stop 269 acknowledged: acknowledged after 10ms
+resume 269: acknowledged after 6ms
+stop 270 acknowledged: acknowledged after 10ms
+resume 270: acknowledged after 4ms
+stop 271 acknowledged: acknowledged after 10ms
+resume 271: acknowledged after 2ms
+stop 272 acknowledged: acknowledged after 10ms
+resume 272: acknowledged after 7ms
+stop 273 acknowledged: acknowledged after 8ms
+resume 273: acknowledged after 5ms
+stop 274 acknowledged: acknowledged after 10ms
+resume 274: acknowledged after 4ms
+stop 275 acknowledged: acknowledged after 10ms
+resume 275: acknowledged after 2ms
+stop 276 acknowledged: acknowledged after 10ms
+resume 276: acknowledged after 6ms
+stop 277 acknowledged: acknowledged after 9ms
+resume 277: acknowledged after 4ms
+stop 278 acknowledged: acknowledged after 10ms
+resume 278: acknowledged after 6ms
+stop 279 acknowledged: acknowledged after 10ms
+resume 279: acknowledged after 4ms
+stop 280 acknowledged: acknowledged after 10ms
+resume 280: acknowledged after 4ms
+stop 281 acknowledged: acknowledged after 10ms
+resume 281: acknowledged after 6ms
+stop 282 acknowledged: acknowledged after 10ms
+resume 282: acknowledged after 4ms
+stop 283 acknowledged: acknowledged after 10ms
+resume 283: acknowledged after 6ms
+stop 284 acknowledged: acknowledged after 8ms
+resume 284: acknowledged after 6ms
+stop 285 acknowledged: acknowledged after 10ms
+resume 285: acknowledged after 6ms
+stop 286 acknowledged: acknowledged after 10ms
+resume 286: acknowledged after 2ms
+stop 287 acknowledged: acknowledged after 10ms
+resume 287: acknowledged after 6ms
+stop 288 acknowledged: acknowledged after 8ms
+resume 288: acknowledged after 6ms
+stop 289 acknowledged: acknowledged after 10ms
+resume 289: acknowledged after 2ms
+stop 290 acknowledged: acknowledged after 10ms
+resume 290: acknowledged after 4ms
+stop 291 acknowledged: acknowledged after 10ms
+resume 291: acknowledged after 6ms
+stop 292 acknowledged: acknowledged after 8ms
+resume 292: acknowledged after 6ms
+stop 293 acknowledged: acknowledged after 10ms
+resume 293: acknowledged after 2ms
+stop 294 acknowledged: acknowledged after 10ms
+resume 294: acknowledged after 6ms
+stop 295 acknowledged: acknowledged after 10ms
+resume 295: acknowledged after 4ms
+stop 296 acknowledged: acknowledged after 10ms
+resume 296: acknowledged after 4ms
+stop 297 acknowledged: acknowledged after 10ms
+resume 297: acknowledged after 6ms
+stop 298 acknowledged: acknowledged after 10ms
+resume 298: acknowledged after 4ms
+stop 299 acknowledged: acknowledged after 9ms
+resume 299: acknowledged after 6ms
+stop 300 acknowledged: acknowledged after 10ms
+resume 300: acknowledged after 5ms
+stops acknowledged with the leader parked in vfork: 107 of 300
+[darklane] owned process group terminated at shutdown
+test darklane::tests::stop_resume_cycles_on_a_constantly_spawning_shell_job ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 1111 filtered out; finished in 5.70s

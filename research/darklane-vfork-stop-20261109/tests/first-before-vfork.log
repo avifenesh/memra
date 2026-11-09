@@ -1,0 +1,28 @@
+start 2026-11-09T15:00:26+02:00 args: --lib -- --exact darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec --nocapture
+warning: memra-engine@0.139.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+   Compiling memra-server v0.139.0 ($WORK/src-darklane/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.10s
+     Running unittests src/lib.rs ($WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e)
+
+running 1 test
+[darklane] bg runner armed: cmd="DARKLANE_TEST_VFORK_FIFO='$WORK/tmp/darklane-vfork-3975767/fifo' exec '$WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e' --exact darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec --nocapture > '$WORK/tmp/darklane-vfork-3975767/leader.log' 2>&1" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 3975770, fresh)
+launch: acknowledged after 10ms
+spawning thread waits in vfork on a child opening the FIFO: acknowledged after 59ms
+
+thread 'darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec' (3975768) panicked at crates/memra-server/src/darklane.rs:775:9:
+no acknowledgement within the 30 s guard: stop acknowledged with a thread parked in vfork
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+owned runner assertion failed: state=running pid=3975770 child_state=Some('T') yields=0 resumes=0
+[darklane] owned process group terminated at shutdown
+test darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec ... FAILED
+
+failures:
+
+failures:
+    darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1120 filtered out; finished in 32.08s
+
+error: test failed, to rerun pass `-p memra-server --lib`
+exit 101 2026-11-09T15:01:10+02:00

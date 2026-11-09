@@ -1,0 +1,26 @@
+start 2026-11-09T15:01:10+02:00 args: --lib -- --exact darklane::tests::stop_resume_cycles_on_a_constantly_spawning_shell_job --ignored --nocapture
+warning: memra-engine@0.139.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/lib.rs ($WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e)
+
+running 1 test
+[darklane] bg runner armed: cmd="while :; do /bin/true; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 3975938, fresh)
+launch: acknowledged after 10ms
+
+thread 'darklane::tests::stop_resume_cycles_on_a_constantly_spawning_shell_job' (3975936) panicked at crates/memra-server/src/darklane.rs:775:9:
+no acknowledgement within the 30 s guard: stop 1 acknowledged
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+owned runner assertion failed: state=running pid=3975938 child_state=Some('D') yields=0 resumes=0
+[darklane] owned process group terminated at shutdown
+test darklane::tests::stop_resume_cycles_on_a_constantly_spawning_shell_job ... FAILED
+
+failures:
+
+failures:
+    darklane::tests::stop_resume_cycles_on_a_constantly_spawning_shell_job
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1120 filtered out; finished in 30.03s
+
+error: test failed, to rerun pass `-p memra-server --lib`
+exit 101 2026-11-09T15:01:40+02:00

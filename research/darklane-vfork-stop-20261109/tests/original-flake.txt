@@ -1,0 +1,13 @@
+test darklane::tests::repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown ... FAILED
+
+failures:
+
+---- darklane::tests::repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown stdout ----
+[darklane] bg runner armed: cmd="while :; do sleep 0.01; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 2111591, fresh)
+launch: acknowledged after 8ms
+fresh stop acknowledged: acknowledged after 10ms
+first resume: acknowledged after 2ms
+
+thread 'darklane::tests::repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown' (2111588) panicked at crates/memra-server/src/darklane.rs:712:9:
+no acknowledgement within the 30 s guard: fresh stop acknowledged

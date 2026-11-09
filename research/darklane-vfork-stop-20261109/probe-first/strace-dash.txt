@@ -1,0 +1,6 @@
+3945615 execve("/usr/bin/sh", ["sh", "-c", "sleep 0.001; true"], 0x7fff00e5a9d0 /* 19 vars */) = 0
+3945615 vfork( <unfinished ...>
+3945616 execve("/usr/bin/sleep", ["sleep", "0.001"], 0x5e7abf3f1600 /* 19 vars */ <unfinished ...>
+3945615 <... vfork resumed>)            = 3945616
+3945616 <... execve resumed>)           = 0
+3945615 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3945616, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---

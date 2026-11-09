@@ -1,0 +1,144 @@
+warning: memra-engine@0.139.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+   Compiling memra-server v0.139.0 ($WORK/src-darklane/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.53s
+     Running unittests src/lib.rs ($WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e)
+
+running 17 tests
+[darklane] bg runner armed: cmd="n=$(cat $WORK/tmp/darklane-ckpt-69632/counter 2>/dev/null || echo 0); trap 'echo $n > $WORK/tmp/darklane-ckpt-69632/counter; exit 75' USR1; while :; do n=$((n+1)); echo $n > $WORK/tmp/darklane-ckpt-69632/counter.live; sleep 0.005; done" mode=checkpoint poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="true" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="trap '' HUP TERM USR1; sleep 600 & echo $! > '$WORK/tmp/darklane-descendant-69632-checkpoint/descendant'; trap - TERM; trap 'exit 75' USR1; wait" mode=checkpoint poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+owned checkpoint receipt dir=$WORK/tmp/darklane-expired-checkpoint-69632
+[darklane] bg runner armed: cmd="while :; do :; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="echo $$ > '$WORK/tmp/darklane-exit-window-69632-7/ready'; while test ! -f '$WORK/tmp/darklane-exit-window-69632-7/release'; do sleep 0.005; done; exit 7" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="trap '' HUP; sleep 600 & echo $! > '$WORK/tmp/darklane-leader-only-69632/descendant'; wait" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="echo $$ > '$WORK/tmp/darklane-exit-window-69632-0/ready'; while test ! -f '$WORK/tmp/darklane-exit-window-69632-0/release'; do sleep 0.005; done; exit 0" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 69653, fresh)
+[darklane] job launched (pid 69649, fresh)
+[darklane] bg runner armed: cmd="while :; do sleep 0.01; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+owned checkpoint descendant ready: acknowledged after 0ms
+[darklane] job launched (pid 69658, fresh)
+[darklane] bg runner armed: cmd="trap '' HUP TERM USR1; sleep 600 & echo $! > '$WORK/tmp/darklane-descendant-69632-normal/descendant'; trap - TERM; while test ! -f '$WORK/tmp/darklane-descendant-69632-normal/release'; do sleep 0.005; done; exit 0" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 69659, fresh)
+[darklane] bg runner armed: cmd="launch: acknowledged after 8ms
+trap '' HUP TERM USR1; sleep 600 & echo $! > '$WORK/tmp/darklane-descendant-69632-shutdown/descendant'; trap - TERM; wait" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+owned child ready: acknowledged after 8ms
+[darklane] job launched (pid 69665, fresh)
+[darklane] job launched (pid 69667, fresh)
+owned descendant ready: acknowledged after 10ms
+[darklane] bg runner armed: cmd="while :; do sleep 0.01; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 69670, fresh)
+owned descendant ready: acknowledged after 7ms
+[darklane] job launched (pid 69677, fresh)
+[darklane] job launched (pid 69674, fresh)
+[darklane] bg runner armed: cmd="while :; do /bin/true; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] bg runner armed: cmd="DARKLANE_TEST_VFORK_FIFO='$WORK/tmp/darklane-vfork-69632/fifo' exec '$WORK/target-darklane/debug/deps/memra_server-f27782b113e9075e' --exact darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec --nocapture > '$WORK/tmp/darklane-vfork-69632/leader.log' 2>&1" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+launch: acknowledged after 4ms
+checkpoint leader exited without reaping: acknowledged after 5ms
+[darklane] job checkpointed (exit 75) — relaunches next valley
+[darklane] job launched (pid 69680, fresh)
+owned descendant ready: acknowledged after 4ms
+owned child ready: acknowledged after 7ms
+[darklane] job launched (pid 69685, fresh)
+[darklane] job COMPLETE (exit 0)
+owned checkpoint descendant terminated: acknowledged after 2ms
+owned descendant ready: acknowledged after 6ms
+owned child exited in stop window: acknowledged after 2ms
+test darklane::tests::expired_checkpoint_deadline_does_not_grant_descendant_term_grace ... ok
+[darklane] job launched (pid 69689, fresh)
+[darklane] bg runner armed: cmd="true" mode=stop poll=5ms vram_budget=1000MB (+2048MB serve headroom must stay free)
+[darklane] REFUSED: vram budget 1000MB + serve headroom 2048MB > min free Some(2500)MB (fail-closed when unreadable); will retry next valley
+launch: acknowledged after 4ms
+launch: acknowledged after 4ms
+acknowledged stop: acknowledged after 9ms
+owned child exited in stop window: acknowledged after 2ms
+[darklane] job FAILED (exit status: 7) — not relaunching
+[darklane] bg runner armed: cmd="true" mode=stop poll=5ms vram_budget=1MB (+2048MB serve headroom must stay free)
+[darklane] REFUSED: vram budget 1MB + serve headroom 2048MB > min free NoneMB (fail-closed when unreadable); will retry next valley
+real exit classified and reaped: acknowledged after 12ms
+owned group stopped: acknowledged after 10ms
+[darklane] job FAILED (signal: 9 (SIGKILL)) — not relaunching
+User defined signal 1
+fresh stop acknowledged: acknowledged after 10ms
+killed child reaped: acknowledged after 4ms
+[darklane] job checkpointed (exit 75) — relaunches next valley
+[darklane] job COMPLETE (exit 0)
+stop 1 acknowledged: acknowledged after 8ms
+real exit classified and reaped: acknowledged after 10ms
+test darklane::tests::failed_exit_between_wait_and_stop_is_failed_without_yield ... ok
+[darklane] bg runner armed: cmd="true" mode=stop poll=5ms vram_budget=1000MB (+2048MB serve headroom must stay free)
+first resume: acknowledged after 6ms
+test darklane::tests::killed_stopped_child_is_reaped_without_resume ... ok
+[darklane] job launched (pid 69722, fresh)
+test darklane::tests::normal_exit_between_wait_and_stop_is_done_without_yield ... ok
+[darklane] job launched (pid 69723, resume from checkpoint)
+resume 1: acknowledged after 7ms
+[darklane] job FAILED (signal: 9 (SIGKILL)) — not relaunching
+killed leader classified: acknowledged after 14ms
+remaining owned descendant terminated: acknowledged after 0ms
+[darklane] job COMPLETE (exit 0)
+fresh stop acknowledged: acknowledged after 8ms
+test darklane::tests::killing_only_yielded_leader_terminates_remaining_owned_group ... ok
+test darklane::tests::vram_budget_refused_when_it_does_not_fit_and_fail_closed ... ok
+test darklane::tests::valley_signal_reads_worker_truth ... ok
+stop 2 acknowledged: acknowledged after 10ms
+[darklane] bg runner armed: cmd="exit 3" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 69753, fresh)
+resume 2: acknowledged after 4ms
+[darklane] job launched (pid 69755, fresh)
+[darklane] owned process group terminated at shutdown
+launch: acknowledged after 6ms
+test darklane::tests::checkpoint_mode_preempts_and_resumes_counter ... job running: acknowledged after 0ms
+ok
+[darklane] owned process group terminated at shutdown
+test darklane::tests::repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown ... ok
+[darklane] job FAILED (exit status: 3) — not relaunching
+stop 3 acknowledged: acknowledged after 10ms
+the runner yields: acknowledged after 10ms
+yield to T, or to D parked in vfork: acknowledged after 0ms
+spawning thread waits in vfork on a child opening the FIFO: acknowledged after 43ms
+test darklane::tests::a_busy_serve_route_is_not_a_valley ... ok
+the runner resumes: acknowledged after 4ms
+resume 3: acknowledged after 6ms
+resume: acknowledged after 2ms
+stop 4 acknowledged: acknowledged after 10ms
+[darklane] owned process group terminated at shutdown
+job reaped: acknowledged after 0ms
+test darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown ... ok
+resume 4: acknowledged after 4ms
+test darklane::tests::job_completion_and_failure_are_terminal ... ok
+stop 5 acknowledged: acknowledged after 10ms
+resume 5: acknowledged after 4ms
+[darklane] job checkpointed (exit 75) — relaunches next valley
+checkpoint group completion: acknowledged after 103ms
+TERM-ignoring owned descendant terminated: acknowledged after 0ms
+test darklane::tests::checkpoint_leader_exit_terminates_term_ignoring_descendant ... ok
+[darklane] owned process group terminated at shutdown
+TERM-ignoring owned descendant terminated: acknowledged after 2ms
+test darklane::tests::shutdown_terminates_descendant_after_leader_exits ... ok
+[darklane] job COMPLETE (exit 0)
+normal group completion: acknowledged after 2009ms
+TERM-ignoring owned descendant terminated: acknowledged after 0ms
+test darklane::tests::normal_leader_exit_terminates_term_ignoring_descendant ... ok
+
+thread 'darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec' (69668) panicked at crates/memra-server/src/darklane.rs:775:9:
+no acknowledgement within the 30 s guard: stop acknowledged with a thread parked in vfork
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+owned runner assertion failed: state=running pid=69689 child_state=Some('T') yields=0 resumes=0
+
+thread 'darklane::tests::stop_resume_cycles_on_a_constantly_spawning_shell_job' (69675) panicked at crates/memra-server/src/darklane.rs:775:9:
+no acknowledgement within the 30 s guard: stop 6 acknowledged
+owned runner assertion failed: state=running pid=69685 child_state=Some('D') yields=5 resumes=5
+[darklane] owned process group terminated at shutdown
+test darklane::tests::stop_resume_cycles_on_a_constantly_spawning_shell_job ... FAILED
+[darklane] owned process group terminated at shutdown
+test darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec ... FAILED
+
+failures:
+
+failures:
+    darklane::tests::stop_acknowledges_a_leader_parked_in_vfork_on_a_child_stopped_before_exec
+    darklane::tests::stop_resume_cycles_on_a_constantly_spawning_shell_job
+
+test result: FAILED. 15 passed; 2 failed; 0 ignored; 0 measured; 1111 filtered out; finished in 32.06s
+
+error: test failed, to rerun pass `-p memra-server --lib`
