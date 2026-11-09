@@ -1,0 +1,38 @@
+kernel-check rc=0 ALL GREEN (127 cells, 5 skipped)
+GATED-RMSNORM-E4M3V2 T=300: f32=0 e4m3+scales=0 (f32 skipped: 0) OK
+GATED-RMSNORM-E4M3V2 T=1024: f32=0 e4m3+scales=0 (f32 skipped: 0) OK
+sdpa_naive_w_lo[longctx Tkv=16392 win=2048]: legacy_launch=FAILS(expected) clipped_maxdiff=4.19e-9 OK
+sdpa_naive_gmem[longctx Tkv=16392]: legacy_launch=FAILS(expected) gmem_maxdiff=4.19e-9 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set, K4/K5 pair: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic off, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=6 broadcast, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set, fused K4+K5, K2 64-row: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set, K4/K5 pair: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic off, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=6 broadcast, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set, fused K4+K5, K2 64-row: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=2 compact, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=2 compact, traffic set, K4/K5 pair: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=2 compact, traffic off, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=6 broadcast, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=2 compact, traffic set, fused K4+K5, K2 64-row: out bitdiff=0 state bitdiff=0 OK
+GDN-K45-NORM T=300 H=48 hk=16: route=true e4m3+scales bitdiff=0 state bitdiff=0 over the seeded run and two pre-filled buffers (zero groups 1) OK
+GDN-K45-NORM T= 64 H=48 hk=16: route=true e4m3+scales bitdiff=0 state bitdiff=0 over the seeded run and two pre-filled buffers (zero groups 1) OK
+GDN-K45-NORM T= 20 H=48 hk=16: route=true e4m3+scales bitdiff=0 state bitdiff=0 over the seeded run and two pre-filled buffers (zero groups 1) OK
+argmax rc=0   SUMMARY flips=0 bad=0   PRIME-SUMMARY prime=MATCH   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+run-spec rc=0   acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)   acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS ===
+prime logits q27 600 B rc=0 pp-only MEDIAN: 16219 tok in 10.1538s = 1597.3 tok/s (pp16219, 1 reps) d1b258408a4030bd
+prime logits q27 600 C rc=0 pp-only MEDIAN: 16219 tok in 9.9839s = 1624.5 tok/s (pp16219, 1 reps) d1b258408a4030bd
+prime logits q27 600 B vs C: IDENTICAL
+prime logits q27 1240 B rc=0 pp-only MEDIAN: 33890 tok in 22.9800s = 1474.8 tok/s (pp33890, 1 reps) 758739bef255cb95
+prime logits q27 1240 C rc=0 pp-only MEDIAN: 33890 tok in 22.7145s = 1492.0 tok/s (pp33890, 1 reps) 758739bef255cb95
+prime logits q27 1240 B vs C: IDENTICAL
+prime logits ornith 600 B rc=0 pp-only MEDIAN: 16219 tok in 4.8378s = 3352.6 tok/s (pp16219, 1 reps) 0815dcad67b4967d
+prime logits ornith 600 C rc=0 pp-only MEDIAN: 16219 tok in 4.7957s = 3382.0 tok/s (pp16219, 1 reps) 0815dcad67b4967d
+prime logits ornith 600 B vs C: IDENTICAL
+prime logits q9 600 B rc=0 pp-only MEDIAN: 16219 tok in 3.9861s = 4068.9 tok/s (pp16219, 1 reps) cb1299ae9489836e
+prime logits q9 600 C rc=0 pp-only MEDIAN: 16219 tok in 3.9751s = 4080.1 tok/s (pp16219, 1 reps) cb1299ae9489836e
+prime logits q9 600 B vs C: IDENTICAL
+GATES-GN-DONE
