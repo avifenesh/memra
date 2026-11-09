@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "wrapper_pid": 3587516,
+  "child_pid": 3587521,
+  "requested_uuids": [
+    "GPU-c2a4ccee-d2dd-56e8-4ea1-cc31f0190fed"
+  ],
+  "lock_order": [
+    "GPU-c2a4ccee-d2dd-56e8-4ea1-cc31f0190fed"
+  ],
+  "lock_files": {
+    "GPU-c2a4ccee-d2dd-56e8-4ea1-cc31f0190fed": "/tmp/memra-gpu-locks/GPU-c2a4ccee-d2dd-56e8-4ea1-cc31f0190fed.lock"
+  },
+  "lock_inodes": {
+    "GPU-c2a4ccee-d2dd-56e8-4ea1-cc31f0190fed": {
+      "inode": 253918,
+      "device_major": 0,
+      "device_minor": 47
+    }
+  },
+  "box_lock": "/mnt/Data/work/evals/gpu1.lock",
+  "devices": [
+    {
+      "index": 1,
+      "uuid": "GPU-c2a4ccee-d2dd-56e8-4ea1-cc31f0190fed",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:21:00.0"
+    }
+  ],
+  "all_devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-f8021f32-a83b-fa33-7ef6-03e0698a4e3b",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:01:00.0"
+    },
+    {
+      "index": 1,
+      "uuid": "GPU-c2a4ccee-d2dd-56e8-4ea1-cc31f0190fed",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:21:00.0"
+    },
+    {
+      "index": 2,
+      "uuid": "GPU-9f8ecd14-35a9-f104-1dd9-c4757538bb34",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:C1:00.0"
+    },
+    {
+      "index": 3,
+      "uuid": "GPU-875678d1-165c-23e1-ba0e-65298ed4a996",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:F1:00.0"
+    }
+  ],
+  "command": [
+    "taskset",
+    "-c",
+    "24-31,56-63",
+    "python3",
+    "/home/access/memra-1093r/ab3/cold_long_ab.py",
+    "/home/access/memra-1093r/flip-long",
+    "/home/access/memra-1093r/memra-server-e0447ca00e",
+    "base"
+  ],
+  "started_unix": 1794256805.3912666,
+  "state": "finished",
+  "child_exit_code": 0,
+  "finished_unix": 1794256885.6643422,
+  "timed_out": false,
+  "interrupted_signal": null,
+  "lingering_compute": [],
+  "process_group_lingered": false,
+  "exit_code": 0
+}
