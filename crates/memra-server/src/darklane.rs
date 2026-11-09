@@ -27,19 +27,24 @@
 //!
 //! YIELD MECHANISM v1 — simplest honest first: the job is a CHILD PROCESS in its own
 //! process group. The runner submits SIGSTOP/SIGCONT on poll ticks (`MEMRA_BG_POLL_MS`,
-//! default 25 ms) and publishes yielded once a later tick observes the stop take effect:
-//! waitid reports the leader stopped, or /proc shows every leader thread stopped, or blocked
-//! in the kernel and bound to stop before it next runs: some thread is stopped (the group
-//! stop is under way), SIGSTOP is in the thread's own pending set, or, for a leader with one
-//! live thread only, SIGSTOP is still in the shared pending set. The second form exists for
-//! vfork: a leader thread waiting in vfork on a child that the same stop caught before exec
-//! stays in D until SIGCONT, so waitid never reports the stop (dash spawns every external
-//! command that way; `research/darklane-vfork-stop-20261109/`). The kernel flags one thread
-//! to take a group stop, the main thread first; when that thread waits in vfork, the other
-//! threads of a multithreaded leader are never told. So when no thread has stopped and more
-//! than one is live, the runner directs SIGSTOP at each live thread (tgkill) and reads again.
-//! OS scheduling and signal delivery control latency. Historical timing receipts live in `research/darktrain-20260807/`. Two
-//! consequences the operator must know:
+//! default 25 ms) and publishes yielded once a later tick observes the stop take effect on
+//! every member of the job's process group: the leader (`sh -c`) and every process the job
+//! started that stayed in the group, which usually includes the job's program, since dash does
+//! not exec even a single command. A member's stop took effect when waitid reports it stopped
+//! (the leader only), or /proc shows every thread of it stopped, or blocked in the kernel and
+//! bound to stop before it next runs: some thread is stopped (the group stop is under way),
+//! SIGSTOP is in the thread's own pending set, or, for a process with one live thread only,
+//! SIGSTOP is still in the shared pending set. A member with no live thread counts as stopped.
+//! The /proc form exists for vfork: a thread waiting in vfork on a child that the same stop
+//! caught before exec stays in D until SIGCONT, so waitid never reports the stop (dash spawns
+//! every external command that way; `research/darklane-vfork-stop-20261109/`). The kernel flags
+//! one thread per process to take a group stop, the main thread first; when that thread waits
+//! in vfork, the other threads are never told. So when no thread of a multithreaded member has
+//! stopped, the runner directs SIGSTOP at each of its live threads (tgkill) and reads again.
+//! Members are found by process group in /proc; a process that left the group is outside the
+//! group's signals and outside this check. OS scheduling and signal delivery control latency.
+//! Historical timing receipts live in `research/darktrain-20260807/`. Two consequences the
+//! operator must know:
 //!   * a SIGSTOPPED process KEEPS its memory — VRAM included, and so does a leader parked
 //!     in vfork. The VRAM budget below is therefore carved out for the LIFE of the job, not
 //!     per-valley.
@@ -357,14 +362,20 @@ fn terminate_owned_group_with_grace(c: &mut std::process::Child) {
 /// Observe a stop without reaping an exit that Child::try_wait must classify.
 /// Sending SIGSTOP successfully does not prove the child remains alive or stopped.
 ///
-/// waitid reports a stop only once EVERY thread of the leader has stopped, and a thread
-/// waiting in vfork cannot stop until its child execs or exits. The same group SIGSTOP stops
-/// that child before exec, so the waiting thread stays in D until SIGCONT and waitid never
-/// reports the stop. dash spawns every external command with vfork; glibc's posix_spawn
-/// (and through it CPython's subprocess) clones with CLONE_VFORK too
-/// (`research/darklane-vfork-stop-20261109/`). When waitid has nothing to report, the stop is
-/// read from /proc instead, and directed at each leader thread when no thread has taken it:
-/// see [`leader_stop_took_effect`]. Called only after a group SIGSTOP was sent successfully.
+/// The stop has taken effect once it has on every member of the job's process group: the
+/// leader, and every process the job started that stayed in the group. `sh -c` is the leader
+/// and dash does not exec even a single command, so the job's program is usually one of the
+/// other members. waitid reports the leader's stop only once EVERY thread of the leader has
+/// stopped, and a thread waiting in vfork cannot stop until its child execs or exits. The same
+/// group SIGSTOP stops that child before exec, so the waiting thread stays in D until SIGCONT and
+/// waitid never reports the stop. dash spawns every external command with vfork; glibc's
+/// posix_spawn (and through it CPython's subprocess) clones with CLONE_VFORK too
+/// (`research/darklane-vfork-stop-20261109/`). So the leader's stop is read from /proc when
+/// waitid has nothing to report, every other member's stop is read from /proc even when waitid
+/// reports the leader stopped, and each reading directs the stop at each thread of a process on
+/// which no thread has taken it: see [`process_stop`]. A member with no live thread (an exiting
+/// or unreaped process) cannot run job code and counts as stopped; the leader's exit is left to
+/// try_wait. Called only after a group SIGSTOP was sent successfully.
 fn child_stop_acknowledged(pid: u32) -> std::io::Result<bool> {
     let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
     let rc = unsafe {
@@ -378,13 +389,64 @@ fn child_stop_acknowledged(pid: u32) -> std::io::Result<bool> {
     if rc != 0 {
         return Err(std::io::Error::last_os_error());
     }
-    if info.si_code == libc::CLD_STOPPED {
-        return Ok(true);
-    }
-    if unsafe { info.si_pid() } != 0 {
+    let leader = if info.si_code == libc::CLD_STOPPED {
+        true
+    } else if unsafe { info.si_pid() } != 0 {
         return Ok(false); // An exit: try_wait reaps and classifies it on the next tick.
+    } else {
+        process_stop(pid, pid)? == ProcessStop::TookEffect
+    };
+    // Every member is read, so each one whose stop no thread has taken gets it this tick.
+    let mut members = true;
+    for member in group_members(pid)? {
+        members &= matches!(
+            process_stop(member, pid)?,
+            ProcessStop::TookEffect | ProcessStop::Gone
+        );
     }
-    leader_stop_took_effect(pid)
+    Ok(leader && members)
+}
+
+/// A /proc read that failed because the process or thread is gone.
+fn proc_gone(err: &std::io::Error) -> bool {
+    err.kind() == std::io::ErrorKind::NotFound || err.raw_os_error() == Some(libc::ESRCH)
+}
+
+/// The process group of a `/proc/<pid>/stat` line: the third field after the LAST ')' (comm
+/// may itself contain spaces and parentheses).
+fn proc_stat_pgrp(stat: &str) -> Option<u32> {
+    stat[stat.rfind(')')? + 1..]
+        .split_whitespace()
+        .nth(2)?
+        .parse()
+        .ok()
+}
+
+/// The process group of `pid`, or None once it is gone.
+fn process_pgrp(pid: u32) -> std::io::Result<Option<u32>> {
+    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Ok(stat) => proc_stat_pgrp(&stat)
+            .map(Some)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "unparsable stat")),
+        Err(err) if proc_gone(&err) => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+/// Every process in process group `pgid` except its leader, from a scan of /proc. A process
+/// that left the group is not found, and the group's signals do not reach it either.
+fn group_members(pgid: u32) -> std::io::Result<Vec<u32>> {
+    let mut members = Vec::new();
+    for entry in std::fs::read_dir("/proc")? {
+        let entry = entry?;
+        let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse().ok()) else {
+            continue; // Not a process directory.
+        };
+        if pid != pgid && process_pgrp(pid)? == Some(pgid) {
+            members.push(pid);
+        }
+    }
+    Ok(members)
 }
 
 /// What one `/proc/<pid>/task/<tid>/status` says about a submitted stop.
@@ -417,27 +479,32 @@ fn thread_stop(status: &str) -> Option<ThreadStop> {
     })
 }
 
-/// What the leader's threads say about a submitted group stop.
+/// What one process's threads say about a submitted group stop.
 #[derive(Debug, PartialEq, Eq)]
-enum LeaderStop {
+enum ProcessStop {
     /// Every live thread is stopped, or blocked in the kernel and bound to stop before it next
     /// returns to user space.
     TookEffect,
-    /// Not yet, and a later tick reads again: a thread can still run (or none is alive) while
-    /// a group stop is under way, the leader has one live thread, or every live thread already
-    /// carries the stop in its own pending set.
+    /// Not yet, and a later tick reads again: a thread can still run while a group stop is
+    /// under way, the process has one live thread, or every live thread already carries the stop
+    /// in its own pending set.
     NotYet,
     /// No thread has taken the stop, more than one is live, and some live thread does not carry
     /// it in its own pending set. The stop must be directed at each live thread.
     Unclaimed,
+    /// No live thread: the process is exiting, or is gone.
+    Gone,
 }
 
-fn classify_leader_stop(threads: &[ThreadStop]) -> LeaderStop {
+fn classify_process_stop(threads: &[ThreadStop]) -> ProcessStop {
     let live: Vec<ThreadStop> = threads
         .iter()
         .copied()
         .filter(|t| !matches!(t.state, 'Z' | 'X'))
         .collect();
+    if live.is_empty() {
+        return ProcessStop::Gone;
+    }
     let stopped = live.iter().any(|t| matches!(t.state, 'T' | 't'));
     let single = live.len() == 1;
     let bound_to_stop = |t: &ThreadStop| match t.state {
@@ -446,30 +513,31 @@ fn classify_leader_stop(threads: &[ThreadStop]) -> LeaderStop {
         'D' | 'I' => stopped || t.own || (single && t.shared),
         _ => false,
     };
-    if !live.is_empty() && live.iter().all(bound_to_stop) {
-        LeaderStop::TookEffect
+    if live.iter().all(bound_to_stop) {
+        ProcessStop::TookEffect
     } else if !stopped && !single && live.iter().any(|t| !t.own) {
-        LeaderStop::Unclaimed
+        ProcessStop::Unclaimed
     } else {
-        LeaderStop::NotYet
+        ProcessStop::NotYet
     }
 }
 
-/// The leader's threads (tid and reading), or None once the leader is gone.
-fn leader_threads(pid: u32) -> std::io::Result<Option<Vec<(libc::pid_t, ThreadStop)>>> {
-    let gone = |err: &std::io::Error| {
-        err.kind() == std::io::ErrorKind::NotFound || err.raw_os_error() == Some(libc::ESRCH)
-    };
+/// A process's threads (tid and reading), or None once the process is gone.
+fn process_threads(pid: u32) -> std::io::Result<Option<Vec<(libc::pid_t, ThreadStop)>>> {
     let tasks = match std::fs::read_dir(format!("/proc/{pid}/task")) {
         Ok(tasks) => tasks,
-        Err(err) if gone(&err) => return Ok(None),
+        Err(err) if proc_gone(&err) => return Ok(None),
         Err(err) => return Err(err),
     };
     let unparsable =
         || std::io::Error::new(std::io::ErrorKind::InvalidData, "unparsable task status");
     let mut threads = Vec::new();
     for task in tasks {
-        let task = task?;
+        let task = match task {
+            Ok(task) => task,
+            Err(err) if proc_gone(&err) => return Ok(None),
+            Err(err) => return Err(err),
+        };
         let tid = task
             .file_name()
             .to_str()
@@ -477,42 +545,47 @@ fn leader_threads(pid: u32) -> std::io::Result<Option<Vec<(libc::pid_t, ThreadSt
             .ok_or_else(unparsable)?;
         match std::fs::read_to_string(task.path().join("status")) {
             Ok(status) => threads.push((tid, thread_stop(&status).ok_or_else(unparsable)?)),
-            Err(err) if gone(&err) => {} // The thread exited after the listing.
+            Err(err) if proc_gone(&err) => {} // The thread exited after the listing.
             Err(err) => return Err(err),
         }
     }
     Ok(Some(threads))
 }
 
-/// The stop has taken effect on the leader when every live thread is stopped, or blocked in the
-/// kernel (D, or I) and bound to stop before it next returns to user space, so that no leader
-/// thread runs job code again before SIGCONT. A blocked thread is bound to stop when:
+/// The stop has taken effect on a process of the job's group when every live thread is
+/// stopped, or blocked in the kernel (D, or I) and bound to stop before it next returns to user
+/// space, so that none of its threads runs job code again before SIGCONT. A blocked thread is
+/// bound to stop when:
 ///   * some thread is stopped: the group stop is under way and marked every thread for it;
 ///   * SIGSTOP is in the thread's own pending set: the kernel flagged that thread to take it;
-///   * the thread is the leader's only live thread and SIGSTOP is in the shared pending set.
+///   * the thread is the process's only live thread and SIGSTOP is in the shared pending set.
 ///
 /// The last condition holds for one live thread only. The kernel queues a group SIGSTOP once
-/// and flags one thread to take it, the main thread first, and tells no other. With more
-/// threads the shared set does not say which thread was flagged, and an unflagged thread whose
-/// wait ends returns to user space and runs. When the flagged thread is the one waiting in
+/// per process and flags one thread to take it, the main thread first, and tells no other. With
+/// more threads the shared set does not say which thread was flagged, and an unflagged thread
+/// whose wait ends returns to user space and runs. When the flagged thread is the one waiting in
 /// vfork, no thread takes the stop at all: the others run on and never start the group stop.
 /// So when no thread is stopped and more than one is live, the stop is directed at each live
-/// thread (tgkill), which flags each one, and read again. A flagged sleeping thread starts the
-/// group stop, and a flagged blocked one carries the stop in its own pending set. tgkill checks
-/// the thread group, so a stale tid cannot reach another process, and SIGCONT flushes
-/// thread-directed stops with the group's. Called only after a group SIGSTOP was sent
-/// successfully.
-fn leader_stop_took_effect(pid: u32) -> std::io::Result<bool> {
+/// thread (tgkill), which flags each one, and read again. A flagged sleeping or running thread
+/// starts the group stop, and a flagged blocked one carries the stop in its own pending set.
+/// tgkill checks the thread group, so a stale tid cannot reach another process, and SIGCONT
+/// flushes thread-directed stops with the group's. A member other than the leader is checked to
+/// be still in group `pgid` right before: pids are allocated cyclically, so one that exited since
+/// the scan is not handed to another process within a tick, and the check keeps the stop inside
+/// the group regardless. Called only after a group SIGSTOP was sent successfully.
+fn process_stop(pid: u32, pgid: u32) -> std::io::Result<ProcessStop> {
     let reading = |threads: &[(libc::pid_t, ThreadStop)]| {
-        classify_leader_stop(&threads.iter().map(|&(_, t)| t).collect::<Vec<_>>())
+        classify_process_stop(&threads.iter().map(|&(_, t)| t).collect::<Vec<_>>())
     };
-    let Some(threads) = leader_threads(pid)? else {
-        return Ok(false);
+    let Some(threads) = process_threads(pid)? else {
+        return Ok(ProcessStop::Gone);
     };
-    match reading(&threads) {
-        LeaderStop::TookEffect => return Ok(true),
-        LeaderStop::NotYet => return Ok(false),
-        LeaderStop::Unclaimed => {}
+    let first = reading(&threads);
+    if first != ProcessStop::Unclaimed {
+        return Ok(first);
+    }
+    if pid != pgid && process_pgrp(pid)? != Some(pgid) {
+        return Ok(ProcessStop::Gone); // It exited, or left the group, since the scan.
     }
     for &(tid, t) in &threads {
         if matches!(t.state, 'Z' | 'X') {
@@ -527,7 +600,14 @@ fn leader_stop_took_effect(pid: u32) -> std::io::Result<bool> {
             }
         }
     }
-    Ok(leader_threads(pid)?.is_some_and(|threads| reading(&threads) == LeaderStop::TookEffect))
+    Ok(match process_threads(pid)? {
+        None => ProcessStop::Gone,
+        Some(threads) => match reading(&threads) {
+            // Every live thread now carries the stop, unless it already took it and stopped.
+            ProcessStop::Unclaimed => ProcessStop::NotYet,
+            again => again,
+        },
+    })
 }
 
 /// Spawn the supervisor thread. `in_valley` / `busy_now` are injected (prod: ValleySignal;
@@ -1488,11 +1568,12 @@ mod tests {
     /// shared) and a running shell inside an ordinary vfork (D, nothing pending) differ only in
     /// the pending set; the second must never acknowledge. With more than one live thread a
     /// shared stop proves nothing: a blocked thread counts once a thread is stopped or the stop
-    /// is in its own set, and a leader with no stopped thread and a thread without its own stop
-    /// gets the stop directed at each thread.
+    /// is in its own set, and a process with no stopped thread and a thread without its own stop
+    /// gets the stop directed at each thread. A process with no live thread is gone. Group
+    /// members are found by the process group in `/proc/<pid>/stat`.
     #[test]
-    fn leader_threads_classify_the_stop() {
-        use LeaderStop::*;
+    fn process_threads_classify_the_stop() {
+        use ProcessStop::*;
         let t = |state, own, shared| ThreadStop { state, own, shared };
         for (threads, want) in [
             (vec![t('T', false, false)], TookEffect),
@@ -1524,10 +1605,11 @@ mod tests {
             (vec![t('D', true, true), t('T', true, true)], TookEffect),
             // A group stop under way: wait for it.
             (vec![t('S', false, false), t('T', false, false)], NotYet),
-            (vec![t('Z', false, false)], NotYet),
-            (vec![], NotYet),
+            // An exiting or unreaped process.
+            (vec![t('Z', false, false)], Gone),
+            (vec![], Gone),
         ] {
-            assert_eq!(classify_leader_stop(&threads), want, "{threads:?}");
+            assert_eq!(classify_process_stop(&threads), want, "{threads:?}");
         }
         // The probe's parked dash leader: SIGCHLD and SIGSTOP shared.
         let parked = "Name:\tsh\nState:\tD (disk sleep)\nSigPnd:\t0000000000000000\n\
@@ -1541,6 +1623,12 @@ mod tests {
         assert_eq!(thread_stop(resumed), Some(t('S', false, false)));
         assert_eq!(thread_stop("State:\tD (disk sleep)\nSigPnd:\t0\n"), None);
         assert_eq!(thread_stop("SigPnd:\t0\nShdPnd:\t0\n"), None);
+        assert_eq!(
+            proc_stat_pgrp("4242 (a ) (b) T 4200 4100 4100 0"),
+            Some(4100)
+        );
+        assert_eq!(proc_stat_pgrp("4242 (sh) S 1 4242 4242 0"), Some(4242));
+        assert_eq!(proc_stat_pgrp("4242 (sh) S 1"), None);
     }
 
     /// Set in the job's environment: this test binary then runs as the job leader below.
@@ -1777,18 +1865,38 @@ mod tests {
         }
     }
 
-    /// The job command for [`main_thread_leader`], with its FIFOs made in `dir`.
-    fn main_thread_leader_job(case: &str, dir: &TestDir) -> String {
+    /// The job command for [`main_thread_leader`], with its FIFOs made in `dir`. With `exec` the
+    /// program replaces the shell as the group's leader; without it the shell stays the leader
+    /// and the program is another member of the group (the trailing `exit` keeps any shell
+    /// from exec'ing it).
+    fn main_thread_leader_job(case: &str, dir: &TestDir, exec: bool) -> String {
         make_fifo(&dir.0.join("fifo"));
         make_fifo(&dir.0.join("held"));
         format!(
-            "{}={case} {}='{}' exec '{}' > '{}' 2>&1",
+            "{}={case} {}='{}' {}'{}' > '{}' 2>&1{}",
             MAIN_LEADER_CASE.to_str().unwrap(),
             MAIN_LEADER_DIR.to_str().unwrap(),
             dir.0.display(),
+            if exec { "exec " } else { "" },
             std::env::current_exe().unwrap().display(),
-            dir.0.join("leader.log").display()
+            dir.0.join("leader.log").display(),
+            if exec { "" } else { "; exit $?" }
         )
+    }
+
+    /// The children of `pid`.
+    fn children_of(pid: u32) -> Vec<u32> {
+        let Ok(procs) = std::fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        procs
+            .filter_map(|p| {
+                let child: u32 = p.ok()?.file_name().to_str()?.parse().ok()?;
+                let (_, ppid, _) =
+                    proc_stat_fields(std::path::Path::new(&format!("/proc/{child}/stat")))?;
+                (ppid == pid).then_some(child)
+            })
+            .collect()
     }
 
     /// The state of the leader's main thread and of its other thread.
@@ -1814,7 +1922,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("darklane-main-vfork-{}", std::process::id()));
         std::fs::create_dir(&path).unwrap();
         let dir = TestDir(path);
-        let cmd = main_thread_leader_job("sleeper", &dir);
+        let cmd = main_thread_leader_job("sleeper", &dir, true);
         let (sig, v, b) = sigs();
         let h = spawn_runner(cfg(&cmd, YieldMode::Stop), v, b, Arc::new(|| None));
         let st = h.state.clone();
@@ -1879,7 +1987,7 @@ mod tests {
         std::fs::create_dir(&path).unwrap();
         let dir = TestDir(path);
         let ran = dir.0.join("ran");
-        let cmd = main_thread_leader_job("blocked", &dir);
+        let cmd = main_thread_leader_job("blocked", &dir, true);
         let (sig, v, b) = sigs();
         let h = spawn_runner(cfg(&cmd, YieldMode::Stop), v, b, Arc::new(|| None));
         let st = h.state.clone();
@@ -1934,6 +2042,84 @@ mod tests {
             open_fifo_writer(&dir.0.join("fifo"))
         });
         wait_acknowledged("leader completed", || {
+            st.state.load(Ordering::Acquire) == BG_DONE && st.job_pid.load(Ordering::Acquire) == 0
+        });
+        assert_eq!(st.yields.load(Ordering::Relaxed), 1);
+        assert_eq!(st.resumes.load(Ordering::Relaxed), 1);
+        guard.shutdown();
+    }
+
+    /// `sh -c` is the job's leader, and dash does not exec even a single command, so the job's
+    /// program is usually another member of the process group. Here the program's main thread
+    /// waits in vfork and its other thread blocks SIGCHLD. The group stop stops the shell at once,
+    /// so waitid reports the leader stopped, while the program's other thread is never told and
+    /// runs on. The runner must publish the yield only once every member is stopped: the shape is
+    /// asserted right at the acknowledgement, with no wait.
+    #[test]
+    fn stop_reaches_the_other_thread_of_a_group_member_whose_main_thread_waits_in_vfork() {
+        let path =
+            std::env::temp_dir().join(format!("darklane-member-vfork-{}", std::process::id()));
+        std::fs::create_dir(&path).unwrap();
+        let dir = TestDir(path);
+        let cmd = main_thread_leader_job("sleeper", &dir, false);
+        let (sig, v, b) = sigs();
+        let h = spawn_runner(cfg(&cmd, YieldMode::Stop), v, b, Arc::new(|| None));
+        let st = h.state.clone();
+        let guard = RunnerGuard(Some(h));
+        sig.valley.store(true, Ordering::Release);
+        wait_acknowledged("launch", || st.state.load(Ordering::Acquire) == BG_RUNNING);
+        let pid = st.job_pid.load(Ordering::Acquire);
+        // The program is the shell's only child.
+        let program = || match children_of(pid)[..] {
+            [program] => Some(program),
+            _ => None,
+        };
+        wait_acknowledged(
+            "the program's main thread waits in vfork on a child opening the FIFO",
+            || {
+                program().is_some_and(|p| {
+                    matches!(main_and_other(p), Some(('D', 'R' | 'S')))
+                        && unexeced_children(p).iter().any(|&(_, s)| s == 'S')
+                })
+            },
+        );
+        let prog = program().unwrap();
+        assert_eq!(unsafe { libc::getpgid(prog as i32) }, pid as i32);
+        sig.valley.store(false, Ordering::Release);
+        sig.busy.store(true, Ordering::Release);
+        wait_acknowledged(
+            "stop acknowledged with the program's main thread parked in vfork",
+            || {
+                st.state.load(Ordering::Acquire) == BG_YIELDED
+                    && st.yields.load(Ordering::Relaxed) == 1
+            },
+        );
+        assert_eq!(proc_state(pid), Some('T'), "the shell stops at once");
+        assert_eq!(
+            main_and_other(prog),
+            Some(('D', 'T')),
+            "the program's other thread was running at the yield: threads {:?}",
+            leader_tids(prog)
+        );
+        let children = unexeced_children(prog);
+        assert!(
+            !children.is_empty() && children.iter().all(|&(_, s)| s == 'T'),
+            "the vfork child was running at the yield: {children:?}"
+        );
+        sig.busy.store(false, Ordering::Release);
+        sig.valley.store(true, Ordering::Release);
+        wait_acknowledged(
+            "resumed, the program's other thread and the vfork child running",
+            || {
+                st.resumes.load(Ordering::Relaxed) == 1
+                    && matches!(main_and_other(prog), Some(('D', 'R' | 'S')))
+                    && unexeced_children(prog).iter().all(|&(_, s)| s != 'T')
+            },
+        );
+        wait_acknowledged("FIFO writer opened", || {
+            open_fifo_writer(&dir.0.join("fifo"))
+        });
+        wait_acknowledged("job completed", || {
             st.state.load(Ordering::Acquire) == BG_DONE && st.job_pid.load(Ordering::Acquire) == 0
         });
         assert_eq!(st.yields.load(Ordering::Relaxed), 1);
