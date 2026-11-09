@@ -135,7 +135,7 @@ sequence's capacity instead of the runner's `max_pos`, and `dsv41-run --experts-
 | penalties (frequency 0.5, presence 0.3, greedy) | served, the same answer twice |
 | numeric budget | `"63"` served (the prompt carries the budget line), `"101"` a 400 naming `[1, 100]` |
 | lib suites on the final binaries, in a one-card lease | memra-server 1,120 passed (10 ignored), memra-cli 30, the engine's dsv41 tests 10; clippy `-D warnings` and fmt clean (`receipts/tests/`) |
-| the shared benchmark client | every request served with its token counts (below) |
+| the shared benchmark client | every request served with its token counts, both stream shapes (below) |
 
 Served greedy against the vendor: capital, multiturn, sys_json, hebrew, needle and needle1200 give
 the vendor's tokens exactly (the decode lane's table, step 6); gsm parts from the vendor after
@@ -171,18 +171,29 @@ The lane measures every engine with one client (`bench.py`, stdlib only): token-
 `/v1/completions` (`prompt_ids` for memra), streamed with `stream_options.include_usage`, greedy,
 generated tokens counted from the server's `usage`, cached tokens read from
 `usage.prompt_tokens_details`. Run against this route as a wiring check, two samples a workload
-after one warm-up, one card capped at 250 W (`scripts/bench_run.sh`, `receipts/bench-client-native/`):
+after one warm-up, one card capped at 250 W (`scripts/bench_run.sh`; `receipts/bench-client/` for the
+OpenAI stream shape, `MEMRA_COMPAT=openai`, which the lane's runs use, and
+`receipts/bench-client-native/` for memra's own shape):
 
 | stream shape | workload | prompt tokens | generated | TTFT | decode tokens/s | card power, hottest read |
 |---|---|---|---|---|---|---|
 | memra's own (`MEMRA_COMPAT` unset) | chat_c1 | 36, 41 | 384 | 1.16, 1.19 s | 7.40, 7.47 | 195 W, 89 C |
 | | decode_c1 | 2,048 | 512 | 6.26, 6.51 s | 7.18, 7.27 | 191 W, 88 C |
 | | prefill4k | 4,096 | 1 | 6.87, 8.72 s | | 181 W, 88 C |
+| OpenAI (`MEMRA_COMPAT=openai`) | chat_c1 | 36, 41 | 384 | 1.24, 1.34 s | 7.16, 7.19 | 163 W, 76 C |
+| | decode_c1 | 2,048 | 512 | 9.56, 10.62 s | 7.04, 7.42 | 162 W, 77 C |
+| | prefill4k | 4,096 | 1 | 6.84, 13.59 s | | 153 W, 76 C |
+
+The two shapes ran on different cards of the box at different times, with other work on the box's
+cores and cards, so the rows are not a comparison of the shapes; time to first token varied more
+in the second run and its cause was not isolated. Power and temperature are the mean of the two
+samples' means and the hottest read.
+
 The smoke request (the capital prompt as token ids, 8 tokens allowed) answered `Paris`.
 
-Every request answered 200 with its token counts (the closing `done` event of memra's own
-stream shape, which the client reads; the OpenAI shape, `MEMRA_COMPAT=openai`, is the next run);
-one token a stream chunk; `cached_tokens` 0 (the route has
+Every request answered 200 with its token counts (the usage chunk `stream_options.include_usage`
+asks for and finish reason `length` in the OpenAI shape, the closing `done` event in memra's own
+shape, which the client also reads); one token a stream chunk; `cached_tokens` 0 (the route has
 no prefix reuse). Two things the client cannot get from this route yet:
 
 - `ignore_eos`: memra-server has no such field, so the client runs with `--no-ignore-eos` and a
@@ -268,5 +279,6 @@ Every script reads the run box's paths, card and lease wrapper from the file `LA
   compared file on both sides); `verify-res/` (the checkpoint and serve gates' bundle: lock, parity
   receipt, gates, serve receipt and response, logs); `serve_gate_all.out` (the binaries' sha256
   and the three gate steps); `chat/` (`chat-gate.json`, the client and server logs, `rates.json`);
-  `bench-client-native/` (the client's samples, summary and logs, the server log); `tests/` (suite summaries); `leases.tsv` (one line per lease of the lane, the failed
+  `bench-client/` and `bench-client-native/` (the client's samples, summary and logs, the server
+  log, for the OpenAI and memra's own stream shape); `tests/` (suite summaries); `leases.tsv` (one line per lease of the lane, the failed
   chat gate of 22:16 included).
