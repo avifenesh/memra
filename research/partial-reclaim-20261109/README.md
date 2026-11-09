@@ -207,7 +207,7 @@ choices vary per boot on both arms, so that column carries no A/B signal.
 
 One card class, one model (Qwen3.8-27B NVFP4 + Q5_K with its MTP head), one served context (32,768), one cap
 (`MEMRA_MAX_SESSIONS=12`), three shapes, two power regimes for the waves (280 and 250 W). An RTX 5090 boot above the
-floor is measured below. Steady traffic at the limit beyond back-to-back bursts stays owed until its cell lands. Unchanged by construction: the floor, unified memory (GB10),
+floor and steady traffic at the limit are measured below. Unchanged by construction: the floor, unified memory (GB10),
 per-device readings, operator budgets and the door-armed path.
 
 ## An RTX 5090 boot above the floor (2026-11-09): `rtx5090-above-floor/`
@@ -310,6 +310,74 @@ The same result as the acceptance cell on `ab21e254a6`: no flush on B, every pas
 Every row that completed on both arms has the same greedy text. The two rows that differ are pressure requests that
 reached the 90 s first-token deadline on one arm only (pressure-6 on B, pressure-7 on A). At 250 W the prefills run
 slower, so five pressure requests per arm hit that deadline, against four at 280 W.
+
+## Steady traffic at the limit (one RTX PRO 6000 Max-Q, 2026-11-09): `pro6000-maxq/steady/`
+
+The second owed case: a continuous stream at the cache's limit, no bursts, long enough for steady state, to see what
+the booking does when some session is always priming.
+
+**The budget.** The card's own derived budget, 54,277,046,272 B at `MEMRA_MAX_SESSIONS=12`, the acceptance config. An
+operator `MEMRA_PREFIX_CACHE_MB` keeps the flush by design (an operator budget is outside the partial pass), so a
+budget capped by hand to a 5090's size would measure the flush against itself; a 5090-sized derived budget on this
+card would need about 56 interactive sessions, which is not the 5090's regime either. The 5090's own regime is the
+section above.
+
+**Arms.** A = main fa0ee88acf, B = #1124 merged onto it in the working tree (tree 113ef7a1e0, the same tree as the
+5090 cell's B). Release builds on the box (sha256 `5395caaf945a601a...` and `a30ed68d4a6c668c...`). A B B A on one card
+in one tracked lease (`tools/memra-gpu-run`), a fresh boot per arm, at the box's own 250 W cap (no power raise),
+every process on 16 of 64 threads.
+
+**The load (`harness/steady.py`).** The acceptance cell's fill (64 unique prompts of about 26.5k tokens, four at a
+time: the cache at its budget and the parked pool at 16), then 1,020 s of continuous traffic from 8 workers, each
+sending its next request as soon as the last ends. Every 4th request repeats an earlier prompt (same text, same
+namespace) drawn from 16 to 48 requests back, seeded, so every arm issues the same sequence; the rest are fresh unique
+prompts.
+
+**Why 8 workers.** At 6 the stream never reaches the reclaim (`pro6000-maxq/steady-w6-stopped/`: 0 reclaims over its first 29 steady-phase prompts, about eight minutes of steady traffic, stopped there). Six active sessions are the state just before the arrival that deferred in
+the acceptance cell, and a finishing session parks and pushes out the oldest parked one, so memory stays flat and every
+arrival fits. The seventh concurrent session is the first that does not.
+
+### Results (`steady/`, `harness/steady_table.py`)
+
+| arm | reclaims (partial, still short) | entries / GB freed (largest) | booking on / off, armed at end | evictions preflight / LRU | OOM lines | new prompts: rows, errors, TTFT p50 / p95 s | repeats: rows, hits, cached tokens, TTFT p50 s | repeat hits per 300 s | greedy texts = A |
+|---|---|---|---|---|---|---|---|---|---|
+| steady-1-A | 2 (0, 0) | 114 / 108.0 (57 / 54.2) | 0 / 0, no | 7 / 0 | 0 | 75, 0, 53.5 / 74.3 | 25, 7, 185216, 53.7 | 2/8 / 4/7 / 1/7 / 0/3 | 164/164 |
+| steady-2-B | 26 (26, 0) | 86 / 81.5 (7 / 6.8) | 12 / 12, no | 11 / 0 | 0 | 87, 0, 35.6 / 63.8 | 29, 27, 717696, 1.5 | 9/9 / 8/8 / 7/9 / 3/3 | 164/164 |
+| steady-3-B | 26 (26, 0) | 87 / 82.4 (7 / 6.8) | 13 / 13, no | 10 / 0 | 0 | 87, 0, 35.1 / 64.0 | 29, 27, 717696, 1.5 | 9/9 / 8/8 / 7/9 / 3/3 | 164/164 |
+
+- **The partial reclaim holds the cache through steady traffic.** B's repeats hit 27 of 29 on both arms (717,696 of
+  771,521 repeat prompt tokens cached, 9/9, 8/8, 7/9 and 3/3 per 300 s window), against A's 7 of 25. A's flush empties
+  the cache whenever an arrival defers (57 entries, 54.2 GB, twice per arm, the first at the start of the stream), and a
+  repeat after it re-primes. B ran 26 partial passes per arm, every one covered, none short, mostly 2 entries each (at
+  most 7), freeing 81.5 to 82.4 GB in all against A's 108.0 GB.
+- **Hits unclog the prefill line.** Repeat TTFT p50 1.5 s against 53.7 s, new-prompt TTFT p50 35.1 to 35.6 s against
+  53.5 s (p95 64 s against 74 s), and B served 87 new prompts in the window against 75.
+- **The booking never sticks.** With 8 workers some session is nearly always priming, and still the booking armed and
+  ended 12 and 13 times per B arm and was disarmed at the end of both: the room cap returns it to 0 as seeds refill
+  the cache, and it ends whenever nothing is owed.
+- **No OOM line, no request error**, every row that completed on both arms has the same greedy text (164 of 164).
+  Max 90 C, fans at most 87 %.
+
+**Arm 4 (A) was cut** by `tools/memra-gpu-run`'s default timeout: the wrapper stops its command after 2 h unless given
+`--timeout`, and the four arms needed about 2 h 2 min. It ran 28.6 of its about 30.5 minutes, so its harness never
+wrote rows (`steady-4-A.stopped/`). Its counts up to the cut, from the admission lines in serve.log (`harness/
+steady_from_log.py`, which reproduces arms 1 to 3 exactly):
+
+| arm | fill admissions | steady new | steady repeats, hits, cached tokens | reclaims (partial) | OOM lines | aborted with no output |
+|---|---|---|---|---|---|---|
+| steady-1-A | 64 | 75 | 25, 7, 185216 | 2 (0) | 0 | 0 |
+| steady-2-B | 64 | 87 | 29, 27, 717696 | 26 (26) | 0 | 0 |
+| steady-3-B | 64 | 87 | 29, 27, 717696 | 26 (26) | 0 | 0 |
+| steady-4-A.stopped | 64 | 71 | 23, 7, 185216 | 2 (0) | 0 | 5 |
+
+Up to the cut it reads like arm 1: two flushes, 7 of 23 repeats. At the cut all 8 workers had a request in flight and
+none has an outcome: three had begun to answer (45, 44 and 4 tokens) and five were still prefilling (the five aborted
+with no output). The pair rerun that followed (B then A as arms 5 and 6) was stopped by the coordinator's ruling, the
+effect being far outside what an interleaved pair guards against; its first arm is kept as `steady-5-B.stopped/` and
+is out of the tables. **Long cells under `tools/memra-gpu-run` need `--timeout`.**
+
+**Validity after rebase.** As for the 5090 cell: A = fa0ee88acf against B = #1124 on it; lever 7 (#1126) changes only
+the F8F4 v3 GEMM's last wave and nothing in admission or the prefix cache.
 
 ## Acceptance plan (one RTX PRO 6000 Max-Q, untimed)
 

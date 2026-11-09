@@ -1,0 +1,11 @@
+2026-11-09 14:00:33 steady: start; affinity  24-31,56-63; STEADY_ARGS=--tok 24000 --fill 64 --fill-conc 4 --workers 8 --duration 1020 --repeat-every 4 --back-min 16 --back-max 48
+2026-11-09 14:00:34 steady 1 A start
+2026-11-09 14:31:12 steady 1 A rc=0 oom_lines=0 reclaim_on_defer_lines=4 
+2026-11-09 14:31:12 steady 2 B start
+2026-11-09 15:01:35 steady 2 B rc=0 oom_lines=0 reclaim_on_defer_lines=78 
+2026-11-09 15:01:35 steady 3 B start
+2026-11-09 15:31:58 steady 3 B rc=0 oom_lines=0 reclaim_on_defer_lines=78 
+2026-11-09 15:31:58 steady 4 A start
+2026-11-09 16:00:35 steady: wrapper rc=1
+2026-11-09 16:03:11 steady: start; affinity  24-31,56-63; STEADY_ARGS=--tok 24000 --fill 64 --fill-conc 4 --workers 8 --duration 1020 --repeat-every 4 --back-min 16 --back-max 48
+2026-11-09 16:03:11 steady 5 B start

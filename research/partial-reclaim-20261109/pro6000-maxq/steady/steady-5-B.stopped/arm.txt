@@ -1,0 +1,4 @@
+arm steady-5-B workload=steady start=2026-11-09T16:03:11+02:00 gpu=<gpu> lease=<lane>/out/lease2/lease.json
+a30ed68d4a6c668cbaa8ebcbacbe2963bd4ae7cdfc63d746d815e58957e22fec  <bins>/memra-server-merge-fa0ee88acf-3448243319
+env: MEMRA_MAX_SESSIONS=12 STEADY_ARGS=--tok 24000 --fill 64 --fill-conc 4 --workers 8 --duration 1020 --repeat-every 4 --back-min 16 --back-max 48
+0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 63, 43 %, 180 MHz, 250.00 W, 2 MiB, 97340 MiB

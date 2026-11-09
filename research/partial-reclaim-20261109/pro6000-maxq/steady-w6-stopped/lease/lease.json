@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "wrapper_pid": 1115896,
+  "child_pid": 1115901,
+  "requested_uuids": [
+    "<gpu>"
+  ],
+  "lock_order": [
+    "<gpu>"
+  ],
+  "lock_files": {
+    "<gpu>": "/tmp/memra-gpu-locks/<gpu>.lock"
+  },
+  "lock_inodes": {
+    "<gpu>": {
+      "inode": 253921,
+      "device_major": 0,
+      "device_minor": 47
+    }
+  },
+  "box_lock": "<box-locks>/gpu0.lock",
+  "devices": [
+    {
+      "index": 0,
+      "uuid": "<gpu>",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:01:00.0"
+    }
+  ],
+  "all_devices": [
+    {
+      "index": 0,
+      "uuid": "<gpu>",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:01:00.0"
+    },
+    {
+      "index": 1,
+      "uuid": "<gpu>",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:21:00.0"
+    },
+    {
+      "index": 2,
+      "uuid": "<gpu>",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:C1:00.0"
+    },
+    {
+      "index": 3,
+      "uuid": "<gpu>",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:F1:00.0"
+    }
+  ],
+  "command": [
+    "bash",
+    "-c",
+    "\n    i=0\n    for a in A B B A; do\n      i=$((i + 1)); bin=<bins>/memra-server-fa0ee88acf; [ \"$a\" = B ] && bin=<bins>/memra-server-merge-fa0ee88acf-3448243319\n      echo \"$(TZ=Asia/Jerusalem date \"+%F %T\") steady $i $a start\" | tee -a <lane>/out/campaign.log\n      bash <lane>/arm-steady.sh \"steady-$i-$a\" \"$bin\" <lane>/out MEMRA_MAX_SESSIONS=12\n      echo \"$(TZ=Asia/Jerusalem date \"+%F %T\") steady $i $a rc=$? $(grep -a \"oom_lines\\|reclaim_on_defer_lines\\|thermal stop\" <lane>/out/steady-$i-$a/arm.txt | tr \"\\n\" \" \")\" | tee -a <lane>/out/campaign.log\n      grep -q \"thermal stop\" <lane>/out/steady-$i-$a/arm.txt && exit 143\n    done\n    exit 0"
+  ],
+  "started_unix": 1794224297.3136177,
+  "state": "finished",
+  "child_exit_code": -15,
+  "finished_unix": 1794225400.0884151,
+  "timed_out": false,
+  "interrupted_signal": 15,
+  "lingering_compute": [],
+  "process_group_lingered": true,
+  "exit_code": 1
+}
