@@ -141,6 +141,7 @@ Served B/T, B = main a8a980a017, T = the lever (c482d10f58, before the restack o
   - the per-row fill: `run-spec` K=1..8 on Qwen3.8-27B with `MEMRA_SPEC_GDN_PACKED=0`, 8 of 8 identical to plain;
   - the rowwise fill: the same with `MEMRA_SPEC_VERIFY_ROWWISE=1`, 8 of 8;
   - the pooled cohort's slab take: `battery/pool_cell.py` (q9, waves of 2, 4 and 8 concurrent requests, greedy and sampled) on the stack parent and on the head, all 14 streams identical.
+- **GB10 device battery** at the stacked code (7f9c268554, unit 1, `cols-battery-unit1/battery.txt`): kernel-check all green (127 cells), the argmax gates pass, and `run-spec` K=1..8 is identical to plain on both roster models.
 - **Engine gates at the lever's first commit:** the RTX 5090 device battery passes (kernel-check all green, the argmax gates, `run-spec` K=1..8 identical to plain on both roster models; `cols-5090/battery.txt`). Its Qwen3.8-27B K=3 run accepts 17 of 42 drafted tokens, so partial accepts restore from the slabs there.
 
 ## The cold-long rung on GB10: K=2 against K=3 (lever 4's first cell, for memra#1093)
