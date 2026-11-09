@@ -73,6 +73,30 @@ pub static PACK: ModelPack = ModelPack {
         max_rel: 1e-5,
         require_argmax: true,
     }),
+    // The GPU route (memra-engine `dsv41_gpu`, runner `dsv41-run`) runs the same checkpoint
+    // program on hardware primitives (tensor-core fp32 accumulation, device expf/rsqrtf): class
+    // `deepseek-v41-source-program`, against the vendor model.py on CUDA. Its band is set from the
+    // vendor's own spread on the probe below: the vendor's CPU and GPU runs of that program differ
+    // by up to 3.18 logits (KL 4.7e-7, top-5 overlap 4/5, same argmax, streams within 1.36% at every
+    // layer); far-tail logits move most. A native backend may sit twice that far from the vendor GPU
+    // run, the factor the lane's layer gates use, and must give the same argmax
+    // (research/modelplan-onboarding-dsv41-20261109/gpu/).
+    checkpoint_parity_classes: &[ClassParityGate {
+        numeric_class: "deepseek-v41-source-program",
+        gate: CheckpointParityGate {
+            max_abs: 6.4,
+            max_rel: 0.0,
+            require_argmax: true,
+        },
+    }],
+    // The checkpoint probe is a real chat turn, not the default 1,2,3,4: on <eos> <pad> ! " the
+    // vendor's own CPU and GPU runs of this program disagree by 13.3 logits (KL 0.49, top-5 overlap
+    // 3/5), so no band on that probe could tell a wrong program from a right one. This is the
+    // vendor encoding of the user turn "What is the capital of France? Answer in one word." (the
+    // lane's `capital` case: <bos><User>...<Assistant></think>, 16 tokens).
+    checkpoint_probe: Some(&[
+        0, 128803, 3085, 344, 270, 6102, 294, 8760, 33, 9361, 295, 834, 2004, 16, 128804, 128822,
+    ]),
     matches_config: |config| matches!(config.arch, Arch::DeepSeekV41) && config.dsv41.is_some(),
     plan_builder,
     tensor_schema,

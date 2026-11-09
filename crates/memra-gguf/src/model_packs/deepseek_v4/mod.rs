@@ -29,6 +29,8 @@ pub static PACK: ModelPack = ModelPack {
         Gate::Serve,
     ],
     checkpoint_parity: None,
+    checkpoint_parity_classes: &[],
+    checkpoint_probe: None,
     matches_config: |config| {
         matches!(config.arch, Arch::DeepSeekV4)
             && config.dsv4.is_some()
@@ -62,6 +64,8 @@ pub static DSPARK_PACK: ModelPack = ModelPack {
         max_rel: 0.005,
         require_argmax: true,
     }),
+    checkpoint_parity_classes: &[],
+    checkpoint_probe: None,
     matches_config: |config| {
         matches!(config.arch, Arch::DeepSeekV4)
             && config.dsv4.is_some()

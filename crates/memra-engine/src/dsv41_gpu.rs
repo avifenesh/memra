@@ -1101,6 +1101,10 @@ pub struct Geo {
     pub engram_head_dim: usize,
     pub engram_ngram: usize,
     pub engram_rows: Vec<usize>,
+    pub engram_bucket_base: u64,
+    pub engram_compressed_vocab: u64,
+    pub engram_pad_id: usize,
+    pub vocab: usize,
     pub rope_theta: f32,
     pub compress_rope_theta: f32,
     pub yarn_factor: f32,
@@ -1145,6 +1149,10 @@ impl Geo {
             engram_head_dim: c.engram_head_dim as usize,
             engram_ngram: c.engram_max_ngram_size as usize,
             engram_rows: u(&c.engram_num_embeddings),
+            engram_bucket_base: c.engram_vocab_size as u64,
+            engram_compressed_vocab: c.engram_compressed_vocab_size as u64,
+            engram_pad_id: c.engram_pad_token_id as usize,
+            vocab: mc.n_vocab as usize,
             rope_theta: mc.rope_freq_base,
             compress_rope_theta: c.compress_rope_theta,
             yarn_factor: c.rope_yarn_factor,
@@ -1474,6 +1482,9 @@ pub struct Ctx {
     pub trace: bool,
     /// positions the RoPE tables and cache capacities cover
     pub max_pos: usize,
+    /// prefill tokens per query-side slice (attention, indexer selection, MoE, Engram); every
+    /// sliced step acts per row, so the slice size never changes a result
+    pub chunk: usize,
 }
 
 impl Ctx {
@@ -1506,26 +1517,33 @@ impl Ctx {
             stage: None,
             trace: false,
             max_pos,
+            chunk: 8192,
         })
     }
 
-    /// Window selection of a prefill chunk (vendor `get_window_topk_idxs`, start_pos 0): row i
-    /// sees positions max(0, i-win+1) ..= i, -1 where that runs past i.
+    /// One prefill row of the window selection (vendor `get_window_topk_idxs`, start_pos 0): the
+    /// query at position p sees positions max(0, p-win+1) ..= p in order, -1 where that runs past p.
+    pub fn window_row(p: usize, win: usize, row: &mut [i32]) {
+        let start = (p + 1).saturating_sub(win);
+        for (j, v) in row.iter_mut().enumerate() {
+            let k = start + j;
+            *v = if k > p { -1 } else { k as i32 };
+        }
+    }
+
+    /// The window selection of a whole prefill of `s` tokens: `([s][min(s, win)], width)`.
     pub fn window_idx(s: usize, win: usize) -> (Vec<i32>, usize) {
         let w = s.min(win);
         let mut v = vec![-1i32; s * w];
-        for i in 0..s {
-            let start = (i + 1).saturating_sub(win);
-            for j in 0..w {
-                let p = start + j;
-                v[i * w + j] = if p > i { -1 } else { p as i32 };
-            }
+        for (i, row) in v.chunks_mut(w.max(1)).enumerate().take(s) {
+            Self::window_row(i, win, row);
         }
         (v, w)
     }
 
-    /// Engram (vendor `Engram.forward`) on the stream in place: gather the hashed table rows from
-    /// the host mmap into a staging buffer, H2D, dequant, `wkv`, the normalized gate.
+    /// Engram (vendor `Engram.forward`) on the stream in place, `chunk` tokens at a time: gather
+    /// the hashed table rows from the host mmap into pinned staging, H2D, dequant, `wkv`, the
+    /// normalized gate. `hashes` is `[s][cols]`.
     pub fn engram(
         &mut self,
         stm: &StModel,
@@ -1545,68 +1563,138 @@ impl Ctx {
                 hashes.len()
             ));
         }
-        if self.stage.as_ref().is_none_or(|x| x.cap < s * cols) {
-            self.stage = Some(engram::Stage::new(&self.ops, (s * cols).max(4096), hd)?);
+        let c = self.chunk.min(s).max(1);
+        if self.stage.as_ref().is_none_or(|x| x.cap < c * cols) {
+            self.stage = Some(engram::Stage::new(&self.ops, (c * cols).max(4096), hd)?);
         }
-        let stage = self.stage.as_mut().unwrap();
-        stage.load(&self.ops, stm, &ew.table, ew.rows, hashes)?;
-        let st = &self.ops.st;
-        let emb = self.ops.buf(s * cols * hd * 2)?;
-        ck("engram_dequant", unsafe {
-            ffi::memra_v41_engram_dequant(
-                stage.d_rows.p(st).m(),
-                stage.d_sc.p(st).m(),
-                (s * cols) as i64,
-                hd as i32,
-                emb.p(st).m(),
-                self.ops.sv(),
-            )
-        })?;
+        let st = self.ops.st.clone();
         let nkv = g.dim * (g.hc + 1);
-        let kv = self.ops.buf(s * nkv * 2)?;
-        self.ops.linear_q(
-            emb.p(st),
-            cols * hd,
-            s,
-            &ew.wkv,
-            kv.p(st),
-            nkv,
-            false,
-            &mut self.scr,
-        )?;
-        ck("engram_gate", unsafe {
-            ffi::memra_v41_engram_gate(
-                h.p(st).m(),
-                kv.p(st).m(),
-                ew.qw.p(st).m(),
-                ew.kw.p(st).m(),
-                s as i32,
-                g.hc as i32,
-                g.dim as i32,
-                g.norm_eps,
-                (g.dim as f32).powf(-0.5),
-                h.p(st).m(),
-                self.ops.sv(),
-            )
-        })?;
+        let emb = self.ops.buf(c * cols * hd * 2)?;
+        let kv = self.ops.buf(c * nkv * 2)?;
+        let row_bytes = g.hc * g.dim * 2;
+        for r0 in (0..s).step_by(c) {
+            let n = c.min(s - r0);
+            let stage = self.stage.as_mut().unwrap();
+            stage.load(
+                &self.ops,
+                stm,
+                &ew.table,
+                ew.rows,
+                &hashes[r0 * cols..(r0 + n) * cols],
+            )?;
+            ck("engram_dequant", unsafe {
+                ffi::memra_v41_engram_dequant(
+                    stage.d_rows.p(&st).m(),
+                    stage.d_sc.p(&st).m(),
+                    (n * cols) as i64,
+                    hd as i32,
+                    emb.p(&st).m(),
+                    self.ops.sv(),
+                )
+            })?;
+            self.ops.linear_q(
+                emb.p(&st),
+                cols * hd,
+                n,
+                &ew.wkv,
+                kv.p(&st),
+                nkv,
+                false,
+                &mut self.scr,
+            )?;
+            let hp = h.at(&st, r0 * row_bytes);
+            ck("engram_gate", unsafe {
+                ffi::memra_v41_engram_gate(
+                    hp.m(),
+                    kv.p(&st).m(),
+                    ew.qw.p(&st).m(),
+                    ew.kw.p(&st).m(),
+                    n as i32,
+                    g.hc as i32,
+                    g.dim as i32,
+                    g.norm_eps,
+                    (g.dim as f32).powf(-0.5),
+                    hp.m(),
+                    self.ops.sv(),
+                )
+            })?;
+            // the staging buffers are refilled next chunk: the copies and kernels must be done
+            self.ops.sync()?;
+        }
         if self.trace {
             tr.engram_out = Some(clone_buf(&self.ops, h)?);
         }
         Ok(())
     }
 
-    /// Indexer (vendor `Indexer.forward`) for `s` queries from position `sp`. On a kv source the
-    /// latent rows that just completed (`latent`: rows, first row index, count) become index keys:
-    /// `k_norm(wk(latent))`, RoPE at each group's first position, fp4 g32, written at their rows.
-    /// Then the fp4 query, the bf16 score over the `n_c` visible keys, the candidate pool on the
-    /// candidate source, and top-k shifted by the window length `offset`.
+    /// Index keys of the latent rows that just completed on a kv source (vendor `Indexer.forward`,
+    /// its key half): `k_norm(wk(latent))`, RoPE at each group's first position, fp4 g32, written
+    /// at rows `[row0, row0 + nrows)` of the shared index keys.
+    fn index_keys(
+        &mut self,
+        lw: &LayerW,
+        lat: &Buf,
+        row0: usize,
+        nrows: usize,
+        sh: &mut Shared,
+    ) -> Result<(), String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let iw = lw.idx.as_ref().unwrap();
+        let (Some(wk), Some(kn)) = (iw.wk.as_ref(), iw.k_norm.as_ref()) else {
+            return Ok(());
+        };
+        let ratio = lw.ratio;
+        let rb = g.index_dim * 2;
+        ensure_rows(
+            &self.ops,
+            &mut sh.index_k,
+            &mut sh.index_k_cap,
+            row0 + nrows,
+            rb,
+            self.max_pos / ratio,
+        )?;
+        let kp = sh.index_k.as_ref().unwrap().at(&st, row0 * rb);
+        self.ops
+            .linear_bf16(lat.p(&st), g.head_dim, nrows, wk, kp, g.index_dim, false)?;
+        self.ops.rmsnorm(
+            kp,
+            g.index_dim,
+            kn,
+            kp,
+            g.index_dim,
+            nrows,
+            g.index_dim,
+            g.norm_eps,
+        )?;
+        self.ops.rope(
+            kp,
+            g.index_dim,
+            nrows,
+            1,
+            g.index_dim,
+            &self.rope_comp,
+            row0 * ratio,
+            ratio,
+            false,
+        )?;
+        self.ops.fp4_qdq(kp, g.index_dim, nrows, g.index_dim, 32)?;
+        Ok(())
+    }
+
+    /// The indexer's selection for query rows `[r0, r1)` of a call of `s` tokens from position
+    /// `sp` (vendor `Indexer.forward`, its query half, row-sliced like the oracle's long-context
+    /// indexer: every step acts per query row). The fp4 query, the bf16 score over the `n_c`
+    /// visible keys, the candidate pool on the candidate source, top-k shifted by the window
+    /// length `offset`; written into rows `r0..r1` of `sh.topk` (and `sh.cand`).
     #[allow(clippy::too_many_arguments)]
-    fn indexer(
+    fn index_select(
         &mut self,
         lw: &LayerW,
         x: &Buf,
         qr: &Buf,
-        latent: Option<(&Buf, usize, usize)>,
+        r0: usize,
+        r1: usize,
         sp: usize,
         s: usize,
         offset: usize,
@@ -1617,54 +1705,17 @@ impl Ctx {
         let iw = lw.idx.as_ref().unwrap();
         let ratio = lw.ratio;
         let n_c = (sp + s) / ratio;
-        if let (Some((lat, row0, nrows)), Some(wk), Some(kn)) =
-            (latent, iw.wk.as_ref(), iw.k_norm.as_ref())
-        {
-            let rb = g.index_dim * 2;
-            ensure_rows(
-                &self.ops,
-                &mut sh.index_k,
-                &mut sh.index_k_cap,
-                row0 + nrows,
-                rb,
-                self.max_pos / ratio,
-            )?;
-            let kp = sh.index_k.as_ref().unwrap().at(&st, row0 * rb);
-            self.ops
-                .linear_bf16(lat.p(&st), g.head_dim, nrows, wk, kp, g.index_dim, false)?;
-            self.ops.rmsnorm(
-                kp,
-                g.index_dim,
-                kn,
-                kp,
-                g.index_dim,
-                nrows,
-                g.index_dim,
-                g.norm_eps,
-            )?;
-            self.ops.rope(
-                kp,
-                g.index_dim,
-                nrows,
-                1,
-                g.index_dim,
-                &self.rope_comp,
-                row0 * ratio,
-                ratio,
-                false,
-            )?;
-            self.ops.fp4_qdq(kp, g.index_dim, nrows, g.index_dim, 32)?;
-        }
+        let rows = r1 - r0;
         let ik = sh
             .index_k
             .as_ref()
             .ok_or("indexer: no index keys from a kv source")?;
         let qd = g.index_heads * g.index_dim;
-        let q = self.ops.buf(s * qd * 2)?;
+        let q = self.ops.buf(rows * qd * 2)?;
         self.ops.linear_q(
-            qr.p(&st),
+            qr.at(&st, r0 * g.q_lora * 2),
             g.q_lora,
-            s,
+            rows,
             &iw.wq_b,
             q.p(&st),
             qd,
@@ -1674,20 +1725,20 @@ impl Ctx {
         self.ops.rope(
             q.p(&st),
             qd,
-            s,
+            rows,
             g.index_heads,
             g.index_dim,
             &self.rope_comp,
-            sp,
+            sp + r0,
             1,
             false,
         )?;
-        self.ops.fp4_qdq(q.p(&st), qd, s, qd, 32)?;
-        let w = self.ops.buf(s * g.index_heads * 2)?;
+        self.ops.fp4_qdq(q.p(&st), qd, rows, qd, 32)?;
+        let w = self.ops.buf(rows * g.index_heads * 2)?;
         self.ops.linear_bf16(
-            x.p(&st),
+            x.at(&st, r0 * g.dim * 2),
             g.dim,
-            s,
+            rows,
             &iw.wproj,
             w.p(&st),
             g.index_heads,
@@ -1695,10 +1746,10 @@ impl Ctx {
         )?;
         // the kernel applies weights * (index_head_dim^-0.5 * index_heads^-0.5) as a bf16 product
         let wscale = ((g.index_dim as f64).powf(-0.5) * (g.index_heads as f64).powf(-0.5)) as f32;
-        let score = self.ops.buf(s * n_c * 2)?;
+        let score = self.ops.buf(rows * n_c * 2)?;
         let (cand, ldc) = if lw.uses_cand {
             let c = sh.cand.as_ref().ok_or("indexer: candidate pool missing")?;
-            (c.p(&st).u8c(), sh.cand_ld)
+            (c.at(&st, r0 * sh.cand_ld).u8c(), sh.cand_ld)
         } else {
             (std::ptr::null(), 0)
         };
@@ -1711,20 +1762,22 @@ impl Ctx {
                 w.p(&st).m(),
                 g.index_heads as i64,
                 wscale,
-                sp as i32,
+                (sp + r0) as i32,
                 ratio as i32,
                 cand,
                 ldc as i64,
                 g.cand_block as i32,
                 score.p(&st).m(),
                 n_c as i64,
-                s as i32,
+                rows as i32,
                 self.ops.sv(),
             )
         })?;
         if lw.cand_source {
-            let nb = n_c.div_ceil(g.cand_block);
-            let keep = self.ops.buf(s * nb)?;
+            let keep = sh
+                .cand
+                .as_ref()
+                .ok_or("indexer: candidate pool not allocated")?;
             ck("candidates", unsafe {
                 ffi::memra_v41_candidates(
                     score.p(&st).m(),
@@ -1732,19 +1785,17 @@ impl Ctx {
                     n_c as i32,
                     g.cand_block as i32,
                     g.cand_blocks as i32,
-                    sp as i32,
+                    (sp + r0) as i32,
                     ratio as i32,
-                    keep.p(&st).u8m(),
-                    nb as i64,
-                    s as i32,
+                    keep.at(&st, r0 * sh.cand_ld).u8m(),
+                    sh.cand_ld as i64,
+                    rows as i32,
                     self.ops.sv(),
                 )
             })?;
-            sh.cand = Some(keep);
-            sh.cand_ld = nb;
         }
-        let tw = g.index_topk.min(n_c);
-        let out = self.ops.buf(s * tw * 4)?;
+        let tw = sh.topk_w;
+        let out = sh.topk.as_ref().ok_or("indexer: selection not allocated")?;
         ck("topk", unsafe {
             ffi::memra_v41_topk(
                 score.p(&st).m(),
@@ -1753,14 +1804,12 @@ impl Ctx {
                 tw as i32,
                 tw as i32,
                 offset as i32,
-                out.p(&st).im(),
+                out.at(&st, r0 * tw * 4).im(),
                 tw as i64,
-                s as i32,
+                rows as i32,
                 self.ops.sv(),
             )
         })?;
-        sh.topk = Some(out);
-        sh.topk_w = tw;
         Ok(())
     }
 
@@ -1858,7 +1907,10 @@ impl Ctx {
     }
 
     /// Attention (vendor `Attention.forward`) on the normed input x `[s][dim]` from position `sp`:
-    /// a prefill chunk at 0, or one decode token. Returns `[s][dim]` bf16.
+    /// a prefill chunk at 0, or one decode token. Returns `[s][dim]` bf16. The keys side (window
+    /// KV, compressor, index keys) runs over all `s` tokens; the query side (q, the indexer's
+    /// selection, attention, the output projections) runs `chunk` query rows at a time, every
+    /// step of it being per query row.
     #[allow(clippy::too_many_arguments)]
     fn attention(
         &mut self,
@@ -1901,33 +1953,7 @@ impl Ctx {
             g.q_lora,
             g.norm_eps,
         )?;
-        let q = self.ops.buf(s * qdim * 2)?;
-        self.ops.linear_q(
-            qr.p(&st),
-            g.q_lora,
-            s,
-            &lw.wq_b,
-            q.p(&st),
-            qdim,
-            false,
-            &mut self.scr,
-        )?;
-        self.ops.rope(
-            q.p(&st),
-            qdim,
-            s,
-            g.heads,
-            hd,
-            if comp {
-                &self.rope_comp
-            } else {
-                &self.rope_base
-            },
-            sp,
-            1,
-            false,
-        )?;
-        // this chunk's window KV: kv_norm(wkv(x)), RoPE, fp8 per-32 quant-dequant
+        // this call's window KV: kv_norm(wkv(x)), RoPE, fp8 per-32 quant-dequant
         let kvw = self.ops.buf(s * hd * 2)?;
         self.ops.linear_q(
             x.p(&st),
@@ -1981,18 +2007,7 @@ impl Ctx {
                 hd * 2,
             )?;
         }
-        let (win_rows, win_idx, ww) = if sp == 0 {
-            let (v, w) = Self::window_idx(s, win);
-            (s, v, w)
-        } else {
-            // decode: the whole ring, oldest slot first, -1 for slots the sequence has not reached
-            let oldest = sp % win + 1;
-            let v: Vec<i32> = (oldest..win)
-                .chain(0..oldest)
-                .map(|i| if i > sp { -1 } else { i as i32 })
-                .collect();
-            (win, v, win)
-        };
+        let (win_rows, ww) = if sp == 0 { (s, s.min(win)) } else { (win, win) };
         let n_c = (sp + s).checked_div(ratio).unwrap_or(0);
         let kv_all = self.ops.buf((win_rows + n_c).max(1) * hd * 2)?;
         if sp == 0 {
@@ -2000,6 +2015,8 @@ impl Ctx {
         } else {
             copy_d2d(&self.ops, ring, 0, &kv_all, 0, win * hd * 2)?;
         }
+        drop(kvw);
+        let c = self.chunk.min(s).max(1);
         if ratio > 0 {
             let latent = if lw.kv_source {
                 self.compressor(lw, x, sp, s, ls)?
@@ -2017,8 +2034,21 @@ impl Ctx {
                     sh.topk = None;
                     sh.topk_w = 0;
                 } else {
-                    let lref = latent.as_ref().map(|(l, r0, n)| (l, *r0, *n));
-                    self.indexer(lw, x, &qr, lref, sp, s, win_rows, sh)?;
+                    if let Some((lat, row0, nrows)) = latent.as_ref() {
+                        self.index_keys(lw, lat, *row0, *nrows, sh)?;
+                    }
+                    let tw = g.index_topk.min(n_c);
+                    sh.topk = Some(self.ops.buf(s * tw * 4)?);
+                    sh.topk_w = tw;
+                    if lw.cand_source {
+                        let nb = n_c.div_ceil(g.cand_block);
+                        sh.cand = Some(self.ops.buf(s * nb)?);
+                        sh.cand_ld = nb;
+                    }
+                    for r0 in (0..s).step_by(c) {
+                        let r1 = (r0 + c).min(s);
+                        self.index_select(lw, x, &qr, r0, r1, sp, s, win_rows, sh)?;
+                    }
                 }
             }
             if let Some((lat, row0, nrows)) = latent {
@@ -2068,99 +2098,150 @@ impl Ctx {
         }
         let tw = if ratio > 0 && n_c > 0 { sh.topk_w } else { 0 };
         let tot = ww + tw;
-        // index rows: window part from the host, compressed part copied in from the selection
-        let mut idx_host = vec![-1i32; s * tot];
-        for i in 0..s {
-            idx_host[i * tot..i * tot + ww].copy_from_slice(&win_idx[i * ww..(i + 1) * ww]);
-        }
-        let idx = Buf::from_i32(&st, &idx_host)?;
-        if tw > 0 {
-            let sel = sh
-                .topk
-                .as_ref()
-                .ok_or("attention: no selection from the index source")?;
-            copy_2d(&self.ops, sel, tw * 4, &idx, ww * 4, tot * 4, tw * 4, s)?;
-        }
-        let o = self.ops.buf(s * qdim * 2)?;
-        let scale = (hd as f64).powf(-0.5) as f32;
-        self.ops.sparse_attn(
-            q.p(&st),
-            qdim,
-            kv_all.p(&st),
-            idx.p(&st),
-            tot,
-            tot,
-            lw.sink.p(&st),
-            scale,
-            o.p(&st),
-            qdim,
-            s,
-            g.heads,
-        )?;
-        if self.trace {
-            tr.qr = Some(clone_buf(&self.ops, &qr)?);
-            tr.q = Some(clone_buf(&self.ops, &q)?);
-            tr.kv_all = Some(clone_buf(&self.ops, &kv_all)?);
-            tr.idx_all = Some(clone_buf(&self.ops, &idx)?);
-            tr.attn_o = Some(clone_buf(&self.ops, &o)?);
-        }
-        self.ops.rope(
-            o.p(&st),
-            qdim,
-            s,
-            g.heads,
-            hd,
-            if comp {
-                &self.rope_comp
-            } else {
-                &self.rope_base
-            },
-            sp,
-            1,
-            true,
-        )?;
-        self.ops.fp8_qdq(o.p(&st), qdim, s, qdim)?;
         let gk = qdim / g.o_groups; // 4096 inputs per group
-        let oa = self.ops.buf(s * g.o_groups * g.o_lora * 2)?;
-        self.ops.gemm_bf16(
-            o.p(&st),
-            qdim,
-            gk,
-            lw.wo_a.w.p(&st),
-            gk,
-            g.o_lora * gk,
-            oa.p(&st),
-            g.o_groups * g.o_lora,
-            g.o_lora,
-            false,
-            s,
-            g.o_lora,
-            gk,
-            g.o_groups,
-        )?;
+        let scale = (hd as f64).powf(-0.5) as f32;
         let out = self.ops.buf(s * g.dim * 2)?;
-        self.ops.linear_q(
-            oa.p(&st),
-            g.o_groups * g.o_lora,
-            s,
-            &lw.wo_b,
-            out.p(&st),
-            g.dim,
-            false,
-            &mut self.scr,
-        )?;
+        let q = self.ops.buf(c * qdim * 2)?;
+        let o = self.ops.buf(c * qdim * 2)?;
+        let oa = self.ops.buf(c * g.o_groups * g.o_lora * 2)?;
+        let single = c == s;
+        for r0 in (0..s).step_by(c) {
+            let rows = c.min(s - r0);
+            self.ops.linear_q(
+                qr.at(&st, r0 * g.q_lora * 2),
+                g.q_lora,
+                rows,
+                &lw.wq_b,
+                q.p(&st),
+                qdim,
+                false,
+                &mut self.scr,
+            )?;
+            self.ops.rope(
+                q.p(&st),
+                qdim,
+                rows,
+                g.heads,
+                hd,
+                if comp {
+                    &self.rope_comp
+                } else {
+                    &self.rope_base
+                },
+                sp + r0,
+                1,
+                false,
+            )?;
+            // index rows: the window part from the host, the compressed part from the selection
+            let mut idx_host = vec![-1i32; rows * tot];
+            for i in 0..rows {
+                let row = &mut idx_host[i * tot..i * tot + ww];
+                if sp == 0 {
+                    Self::window_row(r0 + i, win, row);
+                } else {
+                    // decode: the whole ring, oldest slot first, -1 for slots not reached yet
+                    let oldest = sp % win + 1;
+                    for (v, slot) in row.iter_mut().zip((oldest..win).chain(0..oldest)) {
+                        *v = if slot > sp { -1 } else { slot as i32 };
+                    }
+                }
+            }
+            let idx = Buf::from_i32(&st, &idx_host)?;
+            if tw > 0 {
+                let sel = sh
+                    .topk
+                    .as_ref()
+                    .ok_or("attention: no selection from the index source")?;
+                copy_2d(
+                    &self.ops,
+                    sel,
+                    r0,
+                    tw * 4,
+                    &idx,
+                    ww * 4,
+                    tot * 4,
+                    tw * 4,
+                    rows,
+                )?;
+            }
+            self.ops.sparse_attn(
+                q.p(&st),
+                qdim,
+                kv_all.p(&st),
+                idx.p(&st),
+                tot,
+                tot,
+                lw.sink.p(&st),
+                scale,
+                o.p(&st),
+                qdim,
+                rows,
+                g.heads,
+            )?;
+            if self.trace && single {
+                tr.qr = Some(clone_buf(&self.ops, &qr)?);
+                tr.q = Some(clone_buf(&self.ops, &q)?);
+                tr.kv_all = Some(clone_buf(&self.ops, &kv_all)?);
+                tr.idx_all = Some(clone_buf(&self.ops, &idx)?);
+                tr.attn_o = Some(clone_buf(&self.ops, &o)?);
+            }
+            self.ops.rope(
+                o.p(&st),
+                qdim,
+                rows,
+                g.heads,
+                hd,
+                if comp {
+                    &self.rope_comp
+                } else {
+                    &self.rope_base
+                },
+                sp + r0,
+                1,
+                true,
+            )?;
+            self.ops.fp8_qdq(o.p(&st), qdim, rows, qdim)?;
+            self.ops.gemm_bf16(
+                o.p(&st),
+                qdim,
+                gk,
+                lw.wo_a.w.p(&st),
+                gk,
+                g.o_lora * gk,
+                oa.p(&st),
+                g.o_groups * g.o_lora,
+                g.o_lora,
+                false,
+                rows,
+                g.o_lora,
+                gk,
+                g.o_groups,
+            )?;
+            self.ops.linear_q(
+                oa.p(&st),
+                g.o_groups * g.o_lora,
+                rows,
+                &lw.wo_b,
+                out.at(&st, r0 * g.dim * 2),
+                g.dim,
+                false,
+                &mut self.scr,
+            )?;
+            // the host index rows are rebuilt next chunk
+            self.ops.sync()?;
+        }
         Ok(out)
     }
 
     /// MoE (vendor `MoE.forward`): the sqrtsoftplus gate with its selection bias, routed MXFP4
     /// (or minted NVFP4) experts in ascending id order, the shared FP8 expert, bf16 out.
-    fn moe(&mut self, lw: &LayerW, x: &Buf, s: usize, tr: &mut Trace) -> Result<Buf, String> {
+    fn moe(&mut self, lw: &LayerW, x: Dp, s: usize, out: Dp, tr: &mut Trace) -> Result<(), String> {
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let ne = g.n_experts;
         let raw = self.ops.buf(s * ne * 4)?;
         self.ops
-            .linear_bf16(x.p(&st), g.dim, s, &lw.gate_w, raw.p(&st), ne, true)?;
+            .linear_bf16(x, g.dim, s, &lw.gate_w, raw.p(&st), ne, true)?;
         let sel = self.ops.buf(s * g.topk * 4)?;
         let selw = self.ops.buf(s * g.topk * 4)?;
         ck("route", unsafe {
@@ -2191,8 +2272,8 @@ impl Ctx {
             }
         }
         if self.trace {
-            tr.route_sel = sel_h.clone();
-            tr.route_w = selw_h.clone();
+            tr.route_sel.extend_from_slice(&sel_h);
+            tr.route_w.extend_from_slice(&selw_h);
         }
         let y = self.ops.buf(s * g.dim * 4)?;
         let inter = g.moe_inter;
@@ -2214,7 +2295,7 @@ impl Ctx {
             let drw = Buf::from_f32(&st, &rw)?;
             let [w1, w2, w3] = &lw.experts[e];
             self.ops
-                .act_quant(x.p(&st), g.dim, dri.p(&st), n, g.dim, aq.p(&st), as_.p(&st))?;
+                .act_quant(x, g.dim, dri.p(&st), n, g.dim, aq.p(&st), as_.p(&st))?;
             self.ops
                 .gemm_q(aq.p(&st), as_.p(&st), n, w1, gb.p(&st), inter, false)?;
             self.ops
@@ -2259,26 +2340,10 @@ impl Ctx {
             self.ops.sync()?;
         }
         let [s1, s2, s3] = &lw.shared;
-        self.ops.linear_q(
-            x.p(&st),
-            g.dim,
-            s,
-            s1,
-            gb.p(&st),
-            inter,
-            false,
-            &mut self.scr,
-        )?;
-        self.ops.linear_q(
-            x.p(&st),
-            g.dim,
-            s,
-            s3,
-            ub.p(&st),
-            inter,
-            false,
-            &mut self.scr,
-        )?;
+        self.ops
+            .linear_q(x, g.dim, s, s1, gb.p(&st), inter, false, &mut self.scr)?;
+        self.ops
+            .linear_q(x, g.dim, s, s3, ub.p(&st), inter, false, &mut self.scr)?;
         ck("swiglu", unsafe {
             ffi::memra_v41_swiglu(
                 gb.p(&st).m(),
@@ -2303,17 +2368,16 @@ impl Ctx {
             false,
             &mut self.scr,
         )?;
-        let out = self.ops.buf(s * g.dim * 2)?;
         ck("add_cast", unsafe {
             ffi::memra_v41_add_cast(
                 y.p(&st).f(),
                 db.p(&st).m(),
-                out.p(&st).m(),
+                out.m(),
                 (s * g.dim) as i64,
                 self.ops.sv(),
             )
         })?;
-        Ok(out)
+        self.ops.sync()
     }
 
     /// One trunk block (vendor `Block.forward`) for `s` tokens from position `sp`: a prefill chunk
@@ -2422,7 +2486,14 @@ impl Ctx {
         })?;
         self.ops
             .rmsnorm(x2.p(&st), d, &lw.ffn_norm, x2.p(&st), d, s, d, g.norm_eps)?;
-        let m = self.moe(lw, &x2, s, tr)?;
+        // the MoE runs `chunk` tokens at a time: each token's experts still add in ascending id order
+        let m = self.ops.buf(s * d * 2)?;
+        // larger slices here: the per-expert loop runs once per slice
+        let cm = (4 * self.chunk).min(s).max(1);
+        for r0 in (0..s).step_by(cm) {
+            let rows = cm.min(s - r0);
+            self.moe(lw, x2.at(&st, r0 * d * 2), rows, m.at(&st, r0 * d * 2), tr)?;
+        }
         let h2 = self.ops.buf(s * hc * d * 2)?;
         ck("hc_post", unsafe {
             ffi::memra_v41_hc_post(
@@ -2484,12 +2555,13 @@ pub fn copy_d2d(
     Ok(())
 }
 
-/// Copy `rows` rows of `width` bytes from `src` (pitch `spitch`) into `dst` at byte column
+/// Copy `rows` rows of `width` bytes from `src` (pitch `spitch`, starting at row `src_row`) into `dst` at byte column
 /// `dcol` (pitch `dpitch`).
 #[allow(clippy::too_many_arguments)]
 pub fn copy_2d(
     ops: &Ops,
     src: &Buf,
+    src_row: usize,
     spitch: usize,
     dst: &Buf,
     dcol: usize,
@@ -2503,7 +2575,7 @@ pub fn copy_2d(
     use cudarc::driver::sys::*;
     let p = CUDA_MEMCPY2D {
         srcXInBytes: 0,
-        srcY: 0,
+        srcY: src_row,
         srcMemoryType: CUmemorytype::CU_MEMORYTYPE_DEVICE,
         srcHost: std::ptr::null(),
         srcDevice: src.p(&ops.st).addr(),

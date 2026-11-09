@@ -85,14 +85,16 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                 against: request.against.clone(),
                 out_dir: out_dir.clone(),
             })?;
-            write_hf_oracle_bundle(&request.source, &out_dir)?;
-            let gate = pack.checkpoint_parity.ok_or_else(|| {
-                format!(
+            let probe = pack.checkpoint_probe_tokens();
+            write_hf_oracle_bundle(&request.source, &out_dir, probe)?;
+            if pack.checkpoint_parity.is_none() && pack.checkpoint_parity_classes.is_empty() {
+                return Err(format!(
                     "model pack {} has no checkpoint parity threshold; capture bundle written to {} and no fallback is allowed",
                     pack.family,
                     out_dir.display()
                 )
-            })?;
+                .into());
+            }
             let oracle_path = request.oracle.ok_or_else(|| {
                 format!(
                     "checkpoint tensor contract passed; run {} offline, then repeat with --oracle <hf-oracle.tsv>; no fallback is allowed",
@@ -104,10 +106,24 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                 .or_else(|| std::env::var_os("MEMRA_NATIVE_CHECKPOINT_RUNNER").map(PathBuf::from))
                 .ok_or("checkpoint parity requires --native-runner or MEMRA_NATIVE_CHECKPOINT_RUNNER; no fallback is allowed")?;
             let native_path = out_dir.join("native-oracle.tsv");
-            run_native_checkpoint(&runner, &request.source, &native_path)?;
+            run_native_checkpoint(&runner, &request.source, &native_path, probe)?;
             let runner_hash = hex_sha256(&std::fs::read(&runner)?);
             let expected = parse_checkpoint_oracle(&std::fs::read_to_string(&oracle_path)?)?;
             let actual = parse_checkpoint_oracle(&std::fs::read_to_string(&native_path)?)?;
+            if expected.tokens != probe {
+                return Err(format!(
+                    "the oracle was taken on tokens {:?}; pack {} checks on its probe {probe:?}; no fallback is allowed",
+                    expected.tokens, pack.family
+                )
+                .into());
+            }
+            // the oracle's numeric class picks the band (compare refuses a class mismatch)
+            let gate = pack.checkpoint_parity_for(&expected.numeric_class).ok_or_else(|| {
+                format!(
+                    "model pack {} has no checkpoint parity threshold for numeric class {}; no fallback is allowed",
+                    pack.family, expected.numeric_class
+                )
+            })?;
             let receipt = match compare_checkpoint_oracles(&expected, &actual, gate) {
                 Ok(receipt) => receipt,
                 Err(error) => {
@@ -133,10 +149,17 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                 }
             };
             let artifact_lock = std::fs::read(out_dir.join("artifact.lock"))?;
-            let receipt = format!(
+            let mut receipt = format!(
                 "{receipt}artifact_lock_sha256\t{}\nnative_runner_sha256\t{runner_hash}\n",
                 hex_sha256(&artifact_lock)
             );
+            if pack.checkpoint_probe.is_some() {
+                // a declared probe is part of the record: changing it changes the receipt
+                receipt.push_str(&format!(
+                    "checkpoint_probe_sha256\t{}\n",
+                    probe_sha256(probe)
+                ));
+            }
             write_atomic(&out_dir.join("checkpoint-parity.tsv"), receipt.as_bytes())?;
             write_atomic(
                 &out_dir.join("gates.txt"),
@@ -920,8 +943,23 @@ struct CheckpointOracle {
     logits: Vec<f32>,
 }
 
-fn write_hf_oracle_bundle(source: &str, out_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let tokens = [1u32, 2, 3, 4];
+/// sha256 of a checkpoint probe written as comma-separated decimal ids.
+fn probe_sha256(tokens: &[u32]) -> String {
+    hex_sha256(
+        tokens
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+            .as_bytes(),
+    )
+}
+
+fn write_hf_oracle_bundle(
+    source: &str,
+    out_dir: &Path,
+    tokens: &[u32],
+) -> Result<(), Box<dyn std::error::Error>> {
     let (model, revision) = if Path::new(source).exists() {
         (source.to_string(), None)
     } else {
@@ -944,6 +982,7 @@ fn write_hf_oracle_bundle(source: &str, out_dir: &Path) -> Result<(), Box<dyn st
         .as_ref()
         .map(|revision| format!("{revision:?}"))
         .unwrap_or_else(|| "None".to_string());
+    let tokens_literal = format!("{tokens:?}");
     let script = format!(
         r#"#!/usr/bin/env python3
 import argparse
@@ -954,7 +993,7 @@ from transformers import AutoModelForCausalLM
 
 MODEL = {model_literal}
 REVISION = {revision_literal}
-TOKENS = [1, 2, 3, 4]
+TOKENS = {tokens_literal}
 
 parser = argparse.ArgumentParser(description="Offline HF correctness oracle for Memra onboarding")
 parser.add_argument("--out", default="hf-oracle.tsv")
@@ -992,6 +1031,7 @@ fn run_native_checkpoint(
     runner: &Path,
     source: &str,
     output: &Path,
+    tokens: &[u32],
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !Path::new(source).is_dir() {
         return Err(
@@ -1001,7 +1041,7 @@ fn run_native_checkpoint(
     }
     let result = Command::new(runner)
         .arg(source)
-        .args(["1", "2", "3", "4"])
+        .args(tokens.iter().map(u32::to_string))
         .env("MEMRA_FULL_PREC", "1")
         .env("MEMRA_ORACLE_OUT", output)
         .output()?;
@@ -2281,6 +2321,19 @@ fn format_lock(
         writeln!(output, "checkpoint_atol={}", gate.max_abs).unwrap();
         writeln!(output, "checkpoint_rtol={}", gate.max_rel).unwrap();
         writeln!(output, "checkpoint_require_argmax={}", gate.require_argmax).unwrap();
+    }
+    // only a pack that declares a class band or a probe writes these lines: every other lock
+    // keeps its bytes
+    for class in pack.checkpoint_parity_classes {
+        writeln!(
+            output,
+            "checkpoint_class={} atol={} rtol={} require_argmax={}",
+            class.numeric_class, class.gate.max_abs, class.gate.max_rel, class.gate.require_argmax
+        )
+        .unwrap();
+    }
+    if let Some(probe) = pack.checkpoint_probe {
+        writeln!(output, "checkpoint_probe_sha256={}", probe_sha256(probe)).unwrap();
     }
     writeln!(output, "config_sha256={config}").unwrap();
     writeln!(output, "census_sha256={census}").unwrap();
@@ -3640,7 +3693,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&root).unwrap();
         let sha = "0123456789abcdef0123456789abcdef01234567";
-        write_hf_oracle_bundle(&format!("org/model@{sha}"), &root).unwrap();
+        write_hf_oracle_bundle(&format!("org/model@{sha}"), &root, &[1, 2, 3, 4]).unwrap();
         let request = std::fs::read_to_string(root.join("oracle-request.tsv")).unwrap();
         let script = std::fs::read_to_string(root.join("capture-hf-oracle.py")).unwrap();
         assert!(request.contains(&format!("revision\t{sha}")));

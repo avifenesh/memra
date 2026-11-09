@@ -33,6 +33,8 @@ pub static PACK: ModelPack = ModelPack {
         max_rel: 0.005,
         require_argmax: true,
     }),
+    checkpoint_parity_classes: &[],
+    checkpoint_probe: None,
     matches_config: |config| {
         matches!(config.arch, Arch::Qwen35Moe)
             || (matches!(config.arch, Arch::Qwen35)

@@ -2,16 +2,17 @@
 //! the hashed table rows into pinned staging for one H2D copy per step.
 //!
 //! The tables stay in host memory (two fp8 tables of 384M x 256 B plus ue8m0 scales, 203 GB);
-//! a token at an Engram layer reads `(max_ngram - 1) * heads` = 24 rows of 256 B. The hash
-//! constants (prime bucket sizes, offsets, per-layer multipliers, the compressed token map) are the
-//! ones the vendor code derives at load; they are read from its dump (`engram_constants.json` and
-//! `.token_map.i32`), checked against the config, and the hash ids are gated against the vendor's.
+//! a token at an Engram layer reads `(max_ngram - 1) * heads` = 24 rows of 256 B. The bucket
+//! primes and the per-layer multipliers come from `memra_gguf::dsv41_forward` (the primes drawn as
+//! the vendor draws them, numpy's `SeedSequence` + `PCG64` + Lemire draw ported bit-exactly for the
+//! multipliers); the compressed token map is still an input (the vendor builds it from tokenizer
+//! normalizers at load). The gates compare the resulting hash ids with the vendor's own.
 
-use super::{Buf, Ops};
+use super::{Buf, Geo, Ops};
 use cudarc::driver::PinnedHostSlice;
 use memra_gguf::safetensors::StModel;
 
-/// The vendor-derived hashing constants for every Engram layer.
+/// The hashing constants for every Engram layer.
 #[derive(Debug, Clone)]
 pub struct EngramConsts {
     pub layer_ids: Vec<usize>,
@@ -31,92 +32,66 @@ pub struct EngramConsts {
     pub token_map: Vec<i32>,
 }
 
-fn jarr(v: &serde_json::Value, k: &str) -> Result<Vec<serde_json::Value>, String> {
-    v.get(k)
-        .and_then(|x| x.as_array())
-        .cloned()
-        .ok_or_else(|| format!("engram constants: no array {k}"))
-}
-fn ji64(v: &serde_json::Value) -> Result<i64, String> {
-    v.as_i64()
-        .ok_or_else(|| format!("engram constants: {v} is not an integer"))
+/// The compressed token map as raw little-endian i32, one entry per vocabulary id.
+pub fn token_map_from_file(path: &std::path::Path) -> Result<Vec<i32>, String> {
+    let raw = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if raw.len() % 4 != 0 {
+        return Err(format!("{}: not an i32 array", path.display()));
+    }
+    Ok(raw
+        .chunks_exact(4)
+        .map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect())
 }
 
 impl EngramConsts {
-    pub fn load(
-        json_path: &std::path::Path,
-        token_map_path: &std::path::Path,
-    ) -> Result<Self, String> {
-        let s = std::fs::read_to_string(json_path)
-            .map_err(|e| format!("{}: {e}", json_path.display()))?;
-        let v: serde_json::Value =
-            serde_json::from_str(&s).map_err(|e| format!("{}: {e}", json_path.display()))?;
-        let usz = |k: &str| -> Result<usize, String> {
-            v.get(k)
-                .and_then(|x| x.as_u64())
-                .map(|x| x as usize)
-                .ok_or_else(|| format!("engram constants: no {k}"))
-        };
-        let layer_ids = jarr(&v, "layer_ids")?
-            .iter()
-            .map(|x| ji64(x).map(|y| y as usize))
-            .collect::<Result<Vec<_>, _>>()?;
-        let primes = jarr(&v, "primes")?
+    /// Derive the constants from the config and the token map, then check them against the
+    /// config's table sizes.
+    pub fn derive(g: &Geo, token_map: Vec<i32>) -> Result<Self, String> {
+        use memra_gguf::dsv41_forward::{engram_multipliers, engram_primes};
+        let nl = g.engram_layers.len();
+        let primes_u = engram_primes(nl, g.engram_ngram, g.engram_heads, g.engram_bucket_base);
+        let primes: Vec<Vec<Vec<i64>>> = primes_u
             .iter()
             .map(|l| {
-                l.as_array()
-                    .ok_or("primes layer")
-                    .map_err(String::from)
-                    .and_then(|ng| {
-                        ng.iter()
-                            .map(|h| {
-                                h.as_array()
-                                    .ok_or("primes ngram")
-                                    .map_err(String::from)
-                                    .and_then(|hs| {
-                                        hs.iter().map(ji64).collect::<Result<Vec<_>, _>>()
-                                    })
-                            })
-                            .collect::<Result<Vec<_>, _>>()
-                    })
+                l.iter()
+                    .map(|n| n.iter().map(|&p| p as i64).collect())
+                    .collect()
             })
-            .collect::<Result<Vec<_>, _>>()?;
-        let mat = |k: &str| -> Result<Vec<Vec<i64>>, String> {
-            jarr(&v, k)?
-                .iter()
-                .map(|r| {
-                    r.as_array()
-                        .ok_or(format!("{k} row"))
-                        .and_then(|xs| xs.iter().map(ji64).collect())
-                })
-                .collect()
-        };
-        let offsets = mat("offsets")?;
-        let multipliers = mat("multipliers")?;
-        let num_embeddings = jarr(&v, "num_embeddings")?
-            .iter()
-            .map(ji64)
-            .collect::<Result<Vec<_>, _>>()?;
-        let raw = std::fs::read(token_map_path)
-            .map_err(|e| format!("{}: {e}", token_map_path.display()))?;
-        let token_map: Vec<i32> = raw
-            .chunks_exact(4)
-            .map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect();
+        let offsets = primes
+            .iter()
+            .map(|l| {
+                let mut acc = 0i64;
+                l.iter()
+                    .flatten()
+                    .map(|&p| {
+                        let o = acc;
+                        acc += p;
+                        o
+                    })
+                    .collect()
+            })
+            .collect();
+        let multipliers = g
+            .engram_layers
+            .iter()
+            .map(|&l| engram_multipliers(l as u32, g.engram_ngram, g.engram_compressed_vocab))
+            .collect::<Result<Vec<_>, _>>()?;
+        let pad = *token_map
+            .get(g.engram_pad_id)
+            .ok_or("engram: pad id outside the token map")? as i64;
         let c = Self {
-            layer_ids,
-            max_ngram: usz("max_ngram_size")?,
-            n_heads: usz("n_heads")?,
-            head_dim: usz("head_dim")?,
+            layer_ids: g.engram_layers.clone(),
+            max_ngram: g.engram_ngram,
+            n_heads: g.engram_heads,
+            head_dim: g.engram_head_dim,
             primes,
             offsets,
             multipliers,
-            num_embeddings,
-            pad: ji64(
-                v.get("pad_compressed_id")
-                    .ok_or("engram constants: no pad_compressed_id")?,
-            )?,
-            compressed_vocab: usz("compressed_vocab")?,
+            num_embeddings: g.engram_rows.iter().map(|&r| r as i64).collect(),
+            pad,
+            compressed_vocab: g.engram_compressed_vocab as usize,
             token_map,
         };
         c.validate()?;
@@ -140,19 +115,10 @@ impl EngramConsts {
             {
                 return Err(format!("engram constants: layer {l} shape"));
             }
-            // offsets are the running sums of the bucket sizes; the table holds exactly their total
-            let mut acc = 0i64;
-            for (i, &p) in flat.iter().enumerate() {
-                if self.offsets[l][i] != acc {
-                    return Err(format!(
-                        "engram constants: layer {l} offset {i} is not the prefix sum"
-                    ));
-                }
-                acc += p;
-            }
-            if acc != self.num_embeddings[l] {
+            let total: i64 = flat.iter().sum();
+            if total != self.num_embeddings[l] {
                 return Err(format!(
-                    "engram constants: layer {l} buckets sum to {acc}, table has {}",
+                    "engram constants: layer {l} buckets sum to {total}, table has {}",
                     self.num_embeddings[l]
                 ));
             }

@@ -209,6 +209,30 @@ GEMMs, reductions and transcendental functions in f64 and rounds once, on both t
 the reference side, takes top-k ties in index order (the CUDA `topk` rule), and matches the
 vendor `model.py` to the bit (`research/modelplan-onboarding-dsv41-20261109/`).
 
+### The checkpoint-parity probe and numeric classes
+
+`memra model verify checkpoint` runs the reference oracle and the native runner on one prompt
+and compares the full logits row after it: every logit within the pack's `atol + rtol *
+abs(reference)`, the argmax equal when the pack requires it. The prompt is tokens 1,2,3,4 unless
+the pack declares `checkpoint_probe`. Declare one only when the default probe cannot separate a
+wrong program from a right one on the family, and record the measurement that showed it next to
+the declaration. A declared probe is part of the record: its sha256 is written to the
+`artifact.lock` and to `checkpoint-parity.tsv`, so a different probe is a different receipt.
+Packs that declare nothing keep the default probe and byte-identical locks and receipts.
+
+DeepSeek-V4.1 declares its `capital` chat turn (16 tokens). On 1,2,3,4 (`<eos> <pad> ! "`) the
+vendor's own CPU and GPU runs of the checkpoint program disagree by 13.3 logits (KL 0.49, top-5
+overlap 3/5, hidden states 0.45 apart by layer 38): a band wide enough for the vendor's two
+backends admits nearly any program. The receipts are in
+`research/modelplan-onboarding-dsv41-20261109/gpu/`.
+
+The oracle and the native tape each name a `numeric_class`, and the gate refuses a mismatch. A
+family whose checkpoint program runs under more than one class (a correctly rounded CPU reference
+next to a hardware-primitive GPU route) gives each class its own band in
+`checkpoint_parity_classes`; the oracle's class picks it, and an unnamed class falls back to
+`checkpoint_parity`. Set a class band from the source program's own spread between two backends on
+the probe, never from the native runner's result.
+
 ## 4. Prove tokenizer, template, tools, and thinking
 
 Tokenizer and template work are separate gates:

@@ -9,7 +9,7 @@
 //! usage:
 //!   dsv41-gate kernels FIXTURE_ROOT [--out RECEIPT.json]
 //!   dsv41-gate layer CKPT_DIR CAPTURE_DIR --layers 1,2,20 [--mint] [--chain N]
-//!                    [--engram-consts DIR] [--floor CPU_FLOOR_DIR] [--out RECEIPT.json]
+//!                    [--token-map FILE] [--floor CPU_FLOOR_DIR] [--out RECEIPT.json]
 
 use memra_engine::dsv41_gpu::{
     self as v, Buf, Ctx, Dp, Geo, LayerState, LayerW, Ops, QFmt, QW, Shared, Trace, bf16_to_f32,
@@ -24,6 +24,9 @@ use std::sync::Arc;
 
 struct Fx {
     root: PathBuf,
+    /// the checkpoint the capture was made from (set by the layer gate; the Engram constants
+    /// derive from its config)
+    ckpt: PathBuf,
     t: BTreeMap<String, (String, Vec<usize>, String)>,
     meta: serde_json::Value,
 }
@@ -52,6 +55,7 @@ impl Fx {
         }
         Ok(Self {
             root: root.to_path_buf(),
+            ckpt: PathBuf::new(),
             t,
             meta: v["meta"].clone(),
         })
@@ -1419,7 +1423,14 @@ fn load_shared(
         sh.topk_w = f.shape(&k("topk_idxs"))[2];
     }
     // the hook sees the shared slot at every layer entry; only a rescoring layer reads it
-    if l > g.cand_source && f.has(&k("candidates")) && f.shape(&k("candidates"))[1] == rows {
+    if l > g.cand_source
+        && f.has(&k("candidates_blocks"))
+        && f.shape(&k("candidates_blocks"))[1] == rows
+    {
+        let nb = f.shape(&k("candidates_blocks"))[2];
+        sh.cand = Some(f.dev(ops, &k("candidates_blocks"))?);
+        sh.cand_ld = nb;
+    } else if l > g.cand_source && f.has(&k("candidates")) && f.shape(&k("candidates"))[1] == rows {
         let c = f.i64s(&k("candidates"))?; // [1, rows, n_c] bool per position -> per block
         let n_c = f.shape(&k("candidates"))[2];
         let nb = n_c.div_ceil(g.cand_block);
@@ -1439,19 +1450,20 @@ fn load_shared(
 /// constants are given (checked against the capture's ids at `want_key`), else the capture's.
 fn engram_hashes(
     f: &Fx,
-    consts: Option<&Path>,
+    token_map: Option<&Path>,
     ids: &[u32],
     li: usize,
     want_key: &str,
     rep: &mut Report,
 ) -> Result<Vec<i64>, String> {
-    let Some(cpath) = consts else {
+    let Some(tmap) = token_map else {
         return f.i64s(want_key);
     };
-    let ec = v::engram::EngramConsts::load(
-        &cpath.join("engram_constants.json"),
-        &cpath.join("engram_constants.token_map.i32"),
+    let g = Geo::from_config(
+        &memra_gguf::config::ModelConfig::from_config_json(&f.ckpt.join("config.json"))
+            .map_err(|e| e.to_string())?,
     )?;
+    let ec = v::engram::EngramConsts::derive(&g, v::engram::token_map_from_file(tmap)?)?;
     let all = ec.hash_prefill(ids)?;
     let li_e = ec
         .layer_ids
@@ -1496,7 +1508,7 @@ fn decode_steps(
     lw: &LayerW,
     sh: &mut Shared,
     ls: &mut LayerState,
-    consts: Option<&Path>,
+    token_map: Option<&Path>,
     ids: &[u32],
     decode: usize,
     tol: f64,
@@ -1519,7 +1531,7 @@ fn decode_steps(
             let mut ext = ids.to_vec();
             ext.extend_from_slice(&gen_ids[..step]);
             let hk = format!("{ps}/engram/hash");
-            let all = engram_hashes(f, consts, &ext, li, &hk, rep)?;
+            let all = engram_hashes(f, token_map, &ext, li, &hk, rep)?;
             let cols = g.engram_cols();
             let last = all[all.len() - cols..].to_vec();
             let h = f.dev(&cx.ops, &format!("{ps}/engram/x"))?;
@@ -1617,7 +1629,7 @@ fn layer_gate(
     layers: &[usize],
     mint: bool,
     chain: usize,
-    consts: Option<&Path>,
+    token_map: Option<&Path>,
     tol: f64,
     floor: Option<&Path>,
     decode: usize,
@@ -1648,7 +1660,8 @@ fn layer_gate(
         .map_err(|e| e.to_string())?;
     let g = Geo::from_config(&mc)?;
     let stm = memra_gguf::safetensors::StModel::open(ckpt).map_err(|e| e.to_string())?;
-    let f = Fx::open(cap)?;
+    let mut f = Fx::open(cap)?;
+    f.ckpt = ckpt.to_path_buf();
     let ids: Vec<u32> = f
         .i64s("prompt_ids")?
         .into_iter()
@@ -1657,6 +1670,14 @@ fn layer_gate(
     let s = ids.len();
     let mut cx = Ctx::new(st.clone(), g.clone(), (s + 64).max(1024))?;
     cx.trace = true;
+    if let Some(c) = std::env::args()
+        .skip_while(|x| x != "--chunk")
+        .nth(1)
+        .and_then(|x| x.parse().ok())
+    {
+        // slicing never changes a result (every sliced step is per row): `--chunk` proves it
+        cx.chunk = c;
+    }
     let mut summary = Vec::new();
     for &l0 in layers {
         let mut sh = Shared::default();
@@ -1681,7 +1702,8 @@ fn layer_gate(
             let load_s = t0.elapsed().as_secs_f64();
             let mut tr = Trace::default();
             if lw.engram.is_some() {
-                let hashes = engram_hashes(&f, consts, &ids, li, &format!("{p}/engram/hash"), rep)?;
+                let hashes =
+                    engram_hashes(&f, token_map, &ids, li, &format!("{p}/engram/hash"), rep)?;
                 cx.engram(&stm, &lw, &h, &hashes, s, &mut tr)?;
                 if f.has(&format!("{p}/engram/out")) {
                     let key = format!("{p}/engram/out");
@@ -1893,7 +1915,7 @@ fn layer_gate(
                     &lw,
                     &mut sh,
                     &mut ls,
-                    consts,
+                    token_map,
                     &ids,
                     decode,
                     tol,
@@ -2003,14 +2025,14 @@ fn main() {
             let layers: Vec<usize> = flag("--layers").unwrap_or_default().split(',').filter_map(|x| x.parse().ok()).collect();
             let chain = flag("--chain").and_then(|x| x.parse().ok()).unwrap_or(1);
             let tol = flag("--tol").and_then(|x| x.parse().ok()).unwrap_or(0.02);
-            let consts = flag("--engram-consts").map(PathBuf::from);
+            let token_map = flag("--token-map").map(PathBuf::from);
             let floor = flag("--floor").map(PathBuf::from);
             let decode = flag("--decode").and_then(|x| x.parse().ok()).unwrap_or(0);
             let save = flag("--save").map(PathBuf::from);
-            layer_gate(Path::new(&a[2]), Path::new(&a[3]), &layers, has("--mint"), chain, consts.as_deref(), tol, floor.as_deref(), decode, save.as_deref(), has("--head"), &mut rep)
+            layer_gate(Path::new(&a[2]), Path::new(&a[3]), &layers, has("--mint"), chain, token_map.as_deref(), tol, floor.as_deref(), decode, save.as_deref(), has("--head"), &mut rep)
                 .map(|s| format!("\"gate\": \"layer\", \"capture\": {:?}, {s}", a[3]))
         }
-        _ => Err("usage: dsv41-gate kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--engram-consts DIR] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--out R.json]".into()),
+        _ => Err("usage: dsv41-gate kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json]".into()),
     };
     let header = match r {
         Ok(h) => h,

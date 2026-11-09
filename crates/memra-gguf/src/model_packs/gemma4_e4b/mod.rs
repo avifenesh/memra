@@ -38,6 +38,8 @@ pub static PACK: ModelPack = ModelPack {
         max_rel: 0.005,
         require_argmax: true,
     }),
+    checkpoint_parity_classes: &[],
+    checkpoint_probe: None,
     // The support record was measured on E4B only, so the match is pinned to its geometry: 42
     // trunk layers, the last 18 KV-shared, per-layer inputs 256 wide. Another checkpoint with
     // per-layer inputs and KV sharing gets no pack until it is qualified and recorded.

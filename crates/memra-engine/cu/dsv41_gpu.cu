@@ -821,86 +821,93 @@ extern "C" int memra_v41_comp_pool2(const float* kv, const float* sc, long ld, v
 
 #define V41_IRS 272  // bytes per 128-element bf16 row (+16)
 
+#define V41_IQB 4  // query rows per block: the 64-key tile is loaded once for all of them
+
 __global__ void __launch_bounds__(128) v41_index_score_kernel(const v41_bf* __restrict__ q, long ldq,
                                                               const v41_bf* __restrict__ k, int T,
                                                               const v41_bf* __restrict__ w, long ldw, float wscale,
                                                               int start_pos,
                                                               int ratio, const uint8_t* __restrict__ cand, long ldc,
-                                                              int cb, v41_bf* __restrict__ out, long ldo) {
+                                                              int cb, v41_bf* __restrict__ out, long ldo, int rows) {
     __shared__ __align__(16) uint8_t sQ[32 * V41_IRS];
     __shared__ __align__(16) uint8_t sK[64 * V41_IRS];
     __shared__ float sW[32];
-    int row = blockIdx.y, t0 = blockIdx.x * 64;
+    int t0 = blockIdx.x * 64;
     int tid = threadIdx.x, wp = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
-    const uint8_t* qg = (const uint8_t*)(q + (long)row * ldq);
-    for (int i = tid; i < 32 * 16; i += 128) {
-        int r = i >> 4, c = i & 15;
-        *(uint4*)(sQ + r * V41_IRS + c * 16) = *(const uint4*)(qg + r * 256 + c * 16);
-    }
     for (int i = tid; i < 64 * 16; i += 128) {
         int r = i >> 4, c = i & 15;
         uint4 v = make_uint4(0, 0, 0, 0);
         if (t0 + r < T) v = *(const uint4*)((const uint8_t*)(k + (long)(t0 + r) * 128) + c * 16);
         *(uint4*)(sK + r * V41_IRS + c * 16) = v;
     }
-    // weights_proj(x) * (index_head_dim^-0.5 * index_heads^-0.5), a bf16 product in the reference
-    if (tid < 32) sW[tid] = v41_bf2f(v41_f2bf(__fmul_rn(v41_bf2f(w[(long)row * ldw + tid]), wscale)));
-    __syncthreads();
-    float d[2][2][4];
-#pragma unroll
-    for (int mi = 0; mi < 2; ++mi)
-#pragma unroll
-        for (int ni = 0; ni < 2; ++ni)
-#pragma unroll
-            for (int e = 0; e < 4; ++e) d[mi][ni][e] = 0.f;
-#pragma unroll
-    for (int kk = 0; kk < 8; ++kk) {
-        int kb = kk * 32;
-#pragma unroll
-        for (int mi = 0; mi < 2; ++mi) {
-            uint32_t af[4];
-            int r = mi * 16;
-            af[0] = v41_lds32(sQ + (r + g) * V41_IRS + kb + t * 4);
-            af[1] = v41_lds32(sQ + (r + g + 8) * V41_IRS + kb + t * 4);
-            af[2] = v41_lds32(sQ + (r + g) * V41_IRS + kb + 16 + t * 4);
-            af[3] = v41_lds32(sQ + (r + g + 8) * V41_IRS + kb + 16 + t * 4);
-#pragma unroll
-            for (int ni = 0; ni < 2; ++ni) {
-                int key = wp * 16 + ni * 8 + g;
-                uint32_t b0 = v41_lds32(sK + key * V41_IRS + kb + t * 4);
-                uint32_t b1 = v41_lds32(sK + key * V41_IRS + kb + 16 + t * 4);
-                v41_mma_bf16(d[mi][ni], af, b0, b1);
-            }
+    for (int rq = 0; rq < V41_IQB; ++rq) {
+        int row = blockIdx.y * V41_IQB + rq;
+        if (row >= rows) break;
+        __syncthreads();  // the previous row's readers are done with sQ / sW
+        const uint8_t* qg = (const uint8_t*)(q + (long)row * ldq);
+        for (int i = tid; i < 32 * 16; i += 128) {
+            int r = i >> 4, c = i & 15;
+            *(uint4*)(sQ + r * V41_IRS + c * 16) = *(const uint4*)(qg + r * 256 + c * 16);
         }
-    }
-    // per key column: this thread holds heads {g, g+8, 16+g, 24+g}; sum their terms then across g
-    int visible = (start_pos + row + 1) / ratio;
-#pragma unroll
-    for (int ni = 0; ni < 2; ++ni)
-#pragma unroll
-        for (int cc = 0; cc < 2; ++cc) {
-            float part = 0.f;
-#pragma unroll
-            for (int mi = 0; mi < 2; ++mi)
-#pragma unroll
-                for (int hh = 0; hh < 2; ++hh) {
-                    int head = mi * 16 + g + hh * 8;
-                    float dv = v41_bf2f(v41_f2bf(d[mi][ni][hh * 2 + cc]));
-                    dv = fmaxf(dv, 0.f);
-                    float term = v41_bf2f(v41_f2bf(__fmul_rn(dv, sW[head])));
-                    part = __fadd_rn(part, term);
+        // weights_proj(x) * (index_head_dim^-0.5 * index_heads^-0.5), a bf16 product in the reference
+        if (tid < 32) sW[tid] = v41_bf2f(v41_f2bf(__fmul_rn(v41_bf2f(w[(long)row * ldw + tid]), wscale)));
+        __syncthreads();
+        float d[2][2][4];
+    #pragma unroll
+        for (int mi = 0; mi < 2; ++mi)
+    #pragma unroll
+            for (int ni = 0; ni < 2; ++ni)
+    #pragma unroll
+                for (int e = 0; e < 4; ++e) d[mi][ni][e] = 0.f;
+    #pragma unroll
+        for (int kk = 0; kk < 8; ++kk) {
+            int kb = kk * 32;
+    #pragma unroll
+            for (int mi = 0; mi < 2; ++mi) {
+                uint32_t af[4];
+                int r = mi * 16;
+                af[0] = v41_lds32(sQ + (r + g) * V41_IRS + kb + t * 4);
+                af[1] = v41_lds32(sQ + (r + g + 8) * V41_IRS + kb + t * 4);
+                af[2] = v41_lds32(sQ + (r + g) * V41_IRS + kb + 16 + t * 4);
+                af[3] = v41_lds32(sQ + (r + g + 8) * V41_IRS + kb + 16 + t * 4);
+    #pragma unroll
+                for (int ni = 0; ni < 2; ++ni) {
+                    int key = wp * 16 + ni * 8 + g;
+                    uint32_t b0 = v41_lds32(sK + key * V41_IRS + kb + t * 4);
+                    uint32_t b1 = v41_lds32(sK + key * V41_IRS + kb + 16 + t * 4);
+                    v41_mma_bf16(d[mi][ni], af, b0, b1);
                 }
-            part = __fadd_rn(part, __shfl_xor_sync(0xffffffffu, part, 4));
-            part = __fadd_rn(part, __shfl_xor_sync(0xffffffffu, part, 8));
-            part = __fadd_rn(part, __shfl_xor_sync(0xffffffffu, part, 16));
-            int key = t0 + wp * 16 + ni * 8 + 2 * t + cc;
-            if (g == 0 && key < T) {
-                float v = v41_bf2f(v41_f2bf(part));
-                if (key >= visible) v = -INFINITY;
-                if (cand && !cand[(long)row * ldc + key / cb]) v = -INFINITY;
-                out[(long)row * ldo + key] = v41_f2bf(v);
             }
         }
+        // per key column: this thread holds heads {g, g+8, 16+g, 24+g}; sum their terms then across g
+        int visible = (start_pos + row + 1) / ratio;
+    #pragma unroll
+        for (int ni = 0; ni < 2; ++ni)
+    #pragma unroll
+            for (int cc = 0; cc < 2; ++cc) {
+                float part = 0.f;
+    #pragma unroll
+                for (int mi = 0; mi < 2; ++mi)
+    #pragma unroll
+                    for (int hh = 0; hh < 2; ++hh) {
+                        int head = mi * 16 + g + hh * 8;
+                        float dv = v41_bf2f(v41_f2bf(d[mi][ni][hh * 2 + cc]));
+                        dv = fmaxf(dv, 0.f);
+                        float term = v41_bf2f(v41_f2bf(__fmul_rn(dv, sW[head])));
+                        part = __fadd_rn(part, term);
+                    }
+                part = __fadd_rn(part, __shfl_xor_sync(0xffffffffu, part, 4));
+                part = __fadd_rn(part, __shfl_xor_sync(0xffffffffu, part, 8));
+                part = __fadd_rn(part, __shfl_xor_sync(0xffffffffu, part, 16));
+                int key = t0 + wp * 16 + ni * 8 + 2 * t + cc;
+                if (g == 0 && key < T) {
+                    float v = v41_bf2f(v41_f2bf(part));
+                    if (key >= visible) v = -INFINITY;
+                    if (cand && !cand[(long)row * ldc + key / cb]) v = -INFINITY;
+                    out[(long)row * ldo + key] = v41_f2bf(v);
+                }
+            }
+    }
 }
 
 extern "C" int memra_v41_index_score(const void* q, long ldq, const void* k, int T, const void* w, long ldw,
@@ -908,11 +915,10 @@ extern "C" int memra_v41_index_score(const void* q, long ldq, const void* k, int
                                      long ldo, int rows, void* stream) {
     if (rows <= 0 || T <= 0) return (rows < 0 || T < 0) ? 41009 : 0;
     if (ratio <= 0 || (cand && cb <= 0) || ldq % 8) return 41009;
-    dim3 grid((T + 63) / 64, rows);
+    dim3 grid((T + 63) / 64, (rows + V41_IQB - 1) / V41_IQB);
     v41_index_score_kernel<<<grid, 128, 0, (cudaStream_t)stream>>>((const v41_bf*)q, ldq, (const v41_bf*)k, T,
                                                                    (const v41_bf*)w, ldw, wscale, start_pos, ratio, cand,
-                                                                   ldc,
-                                                                   cb, (v41_bf*)out, ldo);
+                                                                   ldc, cb, (v41_bf*)out, ldo, rows);
     V41_ERR();
 }
 
