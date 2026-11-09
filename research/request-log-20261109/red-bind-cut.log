@@ -1,7 +1,7 @@
      Running unittests src/lib.rs (<target>/release/deps/memra_server-c9aa0d05c61c43ca)
 test tests::request_log_on_and_off_serve_identical_bytes ... ok
 test tests::request_log_two_turns_of_one_session_share_a_key_and_fill_every_field ... FAILED
-thread 'tests::request_log_two_turns_of_one_session_share_a_key_and_fill_every_field' (2606108) panicked at crates/memra-server/src/lib.rs:28143:13:
-assertion `left == right` failed: {"v":1,"request_id":"chatcmpl-926142900f7f2af0562d16518b62b771","route":"/v1/chat/completions","model":"m","stream":false,"session_key":null,"session_key_source":null,"t_arrival":1794180311.866812,"t_first_token":null,"t_end":1794180311.866935,"end_reason":"cancelled","http_status":200,"prompt_tokens":null,"cached_tokens":null,"generated_tokens":null,"tool_calls":null,"prompt_sha256":null}
+thread 'tests::request_log_two_turns_of_one_session_share_a_key_and_fill_every_field' (3363012) panicked at crates/memra-server/src/lib.rs:28260:13:
+assertion `left == right` failed: {"v":1,"request_id":"chatcmpl-93cf3032c32f9cac0addd67a06b27d39","route":"/v1/chat/completions","model":"m","stream":false,"session_key":null,"session_key_source":null,"t_arrival":1794183371.717959,"t_first_token":null,"t_end":1794183371.71808,"end_reason":"cancelled","http_status":200,"prompt_tokens":null,"cached_tokens":null,"generated_tokens":null,"tool_calls":null,"prompt_sha256":null}
   left: String("cancelled")
-test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1112 filtered out; finished in 0.01s
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1113 filtered out; finished in 1.21s

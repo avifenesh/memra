@@ -1,0 +1,32 @@
+{
+ "bin": "~/.cache/memra-reqlog/bins/memra-server-32598d3947-ciprofile",
+ "bin_sha256": "3a92eb5304c61fc5c57202b0d988adeaa936115b02e7f84ae1e69f5ee62e753c",
+ "byte_diffs": [],
+ "env": [],
+ "finished": "2026-11-09T01:49:42+0200",
+ "log_failures": [],
+ "model": "m=/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf",
+ "normalized_sha256": {
+  "chat-named-t1": "8644955943be1b7e7c8154cf51246c50b220a6a75b7e50c4fcb665d06f50ceec",
+  "chat-named-t2-stream": "957bce9a6b4313839a59215055aede0baf7edc1e6d2a4508e2aa7b1762fc9c42",
+  "chat-unnamed-t1": "873a1561ffb0d7b3d22d3f5e5423479a3ee529d05f9e2aaae2c67674cf99ecc8",
+  "chat-unnamed-t2-stream": "dd6cba6da48cebc746026f41c29e235f1ac4f5c6147bb2723b50111e476de492",
+  "completion": "4147cd533891483c6fba18f821987a0cf063a0c0359527318ef80efcddd0731f",
+  "completion-stream": "b0062f2f34669927116729ec1822b512ff3c6766a31d949071007295ac2df7f8",
+  "messages": "60e10d1db7e28be9d62dd56636057f4e3000e4f68909d8679038dce1bfcc0e20",
+  "responses": "aff0336d805a438f56d1853414ab6043dca370d8633a3e6792043200f94846dd"
+ },
+ "order": "A B B A (A=log off, B=log on)",
+ "requests": [
+  "chat-named-t1",
+  "chat-named-t2-stream",
+  "chat-unnamed-t1",
+  "chat-unnamed-t2-stream",
+  "completion",
+  "completion-stream",
+  "responses",
+  "messages"
+ ],
+ "started": "2026-11-09T01:46:39+0200",
+ "verdict": "PASS"
+}

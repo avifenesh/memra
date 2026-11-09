@@ -1,10 +1,23 @@
      Running unittests src/lib.rs (<target>/release/deps/memra_server-c9aa0d05c61c43ca)
+test multi_choice::tests::deadline_flushes_reasoning_and_unterminated_tool_buffers_as_the_n1_parser_does ... ok
+test multi_choice::tests::dropping_the_whole_response_closes_every_choice_channel ... ok
+test multi_choice::tests::deadline_flushes_stop_prefix_once_and_preserves_completed_rows_and_usage ... ok
+test multi_choice::tests::a_committed_group_keeps_its_first_token_deadline ... ok
+test multi_choice::tests::interleaved_rows_count_prompt_once_and_outputs_sum_before_all_terminate ... ok
+test multi_choice::tests::explicit_bounds_and_legacy_default ... ok
+test multi_choice::tests::no_row_can_prime_before_the_whole_group_is_admitted ... ok
+test multi_choice::tests::missing_snapshot_wrong_terminal_count_and_late_events_are_not_success ... ok
+test multi_choice::tests::one_tenant_request_holds_n_decode_slots_and_all_release_on_drop ... ok
+test multi_choice::tests::only_the_group_leader_may_restore_independent_cached_state ... ok
+test multi_choice::tests::seeded_rows_are_independent_and_choice_zero_is_unchanged ... ok
+test multi_choice::tests::unavailable_model_capability_refuses_multiple_choices_but_preserves_n1 ... ok
 test request_log::tests::a_full_queue_drops_and_counts_instead_of_blocking ... ok
 test request_log::tests::end_reason_follows_the_terminal_signal_in_priority_order ... ok
 test request_log::tests::line_hashes_identity_and_content_and_carries_no_text ... ok
+test request_log::tests::the_session_key_is_scoped_to_the_cache_namespace ... ok
 test tests::affinity_key_honors_both_client_conventions_in_priority_order ... ok
 test tests::affinity_key_plumbs_to_the_worker_request_on_both_bodies ... ok
 test worker::tests::implicit_affinity_key_is_equal_exactly_at_the_nomination_bar ... ok
 test tests::request_log_on_and_off_serve_identical_bytes ... ok
 test tests::request_log_two_turns_of_one_session_share_a_key_and_fill_every_field ... ok
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 1106 filtered out; finished in 0.01s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 1094 filtered out; finished in 1.21s
