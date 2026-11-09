@@ -3392,13 +3392,19 @@ this card (0.272 against 0.162 s at a fixed 70-72-token length, n = 48 each), an
 resume skipped it. Turns that already rewound on the grid or restore from the prefix cache are
 unchanged.
 
-STILL OPEN (memra#1093): the plain-affinity rewind primes a suffix of 1..15 rows token by token
-(the spec-affinity tier now applies the prime floor to a recurrent trunk). That suffix stays: a
-batched prime under `PRIME_MIN_T` rows needs a GEMM dispatch below m = 16 and a conv call below
-`d_conv - 1` rows, and the cold prime folds such a tail into the range before it, so even a batched
-short call would be another program; the exact alternative, the prime floor, primes the whole turn
-cold instead. No agentic or pair-cell receipt has reached it (0 of the 14 affinity rewinds on the
-agentic workload).
+**The plain-affinity rewind obeys the prime floor since memra#1093 item 3.** A recurrent cache
+resumes at its affinity checkpoint only with at least `PRIME_MIN_T` rows to prime past it, the
+floor the exact-extension rewind applies (`plain_pool_resume_at`); otherwise the tier declines and
+the turn primes cold. A suffix of 1..15 rows primed token by token, a program the cold prime does
+not run: it folds such a tail into the range before it, and a batched prime under 16 rows (a GEMM
+dispatch below m = 16, a conv call below `d_conv - 1` rows) would be another program again. An
+"edit the last message and resend" client reached it at the RTX 5090 default, on the plain route (a
+greedy request with a presence penalty, which the spec route refuses). The edited 175-token resend
+rewound to 160, primed 15 rows token by token and left the cold text, 3 of 3 runs (821 against 904
+characters). With the floor it is byte-equal, 3 of 3, and faster: TTFT 0.327 s to 0.217 s
+(medians of 3), since the cold prime runs those rows inside its batched last chunk
+(`research/affinity-floor-20261109/`). The spec-affinity tier applies the same floor (memra#1093
+item 1). Attention-only caches keep every non-empty suffix.
 
 **The DFlash capture and the hit site follow the same law since 2026-11-07.** The DFlash prompt-end
 capture was the one capture site left off the grid: with no render-stable cut armed, the tail (or
@@ -3434,7 +3440,7 @@ tokens and primed from there, and turn 3, resumed from rows that prime wrote, le
 
 Known cases this does not change: the `PRIME_MIN_T` floor applies to recurrent entries only (an
 attention-only hit that leaves a 1..15-token suffix still primes it token by token, the W1 class);
-the plain-affinity resume checks no suffix floor; the in-batch fanout still takes the raw LCP
+the in-batch fanout still takes the raw LCP
 (above); glm5_next KDA entries count as recurrent although KDA prefill is a sequential scan with
 no fold grid, so the glm5 spec route's off-grid prompt-end captures now serve only whole covers
 (no exactness gain there, kept conservative). Gate: the warm-vs-cold pair cells in
