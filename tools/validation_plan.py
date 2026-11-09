@@ -1132,6 +1132,16 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
         if package is None:
             raise Refused('include has no package owner')
         source = tree.read(path)
+        pinned = contracts['dynamic_includes'].get(path, ())
+        if pinned:
+            source_sha = hashlib.sha256(source.encode()).hexdigest()
+            pinned = [c for c in pinned if c['sha256'] == source_sha]
+        # A contract that pins this reader's bytes declares what it reads. Its inputs apply even
+        # when an include resolves another way, as through a generated name that only a changed
+        # build script's own pin declares.
+        for contract in pinned:
+            for input_pattern in contract['inputs']:
+                inputs[input_pattern].add(package)
         string_spans = []
         code = (code_views.view(source, string_spans) if code_views is not None
                 else rust_code_view(source, string_spans))
@@ -1164,13 +1174,8 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
             try:
                 literal = include_argument(source[start:end - 1], prefix, generated[package])
             except Refused as error:
-                source_sha = hashlib.sha256(source.encode()).hexdigest()
-                matching = [c for c in contracts['dynamic_includes'].get(path, ()) if c['sha256'] == source_sha]
-                if matching:
-                    for contract in matching:
-                        for input_pattern in contract['inputs']:
-                            inputs[input_pattern].add(package)
-                    continue
+                if pinned:
+                    continue  # its inputs were added above
                 raise Refused(f'{path}:{source.count(chr(10), 0, start) + 1}: {error}') from error
             if literal.startswith('\0GENERATED'):
                 continue  # the build-script contract below owns these inputs

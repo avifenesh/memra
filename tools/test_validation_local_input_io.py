@@ -203,10 +203,10 @@ class LocalInputIO(unittest.TestCase):
             self.fixture.put('crates/memra-server/build.rs', build)
             self.fixture.put(path, reader)
 
-            def generating(names, inputs):
+            def generating(names, inputs, script=build):
                 return json.dumps({'schema': 'memra-validation-build-inputs-v1', 'build_scripts': {
                     'crates/memra-server/build.rs': {
-                        'sha256': hashlib.sha256(build.encode()).hexdigest(), 'package': 'memra-server',
+                        'sha256': hashlib.sha256(script.encode()).hexdigest(), 'package': 'memra-server',
                         'generated_env': names, 'external_inputs': []}},
                     'dynamic_includes': {path: {'sha256': hashlib.sha256(reader.encode()).hexdigest(),
                                                 'inputs': inputs}}})
@@ -214,6 +214,12 @@ class LocalInputIO(unittest.TestCase):
                           census(generating([], ['research/hidden/*.txt']), generating(['HIDDEN_DIR'], [])))
             self.assertNotIn('research/hidden/*.txt',
                              census(generating(['HIDDEN_DIR'], []), generating(['HIDDEN_DIR'], [])))
+            # A changed build.rs that only the commit pins decides its own generated names, but the
+            # running registry's pin for the unchanged reader still applies.
+            changed = 'fn main() { }\n'
+            self.fixture.put('crates/memra-server/build.rs', changed)
+            self.assertIn('research/hidden/*.txt',
+                          census(generating([], ['research/hidden/*.txt']), generating(['HIDDEN_DIR'], [], changed)))
 
     def test_missing_and_noncanonical_paths_remain_refusals(self):
         for name in ('missing', '../outside', '/outside', 'a//b', './a', 'a\\b'):
