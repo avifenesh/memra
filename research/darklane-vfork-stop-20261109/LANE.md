@@ -1,6 +1,6 @@
 # Background stop acknowledgement and vfork
 
-Verdict: a stop-mode yield that lands while the job's leader waits in vfork is never acknowledged. The runner stays `running`, never publishes `yielded` and never sends SIGCONT, and the job stays frozen until shutdown. This explains the `darklane` stop-cycle flake ([original](tests/original-flake.txt): same job and symptom, reproduced here on 3.2% of stops) and matches #939's unexplained failure. The runner now reads the stop per thread from /proc, for the leader when waitid has nothing to report and for every other member of the job's process group, and directs it at each thread of a process on which no thread has taken it and that will not take it by itself: a multithreaded one, and one the stop is not on (it entered the group late, or was continued from outside). Before: the deterministic tests fail. After: they pass, and a 300-cycle stress on a constantly spawning dash job acknowledged every stop. The multithreaded cases came from review: [Multithreaded leaders](#multithreaded-leaders-review-round) and [Group members](#group-members-re-review).
+Verdict: a stop-mode yield that lands while the job's leader waits in vfork is never acknowledged. The runner stays `running`, never publishes `yielded` and never sends SIGCONT, and the job stays frozen until shutdown. This explains the `darklane` stop-cycle flake ([original](tests/original-flake.txt): same job and symptom, reproduced here on 3.2% of stops) and matches #939's unexplained failure. The runner now reads the stop per thread from /proc, for the leader when waitid has nothing to report and for every other member of the job's process group, and directs it at each thread of a process on which no thread has taken it and that may not take it by itself: a multithreaded one, and one the stop is not on (it entered the group late, or was continued from outside). Before: the deterministic tests fail. After: they pass, and a 300-cycle stress on a constantly spawning dash job acknowledged every stop. The multithreaded cases came from review: [Multithreaded leaders](#multithreaded-leaders-review-round) and [Group members](#group-members-re-review).
 
 ## Mechanism
 
@@ -212,6 +212,26 @@ Red controls ([`continued/harness/gen-before.py`](continued/harness/gen-before.p
 Verification of the fix, same host ([`continued/verify/`](continued/verify/summary.txt), [`continued/harness/verify.sh`](continued/harness/verify.sh)): 20 runs of `darklane::` with the stress test, 25 of 25 passed each time, 6,000 stops acknowledged, 364 of them with the leader parked in vfork (10 to 28 per run). The complete memra-server suite passed twice: 1,144 passed, 0 failed, 11 ignored in the library, 7 integration tests. `cargo fmt --all -- --check` and release all-target Clippy with warnings denied are clean, and `darklane.rs` had the same sha256 at the end.
 
 Limits after this round: a process that left the group gets neither the group's signals nor this check; a member the server cannot see in /proc (a `hidepid` mount that hides it) or whose process group a security module refuses is outside the scan; a thread in a ptrace stop reads as stopped, so a tracer outside the job can let it run after the yield; and a job continued from outside after the yield was published runs until the next stop. The last sentence of the late-member section about the leader no longer holds: the leader is stopped again like any member.
+
+## Test hygiene (third review)
+
+The clean-context review of 6f5ad93086 ([comment](https://github.com/avifenesh/memra/pull/1130#issuecomment-6754504929)) found nothing blocking. No production line changes here; the tests and the wording do.
+
+- The two sleep-group tests' sleepers die with the test binary (`PR_SET_PDEATHSIG`, as the runner's job does with the server), so a killed test run leaves nothing behind for ten minutes.
+- A failed sleep-group test prints the states of its leader and member, and the harness copies the line, so the red rows below quote what the previous round's row read from the code.
+- The pure-logic table keeps the multi-thread row with the stop in no set: a multithreaded process continued from outside.
+- The verdict line and the research index say "may not take it by itself"; the `MEMRA_BG_YIELD_MODE` row's pointer to this directory is part of its sentence again.
+- Not taken: asserting on runner code in `repeated_stop_resume_has_fresh_acknowledgements_and_stopped_shutdown` after the first resume. The line checks the kernel premise the old line depended on (no stale stop report after SIGCONT); asking the runner's reading there has side effects on a running job, and splitting the reading for the test's sake is a production change this fix does not otherwise need.
+
+Red controls ([`hygiene/harness/gen-before.py`](hygiene/harness/gen-before.py), [`hygiene/harness/red.sh`](hygiene/harness/red.sh)): the two earlier runners with this round's tests, as in the previous round, same host and pinning:
+
+| run | tree | result, as the log states it | darklane module |
+|---|---|---|---|
+| [before](hygiene/red/before.txt) | scan round's runner (e47a3bbf04): darklane.rs `804878ceb2ffbaf8c1e478b6695bca2b5e78dc6740a6c06221fcdebc173de477`, crates/ `1b629e7be2ce72b34c5f5bac6a022cc12b79eda017d4fdc9418a6ea149b05605` | FAIL at the 30 s guard twice: member the stop never reached (leader `T`, member `S`), continued job (leader `S`, member `S`) | 22 passed, 2 failed |
+| [leader-excluded](hygiene/red/leader-excluded.txt) | late-member round's runner (fff211cb6d): darklane.rs `14f678031df1b7cffa79fc4072dcf1684232371d09558997fcd3dc820344e7ed`, crates/ `d36558b49f11788e999b70ca5a3c58558fa945f247a13bb1873ddd67e88e3b4b` | FAIL at the 30 s guard: continued job, leader `S`, member `T` | 23 passed, 1 failed |
+| [final](hygiene/red/final.txt) | this commit: darklane.rs `9faa8660a494b46c2dbe17bf4940a1be914fb85afb8b60cddbeee121f8eced38`, crates/ `fb7edae6946ee64be6f21305c71c1be29e999c98f68978815ebe7d0311e19769` | PASS | 25 passed |
+
+Verification, same host ([`hygiene/verify/`](hygiene/verify/summary.txt), [`hygiene/harness/verify.sh`](hygiene/harness/verify.sh)): 20 runs of `darklane::` with the stress test, 25 of 25 passed each time, 6,000 stops acknowledged, 425 of them with the leader parked in vfork (14 to 26 per run). The complete memra-server suite passed twice: 1,144 passed, 0 failed, 11 ignored in the library, 7 integration tests. `cargo fmt --all -- --check` and release all-target Clippy with warnings denied are clean, and `darklane.rs` had the same sha256 at the end.
 
 ## Scope
 
