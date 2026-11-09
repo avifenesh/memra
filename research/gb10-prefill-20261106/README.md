@@ -469,7 +469,7 @@ model's budget of 1 (`tools/argmax-margin-gate.sh`, `tools/test_argmax_margin_ga
 
 ## Round 4 (2026-11-08/09): the request window, attention scheduling, the MTP draft fill, the GDN out-norm, the GEMM's last wave
 
-Base main `d6ef68f5a1`. Ledger rows 46-67c; the close against the base, and lever 8 after it, are at
+Base main `d6ef68f5a1`. Ledger rows 46-68d; the close against the base, and lever 8 after it, are at
 the end of this section. Design notes: `ATTN-PINGPONG-DESIGN.md` (attention, rejected),
 `MTP-FILL-DESIGN.md`, `GDN-OUTNORM-DESIGN.md`, `GEMM-V4-DESIGN.md` and `TAIL-FOLD-DESIGN.md`.
 Harness: `harness/r4/`.
@@ -613,7 +613,7 @@ MUFU.EX2 exponential (rows 47-49); the host time before the first kernel (row 58
 on a fresh boot); a persistent GEMM tile walk and per-group slot release (rows 60, 63); h2p's feed
 (row 62, compute-bound at 79% tensor-active).
 
-### Lever 8 (after the close): the boundary tail fold (rows 67-67c, `TAIL-FOLD-DESIGN.md`, `tail-fold/`)
+### Lever 8 (after the close): the boundary tail fold (rows 67-68d, `TAIL-FOLD-DESIGN.md`, `tail-fold/`)
 
 A cold prime with one stop for the prefix-cache capture or the turn checkpoint used to run as two
 prime calls, so the GDN states could be snapshotted where the first ended; the second primed the 16
@@ -637,6 +637,17 @@ The saving is 10 to 100 times the end calls' own spread on both units, and TTFT 
 (on unit 2 it moves inside its per-run spread; on unit 1 T is under B in every cell); the answers are
 identical, and every T request published its capture. Unit 1's cells ran in two parts around another
 landing's record (01-B to 03-T, then 04-B to 06-T), every one at full clock.
+
+**Lever 8b** (rows 68-68d): the folded call ran the unfused out-norm and copied each part's scan
+output into one buffer (an Nsight Systems trace of the folded 131k call: 47.4 ms of
+`gated_rmsnorm_e4m3v2_f32`, 4.8 GB of copies in about 40 ms). Now each part's fused K4+K5 pass
+writes its rows of the call's one F8F4 activation: `gdn_chunk_state_output_norm_mma` takes the
+activation row its first scanned row lands at and the activation's row count (a whole call passes 0
+and T; 128 registers and the same spill as before). Exact (GDN-K45-NORM with a two-part run,
+`prime-fold-gate`). Served against lever 8, the 131k end call drops 5.062 -> 4.973 s on unit 2
+(-0.090 s, spreads 0.008 / 0.004 s) and 5.078 -> 4.998 s on unit 1 (-0.080 s, spreads 0.007 / 0.005 s); the 260k folded call (1,903 rows) is under the F8F4 v2
+route's 2,048 rows and keeps the unfused form, so it does not move. The rest of the trunk is not
+slower.
 
 ### Next (after round 4)
 

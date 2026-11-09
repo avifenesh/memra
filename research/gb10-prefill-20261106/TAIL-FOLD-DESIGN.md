@@ -117,6 +117,10 @@ Per call (B / T medians): at 131k the split's 4,032-row boundary call takes 4.84
 tail call 0.446 s, the folded 4,075-row call 5.055 s; at 260k 4.238 s and 0.695 s against 4.422 s.
 The folded call is 0.21 / 0.18 s longer than the split's boundary call: its extra rows (about 0.05 s
 at 131k), the unfused out-norm in 48 layers, the copy of each part's scan output into one buffer and
-the 48 state copies. The last three are the part a later change can remove (a row offset for the
-fused out-norm, the scan writing into views of one buffer). Unit 1 confirms it: -0.235 s (spreads 0.022 / 0.016 s) and -0.514 s (0.010 / 0.007
-s), TTFT -0.28% / -0.36% with T under B in every cell.
+the 48 state copies. Lever 8b removed the norm and the copies where the call takes the fused
+route (rows 68-68d): the fused kernel writes each part's rows of one activation, and the 131k end call
+fell another 0.090 s on unit 2 and 0.080 s on unit 1 (the 260k folded call, 1,903 rows, is under the
+F8F4 v2 route's 2,048 rows and keeps the unfused form).
+
+Lever 8 on unit 1 confirms unit 2: -0.235 s (spreads 0.022 / 0.016 s) and -0.514 s (0.010 / 0.007 s),
+TTFT -0.28% / -0.36% with T under B in every cell.

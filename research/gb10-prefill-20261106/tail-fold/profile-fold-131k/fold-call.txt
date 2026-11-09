@@ -1,0 +1,35 @@
+last trunk call: 2028 kernels, span 4957.9 ms, kernel sum 4901.6 ms
+    2470.21 ms     16 x  fa_prefill_qw_h2p
+    1704.37 ms    464 x  void mul_mat_f8f4v3<
+     186.02 ms    336 x  void f8f4v2_image_kernel<
+      80.77 ms     96 x  gdn_chunk_state_output_mma
+      72.27 ms     96 x  ssm_conv1d_gdn_state_l2_f32
+      67.81 ms     96 x  gdn_chunk_solve32_f32
+      65.44 ms    127 x  rms_norm_e4m3v2_f32
+      54.46 ms     16 x  fa_dequant_kv_ws_bf16
+      47.40 ms     48 x  gated_rmsnorm_e4m3v2_f32
+      42.32 ms     96 x  gdn_chunk_attn32_f32
+      40.65 ms     96 x  qmatvec_nvfp4_dp4a_rp_t4
+      27.86 ms     16 x  q_split_norm_rope_f32
+      15.14 ms     16 x  sig_mul_e4m3v2_f32
+      10.39 ms      2 x  qmatvec_q5_K_mmvq_il
+       4.05 ms     25 x  rms_norm_f32_v2
+       3.53 ms     27 x  qmatvec_nvfp4_mmvq_mr2_rp
+       3.25 ms     16 x  append_quantize_kv_q8_0_q5_1_rows
+       1.20 ms     96 x  gdn_chunk_cumgate_f32
+       0.93 ms      1 x  void quantize_mmq_e4m3_d4_kernel<
+       0.88 ms     13 x  quantize_q8_1
+       0.67 ms     18 x  rope_neox_f32
+       0.57 ms      1 x  embed_gather_u32_t
+       0.56 ms     96 x  gdn_glog_f32
+       0.50 ms     96 x  sigmoid_f32
+       0.19 ms     96 x  ssm_conv_ring_update_f32
+       0.05 ms      3 x  gdn_scan_s128_b
+       0.03 ms      3 x  add_rms_norm_f32_v2
+       0.02 ms      3 x  silu_mul_f32
+       0.01 ms      3 x  ssm_conv1d_fused_decode_b_f32
+       0.01 ms      3 x  gated_rmsnorm_q8_1
+  memcpy kind 1: 22 copies, 0.01 ms, 0.0 MB
+  memcpy kind 2: 3 copies, 0.05 ms, 2.0 MB
+  memcpy kind 8: 296 copies, 45.53 ms, 5371.3 MB
+  memset: 194 calls, 4.33 ms
