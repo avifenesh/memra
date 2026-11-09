@@ -1864,8 +1864,9 @@ The owner-stream transfer engine (`CudaTransfers::new`, its lease pool and the p
 VMM placement defaults) stays for the tier gates (`kv-tier-gate`, `tier-transfer-gate`). The
 program is banked on
 `bank/spill-program-20260928`. Git history is the archive. History:
-[FLAGS-HISTORY.md](FLAGS-HISTORY.md#memra_kv_host_contracts). Ledger:
-`VERDICT:kv-host-contracts-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+[FLAGS-HISTORY.md](FLAGS-HISTORY.md#memra_kv_host_contracts). Record:
+`research/spill-c-20260919/DOOR-DECISION-PACKET.md` (no measured verdict, so no darklanes
+ledger line).
 
 ## Removed doors, 2026-11-03 (the FP8 block-128 scale fold: superseded by the block MMQ)
 
@@ -1874,7 +1875,7 @@ into one per-tensor scale at load (dequant each block, take the global amax, re-
 `s = amax/448`) so the per-tensor e4m3 consumers could take a block-128 checkpoint. It carried no
 decide-by, and its receipt is a superseding one: `research/fp8st-20260804/mmq/SLICE3-MODEL-VERDICT.md`
 measured ARM A's step-0 top-1 flipped against the Q8_0 floor, with teacher-forced logit drift 1.45x
-(rms) and 1.63x (max_abs) above the per-block MMQ prefill tile, which keeps the floor's top-1 and
+(rms) and 1.62x (max_abs) above the per-block MMQ prefill tile, which keeps the floor's top-1 and
 top-10 and became the default for block-128 checkpoints. Deleted with its env read
 (`fp8_fold_enabled`) and the fold arm in `find_fp8_native`; a block-128 grid now always takes the
 native per-block path. No kernel and no test reached only through it. Git history is the archive.
@@ -1953,8 +1954,8 @@ arm and `nvfp4_routes_build_graph` with its `RoutesGraph`, the token-graph route
 their raw pointers, the routes workspace's graph staging and accessors, the graph-door exclusions
 in the prestage and selection-mirror paths, the `TokenGraphDoorOpen` restore refusal with its
 test, and the token-graph bisection dumps (below), whose subject arm no longer exists. No kernel
-or `docs/KERNELS.md` row goes with it. Git history is the archive. Ledger:
-`VERDICT:step-tp-token-graph-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+or `docs/KERNELS.md` row goes with it. Git history is the archive. Its rows were never banked,
+so no darklanes ledger line.
 
 Retired with it, so the boot audit refuses a stale arm:
 
@@ -1971,8 +1972,7 @@ already overlaps its own launch's GPU work (2026-07-23). Values 0 and 1 were the
 larger value opened the known-bad multi-launch window, so the door could only add a crash.
 Deleted with its env read, the chunk-extension loop and the multi-token ring drain with its
 mid-chunk stop rollback; the loop launches once, syncs and reads its one token from the ring.
-Git history is the archive. Ledger: `VERDICT:graph-drain-door-removed` (darklanes
-`agent-knowledge/gpu/verdicts-ledger.md`).
+Git history is the archive. Its rows were never banked, so no darklanes ledger line.
 
 ## Removed doors, 2026-11-03 (the segmented prime capture, `MEMRA_PRIME_SEG=1`)
 
@@ -1987,8 +1987,8 @@ was never built. Deleted with its env read in `prime_layers`, its exclusion in
 `qwen_prime_graph::supported`, the core-split capture arm, the S-glue capture arm, and the
 `seg_glue` / `seg_mid` / `seg_t` / `mixed` prime-slab fields. The core-split helpers
 (`full_attn_prime_core_inner`, `linear_attn_prime_core_pad_inner`) keep their other callers. No
-kernel or `docs/KERNELS.md` row goes with it. Git history is the archive. Ledger:
-`VERDICT:prime-seg-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+kernel or `docs/KERNELS.md` row goes with it. Git history is the archive. Its rows were never
+banked, so no darklanes ledger line.
 
 ## Removed doors, 2026-11-03 (the step TP shared expert on rank 1, `MEMRA_SHEXP_DEV1`)
 
@@ -2002,7 +2002,7 @@ Deleted with its env read, its dispatch arm in the device-routed step TP MoE, `s
 `shexp_dev1_apply`, the `SHEXP_D1_REPS` / `SHEXP_D1_WS` statics, and `Engine::matvec_bf16_raw_out`,
 which only it called (the `matvec_bf16_f32acc` kernel keeps its other launchers, so no
 `docs/KERNELS.md` row changes). `MEMRA_SHEXP_OVERLAP` is unaffected. Git history is the archive.
-Ledger: `VERDICT:shexp-dev1-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+Its rows were never banked, so no darklanes ledger line.
 
 ## Removed doors, 2026-11-03 (`MEMRA_GLM5_GRAPH_MLA_MID`: decide-by 2026-09-19 passed, the one box row was a defect)
 
@@ -2026,8 +2026,8 @@ executor arm and replay-time host bookkeeping in `glm5_decode_graph.rs`, the
 door's eager middle. The live twins went with `MEMRA_GLM5_VERIFY_GRAPH`, their other consumer (next
 section). The selector
 fix and the snapshot's `index_pools_ready` rewind stay too. It returns only with a box row.
-Git history is the archive. Ledger: `VERDICT:glm5-graph-mla-mid-unmeasured-after-fix`
-(darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+Git history is the archive. No measured verdict, so no darklanes ledger line; the defect is
+darklanes `TRAP:a-door-can-fail-by-dropping-the-graph-it-rides-on`.
 
 ## Removed doors, 2026-11-03 (`MEMRA_GLM5_VERIFY_GRAPH`: decide-by 2026-09-19 passed with no valid row)
 
@@ -2053,8 +2053,8 @@ twins `memra_mla_append_latent_live`, `_attn_absorbed_live`, `_index_append_ring
 unit tests, the gates `tests/mla_kpool_live_gpu.rs` and `tests/mla_live_len_gpu.rs`, the live
 half of `tests/mla_kpool_select_v2_gpu.rs`, and three `docs/KERNELS.md` rows. The scalar
 kernels keep the bodies they shared with the twins. The removed row's earlier form is in
-[FLAGS-HISTORY.md](FLAGS-HISTORY.md#memra_glm5_verify_graph). Ledger:
-`VERDICT:glm5-verify-graph-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+[FLAGS-HISTORY.md](FLAGS-HISTORY.md#memra_glm5_verify_graph). No measured verdict, so no
+darklanes ledger line.
 
 ## Removed doors, 2026-11-03 (`MEMRA_GLM5_SPEC_DEV_IO`: decide-by 2026-09-19 passed, box cell never run)
 
@@ -2071,8 +2071,8 @@ positions), which all take the upload path again; the door-only primitives `Engi
 `u32_words_dev` and `f32_words_dev`, the `SPEC_DEV_IO_AVOIDED` counter, the `d2t_gpu` resident
 and the sampled draft's device-token return; the gate cell `spec_dev_io_verify_rows_match_bitwise`
 and `tests/spec_batched_gather_gpu.rs` with their skip-census rows; and the FLAGS.md row. It
-returns only with its box cell. Git history is the archive. Ledger:
-`VERDICT:glm5-spec-dev-io-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+returns only with its box cell. Git history is the archive. No measured verdict, so no
+darklanes ledger line.
 
 ## Removed doors, 2026-11-03 (three qwen4_exp perf seams: one flat, one contended, one never run)
 
@@ -2147,9 +2147,8 @@ No launcher or gate set either. Deleted with their env reads, their dispatch arm
 `fa_decode_dcw` (`crates/memra-engine/src/lib.rs`) and the two kernels only they reached. The
 walk keeps its `B1_UNROLL` template parameter at 4 for every caller, and `MEMRA_FA_PROF` keeps its
 profile twin. What the receipts left open is a change to the dot's data layout (key-per-lane),
-which moves its FP order. Git history is the archive. Ledger:
-`VERDICT:step-fa-decode-unroll8-hsplit2-negative` (darklanes
-`agent-knowledge/gpu/verdicts-ledger.md`).
+which moves its FP order. Git history is the archive. The rows behind both receipts were never
+banked, so no darklanes ledger line.
 
 ## Removed doors, 2026-11-03 (the MoE cold read-once bypass: flat and losing on the PRO 6000, no 5090 row by its date)
 
@@ -2184,16 +2183,17 @@ receipt deletes the door. Neither is armed by a launcher.
   Deleted: the env read (`tp::rank0_merge_on`), both redirect scopes in `decode_step_h` and
   `decode_step_chain`, and the redirect machinery only they reached in `memra-runtime`
   (`rank0_redirect_scope`, `set_rank0_redirect`, `Rank0RedirectGuard`, the thread-local and its
-  `enter_main` arm). Ledger: `VERDICT:rank0-merge-door-removed`.
+  `enter_main` arm). Its rows were never banked, so no darklanes ledger line.
 - `MEMRA_FENCE_MEMOPS=1`: the moe direct join's two event fences became
   `cuStreamWriteValue32` / `cuStreamWaitValue32` doorbells. **RECEIPTED FLAT on PCIe**; stream
   memops are rejected on peer memory over PCIe P2P and on async-pool allocations. The row kept
   it "for NVLink-class fabrics", a fabric nobody measured it on. Deleted: the env read
   (`tp::fence_memops_on`), the doorbell arm of the device-routes join (the event pair is the
   only join), and the `fence_flags_raw` / `fence_ticket` workspace fields. An NVLink doorbell
-  arm returns only with an NVLink receipt. Ledger: `VERDICT:fence-memops-door-removed`.
+  arm returns only with an NVLink receipt. Its PCIe rows were never banked, so no darklanes
+  ledger line.
 
-Both ledger lines go in darklanes `agent-knowledge/gpu/verdicts-ledger.md`. Git history is the
+Neither door has a darklanes ledger line, since neither receipt was banked. Git history is the
 archive. The `MEMRA_FENCE_RANK1` row of the 2026-09-05 door sweep below still says
 `MEMRA_FENCE_MEMOPS` stayed; this entry supersedes that.
 
@@ -2214,7 +2214,8 @@ history is the archive.
   shared-expert tail (it runs `ffn_act_lim` + `matmul` as before), the
   `SHEXP_SWIGLU_ZQ8_DISPATCHES` counter, `Engine::swiglu_preclamped_mul_scaled_q8_1`, the kernel,
   `tests/swiglu_zq8_gpu.rs` with its skip-census row, and the FLAGS.md and KERNELS.md rows.
-  Ledger: `VERDICT:shexp-swiglu-zq8-flat-below-confirm-bar`.
+  Record: darklanes `research/glm5-b200-mint-20260904/LANE.md` (its rows were never banked, so
+  no darklanes ledger line).
 - `MEMRA_HC_PRE_NORM_FUSE=1`: folded `rms_norm_zq8_f32`'s epilogue into the v4 hc-pre launch
   (`memra_dsv4_hc_pre_v4_norm_zq8`, `cu/dsv4_gpu.cu`) on an index coincidence at hidden 4096 and
   `MEMRA_RMS_BLOCK=1024`. **NEGATIVE on TP, FLAT on PP-2**: `tpwalk12` (TP-2 symmetric graphed
@@ -2230,7 +2231,7 @@ history is the archive.
   `tests/hc_pre_norm_fuse_gpu.rs` with its two skip-census rows, and the FLAGS.md and KERNELS.md
   entries. Ledger: `VERDICT:glm5-hc-pre-norm-fold-loses-on-tp-symmetric`.
 
-The `shexp-swiglu-zq8` ledger line goes in darklanes `agent-knowledge/gpu/verdicts-ledger.md`; the
+The swiglu door has no darklanes ledger line, since its doorscreen rows were never banked; the
 hc-pre fold already has its line there. The fourth door of the same audit,
 `MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME`, is not removed: a launcher sets it, and its row now says so.
 
@@ -2280,7 +2281,8 @@ no decide-by, are not removed: a launcher sets both, and their rows now say so.
 b200-gemv-hbm-20260902) were the MoE half of `MEMRA_B200_GEMV_V2`. The 2026-09-02 box receipt
 (B200 dev 0, `b200_matvec_bench 5 3`, the table in the `MEMRA_B200_GEMV_V2` section above) put
 gate/up at 54.4 us against the `_w4` twin's 53.3 (inside noise) and down at 43.2 against 36.0
-(0.870x, a regression), both bit-identical. The dispatch was removed on that receipt and the two
+(0.870x against shipped's 37.6, a regression), both bit-identical. The dispatch was removed on
+that receipt and the two
 kernels stayed only as bench arms. A neutral and a negative receipt delete the code: the two
 `Engine` launchers, both kernels, their two `b200_matvec_bench` arms and their `docs/KERNELS.md`
 row. `MEMRA_B200_GEMV_V2` keeps its bf16-row, kda6 and W8 q8_0 families. Git history is the
@@ -2408,7 +2410,8 @@ existing kernel. Deleted: the env read, and the two instruments only the door se
 `qwen-fa2-margin-gate` and `qwen-fa2-layer-probe` (both toggled the door inside one process; their
 outputs are in the receipt). No kernel was only the door's. Decision:
 `docs/decisions/QWEN-PRIME-FA2-DEFAULT.md`. Ledger:
-`VERDICT:qwen-prime-fa2-default-on-5090-chunk1024` (pending: the darklanes `agent-knowledge/gpu/verdicts-ledger.md` line is owed by a darklanes lane; this engine lane does not write darklanes).
+`VERDICT:qwen-prime-fa2-default-on-5090-chunk1024`
+(darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-04 (`MEMRA_PRIME_KV_T3`: superseded at its measured geometry, no receipt elsewhere)
 
@@ -2432,7 +2435,7 @@ introduced, stays: the FA2 body stages through it. The four-plane kernels and th
 unchanged. It returns only with a receipt, for example a cold-TTFT cell at the naked chunk on the
 170-SM card, OFF against T3, that also clears the failing request sequence in both arms. Ledger:
 `VERDICT:qwen-prime-kv-t3-superseded-by-fa2-removed`
-(pending: the darklanes `agent-knowledge/gpu/verdicts-ledger.md` line is owed by a darklanes lane; this engine lane does not write darklanes).
+(darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-04 (`MEMRA_MOE_PREFETCH`, the CPU-expert companion's prediction-guided prefetch: negative, decide-by passed)
 
@@ -2469,7 +2472,7 @@ insert and the two `prefetch_*` fields of the `[memra-cpu-profile]` exit line;
 `ci.yml` step; and the detached-prefetch probe in `cpu_native_check`. The companion ABI stays at
 v2: both entries were optional symbols. No CUDA kernel was only its. Ledger:
 `VERDICT:moe-prefetch-predictor-negative-removed`
-(pending: the darklanes `agent-knowledge/gpu/verdicts-ledger.md` line is owed by a darklanes lane; this engine lane does not write darklanes).
+(darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-04 (`MEMRA_MOE_PREFETCH=1`'s in-token arm: a per-card default, its switch goes)
 
@@ -2495,7 +2498,7 @@ kernel was only its. The variable's other reading, the CPU-expert companion's pr
 depth, which DAY59 did not decide, was removed the same day on its own negative receipts
 (previous entry). Decision: `docs/decisions/MOE-INTOKEN-PREFETCH-DEFAULT.md`.
 Ledger: `VERDICT:moe-intoken-prefetch-default-5090laptop-pro6000ws`
-(pending: the darklanes `agent-knowledge/gpu/verdicts-ledger.md` line is owed by a darklanes lane; this engine lane does not write darklanes).
+(darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-04 (`MEMRA_GLM5_TP_DEVICE_SAMPLE`: the winner is the sm_100a default, its door goes)
 
@@ -2515,7 +2518,8 @@ The receipt ran the launcher's symmetric graphed walk, so the sampler engages on
 walk does (`glm5_tp_device_sample_supported`); the walk is the sm_100a TP-2 default again since
 the same day (the symmetric walk entry below).
 Decision: `docs/decisions/GLM5-TP-DEVICE-SAMPLER-DEFAULT.md`. Ledger:
-`VERDICT:glm5-tp2-device-sampler-default-sm100a` (pending: the darklanes `agent-knowledge/gpu/verdicts-ledger.md` line is owed by a darklanes lane; this engine lane does not write darklanes).
+`VERDICT:glm5-tp2-device-sampler-default-sm100a`
+(darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-04 (`MEMRA_TP_TRANSPORT=peer-pull` as an opt-in: the sm_100a default)
 
@@ -2536,8 +2540,8 @@ Later the same day the glm5 symmetric TP-2 walk was restored as the sm_100a defa
 one-shot crossings admit `device-push` only, so the glm5 loader with no transport named arms
 `device-push` under that posture and `peer-pull` on the root-orchestrated walk, where this
 receipt was measured (`glm5_tp::unset_transport_for`, the symmetric walk entry below). Decision:
-`docs/decisions/TP-PEER-PULL-DEFAULT.md`. Ledger: `VERDICT:tp-peer-pull-default-sm100a`
-(pending: the darklanes `agent-knowledge/gpu/verdicts-ledger.md` line is owed by a darklanes lane; this engine lane does not write darklanes).
+`docs/decisions/TP-PEER-PULL-DEFAULT.md`; its rows were never banked, so no darklanes ledger
+line.
 ## Removed doors, 2026-11-04 (`MEMRA_KV_ALLOCATOR`, `MEMRA_KV_VMM_GROW`: on-demand KV planes are a card default)
 `MEMRA_KV_ALLOCATOR=vmm` and its placement seam `MEMRA_KV_VMM_GROW` armed and placed the server's
 on-demand K/V planes (WP-B day 37, `research/spill-b-20260919/DAY37.md`; decide-by 2026-10-04):
@@ -2606,21 +2610,22 @@ callers, so `docs/KERNELS.md` is unchanged. The standalone two-device fork/join 
 and cross-device event edges in one graph) that only this arm built. The served TP/EP replays
 stream-capture one graph per rank (`dsv4_graph::ReplayPair`, `RowsReplay`), so no live DSV4 arm
 uses that mechanism.
-A graph arm returns only with a receipt. Git history is the archive. Ledger: `VERDICT:dsv4-matrix-ep-graph-door-removed` (darklanes
-`agent-knowledge/gpu/verdicts-ledger.md`).
+A graph arm returns only with a receipt. Git history is the archive. No measured verdict, so no
+darklanes ledger line.
 
 ## Removed doors, 2026-11-03 (the DFlash drafter `fa_prefill` block attention)
 
 `MEMRA_DFLASH_FA` routed the DFlash drafter's block attention (`forward_block` and
 `forward_round` in `crates/memra-engine/src/dflash.rs`) through `fa_prefill` instead of the naive
 SDPA. The code's own note named that shape broken: `fa_prefill`'s non-causal arm with T != T_kv
-measured attn maxdiff 0.34 against the torch oracle (jsonl 2026-07-13), and no fixed kernel or
-parity receipt followed. The door had no decide-by date and never served. Deleted with its two
-env reads and both dispatch arms. `fa_prefill` keeps its other callers, so no kernel and no
-`docs/KERNELS.md` row goes with it. The block attention stays on `sdpa_naive`; DFlash2 sliding
-layers keep `d2_windowed_attn`. An fa arm returns only with a fixed kernel and its parity
-receipt. Git history is the archive. Ledger: `VERDICT:dflash-fa-door-removed` (darklanes
-`agent-knowledge/gpu/verdicts-ledger.md`).
+measured attn maxdiff 0.34 against the torch oracle (jsonl 2026-07-13). A later row of the same
+day withdrew that reading (the 0.34 was the kernel's bf16 mma class against an f32 oracle, not a
+mask bug) and adopted the fa arm, but no bf16-class parity receipt was banked. The door had no
+decide-by date and never served. Deleted with its two env reads and both dispatch arms.
+`fa_prefill` keeps its other callers, so no kernel and no `docs/KERNELS.md` row goes with it. The
+block attention stays on `sdpa_naive`; DFlash2 sliding layers keep `d2_windowed_attn`. An fa arm
+returns only with a bf16-class parity receipt. Git history is the archive. No measured verdict,
+so no darklanes ledger line.
 
 **Correction, 2026-11-09:** the "broken" reading above was withdrawn on 2026-07-13, the day it
 was made. The later "fa arm ADOPTED" row of `research/gemma4-bringup/rig5090-gemma4.jsonl`
@@ -2687,8 +2692,8 @@ The same bundle carried `MEMRA_KDA_FUSED_PROJ` and `MEMRA_GLM5_Q8_FUSE`. The fus
 also has a door-level TP-2 row (tpwalk3 v5, 82.58 -> 87.90 tok/s, tape unchanged) and is now the
 sm_100a default, its variable kept as an explicit selector because its GPU gates drive both arms
 (its row). The q8 fuse has only the bundle, so it stays default OFF with a decide-by (its row).
-Decision: `docs/decisions/GLM5-B200-DOORS.md`. Ledger: `VERDICT:glm5-b200-decode-bundle-per-door`
-(owed to darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+Decision: `docs/decisions/GLM5-B200-DOORS.md`. No measured per-door verdict (the record reads
+one bundle row), so no darklanes ledger line.
 
 ## Removed doors, 2026-11-04 (`MEMRA_MLA_COALESCE` and the TP-shard reach of `MEMRA_B200_MLA_DECODE_ARM`: the winners are sm_100a defaults, the switches go; the arm's unsharded reach is superseded)
 
@@ -2729,8 +2734,7 @@ Deleted: both env reads and both FLAGS.md rows. The kernels stay (the generic sp
 shard reach and the gate use them); `mla-decode-arm-gate` and `mla-coalesce-bench` call them
 directly and are unchanged. The retired launcher set both names, so the boot audit now refuses
 them. History: [FLAGS-HISTORY.md](FLAGS-HISTORY.md#memra_b200_mla_decode_arm). Decision:
-`docs/decisions/GLM5-B200-DOORS.md`. Ledger: `VERDICT:glm5-mla-coalesce-tp-arm-sm100a-default`
-(owed to darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+`docs/decisions/GLM5-B200-DOORS.md`. Its rows were never banked, so no darklanes ledger line.
 
 ## Removed doors, 2026-11-04 (`MEMRA_GLM5_TP_PREFIX`: the winner is the sm_100a default, its switch goes)
 
@@ -2758,7 +2762,7 @@ snapshot covers an all-layer spec only, which is the one the receipt ran, and be
 partial form minted an entry without shards that the restore admitted as plain, leaving the
 peers at stale or zero state. Deleted: the
 env read and the row; the per-rank snapshot and restore and their unit gates are unchanged.
-Decision: `docs/decisions/GLM5-B200-DOORS.md`. Ledger: `VERDICT:glm5-tp-prefix-sm100a-default`
+Decision: `docs/decisions/GLM5-B200-DOORS.md`. Ledger: `VERDICT:glm53-tp-prefix-cache-hits`
 (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-04 (`MEMRA_GLM5_Q8_FUSE_ATTN`: the winner is the sm_100a default, its switch goes)
@@ -2779,7 +2783,7 @@ runs on every sm_100a build (`glm5_q8_fuse_attn_default()` keys on `BUILT_CUDA_A
 builds keep the plain norm. TP-sharded KDA layers and MLA layers keep the plain norm as before,
 so a TP-2 load sees no change. Deleted: the env read and the row; the
 `[glm5-q8-fuse-attn] engaged` line and its counter stay as the engagement receipt. Decision:
-`docs/decisions/GLM5-B200-DOORS.md`. Ledger: `VERDICT:glm5-q8-fuse-attn-sm100a-default`
+`docs/decisions/GLM5-B200-DOORS.md`. Ledger: `VERDICT:glm5-b200-attn-norm-zq8-plus-0-43`
 (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-04 (`MEMRA_KPOOL_SELECT_V2`: the winner is the sm_100a default, its switch goes)
@@ -2805,8 +2809,8 @@ kernel-level, with no model-scale row, and whether sm_120a takes v2 on it is an 
 Deleted: the env read and the row. Both bodies stay, reachable by name through
 `Engine::mla_kpool_select_single_cta`, which `tests/mla_kpool_select_v2_gpu.rs` now calls
 directly so its 14 cells run on every build; on sm_100a builds it also checks the dispatch.
-Decision: `docs/decisions/GLM5-B200-DOORS.md`. Ledger: `VERDICT:kpool-select-v2-sm100a-default`
-(darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+Decision: `docs/decisions/GLM5-B200-DOORS.md`. Its rows were never banked, so no darklanes
+ledger line.
 
 ## Removed doors, 2026-11-04 (`MEMRA_TOPK_WARP`: the winner is the sm_100a default, its switch goes)
 
@@ -2827,8 +2831,8 @@ Deleted: the env read and the row. The kernels stay. The gate
 `glm5_matvec_doors_gpu::gpu_topk_warp_matches_standing_kernel_exactly` now calls
 `Engine::topk_rows_warp` and `Engine::topk_rows_standing` directly, so it runs on every build,
 and checks the dispatch on sm_100a builds; door K's gate calls `topk_rows_sharded` directly for
-the same reason. Decision: `docs/decisions/GLM5-B200-DOORS.md`. Ledger:
-`VERDICT:topk-warp-sm100a-default` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+the same reason. Decision: `docs/decisions/GLM5-B200-DOORS.md`. Its rows were never banked, so
+no darklanes ledger line.
 
 ## Removed doors, 2026-11-04 (`MEMRA_DSA_SCORE_TC`: the bf16 arm is the sm_100a prefill-chunk default, precision 2 goes)
 
@@ -2860,7 +2864,8 @@ receipt there. Deleted: the env read, the row, precision 2 (the hi/lo split temp
 `precision` argument and its 40037 refusal). `tests/glm5_tp_indexer_split.rs` now checks
 range-against-whole score bits on both scorers, the one the split prime runs on its own range
 included. Decision: `docs/decisions/GLM5-B200-DOORS.md`. Ledger:
-`VERDICT:dsa-score-tc-sm100a-prefill-default` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+`VERDICT:glm53-dsa-scorer-tensor-cores-bf16-arm` (darklanes
+`agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-04 (`MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME` and `MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET`: the winners are the sm_100a default, their switches go)
 
@@ -2896,8 +2901,8 @@ per-rank CSR build and the pageable table uploads), the negative root-first `=2`
 line, and both FLAGS.md rows. No test or gate cell drove either door. The walk is the expert
 split, the sm_100a TP placement default since the same day (`MEMRA_GLM5_TP_EXPERT_SPLIT` row), so
 a naked TP-2 command on sm_100a reaches the prime. Decision:
-`docs/decisions/GLM5-B200-DOORS.md`. Ledger: `VERDICT:glm5-tp-split-grouped-prime-sm100a-default`
-(darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+`docs/decisions/GLM5-B200-DOORS.md`. Ledger: `VERDICT:glm5-tp-prefill-port-lands` and
+`VERDICT:glm53-tp-split-prime-host-diet` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-04 (the glm5 TP-2 symmetric walk restored as the sm_100a default: `MEMRA_GLM5_TP_SYM_GRAPH`, `MEMRA_GLM5_TP_SYM_GRAPH_MLA` and `MEMRA_TP_AR_1STAGE` go, `MEMRA_GLM5_TP_SYMMETRIC` stays as the gate's posture selector)
 
@@ -2976,8 +2981,8 @@ condition as the routing and could not print.
 
 Not restored: nothing. Git history holds the deletion. The pair cells that would re-prove the
 restored posture on today's code are named in `docs/decisions/GLM5-B200-DOORS.md`. Ledger:
-`VERDICT:glm5-tp2-symmetric-walk-sm100a-default` (owed to darklanes
-`agent-knowledge/gpu/verdicts-ledger.md`, next to the walk's positive verdicts).
+`VERDICT:glm5-tp2-pair-night-ladder-20260907` (darklanes
+`agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-02 (GB10 unified-memory prefix booking seam, booking kept)
 
