@@ -114,6 +114,24 @@ fn refuse(field: &str, why: &str) -> String {
     format!("{field} is not supported on this stateless server: {why}")
 }
 
+/// A Responses boolean field: `Some(b)` for a boolean, `None` when absent or null (OpenAI
+/// declares `background`, `stream` and `store` nullable). Any other value is a 400 naming the
+/// field, `<field> must be a boolean`: the shape chat and text completions give a non-boolean
+/// `background` (`background_jobs::BACKGROUND_NOT_BOOLEAN`).
+fn optional_bool(
+    obj: &serde_json::Map<String, Value>,
+    field: &'static str,
+) -> Result<Option<bool>, (String, Option<String>)> {
+    match obj.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Bool(b)) => Ok(Some(*b)),
+        Some(_) => Err((
+            format!("{field} must be a boolean"),
+            Some(field.to_string()),
+        )),
+    }
+}
+
 /// Translate one Responses API request into the internal OpenAI-chat request value.
 ///
 /// This is the split the design doc calls for (memra#550,
@@ -147,7 +165,7 @@ pub(crate) fn translate(v: &Value) -> Result<Value, (String, Option<String>)> {
              (store:false semantics)",
         ));
     }
-    if obj.get("store").and_then(|s| s.as_bool()) == Some(true) {
+    if optional_bool(obj, "store")? == Some(true) {
         return Err(gate(
             "store",
             "responses are not persisted server-side; set store:false and resend full \
@@ -160,19 +178,9 @@ pub(crate) fn translate(v: &Value) -> Result<Value, (String, Option<String>)> {
             "server-side conversation state does not exist here",
         ));
     }
-    // Same refusal as chat and text completions for a non-boolean value. An explicit null is
-    // absence here: OpenAI declares this field nullable, like the other nullable fields above.
-    let background_requested = match obj.get("background") {
-        None | Some(Value::Null) => false,
-        Some(Value::Bool(b)) => *b,
-        Some(_) => {
-            return Err((
-                crate::background_jobs::BACKGROUND_NOT_BOOLEAN.to_string(),
-                Some("background".to_string()),
-            ));
-        }
-    };
-    if background_requested && obj.get("stream").and_then(|s| s.as_bool()) == Some(true) {
+    let background_requested = optional_bool(obj, "background")?.unwrap_or(false);
+    let stream = optional_bool(obj, "stream")?.unwrap_or(false);
+    if background_requested && stream {
         return Err(gate(
             "background",
             "background and stream are both delivery modes for holding no live connection \
@@ -484,7 +492,7 @@ pub(crate) fn translate(v: &Value) -> Result<Value, (String, Option<String>)> {
     let mut out = json!({
         "model": model,
         "messages": messages,
-        "stream": obj.get("stream").and_then(|s| s.as_bool()).unwrap_or(false),
+        "stream": stream,
     });
     if !tools.is_empty() {
         out["tools"] = Value::Array(tools);
@@ -2178,6 +2186,39 @@ mod tests {
         // stream alone (no background) is unaffected.
         let stream_only = json!({"model": "m", "input": "hi", "stream": true});
         assert!(translate(&stream_only).is_ok());
+    }
+
+    #[test]
+    fn stream_and_store_must_be_booleans_and_null_is_absence() {
+        // A non-boolean value used to translate as absent: `stream` ran non-streaming and
+        // `store` ran unstored.
+        for field in ["stream", "store"] {
+            for invalid in [json!("true"), json!(1), json!({})] {
+                let mut req = json!({"model": "m", "input": "hi"});
+                req[field] = invalid.clone();
+                let (msg, param) = translate(&req).unwrap_err();
+                assert_eq!(
+                    msg,
+                    format!("{field} must be a boolean"),
+                    "{field}={invalid}"
+                );
+                assert_eq!(param.as_deref(), Some(field), "{field}={invalid}");
+            }
+            let mut req = json!({"model": "m", "input": "hi"});
+            req[field] = Value::Null;
+            let translated = translate(&req).expect("null must translate as absent");
+            assert_eq!(
+                translated["stream"], false,
+                "{field}=null runs non-streaming"
+            );
+        }
+        // The booleans keep their meaning: stream:true streams, store:true stays refused.
+        let streamed = translate(&json!({"model": "m", "input": "hi", "stream": true})).unwrap();
+        assert_eq!(streamed["stream"], true);
+        let (msg, param) =
+            translate(&json!({"model": "m", "input": "hi", "store": true})).unwrap_err();
+        assert!(msg.contains("stateless"), "got: {msg}");
+        assert_eq!(param.as_deref(), Some("store"));
     }
 
     #[test]

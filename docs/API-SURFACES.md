@@ -176,6 +176,10 @@ refuse with a clear 400 naming the field:
 - `prompt` (stored prompt templates)
 - `input` items of type `item_reference`
 
+A non-boolean `stream`, `store` or `background` (for example `"true"`, `1` or `{}`) is a 400
+naming the field, with the message `<field> must be a boolean`. An explicit `null` is absent:
+OpenAI declares all three nullable.
+
 **Supported request fields**
 
 | Field | Handling |

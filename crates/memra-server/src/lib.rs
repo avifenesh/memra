@@ -26952,6 +26952,112 @@ temperature = 0.6
         }
     }
 
+    /// A non-boolean `stream` or `store` on `/v1/responses` is a 400 naming the field, before
+    /// any worker or receipt intake. It used to run: non-streaming, unstored. An explicit null
+    /// stays absent: the request is admitted and answers one non-streaming JSON body.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // the shared drain guard serializes real handlers
+    async fn responses_stream_and_store_must_be_booleans_and_null_is_absent() {
+        let _drain = drain_lock();
+        for field in ["stream", "store"] {
+            let (st, mock, _, rx) = bg914_fixture(None);
+            let app = Router::new()
+                .route("/v1/responses", post(responses_api::responses_admitted))
+                .with_state(st);
+            for invalid in [json!("true"), json!(1), json!({})] {
+                let mut body = json!({"model": "bg914", "input": "hi"});
+                body[field] = invalid.clone();
+                let response = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    bg914_http(
+                        app.clone(),
+                        "POST",
+                        "/v1/responses",
+                        Some("owner-key"),
+                        body,
+                    ),
+                )
+                .await
+                .unwrap_or_else(|_| {
+                    panic!("{field}={invalid}: no answer; the request was not refused")
+                });
+                assert_eq!(
+                    response.status(),
+                    StatusCode::BAD_REQUEST,
+                    "{field}={invalid}"
+                );
+                let error = body_value(response).await["error"].clone();
+                assert_eq!(error["type"], "invalid_request_error", "{field}={invalid}");
+                assert_eq!(error["param"], field, "{field}={invalid}");
+                assert_eq!(error["message"], format!("{field} must be a boolean"));
+            }
+            assert!(rx.try_recv().is_err());
+            assert!(mock.events().is_empty());
+
+            let mut body = json!({"model": "bg914", "input": "hi"});
+            body[field] = serde_json::Value::Null;
+            let call = tokio::spawn(bg914_http(
+                app.clone(),
+                "POST",
+                "/v1/responses",
+                Some("owner-key"),
+                body,
+            ));
+            let Cmd::Generate(mut request) = tokio::task::spawn_blocking(move || {
+                rx.recv_timeout(std::time::Duration::from_secs(3)).unwrap()
+            })
+            .await
+            .unwrap() else {
+                panic!("{field}=null was not admitted")
+            };
+            worker::release_pending_admit();
+            worker::release_request_reservation(&mut request);
+            request
+                .tx
+                .send(Event::PromptUsage {
+                    n_prompt: 3,
+                    n_cached: 0,
+                })
+                .unwrap();
+            request
+                .tx
+                .send(Event::Token {
+                    id: 7,
+                    text: "ok".into(),
+                })
+                .unwrap();
+            request
+                .tx
+                .send(Event::Done {
+                    stop_reason: "eos".into(),
+                    n_tokens: 1,
+                    n_prompt: 3,
+                    n_cached: 0,
+                    elapsed_s: 0.01,
+                    spec: None,
+                })
+                .unwrap();
+            let response = tokio::time::timeout(std::time::Duration::from_secs(5), call)
+                .await
+                .unwrap_or_else(|_| panic!("{field}=null: no answer"))
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{field}=null");
+            let content_type = response.headers()[axum::http::header::CONTENT_TYPE]
+                .to_str()
+                .unwrap()
+                .to_string();
+            assert!(
+                content_type.starts_with("application/json"),
+                "{field}=null: {content_type}"
+            );
+            assert_eq!(
+                body_value(response).await["status"],
+                "completed",
+                "{field}=null"
+            );
+        }
+    }
+
     /// A non-boolean `background` on `/v1/responses` gets the same 400 body chat completions
     /// give, before any worker or receipt intake. It used to run synchronously.
     #[tokio::test]
