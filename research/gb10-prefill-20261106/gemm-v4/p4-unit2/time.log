@@ -1,0 +1,42 @@
+T=4096 reps=11 order=v3,v3t (median, image pass included)
+down 5120x17408              v3    6.496 ms  v3t    6.357 ms   +2.19%  bytes identical
+down resid 5120x17408        v3    7.045 ms  v3t    6.898 ms   +2.14%  bytes identical
+wqkv 10240x5120              v3    3.981 ms  v3t    3.974 ms   +0.17%  bytes identical
+ssm_out 5120x6144            v3    2.415 ms  v3t    2.383 ms   +1.33%  bytes identical
+gateup silu 2x17408x5120     v3   12.992 ms  v3t   12.989 ms   +0.03%  bytes identical
+cuda: no error
+T=4096 reps=11 order=v3t,v3 (median, image pass included)
+down 5120x17408              v3    6.480 ms  v3t    6.369 ms   +1.74%  bytes identical
+down resid 5120x17408        v3    6.993 ms  v3t    7.067 ms   -1.06%  bytes identical
+wqkv 10240x5120              v3    3.992 ms  v3t    4.012 ms   -0.50%  bytes identical
+ssm_out 5120x6144            v3    2.403 ms  v3t    2.440 ms   -1.51%  bytes identical
+gateup silu 2x17408x5120     v3   13.002 ms  v3t   13.662 ms   -4.83%  bytes identical
+cuda: no error
+T=4096 reps=11 order=v3,v3t (median, image pass included)
+down 5120x17408              v3    6.617 ms  v3t    6.356 ms   +4.11%  bytes identical
+down resid 5120x17408        v3    6.976 ms  v3t    6.914 ms   +0.89%  bytes identical
+wqkv 10240x5120              v3    4.027 ms  v3t    4.102 ms   -1.83%  bytes identical
+ssm_out 5120x6144            v3    2.424 ms  v3t    2.455 ms   -1.29%  bytes identical
+gateup silu 2x17408x5120     v3   13.562 ms  v3t   13.120 ms   +3.37%  bytes identical
+cuda: no error
+T=4096 reps=11 order=v3t,v3 (median, image pass included)
+down 5120x17408              v3    6.555 ms  v3t    6.726 ms   -2.54%  bytes identical
+down resid 5120x17408        v3    6.984 ms  v3t    6.906 ms   +1.13%  bytes identical
+wqkv 10240x5120              v3    3.990 ms  v3t    3.996 ms   -0.15%  bytes identical
+ssm_out 5120x6144            v3    2.411 ms  v3t    2.380 ms   +1.29%  bytes identical
+gateup silu 2x17408x5120     v3   13.636 ms  v3t   12.979 ms   +5.07%  bytes identical
+cuda: no error
+T=4096 reps=11 order=v3,v3t (median, image pass included)
+down 5120x17408              v3    6.484 ms  v3t    6.349 ms   +2.14%  bytes identical
+down resid 5120x17408        v3    6.965 ms  v3t    6.863 ms   +1.48%  bytes identical
+wqkv 10240x5120              v3    4.076 ms  v3t    3.988 ms   +2.21%  bytes identical
+ssm_out 5120x6144            v3    2.421 ms  v3t    2.388 ms   +1.39%  bytes identical
+gateup silu 2x17408x5120     v3   13.485 ms  v3t   13.628 ms   -1.05%  bytes identical
+cuda: no error
+T=4096 reps=11 order=v3t,v3 (median, image pass included)
+down 5120x17408              v3    6.591 ms  v3t    6.726 ms   -2.00%  bytes identical
+down resid 5120x17408        v3    6.973 ms  v3t    7.006 ms   -0.47%  bytes identical
+wqkv 10240x5120              v3    4.024 ms  v3t    4.010 ms   +0.36%  bytes identical
+ssm_out 5120x6144            v3    2.406 ms  v3t    2.371 ms   +1.50%  bytes identical
+gateup silu 2x17408x5120     v3   13.674 ms  v3t   13.009 ms   +5.12%  bytes identical
+cuda: no error

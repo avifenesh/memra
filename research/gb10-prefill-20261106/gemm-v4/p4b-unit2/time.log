@@ -1,0 +1,28 @@
+T=4096 reps=41 order=v3,v3t (median, image pass included)
+down 5120x17408              v3    6.464 ms  v3t    6.351 ms   +1.77%  bytes identical
+down resid 5120x17408        v3    6.970 ms  v3t    6.876 ms   +1.37%  bytes identical
+wqkv 10240x5120              v3    4.001 ms  v3t    3.994 ms   +0.19%  bytes identical
+ssm_out 5120x6144            v3    2.420 ms  v3t    2.386 ms   +1.41%  bytes identical
+gateup silu 2x17408x5120     v3   13.158 ms  v3t   13.696 ms   -3.93%  bytes identical
+cuda: no error
+T=4096 reps=41 order=v3t,v3 (median, image pass included)
+down 5120x17408              v3    6.468 ms  v3t    6.361 ms   +1.68%  bytes identical
+down resid 5120x17408        v3    6.990 ms  v3t    6.896 ms   +1.37%  bytes identical
+wqkv 10240x5120              v3    3.984 ms  v3t    3.990 ms   -0.15%  bytes identical
+ssm_out 5120x6144            v3    2.416 ms  v3t    2.382 ms   +1.46%  bytes identical
+gateup silu 2x17408x5120     v3   13.620 ms  v3t   13.663 ms   -0.31%  bytes identical
+cuda: no error
+T=4096 reps=41 order=v3,v3t (median, image pass included)
+down 5120x17408              v3    6.472 ms  v3t    6.366 ms   +1.67%  bytes identical
+down resid 5120x17408        v3    6.989 ms  v3t    6.893 ms   +1.40%  bytes identical
+wqkv 10240x5120              v3    3.990 ms  v3t    3.996 ms   -0.14%  bytes identical
+ssm_out 5120x6144            v3    2.421 ms  v3t    2.390 ms   +1.29%  bytes identical
+gateup silu 2x17408x5120     v3   13.465 ms  v3t   13.576 ms   -0.82%  bytes identical
+cuda: no error
+T=4096 reps=41 order=v3t,v3 (median, image pass included)
+down 5120x17408              v3    6.472 ms  v3t    6.365 ms   +1.67%  bytes identical
+down resid 5120x17408        v3    6.996 ms  v3t    6.895 ms   +1.47%  bytes identical
+wqkv 10240x5120              v3    3.988 ms  v3t    4.002 ms   -0.34%  bytes identical
+ssm_out 5120x6144            v3    2.401 ms  v3t    2.385 ms   +0.67%  bytes identical
+gateup silu 2x17408x5120     v3   13.625 ms  v3t   13.668 ms   -0.32%  bytes identical
+cuda: no error
