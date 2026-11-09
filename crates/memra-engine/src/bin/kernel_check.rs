@@ -2772,57 +2772,63 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             // The two-part form (the boundary tail fold's tapped call): rows [0, r) then [r, t)
-            // of one activation, the state handed over between them; r = 160 at T 300 puts the
-            // split between two 64-row tiles of the scale plane's slot permutation.
+            // of one activation, the state handed over between them, into two buffers pre-filled
+            // with different bytes. r = 160 at T 300 and 32 at T 64: the second part's rows and
+            // scale slots sit at absolute tokens (the slot permutation is within 16 tokens).
             let two_part = t >= 64;
             if fused.is_ok() && two_part {
                 let r = if t >= 192 { 160 } else { 32 };
                 let in_f = h * s_v;
                 let up = |x: &[f32], w: usize, lo: usize, hi: usize| e.htod(&x[lo * w..hi * w]);
-                let mut vy = e.htod_bytes(&vec![0x5au8; bytes])?;
-                let mut so_m = e.zeros(s_v * s_v * h)?;
-                let mut so_2 = e.zeros(s_v * s_v * h)?;
-                for (lo, hi) in [(0, r), (r, t)] {
-                    let (qp, kp) = (up(&qc, s_v * nk, lo, hi)?, up(&kc, s_v * nk, lo, hi)?);
-                    let (vp, gp, bp) = (
-                        up(&v, s_v * h, lo, hi)?,
-                        up(&g, h, lo, hi)?,
-                        up(&beta, h, lo, hi)?,
-                    );
-                    let zp = zd.slice(lo * in_f..hi * in_f);
-                    let (st_in, st_out) = if lo == 0 {
-                        (&sid, &mut so_m)
-                    } else {
-                        (&so_m, &mut so_2)
-                    };
-                    let st_in = e.clone_dtod(st_in)?;
-                    fused = e.gdn_scan_prefill_norm_f8f4v2_at(
-                        &qp,
-                        &kp,
-                        &vp,
-                        &gp,
-                        &bp,
-                        None,
-                        None,
-                        &st_in,
-                        st_out,
-                        h,
-                        hi - lo,
-                        scale,
-                        nk,
-                        &zp,
-                        &wd,
-                        eps,
-                        &mut vy,
-                        lo,
-                        t,
-                    );
+                for fill in [0x5au8, 0xa5] {
                     if fused.is_err() {
                         break;
                     }
-                }
-                if fused.is_ok() {
-                    runs.push((e.dtoh_u8(&vy)?, e.dtoh(&so_2)?));
+                    let mut vy = e.htod_bytes(&vec![fill; bytes])?;
+                    let mut so_m = e.zeros(s_v * s_v * h)?;
+                    let mut so_2 = e.zeros(s_v * s_v * h)?;
+                    for (lo, hi) in [(0, r), (r, t)] {
+                        let (qp, kp) = (up(&qc, s_v * nk, lo, hi)?, up(&kc, s_v * nk, lo, hi)?);
+                        let (vp, gp, bp) = (
+                            up(&v, s_v * h, lo, hi)?,
+                            up(&g, h, lo, hi)?,
+                            up(&beta, h, lo, hi)?,
+                        );
+                        let zp = zd.slice(lo * in_f..hi * in_f);
+                        let (st_in, st_out) = if lo == 0 {
+                            (&sid, &mut so_m)
+                        } else {
+                            (&so_m, &mut so_2)
+                        };
+                        let st_in = e.clone_dtod(st_in)?;
+                        fused = e.gdn_scan_prefill_norm_f8f4v2_at(
+                            &qp,
+                            &kp,
+                            &vp,
+                            &gp,
+                            &bp,
+                            None,
+                            None,
+                            &st_in,
+                            st_out,
+                            h,
+                            hi - lo,
+                            scale,
+                            nk,
+                            &zp,
+                            &wd,
+                            eps,
+                            &mut vy,
+                            lo,
+                            t,
+                        );
+                        if fused.is_err() {
+                            break;
+                        }
+                    }
+                    if fused.is_ok() {
+                        runs.push((e.dtoh_u8(&vy)?, e.dtoh(&so_2)?));
+                    }
                 }
             }
             unsafe {
@@ -2865,7 +2871,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .filter(|(a, b)| a.to_bits() != b.to_bits())
                     .count();
             }
-            let routed = routed && runs.len() == 3 + usize::from(two_part);
+            let routed = routed && runs.len() == 3 + 2 * usize::from(two_part);
             println!(
                 "GDN-K45-NORM T={t:3} H={h} hk={nk}: route={routed} e4m3+scales bitdiff={bad} \
                  state bitdiff={bs} over the seeded run, two pre-filled buffers{} (zero groups \

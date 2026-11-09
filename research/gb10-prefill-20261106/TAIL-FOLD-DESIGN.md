@@ -70,9 +70,11 @@ call on either side, MoE trunks (their small-row expert program differs from the
 the split law is not established for them), an explicit `MEMRA_PRIME_CHUNK` (operator ranges off
 the grid), the gemma, hyper, sliding-gated, ring and pipeline-parallel programs, warm and restored
 primes, and the dspark path. A tap a GDN route did not fill (a padded prime, a captured prime
-graph) publishes no capture; the primed rows are the same either way. The tapped call runs the unfused out-norm (`gdn_scan_prefill` then
-`gated_rmsnorm_f8f4v2`, bit-identical to the K4+K5 out-norm kernel by lever 4's gate) because the
-fused kernel writes its activation's k-major scale plane by absolute token column.
+graph) publishes no capture; the primed rows are the same either way. In this first form the tapped call ran the unfused out-norm
+(`gdn_scan_prefill` then `gated_rmsnorm_f8f4v2`, bit-identical to the K4+K5 out-norm kernel by
+lever 4's gate), because the fused kernel wrote its activation's k-major scale plane by the launch's
+own token column; lever 8b (below) gives the fused kernel the absolute row, and only a folded call
+under the F8F4 v2 route's 2,048 rows keeps the unfused form.
 
 ## Expected gain
 

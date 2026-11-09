@@ -121,7 +121,8 @@ int main(int argc, char** argv) {
     auto fused = [&]() {
         gdn_chunk_state_output_norm_mma<<<dim3(H, 2), 256, smem_norm>>>(d_kb, d_gc, d_be, d_U, d_Wb, d_q, d_P,
                                                                        d_z, d_w, d_vy_b, d_st, d_so_b,
-                                                                       H, T, C, scale, hk, D, tp, eps);
+                                                                       H, T, C, scale, hk, D, tp, eps,
+                                                                       0LL, (long long)T);
         CK(cudaGetLastError());
     };
     pair_k45(); pair_norm(); fused();
