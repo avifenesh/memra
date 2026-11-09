@@ -87,7 +87,7 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
 /// Which routed-expert layout the artifact carries. Two real dialects exist
 /// (2026-08-29): the BF16 export ships fused 3D module tensors
 /// (`mlp.experts.gate_up_proj` / `down_proj`); the modelopt NVFP4 mint
-/// (Avifenesh/Qwen3.8-Flash-Next-NVFP4) UN-FUSES to per-expert 2D projections with
+/// (tiyuvta/Qwen3.8-Flash-Next-NVFP4) UN-FUSES to per-expert 2D projections with
 /// gate/up SPLIT and the modelopt sibling set
 /// (`experts.E.{gate,up,down}_proj.{weight,weight_scale,weight_scale_2,input_scale}`).
 /// Everything outside the trunk routed experts is BF16 in both (mtp.* rides a BF16
@@ -1269,7 +1269,7 @@ mod tests {
     /// NVFP4-mint census gate: the PerExpertModelopt derivation must reproduce the banked
     /// artifact census EXACTLY (names, dtypes, shapes) and the dialect contract must BIND
     /// it. Fixture: research/qwen4exp-bringup-20260829/raw/nvfp4-census-names.tsv
-    /// (Avifenesh/Qwen3.8-Flash-Next-NVFP4 safetensors headers, incl. the BF16 mtp graft
+    /// (tiyuvta/Qwen3.8-Flash-Next-NVFP4 safetensors headers, incl. the BF16 mtp graft
     /// shard — 296,347 tensors).
     #[test]
     fn nvfp4_census_matches_the_banked_mint_and_the_dialect_contract_binds_it() {

@@ -74,7 +74,7 @@ if [ -n "$baseline_tag" ]; then
 else
     header="Changes since ${FROM}:"$'\n\n'
 fi
-footer="Boards + reproduction artifacts: https://huggingface.co/Avifenesh/memra-bench · full experiment log in research/tune-data/"$'\n'
+footer="Boards + reproduction artifacts: https://huggingface.co/tiyuvta/memra-bench · full experiment log in research/tune-data/"$'\n'
 
 archive=""; archive_short=""
 if [ -n "$baseline_tag" ]; then
