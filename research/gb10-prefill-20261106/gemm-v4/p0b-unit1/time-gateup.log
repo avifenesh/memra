@@ -1,0 +1,12 @@
+T=4096 reps=11 order=v2,v3 (median, image pass included)
+gateup silu 2x17408x5120     v2   14.922 ms  v3   13.657 ms   +9.26%  bytes identical
+cuda: no error
+T=4096 reps=11 order=v3,v2 (median, image pass included)
+gateup silu 2x17408x5120     v2   14.670 ms  v3   13.448 ms   +9.08%  bytes identical
+cuda: no error
+T=4096 reps=11 order=v2,v3 (median, image pass included)
+gateup silu 2x17408x5120     v2   14.930 ms  v3   13.022 ms  +14.65%  bytes identical
+cuda: no error
+T=4096 reps=11 order=v3,v2 (median, image pass included)
+gateup silu 2x17408x5120     v2   14.917 ms  v3   13.371 ms  +11.56%  bytes identical
+cuda: no error

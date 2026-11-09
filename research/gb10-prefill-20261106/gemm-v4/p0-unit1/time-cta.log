@@ -1,0 +1,24 @@
+T=4096 reps=11 order=v2,v3 (median, image pass included)
+down 5120x17408              v2    7.010 ms  v3    6.483 ms   +8.13%  bytes identical
+down resid 5120x17408        v2    7.507 ms  v3    7.025 ms   +6.86%  bytes identical
+wqkv 10240x5120              v2    4.362 ms  v3    3.999 ms   +9.09%  bytes identical
+ssm_out 5120x6144            v2    2.634 ms  v3    2.406 ms   +9.48%  bytes identical
+cuda: no error
+T=4096 reps=11 order=v3,v2 (median, image pass included)
+down 5120x17408              v2    7.017 ms  v3    6.471 ms   +8.43%  bytes identical
+down resid 5120x17408        v2    7.454 ms  v3    6.918 ms   +7.74%  bytes identical
+wqkv 10240x5120              v2    4.336 ms  v3    4.024 ms   +7.74%  bytes identical
+ssm_out 5120x6144            v2    2.633 ms  v3    2.423 ms   +8.69%  bytes identical
+cuda: no error
+T=4096 reps=11 order=v2,v3 (median, image pass included)
+down 5120x17408              v2    7.021 ms  v3    6.648 ms   +5.61%  bytes identical
+down resid 5120x17408        v2    7.436 ms  v3    6.992 ms   +6.35%  bytes identical
+wqkv 10240x5120              v2    4.348 ms  v3    3.993 ms   +8.90%  bytes identical
+ssm_out 5120x6144            v2    2.630 ms  v3    2.415 ms   +8.92%  bytes identical
+cuda: no error
+T=4096 reps=11 order=v3,v2 (median, image pass included)
+down 5120x17408              v2    7.022 ms  v3    6.537 ms   +7.42%  bytes identical
+down resid 5120x17408        v2    7.496 ms  v3    7.002 ms   +7.05%  bytes identical
+wqkv 10240x5120              v2    4.356 ms  v3    4.033 ms   +8.01%  bytes identical
+ssm_out 5120x6144            v2    2.630 ms  v3    2.420 ms   +8.69%  bytes identical
+cuda: no error

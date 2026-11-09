@@ -1,0 +1,28 @@
+T=4096 reps=11 order=v3,mode3 (median, image pass included)
+down 5120x17408              v3    6.880 ms  mode3    6.377 ms   +7.89%  bytes DIFFER
+down resid 5120x17408        v3    7.182 ms  mode3    7.036 ms   +2.08%  bytes DIFFER
+wqkv 10240x5120              v3    4.143 ms  mode3    3.991 ms   +3.83%  bytes DIFFER
+ssm_out 5120x6144            v3    2.516 ms  mode3    2.554 ms   -1.50%  bytes DIFFER
+gateup silu 2x17408x5120     v3   13.192 ms  mode3   12.258 ms   +7.63%  bytes DIFFER
+cuda: no error
+T=4096 reps=11 order=mode3,v3 (median, image pass included)
+down 5120x17408              v3    6.782 ms  mode3    6.387 ms   +6.19%  bytes DIFFER
+down resid 5120x17408        v3    7.507 ms  mode3    7.016 ms   +7.01%  bytes DIFFER
+wqkv 10240x5120              v3    4.141 ms  mode3    3.931 ms   +5.32%  bytes DIFFER
+ssm_out 5120x6144            v3    2.511 ms  mode3    2.553 ms   -1.66%  bytes DIFFER
+gateup silu 2x17408x5120     v3   13.283 ms  mode3   12.328 ms   +7.75%  bytes DIFFER
+cuda: no error
+T=4096 reps=11 order=v3,mode3 (median, image pass included)
+down 5120x17408              v3    6.784 ms  mode3    6.394 ms   +6.11%  bytes DIFFER
+down resid 5120x17408        v3    7.172 ms  mode3    7.038 ms   +1.89%  bytes DIFFER
+wqkv 10240x5120              v3    4.203 ms  mode3    4.059 ms   +3.54%  bytes DIFFER
+ssm_out 5120x6144            v3    2.514 ms  mode3    2.555 ms   -1.60%  bytes DIFFER
+gateup silu 2x17408x5120     v3   13.233 ms  mode3   12.295 ms   +7.63%  bytes DIFFER
+cuda: no error
+T=4096 reps=11 order=mode3,v3 (median, image pass included)
+down 5120x17408              v3    6.800 ms  mode3    6.368 ms   +6.78%  bytes DIFFER
+down resid 5120x17408        v3    7.216 ms  mode3    7.053 ms   +2.31%  bytes DIFFER
+wqkv 10240x5120              v3    4.174 ms  mode3    4.080 ms   +2.29%  bytes DIFFER
+ssm_out 5120x6144            v3    2.519 ms  mode3    2.558 ms   -1.50%  bytes DIFFER
+gateup silu 2x17408x5120     v3   13.557 ms  mode3   12.270 ms  +10.49%  bytes DIFFER
+cuda: no error

@@ -1,0 +1,9 @@
+drv_gateup.cu(57): error: no instance of function template "f8f4v3_launch" matches the argument list
+            argument types are: (uint8_t *, float *, const uint8_t *, const float *, std::nullptr_t, const int, const int, int, int, const int, float, int, cudaStream_t, uint8_t *, float)
+          ? f8f4v3_launch<256, 128, 8, 2, 64, 3, 1>(vals, scales, act, act_sc, nullptr, rows, Mp, in_f, n_tokens, Tp,
+            ^
+mmq_nvfp4_w4a8.cu(2056): note #3322-D: number of parameters of function template "f8f4v3_launch" does not match the call
+  static cudaError_t f8f4v3_launch(const F8F4V3Maps & mp, float * y, const int out_f, const int K,
+                     ^
+
+1 error detected in the compilation of "drv_gateup.cu".

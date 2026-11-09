@@ -1,0 +1,17 @@
+T=4096 reps=1 order=v2,v3 (median, image pass included)
+==PROF== Connected to process 2296344 (~/.cache/memra-gb10-r4/gemm-p0/drv_cta)
+==PROF== Profiling "mul_mat_f8f4v3": 0%....50%....100% - 38 passes
+==PROF== Profiling "mul_mat_f8f4v3": 0%....50%....100% - 38 passes
+down 5120x17408              v2    7.046 ms  v3 2621.158 ms  -99.73%  bytes identical
+==PROF== Profiling "mul_mat_f8f4v3": 0%....50%....100% - 38 passes
+==PROF== Profiling "mul_mat_f8f4v3": 0%....50%....100% - 38 passes
+down resid 5120x17408        v2    7.457 ms  v3 2667.982 ms  -99.72%  bytes identical
+==PROF== Profiling "mul_mat_f8f4v3": 0%....50%....100% - 39 passes
+==PROF== Profiling "mul_mat_f8f4v3": 0%....50%....100% - 38 passes
+wqkv 10240x5120              v2    4.373 ms  v3 2108.883 ms  -99.79%  bytes identical
+==PROF== Profiling "mul_mat_f8f4v3": 0%....50%....100% - 38 passes
+==PROF== Profiling "mul_mat_f8f4v3": 0%....50%....100% - 38 passes
+ssm_out 5120x6144            v2    2.661 ms  v3 1924.087 ms  -99.86%  bytes identical
+cuda: no error
+==PROF== Disconnected from process 2296344
+==PROF== Report: ~/.cache/memra-gb10-r4/runs/gemm-p0-unit1/ncu-cta.ncu-rep
