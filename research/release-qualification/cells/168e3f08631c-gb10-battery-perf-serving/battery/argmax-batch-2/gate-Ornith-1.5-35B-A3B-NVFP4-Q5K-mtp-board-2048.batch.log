@@ -1,0 +1,35 @@
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 123.15GB (expert budget 119.55GB) -> RESIDENT
+argmax-margin-probe: T=2048 window=12 sm_count=48 model=/data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
+decode program: served batch B=1 (decode_step_batch_sampled_lean_masked, greedy device sample, lean) batch_program=Generic MEMRA_SERVE_B1FAST=<unset>
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 49152 ml_len 16 -> 192 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+[moe-sk-form] dev=0 qt=7 sms=48 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=256 max_m=388
+
+pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree
+2036     24822         8.460777283e0    24822        8.221403122e0    5.125656128e-1   yes
+2037     63            7.791175842e-1   63           1.260702133e0    5.828113556e-1   yes
+2038     318           6.520118713e-1   318          8.524818420e-1   2.558135986e-1   yes
+2039     42714         9.556617737e-1   42714        5.376815796e-1   2.938404083e-1   yes
+2040     40049         7.654417038e0    40049        7.445582390e0    4.298143387e-1   yes
+2041     681           2.773532867e-1   681          6.676483154e-2   2.748966217e-1   yes
+2042     681           3.763027191e-1   681          1.109828949e-1   1.581707001e-1   yes
+2043     735           7.628612518e-1   735          4.608535767e-1   2.483367920e-1   yes
+2044     264           2.674997330e0    264          2.688825607e0    1.940269470e-1   yes
+2045     2972          2.050842285e0    2972         2.668021202e0    3.607873917e-1   yes
+2046     42714         4.006238937e0    42714        3.753444672e0    1.620006561e-1   yes
+2047     2131          7.025051117e-1   2131         6.205425262e-1   8.771610260e-1   yes
+
+margin distribution (decode config, 12 positions): min 0.0668  p10 0.1110  p50 1.2607  p90 7.4456  max 8.2214
+margin distribution (prefill config): min 0.2774  p50 0.9557  max 8.4608
+DECISION POSITION (the gate's): prefill_top1=2131 decode_top1=2131 margin_p=0.7025 margin_d=0.6205 config_delta_at_ids=0.8772
+  -> the decision margin is BELOW 4/12 sampled positions' margins (rank 5 of 12)
+  -> flip is ARITHMETICALLY POSSIBLE iff config_delta > margin: 0.8772 > 0.6205 = true
+agreement across sampled positions: 12/12 (0 flip(s))
+flip budget: 0 flip(s) vs budget 1 (calibration row: default (1/12-window))
+VERDICT-INPUT: NEAR-TIE-EXPOSED — no flip fired, but the margin is inside the config spread: this position is a coin that happened to land the same way in both configs
+SERVED-ARGMAX: rows=12 device_mismatch=0
