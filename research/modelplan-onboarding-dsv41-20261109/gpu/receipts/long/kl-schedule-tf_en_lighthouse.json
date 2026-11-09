@@ -1,0 +1,37 @@
+{
+ "tape": "tf_en_lighthouse.pt",
+ "other": "tf_en_lighthouse.pt",
+ "positions": 2048,
+ "subsets": {
+  "all": {
+   "positions": 2048,
+   "mean_kl": 0.017647589377742624,
+   "p50_kl": 0.0001742239362921316,
+   "p99_kl": 0.36017237325337825,
+   "max_kl": 1.7371183870614892,
+   "top1_agree": 0.97900390625,
+   "mean_vendor_entropy": 0.22161489167934928,
+   "mean_mass_on_shared_top32": 0.9973158484299952
+  },
+  "entropy_gt_1nat": {
+   "positions": 159,
+   "mean_kl": 0.0735005922796299,
+   "p50_kl": 0.02285619833537368,
+   "p99_kl": 0.6004985418823187,
+   "max_kl": 0.6411405552714826,
+   "top1_agree": 0.8301886792452831,
+   "mean_vendor_entropy": 1.733568064513756,
+   "mean_mass_on_shared_top32": 0.9696058089502658
+  },
+  "entropy_top_decile": {
+   "positions": 205,
+   "mean_kl": 0.07948123067459123,
+   "p50_kl": 0.02296594250225506,
+   "p99_kl": 0.6323062491759989,
+   "max_kl": 0.8885095543038501,
+   "top1_agree": 0.8439024390243902,
+   "mean_vendor_entropy": 1.5490272959675147,
+   "mean_mass_on_shared_top32": 0.9757684929241937
+  }
+ }
+}

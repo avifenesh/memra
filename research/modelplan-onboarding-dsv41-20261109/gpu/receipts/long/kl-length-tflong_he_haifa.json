@@ -1,0 +1,37 @@
+{
+ "tape": "tflong_he_haifa.pt",
+ "other": "tflong_he_haifa_30k.pt",
+ "positions": 30000,
+ "subsets": {
+  "all": {
+   "positions": 30000,
+   "mean_kl": 0.01664623403585309,
+   "p50_kl": 0.003901445595438757,
+   "p99_kl": 0.16657563568717582,
+   "max_kl": 4.340658945542839,
+   "top1_agree": 0.9489,
+   "mean_vendor_entropy": 0.8488834589636923,
+   "mean_mass_on_shared_top32": 0.9806271588602697
+  },
+  "entropy_gt_1nat": {
+   "positions": 10941,
+   "mean_kl": 0.03277702458678273,
+   "p50_kl": 0.018467269828164743,
+   "p99_kl": 0.22319739283487164,
+   "max_kl": 2.833443696378248,
+   "top1_agree": 0.8779819029339183,
+   "mean_vendor_entropy": 1.9713770457163104,
+   "mean_mass_on_shared_top32": 0.9484723920137714
+  },
+  "entropy_top_decile": {
+   "positions": 3000,
+   "mean_kl": 0.029655980453326028,
+   "p50_kl": 0.01975824667848721,
+   "p99_kl": 0.1691117427270544,
+   "max_kl": 0.5209932579067269,
+   "top1_agree": 0.8243333333333334,
+   "mean_vendor_entropy": 2.705480876392223,
+   "mean_mass_on_shared_top32": 0.8738864039061799
+  }
+ }
+}

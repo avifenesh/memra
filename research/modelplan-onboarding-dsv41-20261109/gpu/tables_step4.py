@@ -74,7 +74,7 @@ for case in ("needle1200", "needle4800", "needle8400", "needle16800"):
 print()
 print("| text | tokens | mean NLL vendor / native | delta | top-1 agree | moved > 0.1 | floor delta (length, schedule) | floor top-1 | floor moved | pass |")
 print("|---|---|---|---|---|---|---|---|---|---|")
-for case in ("tf_en_lighthouse", "tflong_he_haifa", "tf128k_en_moby", "tf64k_he_cities"):
+for case in ("tf_en_lighthouse", "tflong_he_haifa", "tf128k_en_moby", "tf64k_he_cities", "tf256k_en_moby"):
     t = load(os.path.join(L, f"tf-{case}.json"))
     if not t:
         print(f"| {case} | pending |"); continue

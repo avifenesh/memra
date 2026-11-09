@@ -178,6 +178,16 @@ dsv41-gate layer CKPT captures/needle1200 --layers 20,21,24,25,28 --token-map TO
 MEMRA_FULL_PREC=1 dsv41-run CKPT --ids needle16800.ids.i32 --token-map TOKEN_MAP --last-logits n16800.f32
 MEMRA_FULL_PREC=1 dsv41-run CKPT --ids tf128k_en_moby.ids.i32 --token-map TOKEN_MAP --tf tf128k/
 python3 trunk_vs_tape.py TAPES/tf128k_en_moby.pt tf128k/
+# per-position KL and paired top-1 against the vendor tape, for the native run and each floor
+python3 tf_kl.py TAPES/tf128k_en_moby.pt tf128k/ --json kl-native-tf128k_en_moby.json
+python3 tf_kl.py TAPES/tf128k_en_moby.pt GLOBALMAX/tf128k_en_moby.pt --json kl-schedule-tf128k_en_moby.json
+python3 tables_kl.py RECEIPTS
+python3 paired_top1.py TAPES/tf128k_en_moby.pt tf128k/ GLOBALMAX/tf128k_en_moby.pt
+# decode steps: prompt plus generated tokens as one teacher-forced prefill, native and vendor
+python3 decode_vs_tf.py prep dec/ TAPES/decode32k_he_summary.pt TAPES/decode64k_en_continue.pt
+python3 make_tfids_oracle.py ORACLE_DIR ORACLE_TFIDS
+MEMRA_FULL_PREC=1 dsv41-run CKPT --ids dec/decode32k_he_summary.ids.i32 --token-map TOKEN_MAP --tf dec32k/
+python3 decode_vs_tf.py cmp TAPES/decode32k_he_summary.pt dec32k/
 ```
 
 `ORACLE_DIR` holds the vendor-code oracle: its torch stand-ins for the tilelang kernels and its
@@ -196,7 +206,11 @@ fixtures (0.8 GB) and captures (about 23 GB) are not in the repo.
 - `trunk_vs_tape.py`: a whole-trunk run, or another vendor tape, against a vendor tape (next-token or
   teacher-forced metrics).
 - `make_globalmax_oracle.py`: the oracle copy with global-max attention (the schedule floor).
-- `tables_step4.py`: the step-4 tables from the receipts.
+- `make_tfids_oracle.py`: the oracle copy whose teacher-forced cases take token ids (decode floors).
+- `tf_kl.py`, `paired_top1.py`: per-position KL from both sides' top-32, per entropy subset; paired
+  top-1 sign test of the native run against a floor.
+- `decode_vs_tf.py`: a decode tape's steps against a teacher-forced prefill of the same tokens.
+- `tables_step4.py`, `tables_kl.py`: the step-4 tables from the receipts.
 - `receipts/checkpoint/`, `receipts/long/`: step-4 receipts.
 - `receipts/`: gate receipts (JSON) and their logs.
 
@@ -206,7 +220,8 @@ Verdict: `memra model verify checkpoint --against deepseek_v41` passes with the 
 the native side, on a pack-declared real chat probe, inside a band set from the vendor's own
 CPU-vs-GPU spread. The candidate pool's long-context layers pass against the CPU floor at 18k and
 73k tokens, the whole trunk gives the vendor's next token at 18k, 73k, 128k and 257k tokens, and
-four teacher-forced texts (2k to 131k tokens) score inside the vendor program's own floors.
+five teacher-forced texts (2k to 262k tokens) score inside the vendor program's own floors, in mean
+NLL and in per-position KL on the positions where the vendor is unsure.
 
 `dsv41-run` (crates/memra-engine/src/bin/dsv41_run.rs) is the pack's native checkpoint runner: the
 embedding, the 40 trunk layers each loaded from the safetensors mmap, run and freed (about 7.5 GB a
@@ -274,15 +289,18 @@ Whole trunk, last prompt token against the vendor tape (`trunk_vs_tape.py`):
 
 Every argmax matches. The global-max floor is the same vendor program with P rounded against one
 global max per row (`make_globalmax_oracle.py`), run on the same card: at 128k the vendor disagrees
-with itself by KL 1.3e-4, the native by 2.2e-4. The runner held the 257k prompt on one card (10.5 GB
-per stream copy, the candidate pool at 8.4 GB).
+with itself by KL 1.3e-4, the native by 2.2e-4; at 257k by 1.4e-4 against the native's 5.3e-4. One
+position is one sample of a wide distribution: between the same two vendor realizations the
+per-position KL of the teacher-forced texts below has a mean of 1.3e-2 to 1.8e-2 and a p99 of 0.15
+to 0.36, so the 257k verdict rests on the teacher-forced 262k text further down. The runner held the
+257k prompt on one card (10.5 GB per stream copy, the candidate pool at 8.4 GB).
 
 | prompt | tokens | next token | top-5 | KL(vendor, native) | KL floor (global-max vendor) | max abs diff | whole trunk |
 |---|---|---|---|---|---|---|---|
 | needle1200 | 18,343 | equal (17227) | 4/5 | 3.5e-06 | - | 2.53 | 42 s |
 | needle4800 | 73,520 | equal (21391) | 4/5 | 6.0e-07 | - | 2.21 | 80 s |
 | needle8400 | 128,745 | equal (20982) | 4/5 | 2.2e-04 | 1.3e-04 | 2.99 | 121 s |
-| needle16800 | 257,185 | equal (10186) | 3/5 | 5.3e-04 | - | 2.28 | 238 s |
+| needle16800 | 257,185 | equal (10186) | 3/5 | 5.3e-04 | 1.4e-04 | 2.28 | 238 s |
 
 Teacher-forced texts, every position scored (`--tf`): mean NLL, top-1 agreement and the share of
 positions whose NLL moves more than 0.1 nats, against two floors of the vendor program itself: the
@@ -297,14 +315,77 @@ A text passes when |delta mean NLL| is at most twice the largest floor's, top-1 
 | tflong_he_haifa | 31,859 | 1.4920 / 1.4835 | -0.0086 | 94.8% | 30.1% | -0.0039, -0.0062 | 94.9% | 30.2% | PASS |
 | tf128k_en_moby | 131,072 | 0.0743 / 0.0646 | -0.0097 | 99.1% | 4.3% | -0.0022, -0.0081 | 99.1% | 4.3% | PASS |
 | tf64k_he_cities | 131,072 | 1.2295 / 1.2313 | +0.0018 | 95.5% | 26.9% | +0.0016, -0.0001 | 95.5% | 26.8% | PASS |
+| tf256k_en_moby | 262,144 | 0.0826 / 0.0741 | -0.0085 | 99.0% | 4.7% | +0.0022, -0.0097 | 98.9% | 4.7% | PASS |
 
-The native run sits at the vendor's own floors on every text. The vendor tape at full length is
+The 262k text is the 131k one (Moby Dick from chapter 1) scored twice as far; its length floor is the
+131k tape, on the first 131,072 positions. The native run sits at the vendor's own floors on every text. The vendor tape at full length is
 itself the outlier on mean NLL at 32k and 131k English: its global-max realization scores the same
 text 0.0062 and 0.0081 nats lower, and the native 0.0086 and 0.0097 lower. The 2048-vs-2422 length
 effect measured earlier (delta 0.0006, top-1 98.2%, 11% moved) is the length floor of one text at
 2k under the earlier attention stand-in; at 2k under the tilelang schedule the global-max floor is
 delta 0.0063, top-1 97.9%, 11.6% moved, and at 32k to 131k the Hebrew texts move 27-30% of
 positions by more than 0.1 nats between two valid runs of the vendor program.
+
+Per-position KL (`tf_kl.py`). `dsv41-run --tf` also keeps every position's 32 largest logits, as the
+tape does. At each position both distributions are known exactly on the ids in both top-32 sets, and
+everything else is one rest bucket; the KL of the two coarsened distributions is a lower bound of the
+full KL(vendor || other), computed the same way for the native run and for each vendor floor. The
+English text is memorized (mean NLL 0.07 to 0.08), so most of its positions are near one-hot and
+agree under any realization; the signal is where the vendor is unsure, so each text is also cut to
+the positions whose vendor entropy (top-32 plus the rest bucket, a lower bound) exceeds 1 nat and to
+its top entropy decile. Mean KL against the vendor tape, native and floor on the same positions (the
+schedule floor on every position, the length floor on the shorter tape's prefix with the native cut
+to it), and top-1 agreement (`tables_kl.py`, `receipts/long/kl-*.json`, `kl-tables.md`). A subset
+passes on the larger floor's band, as the NLL rule: mean KL at most twice that floor's, top-1 at most
+1 point under it, or two binomial standard errors when the subset is small (the 2k text's subsets
+have about 160 positions).
+
+| text | positions | native KL | schedule floor KL | ratio | native KL, prefix | length floor KL | ratio | top-1: native, schedule; native, length | pass |
+|---|---|---|---|---|---|---|---|---|---|
+| tf_en_lighthouse (2k) | all: 2,048 | 2.23e-02 | 1.76e-02 | 1.26 | - | - | - | 97.4%, 97.9% | PASS |
+| | entropy > 1 nat: 159 | 1.06e-01 | 7.35e-02 | 1.44 | - | - | - | 81.1%, 83.0% | PASS |
+| | top decile: 205 | 1.14e-01 | 7.95e-02 | 1.44 | - | - | - | 81.5%, 84.4% | PASS |
+| tflong_he_haifa (32k) | all: 31,859 | 1.66e-02 | 1.68e-02 | 0.99 | 1.64e-02 | 1.66e-02 | 0.98 | 94.8%, 95.0%; 94.9%, 94.9% | PASS |
+| | entropy > 1 nat: 11,387 | 3.34e-02 | 3.38e-02 | 0.99 | 3.27e-02 | 3.28e-02 | 1.00 | 87.4%, 87.6%; 87.7%, 87.8% | PASS |
+| | top decile: 3,186 | 2.99e-02 | 3.10e-02 | 0.96 | 2.95e-02 | 2.97e-02 | 0.99 | 81.6%, 81.9%; 81.5%, 82.4% | PASS |
+| tf128k_en_moby (131k) | all: 131,072 | 1.34e-02 | 1.32e-02 | 1.02 | 1.33e-02 | 9.01e-03 | 1.47 | 99.1%, 99.1%; 99.1%, 99.2% | PASS |
+| | entropy > 1 nat: 1,322 | 3.08e-01 | 2.94e-01 | 1.05 | 3.15e-01 | 1.99e-01 | 1.58 | 71.5%, 71.5%; 71.4%, 73.3% | PASS |
+| | top decile: 13,108 | 1.27e-01 | 1.24e-01 | 1.02 | 1.26e-01 | 8.54e-02 | 1.47 | 90.6%, 90.7%; 90.8%, 91.6% | PASS |
+| tf64k_he_cities (131k) | all: 131,072 | 1.49e-02 | 1.44e-02 | 1.04 | 1.50e-02 | 1.40e-02 | 1.07 | 95.5%, 95.5%; 95.4%, 95.5% | PASS |
+| | entropy > 1 nat: 43,069 | 3.23e-02 | 3.17e-02 | 1.02 | 3.23e-02 | 3.07e-02 | 1.05 | 88.0%, 88.1%; 88.0%, 88.2% | PASS |
+| | top decile: 13,108 | 3.23e-02 | 3.17e-02 | 1.02 | 3.21e-02 | 3.00e-02 | 1.07 | 82.1%, 82.5%; 82.0%, 82.5% | PASS |
+| tf256k_en_moby (262k) | all: 262,144 | 1.31e-02 | 1.41e-02 | 0.93 | 1.11e-02 | 8.79e-03 | 1.27 | 99.0%, 98.9%; 99.1%, 99.1% | PASS |
+| | entropy > 1 nat: 3,057 | 2.65e-01 | 2.83e-01 | 0.94 | 2.71e-01 | 1.88e-01 | 1.44 | 70.6%, 69.2%; 69.4%, 72.0% | PASS |
+| | top decile: 26,215 | 1.23e-01 | 1.32e-01 | 0.93 | 1.06e-01 | 8.19e-02 | 1.29 | 89.8%, 89.5%; 91.0%, 91.4% | PASS |
+
+The 257k verdict rests on the 262k text's high-entropy positions: against the vendor's global-max
+realization at the same length the native run is 0.94x its KL on the 3,057 positions above 1 nat and
+0.93x on the top decile (26,215), with top-1 70.6% against 69.2%. On the non-memorized Hebrew texts
+both floors coincide and the native sits at 0.96x to 1.07x of either on every subset. On Moby the
+length floor is the tighter one at both lengths (the native is 1.27x to 1.58x of it, inside 2x); on
+its 1,229 prefix positions above 1 nat the native's top-1 is 2.6 points under the length floor's
+(69.4% against 72.0%), 0.1 point past that floor's own band, so that subset passes on the schedule
+floor alone. Paired, position by position (`paired_top1.py`, `receipts/long/paired-top1.txt`): of
+the positions where exactly one of the two agrees with the vendor, the native wins 138 and the length
+floor 170 (sign test p=0.077); against the schedule floor at 262k the native wins 352 to 309
+(p=0.10). Against every floor of the Hebrew texts p is 0.19 or more.
+
+Decode steps at 41k and 64k (`decode_vs_tf.py`). Two vendor decode tapes (a 41,098-token Hebrew
+summary and a 64,443-token English continuation, 96 and 92 greedy tokens, full logits on the first 8
+steps) put each decode step at a position of one teacher-forced prefill of the prompt plus the
+generated tokens. The native prefill and the vendor's own (`make_tfids_oracle.py`, the oracle taking
+token ids for a teacher-forced case) are both compared with the vendor's decode steps:
+
+| decode tape | prefill | top-1 = vendor decode | first disagreement | KL on the 8 full-logit steps, mean / max |
+|---|---|---|---|---|
+| decode32k_he_summary | native | 90 / 96 | step 13 | 2.5e-04 / 1.1e-03 |
+| decode32k_he_summary | vendor | 93 / 96 | step 13 | 1.0e-03 / 7.2e-03 |
+| decode64k_en_continue | native | 86 / 92 | step 4 | 2.4e-02 / 1.3e-01 |
+| decode64k_en_continue | vendor | 85 / 92 | step 4 | 1.2e-02 / 4.1e-02 |
+
+The native prefill reproduces the vendor's decode as closely as the vendor's own prefill does: both
+first part from it at the same step, and the step counts and KLs straddle each other. Eight KL steps
+per tape set no band; these are context for the decode route, not a gate.
 
 ## Not done here
 
