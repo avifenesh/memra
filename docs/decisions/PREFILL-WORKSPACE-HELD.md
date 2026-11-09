@@ -91,7 +91,24 @@ The held charge at the 17,166-token prompt is 476 MB beside a peer (2,147 MB col
 
 ## Measured
 
-Pending: the interleaved A/B in `research/c8-workspace-20261108/RESULTS.md`.
+These are interleaved fresh-boot A/B runs: A = main `0c25263389`, B = this change on it (`research/c8-workspace-20261108/RESULTS.md`, N=3 per arm unless stated):
+
+| shape | A (main) | B (this change) |
+|---|---|---|
+| agentic c8, measured pass: first token p50 / p99 | 22.0 / 64.7 s | 14.5 / 39.1 s |
+| agentic c8, measured pass: tok/s (median run) / E2E p50 | 47.76 / 53.7 s | 49.52 / 52.7 s |
+| agentic c8, prime pass: first token p50 / slowest per run | 31.0 s / 66.0-75.4 s | 39.3 s / 60.0-62.6 s |
+| agentic c8: failures, OOM lines, lowest driver free | 0, 0, 947 MiB | 0, 0, 307 MiB |
+| greedy c8 (N=1): byte-identical outputs | | 29 + 29 of 29 + 29 |
+| mixed shape: tok/s (median run), TTFT p50, identical rows | 120.64, 953 ms | 124.58, 932 ms, 103 of 103 |
+| agentic c4, measured pass: first token p50 / p99, tok/s per run | 3.1 / 19.9 s, 47.6-50.2 | 3.1 / 19.8 s, 48.1-50.1 |
+| agentic c1 (N=1), measured pass: first token p50, tok/s | 2.4 s, 33.84 | 2.3 s, 34.53 |
+| DFlash route, grow-rewind replay (ABBA): c1 second turns resumed; c4 tok/s; c8 HTTP 408s | 3 of 11; 35.52 / 33.85; 3 and 2 | 11 of 11; 45.71 / 45.44; 0 and 0 |
+
+- **Measured pass.** The first token comes 34% sooner at the median and 40% sooner at p99. Aggregate decode throughput rises 3.7%. Per-token decode is slower (TPOT p50 135 against 96 ms), because more sessions decode together. Whole requests end at the same median.
+- **Prime pass.** This pass is a cold burst of 29 prompts. Its slowest first token falls in every run. Its median rises 27%: in a burst, the deadline order is close to oldest first.
+- **c4 and c1.** Both shapes are flat. At c4 the cold charge never deferred, so the held charge has nothing to admit sooner.
+- **The DFlash route** (the grow-rewind replay, c1 to c8 in each boot). No OOM line and no step-OOM park in any arm. On B the lowest driver-free readings the server logged were 100 and 132 MiB, against 452 and 484 MiB on A. Both were the before side of an admission trim or a reserve settle. The pool held cached blocks, and the trim or settle returned them before the prime ran: after a trim, the lowest reading was 1,508 MiB on B against 2,020 MiB on A. The 250 ms telemetry floor was 487 and 519 MiB on B, against 839 and 871 MiB on A.
 
 ## Rejected
 
@@ -99,6 +116,16 @@ Pending: the interleaved A/B in `research/c8-workspace-20261108/RESULTS.md`.
   pairs on `b868464d9b`): measured-pass first-token p50 14.6 s against 23.4 s, but four prefill
   out-of-memory failures in one of its three runs, as above. Fixed by the yield before every prime
   call.
+- **The whole reserve before every prime call and every batch round** (`C1c`, `47e9d340a8`,
+  `runs/*-c1c/`). It had no failures and no OOM line. It was superseded, not refuted: each prime
+  call now yields only its own need, and the batch rounds bound themselves on a fresh reading. Its
+  mixed-shape median (114.13 against 118.27 tok/s) overlapped A's runs. The final tree is flat
+  there.
+- **The held charge with the old deadline estimate** (`C1e`, `runs/c8-c1e/`). The measured pass
+  gained as above. The cold-burst prime pass put its slowest first token at 86-89 s in every run,
+  against the 90 s deadline.
+- **A fixed 2x margin on that estimate, keyed to this card.** It was never measured. It was a
+  calibration constant from one card and one workload, and the derived estimate replaced it.
 - **The yield before every prime call sized by the batch formula, with no reserve yield before
   phase (a) unless an MTP session was priming** (`C1d`, `bb7f308cef`; review). It missed the
   DFlash walkers, which prime in phase (a) with no `spec` state, and the fanout leader prime, a

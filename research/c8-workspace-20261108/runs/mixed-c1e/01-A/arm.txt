@@ -1,0 +1,14 @@
+arm 01-A workload=mixed start=2026-11-09T04:30:24+02:00 profile=balanced
+9694c523a838600a837d90a52b6820e54216abebafe39260f772426c6ee487c7  <bins>/S/memra-server
+env: MEMRA_MAX_SESSIONS=12
+NVIDIA GeForce RTX 5090 Laptop GPU, 74, 180 MHz, [N/A], 48 MiB, 24028 MiB
+device_free_min_mib 1331 samples 363
+memavailable_min_gib 49.33
+1794191441.035 [prefix-cache] on: budget 2260MB (2259943424 B, derived: 2 x 1129971712 B max entry for model "gate" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), requested 2259943424 B; boot driver free 10053877760 B, post-reserve clamp 8443265024 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+evict_lines=34
+oom_lines=0
+reclaim_on_defer_lines=10
+vram_defer_lines=0
+admit_trim_lines=44
+{"window_s": 47.14, "batch_rows": 96, "batch_agg_tok_s": 122.19, "repeat_cached": [480, 0, 0, 0, 0, 0], "repeat_hits": 1, "repeat_ttft_ms": [261.1, 574.7, 606.5, 615.7, 633.3, 1100.4], "batch_ttft_ms_p50": 942.8048133850098, "metrics_delta": {}, "metrics_end": {}}
+rc=0 end=2026-11-09T04:31:55+02:00

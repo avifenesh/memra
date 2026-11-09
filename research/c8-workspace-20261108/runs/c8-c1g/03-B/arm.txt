@@ -1,0 +1,14 @@
+arm 03-B workload=agentic:8:1.0:768 start=2026-11-09T06:03:16+02:00 profile=balanced
+cbd1a9fd420ac71660d6ff46d262b6a4840573dc69f1e1169323d8fe432e456c  <bins>/C1g/memra-server
+env:
+NVIDIA GeForce RTX 5090 Laptop GPU, 71, 180 MHz, [N/A], 48 MiB, 24028 MiB
+device_free_min_mib 403 samples 1608
+memavailable_min_gib 46.17
+1794197011.773 [prefix-cache] on: budget 2260MB (2259943424 B, derived: 2 x 1129971712 B max entry for model "gate" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), requested 2259943424 B; boot driver free 8376156160 B, post-reserve clamp 6765543424 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+evict_lines=98
+oom_lines=0
+reclaim_on_defer_lines=66
+vram_defer_lines=644
+admit_trim_lines=43
+{"args": {"workload": "<agentic-workload>", "out": "<runs>/c8g/03-B/rows.json", "port": 18287, "users": 8, "think": 1, "temperature": 1.0, "max_tokens": 768, "seed": 1234, "prime_only": false}, "prime": {"rows": 29, "ok": 29, "status_counts": {"200": 29}, "wall_s": 145.0, "ttft_ms_p50": 38055.8, "ttft_ms_p95": 56980.7, "ttft_ms_p99": 61357.3, "ttft_ms_max": 61357.3, "tokens": 29, "agg_tok_s": 0.2, "cached_tokens": 0, "prompt_tokens": 184051, "hits": 0, "per_user_gen_tps_median": null}, "prime_metrics_delta": {}, "measure": {"rows": 29, "ok": 29, "status_counts": {"200": 29}, "wall_s": 215.3, "ttft_ms_p50": 14160.7, "ttft_ms_p95": 36301.4, "ttft_ms_p99": 36864.1, "ttft_ms_max": 36864.1, "tokens": 10623, "agg_tok_s": 49.35, "cached_tokens": 16960, "prompt_tokens": 184051, "hits": 7, "per_user_gen_tps_median": 7.23}, "measure_metrics_delta": {}}
+rc=0 end=2026-11-09T06:09:58+02:00
