@@ -112,6 +112,33 @@ Medians of 3 per arm. The spread is max minus min.
 
 The session-gate oracle is an engine gate, and the lever does not touch the engine. On GB10 it passes at its defaults (K=2, 24 tokens per turn) on both builds. At K=3 with 48 tokens per turn it reports the same turn-2 mismatch on both builds, main included (`eos-unit2/session-gate-*.log`). So that mismatch is main's, not the lever's. Its reference re-primes the whole history, while the session continues from decoded state; since main 1991314b86 the served path never resumes a recurrent trunk at its parked end (the grid law, memra#1093). The mismatch is filed as memra#1146.
 
+## Lever 3a: verify column states stay in the scan's slabs
+
+A recurrent verify keeps each linear layer's GDN state after every verify column, so a partial accept can restore the state after its last accepted column. The packed scan already writes those snapshots into two [T-1 x words] slabs per layer (and the pooled-rows scan into two per segment). Both then copied every column out into its own pair of buffers: 6 device copies per layer per round at K=3, 471 MB a round on Qwen3.8-27B. `ColStates` now holds the two slabs and hands the restore per-column views, so the scan's own buffers are the checkpoint. The per-row and rowwise arms fill a slab with the copies they already made. The restore reads the same bytes at the same offsets, so the lever is bit-identical by construction. No flag.
+
+Served B/T, B = main a8a980a017, T = the lever (c482d10f58, before the restack on lever 1), one fresh server per cell, B T T B B T, one cell per lease, the requests of lever 1. Two GB10 campaigns on unit 2: `cols-unit2/` with the 1k requests, `cols-long-unit2/` with the 131k request added. The RTX 5090 at a 32k context: `cols-5090/`. Medians of 3 per arm, spread = max - min.
+
+| device, campaign | signal | B | T | change | spread B / T |
+|---|---|---:|---:|---:|---:|
+| GB10, 1k | ms per round inside full bursts | 94.26 | 91.35 | -2.92 (-3.1%) | 0.14 / 1.36 |
+| GB10, 1k | g1k total | 4.777 s | 4.655 s | -0.122 s (-2.6%) | 0.007 / 0.040 |
+| GB10, 1k | g1k-t2 total | 1.670 s | 1.624 s | -0.046 s (-2.8%) | 0.003 / 0.010 |
+| GB10, 1k | s1k total | 4.696 s | 4.592 s | -0.104 s (-2.2%) | 0.008 / 0.102 |
+| GB10, long | ms per round inside full bursts (1k and 131k requests) | 146.39 | 142.92 | -3.46 (-2.4%) | 0.34 / 0.26 |
+| GB10, long | g1k total | 4.772 s | 4.654 s | -0.118 s (-2.5%) | 0.004 / 0.013 |
+| GB10, long | g1k-t2 total | 1.673 s | 1.625 s | -0.048 s (-2.9%) | 0.005 / 0.004 |
+| GB10, long | s1k total | 4.706 s | 4.594 s | -0.112 s (-2.4%) | 0.011 / 0.012 |
+| GB10, long | g131k decode after the first token | 12.150 s | 11.928 s | -0.222 s (-1.8%) | 0.043 / 0.042 |
+| GB10, long | g131k total | 129.818 s | 129.509 s | -0.309 s (-0.2%) | 0.208 / 0.029 |
+| RTX 5090 | ms per round inside full bursts | 32.10 | 32.03 | -0.06 (-0.2%) | 1.70 / 1.58 |
+| RTX 5090 | g1k total | 2.611 s | 2.607 s | -0.004 s | 0.160 / 0.157 |
+| RTX 5090 | s1k total | 2.705 s | 2.750 s | +0.045 s | 0.201 / 0.229 |
+
+- **Exact.** Every request served the same text in every cell of both arms, in all three campaigns: greedy, sampled, the resumed second turn and the 131k request.
+- **GB10: about 3 ms a round, at every context.** Every T cell is faster than every B cell on the round cost in both campaigns, and the saving is 2 to 20 times the larger spread. The one wide T spread (1.36 ms, s1k 0.102 s) is cell 06-T of the first campaign, which ran 1 ms a round slower than its two twins and still under every B cell; the second campaign's six cells repeat the saving with spreads under 0.35 ms. The scout priced the copies at 2.75 ms a round.
+- **RTX 5090: no change.** The copies are a small share of a 32 ms round at four times the bandwidth, and the card's clock moved more between cells (1.6-1.7 ms of spread) than the lever could. Nothing regressed.
+- **Engine gates at the lever's first commit:** the RTX 5090 device battery passes (kernel-check all green, the argmax gates, `run-spec` K=1..8 identical to plain on both roster models; `cols-5090/battery.txt`). Its Qwen3.8-27B K=3 run accepts 17 of 42 drafted tokens, so partial accepts restore from the slabs there.
+
 ## The cold-long rung on GB10: K=2 against K=3 (lever 4's first cell, for memra#1093)
 
 memra#1144 found that a cold sampled prompt of 1,024 tokens or more decodes faster at K=2 than at the cold-long rung's K=3 on the RTX 5090 (from 3.6k) and on the RTX PRO 6000 Max-Q (every length). This cell asks the same on GB10, with that lane's harness plus a GB10 prompt set and the served route's draft (`tools/cold_long_ab.py`, `PROMPT_SET=gb10`, `CELL_EXTRA`; the per-boot telemetry table is `research/spec-k-cold-long-20261109/analyze.py`).
