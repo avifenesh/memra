@@ -1413,6 +1413,8 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         (1usize, 1024usize, 4096usize, 8usize),
         (3, 32, 5120, 1),
         (4, 512, 5120, 1),
+        (1, 384, 5120, 1),
+        (1, 5000, 1280, 1),
     ] {
         let a = Buf::from_bytes(&st, &rng.bf16(8 * k * batch))?;
         let b = Buf::from_bytes(&st, &rng.bf16(n * k * batch))?;

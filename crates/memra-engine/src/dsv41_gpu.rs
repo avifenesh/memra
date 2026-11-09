@@ -1820,7 +1820,7 @@ fn ensure_rows(
         return Ok(());
     }
     let new_cap = rows.max(hint).max(*cap * 2);
-    let nb = ops.tmp(new_cap * row_bytes)?;
+    let nb = ops.buf(new_cap * row_bytes)?;
     if let Some(old) = buf.as_ref() {
         let keep = (*cap).min(old.len / row_bytes) * row_bytes;
         copy_d2d(ops, old, 0, &nb, 0, keep)?;
@@ -2282,8 +2282,9 @@ impl Ctx {
             true,
         )?;
         if ls.c_kv.is_none() {
-            ls.c_kv = Some(self.ops.tmp(2 * hd * 4)?);
-            ls.c_sc = Some(self.ops.tmp(2 * hd * 4)?);
+            // carried state: zeroed, so a slot no token wrote yet holds the same bytes on every rank
+            ls.c_kv = Some(self.ops.buf(2 * hd * 4)?);
+            ls.c_sc = Some(self.ops.buf(2 * hd * 4)?);
         }
         let (ckv, csc) = (ls.c_kv.as_ref().unwrap(), ls.c_sc.as_ref().unwrap());
         let pool = |c: &mut Self, kv: &Buf, sc: &Buf, n: usize, lat: &Buf| -> Result<(), String> {
@@ -2473,7 +2474,7 @@ impl Ctx {
         )?;
         self.ops.fp8_qdq(kvw.p(&st), hd, s, hd)?;
         if ls.ring.is_none() {
-            ls.ring = Some(self.ops.tmp(win * hd * 2)?);
+            ls.ring = Some(self.ops.buf(win * hd * 2)?);
         }
         let ring = ls.ring.as_ref().unwrap();
         // the ring holds position p at slot p % win; a prefill seeds it with its last win rows, as
