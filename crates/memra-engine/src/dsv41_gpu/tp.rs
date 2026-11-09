@@ -49,8 +49,8 @@
 #![allow(clippy::needless_range_loop)]
 
 use super::{
-    BW, Buf, Ctx, Dp, Geo, LayerState, LayerW, Part, QFmt, Shared, Trace, bytes_f32, bytes_i32, ck,
-    ffi, i32_bytes, load_bf16_rows, load_vec_bf16,
+    BW, Buf, Ctx, Dp, Geo, LayerState, LayerW, Part, Shared, Trace, bytes_f32, bytes_i32, ck, ffi,
+    load_bf16_rows, load_vec_bf16,
 };
 use crate::Engine;
 use crate::tp_transport::{self, TpTransport};
@@ -831,9 +831,12 @@ impl Group {
     }
 
     /// MoE for rows `[r0, r0 + rows)` of `x2` (every rank's copy), written into the same rows of
-    /// `m`: the router on every rank (replicated weights, the same bytes on every rank), each
-    /// rank's own copy of the host dispatch plan, each rank's experts through the grouped GEMMs,
-    /// the expert rows gathered, the ordered combine with the replicated shared expert.
+    /// `m`. One rank runs the one-card MoE ([`Ctx::moe`]: device plan, no host round trip). N ranks:
+    /// every rank routes its replicated copy (the same bytes, so the same selection) and builds the
+    /// device plan of its experts on its own thread; rank 0's expert offsets size the gathers (the
+    /// one host read); each rank's experts run through the tile-list GEMMs, the expert rows are
+    /// gathered, and every rank adds each token's rows in ascending expert id with the replicated
+    /// shared expert.
     fn moe(
         &mut self,
         lw: &[LayerW],
@@ -846,60 +849,71 @@ impl Group {
         let n = self.n();
         let g = self.cx[0].g.clone();
         let (ne, topk, d) = (g.n_experts, g.topk, g.dim);
+        if n == 1 {
+            let c = &mut self.cx[0];
+            let st = c.ops.st.clone();
+            return c.moe(
+                &lw[0],
+                x2[0].at(&st, r0 * d * 2),
+                rows,
+                m[0].at(&st, r0 * d * 2),
+                &mut tr[0],
+            );
+        }
         let trace = self.trace;
-        let parts = {
+        let plans = {
             let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
             self.each_mut(&mut trs, |r, c, trr| {
                 let st = c.ops.st.clone();
                 let x = x2[r].at(&st, r0 * d * 2);
-                let (sel_h, selw_h) = c.route(&lw[r], x, rows)?;
-                let plan = MoePlan::new(&sel_h, &selw_h, rows, topk, ne)?;
-                let er = Part { rank: r, n }.range(ne);
-                let (p0, p1) = (plan.off[er.start], plan.off[er.end]);
-                let sl = c.ops.buf(plan.ptok.len() * d * 2)?;
-                if p1 > p0 {
-                    c.experts_grouped(&lw[r], x, &plan, er, sl.at(&st, p0 * d * 2))?;
-                }
-                let so = c.shared_expert(&lw[r], x, rows)?;
+                let (sel, selw) = c.moe_route(&lw[r], x, rows)?;
                 if trace {
-                    trr.route_sel.extend_from_slice(&sel_h);
-                    trr.route_w.extend_from_slice(&selw_h);
+                    trr.route_sel
+                        .extend_from_slice(&bytes_i32(&host_timed(&sel, &st)?));
+                    trr.route_w
+                        .extend_from_slice(&bytes_f32(&host_timed(&selw, &st)?));
                 }
-                Ok((
-                    sl,
-                    so,
-                    plan.order,
-                    Blk::flat(p0 * d * 2, (p1 - p0) * d * 2),
-                    sel_h,
-                ))
+                let ex = lw[r].expert0..lw[r].expert0 + lw[r].experts.len();
+                c.moe_plan(&sel, &selw, rows, ex)
             })?
         };
-        let (mut slots, mut shared_out, mut orders, mut blks) = (vec![], vec![], vec![], vec![]);
-        for (sl, so, ord, b, sel) in parts {
-            slots.push((sl, sel));
+        let off: Vec<usize> = bytes_i32(&host_timed(&plans[0].off, &self.cx[0].ops.st)?)
+            .into_iter()
+            .map(|x| x as usize)
+            .collect();
+        if off[ne] != rows * topk {
+            return Err(format!(
+                "route: {} of {} pairs placed",
+                off[ne],
+                rows * topk
+            ));
+        }
+        let np = rows * topk;
+        let parts = self.each(|r, c| {
+            let er = Part { rank: r, n }.range(ne);
+            let (p0, p1) = (off[er.start], off[er.end]);
+            let st = c.ops.st.clone();
+            let x = x2[r].at(&st, r0 * d * 2);
+            let sl = c.ops.buf(np * d * 2)?;
+            c.experts_tiles(&lw[r], x, &plans[r], p0, p1, &sl)?;
+            let so = c.shared_expert(&lw[r], x, rows)?;
+            Ok((sl, so, Blk::flat(p0 * d * 2, (p1 - p0) * d * 2)))
+        })?;
+        let (mut slots, mut shared_out, mut blks) = (vec![], vec![], vec![]);
+        for (sl, so, b) in parts {
+            slots.push(sl);
             shared_out.push(so);
-            orders.push(ord);
             blks.push(b);
         }
-        // every rank routed its own replicated copy of the rows: one plan, or a refusal
-        for r in 1..n {
-            if slots[r].1 != slots[0].1 {
-                return Err(format!(
-                    "dsv41 tp moe: rank {r} routed rows {r0}..{} differently from rank 0",
-                    r0 + rows
-                ));
-            }
-        }
-        let refs: Vec<&Buf> = slots.iter().map(|x| &x.0).collect();
+        let refs: Vec<&Buf> = slots.iter().collect();
         self.allgather(&refs, &blks)?;
         self.each(|r, c| {
             let st = c.ops.st.clone();
-            let ord = Buf::from_bytes(&st, &i32_bytes(&orders[r]))?;
             ck("moe_combine", unsafe {
                 ffi::memra_v41_moe_combine(
-                    slots[r].0.p(&st).c(),
+                    slots[r].p(&st).c(),
                     d as i64,
-                    ord.p(&st).i(),
+                    plans[r].order.p(&st).i(),
                     topk as i32,
                     shared_out[r].p(&st).c(),
                     d as i64,
@@ -911,6 +925,15 @@ impl Group {
                 )
             })
         })?;
+        if trace {
+            for r in 0..n {
+                let st = self.cx[r].ops.st.clone();
+                let err = bytes_i32(&plans[r].err.host(&st)?)[0];
+                if err != 0 {
+                    return Err(format!("rank {r} route: {err} expert ids out of range"));
+                }
+            }
+        }
         // The slot, plan and shared-expert buffers are freed next on their own streams, after
         // the combine; a peer's copy out of a slot is ordered before the free by the gather's
         // release event, which the producer's stream waits on.
@@ -1345,187 +1368,7 @@ impl MoePlan {
     }
 }
 
-/// One grouped-GEMM table entry (`V41Group` in `cu/dsv41_gpu.cu`, 32 bytes).
-fn group_rec(out: &mut Vec<u8>, row0: usize, rows: usize, scale2: f32, w: u64, s: u64) {
-    out.extend_from_slice(&(row0 as i64).to_le_bytes());
-    out.extend_from_slice(&(rows as i32).to_le_bytes());
-    out.extend_from_slice(&scale2.to_le_bytes());
-    out.extend_from_slice(&w.to_le_bytes());
-    out.extend_from_slice(&s.to_le_bytes());
-}
-
 impl Ctx {
-    /// The router (sqrtsoftplus gate with its selection bias) on `rows` rows of `x`: each row's
-    /// `topk` expert ids and weights, read back to the host in one copy.
-    pub fn route(
-        &mut self,
-        lw: &LayerW,
-        x: Dp,
-        rows: usize,
-    ) -> Result<(Vec<i32>, Vec<f32>), String> {
-        let g = self.g.clone();
-        let st = self.ops.st.clone();
-        let (ne, topk) = (g.n_experts, g.topk);
-        let raw = self.ops.buf(rows * ne * 4)?;
-        self.ops
-            .linear_bf16(x, g.dim, rows, &lw.gate_w, raw.p(&st), ne, true)?;
-        let nb = rows * topk * 4;
-        let both = self.ops.buf(2 * nb)?;
-        ck("route", unsafe {
-            ffi::memra_v41_route(
-                raw.p(&st).f(),
-                ne as i64,
-                lw.gate_b.p(&st).f(),
-                ne as i32,
-                topk as i32,
-                1,
-                g.route_scale,
-                both.p(&st).im(),
-                both.at(&st, nb).fm(),
-                rows as i32,
-                self.ops.sv(),
-            )
-        })?;
-        let hb = host_timed(&both, &st)?;
-        Ok((bytes_i32(&hb[..nb]), bytes_f32(&hb[nb..])))
-    }
-}
-
-impl Ctx {
-    /// The routed experts `ex` (this rank's range) of a slice through the grouped GEMMs: the
-    /// pairs' rows of `x` quantized once, `w1` and `w3` as one launch each over every expert with
-    /// rows, the weighted clamped SwiGLU, `w2` into `out` (bf16 rows in plan order from the
-    /// range's first pair). Per row, the arithmetic of the per-expert loop.
-    pub fn experts_grouped(
-        &mut self,
-        lw: &LayerW,
-        x: Dp,
-        plan: &MoePlan,
-        ex: std::ops::Range<usize>,
-        out: Dp,
-    ) -> Result<(), String> {
-        let g = self.g.clone();
-        let st = self.ops.st.clone();
-        let (d, inter) = (g.dim, g.moe_inter);
-        let (p0, p1) = (plan.off[ex.start], plan.off[ex.end]);
-        let np = p1 - p0;
-        if ex.start < lw.expert0 || ex.end > lw.expert0 + lw.experts.len() {
-            return Err(format!(
-                "experts {ex:?} are not on this rank ({} from {})",
-                lw.experts.len(),
-                lw.expert0
-            ));
-        }
-        let fmt = lw.experts[0][0].fmt;
-        let (wfmt, kdiv) = match fmt {
-            QFmt::Mxfp4 => (1, 32),
-            QFmt::Nvfp4Minted { .. } => (2, 16),
-            QFmt::Fp8Block32 => return Err("routed experts are FP4".into()),
-        };
-        let (mut t1, mut t3, mut t2) = (vec![], vec![], vec![]);
-        let mut ng = 0usize;
-        let mut max_rows = 0;
-        for e in ex.clone() {
-            let c = plan.cnt[e];
-            if c == 0 {
-                continue;
-            }
-            let ws = &lw.experts[e - lw.expert0];
-            for (t, w) in [(&mut t1, &ws[0]), (&mut t3, &ws[2]), (&mut t2, &ws[1])] {
-                if std::mem::discriminant(&w.fmt) != std::mem::discriminant(&fmt) {
-                    return Err("mixed expert formats in one layer".into());
-                }
-                let s2 = match w.fmt {
-                    QFmt::Nvfp4Minted { scale2 } => scale2,
-                    _ => 1.0,
-                };
-                group_rec(
-                    t,
-                    plan.off[e] - p0,
-                    c,
-                    s2,
-                    w.w.p(&st).addr(),
-                    w.s.p(&st).addr(),
-                );
-            }
-            ng += 1;
-            max_rows = max_rows.max(c);
-        }
-        let ridx = Buf::from_bytes(&st, &i32_bytes(&plan.ptok[p0..p1]))?;
-        let rw = Buf::from_bytes(&st, &super::f32_bytes(&plan.pw[p0..p1]))?;
-        let (g1, g3, g2) = (
-            Buf::from_bytes(&st, &t1)?,
-            Buf::from_bytes(&st, &t3)?,
-            Buf::from_bytes(&st, &t2)?,
-        );
-        let aq = self.ops.buf(np * d)?;
-        let as_ = self.ops.buf(np * d / 32)?;
-        self.ops
-            .act_quant(x, d, ridx.p(&st), np, d, aq.p(&st), as_.p(&st))?;
-        let gb = self.ops.buf(np * inter * 2)?;
-        let ub = self.ops.buf(np * inter * 2)?;
-        let hb = self.ops.buf(np * inter * 2)?;
-        let grouped = |ops: &super::Ops,
-                       a: &Buf,
-                       a_s: &Buf,
-                       k: usize,
-                       tab: &Buf,
-                       c: Dp,
-                       nout: usize|
-         -> Result<(), String> {
-            ck("gemm_f8_grouped", unsafe {
-                ffi::memra_v41_gemm_f8_grouped(
-                    a.p(&st).c(),
-                    k as i64,
-                    a_s.p(&st).c(),
-                    (k / 32) as i64,
-                    tab.p(&st).c(),
-                    ng as i32,
-                    max_rows as i32,
-                    (k / 2) as i64,
-                    (k / kdiv) as i64,
-                    wfmt,
-                    c.m(),
-                    nout as i64,
-                    0,
-                    nout as i32,
-                    k as i32,
-                    ops.sv(),
-                )
-            })
-        };
-        grouped(&self.ops, &aq, &as_, d, &g1, gb.p(&st), inter)?;
-        grouped(&self.ops, &aq, &as_, d, &g3, ub.p(&st), inter)?;
-        ck("swiglu", unsafe {
-            ffi::memra_v41_swiglu(
-                gb.p(&st).m(),
-                ub.p(&st).m(),
-                inter as i64,
-                rw.p(&st).f(),
-                g.swiglu_limit,
-                hb.p(&st).m(),
-                inter as i64,
-                np as i32,
-                inter as i32,
-                self.ops.sv(),
-            )
-        })?;
-        let aq2 = self.ops.buf(np * inter)?;
-        let as2 = self.ops.buf(np * inter / 32)?;
-        self.ops.act_quant(
-            hb.p(&st),
-            inter,
-            Dp::NULL,
-            np,
-            inter,
-            aq2.p(&st),
-            as2.p(&st),
-        )?;
-        grouped(&self.ops, &aq2, &as2, inter, &g2, out, d)?;
-        // the plan's buffers are dropped here; their kernels are queued before the frees
-        Ok(())
-    }
-
     /// The shared expert on `rows` rows of `x`: bf16 `[rows][dim]`.
     pub fn shared_expert(&mut self, lw: &LayerW, x: Dp, rows: usize) -> Result<Buf, String> {
         let g = self.g.clone();
