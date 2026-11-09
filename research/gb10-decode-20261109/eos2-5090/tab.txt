@@ -1,0 +1,33 @@
+== g1k
+  01-B: total 2.669 s, decode 1.882 s, 106 tok, text c1e79ec24b63, last burst 20 rounds for 6 kept tokens (607.443 ms)
+  02-T: total 2.255 s, decode 1.450 s, 106 tok, text c1e79ec24b63, last burst 3 rounds for 6 kept tokens (97.593 ms)
+  03-T: total 2.218 s, decode 1.438 s, 106 tok, text c1e79ec24b63, last burst 3 rounds for 6 kept tokens (97.417 ms)
+  04-B: total 2.777 s, decode 1.943 s, 106 tok, text c1e79ec24b63, last burst 20 rounds for 6 kept tokens (618.599 ms)
+  05-B: total 2.695 s, decode 1.886 s, 106 tok, text c1e79ec24b63, last burst 20 rounds for 6 kept tokens (612.38 ms)
+  06-T: total 2.255 s, decode 1.424 s, 106 tok, text c1e79ec24b63, last burst 3 rounds for 6 kept tokens (94.266 ms)
+  B: total median 2.695 s (spread 0.108), decode median 1.886 s (spread 0.061), N=3
+  T: total median 2.255 s (spread 0.037), decode median 1.438 s (spread 0.026), N=3
+  T-B: total -0.440 s (-16.3%), decode -0.448 s (-23.8%)
+  same text in every cell: True
+== g1k-t2
+  01-B: total 0.803 s, decode 0.462 s, 18 tok, text 21c1f4249d46, last burst 15 rounds for 18 kept tokens (775.862 ms)
+  02-T: total 0.494 s, decode 0.150 s, 18 tok, text 21c1f4249d46, last burst 5 rounds for 18 kept tokens (464.058 ms)
+  03-T: total 0.493 s, decode 0.144 s, 18 tok, text 21c1f4249d46, last burst 5 rounds for 18 kept tokens (456.124 ms)
+  04-B: total 0.836 s, decode 0.468 s, 18 tok, text 21c1f4249d46, last burst 15 rounds for 18 kept tokens (806.436 ms)
+  05-B: total 0.829 s, decode 0.471 s, 18 tok, text 21c1f4249d46, last burst 15 rounds for 18 kept tokens (801.201 ms)
+  06-T: total 0.498 s, decode 0.149 s, 18 tok, text 21c1f4249d46, last burst 5 rounds for 18 kept tokens (470.217 ms)
+  B: total median 0.829 s (spread 0.033), decode median 0.468 s (spread 0.009), N=3
+  T: total median 0.494 s (spread 0.005), decode median 0.149 s (spread 0.006), N=3
+  T-B: total -0.335 s (-40.4%), decode -0.319 s (-68.2%)
+  same text in every cell: True
+== s1k
+  01-B: total 2.673 s, decode 1.807 s, 106 tok, text a7b07a2ca62e, last burst 18 rounds for 8 kept tokens (624.551 ms)
+  02-T: total 2.210 s, decode 1.326 s, 106 tok, text a7b07a2ca62e, last burst 3 rounds for 8 kept tokens (145.247 ms)
+  03-T: total 2.174 s, decode 1.305 s, 106 tok, text a7b07a2ca62e, last burst 3 rounds for 8 kept tokens (142.425 ms)
+  04-B: total 2.730 s, decode 1.839 s, 106 tok, text a7b07a2ca62e, last burst 18 rounds for 8 kept tokens (640.592 ms)
+  05-B: total 2.718 s, decode 1.817 s, 106 tok, text a7b07a2ca62e, last burst 18 rounds for 8 kept tokens (628.486 ms)
+  06-T: total 2.293 s, decode 1.358 s, 106 tok, text a7b07a2ca62e, last burst 3 rounds for 8 kept tokens (147.421 ms)
+  B: total median 2.718 s (spread 0.057), decode median 1.817 s (spread 0.032), N=3
+  T: total median 2.210 s (spread 0.119), decode median 1.326 s (spread 0.053), N=3
+  T-B: total -0.508 s (-18.7%), decode -0.491 s (-27.0%)
+  same text in every cell: True

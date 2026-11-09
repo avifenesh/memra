@@ -1,0 +1,18 @@
+1794256993.572640 [mtp-draft] loading external MTP draft: ~/models/q38-gguf/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+1794256993.692356 [mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+1794256994.071279 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794257001.152582 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":1342177280,"still_owned_bytes":16602330944,"pool_reserved_bytes":16777216000,"pool_cached_bytes":174885056,"driver_free_bytes":8141275136,"synchronization_errors":[]}
+1794257001.152782 [spec-cost] calibration skipped: model="q38" (16 sessions at depth 2048 do not fit: the other 14 need 7081MB (505.8MB each), 6919MB allocatable); the band serves
+1794257004.951791 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1644167168,"still_owned_bytes":17332139840,"pool_reserved_bytes":17515413504,"pool_cached_bytes":183273664,"driver_free_bytes":7367426048,"synchronization_errors":[]}
+1794257006.152429 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1031 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794257007.355345 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=1202.885 generated=0->34 rounds=10 drafted=30 accepted=23 k=3
+1794257007.843504 [tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=487.706 generated=34->66 rounds=16 drafted=48 accepted=16 k=3
+1794257008.300989 [tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=457.331 generated=66->100 rounds=13 drafted=39 accepted=21 k=3
+1794257008.919882 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=618.599 generated=100->106 rounds=20 drafted=60 accepted=12 k=3
+1794257008.949475 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1169 cached=992 lcp=992 active=1 wave=1 placement=single-or-non-pp2
+1794257009.756067 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=806.436 generated=0->18 rounds=15 drafted=45 accepted=16 k=3
+1794257009.783946 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1031 cached=0 lcp=9 active=1 wave=1 placement=single-or-non-pp2
+1794257010.961756 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=1177.669 generated=0->33 rounds=9 drafted=27 accepted=23 k=3
+1794257011.405685 [tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=443.431 generated=33->66 rounds=12 drafted=36 accepted=20 k=3
+1794257011.845653 [tick-spec] seq=1 slot=0 trace=- start_ms=0.010 gap_ms=0.010 wall_ms=439.774 generated=66->98 rounds=12 drafted=36 accepted=19 k=3
+1794257012.486554 [tick-spec] seq=1 slot=0 trace=- start_ms=0.009 gap_ms=0.009 wall_ms=640.592 generated=98->106 rounds=18 drafted=54 accepted=13 k=3
