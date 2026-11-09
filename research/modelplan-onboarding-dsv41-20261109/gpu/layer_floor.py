@@ -13,6 +13,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("oracle"); ap.add_argument("ckpt"); ap.add_argument("ref"); ap.add_argument("capture"); ap.add_argument("out")
 ap.add_argument("--layers", required=True); ap.add_argument("--threads", type=int, default=16)
 ap.add_argument("--max-seq", type=int, default=8192)
+ap.add_argument("--index-qchunk", type=int, default=0, help="the oracle's row-sliced indexer (long prompts)")
 ap.add_argument("--attn-schedule", choices=["standin", "online"], default="standin",
                 help="online: replace the oracle's global-max sparse_attn stand-in by the tilelang schedule "
                      "(key blocks of 64 in index order, online max, bf16 P)")
@@ -26,10 +27,17 @@ from fixio import Fix  # noqa: E402
 ro = os.path.join(c.oracle, "run_oracle.py")
 src = open(ro).read()
 cut = src.index("\nhidden = []\n")
-sys.argv = [ro, c.ckpt, c.ref, os.devnull, c.out, "--device", "cpu", "--threads", str(c.threads), "--max-seq", str(c.max_seq)]
+sys.argv = [ro, c.ckpt, c.ref, os.devnull, c.out, "--device", "cpu", "--threads", str(c.threads), "--max-seq", str(c.max_seq),
+            "--index-qchunk", str(c.index_qchunk)]
 G = {"__name__": "__oracle_loader__", "__file__": ro}
 exec(compile(src[:cut], ro, "exec"), G)
 torch, M, model = G["torch"], G["M"], G["model"]
+if c.index_qchunk and "long_ctx" not in G:
+    # the oracle installs its row-sliced indexer only for a GPU device; a long CPU floor needs it too
+    import long_ctx  # noqa: E402  (the oracle dir is on sys.path through its loader)
+
+    long_ctx.install(M, c.index_qchunk)
+    G["long_ctx"] = long_ctx
 
 if c.attn_schedule == "online":
     def sparse_attn_online(q, kv, attn_sink, topk_idxs, softmax_scale, qchunk=256, block=64):
@@ -129,6 +137,14 @@ for li in [int(v) for v in c.layers.split(",")]:
         sa.topk_idxs = load(f"{p}/in/topk_idxs")
     if ratio and has(f"{p}/in/candidates"):
         sa.candidates = load(f"{p}/in/candidates").bool()
+    if ratio and has(f"{p}/in/candidates_blocks"):
+        blocks = load(f"{p}/in/candidates_blocks").bool()
+        width = (x_len := idx["tensors"][f"{p}/in/x"]["shape"][1]) // ratio
+        bs = G["args"].candidate_block_size
+        if c.index_qchunk:
+            sa.candidates = G["long_ctx"].BlockCandidates(blocks, bs, width)
+        else:
+            sa.candidates = blocks.repeat_interleave(bs, dim=-1)[..., :width]
     t0 = time.time()
     with torch.inference_mode():
         x = load(f"{p}/in/x")

@@ -161,6 +161,25 @@ dsv41-gate layer CKPT captures/capital --layers 0 --chain 40 --head --engram-con
 python3 compare_dumps.py captures/needle captures/needle-floor mine compare-needle-v2.json
 ```
 
+Step 4:
+
+```bash
+# the native checkpoint runner, and CheckpointParity through the CLI (on the pack's capital probe)
+MEMRA_FULL_PREC=1 dsv41-run CKPT 0 128803 ... --token-map TOKEN_MAP --last-logits native.f32
+MEMRA_DSV41_TOKEN_MAP=TOKEN_MAP memra model verify checkpoint CKPT --against deepseek_v41 \
+  --oracle vendor-cuda-capital.tsv --native-runner dsv41-run --out verify-capital
+# long context: light captures, CPU floors with the row-sliced indexer, layer gates, whole trunk
+python3 capture_layers.py ORACLE_DIR CKPT REF TAPES captures --ids needle1200 --layers 20,21,24,25,28 \
+  --ops 20,21,24,25,28 --light --index-qchunk 512
+python3 layer_floor.py ORACLE_DIR CKPT REF captures/needle1200 captures/needle1200-floor \
+  --layers 20,21,24,25,28 --index-qchunk 512 --max-seq 20000
+dsv41-gate layer CKPT captures/needle1200 --layers 20,21,24,25,28 --token-map TOKEN_MAP \
+  --floor captures/needle1200-floor
+MEMRA_FULL_PREC=1 dsv41-run CKPT --ids needle16800.ids.i32 --token-map TOKEN_MAP --last-logits n16800.f32
+MEMRA_FULL_PREC=1 dsv41-run CKPT --ids tf128k_en_moby.ids.i32 --token-map TOKEN_MAP --tf tf128k/
+python3 trunk_vs_tape.py TAPES/tf128k_en_moby.pt tf128k/
+```
+
 `ORACLE_DIR` holds the vendor-code oracle: its torch stand-ins for the tilelang kernels and its
 loader (`run_oracle.py`, whose loader `capture_layers.py` and `layer_floor.py` execute unchanged),
 plus the Engram constants the vendor code derives (`engram_constants.json` and its token map). The
@@ -173,16 +192,130 @@ fixtures (0.8 GB) and captures (about 23 GB) are not in the repo.
 - `capture_layers.py`, `layer_floor.py`: per-layer vendor capture and its CPU floor.
 - `compare_dumps.py`, `chain_floor.py`, `analyze_compressor.py`: the analyses quoted above.
 - `dev_kernels.py`: the ctypes development loop over a standalone build of `cu/dsv41_gpu.cu`.
+- `logit_band.py`: logit-level spread of two runs of one prompt (the checkpoint bands).
+- `trunk_vs_tape.py`: a whole-trunk run, or another vendor tape, against a vendor tape (next-token or
+  teacher-forced metrics).
+- `make_globalmax_oracle.py`: the oracle copy with global-max attention (the schedule floor).
+- `tables_step4.py`: the step-4 tables from the receipts.
+- `receipts/checkpoint/`, `receipts/long/`: step-4 receipts.
 - `receipts/`: gate receipts (JSON) and their logs.
+
+## CheckpointParity on one card (step 4)
+
+Verdict: `memra model verify checkpoint --against deepseek_v41` passes with the one-card runner as
+the native side, on a pack-declared real chat probe, inside a band set from the vendor's own
+CPU-vs-GPU spread. The candidate pool's long-context layers pass against the CPU floor at 18k and
+73k tokens, the whole trunk gives the vendor's next token at 18k, 73k, 128k and 257k tokens, and
+four teacher-forced texts (2k to 131k tokens) score inside the vendor program's own floors.
+
+`dsv41-run` (crates/memra-engine/src/bin/dsv41_run.rs) is the pack's native checkpoint runner: the
+embedding, the 40 trunk layers each loaded from the safetensors mmap, run and freed (about 7.5 GB a
+layer with its 384 MXFP4 experts, so the 510 GB checkpoint runs on one 96 GB card), the collapse
+with the carried pre-mix, the final norm and the fp32 head. It runs only with `MEMRA_FULL_PREC=1`
+(the route has one numeric program, the checkpoint's), derives the Engram primes and multipliers
+with `memra_gguf::dsv41_forward` (the bit-exact numpy port) and takes the compressed token map as an
+input (`--token-map` or `MEMRA_DSV41_TOKEN_MAP`). It writes the `memra-checkpoint-oracle-v1` tape
+as engine `memra-native-full-precision`, numeric class `deepseek-v41-source-program`; the vendor
+side is `model.py` on CUDA with the oracle's tilelang-schedule stand-ins
+(`oracle_to_checkpoint_tape.py --numeric-class deepseek-v41-source-program`). Long prompts run in
+query slices of 8,192 rows (`Ctx::chunk`): every sliced step acts per row, and the 3,761-token
+layers rerun with 1,024-row slices write byte-identical tensors (43 of 43,
+`receipts/long/chunk-needle-v2.cmp`).
+
+The probe. On the default tokens 1,2,3,4 (`<eos> <pad> ! "`) the vendor's own CPU and GPU runs of the
+checkpoint program differ by up to 13.32 logits (KL 0.49, top-5 overlap 3/5, hidden states 0.45
+apart by layer 38, same argmax); the native runner sits at 11.21 from the GPU vendor (KL 0.31). No
+band wide enough for the vendor's two backends can tell programs apart there, so the pack declares
+the `capital` chat turn (16 tokens) as its checkpoint probe (`checkpoint_probe`, docs/ONBOARDING.md);
+the probe's sha256 is in the lock and the receipt.
+
+| capital probe (16 tokens) | max abs logit diff | KL(vendor GPU, other) | top-5 | argmax |
+|---|---|---|---|---|
+| vendor CPU vs vendor GPU (the band's source) | 3.18 | 4.7e-7 | 4/5 | equal (51119) |
+| native GPU vs vendor GPU | 2.14 | 2.9e-8 | 5/5 | equal (51119) |
+
+The class band is atol 6.4 at rtol 0 plus argmax: twice the vendor's own CPU-vs-GPU spread, the
+factor the layer gates use. `memra model verify checkpoint DeepSeek-V4.1-Flash-1017 --against
+deepseek_v41 --oracle vendor-cuda-capital.tsv --native-runner dsv41-run` passes
+(`receipts/checkpoint/verify-capital-rel/`, max_abs 2.14, Config, TokenizerTemplate, TensorCensus and
+CheckpointParity passed).
+
+## Long context (step 4)
+
+The candidate pool prunes once a row sees more than 2,048 blocks of 8 positions, i.e. past 16,384
+tokens. Captures at 18,343 (`needle1200`) and 73,520 (`needle4800`) tokens record layers 20 (ratio-1
+source, candidate source), 21 (Reuse), 24 and 28 (Reindex inside the pool) and 25 (Reuse after a
+Reindex); the floor is the same layers rerun on the CPU from the captured inputs (`layer_floor.py
+--index-qchunk 512`, the oracle's row-sliced indexer).
+
+Rel L2 against the GPU vendor capture (native / CPU floor), and the share of tokens routed to the
+same expert set (native / CPU floor); every check passes the 2x-floor rule
+(`receipts/long/layer-needle1200.*`, `layer-needle4800*.*`, 42 checks):
+
+| prompt | layer | stream out | attention out | MoE out | routes (same expert set) |
+|---|---|---|---|---|---|
+| 18,343 | 20 | 1.25e-03 / 2.62e-03 | 8.06e-03 / 3.31e-02 | 2.31e-03 / 4.79e-03 | 98.1% / 90.7% |
+| 18,343 | 21 | 5.91e-04 / 5.26e-04 | 4.27e-03 / 3.99e-03 | 1.23e-03 / 1.08e-03 | 99.0% / 99.2% |
+| 18,343 | 24 | 1.99e-04 / 4.85e-04 | 5.40e-03 / 3.40e-02 | 1.96e-03 / 4.87e-03 | 98.9% / 92.0% |
+| 18,343 | 25 | 1.56e-04 / 1.40e-04 | 4.68e-03 / 4.95e-03 | 1.71e-03 / 1.47e-03 | 98.9% / 99.2% |
+| 18,343 | 28 | 1.16e-04 / 4.29e-04 | 3.84e-03 / 3.17e-02 | 9.09e-04 / 2.47e-03 | 98.8% / 89.7% |
+| 73,520 | 20 | 2.25e-03 / 5.92e-03 | 7.32e-03 / 3.53e-02 | 4.38e-03 / 1.09e-02 | 98.3% / 89.0% |
+| 73,520 | 21 | 1.06e-03 / 9.38e-04 | 4.02e-03 / 4.34e-03 | 2.46e-03 / 2.18e-03 | 99.0% / 99.2% |
+| 73,520 | 24 | 3.53e-04 / 9.09e-04 | 5.25e-03 / 3.58e-02 | 3.67e-03 / 9.35e-03 | 99.0% / 92.2% |
+| 73,520 | 25 | 2.67e-04 / 2.26e-04 | 4.99e-03 / 4.88e-03 | 3.63e-03 / 3.04e-03 | 98.7% / 99.1% |
+| 73,520 | 28 | 2.38e-04 / 7.02e-04 | 4.35e-03 / 3.30e-02 | 2.06e-03 / 5.26e-03 | 98.6% / 88.8% |
+
+At both lengths the native layers route closer to the GPU vendor than the CPU vendor does, the
+Reindex layers 24 and 28 included, where the pool now removes blocks. The first 73k run gated
+layers 25 and 28 against a fixed band (their floor was still running) and their routing missed a
+fixed 99% bar at 98.7% and 98.6%; against their own CPU floor (99.1% and 88.8%) they pass.
+
+Whole trunk, last prompt token against the vendor tape (`trunk_vs_tape.py`):
+
+Every argmax matches. The global-max floor is the same vendor program with P rounded against one
+global max per row (`make_globalmax_oracle.py`), run on the same card: at 128k the vendor disagrees
+with itself by KL 1.3e-4, the native by 2.2e-4. The runner held the 257k prompt on one card (10.5 GB
+per stream copy, the candidate pool at 8.4 GB).
+
+| prompt | tokens | next token | top-5 | KL(vendor, native) | KL floor (global-max vendor) | max abs diff | whole trunk |
+|---|---|---|---|---|---|---|---|
+| needle1200 | 18,343 | equal (17227) | 4/5 | 3.5e-06 | - | 2.53 | 42 s |
+| needle4800 | 73,520 | equal (21391) | 4/5 | 6.0e-07 | - | 2.21 | 80 s |
+| needle8400 | 128,745 | equal (20982) | 4/5 | 2.2e-04 | 1.3e-04 | 2.99 | 121 s |
+| needle16800 | 257,185 | equal (10186) | 3/5 | 5.3e-04 | - | 2.28 | 238 s |
+
+Teacher-forced texts, every position scored (`--tf`): mean NLL, top-1 agreement and the share of
+positions whose NLL moves more than 0.1 nats, against two floors of the vendor program itself: the
+same text as a shorter prefix (the length effect: different GEMM shapes, same program) and the
+global-max attention realization at the same length (another valid schedule, `make_globalmax_oracle.py`).
+A text passes when |delta mean NLL| is at most twice the largest floor's, top-1 agreement at most
+1 point under the lowest floor's, and the moved share at most 2 points over the highest floor's.
+
+| text | tokens | mean NLL vendor / native | delta | top-1 agree | moved > 0.1 | floor delta (length, schedule) | floor top-1 | floor moved | pass |
+|---|---|---|---|---|---|---|---|---|---|
+| tf_en_lighthouse | 2,048 | 0.4041 / 0.4058 | +0.0017 | 97.4% | 12.3% | -0.0063 | 97.9% | 11.6% | PASS |
+| tflong_he_haifa | 31,859 | 1.4920 / 1.4835 | -0.0086 | 94.8% | 30.1% | -0.0039, -0.0062 | 94.9% | 30.2% | PASS |
+| tf128k_en_moby | 131,072 | 0.0743 / 0.0646 | -0.0097 | 99.1% | 4.3% | -0.0022, -0.0081 | 99.1% | 4.3% | PASS |
+| tf64k_he_cities | 131,072 | 1.2295 / 1.2313 | +0.0018 | 95.5% | 26.9% | +0.0016, -0.0001 | 95.5% | 26.8% | PASS |
+
+The native run sits at the vendor's own floors on every text. The vendor tape at full length is
+itself the outlier on mean NLL at 32k and 131k English: its global-max realization scores the same
+text 0.0062 and 0.0081 nats lower, and the native 0.0086 and 0.0097 lower. The 2048-vs-2422 length
+effect measured earlier (delta 0.0006, top-1 98.2%, 11% moved) is the length floor of one text at
+2k under the earlier attention stand-in; at 2k under the tilelang schedule the global-max floor is
+delta 0.0063, top-1 97.9%, 11.6% moved, and at 32k to 131k the Hebrew texts move 27-30% of
+positions by more than 0.1 nats between two valid runs of the vendor program.
 
 ## Not done here
 
-- Multi-card: the full model needs 4 cards (about 313 GB on-card, 77 GB each at TP4/EP4). Nothing
-  here is partitioned; `LayerW` loads one whole layer.
-- Serving: no `Engine` integration, no scheduler, no CUDA graphs; the decode path is per-layer and
-  syncs per routed expert.
-- Speed: the GEMM tiles are plain (no cp.async pipeline, no split-K for M=1), the attention runs
-  one block per (query, 16 heads), the MoE launches per expert. No performance claim is made.
+- Multi-card: the full model at serving speed needs 4 cards (about 313 GB on-card, 77 GB each at
+  TP4/EP4). The one-card runner streams every layer's weights from the page cache instead.
+- Serving: no `Engine` integration, no scheduler, no CUDA graphs, no decode in `dsv41-run` (decode
+  is gated per layer in `dsv41-gate layer --decode`).
+- Speed: the GEMM tiles are plain (no cp.async pipeline, no split-K for M=1), the MoE launches per
+  expert. No performance claim is made; the whole-trunk times above are single runs.
 - DSpark (`mtp.*`) blocks and the vision tower: not run.
 - Plan surfaces: the ten `deepseek_v41` plan operations still list no surface; registering these
   kernels as a rewrite comes with the multi-card route and its rewrite receipts.
+- The Engram compressed token map is still an input (the vendor builds it from tokenizer
+  normalizers at load).

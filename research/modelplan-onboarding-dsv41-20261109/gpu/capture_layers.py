@@ -19,6 +19,9 @@ ap.add_argument("--ids", required=True); ap.add_argument("--layers", required=Tr
 ap.add_argument("--decode", type=int, default=0); ap.add_argument("--device", default="cuda")
 ap.add_argument("--threads", type=int, default=8); ap.add_argument("--max-seq", type=int, default=8192)
 ap.add_argument("--expert-cache-gb", type=float, default=24); ap.add_argument("--index-qchunk", type=int, default=0)
+ap.add_argument("--light", action="store_true",
+                help="per-op hooks only on [s, dim]-sized results (attention and MoE outputs, routing, mid stream): "
+                     "long prompts, where the attention operands alone run to gigabytes per layer")
 c = ap.parse_args()
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -48,6 +51,15 @@ def put(k, t):
     cap[f"s{state['step']}/L{state['layer']}/{k}"] = t.detach().to("cpu", copy=True)
 
 
+def put_cand(k, c):
+    # the pool is constant over each block of candidate_block_size positions: keep one column per block
+    # (the oracle's row-sliced indexer, long_ctx.py, already holds it that way)
+    if hasattr(c, "blocks"):
+        put(k + "_blocks", c.blocks.to(torch.uint8))
+    else:
+        put(k + "_blocks", c[..., ::BLOCK].to(torch.uint8))
+
+
 def ops_on():
     return state["on"] and state["layer"] in OPS
 
@@ -71,7 +83,7 @@ def block_pre(mod, args):
         if sa.topk_idxs is not None and not mod.attn.is_index_source:
             put("in/topk_idxs", sa.topk_idxs)
         if sa.candidates is not None:
-            put("in/candidates", sa.candidates)
+            put_cand("in/candidates", sa.candidates)
 
 
 def block_post(mod, args, out):
@@ -86,7 +98,7 @@ def block_post(mod, args, out):
             if mod.attn.is_index_source:
                 put("out/topk_idxs", sa.topk_idxs)
             if mod.attn.indexer is not None and mod.attn.indexer.is_candidate_source:
-                put("out/candidates", sa.candidates)
+                put_cand("out/candidates", sa.candidates)
     state["on"] = False
 
 
@@ -95,7 +107,7 @@ _hc_mixes, _hc_pre, _hc_post = M.Block.hc_mixes, M.Block.hc_pre, M.Block.hc_post
 
 def hc_mixes(self, x, fn, scale, base):
     r = _hc_mixes(self, x, fn, scale, base)
-    if ops_on():
+    if ops_on() and not c.light:
         k = state["hc"]; state["hc"] += 1
         put(f"hc{k}/pre", r[0]); put(f"hc{k}/post", r[1]); put(f"hc{k}/comb", r[2])
     return r
@@ -103,7 +115,7 @@ def hc_mixes(self, x, fn, scale, base):
 
 def hc_pre(self, x, mix):
     r = _hc_pre(self, x, mix)
-    if ops_on():
+    if ops_on() and not c.light:
         k = state["pre"]; state["pre"] += 1
         put(f"hcpre{k}", r)
     return r
@@ -113,7 +125,12 @@ def hc_post(self, x, res, post, comb):
     r = _hc_post(self, x, res, post, comb)
     if ops_on():
         k = state["post"]; state["post"] += 1
-        put(f"sub{k}", x); put(f"hcpost{k}", r)
+        if not c.light:
+            put(f"sub{k}", x)
+        if k == 0:
+            put(f"hcpost{k}", r)
+        elif not c.light:
+            put(f"hcpost{k}", r)
     return r
 
 
@@ -124,7 +141,7 @@ _sparse = M.sparse_attn
 
 def sparse_attn(q, kv, sink, idx, scale):
     o = _sparse(q, kv, sink, idx, scale)
-    if ops_on():
+    if ops_on() and not c.light:
         put("sattn/q", q); put("sattn/kv", kv); put("sattn/idx", idx); put("sattn/o", o)
     return o
 
@@ -157,12 +174,18 @@ def engram_hook(mod, args, out):
     state["layer"] = keep
 
 
+BLOCK = G["args"].candidate_block_size
 for li, layer in enumerate(model.layers):
     layer.register_forward_pre_hook(block_pre)
     layer.register_forward_hook(block_post)
     if li not in OPS:
         continue
     at = layer.attn
+    if c.light:
+        at.register_forward_hook(hook("attn", []))
+        layer.ffn.register_forward_hook(hook("moe", []))
+        layer.ffn.gate.register_forward_hook(hook("gate", []))
+        continue
     at.register_forward_hook(hook("attn", [(0, "x")]))
     at.q_norm.register_forward_hook(hook("qr", []))
     at.kv_norm.register_forward_hook(hook("kvn", []))

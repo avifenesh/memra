@@ -1,0 +1,13 @@
+PASS layer25/attn_out: rel_l2=4.994e-3 maxabs/max=2.309e-2 worst_tok=5.659e-2 cos=0.99998753 [rel_l2 <= 2 x floor (4.884e-3) + 1e-4]
+PASS layer25/mid_stream: rel_l2=6.755e-5 maxabs/max=9.719e-7 worst_tok=1.568e-2 cos=1.00000000 [rel_l2 <= 2 x floor (6.323e-5) + 1e-4]
+PASS layer25/moe_out: rel_l2=3.628e-3 maxabs/max=1.330e-4 worst_tok=9.374e-1 cos=0.99999342 [rel_l2 <= 2 x floor (3.037e-3) + 1e-4]
+PASS layer25/route: 72588/73520 token sets equal [token expert sets agree within 1% of the floor's 72883/73520]
+PASS layer25/out_stream: rel_l2=2.675e-4 maxabs/max=9.291e-6 worst_tok=1.837e-1 cos=0.99999997 load 0.5s fwd 1.19s [rel_l2 <= 2 x floor (2.257e-4) + 1e-4]
+PASS layer25/out_pre_mix: rel_l2=1.667e-4 max_abs=2.395e-3 [rel_l2 <= 2 x floor (1.578e-4) + 1e-4]
+PASS layer28/attn_out: rel_l2=4.350e-3 maxabs/max=4.375e-2 worst_tok=1.623e-1 cos=0.99999054 [rel_l2 <= 2 x floor (3.300e-2) + 1e-4]
+PASS layer28/mid_stream: rel_l2=7.737e-5 maxabs/max=3.762e-6 worst_tok=6.383e-2 cos=1.00000000 [rel_l2 <= 2 x floor (5.282e-4) + 1e-4]
+PASS layer28/moe_out: rel_l2=2.062e-3 maxabs/max=3.847e-5 worst_tok=5.199e-1 cos=0.99999787 [rel_l2 <= 2 x floor (5.260e-3) + 1e-4]
+PASS layer28/route: 72474/73520 token sets equal [token expert sets agree within 1% of the floor's 65281/73520]
+PASS layer28/out_stream: rel_l2=2.377e-4 maxabs/max=7.512e-6 worst_tok=1.229e-1 cos=0.99999997 load 0.5s fwd 1.81s [rel_l2 <= 2 x floor (7.016e-4) + 1e-4]
+PASS layer28/out_pre_mix: rel_l2=2.324e-4 max_abs=3.921e-3 [rel_l2 <= 2 x floor (1.464e-3) + 1e-4]
+dsv41-gate: 12 checks, 0 failed

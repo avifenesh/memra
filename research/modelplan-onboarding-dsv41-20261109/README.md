@@ -239,4 +239,4 @@ consumer.
 
 # Step 3 (GPU): single-card kernels and checkpoint layers (2026-11-09)
 
-Single-card kernels for every V4.1 operation and real-checkpoint layers on one card: `gpu/README.md`.
+Single-card kernels for every V4.1 operation and real-checkpoint layers on one card, then (step 4) the whole trunk on one card as the native checkpoint runner, CheckpointParity on a pack-declared probe, and long-context gates to 257k tokens: `gpu/README.md`.
