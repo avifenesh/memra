@@ -26625,6 +26625,26 @@ fn admit(
                 // Grow to this request's bounded `need`, not the server-global context cap. The
                 // admission estimator charges the same request-shaped capacity before admit.
                 match affinity_resume_target(&prompt, &e.fed, pos, e.cap, need, identity_matches) {
+                    // THE PRIME FLOOR (memra#1093 item 3): a recurrent cache resumes at its
+                    // checkpoint only with at least PRIME_MIN_T rows to prime past it, the rule
+                    // the exact-extension rewind applies (`plain_pool_resume_at`). A shorter
+                    // suffix primes token by token, a program the cold prime does not run (it
+                    // folds such a tail into the range before it); the turn primes cold instead.
+                    Ok(_)
+                        if plain_pool_resume_at(
+                            e.fed.len(),
+                            Some(pos),
+                            prompt.len(),
+                            cache_carries_recurrent(&e.cache),
+                        )
+                        .is_none() =>
+                    {
+                        why = format!(
+                            "grid law: the prompt extends checkpoint {pos} by fewer than the \
+                             prime floor"
+                        );
+                        None
+                    }
                     Ok(target_cap) => Some((i, target_cap)),
                     Err(reason) => {
                         why = reason;
@@ -41834,6 +41854,28 @@ mod tests {
         );
         // Below the cache floor there is no entry to publish.
         assert_eq!(super::dspark_resume_capture(16, 60), DsparkCapture::Off);
+    }
+
+    /// memra#1093 item 3: the plain-affinity rewind asks the same prime floor of a recurrent cache.
+    /// The shape is the 2026-11-09 RTX 5090 receipt's (`research/affinity-floor-20261109/`): a
+    /// 176-token turn parked with its checkpoint at 160, and an edited 175-token resend rewound
+    /// there and primed 15 rows token by token, leaving the cold text.
+    #[test]
+    fn the_plain_affinity_rewind_obeys_the_prime_floor() {
+        // 15 rows past the checkpoint: a recurrent cache declines; 16 rewinds; attention-only
+        // caches keep every non-empty suffix (affinity_resume_target refuses an empty one).
+        assert_eq!(super::plain_pool_resume_at(176, Some(160), 175, true), None);
+        assert_eq!(
+            super::plain_pool_resume_at(176, Some(160), 176, true),
+            Some(160)
+        );
+        assert!(super::plain_pool_resume_at(176, Some(160), 175, false).is_some());
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(squashed.contains(
+            "Ok(_) if plain_pool_resume_at( e.fed.len(), Some(pos), prompt.len(), cache_carries_recurrent(&e.cache), ) .is_none() => { why = format!( \"grid law: the prompt extends checkpoint {pos} by fewer than the \\ prime floor\" ); None }"
+        ));
     }
 
     /// memra#1091: the continuation pool obeys the restore grid law, in the default test set. The
