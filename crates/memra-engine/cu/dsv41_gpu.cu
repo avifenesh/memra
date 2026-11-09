@@ -2354,11 +2354,13 @@ extern "C" int memra_v41_moe_combine(const void* slots, long lds, const int* ord
 // instead of once per token, and a one-token decode spreads over 8 blocks.
 // parts[s][8][nmix + 1] holds each virtual warp's sums.
 
-// V41_HCT tokens per block, V41_HCM strided steps staged at a time: 16 x 16 for a prefill, 1 x 80 for
-// a one-token decode (all of a chain's fn loads in flight at once)
+// V41_HCT tokens per block, V41_HCM strided steps staged at a time: 16 x 16 for a prefill, 1 x 40 for
+// a one-token decode (half of a chain's fn loads in flight at once). 25 warps per block, so at most
+// 80 registers per thread.
 template <int V41_HCT, int V41_HCM>
-__global__ void v41_hc_mixes_part_kernel(const v41_bf* __restrict__ x, const float* __restrict__ fn, int nmix, int n,
-                                         int rows, float* __restrict__ parts) {
+__global__ void __launch_bounds__(800, 1) v41_hc_mixes_part_kernel(const v41_bf* __restrict__ x,
+                                                                   const float* __restrict__ fn, int nmix, int n,
+                                                                   int rows, float* __restrict__ parts) {
     __shared__ float sx[V41_HCM][V41_HCT][32];
     int b = blockIdx.y;  // virtual warp
     int s0 = blockIdx.x * V41_HCT;
@@ -2497,7 +2499,7 @@ extern "C" int memra_v41_hc_mixes(const void* x, const float* fn, const float* s
     if (rows <= 0) return rows < 0 ? 41016 : 0;
     cudaStream_t st = (cudaStream_t)stream;
     if (rows == 1) {
-        v41_hc_mixes_part_kernel<1, 80><<<dim3(1, 8), 32 * (nmix + 1), 0, st>>>((const v41_bf*)x, fn, nmix, hc * d,
+        v41_hc_mixes_part_kernel<1, 40><<<dim3(1, 8), 32 * (nmix + 1), 0, st>>>((const v41_bf*)x, fn, nmix, hc * d,
                                                                                rows, parts);
     } else {
         dim3 g1((rows + 15) / 16, 8);
