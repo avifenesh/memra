@@ -7,16 +7,18 @@
 //! mixes on the full stream, `wq_a`, the single KV head (`wkv`), the compressor, the indexer and its
 //! keys, the router, the shared expert and Engram (host-resident table, gathered per rank). Every
 //! rank therefore holds the full residual stream and the full CSA2 state. At prefill the indexer's
-//! query rows split across the ranks (all heads, replicated weights) and the selection rows (and
-//! the candidate pool rows) are gathered; a decode row is scored on every rank.
+//! query rows split across the ranks (all heads, replicated weights) and the selection rows are
+//! gathered; the candidate pool is not (each rank's later index layers select only its own rows,
+//! so it keeps only those, [`super::Shared::cand_row0`]); a decode row is scored on every rank.
 //!
 //! The collectives are gathers only, so every value is computed by exactly the arithmetic of the
 //! single-card program, in its order:
 //!   - attention: each rank writes its groups' `wo_a` output columns, all-gather those columns, each
 //!     rank computes its `wo_b` output columns over the full row (the K sum of every output element
 //!     is the single-card sum), all-gather the output columns;
-//!   - MoE: the router runs on rank 0 and the host builds one dispatch plan (pairs sorted by expert,
-//!     tokens ascending inside an expert, as the per-expert loop orders them); each rank runs its
+//!   - MoE: every rank runs the router on its own replicated copy and builds the same host
+//!     dispatch plan from its read-back (pairs sorted by expert, tokens ascending inside an expert,
+//!     as the per-expert loop orders them; a rank whose routing differs refuses); each rank runs its
 //!     experts' pairs through one grouped GEMM per projection, all-gather the bf16 expert output
 //!     rows, and every rank adds each token's rows in ascending expert id into an fp32 zero, then
 //!     the shared expert, then rounds (the per-expert loop's scatter-add order);
@@ -34,19 +36,27 @@
 //! ladder through the exact gather primitive in every ordered pair before any layer runs. The
 //! host-canonical arm (the default on this build, as for every TP walk without a receipt for the
 //! peer arm on its card) bounces each block through host memory.
+//!
+//! Issue: between collectives each rank's work runs on its own host thread ([`Group::each`],
+//! `MEMRA_DSV41_TP_ISSUE`), and nothing waits for a device except the routing read-back (the host
+//! builds the dispatch plan), Engram's staging refill and the head's logits. Buffers go back to
+//! the stream-ordered pool on their own stream; a buffer a peer copied out of is freed only after
+//! the producer's stream waited on that copy's release event. cudarc's per-buffer event tracking
+//! is off on the ranks' contexts for the same reason (`Group::new`).
 
 // Rank-indexed loops walk several per-rank vectors (contexts, buffers, shares) in step; an index is
 // the clearer shape there, as in `tp_transport.rs`.
 #![allow(clippy::needless_range_loop)]
 
 use super::{
-    AttnKeys, BW, Buf, Ctx, Dp, Geo, LayerState, LayerW, Part, QFmt, Shared, Trace, bytes_f32,
-    bytes_i32, ck, ffi, i32_bytes, load_bf16_rows, load_vec_bf16,
+    BW, Buf, Ctx, Dp, Geo, LayerState, LayerW, Part, QFmt, Shared, Trace, bytes_f32, bytes_i32, ck,
+    ffi, i32_bytes, load_bf16_rows, load_vec_bf16,
 };
 use crate::Engine;
 use crate::tp_transport::{self, TpTransport};
 use cudarc::driver::CudaEvent;
 use memra_gguf::safetensors::StModel;
+use rayon::prelude::*;
 use std::time::Instant;
 
 /// A byte region of a rank buffer: `rows` rows of `width` bytes, `pitch` apart, from `off`. A
@@ -80,6 +90,21 @@ impl Blk {
     }
 }
 
+/// Host nanoseconds spent blocked on a device read-back (the routing plan, the head's logits),
+/// summed over the ranks: the share of a step the host waited for the cards rather than issuing.
+pub static READBACK_WAIT_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// `b.host()` with its blocked time counted in [`READBACK_WAIT_NS`].
+fn host_timed(b: &Buf, st: &std::sync::Arc<cudarc::driver::CudaStream>) -> Result<Vec<u8>, String> {
+    let t = Instant::now();
+    let v = b.host(st);
+    READBACK_WAIT_NS.fetch_add(
+        t.elapsed().as_nanos() as u64,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    v
+}
+
 /// What the collectives moved (per process, all ranks).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CommStats {
@@ -105,6 +130,39 @@ pub struct Group {
     pub timed: bool,
     /// keep `attn_out`, `moe_out` and the routing in each rank's [`Trace`]
     pub trace: bool,
+    /// one host thread per rank issues that rank's work between collectives (None: this thread
+    /// issues the ranks in turn, `MEMRA_DSV41_TP_ISSUE=serial`)
+    pool: Option<rayon::ThreadPool>,
+}
+
+/// How the host issues the ranks' work: one thread per rank (the default at N > 1) or this thread
+/// for every rank in turn (`MEMRA_DSV41_TP_ISSUE=serial`, the measurement and rollback seam). The
+/// streams, the kernels and the collectives are the same in both, so are the bytes.
+pub const ISSUE_ENV: &str = "MEMRA_DSV41_TP_ISSUE";
+
+/// [`Group::each`] over a pool and the rank contexts, for callers that also borrow other fields.
+fn each_in<T, F>(pool: Option<&rayon::ThreadPool>, cx: &mut [Ctx], f: F) -> Result<Vec<T>, String>
+where
+    T: Send,
+    F: Fn(usize, &mut Ctx) -> Result<T, String> + Sync + Send,
+{
+    match pool {
+        Some(p) => p.install(|| {
+            cx.par_iter_mut()
+                .enumerate()
+                .map(|(r, c)| f(r, c))
+                .collect()
+        }),
+        None => cx.iter_mut().enumerate().map(|(r, c)| f(r, c)).collect(),
+    }
+}
+
+fn issue_parallel() -> Result<bool, String> {
+    match std::env::var(ISSUE_ENV).ok().as_deref() {
+        None | Some("") | Some("parallel") => Ok(true),
+        Some("serial") => Ok(false),
+        Some(x) => Err(format!("{ISSUE_ENV}={x:?}: want parallel or serial")),
+    }
 }
 
 fn de(e: impl std::fmt::Debug) -> String {
@@ -113,12 +171,17 @@ fn de(e: impl std::fmt::Debug) -> String {
 
 /// Device-to-device copy of `b` from `src` into the same region of `dst`, on `ops`'s stream.
 fn copy_blk(ops: &super::Ops, src: &Buf, dst: &Buf, b: Blk) -> Result<(), String> {
+    copy_addr(ops, src.p(&ops.st).addr(), dst.p(&ops.st).addr(), b)
+}
+
+/// [`copy_blk`] between two device base addresses.
+fn copy_addr(ops: &super::Ops, src: u64, dst: u64, b: Blk) -> Result<(), String> {
     use cudarc::driver::sys::*;
     if b.bytes() == 0 {
         return Ok(());
     }
-    let s0 = src.p(&ops.st).addr() + b.off as u64;
-    let d0 = dst.p(&ops.st).addr() + b.off as u64;
+    let s0 = src + b.off as u64;
+    let d0 = dst + b.off as u64;
     let st = ops.sv() as CUstream;
     let r = if b.rows == 1 {
         unsafe { cuMemcpyDtoDAsync_v2(d0, s0, b.width, st) }
@@ -219,9 +282,17 @@ impl Group {
                 "{flag}=device-push: the dsv41 route moves its blocks with host-canonical or peer-pull"
             ));
         }
+        let parallel = issue_parallel()?;
         let mut engines = Vec::with_capacity(n);
         for &d in devices {
-            engines.push(Engine::new(d).map_err(|e| format!("rank on device {d}: {e}"))?);
+            let e = Engine::new(d).map_err(|e| format!("rank on device {d}: {e}"))?;
+            // Every rank buffer lives on its rank's one stream, and the only cross-stream uses
+            // are the gathers, which order themselves with the publication and release events
+            // (the transport laws above). cudarc's per-buffer event tracking would add an event
+            // record and a stream wait to every pointer fetch on the hot path, so the buffers
+            // allocated from here on go untracked.
+            unsafe { e.ctx().disable_event_tracking() };
+            engines.push(e);
         }
         let distinct = |a: usize, b: usize| devices[a] != devices[b];
         if transport == TpTransport::PeerPull {
@@ -243,6 +314,17 @@ impl Group {
             rel_ev.push(st.context().new_event(None).map_err(de)?);
             cx.push(Ctx::new(st, g.clone(), max_pos)?);
         }
+        let pool = if n > 1 && parallel {
+            Some(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(n)
+                    .thread_name(|i| format!("dsv41-rank{i}"))
+                    .build()
+                    .map_err(|e| format!("dsv41 tp issue threads: {e}"))?,
+            )
+        } else {
+            None
+        };
         let mut gr = Self {
             devices: devices.to_vec(),
             engines,
@@ -254,12 +336,14 @@ impl Group {
             stats: CommStats::default(),
             timed: false,
             trace: false,
+            pool,
         };
         gr.probe()?;
         gr.stats = CommStats::default();
         eprintln!(
-            "[dsv41-tp] ranks={n} devices={devices:?} transport={} ({flag}) gathers-only=true",
-            transport.name()
+            "[dsv41-tp] ranks={n} devices={devices:?} transport={} ({flag}) issue={} gathers-only=true",
+            transport.name(),
+            gr.issue_name()
         );
         Ok(gr)
     }
@@ -268,11 +352,64 @@ impl Group {
         self.cx.len()
     }
 
+    /// `parallel` (one host thread per rank) or `serial`.
+    pub fn issue_name(&self) -> &'static str {
+        if self.pool.is_some() {
+            "parallel"
+        } else {
+            "serial"
+        }
+    }
+
     pub fn sync_all(&self) -> Result<(), String> {
         for c in &self.cx {
             c.ops.sync()?;
         }
         Ok(())
+    }
+
+    /// `f(r, rank r's Ctx)` for every rank, each rank on its own host thread (or in turn under
+    /// `MEMRA_DSV41_TP_ISSUE=serial`). Results in rank order. A rank's work only queues on its own
+    /// stream, so the order the host issues the ranks in never changes a byte.
+    pub fn each<T, F>(&mut self, f: F) -> Result<Vec<T>, String>
+    where
+        T: Send,
+        F: Fn(usize, &mut Ctx) -> Result<T, String> + Sync + Send,
+    {
+        let Self { pool, cx, .. } = self;
+        each_in(pool.as_ref(), cx, f)
+    }
+
+    /// [`Self::each`] with one per-rank mutable item `us[r]` handed to rank r.
+    pub fn each_mut<U, T, F>(&mut self, us: &mut [U], f: F) -> Result<Vec<T>, String>
+    where
+        U: Send,
+        T: Send,
+        F: Fn(usize, &mut Ctx, &mut U) -> Result<T, String> + Sync + Send,
+    {
+        if us.len() != self.cx.len() {
+            return Err(format!(
+                "dsv41 tp: {} per-rank items for {} ranks",
+                us.len(),
+                self.cx.len()
+            ));
+        }
+        let Self { pool, cx, .. } = self;
+        match pool {
+            Some(p) => p.install(|| {
+                cx.par_iter_mut()
+                    .zip(us.par_iter_mut())
+                    .enumerate()
+                    .map(|(r, (c, u))| f(r, c, u))
+                    .collect()
+            }),
+            None => cx
+                .iter_mut()
+                .zip(us.iter_mut())
+                .enumerate()
+                .map(|(r, (c, u))| f(r, c, u))
+                .collect(),
+        }
     }
 
     /// The byte-integrity ladder: every rank's block, flat and strided, at three sizes, through
@@ -349,6 +486,46 @@ impl Group {
             None
         };
         match self.transport {
+            TpTransport::PeerPull if self.pool.is_some() => {
+                // the same three steps with each rank's calls on its own thread: every producer
+                // publishes, then every consumer pulls on its own stream and releases, then every
+                // producer waits for the releases (each step completes on the host before the next,
+                // so a wait always sees this gather's record)
+                let addr: Vec<u64> = (0..n)
+                    .map(|r| bufs[r].p(&self.cx[r].ops.st).addr())
+                    .collect();
+                let Self {
+                    pool,
+                    cx,
+                    pub_ev,
+                    rel_ev,
+                    ..
+                } = self;
+                let (pool, pub_ev, rel_ev) = (pool.as_ref(), &*pub_ev, &*rel_ev);
+                each_in(pool, cx, |r, c| pub_ev[r].record(&c.ops.st).map_err(de))?;
+                let copies = each_in(pool, cx, |c, x| {
+                    let mut k = 0u64;
+                    for p in 0..n {
+                        if p == c || blks[p].bytes() == 0 {
+                            continue;
+                        }
+                        x.ops.st.wait(&pub_ev[p]).map_err(de)?;
+                        copy_addr(&x.ops, addr[p], addr[c], blks[p])?;
+                        k += 1;
+                    }
+                    rel_ev[c].record(&x.ops.st).map_err(de)?;
+                    Ok(k)
+                })?;
+                each_in(pool, cx, |p, x| {
+                    for c in 0..n {
+                        if c != p {
+                            x.ops.st.wait(&rel_ev[c]).map_err(de)?;
+                        }
+                    }
+                    Ok(())
+                })?;
+                self.stats.copies += copies.iter().sum::<u64>();
+            }
             TpTransport::PeerPull => {
                 for p in 0..n {
                     self.pub_ev[p].record(&self.cx[p].ops.st).map_err(de)?;
@@ -435,13 +612,39 @@ impl Group {
         })
     }
 
-    /// One trunk block on every rank (the N-rank [`Ctx::block_forward`]): `h[r]`, `pre[r]`, `sh[r]`,
-    /// `ls[r]` are rank r's replicated copies. Returns each rank's new stream and pre-mix.
+    /// One trunk block on every rank (the N-rank [`Ctx::block_forward`]) over borrowed streams:
+    /// a copy of each `h[r]` through [`Self::block_forward_owned`], then a drain (the gates time
+    /// and read it).
     #[allow(clippy::too_many_arguments)]
     pub fn block_forward(
         &mut self,
         lw: &[LayerW],
         h: &[Buf],
+        pre: &[Buf],
+        sp: usize,
+        s: usize,
+        sh: &mut [Shared],
+        ls: &mut [LayerState],
+        tr: &mut [Trace],
+    ) -> Result<(Vec<Buf>, Vec<Buf>), String> {
+        if h.len() != self.n() {
+            return Err("tp block_forward: one share per rank".into());
+        }
+        let hs = self.each(|r, c| super::clone_buf(&c.ops, &h[r]))?;
+        let out = self.block_forward_owned(lw, hs, pre, sp, s, sh, ls, tr)?;
+        self.sync_all()?;
+        Ok(out)
+    }
+
+    /// One trunk block on every rank: `h[r]`, `pre[r]`, `sh[r]`, `ls[r]` are rank r's replicated
+    /// copies. The stream buffers are taken and returned holding the block's output (both mHC
+    /// posts write in place, [`Ctx::hc_post_in_place`]), with each rank's new pre-mix. Nothing
+    /// here waits for the device except the routing plan's read-back.
+    #[allow(clippy::too_many_arguments)]
+    pub fn block_forward_owned(
+        &mut self,
+        lw: &[LayerW],
+        h: Vec<Buf>,
         pre: &[Buf],
         sp: usize,
         s: usize,
@@ -459,54 +662,57 @@ impl Group {
             }
         }
         let d = self.cx[0].g.dim;
-        let (mut a_pre, mut a_post, mut a_comb, mut xs) = (vec![], vec![], vec![], vec![]);
-        for r in 0..n {
-            let c = &mut self.cx[r];
+        let mix = self.each(|r, c| {
             let w = &lw[r];
             let (_m, p, po, co) =
                 c.hc_mix(&w.hc_attn_fn, &w.hc_attn_scale, &w.hc_attn_base, &h[r], s)?;
-            xs.push(c.hc_pre_norm(&h[r], &pre[r], &w.attn_norm, s)?);
+            let x = c.hc_pre_norm(&h[r], &pre[r], &w.attn_norm, s)?;
+            Ok((p, po, co, x))
+        })?;
+        let (mut a_pre, mut a_post, mut a_comb, mut xs) = (vec![], vec![], vec![], vec![]);
+        for (p, po, co, x) in mix {
             a_pre.push(p);
             a_post.push(po);
             a_comb.push(co);
+            xs.push(x);
         }
         let a = self.attention(lw, &xs, sp, s, sh, ls, tr)?;
         drop(xs);
-        let (mut h1, mut f_pre, mut f_post, mut f_comb, mut x2) =
-            (vec![], vec![], vec![], vec![], vec![]);
-        for r in 0..n {
-            let c = &mut self.cx[r];
+        let ffn = self.each(|r, c| {
             let w = &lw[r];
-            let hh = c.hc_post(&a[r], &h[r], &a_post[r], &a_comb[r], s)?;
+            // h[r] becomes the stream after attention
+            c.hc_post_in_place(&a[r], &h[r], &a_post[r], &a_comb[r], s)?;
             let (_m, p, po, co) =
-                c.hc_mix(&w.hc_ffn_fn, &w.hc_ffn_scale, &w.hc_ffn_base, &hh, s)?;
-            x2.push(c.hc_pre_norm(&hh, &a_pre[r], &w.ffn_norm, s)?);
-            h1.push(hh);
+                c.hc_mix(&w.hc_ffn_fn, &w.hc_ffn_scale, &w.hc_ffn_base, &h[r], s)?;
+            let x2 = c.hc_pre_norm(&h[r], &a_pre[r], &w.ffn_norm, s)?;
+            let m = c.ops.buf(s * d * 2)?;
+            Ok((p, po, co, x2, m))
+        })?;
+        drop((a_pre, a_post, a_comb));
+        let a = if self.trace { Some(a) } else { None };
+        let (mut f_pre, mut f_post, mut f_comb, mut x2, mut m) =
+            (vec![], vec![], vec![], vec![], vec![]);
+        for (p, po, co, x, mm) in ffn {
             f_pre.push(p);
             f_post.push(po);
             f_comb.push(co);
-        }
-        let mut m = Vec::with_capacity(n);
-        for c in &self.cx {
-            m.push(c.ops.buf(s * d * 2)?);
+            x2.push(x);
+            m.push(mm);
         }
         let cm = self.cx[0].chunk.min(s).max(1);
         for r0 in (0..s).step_by(cm) {
             let rows = cm.min(s - r0);
             self.moe(lw, &x2, r0, rows, &m, tr)?;
         }
-        let mut h2 = Vec::with_capacity(n);
-        for r in 0..n {
-            h2.push(self.cx[r].hc_post(&m[r], &h1[r], &f_post[r], &f_comb[r], s)?);
-        }
-        if self.trace {
+        drop(x2);
+        self.each(|r, c| c.hc_post_in_place(&m[r], &h[r], &f_post[r], &f_comb[r], s))?;
+        if let Some(a) = a {
             for (r, (aa, mm)) in a.into_iter().zip(m).enumerate() {
                 tr[r].attn_out = Some(aa);
                 tr[r].moe_out = Some(mm);
             }
         }
-        self.sync_all()?;
-        Ok((h2, f_pre))
+        Ok((h, f_pre))
     }
 
     /// Attention on every rank: the keys side replicated, then per query slice each rank's heads
@@ -531,13 +737,23 @@ impl Group {
         let split = n > 1 && s >= 2 * n && lw[0].index_source && lw[0].ratio > 0;
         let per = s.div_ceil(n);
         let span = |r: usize| (r * per).min(s)..((r + 1) * per).min(s);
-        let mut keys: Vec<AttnKeys> = Vec::with_capacity(n);
-        for r in 0..n {
-            self.cx[r].index_rows = split.then(|| span(r));
-            let k = self.cx[r].attn_keys(&lw[r], &xs[r], sp, s, &mut sh[r], &mut ls[r], &mut tr[r]);
-            self.cx[r].index_rows = None;
-            keys.push(k?);
-        }
+        let keys = {
+            let mut io: Vec<(&mut Shared, &mut LayerState, &mut Trace)> = sh
+                .iter_mut()
+                .zip(ls.iter_mut())
+                .zip(tr.iter_mut())
+                .map(|((a, b), c)| (a, b, c))
+                .collect();
+            self.each_mut(&mut io, |r, c, (shr, lsr, trr)| {
+                c.index_rows = split.then(|| span(r));
+                let k = c.attn_keys(&lw[r], &xs[r], sp, s, shr, lsr, trr);
+                c.index_rows = None;
+                k
+            })?
+        };
+        // The selection rows are gathered: every rank's heads attend every query row. The
+        // candidate pool is not: each rank's later index layers select only its own rows and so
+        // read only its own candidate rows (`Shared::cand_row0`).
         if split && sh[0].topk.is_some() {
             let tw = sh[0].topk_w;
             let refs: Vec<&Buf> = sh.iter().map(|x| x.topk.as_ref().unwrap()).collect();
@@ -545,33 +761,37 @@ impl Group {
                 .map(|r| Blk::flat(span(r).start * tw * 4, span(r).len() * tw * 4))
                 .collect();
             self.allgather(&refs, &blks)?;
-            if lw[0].cand_source {
-                let nb = sh[0].cand_ld;
-                let refs: Vec<&Buf> = sh.iter().map(|x| x.cand.as_ref().unwrap()).collect();
-                let blks: Vec<Blk> = (0..n)
-                    .map(|r| Blk::flat(span(r).start * nb, span(r).len() * nb))
-                    .collect();
-                self.allgather(&refs, &blks)?;
-            }
         }
         let c = self.cx[0].chunk.min(s).max(1);
         let oa_ld = g.o_groups * g.o_lora;
+        let bufs = self.each(|r, cx| {
+            let ops = &cx.ops;
+            Ok((
+                ops.buf(c * lw[r].heads_l * hd * 2)?,
+                ops.buf(c * lw[r].heads_l * hd * 2)?,
+                ops.buf(c * oa_ld * 2)?,
+                ops.buf(s * d * 2)?,
+            ))
+        })?;
         let (mut q, mut o, mut oa, mut out) = (vec![], vec![], vec![], vec![]);
-        for r in 0..n {
-            let ops = &self.cx[r].ops;
-            q.push(ops.buf(c * lw[r].heads_l * hd * 2)?);
-            o.push(ops.buf(c * lw[r].heads_l * hd * 2)?);
-            oa.push(ops.buf(c * oa_ld * 2)?);
-            out.push(ops.buf(s * d * 2)?);
+        for (a, b, cc, dd) in bufs {
+            q.push(a);
+            o.push(b);
+            oa.push(cc);
+            out.push(dd);
         }
+        let shr: &[Shared] = sh;
         for r0 in (0..s).step_by(c) {
             let rows = c.min(s - r0);
-            for r in 0..n {
-                let oap = oa[r].p(&self.cx[r].ops.st);
-                self.cx[r].attn_heads(
-                    &lw[r], &keys[r], &sh[r], sp, r0, rows, &q[r], &o[r], oap, oa_ld, false,
-                    &mut tr[r],
-                )?;
+            {
+                let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
+                self.each_mut(&mut trs, |r, cx, trr| {
+                    let oap = oa[r].p(&cx.ops.st);
+                    cx.attn_heads(
+                        &lw[r], &keys[r], &shr[r], sp, r0, rows, &q[r], &o[r], oap, oa_ld, false,
+                        trr,
+                    )
+                })?;
             }
             let blks: Vec<Blk> = lw
                 .iter()
@@ -584,17 +804,17 @@ impl Group {
                 .collect();
             let refs: Vec<&Buf> = oa.iter().collect();
             self.allgather(&refs, &blks)?;
-            for r in 0..n {
-                let st = self.cx[r].ops.st.clone();
-                self.cx[r].attn_wo_b(
+            self.each(|r, cx| {
+                let st = cx.ops.st.clone();
+                cx.attn_wo_b(
                     &lw[r],
                     oa[r].p(&st),
                     oa_ld,
                     rows,
                     out[r].at(&st, r0 * d * 2),
                     d,
-                )?;
-            }
+                )
+            })?;
             let blks: Vec<Blk> = lw
                 .iter()
                 .map(|w| Blk {
@@ -611,8 +831,9 @@ impl Group {
     }
 
     /// MoE for rows `[r0, r0 + rows)` of `x2` (every rank's copy), written into the same rows of
-    /// `m`: the router on rank 0, one host dispatch plan, each rank's experts through the grouped
-    /// GEMMs, the expert rows gathered, the ordered combine with the replicated shared expert.
+    /// `m`: the router on every rank (replicated weights, the same bytes on every rank), each
+    /// rank's own copy of the host dispatch plan, each rank's experts through the grouped GEMMs,
+    /// the expert rows gathered, the ordered combine with the replicated shared expert.
     fn moe(
         &mut self,
         lw: &[LayerW],
@@ -625,64 +846,58 @@ impl Group {
         let n = self.n();
         let g = self.cx[0].g.clone();
         let (ne, topk, d) = (g.n_experts, g.topk, g.dim);
-        let (sel_h, selw_h) = {
-            let c = &mut self.cx[0];
-            let st = c.ops.st.clone();
-            let x = x2[0].at(&st, r0 * d * 2);
-            let raw = c.ops.buf(rows * ne * 4)?;
-            c.ops
-                .linear_bf16(x, d, rows, &lw[0].gate_w, raw.p(&st), ne, true)?;
-            let sel = c.ops.buf(rows * topk * 4)?;
-            let selw = c.ops.buf(rows * topk * 4)?;
-            ck("route", unsafe {
-                ffi::memra_v41_route(
-                    raw.p(&st).f(),
-                    ne as i64,
-                    lw[0].gate_b.p(&st).f(),
-                    ne as i32,
-                    topk as i32,
-                    1,
-                    g.route_scale,
-                    sel.p(&st).im(),
-                    selw.p(&st).fm(),
-                    rows as i32,
-                    c.ops.sv(),
-                )
-            })?;
-            (bytes_i32(&sel.host(&st)?), bytes_f32(&selw.host(&st)?))
+        let trace = self.trace;
+        let parts = {
+            let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
+            self.each_mut(&mut trs, |r, c, trr| {
+                let st = c.ops.st.clone();
+                let x = x2[r].at(&st, r0 * d * 2);
+                let (sel_h, selw_h) = c.route(&lw[r], x, rows)?;
+                let plan = MoePlan::new(&sel_h, &selw_h, rows, topk, ne)?;
+                let er = Part { rank: r, n }.range(ne);
+                let (p0, p1) = (plan.off[er.start], plan.off[er.end]);
+                let sl = c.ops.buf(plan.ptok.len() * d * 2)?;
+                if p1 > p0 {
+                    c.experts_grouped(&lw[r], x, &plan, er, sl.at(&st, p0 * d * 2))?;
+                }
+                let so = c.shared_expert(&lw[r], x, rows)?;
+                if trace {
+                    trr.route_sel.extend_from_slice(&sel_h);
+                    trr.route_w.extend_from_slice(&selw_h);
+                }
+                Ok((
+                    sl,
+                    so,
+                    plan.order,
+                    Blk::flat(p0 * d * 2, (p1 - p0) * d * 2),
+                    sel_h,
+                ))
+            })?
         };
-        if self.trace {
-            tr[0].route_sel.extend_from_slice(&sel_h);
-            tr[0].route_w.extend_from_slice(&selw_h);
+        let (mut slots, mut shared_out, mut orders, mut blks) = (vec![], vec![], vec![], vec![]);
+        for (sl, so, ord, b, sel) in parts {
+            slots.push((sl, sel));
+            shared_out.push(so);
+            orders.push(ord);
+            blks.push(b);
         }
-        let plan = MoePlan::new(&sel_h, &selw_h, rows, topk, ne)?;
-        let np = plan.ptok.len();
-        let mut slots = Vec::with_capacity(n);
-        let mut shared_out = Vec::with_capacity(n);
-        let mut blks = Vec::with_capacity(n);
-        for r in 0..n {
-            let er = Part { rank: r, n }.range(ne);
-            let (p0, p1) = (plan.off[er.start], plan.off[er.end]);
-            let c = &mut self.cx[r];
-            let st = c.ops.st.clone();
-            let x = x2[r].at(&st, r0 * d * 2);
-            let sl = c.ops.buf(np * d * 2)?;
-            if p1 > p0 {
-                c.experts_grouped(&lw[r], x, &plan, er, sl.at(&st, p0 * d * 2))?;
+        // every rank routed its own replicated copy of the rows: one plan, or a refusal
+        for r in 1..n {
+            if slots[r].1 != slots[0].1 {
+                return Err(format!(
+                    "dsv41 tp moe: rank {r} routed rows {r0}..{} differently from rank 0",
+                    r0 + rows
+                ));
             }
-            shared_out.push(c.shared_expert(&lw[r], x, rows)?);
-            slots.push(sl);
-            blks.push(Blk::flat(p0 * d * 2, (p1 - p0) * d * 2));
         }
-        let refs: Vec<&Buf> = slots.iter().collect();
+        let refs: Vec<&Buf> = slots.iter().map(|x| &x.0).collect();
         self.allgather(&refs, &blks)?;
-        for r in 0..n {
-            let c = &mut self.cx[r];
+        self.each(|r, c| {
             let st = c.ops.st.clone();
-            let ord = Buf::from_bytes(&st, &i32_bytes(&plan.order))?;
+            let ord = Buf::from_bytes(&st, &i32_bytes(&orders[r]))?;
             ck("moe_combine", unsafe {
                 ffi::memra_v41_moe_combine(
-                    slots[r].p(&st).c(),
+                    slots[r].0.p(&st).c(),
                     d as i64,
                     ord.p(&st).i(),
                     topk as i32,
@@ -694,10 +909,12 @@ impl Group {
                     d as i32,
                     c.ops.sv(),
                 )
-            })?;
-        }
-        // the plan's device copies and the slot buffers are freed next: drain before they go
-        self.sync_all()
+            })
+        })?;
+        // The slot, plan and shared-expert buffers are freed next on their own streams, after
+        // the combine; a peer's copy out of a slot is ordered before the free by the gather's
+        // release event, which the producer's stream waits on.
+        Ok(())
     }
 
     /// Logits of rows `[r0, r0 + rows)`: the collapse with the carried pre-mix and the final norm
@@ -714,9 +931,7 @@ impl Group {
         let n = self.n();
         let g = self.cx[0].g.clone();
         let (hc, d) = (g.hc, g.dim);
-        let mut parts = Vec::with_capacity(n);
-        for r in 0..n {
-            let c = &mut self.cx[r];
+        let parts = self.each(|r, c| {
             let st = c.ops.st.clone();
             let x = c.ops.buf(rows * d * 2)?;
             ck("hc_pre", unsafe {
@@ -736,12 +951,12 @@ impl Group {
             let lg = c.ops.buf(rows * hw[r].n * 4)?;
             c.ops
                 .linear_bf16(x.p(&st), d, rows, &hw[r], lg.p(&st), hw[r].n, true)?;
-            parts.push(lg);
-        }
+            Ok(bytes_f32(&host_timed(&lg, &st)?))
+        })?;
         let mut out = vec![0f32; rows * g.vocab];
         let mut col = 0;
         for r in 0..n {
-            let v = bytes_f32(&parts[r].host(&self.cx[r].ops.st)?);
+            let v = &parts[r];
             let w = hw[r].n;
             for i in 0..rows {
                 out[i * g.vocab + col..i * g.vocab + col + w]
@@ -1137,6 +1352,43 @@ fn group_rec(out: &mut Vec<u8>, row0: usize, rows: usize, scale2: f32, w: u64, s
     out.extend_from_slice(&scale2.to_le_bytes());
     out.extend_from_slice(&w.to_le_bytes());
     out.extend_from_slice(&s.to_le_bytes());
+}
+
+impl Ctx {
+    /// The router (sqrtsoftplus gate with its selection bias) on `rows` rows of `x`: each row's
+    /// `topk` expert ids and weights, read back to the host in one copy.
+    pub fn route(
+        &mut self,
+        lw: &LayerW,
+        x: Dp,
+        rows: usize,
+    ) -> Result<(Vec<i32>, Vec<f32>), String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let (ne, topk) = (g.n_experts, g.topk);
+        let raw = self.ops.buf(rows * ne * 4)?;
+        self.ops
+            .linear_bf16(x, g.dim, rows, &lw.gate_w, raw.p(&st), ne, true)?;
+        let nb = rows * topk * 4;
+        let both = self.ops.buf(2 * nb)?;
+        ck("route", unsafe {
+            ffi::memra_v41_route(
+                raw.p(&st).f(),
+                ne as i64,
+                lw.gate_b.p(&st).f(),
+                ne as i32,
+                topk as i32,
+                1,
+                g.route_scale,
+                both.p(&st).im(),
+                both.at(&st, nb).fm(),
+                rows as i32,
+                self.ops.sv(),
+            )
+        })?;
+        let hb = host_timed(&both, &st)?;
+        Ok((bytes_i32(&hb[..nb]), bytes_f32(&hb[nb..])))
+    }
 }
 
 impl Ctx {

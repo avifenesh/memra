@@ -58,6 +58,8 @@ pub struct Out {
 pub struct Seq {
     /// the tokens in the cache, in order
     pub ids: Vec<u32>,
+    /// positions its compressed KV and index keys are sized for at their first allocation
+    pub cap: usize,
     /// `[layer][rank]`: window ring and the ratio-2 compressor's open group
     ls: Vec<Vec<LayerState>>,
     /// `[kv source][rank]`: each kv-source group's compressed KV and index keys
@@ -150,13 +152,145 @@ impl<'a> Runner<'a> {
         }
     }
 
-    /// An empty sequence for this runner's ranks and layers.
+    /// Free and total bytes on each rank's device as the allocator sees them: the driver's free
+    /// memory plus the blocks the async pool keeps cached (`Engine::pool_cached_bytes`).
+    pub fn device_mem(&self) -> Result<Vec<(usize, usize)>, String> {
+        let mut out = Vec::with_capacity(self.grp.n());
+        for (r, e) in self.grp.engines.iter().enumerate() {
+            let (free, total) = e
+                .ctx()
+                .mem_get_info()
+                .map_err(|x| format!("rank {r} mem_get_info: {x:?}"))?;
+            out.push((free + e.pool_cached_bytes(), total));
+        }
+        Ok(out)
+    }
+
+    /// The distinct devices of the group with their ranks, in rank order of first use.
+    pub fn device_ranks(&self) -> Vec<(usize, Vec<usize>)> {
+        let mut out: Vec<(usize, Vec<usize>)> = Vec::new();
+        for (r, &d) in self.grp.devices.iter().enumerate() {
+            match out.iter_mut().find(|x| x.0 == d) {
+                Some(x) => x.1.push(r),
+                None => out.push((d, vec![r])),
+            }
+        }
+        out
+    }
+
+    /// Load the first `keep` layers' shares and the head onto the ranks now and keep them, so no
+    /// forward streams them. Before each layer, every device must still hold `reserve` bytes plus
+    /// what the layers loaded so far projected over the ones left; otherwise this refuses before
+    /// anything runs out of memory. `reserve` is what the runs after the load need (the longest
+    /// prefill's workspace and the sequences' state, [`prefill_workspace_bytes`],
+    /// [`seq_state_bytes`]). Returns the report it prints.
+    pub fn load_resident(&mut self, keep: usize, reserve: usize) -> Result<Residency, String> {
+        let keep = keep.min(self.n_layers);
+        self.keep = keep;
+        let devs = self.device_ranks();
+        let gib = |b: usize| b as f64 / (1u64 << 30) as f64;
+        let start = self.device_mem()?;
+        let t0 = Instant::now();
+        let first_rank = |d: usize| devs.iter().find(|x| x.0 == d).map(|x| x.1[0]).unwrap();
+        for li in 0..keep {
+            if self.resident[li].is_some() {
+                continue;
+            }
+            let now = self.device_mem()?;
+            if li >= 2 {
+                for (d, _) in &devs {
+                    let r = first_rank(*d);
+                    let used = start[r].0.saturating_sub(now[r].0);
+                    let per = used / li;
+                    let need = per * (keep - li) + reserve;
+                    if now[r].0 < need {
+                        return Err(format!(
+                            "device {d}: {} layers resident would need {:.1} GiB more ({:.2} GiB a layer for its ranks) plus {:.1} GiB reserve; {:.1} GiB free: does not fit",
+                            keep,
+                            gib(per * (keep - li)),
+                            gib(per),
+                            gib(reserve),
+                            gib(now[r].0)
+                        ));
+                    }
+                }
+            }
+            let lw = self.grp.load_layer(self.stm, &self.g, li, false)?;
+            self.stats.layers_loaded += 1;
+            self.resident[li] = Some(lw);
+        }
+        if self.head.is_none() {
+            self.head = Some(self.grp.load_head(self.stm, &self.g)?);
+        }
+        self.grp.sync_all()?;
+        let load_s = t0.elapsed().as_secs_f64();
+        let after = self.device_mem()?;
+        let mut rep = Residency {
+            layers: keep,
+            of: self.n_layers,
+            load_s,
+            reserve,
+            devices: Vec::new(),
+        };
+        for (d, ranks) in &devs {
+            let r = ranks[0];
+            let resident = start[r].0.saturating_sub(after[r].0);
+            // layers left to stream need room for one layer's shares at a time
+            let stream = if keep < self.n_layers && keep > 0 {
+                resident / keep
+            } else {
+                0
+            };
+            rep.devices.push(DeviceBudget {
+                device: *d,
+                ranks: ranks.clone(),
+                total: after[r].1,
+                free_before: start[r].0,
+                resident,
+                free_after: after[r].0,
+            });
+            if after[r].0 < reserve + stream {
+                return Err(format!(
+                    "device {d}: {:.1} GiB free after the load, the runs need {:.1} GiB (+{:.1} GiB for a streamed layer): does not fit",
+                    gib(after[r].0),
+                    gib(reserve),
+                    gib(stream)
+                ));
+            }
+        }
+        for b in &rep.devices {
+            eprintln!(
+                "[dsv41-resident] device {} ranks {:?}: {} of {} layers + head resident, {:.2} GiB ({:.2} GiB a rank); free {:.2} -> {:.2} GiB of {:.2} GiB; reserve {:.2} GiB; load {:.1}s",
+                b.device,
+                b.ranks,
+                keep,
+                self.n_layers,
+                gib(b.resident),
+                gib(b.resident / b.ranks.len().max(1)),
+                gib(b.free_before),
+                gib(b.free_after),
+                gib(b.total),
+                gib(reserve),
+                load_s
+            );
+        }
+        Ok(rep)
+    }
+
+    /// An empty sequence for this runner's ranks and layers, its state sized for `max_pos`.
     pub fn seq(&self) -> Seq {
+        self.seq_with_capacity(self.max_pos)
+    }
+
+    /// An empty sequence whose compressed KV and index keys are first allocated for `cap`
+    /// positions (a short request in a long-context runner holds only what it uses).
+    pub fn seq_with_capacity(&self, cap: usize) -> Seq {
         let n = self.grp.n();
         let per_rank =
             |_: usize| -> Vec<LayerState> { (0..n).map(|_| LayerState::default()).collect() };
         Seq {
             ids: Vec::new(),
+            cap: cap.clamp(1, self.max_pos),
             ls: (0..self.n_layers).map(per_rank).collect(),
             store: (0..self.g.kv_sources.len())
                 .map(|_| (0..n).map(|_| Shared::default()).collect())
@@ -178,7 +312,8 @@ impl<'a> Runner<'a> {
             .map(|(i, _)| i)
     }
 
-    /// The bf16 embedding of `tokens`, `hc` copies per row, and the one-hot carried pre-mix.
+    /// The bf16 embedding rows of `tokens` `[s][dim]` (the `hc` copies are made on the device)
+    /// and the one-hot carried pre-mix `[s][hc]`.
     fn embed(&self, tokens: &[u32]) -> Result<(Vec<u8>, Vec<f32>), String> {
         let (hc, d) = (self.g.hc, self.g.dim);
         let (ei, eb) = self.stm.raw("embed.weight").ok_or("embed.weight missing")?;
@@ -186,16 +321,13 @@ impl<'a> Runner<'a> {
             return Err(format!("embed.weight: {} {:?}", ei.dtype, ei.shape));
         }
         let s = tokens.len();
-        let mut hb = vec![0u8; s * hc * d * 2];
+        let mut hb = vec![0u8; s * d * 2];
         for (t, &id) in tokens.iter().enumerate() {
             let id = id as usize;
             if id >= self.g.vocab {
                 return Err(format!("token {id} outside the vocabulary"));
             }
-            let row = &eb[id * d * 2..(id + 1) * d * 2];
-            for k in 0..hc {
-                hb[(t * hc + k) * d * 2..(t * hc + k + 1) * d * 2].copy_from_slice(row);
-            }
+            hb[t * d * 2..(t + 1) * d * 2].copy_from_slice(&eb[id * d * 2..(id + 1) * d * 2]);
         }
         let mut pm = vec![0f32; s * hc];
         for t in 0..s {
@@ -247,13 +379,19 @@ impl<'a> Runner<'a> {
                 (Some(ec), true) => Some(ec.hash_span(&q.ids, sp)?),
                 _ => None,
             });
-            let (hb, pm) = self.embed(&c.tokens)?;
-            let mut hr = Vec::with_capacity(n);
-            let mut pr = Vec::with_capacity(n);
-            for cx in &self.grp.cx {
-                hr.push(Buf::from_bytes(&cx.ops.st, &hb)?);
-                pr.push(Buf::from_f32(&cx.ops.st, &pm)?);
-            }
+            let (eb, pm) = self.embed(&c.tokens)?;
+            let s = c.tokens.len();
+            let (hc, d) = (g.hc, g.dim);
+            // each rank uploads the rows once and copies them into the hc stream slots
+            let up = self.grp.each(|_, cx| {
+                let e = Buf::from_bytes(&cx.ops.st, &eb)?;
+                let hh = cx.ops.buf(s * hc * d * 2)?;
+                for k in 0..hc {
+                    super::copy_2d(&cx.ops, &e, 0, d * 2, &hh, k * d * 2, hc * d * 2, d * 2, s)?;
+                }
+                Ok((hh, Buf::from_f32(&cx.ops.st, &pm)?))
+            })?;
+            let (hr, pr): (Vec<Buf>, Vec<Buf>) = up.into_iter().unzip();
             h.push(hr);
             pre.push(pr);
         }
@@ -286,6 +424,9 @@ impl<'a> Runner<'a> {
             for (ci, c) in calls.iter().enumerate() {
                 let (sp, s) = pos[ci];
                 let q = &mut seqs[c.seq];
+                for cx in self.grp.cx.iter_mut() {
+                    cx.rows_hint = q.cap;
+                }
                 if let Some(sl) = slot {
                     let ec = self.ec.as_ref().unwrap();
                     let (nl, cols) = (ec.layer_ids.len(), ec.cols());
@@ -293,18 +434,21 @@ impl<'a> Runner<'a> {
                     let mine: Vec<i64> = (0..s)
                         .flat_map(|t| all[(t * nl + sl) * cols..(t * nl + sl + 1) * cols].to_vec())
                         .collect();
-                    for r in 0..n {
-                        self.grp.cx[r].engram(self.stm, &lw[r], &h[ci][r], &mine, s, &mut tr[r])?;
-                    }
+                    let stm = self.stm;
+                    let hc_ = &h[ci];
+                    let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
+                    self.grp.each_mut(&mut trs, |r, cx, t| {
+                        cx.engram(stm, &lw[r], &hc_[r], &mine, s, t)
+                    })?;
                 }
                 if let Some(gi) = gi {
                     for (f, st) in fwd[ci].iter_mut().zip(q.store[gi].iter_mut()) {
                         f.swap_group(st);
                     }
                 }
-                let res = self.grp.block_forward(
+                let res = self.grp.block_forward_owned(
                     &lw,
-                    &h[ci],
+                    std::mem::take(&mut h[ci]),
                     &pre[ci],
                     sp,
                     s,
@@ -352,11 +496,106 @@ impl<'a> Runner<'a> {
         self.grp.head_logits(&out.h, &out.pre, r0, rows, nw, hw)
     }
 
+    /// The greedy next token after a call (its last row's logits, lowest id among equal maxima),
+    /// without the log-sum-exp and top-k a scored step also keeps.
+    pub fn argmax_last(&mut self, out: &Out) -> Result<u32, String> {
+        let lg = self.logits(out, out.s - 1, 1)?;
+        if lg.iter().any(|x| !x.is_finite()) {
+            return Err("non-finite logits".into());
+        }
+        Ok(argmax(&lg) as u32)
+    }
+
     /// The scored next-token distribution after a call: its last row's logits reduced.
     pub fn score_last(&mut self, out: &Out, keep_logits: bool) -> Result<Scored, String> {
         let lg = self.logits(out, out.s - 1, 1)?;
         Scored::of(lg, keep_logits)
     }
+}
+
+/// What [`Runner::load_resident`] placed, per device.
+#[derive(Debug, Clone)]
+pub struct Residency {
+    pub layers: usize,
+    pub of: usize,
+    pub load_s: f64,
+    pub reserve: usize,
+    pub devices: Vec<DeviceBudget>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeviceBudget {
+    pub device: usize,
+    pub ranks: Vec<usize>,
+    pub total: usize,
+    pub free_before: usize,
+    /// bytes the resident layers and the head took on this device (all its ranks)
+    pub resident: usize,
+    pub free_after: usize,
+}
+
+/// Device bytes one sequence's carried state takes on each rank when it is allocated for `cap`
+/// positions (`Seq::cap`): every kv-source group's compressed KV (`cap / ratio` rows of
+/// `head_dim` bf16) and, where the source owns index keys, its index keys (`cap / ratio` rows of
+/// `index_dim` bf16); every layer's window ring (`window` rows of `head_dim` bf16); each ratio-2
+/// source's open pair (two fp32 rows of kv and of gate). Replicated: the same on every rank.
+pub fn seq_state_bytes(g: &Geo, n_layers: usize, cap: usize) -> usize {
+    let hd = g.head_dim;
+    let mut b = n_layers * g.window * hd * 2;
+    for &k in &g.kv_sources {
+        if k >= n_layers {
+            continue;
+        }
+        let r = g.compress_ratios[k];
+        if r == 0 {
+            continue;
+        }
+        b += (cap / r) * hd * 2;
+        if g.index_sources.contains(&k) {
+            b += (cap / r) * g.index_dim * 2;
+        }
+        if r > 1 {
+            b += 2 * 2 * hd * 4;
+        }
+    }
+    b
+}
+
+/// An upper estimate of the device bytes one rank needs at once for a prefill of `s` tokens on
+/// `n` ranks with query slices of `chunk` rows, besides the weights and the carried state: the
+/// `[s][hc][dim]` stream (the mHC posts write in place), the larger of the attention phase (its
+/// input and output rows, the query latent, the KV rows the heads read, the selection, this
+/// rank's candidate rows, one slice's index score and head buffers) and the MoE phase (its input
+/// and output rows, one slice's expert pairs and buffers), the mHC mixes, Engram's slice buffers,
+/// plus 10% and 512 MiB for the allocator and the kernels' own scratch. The runs measure the
+/// real peak (the pool's high-water mark) next to it.
+pub fn prefill_workspace_bytes(g: &Geo, n: usize, s: usize, chunk: usize) -> usize {
+    let (d, hd, hc) = (g.dim, g.head_dim, g.hc);
+    let c = chunk.min(s).max(1);
+    let n_c = s; // ratio 1 has the most compressed rows
+    let stream = s * hc * d * 2;
+    let rows = s * d * 2;
+    let attn = 2 * rows
+        + s * g.q_lora * 2
+        + (s + n_c) * hd * 2
+        + s * g.index_topk * 4
+        + s.div_ceil(n) * n_c.div_ceil(g.cand_block.max(1))
+        + c * n_c * 2
+        + c * g.index_heads * g.index_dim * 2
+        + 2 * c * (g.heads / n) * hd * 2
+        + c * g.o_groups * g.o_lora * 2
+        + c * (g.window + g.index_topk) * 4;
+    let pairs = c * g.topk;
+    let moe = 2 * rows
+        + pairs * d * 2
+        + pairs.div_ceil(n)
+            * 2
+            * (d + d / 32 + 3 * g.moe_inter * 2 + g.moe_inter + g.moe_inter / 32)
+        + c * (3 * g.moe_inter * 2 + d * 2 + g.n_experts * 4);
+    let mixes = 2 * s * ((2 + hc) * hc + 2 * hc + hc * hc) * 4;
+    let engram = c * (d * (hc + 1) * 2 + g.engram_cols() * g.engram_head_dim * 3);
+    let peak = stream + attn.max(moe) + mixes + engram;
+    peak + peak / 10 + (512 << 20)
 }
 
 /// Logits kept per step, as many as the oracle tape's `top_ids`/`top_vals`.

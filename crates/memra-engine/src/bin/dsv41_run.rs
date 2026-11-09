@@ -39,6 +39,9 @@
 //!                            through each layer, each sequence alone through each block
 //!   --resident N             keep the first N layers' weights on the card across the greedy
 //!                            decode forwards (the prompts' pass streams every layer)
+//!   --preload                load those N layers and the head before the first forward (the
+//!                            prompts' pass then streams only the others), with the memory budget
+//!                            printed and refused when it does not fit
 //!   --steps K                stop after K greedy decode forwards; a rerun with the same --out
 //!                            resumes: it replays the saved tokens layer by layer, refuses to go on
 //!                            unless every replayed step's saved values come back byte for byte,
@@ -62,6 +65,10 @@ fn main() {
         eprintln!("dsv41-run: {e}");
         std::process::exit(1);
     }
+}
+
+fn flag_set(a: &[String], k: &str) -> bool {
+    a.iter().any(|x| x == k)
 }
 
 fn read_ids(f: &str) -> Result<Vec<u32>, String> {
@@ -126,6 +133,10 @@ fn run() -> Result<(), String> {
     let mut ids: Vec<u32> = Vec::new();
     let mut i = 2;
     while i < a.len() {
+        if a[i] == "--preload" {
+            i += 1;
+            continue;
+        }
         if a[i].starts_with("--") {
             i += 2;
             continue;
@@ -267,6 +278,31 @@ fn run() -> Result<(), String> {
         0,
         chunk,
     )?;
+    if flag_set(&a, "--preload") {
+        // the resident layers and the head on the cards before the first forward, refused when
+        // the longest prompt's prefill and the sequences' state would not fit beside them
+        let longest = cases.iter().map(|c| c.prompt.len()).max().unwrap_or(0);
+        let state: usize = cases
+            .iter()
+            .map(|c| {
+                v::decode::seq_state_bytes(
+                    &g,
+                    n_layers,
+                    max_pos.min(c.prompt.len() + c.steps() + 16),
+                )
+            })
+            .sum();
+        let per_dev = rn
+            .device_ranks()
+            .iter()
+            .map(|x| x.1.len())
+            .max()
+            .unwrap_or(1);
+        let reserve = (v::decode::prefill_workspace_bytes(&g, devices.len(), longest, chunk)
+            + state)
+            * per_dev;
+        rn.load_resident(keep, reserve)?;
+    }
     eprintln!(
         "dsv41-run: {} sequence(s), longest prompt {}, {n_layers} layers, chunk {chunk}, {} rank(s) on devices {devices:?}, {keep} resident, transport {}",
         cases.len(),
@@ -293,7 +329,10 @@ fn run() -> Result<(), String> {
     }
 
     // pass 0, layer by layer: every prompt, then each sequence's known tokens (forced, or saved)
-    let mut seqs: Vec<Seq> = cases.iter().map(|_| rn.seq()).collect();
+    let mut seqs: Vec<Seq> = cases
+        .iter()
+        .map(|c| rn.seq_with_capacity(c.prompt.len() + c.steps() + 16))
+        .collect();
     let mut calls = Vec::new();
     let mut step_of = Vec::new();
     for (i, c) in cases.iter().enumerate() {

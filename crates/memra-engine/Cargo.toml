@@ -29,6 +29,8 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 base64 = "0.22"
 # dsv41 lane: the vendor Engram constants dump and gate fixture indexes are JSON
 serde_json = "1"
+# dsv41 lane: one host thread per rank issues the N-rank program (dsv41_gpu::tp)
+rayon = "1.12"
 
 [[bin]]
 name = "storage-bench"
@@ -69,6 +71,10 @@ path = "src/bin/dsv41_gate.rs"
 [[bin]]
 name = "dsv41-run"
 path = "src/bin/dsv41_run.rs"
+
+[[bin]]
+name = "dsv41-tpbench"
+path = "src/bin/dsv41_tpbench.rs"
 
 [[bin]]
 name = "dsv4-native-gemm-gate"

@@ -1432,6 +1432,7 @@ fn load_shared(
         let nb = f.shape(&k("candidates_blocks"))[2];
         sh.cand = Some(f.dev(ops, &k("candidates_blocks"))?);
         sh.cand_ld = nb;
+        sh.cand_row0 = 0;
     } else if l > g.cand_source && f.has(&k("candidates")) && f.shape(&k("candidates"))[1] == rows {
         let c = f.i64s(&k("candidates"))?; // [1, rows, n_c] bool per position -> per block
         let n_c = f.shape(&k("candidates"))[2];
@@ -1444,6 +1445,7 @@ fn load_shared(
         }
         sh.cand = Some(Buf::from_bytes(&ops.st, &kb)?);
         sh.cand_ld = nb;
+        sh.cand_row0 = 0;
     }
     Ok(())
 }
@@ -2371,9 +2373,18 @@ fn tp_compare(
                 "i32",
             ),
             (
+                // each rank keeps only the candidate rows it selects (`Shared::cand_row0`):
+                // compare those rows of the single-card pool
                 "candidates",
-                wcand.clone(),
-                opt_host(ro, shs[r].cand.as_ref())?,
+                wcand.as_ref().map(|w| {
+                    let (a, b) = cand_rows(&shs[r], w.len());
+                    w[a..b].to_vec()
+                }),
+                opt_host(ro, shs[r].cand.as_ref())?.map(|mut v| {
+                    let (a, b) = cand_rows(&shs[r], wcand.as_ref().map_or(v.len(), |w| w.len()));
+                    v.truncate(b - a);
+                    v
+                }),
                 "u8",
             ),
             (
@@ -2409,15 +2420,28 @@ fn tp_compare(
         }
     }
     if !tr.route_sel.is_empty() {
-        let same = trs[0].route_sel == tr.route_sel && trs[0].route_w == tr.route_w;
-        rep.raw(
-            &format!("{tag}/route"),
-            same,
-            "identical expert ids and weights",
-            format!("{} selections", tr.route_sel.len()),
-        );
+        // every rank routes its own replicated copy
+        for (r, t) in trs.iter().enumerate() {
+            let same = t.route_sel == tr.route_sel && t.route_w == tr.route_w;
+            rep.raw(
+                &format!("{tag}/rank{r}/route"),
+                same,
+                "identical expert ids and weights",
+                format!("{} selections", tr.route_sel.len()),
+            );
+        }
     }
     Ok(())
+}
+
+/// The byte range of the single-card candidate pool (`whole` bytes) that a rank's pool holds:
+/// its rows from `cand_row0`, as many as its buffer has and the whole pool reaches.
+fn cand_rows(sh: &Shared, whole: usize) -> (usize, usize) {
+    let ld = sh.cand_ld.max(1);
+    let rows = sh.cand.as_ref().map_or(0, |b| b.len / ld);
+    let a = (sh.cand_row0 * ld).min(whole);
+    let b = ((sh.cand_row0 + rows) * ld).min(whole);
+    (a, b)
 }
 
 /// `dsv41-gate tp`: the N-rank program (`dsv41_gpu::tp`) against the single-card `block_forward`

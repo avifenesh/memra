@@ -1662,8 +1662,12 @@ pub struct Shared {
     pub index_k: Option<Buf>, // bf16 [n_c][128], RoPE'd and fp4 g32 quant-dequantized
     pub topk: Option<Buf>,    // i32 [s][topk_w], positions already offset by the window length
     pub topk_w: usize,
-    pub cand: Option<Buf>, // u8 [s][n_blocks]
+    pub cand: Option<Buf>, // u8 [rows][n_blocks]: query rows from `cand_row0`
     pub cand_ld: usize,
+    /// the first query row `cand` holds: 0 when it holds every row; under an N-rank prefill
+    /// with the indexer's query rows split, each rank keeps only its own rows (its later index
+    /// layers read no other), from the start of its range
+    pub cand_row0: usize,
     /// row capacity of `compress_kv` / `index_k` (decode appends rows)
     pub compress_cap: usize,
     pub index_k_cap: usize,
@@ -1758,8 +1762,11 @@ pub struct Ctx {
     pub scr: Scratch,
     pub stage: Option<engram::Stage>,
     pub trace: bool,
-    /// positions the RoPE tables and cache capacities cover
+    /// positions the RoPE tables cover
     pub max_pos: usize,
+    /// positions a sequence's compressed KV and index keys are first sized for (the running
+    /// sequence's capacity, at most `max_pos`); a sequence that outgrows it doubles them
+    pub rows_hint: usize,
     /// prefill tokens per query-side slice (attention, indexer selection, MoE, Engram); every
     /// sliced step acts per row, so the slice size never changes a result
     pub chunk: usize,
@@ -1799,6 +1806,7 @@ impl Ctx {
             stage: None,
             trace: false,
             max_pos,
+            rows_hint: max_pos,
             chunk: 8192,
             index_rows: None,
         })
@@ -1945,7 +1953,7 @@ impl Ctx {
             &mut sh.index_k_cap,
             row0 + nrows,
             rb,
-            self.max_pos / ratio,
+            self.rows_hint.min(self.max_pos) / ratio,
         )?;
         let kp = sh.index_k.as_ref().unwrap().at(&st, row0 * rb);
         self.ops
@@ -2040,9 +2048,12 @@ impl Ctx {
         // the kernel applies weights * (index_head_dim^-0.5 * index_heads^-0.5) as a bf16 product
         let wscale = ((g.index_dim as f64).powf(-0.5) * (g.index_heads as f64).powf(-0.5)) as f32;
         let score = self.ops.buf(rows * n_c * 2)?;
+        let crow = r0
+            .checked_sub(sh.cand_row0)
+            .ok_or("indexer: query row before the candidate pool's first row")?;
         let (cand, ldc) = if lw.uses_cand {
             let c = sh.cand.as_ref().ok_or("indexer: candidate pool missing")?;
-            (c.at(&st, r0 * sh.cand_ld).u8c(), sh.cand_ld)
+            (c.at(&st, crow * sh.cand_ld).u8c(), sh.cand_ld)
         } else {
             (std::ptr::null(), 0)
         };
@@ -2080,7 +2091,7 @@ impl Ctx {
                     g.cand_blocks as i32,
                     (sp + r0) as i32,
                     ratio as i32,
-                    keep.at(&st, r0 * sh.cand_ld).u8m(),
+                    keep.at(&st, crow * sh.cand_ld).u8m(),
                     sh.cand_ld as i64,
                     rows as i32,
                     self.ops.sv(),
@@ -2387,12 +2398,15 @@ impl Ctx {
                     let tw = g.index_topk.min(n_c);
                     sh.topk = Some(self.ops.buf(s * tw * 4)?);
                     sh.topk_w = tw;
-                    if lw.cand_source {
-                        let nb = n_c.div_ceil(g.cand_block);
-                        sh.cand = Some(self.ops.buf(s * nb)?);
-                        sh.cand_ld = nb;
-                    }
                     let span = self.index_rows.clone().unwrap_or(0..s);
+                    if lw.cand_source {
+                        // only the rows this card selects: its later index layers read no other
+                        let nb = n_c.div_ceil(g.cand_block);
+                        let (a, b) = (span.start.min(s), span.end.min(s));
+                        sh.cand = Some(self.ops.buf((b - a).max(1) * nb)?);
+                        sh.cand_ld = nb;
+                        sh.cand_row0 = a;
+                    }
                     for r0 in (span.start..span.end.min(s)).step_by(c) {
                         let r1 = (r0 + c).min(span.end.min(s));
                         self.index_select(lw, x, &qr, r0, r1, sp, s, win_rows, sh)?;
@@ -2418,7 +2432,7 @@ impl Ctx {
                     &mut sh.compress_cap,
                     row0 + nrows,
                     hd * 2,
-                    self.max_pos / ratio,
+                    self.rows_hint.min(self.max_pos) / ratio,
                 )?;
                 copy_d2d(
                     &self.ops,
@@ -2858,6 +2872,40 @@ impl Ctx {
             )
         })?;
         Ok(out)
+    }
+
+    /// [`Self::hc_post`] written over `res` itself (`h` `[s][hc][dim]`). The kernel reads a
+    /// column's `hc` residual values into registers before it writes that column's `hc` outputs,
+    /// and no other thread touches the column, so the bytes are those of a separate output
+    /// buffer; the stream then needs one `[s][hc][dim]` buffer per layer instead of three.
+    pub fn hc_post_in_place(
+        &mut self,
+        f: &Buf,
+        res: &Buf,
+        post: &Buf,
+        comb: &Buf,
+        s: usize,
+    ) -> Result<(), String> {
+        let g = &self.g;
+        let st = self.ops.st.clone();
+        let (hc, d) = (g.hc, g.dim);
+        if res.len < s * hc * d * 2 {
+            return Err("hc_post_in_place: stream buffer too small".into());
+        }
+        ck("hc_post", unsafe {
+            ffi::memra_v41_hc_post(
+                f.p(&st).m(),
+                d as i64,
+                res.p(&st).m(),
+                post.p(&st).f(),
+                comb.p(&st).f(),
+                s as i32,
+                hc as i32,
+                d as i32,
+                res.p(&st).m(),
+                self.ops.sv(),
+            )
+        })
     }
 
     /// One trunk block (vendor `Block.forward`) for `s` tokens from position `sp`: a prefill chunk
