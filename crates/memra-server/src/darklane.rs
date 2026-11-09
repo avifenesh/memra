@@ -34,8 +34,10 @@
 //! (the leader only), or /proc shows every thread of it stopped, or blocked in the kernel and
 //! bound to stop before it next runs: some thread is stopped (the group stop is under way),
 //! SIGSTOP is in the thread's own pending set, or, for a process with one live thread only,
-//! SIGSTOP is still in the shared pending set. A member with no live thread counts as stopped.
-//! The /proc form exists for vfork: a thread waiting in vfork on a child that the same stop
+//! SIGSTOP is still in the shared pending set. A member other than the leader with no live
+//! thread (exiting, or a zombie not yet reaped) counts as stopped. The leader never does: a
+//! leader that exited or is gone is never published as yielded, and try_wait reaps it with its
+//! real exit status (#951). The /proc form exists for vfork: a thread waiting in vfork on a child that the same stop
 //! caught before exec stays in D until SIGCONT, so waitid never reports the stop (dash spawns
 //! every external command that way; `research/darklane-vfork-stop-20261109/`). The kernel flags
 //! one thread per process to take a group stop, the main thread first; when that thread waits
@@ -1535,9 +1537,9 @@ mod tests {
                     && st.yields.load(Ordering::Relaxed) == cycle
             });
             // dash spawns `sleep` with vfork: the stop can park the shell in D on a child
-            // it caught before exec (research/darklane-vfork-stop-20261109/). The runner reads
-            // the leader's threads only, so that child can still be runnable with its stop
-            // pending when the yield is published.
+            // it caught before exec (research/darklane-vfork-stop-20261109/). That child is a
+            // member of the group, and the runner waits for it to stop before it publishes the
+            // yield, so this wait is redundant; it stays as a harmless guard.
             wait_acknowledged("yield to T, or to D parked in vfork", || {
                 leader_stopped_or_vfork_parked(pid)
             });
@@ -1724,8 +1726,8 @@ mod tests {
         wait_acknowledged("stop acknowledged with a thread parked in vfork", || {
             st.state.load(Ordering::Acquire) == BG_YIELDED && st.yields.load(Ordering::Relaxed) == 1
         });
-        // The runner reads the leader's threads only: the vfork child can still be runnable with
-        // its stop pending when the yield is published.
+        // The vfork child is a member of the group, and the runner waits for it to stop before it
+        // publishes the yield, so this wait is redundant; it stays as a harmless guard.
         wait_acknowledged("threads D and T, the vfork child stopped", || {
             let threads = leader_thread_states(pid);
             threads.contains(&'D') && threads.contains(&'T') && leader_stopped_or_vfork_parked(pid)
@@ -2152,7 +2154,7 @@ mod tests {
                 st.state.load(Ordering::Acquire) == BG_YIELDED
                     && st.yields.load(Ordering::Relaxed) == cycle
             });
-            // The vfork child can still be runnable with its stop pending at the yield.
+            // The vfork child is a group member the runner waits for: a redundant, harmless wait.
             wait_acknowledged(
                 &format!("stop {cycle}: yield to T, or to D parked in vfork"),
                 || leader_stopped_or_vfork_parked(pid),
