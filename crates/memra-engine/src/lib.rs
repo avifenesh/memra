@@ -7825,35 +7825,6 @@ impl Engine {
         Ok(())
     }
 
-    /// Indirect-source copy (engine-bundle slice 3): the src ADDRESS is loaded from a
-    /// device pointer-table entry at run time, so a captured graph follows the gdn
-    /// ping-pong through the same table its scan kernels read — a baked memcpy node
-    /// would keep the capture-time physical buffer. `dst_off`/`words` in f32 elements.
-    pub fn copy_indirect_src_f32(
-        &self,
-        src_entry: &cudarc::driver::CudaView<u64>,
-        dst: &mut CudaSlice<f32>,
-        dst_off: usize,
-        words: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("copy_indirect_src_f32");
-        let chunks = (words / 4).max(1).div_ceil(256).min(48) as u32;
-        let wi = words as i32;
-        let cfg = LaunchConfig {
-            grid_dim: (chunks, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let mut dv = dst.slice_mut(dst_off..dst_off + words);
-        let __s = self.gpu.stream();
-        let mut b = __s.launch_builder(&f);
-        b.arg(src_entry).arg(&mut dv).arg(&wi);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// Uninitialized i8 device buffer (decode_batch q8_1 row scratch).
     #[track_caller]
     pub fn uninit_i8(&self, n: usize) -> Result<CudaSlice<i8>, Box<dyn std::error::Error>> {
@@ -32644,10 +32615,11 @@ impl Engine {
     }
 
     /// VIEW twins of the three GDN decode state wrappers (lane/verify-launchslim): identical
-    /// launches, row args as views into the caller's packed [T, ...] buffers — the t-parallel
-    /// verify's per-row loop passes slices instead of paying an arithmetic-free dtod per row
-    /// per kernel (48 layers x T rows x 4 copies/round on the money path). Same kernels, same
-    /// numeric class; only the pointer arithmetic moved host-side.
+    /// launches, row args as views into the caller's packed [T, ...] buffers, so a caller
+    /// passes slices instead of paying an arithmetic-free dtod per row per kernel (48 layers x
+    /// T rows x 4 copies/round on the per-row verify loop they were written for). Callers: the
+    /// t-parallel verify's one-row arm and the `gdn_packed_gpu` per-row reference. Same
+    /// kernels, same numeric class; only the pointer arithmetic moved host-side.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     pub fn ssm_conv1d_fused_decode_b_view(
