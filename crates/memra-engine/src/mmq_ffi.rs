@@ -2862,8 +2862,7 @@ impl Engine {
         key_ptr: u64,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let in_f = 128 * n_head;
-        let bytes = unsafe { memra_mmq_nvfp4_f8f4_v2_act_bytes(in_f as i32, t as i32) };
-        let mut scratch = self.alloc_uninit::<u8>(bytes)?;
+        let mut scratch = self.alloc_uninit::<u8>(Self::f8f4v2_act_bytes(in_f, t))?;
         self.gdn_scan_prefill_norm_f8f4v2_into(
             q,
             k,
@@ -2883,17 +2882,35 @@ impl Engine {
             eps,
             &mut scratch,
         )?;
+        self.f8f4v2_seed_activation(key_ptr, in_f, t, scratch);
+        Ok(())
+    }
+
+    /// Bytes of an F8F4 v2 activation of `rows` x `in_f` (the e4m3 values, then the scale plane).
+    pub fn f8f4v2_act_bytes(in_f: usize, rows: usize) -> usize {
+        unsafe { memra_mmq_nvfp4_f8f4_v2_act_bytes(in_f as i32, rows as i32) }
+    }
+
+    /// Seed the next quantize-once scope over the buffer at `key_ptr` with a written F8F4 v2
+    /// activation (`scratch`, `rows` x `in_f`), as the seeded norm entries do; the f32 buffer
+    /// itself is not written (`x_written` false).
+    pub fn f8f4v2_seed_activation(
+        &self,
+        key_ptr: u64,
+        in_f: usize,
+        rows: usize,
+        scratch: CudaSlice<u8>,
+    ) {
         *self.f8f4_act_seed.lock().unwrap() = Some(crate::F8f4ActGroup {
             x_ptr: key_ptr,
             in_f,
-            m: t,
+            m: rows,
             scratch: Some(scratch),
             v2: true,
             q8: None,
             x_written: false,
             seeded_uses: 0,
         });
-        Ok(())
     }
 
     /// `gdn_scan_prefill_norm_f8f4v2` into a caller's activation buffer `vy` (at least
@@ -2920,14 +2937,48 @@ impl Engine {
         eps: f32,
         vy: &mut CudaSlice<u8>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gdn_scan_prefill_norm_f8f4v2_at(
+            q, k, v, g, beta, kb16_pre, qb16_pre, state_in, state_out, n_head, t, scale, hk, z, w,
+            eps, vy, 0, t,
+        )
+    }
+
+    /// `gdn_scan_prefill_norm_f8f4v2_into` for `t` rows that are rows `row0..row0 + t` of a
+    /// `rows`-row activation in `vy` (at least `memra_mmq_nvfp4_f8f4_v2_act_bytes(128 * n_head,
+    /// rows)` bytes): the two parts of a prime call the GDN state tap splits each write their rows
+    /// of the call's one activation (the boundary tail fold). `z` is this part's `[t, 128 *
+    /// n_head]` gate rows.
+    #[allow(clippy::too_many_arguments)] // allow: the fused scan's operand set plus the activation rows it writes
+    pub fn gdn_scan_prefill_norm_f8f4v2_at(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &CudaSlice<f32>,
+        v: &CudaSlice<f32>,
+        g: &CudaSlice<f32>,
+        beta: &CudaSlice<f32>,
+        kb16_pre: Option<&CudaSlice<u8>>,
+        qb16_pre: Option<&CudaSlice<u8>>,
+        state_in: &CudaSlice<f32>,
+        state_out: &mut CudaSlice<f32>,
+        n_head: usize,
+        t: usize,
+        scale: f32,
+        hk: usize,
+        z: &cudarc::driver::CudaView<f32>,
+        w: &CudaSlice<f32>,
+        eps: f32,
+        vy: &mut CudaSlice<u8>,
+        row0: usize,
+        rows: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if !self.gdn_k45_norm_route(t) {
             return Err("gdn_scan_prefill_norm_f8f4v2 off the fused K4+K5 route".into());
         }
         let in_f = 128 * n_head;
-        let bytes = unsafe { memra_mmq_nvfp4_f8f4_v2_act_bytes(in_f as i32, t as i32) };
-        if z.len() < t * in_f || w.len() < 128 || vy.len() < bytes {
+        let bytes = Self::f8f4v2_act_bytes(in_f, rows);
+        if row0 + t > rows || z.len() < t * in_f || w.len() < 128 || vy.len() < bytes {
             return Err(format!(
-                "gdn_scan_prefill_norm_f8f4v2: z {} / w {} / vy {} short of [{t}, {in_f}] / 128 / {bytes}",
+                "gdn_scan_prefill_norm_f8f4v2: rows {row0}+{t} of {rows}, z {} / w {} / vy {} short of [{t}, {in_f}] / 128 / {bytes}",
                 z.len(),
                 w.len(),
                 vy.len()
@@ -2948,7 +2999,14 @@ impl Engine {
             qb16_pre,
             state_in,
             state_out,
-            crate::GdnScanOut::Norm { z, w, vy, eps },
+            crate::GdnScanOut::Norm {
+                z,
+                w,
+                vy,
+                eps,
+                row0,
+                rows,
+            },
             n_head,
             t,
             scale,

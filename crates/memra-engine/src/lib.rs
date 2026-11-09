@@ -1914,7 +1914,10 @@ pub struct GdnConvL2<'a> {
 
 /// Where the chunked GDN scan puts its output: `o` itself, or (`Norm`, the fused K4+K5 route
 /// only) the gated RMSNorm of `o` with weight `w` and gate `z` as the ssm_out GEMM's F8F4 v2
-/// activation in `vy`, `o` never stored (`Engine::gdn_scan_prefill_norm_f8f4v2`).
+/// activation in `vy`, `o` never stored (`Engine::gdn_scan_prefill_norm_f8f4v2`). `vy` holds an
+/// activation of `rows` rows, and this scan's rows land at rows `row0..` of it (0 and the scan's
+/// rows for a whole prime call; a part of a call the GDN state tap splits passes its first row and
+/// the call's rows).
 pub(crate) enum GdnScanOut<'a, 'z> {
     O(&'a mut CudaSlice<f32>),
     Norm {
@@ -1922,6 +1925,8 @@ pub(crate) enum GdnScanOut<'a, 'z> {
         w: &'a CudaSlice<f32>,
         vy: &'a mut CudaSlice<u8>,
         eps: f32,
+        row0: usize,
+        rows: usize,
     },
 }
 
@@ -34215,7 +34220,14 @@ impl Engine {
             if self.gdn_k45_on() && crate::qwen_prime_graph::current().is_none() {
                 let o = match out {
                     GdnScanOut::O(o) => o,
-                    GdnScanOut::Norm { z, w, vy, eps } => {
+                    GdnScanOut::Norm {
+                        z,
+                        w,
+                        vy,
+                        eps,
+                        row0,
+                        rows,
+                    } => {
                         // The same pass with the GDN out-norm in place of the o store
                         // (research/gb10-prefill-20261106/GDN-OUTNORM-DESIGN.md): the gated
                         // RMSNorm and the ssm_out GEMM's F8F4 v2 activation, the bytes
@@ -34234,7 +34246,8 @@ impl Engine {
                             shared_mem_bytes: K45_NORM_SMEM,
                         };
                         let (hki, ncols) = (hk as i32, D as i32);
-                        let tp: i64 = (t as i64 + 255) / 256 * 256;
+                        let tp: i64 = (rows as i64 + 255) / 256 * 256;
+                        let (tok0, t_plane) = (row0 as i64, rows as i64);
                         let __s_b = self.gpu.stream();
                         let mut b = __s_b.launch_builder(&f);
                         b.arg(kb16_ref)
@@ -34256,7 +34269,9 @@ impl Engine {
                             .arg(&hki)
                             .arg(&ncols)
                             .arg(&tp)
-                            .arg(&eps);
+                            .arg(&eps)
+                            .arg(&tok0)
+                            .arg(&t_plane);
                         unsafe {
                             b.launch(cfg)?;
                         }
