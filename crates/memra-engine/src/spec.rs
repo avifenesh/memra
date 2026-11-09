@@ -2792,9 +2792,57 @@ pub(crate) struct PooledPos<'a> {
 }
 
 pub(crate) struct VerifyCkpt {
-    #[allow(clippy::type_complexity)]
-    // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    cols: Vec<Option<Vec<(CudaSlice<f32>, CudaSlice<f32>)>>>, // [n_layer][col] = (conv, ssm) after col
+    cols: Vec<Option<ColStates>>, // [n_layer]: the (conv, ssm) state after each verify column
+}
+
+/// One linear layer's GDN states after verify columns 0..n-1 (the last column's state is the
+/// live one, so a T-row verify keeps T-1), as two `[n x words]` slabs. The packed scan writes its
+/// per-row snapshots into slabs of exactly this shape, so they become the checkpoint as they
+/// are, with no per-column copy (GB10 round 5 lever 3a: those clones were 6 copies per layer per
+/// round, 471 MB at K=3; research/gb10-decode-20261109).
+pub(crate) struct ColStates {
+    conv: CudaSlice<f32>,
+    ssm: CudaSlice<f32>,
+    conv_words: usize,
+    ssm_words: usize,
+}
+
+impl ColStates {
+    /// Room for `n` columns, filled by [`Self::put`].
+    fn with_cols(
+        e: &Engine,
+        n: usize,
+        conv_words: usize,
+        ssm_words: usize,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(ColStates {
+            conv: e.uninit(n * conv_words)?,
+            ssm: e.uninit(n * ssm_words)?,
+            conv_words,
+            ssm_words,
+        })
+    }
+
+    /// Copies column `c`'s states in from the live buffers.
+    fn put(
+        &mut self,
+        e: &Engine,
+        c: usize,
+        conv: &CudaSlice<f32>,
+        ssm: &CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        e.dtod_copy_into(conv, &mut self.conv, c * self.conv_words)?;
+        e.dtod_copy_into(ssm, &mut self.ssm, c * self.ssm_words)
+    }
+
+    fn conv_col(&self, c: usize) -> cudarc::driver::CudaView<'_, f32> {
+        self.conv
+            .slice(c * self.conv_words..(c + 1) * self.conv_words)
+    }
+
+    fn ssm_col(&self, c: usize) -> cudarc::driver::CudaView<'_, f32> {
+        self.ssm.slice(c * self.ssm_words..(c + 1) * self.ssm_words)
+    }
 }
 /// Opaque handle for the dspark round (dflash.rs) — VerifyCkpt stays spec-private.
 pub(crate) struct DsparkVerifyCkpt(VerifyCkpt);
@@ -6985,9 +7033,17 @@ impl HybridModel {
         let mut ph_last = std::time::Instant::now();
         for il in lo..hi {
             let mut next = e.uninit(t * n_embd)?;
-            let mut col_states: Option<Vec<(CudaSlice<f32>, CudaSlice<f32>)>> =
+            let mut col_states: Option<ColStates> =
                 if ckpt.is_some() && t >= 2 && matches!(self.layers[il].mixer, Mixer::Linear(_)) {
-                    Some(Vec::with_capacity(t - 1))
+                    let recur = cache.recur[il]
+                        .as_ref()
+                        .ok_or("Qwen35-MoE linear verify layer has no recurrent state")?;
+                    Some(ColStates::with_cols(
+                        e,
+                        t - 1,
+                        recur.conv_state.len(),
+                        recur.ssm_state.len(),
+                    )?)
                 } else {
                     None
                 };
@@ -7019,10 +7075,7 @@ impl HybridModel {
                     let recur = cache.recur[il]
                         .as_ref()
                         .ok_or("Qwen35-MoE linear verify layer has no recurrent state")?;
-                    states.push((
-                        e.clone_dtod(&recur.conv_state)?,
-                        e.clone_dtod(&recur.ssm_state)?,
-                    ));
+                    states.put(e, r, &recur.conv_state, &recur.ssm_state)?;
                 }
             }
             if let (Some(checkpoint), Some(states)) = (ckpt.as_deref_mut(), col_states) {
@@ -8861,16 +8914,14 @@ impl HybridModel {
                 gdn_scale,
                 snaps[si].as_mut().map(|(_, sst)| sst),
             )?;
-            if let (Some(ck), Some((ct, st))) = (s.ckpt.as_deref_mut(), snaps[si].as_ref()) {
-                let mut states = Vec::with_capacity(ts - 1);
-                for r in 0..ts - 1 {
-                    let mut c = e.uninit(conv_words)?;
-                    e.dtod_copy_view(&ct.slice(r * conv_words..(r + 1) * conv_words), &mut c)?;
-                    let mut sst = e.uninit(ssm_words)?;
-                    e.dtod_copy_view(&st.slice(r * ssm_words..(r + 1) * ssm_words), &mut sst)?;
-                    states.push((c, sst));
-                }
-                ck.cols[il] = Some(states);
+            if let (Some(ck), Some((conv, ssm))) = (s.ckpt.as_deref_mut(), snaps[si].take()) {
+                // The scan's snapshot slabs ARE the checkpoint: no per-column copies.
+                ck.cols[il] = Some(ColStates {
+                    conv,
+                    ssm,
+                    conv_words,
+                    ssm_words,
+                });
             }
             if ts % 2 == 1 {
                 let rl = s.cache.recur[il].as_mut().unwrap();
@@ -9602,12 +9653,8 @@ impl HybridModel {
             None => (table_local.as_ref().unwrap(), 0),
         };
         let mut o_all = e.uninit(t * value_dim)?;
-        let mut col_states: Option<Vec<(CudaSlice<f32>, CudaSlice<f32>)>> =
-            if ckpt.is_some() && stash.is_none() && t >= 2 {
-                Some(Vec::with_capacity(t - 1))
-            } else {
-                None
-            };
+        let want_cols = ckpt.is_some() && stash.is_none() && t >= 2;
+        let mut col_states: Option<ColStates> = None;
         let mut stash = stash;
         if spec_gdn_packed() && t >= 2 {
             // PACKED (lane/dspark-gdn-packed): one launch per state kernel over all T rows, the
@@ -9691,18 +9738,27 @@ impl HybridModel {
                     ssm_snap,
                 )?;
             }
-            if let (Some(ct), Some(st)) = (conv_tmp.as_ref(), ssm_tmp.as_ref()) {
-                let mut states = Vec::with_capacity(t - 1);
-                for r in 0..t - 1 {
-                    let mut c = e.uninit(conv_words)?;
-                    e.dtod_copy_view(&ct.slice(r * conv_words..(r + 1) * conv_words), &mut c)?;
-                    let mut sst = e.uninit(ssm_words)?;
-                    e.dtod_copy_view(&st.slice(r * ssm_words..(r + 1) * ssm_words), &mut sst)?;
-                    states.push((c, sst));
-                }
-                col_states = Some(states);
+            if let (Some(conv), Some(ssm)) = (conv_tmp, ssm_tmp) {
+                // The scan's snapshot slabs ARE the checkpoint: no per-column copies.
+                col_states = Some(ColStates {
+                    conv,
+                    ssm,
+                    conv_words,
+                    ssm_words,
+                });
             }
         } else {
+            if want_cols {
+                let rl = cache.recur[il]
+                    .as_ref()
+                    .ok_or("qwen35 linear verify layer has no recurrent state")?;
+                col_states = Some(ColStates::with_cols(
+                    e,
+                    t - 1,
+                    rl.conv_state.len(),
+                    rl.ssm_state.len(),
+                )?);
+            }
             // Per-row scratch reused across rows (uninit is cheap but not free at
             // 48 layers x T rows); row inputs/outputs pass as VIEWS into the packed
             // [T, ...] buffers — zero arithmetic-free copies in this loop.
@@ -9791,8 +9847,7 @@ impl HybridModel {
                         }
                         None => {
                             if let Some(states) = col_states.as_mut() {
-                                states
-                                    .push((e.clone_dtod(&rl.conv_state)?, e.clone_dtod(ssm_src)?));
+                                states.put(e, r, &rl.conv_state, ssm_src)?;
                             }
                         }
                     }
@@ -10233,7 +10288,7 @@ impl HybridModel {
                 let Some(cols) = &ckpt.cols[il] else {
                     continue; // missing-ckpt error surfaces in the main loop
                 };
-                let (c, st) = &cols[j - 1];
+                let (c, st) = (cols.conv_col(j - 1), cols.ssm_col(j - 1));
                 if conv_pairs.is_empty() {
                     conv_words = c.len();
                     ssm_words = st.len();
@@ -10277,9 +10332,9 @@ impl HybridModel {
                 }
                 if let Some(cols) = &ckpt.cols[il] {
                     if !batched_cols {
-                        let (c, s) = &cols[j - 1];
-                        e.copy_into(&mut rl.conv_state, 0, c, c.len())?;
-                        e.copy_into(&mut rl.ssm_state, 0, s, s.len())?;
+                        let (c, s) = (cols.conv_col(j - 1), cols.ssm_col(j - 1));
+                        e.copy_view_into(&mut rl.conv_state, 0, &c, c.len())?;
+                        e.copy_view_into(&mut rl.ssm_state, 0, &s, s.len())?;
                     }
                 } else {
                     return Err(
