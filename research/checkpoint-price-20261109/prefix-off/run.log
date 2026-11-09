@@ -1,0 +1,171 @@
+gpulock: 5090 leased as claude-code-20261109T174137-143705 for 30m
+anon 1 0 1 0.6733 0 {'park_skip': [()]}
+anon 1 0 2 0.7626 0 {'park_skip': [()]}
+anon 1 0 3 0.8631 0 {'park_skip': [()]}
+anon 1 1 1 0.691 0 {'park_skip': [()]}
+anon 1 1 2 0.7693 0 {'park_skip': [()]}
+anon 1 1 3 0.9193 0 {'park_skip': [()]}
+anon 1 2 1 0.7098 0 {'park_skip': [()]}
+anon 1 2 2 0.7909 0 {'park_skip': [()]}
+anon 1 2 3 0.932 0 {'park_skip': [()]}
+named 2 0 1 0.6742 1 {}
+named 2 0 2 0.3012 1 {'affinity': [('768', '950')]}
+named 2 0 3 0.2399 1 {'affinity': [('928', '1083')]}
+named 2 1 1 0.6969 2 {}
+named 2 1 2 0.3097 2 {'affinity': [('768', '951')]}
+named 2 1 3 0.2411 2 {'affinity': [('928', '1084')]}
+named 2 2 1 0.8173 2 {}
+named 2 2 2 0.311 2 {'affinity': [('800', '982')]}
+named 2 2 3 0.2362 2 {'affinity': [('960', '1115')]}
+named 3 0 1 0.698 1 {}
+named 3 0 2 0.3131 1 {'affinity': [('768', '951')]}
+named 3 0 3 0.2391 1 {'affinity': [('928', '1084')]}
+named 3 1 1 0.8211 2 {}
+named 3 1 2 0.3113 2 {'affinity': [('800', '982')]}
+named 3 1 3 0.2355 2 {'affinity': [('960', '1115')]}
+named 3 2 1 0.8377 2 {}
+named 3 2 2 0.3128 2 {'affinity': [('832', '1013')]}
+named 3 2 3 0.2345 2 {'affinity': [('992', '1146')]}
+anon 4 0 1 0.697 0 {'park_skip': [()]}
+anon 4 0 2 0.7743 0 {'park_skip': [()]}
+anon 4 0 3 0.8906 0 {'park_skip': [()]}
+anon 4 1 1 0.6906 0 {'park_skip': [()]}
+anon 4 1 2 0.8151 0 {'park_skip': [()]}
+anon 4 1 3 0.9309 0 {'park_skip': [()]}
+anon 4 2 1 0.7049 0 {'park_skip': [()]}
+anon 4 2 2 0.7986 0 {'park_skip': [()]}
+anon 4 2 3 0.9382 0 {'park_skip': [()]}
+anon 5 0 1 0.6679 0 {'park_skip': [()]}
+anon 5 0 2 0.7618 0 {'park_skip': [()]}
+anon 5 0 3 0.8846 0 {'park_skip': [()]}
+anon 5 1 1 0.7009 0 {'park_skip': [()]}
+anon 5 1 2 0.7782 0 {'park_skip': [()]}
+anon 5 1 3 0.9061 0 {'park_skip': [()]}
+anon 5 2 1 0.6869 0 {'park_skip': [()]}
+anon 5 2 2 0.7959 0 {'park_skip': [()]}
+anon 5 2 3 0.8853 0 {'park_skip': [()]}
+named 6 0 1 0.6657 1 {}
+named 6 0 2 0.3042 1 {'affinity': [('768', '951')]}
+named 6 0 3 0.2323 1 {'affinity': [('928', '1084')]}
+named 6 1 1 0.6987 2 {}
+named 6 1 2 0.3073 2 {'affinity': [('768', '951')]}
+named 6 1 3 0.2329 2 {'affinity': [('928', '1084')]}
+named 6 2 1 0.8126 2 {}
+named 6 2 2 0.314 2 {'affinity': [('800', '982')]}
+named 6 2 3 0.2396 2 {'affinity': [('960', '1115')]}
+named 7 0 1 0.7288 1 {}
+named 7 0 2 0.3106 1 {'affinity': [('768', '951')]}
+named 7 0 3 0.2465 1 {'affinity': [('928', '1084')]}
+named 7 1 1 0.8269 2 {}
+named 7 1 2 0.3218 2 {'affinity': [('800', '982')]}
+named 7 1 3 0.2452 2 {'affinity': [('960', '1115')]}
+named 7 2 1 0.8954 2 {}
+named 7 2 2 0.3282 2 {'affinity': [('832', '1013')]}
+named 7 2 3 0.2481 2 {'affinity': [('992', '1146')]}
+anon 8 0 1 0.6712 0 {'park_skip': [()]}
+anon 8 0 2 0.7653 0 {'park_skip': [()]}
+anon 8 0 3 0.9076 0 {'park_skip': [()]}
+anon 8 1 1 0.687 0 {'park_skip': [()]}
+anon 8 1 2 0.7993 0 {'park_skip': [()]}
+anon 8 1 3 0.9099 0 {'park_skip': [()]}
+anon 8 2 1 0.7314 0 {'park_skip': [()]}
+anon 8 2 2 0.8629 0 {'park_skip': [()]}
+anon 8 2 3 1.006 0 {'park_skip': [()]}
+{
+ "anon/t1": {
+  "n": 12,
+  "ttft_median_s": 0.6908,
+  "min": 0.6679,
+  "max": 0.7314
+ },
+ "anon/t2": {
+  "n": 12,
+  "ttft_median_s": 0.7846,
+  "min": 0.7618,
+  "max": 0.8629
+ },
+ "anon/t3": {
+  "n": 12,
+  "ttft_median_s": 0.9087,
+  "min": 0.8631,
+  "max": 1.006
+ },
+ "anon/after-t3": {
+  "cuda_pool_used_bytes": [
+   17213437760,
+   17213437760,
+   17213437760,
+   17213437760,
+   17213437760,
+   17213437760,
+   17213437760,
+   17213437760,
+   17213437760,
+   17213437760,
+   17213437760,
+   17213437760
+  ],
+  "spec_pool_entries": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ]
+ },
+ "named/t1": {
+  "n": 12,
+  "ttft_median_s": 0.7707,
+  "min": 0.6657,
+  "max": 0.8954
+ },
+ "named/t2": {
+  "n": 12,
+  "ttft_median_s": 0.3112,
+  "min": 0.3012,
+  "max": 0.3282
+ },
+ "named/t3": {
+  "n": 12,
+  "ttft_median_s": 0.2394,
+  "min": 0.2323,
+  "max": 0.2481
+ },
+ "named/after-t3": {
+  "cuda_pool_used_bytes": [
+   17724341316,
+   18235278280,
+   18236347336,
+   17724374724,
+   18236347336,
+   18238418632,
+   17724374724,
+   18235311688,
+   18236347336,
+   17724374724,
+   18236347336,
+   18238418632
+  ],
+  "spec_pool_entries": [
+   1,
+   2,
+   2,
+   1,
+   2,
+   2,
+   1,
+   2,
+   2,
+   1,
+   2,
+   2
+  ]
+ }
+}
