@@ -187,10 +187,10 @@ than the score.
   streaming them per layer, with the CSA2 state (compressed KV, index keys, window rings, candidate
   pool) sized for the target context inside the remaining ~24 GiB per card; then the same
   `dsv41-gate tp` and `dsv41-run --devices 0,1,2,3` gates on four cards.
-- Engine and server integration: a `dsv41` engine entry over `tp::Group` (prefill then decode in
-  one session, the decode loop that `dsv41-run` lacks, sampler on the gathered logits, request
-  state per rank), the model pack's multi-card capability in the execution manifest, and the
-  serve gates of the support record.
+- Engine and server integration: a `dsv41` engine entry over `tp::Group` (sessions over the
+  decode loop, which step 6 added as `dsv41_gpu::decode` on a rank group, `../decode/README.md`;
+  sampler on the gathered logits, request state per rank), the model pack's multi-card capability
+  in the execution manifest, and the serve gates of the support record.
 - CUDA graphs for decode: the per-layer gathers are event-ordered copies today (3 to 5 per layer,
   host-issued), with host round trips for the routing plan and the window index rows; a graph
   needs the routing plan built on the device and fixed-address buffers.

@@ -392,8 +392,8 @@ per tape set no band; these are context for the decode route, not a gate.
 - Multi-card: the full model at serving speed needs 4 cards (about 313 GB on-card, 77 GB each at
   TP4/EP4). The one-card runner streams every layer's weights from the page cache instead. (Step 5,
   `../tp/README.md`: the N-rank partition, byte-identical to this route at N=2 on two cards.)
-- Serving: no `Engine` integration, no scheduler, no CUDA graphs, no decode in `dsv41-run` (decode
-  is gated per layer in `dsv41-gate layer --decode`).
+- Serving: no `Engine` integration, no scheduler, no CUDA graphs. (Step 6, `../decode/README.md`:
+  the decode loop in `dsv41-run`, gated against the vendor's generations.)
 - Speed: the GEMM tiles are plain (no cp.async pipeline, no split-K for M=1), the MoE launches per
   expert. No performance claim is made; the whole-trunk times above are single runs.
 - DSpark (`mtp.*`) blocks and the vision tower: not run.

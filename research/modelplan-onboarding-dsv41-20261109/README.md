@@ -248,3 +248,12 @@ gathers only, so the N-rank program writes the one-card bytes): byte-identical t
 `block_forward` on six real layers at prefill and decode on two cards, the whole trunk on two cards
 gives the one-card logits bit for bit up to 128,745 tokens, the indexer splits its query rows at
 prefill (measured against a head split), and the list of what the 4-card stage adds: `tp/README.md`.
+
+# Step 6 (GPU): the decode loop, gated against the vendor's generations (2026-11-09)
+
+A prefill, then one token per call with every sequence's window rings, compressor groups,
+compressed KV, index keys and token history carried as the vendor carries them (`dsv41_gpu::decode`,
+`dsv41-run --force / --gen`), on one rank or N. Teacher-forced with the vendor's greedy tokens it sits
+inside the vendor program's own decode floor on 711 steps of 17 tapes (16 to 128,745 tokens of
+context); greedy generation, the identity gates (layer-by-layer replay against token-by-token
+generation, N=2 against N=1) and what serving still needs: `decode/README.md`.

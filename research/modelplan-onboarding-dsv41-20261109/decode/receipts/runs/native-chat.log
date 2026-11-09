@@ -1,0 +1,28 @@
+smoke-capital rc 0 18:04:18 dsv41-run: 1 forwards, 1 calls, 40 layer loads (18.8s), blocks 0.2s, total 19.5s
+smoke-needle1200 rc 0 18:04:50 dsv41-run: 1 forwards, 1 calls, 40 layer loads (18.8s), blocks 10.9s, total 30.4s
+a3de6c005971dc4dc4b88b988166200f0a929a4abaf68c6480c8703cdc1109e9  dec/smoke/capital.f32
+50657b549541c71312c1f2985b7e395cdef5eaefe1573da173faf9d81779231c  dec/smoke/needle1200.f32
+SMOKE: prefill logits identical to the banked runs
+tf-chat rc 0 18:06:34 dsv41-run: 1 forwards, 517 calls, 40 layer loads (19.9s), blocks 78.9s, total 101.5s
+tp2-chat rc 0 18:06:58 dsv41-run: 1 forwards, 25 calls, 40 layer loads (17.9s), blocks 3.5s, total 22.1s
+TP2-CMP-DONE
+greedy-chat-1 rc 0 18:16:33 dsv41-run: 41 forwards, 284 calls, 1211 layer loads (517.9s), blocks 50.5s, total 572.0s
+greedy-chat-2 rc 0 18:30:27 dsv41-run: 41 forwards, 384 calls, 1211 layer loads (761.7s), blocks 64.1s, total 830.9s
+greedy-chat-3 rc 0 18:46:29 dsv41-run: 41 forwards, 464 calls, 1211 layer loads (879.4s), blocks 74.2s, total 959.2s
+greedy-chat-4 rc 0 18:57:33 dsv41-run: 41 forwards, 509 calls, 1211 layer loads (577.0s), blocks 80.0s, total 662.0s
+greedy-chat-5 rc 0 19:03:11 dsv41-run: 15 forwards, 523 calls, 457 layer loads (251.7s), blocks 80.1s, total 335.5s
+greedy-chat-verify rc 0 19:04:57 dsv41-run: 1 forwards, 523 calls, 40 layer loads (20.8s), blocks 79.8s, total 103.5s
+dsv41-run: capital: replayed 2 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: gsm: replayed 20 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: code: replayed 42 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: copy: replayed 30 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: hebrew: replayed 3 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: gsm_think: replayed 47 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: story: replayed 126 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: hebrew_para: replayed 175 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: code_pal: replayed 54 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: sys_json: replayed 15 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: multiturn: replayed 3 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: needle: replayed 3 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: needle1200: replayed 3 saved steps layer by layer, every one byte-identical to the saved step
+NATIVE-chat-DONE

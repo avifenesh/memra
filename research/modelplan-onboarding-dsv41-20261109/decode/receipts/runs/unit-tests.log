@@ -1,0 +1,10 @@
+test dsv41_gpu::decode::tests::each_layer_reads_the_latest_kv_source_at_or_below_it ... ok
+test dsv41_gpu::decode::tests::lse_is_stable_far_from_zero ... ok
+test dsv41_gpu::decode::tests::top_k_is_the_sorted_largest_with_lower_ids_first_among_ties ... ok
+test dsv41_gpu::engram::tests::a_decode_span_hashes_like_the_whole_sequence ... ok
+test dsv41_gpu::tests::decode_rows_read_the_ring_oldest_slot_first ... ok
+test dsv41_gpu::tests::mint_is_exact_and_refuses_what_e4m3_cannot_hold ... ok
+test dsv41_gpu::tests::window_rows_match_the_reference_prefill_selection ... ok
+test dsv41_gpu::tp::tests::blk_end_covers_the_last_row_only_to_its_width ... ok
+test dsv41_gpu::tp::tests::moe_plan_orders_pairs_by_expert_then_token_and_tokens_by_expert ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 764 filtered out; finished in 0.00s

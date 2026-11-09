@@ -174,6 +174,21 @@ impl EngramConsts {
         }
         Ok(out)
     }
+
+    /// Hash ids `[ids.len() - from][n_layers][cols]` of the positions `from..` of the text
+    /// sequence `ids` (prompt and fed tokens from position 0): the n-grams ending there, each
+    /// looking back over at most `max_ngram - 1` earlier tokens. The rows equal those of
+    /// [`Self::hash_prefill`] over the whole sequence (the vendor's decode step hashes one new
+    /// token against the tokens before it).
+    pub fn hash_span(&self, ids: &[u32], from: usize) -> Result<Vec<i64>, String> {
+        if from > ids.len() {
+            return Err(format!("engram: position {from} past {} tokens", ids.len()));
+        }
+        let start = from.saturating_sub(self.max_ngram - 1);
+        let all = self.hash_prefill(&ids[start..])?;
+        let row = self.layer_ids.len() * self.cols();
+        Ok(all[(from - start) * row..].to_vec())
+    }
 }
 
 /// Copy the hashed rows of one Engram table out of the host mmap: `(rows [n][hd] e4m3, scales
@@ -301,5 +316,65 @@ impl Stage {
             .memcpy_htod(&self.sc, &mut self.d_sc.s)
             .map_err(|e| format!("engram h2d: {e:?}"))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Small hashing constants (2 layers, 4-grams, 3 heads, 20 compressed ids).
+    fn consts() -> EngramConsts {
+        let primes = vec![
+            vec![vec![7, 11, 13], vec![17, 19, 23], vec![29, 31, 37]],
+            vec![vec![41, 43, 47], vec![53, 59, 61], vec![67, 71, 73]],
+        ];
+        let offsets = primes
+            .iter()
+            .map(|l: &Vec<Vec<i64>>| {
+                let mut o = 0;
+                l.iter()
+                    .flatten()
+                    .map(|&p| {
+                        let x = o;
+                        o += p;
+                        x
+                    })
+                    .collect()
+            })
+            .collect();
+        EngramConsts {
+            layer_ids: vec![1, 14],
+            max_ngram: 4,
+            n_heads: 3,
+            head_dim: 8,
+            num_embeddings: primes.iter().map(|l| l.iter().flatten().sum()).collect(),
+            primes,
+            offsets,
+            multipliers: vec![vec![3, 5, 9, 17], vec![33, 65, 129, 257]],
+            pad: 2,
+            compressed_vocab: 20,
+            token_map: (0..20).map(|i| (i * 7) % 20).collect(),
+        }
+    }
+
+    #[test]
+    fn a_decode_span_hashes_like_the_whole_sequence() {
+        let c = consts();
+        c.validate().unwrap();
+        let ids: Vec<u32> = vec![5, 0, 19, 3, 3, 8, 11, 2, 17, 6];
+        let all = c.hash_prefill(&ids).unwrap();
+        let row = c.layer_ids.len() * c.cols();
+        for from in 0..=ids.len() {
+            assert_eq!(
+                c.hash_span(&ids, from).unwrap(),
+                all[from * row..].to_vec(),
+                "from {from}"
+            );
+        }
+        // one decode token: its row only, from the look-back window
+        let last = c.hash_span(&ids, ids.len() - 1).unwrap();
+        assert_eq!(last.len(), row);
+        assert!(c.hash_span(&ids, ids.len() + 1).is_err());
     }
 }

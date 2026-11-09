@@ -1,0 +1,17 @@
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) gathers-only=true
+dsv41-run: 4 sequence(s), longest prompt 128745, 40 layers, chunk 8192, 1 rank(s) on devices [0], 11 resident, transport host-canonical
+dsv41-run: pass 0: 173 calls in 247.7s (weights 19.6s, 40 layer loads)
+dsv41-run: decode32k_he_summary: replayed 91 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: decode64k_en_continue: replayed 76 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: needle4800: replayed 3 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: needle8400: replayed 3 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: decode forward 1: 1 sequence(s), 15.3s (weights 15.2s)
+dsv41-run: decode forward 2: 1 sequence(s), 11.2s (weights 11.0s)
+dsv41-run: decode forward 3: 1 sequence(s), 11.1s (weights 11.0s)
+dsv41-run: decode forward 4: 1 sequence(s), 12.0s (weights 11.8s)
+dsv41-run: decode forward 5: 1 sequence(s), 11.2s (weights 11.0s)
+decode32k_he_summary: greedy, 96 steps, done
+decode64k_en_continue: greedy, 76 steps, done
+needle4800: greedy, 3 steps, done
+needle8400: greedy, 3 steps, done
+dsv41-run: 6 forwards, 178 calls, 196 layer loads (79.6s), blocks 225.7s, total 309.7s

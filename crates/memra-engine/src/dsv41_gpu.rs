@@ -11,15 +11,18 @@
 //! is the typed plan these kernels execute.
 //!
 //! Scope today: every V4.1 operation as a kernel plus the prefill/decode layer
-//! ([`Ctx::block_forward`]) fed from the safetensors checkpoint, and the same layer split across
+//! ([`Ctx::block_forward`]) fed from the safetensors checkpoint, the same layer split across
 //! N ranks ([`tp`]: tensor-parallel attention, expert-parallel MoE, a vocab-parallel head; gathers
-//! only, so the N-rank program writes these bytes). Serving is not here yet.
+//! only, so the N-rank program writes these bytes), and the whole trunk as a prefill followed by
+//! one token per call with every sequence's state carried the vendor's way ([`decode`]). Serving
+//! is not here yet.
 
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr};
 use memra_gguf::safetensors::StModel;
 use std::os::raw::c_void;
 use std::sync::Arc;
 
+pub mod decode;
 pub mod engram;
 pub mod tp;
 
@@ -1225,7 +1228,7 @@ pub fn load_wo_a_rows(
 // one layer
 
 /// V4.1 geometry the layer needs (from `DeepSeekV41Config` + the base config).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Geo {
     pub dim: usize,
     pub heads: usize,
@@ -1666,6 +1669,21 @@ pub struct Shared {
     pub index_k_cap: usize,
 }
 
+impl Shared {
+    /// Exchange the half a kv-source group owns (its compressed KV, index keys, row count and
+    /// capacities) with `store`; the per-forward half (selection, candidate pool) stays. The vendor
+    /// keeps a compressed KV cache per kv source and an index-key cache per key-owning indexer and
+    /// points the shared slots at the current group's; a decode step reads every group's cache, so
+    /// each group's half lives in its own store between calls.
+    pub fn swap_group(&mut self, store: &mut Shared) {
+        std::mem::swap(&mut self.compress_kv, &mut store.compress_kv);
+        std::mem::swap(&mut self.n_c, &mut store.n_c);
+        std::mem::swap(&mut self.index_k, &mut store.index_k);
+        std::mem::swap(&mut self.compress_cap, &mut store.compress_cap);
+        std::mem::swap(&mut self.index_k_cap, &mut store.index_k_cap);
+    }
+}
+
 /// One layer's own decode state: the sliding-window ring (bf16 `[window][head_dim]`, position p at
 /// slot p % window) and, on a ratio-2 kv source, the open pair's fp32 kv/gate rows.
 #[derive(Default)]
@@ -1793,6 +1811,16 @@ impl Ctx {
         for (j, v) in row.iter_mut().enumerate() {
             let k = start + j;
             *v = if k > p { -1 } else { k as i32 };
+        }
+    }
+
+    /// The window selection of one decode token at position `sp > 0` (vendor `get_window_topk_idxs`,
+    /// start_pos > 0): the whole ring, oldest slot first, -1 for slots the ring has not reached.
+    /// Below the window this is another key order than the prefill row of the same position.
+    pub fn window_row_decode(sp: usize, win: usize, row: &mut [i32]) {
+        let oldest = sp % win + 1;
+        for (v, slot) in row.iter_mut().zip((oldest..win).chain(0..oldest)) {
+            *v = if slot > sp { -1 } else { slot as i32 };
         }
     }
 
@@ -2493,11 +2521,7 @@ impl Ctx {
             if sp == 0 {
                 Self::window_row(r0 + i, win, row);
             } else {
-                // decode: the whole ring, oldest slot first, -1 for slots not reached yet
-                let oldest = sp % win + 1;
-                for (v, slot) in row.iter_mut().zip((oldest..win).chain(0..oldest)) {
-                    *v = if slot > sp { -1 } else { slot as i32 };
-                }
+                Self::window_row_decode(sp, win, row);
             }
         }
         let idx = Buf::from_i32(&st, &idx_host)?;
@@ -2996,6 +3020,26 @@ mod tests {
         // 18 octaves of spread cannot be one e4m3 power of two each
         assert!(mint_mxfp4_scales(&[100u8, 118]).is_err());
         assert!(mint_mxfp4_scales(&[0xFF]).is_err());
+    }
+
+    #[test]
+    fn decode_rows_read_the_ring_oldest_slot_first() {
+        // vendor: oldest = start_pos % win + 1; cat(arange(oldest, win), arange(oldest)); -1 where > start_pos
+        let row = |sp: usize| {
+            let mut r = vec![0i32; 8];
+            Ctx::window_row_decode(sp, 8, &mut r);
+            r
+        };
+        // the ring still filling: empty slots first, then positions 0..=sp in order
+        assert_eq!(row(5), vec![-1, -1, 0, 1, 2, 3, 4, 5]);
+        assert_eq!(row(7), vec![0, 1, 2, 3, 4, 5, 6, 7]);
+        // wrapped: slots 3..7 then 0..2 hold positions 3..10, oldest first
+        assert_eq!(row(10), vec![3, 4, 5, 6, 7, 0, 1, 2]);
+        assert_eq!(row(15), vec![0, 1, 2, 3, 4, 5, 6, 7]);
+        // the prefill row of the same position reads the same keys in another order
+        let mut p = vec![0i32; 6];
+        Ctx::window_row(5, 8, &mut p);
+        assert_eq!(p, vec![0, 1, 2, 3, 4, 5]);
     }
 
     #[test]
