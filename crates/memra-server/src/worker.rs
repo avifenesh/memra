@@ -32340,7 +32340,8 @@ impl<'t> SpecBurstEmit<'t> {
         }
     }
 
-    /// The round-cadence flush (`on_commit`): returns the admission-yield continue-verdict.
+    /// The round-cadence flush (`on_commit`): returns the continue-verdict
+    /// ([`spec_round_continues`]).
     fn flush(
         &mut self,
         slice: &[u32],
@@ -32351,13 +32352,13 @@ impl<'t> SpecBurstEmit<'t> {
         tokens_emitted: &mut usize,
     ) -> bool {
         let (tok, flush_tx) = (self.tok, &self.flush_tx);
-        // Continue-verdict polled at EVERY round boundary (even empty/post-EOS flushes).
+        // Admission verdict polled at EVERY round boundary (even empty flushes).
         let keep =
             !self.admit_yield || PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) == 0;
         if self.eos_seen || self.emit_remaining == 0 || slice.is_empty() {
-            // poll-only boundary: post-EOS (tokens never visible; accounting happens
-            // post-burst) / nothing new committed this round.
-            return keep;
+            // Nothing to publish: the public stream already ended (its later tokens are never
+            // visible; accounting happens post-burst) or nothing new committed this round.
+            return spec_round_continues(keep, self.eos_seen, self.emit_remaining);
         }
         if let Some(trace) = ttft {
             trace.mark_prime_end();
@@ -32382,8 +32383,21 @@ impl<'t> SpecBurstEmit<'t> {
         // `tokens_emitted`; advance it at the send so a post-flush OOM never replays.
         *tokens_emitted += emitted.sent;
         self.send_ok = emitted.send_ok;
-        keep
+        spec_round_continues(keep, self.eos_seen, self.emit_remaining)
     }
+}
+
+/// A spec burst's continue-verdict at a round boundary. `false` ends the burst at this round,
+/// exactly as if its burst count had been reached; burst size is content-neutral (spec-levers
+/// battery), so the verdict moves when control returns, never what the tokens say.
+/// - `admit_keep` is false while a request waits for admission (ADMISSION YIELD above).
+/// - The burst also ends at the round where its public stream ends: an EOS or stop id
+///   (`eos_seen`) or a spent request budget. Every later round committed only tokens nobody
+///   sees, and the last burst used to run them out to its full target (up to 32 tokens' worth
+///   of rounds, about a fifth of a 100-token answer's decode on GB10,
+///   research/gb10-decode-20261109).
+fn spec_round_continues(admit_keep: bool, eos_seen: bool, emit_remaining: usize) -> bool {
+    admit_keep && !eos_seen && emit_remaining > 0
 }
 
 /// Everything `step_session`'s spec arm does after the engine burst call: telemetry, the
@@ -38302,6 +38316,55 @@ mod tests {
         assert_eq!(result.sent, burst.len());
         assert_eq!(events.len(), burst.len());
         assert_eq!(remaining, requested_max - burst.len());
+    }
+
+    /// A burst ends at the round its public stream ends: the round that commits EOS (or a stop
+    /// id) answers false, and so does every later flush, so the engine runs no post-EOS rounds.
+    #[test]
+    fn spec_burst_ends_at_the_round_that_commits_eos() {
+        let (eos, stop) = (7u32, 9u32);
+        let mut remaining = 64usize;
+        let (mut decoded, mut cursor, mut eos_seen) = (Vec::new(), 0usize, false);
+        let mut round = |slice: &[u32], remaining: &mut usize, eos_seen: &mut bool| {
+            if !*eos_seen && *remaining > 0 && !slice.is_empty() {
+                emit_spec_token_events(
+                    slice,
+                    remaining,
+                    &mut decoded,
+                    &mut cursor,
+                    &[eos],
+                    &[stop],
+                    eos_seen,
+                    ascii_decode,
+                    |_| true,
+                );
+            }
+            spec_round_continues(true, *eos_seen, *remaining)
+        };
+        assert!(round(&[1, 2, 3], &mut remaining, &mut eos_seen));
+        assert!(
+            !round(&[4, eos, 5], &mut remaining, &mut eos_seen),
+            "the EOS round ends it"
+        );
+        assert!(
+            !round(&[6, 8], &mut remaining, &mut eos_seen),
+            "and no later round restarts it"
+        );
+        let (mut remaining, mut eos_seen) = (64usize, false);
+        assert!(
+            !round(&[4, stop], &mut remaining, &mut eos_seen),
+            "a stop id ends it too"
+        );
+        let (mut remaining, mut eos_seen) = (2usize, false);
+        assert!(
+            !round(&[1, 2, 3], &mut remaining, &mut eos_seen),
+            "so does a spent budget"
+        );
+        assert!(
+            !spec_round_continues(false, false, 5),
+            "the admission yield still ends it"
+        );
+        assert!(spec_round_continues(true, false, 5));
     }
 
     /// memra#659: the open door's budget is its charged output, leaving CTX_SLACK rows past it as
