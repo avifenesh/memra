@@ -107,7 +107,9 @@ For a recurrent (GDN) trunk:
 - The affinity tier takes only such a checkpoint.
 - A retiring session with no on-grid checkpoint is freed, not parked (it could never resume
   exactly, and it would hold its trunk and draft planes). The check runs before the pending flush.
-- Every pool resume starts the request's Philox counters at (0, 0).
+- Every pool resume that primes a suffix starts the request's Philox counters at (0, 0). An
+  empty-suffix continuation keeps the parked counters: it emits the token the parked request drew,
+  and restarting at 0 would reuse that draw's noise inside one response (independent review).
 - `/metrics`: `spec_pool_grid_rewinds`, `spec_pool_grid_declines`, `spec_pool_grid_park_skips`.
 
 Why an on-grid checkpoint is cold state: the engine captures the turn checkpoint at a prime stop.

@@ -2265,8 +2265,8 @@ conversation for no soundness gain (pinned by `seed_alone_does_not_refuse` in me
 `spec_pool_sampler_refusals`, a subset of `spec_pool_misses`; it answers whether real traffic
 changes sampler mid-session. Receipts: darklanes
 `research/spec-cache-20260818/SESSION-RESUME-PREDICATE.md`. Since memra#1093 the Philox stream
-position no longer carries over: every pool resume starts the request's counters at (0, 0), as a
-cold session does (`research/spec-pool-grid-20261109/`).
+position no longer carries over: every pool resume that primes a suffix starts the request's
+counters at (0, 0), as a cold session does (`research/spec-pool-grid-20261109/`).
 
 **Accounting:** every response shape carries OpenAI-schema usage with the worker-truth split —
 `usage.prompt_tokens`, `completion_tokens`, `total_tokens`, and
@@ -3377,7 +3377,9 @@ counters, and a cold session starts at (0, 0). The law, for a recurrent trunk:
   the prompt's own tokens, not the re-tokenized remainder;
 - the affinity tier takes only such a checkpoint;
 - a retiring session with no on-grid checkpoint is freed, not parked;
-- every pool resume starts the request's Philox stream at (0, 0).
+- every pool resume that primes a suffix starts the request's Philox stream at (0, 0); an
+  empty-suffix continuation keeps the parked counters, since it emits the token the parked request
+  drew.
 
 Attention-only trunks resume where they stand, as before. Counters: `spec_pool_grid_rewinds`,
 `spec_pool_grid_declines`, `spec_pool_grid_park_skips`. Measured on the RTX 5090 at the device

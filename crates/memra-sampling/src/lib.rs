@@ -123,11 +123,11 @@ impl SamplerIdentity {
     ///   `SampledGraphKey` already carries `seed`: a seed change drops the parked graph and
     ///   recaptures. (`memra-engine` `spec.rs`; pinned by `seed_alone_still_rekeys_the_draft_graph`
     ///   in that crate's `sampled_graph_key` tests.)
-    /// - The session's persisted Philox counters (`SpecSession::sctr/uctr`) are counter-based:
-    ///   `philox(seed', ctr)` continued from another seed's counter position is an independent
-    ///   stream, not a repeated one. Reproducibility is already scoped per `(seed, session)`
-    ///   rather than per seed (`memra-server` `worker.rs`, the spec-burst sampling note), so a
-    ///   changed seed costs nothing that same-seed resume was not already costing.
+    /// - The session's Philox counters (`SpecSession::sctr/uctr`) are counter-based, and a pool
+    ///   resume that primes restarts them at (0,0) (memra#1093), so the resumed turn draws
+    ///   `philox(seed', ctr)` from 0 exactly as a cold session with that seed does. An
+    ///   empty-suffix continuation keeps the parked counters, so its stream continues rather
+    ///   than repeats.
     ///
     /// Comparing it would refuse essentially ALL sampled traffic: omitting `seed` on a serve
     /// request draws fresh per-request entropy, so every turn of every seed-omitting conversation

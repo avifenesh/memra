@@ -1562,7 +1562,9 @@ pub struct SpecSession {
     /// first, feeds it, and the round loop resumes without any prime. None before the first turn.
     pub next_pred: Option<u32>,
     /// SAMPLED-SPEC stream continuity across bursts: Philox event counters persist here so a
-    /// session's randomness never repeats between generate_spec_session calls. (0,0) at admit.
+    /// session's randomness never repeats between generate_spec_session calls. (0,0) at admit,
+    /// including a pool resume that primes a suffix (the server resets them, memra#1093); an
+    /// empty-suffix continuation keeps the parked counters.
     pub sctr: u32,
     pub uctr: u32,
     /// PERSISTENT DRAFT-GRAPH CONTEXT (2026-08-01, the serve-burst fixed-cost fix): the captured
