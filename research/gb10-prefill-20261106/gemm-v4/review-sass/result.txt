@@ -1,0 +1,24 @@
+nvcc: Build cuda_13.4.r13.4/compiler.38855100_0
+old = mmq_nvfp4_w4a8.cu at 7e0a680c11 (the copy, as reviewed and measured); new = at 9530c975b1 (one template)
+== sm_121a
+SAME ('v3', ('128', '128', '4', '2', '64', '3', '0', '256')) 1120
+SAME ('v3', ('128', '128', '4', '2', '64', '3', '2', '256')) 1776
+SAME ('v3', ('256', '128', '8', '2', '64', '3', '0', '256')) 1152
+SAME ('v3', ('256', '128', '8', '2', '64', '3', '1', '256')) 3088
+SAME ('v3', ('256', '128', '8', '2', '64', '3', '2', '256')) 1800
+functions old 29 new 29 mismatches 0
+== sm_120a
+SAME ('v3', ('128', '128', '4', '2', '64', '3', '0', '256')) 1120
+SAME ('v3', ('128', '128', '4', '2', '64', '3', '2', '256')) 1776
+SAME ('v3', ('256', '128', '8', '2', '64', '3', '0', '256')) 1152
+SAME ('v3', ('256', '128', '8', '2', '64', '3', '1', '256')) 3088
+SAME ('v3', ('256', '128', '8', '2', '64', '3', '2', '256')) 1800
+functions old 29 new 29 mismatches 0
+== encodings and control bits included (addresses stripped; cmp_enc.py)
+sm_121a: functions old 29 new 29, identical with encodings 29
+sm_120a: functions old 29 new 29, identical with encodings 29
+== sha256 of the dumps (they differ in the kernels' mangled names only: the copy's mul_mat_f8f4v3t and the 7-argument template)
+e5441118deb95917ea1a405a56c6d338273c18fc74cb7356ace004987c621663  old-121a.sass
+54d6b667dbbeffe1595aa48f6e22499199db891c9a05dd0ac7c9a0475dc89219  new-121a.sass
+b9c5811ff9ed56e25ba50924fa94b74943725040299fc95467c77fa678361df5  old-120a.sass
+8f2dc4fa072268b0791bd75c37eeaa0686a024e5775a7c9e1cf419ee8869c6de  new-120a.sass
