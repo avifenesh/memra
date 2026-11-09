@@ -136,7 +136,8 @@ resident heads retain the existing graph default. See [the capture receipt](../r
   verify writes the same tokens at any K, while a sampled verify draws its Philox events per
   round, so a sampled resume at the cached-long K left the text its cold twin wrote at the
   cold-long K. A sampled request takes its cold twin's rung whatever it restored
-  (`spec_k_cached_tokens`; `research/spec-k-resume-20261109/`). `MEMRA_SPEC_K` remains the
+  (`spec_k_cached_tokens`; `research/spec-k-resume-20261109/`): on the RTX 5090 such resumes
+  decode about 3% slower at K=3 (59.6 against 61.5 tok/s, n = 24 turns per arm), TTFT unchanged. `MEMRA_SPEC_K` remains the
   operator pin, including `0` for plain. Receipts: `research/specplace-20260808/`,
   `research/kpolicy-20260808/`.
 - **Spec engages on prefix-cache hits** (v0.93.0, lane/spec-on-cache-hit — whole-entry
