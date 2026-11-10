@@ -1249,6 +1249,36 @@ mod fa_split_ladder_tests {
     }
 
     #[test]
+    fn the_rtx5090_laptop_takes_256_keys_past_its_floor() {
+        for (kv, floor) in [(4, 65_536), (3, 65_536), (2, 32_768), (1, 32_768)] {
+            assert_eq!(
+                fa_split_deep_rung(kv, RTX5090_LAPTOP),
+                Some((floor, 256)),
+                "kv {kv}"
+            );
+            for (t_kv, sp) in [
+                (512, 8),
+                (513, 64),
+                (16_384, 64),
+                (16_385, 128),
+                (floor, 128),
+            ] {
+                assert_eq!(
+                    fa_split_ladder(t_kv, kv, RTX5090_LAPTOP),
+                    sp,
+                    "kv {kv} t_kv {t_kv}"
+                );
+            }
+            assert_eq!(
+                fa_split_ladder(floor + 1, kv, RTX5090_LAPTOP),
+                256,
+                "kv {kv}"
+            );
+            assert_eq!(fa_split_ladder(262_144, kv, RTX5090_LAPTOP), 256, "kv {kv}");
+        }
+    }
+
+    #[test]
     fn other_parts_and_wide_kv_keep_todays_ladder() {
         for sm in [GB10, RTX5090_LAPTOP] {
             for (t_kv, sp) in [
@@ -1259,22 +1289,6 @@ mod fa_split_ladder_tests {
                 (262_144, 128),
             ] {
                 assert_eq!(fa_split_ladder(t_kv, 8, sm), sp, "sm {sm} t_kv {t_kv}");
-            }
-        }
-        for kv in [1, 2, 4] {
-            assert_eq!(fa_split_deep_rung(kv, RTX5090_LAPTOP), None);
-            for (t_kv, sp) in [
-                (512, 8),
-                (513, 64),
-                (16_384, 64),
-                (16_385, 128),
-                (262_144, 128),
-            ] {
-                assert_eq!(
-                    fa_split_ladder(t_kv, kv, RTX5090_LAPTOP),
-                    sp,
-                    "kv {kv} t_kv {t_kv}"
-                );
             }
         }
         // The RTX PRO 6000 class: unmeasured at depth, so unchanged, and still the literal
@@ -1837,8 +1851,9 @@ pub(crate) fn rms_block() -> u32 {
 /// rung comments below): on parts with at least 128 SMs, 16 up to t_kv 2048 (`MEMRA_FA_SP_SHORT`
 /// overrides that rung), 64 up to 16384 and 128 beyond; on smaller parts, 8 up to 512 for
 /// n_head_kv <= 4 and 32 up to 8192 otherwise, then 64 up to 16384 and 128 beyond, except that
-/// for n_head_kv <= 4 a part under 64 SMs takes 512 past its deep floor (`fa_split_deep_rung`:
-/// 16384 with 3 or 4 KV heads, 32768 with fewer). The gemma seam
+/// for n_head_kv <= 4 a deep rung takes over past a floor (`fa_split_deep_rung`): under 64 SMs
+/// 512 past 16384 with 3 or 4 KV heads and past 32768 with fewer, from 64 to 127 SMs 256 past
+/// 65536 and 32768. The gemma seam
 /// (the profile's `fa_sp_gemma` with `MEMRA_FA_SP16=1`) takes 16 / 64 / 128 at 8192 / 16384. The split changes
 /// the combine's FP summation order, so every ladder change is a numeric-class change that
 /// kernel-check and run-spec K=1..8 arbitrate. Takes t_kv so eager decode, `_dc` capture and
@@ -1911,13 +1926,18 @@ pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
 /// `research/gb10-split-rung-20261110/`). On a 48-SM part (GB10) a 512-key split is faster than a
 /// 128-key one on every launch from 16k keys with 4 KV heads, and from 32k with 2: below 32k two
 /// KV heads give a 512-key split too few blocks to fill the part, and a single row (plain decode)
-/// is 10 to 18% slower there. Each floor is a power of two, so the verify graph's power-of-two
-/// rung never straddles it. Parts with 64 SMs or more keep today's ladder (the RTX PRO 6000's is
-/// also spelled in `fa_decode_dcw_rows`).
+/// is 10 to 18% slower there. On an 82-SM part (the RTX 5090 Laptop) the gain is smaller and
+/// comes later: a 256-key split is faster on every launch from 64k keys with 4 KV heads (one row
+/// is flat to 13% slower between 16k and 49k on the 16/4 shape) and from 32k with 2, and 512 keys
+/// lose one row by up to 3% at 64k there. Each floor is a power of two, so the verify graph's
+/// power-of-two rung never straddles it. Parts with 128 SMs or more keep today's ladder (the
+/// RTX PRO 6000's is also spelled in `fa_decode_dcw_rows`).
 pub fn fa_split_deep_rung(n_head_kv: usize, sm_count: i32) -> Option<(usize, usize)> {
     match (sm_count, n_head_kv) {
         (..64, 3..=4) => Some((16_384, 512)),
         (..64, ..=2) => Some((32_768, 512)),
+        (64..128, 3..=4) => Some((65_536, 256)),
+        (64..128, ..=2) => Some((32_768, 256)),
         _ => None,
     }
 }
