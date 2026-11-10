@@ -1,0 +1,21 @@
+card 74 C at start
+server sha256 c3d3749be38e50de6b692526dfbf0525cc136ab99c1ae922747ffba30ce9646f
++ env RUST_BACKTRACE=1 MEMRA_DSPARK_VT=ladder dspark-serve-smoke.sh Qwen3.8-27B-NVFP4-Q5K-mtp.gguf q38-dspark-agentic memra-server
+== boot 1: dspark route armed ==
+on-r1: spec rounds=40 drafted=114 accepted=57
+on-r2: spec rounds=51 drafted=130 accepted=46
+on-r3: spec rounds=42 drafted=120 accepted=54
+-- sampled rejection-verify engagement --
+sampled: dspark engaged, 396 chars
+-- concurrent pair (LOW=2 wave admission) --
+-- sampled-first blocks later greedy LOW widening --
+sampled-first tooth: later greedy request stacked into the LOW band
+== boot 1b: LOW=1 negative-control tooth ==
+LOW=1 tooth: low1-c1.json decided after both admits (logged wave=2) -> plain
+LOW=1 tooth: low1-c2.json decided after both admits (logged wave=2) -> plain
+== boot 2: spec off (plain oracle) ==
+== byte identity ==
+r1 IDENTICAL (3accd7199d0f58c1)
+r2 IDENTICAL (f5feea34a51a16da)
+r3 IDENTICAL (0308118696d78674)
+dspark-serve-smoke: ALL GREEN
