@@ -1764,7 +1764,8 @@ reference:
 Prompts: a 1.2k-token and a 34-token one at temperature 1, a 1.2k-token one at temperature 0.7
 with `top_p` 0.95, a 34-token one with a frequency penalty of 0.4, the pair, the conversation.
 Where plain decode samples a penalised request on the host (`MEMRA_SERVE_DEVPENALTY` off: every
-model and card pair except the dense Qwen35 class on the RTX 5090 and RTX PRO 6000 classes)
+model and card pair except the dense Qwen35 class on the RTX 5090 and RTX PRO 6000 classes and
+the dense Qwen35 and Qwen35Moe classes on GB10)
 pass `--penalised host`: plain and speculation then draw that prompt from different random
 streams, so its speculative texts are compared with each other. It is a
 serving gate for a change to the sampled verify, the plain sampler's counters, the boundary

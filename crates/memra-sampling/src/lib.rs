@@ -444,8 +444,9 @@ impl Sampler {
     /// sampler for any penalized config whose (model class, card class) pair is unqualified
     /// and unoverridden (`serve_devpenalty_from`), and a served model whose VENDOR-RECOMMENDED
     /// non-thinking arm carries `presence_penalty` therefore lands every token of every
-    /// request on this function. Qualified pairs (Qwen3.5 on the RTX 5090 card class since
-    /// 2026-09-09) take the device path instead; this remains the host oracle for them.
+    /// request on this function. Qualified pairs (the list is on `serve_devpenalty_from`; the
+    /// first was Qwen3.5 on the RTX 5090 card class, 2026-09-09) take the device path instead;
+    /// this remains the host oracle for them.
     ///
     /// BIT-IDENTICAL BY CONSTRUCTION, and gated as such rather than asserted in prose: the set of
     /// touched entries is identical (`penalty_counts` covers exactly the window, which the
