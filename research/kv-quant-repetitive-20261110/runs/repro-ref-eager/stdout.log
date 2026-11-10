@@ -1,0 +1,19 @@
+argmax-margin-probe: T=2048 window=4 sm_count=48 model=~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
+
+pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree
+2044     248046        1.260871887e-1   279          1.804771423e-1   2.522201538e-1   NO <-- FLIP
+2045     248046        4.767938614e0    248046       4.177013397e0    4.739608765e-1   yes
+2046     248046        8.367450714e0    248046       7.473363876e0    6.826381683e-1   yes
+2047     248046        4.276718140e0    248046       4.226263046e0    3.870277405e-1   yes
+
+margin distribution (decode config, 4 positions): min 0.1805  p10 0.1805  p50 4.2263  p90 7.4734  max 7.4734
+margin distribution (prefill config): min 0.1261  p50 4.7679  max 8.3675
+DECISION POSITION (the gate's): prefill_top1=248046 decode_top1=248046 margin_p=4.2767 margin_d=4.2263 config_delta_at_ids=0.3870
+  -> the decision margin is BELOW 2/4 sampled positions' margins (rank 3 of 4)
+  -> flip is ARITHMETICALLY POSSIBLE iff config_delta > margin: 0.3870 > 4.2263 = false
+agreement across sampled positions: 3/4 (1 flip(s))
+flip@2044: margin 0.1261 vs config spread 0.2522 -> margin-EXPLAINED (near-tie coin)
+flip budget: 1 flip(s) vs budget 1 (calibration row: default (1/12-window))
+VERDICT-INPUT: NEAR-TIE class — every flip sits at a margin the config spread covers, within the model's calibrated budget (documented cross-config drift, not a numeric defect)
+PRIME-GATE: class=MATCH bp_argmax=248046 tw_argmax=248046 tw_margin=4.226263046e0 bp_margin=4.493068695e0 maxdiff=7.043390274e-1

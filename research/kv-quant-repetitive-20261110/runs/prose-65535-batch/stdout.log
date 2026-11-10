@@ -1,0 +1,18 @@
+kvq-rows-probe: T=65535 rows=2048 first=63487 decode=Batch from=Prime sm_count=48 model=~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+prompt ids fnv64=4ae5eb15ede4ac0f
+env: MEMRA_FA_SPLIT=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset> MEMRA_SERVE_B1FAST=<unset>
+phase a (forward trunk T=65535): 88.4 s
+PRIME-LAST: row 65534 of the hidden stack vs the prime's own logits: bit-identical=true differing=0 maxdiff=0e0
+phase b (prime T=65535): 48.1 s
+phase c prefix (Prime, 63487 rows): 46.7 s
+  window row 256/2048: 25.2 s
+  window row 512/2048: 50.3 s
+  window row 768/2048: 75.5 s
+  window row 1024/2048: 100.7 s
+  window row 1280/2048: 125.9 s
+  window row 1536/2048: 151.2 s
+  window row 1792/2048: 176.4 s
+  window row 2048/2048: 201.7 s
+phase c window (2048 rows, served batch B=1): 201.7 s; device-sampled token != host argmax at 0 rows
+rows written: 2048 -> ~/.cache/memra-kvq/runs/prose-65535-batch/rows.jsonl
+total after load: 248.4 s
