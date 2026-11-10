@@ -5465,6 +5465,16 @@ impl HybridModel {
         if self.uses_gemma_program() {
             return self.gemma4_forward(e, tokens, true);
         }
+        let hn = self.forward_last_normed(e, tokens)?;
+        self.forward_last_head(e, &hn, tokens.len())
+    }
+
+    /// `forward_last` up to the lm_head: the trunk over all T and the final norm, `[T, n_embd]`.
+    fn forward_last_normed(
+        &self,
+        e: &Engine,
+        tokens: &[u32],
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let t = tokens.len();
@@ -5597,10 +5607,50 @@ impl HybridModel {
                 ms(4)
             );
         }
-        // norm over all T, then slice the LAST row and run lm_head on that single row.
+        // norm over all T; the caller slices the rows it runs the lm_head on.
         let mut hn = e.uninit(t * n_embd)?;
         e.rms_norm(&x, self.output_norm.float_data(), &mut hn, n_embd, t, eps)?;
-        let last = e.view(&hn, t * n_embd); // [T, n_embd]
+        Ok(hn)
+    }
+
+    /// RESEARCH (memra#1177, branch research/kv-quant-repetitive, not for landing):
+    /// `forward_last`'s own trunk and final norm, returning the normed rows `[first, T)` as one
+    /// device buffer `[T - first, n_embd]`. Running the lm_head on row `T - 1` of it is the
+    /// exact sequence `forward_last` runs; the probe `kvq-rows-probe` reads every row of the
+    /// window from one prefill instead of one prefill per prefix.
+    pub fn forward_normed_rows(
+        &self,
+        e: &Engine,
+        tokens: &[u32],
+        first: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
+        if self.hyper.is_some() || self.uses_gemma_program() {
+            return Err("forward_normed_rows: generic trunk only".into());
+        }
+        let n_embd = self.cfg.n_embd as usize;
+        let t = tokens.len();
+        assert!(first < t, "forward_normed_rows: first row past the prompt");
+        let hn = self.forward_last_normed(e, tokens)?;
+        let mut out = e.uninit((t - first) * n_embd)?;
+        e.copy_view_into(
+            &mut out,
+            0,
+            &e.view(&hn, t * n_embd).slice(first * n_embd..t * n_embd),
+            (t - first) * n_embd,
+        )?;
+        Ok(out)
+    }
+
+    /// `forward_last`'s lm_head on the last row of its normed stack, unchanged.
+    fn forward_last_head(
+        &self,
+        e: &Engine,
+        hn: &CudaSlice<f32>,
+        t: usize,
+    ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let n_embd = self.cfg.n_embd as usize;
+        let last = e.view(hn, t * n_embd); // [T, n_embd]
         let last_row = last.slice((t - 1) * n_embd..t * n_embd); // [1, n_embd]
         let mut hlast = e.uninit(n_embd)?;
         e.copy_view_into(&mut hlast, 0, &last_row, n_embd)?;
