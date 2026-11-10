@@ -1,0 +1,77 @@
+case ref
+     ref    alone  a tokens=240 cached=0 acceptance=None sha=3b83131e04ff2f34
+     ref    alone  b tokens=240 cached=0 acceptance=None sha=bf91fdd2c5217f59
+     ref    alone  f tokens=240 cached=0 acceptance=None sha=e08ef2d1420f873d
+     ref    alone  g tokens=240 cached=0 acceptance=None sha=f194783180bd193b
+     ref    alone  c tokens=240 cached=0 acceptance=None sha=5e7084c91377bfe1
+     ref    alone  d tokens=240 cached=0 acceptance=None sha=985b72ccbc96acf8
+     ref    alone e1 tokens=240 cached=0 acceptance=None sha=a03846296efd70e3
+     ref    alone p1 tokens=48 cached=0 acceptance=None sha=bbe1cc12f58c12c0
+    ref2     cold e2 tokens=202 cached=0 acceptance=None sha=3128ff27b9bee689
+    ref2     cold p2 tokens=240 cached=0 acceptance=None sha=4cbe17831df3e408
+case 1
+       1    alone  a tokens=240 cached=0 acceptance=0.6884057971014492 sha=b094919ecf71f5a2
+       1    alone  b tokens=240 cached=0 acceptance=0.6 sha=209206145597cc21
+       1    alone  f tokens=240 cached=0 acceptance=0.7132352941176471 sha=4a6fdb42356ba8a0
+       1    alone  g tokens=240 cached=0 acceptance=0.5364238410596026 sha=5a5a54cded60a241
+       1     pair  c tokens=240 cached=0 acceptance=0.7313432835820896 sha=7129e69c5d88fbdd
+       1     pair  d tokens=240 cached=0 acceptance=0.7111111111111111 sha=7bab72214cd90277
+       1    turn1 e1 tokens=240 cached=0 acceptance=0.6934306569343066 sha=1ca28b8f00bdc10b
+       1  resumed e2 tokens=168 cached=1248 acceptance=0.5673076923076923 sha=63e947e500755894
+       1     park p1 tokens=48 cached=0 acceptance=0.8076923076923077 sha=94dff47d04debab2
+       1   parked p2 tokens=240 cached=192 acceptance=0.725925925925926 sha=45dcb1d0617f8cde
+case 2
+       2    alone  a tokens=240 cached=0 acceptance=0.5636363636363636 sha=d4aeec016a3e284d
+       2    alone  b tokens=240 cached=0 acceptance=0.49572649572649574 sha=116d56ec2387ccf5
+       2    alone  f tokens=240 cached=0 acceptance=0.5173913043478261 sha=1f66004d7f5cf831
+       2    alone  g tokens=240 cached=0 acceptance=0.428 sha=155277033f91119d
+       2     pair  c tokens=240 cached=0 acceptance=0.5990566037735849 sha=b12e14e4eaea7480
+       2     pair  d tokens=240 cached=0 acceptance=0.55 sha=56e099cef8a2e805
+       2    turn1 e1 tokens=240 cached=0 acceptance=0.5265486725663717 sha=de6ab66e15a8148f
+       2  resumed e2 tokens=188 cached=1248 acceptance=0.4838709677419355 sha=0c3d132c0483fa80
+       2     park p1 tokens=48 cached=0 acceptance=0.5454545454545454 sha=2161108703101146
+       2   parked p2 tokens=240 cached=192 acceptance=0.5642201834862385 sha=4d48db226278a0bb
+case 3
+       3    alone  a tokens=240 cached=0 acceptance=0.41346153846153844 sha=d98dd183b13f6be9
+       3    alone  b tokens=240 cached=0 acceptance=0.3005464480874317 sha=c149bb6ccf0fdd31
+       3    alone  f tokens=240 cached=0 acceptance=0.4478114478114478 sha=890f492129569859
+       3    alone  g tokens=240 cached=0 acceptance=0.35398230088495575 sha=50e6244c081b6e5f
+       3     pair  c tokens=240 cached=0 acceptance=0.41025641025641024 sha=a831c11cf883023d
+       3     pair  d tokens=240 cached=0 acceptance=0.34502923976608185 sha=369d6b0d226415e0
+       3    turn1 e1 tokens=240 cached=0 acceptance=0.4025157232704403 sha=9bdf64b23aeb57bb
+       3  resumed e2 tokens=193 cached=1248 acceptance=0.39080459770114945 sha=0557a29d1f2ae58a
+       3     park p1 tokens=48 cached=0 acceptance=0.5370370370370371 sha=be608eb70865661c
+       3   parked p2 tokens=240 cached=192 acceptance=0.6416666666666667 sha=2216484b91e19abd
+
+receipts: prbase/
+SEEDED INVARIANCE: FAIL (30 of 40 rows)
+  1 alone a: differs from the reference after 14 characters
+  1 alone b: differs from the reference after 10 characters
+  1 alone f: differs from the reference after 4 characters
+  1 alone g: differs from the reference after 52 characters
+  1 pair c: differs from the reference after 25 characters
+  1 pair d: differs from the reference after 28 characters
+  1 turn1 e1: differs from the reference after 26 characters
+  1 resumed e2: differs from the reference after 0 characters
+  1 park p1: differs from the reference after 0 characters
+  1 parked p2: differs from the reference after 0 characters
+  2 alone a: differs from the reference after 13 characters
+  2 alone b: differs from the reference after 10 characters
+  2 alone f: differs from the reference after 4 characters
+  2 alone g: differs from the reference after 41 characters
+  2 pair c: differs from the reference after 25 characters
+  2 pair d: differs from the reference after 27 characters
+  2 turn1 e1: differs from the reference after 4 characters
+  2 resumed e2: differs from the reference after 0 characters
+  2 park p1: differs from the reference after 0 characters
+  2 parked p2: differs from the reference after 0 characters
+  3 alone a: differs from the reference after 13 characters
+  3 alone b: differs from the reference after 10 characters
+  3 alone f: differs from the reference after 4 characters
+  3 alone g: differs from the reference after 41 characters
+  3 pair c: differs from the reference after 34 characters
+  3 pair d: differs from the reference after 27 characters
+  3 turn1 e1: differs from the reference after 25 characters
+  3 resumed e2: differs from the reference after 0 characters
+  3 park p1: differs from the reference after 0 characters
+  3 parked p2: differs from the reference after 0 characters

@@ -1,0 +1,85 @@
+waitfor: MET after 0m00s
+seeded-invariance gate, main (expected to fail; 6 short boots) start 2026-11-10T04:26:58+02:00
+case ref
+     ref    alone  a tokens=240 cached=0 acceptance=None sha=381727999c7538e5
+     ref    alone  b tokens=240 cached=0 acceptance=None sha=2830bf68b8dfe843
+     ref    alone  f tokens=240 cached=0 acceptance=None sha=ed3e17bd47d7718e
+     ref    alone  g tokens=240 cached=0 acceptance=None sha=724217ed0c3ed37a
+     ref    alone  c tokens=240 cached=0 acceptance=None sha=f274f56e4d68f827
+     ref    alone  d tokens=240 cached=0 acceptance=None sha=d1e503eb71b926e0
+     ref    alone e1 tokens=240 cached=0 acceptance=None sha=7ebbccf5a88c1865
+    ref2     cold e2 tokens=237 cached=0 acceptance=None sha=53b7461a086fed75
+case 0
+       0    alone  a tokens=240 cached=0 acceptance=None sha=381727999c7538e5
+       0    alone  b tokens=240 cached=0 acceptance=None sha=2830bf68b8dfe843
+       0    alone  f tokens=240 cached=0 acceptance=None sha=ed3e17bd47d7718e
+       0    alone  g tokens=240 cached=0 acceptance=None sha=724217ed0c3ed37a
+       0     pair  c tokens=240 cached=0 acceptance=None sha=f274f56e4d68f827
+       0     pair  d tokens=240 cached=0 acceptance=None sha=d1e503eb71b926e0
+       0    turn1 e1 tokens=240 cached=0 acceptance=None sha=7ebbccf5a88c1865
+       0  resumed e2 tokens=237 cached=1248 acceptance=None sha=53b7461a086fed75
+case 1
+       1    alone  a tokens=240 cached=0 acceptance=0.8062015503875969 sha=3e5341669cd8dfff
+       1    alone  b tokens=240 cached=0 acceptance=0.6453900709219859 sha=36e009feb045a3ea
+       1    alone  f tokens=240 cached=0 acceptance=0.7984496124031008 sha=f67578c9ffaeb992
+       1    alone  g tokens=240 cached=0 acceptance=0.6762589928057554 sha=1810750419861057
+       1     pair  c tokens=240 cached=0 acceptance=0.7846153846153846 sha=9ad2bdcaaa2facd6
+       1     pair  d tokens=240 cached=0 acceptance=0.7443609022556391 sha=7e1a0a87b45410af
+       1    turn1 e1 tokens=240 cached=0 acceptance=0.7058823529411765 sha=f2fed1f471550cab
+       1  resumed e2 tokens=207 cached=1248 acceptance=0.7241379310344828 sha=70a9d3f0d457b431
+case 2
+       2    alone  a tokens=240 cached=0 acceptance=0.5642201834862385 sha=ecf5a135a539e12d
+       2    alone  b tokens=240 cached=0 acceptance=0.5688073394495413 sha=29fd36429652cf93
+       2    alone  f tokens=240 cached=0 acceptance=0.6142857142857143 sha=83827e67b3d5713f
+       2    alone  g tokens=240 cached=0 acceptance=0.5688073394495413 sha=16a7ab9d0dc1e471
+       2     pair  c tokens=240 cached=0 acceptance=0.6153846153846154 sha=b79f973688475dd5
+       2     pair  d tokens=240 cached=0 acceptance=0.6047619047619047 sha=5b352848f37336ca
+       2    turn1 e1 tokens=240 cached=0 acceptance=0.6534653465346535 sha=13599ce3ae2ae12f
+       2  resumed e2 tokens=240 cached=1248 acceptance=0.5990566037735849 sha=374ecc2ea884621d
+case 3
+       3    alone  a tokens=240 cached=0 acceptance=0.5201465201465202 sha=db760c0169a70750
+       3    alone  b tokens=240 cached=0 acceptance=0.41025641025641024 sha=c36001616d32ced6
+       3    alone  f tokens=240 cached=0 acceptance=0.42483660130718953 sha=609f4f5669183fad
+       3    alone  g tokens=240 cached=0 acceptance=0.40634920634920635 sha=80b2c7e26d7ff593
+       3     pair  c tokens=240 cached=0 acceptance=0.5259259259259259 sha=c0ccc3ae86fdc2b9
+       3     pair  d tokens=240 cached=0 acceptance=0.47719298245614034 sha=ba536ef6619f90c0
+       3    turn1 e1 tokens=240 cached=0 acceptance=0.5144927536231884 sha=e9736d357c0f4b43
+       3  resumed e2 tokens=240 cached=1248 acceptance=0.47079037800687284 sha=224261040e9466a2
+case demote
+  demote    alone  a tokens=240 cached=0 acceptance=0.6923076923076923 sha=6ae6f60d158b3e69
+  demote    alone  b tokens=240 cached=0 acceptance=0.4567901234567901 sha=385c6fd93115f547
+  demote    alone  f tokens=240 cached=0 acceptance=0.76 sha=8d2e3634d5a11769
+  demote    alone  g tokens=240 cached=0 acceptance=0.4444444444444444 sha=dc6267ff1441dfe4
+  demote: 4 sampled handoffs in the server log for 4 requests
+
+receipts: gate-main/
+SEEDED INVARIANCE: FAIL (28 of 44 rows)
+  1 alone a: differs from the reference after 31 characters
+  1 alone b: differs from the reference after 0 characters
+  1 alone f: differs from the reference after 113 characters
+  1 alone g: differs from the reference after 0 characters
+  1 pair c: differs from the reference after 13 characters
+  1 pair d: differs from the reference after 0 characters
+  1 turn1 e1: differs from the reference after 40 characters
+  1 resumed e2: differs from the reference after 0 characters
+  2 alone a: differs from the reference after 32 characters
+  2 alone b: differs from the reference after 0 characters
+  2 alone f: differs from the reference after 25 characters
+  2 alone g: differs from the reference after 0 characters
+  2 pair c: differs from the reference after 13 characters
+  2 pair d: differs from the reference after 0 characters
+  2 turn1 e1: differs from the reference after 33 characters
+  2 resumed e2: differs from the reference after 0 characters
+  3 alone a: differs from the reference after 27 characters
+  3 alone b: differs from the reference after 0 characters
+  3 alone f: differs from the reference after 33 characters
+  3 alone g: differs from the reference after 0 characters
+  3 pair c: differs from the reference after 13 characters
+  3 pair d: differs from the reference after 0 characters
+  3 turn1 e1: differs from the reference after 25 characters
+  3 resumed e2: differs from the reference after 0 characters
+  demote alone a: differs from the reference after 32 characters
+  demote alone b: differs from the reference after 0 characters
+  demote alone f: differs from the reference after 25 characters
+  demote alone g: differs from the reference after 0 characters
+seeded-invariance gate, main (expected to fail; 6 short boots) exit 1 2026-11-10T04:38:25+02:00

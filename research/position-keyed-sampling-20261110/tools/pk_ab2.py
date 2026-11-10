@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+"""Position-keyed sampled verify against today's rejection walk (memra#1154 prototype).
+
+One boot per call. Arms are two binaries (the driver passes each its own): `base`, main, and
+`cand`, main plus the coupled verify on the MTP route.
+
+MODE perf: nine cold prompts, one at a time, three per sampler (short 34 tokens, 1.2k, 3.6k):
+  t1     temperature 1, fixed seed
+  chat   temperature 0.7, top_p 0.95, fixed seed
+  greedy temperature 0 (the control: its text and rate must not move between the arms)
+Per request: the [spec-k] line, TTFT, decode rate after the first chunk, acceptance, text sha.
+
+MODE inv (SPEC_K=0..3 pins the draft length for the boot; 0 is plain decode): the invariance
+cell. One seeded T=1 request must write one text whatever K is, alone or beside another request,
+cold or resumed:
+  alone     prompts a and b, one at a time
+  pair      prompts c and d sent at once                     (PART=x)
+  resumed   conversation e: turn 1, then turn 2 on top of it  (PART=x)
+  solo      prompts c and d one at a time                     (PART=y)
+  cold      conversation e's turn 2 sent cold, with turn 1's answer taken from E1_FILE (PART=y)
+Texts are saved under OUT/texts so another boot can read turn 1's answer.
+
+usage: pk_ab.py OUT BINARY ARM   (env: MODE, BOOT_START, SPEC_K, PART, E1_FILE, CELL_MODEL,
+CELL_PORT, TELEMETRY_GPU)
+"""
+import hashlib
+import json
+import os
+import pathlib
+import re
+import socket
+import subprocess
+import sys
+import threading
+import time
+import urllib.request
+
+OUT = pathlib.Path(sys.argv[1])
+OUT.mkdir(parents=True, exist_ok=True)
+(OUT / "texts").mkdir(exist_ok=True)
+BIN, ARM = sys.argv[2], sys.argv[3]
+MODE = os.environ.get("MODE", "perf")
+PORT = int(os.environ.get("CELL_PORT", "18193"))
+URL = f"http://127.0.0.1:{PORT}"
+MODEL = os.environ.get("CELL_MODEL", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf")
+ENV = {"MEMRA_COMPAT": "openai", "MEMRA_MODELS": f"q={MODEL}", "MEMRA_ADDR": f"127.0.0.1:{PORT}",
+       "MEMRA_CTX": "8192", "MEMRA_MAX_SESSIONS": "2"}
+SPEC_K = os.environ.get("SPEC_K")
+if SPEC_K is not None:
+    ENV["MEMRA_SPEC_K"] = SPEC_K
+KLINE = r"\[spec-k\] model=\"q\" tenant=\"[^\"]*\" K=(\d+) source=(\S+) prompt=(\d+) cached=(\d+)"
+
+
+def notes(topic, n):
+    return " ".join(f"Note {i}: the {topic} survey records one measurement per site, and a later visit "
+                    f"extends the same record with a new reading." for i in range(1, n + 1))
+
+
+def long_prompt(topic, n):
+    return f"{topic.capitalize()} field notes. {notes(topic, n)}\n\nWrite about 300 words on what these notes say about {topic}."
+
+
+def short_prompt(topic):
+    return f"{topic.capitalize()} in brief: write about 300 words on how a {topic} survey is planned and run."
+
+
+SAMPLERS = {"t1": lambda seed: {"temperature": 1.0, "seed": seed},
+            "chat": lambda seed: {"temperature": 0.7, "top_p": 0.95, "seed": seed},
+            "greedy": lambda seed: {"temperature": 0}}
+PERF = []
+for si, (sname, topics) in enumerate((("t1", ("comet", "rivers", "bridges")), ("chat", ("tide", "glaciers", "harbors")),
+                                      ("greedy", ("dune", "islands", "deserts")))):
+    for ti, (size, topic) in enumerate(zip(("short", "1k", "4k"), topics)):
+        content = short_prompt(topic) if size == "short" else long_prompt(topic, 45 if size == "1k" else 130)
+        PERF.append((f"{sname}-{size}", f"{topic}-{size}", content, SAMPLERS[sname](501 + 10 * si + ti)))
+
+
+def boot(log):
+    with socket.socket() as s:
+        if s.connect_ex(("127.0.0.1", PORT)) == 0:
+            raise SystemExit(f"port {PORT} busy")
+    e = {k: v for k, v in os.environ.items() if not k.startswith("MEMRA_")}
+    e.update(ENV)
+    p = subprocess.Popen([BIN], env=e, stdout=open(log, "w"), stderr=subprocess.STDOUT)
+    t0 = time.time()
+    while time.time() - t0 < 900:
+        if p.poll() is not None:
+            raise SystemExit(f"server exited {p.returncode}; see {log}")
+        try:
+            urllib.request.urlopen(URL + "/v1/models", timeout=3).read()
+            return p
+        except Exception:
+            time.sleep(1)
+    p.kill()
+    raise SystemExit("server not ready in 900 s")
+
+
+def stop(p):
+    if p.poll() is None:
+        p.terminate()
+        try:
+            p.wait(60)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+
+
+def stream(messages, samp, out, max_tokens=400):
+    body = {"model": "q", "messages": messages, "max_tokens": max_tokens, "stream": True,
+            "chat_template_kwargs": {"enable_thinking": False}, **samp}
+    req = urllib.request.Request(URL + "/v1/chat/completions", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    t0 = time.perf_counter()
+    times, text, usage = [], [], None
+    try:
+        with urllib.request.urlopen(req, timeout=900) as r:
+            for raw in r:
+                line = raw.decode(errors="replace").strip()
+                if not line.startswith("data:") or line == "data: [DONE]":
+                    continue
+                obj = json.loads(line[5:])
+                usage = obj.get("usage") or usage
+                for ch in obj.get("choices") or []:
+                    piece = (ch.get("delta") or {}).get("content")
+                    if piece:
+                        times.append(time.perf_counter() - t0)
+                        text.append(piece)
+        out.update(times=times, total=time.perf_counter() - t0, text="".join(text), usage=usage, error=None)
+    except Exception as exc:  # recorded, never swallowed
+        out.update(times=times, total=time.perf_counter() - t0, text="".join(text), usage=usage, error=repr(exc))
+
+
+def record(n, cls, pid, o, klines, extra=None):
+    usage = o.get("usage") or {}
+    toks = usage.get("completion_tokens") or 0
+    times = o.get("times") or []
+    ttft = times[0] if times else None
+    ptoks = usage.get("prompt_tokens")
+    k = next((kl for kl in klines if ptoks and abs(int(kl[2]) - ptoks) <= 1), None)
+    spec = usage.get("spec") or {}
+    text = o.get("text") or ""
+    sha = hashlib.sha256(text.encode()).hexdigest()[:16]
+    r = {"boot": n, "arm": ARM, "mode": MODE, "spec_k_pin": SPEC_K, "class": cls, "prompt": pid, "k": k,
+         "prompt_tokens": ptoks, "cached": (usage.get("prompt_tokens_details") or {}).get("cached_tokens"),
+         "completion_tokens": toks, "ttft_s": round(ttft, 4) if ttft else None,
+         "total_s": round(o.get("total", 0), 4),
+         "decode_tok_s": round(toks / (o["total"] - ttft), 2) if ttft and o["total"] > ttft and toks else None,
+         "acceptance": spec.get("acceptance_rate"), "drafted": spec.get("drafted_tokens"),
+         "accepted": spec.get("accepted_tokens"), "sha": sha, "error": o.get("error")}
+    if extra:
+        r.update(extra)
+    with open(OUT / "runs.jsonl", "a") as f:
+        f.write(json.dumps(r) + "\n")
+    (OUT / "texts" / f"{ARM}-k{SPEC_K}-b{n}-{cls}-{pid}.txt").write_text(text)
+    print(ARM, n, cls, pid, r["k"], r["ttft_s"], r["decode_tok_s"], r["acceptance"], toks, sha, r["error"], flush=True)
+    return text
+
+
+def serve(n, log, group):
+    """One request, or several at once: group = [(cls, pid, messages, samp), ...]."""
+    outs = [{} for _ in group]
+    before = log.stat().st_size
+    threads = [threading.Thread(target=stream, args=(m, s, o)) for (_, _, m, s), o in zip(group, outs)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    time.sleep(0.3)
+    with open(log, errors="replace") as f:
+        f.seek(before)
+        klines = re.findall(KLINE, f.read())
+    return [record(n, cls, pid, o, klines) for (cls, pid, _, _), o in zip(group, outs)]
+
+
+def user(content):
+    return [{"role": "user", "content": content}]
+
+
+def t1(seed):
+    return {"temperature": 1.0, "seed": seed}
+
+
+def main():
+    n = int(os.environ.get("BOOT_START", "1"))
+    log = OUT / f"server-{n}-{ARM}.log"
+    sel = ["-i", os.environ["TELEMETRY_GPU"]] if os.environ.get("TELEMETRY_GPU") else []
+    tel = subprocess.Popen(["nvidia-smi", *sel, "--query-gpu=timestamp,temperature.gpu,clocks.sm,clocks.mem,power.draw,utilization.gpu,clocks_throttle_reasons.active",
+                            "--format=csv", "-lms", "250"], stdout=open(OUT / f"telemetry-{n}-{ARM}.csv", "w"),
+                           stderr=subprocess.DEVNULL)
+    p = boot(log)
+    try:
+        if MODE == "perf":
+            for cls, pid, content, samp in PERF:
+                serve(n, log, [(cls, pid, user(content), samp)])
+            return
+        if MODE == "acc":
+            # Acceptance over many texts: 16 prompts (short and 1.2k alternating), each at T=1 and
+            # at the chat setting, 200-token answers, one at a time.
+            topics = ("delta", "estuary", "tundra", "reef", "steppe", "marsh", "fjord", "atoll", "mesa", "bog",
+                      "plateau", "oasis", "savanna", "karst", "moraine", "lagoon")
+            for i, topic in enumerate(topics):
+                content = short_prompt(topic) if i % 2 == 0 else long_prompt(topic, 45)
+                for sname in ("t1", "chat"):
+                    outs = [{}]
+                    before = log.stat().st_size
+                    stream(user(content), SAMPLERS[sname](900 + i), outs[0], max_tokens=200)
+                    time.sleep(0.2)
+                    with open(log, errors="replace") as f:
+                        f.seek(before)
+                        klines = re.findall(KLINE, f.read())
+                    record(n, f"{sname}-acc", f"{topic}", outs[0], klines)
+            return
+        part = os.environ.get("PART", "x")
+        a, b = long_prompt("volcanoes", 45), short_prompt("meadow")
+        c, d = long_prompt("canyons", 45), long_prompt("forests", 45)
+        e1 = long_prompt("lagoons", 45)
+        e2 = "Now give three concrete next steps for the same survey, in about 150 words."
+        if part == "z":
+            # The same request twice in one boot: the second finds its whole prompt cached.
+            serve(n, log, [("first", "a", user(a), t1(701))])
+            serve(n, log, [("repeat", "a", user(a), t1(701))])
+            serve(n, log, [("first", "b", user(b), t1(702))])
+            serve(n, log, [("repeat", "b", user(b), t1(702))])
+            return
+        if part == "x":
+            serve(n, log, [("alone", "a", user(a), t1(701))])
+            serve(n, log, [("alone", "b", user(b), t1(702))])
+            serve(n, log, [("pair", "c", user(c), t1(703)), ("pair", "d", user(d), t1(704))])
+            answer = serve(n, log, [("turn1", "e1", user(e1), t1(705))])[0]
+            (OUT / "texts" / f"E1-{ARM}-k{SPEC_K}.txt").write_text(answer)
+            conv = user(e1) + [{"role": "assistant", "content": answer}, {"role": "user", "content": e2}]
+            serve(n, log, [("resumed", "e2", conv, t1(706))])
+        else:
+            serve(n, log, [("solo", "c", user(c), t1(703))])
+            serve(n, log, [("solo", "d", user(d), t1(704))])
+            answer = pathlib.Path(os.environ["E1_FILE"]).read_text()
+            conv = user(e1) + [{"role": "assistant", "content": answer}, {"role": "user", "content": e2}]
+            serve(n, log, [("cold", "e2", conv, t1(706))])
+    finally:
+        stop(p)
+        tel.terminate()
+        try:
+            tel.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            tel.kill()
+            tel.wait()
+
+
+main()
