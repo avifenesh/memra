@@ -593,10 +593,14 @@ impl<'a> Runner<'a> {
                 let cx = &mut self.grp.cx[0];
                 let st = cx.ops.st.clone();
                 let w = &dw.m_head[0];
-                let mut seed = vec![0i32; b + 1];
-                seed[0] = tok as i32;
-                let ids = Buf::from_i32(&st, &seed)?;
-                let vals = cx.ops.tmp(b * 4)?;
+                // one 64-bit key a pick (`memra_v41_add_argmax_key`): its low word is the token,
+                // read by the next pick's gather; the first key's low word is `tok`
+                let mut seed = Vec::with_capacity((b + 1) * 8);
+                seed.extend_from_slice(&(tok as u64).to_le_bytes());
+                for _ in 0..b {
+                    seed.extend_from_slice(&0xffff_ffff_0000_0000u64.to_le_bytes());
+                }
+                let keys = Buf::from_bytes(&st, &seed)?;
                 let e = cx.ops.tmp(mr * 2)?;
                 let bias = cx.ops.tmp(w.n * 4)?;
                 for i in 0..b {
@@ -604,7 +608,7 @@ impl<'a> Runner<'a> {
                         ffi::memra_v41_gather_rows(
                             tab.w.p(&st).c(),
                             mr as i64,
-                            ids.at(&st, i * 4).i(),
+                            keys.at(&st, i * 8).i(),
                             e.p(&st).m(),
                             mr as i64,
                             1,
@@ -614,21 +618,38 @@ impl<'a> Runner<'a> {
                     })?;
                     cx.ops
                         .linear_bf16(e.p(&st), mr, 1, w, bias.p(&st), w.n, true)?;
-                    ck("add_argmax", unsafe {
-                        ffi::memra_v41_add_argmax(
+                    ck("add_argmax_key", unsafe {
+                        ffi::memra_v41_add_argmax_key(
                             lgs[0].at(&st, i * w.n * 4).fm(),
                             bias.p(&st).f(),
                             w.n as i32,
-                            vals.at(&st, i * 4).fm(),
-                            ids.at(&st, (i + 1) * 4).im(),
+                            0,
+                            keys.at(&st, (i + 1) * 8).m(),
                             cx.ops.sv(),
                         )
                     })?;
                 }
-                let got = bytes_i32(&ids.host(&st)?);
-                if bytes_f32(&vals.host(&st)?).iter().any(|x| !x.is_finite()) {
+                let kb = keys.host(&st)?;
+                let mut got = Vec::with_capacity(b + 1);
+                for k in kb.chunks_exact(8) {
+                    let k = u64::from_le_bytes(k.try_into().unwrap());
+                    got.push(k as u32 as i32);
+                    got.push((k >> 32) as u32 as i32);
+                }
+                // the high word back to the value: a key no slice wrote decodes to NaN
+                let nonfinite = got.chunks_exact(2).skip(1).any(|p| {
+                    let asc = !(p[1] as u32);
+                    let u = if asc & 0x8000_0000 != 0 {
+                        asc ^ 0x8000_0000
+                    } else {
+                        !asc
+                    };
+                    !f32::from_bits(u).is_finite()
+                });
+                if nonfinite {
                     return Err("draft: non-finite logits".into());
                 }
+                let got: Vec<i32> = got.chunks_exact(2).map(|p| p[0]).collect();
                 Some(got)
             }
             _ => None,

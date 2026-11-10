@@ -487,6 +487,16 @@ pub mod ffi {
             out_idx: *mut i32,
             stream: *mut c_void,
         ) -> i32;
+        /// `row + bias` in fp32, its maximum and lowest index as one 64-bit key (low word the
+        /// index), reduced over several blocks; `key` holds `0xffffffff00000000` before.
+        pub fn memra_v41_add_argmax_key(
+            row: *mut f32,
+            bias: *const f32,
+            n: i32,
+            store: i32,
+            key: *mut c_void,
+            stream: *mut c_void,
+        ) -> i32;
         /// Each fp32 row's maximum and its lowest index (NaN for a row with a non-finite value).
         pub fn memra_v41_argmax_rows(
             x: *const f32,

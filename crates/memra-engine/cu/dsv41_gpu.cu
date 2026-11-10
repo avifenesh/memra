@@ -2238,6 +2238,52 @@ extern "C" int memra_v41_add_argmax(float* row, const float* bias, int n, float*
     V41_ERR();
 }
 
+// The same pick for a chain of picks on the device, over several blocks: each block reduces its
+// slice of the row to the largest value and the lowest index holding it, and the blocks meet in
+// one 64-bit key through atomicMin. The key's high word falls as the value rises (the float's
+// bits mapped to an unsigned order and inverted, -0 read as +0), its low word is the index, so
+// the smallest key is the largest value at its lowest index and the low word alone is the
+// token: the next pick's gather reads it as an int. `key` must hold 0xffffffff00000000 before
+// the launch (no value, token 0); a row of NaNs leaves it so, and the high word decodes to NaN.
+// `store` writes row + bias back (a caller that keeps the logits).
+__global__ void __launch_bounds__(256) v41_add_argmax_key_kernel(float* __restrict__ row,
+                                                                 const float* __restrict__ bias, int n, int per,
+                                                                 int store, unsigned long long* __restrict__ key) {
+    __shared__ unsigned long long sk[8];
+    int lo = blockIdx.x * per;
+    int hi = min(n, lo + per);
+    unsigned long long best = ~0ull;
+    for (int i = lo + threadIdx.x; i < hi; i += blockDim.x) {
+        float v = bias ? __fadd_rn(row[i], bias[i]) : row[i];
+        if (bias && store) row[i] = v;
+        if (v != v) continue;
+        unsigned u = v == 0.0f ? 0u : __float_as_uint(v);
+        unsigned asc = (u & 0x80000000u) ? ~u : (u | 0x80000000u);
+        unsigned long long k = ((unsigned long long)(~asc) << 32) | (unsigned)i;
+        best = k < best ? k : best;
+    }
+#pragma unroll
+    for (int o = 16; o > 0; o >>= 1) {
+        unsigned long long ok = __shfl_xor_sync(0xffffffffu, best, o);
+        best = ok < best ? ok : best;
+    }
+    if ((threadIdx.x & 31) == 0) sk[threadIdx.x >> 5] = best;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        for (int w = 1; w < (int)(blockDim.x >> 5); ++w) best = sk[w] < best ? sk[w] : best;
+        // a slice of NaNs holds no key: the row's key keeps what the other slices (or the caller) wrote
+        if (best != ~0ull) atomicMin(key, best);
+    }
+}
+
+extern "C" int memra_v41_add_argmax_key(float* row, const float* bias, int n, int store, void* key, void* stream) {
+    if (n <= 0 || !row || !key) return 41033;
+    const int per = 4096;
+    v41_add_argmax_key_kernel<<<(n + per - 1) / per, 256, 0, (cudaStream_t)stream>>>(
+        row, bias, n, per, store, (unsigned long long*)key);
+    V41_ERR();
+}
+
 // The greedy token of each fp32 logits row of `x` ([rows][n], pitch ld): the largest value and
 // the lowest index holding it, one block per row. A row holding a non-finite value reports NaN, so
 // the caller refuses it as it refuses such a row of downloaded logits.
