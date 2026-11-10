@@ -62,7 +62,7 @@
 //! env: engine knobs (MEMRA_FA_SPLIT, MEMRA_Q80_G2, MEMRA_FAST, ...) steer the arm under test.
 
 use memra_engine::Engine;
-use memra_engine::argmax_margin::{self, FloorKey, Row};
+use memra_engine::argmax_margin::{self, FloorKey, Row, StoredKey, StoredTable};
 use memra_engine::decode_batch::DevSamp;
 use memra_engine::forward::argmax;
 use memra_engine::hybrid::HybridModel;
@@ -71,7 +71,7 @@ use memra_gguf::GgufFile;
 use memra_tokenizer::Tokenizer;
 
 const USAGE: &str = "usage: argmax-margin-probe <model.gguf|hf_dir> <prompt-file> [window=24|all] [--decode eager|batch]";
-const JUDGE_USAGE: &str = "usage: argmax-margin-probe --judge <log> --max-flips N [--floors <tsv> --model M --prompt P --prompt-sha256 S --decode eager|batch --device D] [--calibrate --receipt PATH]";
+const JUDGE_USAGE: &str = "usage: argmax-margin-probe --judge <log> --max-flips N [--floors <tsv> --model M --prompt P --prompt-sha256 S --decode eager|batch --device D] [--stored-rows DIR --model-sha256 S --window N] [--calibrate --receipt PATH [--rows-out FILE --commit C]]";
 
 /// The program on the decode side of the table (see the module doc).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -325,6 +325,16 @@ struct JudgeArgs {
     device: String,
     calibrate: bool,
     receipt: String,
+    /// The directory of stored tables (memra#1204): compare the log's table with main's.
+    stored_rows: Option<String>,
+    /// sha256 of the model artifact: part of a stored table's key.
+    model_sha256: String,
+    /// Rows in the gate's window: part of a stored table's key.
+    window: usize,
+    /// `--calibrate`: write the stored table of the log's last `window` rows to this file.
+    rows_out: Option<String>,
+    /// `--calibrate --rows-out`: the commit of the binary that measured the log.
+    commit: String,
 }
 
 fn parse_judge_args(args: &[String]) -> Result<JudgeArgs, String> {
@@ -360,6 +370,17 @@ fn parse_judge_args(args: &[String]) -> Result<JudgeArgs, String> {
             "--decode" => out.decode = value,
             "--device" => out.device = value,
             "--receipt" => out.receipt = value,
+            "--stored-rows" => out.stored_rows = Some(value),
+            "--model-sha256" => out.model_sha256 = value,
+            "--window" => {
+                out.window = value
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|w| *w > 0)
+                    .ok_or_else(|| format!("--window {value:?} is not a positive integer"))?
+            }
+            "--rows-out" => out.rows_out = Some(value),
+            "--commit" => out.commit = value,
             other => return Err(format!("unknown option {other}; {JUDGE_USAGE}")),
         }
     }
@@ -375,6 +396,18 @@ fn parse_judge_args(args: &[String]) -> Result<JudgeArgs, String> {
             "--floors and --calibrate need --model, --prompt, --prompt-sha256, --decode and --device; {JUDGE_USAGE}"
         ));
     }
+    if (out.stored_rows.is_some() || out.rows_out.is_some())
+        && (keyed.iter().any(|v| v.is_empty()) || out.model_sha256.is_empty() || out.window == 0)
+    {
+        return Err(format!(
+            "--stored-rows and --rows-out need the floor key, --model-sha256 and --window; {JUDGE_USAGE}"
+        ));
+    }
+    if out.rows_out.is_some() && (!out.calibrate || out.commit.is_empty()) {
+        return Err(format!(
+            "--rows-out goes with --calibrate and --commit; {JUDGE_USAGE}"
+        ));
+    }
     if out.calibrate {
         if out.receipt.is_empty() {
             return Err(format!("--calibrate needs --receipt; {JUDGE_USAGE}"));
@@ -386,10 +419,96 @@ fn parse_judge_args(args: &[String]) -> Result<JudgeArgs, String> {
     Ok(out)
 }
 
+/// The stored-table key of a judge call.
+fn stored_key(args: &JudgeArgs) -> StoredKey {
+    StoredKey {
+        model: args.model.clone(),
+        model_sha256: args.model_sha256.clone(),
+        prompt: args.prompt.clone(),
+        prompt_sha256: args.prompt_sha256.clone(),
+        decode: args.decode.clone(),
+        device: args.device.clone(),
+        window: args.window,
+    }
+}
+
+/// `--calibrate --rows-out`: the stored table of a log's gate window, its last `window` rows.
+fn stored_table_of(args: &JudgeArgs, log: &str) -> Result<StoredTable, String> {
+    let lines = argmax_margin::table_lines(log)?;
+    if lines.len() < args.window {
+        return Err(format!(
+            "the table has {} rows, fewer than the window of {}",
+            lines.len(),
+            args.window
+        ));
+    }
+    Ok(StoredTable {
+        key: stored_key(args),
+        commit: args.commit.clone(),
+        receipt: args.receipt.clone(),
+        rows: lines[lines.len() - args.window..].to_vec(),
+    })
+}
+
+/// The stored-rows guard (memra#1204): the log's table against main's stored table for the
+/// same cell and window. Text and whether it fails. No stored table is reported, not failed:
+/// the gate script decides what a missing table means for the cell.
+fn stored_rows_verdict(
+    args: &JudgeArgs,
+    log: &str,
+    tables: &[StoredTable],
+    detail: &dyn Fn(usize) -> Option<String>,
+) -> Result<(String, bool), String> {
+    let key = stored_key(args);
+    let Some(table) = argmax_margin::find_stored(tables, &key)? else {
+        return Ok((
+            format!(
+                "STORED-ROWS: none (no stored table for model={} model_sha256={} prompt={} \
+                 sha256={} decode={} device={:?} window={}; the table is not compared with main's)\n",
+                key.model,
+                key.model_sha256,
+                key.prompt,
+                key.prompt_sha256,
+                key.decode,
+                key.device,
+                key.window
+            ),
+            false,
+        ));
+    };
+    let diffs = argmax_margin::compare_rows(&table.rows, &argmax_margin::table_lines(log)?);
+    if diffs.is_empty() {
+        return Ok((
+            format!(
+                "STORED-ROWS: identical ({} rows equal main's, measured at {}; {})\n",
+                table.rows.len(),
+                table.commit,
+                table.receipt
+            ),
+            false,
+        ));
+    }
+    let mut out = argmax_margin::rows_report(&diffs, detail);
+    out.push_str(&format!(
+        "STORED-ROWS: DIFFERENT ({} of {} positions differ from main's rows, measured at {}; {})\n",
+        diffs.len(),
+        table.rows.len(),
+        table.commit,
+        table.receipt
+    ));
+    Ok((out, true))
+}
+
 /// `--judge`: the verdict on the table of a log, as text and an exit code (0 pass, 1 fail).
-/// `floors` is the text of the floors table when one was named. A malformed table or floors
-/// table is an `Err` (exit 2).
-fn judge_log(args: &JudgeArgs, log: &str, floors: Option<&str>) -> Result<(String, i32), String> {
+/// `floors` is the text of the floors table when one was named; `stored` the stored tables
+/// when a directory of them was named. A cell passes only if the floor rule and the stored
+/// rows both pass. A malformed table, floors table or stored table is an `Err` (exit 2).
+fn judge_log(
+    args: &JudgeArgs,
+    log: &str,
+    floors: Option<&str>,
+    stored: Option<&[StoredTable]>,
+) -> Result<(String, i32), String> {
     let rows = argmax_margin::parse_table(log)?;
     let key = FloorKey {
         model: &args.model,
@@ -445,7 +564,31 @@ fn judge_log(args: &JudgeArgs, log: &str, floors: Option<&str>) -> Result<(Strin
             .map(str::to_string)
     };
     out.push_str(&verdict.report(&detail));
-    Ok((out, if verdict.passes() { 0 } else { 1 }))
+    let mut failed = !verdict.passes();
+    if let Some(tables) = stored {
+        let (text, differs) = stored_rows_verdict(args, log, tables, &detail)?;
+        out.push_str(&text);
+        failed |= differs;
+    }
+    Ok((out, if failed { 1 } else { 0 }))
+}
+
+/// Every `*.rows` file of a directory, parsed. An unreadable or malformed file is an error:
+/// a stored table that cannot be read must not read as "no stored table".
+fn read_stored_tables(dir: &str) -> Result<Vec<StoredTable>, String> {
+    let mut paths: Vec<_> = std::fs::read_dir(dir)
+        .map_err(|e| format!("{dir}: {e}"))?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "rows"))
+        .collect();
+    paths.sort();
+    paths
+        .iter()
+        .map(|p| {
+            let text = std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?;
+            StoredTable::parse(&text).map_err(|e| format!("{}: {e}", p.display()))
+        })
+        .collect()
 }
 
 fn judge_main(args: &[String]) -> i32 {
@@ -456,7 +599,20 @@ fn judge_main(args: &[String]) -> i32 {
             Some(path) => Some(std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?),
             None => None,
         };
-        judge_log(&args, &log, floors.as_deref())
+        let stored = match &args.stored_rows {
+            Some(dir) => Some(read_stored_tables(dir)?),
+            None => None,
+        };
+        let (mut text, code) = judge_log(&args, &log, floors.as_deref(), stored.as_deref())?;
+        if let Some(path) = &args.rows_out {
+            let table = stored_table_of(&args, &log)?;
+            std::fs::write(path, table.render()).map_err(|e| format!("{path}: {e}"))?;
+            text.push_str(&format!(
+                "STORED-ROWS-FILE: {path} ({} rows, the gate's window of this table)\n",
+                table.rows.len()
+            ));
+        }
+        Ok((text, code))
     };
     match run() {
         Ok((text, code)) => {
@@ -691,9 +847,9 @@ mod tests {
     use super::{
         DecodeArm, JudgeArgs, ProbeArgs, SERVED_EAGER_ROUTED, Window, judge_log, parse_args,
         parse_judge_args, prime_gate_row, prime_gate_skip_reason, served_argmax_row,
-        validate_placement,
+        stored_table_of, validate_placement,
     };
-    use memra_engine::argmax_margin::Row;
+    use memra_engine::argmax_margin::{Row, StoredTable};
     use memra_engine::forward::{PrimeGateClass, PrimeGateVerdict};
 
     fn args(list: &[&str]) -> Vec<String> {
@@ -890,7 +1046,7 @@ mod tests {
     fn the_judge_fails_a_wide_flip_and_passes_a_near_tie() {
         // The red arm on the gate's own parse path: one table, three injected rows.
         let clean = [row(10, 1, 2.0, 1, 2.1), row(11, 2, 5.0, 2, 5.3)];
-        let (text, code) = judge_log(&judge_args(&[]), &table(&clean), Some(FLOORS)).unwrap();
+        let (text, code) = judge_log(&judge_args(&[]), &table(&clean), Some(FLOORS), None).unwrap();
         assert_eq!(code, 0, "{text}");
         assert!(text.starts_with("FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; p50 0.1000, p99 0.2000, p99.9 0.3000; no calibration flip above it; research/x/gate.log)\n"), "{text}");
         assert!(text.contains("SUMMARY flips=0 bad=0 "), "{text}");
@@ -898,7 +1054,7 @@ mod tests {
         let mut wide = clean.to_vec();
         wide.push(row(12, 3, 14.4, 4, 2.5));
         let log = format!("{}detail pos=12 the examination line\n", table(&wide));
-        let (text, code) = judge_log(&judge_args(&[]), &log, Some(FLOORS)).unwrap();
+        let (text, code) = judge_log(&judge_args(&[]), &log, Some(FLOORS), None).unwrap();
         assert_eq!(code, 1, "{text}");
         assert!(
             text.contains(
@@ -919,7 +1075,7 @@ mod tests {
 
         let mut tie = clean.to_vec();
         tie.push(row(12, 3, 0.02, 4, 0.03));
-        let (text, code) = judge_log(&judge_args(&[]), &table(&tie), Some(FLOORS)).unwrap();
+        let (text, code) = judge_log(&judge_args(&[]), &table(&tie), Some(FLOORS), None).unwrap();
         assert_eq!(code, 0, "{text}");
         assert!(text.contains("near-tie pos=12 "), "{text}");
         assert!(
@@ -929,13 +1085,14 @@ mod tests {
 
         // A second near tie is over the budget of 1.
         tie.push(row(13, 5, 0.01, 6, 0.01));
-        let (text, code) = judge_log(&judge_args(&[]), &table(&tie), Some(FLOORS)).unwrap();
+        let (text, code) = judge_log(&judge_args(&[]), &table(&tie), Some(FLOORS), None).unwrap();
         assert_eq!(code, 1, "{text}");
         assert!(text.contains("TOO-MANY-NEAR-TIES 2 > budget 1"), "{text}");
 
         // An agreeing row whose margins differ by more than the floor.
         let wide_row = [row(10, 1, 14.4, 1, 7.2)];
-        let (text, code) = judge_log(&judge_args(&[]), &table(&wide_row), Some(FLOORS)).unwrap();
+        let (text, code) =
+            judge_log(&judge_args(&[]), &table(&wide_row), Some(FLOORS), None).unwrap();
         assert_eq!(code, 1, "{text}");
         assert!(text.contains("WIDE-ROW pos=10 "), "{text}");
     }
@@ -944,7 +1101,7 @@ mod tests {
     fn without_a_floor_row_a_flip_fails_and_a_clean_table_says_uncalibrated() {
         let other_device = judge_args(&["--device", "device B"]);
         let clean = [row(10, 1, 14.4, 1, 7.2)];
-        let (text, code) = judge_log(&other_device, &table(&clean), Some(FLOORS)).unwrap();
+        let (text, code) = judge_log(&other_device, &table(&clean), Some(FLOORS), None).unwrap();
         assert_eq!(code, 0, "{text}");
         assert!(
             text.starts_with("FLOOR: none (UNCALIBRATED: no floor row for model=m "),
@@ -954,12 +1111,12 @@ mod tests {
         assert!(text.contains(" floor=none "), "{text}");
 
         let tie = [row(12, 3, 0.02, 4, 0.03)];
-        let (text, code) = judge_log(&other_device, &table(&tie), Some(FLOORS)).unwrap();
+        let (text, code) = judge_log(&other_device, &table(&tie), Some(FLOORS), None).unwrap();
         assert_eq!(code, 1, "{text}");
         assert!(text.contains("UNCALIBRATED-FLIP pos=12 "), "{text}");
         // The same without any floors table.
         let bare = parse_judge_args(&args(&["gate.log", "--max-flips", "1"])).unwrap();
-        assert_eq!(judge_log(&bare, &table(&tie), None).unwrap().1, 1);
+        assert_eq!(judge_log(&bare, &table(&tie), None, None).unwrap().1, 1);
     }
 
     #[test]
@@ -970,7 +1127,7 @@ mod tests {
             row(12, 3, 0.02, 4, 0.03),
         ];
         let a = judge_args(&["--calibrate", "--receipt", "research/x/gate.log"]);
-        let (text, code) = judge_log(&a, &table(&rows), None).unwrap();
+        let (text, code) = judge_log(&a, &table(&rows), None, None).unwrap();
         assert_eq!(code, 0);
         assert_eq!(
             text,
@@ -984,7 +1141,7 @@ mod tests {
             .unwrap()
             .strip_prefix("FLOOR-ROW: ")
             .unwrap();
-        let (_, code) = judge_log(&judge_args(&[]), &table(&rows), Some(line)).unwrap();
+        let (_, code) = judge_log(&judge_args(&[]), &table(&rows), Some(line), None).unwrap();
         assert_eq!(code, 0);
     }
 
@@ -994,7 +1151,7 @@ mod tests {
         // above the floor of 0.4. The same row in a judged window is named and passes.
         let same = [row(40, 1, 2.0, 1, 2.1), row(41, 18, 1.5, 15, 2.5)];
         let log = format!("{}detail pos=41 the examination line\n", table(&same));
-        let (text, code) = judge_log(&judge_args(&[]), &log, Some(FLOORS_KNOWN)).unwrap();
+        let (text, code) = judge_log(&judge_args(&[]), &log, Some(FLOORS_KNOWN), None).unwrap();
         assert_eq!(code, 0, "{text}");
         assert!(text.starts_with("FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; p50 0.1000, p99 0.2000, p99.9 0.3000; known rows (calibration flips above it, memra#1203): 41 (shift 4.0000); research/x/gate.log)\n"), "{text}");
         assert!(
@@ -1012,7 +1169,8 @@ mod tests {
 
         // A candidate whose gap shift at that row exceeds main's recorded shift fails.
         let wider = [row(40, 1, 2.0, 1, 2.1), row(41, 18, 1.5, 15, 2.75)];
-        let (text, code) = judge_log(&judge_args(&[]), &table(&wider), Some(FLOORS_KNOWN)).unwrap();
+        let (text, code) =
+            judge_log(&judge_args(&[]), &table(&wider), Some(FLOORS_KNOWN), None).unwrap();
         assert_eq!(code, 1, "{text}");
         assert!(text.contains("KNOWN-ROW-WIDER pos=41 "), "{text}");
         assert!(
@@ -1022,7 +1180,7 @@ mod tests {
         assert!(text.contains(" known_rows=0 known_rows_wider=1 "), "{text}");
 
         // Without the known row in the floor row, main's own flip there is a wide flip.
-        let (text, code) = judge_log(&judge_args(&[]), &table(&same), Some(FLOORS)).unwrap();
+        let (text, code) = judge_log(&judge_args(&[]), &table(&same), Some(FLOORS), None).unwrap();
         assert_eq!(code, 1, "{text}");
         assert!(text.contains("WIDE-FLIP pos=41 "), "{text}");
     }
@@ -1035,7 +1193,7 @@ mod tests {
             row(41, 18, 1.5, 15, 2.5),
         ];
         let a = judge_args(&["--calibrate", "--receipt", "research/x/gate.log"]);
-        let (text, _) = judge_log(&a, &table(&rows), None).unwrap();
+        let (text, _) = judge_log(&a, &table(&rows), None, None).unwrap();
         assert!(text.contains(" flips_above_floor=1 "), "{text}");
         let line = text
             .lines()
@@ -1048,15 +1206,235 @@ mod tests {
             "{line}"
         );
         // The printed row judges its own table green, the known row named.
-        let (text, code) = judge_log(&judge_args(&[]), &table(&rows), Some(line)).unwrap();
+        let (text, code) = judge_log(&judge_args(&[]), &table(&rows), Some(line), None).unwrap();
         assert_eq!(code, 0, "{text}");
         assert!(text.contains("KNOWN-ROW pos=41 "), "{text}");
     }
 
+    /// The judge call of a cell with a stored table: window 3, the floor of FLOORS (0.4).
+    fn stored_args(extra: &[&str]) -> JudgeArgs {
+        let mut list = vec![
+            "--stored-rows",
+            "rows",
+            "--model-sha256",
+            "aa",
+            "--window",
+            "3",
+        ];
+        list.extend_from_slice(extra);
+        judge_args(&list)
+    }
+
+    fn main_window() -> [Row; 3] {
+        [
+            row(10, 1, 2.0, 1, 2.1),
+            row(11, 2, 5.0, 2, 5.3),
+            row(12, 3, 4.0, 3, 4.2),
+        ]
+    }
+
+    /// Main's stored table for that cell, as `--calibrate --rows-out` writes it.
+    fn stored_tables() -> Vec<StoredTable> {
+        let a = stored_args(&[
+            "--calibrate",
+            "--receipt",
+            "research/x/probe.log",
+            "--rows-out",
+            "x.rows",
+            "--commit",
+            "031f146690",
+        ]);
+        let before = [row(8, 1, 2.0, 1, 2.1), row(9, 1, 2.0, 1, 2.1)];
+        let log = format!("{}{}", table(&before), table(&main_window()));
+        vec![stored_table_of(&a, &log).unwrap()]
+    }
+
+    #[test]
+    fn calibration_stores_the_last_window_rows_as_printed() {
+        let tables = stored_tables();
+        let t = &tables[0];
+        assert_eq!(
+            t.rows,
+            main_window()
+                .iter()
+                .map(|r| r.table_line())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            (t.key.window, t.key.model_sha256.as_str(), t.commit.as_str()),
+            (3, "aa", "031f146690")
+        );
+        assert_eq!(t.key.prompt_sha256, "abc");
+        assert_eq!(StoredTable::parse(&t.render()).unwrap(), *t);
+        // A log with fewer rows than the window gives no stored table.
+        let a = stored_args(&[
+            "--calibrate",
+            "--receipt",
+            "r",
+            "--rows-out",
+            "x.rows",
+            "--commit",
+            "c",
+        ]);
+        assert!(stored_table_of(&a, &table(&main_window()[..2])).is_err());
+    }
+
+    #[test]
+    fn an_identical_window_passes_the_stored_rows() {
+        let tables = stored_tables();
+        let (text, code) = judge_log(
+            &stored_args(&[]),
+            &table(&main_window()),
+            Some(FLOORS),
+            Some(&tables),
+        )
+        .unwrap();
+        assert_eq!(code, 0, "{text}");
+        assert!(text.contains("SUMMARY flips=0 bad=0 "), "{text}");
+        assert!(text.ends_with("STORED-ROWS: identical (3 rows equal main's, measured at 031f146690; research/x/probe.log)\n"), "{text}");
+    }
+
+    #[test]
+    fn a_one_logit_move_passes_the_floor_rule_and_fails_the_stored_rows() {
+        // The red arm on the gate's parse path: decode's margin at row 11 moves by one logit,
+        // from 5.3 to 4.3. Under a floor of 4.0, as loose as the roster's, the floor rule
+        // passes the row (an agreeing row with a gap shift of 0.7).
+        let loose = FLOORS.replace("4.0e-1", "4.0e0");
+        let tables = stored_tables();
+        let mut moved = main_window();
+        moved[1] = row(11, 2, 5.0, 2, 4.3);
+        let log = format!("{}detail pos=11 the examination line\n", table(&moved));
+        // Without the stored rows the cell passes.
+        let (text, code) = judge_log(&judge_args(&[]), &log, Some(&loose), None).unwrap();
+        assert_eq!(code, 0, "{text}");
+        // With them it fails, and the row is printed with both sides.
+        let (text, code) = judge_log(&stored_args(&[]), &log, Some(&loose), Some(&tables)).unwrap();
+        assert_eq!(code, 1, "{text}");
+        assert!(text.contains("SUMMARY flips=0 bad=0 "), "{text}");
+        assert!(text.contains(
+            "ROW-DIFF pos=11\n  stored (main): prefill_top1=2 margin_p=5.000000000e0 decode_top1=2 margin_d=5.300000191e0 "
+        ), "{text}");
+        assert!(text.contains("\n  candidate:     prefill_top1=2 margin_p=5.000000000e0 decode_top1=2 margin_d=4.300000191e0 "), "{text}");
+        assert!(
+            text.contains("\n  detail pos=11 the examination line\n"),
+            "{text}"
+        );
+        assert!(text.ends_with("STORED-ROWS: DIFFERENT (1 of 3 positions differ from main's rows, measured at 031f146690; research/x/probe.log)\n"), "{text}");
+    }
+
+    #[test]
+    fn a_token_change_under_the_floor_passes_the_floor_rule_and_fails_the_stored_rows() {
+        let loose = FLOORS.replace("4.0e-1", "4.0e0");
+        let tables = stored_tables();
+        let mut flipped = main_window();
+        flipped[0] = row(10, 1, 2.0, 7, 0.5); // decode now picks token 7 by 0.5: a near tie under 4.0
+        let (text, code) =
+            judge_log(&judge_args(&[]), &table(&flipped), Some(&loose), None).unwrap();
+        assert_eq!(code, 0, "{text}");
+        assert!(text.contains("near-tie pos=10 "), "{text}");
+        let (text, code) = judge_log(
+            &stored_args(&[]),
+            &table(&flipped),
+            Some(&loose),
+            Some(&tables),
+        )
+        .unwrap();
+        assert_eq!(code, 1, "{text}");
+        assert!(text.contains("ROW-DIFF pos=10\n"), "{text}");
+        assert!(
+            text.contains("decode_top1=7 margin_d=5.000000000e-1"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn other_prompt_bytes_or_another_artifact_read_as_no_stored_table() {
+        let tables = stored_tables();
+        let mut moved = main_window();
+        moved[1] = row(11, 2, 5.0, 2, 4.3);
+        let loose = FLOORS
+            .replace("4.0e-1", "4.0e0")
+            .replace("\tabc\t", "\tabd\t");
+        for other in [
+            stored_args(&["--prompt-sha256", "abd"]),
+            stored_args(&["--model-sha256", "bb"]),
+            stored_args(&["--window", "12"]),
+            stored_args(&["--device", "device B"]),
+            stored_args(&["--decode", "batch"]),
+        ] {
+            let (text, _) = judge_log(&other, &table(&moved), Some(&loose), Some(&tables)).unwrap();
+            assert!(
+                text.contains("STORED-ROWS: none (no stored table for model=m "),
+                "{text}"
+            );
+            assert!(!text.contains("ROW-DIFF"), "{text}");
+        }
+        // No directory named: the guard is not run and prints nothing.
+        let (text, _) = judge_log(&judge_args(&[]), &table(&moved), Some(FLOORS), None).unwrap();
+        assert!(!text.contains("STORED-ROWS"), "{text}");
+    }
+
+    #[test]
+    fn stored_rows_arguments_are_checked() {
+        for bad in [
+            &["--stored-rows", "rows"][..],
+            &["--stored-rows", "rows", "--model-sha256", "aa"],
+            &[
+                "--stored-rows",
+                "rows",
+                "--model-sha256",
+                "aa",
+                "--window",
+                "0",
+            ],
+            &[
+                "--stored-rows",
+                "rows",
+                "--model-sha256",
+                "aa",
+                "--window",
+                "3",
+                "--rows-out",
+                "x.rows",
+            ],
+            &[
+                "--calibrate",
+                "--receipt",
+                "r",
+                "--rows-out",
+                "x.rows",
+                "--model-sha256",
+                "aa",
+                "--window",
+                "3",
+            ],
+        ] {
+            let mut list = vec![
+                "gate.log",
+                "--max-flips",
+                "1",
+                "--floors",
+                "floors.tsv",
+                "--model",
+                "m",
+                "--prompt",
+                "board-2048",
+                "--prompt-sha256",
+                "abc",
+                "--decode",
+                "eager",
+                "--device",
+                "device A",
+            ];
+            list.extend_from_slice(bad);
+            assert!(parse_judge_args(&args(&list)).is_err(), "{bad:?}");
+        }
+    }
+
     #[test]
     fn a_malformed_table_or_floors_table_is_an_error() {
-        assert!(judge_log(&judge_args(&[]), "no table", Some(FLOORS)).is_err());
+        assert!(judge_log(&judge_args(&[]), "no table", Some(FLOORS), None).is_err());
         let clean = [row(10, 1, 2.0, 1, 2.1)];
-        assert!(judge_log(&judge_args(&[]), &table(&clean), Some("one\ttwo\n")).is_err());
+        assert!(judge_log(&judge_args(&[]), &table(&clean), Some("one\ttwo\n"), None).is_err());
     }
 }
