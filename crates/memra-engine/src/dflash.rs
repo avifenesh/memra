@@ -46,6 +46,16 @@ pub struct DflashCfg {
     pub is_causal: Option<bool>,
 }
 
+impl DflashCfg {
+    /// Trailing rows the drafter can still observe: `sliding_window + block_size`, saturating.
+    /// A drafter with no sliding layer loads `sliding_window = usize::MAX`, so this is
+    /// `usize::MAX` for it: it reads every row. Every caller takes the window from here, so no
+    /// plain sum on the sentinel can wrap (memra#1159).
+    pub fn window_rows(&self) -> usize {
+        self.sliding_window.saturating_add(self.block_size)
+    }
+}
+
 pub struct DflashLayer {
     pub wq: GpuTensor,           // [nh*hd, hidden] row-major (out_f rows)
     pub wk: GpuTensor,           // [nkv*hd, hidden]
@@ -2836,9 +2846,10 @@ pub struct DflashKv {
     pub v: Vec<CudaSlice<f32>>,
     pub len: usize,
     pub cap: usize,
-    /// Trailing rows the drafter can still observe: `sliding_window + block_size`. Carried on
-    /// the KV (not recomputed at call sites) so an export and an import cannot disagree about
-    /// the geometry — see `DsparkSpecSession::draft_tail_rows`.
+    /// Trailing rows the drafter can still observe (`DflashCfg::window_rows`, `usize::MAX` for a
+    /// drafter with no sliding layer). Carried on the KV, not recomputed at call sites, so an
+    /// export and an import cannot disagree about the geometry (`DsparkSpecSession::
+    /// draft_tail_rows`). Every sum or product on it must saturate or be checked (memra#1159).
     window_rows: usize,
     /// `n_kv * head_dim * size_of::<f32>()` — the row unit for tail copies.
     row_bytes: usize,
@@ -3022,10 +3033,13 @@ pub(crate) fn ring_plan(
         RingPlan::Compact { keep_from }
     } else {
         // Reallocate with a full window of slack past the rows that must stay, so the next
-        // compaction is a window away rather than immediate.
+        // compaction is a window away rather than immediate. Saturating: a windowless drafter's
+        // `usize::MAX` window wrapped the plain sum to one row short of the write (memra#1159).
+        // That KV is sized `cap + block` and never gets here. If one did, the plan would be
+        // `usize::MAX` rows and `dflash_kv_plane_words` would refuse the grow by name.
         RingPlan::Grow {
             keep_from,
-            phys_rows: kept + add + window_rows,
+            phys_rows: (kept + add).saturating_add(window_rows),
         }
     }
 }
@@ -3088,20 +3102,38 @@ pub(crate) fn dkv_rewind_refusal(
 /// rounds; never more than the door-off size for a short cap), the whole cap plus a block
 /// with the ring off. ONE definition, shared by the allocation (`DflashKv::new`) and the
 /// admission charge (`dflash_kv_resident_bytes`).
+///
+/// A drafter with no sliding layer (`sliding_window = usize::MAX`) reads every row, so its
+/// ring is the door-off size. The arithmetic saturates for that window: the plain
+/// `2 * window_rows + block` wrapped to `block - 2` rows (5 for a block of 7), and the first
+/// prime ingest overran the grow that followed (memra#1159).
 pub fn dflash_kv_phys_rows(cfg: &DflashCfg, cap: usize, ring_on: bool) -> usize {
-    let window_rows = cfg.sliding_window.saturating_add(cfg.block_size);
+    let window_rows = cfg.window_rows();
     if ring_on {
-        (2 * window_rows + cfg.block_size).min(cap + cfg.block_size)
+        window_rows
+            .saturating_mul(2)
+            .saturating_add(cfg.block_size)
+            .min(cap + cfg.block_size)
     } else {
         cap + cfg.block_size
     }
 }
 
+/// f32 words in one K or V plane of `rows` rows of `row_words` each, checked: a row count
+/// whose plane size overflows is a named error, never a wrapped allocation (memra#1159).
+/// `DflashKv::new`, `DflashKv::grow_cap` and the ring grow all size their planes here.
+pub(crate) fn dflash_kv_plane_words(rows: usize, row_words: usize) -> Result<usize, String> {
+    rows.checked_mul(row_words)
+        .ok_or_else(|| format!("draft kv plane of {rows} rows x {row_words} words overflows"))
+}
+
 /// Bytes one DflashKv holds resident for a request context cap (K and V, f32, every draft
 /// layer): the per-session draft-plane charge admission makes for a dspark request
 /// (memra#302). With the ring on this is a constant for any prompt above two windows
-/// (170 MB at the q38 geometry); with it off it grows with the cap, which is what the
-/// pre-lane program allocated and never charged.
+/// (170 MB at the q38 DFlash2 geometry), except for a drafter with no sliding layer, whose
+/// ring is `cap + block` rows, so its charge grows with the cap (40,960 B per row at the q38
+/// geometry). With the ring off it grows with the cap, which is what the pre-lane program
+/// allocated and never charged.
 pub fn dflash_kv_resident_bytes(cfg: &DflashCfg, cap: usize, ring_on: bool) -> usize {
     dflash_kv_phys_rows(cfg, cap, ring_on)
         * cfg.n_kv
@@ -3134,13 +3166,14 @@ impl DflashKv {
         cap: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let rowsz = cfg.n_kv * cfg.head_dim;
-        let window_rows = cfg.sliding_window.saturating_add(cfg.block_size);
+        let window_rows = cfg.window_rows();
         let phys_rows = dflash_kv_phys_rows(cfg, cap, dflash_kv_ring_on());
+        let words = dflash_kv_plane_words(phys_rows, rowsz)?;
         let mut k = Vec::with_capacity(cfg.n_layer);
         let mut v = Vec::with_capacity(cfg.n_layer);
         for _ in 0..cfg.n_layer {
-            k.push(e.uninit(phys_rows * rowsz)?);
-            v.push(e.uninit(phys_rows * rowsz)?);
+            k.push(e.uninit(words)?);
+            v.push(e.uninit(words)?);
         }
         Ok(Self {
             k,
@@ -3223,11 +3256,12 @@ impl DflashKv {
         if rows > self.phys_rows {
             let rowsz = self.row_bytes / std::mem::size_of::<f32>();
             let live = (self.len - self.base) * rowsz;
+            let words = dflash_kv_plane_words(rows, rowsz)?;
             let mut k = Vec::with_capacity(self.k.len());
             let mut v = Vec::with_capacity(self.v.len());
             for li in 0..self.k.len() {
-                let mut nk = e.uninit(rows * rowsz)?;
-                let mut nv = e.uninit(rows * rowsz)?;
+                let mut nk = e.uninit(words)?;
+                let mut nv = e.uninit(words)?;
                 if live > 0 {
                     e.copy_range_into(&mut nk, 0, &self.k[li], 0, live)?;
                     e.copy_range_into(&mut nv, 0, &self.v[li], 0, live)?;
@@ -3294,9 +3328,10 @@ impl DflashKv {
             } => {
                 let kept = self.len - keep_from;
                 let src = (keep_from - self.base) * rowsz;
+                let words = dflash_kv_plane_words(phys_rows, rowsz)?;
                 for li in 0..self.k.len() {
-                    let mut nk = e.uninit(phys_rows * rowsz)?;
-                    let mut nv = e.uninit(phys_rows * rowsz)?;
+                    let mut nk = e.uninit(words)?;
+                    let mut nv = e.uninit(words)?;
                     if kept > 0 {
                         e.copy_range_into(&mut nk, 0, &self.k[li], src, kept * rowsz)?;
                         e.copy_range_into(&mut nv, 0, &self.v[li], src, kept * rowsz)?;
@@ -3401,6 +3436,19 @@ impl DflashDraft {
         // Ring: the block's transient rows land past the resident window; make room first,
         // then address everything physically. `ctx` stays logical for the rope positions.
         kv.ensure_room(e, b)?;
+        // Only the DFlash2 windowed arm (`d2_windowed_attn`) honors a context floor; the other
+        // arm attends every resident row, so a floor-bearing KV there would draft over rows it
+        // never owned. The worker builds none (with the right window a cold-drafter conversion
+        // and a floored tail are both refused for these drafters); refuse rather than draft
+        // over them (memra#1159).
+        if self.dflash2.is_none() && kv.floor > 0 {
+            return Err(format!(
+                "draft kv has a context floor at {} but this drafter's round attention reads \
+                 every row",
+                kv.floor
+            )
+            .into());
+        }
         let ctx_phys = kv.phys(ctx);
         let floor_phys = kv.phys_floor();
         let pos_blk = e.htod_i32(pos_block)?;
@@ -4976,7 +5024,7 @@ impl DflashKvTail {
             self.floor,
             cfg.n_layer,
             cfg.n_kv * cfg.head_dim * std::mem::size_of::<f32>(),
-            cfg.sliding_window.saturating_add(cfg.block_size),
+            cfg.window_rows(),
             cap,
         )?;
         let elements = self
@@ -9252,6 +9300,48 @@ mod dflash_kv_ring_tests {
         }
     }
 
+    /// memra#1159: the window accessor saturates. A drafter with no sliding layer reads every
+    /// row (`usize::MAX`); a finite window is `sliding_window + block`.
+    #[test]
+    fn window_rows_saturates_for_a_drafter_with_no_sliding_layer() {
+        use super::dflash_windowless_ring_tests::windowless_dspark_cfg;
+        assert_eq!(windowless_dspark_cfg().window_rows(), usize::MAX);
+        let finite = super::DflashCfg {
+            sliding_window: 2048,
+            block_size: 16,
+            ..windowless_dspark_cfg()
+        };
+        assert_eq!(finite.window_rows(), W);
+    }
+
+    /// memra#1159: what a windowless grow really does. Its KV is sized `cap + block` and never
+    /// plans one; a KV that did would plan `usize::MAX` rows, and the plane-size check
+    /// `ensure_room` runs before any allocation refuses it by name. Finite grows pass the check.
+    #[test]
+    fn a_windowless_grow_is_refused_by_the_plane_size_check() {
+        let row_words = 8 * 128;
+        let RingPlan::Grow { phys_rows, .. } = ring_plan(0, 0, 5, usize::MAX, 16, None) else {
+            panic!("a 16-row write into 5 rows with nothing to compact must grow");
+        };
+        assert_eq!(phys_rows, usize::MAX);
+        let err = super::dflash_kv_plane_words(phys_rows, row_words).unwrap_err();
+        assert!(err.contains("overflows"), "{err}");
+        for (len, base, pin) in [(4130usize, 0usize, Some(0)), (3000 + P - 8, 3000, Some(10))] {
+            let RingPlan::Grow {
+                keep_from,
+                phys_rows,
+            } = ring_plan(len, base, P, W, 16, pin)
+            else {
+                panic!("len {len} base {base}: expected a grow");
+            };
+            assert!(phys_rows >= len - keep_from + 16);
+            assert_eq!(
+                super::dflash_kv_plane_words(phys_rows, row_words),
+                Ok(phys_rows * row_words)
+            );
+        }
+    }
+
     /// memra#1093: the soft keep a parked session's rewind needs never allocates. It extends a
     /// compaction like a pin while the kept rows fit the buffer, and is dropped (the plan without
     /// it runs) the moment keeping it would grow the ring.
@@ -9595,5 +9685,122 @@ mod dspark_boundary_capture_tests {
         assert!(
             super::dspark_resume_split(DsparkCapture::Boundary(14_592), 13_440, 2_048, 0).is_err()
         );
+    }
+}
+
+/// memra#1159: the KV ring of a drafter with no sliding layer (`sliding_window = usize::MAX`).
+/// Only APIs main already had, so this module also runs against main's code (the fail-before
+/// receipt in research/dspark-ingest-ring-20261110/).
+#[cfg(test)]
+pub(crate) mod dflash_windowless_ring_tests {
+    use super::{RingPlan, dflash_kv_phys_rows, dflash_kv_resident_bytes, ring_plan};
+
+    /// The q38 DSpark agentic export's geometry: five full-attention layers, block 7, and
+    /// `sliding_window: null` in its config, which the loader reads as `usize::MAX`.
+    pub(crate) fn windowless_dspark_cfg() -> super::DflashCfg {
+        super::DflashCfg {
+            hidden: 5120,
+            n_head: 40,
+            n_kv: 8,
+            head_dim: 128,
+            n_ff: 10240,
+            n_layer: 5,
+            eps: 1e-6,
+            rope_theta: 1e7,
+            block_size: 7,
+            mask_token_id: 248_077,
+            target_layer_ids: vec![4, 16, 28, 40, 52],
+            sliding_window: usize::MAX,
+            layer_sliding: vec![false; 5],
+            strategy_dspark: true,
+            is_causal: None,
+        }
+    }
+
+    /// memra#1159: a drafter with no sliding layer has `window_rows == usize::MAX`. Its
+    /// attention reads every row, so its ring is the door-off geometry (`cap + block` rows) and
+    /// every prime ingest, round block and kept-row ingest fits without a compaction or a grow.
+    /// `2 * window_rows + block` used to wrap to 5 rows. The gate's first prime ingest
+    /// (16 rows) then planned a grow to `0 + 16 + usize::MAX`, which wrapped to 15 rows, and
+    /// copying 16 rows into 15 panicked.
+    #[test]
+    fn a_windowless_drafter_ring_holds_every_row_and_never_grows() {
+        let cfg = windowless_dspark_cfg();
+        let b = cfg.block_size;
+        let window_rows = cfg.sliding_window.saturating_add(b);
+        assert_eq!(window_rows, usize::MAX);
+        // The gate's cap (prompt 16, ngen 96: prompt + ngen + block + 8) and a served cap.
+        for (prompt, cap) in [(16usize, 16 + 96 + b + 8), (300, 262_144)] {
+            let phys_rows = dflash_kv_phys_rows(&cfg, cap, true);
+            assert_eq!(phys_rows, cap + b, "cap {cap}");
+            let plan =
+                |len: usize, add: usize| ring_plan(len, 0, phys_rows, window_rows, add, None);
+            let mut len = 0;
+            // The prime's 256-row tap batches (`TapBatchCarry`).
+            while len < prompt {
+                let rows = (prompt - len).min(256);
+                assert_eq!(
+                    plan(len, rows),
+                    RingPlan::Fits,
+                    "prime ingest at {len}, cap {cap}"
+                );
+                len += rows;
+            }
+            // Rounds: the block lands transiently at `len`, then up to `b + 1` kept rows ingest.
+            while len < cap {
+                assert_eq!(
+                    plan(len, b),
+                    RingPlan::Fits,
+                    "round block at {len}, cap {cap}"
+                );
+                let keep = (b + 1).min(cap - len);
+                assert_eq!(
+                    plan(len, keep),
+                    RingPlan::Fits,
+                    "ingest at {len}, cap {cap}"
+                );
+                len += keep;
+            }
+        }
+    }
+
+    /// A window whose double overflows while its sum does not (between `usize::MAX / 2` and
+    /// `usize::MAX`) gets the door-off ring too. The plain `2 * w + b` wrapped it to 21 rows.
+    #[test]
+    fn a_window_whose_double_overflows_still_gets_the_door_off_ring() {
+        let cfg = super::DflashCfg {
+            sliding_window: usize::MAX / 2 + 1,
+            ..windowless_dspark_cfg()
+        };
+        let sum = cfg.sliding_window.checked_add(cfg.block_size);
+        assert!(sum.is_some_and(|w| w.checked_mul(2).is_none()));
+        for cap in [127usize, 8192, 262_144] {
+            assert_eq!(dflash_kv_phys_rows(&cfg, cap, true), cap + cfg.block_size);
+        }
+    }
+
+    /// Admission charges a windowless session its whole `cap + block` ring, 40,960 B per row at
+    /// this geometry. Main charged 5 rows (204,800 B) whatever the cap.
+    #[test]
+    fn a_windowless_session_is_charged_its_whole_cap() {
+        let cfg = windowless_dspark_cfg();
+        let row = 8 * 128 * 4 * 2 * 5;
+        assert_eq!(row, 40_960);
+        for cap in [8192usize, 30_000] {
+            assert_eq!(dflash_kv_resident_bytes(&cfg, cap, true), (cap + 7) * row);
+        }
+    }
+
+    /// A windowless grow never plans fewer rows than its write: the slack saturates to
+    /// `usize::MAX`. Main's plain sum planned 15 rows for a 16-row write and 47 for 48.
+    #[test]
+    fn a_windowless_grow_never_plans_fewer_rows_than_its_write() {
+        let grow = |len, phys_rows, add| ring_plan(len, 0, phys_rows, usize::MAX, add, None);
+        let max = RingPlan::Grow {
+            keep_from: 0,
+            phys_rows: usize::MAX,
+        };
+        assert_eq!(grow(0, 5, 16), max);
+        assert_eq!(grow(40, 47, 8), max);
     }
 }

@@ -1416,7 +1416,7 @@ fn prefix_restore_exact(entry_toks: usize, prompt_toks: usize, recurrent: bool) 
 enum ColdDrafterRefusal {
     /// The carrier is empty or covers the whole prompt: there is no suffix to prime.
     NoStrictPrefix,
-    /// The suffix is shorter than the drafter window (`sliding_window + block`): a drafter
+    /// The suffix is shorter than the drafter window (`DflashCfg::window_rows`): a drafter
     /// born at the boundary would read rows it never saw.
     ShortSuffix,
     /// The prompt does not fit the DFlash spec route (`dspark_spec_prompt_fits`).
@@ -1496,7 +1496,7 @@ fn dspark_session_armed(prefers_cold: bool, pool_resume: bool, prefix_restored: 
 
 /// A drafter tail that carries a context floor (the export of a cold-drafter conversion, born
 /// empty at its carrier boundary) holds only the rows above that floor. A prompt that ends
-/// before `floor + window` (`window` = `sliding_window + block_size`) would draft over fewer
+/// before `floor + window` (`window` = `DflashCfg::window_rows`) would draft over fewer
 /// rows than a cold prime of the same prompt reads, so q differs and a sampled request is no
 /// longer byte-identical to the cold reference. Such a tail is not restorable; the request
 /// takes cold admission. Same rule as `ColdDrafterRefusal::ShortSuffix` for the conversion.
@@ -1505,7 +1505,7 @@ fn dspark_floored_tail_too_short(tail_floor: usize, prompt_len: usize, window: u
 }
 
 /// `dspark_floored_tail_too_short` for a prefix entry's drafter tail and the live drafter's
-/// window (`sliding_window + block_size`). No tail or no drafter answers false: the other
+/// window (`DflashCfg::window_rows`). No tail or no drafter answers false: the other
 /// restorable checks already refuse those. Admission, the restorable-hit probe, the
 /// restorable-hit lookup and the restore itself all apply this rule, so a hit admission plans
 /// as a DFlash restore is never refused at consume for its floor.
@@ -9863,6 +9863,9 @@ struct PrefixEntry {
     ///
     /// Only the readable tail travels (see `DflashKvTail`): ~85 MB against ~1,229 MB for the
     /// full history, which would have exceeded the entry's own ~1,057 MB of trunk planes.
+    /// A drafter with no sliding layer reads every row, so its readable tail IS the full
+    /// history (40,960 B per token at the q38 geometry). It is charged to the entry like any
+    /// plane, so eviction and the whole-budget refusal still hold; fewer entries fit (memra#1159).
     ///
     /// A plane from one spec program must never be restored into the other. That cannot happen
     /// here — arming dspark disables the MTP arm for the model at boot, loudly — and the
@@ -10740,7 +10743,7 @@ impl PrefixCache {
             || dspark_floored_tail_too_short(
                 tail.floor,
                 prompt.len(),
-                cfg.sliding_window + cfg.block_size,
+                cfg.window_rows(),
             )
             || !memra_engine::dflash::dspark_spec_prompt_fits(
                 prompt.len(), ctx_cap, cfg.block_size,
@@ -16959,7 +16962,10 @@ fn publish_dspark_prefix_capture_inner(
     // Publication is gated on the SAME flag as consumption (review round 5): with the flag
     // off there is no possible consumer, and the tail is a real cost charged to the entry's
     // byte budget — a fixed ~85 MB/entry, ~8% on a 30k entry but ~34% on a 7k one — evicting
-    // other entries for nothing. Gating both sides makes `=0` a true rollback: the
+    // other entries for nothing. A drafter with no sliding layer publishes its whole history
+    // instead (40,960 B per token at the q38 geometry), charged the same way, and a failed
+    // device copy publishes the entry trunk-only (memra#1159). Gating both sides makes `=0` a
+    // true rollback: the
     // cache's memory profile reverts along with the routing. After arming, real long-decode
     // traffic republishes tailed entries within minutes, so no pre-arming is needed.
     let dspark_tail = if dspark_prefix_restore_on() {
@@ -18821,10 +18827,12 @@ pub fn run(
                  (no MTP scratch term); the draft plane is charged per session, {:.0}MB at a \
                  30k cap (ring {})",
                 draft.resident_kv_bytes(30_000) as f64 / 1e6,
-                if memra_engine::dflash::dflash_kv_ring_on() {
-                    "on: constant above two windows"
-                } else {
+                if !memra_engine::dflash::dflash_kv_ring_on() {
                     "off: grows with the cap"
+                } else if draft.cfg.window_rows() == usize::MAX {
+                    "on, but the drafter has no sliding layer: grows with the cap"
+                } else {
+                    "on: constant above two windows"
                 },
             );
         }
@@ -20406,7 +20414,7 @@ pub fn run(
                         let draft = dspark_drafts
                             .get(&model_key)
                             .filter(|_| estimate_spec && dspark_prefix_restore_on());
-                        let tail_window = draft.map(|d| d.cfg.sliding_window + d.cfg.block_size);
+                        let tail_window = draft.map(|d| d.cfg.window_rows());
                         let dflash_inputs = draft.map(|draft| {
                             admission_dflash_inputs(
                                 &req,
@@ -27153,9 +27161,7 @@ fn admit(
     // beside the hit itself so the probe gate can distinguish "a hit the conversion will
     // consume" from "a hit that would cost the restore for nothing" (strict-prefix hits — the
     // multi-turn shape — convert never, so they must not buy the carrier).
-    let dspark_tail_window = dspark_draft
-        .as_ref()
-        .map(|d| d.cfg.sliding_window + d.cfg.block_size);
+    let dspark_tail_window = dspark_draft.as_ref().map(|d| d.cfg.window_rows());
     let mut dspark_restorable_hit = dspark_prefix_restore_on()
         && consumable_hit
             .map(|i| {
@@ -27913,17 +27919,14 @@ fn admit(
             .and_then(|i| px.entries[&pool_key][i].dspark_draft.as_ref())
             .map(|tail| tail.floor)
             .unwrap_or(0);
-        let tail_floor_short = dspark_floored_tail_too_short(
-            entry_tail_floor,
-            prompt.len(),
-            draft.cfg.sliding_window + draft.cfg.block_size,
-        );
+        let tail_floor_short =
+            dspark_floored_tail_too_short(entry_tail_floor, prompt.len(), draft.cfg.window_rows());
         if tail_floor_short {
             eprintln!(
                 "[prefix-cache] dspark restore: the draft tail's context floor {entry_tail_floor} \
                  leaves fewer than {} drafter rows above it at {} prompt tokens; cold admission \
                  required (model {})",
-                draft.cfg.sliding_window + draft.cfg.block_size,
+                draft.cfg.window_rows(),
                 prompt.len(),
                 req.model,
             );
@@ -28005,7 +28008,7 @@ fn admit(
     // The cache-preferred veto serves a long prompt's PLAIN hit plain, the session
     // publishes another plain entry, and a multi-turn DFlash session never speculates again
     // (GB10 GGUF DFlash2 c1: 12.0 tok/s, 28 vetoes). When the suffix the hit leaves covers the
-    // whole drafter window (`sliding_window + block` rows), the drafter can be born EMPTY at the
+    // whole drafter window (`DflashCfg::window_rows`), the drafter can be born EMPTY at the
     // restored boundary (`DflashKv::new_cold_at`) and filled from the suffix prime's taps: every
     // row a round at the prompt end reads lies in the suffix, so the draft state is the one a
     // cold DFlash prime of the whole prompt builds, row for row. The session therefore keeps
@@ -28024,7 +28027,7 @@ fn admit(
         && let Some(draft) = dspark_draft
         && let Some(carrier) = reused.take()
     {
-        let window = draft.cfg.sliding_window + draft.cfg.block_size;
+        let window = draft.cfg.window_rows();
         let suffix_len = prompt.len().saturating_sub(carrier.fed.len());
         let shape_ok = !vision_req
             && constraint.is_none()
@@ -40528,7 +40531,7 @@ mod tests {
         let squashed = code.split_whitespace().collect::<Vec<_>>().join(" ");
         for needle in [
             "if (full_cover || partial_ok) && entry_tail_present && !tail_floor_short && shape_ok {",
-            "|| tail.validate_restore(cfg, ctx_cap).is_err() || dspark_floored_tail_too_short( tail.floor, prompt.len(), cfg.sliding_window + cfg.block_size, )",
+            "|| tail.validate_restore(cfg, ctx_cap).is_err() || dspark_floored_tail_too_short( tail.floor, prompt.len(), cfg.window_rows(), )",
             "dspark_hit_is_restorable_with( e.toks.len(), prompt_len, e.dspark_draft.is_some(), partial_on, ) && !dspark_entry_tail_floor_short(e.dspark_draft.as_ref(), prompt_len, tail_window)",
             "dspark_entry_restorable(&px.entries[&pool_key][i], prompt.len(), dspark_tail_window)",
             "dspark_entry_restorable(e, prompt.len(), dspark_tail_window)",
@@ -43857,6 +43860,121 @@ mod tests {
         assert!(px.unpin(&pin));
         assert_eq!(px.evict_all(), 1, "without the exemption reclaim takes E");
         assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#1159: the q38 DSpark agentic drafter's config. No sliding layer and block 7: the
+    /// loader reads its `sliding_window: null` as `usize::MAX`.
+    fn windowless_drafter_cfg() -> memra_engine::dflash::DflashCfg {
+        memra_engine::dflash::DflashCfg {
+            hidden: 5120,
+            n_head: 40,
+            n_kv: 8,
+            head_dim: 128,
+            n_ff: 10240,
+            n_layer: 5,
+            eps: 1e-6,
+            rope_theta: 1e7,
+            block_size: 7,
+            mask_token_id: 248_077,
+            target_layer_ids: vec![4, 16, 28, 40, 52],
+            sliding_window: usize::MAX,
+            layer_sliding: vec![false; 5],
+            strategy_dspark: true,
+            is_causal: None,
+        }
+    }
+
+    /// What main's plain `sliding_window + block_size` gave that drafter in a release build (a
+    /// debug build panicked on it).
+    fn mains_wrapped_window(cfg: &memra_engine::dflash::DflashCfg) -> usize {
+        cfg.sliding_window.wrapping_add(cfg.block_size)
+    }
+
+    /// memra#1159, site 5 (the cold-drafter conversion of a vetoed plain hit): a drafter with no
+    /// sliding layer reads every row, so no suffix covers its window and the conversion is always
+    /// refused. Main's wrapped window (6) let any suffix of 6 rows or more convert, and
+    /// `DflashKv::new_cold_at` then built a drafter with a context floor, whose round attention
+    /// also reads the zero rows below that floor. A finite window converts as before.
+    #[test]
+    fn a_windowless_drafter_never_takes_the_cold_drafter_conversion() {
+        let cfg = windowless_drafter_cfg();
+        let (fed, prompt, grid) = (4096, 8000, 32);
+        let refusal =
+            |window| super::dspark_cold_drafter_refusal(fed, fed, prompt, window, grid, true);
+        assert_eq!(
+            refusal(cfg.window_rows()),
+            Some(super::ColdDrafterRefusal::ShortSuffix)
+        );
+        assert_eq!(mains_wrapped_window(&cfg), 6);
+        assert_eq!(
+            refusal(mains_wrapped_window(&cfg)),
+            None,
+            "main's window converted it"
+        );
+        let dflash2 = memra_engine::dflash::DflashCfg {
+            sliding_window: 2048,
+            block_size: 8,
+            ..windowless_drafter_cfg()
+        };
+        assert_eq!(
+            refusal(dflash2.window_rows()),
+            None,
+            "a finite window still converts"
+        );
+    }
+
+    /// memra#1159, sites 1 and 4 (the admission restore route and the restore block): a windowless
+    /// drafter's tail with a context floor is never restorable, since the rows below the floor
+    /// are ones its attention reads. Main's window took such a tail at any prompt 6 rows past
+    /// its floor, so the restored drafter saw a shorter context than a cold prime. A full tail
+    /// (floor 0) stays restorable.
+    #[test]
+    fn a_windowless_drafter_restores_only_a_full_tail() {
+        let cfg = windowless_drafter_cfg();
+        assert!(super::dspark_floored_tail_too_short(
+            4096,
+            8000,
+            cfg.window_rows()
+        ));
+        assert!(!super::dspark_floored_tail_too_short(
+            4096,
+            8000,
+            mains_wrapped_window(&cfg)
+        ));
+        assert!(!super::dspark_floored_tail_too_short(
+            0,
+            8000,
+            cfg.window_rows()
+        ));
+    }
+
+    /// memra#1159, sites 2 and 3 (the admission reclaim spare and the restorable-hit probe, both
+    /// through `dspark_entry_restorable`): the same rule on a prefix entry carrying the tail.
+    #[test]
+    fn a_windowless_floored_tail_entry_is_not_restorable() {
+        let k = key("tenant");
+        let prompt = toks(8000);
+        let cfg = windowless_drafter_cfg();
+        let tail = |floor: usize| memra_engine::dflash::DflashKvTail {
+            layers: Vec::new(),
+            base: floor,
+            rows: 8000 - floor,
+            len: 8000,
+            row_bytes: 4096,
+            floor,
+        };
+        let mut e = entry(&k, prompt.clone());
+        e.dspark_draft = Some(tail(4096));
+        let restorable = |e: &super::PrefixEntry, window| {
+            super::dspark_entry_restorable_with(e, prompt.len(), Some(window), true)
+        };
+        assert!(!restorable(&e, cfg.window_rows()));
+        assert!(
+            restorable(&e, mains_wrapped_window(&cfg)),
+            "main's window took it"
+        );
+        e.dspark_draft = Some(tail(0));
+        assert!(restorable(&e, cfg.window_rows()));
     }
 
     /// The RTX 5090 receipt (Q38 + DFlash2, doors forced on, prefix cache 4000 MB): r1 served P+X
@@ -51914,5 +52032,163 @@ mod emission_metrics_tests {
         assert_eq!(snap.token_gap_hists[0].count, 0);
         assert_eq!(snap.token_gap_hists[1].count, 1);
         assert_eq!(snap.token_gap_hists[2].count, 0);
+    }
+}
+
+/// memra#1159: every drafter window on the served route comes from `DflashCfg::window_rows`,
+/// which saturates for a drafter with no sliding layer. The five sites are inline in the
+/// admission tick and `admit`, which no CPU test can call, so these read the comment-stripped
+/// production source, as the floored-tail census in `mod tests` does. The read census binds:
+/// it lists every production read of `sliding_window` and fails on any other. The per-site
+/// pins name `window_rows()`, which main lacks, so on main they fail by construction; they
+/// show the text changed, and the predicate tests in `mod tests`
+/// (`a_windowless_drafter_never_takes_the_cold_drafter_conversion` and its neighbours) carry
+/// the behaviour. This module uses no API main lacked, so it also runs against main's code
+/// (the fail-before receipt in research/dspark-ingest-ring-20261110/).
+#[cfg(test)]
+mod windowless_drafter_window_tests {
+    fn production() -> String {
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").expect("the tests module")];
+        let code: String = production
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        code.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    fn assert_site(site: &str, needle: &str) {
+        assert!(
+            production().contains(needle),
+            "{site}: the drafter window here is not `cfg.window_rows()`: {needle}"
+        );
+    }
+
+    /// Every production read of `sliding_window`, as its delimited expression, and why each is
+    /// safe at `usize::MAX`: four pass it straight to `dspark_spec_prompt_fits` (which only
+    /// takes `ctx_cap.min` of it) and one compares it. The census fails on any other read: any
+    /// arithmetic on it, in any form, or an alias that could feed some. A new read joins this
+    /// list only after its consumer is checked; a window comes from `cfg.window_rows()`.
+    const LISTED_WINDOW_READS: [&str; 5] = [
+        "!is_dflash2 && ctx_cap > cfg.sliding_window",
+        "cfg.sliding_window",
+        "draft.cfg.sliding_window",
+        "draft.cfg.sliding_window",
+        "draft.cfg.sliding_window",
+    ];
+
+    /// The delimited expression around each `sliding_window` read in squashed code: from the
+    /// previous `(` `,` `;` `{` `}` to the next `,` `)` `;` `{` `}`. Sorted.
+    fn window_reads(code: &str) -> Vec<String> {
+        let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+        let mut out = Vec::new();
+        for (i, tok) in code.match_indices("sliding_window") {
+            let j = i + tok.len();
+            if code[..i].ends_with(ident) || code[j..].starts_with(ident) {
+                continue;
+            }
+            let start = code[..i]
+                .rfind(['(', ',', ';', '{', '}'])
+                .map_or(0, |p| p + 1);
+            let end = code[j..]
+                .find([',', ')', ';', '{', '}'])
+                .map_or(code.len(), |p| j + p);
+            out.push(code[start..end].trim().to_string());
+        }
+        out.sort();
+        out
+    }
+
+    fn listed_window_reads() -> Vec<String> {
+        let mut listed: Vec<String> = LISTED_WINDOW_READS.iter().map(|s| s.to_string()).collect();
+        listed.sort();
+        listed
+    }
+
+    #[test]
+    fn every_window_read_on_the_served_route_is_a_listed_safe_one() {
+        assert_eq!(
+            window_reads(&production()),
+            listed_window_reads(),
+            "a sliding_window read outside the list: take the window from cfg.window_rows()"
+        );
+    }
+
+    /// The census itself: production source with any one way of writing a plain window sum
+    /// added to it fails, and the listed forms classify as themselves.
+    #[test]
+    fn the_window_census_fails_on_every_form_of_window_arithmetic() {
+        let code = production();
+        for form in [
+            "let w = d.cfg.block_size + d.cfg.sliding_window;",
+            "f(prompt.len(), draft.cfg.block_size + draft.cfg.sliding_window);",
+            "let w = draft.cfg.sliding_window + draft.cfg.block_size;",
+            "let sw = draft.cfg.sliding_window; let w = sw + b;",
+            "let w = 2 * draft.cfg.sliding_window;",
+            "let w = cfg.sliding_window.wrapping_add(cfg.block_size);",
+            "let w = cfg.sliding_window.checked_add(cfg.block_size).unwrap();",
+            "let DflashCfg { sliding_window, .. } = cfg; let w = sliding_window + 1;",
+        ] {
+            assert_ne!(
+                window_reads(&format!("{code} {form}")),
+                listed_window_reads(),
+                "the census passed with {form}"
+            );
+        }
+        assert_eq!(
+            window_reads("f(a, draft.cfg.sliding_window, b);"),
+            ["draft.cfg.sliding_window"]
+        );
+        assert_eq!(
+            window_reads("|| (!is_dflash2 && ctx_cap > cfg.sliding_window)"),
+            ["!is_dflash2 && ctx_cap > cfg.sliding_window"]
+        );
+    }
+
+    #[test]
+    fn site_1_the_admission_restore_route_takes_window_rows() {
+        assert_site(
+            "the admission restore route",
+            "|| dspark_floored_tail_too_short( tail.floor, prompt.len(), cfg.window_rows(), )",
+        );
+    }
+
+    #[test]
+    fn site_2_the_admission_reclaim_spare_takes_window_rows() {
+        assert_site(
+            "the admission reclaim spare",
+            "let tail_window = draft.map(|d| d.cfg.window_rows());",
+        );
+    }
+
+    #[test]
+    fn site_3_the_restorable_hit_probe_takes_window_rows() {
+        assert_site(
+            "the restorable-hit probe",
+            "let dspark_tail_window = dspark_draft.as_ref().map(|d| d.cfg.window_rows());",
+        );
+    }
+
+    #[test]
+    fn site_4_the_restore_block_takes_window_rows() {
+        assert_site(
+            "the restore block",
+            "let tail_floor_short = dspark_floored_tail_too_short(entry_tail_floor, prompt.len(), \
+             draft.cfg.window_rows());",
+        );
+        assert_site(
+            "the restore block's refusal line",
+            "required (model {})\", draft.cfg.window_rows(), prompt.len(), req.model, );",
+        );
+    }
+
+    #[test]
+    fn site_5_the_cold_drafter_conversion_takes_window_rows() {
+        assert_site(
+            "the cold-drafter conversion",
+            "let window = draft.cfg.window_rows(); let suffix_len = \
+             prompt.len().saturating_sub(carrier.fed.len());",
+        );
     }
 }
