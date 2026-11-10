@@ -1331,7 +1331,8 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         );
     };
     // (m, n, k, weight format, activation scale code range)
-    let cases: [(usize, usize, usize, i32, (u8, u8)); 12] = [
+    type GemmCase = (usize, usize, usize, i32, (u8, u8));
+    let cases: [GemmCase; 12] = [
         (1, 1280, 5120, 0, (118, 130)),
         (3, 4096, 1280, 0, (118, 130)),
         (4, 2304, 5120, 1, (118, 130)),
@@ -1531,7 +1532,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             )
         })?;
         let want = ops.buf(np * n * 2)?;
-        for e in 0..ne {
+        for (e, wt) in wts.iter().enumerate().take(ne) {
             let (p0, p1) = (host.off[e], host.off[e + 1]);
             if p1 == p0 {
                 continue;
@@ -1542,9 +1543,9 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                     k as i64,
                     a_s.at(&st, p0 * (k / 32)).c(),
                     (k / 32) as i64,
-                    wts[e].0.p(&st).c(),
+                    wt.0.p(&st).c(),
                     (k / 2) as i64,
-                    wts[e].1.p(&st).c(),
+                    wt.1.p(&st).c(),
                     (k / 32) as i64,
                     1.0,
                     1,
