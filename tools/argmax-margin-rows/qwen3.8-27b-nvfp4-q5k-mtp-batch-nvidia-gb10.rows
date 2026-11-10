@@ -1,0 +1,25 @@
+# Main's argmax margin probe rows for one gate cell (memra#1204). The gate compares a
+# candidate's table for this window with these lines, byte for byte.
+model	Qwen3.8-27B-NVFP4-Q5K-mtp
+model_sha256	1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a
+prompt	board-2048
+prompt_sha256	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc
+decode	batch
+device	NVIDIA GB10
+window	12
+experts	none
+commit	031f146690
+receipt	research/argmax-gate-rule-20261110/calibration/gb10/q38-batch/probe.log
+rows
+2036     24822         1.081750584e1    24822        1.091394901e1    1.604099274e-1   yes
+2037     63            2.149499893e0    63           2.158823013e0    8.747100830e-3   yes
+2038     318           6.582031250e-1   318          6.029376984e-1   5.989265442e-2   yes
+2039     77            4.075336456e-1   77           7.033462524e-1   2.346286774e-1   yes
+2040     40049         5.855499268e0    40049        5.982575417e0    2.523517609e-1   yes
+2041     681           4.248561859e-1   681          5.396270752e-1   1.569690704e-1   yes
+2042     681           6.732540131e-1   681          7.260284424e-1   1.031646729e-1   yes
+2043     11069         3.567523956e-1   11069        4.334945679e-1   1.339073181e-1   yes
+2044     264           2.302997589e0    264          2.658355713e0    2.560787201e-1   yes
+2045     2972          1.517026901e0    2972         1.399312973e0    1.837863922e-1   yes
+2046     42714         2.604997635e0    42714        2.634328842e0    1.577186584e-2   yes
+2047     485           1.209479332e0    485          6.835575104e-1   5.580234528e-1   yes
