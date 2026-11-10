@@ -1,0 +1,31 @@
+# cmd
+cd box && CELL_PORT=18193 PAIR_MODEL=$HOME/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf timeout 12m python3 specpub_pairs.py $HOME/.cache/memra-specpub/cells/pairs-short-greedy-T/out "pairs-short-greedy-T=$HOME/.cache/memra-specpub/bins/head-ee37f8d3b4/memra-server|deep38|64,64,64|MEMRA_CTX=262144 MEMRA_MAX_SESSIONS=32 MEMRA_KV_HOST_MB=0 MEMRA_PREFIX_STABLE_BOUNDARY=1 MEMRA_MTP_DRAFT=$HOME/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf "
+# rc 0
+# verdict (specpub_pairs.py)
+{"case": "pairs-short-greedy-T", "binary": "~/.cache/memra-specpub/bins/head-ee37f8d3b4/memra-server", "shape": "deep38", "max_tokens": [64, 64, 64], "env": "MEMRA_CTX=262144 MEMRA_MAX_SESSIONS=32 MEMRA_KV_HOST_MB=0 MEMRA_PREFIX_STABLE_BOUNDARY=1 MEMRA_MTP_DRAFT=~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf ", "request": {"model": "q", "temperature": 0}, "turns": {"1": {"warm_sha": "f1fb5d522e5213cc", "warm_len": 277}, "2": {"equal": true, "warm_sha": "ce72af3e926650cb", "cold_sha": "ce72af3e926650cb", "warm_len": 249, "cold_len": 249}, "3": {"equal": true, "warm_sha": "8c7ed81f9562c833", "cold_sha": "8c7ed81f9562c833", "warm_len": 283, "cold_len": 283}}, "bytes": true, "restored_from_spec_entry": true, "cold_is_cold": true, "warm": {"insert": [["spec-boundary", 960, 187.2], ["spec-boundary", 1056, 190.2], ["spec-boundary", 1152, 193.3]], "hit": [[960, 1083], [1056, 1171]], "spec_restore": [[960, 1083], [1056, 1171]], "draft_restore": [[960, 1083], [1056, 1171]], "state": [], "state_error": [], "refused": [], "spec_parked_end": [], "spec_affinity": [], "spec_grid_rewind": [], "bursts": [[0, 33, 12, 36, 20, 3], [33, 64, 13, 39, 21, 3], [0, 33, 15, 45, 17, 3], [33, 64, 15, 45, 19, 3], [0, 35, 8, 40, 26, 5], [35, 64, 14, 70, 17, 5]]}, "cold_state": {"2": [], "3": []}, "cold_insert": {"2": [["spec-boundary", 1056, 190.2]], "3": [["spec-boundary", 1152, 193.3]]}, "usage": {"warm-t1": {"prompt": 1000, "completion": 64, "cached": 0, "spec": {"rounds": 25, "drafted": 75, "accepted": 41, "acceptance_rate": 0.5466666666666666}}, "warm-t2": {"prompt": 1083, "completion": 64, "cached": 960, "spec": {"rounds": 30, "drafted": 90, "accepted": 36, "acceptance_rate": 0.4}}, "warm-t3": {"prompt": 1171, "completion": 64, "cached": 1056, "spec": {"rounds": 22, "drafted": 110, "accepted": 43, "acceptance_rate": 0.39090909090909093}}, "cold-t2": {"prompt": 1083, "completion": 64, "cached": 0, "spec": {"rounds": 30, "drafted": 90, "accepted": 36, "acceptance_rate": 0.4}}, "cold-t3": {"prompt": 1171, "completion": 64, "cached": 0, "spec": {"rounds": 24, "drafted": 72, "accepted": 41, "acceptance_rate": 0.5694444444444444}}}}
+# turns (prompt / completion / cached tokens, spec counters)
+cold-t2: 1083 / 64 / 0, spec {"rounds": 30, "drafted": 90, "accepted": 36, "acceptance_rate": 0.4}
+cold-t3: 1171 / 64 / 0, spec {"rounds": 24, "drafted": 72, "accepted": 41, "acceptance_rate": 0.5694444444444444}
+warm-t1: 1000 / 64 / 0, spec {"rounds": 25, "drafted": 75, "accepted": 41, "acceptance_rate": 0.5466666666666666}
+warm-t2: 1083 / 64 / 960, spec {"rounds": 30, "drafted": 90, "accepted": 36, "acceptance_rate": 0.4}
+warm-t3: 1171 / 64 / 1056, spec {"rounds": 22, "drafted": 110, "accepted": 43, "acceptance_rate": 0.39090909090909093}
+# cold-t2-server.log: prefix-cache and spec restore lines
+[prefix-cache] on: budget 51320MB (51319992320 B, derived: 2 x 7941521408 B max entry for model "q" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 51319992320 B; boot driver free 106398081024 B, post-reserve clamp 102639984640 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[prefix-cache] stable-boundary capture armed at 1056 of 1083 prompt tokens (model q)
+[prefix-cache] insert (spec-boundary): 1056 tokens, 190.2MB (resident 190.2MB / 51320MB, model q)
+# cold-t3-server.log: prefix-cache and spec restore lines
+[prefix-cache] on: budget 51332MB (51332458496 B, derived: 2 x 7941521408 B max entry for model "q" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 51332458496 B; boot driver free 106423013376 B, post-reserve clamp 102664916992 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[prefix-cache] stable-boundary capture armed at 1152 of 1171 prompt tokens (model q)
+[prefix-cache] insert (spec-boundary): 1152 tokens, 193.3MB (resident 193.3MB / 51332MB, model q)
+# warm-server.log: prefix-cache and spec restore lines
+[prefix-cache] on: budget 50316MB (50315722752 B, derived: 2 x 7941521408 B max entry for model "q" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50315722752 B; boot driver free 104389541888 B, post-reserve clamp 100631445504 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[prefix-cache] stable-boundary capture armed at 960 of 1000 prompt tokens (model q)
+[prefix-cache] insert (spec-boundary): 960 tokens, 187.2MB (resident 187.2MB / 50316MB, model q)
+[prefix-cache] hit: 960 of 1083 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 960 of 1083 prompt tokens + draft plane from cache [suffix queued] (model q)
+[prefix-cache] insert (spec-boundary): 1056 tokens, 190.2MB (resident 377.4MB / 50316MB, model q)
+[prefix-cache] hit: 1056 of 1171 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 1056 of 1171 prompt tokens + draft plane from cache [suffix queued] (model q)
+[prefix-cache] insert (spec-boundary): 1152 tokens, 193.3MB (resident 570.7MB / 50316MB, model q)
+# binary sha256
+83cbf662555fe2393a059fe59a06677d1cd611f5889d980b84ed9c56bb7091b0

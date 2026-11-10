@@ -1,0 +1,18 @@
+f29e79f4cbb9725ac9cd0a21aecf98d1a0072fe1ccf5ff880566f5444ee2a265  ~/.cache/memra-specpub/bins/basetests-3afa740d13/server-lib-test
+5b00c0beac9ced1bf814d2564524f338ae480e647ca4fbc4fd983c7d169fe4c5  ~/.cache/memra-specpub/bins/head-3afa740d13/server-lib-test
+f7de3467b79bc2285f670c41bbadc3508d308a92f462b13f4e284d48ca159ab4  ~/.cache/memra-specpub/bins/unwritten-3afa740d13/server-lib-test
+specpub-base rc=0 (want 0) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1175 filtered out; finished in 3.42s
+specpub-head rc=0 (want 0) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1176 filtered out; finished in 3.39s
+b1-head rc=0 (want 0) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1176 filtered out; finished in 0.66s
+budget-head rc=0 (want 0) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1176 filtered out; finished in 0.37s
+fault-head rc=0 (want 0) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1176 filtered out; finished in 0.48s
+fault-red rc=101 (want 101) test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1176 filtered out; finished in 0.36s
+tiny: an entry was published although the copy of the first trunk K failed
+[specpub budget cell] unified=true free MB: before 118550 unwritten 116468 written 116468 freed 118516
+[b1 cell] tiny pos=1: 2 attention and 2 recurrent layers equal
+[b1 cell] tiny pos=97: 2 attention and 2 recurrent layers equal
+[b1 cell] ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf pos=1: 17 attention and 48 recurrent layers equal
+[b1 cell] ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf pos=97: 17 attention and 48 recurrent layers equal
+[specpub fault cell] tiny: 3 failed trunk copies published nothing, 2 failed draft copies published trunk-only (2 trunk planes)
+[specpub fault cell] Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: 3 failed trunk copies published nothing, 2 failed draft copies published trunk-only (32 trunk planes)
+digests: 18 entries, base == head

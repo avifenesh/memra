@@ -1,0 +1,30 @@
+== base-2628ece940 server (worker.base.rs) 2026-11-10T15:52:36+02:00
+   Compiling memra-engine v0.140.0 (~/.cache/memra-specpub/src/crates/memra-engine)
+   Compiling memra-sampling v0.140.0 (~/.cache/memra-specpub/src/crates/memra-sampling)
+   Compiling memra-server v0.140.0 (~/.cache/memra-specpub/src/crates/memra-server)
+warning: memra-engine@0.140.0: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+warning: memra-engine@0.140.0: MEMRA_CUDA_ARCH auto-detected 121a (compute_cap 12.1); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 4m 54s
+a366e9b6917ef06d1aacbbc11341fbd645e52534139bc8b91c88acb68496e037  ~/.cache/memra-specpub/bins/base-2628ece940/memra-server
+== base-2628ece940 test (worker.red.rs) 2026-11-10T15:57:30+02:00
+warning: memra-engine@0.140.0: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+warning: memra-engine@0.140.0: MEMRA_CUDA_ARCH auto-detected 121a (compute_cap 12.1); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.140.0 (~/.cache/memra-specpub/src/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 3m 38s
+a366e9b6917ef06d1aacbbc11341fbd645e52534139bc8b91c88acb68496e037  ~/.cache/memra-specpub/bins/base-2628ece940/memra-server
+75aeac728c0f0266d3316ea777b9512be4ca097dc044b387e10e403b8718fa4d  ~/.cache/memra-specpub/bins/base-2628ece940/server-lib-test
+== head-ee37f8d3b4 server (worker.head.rs) 2026-11-10T16:01:09+02:00
+warning: memra-engine@0.140.0: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+warning: memra-engine@0.140.0: MEMRA_CUDA_ARCH auto-detected 121a (compute_cap 12.1); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.140.0 (~/.cache/memra-specpub/src/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 3m 15s
+83cbf662555fe2393a059fe59a06677d1cd611f5889d980b84ed9c56bb7091b0  ~/.cache/memra-specpub/bins/head-ee37f8d3b4/memra-server
+== head-ee37f8d3b4 test (worker.head.rs) 2026-11-10T16:04:24+02:00
+warning: memra-engine@0.140.0: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+warning: memra-engine@0.140.0: MEMRA_CUDA_ARCH auto-detected 121a (compute_cap 12.1); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.140.0 (~/.cache/memra-specpub/src/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 4m 44s
+83cbf662555fe2393a059fe59a06677d1cd611f5889d980b84ed9c56bb7091b0  ~/.cache/memra-specpub/bins/head-ee37f8d3b4/memra-server
+d28137abbd42be85cb5b461e9d4ab00c906f649a4626ef7ea867751af874c08b  ~/.cache/memra-specpub/bins/head-ee37f8d3b4/server-lib-test
+4
+BUILD-DONE
