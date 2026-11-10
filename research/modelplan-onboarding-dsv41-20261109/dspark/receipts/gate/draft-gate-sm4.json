@@ -1,0 +1,243 @@
+{
+ "pass": true,
+ "cases": [
+  "gsm",
+  "code",
+  "copy",
+  "story",
+  "hebrew_para",
+  "code_pal",
+  "sys_json",
+  "gsm_think",
+  "needle",
+  "capital",
+  "hebrew",
+  "multiturn"
+ ],
+ "rows": [
+  {
+   "metric": "ring",
+   "kind": "median rel L2, n=3969",
+   "memra": 0.0,
+   "floor": 0.0,
+   "band": "<= 1.000e-04",
+   "pass": true
+  },
+  {
+   "metric": "main_x",
+   "kind": "median rel L2, n=339",
+   "memra": 3.0735157310834124e-09,
+   "floor": 0.0,
+   "band": "<= 1.000e-04",
+   "pass": true
+  },
+  {
+   "metric": "attn_in0",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.0,
+   "floor": 0.0,
+   "band": "<= 1.000e-04",
+   "pass": true
+  },
+  {
+   "metric": "attn_out0",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.004777323629299335,
+   "floor": 0.004724995182493734,
+   "band": "<= 9.550e-03",
+   "pass": true
+  },
+  {
+   "metric": "ffn_out0",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.02430724618311104,
+   "floor": 0.024249059141354622,
+   "band": "<= 4.860e-02",
+   "pass": true
+  },
+  {
+   "metric": "h0",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.022899644538157297,
+   "floor": 0.022762081730156394,
+   "band": "<= 4.562e-02",
+   "pass": true
+  },
+  {
+   "metric": "attn_in1",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.021938355655460103,
+   "floor": 0.021737673719438206,
+   "band": "<= 4.358e-02",
+   "pass": true
+  },
+  {
+   "metric": "attn_out1",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.05329229763033446,
+   "floor": 0.05373315863419719,
+   "band": "<= 1.076e-01",
+   "pass": true
+  },
+  {
+   "metric": "ffn_out1",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.05613333606645144,
+   "floor": 0.05631627902423641,
+   "band": "<= 1.127e-01",
+   "pass": true
+  },
+  {
+   "metric": "h1",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.04788377319373832,
+   "floor": 0.04808290147014873,
+   "band": "<= 9.627e-02",
+   "pass": true
+  },
+  {
+   "metric": "attn_in2",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.04991360748958416,
+   "floor": 0.049946057592079665,
+   "band": "<= 9.999e-02",
+   "pass": true
+  },
+  {
+   "metric": "attn_out2",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.07595701899820531,
+   "floor": 0.0758048191929205,
+   "band": "<= 1.517e-01",
+   "pass": true
+  },
+  {
+   "metric": "ffn_out2",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.06728606935156149,
+   "floor": 0.06782996464300352,
+   "band": "<= 1.358e-01",
+   "pass": true
+  },
+  {
+   "metric": "h2",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.06645955007940807,
+   "floor": 0.06659993679025482,
+   "band": "<= 1.333e-01",
+   "pass": true
+  },
+  {
+   "metric": "head_x",
+   "kind": "median rel L2, n=1695",
+   "memra": 0.06867574979516064,
+   "floor": 0.06856304310610133,
+   "band": "<= 1.372e-01",
+   "pass": true
+  },
+  {
+   "metric": "pre0_absmax",
+   "kind": "median of the per-row max abs difference",
+   "memra": 0.00035165250301361084,
+   "floor": 0.0003521144390106201,
+   "band": "<= 8.042e-04",
+   "pass": true
+  },
+  {
+   "metric": "route0_agree",
+   "kind": "expert-set agreement, mean",
+   "memra": 0.9980334316617502,
+   "floor": 0.9982300884955753,
+   "band": ">= 0.9882",
+   "pass": true
+  },
+  {
+   "metric": "pre1_absmax",
+   "kind": "median of the per-row max abs difference",
+   "memra": 0.005064785480499268,
+   "floor": 0.005532056093215942,
+   "band": "<= 1.116e-02",
+   "pass": true
+  },
+  {
+   "metric": "route1_agree",
+   "kind": "expert-set agreement, mean",
+   "memra": 0.9830875122910522,
+   "floor": 0.983480825958702,
+   "band": ">= 0.9735",
+   "pass": true
+  },
+  {
+   "metric": "pre2_absmax",
+   "kind": "median of the per-row max abs difference",
+   "memra": 0.000200626440346241,
+   "floor": 0.00020835548639297485,
+   "band": "<= 5.167e-04",
+   "pass": true
+  },
+  {
+   "metric": "route2_agree",
+   "kind": "expert-set agreement, mean",
+   "memra": 0.9797443461160275,
+   "floor": 0.9791543756145525,
+   "band": ">= 0.9692",
+   "pass": true
+  },
+  {
+   "metric": "draft_token_agree",
+   "kind": "agreement with the vendor GPU draft, n=1695",
+   "memra": 0.9557522123893806,
+   "floor": 0.9528023598820059,
+   "band": ">= 0.9425",
+   "pass": true
+  },
+  {
+   "metric": "draft_token_agree_same_ctx",
+   "kind": "agreement with the vendor GPU draft, n=1634",
+   "memra": 0.9712362301101591,
+   "floor": 0.9728897104128158,
+   "band": ">= 0.9629",
+   "pass": true
+  },
+  {
+   "metric": "conf_absdiff",
+   "kind": "mean absolute difference",
+   "memra": 0.09963812778340231,
+   "floor": 0.09730648251797817,
+   "band": "<= 1.947e-01",
+   "pass": true
+  },
+  {
+   "metric": "conf_sigmoid_absdiff",
+   "kind": "mean absolute difference",
+   "memra": 0.005342393354347461,
+   "floor": 0.005531844789149654,
+   "band": "<= 1.116e-02",
+   "pass": true
+  },
+  {
+   "metric": "kl_top32",
+   "kind": "mean KL(vendor GPU || x), n=1634",
+   "memra": 0.006159269469464697,
+   "floor": 0.006514677891443628,
+   "band": "<= 1.303e-02",
+   "pass": true
+  },
+  {
+   "metric": "kl_full",
+   "kind": "mean KL(vendor GPU || x), n=191",
+   "memra": 0.008013061286708045,
+   "floor": 0.012558730356343084,
+   "band": "<= 2.512e-02",
+   "pass": true
+  },
+  {
+   "metric": "markov_bias_rel_l2",
+   "kind": "median rel L2, n=191",
+   "memra": 1.08955577533937e-07,
+   "floor": 3.580505614800618e-08,
+   "band": "<= 1.001e-04",
+   "pass": true
+  }
+ ]
+}

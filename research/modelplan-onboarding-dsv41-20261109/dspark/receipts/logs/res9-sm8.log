@@ -1,0 +1,28 @@
+02:54:22 res9-sm8: lease on GPU3 (GPU-<uuid>), receipt $LANE/leases/spec-res9-sm8-20261110T025422
+host memory before: Mem:            1002          44         375           0         570         957
+dsv41-spec: capital done in 0.0s
+dsv41-spec: hebrew done in 0.0s
+dsv41-spec: multiturn done in 0.0s
+dsv41-spec: expert cache CacheStats { lookups: 0, hits: 0, misses: 0, h2d_bytes: 0, evictions: 0, slabs_released: 0, slabs_grown: 0 }, slots []
+{"id":"short","job":"rows-time","one_token_ms":[5.787896,5.68408,5.58345,5.546264000000001,5.761716,5.701306,5.615778,5.705813,5.748537,5.528066,5.586695,5.551722],"one_token_ms_median":5.68408,"pass":true,"prefill_ms":37.072601,"prompt":27,"reps":12,"rows_2_to_6_first_ms":[7.226462000000001,8.405279,9.50029,11.460008,12.269231],"rows_2_to_6_repeat_ms_median":[6.986572,8.198969,9.13254,11.202342,12.0551],"same_token_rows_2_to_6_first_ms":[7.083397,8.059621,8.438499,10.044535999999999,10.737695],"same_token_rows_2_to_6_repeat_ms_median":[7.126953,7.990247000000001,8.66645,10.039419,10.8672]}
+{"id":"needle","job":"rows-time","one_token_ms":[6.469908,6.238631,6.388566,6.229227000000001,6.427094,6.383819,6.350068,6.181546,6.220314,6.176728000000001,6.227715,6.149959],"one_token_ms_median":6.238631,"pass":true,"prefill_ms":471.94263199999995,"prompt":3761,"reps":12,"rows_2_to_6_first_ms":[7.672091,9.128243,10.030095,12.006938,12.67577],"rows_2_to_6_repeat_ms_median":[7.694553,8.927832,10.038046999999999,11.873688,12.595970999999999],"same_token_rows_2_to_6_first_ms":[8.008384,8.709736,9.43975,10.899918999999999,11.457935],"same_token_rows_2_to_6_repeat_ms_median":[7.926070999999999,8.821703,9.204317,10.816393,11.484235]}
+{"id":"needle1200","job":"rows-time","one_token_ms":[6.93185,6.827043,6.962426,6.958541,6.864079,6.791720000000001,6.901155,6.766934,6.797689,6.794675,6.770027,6.734935],"one_token_ms_median":6.827043,"pass":true,"prefill_ms":1709.788761,"prompt":18343,"reps":12,"rows_2_to_6_first_ms":[8.246881,9.273610999999999,10.618367,12.598354,14.300726],"rows_2_to_6_repeat_ms_median":[8.167232,9.289775,10.642172,12.688319,13.488749],"same_token_rows_2_to_6_first_ms":[8.270968,9.094692,9.821943,11.521831,12.207268000000001],"same_token_rows_2_to_6_repeat_ms_median":[8.274213000000001,9.165048,9.932497999999999,11.530854,12.276342000000001]}
+{"arm_a_s":0.164821321,"arm_b_s":0.07764081,"blocks":7,"first_bad":null,"id":"gsm","job":"verify-rows","logit_rows_equal":20,"pass":true,"prompt":42,"rejected_rows":6,"rows":20,"steps":20,"tap_rows_equal":20}
+{"arm_a_s":2.426413301,"arm_b_s":1.30822223,"blocks":109,"first_bad":null,"id":"cross128","job":"verify-rows","logit_rows_equal":346,"pass":true,"prompt":27,"rejected_rows":86,"rows":346,"steps":346,"tap_rows_equal":346}
+{"arm_a_s":2.423633584,"arm_b_s":1.3194700400000001,"blocks":109,"first_bad":null,"id":"cross128odd","job":"verify-rows","logit_rows_equal":346,"pass":true,"prompt":22,"rejected_rows":86,"rows":346,"steps":346,"tap_rows_equal":346}
+{"arm_a_s":2.7255527280000003,"arm_b_s":1.3867760279999999,"blocks":109,"first_bad":null,"id":"needle","job":"verify-rows","logit_rows_equal":346,"pass":true,"prompt":3761,"rejected_rows":86,"rows":346,"steps":346,"tap_rows_equal":346}
+{"blocks_equal_vendor":18,"draft_tokens":95,"draft_tokens_equal_vendor":94,"id":"gsm","job":"draft-tape","pass":true,"prompt":42,"secs":0.19023194,"steps":19}
+{"blocks_equal_vendor":39,"draft_tokens":205,"draft_tokens_equal_vendor":203,"id":"code","job":"draft-tape","pass":true,"prompt":24,"secs":0.403464577,"steps":41}
+{"blocks_equal_vendor":28,"draft_tokens":145,"draft_tokens_equal_vendor":143,"id":"copy","job":"draft-tape","pass":true,"prompt":41,"secs":0.275906272,"steps":29}
+{"blocks_equal_vendor":48,"draft_tokens":320,"draft_tokens_equal_vendor":294,"id":"story","job":"draft-tape","pass":true,"prompt":22,"secs":0.709520661,"steps":64}
+{"blocks_equal_vendor":50,"draft_tokens":320,"draft_tokens_equal_vendor":295,"id":"hebrew_para","job":"draft-tape","pass":true,"prompt":27,"secs":0.621076888,"steps":64}
+{"blocks_equal_vendor":48,"draft_tokens":260,"draft_tokens_equal_vendor":256,"id":"code_pal","job":"draft-tape","pass":true,"prompt":33,"secs":0.495126864,"steps":52}
+{"blocks_equal_vendor":12,"draft_tokens":70,"draft_tokens_equal_vendor":68,"id":"sys_json","job":"draft-tape","pass":true,"prompt":31,"secs":0.14525393,"steps":14}
+{"blocks_equal_vendor":43,"draft_tokens":245,"draft_tokens_equal_vendor":235,"id":"gsm_think","job":"draft-tape","pass":true,"prompt":68,"secs":0.519235642,"steps":49}
+{"blocks_equal_vendor":2,"draft_tokens":10,"draft_tokens_equal_vendor":10,"id":"needle","job":"draft-tape","pass":true,"prompt":3761,"secs":0.022396201,"steps":2}
+{"blocks_equal_vendor":1,"draft_tokens":5,"draft_tokens_equal_vendor":5,"id":"capital","job":"draft-tape","pass":true,"prompt":16,"secs":0.012137003,"steps":1}
+{"blocks_equal_vendor":2,"draft_tokens":10,"draft_tokens_equal_vendor":10,"id":"hebrew","job":"draft-tape","pass":true,"prompt":16,"secs":0.022494959,"steps":2}
+{"blocks_equal_vendor":1,"draft_tokens":10,"draft_tokens_equal_vendor":7,"id":"multiturn","job":"draft-tape","pass":true,"prompt":45,"secs":0.02529105,"steps":2}
+SPEC-DONE jobs 19 failed 0
+spec_run rc 0
+02:54:54 res9-sm8: lease ended rc 0

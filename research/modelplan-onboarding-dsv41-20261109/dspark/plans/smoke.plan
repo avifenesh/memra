@@ -1,0 +1,4 @@
+# first run on a card: one short byte gate, one draft tape, one drafted generation
+verify-rows gsm $LANE/dec/ids/gsm.prompt.i32 $LANE/dec/ids/gsm.gen.i32
+draft-tape gsm $LANE/spec/tapes-raw/gsm
+gen code $LANE/dec/ids/code.prompt.i32 48
