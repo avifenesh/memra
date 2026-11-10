@@ -3146,9 +3146,9 @@ extern "C" int memra_v41_moe_owner(const int* order, int n, const int* off, int 
 template <int V41_HCT, int V41_HCM>
 __global__ void __launch_bounds__(800, 1) v41_hc_mixes_part_kernel(const v41_bf* __restrict__ x,
                                                                    const float* __restrict__ fn, int nmix, int n,
-                                                                   int rows, float* __restrict__ parts) {
+                                                                   int rows, float* __restrict__ parts, int b0) {
     __shared__ __align__(16) v41_bf sx[V41_HCM][V41_HCT][32];  // raw bf16, widened where it is read
-    int b = blockIdx.y;  // virtual warp
+    int b = blockIdx.y + b0;  // virtual warp (b0: the first of a rank's share, see memra_v41_hc_mixes_part)
     int s0 = blockIdx.x * V41_HCT;
     int j = threadIdx.x >> 5, lane = threadIdx.x & 31;
     int nt = min(V41_HCT, rows - s0);
@@ -3344,14 +3344,43 @@ extern "C" int memra_v41_hc_mixes(const void* x, const float* fn, const float* s
                                                                                    parts);
     } else if (rows == 1) {
         v41_hc_mixes_part_kernel<1, 40><<<dim3(1, 8), 32 * (nmix + 1), 0, st>>>((const v41_bf*)x, fn, nmix, hc * d,
-                                                                               rows, parts);
+                                                                               rows, parts, 0);
     } else {
         dim3 g1((rows + 15) / 16, 8);
         v41_hc_mixes_part_kernel<16, 16><<<g1, 32 * (nmix + 1), 0, st>>>((const v41_bf*)x, fn, nmix, hc * d, rows,
-                                                                          parts);
+                                                                          parts, 0);
     }
     v41_hc_finish_kernel<<<(rows + 15) / 16, 256, 0, st>>>(parts, nmix, hc * d, norm_eps, scale, base, hc, iters,
                                                            hc_eps, mixes, pre, post, comb, rows);
+    V41_ERR();
+}
+
+// The many-token partial pass for the virtual warps [b0, b0 + nb) only, and the finish on its own. The 8
+// virtual warps' sums are independent of each other and every rank holds the whole stream, so on N ranks
+// each rank runs 8 / N of them, the sums are gathered, and every rank runs the finish: the same sums in
+// the same orders as memra_v41_hc_mixes, a rank reading 1 / N of the mix weights. More than V41_SM_MAX rows
+// (below that the one-token kernel a row is one launch and a gather would cost more than it saves).
+extern "C" int memra_v41_hc_mixes_part(const void* x, const float* fn, int rows, int hc, int d, int b0, int nb,
+                                       float* parts, void* stream) {
+    int nmix = (2 + hc) * hc;
+    if (hc <= 0 || hc > 4 || nmix > 31 || b0 < 0 || nb <= 0 || b0 + nb > 8) return 41047;
+    if ((hc * d) % 8 || (uintptr_t)x % 16) return 41047;
+    if (rows <= V41_SM_MAX) return 41047;
+    dim3 g1((rows + 15) / 16, nb);
+    v41_hc_mixes_part_kernel<16, 16><<<g1, 32 * (nmix + 1), 0, (cudaStream_t)stream>>>((const v41_bf*)x, fn, nmix,
+                                                                                       hc * d, rows, parts, b0);
+    V41_ERR();
+}
+
+extern "C" int memra_v41_hc_mixes_finish(const float* parts, const float* scale, const float* base, int rows, int hc,
+                                         int d, int iters, float norm_eps, float hc_eps, float* mixes, float* pre,
+                                         float* post, float* comb, void* stream) {
+    int nmix = (2 + hc) * hc;
+    if (hc <= 0 || hc > 4 || nmix > 31) return 41047;
+    if (rows <= 0) return rows < 0 ? 41047 : 0;
+    v41_hc_finish_kernel<<<(rows + 15) / 16, 256, 0, (cudaStream_t)stream>>>(parts, nmix, hc * d, norm_eps, scale,
+                                                                             base, hc, iters, hc_eps, mixes, pre,
+                                                                             post, comb, rows);
     V41_ERR();
 }
 

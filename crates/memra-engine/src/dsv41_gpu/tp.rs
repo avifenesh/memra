@@ -1342,13 +1342,26 @@ impl Group {
             }
         }
         let d = self.cx[0].g.dim;
+        // many rows on N ranks: each rank computes its share of the mHC mixes' partial sums
+        let split_mix = n > 1 && 8 % n == 0 && s > super::SMALL_M;
+        let parts = if split_mix {
+            Some(self.hc_parts(lw, &h, s, false)?)
+        } else {
+            None
+        };
         let mix = self.each(|r, c| {
             let w = &lw[r];
-            let (_m, p, po, co) =
-                c.hc_mix(&w.hc_attn_fn, &w.hc_attn_scale, &w.hc_attn_base, &h[r], s)?;
+            let (_m, p, po, co) = match &parts {
+                Some(ps) => c.hc_mix_finish(&ps[r], &w.hc_attn_scale, &w.hc_attn_base, s)?,
+                // a few rows: under the attention, on the second stream
+                None => {
+                    c.hc_mix_under(&w.hc_attn_fn, &w.hc_attn_scale, &w.hc_attn_base, &h[r], s)?
+                }
+            };
             let x = c.hc_pre_norm(&h[r], &pre[r], &w.attn_norm, s)?;
             Ok((p, po, co, x))
         })?;
+        drop(parts);
         let (mut a_pre, mut a_post, mut a_comb, mut xs) = (vec![], vec![], vec![], vec![]);
         for (p, po, co, x) in mix {
             a_pre.push(p);
@@ -1358,12 +1371,25 @@ impl Group {
         }
         let a = self.attention(lw, &xs, sp, s, sh, ls, tr)?;
         drop(xs);
+        let parts = if split_mix {
+            // h[r] becomes the stream after attention
+            self.each(|r, c| c.hc_post_in_place(&a[r], &h[r], &a_post[r], &a_comb[r], s))?;
+            Some(self.hc_parts(lw, &h, s, true)?)
+        } else {
+            None
+        };
         let ffn = self.each(|r, c| {
             let w = &lw[r];
-            // h[r] becomes the stream after attention
-            c.hc_post_in_place(&a[r], &h[r], &a_post[r], &a_comb[r], s)?;
-            let (_m, p, po, co) =
-                c.hc_mix(&w.hc_ffn_fn, &w.hc_ffn_scale, &w.hc_ffn_base, &h[r], s)?;
+            let (_m, p, po, co) = match &parts {
+                Some(ps) => c.hc_mix_finish(&ps[r], &w.hc_ffn_scale, &w.hc_ffn_base, s)?,
+                None => {
+                    // the attention's mixes ran under it; h[r] becomes the stream after attention
+                    c.side_join()?;
+                    c.hc_post_in_place(&a[r], &h[r], &a_post[r], &a_comb[r], s)?;
+                    // and the FFN's mixes run under the MoE
+                    c.hc_mix_under(&w.hc_ffn_fn, &w.hc_ffn_scale, &w.hc_ffn_base, &h[r], s)?
+                }
+            };
             let x2 = c.hc_pre_norm(&h[r], &a_pre[r], &w.ffn_norm, s)?;
             let m = c.ops.tmp(s * d * 2)?;
             Ok((p, po, co, x2, m))
@@ -1392,7 +1418,10 @@ impl Group {
             self.moe(lw, &x2, r0, rows, &m, tr)?;
         }
         drop(x2);
-        self.each(|r, c| c.hc_post_in_place(&m[r], &h[r], &f_post[r], &f_comb[r], s))?;
+        self.each(|r, c| {
+            c.side_join()?;
+            c.hc_post_in_place(&m[r], &h[r], &f_post[r], &f_comb[r], s)
+        })?;
         if let Some(a) = a {
             for (r, (aa, mm)) in a.into_iter().zip(m).enumerate() {
                 tr[r].attn_out = Some(aa);
@@ -1400,6 +1429,44 @@ impl Group {
             }
         }
         Ok((h, f_pre))
+    }
+
+    /// The mHC mixes' partial sums of `s` rows of the streams `h` with every rank computing its
+    /// share: rank r runs the virtual warps `[r * 8 / N, (r + 1) * 8 / N)` of the partial pass over
+    /// its whole stream copy (the 8 sums are independent and each reads an eighth of the mix
+    /// weights), and the sums are gathered. Each rank then holds all 8, the ones the finish adds.
+    fn hc_parts(
+        &mut self,
+        lw: &[LayerW],
+        h: &[Buf],
+        s: usize,
+        ffn: bool,
+    ) -> Result<Vec<Buf>, String> {
+        let n = self.n();
+        let nb = 8 / n;
+        let slot = {
+            let g = &self.cx[0].g;
+            ((2 + g.hc) * g.hc + 1) * 4
+        };
+        let parts = self.each(|r, c| {
+            let f = if ffn {
+                &lw[r].hc_ffn_fn
+            } else {
+                &lw[r].hc_attn_fn
+            };
+            c.hc_mix_part(f, &h[r], s, r * nb, nb)
+        })?;
+        let refs: Vec<&Buf> = parts.iter().collect();
+        let blks: Vec<Blk> = (0..n)
+            .map(|r| Blk {
+                off: r * nb * slot,
+                width: nb * slot,
+                pitch: 8 * slot,
+                rows: s,
+            })
+            .collect();
+        self.allgather(&refs, &blks)?;
+        Ok(parts)
     }
 
     /// Attention on every rank: the keys side replicated, then per query slice each rank's heads
