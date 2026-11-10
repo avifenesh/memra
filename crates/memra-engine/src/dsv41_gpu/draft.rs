@@ -653,6 +653,169 @@ impl<'a> Runner<'a> {
     }
 }
 
+/// What a decode call costs by its rows on the residency that runs it, in milliseconds: a table
+/// the caller fills from its own steps (an exponential average per row count), never a constant.
+/// The cost of a row depends on where the routed experts live (every expert a block's rows
+/// route to is read once: on one card that is most of a row's cost, split across ranks it
+/// divides by them, behind an expert cache it includes the fetches), so the table belongs to
+/// the route, and a row count nobody has run yet is read off the line through its measured
+/// neighbours.
+#[derive(Debug, Clone)]
+pub struct RowCost {
+    ms: Vec<Option<f64>>,
+}
+
+impl RowCost {
+    /// Weight of a new observation in the running average.
+    const ALPHA: f64 = 0.25;
+
+    pub fn new(max_rows: usize) -> Self {
+        Self {
+            ms: vec![None; max_rows.max(1)],
+        }
+    }
+
+    /// One call of `rows` rows took `ms`.
+    pub fn observe(&mut self, rows: usize, ms: f64) {
+        if rows == 0 || rows > self.ms.len() || !ms.is_finite() || ms <= 0.0 {
+            return;
+        }
+        let slot = &mut self.ms[rows - 1];
+        *slot = Some(match *slot {
+            Some(old) => old + Self::ALPHA * (ms - old),
+            None => ms,
+        });
+    }
+
+    /// The cost of a call of `rows` rows: its own average, or the line through the nearest
+    /// measured row counts on either side (the two nearest on one side when it lies outside
+    /// them); None until two row counts are measured.
+    pub fn ms(&self, rows: usize) -> Option<f64> {
+        if rows == 0 || rows > self.ms.len() {
+            return None;
+        }
+        if let Some(v) = self.ms[rows - 1] {
+            return Some(v);
+        }
+        let known: Vec<(f64, f64)> = self
+            .ms
+            .iter()
+            .enumerate()
+            .filter_map(|(i, v)| v.map(|v| ((i + 1) as f64, v)))
+            .collect();
+        if known.len() < 2 {
+            return None;
+        }
+        let x = rows as f64;
+        let below = known.iter().rev().find(|k| k.0 < x);
+        let above = known.iter().find(|k| k.0 > x);
+        let (a, b) = match (below, above) {
+            (Some(a), Some(b)) => (*a, *b),
+            (None, _) => (known[0], known[1]),
+            (_, None) => (known[known.len() - 2], known[known.len() - 1]),
+        };
+        let v = a.1 + (b.1 - a.1) * (x - a.0) / (b.0 - a.0);
+        // a call never costs less than the cheapest one measured
+        Some(v.max(known.iter().map(|k| k.1).fold(f64::INFINITY, f64::min)))
+    }
+}
+
+/// Tokens a verification of the first `k` drafts yields in expectation: the token after the
+/// block's first row always, and draft i when it and every draft before it hold. The
+/// confidence head's sigmoid is the chance a draft holds given that the ones before it do (on
+/// the vendor's tapes, 959 drafts: 0.99 held at a sigmoid of 0.9 and up, 0.93 at 0.8..0.9,
+/// 0.50 at 0.4..0.5, 0.17 at 0.1..0.2), so the survival of draft i is the product of the
+/// sigmoids up to it.
+pub fn expected_tokens(conf: &[f32], k: usize) -> f64 {
+    let mut alive = 1.0f64;
+    let mut tokens = 1.0f64;
+    for &c in conf.iter().take(k) {
+        alive *= 1.0 / (1.0 + (-(c as f64)).exp());
+        tokens += alive;
+    }
+    tokens
+}
+
+/// The drafts to verify this step: the depth, 0 to `max`, with the most expected tokens per
+/// millisecond of the step (the verification call of depth + 1 rows plus the draft that
+/// follows it, `draft_ms`). A deeper block is taken only when it is strictly better. While the
+/// table cannot price a call yet, every draft is verified (those calls fill it).
+pub fn price_depth(conf: &[f32], cost: &RowCost, draft_ms: f64, max: usize) -> usize {
+    let max = max.min(conf.len());
+    let mut best = (0usize, f64::NEG_INFINITY);
+    for k in 0..=max {
+        let Some(ms) = cost.ms(k + 1) else {
+            return max;
+        };
+        let rate = expected_tokens(conf, k) / (ms + draft_ms.max(0.0));
+        if rate > best.1 {
+            best = (k, rate);
+        }
+    }
+    best.0
+}
+
+/// Whether a sequence drafts at all, from what its drafted steps have yielded: a drafted step
+/// costs a draft on top of its verification, so on text whose drafts rarely hold (prose) the
+/// undrafted step is the cheaper way to a token. Each drafted step reports its tokens per
+/// millisecond against the one-token step's; while their running average stays under one the
+/// sequence stops drafting for a stretch (longer each time it happens again), then tries again.
+/// It only skips drafts, never changes a token.
+#[derive(Debug, Clone)]
+pub struct DraftGate {
+    gain: f64,
+    pause: usize,
+    stretch: usize,
+}
+
+impl Default for DraftGate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DraftGate {
+    /// Weight of a new drafted step in the running gain.
+    const ALPHA: f64 = 0.25;
+    /// Undrafted steps of the first stretch and of the longest (it doubles in between).
+    const STRETCH: (usize, usize) = (8, 64);
+
+    pub fn new() -> Self {
+        Self {
+            gain: 1.0,
+            pause: 0,
+            stretch: Self::STRETCH.0,
+        }
+    }
+
+    /// Whether the next step drafts; an undrafted step counts the stretch down.
+    pub fn drafts(&mut self) -> bool {
+        if self.pause > 0 {
+            self.pause -= 1;
+            return false;
+        }
+        true
+    }
+
+    /// A drafted step yielded `tokens` in `step_ms` (its verification call and its draft) where
+    /// a one-token step costs `plain_ms`.
+    pub fn observe(&mut self, tokens: usize, step_ms: f64, plain_ms: f64) {
+        if !(step_ms > 0.0 && plain_ms > 0.0) {
+            return;
+        }
+        let gain = tokens as f64 * plain_ms / step_ms;
+        self.gain += Self::ALPHA * (gain - self.gain);
+        if self.gain < 1.0 {
+            self.pause = self.stretch;
+            self.stretch = (self.stretch * 2).min(Self::STRETCH.1);
+            // the next try starts even
+            self.gain = 1.0;
+        } else if self.gain > 1.0 + Self::ALPHA {
+            self.stretch = Self::STRETCH.0;
+        }
+    }
+}
+
 /// The accept walk of a verified block: `targets[i]` is the target's own token after the block's
 /// row i (row 0 is the token the block started from), `drafts[i]` the draft's token for that
 /// same position. Returns how many drafts the target agrees with from the front and the token
@@ -677,5 +840,139 @@ mod tests {
         assert_eq!(accept_walk(&[1, 2], &[3]), (0, 1));
         // a one-row verification (no draft forwarded) yields the target's token
         assert_eq!(accept_walk(&[6], &[]), (0, 6));
+    }
+
+    fn logit(p: f64) -> f32 {
+        (p / (1.0 - p)).ln() as f32
+    }
+
+    /// The row costs of a 9-layer trunk resident on one card, ms (`dspark/README.md`).
+    fn resident() -> RowCost {
+        let mut c = RowCost::new(6);
+        for (rows, ms) in [
+            (1, 5.68),
+            (2, 6.99),
+            (3, 8.20),
+            (4, 9.13),
+            (5, 11.20),
+            (6, 12.06),
+        ] {
+            c.observe(rows, ms);
+        }
+        c
+    }
+
+    #[test]
+    fn a_row_count_nobody_ran_is_read_off_its_measured_neighbours() {
+        let mut c = RowCost::new(6);
+        assert_eq!(c.ms(1), None);
+        c.observe(1, 10.0);
+        assert_eq!(c.ms(1), Some(10.0));
+        assert_eq!(c.ms(3), None, "one point prices nothing else");
+        c.observe(6, 20.0);
+        assert_eq!(c.ms(3), Some(14.0));
+        c.observe(3, 12.0);
+        assert_eq!(c.ms(2), Some(11.0));
+        assert_eq!(c.ms(5), Some(12.0 + (20.0 - 12.0) * 2.0 / 3.0));
+        // an average, not the last value
+        c.observe(1, 14.0);
+        assert_eq!(c.ms(1), Some(11.0));
+        assert_eq!(c.ms(0), None);
+        assert_eq!(c.ms(7), None);
+        // outside the measured range: the line through the two nearest, never under the cheapest
+        let mut d = RowCost::new(6);
+        d.observe(3, 9.0);
+        d.observe(4, 10.0);
+        assert_eq!(d.ms(6), Some(12.0));
+        assert_eq!(d.ms(1), Some(9.0));
+    }
+
+    #[test]
+    fn expected_tokens_follow_the_survival_of_the_drafts() {
+        let conf = [logit(0.5), logit(0.5), logit(0.5)];
+        assert!((expected_tokens(&conf, 0) - 1.0).abs() < 1e-9);
+        assert!((expected_tokens(&conf, 1) - 1.5).abs() < 1e-6);
+        assert!((expected_tokens(&conf, 3) - 1.875).abs() < 1e-6);
+        assert!((expected_tokens(&conf, 9) - 1.875).abs() < 1e-6);
+    }
+
+    #[test]
+    fn confident_drafts_are_verified_whole_and_doubtful_ones_cut_short() {
+        let cost = resident();
+        // code-like: every draft near certain
+        let sure = [
+            logit(0.99),
+            logit(0.99),
+            logit(0.97),
+            logit(0.97),
+            logit(0.95),
+        ];
+        assert_eq!(price_depth(&sure, &cost, 2.0, 5), 5);
+        // prose-like: the first draft a coin flip, the rest unlikely
+        let prose = [
+            logit(0.47),
+            logit(0.29),
+            logit(0.19),
+            logit(0.17),
+            logit(0.15),
+        ];
+        let k = price_depth(&prose, &cost, 2.0, 5);
+        assert!((1..=2).contains(&k), "prose depth {k}");
+        // hopeless drafts: the one-token call
+        let none = [logit(0.02); 5];
+        assert_eq!(price_depth(&none, &cost, 2.0, 5), 0);
+        // the cap holds
+        assert_eq!(price_depth(&sure, &cost, 2.0, 3), 3);
+        // rows that cost almost nothing more: doubtful drafts are verified as far as they add
+        // anything (the fourth's survival is 0.004)
+        let mut flat = RowCost::new(6);
+        flat.observe(1, 10.0);
+        flat.observe(6, 10.5);
+        assert_eq!(price_depth(&prose, &flat, 2.0, 5), 3);
+        // rows that cost a whole step each: doubtful drafts are not worth one, and even
+        // near-certain ones stop paying before the block ends
+        let mut steep = RowCost::new(6);
+        steep.observe(1, 10.0);
+        steep.observe(6, 60.0);
+        assert_eq!(price_depth(&prose, &steep, 2.0, 5), 0);
+        assert_eq!(price_depth(&sure, &steep, 2.0, 5), 3);
+        // an unpriced table verifies everything
+        assert_eq!(price_depth(&prose, &RowCost::new(6), 2.0, 5), 5);
+    }
+
+    #[test]
+    fn a_sequence_whose_drafts_do_not_pay_stops_drafting_for_a_stretch() {
+        let mut g = DraftGate::new();
+        assert!(g.drafts());
+        // one token for a step that costs 1.5 one-token steps: a loss
+        g.observe(1, 15.0, 10.0);
+        let mut skipped = 0;
+        while !g.drafts() {
+            skipped += 1;
+        }
+        assert_eq!(skipped, 8);
+        // the same again: a longer stretch
+        g.observe(1, 15.0, 10.0);
+        let mut skipped = 0;
+        while !g.drafts() {
+            skipped += 1;
+        }
+        assert_eq!(skipped, 16);
+        // drafts that pay keep it drafting and shorten the next stretch
+        for _ in 0..8 {
+            g.observe(5, 20.0, 10.0);
+            assert!(g.drafts());
+        }
+        // a run of losses after a good spell: the average has to fall under one first
+        for _ in 0..3 {
+            g.observe(1, 60.0, 10.0);
+            assert!(g.drafts());
+        }
+        g.observe(1, 60.0, 10.0);
+        let mut skipped = 0;
+        while !g.drafts() {
+            skipped += 1;
+        }
+        assert_eq!(skipped, 8);
     }
 }
