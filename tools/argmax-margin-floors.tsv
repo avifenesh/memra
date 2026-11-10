@@ -22,4 +22,17 @@
 # A row changes only by recalibration, in the PR whose decision record accepts the change of
 # numeric class, with the old and the new row shown (docs/TESTING.md).
 #
+#
+# The rows below were measured with main 031f146690's unmodified argmax-margin-probe (sm_120a
+# build sha256 723a3f7ff8dd..., sm_121a build sha256 6e6650071f22...) over every row of
+# board-2048 (2,045 of T = 2,048). Main was at 2628ece940 when they landed; board-2048 does not
+# reach the depth that commit changes on GB10, and the roster's 12-row tables are byte-identical
+# across it (research/argmax-gate-rule-20261110/README.md).
+#
 # model	prompt	prompt_sha256	decode	device	floor	rows	set_by_row	p50	p99	p999	known_rows	receipt
+Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp	board-2048	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc	batch	NVIDIA GeForce RTX 5090 Laptop GPU	3.955724716e0	1874	740	1.994380951e-1	1.581853867e0	3.339081764e0	-	research/argmax-gate-rule-20261110/calibration/rtx5090-laptop/ornith-batch/probe.log
+Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp	board-2048	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc	eager	NVIDIA GeForce RTX 5090 Laptop GPU	3.558178902e0	1846	306	1.972351074e-1	1.522388458e0	2.265349388e0	41:18:1.472389221e0:15:2.899415970e0;1809:22:4.079244614e0:332:7.047653198e-2	research/argmax-gate-rule-20261110/calibration/rtx5090-laptop/ornith-eager/probe.log
+Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp	board-2048	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc	batch	NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition	3.695106506e0	1864	1169	1.948432922e-1	1.504308701e0	2.763144493e0	-	research/argmax-gate-rule-20261110/calibration/rtxpro6000-maxq/ornith-batch/probe.log
+Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp	board-2048	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc	eager	NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition	3.917836189e0	1872	306	1.994085312e-1	1.369862556e0	2.847815514e0	41:18:1.472389221e0:15:2.899415970e0	research/argmax-gate-rule-20261110/calibration/rtxpro6000-maxq/ornith-eager/probe.log
+Qwen3.8-27B-NVFP4-Q5K-mtp	board-2048	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc	batch	NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition	4.241897583e0	2004	1198	4.948997498e-2	3.706073761e-1	1.221977234e0	-	research/argmax-gate-rule-20261110/calibration/rtxpro6000-maxq/q38-batch/probe.log
+Qwen3.8-27B-NVFP4-Q5K-mtp	board-2048	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc	eager	NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition	3.959527969e0	2001	1198	4.813766479e-2	3.938093185e-1	1.139497757e0	-	research/argmax-gate-rule-20261110/calibration/rtxpro6000-maxq/q38-eager/probe.log

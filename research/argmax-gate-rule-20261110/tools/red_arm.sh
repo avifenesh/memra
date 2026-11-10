@@ -34,7 +34,7 @@ for tree in base head; do
     printf 'A prompt fixture.\n' > "$root/prompt.txt"
     : > "$root/model.gguf"
     sha=$(sha256sum "$root/prompt.txt" | cut -d' ' -f1)
-    printf 'model\tprompt\t%s\teager\tCPU fixture device\t4.000000000e-1\t2040\t2047\tresearch/fixture/gate.log\n' "$sha" \
+    printf 'model\tprompt\t%s\teager\tCPU fixture device\t4.000000000e-1\t2040\t2047\t1.000000000e-1\t2.000000000e-1\t3.000000000e-1\t-\tresearch/fixture/gate.log\n' "$sha" \
         > "$root/tools/argmax-margin-floors.tsv"
     for name in wide-flip near-tie wide-row; do
         printf '#!/bin/sh\nif [ "$1" = --judge ]; then exec %s "$@"; fi\nprintf "%%s\\n" "%s" "%s"\n' \

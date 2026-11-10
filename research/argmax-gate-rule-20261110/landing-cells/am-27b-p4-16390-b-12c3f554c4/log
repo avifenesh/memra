@@ -1,0 +1,10 @@
+2026-11-10T15:58:44+02:00 arm=T commit=12c3f554c4fdc3992fea68acf3a1eb6a2f943e6b probe sha256 before: 22293a1dac1385a36ef29c6a4845028d86ee94ca8c6045bb616bb3b48755ca4c
+c9b1e8578dd07cbd06d7a0b3ecb06a4a617aaa5ac0186587b62d81a8137ee112  ~/.cache/memra-split-rung/prompts/p4-16390.txt
+argmax-margin-gate: model=Qwen3.8-27B-NVFP4-Q5K-mtp.gguf prompt=p4-16390.txt window=12 decode=batch canary=0
+  flip budget: 1 (row: default)
+  SUMMARY flips=0 bad=0
+  SERVED-SUMMARY served=MATCH
+    SERVED-ARGMAX: rows=12 device_mismatch=0
+  PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+  raw: ~/.cache/memra-split-rung/cells/am-27b-p4-16390-b-12c3f554c4/gate/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-p4-16390.batch.log
+2026-11-10T16:22:25+02:00 rc=0 probe sha256 after: 22293a1dac1385a36ef29c6a4845028d86ee94ca8c6045bb616bb3b48755ca4c

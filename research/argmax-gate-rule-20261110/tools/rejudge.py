@@ -7,9 +7,11 @@ the cell's floor is a wide flip, an agreeing row whose margin difference is abov
 row, a flip in a cell with no floor row cannot be classified. Arithmetic is done in f32, as the
 gate does it.
 
-A receipt names its device only by SM count, and its prompt only by name, so the key here is
-(model, prompt name, decode program, device name from the SM count). The gate itself also keys
-on the prompt's sha256.
+A probe table names its device only by SM count, and its prompt only by name, so the key here
+is (model, prompt name, decode program, device name). The device name is taken from the SM count
+for GB10 (48) and the RTX 5090 Laptop GPU (82); a 188-SM table gets the RTX PRO 6000 Max-Q name
+only inside research/release-qualification/, whose records name that card. Every other table has
+no floor. The gate itself also keys on the prompt's sha256.
 
 usage: rejudge.py rows.tsv floors.tsv > REJUDGE.md
 """
@@ -22,6 +24,13 @@ DEVICE_OF_SM = {
     "48": "NVIDIA GB10",
     "82": "NVIDIA GeForce RTX 5090 Laptop GPU",
 }
+PRO6000_MAXQ = "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+
+
+def device_of(sm, source):
+    if sm == "188" and source.startswith("research/release-qualification/"):
+        return PRO6000_MAXQ
+    return DEVICE_OF_SM.get(sm)
 
 
 def f32(x):
@@ -43,8 +52,14 @@ def load_floors(path):
         for line in handle:
             if not line.strip() or line.startswith("#"):
                 continue
-            model, prompt, _sha, decode, device, floor, rows, set_by, receipt = line.rstrip("\n").split("\t")
-            floors[(model, prompt, decode, device)] = (f32(float(floor)), rows, set_by, receipt)
+            f = line.rstrip("\n").split("\t")
+            model, prompt, decode, device, floor, known = f[0], f[1], f[3], f[4], f[5], f[11]
+            recorded = {}
+            if known != "-":
+                for entry in known.split(";"):
+                    pos, _p1, mp, _d1, md = entry.split(":")
+                    recorded[int(pos)] = f32(f32(float(mp)) + f32(float(md)))
+            floors[(model, prompt, decode, device)] = (f32(float(floor)), recorded)
     return floors
 
 
@@ -54,7 +69,10 @@ def main():
     tables = collections.defaultdict(list)
     with open(rows_path, encoding="utf-8") as handle:
         for r in csv.DictReader(handle, delimiter="\t"):
-            if r["tree"] == "kv-quant" or "argmax-gate-rule-20261110/" in r["source"]:
+            # This lane's calibration, timing and green-arm logs are not history; the
+            # landing cells banked here are.
+            lane = "argmax-gate-rule-20261110/"
+            if r["tree"] == "kv-quant" or any(lane + d in r["source"] for d in ("calibration/", "timing/", "green-arm/")):
                 continue
             tables[(r["tree"], r["source"], r["table"])].append(r)
     distinct = collections.defaultdict(list)
@@ -76,14 +94,17 @@ def main():
         budget = old_budget(model, prompt, len(rk))
         flips = [r for r in rk if r[1] != r[3]]
         old = "PASS" if len(flips) <= budget else "FAIL (count)"
-        device = DEVICE_OF_SM.get(sm)
+        device = device_of(sm, sorted(sources)[0])
         floor = floors.get((model, prompt, arm, device)) if device else None
         findings = []
         near = 0
         for pos, p1, mp, d1, md, spread in rk:
             flip = p1 != d1
             shift = f32(mp + md) if flip else abs(f32(mp - md))
-            if flip and floor is None:
+            if floor is not None and pos in floor[1]:
+                name = "KNOWN-ROW-WIDER" if shift > floor[1][pos] else "KNOWN-ROW"
+                findings.append((name, pos, mp, md, shift))
+            elif flip and floor is None:
                 findings.append(("UNCALIBRATED-FLIP", pos, mp, md, shift))
             elif flip and shift > floor[0]:
                 findings.append(("WIDE-FLIP", pos, mp, md, shift))
@@ -92,7 +113,7 @@ def main():
                 findings.append(("near-tie", pos, mp, md, shift))
             elif floor is not None and shift > floor[0]:
                 findings.append(("WIDE-ROW", pos, mp, md, shift))
-        bad = [f for f in findings if f[0] != "near-tie"]
+        bad = [f for f in findings if f[0] not in ("near-tie", "KNOWN-ROW")]
         if bad:
             new = "FAIL: " + ", ".join(sorted({f[0] for f in bad}))
         elif near > budget:
