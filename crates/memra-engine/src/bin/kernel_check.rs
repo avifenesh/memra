@@ -8581,6 +8581,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // takes, and has no eager twin.
                 {
                     let (mut dc_cases, mut dc_bad) = (0usize, 0usize);
+                    let mut dc_teeth: Vec<(usize, usize)> = Vec::new();
                     let kfull = e.view_u8(&kc_a, kc_a.len());
                     let vfull = e.view_u8(&vc_a, vc_a.len());
                     let mut q1 = e.zeros(hd * nh_r)?;
@@ -8603,6 +8604,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             )?;
                             let a = e.dtoh(&o_e)?;
                             let t_dev = e.htod_i32(&[t_kv as i32])?;
+                            // Teeth: the row on the edge, sized past it (the far rung's
+                            // partition, as the draft's scratch bucket can be), must differ
+                            // from eager, or this cell could not see a partition change.
+                            if t_kv == edge && edge < deep_max {
+                                let mut o_x = e.zeros(hd * nh_r)?;
+                                e.fa_decode_dc(
+                                    &q1,
+                                    &kfull,
+                                    &vfull,
+                                    &mut o_x,
+                                    hd,
+                                    nh_r,
+                                    nhkv_r,
+                                    &t_dev,
+                                    edge + 1,
+                                    scale,
+                                    ktb,
+                                    vtb,
+                                    false,
+                                )?;
+                                let x = e.dtoh(&o_x)?;
+                                dc_teeth.push((
+                                    edge,
+                                    a.iter()
+                                        .zip(&x)
+                                        .filter(|(p, q)| p.to_bits() != q.to_bits())
+                                        .count(),
+                                ));
+                            }
                             for bucket in [t_kv, seg_end] {
                                 let mut o_d = e.zeros(hd * nh_r)?;
                                 e.fa_decode_dc(
@@ -8628,9 +8658,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!(
                         "FA-DC-EAGER gqa={} ({nh_r}/{nhkv_r}): fa_decode_dc vs fa_decode for one row at the split \
                          ladder edges {edges:?}, {dc_cases} cases (each side; dc sized at the row and at its rung's \
-                         end): bitdiff={dc_bad} {}",
+                         end): bitdiff={dc_bad}; teeth (the edge row sized on the far rung, words that differ) \
+                         {dc_teeth:?} {}",
                         nh_r / nhkv_r,
-                        if dc_bad == 0 && (edges.is_empty() || dc_cases > 0) {
+                        if dc_bad == 0
+                            && (edges.is_empty() || dc_cases > 0)
+                            && dc_teeth.iter().all(|t| t.1 > 0)
+                        {
                             "OK"
                         } else {
                             fails += 1;
