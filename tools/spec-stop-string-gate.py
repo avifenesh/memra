@@ -25,8 +25,10 @@ Boots, one per invocation, so a GPU lease covers one boot:
                writes plan.json and runs every row: the reference counts and texts.
   boot NAME    a speculative boot (--route mtp or dspark) with --env NAME=VALUE pins, for
                example `boot small --env MEMRA_SPEC_BURST=2` (a burst ends at nearly every
-               round). An MTP boot runs with MEMRA_SPEC_SETUP_TRACE=1 and MEMRA_DEBUG_SPEC=1:
-               the burst ends and the per-round drafts are read from its log.
+               round). It runs with MEMRA_SPEC_GATE=0 (no demotion to plain decode) and fails a
+               row that did not speculate to its end. An MTP boot also runs with
+               MEMRA_SPEC_SETUP_TRACE=1 and MEMRA_DEBUG_SPEC=1: the burst ends and the per-round
+               drafts are read from its log.
   judge        reads every boot under DIR.
 
 The judge fails a speculative row whose text, finish reason or completion tokens differ from
@@ -286,9 +288,15 @@ class Server:
                "close_ms": tail, "burst_ends": ends, "receipts": receipts,
                "park": [m[:200] for m in PARK.findall(chunk)],
                "sha": hashlib.sha256(o["text"].encode()).hexdigest()[:16], "error": o["error"]}
+        row["demoted"] = chunk.count("[spec-gate] demoted session")
+        speculative = self.case != "ref"
         if row["error"] is None:
             if not o["text"] or not row["completion_tokens"]:
                 row["error"] = "empty answer"
+            elif speculative and (row["completion_tokens"] or 0) > 1 and row["acceptance"] is None:
+                row["error"] = "the request did not speculate (no acceptance in its usage): it tested plain decode"
+            elif speculative and row["demoted"]:
+                row["error"] = "the request was demoted to plain decode mid-answer: its stop tested plain decode"
             elif want_cached and not row["cached"]:
                 row["error"] = "the resumed request restored nothing (cached_tokens is 0)"
         (self.args.out / "texts").mkdir(exist_ok=True)
@@ -349,7 +357,10 @@ def run_boot(args):
         if not plan_path.exists():
             raise SystemExit("run the ref boot first: no plan.json")
         plan = json.loads(plan_path.read_text())
-        env = {"MEMRA_SPEC_SETUP_TRACE": "1", "MEMRA_DEBUG_SPEC": "1"} if args.route == "mtp" else {}
+        # MEMRA_SPEC_GATE=0: no demotion to plain decode, so every row speculates to its end.
+        env = {"MEMRA_SPEC_GATE": "0"}
+        if args.route == "mtp":
+            env.update({"MEMRA_SPEC_SETUP_TRACE": "1", "MEMRA_DEBUG_SPEC": "1"})
     if any(r.get("case") == args.case for r in load_rows(args.out)):
         raise SystemExit(f"{args.out} already holds boot {args.case}")
     srv = Server(args, args.case, env)
@@ -527,6 +538,8 @@ def judge(out):
     for r in rows:
         if r["error"]:
             failures.append(f"{r['case']} {r['id']}: {r['error']}")
+        elif r["case"] != "ref" and (r["completion_tokens"] or 0) > 1 and r["acceptance"] is None:
+            failures.append(f"{r['case']} {r['id']}: the request did not speculate: it tested plain decode")
     for case in [b["case"] for b in boots if b["case"] != "ref"]:
         mine = [r for r in rows if r["case"] == case]
         rejects = json.loads((out / f"reject-{case}.json").read_text()) if (out / f"reject-{case}.json").exists() else {}
