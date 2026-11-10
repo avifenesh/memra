@@ -1190,6 +1190,52 @@ Prefill on one rank (`prefillab-k3-prefill-n1`): 4,096 tokens level (median 0.99
 thread, so fewer blocks fit a multiprocessor; that cost is open (a narrower tile keeps every
 element's program).
 
+### A four-card prefill's copies, and the copy call that was slow
+
+On four cards a 4,096-token prefill took 4.0 s (vLLM's: 0.24 s). The night pass's trace
+(`night/pre-trace`, not kept) shows where: per rank and layer 170.5 MB arrive in 21.6 peer copies,
+82 of the layer's 102 ms (678 of 769 ms at 32,768 tokens), each copy running at 2.0 GB/s. By
+tensor, into a rank a layer: the `wo_a` columns 50.3 MB, the experts' hidden columns as FP8 codes
+and scales 51.1 MB, the experts' and shared expert's output columns 31.5 MB, the `wo_b` output
+columns 31.5 MB, a small per-row gather 4.9 MB, the index selection 1.3 MB. The bytes are within
+1.35 to 2.7x of what a ring all-reduce of the layer's output moves a rank; the rate was 15x off.
+
+A standalone probe on the four cards with no model (`p2p_probe.py`, `receipts/p2p-probe`; an
+all-gather of S bytes a rank, GB/s a rank received, median of 15):
+
+| method | 10 MiB | 16 MiB | 64 MiB |
+|---|---|---|---|
+| one copy alone (its own rate) | 54.1 | 54.5 | 55.1 |
+| the 12 copies one at a time | 13.4 | 13.5 | 13.7 |
+| each consumer pulls its 3 on its stream, 4 at once | 30.9 | 31.1 | 31.1 |
+| the 12 copies at once | 26.6 | 26.1 | 26.2 |
+| kernel stores into the peers, 4 at once | 2.1 | 2.1 | 2.1 |
+| NCCL all-gather (P2P/CUMEM, 4 channels) | 36.7 | 37.3 | 38.0 |
+
+So the pattern was not the cause. The engine's own gather probe on the same cards, nothing else
+running, gave 2.3 GB/s a rank at 1 MiB: the cause was in its copy path. Its factors one at a time
+(`p2p_probe2.py`, `receipts/p2p-probe2`; consumers pull in ring order as the engine does):
+
+| GB/s a rank | 1 MiB | 16 MiB |
+|---|---|---|
+| cudaMalloc blocks, the peer copy call, pull | 27.4 | 49.7 |
+| cudaMalloc blocks, a copy by device address, pull | 27.5 | 50.0 |
+| pool blocks, the peer copy call, pull | 27.6 | 49.8 |
+| pool blocks, a copy by device address, PUSH (the producer's stream) | 32.6 | 50.9 |
+| pool blocks, a copy by device address, pull (the engine) | 2.9 | 2.67 |
+| pool blocks allocated for each gather, by device address, pull | 2.9 | 2.47 |
+
+Only one combination is slow: a stream-ordered pool block read by a consumer through a copy by
+plain device addresses, which is what every large gather did. The fix keeps the stream, the ring
+order and the events and changes the call: every copy between two ranks' cards is
+`cuMemcpyPeerAsync` naming both contexts (`copy_peer` in `tp.rs`: the packed gather, both
+peer-pull branches, and the bench's copy probe). Pure movement, so the bytes are unchanged.
+Expected at four cards: 4,096 tokens from 4.0 s to about 0.6 to 0.7 s (40 layers x (11.4 ms of
+kernels + 170 MB at 31 to 50 GB/s)), to be measured in the next four-card window with the probe's
+per-card-pair rows. Owed before this lands: the tp gates on one card and the pair (20 layers),
+the pair's prefill and decode A B B A in steady state, and the gather probe's in-kernel against
+kept-block crossing, which alone may move the push limit (in its own commit).
+
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
 The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor
@@ -1340,6 +1386,10 @@ weight traffic: 1.1 ms.
 - `step_wall.py`: a traced decode step's whole wall by layer index: each layer's median window,
   and what the heavy ones (the head, the Engram layers, the index layers) add to a typical layer
   by kernel and host call.
+- `p2p_probe.py`, `p2p_probe2.py`: transfer probes on N cards with no model (torch's NCCL, a small
+  CUDA extension): an all-gather by copy pattern, kernel stores and NCCL; the engine's copy factors
+  one at a time (pool or cudaMalloc blocks, the peer call or device addresses, pull or push) and one
+  copy alone a card pair. `copy_sizes.py`: a trace's peer copies by size into one card.
 - `steady.py`: the calls of `dsv41-tpbench` runs by how long the card has been busy (the first
   0.15 s, to 0.5 s, from 0.5 s on): the steady figure a served step pays next to the burst one.
   `trace_rot.py`: kernel time by name of a mixed-width trace against the sum of its widths traced

@@ -1,0 +1,20 @@
+build start 03:15:58
+9074ce6eac77fc460992a0dac3c0007cfed1a187b4415d953d2288d8ec1d0697  $LANE/bins/kpc/dsv41-bench
+f6dd1aa24fff23f1831cd0d34b263436848ddb88a9277435f818a8e2fb3f3005  $LANE/bins/kpc/dsv41-gate
+84ea104e6f59f0d0d034e3ab49e02442712c0562346c9d5be80e80747f90c6e3  $LANE/bins/kpc/dsv41-run
+e685e06f8cbdaf155cb44b8b435fc4aaacbdb1493f5b52f5d72bece88d78a2c6  $LANE/bins/kpc/dsv41-tpbench
+tp 0,0 peer-pull rc 0 478 checks, 0 failed 0 FAIL lines
+tp 0,0 default rc 0 480 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 0]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 0]: 708 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+tp 0,0 host-canonical rc 0 478 checks, 0 failed 0 FAIL lines
+tp 0,0,0,0 peer-pull rc 0 914 checks, 0 failed 0 FAIL lines
+tp 0,0,0,0 default rc 0 916 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 0, 0, 0]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 0, 0, 0]: 557665 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+tp 0,0,0,0 host-canonical rc 0 914 checks, 0 failed 0 FAIL lines
+tp 0,0 graph door rc 0 1105 checks, 0 failed 0 FAIL lines
+PASS graph/replayed: 12 steps x 4 repeats: 6 captures, 42 replays (12 self-checked), 42 moved, 0 refused [MEMRA_DSV41_DECODE_GRAPH=1: the decode steps ran through the captured spans]
+layer rc 0 161 checks, 0 failed 0 FAIL lines
+layer saved tensors against k3's set: 111 compared, 0 differ
+GATES-KPC-DONE 04:00:36
