@@ -274,6 +274,26 @@ esac
         args = (self.root / "argmax-batch.args").read_text().splitlines()
         self.assertEqual(args[:4], [str(self.model), "--decode", "batch", "--require-floor"])
 
+    def test_listed_argmax_cells_are_the_gate_calls_the_battery_makes(self):
+        # tools/check-argmax-floors.py reads --list-argmax-cells to demand a floor row per cell.
+        # The list is honest only if it names exactly the calls the loop makes: one eager and one
+        # --decode batch call per roster model, both on the listed prompt.
+        listed = subprocess.run(
+            ["bash", str(self.tools / "release-battery.sh"), "--roster", str(self.roster), "--list-argmax-cells"],
+            cwd=self.root, env=self.env, text=True, capture_output=True, timeout=60)
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertEqual(listed.stdout.splitlines(),
+                         ["fixture\town\tboard-2048\teager", "fixture\town\tboard-2048\tbatch"])
+        self.run_battery()
+        eager = (self.root / "argmax.args").read_text().splitlines()
+        batch = (self.root / "argmax-batch.args").read_text().splitlines()
+        self.assertNotIn("--decode", eager)
+        self.assertEqual(batch[1:3], ["--decode", "batch"])
+        for args in (eager, batch):
+            self.assertEqual(args[0], str(self.model))
+            prompt = args[args.index("--prompt") + 1]
+            self.assertTrue(prompt.endswith("/research/e2e/prompts/board-2048.txt"), prompt)
+
     def test_cell_without_a_calibrated_floor_is_refused(self):
         # A release never passes an argmax cell as UNCALIBRATED: both cells call the gate with
         # --require-floor, and its refusal is reported as one, not as a gate failure.

@@ -293,6 +293,10 @@ jobs:
         run: tools/test_release_guard.sh
       - name: Release-battery coverage fixtures (CPU only)
         run: python3 tools/test_release_battery_coverage.py
+      # The battery runs the argmax margin gate with --require-floor, so a roster model or a
+      # device with a missing floor row refuses a release. This census fails first (memra#1199).
+      - name: Argmax floors census (CPU only)
+        run: python3 tools/test_argmax_margin_floors.py
 
       # Physical GPU resolution fixtures (memra#264 reopened, CPU only). CUDA_VISIBLE_DEVICES
       # can select a physical card other than 0; these command-routing tests plant an NVML

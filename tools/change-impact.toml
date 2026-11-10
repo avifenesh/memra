@@ -168,7 +168,7 @@ why = "qualification metadata namespace (excluded from source inputs)"
 
 # --- the gate itself: a change to what is required needs the battery it requires -----
 [[rule]]
-pattern = '^tools/(change-impact\.toml|change_impact\.py|cell_evidence\.py|qualify-release\.py|release_qualification\.py|release_inputs\.py|release_input_view\.py|check_hardware_gate\.py|release-battery\.sh|release-coverage\.py|release-roster\.tsv|argmax-margin-gate\.sh|argmax-margin-floors\.tsv|serve-smoke\.sh|cache-meter-gate\.py|q35-cold-mixed-gate\.py|port-guard\.sh|chunk-invariance-gate\.sh|qualify-model-device-memory\.py|resolve-physical-gpu\.py|kernel-check-[a-z0-9]+\.cells|hooks/pre-push)$'
+pattern = '^tools/(change-impact\.toml|change_impact\.py|cell_evidence\.py|qualify-release\.py|release_qualification\.py|release_inputs\.py|release_input_view\.py|check_hardware_gate\.py|release-battery\.sh|release-coverage\.py|release-roster\.tsv|argmax-margin-gate\.sh|argmax-margin-floors\.tsv|check-argmax-floors\.py|serve-smoke\.sh|cache-meter-gate\.py|q35-cold-mixed-gate\.py|port-guard\.sh|chunk-invariance-gate\.sh|qualify-model-device-memory\.py|resolve-physical-gpu\.py|kernel-check-[a-z0-9]+\.cells|hooks/pre-push)$'
 class = "gate"
 why = "qualification battery, its helpers and coverage, the impact rules or the gate code"
 
@@ -191,6 +191,15 @@ why = "the argmax margin gate's verdict function (the probe's --judge)"
 pattern = '^research/(e2e/prompts/|sellgate-20260812/|chunk-invariance-20260805/)'
 class = "gate"
 why = "research data a gate tool reads at run time"
+
+# The calibration logs behind tools/argmax-margin-floors.tsv: each floor row names one as its
+# receipt (the cell's full per-row table). The gate does not read them when it runs, but a
+# floor row is only as good as its receipt, so an edit to one is a change to the gate's input.
+# A recalibration PR that banks its logs elsewhere adds that directory here.
+[[rule]]
+pattern = '^research/argmax-gate-rule-20261110/calibration/'
+class = "gate"
+why = "calibration receipts of the argmax margin gate's floor rows"
 
 # --- tests and diagnostics ------------------------------------------------------------
 [[rule]]
