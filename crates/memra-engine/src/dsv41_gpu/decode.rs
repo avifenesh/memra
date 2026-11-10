@@ -36,6 +36,15 @@
 //! alone through each block (one sequence, its own rows), so running several sequences in one
 //! forward never changes a sequence's numbers.
 //!
+//! Several sequences can take their next token in one call ([`Runner::forward_batch`]): the
+//! rows of the call are the sequences' one-token steps, each at its own position against its own
+//! ring, compressor pair, compressed rows, index keys, candidate pool and token history, run
+//! through each block's launches together. What acts per row runs once for all rows; what reads
+//! one sequence's buffers (its ring copy, a ratio-2 pair's pooling, the index score over its
+//! keys, its candidates and top-k, its compressed rows' copy) runs per sequence
+//! ([`super::Ctx::attn_keys_batch`]). A row's bytes are those of its sequence's own one-token
+//! call (`dsv41-spec batch-rows`).
+//!
 //! The ranks are a [`Group`]: one rank is the one-card program (with the grouped expert dispatch,
 //! byte-identical to the per-expert loop), N ranks the TP/EP partition, which writes the same
 //! bytes.
@@ -43,7 +52,7 @@
 use super::engram::EngramConsts;
 use super::experts::{CacheStats, ExpertCache, HostExperts};
 use super::tp::Group;
-use super::{BW, Buf, Geo, LayerState, LayerW, Part, Shared, Trace};
+use super::{BW, BatchRow, BatchSel, Buf, Geo, LayerState, LayerW, Part, Shared, Trace};
 use memra_gguf::safetensors::StModel;
 use std::sync::Arc;
 use std::time::Instant;
@@ -719,6 +728,212 @@ impl<'a> Runner<'a> {
                 }
             })
             .collect())
+    }
+
+    /// One decode step of several sequences in one call: `rows[i]` is `(sequence, token)`, the
+    /// sequences distinct and in ascending order, each past its prefill with no call open. The
+    /// returned [`Out`] holds the rows' streams side by side (row i is `rows[i]`), so
+    /// [`Self::logits`] and [`Self::argmax_rows`] take all of them in one head pass, and its
+    /// taps hold every row. Each row is its sequence's one-token decode call, byte for byte.
+    pub fn forward_batch(
+        &mut self,
+        seqs: &mut [Seq],
+        rows: &[(usize, u32)],
+    ) -> Result<Out, String> {
+        let n = self.grp.n();
+        let g = self.g.clone();
+        let nr = rows.len();
+        if nr == 0 {
+            return Err("a batched call needs at least one row".into());
+        }
+        let mut positions = Vec::with_capacity(nr);
+        for (i, &(si, _)) in rows.iter().enumerate() {
+            if i > 0 && rows[i - 1].0 >= si {
+                return Err("a batched call takes distinct sequences in ascending order".into());
+            }
+            let q = seqs
+                .get(si)
+                .ok_or_else(|| format!("batched row on sequence {si} of {}", seqs.len()))?;
+            if q.pending.is_some() {
+                return Err(format!("sequence {si}: rows wait for a commit"));
+            }
+            let p = q.len();
+            if p == 0 {
+                return Err(format!("sequence {si}: a batched row follows the prefill"));
+            }
+            if p + 1 > self.max_pos {
+                return Err(format!(
+                    "position {} past the runner's {} (RoPE tables and caches)",
+                    p + 1,
+                    self.max_pos
+                ));
+            }
+            positions.push(p);
+        }
+        let engram = g.engram_layers.iter().any(|&l| l < self.n_layers);
+        let tokens: Vec<u32> = rows.iter().map(|r| r.1).collect();
+        let mut hashes: Vec<Vec<i64>> = Vec::with_capacity(nr);
+        for (&(si, t), &p) in rows.iter().zip(&positions) {
+            let q = &mut seqs[si];
+            q.ids.push(t);
+            if let (Some(ec), true) = (&self.ec, engram) {
+                hashes.push(ec.hash_span(&q.ids, p)?);
+            }
+        }
+        let (eb, pm) = self.embed(&tokens)?;
+        let (hc, d) = (g.hc, g.dim);
+        let pos_i32: Vec<i32> = positions.iter().map(|&p| p as i32).collect();
+        let up = self.grp.each(|_, cx| {
+            let e = Buf::from_bytes(&cx.ops.st, &eb)?;
+            let hh = cx.ops.buf(nr * hc * d * 2)?;
+            for k in 0..hc {
+                super::copy_2d(&cx.ops, &e, 0, d * 2, &hh, k * d * 2, hc * d * 2, d * 2, nr)?;
+            }
+            Ok((
+                hh,
+                Buf::from_f32(&cx.ops.st, &pm)?,
+                Buf::from_i32(&cx.ops.st, &pos_i32)?,
+            ))
+        })?;
+        let (mut h, mut pre, mut pos) = (Vec::new(), Vec::new(), Vec::new());
+        for (a, b, c) in up {
+            h.push(a);
+            pre.push(b);
+            pos.push(c);
+        }
+        // `[row][rank]`: each row's CSA2 state for this call (its group's store swapped in per layer)
+        let mut fwd: Vec<Vec<Shared>> = (0..nr)
+            .map(|_| (0..n).map(|_| Shared::default()).collect())
+            .collect();
+        let mut sel: Vec<BatchSel> = (0..n).map(|_| BatchSel::default()).collect();
+        let mut tr: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
+        let nt = self.taps.len();
+        let taps: Vec<Buf> = if nt == 0 {
+            Vec::new()
+        } else {
+            self.grp.each(|_, cx| cx.ops.tmp(nr * nt * d * 2))?
+        };
+        for li in 0..self.n_layers {
+            let tl = Instant::now();
+            let mut streamed: Option<Vec<LayerW>> = None;
+            let lw: &Vec<LayerW> = match self.resident[li].as_ref() {
+                Some(w) => w,
+                None if self.host.is_some() => {
+                    return Err(format!(
+                        "layer {li} is not resident with the experts off the card"
+                    ));
+                }
+                None => {
+                    self.stats.layers_loaded += 1;
+                    streamed.insert(self.grp.load_layer(self.stm, &g, li, false)?)
+                }
+            };
+            self.stats.load_s += tl.elapsed().as_secs_f64();
+            let tr0 = Instant::now();
+            if let (Some(ec), true) = (&self.ec, lw[0].engram.is_some()) {
+                let sl = ec
+                    .layer_ids
+                    .iter()
+                    .position(|&x| x == li)
+                    .ok_or("engram layer not in the constants")?;
+                let (nl, cols) = (ec.layer_ids.len(), ec.cols());
+                let mut mine: Vec<i64> = Vec::with_capacity(nr * cols);
+                for hs in &hashes {
+                    mine.extend_from_slice(&hs[sl * cols..(sl + 1) * cols]);
+                }
+                debug_assert!(hashes.iter().all(|x| x.len() == nl * cols));
+                let stm = self.stm;
+                let hr = &h;
+                let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
+                self.grp.each_mut(&mut trs, |r, cx, t| {
+                    cx.engram(stm, &lw[r], &hr[r], &mine, nr, t)
+                })?;
+            }
+            if let Some(ti) = self.taps.iter().position(|&l| l == li) {
+                let (hs, tb, mix) = (&h, &taps, &self.tap_mix);
+                self.grp.each(|r, cx| {
+                    let st = cx.ops.st.clone();
+                    super::ck("tap mean", unsafe {
+                        super::ffi::memra_v41_hc_pre(
+                            hs[r].p(&st).c(),
+                            mix[r].p(&st).f(),
+                            nr as i32,
+                            hc as i32,
+                            d as i32,
+                            tb[r].at(&st, ti * d * 2).m(),
+                            (nt * d) as i64,
+                            cx.ops.sv(),
+                        )
+                    })
+                })?;
+            }
+            let gi = Self::group_of(&g, li);
+            // every row's state of this layer, by rank: the sequences in order, their rows in order
+            let mut by_rank: Vec<Vec<BatchRow<'_>>> =
+                (0..n).map(|_| Vec::with_capacity(nr)).collect();
+            let mut next = 0usize;
+            let mut fwd_it = fwd.iter_mut();
+            for (si, q) in seqs.iter_mut().enumerate() {
+                if next >= nr || rows[next].0 != si {
+                    continue;
+                }
+                let f = fwd_it.next().expect("one state per row");
+                if let Some(gi) = gi {
+                    for (fr, st) in f.iter_mut().zip(q.store[gi].iter_mut()) {
+                        fr.swap_group(st);
+                    }
+                }
+                let cap = q.cap;
+                for (r, (l, fr)) in q.ls[li].iter_mut().zip(f.iter_mut()).enumerate() {
+                    by_rank[r].push(BatchRow {
+                        pos: positions[next],
+                        cap,
+                        ls: l,
+                        sh: fr,
+                    });
+                }
+                next += 1;
+            }
+            let res = self.grp.block_forward_batch(
+                lw,
+                std::mem::take(&mut h),
+                &pre,
+                &pos,
+                &mut by_rank,
+                &mut sel,
+                &mut tr,
+            );
+            drop(by_rank);
+            if let Some(gi) = gi {
+                for (f, &(si, _)) in fwd.iter_mut().zip(rows) {
+                    for (fr, st) in f.iter_mut().zip(seqs[si].store[gi].iter_mut()) {
+                        fr.swap_group(st);
+                    }
+                }
+            }
+            let (h2, p2) = res?;
+            h = h2;
+            pre = p2;
+            self.stats.run_s += tr0.elapsed().as_secs_f64();
+            crate::progress::note_prime_rows(nr);
+            if let Some(w) = streamed
+                && li < self.keep
+            {
+                self.resident[li] = Some(w);
+            }
+        }
+        self.stats.forwards += 1;
+        self.stats.calls += nr;
+        let tap_rows = if taps.is_empty() { 0 } else { nr };
+        Ok(Out {
+            h,
+            pre,
+            sp: positions[0],
+            s: nr,
+            taps,
+            tap_row0: 0,
+            tap_rows,
+        })
     }
 
     /// Close a several-token decode call on `q`: its first `keep` rows (at least one: the first

@@ -35,12 +35,23 @@
 //!       confidence sigmoid is at least TAU.
 //!   rows-time ID PROMPT.i32 FORCE.i32 [REPS]
 //!       What a decode call costs by its rows. After the prefill, REPS one-token calls (the plain
-//!       step), then for 2..6 rows the same block REPS times, dropped whole after each run: the
+//!       step), then for 2..8 rows the same block REPS times, dropped whole after each run: the
 //!       first run of a block fetches its experts where they live off the card, the later ones
 //!       find them (the rows' compute alone). Each width runs twice: a block of different tokens
 //!       (its rows route to up to rows x top-k experts a layer) and a block of one token repeated
 //!       (its rows route alike), which separates the experts a block reads from its other
 //!       per-row work.
+//!   batch-rows ID PROMPT.i32 FORCE.i32 [PROMPT.i32 FORCE.i32 ...]
+//!       The byte gate of a decode call over several sequences. Arm A runs every sequence alone
+//!       (its prompt, then its forced tokens one call at a time). Arm B prefills the sequences
+//!       and then steps them together, one batched call per step (eight rows at most a call; a
+//!       sequence leaves the batch when its forced tokens end, so the widths mix). Every row's
+//!       logits and taps must equal arm A's row of the same sequence and step, and the device
+//!       argmax of the rows must name the host argmax's tokens.
+//!   batch-time ID REPS PROMPT.i32 FORCE.i32 [PROMPT.i32 FORCE.i32 ...]
+//!       What a decode step costs by the sequences it carries: for 1, 2, 4 and 8 sequences, REPS
+//!       batched calls (forward and the rows' logits), and the same steps with every sequence's
+//!       call run alone through each block (one forward of that many calls).
 //! Every job prints one JSON line and writes its files under --out/ID.
 
 use memra_engine::dsv41_gpu::{
@@ -125,6 +136,15 @@ enum Job {
         force: Vec<u32>,
         reps: usize,
     },
+    BatchRows {
+        id: String,
+        seqs: Vec<(Vec<u32>, Vec<u32>)>,
+    },
+    BatchTime {
+        id: String,
+        reps: usize,
+        seqs: Vec<(Vec<u32>, Vec<u32>)>,
+    },
 }
 
 impl Job {
@@ -133,7 +153,9 @@ impl Job {
             Job::VerifyRows { id, .. }
             | Job::DraftTape { id, .. }
             | Job::Gen { id, .. }
-            | Job::RowsTime { id, .. } => id,
+            | Job::RowsTime { id, .. }
+            | Job::BatchRows { id, .. }
+            | Job::BatchTime { id, .. } => id,
         }
     }
     /// the positions the job reaches
@@ -152,6 +174,11 @@ impl Job {
             }
             Job::Gen { prompt, n, .. } => prompt.len() + n,
             Job::RowsTime { prompt, force, .. } => prompt.len() + force.len(),
+            Job::BatchRows { seqs, .. } | Job::BatchTime { seqs, .. } => seqs
+                .iter()
+                .map(|(p, f)| p.len() + f.len())
+                .max()
+                .unwrap_or(0),
         })
     }
 }
@@ -207,6 +234,11 @@ fn run() -> Result<(), String> {
     let n_layers = num("--layers")?.unwrap_or(trunk).min(trunk);
     let no_draft = a.iter().any(|x| x == "--no-draft");
 
+    let pairs = |f: &[&str]| -> Result<Vec<(Vec<u32>, Vec<u32>)>, String> {
+        f.chunks(2)
+            .map(|c| Ok((read_i32(Path::new(c[0]))?, read_i32(Path::new(c[1]))?)))
+            .collect()
+    };
     let mut jobs = Vec::new();
     let txt = std::fs::read_to_string(&plan).map_err(|e| format!("{plan}: {e}"))?;
     for line in txt
@@ -242,6 +274,15 @@ fn run() -> Result<(), String> {
                     .map(|x| x.parse().map_err(|_| bad()))
                     .transpose()?
                     .unwrap_or(8),
+            },
+            ("batch-rows", n) if n >= 4 && n % 2 == 0 => Job::BatchRows {
+                id: f[1].into(),
+                seqs: pairs(&f[2..])?,
+            },
+            ("batch-time", n) if n >= 5 && n % 2 == 1 => Job::BatchTime {
+                id: f[1].into(),
+                reps: f[2].parse().map_err(|_| bad())?,
+                seqs: pairs(&f[3..])?,
             },
             _ => return Err(bad()),
         });
@@ -342,6 +383,8 @@ fn run() -> Result<(), String> {
                 force,
                 reps,
             } => rows_time(&mut rn, id, prompt, force, *reps),
+            Job::BatchRows { id, seqs } => batch_rows(&mut rn, id, seqs),
+            Job::BatchTime { id, reps, seqs } => batch_time(&mut rn, id, *reps, seqs),
         };
         match r {
             Ok((pass, line)) => {
@@ -507,6 +550,199 @@ fn verify_rows(
     ))
 }
 
+/// The most rows a batched call carries (the small-M GEMM bodies' limit).
+const BATCH_ROWS: usize = 8;
+
+/// The byte gate of the decode call over several sequences (see the module doc).
+fn batch_rows(
+    rn: &mut Runner,
+    id: &str,
+    input: &[(Vec<u32>, Vec<u32>)],
+) -> Result<(bool, String), String> {
+    let v_ = rn.g.vocab;
+    let ns = input.len();
+    if input.iter().any(|(p, f)| p.is_empty() || f.len() < 2) {
+        return Err("batch-rows wants a prompt and at least 2 forced tokens per sequence".into());
+    }
+    let cap = |p: &Vec<u32>, f: &Vec<u32>| p.len() + f.len() + 16;
+    // arm A: every sequence alone
+    let mut a_hash: Vec<Vec<u64>> = Vec::with_capacity(ns);
+    let mut a_tap: Vec<Vec<u64>> = Vec::with_capacity(ns);
+    let ta = Instant::now();
+    for (p, f) in input {
+        let mut seqs = vec![rn.seq_with_capacity(cap(p, f))];
+        let mut calls = vec![Call {
+            seq: 0,
+            tokens: p.clone(),
+        }];
+        for &t in &f[..f.len() - 1] {
+            calls.push(Call {
+                seq: 0,
+                tokens: vec![t],
+            });
+        }
+        let outs = rn.forward(&mut seqs, &calls)?;
+        let (mut hs, mut ts) = (Vec::new(), Vec::new());
+        for o in &outs {
+            hs.push(fnv(&rn.logits(o, o.s - 1, 1)?));
+            ts.push(fnv_bytes(&tap_bytes(rn, o, o.s - 1, 1)?));
+        }
+        a_hash.push(hs);
+        a_tap.push(ts);
+    }
+    let a_s = ta.elapsed().as_secs_f64();
+    // arm B: the prompts (each call alone), then the sequences together
+    let tb = Instant::now();
+    let mut seqs: Vec<Seq> = input
+        .iter()
+        .map(|(p, f)| rn.seq_with_capacity(cap(p, f)))
+        .collect();
+    let calls: Vec<Call> = input
+        .iter()
+        .enumerate()
+        .map(|(i, (p, _))| Call {
+            seq: i,
+            tokens: p.clone(),
+        })
+        .collect();
+    let outs = rn.forward(&mut seqs, &calls)?;
+    let (mut rows_n, mut equal, mut taps_equal, mut dev_equal) = (0usize, 0usize, 0usize, 0usize);
+    for (i, o) in outs.iter().enumerate() {
+        rows_n += 1;
+        equal += usize::from(fnv(&rn.logits(o, o.s - 1, 1)?) == a_hash[i][0]);
+        taps_equal += usize::from(fnv_bytes(&tap_bytes(rn, o, o.s - 1, 1)?) == a_tap[i][0]);
+        dev_equal += 1;
+    }
+    drop(outs);
+    let mut first_bad: Option<String> = None;
+    let mut widths = vec![0usize; BATCH_ROWS + 1];
+    let steps = input.iter().map(|(_, f)| f.len()).max().unwrap_or(0);
+    for k in 1..steps {
+        let live: Vec<(usize, u32)> = input
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, f))| k < f.len())
+            .map(|(i, (_, f))| (i, f[k - 1]))
+            .collect();
+        for chunk in live.chunks(BATCH_ROWS) {
+            let o = rn.forward_batch(&mut seqs, chunk)?;
+            let n = chunk.len();
+            widths[n] += 1;
+            let lg = rn.logits(&o, 0, n)?;
+            let tb_ = tap_bytes(rn, &o, 0, n)?;
+            let tw = tb_.len() / n;
+            let dev = rn.argmax_rows(&o, 0, n)?;
+            for (r, &(si, _)) in chunk.iter().enumerate() {
+                let row = &lg[r * v_..(r + 1) * v_];
+                rows_n += 1;
+                if fnv(row) == a_hash[si][k] {
+                    equal += 1;
+                } else if first_bad.is_none() {
+                    first_bad = Some(format!(
+                        "sequence {si} step {k} (row {r} of {n}, position {})",
+                        seqs[si].len() - 1
+                    ));
+                }
+                taps_equal += usize::from(fnv_bytes(&tb_[r * tw..(r + 1) * tw]) == a_tap[si][k]);
+                dev_equal += usize::from(dev[r] == argmax(row) as u32);
+            }
+        }
+    }
+    let b_s = tb.elapsed().as_secs_f64();
+    let pass = equal == rows_n && taps_equal == rows_n && dev_equal == rows_n;
+    Ok((
+        pass,
+        serde_json::json!({
+            "job": "batch-rows", "id": id, "pass": pass, "sequences": ns,
+            "prompts": input.iter().map(|(p, _)| p.len()).collect::<Vec<_>>(),
+            "steps": input.iter().map(|(_, f)| f.len()).collect::<Vec<_>>(),
+            "rows": rows_n, "logit_rows_equal": equal, "tap_rows_equal": taps_equal,
+            "device_argmax_equal": dev_equal, "calls_by_width": widths, "first_bad": first_bad,
+            "arm_a_s": a_s, "arm_b_s": b_s,
+        })
+        .to_string(),
+    ))
+}
+
+/// What a decode step costs by the sequences it carries (see the module doc).
+fn batch_time(
+    rn: &mut Runner,
+    id: &str,
+    reps: usize,
+    input: &[(Vec<u32>, Vec<u32>)],
+) -> Result<(bool, String), String> {
+    let reps = reps.max(4);
+    if input.iter().any(|(p, f)| p.is_empty() || f.len() < reps) {
+        return Err(format!(
+            "batch-time wants {reps} forced tokens per sequence"
+        ));
+    }
+    let med = |x: &[f64]| -> f64 {
+        let mut v = x.to_vec();
+        v.sort_by(|a, b| a.total_cmp(b));
+        v[v.len() / 2]
+    };
+    let mut out = serde_json::Map::new();
+    for w in [1usize, 2, 4, 8] {
+        if w > input.len() {
+            break;
+        }
+        for batched in [true, false] {
+            let mut seqs: Vec<Seq> = input[..w]
+                .iter()
+                .map(|(p, f)| rn.seq_with_capacity(p.len() + f.len() + 16))
+                .collect();
+            let calls: Vec<Call> = input[..w]
+                .iter()
+                .enumerate()
+                .map(|(i, (p, _))| Call {
+                    seq: i,
+                    tokens: p.clone(),
+                })
+                .collect();
+            drop(rn.forward(&mut seqs, &calls)?);
+            let mut ms = Vec::with_capacity(reps);
+            for k in 0..reps {
+                let t = Instant::now();
+                if batched {
+                    let rows: Vec<(usize, u32)> = input[..w]
+                        .iter()
+                        .enumerate()
+                        .map(|(i, (_, f))| (i, f[k]))
+                        .collect();
+                    let o = rn.forward_batch(&mut seqs, &rows)?;
+                    rn.logits(&o, 0, w)?;
+                } else {
+                    let calls: Vec<Call> = input[..w]
+                        .iter()
+                        .enumerate()
+                        .map(|(i, (_, f))| Call {
+                            seq: i,
+                            tokens: vec![f[k]],
+                        })
+                        .collect();
+                    for o in &rn.forward(&mut seqs, &calls)? {
+                        rn.logits(o, 0, 1)?;
+                    }
+                }
+                ms.push(t.elapsed().as_secs_f64() * 1e3);
+            }
+            // the first two steps warm the shapes
+            let key = format!("{}_{w}_ms", if batched { "batched" } else { "alone" });
+            out.insert(key, serde_json::json!(med(&ms[2..])));
+        }
+    }
+    out.insert("job".into(), "batch-time".into());
+    out.insert("id".into(), id.into());
+    out.insert("pass".into(), true.into());
+    out.insert("reps".into(), reps.into());
+    out.insert(
+        "prompts".into(),
+        serde_json::json!(input.iter().map(|(p, _)| p.len()).collect::<Vec<_>>()),
+    );
+    Ok((true, serde_json::Value::Object(out).to_string()))
+}
+
 /// What a decode call costs by its rows (see the module doc).
 fn rows_time(
     rn: &mut Runner,
@@ -516,10 +752,10 @@ fn rows_time(
     reps: usize,
 ) -> Result<(bool, String), String> {
     let reps = reps.max(2);
-    if force.len() < reps + 6 {
+    if force.len() < reps + 8 {
         return Err(format!(
             "rows-time wants at least {} forced tokens",
-            reps + 6
+            reps + 8
         ));
     }
     let ms = |t: Instant| t.elapsed().as_secs_f64() * 1e3;
@@ -554,13 +790,13 @@ fn rows_time(
         rn.logits(&outs[0], 0, 1)?;
         one.push(ms(t));
     }
-    // blocks of 2..6 rows at the same position, dropped whole after each run: different
+    // blocks of 2..8 rows at the same position, dropped whole after each run: different
     // tokens, then one token repeated
     let mut first = Vec::new();
     let mut warm = Vec::new();
     let mut same_first = Vec::new();
     let mut same_warm = Vec::new();
-    for k in 2..=6usize {
+    for k in 2..=8usize {
         for same in [false, true] {
             let toks = if same {
                 vec![force[reps]; k]
@@ -597,9 +833,9 @@ fn rows_time(
             "job": "rows-time", "id": id, "pass": true, "prompt": prompt.len(), "reps": reps,
             "prefill_ms": prefill_ms,
             "one_token_ms": one, "one_token_ms_median": med(&one),
-            "rows_2_to_6_first_ms": first, "rows_2_to_6_repeat_ms_median": warm,
-            "same_token_rows_2_to_6_first_ms": same_first,
-            "same_token_rows_2_to_6_repeat_ms_median": same_warm,
+            "rows_2_to_8_first_ms": first, "rows_2_to_8_repeat_ms_median": warm,
+            "same_token_rows_2_to_8_first_ms": same_first,
+            "same_token_rows_2_to_8_repeat_ms_median": same_warm,
         })
         .to_string(),
     ))

@@ -49,8 +49,8 @@
 #![allow(clippy::needless_range_loop)]
 
 use super::{
-    BW, Buf, Ctx, Dp, Geo, LayerState, LayerW, Part, Shared, Trace, bytes_f32, bytes_i32, ck, ffi,
-    load_bf16_rows, load_vec_bf16,
+    BW, BatchRow, BatchSel, Buf, Ctx, Dp, Geo, LayerState, LayerW, Part, Shared, Trace, bytes_f32,
+    bytes_i32, ck, ffi, load_bf16_rows, load_vec_bf16,
 };
 use crate::Engine;
 use crate::tp_transport::{self, TpTransport};
@@ -125,6 +125,21 @@ pub enum AttnKind {
     /// a DSpark draft stage over its block: every row reads the first `filled` slots of the
     /// stage's ring of the trunk's rows and then the whole block
     Draft { filled: usize },
+}
+
+/// What a block's attention reads on its keys side: one call's layer state on every rank, or a
+/// batch of sequences' rows.
+enum Side<'a, 'b> {
+    Layer {
+        sh: &'a mut [Shared],
+        ls: &'a mut [LayerState],
+        kind: AttnKind,
+    },
+    Batch {
+        pos: &'a [Buf],
+        rows: &'a mut [Vec<BatchRow<'b>>],
+        sel: &'a mut [BatchSel],
+    },
 }
 
 /// N ranks, one engine and one [`Ctx`] each (rank 0 first). Ranks may share a device (the code
@@ -926,8 +941,54 @@ impl Group {
         tr: &mut [Trace],
         kind: AttnKind,
     ) -> Result<(Vec<Buf>, Vec<Buf>), String> {
+        if sh.len() != self.n() || ls.len() != self.n() {
+            return Err("tp block_forward: one share per rank".into());
+        }
+        self.block_forward_side(lw, h, pre, sp, s, tr, Side::Layer { sh, ls, kind })
+    }
+
+    /// One trunk block for a decode call whose rows belong to different sequences: `rows[r]`
+    /// is rank r's view of the call's rows (row i is one token of its sequence at its own
+    /// position, [`BatchRow`]), `pos[r]` the rows' positions as a device i32 array, `sel[r]` the
+    /// batch's selection carried between layers. `h[r]` / `pre[r]` hold the rows' streams side
+    /// by side. Everything but the keys side of attention is [`Self::block_forward_kind`]'s; the
+    /// keys side is [`Ctx::attn_keys_batch`]. A row's bytes are those of its sequence's
+    /// one-token call (`dsv41-spec batch-rows`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn block_forward_batch(
+        &mut self,
+        lw: &[LayerW],
+        h: Vec<Buf>,
+        pre: &[Buf],
+        pos: &[Buf],
+        rows: &mut [Vec<BatchRow<'_>>],
+        sel: &mut [BatchSel],
+        tr: &mut [Trace],
+    ) -> Result<(Vec<Buf>, Vec<Buf>), String> {
         let n = self.n();
-        if lw.len() != n || h.len() != n || pre.len() != n || sh.len() != n || ls.len() != n {
+        if pos.len() != n || rows.len() != n || sel.len() != n {
+            return Err("tp block_forward_batch: one share per rank".into());
+        }
+        let s = rows[0].len();
+        if s == 0 || rows.iter().any(|x| x.len() != s) {
+            return Err("tp block_forward_batch: the ranks hold the same rows".into());
+        }
+        self.block_forward_side(lw, h, pre, 0, s, tr, Side::Batch { pos, rows, sel })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn block_forward_side(
+        &mut self,
+        lw: &[LayerW],
+        h: Vec<Buf>,
+        pre: &[Buf],
+        sp: usize,
+        s: usize,
+        tr: &mut [Trace],
+        side: Side<'_, '_>,
+    ) -> Result<(Vec<Buf>, Vec<Buf>), String> {
+        let n = self.n();
+        if lw.len() != n || h.len() != n || pre.len() != n {
             return Err("tp block_forward: one share per rank".into());
         }
         for (r, w) in lw.iter().enumerate() {
@@ -950,7 +1011,21 @@ impl Group {
             a_comb.push(co);
             xs.push(x);
         }
-        let a = self.attention(lw, &xs, sp, s, sh, ls, tr, kind)?;
+        let a = match side {
+            Side::Layer { sh, ls, kind } => self.attention(lw, &xs, sp, s, sh, ls, tr, kind)?,
+            Side::Batch { pos, rows, sel } => {
+                let keys = {
+                    let mut io: Vec<(&mut Vec<BatchRow<'_>>, &mut BatchSel)> =
+                        rows.iter_mut().zip(sel.iter_mut()).collect();
+                    self.each_mut(&mut io, |r, c, (rr, se)| {
+                        c.attn_keys_batch(&lw[r], &xs[r], &pos[r], rr, se)
+                    })?
+                };
+                // the rows' selections are in the keys' own index rows
+                let none: Vec<Shared> = (0..n).map(|_| Shared::default()).collect();
+                self.attention_run(lw, &keys, &none, 0, s, tr)?
+            }
+        };
         drop(xs);
         let ffn = self.each(|r, c| {
             let w = &lw[r];
@@ -1005,8 +1080,6 @@ impl Group {
         kind: AttnKind,
     ) -> Result<Vec<Buf>, String> {
         let n = self.n();
-        let g = self.cx[0].g.clone();
-        let (d, hd) = (g.dim, g.head_dim);
         // the indexer's query rows split across the ranks at prefill (measured: `dsv41-gate idx`,
         // research/.../tp/README.md); one decode row is scored on every rank, with nothing to move
         let split = n > 1 && sp == 0 && s >= 2 * n && lw[0].index_source && lw[0].ratio > 0;
@@ -1040,6 +1113,23 @@ impl Group {
                 .collect();
             self.allgather(&refs, &blks)?;
         }
+        self.attention_run(lw, &keys, sh, sp, s, tr)
+    }
+
+    /// The query side of attention on every rank from the ranks' keys: per query slice each
+    /// rank's heads and output groups, the `wo_a` columns gathered, each rank's `wo_b` columns,
+    /// the output columns gathered.
+    fn attention_run(
+        &mut self,
+        lw: &[LayerW],
+        keys: &[super::AttnKeys],
+        shr: &[Shared],
+        sp: usize,
+        s: usize,
+        tr: &mut [Trace],
+    ) -> Result<Vec<Buf>, String> {
+        let g = self.cx[0].g.clone();
+        let (d, hd) = (g.dim, g.head_dim);
         let c = self.cx[0].chunk.min(s).max(1);
         let oa_ld = g.o_groups * g.o_lora;
         let bufs = self.each(|r, cx| {
@@ -1058,7 +1148,6 @@ impl Group {
             oa.push(cc);
             out.push(dd);
         }
-        let shr: &[Shared] = sh;
         for r0 in (0..s).step_by(c) {
             let rows = c.min(s - r0);
             {

@@ -365,6 +365,20 @@ pub mod ffi {
             out: *mut i32,
             stream: *mut c_void,
         ) -> i32;
+        /// The index rows of a decode call over several sequences (each row its own position
+        /// and its own region of the KV rows).
+        pub fn memra_v41_attn_idx_batch(
+            sel: *const i32,
+            tw: i32,
+            pos: *const i32,
+            base: *const i32,
+            nsel: *const i32,
+            rows: i32,
+            win: i32,
+            tot: i32,
+            out: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
         /// `row += bias` in fp32 (bias may be null), then the maximum and its lowest index.
         pub fn memra_v41_add_argmax(
             row: *mut f32,
@@ -889,6 +903,35 @@ impl Ops {
             pos_base as i32,
             pos_step as i32,
             std::ptr::null(),
+            inverse as i32,
+            self.sv()
+        ))
+    }
+    /// [`Self::rope`] with each row's position read from a device array (`pos`: i32 per row);
+    /// the caller has checked the positions against the table.
+    #[allow(clippy::too_many_arguments)]
+    pub fn rope_pos(
+        &self,
+        x: Dp,
+        ld_row: usize,
+        rows: usize,
+        heads: usize,
+        hd: usize,
+        t: &RopeTable,
+        pos: Dp,
+        inverse: bool,
+    ) -> Result<(), String> {
+        launch!(memra_v41_rope(
+            x.m(),
+            ld_row as i64,
+            rows as i32,
+            heads as i32,
+            hd as i32,
+            t.cos.p(&self.st).f(),
+            t.sin.p(&self.st).f(),
+            0,
+            0,
+            pos.i(),
             inverse as i32,
             self.sv()
         ))
@@ -2073,8 +2116,35 @@ pub struct AttnKeys {
     /// several decode tokens in one forward: the window part is `[ring | the forward's rows]`
     pub dec_rows: bool,
     /// the index rows `[rows][tot]` given outright (a draft block: every row reads the same
-    /// ring slots and block rows); None builds them from the position
+    /// ring slots and block rows; a batch of sequences: each row its own region); None builds
+    /// them from the position
     pub idx: Option<Buf>,
+    /// each row's position as a device i32 array (a batch of sequences); None: consecutive
+    /// positions from the call's first
+    pub pos: Option<Dp>,
+}
+
+/// One row of a decode call over several sequences: a sequence's one-token step at its own
+/// position, with that sequence's layer state and its CSA2 state (the kv-source group's
+/// compressed KV and index keys swapped in, and the call's own candidate pool).
+pub struct BatchRow<'a> {
+    pub pos: usize,
+    /// positions the sequence's compressed KV and index keys are first sized for
+    pub cap: usize,
+    pub ls: &'a mut LayerState,
+    pub sh: &'a mut Shared,
+}
+
+/// What a batched decode call hands down the stack on one rank beside each row's [`Shared`]:
+/// the selection rows of the last index source, each already offset to its row's region of the
+/// KV rows (the regions are the same on every layer of one compress ratio).
+#[derive(Default)]
+pub struct BatchSel {
+    /// i32 `[rows][tw]`
+    pub topk: Option<Buf>,
+    pub tw: usize,
+    /// the rows that hold a selection (a sequence with no compressed row yet holds none)
+    pub has: Vec<bool>,
 }
 
 /// Runtime pieces shared by every layer on the card.
@@ -2952,6 +3022,472 @@ impl Ctx {
             comp,
             dec_rows,
             idx: None,
+            pos: None,
+        })
+    }
+
+    /// The keys side of attention for a decode call whose rows belong to different sequences
+    /// (`rows[i]` is row i: one token of its sequence at its own position). Every row runs the
+    /// one-token program of [`Self::attn_keys`]; what acts per row runs once for all rows (the
+    /// projections, norms, RoPE at each row's position from `pos`, the quantize-dequantize
+    /// steps, the index query and head weights), and what reads one sequence's own buffers runs
+    /// per sequence: its ring row and ring copy, a ratio-2 compressor's open pair and pooling,
+    /// the index score over its keys, its candidate pool and its top-k, and the copies of its
+    /// compressed rows. The KV rows the heads read are the sequences' regions side by side,
+    /// `[ring | compressed rows]` each, and the index rows address each row's region
+    /// (`memra_v41_attn_idx_batch`), so a row reads the keys of its one-token call in its order.
+    pub fn attn_keys_batch(
+        &mut self,
+        lw: &LayerW,
+        x: &Buf,
+        pos: &Buf,
+        rows: &mut [BatchRow<'_>],
+        sel: &mut BatchSel,
+    ) -> Result<AttnKeys, String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let (hd, win, ratio) = (g.head_dim, g.window, lw.ratio);
+        let comp = ratio > 0;
+        let n = rows.len();
+        if n == 0 || rows.iter().any(|r| r.pos == 0 || r.pos >= self.max_pos) {
+            return Err("a batched decode row is one token past its sequence's prefill".into());
+        }
+        let qr = self.ops.tmp(n * g.q_lora * 2)?;
+        self.ops.linear_q(
+            x.p(&st),
+            g.dim,
+            n,
+            &lw.wq_a,
+            qr.p(&st),
+            g.q_lora,
+            false,
+            &mut self.scr,
+        )?;
+        self.ops.rmsnorm(
+            qr.p(&st),
+            g.q_lora,
+            &lw.q_norm,
+            qr.p(&st),
+            g.q_lora,
+            n,
+            g.q_lora,
+            g.norm_eps,
+        )?;
+        // every row's window KV: kv_norm(wkv(x)), RoPE at its position, fp8 per-32 quant-dequant
+        let kvw = self.ops.tmp(n * hd * 2)?;
+        self.ops.linear_q(
+            x.p(&st),
+            g.dim,
+            n,
+            &lw.wkv,
+            kvw.p(&st),
+            hd,
+            false,
+            &mut self.scr,
+        )?;
+        self.ops.rmsnorm(
+            kvw.p(&st),
+            hd,
+            &lw.kv_norm,
+            kvw.p(&st),
+            hd,
+            n,
+            hd,
+            g.norm_eps,
+        )?;
+        self.ops.rope_pos(
+            kvw.p(&st),
+            hd,
+            n,
+            1,
+            hd,
+            if comp {
+                &self.rope_comp
+            } else {
+                &self.rope_base
+            },
+            pos.p(&st),
+            false,
+        )?;
+        self.ops.fp8_qdq(kvw.p(&st), hd, n, hd)?;
+        // each sequence's region of the KV rows: its ring, then its visible compressed rows
+        let ncs: Vec<usize> = rows
+            .iter()
+            .map(|r| (r.pos + 1).checked_div(ratio).unwrap_or(0))
+            .collect();
+        let mut bases = Vec::with_capacity(n);
+        let mut total = 0usize;
+        for &c in &ncs {
+            bases.push(total);
+            total += win + c;
+        }
+        let kv_all = self.ops.tmp(total * hd * 2)?;
+        for (i, r) in rows.iter().enumerate() {
+            let ring =
+                r.ls.ring
+                    .as_ref()
+                    .ok_or("a batched decode row's sequence has no window ring (no prefill)")?;
+            copy_d2d(
+                &self.ops,
+                &kvw,
+                i * hd * 2,
+                ring,
+                (r.pos % win) * hd * 2,
+                hd * 2,
+            )?;
+            copy_d2d(&self.ops, ring, 0, &kv_all, bases[i] * hd * 2, win * hd * 2)?;
+        }
+        drop(kvw);
+        if comp {
+            // the latents that complete on a kv source: (row, its compressed row)
+            let mut emit: Vec<(usize, usize)> = Vec::new();
+            let mut lat: Option<Buf> = None;
+            if lw.kv_source {
+                let cw = lw.comp.as_ref().unwrap();
+                if ratio == 1 {
+                    let l = self.ops.tmp(n * hd * 2)?;
+                    self.ops
+                        .linear_bf16(x.p(&st), g.dim, n, &cw.wkv, l.p(&st), hd, false)?;
+                    emit = rows.iter().enumerate().map(|(i, r)| (i, r.pos)).collect();
+                    lat = Some(l);
+                } else if ratio == 2 {
+                    let kvf = self.ops.tmp(n * hd * 4)?;
+                    let scf = self.ops.tmp(n * hd * 4)?;
+                    self.ops
+                        .linear_bf16(x.p(&st), g.dim, n, &cw.wkv, kvf.p(&st), hd, true)?;
+                    self.ops.linear_bf16(
+                        x.p(&st),
+                        g.dim,
+                        n,
+                        cw.wgate.as_ref().unwrap(),
+                        scf.p(&st),
+                        hd,
+                        true,
+                    )?;
+                    let l = self.ops.tmp(n * hd * 2)?;
+                    for (i, r) in rows.iter_mut().enumerate() {
+                        if r.ls.c_kv.is_none() {
+                            r.ls.c_kv = Some(self.ops.buf(2 * hd * 4)?);
+                            r.ls.c_sc = Some(self.ops.buf(2 * hd * 4)?);
+                        }
+                        let (ckv, csc) = (r.ls.c_kv.as_ref().unwrap(), r.ls.c_sc.as_ref().unwrap());
+                        let slot = r.pos % 2;
+                        copy_d2d(&self.ops, &kvf, i * hd * 4, ckv, slot * hd * 4, hd * 4)?;
+                        copy_d2d(&self.ops, &scf, i * hd * 4, csc, slot * hd * 4, hd * 4)?;
+                        if (r.pos + 1).is_multiple_of(2) {
+                            ck("comp_pool2", unsafe {
+                                ffi::memra_v41_comp_pool2(
+                                    ckv.p(&st).f(),
+                                    csc.p(&st).f(),
+                                    hd as i64,
+                                    l.at(&st, emit.len() * hd * 2).m(),
+                                    hd as i64,
+                                    1,
+                                    hd as i32,
+                                    self.ops.sv(),
+                                )
+                            })?;
+                            emit.push((i, r.pos / 2));
+                        }
+                    }
+                    lat = Some(l);
+                } else {
+                    return Err(format!("compressor ratio {ratio} has no pooling kernel"));
+                }
+                if let (Some(l), false) = (lat.as_ref(), emit.is_empty()) {
+                    self.ops.rmsnorm(
+                        l.p(&st),
+                        hd,
+                        &cw.norm,
+                        l.p(&st),
+                        hd,
+                        emit.len(),
+                        hd,
+                        g.norm_eps,
+                    )?;
+                }
+            }
+            // the position of each latent's group (its first token), for the keys' and the KV's RoPE
+            let epos = if emit.is_empty() {
+                None
+            } else {
+                let p: Vec<i32> = emit.iter().map(|&(_, r0)| (r0 * ratio) as i32).collect();
+                Some(Buf::from_i32(&st, &p)?)
+            };
+            if lw.index_source {
+                let iw = lw.idx.as_ref().unwrap();
+                let idim = g.index_dim;
+                if let (Some(l), Some(ep), Some(wk), Some(kn)) = (
+                    lat.as_ref(),
+                    epos.as_ref(),
+                    iw.wk.as_ref(),
+                    iw.k_norm.as_ref(),
+                ) {
+                    // the completed latents' index keys, each into its sequence's keys
+                    let e = emit.len();
+                    let kp = self.ops.tmp(e * idim * 2)?;
+                    self.ops
+                        .linear_bf16(l.p(&st), hd, e, wk, kp.p(&st), idim, false)?;
+                    self.ops
+                        .rmsnorm(kp.p(&st), idim, kn, kp.p(&st), idim, e, idim, g.norm_eps)?;
+                    self.ops.rope_pos(
+                        kp.p(&st),
+                        idim,
+                        e,
+                        1,
+                        idim,
+                        &self.rope_comp,
+                        ep.p(&st),
+                        false,
+                    )?;
+                    self.ops.fp4_qdq(kp.p(&st), idim, e, idim, 32)?;
+                    for (j, &(i, row0)) in emit.iter().enumerate() {
+                        let hint = rows[i].cap.min(self.max_pos) / ratio;
+                        let sh = &mut *rows[i].sh;
+                        ensure_rows(
+                            &self.ops,
+                            &mut sh.index_k,
+                            &mut sh.index_k_cap,
+                            row0 + 1,
+                            idim * 2,
+                            hint,
+                        )?;
+                        copy_d2d(
+                            &self.ops,
+                            &kp,
+                            j * idim * 2,
+                            sh.index_k.as_ref().unwrap(),
+                            row0 * idim * 2,
+                            idim * 2,
+                        )?;
+                    }
+                }
+                // the selection: the query and the head weights of every row at once, then each
+                // sequence's score over its own keys, its candidate pool and its top-k
+                let tw = ncs.iter().map(|&c| g.index_topk.min(c)).max().unwrap_or(0);
+                if tw == 0 {
+                    *sel = BatchSel {
+                        topk: None,
+                        tw: 0,
+                        has: vec![false; n],
+                    };
+                } else {
+                    let qd = g.index_heads * idim;
+                    let q = self.ops.tmp(n * qd * 2)?;
+                    self.ops.linear_q(
+                        qr.p(&st),
+                        g.q_lora,
+                        n,
+                        &iw.wq_b,
+                        q.p(&st),
+                        qd,
+                        false,
+                        &mut self.scr,
+                    )?;
+                    self.ops.rope_pos(
+                        q.p(&st),
+                        qd,
+                        n,
+                        g.index_heads,
+                        idim,
+                        &self.rope_comp,
+                        pos.p(&st),
+                        false,
+                    )?;
+                    self.ops.fp4_qdq(q.p(&st), qd, n, qd, 32)?;
+                    let w = self.ops.tmp(n * g.index_heads * 2)?;
+                    self.ops.linear_bf16(
+                        x.p(&st),
+                        g.dim,
+                        n,
+                        &iw.wproj,
+                        w.p(&st),
+                        g.index_heads,
+                        false,
+                    )?;
+                    let wscale =
+                        ((idim as f64).powf(-0.5) * (g.index_heads as f64).powf(-0.5)) as f32;
+                    let out = self.ops.tmp(n * tw * 4)?;
+                    let mut has = vec![false; n];
+                    for (i, r) in rows.iter_mut().enumerate() {
+                        let n_c = ncs[i];
+                        if n_c == 0 {
+                            continue;
+                        }
+                        let sh = &mut *r.sh;
+                        let ik = sh
+                            .index_k
+                            .as_ref()
+                            .ok_or("indexer: no index keys from a kv source")?;
+                        let score = self.ops.tmp(n_c * 2)?;
+                        let (cand, ldc) = if lw.uses_cand {
+                            let c = sh.cand.as_ref().ok_or("indexer: candidate pool missing")?;
+                            (c.p(&st).u8c(), sh.cand_ld)
+                        } else {
+                            (std::ptr::null(), 0)
+                        };
+                        ck("index_score", unsafe {
+                            ffi::memra_v41_index_score(
+                                q.at(&st, i * qd * 2).m(),
+                                qd as i64,
+                                ik.p(&st).m(),
+                                n_c as i32,
+                                w.at(&st, i * g.index_heads * 2).m(),
+                                g.index_heads as i64,
+                                wscale,
+                                r.pos as i32,
+                                ratio as i32,
+                                cand,
+                                ldc as i64,
+                                g.cand_block as i32,
+                                score.p(&st).m(),
+                                n_c as i64,
+                                1,
+                                self.ops.sv(),
+                            )
+                        })?;
+                        if lw.cand_source {
+                            let nb = n_c.div_ceil(g.cand_block);
+                            let keep = self.ops.tmp(nb.max(1))?;
+                            ck("candidates", unsafe {
+                                ffi::memra_v41_candidates(
+                                    score.p(&st).m(),
+                                    n_c as i64,
+                                    n_c as i32,
+                                    g.cand_block as i32,
+                                    g.cand_blocks as i32,
+                                    r.pos as i32,
+                                    ratio as i32,
+                                    keep.p(&st).u8m(),
+                                    nb as i64,
+                                    1,
+                                    self.ops.sv(),
+                                )
+                            })?;
+                            sh.cand = Some(keep);
+                            sh.cand_ld = nb;
+                            sh.cand_row0 = 0;
+                        }
+                        ck("topk", unsafe {
+                            ffi::memra_v41_topk(
+                                score.p(&st).m(),
+                                n_c as i64,
+                                n_c as i32,
+                                g.index_topk.min(n_c) as i32,
+                                tw as i32,
+                                (bases[i] + win) as i32,
+                                out.at(&st, i * tw * 4).im(),
+                                tw as i64,
+                                1,
+                                self.ops.sv(),
+                            )
+                        })?;
+                        has[i] = true;
+                    }
+                    *sel = BatchSel {
+                        topk: Some(out),
+                        tw,
+                        has,
+                    };
+                }
+            }
+            // the completed latents into each sequence's compressed KV
+            if let (Some(l), Some(ep)) = (lat.as_ref(), epos.as_ref()) {
+                let e = emit.len();
+                self.ops
+                    .rope_pos(l.p(&st), hd, e, 1, hd, &self.rope_comp, ep.p(&st), false)?;
+                self.ops.fp4_qdq(l.p(&st), hd, e, hd, 16)?;
+                for (j, &(i, row0)) in emit.iter().enumerate() {
+                    let hint = rows[i].cap.min(self.max_pos) / ratio;
+                    let sh = &mut *rows[i].sh;
+                    ensure_rows(
+                        &self.ops,
+                        &mut sh.compress_kv,
+                        &mut sh.compress_cap,
+                        row0 + 1,
+                        hd * 2,
+                        hint,
+                    )?;
+                    copy_d2d(
+                        &self.ops,
+                        l,
+                        j * hd * 2,
+                        sh.compress_kv.as_ref().unwrap(),
+                        row0 * hd * 2,
+                        hd * 2,
+                    )?;
+                    sh.n_c = row0 + 1;
+                }
+            }
+            // each sequence's visible compressed rows after its ring
+            for (i, r) in rows.iter().enumerate() {
+                let n_c = ncs[i];
+                if n_c == 0 {
+                    continue;
+                }
+                let ckv =
+                    r.sh.compress_kv
+                        .as_ref()
+                        .ok_or("attention: no compressed KV from the group source")?;
+                if r.sh.n_c < n_c {
+                    return Err(format!(
+                        "attention: compressed KV holds {} rows, need {n_c}",
+                        r.sh.n_c
+                    ));
+                }
+                copy_d2d(
+                    &self.ops,
+                    ckv,
+                    0,
+                    &kv_all,
+                    (bases[i] + win) * hd * 2,
+                    n_c * hd * 2,
+                )?;
+            }
+        }
+        let tw = if comp && ncs.iter().any(|&c| c > 0) {
+            if sel.topk.is_none() || sel.has.len() != n {
+                return Err("attention: no selection from the index source".into());
+            }
+            sel.tw
+        } else {
+            0
+        };
+        let tot = win + tw;
+        // each row's region base and how many selection entries it holds
+        let mut meta: Vec<i32> = bases.iter().map(|&b| b as i32).collect();
+        meta.extend((0..n).map(|i| if tw > 0 && sel.has[i] { tw as i32 } else { 0 }));
+        let meta = Buf::from_i32(&st, &meta)?;
+        let idx = self.ops.tmp(n * tot * 4)?;
+        let selp = match (tw, sel.topk.as_ref()) {
+            (0, _) | (_, None) => Dp::NULL,
+            (_, Some(t)) => t.p(&st),
+        };
+        ck("attn_idx_batch", unsafe {
+            ffi::memra_v41_attn_idx_batch(
+                selp.i(),
+                tw as i32,
+                pos.p(&st).i(),
+                meta.p(&st).i(),
+                meta.at(&st, n * 4).i(),
+                n as i32,
+                win as i32,
+                tot as i32,
+                idx.p(&st).im(),
+                self.ops.sv(),
+            )
+        })?;
+        Ok(AttnKeys {
+            qr,
+            kv_all,
+            ww: win,
+            tw,
+            tot,
+            win,
+            comp,
+            dec_rows: false,
+            idx: Some(idx),
+            pos: Some(pos.p(&st)),
         })
     }
 
@@ -3054,21 +3590,27 @@ impl Ctx {
             false,
             &mut self.scr,
         )?;
-        self.ops.rope(
-            q.p(&st),
-            qdim,
-            rows,
-            heads,
-            hd,
-            if k.comp {
-                &self.rope_comp
-            } else {
-                &self.rope_base
-            },
-            sp + r0,
-            1,
-            false,
-        )?;
+        let table = if k.comp {
+            &self.rope_comp
+        } else {
+            &self.rope_base
+        };
+        match k.pos {
+            // a batch of sequences: each row at its own position
+            Some(p) => self.ops.rope_pos(
+                q.p(&st),
+                qdim,
+                rows,
+                heads,
+                hd,
+                table,
+                Dp(p.addr() + (r0 * 4) as u64),
+                false,
+            )?,
+            None => self
+                .ops
+                .rope(q.p(&st), qdim, rows, heads, hd, table, sp + r0, 1, false)?,
+        }
         self.nv_end();
         // index rows on the device: the window part (`window_row`, or the decode ring oldest slot
         // first), then the selection rows
@@ -3151,21 +3693,21 @@ impl Ctx {
             tr.attn_o = Some(clone_buf(&self.ops, o)?);
         }
         self.nv(c"wo_a");
-        self.ops.rope(
-            o.p(&st),
-            qdim,
-            rows,
-            heads,
-            hd,
-            if k.comp {
-                &self.rope_comp
-            } else {
-                &self.rope_base
-            },
-            sp + r0,
-            1,
-            true,
-        )?;
+        match k.pos {
+            Some(p) => self.ops.rope_pos(
+                o.p(&st),
+                qdim,
+                rows,
+                heads,
+                hd,
+                table,
+                Dp(p.addr() + (r0 * 4) as u64),
+                true,
+            )?,
+            None => self
+                .ops
+                .rope(o.p(&st), qdim, rows, heads, hd, table, sp + r0, 1, true)?,
+        }
         self.ops.fp8_qdq(o.p(&st), qdim, rows, qdim)?;
         self.ops.gemm_bf16(
             o.p(&st),

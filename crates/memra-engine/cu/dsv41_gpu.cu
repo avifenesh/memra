@@ -1853,6 +1853,38 @@ extern "C" int memra_v41_attn_idx_rows(const int* sel, int tw, int r0, int rows,
     V41_ERR();
 }
 
+// The index rows of a decode call whose rows belong to different sequences: row i is the
+// one-token decode row of its own position pos[i] (its sequence's ring oldest slot first, -1 for
+// slots past the position), read from that sequence's region of the KV rows (`base[i]`: its ring,
+// then its compressed rows), then its selection row (already offset to its region), -1 past
+// `nsel[i]` (a sequence with no compressed row yet has none).
+__global__ void v41_attn_idx_batch_kernel(const int* __restrict__ sel, int tw, const int* __restrict__ pos,
+                                          const int* __restrict__ base, const int* __restrict__ nsel, int win,
+                                          int tot, int* __restrict__ out) {
+    int i = blockIdx.x;
+    int p = pos[i], b = base[i], ns = nsel[i];
+    int* o = out + (long)i * tot;
+    for (int j = threadIdx.x; j < tot; j += blockDim.x) {
+        int v;
+        if (j < win) {
+            int slot = (p % win + 1 + j) % win;
+            v = slot > p ? -1 : b + slot;
+        } else {
+            int jj = j - win;
+            v = jj < ns ? sel[(long)i * tw + jj] : -1;
+        }
+        o[j] = v;
+    }
+}
+
+extern "C" int memra_v41_attn_idx_batch(const int* sel, int tw, const int* pos, const int* base, const int* nsel,
+                                        int rows, int win, int tot, int* out, void* stream) {
+    if (rows <= 0) return rows < 0 ? 41031 : 0;
+    if (win <= 0 || tw < 0 || tot != win + tw || (tw > 0 && !sel) || !pos || !base || !nsel) return 41031;
+    v41_attn_idx_batch_kernel<<<rows, 128, 0, (cudaStream_t)stream>>>(sel, tw, pos, base, nsel, win, tot, out);
+    V41_ERR();
+}
+
 // ---------------------------------------------------------------------------------------------
 // The draft head's pick: row[i] += bias[i] in fp32 (the Markov head's bias added to the block
 // row's logits, vendor `logits[:, i].add_(logits_bias)`), then the largest value and the lowest

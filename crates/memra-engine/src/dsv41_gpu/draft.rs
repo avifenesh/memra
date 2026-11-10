@@ -304,6 +304,7 @@ impl Ctx {
             comp: false,
             dec_rows: false,
             idx: Some(Buf::from_i32(&st, &idx)?),
+            pos: None,
         })
     }
 }
