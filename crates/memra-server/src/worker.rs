@@ -14564,6 +14564,47 @@ fn prefix_plane_alloc(
     }
 }
 
+/// One plane of a spec boundary publication: `[0, bytes)` of the live `src` into `dst`, a plane
+/// [`prefix_plane_alloc`] sized at exactly `bytes` and did not zero. True when the plane holds
+/// its bytes: the copy of the whole plane is enqueued, or the plane has no bytes and is the
+/// allocator's zeroed 1-byte buffer. On false the caller drops the plane, so an entry never
+/// publishes a plane that was not written.
+fn spec_plane_copy(
+    engine: &Engine,
+    dst: &mut CudaSlice<u8>,
+    src: &CudaSlice<u8>,
+    bytes: usize,
+) -> bool {
+    #[cfg(test)]
+    if spec_plane_copy_fault() {
+        return false;
+    }
+    bytes == 0 || engine.copy_u8_into(dst, 0, src, bytes).is_ok()
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test fault of [`spec_plane_copy`]: the copy with this ordinal (0-based, counted on this
+    /// thread from the moment it is set) reports failure and copies nothing.
+    static SPEC_PLANE_COPY_FAULT: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn spec_plane_copy_fault() -> bool {
+    SPEC_PLANE_COPY_FAULT.with(|fault| match fault.get() {
+        Some(0) => {
+            fault.set(None);
+            true
+        }
+        Some(n) => {
+            fault.set(Some(n - 1));
+            false
+        }
+        None => false,
+    })
+}
+
 /// Design B1: the snapshot's KV and recurrent copies as ONE launch. Every source keeps its read
 /// event and every destination its write event: the guards are held across the launch, so a
 /// consumer on another stream waits for the batch as it waited for the per-plane copies.
@@ -15639,15 +15680,17 @@ fn prefix_insert_from_spec_boundary(
                 }
                 let kb = pos * l.k_tok_bytes;
                 let vb = pos * l.v_tok_bytes;
-                let (Ok(mut k), Ok(mut v)) =
-                    (engine.alloc_u8(kb.max(1)), engine.alloc_u8(vb.max(1)))
-                else {
+                // No memset: a plane is exactly its bytes long and its copy writes all of it
+                // (`spec_plane_copy`). A plane whose copy fails leaves with the insert.
+                let (Ok(mut k), Ok(mut v)) = (
+                    prefix_plane_alloc(engine, kb),
+                    prefix_plane_alloc(engine, vb),
+                ) else {
                     return; // alloc pressure: publication is an optimization, drop silently
                 };
-                if kb > 0 && engine.copy_u8_into(&mut k, 0, &l.k, kb).is_err() {
-                    return;
-                }
-                if vb > 0 && engine.copy_u8_into(&mut v, 0, &l.v, vb).is_err() {
+                if !spec_plane_copy(engine, &mut k, &l.k, kb)
+                    || !spec_plane_copy(engine, &mut v, &l.v, vb)
+                {
                     return;
                 }
                 bytes += kb + vb;
@@ -15674,7 +15717,8 @@ fn prefix_insert_from_spec_boundary(
     // `[0..pos)` exactly like the trunk KV above — append-only below the prime boundary
     // for the session's lifetime, so the live buffers still hold the prime fill's rows.
     // A failed copy drops ONLY the plane (the trunk entry stays publishable and serves
-    // plain hits); publication is an optimization, never a correctness dependency.
+    // plain hits); publication is an optimization, never a correctness dependency. The
+    // plane is allocated without a memset, like the trunk's: dropped, it is never read.
     let draft = draft_plane.and_then(|(k_src, v_src, k_tok_bytes, v_tok_bytes)| {
         let kb = pos * k_tok_bytes;
         let vb = pos * v_tok_bytes;
@@ -15685,14 +15729,15 @@ fn prefix_insert_from_spec_boundary(
             );
             return None;
         }
-        let (Ok(mut k), Ok(mut v)) = (engine.alloc_u8(kb.max(1)), engine.alloc_u8(vb.max(1)))
-        else {
+        let (Ok(mut k), Ok(mut v)) = (
+            prefix_plane_alloc(engine, kb),
+            prefix_plane_alloc(engine, vb),
+        ) else {
             return None; // alloc pressure: trunk-only entry
         };
-        if kb > 0 && engine.copy_u8_into(&mut k, 0, k_src, kb).is_err() {
-            return None;
-        }
-        if vb > 0 && engine.copy_u8_into(&mut v, 0, v_src, vb).is_err() {
+        if !spec_plane_copy(engine, &mut k, k_src, kb)
+            || !spec_plane_copy(engine, &mut v, v_src, vb)
+        {
             return None;
         }
         bytes += kb + vb;
@@ -47710,6 +47755,465 @@ mod tests {
                     recur_fill.iter().flatten().count()
                 );
             }
+        }
+    }
+
+    /// GPU-only fixture of the spec boundary publication cells: a live cache on `cfg` holding
+    /// `live` rows of random bytes on every attention layer but the last (which stands for the
+    /// unexecuted MTP layer), draft sources of random bytes at the cache's capacity, and the
+    /// capture's recurrent planes, hidden row and logits as host values.
+    struct SpecPubFixture {
+        src: super::Cache,
+        kv_fill: Vec<Option<(Vec<u8>, Vec<u8>)>>,
+        draft_tok: (usize, usize),
+        draft_host: (Vec<u8>, Vec<u8>),
+        draft: (cudarc::driver::CudaSlice<u8>, cudarc::driver::CudaSlice<u8>),
+        recur_fill: Vec<Option<(Vec<f32>, Vec<f32>)>>,
+        last_h: Vec<f32>,
+        logits: Vec<f32>,
+        committed: Vec<u32>,
+        live: usize,
+    }
+
+    impl SpecPubFixture {
+        const CAP_ROWS: usize = 256;
+
+        fn configs() -> Vec<(String, memra_gguf::config::ModelConfig)> {
+            use memra_gguf::config::{HfConfig, ModelConfig};
+            let mut cfgs = vec![(
+                "tiny".to_string(),
+                ModelConfig::from_hf(&HfConfig::parse(
+                    r#"{"model_type":"qwen3_5","num_hidden_layers":4,"hidden_size":64,
+                    "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+                    "intermediate_size":128,"vocab_size":16,"max_position_embeddings":256,
+                    "full_attention_interval":2,"linear_conv_kernel_dim":3,
+                    "linear_key_head_dim":32,"linear_value_head_dim":32,
+                    "linear_num_key_heads":1,"linear_num_value_heads":2}"#,
+                )),
+            )];
+            if let Ok(path) = std::env::var("MEMRA_B1_MODEL") {
+                let g = memra_gguf::GgufFile::open(&path).unwrap();
+                let file = std::path::Path::new(&path).file_name().unwrap();
+                cfgs.push((
+                    file.to_string_lossy().into_owned(),
+                    ModelConfig::from_gguf(&g),
+                ));
+            }
+            cfgs
+        }
+
+        fn new(
+            engine: &Engine,
+            cfg: &memra_gguf::config::ModelConfig,
+            live: usize,
+            next: &mut impl FnMut() -> u64,
+        ) -> Self {
+            let stream = engine.stream();
+            let mut src = super::Cache::new(engine, cfg, Self::CAP_ROWS).unwrap();
+            let n = src.kv.len();
+            assert!(
+                src.kv.iter().flatten().count() > 1,
+                "at least two attention layers"
+            );
+            let absent = src.kv.iter().rposition(Option::is_some).unwrap();
+            let mut kv_fill: Vec<Option<(Vec<u8>, Vec<u8>)>> = vec![None; n];
+            let mut draft_tok = (0usize, 0usize);
+            for (il, slot) in src.kv.iter_mut().enumerate() {
+                let Some(l) = slot.as_mut() else { continue };
+                if il == absent {
+                    continue;
+                }
+                draft_tok = (l.k_tok_bytes, l.v_tok_bytes);
+                let k: Vec<u8> = (0..live * l.k_tok_bytes).map(|_| next() as u8).collect();
+                let v: Vec<u8> = (0..live * l.v_tok_bytes).map(|_| next() as u8).collect();
+                engine.htod_u8_into(&mut l.k, 0, &k).unwrap();
+                engine.htod_u8_into(&mut l.v, 0, &v).unwrap();
+                l.len = live;
+                kv_fill[il] = Some((k, v));
+            }
+            src.pos = live;
+            let dk: Vec<u8> = (0..Self::CAP_ROWS * draft_tok.0)
+                .map(|_| next() as u8)
+                .collect();
+            let dv: Vec<u8> = (0..Self::CAP_ROWS * draft_tok.1)
+                .map(|_| next() as u8)
+                .collect();
+            let draft = (
+                stream.clone_htod(&dk).unwrap(),
+                stream.clone_htod(&dv).unwrap(),
+            );
+            let recur_fill = src
+                .recur
+                .iter()
+                .map(|slot| {
+                    slot.as_ref().map(|r| {
+                        let c = (0..r.conv_state.len())
+                            .map(|_| f32::from_bits(next() as u32))
+                            .collect();
+                        let s = (0..r.ssm_state.len())
+                            .map(|_| f32::from_bits(next() as u32))
+                            .collect();
+                        (c, s)
+                    })
+                })
+                .collect();
+            Self {
+                src,
+                kv_fill,
+                draft_tok,
+                draft_host: (dk, dv),
+                draft,
+                recur_fill,
+                last_h: (0..8).map(|_| f32::from_bits(next() as u32)).collect(),
+                logits: vec![0.5, -1.25, 3.0],
+                committed: (0..live as u32).collect(),
+                live,
+            }
+        }
+
+        /// Bytes of an entry at `pos` without its draft plane.
+        fn trunk_entry_bytes(&self, pos: usize) -> usize {
+            let trunk: usize = self
+                .kv_fill
+                .iter()
+                .flatten()
+                .map(|(k, v)| (k.len() + v.len()) / self.live * pos)
+                .sum();
+            let recur: usize = self
+                .recur_fill
+                .iter()
+                .flatten()
+                .map(|(c, s)| (c.len() + s.len()) * 4)
+                .sum();
+            trunk + recur + self.last_h.len() * 4
+        }
+
+        /// One publication at `pos` into a fresh cache under `key`.
+        fn publish(
+            &self,
+            engine: &Engine,
+            pos: usize,
+            draft_plane: Option<(
+                &cudarc::driver::CudaSlice<u8>,
+                &cudarc::driver::CudaSlice<u8>,
+                usize,
+                usize,
+            )>,
+            key: &super::PoolKey,
+        ) -> super::PrefixCache {
+            let stream = engine.stream();
+            let n = self.src.kv.len();
+            let cap = memra_engine::spec::SpecBoundaryCapture {
+                snap: memra_engine::cache::CacheSnapshot {
+                    kv_len: vec![None; n],
+                    tp_kv_len: vec![None; n],
+                    conv: self
+                        .recur_fill
+                        .iter()
+                        .map(|f| f.as_ref().map(|(c, _)| stream.clone_htod(c).unwrap()))
+                        .collect(),
+                    ssm: self
+                        .recur_fill
+                        .iter()
+                        .map(|f| f.as_ref().map(|(_, s)| stream.clone_htod(s).unwrap()))
+                        .collect(),
+                    pos,
+                },
+                pos,
+                logits: self.logits.clone(),
+                last_h: self.last_h.clone(),
+                latent_tails: Vec::new(),
+            };
+            let mut px = super::PrefixCache::default();
+            let mut hpx = super::HostPrefixCache::new(0);
+            super::prefix_insert_from_spec_boundary(
+                engine,
+                &mut px,
+                &mut hpx,
+                key,
+                &self.committed,
+                &self.src,
+                draft_plane,
+                None,
+                cap,
+                "spec-boundary",
+            );
+            px
+        }
+
+        /// The entry's trunk planes are exactly `[0, pos * tok_bytes)` of their sources and its
+        /// recurrent planes, hidden row and logits are the capture's.
+        fn assert_trunk(
+            &self,
+            engine: &Engine,
+            entry: &super::PrefixEntry,
+            pos: usize,
+            what: &str,
+        ) {
+            let bits = |x: &[f32]| x.iter().map(|f| f.to_bits()).collect::<Vec<u32>>();
+            assert_eq!(entry.pos, pos, "{what}");
+            for (il, fill) in self.kv_fill.iter().enumerate() {
+                match (fill, &entry.kv[il]) {
+                    (Some((k, v)), Some(p)) => {
+                        let (kb, vb) = (pos * p.k_tok_bytes, pos * p.v_tok_bytes);
+                        assert_eq!(p.len, pos, "{what} len {il}");
+                        assert_eq!(engine.dtoh_u8(&p.k).unwrap(), k[..kb], "{what} K {il}");
+                        assert_eq!(engine.dtoh_u8(&p.v).unwrap(), v[..vb], "{what} V {il}");
+                    }
+                    (None, None) => {}
+                    _ => panic!("{what}: layer {il} out of kind"),
+                }
+            }
+            for (il, fill) in self.recur_fill.iter().enumerate() {
+                match (fill, &entry.conv[il], &entry.ssm[il]) {
+                    (Some((c, s)), Some(ec), Some(es)) => {
+                        assert_eq!(bits(&engine.dtoh(ec).unwrap()), bits(c), "{what} conv {il}");
+                        assert_eq!(bits(&engine.dtoh(es).unwrap()), bits(s), "{what} ssm {il}");
+                    }
+                    (None, None, None) => {}
+                    _ => panic!("{what}: recur {il} out of kind"),
+                }
+            }
+            assert_eq!(bits(&entry.last_h), bits(&self.last_h), "{what}");
+            assert_eq!(bits(&entry.last_logits), bits(&self.logits), "{what}");
+        }
+    }
+
+    /// The spec boundary publisher allocates no zeroed plane: its planes come from the plain
+    /// snapshot's allocator (no memset) and each is written whole by its own device copy (GB10,
+    /// 131k prompt: 34 memsets of 4.13 GB went with the zeroed planes). A plane is published
+    /// only when `spec_plane_copy` reports it written: a failed trunk copy abandons the insert, a
+    /// failed draft copy drops the draft plane, and a plane without bytes is the allocator's
+    /// zeroed 1-byte buffer.
+    #[test]
+    fn spec_boundary_publish_allocates_no_zeroed_plane() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let body = |start: &str| {
+            let a = production.find(start).unwrap_or_else(|| panic!("{start}"));
+            &production[a..a + production[a..].find("\n}\n").expect("the function ends")]
+        };
+        let publish = body("fn prefix_insert_from_spec_boundary(");
+        for gone in [
+            "engine.alloc_u8(",
+            "alloc_zeros",
+            "copy_u8_into(",
+            "memcpy_dtod",
+        ] {
+            assert!(!publish.contains(gone), "the spec publisher calls {gone}");
+        }
+        // Trunk K and V, draft K and V: one allocation and one copy each.
+        assert_eq!(publish.matches("prefix_plane_alloc(engine, ").count(), 4);
+        assert_eq!(publish.matches("spec_plane_copy(engine, ").count(), 4);
+        // A failed trunk copy abandons the insert; a failed draft copy drops the draft plane.
+        assert!(publish.contains(
+            "                if !spec_plane_copy(engine, &mut k, &l.k, kb)\n                    \
+             || !spec_plane_copy(engine, &mut v, &l.v, vb)\n                {\n                    \
+             return;\n                }"
+        ));
+        assert!(publish.contains(
+            "        if !spec_plane_copy(engine, &mut k, k_src, kb)\n            \
+             || !spec_plane_copy(engine, &mut v, v_src, vb)\n        {\n            \
+             return None;\n        }"
+        ));
+        // The copy is the whole plane or nothing, and its fault is compiled into tests only.
+        let copy = body("fn spec_plane_copy(");
+        assert!(copy.contains("bytes == 0 || engine.copy_u8_into(dst, 0, src, bytes).is_ok()"));
+        assert!(copy.contains("#[cfg(test)]\n    if spec_plane_copy_fault() {"));
+        // The allocator: no memset for a plane with bytes, the zeroed 1-byte buffer without.
+        let alloc = body("fn prefix_plane_alloc(");
+        assert!(alloc.contains("engine.alloc_u8_uninit(bytes)"));
+        assert!(alloc.contains("engine.alloc_u8(1)"));
+    }
+
+    /// GPU cell: the spec boundary publication is the copy program. A tiny hybrid config always,
+    /// and the checkpoint's own geometry when `MEMRA_B1_MODEL` names a GGUF (metadata only). The
+    /// live cache holds `live >= pos` rows (a session past its prime boundary). The published
+    /// entry's trunk and draft planes are exactly `[0, pos * tok_bytes)` of their sources, its
+    /// recurrent planes and rows are the capture's, and its byte count is their sum. A draft
+    /// source shorter than the boundary and a publisher without a draft plane publish
+    /// trunk-only. The digest line is the round-trip digest of each entry on a fixed seed: equal
+    /// lines from two binaries are equal entries.
+    #[test]
+    #[ignore = "requires a CUDA GPU; MEMRA_B1_MODEL adds a checkpoint's geometry"]
+    fn spec_boundary_publish_is_the_copy_program() {
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let stream = engine.stream();
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for (name, cfg) in &SpecPubFixture::configs() {
+            for (pos, live) in [(1usize, 1usize), (97, 97), (97, 131)] {
+                let fx = SpecPubFixture::new(&engine, cfg, live, &mut next);
+                let (dk_tok, dv_tok) = fx.draft_tok;
+                let dk_short = stream
+                    .clone_htod(&fx.draft_host.0[..pos * dk_tok - 1])
+                    .unwrap();
+                for case in ["draft", "short-draft", "no-draft"] {
+                    let draft_plane = match case {
+                        "draft" => Some((&fx.draft.0, &fx.draft.1, dk_tok, dv_tok)),
+                        "short-draft" => Some((&dk_short, &fx.draft.1, dk_tok, dv_tok)),
+                        _ => None,
+                    };
+                    let what = format!("{name} pos {pos} live {live} {case}");
+                    let key: super::PoolKey = (format!("specpub-{case}"), String::new());
+                    let px = fx.publish(&engine, pos, draft_plane, &key);
+                    let at = px
+                        .key_index(&key, &fx.committed[..pos])
+                        .unwrap_or_else(|| panic!("{what}: no entry"));
+                    let entry = &px.entries[&key][at];
+                    fx.assert_trunk(&engine, entry, pos, &what);
+                    let mut want = fx.trunk_entry_bytes(pos);
+                    match (case, &entry.draft) {
+                        ("draft", Some(p)) => {
+                            let (kb, vb) = (pos * dk_tok, pos * dv_tok);
+                            assert_eq!(
+                                (p.len, p.k_tok_bytes, p.v_tok_bytes),
+                                (pos, dk_tok, dv_tok),
+                                "{what}"
+                            );
+                            assert_eq!(
+                                engine.dtoh_u8(&p.k).unwrap(),
+                                fx.draft_host.0[..kb],
+                                "{what} draft K"
+                            );
+                            assert_eq!(
+                                engine.dtoh_u8(&p.v).unwrap(),
+                                fx.draft_host.1[..vb],
+                                "{what} draft V"
+                            );
+                            want += kb + vb;
+                        }
+                        ("short-draft" | "no-draft", None) => {}
+                        _ => panic!("{what}: draft plane out of kind"),
+                    }
+                    assert_eq!(entry.bytes, want, "{what} bytes");
+                    eprintln!(
+                        "[specpub cell] {name} pos={pos} live={live} case={case} bytes={} digest={}",
+                        entry.bytes,
+                        super::prefix_entry_roundtrip_digest(&engine, entry).unwrap()
+                    );
+                }
+            }
+        }
+    }
+
+    /// GPU cell: a plane allocated without a memset is charged to the insert budget's free
+    /// reading when it is allocated, before any byte of it is written. The spec boundary
+    /// publisher reads that budget right after it enqueues its copies, so the reading must not
+    /// depend on whether a copy has run (on unified memory the reading is the larger of the
+    /// driver's and `MemAvailable`, plus the pool's cached bytes).
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn an_unwritten_plane_is_charged_to_the_insert_budget_reading() {
+        use super::{effective_free_bytes, prefix_plane_alloc};
+        const BYTES: usize = 2 << 30;
+        const SLACK: usize = 128 << 20;
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let stream = engine.stream();
+        let read = || {
+            stream.synchronize().unwrap();
+            effective_free_bytes(&engine).unwrap().0
+        };
+        let before = read();
+        let mut plane = prefix_plane_alloc(&engine, BYTES).unwrap();
+        let unwritten = read();
+        stream.memset_zeros(&mut plane).unwrap();
+        let written = read();
+        drop(plane);
+        let freed = read();
+        eprintln!(
+            "[specpub budget cell] unified={} free MB: before {} unwritten {} written {} freed {}",
+            super::device_is_unified(&engine),
+            before >> 20,
+            unwritten >> 20,
+            written >> 20,
+            freed >> 20
+        );
+        assert!(
+            before.saturating_sub(unwritten) + SLACK >= BYTES,
+            "an unwritten {BYTES}-byte plane moved the reading by {}",
+            before.saturating_sub(unwritten)
+        );
+        assert!(
+            unwritten.abs_diff(written) <= SLACK,
+            "writing the plane moved the reading by {}",
+            unwritten.abs_diff(written)
+        );
+    }
+
+    /// GPU cell: a plane whose copy failed is never published. The planes are allocated without
+    /// a memset, so a plane left unwritten would publish whatever the allocation held. The test
+    /// fault makes one copy report failure and copy nothing: on a trunk plane (the first K, the
+    /// first V, the last V) the publisher inserts no entry and the cache stays empty; on the
+    /// draft plane (K, then V) it publishes the entry trunk-only, its trunk planes equal to
+    /// their sources and its byte count without the draft plane.
+    #[test]
+    #[ignore = "requires a CUDA GPU; MEMRA_B1_MODEL adds a checkpoint's geometry"]
+    fn spec_boundary_publish_drops_a_plane_whose_copy_failed() {
+        use super::SPEC_PLANE_COPY_FAULT;
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let (pos, live) = (97usize, 131usize);
+        for (name, cfg) in &SpecPubFixture::configs() {
+            let fx = SpecPubFixture::new(&engine, cfg, live, &mut next);
+            let trunk_planes = 2 * fx.kv_fill.iter().flatten().count();
+            let (dk_tok, dv_tok) = fx.draft_tok;
+            let draft_plane = Some((&fx.draft.0, &fx.draft.1, dk_tok, dv_tok));
+            for (ordinal, plane) in [
+                (0, "the first trunk K"),
+                (1, "the first trunk V"),
+                (trunk_planes - 1, "the last trunk V"),
+            ] {
+                let key: super::PoolKey = (format!("specpub-fault-{ordinal}"), String::new());
+                SPEC_PLANE_COPY_FAULT.with(|fault| fault.set(Some(ordinal)));
+                let px = fx.publish(&engine, pos, draft_plane, &key);
+                assert!(
+                    SPEC_PLANE_COPY_FAULT.with(|fault| fault.get()).is_none(),
+                    "{name}: the fault on {plane} did not fire"
+                );
+                assert!(
+                    px.key_index(&key, &fx.committed[..pos]).is_none() && px.total_bytes == 0,
+                    "{name}: an entry was published although the copy of {plane} failed"
+                );
+            }
+            for (ordinal, plane) in [
+                (trunk_planes, "the draft K"),
+                (trunk_planes + 1, "the draft V"),
+            ] {
+                let what = format!("{name}, failed copy of {plane}");
+                let key: super::PoolKey = (format!("specpub-fault-{ordinal}"), String::new());
+                SPEC_PLANE_COPY_FAULT.with(|fault| fault.set(Some(ordinal)));
+                let px = fx.publish(&engine, pos, draft_plane, &key);
+                assert!(
+                    SPEC_PLANE_COPY_FAULT.with(|fault| fault.get()).is_none(),
+                    "{what}: the fault did not fire"
+                );
+                let at = px
+                    .key_index(&key, &fx.committed[..pos])
+                    .unwrap_or_else(|| panic!("{what}: no trunk-only entry"));
+                let entry = &px.entries[&key][at];
+                assert!(
+                    entry.draft.is_none(),
+                    "{what}: the draft plane was published"
+                );
+                fx.assert_trunk(&engine, entry, pos, &what);
+                assert_eq!(entry.bytes, fx.trunk_entry_bytes(pos), "{what} bytes");
+            }
+            eprintln!(
+                "[specpub fault cell] {name}: 3 failed trunk copies published nothing, 2 failed \
+                 draft copies published trunk-only ({trunk_planes} trunk planes)"
+            );
         }
     }
 
