@@ -41,6 +41,14 @@
 //!   says stop after its second slice: the burst must end there with `committed` equal to the
 //!   cache rows and to the true history less the pending token, and the next burst must carry
 //!   on with the oracle's tokens.
+//! - **A sampled burst carries its pending token** (memra#1186). Three sessions serve one
+//!   seeded, frequency-penalised request: the first in one burst (no burst boundary inside the
+//!   answer, the reference), the second one burst after another, the third with a no-round
+//!   burst after every burst. Every burst of the second and third must end on a carried
+//!   token, `committed` must stay the cache rows, and the three must emit the same tokens:
+//!   the draw is keyed by position, so where a burst ends and whether a burst ran a round may
+//!   not move it. A carry that drew the token after a boundary at another event, or in
+//!   another penalty window, differs from the one-burst session there.
 //!
 //! usage: session-gate <model.gguf>   (env: MEMRA_SPEC_K, MEMRA_NGEN per turn)
 use memra_engine::Engine;
@@ -386,6 +394,86 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if !text_ok {
             println!("  session:   {:?}", &got[..got.len().min(12)]);
             println!("  reference: {:?}", &reference[..reference.len().min(12)]);
+        }
+    }
+    // The sampled carry: one seeded, frequency-penalised request on three sessions: in one
+    // burst (the reference: no boundary inside it), burst after burst, and burst after burst
+    // with a no-round burst after each.
+    {
+        let sp = SpecSampling {
+            temp: 1.0,
+            seed: 4242,
+            penalty_last_n: 8192,
+            penalty_freq: 0.4,
+            ..SpecSampling::GREEDY
+        };
+        let run = |burst: usize,
+                   idle_bursts: bool|
+         -> Result<(Vec<u32>, bool, bool), Box<dyn std::error::Error>> {
+            let mut s = model.new_session(&e, 4096)?;
+            let (mut all, mut carried, mut rows_ok) = (Vec::new(), true, true);
+            let mut prime: &[u32] = &identity_prompt;
+            while all.len() < 3 * n_new {
+                let (out, _d, _a) = model.generate_spec_session_sampled_prime_split(
+                    &e,
+                    &mut s,
+                    prime,
+                    burst,
+                    k,
+                    Some(sp),
+                    None,
+                    None,
+                )?;
+                if out.is_empty() {
+                    return Err("a sampled burst emitted nothing".into());
+                }
+                prime = &[];
+                all.extend_from_slice(&out);
+                carried &= s.has_pending();
+                rows_ok &= s.committed.len() == s.kv_position();
+                if idle_bursts {
+                    let mut stop = |_: &[u32]| false;
+                    let (idle, _d, _a) = model.generate_spec_session_sampled_prime_split(
+                        &e,
+                        &mut s,
+                        &[],
+                        n_new,
+                        k,
+                        Some(sp),
+                        None,
+                        Some(&mut stop),
+                    )?;
+                    all.extend_from_slice(&idle);
+                    carried &= s.has_pending();
+                    rows_ok &= s.committed.len() == s.kv_position();
+                }
+            }
+            Ok((all, carried, rows_ok))
+        };
+        let (single, _, rows_s) = run(3 * n_new, false)?;
+        let (straight, carried_a, rows_a) = run(n_new, false)?;
+        let (idled, carried_b, rows_b) = run(n_new, true)?;
+        let n = single.len().min(straight.len()).min(idled.len());
+        let same = single[..n] == straight[..n] && single[..n] == idled[..n];
+        let m = if same && carried_a && carried_b && rows_s && rows_a && rows_b {
+            "MATCH"
+        } else {
+            ok = false;
+            "MISMATCH"
+        };
+        println!(
+            "sampled carry: {} tok in one burst, {} burst after burst, {} with no-round bursts, \
+             first {n} equal {same}; every burst ended on a carried token {carried_a}/{carried_b}; \
+             committed == cache rows {rows_s}/{rows_a}/{rows_b} -> {m}",
+            single.len(),
+            straight.len(),
+            idled.len()
+        );
+        if !same {
+            let at = (0..n)
+                .find(|&i| single[i] != straight[i] || single[i] != idled[i])
+                .unwrap_or(n);
+            println!("  first difference at generated position {at}");
         }
     }
     println!(

@@ -22038,8 +22038,10 @@ pub fn run(
             // tail. It costs one T=1 trunk pass, once per demotion (never per burst).
             //
             // SAMPLED sessions demote too (lane/batch-spec, 2026-11-01). The handed token is a
-            // proper draw: the MTP sampled tail draws `next_pred` from the boundary logits
-            // (lane/sampled-spec-quality, 2026-08-19) and the DFlash2 round draws its `last`
+            // proper draw: the MTP flush of a sampled session's carried pending draws
+            // `next_pred` from the commit pass's logits at the position's own event
+            // (memra#1186; before it the sampled tail drew it at every burst boundary,
+            // lane/sampled-spec-quality, 2026-08-19) and the DFlash2 round draws its `last`
             // bonus/residual token; neither is emitted yet, so emitting it next is exactly what
             // the spec stream would do. The penalty window is the worker's own `Sampler`
             // history, which every spec burst already feeds through `accept`. The one real
@@ -22318,10 +22320,12 @@ pub fn run(
                         // drops the scratch. Settle BLOCKING before the session is consumed.
                         let mut sess = s.spec.take().unwrap();
                         let lm = &loaded[&s.model];
-                        // A pending only exists on the greedy tail today; a sampled session that
-                        // ever carried one must get a DRAWN next_pred from the flush, never an
-                        // argmax, so the flush takes the request's own sampling config
-                        // (`None` for greedy, as before).
+                        // A sampled session carries its pending token like a greedy one
+                        // (memra#1186) and must get a DRAWN next_pred from the flush, never an
+                        // argmax, so the flush takes the request's own sampling config (`None`
+                        // for greedy). The draw is at the session's counter, the position after
+                        // the pending token, so plain decode continues one position later with
+                        // the counter the flush left (`demoted_philox_base`).
                         if sess.has_pending()
                             && let Err(err) = lm.model.spec_flush_pending(
                                 &engine,
@@ -24342,10 +24346,17 @@ pub fn run(
                 // PENDING-CARRY flush before parking: a parked session must be fully committed
                 // (committed_text drives the text-prefix resume match — an uncommitted pending
                 // would double-feed on resume). One T=1 pass per RETIRED request, not per burst.
+                // The flush takes the retiring request's own sampler (`None` for greedy): a
+                // sampled request carries its pending token too (memra#1186), and its flush
+                // leaves the session as the pre-carry sampled tail left it, with the next token
+                // drawn at the session's counter. Only a request with an equivalent sampler
+                // resumes this session (`spec_resume_sampler_admits`).
                 if sess.pending_tok.is_some()
-                    && let Err(err) = loaded[&s.model]
-                        .model
-                        .spec_flush_pending(&engine, &mut sess, None)
+                    && let Err(err) = loaded[&s.model].model.spec_flush_pending(
+                        &engine,
+                        &mut sess,
+                        spec_sampling_for(&s.sampler),
+                    )
                 {
                     eprintln!("[worker] spec pending flush failed ({err}); dropping session");
                     continue;
@@ -32430,8 +32441,10 @@ fn spec_burst_pre(
 
 /// ENTRY-YIELD BOUND (memra#1201). A burst's first commit hook runs before its first round, and
 /// when a request waits for admission the hook says stop there (ADMISSION YIELD, below): the
-/// burst runs no round. A greedy burst that enters on a carried pending token has emitted nothing
-/// at that hook, so it made no progress. Under arrivals that keep a request waiting at each of its
+/// burst runs no round. A burst that enters on a carried pending token (greedy, and sampled since
+/// the sampled pending carry, memra#1186) has emitted nothing at that hook, so it made no
+/// progress. A sampled burst on a rollback seam that keeps the tail pass enters on its drawn
+/// boundary token, which the entry hook emits, so the bound never acts there. Under arrivals that keep a request waiting at each of its
 /// burst entries it made none at all: on GB10 at the default gate, two closed-loop clients of
 /// one-token requests with a think time of 200 ms or less left a long greedy request at 1 or 2
 /// tokens in 30 s. (The cost model admits those requests to the speculative path, and their first
@@ -32859,7 +32872,15 @@ fn spec_burst_post(
         "a stop string completed in the burst and the round hook did not latch it"
     );
     // +3 (was +2): committed excludes a carried pending token (pending-carry, 2026-08-01).
-    if stop.is_none() && spec.committed.len() + k + 3 >= spec.cache_max_ctx() {
+    // A SAMPLED session's pending token is counted back in (memra#1186): before its carry
+    // the sampled tail had committed that token, so `committed` held every emitted token and
+    // the request stopped one token earlier than a greedy one. Counting it keeps the stop
+    // rule in emitted tokens what it was. Where the last burst ends still depends on round
+    // alignment (the engine's context-edge guard, the last round's overshoot), which the carry
+    // shifts, so the text is plain decode's prefix, as before, not necessarily of the same
+    // length.
+    let sampled_pending = usize::from(spec.has_pending() && !s.sampler.is_greedy());
+    if stop.is_none() && spec.committed.len() + sampled_pending + k + 3 >= spec.cache_max_ctx() {
         stop = Some(StopReason::ContextFull);
     }
     if let Some(r) = stop {
@@ -39267,6 +39288,49 @@ mod tests {
         let mut e = burst(SPEC_ENTRY_YIELD_MAX);
         assert!(!e.bound_entry_yield(false, false));
         assert_eq!(e.entry_yields, 0);
+    }
+
+    /// The sampled pending carry's worker wiring (memra#1186). A sampled session now ends its
+    /// bursts on a carried pending token, so every worker flush of that token (the demotion to
+    /// plain decode and the park at retirement) must draw the token after it with the request's
+    /// own sampler: an argmax there would hand a sampled session a greedy prediction. And the
+    /// context-full stop counts a sampled session's pending token, which the pre-carry tail had
+    /// already committed, so the stop rule in emitted tokens is what it was before the carry.
+    #[test]
+    fn spec_sampled_pending_carry_is_wired() {
+        let strip = |src: &str| -> String {
+            src.lines()
+                .map(|l| l.split("//").next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(&strip(include_str!("worker.rs")));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let calls: Vec<&str> = live.split(".spec_flush_pending(").skip(1).collect();
+        assert_eq!(
+            calls.len(),
+            2,
+            "the worker flushes a pending token at demotion and at park"
+        );
+        for call in calls {
+            let args = &call[..call.find(')').expect("the call's arguments end")];
+            assert!(
+                args.ends_with("spec_sampling_for(&s.sampler"),
+                "a worker flush draws with the request's own sampler: ({args})"
+            );
+        }
+        let post = live
+            .split("fn spec_burst_post(")
+            .nth(1)
+            .expect("spec_burst_post exists");
+        assert!(
+            post.contains(
+                "let sampled_pending = usize::from(spec.has_pending() && !s.sampler.is_greedy());"
+            ) && post
+                .contains("spec.committed.len() + sampled_pending + k + 3 >= spec.cache_max_ctx()"),
+            "the context-full stop counts a sampled session's pending token"
+        );
     }
 
     /// The entry-yield bound's wiring (memra#1201): the counter is read into each burst's

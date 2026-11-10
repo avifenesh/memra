@@ -1615,13 +1615,21 @@ pub struct SpecSession {
     /// emitted by the last round but NOT committed to the caches. The old tail committed it with
     /// a solo T=1 trunk pass (+ draft fill), and the next burst's setup fed the stashed next_pred
     /// with ANOTHER solo pass — 2x ~11.5ms/burst measured on H100 q27 ([spec-setup] trace).
-    /// Carrying it lets the next empty-suffix greedy burst consume it as round-0 verify col 0,
+    /// Carrying it lets the next empty-suffix burst consume it as round-0 verify col 0,
     /// exactly like a mid-burst full-accept boundary (no solo passes). INVARIANT: when set,
     /// `committed` (== cache rows) EXCLUDES this token although it was already emitted in the
     /// last burst's output, and `last_h` holds the hidden of the last COMMITTED row (its
     /// predecessor — the chain-seed/fill anchor). `next_pred` is None (unknown without the
-    /// commit pass). Non-empty-suffix or sampled turns must flush first (spec_flush_pending);
+    /// commit pass). A non-empty-suffix turn must flush first (spec_flush_pending);
     /// generate_spec_session_sampled does this at entry, and serve parks only flushed sessions.
+    ///
+    /// SAMPLED bursts carry too (memra#1186): the sampled walk is position-keyed (memra#1154),
+    /// so the token after the pending one is the draw at event `sctr` from the row after it,
+    /// whichever forward produces that row. The next burst's round 0 verifies the pending
+    /// token as column 0 and draws that row at `sctr`, the draw the old tail made from its
+    /// solo commit pass. `sctr` stays at the event of the position after the pending token.
+    /// Two rollback seams keep the tail pass, because each defines its text by the burst
+    /// boundary: see [`sampled_pending_carries`].
     pub pending_tok: Option<u32>,
     /// SESSION-AFFINITY TURN CHECKPOINT (lane/session-affinity, 2026-08-05): the state at this
     /// turn's PROMPT-END boundary, retained so a later turn can REWIND here. See
@@ -1815,8 +1823,9 @@ impl SpecSession {
         })
     }
     /// Is this session in the DEMOTION-READY shape (see [`SpecSession::into_demoted`])?
-    /// `false` means a carried pending must be flushed first (`spec_flush_pending`), or the
-    /// session has never run a turn and has no prediction to hand over.
+    /// `false` means a carried pending must be flushed first (`spec_flush_pending`, with the
+    /// request's own sampler), or the session has never run a turn and has no prediction to
+    /// hand over.
     pub fn demote_ready(&self) -> bool {
         self.pending_tok.is_none() && self.next_pred.is_some()
     }
@@ -1850,7 +1859,9 @@ impl SpecSession {
     ///
     /// SAMPLED sessions (lane/batch-spec, 2026-11-01): `next_pred` is the boundary DRAW from
     /// the session's Philox stream (`sample_boundary_token*`), not yet emitted, so handing it
-    /// over emits exactly what the next burst would have. The caller reads `sctr` BEFORE this
+    /// over emits exactly what the next burst would have. Since memra#1186 a sampled burst
+    /// carries its pending token, so the draw is usually the flush's (`spec_flush_pending`
+    /// with the request's sampler). The caller reads `sctr` BEFORE this
     /// call and starts the row's plain device draws there (the worker's
     /// `demoted_philox_base`): plain draws share this Philox space, and reusing an event the
     /// spec prefix consumed would not be an exact sample.
@@ -1988,6 +1999,22 @@ pub fn spec_sampled_boundary_on() -> bool {
 pub fn spec_pen_session_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_SPEC_PEN_SESSION").as_deref() != Ok("0"))
+}
+
+/// Does a SAMPLED burst carry its pending bonus token into the next burst (memra#1186)?
+///
+/// Yes, unless a rollback seam defines the text by the burst boundary:
+/// - `MEMRA_SPEC_SAMPLED_BOUNDARY=0` emits an ARGMAX at every burst boundary. A carried
+///   boundary has no boundary token: round 0 would draw that position.
+/// - `MEMRA_SPEC_PEN_SESSION=0` restarts the penalty window at every burst. The boundary
+///   token is then drawn in the ending burst's window and the next row in a window that
+///   starts at that token. A carried round 0 would draw the boundary position in a window
+///   holding only the pending token.
+///
+/// Both keep the tail's commit pass, so their texts are the ones they wrote before the carry.
+/// One predicate for the tail's stash and the two entry flushes, so they cannot drift apart.
+pub(crate) fn sampled_pending_carries(sp: &SpecSampling) -> bool {
+    sp.temp > 0.0 && spec_sampled_boundary_on() && (!sp.pen_on() || spec_pen_session_on())
 }
 
 /// ROLLBACK DOOR for extended-entry publication from a RESTORED session
@@ -8190,10 +8217,10 @@ impl HybridModel {
             .zip(hooks.iter_mut())
             .enumerate()
         {
-            // The wrapper's pending-carry entry flush (sampled bursts never carry; this only
-            // mirrors the serial entry for completeness).
+            // The wrapper's pending-carry entry flush, as the serial entry runs it: only a
+            // sampled burst on a rollback seam that keeps the tail pass flushes here.
             if sess.pending_tok.is_some()
-                && sampling.is_some_and(|s| s.temp > 0.0)
+                && sampling.is_some_and(|s| s.temp > 0.0 && !sampled_pending_carries(&s))
                 && let Err(err) = self.spec_flush_pending(e, sess, sampling)
             {
                 outcomes[j] = Some(Err(err));
@@ -11728,13 +11755,17 @@ impl HybridModel {
     /// Commit a carried pending bonus (see SpecSession::pending_tok): one T=1 trunk pass
     /// (its logits' argmax becomes next_pred) + the draft-KV fill at the carried anchor —
     /// byte-identical to the pre-carry session tail. Required before a non-empty-suffix
-    /// prime, a sampled turn, or parking a session for pool reuse. No-op without a pending.
-    /// `sampling` is the sampler of the request that will CONSUME the resulting `next_pred`
-    /// (lane/sampled-spec-quality): this is a boundary site like any other, so a sampled
-    /// consumer must get a DRAWN token, not an argmax. Pass `None` from the park/demote
-    /// callers — a pending only ever exists on the GREEDY tail, and the consumer of a
-    /// park-time flush is a future request whose sampler is not knowable here (residual
-    /// named at the pool-resume probe in worker.rs and in SAMPLED-QUALITY.md).
+    /// prime, a demotion to plain decode, or parking a session for pool reuse. No-op without
+    /// a pending.
+    /// `sampling` decides the token after the pending one: a draw at event `sctr` for a
+    /// sampled config (the draw the pre-carry sampled tail made, from the commit pass's row
+    /// over the session's window, so a demotion continues at the next position with the same
+    /// counter, memra#1186), an argmax for `None`. The worker's park and demote callers pass
+    /// the sampler of the request that stashed the token. The two in-engine callers ahead of
+    /// a suffix prime pass the sampler of the call that primes: the token they produce is
+    /// never emitted (the prime's last row decides the next token), but a caller that changes
+    /// sampler between calls on one session and does not reset `sctr`, as the worker does on
+    /// every resume that primes, leaves the counter where that call's regime put it.
     pub fn spec_flush_pending(
         &self,
         e: &Engine,
@@ -12200,11 +12231,14 @@ impl HybridModel {
             );
         }
         // PENDING-CARRY entry flush: a carried bonus precedes any new suffix in the sequence,
-        // so it must commit BEFORE the suffix primes; the sampled path doesn't carry (its
-        // round-0 accept needs the commit pass's logits). Empty-suffix greedy bursts — the
-        // serve continuation case — consume the carry in-loop with zero solo passes.
+        // so it must commit BEFORE the suffix primes. Empty-suffix bursts — the serve
+        // continuation case — consume the carry in-loop with zero solo passes, greedy and
+        // sampled alike (memra#1186: round 0 draws the row after the carried token at its own
+        // position-keyed event). A sampled burst on a rollback seam that keeps the tail pass
+        // (`sampled_pending_carries`) flushes, as every sampled burst did before.
         if sess.pending_tok.is_some()
-            && (!suffix.is_empty() || sampling.is_some_and(|s| s.temp > 0.0))
+            && (!suffix.is_empty()
+                || sampling.is_some_and(|s| s.temp > 0.0 && !sampled_pending_carries(&s)))
         {
             self.spec_flush_pending(e, sess, sampling)?;
         }
@@ -13337,9 +13371,11 @@ impl HybridModel {
         }
         let base = prepared.as_ref().map_or(cache.pos, |p| p.base);
         // PENDING-CARRY consume (2026-08-01): a carried bonus reaches here only on the
-        // empty-suffix GREEDY continuation path (generate_spec_session_sampled flushed every
-        // other case). It enters the round loop as round-0's pending — verify col 0 — exactly
-        // like a mid-burst full-accept boundary: no init feed, no tail commit pass.
+        // empty-suffix continuation path (generate_spec_session_sampled flushed every other
+        // case). It enters the round loop as round-0's pending — verify col 0 — exactly like a
+        // mid-burst full-accept boundary: no init feed, no tail commit pass. A sampled burst
+        // takes it the same way (memra#1186): round 0 runs with base 1, so its row 0 is verify
+        // col 0, the row after the carried token, drawn at the session's `sctr`.
         let carried_pending: Option<u32> = sess_pending_slot.as_mut().and_then(|s| s.take());
         // PERSISTENT DRAFT KV (the only mode since 2026-07-08 — the legacy round-local scratch,
         // MEMRA_SPEC_KVLOCAL, measured -35 acceptance pts on the 27B p3 sweep and was removed;
@@ -13821,6 +13857,15 @@ impl HybridModel {
             // until this burst's tail). Covers the carry/continuation seeds too — neither is
             // in `committed` yet.
             pen_hist.push(last_token);
+        }
+        if sampled
+            && let Some(b) = carried_pending
+            && spec_boundary_trace()
+        {
+            // Diagnostics: the sampled carry (memra#1186) draws nothing at the boundary, so
+            // it has no `[spec-boundary]` line. Name the burst that entered on a carried
+            // token and the event its round 0 draws first, so a gate can see the carry ran.
+            eprintln!("[spec-carry] site=burst-entry token={b} event={sctr}");
         }
         if carried_pending.is_none() {
             out.push(last_token);
@@ -14654,24 +14699,32 @@ impl HybridModel {
         let t_rounds = t_ent.elapsed();
         if let Some((committed, last_h, next_pred_slot, sctr_slot, uctr_slot)) = sess_tail.take() {
             // NEXT BURST'S BOUNDARY TOKEN (lane/sampled-spec-quality, Item 1). Greedy stashes
-            // the argmax `last_pred` exactly as before (byte contract). SAMPLED draws the token
-            // HERE, where the sampler, the session Philox counters and the penalty window are
-            // all live and the boundary logits row still exists — that is the "make the state
-            // available" half of the fix; the consuming burst then just emits it. `sctr` is
-            // written to the session BELOW the draws so the advance is never lost.
+            // the argmax `last_pred` exactly as before (byte contract). A SAMPLED burst that
+            // ends with no pending token, or on a rollback seam, draws the token HERE, where
+            // the sampler, the session Philox counters and the penalty window are all live and
+            // the boundary logits row still exists; the consuming burst then just emits it.
+            // A sampled burst that ends on a pending token carries it instead (memra#1186) and
+            // draws nothing here. `sctr` is written to the session BELOW the draws so the
+            // advance is never lost.
             *next_pred_slot = Some(last_pred);
             let sample_boundary = sampled && constraint.is_none() && spec_sampled_boundary_on();
             let mut stashed_pending = false;
             if let Some(b) = pending.take() {
-                if !sampled {
+                if !sampled || (constraint.is_none() && sampled_pending_carries(&sp)) {
                     // PENDING-CARRY (2026-08-01): stash the bonus on the session instead of
-                    // committing it with a solo T=1 pass — the next empty-suffix greedy burst
+                    // committing it with a solo T=1 pass — the next empty-suffix burst
                     // consumes it as round-0 verify col 0 (a plain round edge; the old tail
                     // commit + next burst's init feed were 11.6+11.5ms solo trunk passes per
                     // burst on H100 q27, [spec-setup] trace). b stays in `out` (emitted) but
                     // OUT of `committed` (cache rows == committed); the consuming call
                     // prepends it once its verify commits the row. next_pred is unknowable
                     // without the commit pass — None; callers gate on pending_tok too.
+                    //
+                    // SAMPLED (memra#1186): the same stash. The token after b is not drawn
+                    // here: `sctr` already names its event, and the next burst's round 0
+                    // draws it from verify col 0, the row this tail's commit pass used to
+                    // produce. No draw moves: same row, same window (the session's committed
+                    // tail plus b), same event.
                     // A burst that ran no round re-stashes the token it was handed, so `out`
                     // may not end with it.
                     debug_assert!(
@@ -14687,8 +14740,9 @@ impl HybridModel {
                     *last_h = Some(e.clone_dtod(&fill_prev)?);
                     stashed_pending = true;
                 } else {
-                    // SAMPLED tail (unchanged): commit the bonus (one T=1 pass) + draft fill —
-                    // the sampled round-0 accept needs this pass's logits (last_col_logits).
+                    // SAMPLED tail on a rollback seam (`sampled_pending_carries` is false):
+                    // commit the bonus (one T=1 pass) + draft fill. The seam's boundary token
+                    // comes off this pass's logits.
                     let pos_b = cache.pos;
                     scratch.set_len(e, pos_b)?;
                     let (lg_b, hb) = self.spec_target_step_h(e, b, &mut *cache)?;
@@ -14817,8 +14871,9 @@ impl HybridModel {
     ) -> Option<SpecRoundGate> {
         let SpecRoundCfg { k, adapt, .. } = rs.cfg;
         // CONTEXT-EDGE GUARD (memra#659): a round writes the verify window (the pending
-        // token plus up to k_this drafts) at rows cache.pos.., and a sampled tail commits
-        // its bonus one row past that. A round that cannot land inside the cache ends the
+        // token plus up to k_this drafts) at rows cache.pos.., and a flush of the pending
+        // token (a park, a demotion, a sampled tail on a rollback seam) commits it one row
+        // past that. A round that cannot land inside the cache ends the
         // burst here, at a round boundary, before anything of the round runs (the same exit
         // as the admission yield); the worker's `committed + k + 3 >= cache_max_ctx` check
         // then finishes the request ContextFull. Without it a request whose budget spans its
