@@ -2269,11 +2269,15 @@ __device__ int v41_select(const V41Keys& K, int k, int* hist, int* wsum, uint32_
     return total;
 }
 
+// the select's static shared memory: the histogram, the warp sums and its four counters
+#define V41_SEL_STATIC (256 * 4 + 8 * 4 + 4 * 4)
 // the emit tables of a row of n keys: 12 bytes per warp of every 256 keys; 0 (the scan form) when
-// they would not fit a block with room to spare
+// two blocks with their tables and static shared memory would not share an SM's 102.4 KB: rows up
+// to 133,632 keys take the tables (48 KB for the 131,072 keys of a ratio-1 index layer at that
+// many tokens), longer rows the scan form (one block an SM is not measured)
 static int v41_sel_tab_bytes(int n) {
     long b = (long)((n + 255) / 256) * 8 * 12;
-    return b > 0 && b <= 40 * 1024 ? (int)b : 0;
+    return b > 0 && b <= 51200 - V41_SEL_STATIC ? (int)b : 0;
 }
 
 __global__ void __launch_bounds__(256) v41_topk_kernel(const v41_bf* __restrict__ score, long lds, int T, int k,
@@ -2299,6 +2303,13 @@ extern "C" int memra_v41_topk(const void* score, long lds, int T, int k, int out
     // fastest that way (0.040 against 0.062 ms on a 32,768-key row); many rows at once want the
     // strided table form (10.1 against 4.3 ms for 8,192 such rows).
     int tb = rows <= 4 ? 0 : v41_sel_tab_bytes(T);
+    // A block past 48 KB of shared memory (tables and static) needs the limit raised and the whole
+    // of the SM's shared memory, or the second block does not fit. Both are per device and cheap,
+    // and the carveout is set on every call so a row's schedule never depends on the launch before.
+    bool big = tb + V41_SEL_STATIC > 48 * 1024;
+    if (big) cudaFuncSetAttribute(v41_topk_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, tb);
+    cudaFuncSetAttribute(v41_topk_kernel, cudaFuncAttributePreferredSharedMemoryCarveout,
+                         big ? (int)cudaSharedmemCarveoutMaxShared : (int)cudaSharedmemCarveoutDefault);
     v41_topk_kernel<<<rows, 256, tb, (cudaStream_t)stream>>>((const v41_bf*)score, lds, T, k, out_w, offset, out, ldo,
                                                              tb > 0);
     V41_ERR();
