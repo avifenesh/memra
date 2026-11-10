@@ -40,8 +40,13 @@
 #     its OWN boundary was an ARGMAX in both regimes, so a sampled stream took a greedy
 #     token once per burst AND every sampled request began with the same greedy token no
 #     matter the seed. The spec-on boot runs with MEMRA_SPEC_BOUNDARY_TRACE=1; the gate
-#     asserts all three boundary SITES fired and at least one draw DEVIATED from the argmax
-#     it replaced. The customer-visible half is the one-token cells (bg/b<seed>,
+#     asserts the boundary SITES fired (the cold prime's first token and a converted
+#     full-cover hit's seed) and at least one draw DEVIATED from the argmax it replaced.
+#     Since memra#1186 a continuation burst draws no boundary token: a sampled burst carries
+#     its pending token and the next burst's round 0 draws the position. The gate asserts
+#     that too: sampled bursts entered on a carried token (`[spec-carry]`) and none drew at
+#     its tail (`site=burst-tail-commit`). The teeth arm requires the opposite of the first:
+#     with the boundary door shut the tail pass stays, so no burst may carry. The customer-visible half is the one-token cells (bg/b<seed>,
 #     max_tokens=1): pre-lane EVERY sampled request's first token was the greedy one, for
 #     every seed; the gate requires at least one seed to differ from the greedy cell now, and
 #     the teeth arm requires all of them to match it.
@@ -857,18 +862,28 @@ if [ "$ARM" = qwen ]; then
             echo "  FAIL: teeth: $BLINES boundary draws with the door shut"
             FAILS=$((FAILS + 1))
         fi
+        # ... and the seam keeps the sampled tail's commit pass (its argmax comes off that
+        # pass's logits), so no sampled burst may enter on a carried token.
+        CARRIES=$(grep -c "\[spec-carry\] site=burst-entry" "$EV/qwen-on-server.log" || true)
+        if [ "$CARRIES" = 0 ]; then
+            echo "  ok: teeth: no sampled burst carried its pending token (the seam keeps the tail pass)"
+        else
+            echo "  FAIL: teeth: $CARRIES sampled bursts carried a pending token with the door shut"
+            FAILS=$((FAILS + 1))
+        fi
     else
         # Every boundary SITE must be exercised by this cell set, or a site could regress
-        # silently: the cold prime's first token, a continuation burst's stashed token
-        # (max_tokens 48 > MEMRA_SPEC_BURST 32, so every sampled cell crosses one boundary),
-        # and a converted full-cover hit's seed.
+        # silently: the cold prime's first token and a converted full-cover hit's seed. A
+        # continuation burst has no site of its own since memra#1186 (max_tokens 48 >
+        # MEMRA_SPEC_BURST 32, so every sampled cell crosses one boundary): its burst carries
+        # the pending token and the next round draws the position, asserted below.
         # The converted SUFFIX hits (s/sp/sx since the capture law moved their entries under the
         # prompt end) draw their first token in the prime path (`cold-prime`): the deferred
         # restore primes the carried suffix through the walker, and `restore-suffix-feed` is the
         # legacy non-deferred shape's site, unreachable from these cells. Day 19 asserted it for
         # one run and removed the assertion the same day (its own addition, never a shipped
         # check); the fc cells keep the full-cover site lit.
-        for SITE in cold-prime burst-tail-commit restore-full-cover; do
+        for SITE in cold-prime restore-full-cover; do
             if grep -q "\[spec-boundary\] site=$SITE " "$EV/qwen-on-server.log"; then
                 echo "  ok: boundary site $SITE fired"
             else
@@ -876,6 +891,16 @@ if [ "$ARM" = qwen ]; then
                 FAILS=$((FAILS + 1))
             fi
         done
+        # The sampled pending carry (memra#1186): a burst that ends on a pending token
+        # stashes it, and the next burst enters on it with no tail commit and no init feed.
+        CARRIES=$(grep -c "\[spec-carry\] site=burst-entry" "$EV/qwen-on-server.log" || true)
+        TAILS=$(grep -c "\[spec-boundary\] site=burst-tail-commit " "$EV/qwen-on-server.log" || true)
+        if [ "$CARRIES" -gt 0 ] && [ "$TAILS" = 0 ]; then
+            echo "  ok: $CARRIES sampled bursts entered on a carried token, none drew at its tail"
+        else
+            echo "  FAIL: sampled pending carry: $CARRIES bursts entered on a carried token, $TAILS drew at the tail"
+            FAILS=$((FAILS + 1))
+        fi
         # ... and at least one draw must have DEVIATED from the argmax it replaced, otherwise
         # the fix is indistinguishable from the defect on this cell set.
         if [ "$BDEV" -gt 0 ]; then

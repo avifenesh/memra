@@ -1158,6 +1158,11 @@ Then a continuation burst whose commit hook says stop after its second slice (me
 server ends a burst at the round that completes a stop string and parks the session): the burst
 must end there, short of its target, with `committed` equal to the cache rows and to the true
 history less the pending token, and the burst after it must emit the oracle's tokens.
+A second check serves one seeded, frequency-penalised sampled request on three sessions: in one
+burst (no boundary inside the answer, the reference), burst after burst, and burst after burst
+with a no-round burst after each. Every burst of the last two must end on a carried token (the
+sampled pending carry, memra#1186), `committed` must stay the cache rows, and the three must
+emit the same tokens.
 
 ## Gate integrity: the shapes that report green while verifying nothing
 

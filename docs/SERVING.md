@@ -212,6 +212,29 @@ resident heads retain the existing graph default. See [the capture receipt](../r
     distributional oracle covers it (arm 9: 20k draws, TV against the CPU-referenced target
     with the Monte-Carlo floor printed, teeth cells for the argmax rule and an unpenalized
     target). Greedy is byte-unaffected.
+    Since memra#1186 a continuation burst has no boundary token of its own. A sampled burst
+    ends on a pending token (emitted, not yet in the caches). It used to commit that token
+    with a solo trunk pass, draw the boundary token from the pass's logits, and the next
+    burst fed the boundary token with a second solo pass. Now it stashes the pending token
+    on the session, as a greedy burst has since 2026-08-01, and the next burst's round 0
+    verifies it as column 0 and draws the next position from that column at its own
+    position-keyed event (memra#1154): the same row, the same penalty window, the same
+    event, so the same token. The two passes are gone from every burst boundary; on GB10
+    they were 10 to 12 ms of wall per sampled round. A request's last pending token stays
+    on the session when the request ends. It is committed by one pass with the request's
+    own sampler in two cases: when the session is parked for reuse, after the response has
+    ended, and when the session is demoted to plain decode, once, mid-response. The drawn
+    boundary tokens that remain are the cold prime's first token, a converted hit's seed,
+    and the token after a burst that ended with no pending token (a one-token first burst,
+    an admission yield right after the prime). With the door shut
+    (`MEMRA_SPEC_SAMPLED_BOUNDARY=0`), or with `MEMRA_SPEC_PEN_SESSION=0` on a penalised
+    request, the old tail stays: both define their text by the burst boundary. Under
+    `MEMRA_SPEC_REPLAY=1` every round commits its bonus, so no burst ends on a pending
+    token and nothing is carried. The context-full stop counts a sampled session's pending
+    token, so its rule in emitted tokens is what it was; where the last burst ends still moves
+    with round alignment, and the text stays a prefix of plain decode's.
+    Record: `docs/decisions/SAMPLED-PENDING-CARRY.md`; receipts:
+    `research/spec-sampled-pending-carry-20261110/`.
   - **Penalty history spans the SESSION** (`MEMRA_SPEC_PEN_SESSION`, default on). The burst
     seeded `pen_hist` from the `prompt` slice it was handed, so a continuation burst — the
     majority of a stream's tokens, and all of a converted hit's — restarted the penalty
