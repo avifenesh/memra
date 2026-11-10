@@ -1,0 +1,29 @@
+1794262069.483286 [mtp-draft] loading external MTP draft: ~/models/q38-gguf/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+1794262069.568573 [mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+1794262069.937979 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794262075.385187 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":1342177280,"still_owned_bytes":16602330944,"pool_reserved_bytes":16777216000,"pool_cached_bytes":174885056,"driver_free_bytes":8141275136,"synchronization_errors":[]}
+1794262075.385234 [spec-cost] calibration skipped: model="q38" (16 sessions at depth 2048 do not fit: the other 14 need 7081MB (505.8MB each), 6919MB allocatable); the band serves
+1794262079.083843 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1644167168,"still_owned_bytes":17332139840,"pool_reserved_bytes":17515413504,"pool_cached_bytes":183273664,"driver_free_bytes":7367426048,"synchronization_errors":[]}
+1794262079.736737 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=1031 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794262080.848260 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=1111.384 generated=0->34 rounds=10 drafted=30 accepted=23 k=3
+1794262081.314309 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=465.409 generated=34->66 rounds=16 drafted=48 accepted=16 k=3
+1794262081.669954 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=355.640 generated=66->98 rounds=12 drafted=36 accepted=20 k=3
+1794262082.180850 [tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=510.756 generated=98->116 rounds=17 drafted=51 accepted=16 k=3
+1794262082.230357 [spec-k] model="q38" tenant="" K=3 source=cold-long prompt=28006 cached=0 lcp=10 active=1 wave=1 placement=single-or-non-pp2
+1794262085.340586 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3110.226 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262088.713550 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3372.563 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262092.274937 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3561.340 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262096.048188 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3773.061 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262099.948034 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3899.639 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262103.993286 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=4044.916 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262107.620138 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=3626.677 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262107.631048 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=10.939 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262107.642600 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=11.375 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262107.654022 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=11.390 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262107.665156 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=11.049 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262107.676249 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=11.049 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262107.687867 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=11.455 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794262108.103772 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=415.685 generated=0->35 rounds=10 drafted=30 accepted=24 k=3
+1794262108.628690 [tick-spec] seq=1 slot=0 trace=- start_ms=0.011 gap_ms=0.011 wall_ms=524.611 generated=35->69 rounds=13 drafted=39 accepted=21 k=3
+1794262109.149745 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=520.814 generated=69->101 rounds=13 drafted=39 accepted=19 k=3
+1794262109.871184 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=721.208 generated=101->103 rounds=18 drafted=54 accepted=14 k=3
