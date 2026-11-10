@@ -876,9 +876,9 @@ ranks on two cards, 20 layers; `receipts/widesweep-w3-n1` one rank, 9 layers):
 
 On one rank a dense launch is twice as wide and its groups pay only to 12 rows (level at 16,
 +1.6 ms at 24); bf16 to 16, fp32 FMA to 48, mHC to 32, tiles to 48. The limits are therefore per
-family and rank count (`wide_rows_for`): one rank 16 / 16 / 48 / 32 / 48, two ranks and more
-24 / 16 / 64 / 48 / 64 (dense, bf16, fp32 FMA, mHC, tiles); four ranks take the two-rank limits
-until they are measured.
+family and rank count (`wide_rows_for`): at this point one rank 16 / 16 / 48 / 32 / 48, two ranks
+and more 24 / 16 / 64 / 48 / 64 (dense, bf16, fp32 FMA, mHC, tiles; the next section moves the
+dense one); four ranks take the two-rank limits until they are measured.
 
 | a call of N rows, ms | 8 | 12 | 16 | 24 | 32 | 48 | 64 |
 |---|---|---|---|---|---|---|---|
@@ -899,6 +899,54 @@ each rank, on layers 1, 2, 14, 20 and 24. (A first form compared a short call wi
 of the full prefill; that holds on a layer without compressed keys and not on a kv source, where
 the selection width follows the call's key count and the attention sums a row's keys in another
 grouping.)
+
+### The dense body for 7 to 32 rows, the router's gate in one launch
+
+A traced 32-row call on two ranks after the section above (`receipts/wide-w4-n2`, 1,606 us of
+kernels a rank a layer): the pipelined dense tile 28%, the fused hidden tiles 25%, the w2 tiles
+13%, the router's gate 9% as four launches of 8 rows, bf16 8%.
+
+What bounds the pipelined dense body there is its shape. Its launches by grid in that trace: wq_a
+(10 blocks, K = 5,120) 68 us, wkv (4 blocks, K = 5,120) 66 us, the shared expert's w1 and w3 (9
+blocks) 66 us each, wq_b (128 blocks, K = 1,280) 21 us. Time follows K and nothing else: a block
+lands 3 K blocks a stage, a stage is about 1.25 us of round trip, K = 5,120 is 54 stages, and most
+of the card is idle. A rank's dense weights are 55 us a layer at the copy rate. The one-pass
+small-row form has the opposite problem: it keeps all of K's terms in shared memory, one block an
+SM at 16 rows.
+
+`v41_gemv_f8_rows_kernel` is the 8-column body with K in parts: a part of K is split over the
+block's eight warps, a warp loads the weight fragments of its K blocks once and runs them against
+each set of 16 activation rows, the part's scaled terms go to shared memory, the (row, column)
+threads add them in K order onto the sum they carry. A block holds one part's terms (24 KB, four
+blocks an SM) and a weight is read once for all the rows. It replaces the 16-row form above. The
+router's gate (any narrow fp32 FMA output) at 9 to 32 rows is one launch: the narrow kernel's
+block is 4 columns by up to 32 chains, with K landed in four parts. Past the dense limit a call of
+up to 32 rows takes a 32-row tile of the pipelined body.
+
+Two ranks, 20 layers, the family alone against the pipelined path, ms a call
+(`receipts/widesweep-w7-n2`):
+
+| rows | none | dense in parts | (the 16-row form) | the gate in one launch | tiles | mHC | bf16 |
+|---|---|---|---|---|---|---|---|
+| 12 | 33.7 | -4.1 | -3.8 | -6.5 | -4.2 | -1.6 | -0.9 |
+| 16 | 36.9 | -3.9 | -2.3 | -6.6 | -5.3 | -1.7 | -0.9 |
+| 24 | 40.7 | -3.3 | -0.2 | -6.5 | -5.6 | -1.5 | -0.3 |
+| 32 | 42.8 | -2.5 | +1.8 | -6.4 | -5.3 | -1.3 | +0.6 |
+| 48 | 47.9 | -1.4 | +4.3 | -2.9 | -3.7 | -0.8 | +2.3 |
+| 64 | 50.5 | -0.3 | +8.2 | -1.5 | -2.1 | -0.4 | +3.9 |
+| 96 | 54.6 | +4.3 | | +1.9 | +0.7 | +0.6 | +7.6 |
+
+Limits now (`wide_rows_for`; dense, bf16, fp32 FMA, mHC, tiles): one rank 24 / 16 / 48 / 32 / 48,
+two ranks and more 48 / 16 / 64 / 48 / 64. A call on two cards with the defaults
+(`receipts/wide-w10-n2`, best of 16): 8 rows 12.6 ms, 16 rows 19.0, 24 rows 24.0, 32 rows 27.6, 48
+rows 39.3, 64 rows 46.9; a 32-row call was 44.4 ms before this work and four calls of 8 are 50.5.
+Its kernels are now 1,325 us a rank a layer: the fused hidden tiles 30% and the w2 tiles 16% (the
+routed experts' weights, read once), dense 19% (252 us, from 451), bf16 10%, the gate 4%.
+
+The body also beats the one-pass form at 7 and 8 rows, and loses below
+(`receipts/prefillab-w9-parts8-n2`, `-parts5-n2`, `-parts5-n1`, the body forced down, A B B A):
+two ranks 1 row +1.3%, 4 rows +2.0%, 5 and 6 rows level, 7 rows -1.4%, 8 rows 12.77 -> 12.48 ms;
+one rank 7 rows -1.4%, 8 rows 9.90 -> 9.53 ms. Dense calls of 7 rows and more take it.
 
 ### The page cache under a timed cell
 
@@ -998,7 +1046,7 @@ weight traffic: 1.1 ms.
 | Prefill: expert tiles | 4.83 ms a rank a layer at 4,096 tokens on four ranks at the last four-card pass. Since then the input is quantized once a token (2 to 3% of a pair's prefill, 1 to 1.5% of one card's); 128-row tiles at 4,096 rows measured 0.8% slower than 64-row ones, so the tile-row rule stands | the read of each expert's weights once a tile is what is left: a tile that serves two experts' rows, or the weights staged once for an expert's tiles |
 | Expert tiles through shared memory | landed for the one-card tiles (`eaa42ee764`) and for the fused w1 + w3 + SwiGLU launch of the split path: 1.04 ms off an 8-row call on two cards | the same body for w2 at 9 to 32 rows, where a batch of more than 8 sequences falls back to several calls of 8 |
 | The head at 5 to 8 rows | 2.1 ms against 0.9 at one row: every thread of the 256-thread block runs a chain and the block is bound by its instructions; 16-byte loads of the staged values are built, not gated | about 1.2 ms |
-| Dense FP8 at 8 rows | +0.76 ms on a 9-layer call (the batching lane's per-kernel table); wo_b's terms pass two blocks an SM at 7 and 8 rows | K in parts for the 8-column body, as the tiles have |
+| Dense FP8 at 7 to 32 rows | the 8-column body with K in parts: 2.2 to 4.1% of an 8-row call, 2.5 to 4.1 ms of a 12 to 32-row call on two cards; dense is still 252 us a rank a layer at 32 rows where the weights are 55 us of reads | fewer, larger parts (the terms of a part in registers instead of shared memory), and the same body for bf16 (`wo_a`: 127 us a rank a layer at 32 rows through the 64 x 64 tile kernel) |
 | `act_quant` | 10 launches a layer, 1.2 us each in a stream (0.6 ms a 9-layer call when every launch is synchronized, which is the profiler's floor, not the step's) | folding it into each GEMM block would repeat the quantization in every block; into the producers (the norm before wq_a / wkv and the FFN, SwiGLU before w2) it saves 7 launches, about 10 us a layer |
 | N-rank decode: batching across sequences | each call runs alone through each block, so 8 streams give one stream's tokens/s | the design above: 170 to 250 tokens/s aggregate at 8 streams on four ranks, from measured kernel times |
 | N-rank decode: CUDA graph of a rank's step | the capture, replay, retune and self-check module is in (`dsv41_gpu::graph`) with the second half of a layer as its first span; the batched call takes its host data from one block a rank | the attention half and then the whole step: one upload, one graph launch and the index layers' node updates a rank a step |
