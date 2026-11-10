@@ -31152,7 +31152,7 @@ fn advance_sample_emit(
 /// The card class comes from the worker device's name through
 /// `memra_engine::parallel::HardwareTarget::from_device_name`, the rule the parallel planner
 /// and the pinned-host default key on. The build arch is not the key: a `120a` build also
-/// runs GB10, which carries no receipt for this pair.
+/// runs cards with no receipt, and GB10's receipts are its own.
 ///
 /// Qualified, default ON:
 /// - the dense `Arch::Qwen35` class (Qwen3.8-27B; no MoE MLP in the plan) on the RTX 5090 card
@@ -31173,23 +31173,50 @@ fn advance_sample_emit(
 ///   Workstation Edition aggregate c8 155.16 -> 294.05 tok/s, six interleaved boots (darklanes
 ///   `research/qorn-md-single-card-20260910/DEVPENALTY-RESULTS.md`).
 ///
-/// Off by default: every other (model class, card class) pair, GB10 included. Ornith
-/// (`Arch::Qwen35Moe`) on the PRO 6000 Server Edition has a measured win in the same receipt
-/// but no default of its own yet.
+/// - the dense `Arch::Qwen35` class on GB10 (DGX Spark), keyed by the device name. Qwen3.8-27B,
+///   vendor non-thinking shape, six boots off on on off off on: flat one at a time (decode
+///   20.89 -> 20.92 tok/s), four at once aggregate 37.49 -> 41.90 tok/s (+11.8%, nine of nine
+///   boot pairs) and request time 30.95 -> 27.36 s. Plain batched decode at four sessions goes
+///   41.9 -> 49.3 tok/s and passes K=3 (43.1), so the spec cost model serves such a group
+///   plain; its requests then get their first token together (mean first token four at once
+///   1.77 -> 2.12 s). With the arm on a penalised sampled request draws every token on the
+///   device, so its seeded text no longer depends on a demotion (memra#1154).
+///   `research/devpenalty-gb10-20261110/`, `docs/decisions/GB10-DEVICE-PENALTY-DEFAULT.md`.
+///
+/// - the Qwen3.5 MoE class (`Arch::Qwen35Moe`) on GB10. Qwen3.6-35B-A3B, the same cell: flat
+///   one at a time (decode 70.34 -> 70.37 tok/s, the 1.2k-token first token 12 ms later), four
+///   at once aggregate 88.97 -> 131.41 tok/s (+47.7%, nine of nine boot pairs) and request time
+///   13.46 -> 9.10 s. The same receipts. An `Arch::Qwen35` plan that carries experts (the
+///   `qwen3next` alias above) is not this class and stays off here too.
+///
+/// The key is the class, on GB10 as on the other cards: one checkpoint per class was measured,
+/// and the other checkpoints of the class (the 9B; Ornith on GB10) take its default.
+///
+/// Off by default: every other (model class, card class) pair. Ornith (`Arch::Qwen35Moe`) on
+/// the PRO 6000 Server Edition has a measured win in the same receipt but no default of its
+/// own yet.
 fn serve_devpenalty_from(v: Option<&str>, device_name: &str, arch: &Arch, moe: bool) -> bool {
     use memra_engine::parallel::HardwareTarget;
     match v.map(str::trim) {
         Some("1") => true,
         Some("0") => false,
         _ => {
-            matches!(arch, Arch::Qwen35)
-                && !moe
+            let dense = matches!(arch, Arch::Qwen35) && !moe;
+            let moe_class = matches!(arch, Arch::Qwen35Moe);
+            (dense
                 && matches!(
                     HardwareTarget::from_device_name(device_name),
                     Ok(HardwareTarget::Rtx5090 | HardwareTarget::RtxPro6000Blackwell)
-                )
+                ))
+                || ((dense || moe_class) && devpenalty_gb10(device_name))
         }
     }
+}
+
+/// GB10 (DGX Spark) by the worker device's name, the key the other pairs of this default use
+/// (the default is a pure function of the name, so its tests need no device).
+fn devpenalty_gb10(device_name: &str) -> bool {
+    device_name.contains("GB10")
 }
 
 /// Does the plan's trunk route any layer through an MoE MLP? The devpenalty class test.
@@ -31367,13 +31394,23 @@ mod serve_devpenalty_default_tests {
         "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
         "NVIDIA RTX PRO 6000 Blackwell Server Edition",
     ];
+    /// GB10 (DGX Spark): qualified for the dense and the MoE class since 2026-11-10.
+    const GB10: &str = "NVIDIA GB10";
     /// Cards a `120a` build also runs (or another build serves) with no Qwen3.5 receipt.
-    const UNQUALIFIED_CARDS: [&str; 4] =
-        ["NVIDIA GB10", "NVIDIA B200", "NVIDIA H100 80GB HBM3", ""];
+    const UNQUALIFIED_CARDS: [&str; 3] = ["NVIDIA B200", "NVIDIA H100 80GB HBM3", ""];
 
     #[test]
     fn unset_follows_the_qualified_pair() {
         assert!(door(None, RTX5090, &Arch::Qwen35, false));
+        assert!(door(None, GB10, &Arch::Qwen35, false));
+        // GB10 carries the Qwen3.5 MoE class too, on its own cell
+        assert!(door(None, GB10, &Arch::Qwen35Moe, true));
+        // the qwen3next alias with experts is neither measured class
+        assert!(!door(None, GB10, &Arch::Qwen35, true));
+        // other families stay off on GB10
+        assert!(!door(None, GB10, &Arch::Qwen3, false));
+        assert!(!door(None, GB10, &Arch::Qwen3Moe, true));
+        assert!(!door(None, GB10, &Arch::Gemma4, false));
         for card in PRO6000 {
             assert!(door(None, card, &Arch::Qwen35, false), "{card:?}");
             assert!(!door(None, card, &Arch::Qwen35Moe, true), "{card:?}");
@@ -31392,12 +31429,19 @@ mod serve_devpenalty_default_tests {
 
     #[test]
     fn explicit_values_win_on_every_pair() {
-        for arch in [&Arch::Qwen35, &Arch::Qwen3Moe, &Arch::Gemma4] {
-            for card in std::iter::once(RTX5090).chain(UNQUALIFIED_CARDS) {
-                assert!(door(Some("1"), card, arch, false));
-                assert!(door(Some(" 1 "), card, arch, false));
-                assert!(!door(Some("0"), card, arch, false));
-                assert!(!door(Some(" 0 "), card, arch, false));
+        for arch in [
+            &Arch::Qwen35,
+            &Arch::Qwen35Moe,
+            &Arch::Qwen3Moe,
+            &Arch::Gemma4,
+        ] {
+            for card in [RTX5090, GB10].into_iter().chain(UNQUALIFIED_CARDS) {
+                for moe in [false, true] {
+                    assert!(door(Some("1"), card, arch, moe), "{card:?} {arch:?}");
+                    assert!(door(Some(" 1 "), card, arch, moe), "{card:?} {arch:?}");
+                    assert!(!door(Some("0"), card, arch, moe), "{card:?} {arch:?}");
+                    assert!(!door(Some(" 0 "), card, arch, moe), "{card:?} {arch:?}");
+                }
             }
         }
     }
@@ -31407,6 +31451,9 @@ mod serve_devpenalty_default_tests {
         for v in ["", "true", "on", "yes", "2"] {
             assert!(door(Some(v), RTX5090, &Arch::Qwen35, false));
             assert!(!door(Some(v), RTX5090, &Arch::Qwen3Moe, false));
+            assert!(door(Some(v), GB10, &Arch::Qwen35, false));
+            assert!(door(Some(v), GB10, &Arch::Qwen35Moe, true));
+            assert!(!door(Some(v), GB10, &Arch::Qwen3Moe, true));
             for card in UNQUALIFIED_CARDS {
                 assert!(!door(Some(v), card, &Arch::Qwen35, false), "{card:?}");
             }
@@ -31432,6 +31479,7 @@ mod serve_devpenalty_default_tests {
         assert_eq!(plan.arch, Arch::Qwen35);
         assert!(devpenalty_plan_moe(&plan));
         assert!(!door(None, RTX5090, &plan.arch, devpenalty_plan_moe(&plan)));
+        assert!(!door(None, GB10, &plan.arch, devpenalty_plan_moe(&plan)));
     }
 }
 

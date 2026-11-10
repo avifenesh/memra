@@ -1021,7 +1021,8 @@ gated by the official `openai` Python SDK against a live server
   on where rounds fall). On those a seed still pins the text for one fixed serving shape,
   not across draft lengths or batch companions. Also not covered: a penalised sampled
   request where the device penalty arm is off (`MEMRA_SERVE_DEVPENALTY`: every model and
-  card pair except the dense Qwen35 class on the RTX 5090 and RTX PRO 6000 classes)
+  card pair except the dense Qwen35 class on the RTX 5090 and RTX PRO 6000 classes and the
+  dense Qwen35 and Qwen35Moe classes on GB10)
   draws every plain token on the host, so its speculative text is one text across draft
   lengths but not plain decode's, and a demotion switches it to the host stream midway.
   Three rules keep every other request on one stream: a draft head with a trimmed

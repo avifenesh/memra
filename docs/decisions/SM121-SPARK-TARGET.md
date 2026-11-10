@@ -66,3 +66,6 @@ Still open:
   prefill MMQ: grouped rasterization is flat (deleted) and the opt-in F8F4 route is 15.4% faster,
   pending its acceptance receipt. Every other inherited default stays a one-rig extrapolation
   until a GB10 A/B confirms or re-keys it on the device.
+  Closed since: `serve_devpenalty` (2026-11-10). It is keyed on the device name, was off on
+  GB10, and its GB10 A/B turned it on for the dense and the MoE Qwen3.5 class
+  ([GB10-DEVICE-PENALTY-DEFAULT.md](GB10-DEVICE-PENALTY-DEFAULT.md)).

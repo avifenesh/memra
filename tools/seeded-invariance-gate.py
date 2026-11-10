@@ -19,9 +19,10 @@ equal the reference text of its prompt. Exit 0 on a full match, 1 on any differe
 
 --penalised host: for a model and card where plain decode samples a penalised request on the
 host (MEMRA_SERVE_DEVPENALTY off: every pair except the dense Qwen35 class on the RTX 5090 and
-RTX PRO 6000 classes). Plain decode and speculation then draw the penalised prompt from
-different random streams, so its speculative texts are compared with each other (the K=1
-text) instead of with the plain reference, and its demotion row is reported, not judged.
+RTX PRO 6000 classes and the dense Qwen35 and Qwen35Moe classes on GB10). Plain decode and
+speculation then draw the penalised prompt from different random streams, so its speculative
+texts are compared with each other (the K=1 text) instead of with the plain reference, and its
+demotion row is reported, not judged.
 
 usage: seeded-invariance-gate.py SERVER_BINARY MODEL.gguf [--out DIR] [--port N]
            [--max-tokens N] [--cases ref,0,1,2,3,demote] [--demote-at N] [--penalised device|host]

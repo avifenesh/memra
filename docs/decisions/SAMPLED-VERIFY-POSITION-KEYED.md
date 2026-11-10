@@ -116,8 +116,8 @@ Not covered, each named where a reader will look (`docs/SERVING.md`, the `MEMRA_
 - The DFlash2, GLM5, DSpark and gemma assistant-drafter routes: still the rejection walk.
 - A penalised sampled request where the device penalty arm is off (`MEMRA_SERVE_DEVPENALTY`:
   every model and card pair except the dense Qwen35 class on the RTX 5090 and RTX PRO 6000
-  classes): plain decode draws it on the host, so its speculative text is one text across K but
-  not plain decode's.
+  classes and the dense Qwen35 and Qwen35Moe classes on GB10): plain decode draws it on the
+  host, so its speculative text is one text across K but not plain decode's.
 - `MEMRA_SPEC_SAMPLED_BOUNDARY=0` (a rollback seam) puts an argmax at each burst boundary and
   breaks the position key.
 - The draft side still retains its head logits and reads back its filter statistics every slot
