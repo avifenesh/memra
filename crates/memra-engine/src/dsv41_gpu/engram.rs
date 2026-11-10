@@ -236,8 +236,10 @@ pub fn gather_host(
 /// measured 6.8 us a row cold against 0.03 to 0.1 us once the page is mapped (a 4,096-token
 /// prefill's 98,000 rows 666 ms against 3.5 to 10 ms; a decode step's 24 rows a table 0.16 ms
 /// against microseconds). Populating runs at 38 GB/s, 2.6 s a table, and takes no memory of its
-/// own: the pages are the page cache's. Best effort: where the kernel has no such advice the
-/// rows fault in as before.
+/// own: the pages are the page cache's. A table the page cache does not hold is read from the
+/// disk here, which one thread did at 1.3 GB/s (74 s a table, measured after another job dropped
+/// the cache), so the range is split over [`POPULATE_THREADS`] threads: the disk serves them
+/// side by side. Best effort: where the kernel has no such advice the rows fault in as before.
 pub fn populate(stm: &StModel, table: &str) {
     static DONE: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
     let mut done = DONE.lock().unwrap_or_else(|e| e.into_inner());
@@ -247,16 +249,32 @@ pub fn populate(stm: &StModel, table: &str) {
     done.push(table.to_string());
     // SAFETY: sysconf has no preconditions
     let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) }.max(4096) as usize;
+    let threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(POPULATE_THREADS);
     for part in ["weight", "scale"] {
         if let Some((_, b)) = stm.raw(&format!("{table}.{part}")) {
             let a = b.as_ptr() as usize & !(page - 1);
-            let len = b.as_ptr() as usize + b.len() - a;
-            // SAFETY: [a, a + len) lies inside the checkpoint's read-only mapping that `b`
-            // borrows from; the advice only maps its pages
-            unsafe { libc::madvise(a as *mut libc::c_void, len, libc::MADV_POPULATE_READ) };
+            let end = b.as_ptr() as usize + b.len();
+            // whole pages a thread, at least 1 GiB each
+            let per = ((end - a).div_ceil(threads).max(1 << 30) + page - 1) & !(page - 1);
+            std::thread::scope(|sc| {
+                for lo in (a..end).step_by(per) {
+                    let len = per.min(end - lo);
+                    // SAFETY: [lo, lo + len) lies inside the checkpoint's read-only mapping that
+                    // `b` borrows from; the advice only maps its pages
+                    sc.spawn(move || unsafe {
+                        libc::madvise(lo as *mut libc::c_void, len, libc::MADV_POPULATE_READ)
+                    });
+                }
+            });
         }
     }
 }
+
+/// The most threads that map an Engram table ([`populate`]).
+const POPULATE_THREADS: usize = 8;
 
 /// The fewest rows a gather thread takes: under it one thread does the whole gather (a decode
 /// step's rows are a few dozen).
