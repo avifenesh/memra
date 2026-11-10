@@ -1,0 +1,10 @@
+09:23:43 w20: lease on GPU1 (GPU-<uuid>), receipt $LANE/leases/spec-w20-20261110T092343
+host memory before: Mem:            1002          37         658           4         315         964
+dsv41-spec: 9 layers resident in 5.1s
+dsv41-spec: 1 job(s), 9 layers + 0 draft stages, 1 rank(s) on devices [0], up in 5.5s
+dsv41-spec: wide20 done in 6.9s
+dsv41-spec: expert cache CacheStats { lookups: 0, hits: 0, misses: 0, h2d_bytes: 0, evictions: 0, slabs_released: 0, slabs_grown: 0 }, slots []
+{"job":"batch-rows","id":"wide20","pass":true,"sequences":20,"prompts":[42,24,41,22,27,33,31,68,16,16,45,3761,42,24,41,22,42,24,41,22],"steps":[30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30],"rows":600,"logit_rows_equal":600,"tap_rows_equal":600,"device_argmax_equal":600,"calls_by_width":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,29],"first_bad":null,"arm_a_s":4.438863858,"arm_b_s":2.417686451}
+SPEC-DONE jobs 1 failed 0
+spec_run rc 0
+09:23:57 w20: lease ended rc 0

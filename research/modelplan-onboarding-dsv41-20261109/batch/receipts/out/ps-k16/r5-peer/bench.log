@@ -1,0 +1,11 @@
+10:03:09 label ps-k16/r5-peer engine memra model v41 seed 1148943675 plan ['decode_c1', 'conc8', 'dconc8']
+10:03:14 decode_c1 0 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2613, 'decode_tok_s': 229.32, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+10:03:17 decode_c1 1 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2445, 'decode_tok_s': 230.89, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+10:03:19 decode_c1 2 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2233, 'decode_tok_s': 230.63, 'tok_per_chunk': 1.002, 'spec_accept_length': None} None 
+10:03:31 conc8 0 {'wall_s': 5.726, 'completion_tokens': 4096, 'agg_out_tok_s': 715.37, 'n_err': 0} 98.745 None None
+10:03:36 conc8 1 {'wall_s': 5.601, 'completion_tokens': 4096, 'agg_out_tok_s': 731.28, 'n_err': 0} 100.005 None None
+10:03:42 conc8 2 {'wall_s': 5.647, 'completion_tokens': 4096, 'agg_out_tok_s': 725.34, 'n_err': 0} 99.225 None None
+10:03:53 dconc8 0 {'wall_s': 5.568, 'completion_tokens': 4096, 'agg_out_tok_s': 735.65, 'n_err': 0} 99.86 None None
+10:03:59 dconc8 1 {'wall_s': 5.547, 'completion_tokens': 4096, 'agg_out_tok_s': 738.48, 'n_err': 0} 100.11 None None
+10:04:04 dconc8 2 {'wall_s': 5.551, 'completion_tokens': 4096, 'agg_out_tok_s': 737.9, 'n_err': 0} 100.095 None None
+10:04:04 DONE ps-k16/r5-peer elapsed 55 s quality pass: None

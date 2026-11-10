@@ -1,0 +1,174 @@
+{
+ "label": "ps-k16/r7-peer",
+ "engine": "memra",
+ "url": "http://127.0.0.1:18361",
+ "seed": 1149967949,
+ "workloads_sha256": "995eaba4a656af90b52129b98939b585dcad79edbc06d2b8e3047b8fa12ae291",
+ "elapsed_s": 52.1,
+ "workloads": {
+  "decode_c1": {
+   "kind": "single",
+   "n_ok": 3,
+   "n_err": 0,
+   "ttft_s": {
+    "n": 3,
+    "median": 0.2386,
+    "min": 0.2142,
+    "max": 0.255
+   },
+   "decode_tok_s": {
+    "n": 3,
+    "median": 236.14,
+    "min": 235.87,
+    "max": 236.25
+   },
+   "prefill_tok_s": {
+    "n": 3,
+    "median": 8583.4032,
+    "min": 8031.3725,
+    "max": 9561.1578
+   },
+   "prompt_tokens": {
+    "n": 3,
+    "median": 2048,
+    "min": 2048,
+    "max": 2048
+   },
+   "completion_tokens": {
+    "n": 3,
+    "median": 512,
+    "min": 512,
+    "max": 512
+   },
+   "cached_tokens": {
+    "n": 3,
+    "median": 0,
+    "min": 0,
+    "max": 0
+   },
+   "tok_per_chunk": {
+    "n": 3,
+    "median": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "accept_len_server": null,
+   "gpu_power_mean_w": {
+    "n": 3,
+    "median": 235.2,
+    "min": 228.0,
+    "max": 237.6
+   },
+   "gpu_sm_mean_mhz": {
+    "n": 3,
+    "median": 2261,
+    "min": 2226,
+    "max": 2264
+   },
+   "gpu_temp_max_c": {
+    "n": 3,
+    "median": 74.0,
+    "min": 73.0,
+    "max": 75.0
+   }
+  },
+  "conc8": {
+   "kind": "concurrent",
+   "conc": 8,
+   "n_ok": 3,
+   "agg_out_tok_s": {
+    "n": 3,
+    "median": 776.83,
+    "min": 771.47,
+    "max": 779.46
+   },
+   "per_req_decode_tok_s_median": {
+    "n": 3,
+    "median": 106.625,
+    "min": 106.55,
+    "max": 107.03
+   },
+   "ttft_median_s": {
+    "n": 3,
+    "median": 0.4612,
+    "min": 0.4404,
+    "max": 0.5167
+   },
+   "ttft_max_s": {
+    "n": 3,
+    "median": 0.8265,
+    "min": 0.8152,
+    "max": 0.9134
+   },
+   "cached_tokens_max": 0,
+   "accept_len_server": null,
+   "gpu_power_mean_w": {
+    "n": 3,
+    "median": 250.0,
+    "min": 248.6,
+    "max": 250.0
+   },
+   "gpu_sm_mean_mhz": {
+    "n": 3,
+    "median": 1888,
+    "min": 1879,
+    "max": 1939
+   },
+   "gpu_temp_max_c": {
+    "n": 3,
+    "median": 82.0,
+    "min": 80.0,
+    "max": 84.0
+   }
+  },
+  "dconc8": {
+   "kind": "concurrent",
+   "conc": 8,
+   "n_ok": 3,
+   "agg_out_tok_s": {
+    "n": 3,
+    "median": 771.18,
+    "min": 762.98,
+    "max": 776.36
+   },
+   "per_req_decode_tok_s_median": {
+    "n": 3,
+    "median": 104.815,
+    "min": 103.74,
+    "max": 105.475
+   },
+   "ttft_median_s": {
+    "n": 3,
+    "median": 0.417,
+    "min": 0.4126,
+    "max": 0.4235
+   },
+   "ttft_max_s": {
+    "n": 3,
+    "median": 0.7583,
+    "min": 0.749,
+    "max": 0.7643
+   },
+   "cached_tokens_max": 0,
+   "accept_len_server": null,
+   "gpu_power_mean_w": {
+    "n": 3,
+    "median": 250.0,
+    "min": 250.0,
+    "max": 250.0
+   },
+   "gpu_sm_mean_mhz": {
+    "n": 3,
+    "median": 1777,
+    "min": 1775,
+    "max": 1784
+   },
+   "gpu_temp_max_c": {
+    "n": 3,
+    "median": 88.0,
+    "min": 86.0,
+    "max": 89.0
+   }
+  }
+ }
+}

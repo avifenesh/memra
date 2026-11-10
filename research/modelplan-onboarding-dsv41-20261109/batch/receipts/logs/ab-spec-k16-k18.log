@@ -1,0 +1,15 @@
+10:42:56 run 1 k16 rc 0 SPEC-DONE jobs 13 failed 0
+10:43:14 run 2 k18 rc 0 SPEC-DONE jobs 13 failed 0
+10:43:32 run 3 k18 rc 0 SPEC-DONE jobs 13 failed 0
+10:43:51 run 4 k16 rc 0 SPEC-DONE jobs 13 failed 0
+r1-k16 argmax [4.81, 6.42, 9.41, 15.03] fwd [3.88, 5.27, 8.0, 13.03] draft ms 3.15 tapes pass/untraced equal/steps/vendor tokens (12, 339, 339, 1620)
+r2-k18 argmax [4.64, 5.61, 7.86, 12.76] fwd [3.71, 4.57, 6.5, 11.01] draft ms 2.58 tapes pass/untraced equal/steps/vendor tokens (12, 339, 339, 1620)
+r3-k18 argmax [4.65, 5.67, 7.92, 12.88] fwd [3.73, 4.61, 6.54, 11.1] draft ms 2.59 tapes pass/untraced equal/steps/vendor tokens (12, 339, 339, 1620)
+r4-k16 argmax [4.92, 6.58, 9.67, 15.53] fwd [3.94, 5.39, 8.16, 13.54] draft ms 3.2 tapes pass/untraced equal/steps/vendor tokens (12, 339, 339, 1620)
+k16: argmax 1/2/4/8 [4.87, 6.5, 9.54, 15.28] fwd [3.91, 5.33, 8.08, 13.29] draft 3.17 ms
+   8-seq call, own ms a step: gemm_f8_tiles 7.75, memra_v41_gemm_ffma 2.33, memra_v41_gemm_f8 2.13, memra_v41_act_quant 0.60, memra_v41_gemm_bf16 0.60, hc_mixes 0.47
+   draft, launches and own ms a draft: 150 memra_v41_gemm_ffma 1.66, memra_v41_gemm_f8 0.54, gemm_f8_tiles 0.52, add_argmax 0.28, memra_v41_act_quant 0.20, memra_v41_gemm_bf16 0.15 | by part (stages, head, picks): [0.66, 0.74, 0.65, 1.38, 0.55, 0.03]
+k18: argmax 1/2/4/8 [4.65, 5.64, 7.89, 12.82] fwd [3.72, 4.59, 6.52, 11.06] draft 2.58 ms
+   8-seq call, own ms a step: gemm_f8_tiles 6.12, memra_v41_gemm_f8 2.10, memra_v41_gemm_ffma 1.93, memra_v41_gemm_bf16 0.60, memra_v41_act_quant 0.59, hc_mixes 0.45
+   draft, launches and own ms a draft: 150 memra_v41_gemm_ffma 1.43, memra_v41_gemm_f8 0.53, gemm_f8_tiles 0.37, memra_v41_act_quant 0.20, memra_v41_gemm_bf16 0.15, memra_v41_rmsnorm 0.12 | by part (stages, head, picks): [0.61, 0.68, 0.6, 1.17, 0.3, 0.02]
+AB-SPEC-DONE k16 k18
