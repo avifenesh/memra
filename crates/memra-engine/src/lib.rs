@@ -2442,13 +2442,13 @@ pub const FA_ROWS_WARPS: usize = 32;
 /// whose key bound is below it attends through the seqs launch's program (a group of one). The
 /// two launches are bit-identical per row, so the floor only chooses the faster one.
 ///
-/// Measured per attention call on GB10 and the RTX 5090 (kernel-check FA-VERIFY-ROWS timing
-/// rows, `research/gb10-verify-rows-20261109/`): the walk shares one staged tile among a
-/// group's rows and pays for it with a wider block (rows x GQA warps), so it loses on the
-/// 8-key split rung and wins with depth, later for a wider block. Each floor is the first
-/// measured depth from which the walk is faster on both devices with the two arms' ranges
-/// apart: 1,024 keys for GQA up to 4, 2,048 for GQA 5 and 6 (the 27B), and the 128-key split
-/// rung (16,384) for GQA 7 and 8. A shape without a timing row takes its class's floor.
+/// Measured per attention call on GB10, the RTX 5090 and the RTX PRO 6000 Max-Q (kernel-check
+/// FA-VERIFY-ROWS timing rows, `research/gb10-verify-rows-20261109/`): the walk shares one
+/// staged tile among a group's rows and pays for it with a wider block (rows x GQA warps), so
+/// it loses on the shortest split rung and wins with depth, later for a wider block. Each
+/// floor is the first measured depth from which the walk is not slower on any of the three:
+/// 1,024 keys for GQA up to 4, 2,048 for GQA 5 and 6 (the 27B), and the 128-key split rung
+/// (16,384) for GQA 7 and 8. A shape without a timing row takes its class's floor.
 pub fn fa_rows_floor(n_head: usize, n_head_kv: usize) -> usize {
     match n_head / n_head_kv.max(1) {
         0..=4 => 1024,
