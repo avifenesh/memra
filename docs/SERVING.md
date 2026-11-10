@@ -1598,16 +1598,17 @@ them — the same trap `default_reasoning_effort` created in v0.92.0. Roll the b
 first, confirm it is live, then render the config.
 
 **PERFORMANCE NOTE.** Both currently served models' vendor recommendations include truncation
-filters (`top_p` < 1 and a positive `top_k`). The in-graph sampled draft chain samples from the
-raw softmax and can hold no per-row filter stats, so `spec.rs` engages the captured sampled graph
-only in the pure-temperature regime and otherwise uses the eager draft chain
-(`memra-sampling::Sampler::is_spec_sampling`, `spec.rs`'s `pure_temp`). Declaring `default_top_p`
-/ `default_top_k` therefore moves the DEFAULT request shape onto the eager draft chain. Exactness
-is unaffected — filters apply to draft `q` and target `p` alike, and the verify emits the target's own
-filtered draw, so these requests stay spec-eligible and distribution-exact — but the throughput profile
-of the default path changes, and a client can opt back into the fast regime with an explicit
-`top_p: 1.0` + `top_k: 0`. `vendor_defaults_leave_the_pure_temp_sampled_spec_regime` pins this so
-the flip stays measured rather than discovered.
+filters (`top_p` < 1 and a positive `top_k`). Declaring `default_top_p` / `default_top_k`
+therefore moves the DEFAULT request shape out of the pure-temperature regime
+(`memra-sampling::Sampler::is_spec_sampling`, `spec.rs`'s `pure_temp`). A filtered request still
+drafts on the captured sampled graph, with the filter inside it (`MEMRA_SPEC_GRAPH_FILTERED`,
+default on); a penalised request drafts on the eager chain, because a graph cannot hold the
+per-round penalty history. Exactness is unaffected — filters apply to draft `q` and target `p`
+alike, and the verify emits the target's own filtered draw, so these requests stay spec-eligible
+and distribution-exact — but the throughput profile of the default path changes, and a client can
+opt back into the pure-temperature regime with an explicit `top_p: 1.0` + `top_k: 0`.
+`vendor_defaults_leave_the_pure_temp_sampled_spec_regime` pins this so the flip stays measured
+rather than discovered.
 `pricing` accepts `prompt`, `cached_prompt`, `cache_write`, `completion`,
 `internal_reasoning`, and `request`; `capacity` accepts `prompt_tpm`,
 `cached_prompt_tpm`, `completion_tpm`, `request_rpm`, and `concurrency`.

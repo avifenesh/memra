@@ -243,15 +243,15 @@ impl Sampler {
     pub fn is_greedy(&self) -> bool {
         self.cfg.temperature <= 0.0
     }
-    /// Sampled spec in its FASTEST regime: pure temperature, no truncation filters, no
-    /// penalties. Filters and penalties are also distribution-exact under the sampled
-    /// verify (spec.rs emits the target's own filtered, penalised draw), so they remain
-    /// spec-ELIGIBLE — see `spec_eligible` in memra-server's worker, the authoritative
-    /// predicate. What they cost is the in-graph draft chain: the captured sampled draft
-    /// samples from the RAW softmax and can hold neither per-row filter stats nor a varying
-    /// penalty history, so `spec.rs` engages `graph_s` only in this pure-temp regime
-    /// (`pure_temp`) and otherwise falls back to the eager draft chain. This predicate names
-    /// that regime; it is NOT an eligibility test.
+    /// Sampled spec in its pure-temperature regime: no truncation filters, no penalties.
+    /// Filters and penalties are also distribution-exact under the sampled verify (spec.rs
+    /// emits the target's own filtered, penalised draw), so they remain spec-ELIGIBLE — see
+    /// `spec_eligible` in memra-server's worker, the authoritative predicate. What a penalty
+    /// costs is the in-graph draft chain: a captured sampled draft cannot hold a varying
+    /// penalty history, so `spec.rs` drafts a penalised request on the eager chain. A
+    /// truncation filter runs inside the captured graph (`MEMRA_SPEC_GRAPH_FILTERED`,
+    /// default on). This predicate names the pure-temp regime (`pure_temp`); it is NOT an
+    /// eligibility test.
     pub fn is_spec_sampling(&self) -> bool {
         self.cfg.temperature > 0.0
             && self.cfg.penalty_repeat == 1.0
