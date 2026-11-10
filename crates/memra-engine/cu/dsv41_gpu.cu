@@ -712,6 +712,14 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
         }
     };
 
+    // A tile's last rows and a launch's last columns are padding: a warp whose rows or columns are all
+    // outside (`dead`) computes nothing, and a warp skips each 16-row MMA group that is outside (`lr`).
+    // Live elements run exactly the MMAs and sums they ran before; the padding had no output.
+    bool dead = m0 + wm * (BM / 2) >= M || n0 + wn * 32 >= N;
+    bool lr[MI];
+#pragma unroll
+    for (int mi = 0; mi < MI; ++mi) lr[mi] = m0 + wm * (BM / 2) + mi * 16 < M;
+
     float acc[MI][4][4];
 #pragma unroll
     for (int i = 0; i < MI; ++i)
@@ -761,6 +769,7 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
 #pragma unroll
         for (int kk = 0; kk < P::PK; ++kk) {
             if (i * P::PK + kk >= KB) break;
+            if (dead) continue;
             uint32_t af[MI][4];
 #pragma unroll
             for (int mi = 0; mi < MI; ++mi) {
@@ -786,7 +795,8 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
 #pragma unroll
             for (int ni = 0; ni < 4; ++ni)
 #pragma unroll
-                for (int mi = 0; mi < MI; ++mi) v41_mma_e4m3(d[mi][ni], af[mi], bf[ni][0], bf[ni][1]);
+                for (int mi = 0; mi < MI; ++mi)
+                    if (lr[mi]) v41_mma_e4m3(d[mi][ni], af[mi], bf[ni][0], bf[ni][1]);
             float sa[MI][2];
 #pragma unroll
             for (int mi = 0; mi < MI; ++mi) {
@@ -809,6 +819,7 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
             if (fused && WF == 0) {
 #pragma unroll
                 for (int mi = 0; mi < MI; ++mi) {
+                    if (!lr[mi]) continue;
                     float s0 = __fmul_rn(sa[mi][0], sb[0][0]), s1 = __fmul_rn(sa[mi][1], sb[0][0]);
 #pragma unroll
                     for (int ni = 0; ni < 4; ++ni) {
@@ -823,6 +834,7 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
                 for (int ni = 0; ni < 4; ++ni)
 #pragma unroll
                     for (int mi = 0; mi < MI; ++mi) {
+                        if (!lr[mi]) continue;
                         float sa0 = sa[mi][0], sa1 = sa[mi][1];
                         acc[mi][ni][0] = __fmaf_rn(__fmul_rn(d[mi][ni][0], sa0), sb[ni][0], acc[mi][ni][0]);
                         acc[mi][ni][1] = __fmaf_rn(__fmul_rn(d[mi][ni][1], sa0), sb[ni][1], acc[mi][ni][1]);
@@ -834,6 +846,7 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
                 for (int ni = 0; ni < 4; ++ni)
 #pragma unroll
                     for (int mi = 0; mi < MI; ++mi) {
+                        if (!lr[mi]) continue;
                         float sa0 = sa[mi][0], sa1 = sa[mi][1], sb0 = sb[ni][0], sb1 = sb[ni][1];
                         acc[mi][ni][0] = __fadd_rn(acc[mi][ni][0], __fmul_rn(__fmul_rn(d[mi][ni][0], sa0), sb0));
                         acc[mi][ni][1] = __fadd_rn(acc[mi][ni][1], __fmul_rn(__fmul_rn(d[mi][ni][1], sa0), sb1));
@@ -3330,9 +3343,9 @@ extern "C" int memra_v41_moe_owner(const int* order, int n, const int* off, int 
 template <int V41_HCT, int V41_HCM>
 __global__ void __launch_bounds__(800, 1) v41_hc_mixes_part_kernel(const v41_bf* __restrict__ x,
                                                                    const float* __restrict__ fn, int nmix, int n,
-                                                                   int rows, float* __restrict__ parts) {
+                                                                   int rows, float* __restrict__ parts, int b0) {
     __shared__ __align__(16) v41_bf sx[V41_HCM][V41_HCT][32];  // raw bf16, widened where it is read
-    int b = blockIdx.y;  // virtual warp
+    int b = blockIdx.y + b0;  // virtual warp (b0: the first of a rank's share, see memra_v41_hc_mixes_part)
     int s0 = blockIdx.x * V41_HCT;
     int j = threadIdx.x >> 5, lane = threadIdx.x & 31;
     int nt = min(V41_HCT, rows - s0);
@@ -3528,14 +3541,43 @@ extern "C" int memra_v41_hc_mixes(const void* x, const float* fn, const float* s
                                                                                    parts);
     } else if (rows == 1) {
         v41_hc_mixes_part_kernel<1, 40><<<dim3(1, 8), 32 * (nmix + 1), 0, st>>>((const v41_bf*)x, fn, nmix, hc * d,
-                                                                               rows, parts);
+                                                                               rows, parts, 0);
     } else {
         dim3 g1((rows + 15) / 16, 8);
         v41_hc_mixes_part_kernel<16, 16><<<g1, 32 * (nmix + 1), 0, st>>>((const v41_bf*)x, fn, nmix, hc * d, rows,
-                                                                          parts);
+                                                                          parts, 0);
     }
     v41_hc_finish_kernel<<<(rows + 15) / 16, 256, 0, st>>>(parts, nmix, hc * d, norm_eps, scale, base, hc, iters,
                                                            hc_eps, mixes, pre, post, comb, rows);
+    V41_ERR();
+}
+
+// The many-token partial pass for the virtual warps [b0, b0 + nb) only, and the finish on its own. The 8
+// virtual warps' sums are independent of each other and every rank holds the whole stream, so on N ranks
+// each rank runs 8 / N of them, the sums are gathered, and every rank runs the finish: the same sums in
+// the same orders as memra_v41_hc_mixes, a rank reading 1 / N of the mix weights. More than V41_SM_MAX rows
+// (below that the one-token kernel a row is one launch and a gather would cost more than it saves).
+extern "C" int memra_v41_hc_mixes_part(const void* x, const float* fn, int rows, int hc, int d, int b0, int nb,
+                                       float* parts, void* stream) {
+    int nmix = (2 + hc) * hc;
+    if (hc <= 0 || hc > 4 || nmix > 31 || b0 < 0 || nb <= 0 || b0 + nb > 8) return 41047;
+    if ((hc * d) % 8 || (uintptr_t)x % 16) return 41047;
+    if (rows <= V41_SM_MAX) return 41047;
+    dim3 g1((rows + 15) / 16, nb);
+    v41_hc_mixes_part_kernel<16, 16><<<g1, 32 * (nmix + 1), 0, (cudaStream_t)stream>>>((const v41_bf*)x, fn, nmix,
+                                                                                       hc * d, rows, parts, b0);
+    V41_ERR();
+}
+
+extern "C" int memra_v41_hc_mixes_finish(const float* parts, const float* scale, const float* base, int rows, int hc,
+                                         int d, int iters, float norm_eps, float hc_eps, float* mixes, float* pre,
+                                         float* post, float* comb, void* stream) {
+    int nmix = (2 + hc) * hc;
+    if (hc <= 0 || hc > 4 || nmix > 31) return 41047;
+    if (rows <= 0) return rows < 0 ? 41047 : 0;
+    v41_hc_finish_kernel<<<(rows + 15) / 16, 256, 0, (cudaStream_t)stream>>>(parts, nmix, hc * d, norm_eps, scale,
+                                                                             base, hc, iters, hc_eps, mixes, pre,
+                                                                             post, comb, rows);
     V41_ERR();
 }
 
@@ -3983,6 +4025,63 @@ extern "C" int memra_v41_pull(const void* in, int npeer, unsigned seq, void* dst
         most = b > most ? b : most;
     }
     v41_pull_kernel<<<1, v41_push_threads(most), 0, (cudaStream_t)stream>>>(s, npeer, seq, (uint8_t*)dst, bad);
+    V41_ERR();
+}
+
+// A strided region to and from a contiguous block, for the N-rank gathers of strided regions: a peer copy
+// of a strided region between two cards is issued a row at a time, of a contiguous block it is one
+// transfer. Chunks of 16 bytes (T = uint4), 4 (uint32_t) or 1 (uint8_t), 8 a thread.
+template <typename T>
+__global__ void __launch_bounds__(256) v41_blk_pack_kernel(uint8_t* reg, long pitch, long cw, long rows,
+                                                           uint8_t* packed, int unpack) {
+    long i0 = ((long)blockIdx.x * blockDim.x + threadIdx.x) * 8, total = cw * rows;
+    if (i0 >= total) return;
+    long r = i0 / cw, c = i0 % cw;
+    T v[8];
+    T* at[8];
+#pragma unroll
+    for (int u = 0; u < 8; ++u) {
+        at[u] = nullptr;
+        if (i0 + u < total) {
+            at[u] = (T*)(reg + r * pitch + c * sizeof(T));
+            v[u] = unpack == 1 ? *(const T*)(packed + (i0 + u) * sizeof(T)) : *at[u];
+            if (++c == cw) {
+                c = 0;
+                ++r;
+            }
+        }
+    }
+#pragma unroll
+    for (int u = 0; u < 8; ++u)
+        if (at[u]) {
+            if (unpack == 1) *at[u] = v[u];
+            else *(T*)(packed + (i0 + u) * sizeof(T)) = v[u];
+        }
+    // unpack 2: `packed` is a peer card's memory; the stores are fenced to the system before the kernel ends
+    if (unpack == 2) __threadfence_system();
+}
+
+// rows x width bytes of `reg` (rows `pitch` apart) into `packed` (unpack 0; 2 when `packed` is on a peer
+// card, the large gathers of the device-push transport) or back (unpack 1): 16-byte
+// chunks when everything is a multiple of 16 bytes and 16-byte aligned, 4-byte ones for multiples of 4,
+// bytes otherwise
+extern "C" int memra_v41_blk_pack(void* reg, long pitch, long width, long rows, void* packed, int unpack,
+                                  void* stream) {
+    if (rows <= 0 || width <= 0) return (rows < 0 || width < 0) ? 41045 : 0;
+    uintptr_t all = (uintptr_t)reg | (uintptr_t)packed | (uintptr_t)width | (uintptr_t)pitch;
+    if (pitch < width) return 41045;
+    int unit = all % 16 == 0 ? 16 : all % 4 == 0 ? 4 : 1;
+    long blocks = (width / unit * rows + 8 * 256 - 1) / (8 * 256);
+    if (blocks > 0x7fffffffL) return 41045;
+    if (unit == 16)
+        v41_blk_pack_kernel<uint4><<<(unsigned)blocks, 256, 0, (cudaStream_t)stream>>>(
+            (uint8_t*)reg, pitch, width / 16, rows, (uint8_t*)packed, unpack);
+    else if (unit == 4)
+        v41_blk_pack_kernel<uint32_t><<<(unsigned)blocks, 256, 0, (cudaStream_t)stream>>>(
+            (uint8_t*)reg, pitch, width / 4, rows, (uint8_t*)packed, unpack);
+    else
+        v41_blk_pack_kernel<uint8_t><<<(unsigned)blocks, 256, 0, (cudaStream_t)stream>>>(
+            (uint8_t*)reg, pitch, width, rows, (uint8_t*)packed, unpack);
     V41_ERR();
 }
 

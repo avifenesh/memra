@@ -306,6 +306,35 @@ pub mod ffi {
             comb: *mut f32,
             stream: *mut c_void,
         ) -> i32;
+        /// The many-token partial pass for the virtual warps `[b0, b0 + nb)` (more than 8 rows).
+        pub fn memra_v41_hc_mixes_part(
+            x: *const c_void,
+            fn_: *const f32,
+            rows: i32,
+            hc: i32,
+            d: i32,
+            b0: i32,
+            nb: i32,
+            parts: *mut f32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// The finish of [`memra_v41_hc_mixes`] from complete partial sums.
+        pub fn memra_v41_hc_mixes_finish(
+            parts: *const f32,
+            scale: *const f32,
+            base: *const f32,
+            rows: i32,
+            hc: i32,
+            d: i32,
+            iters: i32,
+            norm_eps: f32,
+            hc_eps: f32,
+            mixes: *mut f32,
+            pre: *mut f32,
+            post: *mut f32,
+            comb: *mut f32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_v41_hc_pre(
             x: *const c_void,
             mix: *const f32,
@@ -582,6 +611,17 @@ pub mod ffi {
             seq: u32,
             dst: *mut c_void,
             bad: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// A strided region to (`unpack` 0; 2: the block is on a peer card) or from (1) a
+        /// contiguous block.
+        pub fn memra_v41_blk_pack(
+            reg: *mut c_void,
+            pitch: i64,
+            width: i64,
+            rows: i64,
+            packed: *mut c_void,
+            unpack: i32,
             stream: *mut c_void,
         ) -> i32;
         /// Gate helper: a region of 32-bit words set to a pattern of `(seed, word)`, or with `diff`
@@ -4614,6 +4654,79 @@ impl Ctx {
         x: &Buf,
         s: usize,
     ) -> Result<(Buf, Buf, Buf, Buf), String> {
+        hc_mix_on(&self.ops, &self.g, fn_, sc, base, x, s)
+    }
+
+    /// [`Self::hc_mix`] of a few rows on the card's second stream, behind everything issued on
+    /// the main stream so far. Nothing between here and the mixes' first reader needs them (the
+    /// collapse before a sublayer uses the mix carried from the one before), so they run under
+    /// the sublayer; [`Self::side_join`] before that reader. More rows: the main stream.
+    pub fn hc_mix_under(
+        &mut self,
+        fn_: &Buf,
+        sc: &Buf,
+        base: &Buf,
+        x: &Buf,
+        s: usize,
+    ) -> Result<(Buf, Buf, Buf, Buf), String> {
+        if s > SIDE_ROWS {
+            return self.hc_mix(fn_, sc, base, x, s);
+        }
+        let st = self.ops.st.clone();
+        if self.side.is_none() {
+            self.side = Some(Side::new(&st)?);
+        }
+        let side = self.side.as_ref().unwrap();
+        side.fork(&st)?;
+        hc_mix_on(&side.ops, &self.g, fn_, sc, base, x, s)
+    }
+
+    /// The main stream waits for everything issued on the second stream (a no-op without one).
+    pub fn side_join(&self) -> Result<(), String> {
+        match &self.side {
+            Some(s) => s.join(&self.ops.st),
+            None => Ok(()),
+        }
+    }
+
+    /// The partial pass of [`Self::hc_mix`] for the virtual warps `[b0, b0 + nb)` of 8: the sums
+    /// land in their slots of `parts` (`[s][8][mixes + 1]` f32), the other slots are a peer's.
+    pub fn hc_mix_part(
+        &mut self,
+        fn_: &Buf,
+        x: &Buf,
+        s: usize,
+        b0: usize,
+        nb: usize,
+    ) -> Result<Buf, String> {
+        let g = &self.g;
+        let st = self.ops.st.clone();
+        let (hc, d) = (g.hc, g.dim);
+        let parts = self.ops.tmp(s * 8 * ((2 + hc) * hc + 1) * 4)?;
+        ck("hc_mixes_part", unsafe {
+            ffi::memra_v41_hc_mixes_part(
+                x.p(&st).c(),
+                fn_.p(&st).f(),
+                s as i32,
+                hc as i32,
+                d as i32,
+                b0 as i32,
+                nb as i32,
+                parts.p(&st).fm(),
+                self.ops.sv(),
+            )
+        })?;
+        Ok(parts)
+    }
+
+    /// The finish of [`Self::hc_mix`] from all 8 virtual warps' sums: `(mixes, pre, post, comb)`.
+    pub fn hc_mix_finish(
+        &mut self,
+        parts: &Buf,
+        sc: &Buf,
+        base: &Buf,
+        s: usize,
+    ) -> Result<(Buf, Buf, Buf, Buf), String> {
         let g = &self.g;
         let st = self.ops.st.clone();
         let (hc, d) = (g.hc, g.dim);
@@ -4622,12 +4735,9 @@ impl Ctx {
         let pre = self.ops.tmp(s * hc * 4)?;
         let post = self.ops.tmp(s * hc * 4)?;
         let comb = self.ops.tmp(s * hc * hc * 4)?;
-        // the partial pass's 8 virtual-warp sums of each mix and of the square sum
-        let parts = self.ops.tmp(s * 8 * (nmix + 1) * 4)?;
-        ck("hc_mixes", unsafe {
-            ffi::memra_v41_hc_mixes(
-                x.p(&st).m(),
-                fn_.p(&st).f(),
+        ck("hc_mixes_finish", unsafe {
+            ffi::memra_v41_hc_mixes_finish(
+                parts.p(&st).f(),
                 sc.p(&st).f(),
                 base.p(&st).f(),
                 s as i32,
@@ -4636,7 +4746,6 @@ impl Ctx {
                 g.sinkhorn_iters as i32,
                 g.norm_eps,
                 g.hc_eps,
-                parts.p(&st).fm(),
                 mixes.p(&st).fm(),
                 pre.p(&st).fm(),
                 post.p(&st).fm(),
@@ -4824,6 +4933,48 @@ pub fn put_rows(
             ops.sv(),
         )
     })
+}
+
+/// Single-pass mHC mixes of the stream `x` `[s][hc][dim]` on `ops`' stream: `(mixes, pre, post, comb)`.
+pub fn hc_mix_on(
+    ops: &Ops,
+    g: &Geo,
+    fn_: &Buf,
+    sc: &Buf,
+    base: &Buf,
+    x: &Buf,
+    s: usize,
+) -> Result<(Buf, Buf, Buf, Buf), String> {
+    let st = ops.st.clone();
+    let (hc, d) = (g.hc, g.dim);
+    let nmix = (2 + hc) * hc;
+    let mixes = ops.tmp(s * nmix * 4)?;
+    let pre = ops.tmp(s * hc * 4)?;
+    let post = ops.tmp(s * hc * 4)?;
+    let comb = ops.tmp(s * hc * hc * 4)?;
+    // the partial pass's 8 virtual-warp sums of each mix and of the square sum
+    let parts = ops.tmp(s * 8 * (nmix + 1) * 4)?;
+    ck("hc_mixes", unsafe {
+        ffi::memra_v41_hc_mixes(
+            x.p(&st).m(),
+            fn_.p(&st).f(),
+            sc.p(&st).f(),
+            base.p(&st).f(),
+            s as i32,
+            hc as i32,
+            d as i32,
+            g.sinkhorn_iters as i32,
+            g.norm_eps,
+            g.hc_eps,
+            parts.p(&st).fm(),
+            mixes.p(&st).fm(),
+            pre.p(&st).fm(),
+            post.p(&st).fm(),
+            comb.p(&st).fm(),
+            ops.sv(),
+        )
+    })?;
+    Ok((mixes, pre, post, comb))
 }
 
 /// `dst[doff..doff+n] = src[soff..soff+n]` on the stream.
