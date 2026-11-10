@@ -1,0 +1,25 @@
+warning: memra-engine@0.141.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.0 (~/.cache/memra-1212/tree/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 3m 47s
+     Running unittests src/lib.rs (~/.cache/memra-1212/target/release/deps/memra_server-641b2c4831f9f329)
+
+running 1 test
+test worker::tests::spec_cost_tied_slots_price_the_same_on_every_build ... FAILED
+
+failures:
+
+---- worker::tests::spec_cost_tied_slots_price_the_same_on_every_build stdout ----
+
+thread 'worker::tests::spec_cost_tied_slots_price_the_same_on_every_build' (669175) panicked at crates/memra-server/src/worker.rs:35412:9:
+assertion `left == right` failed
+  left: [11.5, 23.0]
+ right: [23.0]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::spec_cost_tied_slots_price_the_same_on_every_build
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1192 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

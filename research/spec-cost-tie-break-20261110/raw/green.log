@@ -1,0 +1,15 @@
+warning: memra-engine@0.141.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.0 (~/.cache/memra-1212/tree/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 4m 16s
+     Running unittests src/lib.rs (~/.cache/memra-1212/target/release/deps/memra_server-641b2c4831f9f329)
+
+running 6 tests
+test worker::tests::spec_cost_expected_tokens_come_from_per_position_acceptance ... ok
+test worker::tests::spec_cost_round_pools_verifies_in_16_row_chunks ... ok
+test worker::tests::spec_cost_explores_without_acceptance_history ... ok
+test worker::tests::spec_cost_picks_spec_at_low_concurrency_and_plain_at_high_on_gb10 ... ok
+test worker::tests::spec_cost_realized_rates_override_and_correct_predictions ... ok
+test worker::tests::spec_cost_tied_slots_price_the_same_on_every_build ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1187 filtered out; finished in 0.00s
+

@@ -30,6 +30,8 @@ ap.add_argument("--model")
 a = ap.parse_args()
 log, rung, want = a.log, a.rung, a.model
 accept = [float(x) for x in a.accept.split(",")]
+if rung > len(accept):
+    raise SystemExit(f"--rung {rung} needs {rung} acceptance values, got {len(accept)}")
 
 line = None
 for l in open(log, errors="replace"):
