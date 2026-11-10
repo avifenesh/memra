@@ -669,6 +669,255 @@ pub fn floor_line(key: &FloorKey<'_>, cal: &Calibration, receipt: &str) -> Strin
     )
 }
 
+// ---- stored rows (memra#1204) ---------------------------------------------------------
+//
+// The floor judges prefill against decode inside one build, and it is loose where one row
+// sets it. The stored rows judge a candidate against main: at calibration, main's probe
+// table for the gate's window is stored as printed, and at gate time the candidate's table
+// for the same window must equal it line for line. There is no tolerance.
+
+/// What a stored table belongs to. Every field is part of the key: a changed prompt or model
+/// artifact reads as "no stored table", never as a difference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredKey {
+    /// Model file name without `.gguf`, or the checkpoint directory name.
+    pub model: String,
+    /// sha256 of the model artifact's bytes.
+    pub model_sha256: String,
+    /// Prompt file name without `.txt`.
+    pub prompt: String,
+    pub prompt_sha256: String,
+    /// `eager` or `batch`.
+    pub decode: String,
+    /// The device name `nvidia-smi` reports.
+    pub device: String,
+    /// Rows in the gate's window.
+    pub window: usize,
+}
+
+/// Main's probe table for one cell's window, as printed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredTable {
+    pub key: StoredKey,
+    /// The commit whose binary measured the rows.
+    pub commit: String,
+    /// The calibration receipt, a path in this repo.
+    pub receipt: String,
+    /// The probe's table lines, verbatim apart from trailing whitespace.
+    pub rows: Vec<String>,
+}
+
+/// The table lines of a log, as printed (trailing whitespace dropped): the lines `parse_table`
+/// reads. Errors are `parse_table`'s.
+pub fn table_lines(log: &str) -> Result<Vec<String>, String> {
+    parse_table(log)?;
+    Ok(log
+        .lines()
+        .filter(|line| {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            f.len() >= 7 && f[0].parse::<usize>().is_ok() && f[1].parse::<usize>().is_ok()
+        })
+        .map(|line| line.trim_end().to_string())
+        .collect())
+}
+
+impl StoredTable {
+    /// The file form: `name<TAB>value` header lines, a `rows` line, then the table lines.
+    pub fn render(&self) -> String {
+        let k = &self.key;
+        let mut out = format!(
+            "# Main's argmax margin probe rows for one gate cell (memra#1204). The gate compares a\n\
+             # candidate's table for this window with these lines, byte for byte.\n\
+             model\t{}\nmodel_sha256\t{}\nprompt\t{}\nprompt_sha256\t{}\ndecode\t{}\ndevice\t{}\n\
+             window\t{}\ncommit\t{}\nreceipt\t{}\nrows\n",
+            k.model,
+            k.model_sha256,
+            k.prompt,
+            k.prompt_sha256,
+            k.decode,
+            k.device,
+            k.window,
+            self.commit,
+            self.receipt
+        );
+        for row in &self.rows {
+            out.push_str(row);
+            out.push('\n');
+        }
+        out
+    }
+
+    /// Parse the file form. A missing or repeated header field, an unknown one, a row count
+    /// that is not the window, or rows that are not a probe table is an error.
+    pub fn parse(text: &str) -> Result<StoredTable, String> {
+        const FIELDS: [&str; 9] = [
+            "model",
+            "model_sha256",
+            "prompt",
+            "prompt_sha256",
+            "decode",
+            "device",
+            "window",
+            "commit",
+            "receipt",
+        ];
+        let mut values: Vec<Option<String>> = vec![None; FIELDS.len()];
+        let mut lines = text.lines();
+        let mut saw_rows = false;
+        for line in lines.by_ref() {
+            if line.starts_with('#') || line.trim().is_empty() {
+                continue;
+            }
+            if line == "rows" {
+                saw_rows = true;
+                break;
+            }
+            let (name, value) = line
+                .split_once('\t')
+                .ok_or_else(|| format!("stored table: header line {line:?}"))?;
+            let slot = FIELDS
+                .iter()
+                .position(|f| *f == name)
+                .ok_or_else(|| format!("stored table: unknown field {name:?}"))?;
+            if value.trim().is_empty() || values[slot].replace(value.to_string()).is_some() {
+                return Err(format!("stored table: field {name:?} is empty or repeated"));
+            }
+        }
+        if !saw_rows {
+            return Err("stored table: no `rows` line".into());
+        }
+        let mut field = |name: &str| -> Result<String, String> {
+            let slot = FIELDS.iter().position(|f| *f == name).expect("known field");
+            values[slot]
+                .take()
+                .ok_or_else(|| format!("stored table: field {name:?} is missing"))
+        };
+        let window: usize = field("window")?
+            .parse()
+            .map_err(|_| "stored table: window is not a number".to_string())?;
+        let body: String = lines.map(|l| format!("{l}\n")).collect();
+        let rows = table_lines(&body).map_err(|e| format!("stored table: {e}"))?;
+        if rows.len() != window || window == 0 {
+            return Err(format!(
+                "stored table: {} rows for a window of {window}",
+                rows.len()
+            ));
+        }
+        let decode = field("decode")?;
+        if !matches!(decode.as_str(), "eager" | "batch") {
+            return Err(format!("stored table: decode {decode:?}"));
+        }
+        Ok(StoredTable {
+            key: StoredKey {
+                model: field("model")?,
+                model_sha256: field("model_sha256")?,
+                prompt: field("prompt")?,
+                prompt_sha256: field("prompt_sha256")?,
+                decode,
+                device: field("device")?,
+                window,
+            },
+            commit: field("commit")?,
+            receipt: field("receipt")?,
+            rows,
+        })
+    }
+}
+
+/// The stored table of a key among parsed tables. Every key field must match exactly; two
+/// tables with one key is an error.
+pub fn find_stored<'a>(
+    tables: &'a [StoredTable],
+    key: &StoredKey,
+) -> Result<Option<&'a StoredTable>, String> {
+    let mut found = tables.iter().filter(|t| t.key == *key);
+    let first = found.next();
+    if found.next().is_some() {
+        return Err(format!(
+            "two stored tables for model={} prompt={} decode={} device={:?} window={}",
+            key.model, key.prompt, key.decode, key.device, key.window
+        ));
+    }
+    Ok(first)
+}
+
+/// One position where the candidate's table line is not the stored one. `None` is a
+/// position one side does not have.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowDiff {
+    pub pos: usize,
+    pub stored: Option<String>,
+    pub candidate: Option<String>,
+}
+
+fn line_pos(line: &str) -> usize {
+    line.split_whitespace()
+        .next()
+        .and_then(|p| p.parse().ok())
+        .expect("a table line starts with its position")
+}
+
+/// The positions where a candidate's table lines differ from the stored ones, in position
+/// order. Identity is byte identity of the printed line: no tolerance.
+pub fn compare_rows(stored: &[String], candidate: &[String]) -> Vec<RowDiff> {
+    let mut positions: Vec<usize> = stored
+        .iter()
+        .chain(candidate)
+        .map(|l| line_pos(l))
+        .collect();
+    positions.sort_unstable();
+    positions.dedup();
+    positions
+        .into_iter()
+        .filter_map(|pos| {
+            let at = |lines: &[String]| lines.iter().find(|l| line_pos(l) == pos).cloned();
+            let (s, c) = (at(stored), at(candidate));
+            (s != c).then_some(RowDiff {
+                pos,
+                stored: s,
+                candidate: c,
+            })
+        })
+        .collect()
+}
+
+/// One side of a difference: both programs' top-1 ids and margins and the spread, or the
+/// reason the side is absent.
+fn side(line: &Option<String>) -> String {
+    match line.as_deref().map(parse_table) {
+        Some(Ok(rows)) => {
+            let r = rows[0];
+            format!(
+                "prefill_top1={} margin_p={:.9e} decode_top1={} margin_d={:.9e} spread={:.9e}{}",
+                r.prefill_top1,
+                r.margin_p,
+                r.decode_top1,
+                r.margin_d,
+                r.spread,
+                if r.is_flip() { " FLIP" } else { "" }
+            )
+        }
+        Some(Err(err)) => format!("unreadable ({err})"),
+        None => "no row at this position".into(),
+    }
+}
+
+/// The report of a comparison: one `ROW-DIFF` block per differing position, both sides.
+/// `detail` returns the candidate probe's examination line for a position when the log holds
+/// one.
+pub fn rows_report(diffs: &[RowDiff], detail: &dyn Fn(usize) -> Option<String>) -> String {
+    let mut out = String::new();
+    for d in diffs {
+        let _ = writeln!(out, "ROW-DIFF pos={}", d.pos);
+        let _ = writeln!(out, "  stored (main): {}", side(&d.stored));
+        let _ = writeln!(out, "  candidate:     {}", side(&d.candidate));
+        if let Some(line) = detail(d.pos) {
+            let _ = writeln!(out, "  {line}");
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1123,5 +1372,209 @@ mod tests {
             };
             assert_eq!(floor_line(&key, &cal, receipt), line, "{receipt}");
         }
+    }
+
+    // ---- stored rows (memra#1204) ----
+
+    fn stored_key() -> StoredKey {
+        StoredKey {
+            model: "m".into(),
+            model_sha256: "aa".into(),
+            prompt: "board-2048".into(),
+            prompt_sha256: "bb".into(),
+            decode: "eager".into(),
+            device: "device A".into(),
+            window: 3,
+        }
+    }
+
+    /// Main's window: two agreeing rows and a near tie.
+    fn main_rows() -> Vec<Row> {
+        vec![
+            row(10, &[(1, 12.0), (2, 10.0)], &[(1, 12.5), (2, 10.0)]),
+            row(11, &[(1, 14.0), (2, 10.0)], &[(1, 14.25), (2, 10.0)]),
+            row(12, &[(1, 10.02), (2, 10.0)], &[(1, 10.0), (2, 10.03)]),
+        ]
+    }
+
+    fn lines(rows: &[Row]) -> Vec<String> {
+        rows.iter().map(|r| r.table_line()).collect()
+    }
+
+    fn stored(rows: &[Row]) -> StoredTable {
+        StoredTable {
+            key: stored_key(),
+            commit: "031f146690".into(),
+            receipt: "research/x/probe.log".into(),
+            rows: lines(rows),
+        }
+    }
+
+    #[test]
+    fn a_stored_table_round_trips_through_its_file_form() {
+        let table = stored(&main_rows());
+        let text = table.render();
+        assert_eq!(StoredTable::parse(&text).unwrap(), table);
+        // The rows are the probe's own lines: a log's table read back equals them.
+        let log = format!("header\n{}\ntrailer", table.rows.join("\n"));
+        assert_eq!(table_lines(&log).unwrap(), table.rows);
+        for (bad, why) in [
+            (
+                text.replace("window\t3", "window\t4"),
+                "row count is not the window",
+            ),
+            (text.replace("model_sha256\taa\n", ""), "a missing field"),
+            (
+                text.replace("decode\teager", "decode\tgraph"),
+                "an unknown decode program",
+            ),
+            (
+                text.replace("commit\t", "commit\t\ncommit\t"),
+                "an empty field",
+            ),
+            (
+                text.replace("prompt\tboard-2048", "prompt\tboard-2048\nprompt\tp4"),
+                "a repeated field",
+            ),
+            (
+                text.replace("device\t", "unit\tx\ndevice\t"),
+                "an unknown field",
+            ),
+            (text.replace("rows\n", ""), "no rows line"),
+            (
+                text.replace(" yes", " maybe"),
+                "rows that are not a probe table",
+            ),
+        ] {
+            assert!(StoredTable::parse(&bad).is_err(), "{why}");
+        }
+    }
+
+    #[test]
+    fn an_identical_table_has_no_difference() {
+        let table = stored(&main_rows());
+        assert!(compare_rows(&table.rows, &lines(&main_rows())).is_empty());
+        assert_eq!(rows_report(&[], &|_| None), "");
+    }
+
+    #[test]
+    fn a_one_logit_move_passes_the_floor_and_fails_the_stored_rows() {
+        // The red arm of memra#1204. The candidate moves decode's margin at row 11 by one
+        // logit (14.25 to 13.25 over the runner-up). The floor rule sees an agreeing row with
+        // a gap shift of 0.75 under a floor of 3.7 and passes. The stored rows do not.
+        let table = stored(&main_rows());
+        let mut candidate = main_rows();
+        candidate[1] = row(11, &[(1, 14.0), (2, 10.0)], &[(1, 13.25), (2, 10.0)]);
+        assert!(judge(&main_rows(), Some(3.7), &[], 1).passes());
+        assert!(judge(&candidate, Some(3.7), &[], 1).passes());
+        let diffs = compare_rows(&table.rows, &lines(&candidate));
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(diffs[0].pos, 11);
+        let text = rows_report(&diffs, &|pos| {
+            (pos == 11).then(|| "detail pos=11 ...".to_string())
+        });
+        assert_eq!(
+            text,
+            "ROW-DIFF pos=11\n\
+             \x20 stored (main): prefill_top1=1 margin_p=4.000000000e0 decode_top1=1 margin_d=4.250000000e0 spread=2.500000000e-1\n\
+             \x20 candidate:     prefill_top1=1 margin_p=4.000000000e0 decode_top1=1 margin_d=3.250000000e0 spread=7.500000000e-1\n\
+             \x20 detail pos=11 ...\n"
+        );
+    }
+
+    #[test]
+    fn a_token_change_at_a_margin_under_the_floor_passes_the_floor_and_fails_the_stored_rows() {
+        // Row 10: main's two programs agree on token 1; the candidate's decode picks token 2
+        // by 0.5. A flip with a margin sum of 2.5 is a near tie under a floor of 3.7.
+        let table = stored(&main_rows());
+        let mut candidate = main_rows();
+        candidate[0] = row(10, &[(1, 12.0), (2, 10.0)], &[(1, 10.0), (2, 10.5)]);
+        assert!(candidate[0].is_flip());
+        // Two near ties now (rows 10 and 12): inside a budget of 2, and each inside the floor.
+        assert!(judge(&candidate, Some(3.7), &[], 2).passes());
+        let diffs = compare_rows(&table.rows, &lines(&candidate));
+        assert_eq!(diffs.iter().map(|d| d.pos).collect::<Vec<_>>(), vec![10]);
+        let text = rows_report(&diffs, &|_| None);
+        assert!(
+            text.contains("stored (main): prefill_top1=1 margin_p=2.000000000e0 decode_top1=1 "),
+            "{text}"
+        );
+        assert!(text.contains("candidate:     prefill_top1=1 margin_p=2.000000000e0 decode_top1=2 margin_d=5.000000000e-1"), "{text}");
+        assert!(text.contains(" FLIP\n"), "{text}");
+    }
+
+    #[test]
+    fn the_smallest_float_step_in_one_margin_is_a_difference() {
+        // No tolerance: one unit in the last place of one margin differs.
+        let table = stored(&main_rows());
+        let mut candidate = main_rows();
+        candidate[1].margin_d = f32::from_bits(candidate[1].margin_d.to_bits() + 1);
+        assert_eq!(compare_rows(&table.rows, &lines(&candidate)).len(), 1);
+    }
+
+    #[test]
+    fn a_missing_or_extra_position_is_a_difference() {
+        let table = stored(&main_rows());
+        let mut shifted = lines(&main_rows());
+        shifted.remove(0);
+        shifted.push(row(13, &[(1, 12.0), (2, 10.0)], &[(1, 12.5), (2, 10.0)]).table_line());
+        let diffs = compare_rows(&table.rows, &shifted);
+        assert_eq!(
+            diffs.iter().map(|d| d.pos).collect::<Vec<_>>(),
+            vec![10, 13]
+        );
+        assert!(diffs[0].candidate.is_none() && diffs[1].stored.is_none());
+        let text = rows_report(&diffs, &|_| None);
+        assert!(
+            text.contains("candidate:     no row at this position"),
+            "{text}"
+        );
+        assert!(
+            text.contains("stored (main): no row at this position"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_stored_table_is_found_only_by_its_whole_key() {
+        let tables = vec![stored(&main_rows())];
+        let key = stored_key();
+        assert!(find_stored(&tables, &key).unwrap().is_some());
+        // Other prompt bytes, another artifact, device, decode program or window: no stored
+        // table, not a difference.
+        for other in [
+            StoredKey {
+                prompt_sha256: "cc".into(),
+                ..key.clone()
+            },
+            StoredKey {
+                model_sha256: "dd".into(),
+                ..key.clone()
+            },
+            StoredKey {
+                model: "m2".into(),
+                ..key.clone()
+            },
+            StoredKey {
+                prompt: "p4-16k".into(),
+                ..key.clone()
+            },
+            StoredKey {
+                device: "device B".into(),
+                ..key.clone()
+            },
+            StoredKey {
+                decode: "batch".into(),
+                ..key.clone()
+            },
+            StoredKey {
+                window: 12,
+                ..key.clone()
+            },
+        ] {
+            assert!(find_stored(&tables, &other).unwrap().is_none(), "{other:?}");
+        }
+        let twice = vec![stored(&main_rows()), stored(&main_rows())];
+        assert!(find_stored(&twice, &key).is_err());
     }
 }
