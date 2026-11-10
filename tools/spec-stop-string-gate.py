@@ -652,13 +652,20 @@ def judge(out):
             continue
         parked = any("dspark-park REWOUND" in line for line in c1["park"])
         resumed = any("dspark-reuse:" in line and "resumed" in line for line in c2["park"])
+        # With the DSpark restore switch on (the GB10 default) the pool parks nothing by design
+        # and the next turn restores from the prefix cache instead.
+        restore_switch = any("the restore switch is on" in line for line in c1["park"])
         print(f"== {b['case']}: cold conversation: turn 1 {c1['completion_tokens']} tokens, finish {c1['finish']}, "
-              f"parked rewound {parked}; turn 2 resumed from the pool {resumed}, cached {c2['cached']}")
+              f"parked rewound {parked}; turn 2 resumed from the pool {resumed}, cached {c2['cached']}"
+              + ("; the restore switch is on: the prefix cache serves the next turn" if restore_switch else ""))
         if c1["finish"] != "stop":
             failures.append(f"{b['case']} coldturn1: did not end on its stop string (finish {c1['finish']}): nothing tested")
+        elif restore_switch:
+            if not c2["cached"]:
+                failures.append(f"{b['case']} coldturn2: the restore switch is on and the second turn restored nothing")
         elif not parked:
             failures.append(f"{b['case']} coldturn1: the stop-ended session did not park rewound: {c1['park']}")
-        if not resumed:
+        if not restore_switch and not resumed:
             failures.append(f"{b['case']} coldturn2: the second turn did not resume the parked session: {c2['park']}")
     if not ref:
         failures.append("no plain (ref) boot in this DIR")

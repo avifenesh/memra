@@ -1850,7 +1850,8 @@ confirmed (the last two on MTP boots). The second turn after a stop-ended first 
 restore a prefix on MTP boots. A DSpark boot with the prefix cache on also runs a cold
 conversation whose first turn ends on a stop string: that session must park rewound to its own
 prime boundary and the second turn resume it from the pool (before the fix's review it was
-refused at park). DSpark admits cold sessions only, so a DSpark request that restored a prefix
+refused at park); with the DSpark restore switch on (the GB10 default) the pool parks nothing by
+design and the second turn must restore from the prefix cache instead. DSpark admits cold sessions only, so a DSpark request that restored a prefix
 runs on plain decode and is judged as plain decode. A GPU lease is
 the caller's business, one per boot. Receipts: `research/spec-stop-string-20261110/`.
 
