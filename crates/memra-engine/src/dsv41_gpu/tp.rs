@@ -1678,46 +1678,50 @@ impl MoePlan {
 }
 
 impl Ctx {
-    /// The shared expert on `rows` rows of `x`: bf16 `[rows][dim]`.
+    /// The shared FP8 expert of `rows` rows of `x`: bf16 `[rows][dim]`.
     pub fn shared_expert(&mut self, lw: &LayerW, x: Dp, rows: usize) -> Result<Buf, String> {
         let g = self.g.clone();
-        let st = self.ops.st.clone();
-        let (d, inter) = (g.dim, g.moe_inter);
-        let [s1, s2, s3] = &lw.shared;
-        let gb = self.ops.tmp(rows * inter * 2)?;
-        let ub = self.ops.tmp(rows * inter * 2)?;
-        let hb = self.ops.tmp(rows * inter * 2)?;
-        let out = self.ops.tmp(rows * d * 2)?;
-        self.ops
-            .linear_q(x, d, rows, s1, gb.p(&st), inter, false, &mut self.scr)?;
-        self.ops
-            .linear_q(x, d, rows, s3, ub.p(&st), inter, false, &mut self.scr)?;
-        ck("swiglu", unsafe {
-            ffi::memra_v41_swiglu(
-                gb.p(&st).m(),
-                ub.p(&st).m(),
-                inter as i64,
-                std::ptr::null(),
-                g.swiglu_limit,
-                hb.p(&st).m(),
-                inter as i64,
-                rows as i32,
-                inter as i32,
-                self.ops.sv(),
-            )
-        })?;
-        self.ops.linear_q(
-            hb.p(&st),
-            inter,
-            rows,
-            s2,
-            out.p(&st),
-            d,
-            false,
-            &mut self.scr,
-        )?;
-        Ok(out)
+        shared_expert_on(&self.ops, &mut self.scr, &g, lw, x, rows)
     }
+}
+
+/// [`Ctx::shared_expert`] on `ops`'s stream with `scr` as its activation scratch. `w1` and `w3`
+/// read the same rows, so the rows are quantized once for both.
+pub fn shared_expert_on(
+    ops: &super::Ops,
+    scr: &mut super::Scratch,
+    g: &Geo,
+    lw: &LayerW,
+    x: Dp,
+    rows: usize,
+) -> Result<Buf, String> {
+    let st = ops.st.clone();
+    let (d, inter) = (g.dim, g.moe_inter);
+    let [s1, s2, s3] = &lw.shared;
+    let gb = ops.tmp(rows * inter * 2)?;
+    let ub = ops.tmp(rows * inter * 2)?;
+    let hb = ops.tmp(rows * inter * 2)?;
+    let out = ops.tmp(rows * d * 2)?;
+    let (q, qs) = scr.actq(ops, rows, d)?;
+    ops.act_quant(x, d, Dp::NULL, rows, d, q, qs)?;
+    ops.gemm_q(q, qs, rows, s1, gb.p(&st), inter, false)?;
+    ops.gemm_q(q, qs, rows, s3, ub.p(&st), inter, false)?;
+    ck("swiglu", unsafe {
+        ffi::memra_v41_swiglu(
+            gb.p(&st).m(),
+            ub.p(&st).m(),
+            inter as i64,
+            std::ptr::null(),
+            g.swiglu_limit,
+            hb.p(&st).m(),
+            inter as i64,
+            rows as i32,
+            inter as i32,
+            ops.sv(),
+        )
+    })?;
+    ops.linear_q(hb.p(&st), inter, rows, s2, out.p(&st), d, false, scr)?;
+    Ok(out)
 }
 
 #[cfg(test)]

@@ -17,7 +17,7 @@
 //! one token per call with every sequence's state carried the vendor's way ([`decode`]). Serving
 //! is not here yet.
 
-use cudarc::driver::{CudaSlice, CudaStream, DevicePtr};
+use cudarc::driver::{CudaEvent, CudaSlice, CudaStream, DevicePtr};
 use memra_gguf::safetensors::StModel;
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
@@ -2042,7 +2042,53 @@ pub struct Ctx {
     /// i32, sticky: an N-rank one-token MoE whose plan placed other than `rows * topk` pairs
     /// (`memra_v41_moe_owner`); read with the step's logits
     pub route_bad: Buf,
+    /// the card's second stream, made at the first one-token MoE ([`Side`])
+    side: Option<Side>,
 }
+
+/// A second stream on the card for a branch of a one-token layer that depends on nothing the main
+/// stream is about to compute. At one row most of a layer's kernels are a few blocks waiting on a
+/// dependency chain (the router's fp32 chain, the plan) and leave the card empty; a kernel that
+/// fills it (the shared expert's three GEMMs) costs nothing run under them. The branch has its own
+/// free list and scratch, starts behind an event the main stream records where the branch's inputs
+/// are complete, and the main stream waits for the branch's last kernel before it reads the result.
+pub struct Side {
+    pub ops: Ops,
+    pub scr: Scratch,
+    fork: CudaEvent,
+    join: CudaEvent,
+}
+
+impl Side {
+    fn new(main: &Arc<CudaStream>) -> Result<Self, String> {
+        let cx = main.context();
+        let st = cx.new_stream().map_err(|e| format!("side stream: {e:?}"))?;
+        Ok(Self {
+            ops: Ops::new(st),
+            scr: Scratch::default(),
+            fork: cx.new_event(None).map_err(|e| format!("event: {e:?}"))?,
+            join: cx.new_event(None).map_err(|e| format!("event: {e:?}"))?,
+        })
+    }
+    /// The branch starts after everything issued on `main` so far.
+    fn fork(&self, main: &Arc<CudaStream>) -> Result<(), String> {
+        self.fork
+            .record(main)
+            .and_then(|()| self.ops.st.wait(&self.fork))
+            .map_err(|e| format!("side fork: {e:?}"))
+    }
+    /// What `main` runs next starts after everything issued on the branch so far.
+    fn join(&self, main: &Arc<CudaStream>) -> Result<(), String> {
+        self.join
+            .record(&self.ops.st)
+            .and_then(|()| main.wait(&self.join))
+            .map_err(|e| format!("side join: {e:?}"))
+    }
+}
+
+/// The most rows of a forward whose shared expert runs on the side stream: the small-M kernels'
+/// rows. With more rows every GEMM fills the card and there is nothing to run under.
+const SIDE_ROWS: usize = SMALL_M;
 
 impl Ctx {
     pub fn new(st: Arc<CudaStream>, g: Geo, max_pos: usize) -> Result<Self, String> {
@@ -2081,6 +2127,7 @@ impl Ctx {
             nvtx: false,
             experts: None,
             route_bad,
+            side: None,
         })
     }
 
@@ -2976,6 +3023,23 @@ impl Ctx {
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let d = g.dim;
+        // one-token forward: the shared expert (it reads only `x`) on the side stream, under the
+        // router's chain and the plan; the join is before the combine, the first reader of it
+        let side_shared = if s <= SIDE_ROWS {
+            if self.side.is_none() {
+                self.side = Some(Side::new(&st)?);
+            }
+            self.nv(c"shared_expert");
+            let o = {
+                let side = self.side.as_mut().unwrap();
+                side.fork(&st)
+                    .and_then(|()| tp::shared_expert_on(&side.ops, &mut side.scr, &g, lw, x, s))
+            };
+            self.nv_end();
+            Some(o?)
+        } else {
+            None
+        };
         self.nv(c"router");
         let (sel, selw) = self.moe_route(lw, x, s)?;
         self.nv_end();
@@ -2991,9 +3055,18 @@ impl Ctx {
         let slots = self.ops.tmp(plan.np * d * 2)?;
         self.experts_tiles(lw, x, &plan, 0, plan.np, slots.p(&st), None)?;
         self.nv_end();
-        self.nv(c"shared_expert");
-        let shared = self.shared_expert(lw, x, s)?;
-        self.nv_end();
+        let shared = match side_shared {
+            Some(b) => {
+                self.side.as_ref().unwrap().join(&st)?;
+                b
+            }
+            None => {
+                self.nv(c"shared_expert");
+                let b = self.shared_expert(lw, x, s);
+                self.nv_end();
+                b?
+            }
+        };
         self.nv(c"combine");
         ck("moe_combine", unsafe {
             ffi::memra_v41_moe_combine(
