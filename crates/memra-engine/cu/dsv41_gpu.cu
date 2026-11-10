@@ -1032,16 +1032,14 @@ __global__ void __launch_bounds__(256) v41_gemv_f8_kernel(const uint8_t* __restr
 // a token's six experts). The dense FP8 GEMMs keep the 8-column body: a single wave of blocks is
 // bound by its load rounds, and 16 rows of fragments leave registers for half as many K blocks a
 // round (wo_b 44 -> 68 us).
-// X2: the body runs on each 256-thread half of a 512-thread block (the fused w1 + w3 kernel below): `sT` is
-// the half's terms, and each sum is handed back in `*accp` instead of being stored.
-template <int WF, int OUTF, int SU, int ONE, int X2 = 0>
+template <int WF, int OUTF, int SU, int ONE>
 __device__ __forceinline__ void v41_gemv_f8_cols16(const uint8_t* __restrict__ A, long lda,
                                                    const uint8_t* __restrict__ As, long ldas,
                                                    const uint8_t* __restrict__ B, long ldb,
                                                    const uint8_t* __restrict__ Bs, long ldbs, float bscale2,
                                                    void* __restrict__ C, long ldc, int M, int N, int K, int n0,
-                                                   int P, float* sT, float* accp = nullptr) {
-    int tid = X2 ? (int)(threadIdx.x & 255) : (int)threadIdx.x;
+                                                   int P, float* sT) {
+    int tid = threadIdx.x;
     int warp = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
     int KB = K / 32;
     // the K blocks run in P parts so that a part's terms fit the block's shared memory; the sum
@@ -1159,10 +1157,6 @@ __device__ __forceinline__ void v41_gemv_f8_cols16(const uint8_t* __restrict__ A
     }
     // the next part's terms overwrite these
     if (pb < KB) __syncthreads();
-    }
-    if (X2) {
-        *accp = acc;
-        return;
     }
     if (tid < M * 16) {
         int r = tid >> 4, cc = tid & 15;
@@ -3128,41 +3122,148 @@ __global__ void v41_swiglu_kernel(const v41_bf* __restrict__ gate, const v41_bf*
     }
 }
 
-// w1, w3 and the SwiGLU of a small-M tile list in one launch. A block is 512 threads: its first half runs the
-// 16-column body on the tile's w1 rows and its second half on the w3 rows at the same time, so the two
-// projections cost one kernel's latency instead of two launches back to back; then each gate thread rounds
-// its sum and the up thread's to bf16 and stores v41_swiglu_kernel's value (times the pair's routing weight)
-// straight into the hidden rows. Per element this is the three launches' program: both sums are the tile
-// body's, both are rounded to bf16 before the SwiGLU as the stored tensors were, and the SwiGLU is the same
-// function. tf: fp32 terms of one half ([K blocks of a part][rows][16]).
-template <int WF, int ONE>
-__global__ void __launch_bounds__(512) v41_swiglu_tiles_kernel(
+// w1, w3 and the SwiGLU of a small-M tile list in one launch. A block is 512 threads: its first half is the
+// tile's w1 rows and its second half the w3 rows, at the same time, so the two projections cost one kernel's
+// latency instead of two launches back to back; then each gate thread rounds its sum and the up thread's to
+// bf16 and stores v41_swiglu_kernel's value (times the pair's routing weight) straight into the hidden rows.
+// The body is the staged one (v41_gemv_f4s_tiles_kernel's): a part of K lands in shared memory by cp.async at
+// once, here the 16 weight rows' nibbles and scale bytes of BOTH projections and the tile's activation rows
+// and scale bytes once for the two; then each half's warps run their K blocks of the part from shared memory
+// into that half's terms, each half's (row, column) threads add the part's terms in K order, and the next
+// part lands. One round trip a part instead of four a block, and nothing in flight in registers (the first
+// form of this kernel ran the 16-column register body in each half: 13.98 against 12.94 ms for an 8-row call
+// on two cards). Per element this is the three launches' program: both sums are the staged tile kernel's
+// (the from-zero MMA over the same 32 products, (d * sa) * sb, the ascending sum over K), both are rounded
+// to bf16 before the SwiGLU as the stored tensors were, and the SwiGLU is the same function.
+// BM: the rows the shared memory is sized for (the plan's tile rows).
+template <int WF>
+__global__ void __launch_bounds__(512, 2) v41_swiglu_f4s_tiles_kernel(
     const uint8_t* __restrict__ A, long lda, const uint8_t* __restrict__ As, long ldas,
     const V41Tile* __restrict__ tiles, const int* __restrict__ ntiles, const V41ExpW* __restrict__ ew, long ldb,
-    long ldbs, const float* __restrict__ wrow, float limit, v41_bf* __restrict__ H, long ldh, int N, int K, int P,
-    int tf) {
-    extern __shared__ float v41_sm_x[];
+    long ldbs, const float* __restrict__ wrow, float limit, v41_bf* __restrict__ H, long ldh, int N, int K, int Kn,
+    int BM) {
+    extern __shared__ __align__(16) uint8_t v41_swf_sm[];
     const V41Tile tl = tiles[blockIdx.y];
     if ((int)blockIdx.y >= *ntiles) return;
     const V41ExpW& w = ew[tl.expert];
-    int half = threadIdx.x >> 8, proj = half ? 2 : 0, tid = threadIdx.x & 255;
-    float acc = 0.f;
-    v41_gemv_f8_cols16<WF, 0, 5, ONE, 1>(A + (long)tl.row0 * lda, lda, As + (long)tl.row0 * ldas, ldas, w.w[proj],
-                                         ldb, w.s[proj], ldbs, w.scale2[proj], nullptr, 0, tl.rows, N, K,
-                                         blockIdx.x * 16, P, v41_sm_x + (long)half * tf, &acc);
+    int half = threadIdx.x >> 8, proj = half ? 2 : 0;
+    float bscale2 = w.scale2[proj];
+    const uint8_t* Ar = A + (long)tl.row0 * lda;
+    const uint8_t* Asr = As + (long)tl.row0 * ldas;
+    int M = tl.rows, n0 = blockIdx.x * 16;
+    int all = threadIdx.x, tid = all & 255, warp = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
+    int KB = K / 32;
+    const int SW = WF == 2 ? 2 : 1;  // scale bytes a K block
+    int pw = Kn * 16, ps = (Kn * SW + 7) & ~7, pa = Kn * 32, pas = (Kn + 7) & ~7;
+    uint8_t* sW = v41_swf_sm;          // [2][16][Kn x 16]: weight nibbles, w1's rows then w3's
+    uint8_t* sWs = sW + 32 * pw;       // [2][16][Kn x SW]: weight scale bytes
+    uint8_t* sA = sWs + 32 * ps;       // [BM][Kn x 32]: activation codes
+    uint8_t* sAs = sA + BM * pa;       // [BM][Kn]: activation scale bytes
+    float* sX = (float*)(sAs + BM * pas);     // [2][Kn][BM][16]: each half's terms of the part
+    float* sT = sX + (long)half * Kn * BM * 16;
+    int r0 = 2 * t, r1 = r0 + 1;
+    bool out0 = r0 < M, out1 = r1 < M;
+    float acc = 0.f;  // the (row, column) sum of a half's threads below M * 16
+    for (int p0 = 0; p0 < KB; p0 += Kn) {
+        int nk = min(Kn, KB - p0);
+        for (int q = all; q < 32 * nk; q += 512) {
+            int r = q / nk, cc = q % nk;  // r: 0..15 w1's rows, 16..31 w3's
+            bool ok = n0 + (r & 15) < N;
+            const uint8_t* B = w.w[r < 16 ? 0 : 2];
+            v41_cp16(sW + r * pw + cc * 16, B + (long)(ok ? n0 + (r & 15) : 0) * ldb + (long)(p0 + cc) * 16, ok);
+        }
+        int ns8 = (nk * SW + 7) / 8;
+        for (int q = all; q < 32 * ns8; q += 512) {
+            int r = q / ns8, cc = q % ns8;
+            bool ok = n0 + (r & 15) < N;
+            const uint8_t* Bs = w.s[r < 16 ? 0 : 2];
+            v41_cp8(sWs + r * ps + cc * 8, Bs + (long)(ok ? n0 + (r & 15) : 0) * ldbs + (long)p0 * SW + cc * 8, ok);
+        }
+        for (int q = all; q < M * nk * 2; q += 512) {
+            int r = q / (nk * 2), cc = q % (nk * 2);
+            v41_cp16(sA + r * pa + cc * 16, Ar + (long)r * lda + (long)p0 * 32 + cc * 16, true);
+        }
+        int na8 = (nk + 7) / 8;
+        for (int q = all; q < M * na8; q += 512) {
+            int r = q / na8, cc = q % na8;
+            v41_cp8(sAs + r * pas + cc * 8, Asr + (long)r * ldas + p0 + cc * 8, true);
+        }
+        v41_cp_commit();
+        v41_cp_wait<0>();
+        __syncthreads();
+        int per = (nk + 7) / 8;
+        int kb0 = warp * per, kb1 = min(nk, kb0 + per);
+        const uint8_t* w0 = sW + (half * 16 + g) * pw + 2 * t;
+        const uint8_t* w1 = sW + (half * 16 + g + 8) * pw + 2 * t;
+        const uint8_t* q0s = sWs + (half * 16 + g) * ps;
+        const uint8_t* q1s = sWs + (half * 16 + g + 8) * ps;
+        const uint8_t* ab = sA + (g < M ? g : 0) * pa + 4 * t;
+        for (int kb = kb0; kb < kb1; ++kb) {
+            uint32_t af[4] = {*(const uint16_t*)(w0 + kb * 16), *(const uint16_t*)(w1 + kb * 16),
+                              *(const uint16_t*)(w0 + kb * 16 + 8), *(const uint16_t*)(w1 + kb * 16 + 8)};
+#pragma unroll
+            for (int i = 0; i < 4; ++i) af[i] = v41_fp4_to_e4m3x4(af[i]);
+            uint32_t b0 = 0, b1 = 0;
+            if (g < M) {
+                b0 = *(const uint32_t*)(ab + kb * 32);
+                b1 = *(const uint32_t*)(ab + kb * 32 + 16);
+            }
+            float d[4];
+            v41_mma_e4m3(d, af, b0, b1);
+            if (out0) {
+                float s0 = v41_e8m0(sAs[r0 * pas + kb]), s1 = out1 ? v41_e8m0(sAs[r1 * pas + kb]) : 0.f;
+                float q0, q1;
+                if (WF == 1) {
+                    q0 = v41_e8m0(q0s[kb]);
+                    q1 = v41_e8m0(q1s[kb]);
+                } else {
+                    q0 = __fmul_rn(v41_e4m3f(q0s[2 * kb]), bscale2);
+                    q1 = __fmul_rn(v41_e4m3f(q1s[2 * kb]), bscale2);
+                }
+                // d[0], d[1]: weight row n0 + g against activation rows r0, r1; d[2], d[3]: row n0 + g + 8
+                float* tp = sT + ((long)kb * M + r0) * 16 + g;
+                tp[0] = __fmul_rn(__fmul_rn(d[0], s0), q0);
+                tp[8] = __fmul_rn(__fmul_rn(d[2], s0), q1);
+                if (out1) {
+                    tp[16] = __fmul_rn(__fmul_rn(d[1], s1), q0);
+                    tp[24] = __fmul_rn(__fmul_rn(d[3], s1), q1);
+                }
+            }
+        }
+        __syncthreads();
+        if (tid < M * 16) {
+            int r = tid >> 4, cc = tid & 15;
+            int kb = 0;
+            for (; kb + 8 <= nk; kb += 8) {
+                float v[8];
+#pragma unroll
+                for (int u = 0; u < 8; ++u) v[u] = sT[((long)(kb + u) * M + r) * 16 + cc];
+#pragma unroll
+                for (int u = 0; u < 8; ++u) acc = __fadd_rn(acc, v[u]);
+            }
+            for (; kb < nk; ++kb) acc = __fadd_rn(acc, sT[((long)kb * M + r) * 16 + cc]);
+        }
+        // the next part, and the epilogue, overwrite everything the chains and the sums read
+        __syncthreads();
+    }
     // the up sums cross to the gate threads through the block's memory (the terms are spent)
-    bool live = tid < tl.rows * 16;
-    __syncthreads();
-    if (half && live) v41_sm_x[tid] = acc;
+    bool live = tid < M * 16;
+    if (half && live) sX[tid] = acc;
     __syncthreads();
     if (!half && live) {
-        int r = tl.row0 + (tid >> 4), cn = blockIdx.x * 16 + (tid & 15);
+        int r = tl.row0 + (tid >> 4), cn = n0 + (tid & 15);
         if (cn < N) {
-            float h = v41_swiglu1(v41_bf2f(v41_f2bf(acc)), v41_bf2f(v41_f2bf(v41_sm_x[tid])), limit);
+            float h = v41_swiglu1(v41_bf2f(v41_f2bf(acc)), v41_bf2f(v41_f2bf(sX[tid])), limit);
             if (wrow) h = __fmul_rn(wrow[r], h);
             H[(long)r * ldh + cn] = v41_f2bf(h);
         }
     }
+}
+
+// the staged fused kernel's shared memory for Kn K blocks a part and bm rows
+static long v41_swf_bytes(int kn, int bm, int sw) {
+    return 32L * kn * 16 + 32L * ((kn * sw + 7) & ~7) + (long)bm * kn * 32 + (long)bm * ((kn + 7) & ~7) +
+           2L * kn * bm * 64;
 }
 
 // The routed experts' hidden rows of a small-M tile list: h[pair][n] = SwiGLU(w1 a, w3 a) * wrow[pair], bf16,
@@ -3175,20 +3276,37 @@ extern "C" int memra_v41_swiglu_tiles(const void* a, long lda, const void* as, l
         bm > V41_SM_MAX || (wfmt != 1 && wfmt != 2))
         return 41043;
     if (max_tiles == 0) return 0;
-    // both halves' terms within the default 48 KB of a block
-    int kb = k / 32, parts = 1;
-    while ((long)((kb + parts - 1) / parts) * bm * 16 * 4 * 2 > 48 * 1024) ++parts;
-    int tf = ((kb + parts - 1) / parts) * bm * 16;
+    int kb = k / 32;
     dim3 grid((n + 15) / 16, max_tiles);
     cudaStream_t st = (cudaStream_t)stream;
-#define V41_SWT(WF, ONE)                                                                                          \
-    v41_swiglu_tiles_kernel<WF, ONE><<<grid, 512, 2 * tf * 4, st>>>(                                              \
-        (const uint8_t*)a, lda, (const uint8_t*)as, ldas, (const V41Tile*)tiles, ntiles, (const V41ExpW*)ew, ldb, \
-        ldbs, wrow, limit, (v41_bf*)h, ldh, n, k, parts, tf)
-    if (wfmt == 1) { if (parts == 1) V41_SWT(1, 1); else V41_SWT(1, 0); }
-    else { if (parts == 1) V41_SWT(2, 1); else V41_SWT(2, 0); }
-#undef V41_SWT
-    V41_ERR();
+    if (kb % 8 == 0) {
+        // K in as few equal parts as put two blocks (four halves) on an SM
+        int sw = wfmt == 2 ? 2 : 1, kn = 0;
+        for (int parts = 1; parts <= kb / 8; ++parts) {
+            int c = (((kb + parts - 1) / parts) + 7) & ~7;
+            if (v41_swf_bytes(c, bm, sw) <= 51200) {
+                kn = c;
+                break;
+            }
+        }
+        if (kn > 0) {
+            int smem = (int)v41_swf_bytes(kn, bm, sw);
+#define V41_SWF(WF)                                                                                              \
+    do {                                                                                                         \
+        V41_CARVE_MAX((v41_swiglu_f4s_tiles_kernel<WF>));                                                        \
+        if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_swiglu_f4s_tiles_kernel<WF>), 51200);                          \
+        v41_swiglu_f4s_tiles_kernel<WF><<<grid, 512, smem, st>>>(                                                \
+            (const uint8_t*)a, lda, (const uint8_t*)as, ldas, (const V41Tile*)tiles, ntiles, (const V41ExpW*)ew, \
+            ldb, ldbs, wrow, limit, (v41_bf*)h, ldh, n, k, kn, bm);                                              \
+    } while (0)
+            if (wfmt == 1) V41_SWF(1);
+            else V41_SWF(2);
+#undef V41_SWF
+            V41_ERR();
+        }
+    }
+    // no part of K fits two blocks on an SM with these rows
+    return 41043;
 }
 
 extern "C" int memra_v41_swiglu(const void* gate, const void* up, long ld, const float* wrow, float limit, void* out,
