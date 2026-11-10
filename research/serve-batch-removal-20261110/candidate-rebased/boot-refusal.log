@@ -1,0 +1,18 @@
+== MEMRA_SERVE_BATCH='0'
+[server] FATAL: MEMRA_SERVE_BATCH is retired; it cannot select a scheduler (found "0"). The batched scheduler is the only served path: the round-robin path that MEMRA_SERVE_BATCH=0 restored served a numeric class the speculative route is not exact against. Unset it. Ledger: docs/FLAGS.md 'Removed doors, 2026-11-10'.
+exit 1
+== MEMRA_SERVE_BATCH='1'
+[server] FATAL: MEMRA_SERVE_BATCH is retired; it cannot select a scheduler (found "1"). The batched scheduler is the only served path: the round-robin path that MEMRA_SERVE_BATCH=0 restored served a numeric class the speculative route is not exact against. Unset it. Ledger: docs/FLAGS.md 'Removed doors, 2026-11-10'.
+exit 1
+== MEMRA_SERVE_BATCH=''
+[server] FATAL: MEMRA_SERVE_BATCH is retired; it cannot select a scheduler (found ""). The batched scheduler is the only served path: the round-robin path that MEMRA_SERVE_BATCH=0 restored served a numeric class the speculative route is not exact against. Unset it. Ledger: docs/FLAGS.md 'Removed doors, 2026-11-10'.
+exit 1
+== MEMRA_SERVE_BATCH='off'
+[server] FATAL: MEMRA_SERVE_BATCH is retired; it cannot select a scheduler (found "off"). The batched scheduler is the only served path: the round-robin path that MEMRA_SERVE_BATCH=0 restored served a numeric class the speculative route is not exact against. Unset it. Ledger: docs/FLAGS.md 'Removed doors, 2026-11-10'.
+exit 1
+== MEMRA_ENV_AUDIT=warn MEMRA_SERVE_BATCH=0
+[server] FATAL: MEMRA_SERVE_BATCH is retired; it cannot select a scheduler (found "0"). The batched scheduler is the only served path: the round-robin path that MEMRA_SERVE_BATCH=0 restored served a numeric class the speculative route is not exact against. Unset it. Ledger: docs/FLAGS.md 'Removed doors, 2026-11-10'.
+exit 1
+== unset (sentinel)
+[server] FATAL: MEMRA_METRICS_TOKEN must not be empty
+exit 1

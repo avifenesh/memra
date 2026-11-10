@@ -1,0 +1,83 @@
+[server] build: memra-0.140.0-6dffe26db401 (id: source-tree, git: unknown)
+[server] starting; models config = [("smoke", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "smoke" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] smoke: regime draft attached (/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker] smoke: canonical draft plan attached (1 MTP blocks)
+[worker]   loaded "smoke": 33 layers, eos=248046, stop=[248046]
+[spec-gate] policy disabled by MEMRA_SPEC_GATE=0: always-spec
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] smoke: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="smoke" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[fa-pool] grow #0 dev=0 o_len 0 -> 2162688 ml_len 0 -> 8448 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 2162688 -> 4325376 ml_len 8448 -> 16896 (retired kept, zero=false)
+[device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":6308233216,"still_owned_bytes":7701540864,"pool_reserved_bytes":7851737088,"pool_cached_bytes":150196224,"driver_free_bytes":17066754048,"synchronization_errors":[]}
+[wave-probe] 32 sessions at depth 2048: two 16-row waves 62.0 ms, one 32-row wave 62.8 ms (tensor-core tier 55.8 ms) -> wave cap 32, tensor-core b32 on (17.5s; released 6016MB of cached pool to the driver)
+[worker] smoke: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+[prefix-cache] on: budget 7890MB (7890010112 B, derived: 2 x 3945005056 B max entry for model "smoke" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 336797368320 B (76 resident sessions x 4431544320 B served-context session), requested 7890010112 B; boot driver free 17066754048 B, post-reserve clamp 15456141312 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "smoke": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
+[prime-walk] model="smoke" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q6_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 35MB (max of parked delta 35MB and capture-time pool peak 1MB; charged per spec admission and gating future captures)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1107296256,"still_owned_bytes":8246800400,"pool_reserved_bytes":8455716864,"pool_cached_bytes":208916464,"driver_free_bytes":16427122688,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1056MB cached back to the driver
+[admit-cal] boot calibration done: model="smoke" route=mtp transient floor 1536MB (static was 1536MB; measured 953MB; probe kv charge 67MB, draft-state 35MB, drafted 75 accepted 41; [dev0 peak-mapped 9120MB rest-mapped 8064MB charged 102MB -> 953MB]; 1.4s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["smoke"]
+[server] listening on http://127.0.0.1:8177
+[meter] admit id=cmpl-208fd39edf95be1f71eb850adac716a2 tenant=default lane=interactive model="smoke"
+[admission] per-session draft-state charge: model="smoke" +37MB (measured capture high-water)
+[admission] request cost: model="smoke" ctx=160 path=spec = 16704 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 7MB
+[admission] prefill workspace held: model="smoke" prompt=48 call=48 stack=48 concat=0 slab_resident=1074MB held=4MB cold=17MB
+[spec-k] model="smoke" tenant="" K=3 source=cold-short prompt=48 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="smoke" 103MB (observed 105MB at ctx 104 path=spec)
+[spec-acc] ctx=48 burst=23/33 cum=23/33=0.697
+[prefix-cache] insert (spec-boundary): 32 tokens, 53.2MB (resident 53.2MB / 7890MB, model smoke)
+[spec-acc] ctx=83 burst=10/18 cum=33/51=0.647
+[meter] admit id=cmpl-c83d6abd0d928a21abcc4af1dee91155 tenant=default lane=interactive model="smoke"
+[admission] per-session draft-state charge: model="smoke" +37MB (measured capture high-water)
+[admission] request cost: model="smoke" ctx=206 path=spec = 16704 B/token x ctx + 8MB prefill-workspace + 103MB fixed = 114MB
+[admission] prefill workspace held: model="smoke" prompt=94 call=94 stack=94 concat=0 slab_resident=1074MB held=8MB cold=32MB
+[worker] spec-affinity: grew parked session 104 -> 206 rows (request-owned need)
+[worker] spec-affinity: rewound to 32 of 94 prompt tokens (explicit; priming 62 suffix; model smoke)
+[spec-k] model="smoke" tenant="" K=3 source=cold-short prompt=94 cached=32 lcp=32 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=62 burst=19/36 cum=19/36=0.528
+[spec-acc] ctx=94 burst=8/27 cum=27/63=0.429
+[meter] admit id=cmpl-9808d9fe597850f81c6d171c9e9d1624 tenant=default lane=interactive model="smoke"
+[admission] per-session draft-state charge: model="smoke" +37MB (measured capture high-water)
+[admission] request cost: model="smoke" ctx=253 path=spec = 16704 B/token x ctx + 12MB prefill-workspace + 103MB fixed = 119MB
+[admission] prefill workspace held: model="smoke" prompt=141 call=141 stack=141 concat=0 slab_resident=1074MB held=12MB cold=49MB
+[worker] spec-affinity: grew parked session 206 -> 253 rows (request-owned need)
+[worker] spec-affinity: rewound to 64 of 141 prompt tokens (explicit; priming 77 suffix; model smoke)
+[spec-k] model="smoke" tenant="" K=3 source=cold-short prompt=141 cached=64 lcp=32 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=77 burst=17/42 cum=17/42=0.405
+[spec-acc] ctx=109 burst=12/15 cum=29/57=0.509
+[meter] admit id=cmpl-a17155e9cc420046e2123b7fa5c4e425 tenant=default lane=interactive model="smoke"
+[admission] per-session draft-state charge: model="smoke" +37MB (measured capture high-water)
+[admission] request cost: model="smoke" ctx=303 path=spec = 16704 B/token x ctx + 16MB prefill-workspace + 103MB fixed = 124MB
+[admission] prefill workspace held: model="smoke" prompt=191 call=191 stack=191 concat=0 slab_resident=1074MB held=16MB cold=66MB
+[worker] spec-affinity: grew parked session 253 -> 303 rows (request-owned need)
+[worker] spec-affinity: rewound to 96 of 191 prompt tokens (explicit; priming 95 suffix; model smoke)
+[spec-k] model="smoke" tenant="" K=3 source=cold-short prompt=191 cached=96 lcp=32 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=95 burst=20/33 cum=20/33=0.606
+[spec-acc] ctx=127 burst=9/27 cum=29/60=0.483
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
