@@ -1,0 +1,15 @@
+component	t1	chat	pen	greedy-b
+burst boundary: tail T=1 pass	+5.0988	+5.6455	+4.8542	-0.4423
+burst boundary: after it (logits readback, boundary draw, fill, burst exit and entry)	+0.2739	+0.2738	+0.3731	-0.0188
+burst boundary: init-feed T=1 pass	+5.5841	+5.7067	+4.8691	+0.0120
+burst boundary: after it (logits readback, host argmax, row upload, burst setup, snapshot)	+0.4138	+0.3973	+0.4073	+0.0001
+SUM burst boundary	+11.3707	+12.0232	+10.5037	-0.4490
+in the round: draft forward (MTP block and head)	+0.0703	+0.0835	+0.2499	+0.2079
+in the round: draft draw and token readback	+0.0084	+0.6597	+1.0035	+0.3652
+in the round: verify pass	-0.1025	-0.2214	+0.4777	+0.1377
+in the round: verify draw and accept readback	+0.1094	+0.5042	+0.5952	+0.0001
+in the round: commit, fill, snapshot	-0.2549	-0.2167	-0.1595	+0.0839
+SUM in the round	-0.1693	+0.8093	+2.1669	+0.7949
+round wall	+11.2014	+12.8325	+12.6705	+0.3459
+boundary tokens outside the rounds	-3.6533	-3.1361	-3.1316	-0.2539
+issue figure	+7.5482	+9.6964	+9.5389	+0.0920

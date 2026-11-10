@@ -1,0 +1,594 @@
+The sampled-round split: one request per class, the decode window of each under Nsight Systems
+
+class      prompt  tokens  rounds  drafted  accepted  init feeds  tail passes  window ms  ms/round  client ms/round  text sha
+warm           36      48      20       60        27           1            0     2185.8    109.29           104.72  84083f0a1ba09bc5
+greedy       1239     400     170      510       230           1            1    17205.2    101.21           100.17  7c78c239723e82b9
+t1           1239     400     163      489       224          13           12    18322.6    112.41           111.76  e12ce14478d9edba
+chat         1240     400     160      480       229          13           13    18246.3    114.04           113.38  101d6a1450a2d9c4
+pen          1239     400     171      513       218          12           12    19473.1    113.88           113.39  034295cf6b7f9737
+greedy-b     1285     400     166      510       229           1            0    16857.8    101.55           100.50  158e3abf8067cecf  (the trace holds 166 of its 170 rounds: the profiler lost the boot's last events)
+
+init feeds, tail passes: the T=1 trunk passes in the window. A sampled request has one init feed per burst and one tail
+pass per burst that ends on a pending token; a greedy request has the cold init feed and one flush when it ends.
+window: from the cold init feed to the request's last device work. client ms/round: (total less TTFT) / rounds on the
+client's clock, which opens after the cold init feed and, for the greedy requests, closes before the closing flush.
+
+== Phases, ms per round (phase wall / rounds); in brackets the change against the greedy request of the same boot
+phase                       greedy                    t1                  chat                   pen              greedy-b
+solo-init          0.453 [ +0.000]       6.037 [ +5.584]       6.159 [ +5.707]       5.322 [ +4.869]       0.465 [ +0.012]
+after-init         0.001 [ +0.000]       0.415 [ +0.414]       0.398 [ +0.397]       0.408 [ +0.407]       0.001 [ +0.000]
+draft-fwd         19.318 [ +0.000]      19.388 [ +0.070]      19.401 [ +0.084]      19.568 [ +0.250]      19.526 [ +0.208]
+draft-draw         0.198 [ +0.000]       0.206 [ +0.008]       0.857 [ +0.660]       1.201 [ +1.004]       0.563 [ +0.365]
+verify            77.375 [ +0.000]      77.272 [ -0.102]      77.153 [ -0.221]      77.852 [ +0.478]      77.512 [ +0.138]
+verify-draw        0.059 [ +0.000]       0.168 [ +0.109]       0.563 [ +0.504]       0.654 [ +0.595]       0.059 [ +0.000]
+commit             3.344 [ +0.000]       3.089 [ -0.255]       3.127 [ -0.217]       3.184 [ -0.160]       3.427 [ +0.084]
+solo-tail          0.442 [ +0.000]       5.541 [ +5.099]       6.088 [ +5.645]       5.296 [ +4.854]       0.000 [ -0.442]
+after-tail         0.019 [ +0.000]       0.293 [ +0.274]       0.293 [ +0.274]       0.392 [ +0.373]       0.000 [ -0.019]
+round            101.207 [ +0.000]     112.409 [+11.201]     114.040 [+12.833]     113.878 [+12.671]     101.553 [ +0.346]
+
+== Sampled less greedy, ms per round of wall, by component (the brackets above, grouped)
+component                                                                                           t1      chat       pen  greedy-b
+burst boundary: tail T=1 pass                                                                   +5.099    +5.645    +4.854    -0.442
+burst boundary: after it (logits readback, boundary draw, fill, burst exit and entry)           +0.274    +0.274    +0.373    -0.019
+burst boundary: init-feed T=1 pass                                                              +5.584    +5.707    +4.869    +0.012
+burst boundary: after it (logits readback, host argmax, row upload, burst setup, snapshot)      +0.414    +0.397    +0.407    +0.000
+SUM burst boundary                                                                             +11.371   +12.023   +10.504    -0.449
+in the round: draft forward (MTP block and head)                                                +0.070    +0.084    +0.250    +0.208
+in the round: draft draw and token readback                                                     +0.008    +0.660    +1.004    +0.365
+in the round: verify pass                                                                       -0.102    -0.221    +0.478    +0.138
+in the round: verify draw and accept readback                                                   +0.109    +0.504    +0.595    +0.000
+in the round: commit, fill, snapshot                                                            -0.255    -0.217    -0.160    +0.084
+SUM in the round                                                                                -0.169    +0.809    +2.167    +0.795
+round wall, sampled less greedy                                                                +11.201   +12.833   +12.671    +0.346
+tokens the boundary emits outside the rounds (the issue figure counts round tokens only)        -3.653    -3.136    -3.132    -0.254
+the issue figure, sampled less greedy                                                           +7.548    +9.696    +9.539    +0.092
+
+The issue figure is 1000 x tokens per round / decode rate with tokens per round = 1 + K x acceptance, that is wall per
+round x (rounds + accepted) / completion tokens. A sampled burst emits one boundary token outside its rounds, so the
+figure is the wall per round less that token's share:
+class      wall ms/round  round tokens / all tokens  issue figure
+greedy            101.21                     1.0000        101.21
+t1                112.41                     0.9675        108.76
+chat              114.04                     0.9725        110.90
+pen               113.88                     0.9725        110.75
+greedy-b          101.55                     0.9975        101.30
+
+== Burst boundary units: count, ms each (wall of the phase / count)
+class     unit          count   ms each   ms total
+greedy    solo-init         1    76.937       76.9
+greedy    after-init        1     0.158        0.2
+greedy    solo-tail         1    75.193       75.2
+greedy    after-tail        1     3.198        3.2
+t1        solo-init        13    75.691      984.0
+t1        after-init       13     5.201       67.6
+t1        solo-tail        12    75.267      903.2
+t1        after-tail       12     3.977       47.7
+chat      solo-init        13    75.806      985.5
+chat      after-init       13     4.901       63.7
+chat      solo-tail        13    74.926      974.0
+chat      after-tail       13     3.601       46.8
+pen       solo-init        12    75.834      910.0
+pen       after-init       12     5.817       69.8
+pen       solo-tail        12    75.475      905.7
+pen       after-tail       12     5.585       67.0
+greedy-b  solo-init         1    77.120       77.1
+greedy-b  after-init        1     0.171        0.2
+
+== Inside each phase: device time by class and idle (host), ms per round
+-- greedy (170 rounds)
+  solo-init: 0.453 ms per round
+      matvec NVFP4                            0.3918 ms/round      2.92 per round      134.3 us each
+      output head Q5_K                        0.0323 ms/round      0.01 per round     5493.7 us each
+      norms, quantize, glue                   0.0103 ms/round      3.78 per round        2.7 us each
+      GDN scan and conv                       0.0070 ms/round      0.85 per round        8.3 us each
+      attention                               0.0027 ms/round      0.19 per round       14.5 us each
+      DtoD                                    0.0004 ms/round      0.38 per round        1.0 us each
+      HtoD                                    0.0001 ms/round      0.39 per round        0.4 us each
+      idle between intervals (host)           0.0079 ms/round   5 to 100 us 0.0002, under 5 us 0.0076
+  after-init: 0.001 ms per round
+      DtoH                                    0.0001 ms/round      0.01 per round       23.8 us each
+      memset                                  0.0000 ms/round      0.07 per round        0.6 us each
+      DtoD                                    0.0000 ms/round      0.02 per round        1.1 us each
+      HtoD                                    0.0000 ms/round      0.01 per round        0.5 us each
+      idle between intervals (host)           0.0007 ms/round   5 to 100 us 0.0005, under 5 us 0.0002
+  draft-fwd: 19.318 ms per round
+      output head Q5_K                       15.6873 ms/round      3.01 per round     5208.7 us each
+      matvec NVFP4                            3.2599 ms/round     24.09 per round      135.3 us each
+      norms, quantize, glue                   0.1517 ms/round     72.28 per round        2.1 us each
+      attention                               0.0899 ms/round      6.02 per round       14.9 us each
+      memset                                  0.0548 ms/round     57.22 per round        1.0 us each
+      DtoD                                    0.0057 ms/round      6.46 per round        0.9 us each
+      idle between intervals (host)           0.0686 ms/round   1 ms and over 0.0209, 5 to 100 us 0.0001, under 5 us 0.0476
+  draft-draw: 0.198 ms per round
+      norms, quantize, glue                   0.0280 ms/round      3.09 per round        9.1 us each
+      DtoD                                    0.0239 ms/round      4.18 per round        5.7 us each
+      argmax_partial_f32                      0.0184 ms/round      3.01 per round        6.1 us each
+      memset                                  0.0074 ms/round      0.60 per round       12.4 us each
+      DtoH                                    0.0058 ms/round      3.00 per round        1.9 us each
+      argmax_final_f32                        0.0037 ms/round      3.01 per round        1.2 us each
+      HtoD                                    0.0006 ms/round      2.05 per round        0.3 us each
+      idle between intervals (host)           0.1098 ms/round   1 ms and over 0.0063, 100 us to 1 ms 0.0173, 5 to 100 us 0.0694, under 5 us 0.0168
+  verify: 77.375 ms per round
+      matvec NVFP4                           65.4258 ms/round    256.00 per round      255.6 us each
+      output head Q5_K                        5.0830 ms/round      1.00 per round     5083.0 us each
+      GDN scan and conv                       2.4171 ms/round    144.00 per round       16.8 us each
+      norms, quantize, glue                   1.6712 ms/round    579.00 per round        2.9 us each
+      attention                               1.0545 ms/round     32.00 per round       33.0 us each
+      HtoD                                    0.0290 ms/round     65.00 per round        0.4 us each
+      idle between intervals (host)           1.6942 ms/round   100 us to 1 ms 0.0014, 5 to 100 us 0.0304, under 5 us 1.6624
+  verify-draw: 0.059 ms per round
+      argmax_partial_f32                      0.0244 ms/round      3.99 per round        6.1 us each
+      argmax_final_f32                        0.0071 ms/round      3.99 per round        1.8 us each
+      DtoH                                    0.0030 ms/round      1.00 per round        3.0 us each
+      idle between intervals (host)           0.0242 ms/round   5 to 100 us 0.0050, under 5 us 0.0193
+  commit: 3.344 ms per round
+      DtoD                                    1.5923 ms/round    109.87 per round       14.5 us each
+      copy_batch_uniform_f32                  1.0531 ms/round      1.52 per round      693.9 us each
+      matvec NVFP4                            0.2054 ms/round      3.00 per round       68.5 us each
+      memset                                  0.0499 ms/round     13.74 per round        3.6 us each
+      norms, quantize, glue                   0.0309 ms/round     10.00 per round        3.1 us each
+      HtoD                                    0.0074 ms/round     20.72 per round        0.4 us each
+      idle between intervals (host)           0.4046 ms/round   1 ms and over 0.0686, 100 us to 1 ms 0.0066, 5 to 100 us 0.0426, under 5 us 0.2868
+  solo-tail: 0.442 ms per round
+      matvec NVFP4                            0.3844 ms/round      2.92 per round      131.7 us each
+      output head Q5_K                        0.0304 ms/round      0.01 per round     5174.2 us each
+      norms, quantize, glue                   0.0094 ms/round      3.78 per round        2.5 us each
+      GDN scan and conv                       0.0062 ms/round      0.85 per round        7.3 us each
+      attention                               0.0036 ms/round      0.19 per round       19.1 us each
+      DtoD                                    0.0004 ms/round      0.38 per round        1.0 us each
+      HtoD                                    0.0001 ms/round      0.39 per round        0.3 us each
+      idle between intervals (host)           0.0079 ms/round   5 to 100 us 0.0000, under 5 us 0.0078
+  after-tail: 0.019 ms per round
+      DtoH                                    0.0154 ms/round      0.01 per round     2612.2 us each
+      matvec NVFP4                            0.0010 ms/round      0.02 per round       58.3 us each
+      norms, quantize, glue                   0.0002 ms/round      0.06 per round        3.5 us each
+      memset                                  0.0000 ms/round      0.03 per round        1.2 us each
+      DtoD                                    0.0000 ms/round      0.01 per round        1.0 us each
+      HtoD                                    0.0000 ms/round      0.01 per round        0.6 us each
+      idle between intervals (host)           0.0022 ms/round   100 us to 1 ms 0.0020, 5 to 100 us 0.0000, under 5 us 0.0001
+-- t1 (163 rounds)
+  solo-init: 6.037 ms per round
+      matvec NVFP4                            5.2492 ms/round     39.56 per round      132.7 us each
+      output head Q5_K                        0.4131 ms/round      0.08 per round     5179.1 us each
+      norms, quantize, glue                   0.1329 ms/round     51.20 per round        2.6 us each
+      GDN scan and conv                       0.0858 ms/round     11.48 per round        7.5 us each
+      attention                               0.0431 ms/round      2.55 per round       16.9 us each
+      DtoD                                    0.0056 ms/round      5.10 per round        1.1 us each
+      HtoD                                    0.0019 ms/round      5.34 per round        0.4 us each
+      idle between intervals (host)           0.1052 ms/round   5 to 100 us 0.0015, under 5 us 0.1037
+  after-init: 0.415 ms per round
+      DtoD                                    0.1910 ms/round     13.87 per round       13.8 us each
+      DtoH                                    0.0992 ms/round      0.09 per round     1077.9 us each
+      memset                                  0.0430 ms/round      7.40 per round        5.8 us each
+      HtoD                                    0.0017 ms/round      0.36 per round        4.8 us each
+      filter_stats_coop_f32                   0.0001 ms/round      0.01 per round       19.7 us each
+      gumbel_perturb_filtered_f32             0.0000 ms/round      0.01 per round        5.7 us each
+      argmax_partial_f32                      0.0000 ms/round      0.01 per round        4.5 us each
+      argmax_final_f32                        0.0000 ms/round      0.01 per round        1.4 us each
+      idle between intervals (host)           0.0796 ms/round   100 us to 1 ms 0.0298, 5 to 100 us 0.0052, under 5 us 0.0446
+  draft-fwd: 19.388 ms per round
+      output head Q5_K                       15.7479 ms/round      3.01 per round     5227.9 us each
+      matvec NVFP4                            3.2792 ms/round     24.10 per round      136.1 us each
+      norms, quantize, glue                   0.1533 ms/round     72.29 per round        2.1 us each
+      attention                               0.0922 ms/round      6.02 per round       15.3 us each
+      memset                                  0.0561 ms/round     57.23 per round        1.0 us each
+      DtoD                                    0.0055 ms/round      6.48 per round        0.9 us each
+      idle between intervals (host)           0.0540 ms/round   100 us to 1 ms 0.0055, 5 to 100 us 0.0006, under 5 us 0.0479
+  draft-draw: 0.206 ms per round
+      norms, quantize, glue                   0.0277 ms/round      3.09 per round        8.9 us each
+      DtoD                                    0.0268 ms/round      4.23 per round        6.4 us each
+      gumbel_perturb_ctr_f32                  0.0184 ms/round      3.01 per round        6.1 us each
+      memset                                  0.0077 ms/round      0.63 per round       12.3 us each
+      argmax_partial_f32                      0.0075 ms/round      3.01 per round        2.5 us each
+      DtoH                                    0.0064 ms/round      3.00 per round        2.1 us each
+      memra_sctr_inc                          0.0044 ms/round      3.01 per round        1.5 us each
+      argmax_final_f32                        0.0040 ms/round      3.01 per round        1.3 us each
+      HtoD                                    0.0011 ms/round      2.06 per round        0.6 us each
+      idle between intervals (host)           0.1020 ms/round   1 ms and over 0.0063, 100 us to 1 ms 0.0098, 5 to 100 us 0.0712, under 5 us 0.0147
+  verify: 77.272 ms per round
+      matvec NVFP4                           65.4048 ms/round    256.00 per round      255.5 us each
+      output head Q5_K                        5.1070 ms/round      1.00 per round     5107.0 us each
+      GDN scan and conv                       2.3327 ms/round    144.00 per round       16.2 us each
+      norms, quantize, glue                   1.6700 ms/round    579.00 per round        2.9 us each
+      attention                               1.0358 ms/round     32.00 per round       32.4 us each
+      HtoD                                    0.0285 ms/round     65.00 per round        0.4 us each
+      idle between intervals (host)           1.6935 ms/round   5 to 100 us 0.0227, under 5 us 1.6709
+  verify-draw: 0.168 ms per round
+      filter_stats_coop_f32                   0.0462 ms/round      2.00 per round       23.1 us each
+      DtoD                                    0.0241 ms/round      4.00 per round        6.0 us each
+      gumbel_perturb_filtered_col_f32         0.0231 ms/round      4.00 per round        5.8 us each
+      argmax_partial_f32                      0.0120 ms/round      4.00 per round        3.0 us each
+      argmax_final_f32                        0.0057 ms/round      4.00 per round        1.4 us each
+      DtoH                                    0.0036 ms/round      1.00 per round        3.6 us each
+      memset                                  0.0022 ms/round      4.15 per round        0.5 us each
+      HtoD                                    0.0004 ms/round      1.00 per round        0.4 us each
+      idle between intervals (host)           0.0510 ms/round   5 to 100 us 0.0036, under 5 us 0.0474
+  commit: 3.089 ms per round
+      DtoD                                    1.4365 ms/round     98.18 per round       14.6 us each
+      copy_batch_uniform_f32                  1.0057 ms/round      1.42 per round      706.6 us each
+      matvec NVFP4                            0.2080 ms/round      2.94 per round       70.6 us each
+      norms, quantize, glue                   0.0319 ms/round      9.82 per round        3.3 us each
+      memset                                  0.0124 ms/round      6.87 per round        1.8 us each
+      HtoD                                    0.0078 ms/round     20.92 per round        0.4 us each
+      idle between intervals (host)           0.3863 ms/round   1 ms and over 0.0969, 100 us to 1 ms 0.0021, 5 to 100 us 0.0380, under 5 us 0.2493
+  solo-tail: 5.541 ms per round
+      matvec NVFP4                            4.8202 ms/round     36.52 per round      132.0 us each
+      output head Q5_K                        0.3793 ms/round      0.07 per round     5151.5 us each
+      norms, quantize, glue                   0.1190 ms/round     47.26 per round        2.5 us each
+      GDN scan and conv                       0.0791 ms/round     10.60 per round        7.5 us each
+      attention                               0.0399 ms/round      2.36 per round       16.9 us each
+      DtoD                                    0.0050 ms/round      4.71 per round        1.1 us each
+      HtoD                                    0.0018 ms/round      4.93 per round        0.4 us each
+      idle between intervals (host)           0.0970 ms/round   5 to 100 us 0.0014, under 5 us 0.0956
+  after-tail: 0.293 ms per round
+      DtoH                                    0.2505 ms/round      0.29 per round      850.7 us each
+      matvec NVFP4                            0.0147 ms/round      0.22 per round       66.7 us each
+      DtoD                                    0.0023 ms/round      0.43 per round        5.4 us each
+      norms, quantize, glue                   0.0023 ms/round      0.74 per round        3.1 us each
+      memset                                  0.0021 ms/round      0.94 per round        2.3 us each
+      HtoD                                    0.0019 ms/round      0.52 per round        3.6 us each
+      filter_stats_coop_f32                   0.0018 ms/round      0.07 per round       24.1 us each
+      gumbel_perturb_filtered_f32             0.0004 ms/round      0.07 per round        5.6 us each
+      argmax_partial_f32                      0.0003 ms/round      0.07 per round        4.3 us each
+      argmax_final_f32                        0.0001 ms/round      0.07 per round        1.7 us each
+      idle between intervals (host)           0.0163 ms/round   5 to 100 us 0.0122, under 5 us 0.0041
+-- chat (160 rounds)
+  solo-init: 6.159 ms per round
+      matvec NVFP4                            5.3531 ms/round     40.30 per round      132.8 us each
+      output head Q5_K                        0.4189 ms/round      0.08 per round     5155.9 us each
+      norms, quantize, glue                   0.1382 ms/round     52.16 per round        2.6 us each
+      GDN scan and conv                       0.0883 ms/round     11.70 per round        7.5 us each
+      attention                               0.0443 ms/round      2.60 per round       17.0 us each
+      DtoD                                    0.0055 ms/round      5.20 per round        1.1 us each
+      HtoD                                    0.0023 ms/round      5.44 per round        0.4 us each
+      idle between intervals (host)           0.1087 ms/round   5 to 100 us 0.0031, under 5 us 0.1056
+  after-init: 0.398 ms per round
+      DtoD                                    0.1967 ms/round     14.72 per round       13.4 us each
+      DtoH                                    0.0779 ms/round      0.08 per round      958.2 us each
+      memset                                  0.0441 ms/round      7.50 per round        5.9 us each
+      HtoD                                    0.0017 ms/round      0.39 per round        4.5 us each
+      idle between intervals (host)           0.0778 ms/round   100 us to 1 ms 0.0259, 5 to 100 us 0.0049, under 5 us 0.0470
+  draft-fwd: 19.401 ms per round
+      output head Q5_K                       15.7364 ms/round      3.01 per round     5223.7 us each
+      matvec NVFP4                            3.2799 ms/round     24.10 per round      136.1 us each
+      norms, quantize, glue                   0.1557 ms/round     72.30 per round        2.2 us each
+      attention                               0.0930 ms/round      6.03 per round       15.4 us each
+      memset                                  0.0559 ms/round     57.24 per round        1.0 us each
+      DtoD                                    0.0065 ms/round      6.49 per round        1.0 us each
+      idle between intervals (host)           0.0741 ms/round   1 ms and over 0.0169, 100 us to 1 ms 0.0074, 5 to 100 us 0.0016, under 5 us 0.0482
+  draft-draw: 0.857 ms per round
+      filter_stats_coop_f32                   0.6610 ms/round      3.01 per round      219.4 us each
+      norms, quantize, glue                   0.0277 ms/round      3.09 per round        9.0 us each
+      DtoD                                    0.0249 ms/round      4.26 per round        5.8 us each
+      gumbel_perturb_filtered_ctr_f32         0.0127 ms/round      3.01 per round        4.2 us each
+      argmax_partial_f32                      0.0074 ms/round      3.01 per round        2.4 us each
+      memset                                  0.0072 ms/round      0.64 per round       11.4 us each
+      DtoH                                    0.0063 ms/round      3.00 per round        2.1 us each
+      memra_sctr_inc                          0.0044 ms/round      3.01 per round        1.5 us each
+      argmax_final_f32                        0.0039 ms/round      3.01 per round        1.3 us each
+      HtoD                                    0.0008 ms/round      2.06 per round        0.4 us each
+      idle between intervals (host)           0.1010 ms/round   100 us to 1 ms 0.0163, 5 to 100 us 0.0692, under 5 us 0.0156
+  verify: 77.153 ms per round
+      matvec NVFP4                           65.3198 ms/round    256.00 per round      255.2 us each
+      output head Q5_K                        5.0988 ms/round      1.00 per round     5098.8 us each
+      GDN scan and conv                       2.3250 ms/round    144.00 per round       16.1 us each
+      norms, quantize, glue                   1.6666 ms/round    579.00 per round        2.9 us each
+      attention                               1.0301 ms/round     32.00 per round       32.2 us each
+      HtoD                                    0.0275 ms/round     65.00 per round        0.4 us each
+      idle between intervals (host)           1.6856 ms/round   100 us to 1 ms 0.0014, 5 to 100 us 0.0170, under 5 us 1.6672
+  verify-draw: 0.563 ms per round
+      filter_stats_coop_f32                   0.4493 ms/round      2.00 per round      224.7 us each
+      DtoD                                    0.0239 ms/round      4.00 per round        6.0 us each
+      gumbel_perturb_filtered_col_f32         0.0140 ms/round      4.00 per round        3.5 us each
+      argmax_partial_f32                      0.0123 ms/round      4.00 per round        3.1 us each
+      argmax_final_f32                        0.0056 ms/round      4.00 per round        1.4 us each
+      DtoH                                    0.0040 ms/round      1.00 per round        4.0 us each
+      memset                                  0.0026 ms/round      4.16 per round        0.6 us each
+      HtoD                                    0.0004 ms/round      1.00 per round        0.4 us each
+      idle between intervals (host)           0.0509 ms/round   5 to 100 us 0.0030, under 5 us 0.0479
+  commit: 3.127 ms per round
+      DtoD                                    1.4240 ms/round     97.52 per round       14.6 us each
+      copy_batch_uniform_f32                  1.0572 ms/round      1.50 per round      704.8 us each
+      matvec NVFP4                            0.2064 ms/round      2.94 per round       70.1 us each
+      norms, quantize, glue                   0.0330 ms/round      9.81 per round        3.4 us each
+      memset                                  0.0126 ms/round      6.87 per round        1.8 us each
+      HtoD                                    0.0080 ms/round     21.60 per round        0.4 us each
+      idle between intervals (host)           0.3856 ms/round   1 ms and over 0.0970, 100 us to 1 ms 0.0009, 5 to 100 us 0.0411, under 5 us 0.2466
+  solo-tail: 6.088 ms per round
+      matvec NVFP4                            5.3004 ms/round     40.30 per round      131.5 us each
+      output head Q5_K                        0.4182 ms/round      0.08 per round     5147.5 us each
+      norms, quantize, glue                   0.1295 ms/round     52.16 per round        2.5 us each
+      GDN scan and conv                       0.0841 ms/round     11.70 per round        7.2 us each
+      attention                               0.0425 ms/round      2.60 per round       16.3 us each
+      DtoD                                    0.0052 ms/round      5.20 per round        1.0 us each
+      HtoD                                    0.0020 ms/round      5.44 per round        0.4 us each
+      idle between intervals (host)           0.1059 ms/round   5 to 100 us 0.0000, under 5 us 0.1059
+  after-tail: 0.293 ms per round
+      DtoH                                    0.2319 ms/round      0.33 per round      713.6 us each
+      filter_stats_coop_f32                   0.0177 ms/round      0.08 per round      218.0 us each
+      matvec NVFP4                            0.0155 ms/round      0.24 per round       63.7 us each
+      norms, quantize, glue                   0.0025 ms/round      0.81 per round        3.1 us each
+      DtoD                                    0.0025 ms/round      0.46 per round        5.4 us each
+      memset                                  0.0021 ms/round      1.02 per round        2.0 us each
+      HtoD                                    0.0020 ms/round      0.55 per round        3.6 us each
+      argmax_partial_f32                      0.0003 ms/round      0.08 per round        4.2 us each
+      gumbel_perturb_filtered_f32             0.0002 ms/round      0.08 per round        3.0 us each
+      argmax_final_f32                        0.0001 ms/round      0.08 per round        1.5 us each
+      idle between intervals (host)           0.0177 ms/round   100 us to 1 ms 0.0016, 5 to 100 us 0.0118, under 5 us 0.0043
+-- pen (171 rounds)
+  solo-init: 5.322 ms per round
+      matvec NVFP4                            4.6230 ms/round     34.81 per round      132.8 us each
+      output head Q5_K                        0.3622 ms/round      0.07 per round     5162.0 us each
+      norms, quantize, glue                   0.1193 ms/round     45.05 per round        2.6 us each
+      GDN scan and conv                       0.0777 ms/round     10.11 per round        7.7 us each
+      attention                               0.0376 ms/round      2.25 per round       16.8 us each
+      DtoD                                    0.0047 ms/round      4.49 per round        1.0 us each
+      HtoD                                    0.0024 ms/round      4.70 per round        0.5 us each
+      idle between intervals (host)           0.0946 ms/round   100 us to 1 ms 0.0007, 5 to 100 us 0.0029, under 5 us 0.0910
+  after-init: 0.408 ms per round
+      DtoD                                    0.1917 ms/round     13.77 per round       13.9 us each
+      DtoH                                    0.0587 ms/round      0.07 per round      836.4 us each
+      memset                                  0.0438 ms/round      7.11 per round        6.2 us each
+      norms, quantize, glue                   0.0218 ms/round      0.08 per round      286.9 us each
+      HtoD                                    0.0017 ms/round      0.39 per round        4.4 us each
+      idle between intervals (host)           0.0905 ms/round   1 ms and over 0.0131, 100 us to 1 ms 0.0291, 5 to 100 us 0.0038, under 5 us 0.0445
+  draft-fwd: 19.568 ms per round
+      output head Q5_K                       15.7164 ms/round      3.00 per round     5238.8 us each
+      matvec NVFP4                            3.2855 ms/round     24.00 per round      136.9 us each
+      norms, quantize, glue                   0.1606 ms/round     72.00 per round        2.2 us each
+      attention                               0.0919 ms/round      6.00 per round       15.3 us each
+      memset                                  0.0664 ms/round     57.00 per round        1.2 us each
+      DtoD                                    0.0068 ms/round      6.00 per round        1.1 us each
+      idle between intervals (host)           0.2403 ms/round   100 us to 1 ms 0.0012, 5 to 100 us 0.0024, under 5 us 0.2367
+  draft-draw: 1.201 ms per round
+      filter_stats_coop_f32                   0.6467 ms/round      3.00 per round      215.6 us each
+      penalize_logits_f32                     0.2544 ms/round      3.00 per round       84.8 us each
+      DtoH                                    0.0227 ms/round      9.00 per round        2.5 us each
+      DtoD                                    0.0153 ms/round      3.00 per round        5.1 us each
+      memset                                  0.0124 ms/round     12.07 per round        1.0 us each
+      gumbel_perturb_filtered_f32             0.0108 ms/round      3.00 per round        3.6 us each
+      argmax_partial_f32                      0.0082 ms/round      3.00 per round        2.7 us each
+      argmax_final_f32                        0.0051 ms/round      3.00 per round        1.7 us each
+      HtoD                                    0.0037 ms/round      9.00 per round        0.4 us each
+      idle between intervals (host)           0.2218 ms/round   1 ms and over 0.0507, 100 us to 1 ms 0.0007, 5 to 100 us 0.1046, under 5 us 0.0658
+  verify: 77.852 ms per round
+      matvec NVFP4                           65.8224 ms/round    256.00 per round      257.1 us each
+      output head Q5_K                        5.1067 ms/round      1.00 per round     5106.7 us each
+      GDN scan and conv                       2.3887 ms/round    144.00 per round       16.6 us each
+      norms, quantize, glue                   1.7336 ms/round    579.00 per round        3.0 us each
+      attention                               1.0546 ms/round     32.00 per round       33.0 us each
+      HtoD                                    0.0324 ms/round     65.00 per round        0.5 us each
+      idle between intervals (host)           1.7140 ms/round   100 us to 1 ms 0.0018, 5 to 100 us 0.0505, under 5 us 1.6616
+  verify-draw: 0.654 ms per round
+      filter_stats_coop_f32                   0.4509 ms/round      2.00 per round      225.5 us each
+      penalize_logits_rows_inc_f32            0.0828 ms/round      1.00 per round       82.8 us each
+      DtoD                                    0.0240 ms/round      4.00 per round        6.0 us each
+      gumbel_perturb_filtered_col_f32         0.0174 ms/round      4.00 per round        4.3 us each
+      argmax_partial_f32                      0.0122 ms/round      4.00 per round        3.0 us each
+      argmax_final_f32                        0.0057 ms/round      4.00 per round        1.4 us each
+      DtoH                                    0.0046 ms/round      1.00 per round        4.6 us each
+      memset                                  0.0020 ms/round      4.07 per round        0.5 us each
+      HtoD                                    0.0009 ms/round      2.00 per round        0.5 us each
+      idle between intervals (host)           0.0534 ms/round   5 to 100 us 0.0044, under 5 us 0.0490
+  commit: 3.184 ms per round
+      DtoD                                    1.4445 ms/round     97.89 per round       14.8 us each
+      copy_batch_uniform_f32                  1.1032 ms/round      1.56 per round      709.2 us each
+      matvec NVFP4                            0.2101 ms/round      2.96 per round       70.9 us each
+      norms, quantize, glue                   0.0330 ms/round      9.88 per round        3.3 us each
+      memset                                  0.0165 ms/round      7.85 per round        2.1 us each
+      HtoD                                    0.0091 ms/round     22.02 per round        0.4 us each
+      idle between intervals (host)           0.3677 ms/round   1 ms and over 0.0794, 5 to 100 us 0.0386, under 5 us 0.2497
+  solo-tail: 5.296 ms per round
+      matvec NVFP4                            4.6049 ms/round     34.81 per round      132.3 us each
+      output head Q5_K                        0.3625 ms/round      0.07 per round     5165.3 us each
+      norms, quantize, glue                   0.1160 ms/round     45.05 per round        2.6 us each
+      GDN scan and conv                       0.0758 ms/round     10.11 per round        7.5 us each
+      attention                               0.0381 ms/round      2.25 per round       16.9 us each
+      DtoD                                    0.0048 ms/round      4.49 per round        1.1 us each
+      HtoD                                    0.0018 ms/round      4.70 per round        0.4 us each
+      idle between intervals (host)           0.0927 ms/round   5 to 100 us 0.0016, under 5 us 0.0911
+  after-tail: 0.392 ms per round
+      DtoH                                    0.3338 ms/round      0.28 per round     1189.3 us each
+      filter_stats_coop_f32                   0.0149 ms/round      0.07 per round      212.7 us each
+      matvec NVFP4                            0.0132 ms/round      0.21 per round       62.8 us each
+      penalize_logits_f32                     0.0061 ms/round      0.07 per round       86.8 us each
+      DtoD                                    0.0023 ms/round      0.41 per round        5.5 us each
+      norms, quantize, glue                   0.0021 ms/round      0.70 per round        3.1 us each
+      memset                                  0.0019 ms/round      0.90 per round        2.1 us each
+      HtoD                                    0.0018 ms/round      0.54 per round        3.4 us each
+      argmax_partial_f32                      0.0003 ms/round      0.07 per round        3.6 us each
+      gumbel_perturb_filtered_f32             0.0002 ms/round      0.07 per round        3.0 us each
+      argmax_final_f32                        0.0002 ms/round      0.07 per round        2.5 us each
+      idle between intervals (host)           0.0151 ms/round   100 us to 1 ms 0.0013, 5 to 100 us 0.0099, under 5 us 0.0038
+-- greedy-b (166 rounds)
+  solo-init: 0.465 ms per round
+      matvec NVFP4                            0.4033 ms/round      2.99 per round      135.0 us each
+      output head Q5_K                        0.0313 ms/round      0.01 per round     5202.0 us each
+      norms, quantize, glue                   0.0111 ms/round      3.87 per round        2.9 us each
+      GDN scan and conv                       0.0067 ms/round      0.87 per round        7.8 us each
+      attention                               0.0031 ms/round      0.19 per round       16.1 us each
+      DtoD                                    0.0007 ms/round      0.39 per round        1.7 us each
+      HtoD                                    0.0002 ms/round      0.40 per round        0.4 us each
+      idle between intervals (host)           0.0082 ms/round   5 to 100 us 0.0005, under 5 us 0.0077
+  after-init: 0.001 ms per round
+      DtoH                                    0.0002 ms/round      0.01 per round       26.4 us each
+      DtoD                                    0.0001 ms/round      0.02 per round        4.2 us each
+      memset                                  0.0001 ms/round      0.07 per round        0.9 us each
+      HtoD                                    0.0000 ms/round      0.01 per round        0.2 us each
+      idle between intervals (host)           0.0007 ms/round   5 to 100 us 0.0006, under 5 us 0.0002
+  draft-fwd: 19.526 ms per round
+      output head Q5_K                       15.8478 ms/round      3.03 per round     5230.1 us each
+      matvec NVFP4                            3.2985 ms/round     24.24 per round      136.1 us each
+      norms, quantize, glue                   0.1560 ms/round     72.72 per round        2.1 us each
+      attention                               0.0955 ms/round      6.06 per round       15.8 us each
+      memset                                  0.0561 ms/round     57.57 per round        1.0 us each
+      DtoD                                    0.0062 ms/round      6.51 per round        0.9 us each
+      idle between intervals (host)           0.0656 ms/round   1 ms and over 0.0098, 100 us to 1 ms 0.0066, 5 to 100 us 0.0010, under 5 us 0.0483
+  draft-draw: 0.563 ms per round
+      matvec NVFP4                            0.3137 ms/round      1.23 per round      255.3 us each
+      norms, quantize, glue                   0.0385 ms/round      5.84 per round        6.6 us each
+      DtoH                                    0.0325 ms/round      3.02 per round       10.8 us each
+      DtoD                                    0.0251 ms/round      4.22 per round        5.9 us each
+      argmax_partial_f32                      0.0187 ms/round      3.03 per round        6.2 us each
+      GDN scan and conv                       0.0114 ms/round      0.70 per round       16.2 us each
+      memset                                  0.0081 ms/round      0.61 per round       13.1 us each
+      attention                               0.0054 ms/round      0.14 per round       37.1 us each
+      argmax_final_f32                        0.0038 ms/round      3.03 per round        1.2 us each
+      HtoD                                    0.0007 ms/round      2.37 per round        0.3 us each
+      idle between intervals (host)           0.1050 ms/round   100 us to 1 ms 0.0096, 5 to 100 us 0.0717, under 5 us 0.0237
+  verify: 77.512 ms per round
+      matvec NVFP4                           65.5265 ms/round    256.00 per round      256.0 us each
+      output head Q5_K                        5.0978 ms/round      1.00 per round     5097.8 us each
+      GDN scan and conv                       2.3923 ms/round    144.00 per round       16.6 us each
+      norms, quantize, glue                   1.6860 ms/round    579.00 per round        2.9 us each
+      attention                               1.0865 ms/round     32.00 per round       34.0 us each
+      HtoD                                    0.0277 ms/round     65.00 per round        0.4 us each
+      idle between intervals (host)           1.6957 ms/round   100 us to 1 ms 0.0007, 5 to 100 us 0.0265, under 5 us 1.6684
+  verify-draw: 0.059 ms per round
+      argmax_partial_f32                      0.0256 ms/round      3.99 per round        6.4 us each
+      argmax_final_f32                        0.0058 ms/round      3.99 per round        1.5 us each
+      DtoH                                    0.0035 ms/round      1.00 per round        3.5 us each
+      idle between intervals (host)           0.0239 ms/round   5 to 100 us 0.0045, under 5 us 0.0194
+  commit: 3.427 ms per round
+      DtoD                                    1.6207 ms/round    110.60 per round       14.7 us each
+      copy_batch_uniform_f32                  1.0680 ms/round      1.53 per round      698.0 us each
+      matvec NVFP4                            0.2075 ms/round      3.00 per round       69.2 us each
+      memset                                  0.0541 ms/round     13.90 per round        3.9 us each
+      norms, quantize, glue                   0.0317 ms/round     10.00 per round        3.2 us each
+      HtoD                                    0.0082 ms/round     20.84 per round        0.4 us each
+      idle between intervals (host)           0.4373 ms/round   1 ms and over 0.0901, 100 us to 1 ms 0.0077, 5 to 100 us 0.0492, under 5 us 0.2903
+
+== Sampling kernels by phase: launches per round, us each, ms per round
+-- greedy
+  draft-draw   argmax_final_f32                        3.01 per round      1.4 us each   0.0041 ms/round
+  draft-draw   argmax_partial_f32                      3.01 per round      6.2 us each   0.0188 ms/round
+  verify-draw  argmax_final_f32                        3.99 per round      1.8 us each   0.0071 ms/round
+  verify-draw  argmax_partial_f32                      3.99 per round      6.1 us each   0.0244 ms/round
+-- t1
+  after-init   argmax_final_f32                        0.01 per round      1.4 us each   0.0000 ms/round
+  after-init   argmax_partial_f32                      0.01 per round      4.5 us each   0.0000 ms/round
+  after-init   filter_stats_coop_f32                   0.01 per round     19.7 us each   0.0001 ms/round
+  after-init   gumbel_perturb_filtered_f32             0.01 per round      5.7 us each   0.0000 ms/round
+  draft-draw   argmax_final_f32                        3.01 per round      1.3 us each   0.0040 ms/round
+  draft-draw   argmax_partial_f32                      3.01 per round      2.5 us each   0.0075 ms/round
+  draft-draw   gumbel_perturb_ctr_f32                  3.01 per round      6.2 us each   0.0188 ms/round
+  draft-draw   memra_sctr_inc                          3.01 per round      1.6 us each   0.0048 ms/round
+  verify-draw  argmax_final_f32                        4.00 per round      1.4 us each   0.0057 ms/round
+  verify-draw  argmax_partial_f32                      4.00 per round      3.0 us each   0.0120 ms/round
+  verify-draw  filter_stats_coop_f32                   2.00 per round     23.1 us each   0.0462 ms/round
+  verify-draw  gumbel_perturb_filtered_col_f32         4.00 per round      5.8 us each   0.0231 ms/round
+  after-tail   argmax_final_f32                        0.07 per round      1.7 us each   0.0001 ms/round
+  after-tail   argmax_partial_f32                      0.07 per round      4.3 us each   0.0003 ms/round
+  after-tail   filter_stats_coop_f32                   0.07 per round     24.1 us each   0.0018 ms/round
+  after-tail   gumbel_perturb_filtered_f32             0.07 per round      5.6 us each   0.0004 ms/round
+-- chat
+  draft-draw   argmax_final_f32                        3.01 per round      1.3 us each   0.0039 ms/round
+  draft-draw   argmax_partial_f32                      3.01 per round      2.4 us each   0.0074 ms/round
+  draft-draw   filter_stats_coop_f32                   3.01 per round    219.6 us each   0.6614 ms/round
+  draft-draw   gumbel_perturb_filtered_ctr_f32         3.01 per round      4.2 us each   0.0127 ms/round
+  draft-draw   memra_sctr_inc                          3.01 per round      1.6 us each   0.0048 ms/round
+  verify-draw  argmax_final_f32                        4.00 per round      1.4 us each   0.0056 ms/round
+  verify-draw  argmax_partial_f32                      4.00 per round      3.1 us each   0.0123 ms/round
+  verify-draw  filter_stats_coop_f32                   2.00 per round    224.7 us each   0.4493 ms/round
+  verify-draw  gumbel_perturb_filtered_col_f32         4.00 per round      3.5 us each   0.0140 ms/round
+  after-tail   argmax_final_f32                        0.08 per round      1.5 us each   0.0001 ms/round
+  after-tail   argmax_partial_f32                      0.08 per round      4.2 us each   0.0003 ms/round
+  after-tail   filter_stats_coop_f32                   0.08 per round    218.0 us each   0.0177 ms/round
+  after-tail   gumbel_perturb_filtered_f32             0.08 per round      3.0 us each   0.0002 ms/round
+-- pen
+  draft-draw   argmax_final_f32                        3.00 per round      1.7 us each   0.0051 ms/round
+  draft-draw   argmax_partial_f32                      3.00 per round      2.7 us each   0.0082 ms/round
+  draft-draw   filter_stats_coop_f32                   3.00 per round    215.6 us each   0.6467 ms/round
+  draft-draw   gumbel_perturb_filtered_f32             3.00 per round      3.6 us each   0.0108 ms/round
+  draft-draw   penalize_logits_f32                     3.00 per round     84.8 us each   0.2544 ms/round
+  verify-draw  argmax_final_f32                        4.00 per round      1.4 us each   0.0057 ms/round
+  verify-draw  argmax_partial_f32                      4.00 per round      3.0 us each   0.0122 ms/round
+  verify-draw  filter_stats_coop_f32                   2.00 per round    225.5 us each   0.4509 ms/round
+  verify-draw  gumbel_perturb_filtered_col_f32         4.00 per round      4.3 us each   0.0174 ms/round
+  verify-draw  penalize_logits_rows_inc_f32            1.00 per round     82.8 us each   0.0828 ms/round
+  after-tail   argmax_final_f32                        0.07 per round      2.5 us each   0.0002 ms/round
+  after-tail   argmax_partial_f32                      0.07 per round      3.6 us each   0.0003 ms/round
+  after-tail   filter_stats_coop_f32                   0.07 per round    212.7 us each   0.0149 ms/round
+  after-tail   gumbel_perturb_filtered_f32             0.07 per round      3.0 us each   0.0002 ms/round
+  after-tail   penalize_logits_f32                     0.07 per round     86.8 us each   0.0061 ms/round
+-- greedy-b
+  draft-draw   argmax_final_f32                        3.03 per round      1.4 us each   0.0042 ms/round
+  draft-draw   argmax_partial_f32                      3.03 per round      6.3 us each   0.0192 ms/round
+  verify-draw  argmax_final_f32                        3.99 per round      1.5 us each   0.0058 ms/round
+  verify-draw  argmax_partial_f32                      3.99 per round      6.4 us each   0.0256 ms/round
+
+== Host calls that block, by the phase the call starts in: count per round, ms per round inside the call
+   (the host runs ahead of the device, so a readback's wait is device time already counted above, not extra wall)
+-- greedy
+  solo-init    cuMemcpyDtoHAsync               0.01 per round     0.326 ms/round
+  after-init   cuStreamSynchronize             0.01 per round     0.000 ms/round
+  draft-fwd    cuMemcpyDtoHAsync               2.01 per round    12.814 ms/round
+  draft-fwd    cuStreamSynchronize             0.01 per round     0.074 ms/round
+  draft-draw   cuGraphLaunch                   2.01 per round     0.087 ms/round
+  draft-draw   cuMemcpyDtoHAsync               0.01 per round     0.053 ms/round
+  draft-draw   cuStreamSynchronize             3.01 per round     0.041 ms/round
+  verify       cuMemcpyDtoHAsync               1.00 per round    71.497 ms/round
+  commit       cuGraphLaunch                   0.99 per round     0.139 ms/round
+  commit       cuMemcpyDtoHAsync               0.98 per round     7.752 ms/round
+  commit       cuStreamSynchronize             2.06 per round     1.050 ms/round
+  solo-tail    cuMemcpyDtoHAsync               0.01 per round     0.335 ms/round
+  after-tail   cuStreamSynchronize             0.01 per round     0.000 ms/round
+-- t1
+  solo-init    cuMemcpyDtoHAsync               0.08 per round     4.430 ms/round
+  after-init   cuGraphLaunch                   0.07 per round     0.009 ms/round
+  after-init   cuMemcpyDtoHAsync               0.09 per round     0.629 ms/round
+  after-init   cuStreamSynchronize             0.09 per round     0.001 ms/round
+  draft-fwd    cuMemcpyDtoHAsync               2.00 per round    12.825 ms/round
+  draft-fwd    cuStreamSynchronize             0.01 per round     0.074 ms/round
+  draft-draw   cuGraphLaunch                   2.01 per round     0.093 ms/round
+  draft-draw   cuMemcpyDtoHAsync               0.01 per round     0.059 ms/round
+  draft-draw   cuStreamSynchronize             3.01 per round     0.037 ms/round
+  verify       cuMemcpyDtoHAsync               1.00 per round    71.239 ms/round
+  commit       cuGraphLaunch                   0.93 per round     0.110 ms/round
+  commit       cuMemcpyDtoHAsync               0.93 per round     7.193 ms/round
+  commit       cuStreamSynchronize             1.98 per round     0.996 ms/round
+  solo-tail    cuMemcpyDtoHAsync               0.07 per round     4.249 ms/round
+  after-tail   cuMemcpyDtoHAsync               0.22 per round     0.005 ms/round
+  after-tail   cuStreamSynchronize             0.37 per round     0.004 ms/round
+-- chat
+  solo-init    cuMemcpyDtoHAsync               0.08 per round     4.497 ms/round
+  after-init   cuGraphLaunch                   0.07 per round     0.009 ms/round
+  after-init   cuMemcpyDtoHAsync               0.07 per round     0.705 ms/round
+  after-init   cuStreamSynchronize             0.08 per round     0.001 ms/round
+  draft-fwd    cuMemcpyDtoHAsync               2.01 per round    13.309 ms/round
+  draft-fwd    cuStreamSynchronize             0.01 per round     0.083 ms/round
+  draft-draw   cuGraphLaunch                   2.01 per round     0.101 ms/round
+  draft-draw   cuMemcpyDtoHAsync               0.01 per round     0.056 ms/round
+  draft-draw   cuStreamSynchronize             3.01 per round     0.037 ms/round
+  verify       cuMemcpyDtoHAsync               1.00 per round    71.617 ms/round
+  commit       cuGraphLaunch                   0.92 per round     0.141 ms/round
+  commit       cuMemcpyDtoHAsync               0.91 per round     7.269 ms/round
+  commit       cuStreamSynchronize             1.98 per round     1.045 ms/round
+  solo-tail    cuMemcpyDtoHAsync               0.08 per round     4.627 ms/round
+  after-tail   cuMemcpyDtoHAsync               0.24 per round     0.021 ms/round
+  after-tail   cuStreamSynchronize             0.40 per round     0.003 ms/round
+-- pen
+  solo-init    cuMemcpyDtoHAsync               0.07 per round     3.876 ms/round
+  after-init   cuMemcpyDtoHAsync               0.07 per round     0.646 ms/round
+  after-init   cuStreamSynchronize             0.08 per round     0.029 ms/round
+  draft-fwd    cuMemcpyDtoHAsync               2.00 per round    13.179 ms/round
+  draft-draw   cuMemcpyDtoHAsync               6.00 per round     0.060 ms/round
+  draft-draw   cuStreamSynchronize             9.00 per round     0.016 ms/round
+  verify       cuMemcpyDtoHAsync               1.00 per round    72.405 ms/round
+  commit       cuMemcpyDtoHAsync               0.93 per round     7.434 ms/round
+  commit       cuStreamSynchronize             1.99 per round     1.092 ms/round
+  solo-tail    cuMemcpyDtoHAsync               0.07 per round     4.162 ms/round
+  after-tail   cuMemcpyDtoHAsync               0.21 per round     0.024 ms/round
+  after-tail   cuStreamSynchronize             0.35 per round     0.003 ms/round
+-- greedy-b
+  solo-init    cuMemcpyDtoHAsync               0.01 per round     0.337 ms/round
+  after-init   cuStreamSynchronize             0.01 per round     0.000 ms/round
+  draft-fwd    cuMemcpyDtoHAsync               2.02 per round    12.946 ms/round
+  draft-fwd    cuStreamSynchronize             0.01 per round     0.079 ms/round
+  draft-draw   cuGraphLaunch                   2.02 per round     0.094 ms/round
+  draft-draw   cuMemcpyDtoHAsync               0.01 per round     0.096 ms/round
+  draft-draw   cuStreamSynchronize             3.03 per round     0.042 ms/round
+  verify       cuMemcpyDtoHAsync               1.00 per round    71.525 ms/round
+  commit       cuGraphLaunch                   1.00 per round     0.136 ms/round
+  commit       cuMemcpyDtoHAsync               0.99 per round     7.804 ms/round
+  commit       cuStreamSynchronize             2.07 per round     1.064 ms/round
