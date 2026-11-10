@@ -663,6 +663,41 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
             ));
         }
     }
+    // the fp32 FMA linear at the head's and the router's shapes (bf16 weights, fp32 out), by rows
+    for &(name, n, k) in &[("head", 129_280usize, 5120usize), ("router", 384, 5120)] {
+        let mut rng = Lcg(0x5eed_d541 ^ ((n * 31 + k) as u64));
+        // bf16 values in a small range: raw bits with the exponent held near 1.0
+        let rand_bf16 = |rng: &mut Lcg, len: usize| -> Vec<u8> {
+            let mut v = rng.bytes(len * 2);
+            for c in v.chunks_exact_mut(2) {
+                c[1] = (c[1] & 0x80) | 0x3F;
+            }
+            v
+        };
+        let w = v::BW {
+            w: Buf::from_bytes(&st, &rand_bf16(&mut rng, n * k))?,
+            n,
+            k,
+        };
+        for m in [1usize, 4, 5, 8] {
+            let x = Buf::from_bytes(&st, &rand_bf16(&mut rng, m * k))?;
+            let c = ops.buf(m * n * 4)?;
+            let ms = time_ms(&ops, reps, || {
+                ops.linear_bf16(x.p(&st), k, m, &w, c.p(&st), n, true)
+            })?;
+            let hsh = sha(&c.host(&st)?);
+            let med = median(&ms);
+            eprintln!(
+                "gemm ffma {name} m {m} n {n} k {k}: median {:.4} ms ({:.0} GB/s) sha {hsh}",
+                med,
+                (n * k * 2) as f64 / med / 1e6
+            );
+            out.push(format!(
+                "{{\"op\": \"ffma\", \"name\": \"{name}\", \"m\": {m}, \"n\": {n}, \"k\": {k}, \"median_ms\": {med:.5}, \"ms\": {}, \"sha\": \"{hsh}\"}}",
+                fmt_list(&ms)
+            ));
+        }
+    }
     // grouped MXFP4 experts through the tile-list dispatch: w1/w3 (n 2304, k 5120) and w2 (n 5120,
     // k 2304), `ng` experts of `rows` rows, tiles as `Ctx::moe_bm` picks them for that slice
     for &(ng, rows) in &[

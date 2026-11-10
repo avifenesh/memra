@@ -1806,8 +1806,11 @@ __global__ void __launch_bounds__(MR * 32) v41_gemv_ffma_kernel(const v41_bf* __
                                                                 const v41_bf* __restrict__ B, long ldb,
                                                                 float* __restrict__ C, long ldc, int M, int N,
                                                                 int K) {
-    __shared__ float sB[V41_SMF_KC][33];
-    __shared__ float sA[MR][V41_SMF_KC];
+    // B as [column][K chunk] and A as [row][K chunk], rows 16-byte aligned: a chain reads its 8 next
+    // values of each with two 16-byte loads. At 5..8 rows every thread of the block runs a chain and
+    // the block is bound by the instructions it issues, 4 loads for 8 fmas instead of 16.
+    __shared__ __align__(16) float sB[32][V41_SMF_KC + 4];
+    __shared__ __align__(16) float sA[MR][V41_SMF_KC];
     int tid = threadIdx.x, n0 = blockIdx.x * 32;
     // staging roles: B row j = tid >> 2, quarter q = tid & 3 (64 elements = 8 x 16 B), the first 128
     // threads; A: 16 B each
@@ -1834,28 +1837,32 @@ __global__ void __launch_bounds__(MR * 32) v41_gemv_ffma_kernel(const v41_bf* __
 #pragma unroll
             for (int i = 0; i < 8; ++i) {
                 const v41_bf* e = (const v41_bf*)&nb[i];
-#pragma unroll
-                for (int u = 0; u < 8; ++u) sB[q * 64 + i * 8 + u][j] = v41_bf2f(e[u]);
+                float4* d = (float4*)&sB[j][q * 64 + i * 8];
+                d[0] = make_float4(v41_bf2f(e[0]), v41_bf2f(e[1]), v41_bf2f(e[2]), v41_bf2f(e[3]));
+                d[1] = make_float4(v41_bf2f(e[4]), v41_bf2f(e[5]), v41_bf2f(e[6]), v41_bf2f(e[7]));
             }
         }
         {
             const v41_bf* e = (const v41_bf*)&na;
-#pragma unroll
-            for (int u = 0; u < 8; ++u) sA[ar][ac + u] = v41_bf2f(e[u]);
+            float4* d = (float4*)&sA[ar][ac];
+            d[0] = make_float4(v41_bf2f(e[0]), v41_bf2f(e[1]), v41_bf2f(e[2]), v41_bf2f(e[3]));
+            d[1] = make_float4(v41_bf2f(e[4]), v41_bf2f(e[5]), v41_bf2f(e[6]), v41_bf2f(e[7]));
         }
         __syncthreads();
         if (k0 + V41_SMF_KC < K) fetch(k0 + V41_SMF_KC);
         int kn = min(V41_SMF_KC, K - k0);
         if (r < M)
             for (int kk = 0; kk < kn; kk += 8) {
-                float av[8], bv[8];
-#pragma unroll
-                for (int u = 0; u < 8; ++u) {
-                    av[u] = sA[r][kk + u];
-                    bv[u] = sB[kk + u][cc];
-                }
-#pragma unroll
-                for (int u = 0; u < 8; ++u) acc = __fmaf_rn(av[u], bv[u], acc);
+                const float4 a0 = *(const float4*)&sA[r][kk], a1 = *(const float4*)&sA[r][kk + 4];
+                const float4 b0 = *(const float4*)&sB[cc][kk], b1 = *(const float4*)&sB[cc][kk + 4];
+                acc = __fmaf_rn(a0.x, b0.x, acc);
+                acc = __fmaf_rn(a0.y, b0.y, acc);
+                acc = __fmaf_rn(a0.z, b0.z, acc);
+                acc = __fmaf_rn(a0.w, b0.w, acc);
+                acc = __fmaf_rn(a1.x, b1.x, acc);
+                acc = __fmaf_rn(a1.y, b1.y, acc);
+                acc = __fmaf_rn(a1.z, b1.z, acc);
+                acc = __fmaf_rn(a1.w, b1.w, acc);
             }
     }
     if (r < M && n0 + cc < N) C[(long)r * ldc + n0 + cc] = acc;
