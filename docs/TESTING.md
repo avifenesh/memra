@@ -521,12 +521,71 @@ run-gen's prefill-vs-decode argmax assert calibrated against the **top-2 margin 
 position**, because a near-tie flip and a real cache bug are the same red until you measure the
 margin (see `research/q8-argmax-20260806/`). Flags:
 `tools/argmax-margin-gate.sh [<model.gguf|hf_dir>] [--prompt f] [--window N] [--max-flips N]
-[--margin-floor F] [--decode eager|batch] [--canary] [--logdir D]`. **Effective `--window` default is 12**, not the 24
+[--decode eager|batch] [--floors F] [--device NAME] [--require-floor] [--canary] [--logdir D]`,
+and `--calibrate [--receipt PATH]` to measure a floor. **Effective `--window` default is 12**, not the 24
 the probe binary advertises in its own usage line: the wrapper always passes its own
 `WINDOW=12`. Worth knowing, since window width *is* this gate's
 coverage. Automatic dispatch is limited to `decode.rs`, `forward.rs`, `hybrid_forward.rs`, and
 the gate's own wrapper/probe implementation (`amarginb` / `amarginbc` add `decode_batch.rs`);
 `--probes amargin,amarginc` remains the clean-tree or deliberate explicit invocation.
+
+**The verdict (memra#1199, `docs/decisions/ARGMAX-GATE-GAP-SHIFT-FLOOR.md`).** Per row the probe
+gives each program's top-1 id and top-2 margin. A flip (prefill picks `i`, decode picks `j`) needs
+`p_i - p_j >= margin_p` and `d_j - d_i >= margin_d`, so the two programs disagree about `i` against
+`j` by at least `margin_p + margin_d`; at an agreeing row they disagree about the top-1 against the
+runner-up by `|margin_p - margin_d|`. That number is the row's **gap shift**. The **floor** of a
+cell (model, prompt, decode program, device) is the largest gap shift at an agreeing row over the
+whole prompt. The clauses:
+
+| clause | row | result |
+|---|---|---|
+| near tie | a flip whose gap shift is inside the floor | counted against `--max-flips` |
+| `WIDE-FLIP` | a flip whose gap shift is above the floor | fails at any count |
+| `WIDE-ROW` | an agreeing row whose gap shift is above the floor | fails |
+| `TOO-MANY-NEAR-TIES` | more near ties than the budget | fails |
+| `UNCALIBRATED-FLIP` | a flip in a cell with no floor row | fails |
+
+One function gives the verdict, `memra_engine::argmax_margin::judge`. The wrapper calls it through
+`argmax-margin-probe --judge <log>` on the measured log and on the canary's injected copy. For
+every flip and every wide row it prints the clause, both top-1 ids and margins, the spread, the
+gap shift and the floor, and under it the probe's `detail` line (both programs' top-2 ids with
+their text and logits, and each program's logit at the other's top-1), so a row can be examined
+from the log alone. The rule before memra#1199 called a flip "margin-explained" when the spread
+at the contending ids exceeded the smaller margin; the spread at a flip is at least the mean of
+the two margins, so that never failed and the count was the only working check.
+
+**Floors** live in `tools/argmax-margin-floors.tsv`, one row per (model, prompt, prompt sha256,
+decode program, device as `nvidia-smi` names it), each with its row count, the row that set it
+and its receipt. Every key field must match exactly; there is no fallback floor and no floor from
+another prompt, model or device. A cell with no row is **UNCALIBRATED**: a flip fails, a table with
+no flip passes and says `PASS: UNCALIBRATED`, and its agreeing rows are not judged.
+`--require-floor` refuses such a cell (`argmax-margin-gate: UNCALIBRATED ...`, exit 1); the
+release battery passes it for both cells of every roster model and reports the refusal as
+`REFUSED`, so a release needs the floor rows of its roster on the device it runs on.
+
+**Calibrating a cell.** `tools/argmax-margin-gate.sh <model> [--prompt f] [--decode batch]
+--calibrate --logdir research/<lane>/<cell>` runs the probe over every row of the prompt (window
+`all`, T - 3 rows) and prints `CALIBRATION:` and the `FLOOR-ROW:` line; it judges nothing. Add
+the row to the floors table with the banked log as its receipt. The floor is the maximum, not a
+quantile, so its row names the count and the row that set it. Measured on the receipts of
+`research/argmax-gate-rule-20261110/`: a floor taken from 12 rows is exceeded by an agreeing row
+in 54% of other 12-row windows of the same text, from 256 rows in 5.6%, from 1,024 rows in 0.8%,
+which is why the window is the whole prompt.
+
+**A lane that gates on its own prompt** (a depth, a document class) has no row in the table, and
+does not borrow one. It calibrates the base binary (main's) on that prompt first, with
+`--calibrate`, writes the printed row into a table of its own in its receipts and runs the gate
+on the base and on the candidate with `--floors <that table>`. The base arm is then the floor's
+own table (it passes by construction), and the candidate is judged against what main's two
+programs do on that prompt. A prompt on which main itself is wide (memra#1175: a synthetic record
+document where prefill and decode sit 5 to 7 logits apart) has a floor that large; say so in
+the lane's write-up, because a floor of several logits passes flips no reader would call ties.
+
+**Recalibration.** A floor row changes only when a decision record accepts a change of numeric
+class for that cell (a new kernel order, a new split, a new cache format). The same PR reruns
+`--calibrate` on the changed binary, replaces the row, banks the new log and shows the old and
+the new row in the record and the PR body. A floor is never raised to turn a red cell green
+without that record.
 
 HF directories use the native `SafetensorsSource` loader and their HF tokenizer; GGUF inputs
 retain the GGUF loader and tokenizer. By default (`--decode eager`) this gate compares batched
@@ -542,7 +601,7 @@ at every width, B=1 included, and it carries a decode-config FP-composition gap 
 Speculative rows (the default `MEMRA_SERVE_SPEC` route for spec-eligible requests on a model
 with a draft head) decode through the spec path and stay gated by `run-spec`. The probe installs
 no `MEMRA_REWRITE_BUNDLE`, so the arm gates the default bundle-less served program. Same
-prefill reference, flip budget and margin rules; instead of the prime line the probe prints
+prefill reference, flip budget and clauses, with its own floor row (`decode` = `batch`); instead of the prime line the probe prints
 `SERVED-ARGMAX: rows=N device_mismatch=M`, the wrapper prints
 `SERVED-SUMMARY served=<MATCH|MISMATCH|EAGER-ROUTED>`, and `M > 0` or a missing or malformed
 line fails (a probe that ignores `--decode` prints no such line). A model the scheduler decodes
@@ -569,10 +628,15 @@ arithmetic is substituted to make them pass.
 An explicitly requested missing model or probe, a missing prompt, invalid options, or an
 empty/malformed/non-finite/duplicate-position table fails. The measured table must contain
 exactly the requested window before canary injection. Automatic discovery with no available
-model remains an explicit SKIP. Machine-consumed margins preserve f32 round-trip precision;
-display rounding must not turn a small explained flip into a false failure. CPU controls:
-`python3 tools/test_argmax_margin_gate.py` and
-`cargo test -p memra-engine --bin argmax-margin-probe` (no GPU execution in these tests).
+model remains an explicit SKIP. Machine-consumed margins preserve f32 round-trip precision, so
+the judge reads back the values the probe measured and a row that set a floor sits exactly on it.
+CPU controls (no GPU execution): `cargo test -p memra-engine --lib argmax_margin` (the verdict on
+synthetic logit rows: a wide-margin flip fails, a near tie inside the floor passes, near ties above
+the budget fail, a wide row fails, a flip with no floor fails, and the old predicate is pinned as
+true for every flip of 20,000 random row pairs), `cargo test -p memra-engine --bin
+argmax-margin-probe` (the `--judge` path) and `python3 tools/test_argmax_margin_gate.py` (the
+wrapper, with a stub measurement and the built probe as the judge; it fails, not skips, when the
+probe is not built).
 
 Also 2026-08-06: `accept` (`tools/accept-gate.sh`, the **served-spec acceptance +
 long-text** assertion). It exists because the battery was *provably* blind to a class:

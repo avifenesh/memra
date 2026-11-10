@@ -1,0 +1,15 @@
+# argmax-margin-floors.tsv: the calibrated floor of each argmax margin gate cell.
+#
+# One row per (model, prompt, decode program, device). The floor is the largest gap shift at an
+# agreeing row, measured by `tools/argmax-margin-gate.sh <model> [--decode batch] --calibrate`
+# over every row of the prompt (memra#1199, docs/decisions/ARGMAX-GATE-GAP-SHIFT-FLOOR.md).
+# `rows` is the number of agreeing rows the floor is the maximum of and `set_by_row` the row
+# that set it. `prompt_sha256` binds the row to the prompt's bytes. `device` is the name
+# nvidia-smi reports. `receipt` is the banked calibration log.
+#
+# Every field of the key must match exactly. There is no fallback row: a cell without one is
+# UNCALIBRATED (a flip fails, agreeing rows are not judged, the release battery refuses).
+# A row changes only by recalibration, in the PR whose decision record accepts the change of
+# numeric class, with the old and the new row shown (docs/TESTING.md).
+#
+# model	prompt	prompt_sha256	decode	device	floor	rows	set_by_row	receipt

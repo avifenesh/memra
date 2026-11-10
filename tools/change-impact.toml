@@ -168,7 +168,7 @@ why = "qualification metadata namespace (excluded from source inputs)"
 
 # --- the gate itself: a change to what is required needs the battery it requires -----
 [[rule]]
-pattern = '^tools/(change-impact\.toml|change_impact\.py|cell_evidence\.py|qualify-release\.py|release_qualification\.py|release_inputs\.py|release_input_view\.py|check_hardware_gate\.py|release-battery\.sh|release-coverage\.py|release-roster\.tsv|argmax-margin-gate\.sh|serve-smoke\.sh|cache-meter-gate\.py|q35-cold-mixed-gate\.py|port-guard\.sh|chunk-invariance-gate\.sh|qualify-model-device-memory\.py|resolve-physical-gpu\.py|kernel-check-[a-z0-9]+\.cells|hooks/pre-push)$'
+pattern = '^tools/(change-impact\.toml|change_impact\.py|cell_evidence\.py|qualify-release\.py|release_qualification\.py|release_inputs\.py|release_input_view\.py|check_hardware_gate\.py|release-battery\.sh|release-coverage\.py|release-roster\.tsv|argmax-margin-gate\.sh|argmax-margin-floors\.tsv|serve-smoke\.sh|cache-meter-gate\.py|q35-cold-mixed-gate\.py|port-guard\.sh|chunk-invariance-gate\.sh|qualify-model-device-memory\.py|resolve-physical-gpu\.py|kernel-check-[a-z0-9]+\.cells|hooks/pre-push)$'
 class = "gate"
 why = "qualification battery, its helpers and coverage, the impact rules or the gate code"
 
@@ -176,6 +176,11 @@ why = "qualification battery, its helpers and coverage, the impact rules or the 
 pattern = '^crates/memra-engine/src/bin/(kernel_check|run_gen|run_spec|argmax_margin_probe|tok_parity)\.rs$'
 class = "gate"
 why = "a release battery binary"
+
+[[rule]]
+pattern = '^crates/memra-engine/src/argmax_margin\.rs$'
+class = "gate"
+why = "the argmax margin gate's verdict function (the probe's --judge)"
 
 # Research files the gate tools read when they run: the argmax gate's default prompt
 # (tools/argmax-margin-gate.sh), the Q35 cold-mixed serve-smoke replay and its workload lock

@@ -205,10 +205,11 @@ isogapc	cmd	tools/iso-gap-gate.sh	--canary	-	-
 # The real hole this closes is COVERAGE: one-position checking makes greenness depend on
 # whether a prompt's LAST token happens to be a near-tie. Measured — the 27B NVFP4 arm the
 # release battery calls green carries a flip at pos 2042 whose margin (0.0184) is SMALLER than
-# the failing arm's (0.0307). This gate checks the last 24 positions and asserts every flip is
-# explained by a margin the config spread can reach across; a WIDE-margin flip (the genuine
-# cache/kernel-bug signature) fails at any position. amarginc is its teeth: it fault-injects a
-# wide-margin flip row and PASSES only if the comparator rejects it.
+# the failing arm's (0.0307). This gate checks the last 12 positions against the cell's
+# calibrated floor (tools/argmax-margin-floors.tsv, memra#1199): a flip inside it is a near
+# tie, a WIDE flip (the genuine cache/kernel-bug signature) or a wide agreeing row fails at
+# any position. amarginc is its teeth: it fault-injects a wide flip row and PASSES only if
+# the judge rejects it.
 # map.tsv dispatches both arms for the forward_last/decode-step implementation surfaces and
 # for this gate's own wrapper/probe; sampled-spec and served acceptance retain samp/accept.
 amargin	cmd	tools/argmax-margin-gate.sh	-	-	-
@@ -219,7 +220,7 @@ amarginc	cmd	tools/argmax-margin-gate.sh	--canary	-	-
 # a batch-served model through decode_step_batch_sampled_lean_masked at every width, B=1 included
 # (speculative rows stay gated by run-spec), and the two carry a decode-config FP-composition
 # gap, so a change to the batched body or its epilogue can leave amargin green and still move
-# served tokens. Same prefill reference, flip budget and margin rules, plus every window step's
+# served tokens. Same prefill reference, flip budget and clauses, plus every window step's
 # device-sampled token equal to the host argmax of its row (or served=EAGER-ROUTED for a model
 # the scheduler decodes eagerly). amarginbc injects a wide-margin flip and a served-token
 # mismatch line and PASSES only if both readers reject them.
