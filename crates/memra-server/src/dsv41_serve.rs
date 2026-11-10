@@ -924,6 +924,30 @@ enum Picked {
     Ids(Vec<u32>),
 }
 
+/// What a chunk of batched one-token steps hands the route. An all-greedy chunk asks the device
+/// for each row's argmax (`argmax`); any other chunk downloads its rows' logits (`logits`). The
+/// device pick answers for the chunk as a whole, so when it refuses (one row holds a non-finite
+/// logit) the chunk's logits come down instead and every request chooses from its own row: the
+/// bad row's request fails alone in [`choose`], as on the logits path, and the others go on. A
+/// fault of the step itself (a rank's route flag) fails the logits too, and with them the step.
+fn pick_rows<R>(
+    rn: &mut R,
+    greedy: bool,
+    argmax: impl FnOnce(&mut R) -> Result<Vec<u32>, String>,
+    logits: impl FnOnce(&mut R) -> Result<Vec<f32>, String>,
+) -> Result<Picked, String> {
+    if greedy {
+        match argmax(rn) {
+            Ok(ids) => return Ok(Picked::Ids(ids)),
+            Err(e) => eprintln!(
+                "[dsv41-serve] the device pick of a batched call refused ({e}): its rows choose \
+                 from their logits"
+            ),
+        }
+    }
+    Ok(Picked::Logits(logits(rn)?))
+}
+
 /// The most rows a batched decode call carries: the small-M GEMM bodies' limit
 /// (`dsv41_gpu::SMALL_M`).
 const BATCH_ROWS_MAX: usize = v41::SMALL_M;
@@ -1592,11 +1616,12 @@ fn serve_loop(
             let mut bouts = Vec::new();
             for chunk in batch.chunks(up.batch_rows) {
                 let o = up.rn.forward_batch(&mut seqs, chunk)?;
-                let picked = if greedy {
-                    Picked::Ids(up.rn.argmax_rows(&o, 0, chunk.len())?)
-                } else {
-                    Picked::Logits(up.rn.logits(&o, 0, chunk.len())?)
-                };
+                let picked = pick_rows(
+                    &mut up.rn,
+                    greedy,
+                    |rn| rn.argmax_rows(&o, 0, chunk.len()),
+                    |rn| rn.logits(&o, 0, chunk.len()),
+                )?;
                 bouts.push((o, picked));
             }
             Ok::<_, String>((
@@ -1891,6 +1916,72 @@ fn fail_all(act: &mut Vec<Active>, seqs: &mut Vec<Seq>, health: &Arc<RouteHealth
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_greedy_chunk_whose_device_argmax_refuses_chooses_from_its_logits_row_by_row() {
+        // two rows of a 2-token vocabulary; the first holds a NaN, so the device pick refuses
+        let rows = vec![f32::NAN, 1.0, 0.0, 2.0];
+        let mut asked: Vec<&str> = Vec::new();
+        let picked = pick_rows(
+            &mut asked,
+            true,
+            |a| {
+                a.push("argmax");
+                Err("non-finite logits".into())
+            },
+            |a| {
+                a.push("logits");
+                Ok(rows.clone())
+            },
+        );
+        // the step goes on with the chunk's logits: the NaN row's request fails alone in
+        // `choose`, the other row's request takes its token
+        let Ok(Picked::Logits(lg)) = picked else {
+            panic!("a refused device pick must fall back to the logits, not fail the step");
+        };
+        assert_eq!(asked, ["argmax", "logits"]);
+        assert!(choose(lg[..2].to_vec(), 7, None, None, &[]).is_err());
+        assert_eq!(choose(lg[2..].to_vec(), 7, None, None, &[]), Ok(1));
+        // a finite greedy chunk never downloads its logits; a sampled one never asks the device
+        let mut asked: Vec<&str> = Vec::new();
+        let picked = pick_rows(
+            &mut asked,
+            true,
+            |a| {
+                a.push("argmax");
+                Ok(vec![1, 1])
+            },
+            |a| {
+                a.push("logits");
+                Ok(rows.clone())
+            },
+        );
+        assert!(matches!(picked, Ok(Picked::Ids(ref ids)) if ids == &[1, 1]));
+        assert_eq!(asked, ["argmax"]);
+        let mut asked: Vec<&str> = Vec::new();
+        let picked = pick_rows(
+            &mut asked,
+            false,
+            |a| {
+                a.push("argmax");
+                Ok(vec![1, 1])
+            },
+            |a| {
+                a.push("logits");
+                Ok(rows.clone())
+            },
+        );
+        assert!(matches!(picked, Ok(Picked::Logits(_))));
+        assert_eq!(asked, ["logits"]);
+        // the logits' own failure (a route fault) still fails the step
+        let picked = pick_rows(
+            &mut (),
+            true,
+            |_| Err("non-finite logits".into()),
+            |_| Err("rank 1 route: a layer placed other than rows x topk pairs".into()),
+        );
+        assert!(picked.is_err());
+    }
 
     #[test]
     fn the_batch_width_defaults_to_the_small_m_limit_and_refuses_what_is_outside_it() {

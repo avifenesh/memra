@@ -170,6 +170,24 @@ token arrives at 1.44 s), the 512 steps 7.8 s, and what the engine thread does b
 again at every token (8.8 us a token averaged over a 512-token answer, growing with it); it now
 appends the token's bytes (0.43 us), and every prefix reads the same text.
 
+## More than one rank
+
+`forward_batch` is written over the rank group like the one-token call: the keys side of
+attention runs on every rank from its own copy of each sequence's state (so a row's key table
+names buffers of the rank's own card), each rank runs its heads and output groups and the columns
+are gathered, and the MoE is the group's own entry (`Group::moe`), so a change of the expert split
+across ranks lands underneath the batched call without touching it. It has not run on more than
+one rank yet. Its gate is in the chain: the `keyed9` plan with two ranks on one card
+(`--devices 0,0`), where a batched or verification row must equal its sequence's own call on two
+ranks, and the hashes of that call must equal the one-rank arm's; then the served chat gate with
+`MEMRA_DSV41_DEVICES=0,0` against the one-rank native references.
+
+Two review findings on the greedy pick are fixed with it. `Runner::argmax_rows` answers for a call
+as a whole, so one row with a non-finite logit used to fail every running request of the step; the
+route now takes the chunk's logits when the device pick refuses and each request chooses from its
+own row, as on the logits path (`pick_rows`, with a unit test that fails on the old behaviour).
+And `argmax_rows` reads each rank's route flag as `Group::head_logits` does.
+
 ## Drafting on this branch
 
 The draft's five picks chain on the device on one rank: the Markov embedding row is gathered by

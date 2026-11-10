@@ -1045,7 +1045,9 @@ impl<'a> Runner<'a> {
     /// fp32 head), then each row's largest logit and the lowest id holding it on every rank
     /// (`memra_v41_argmax_rows`), the ranks' slices compared on the host in ascending order, so
     /// the lowest id wins among equal maxima. The token of [`argmax`] over [`Self::logits`]
-    /// without the logits' download; a row with a non-finite logit is refused like there.
+    /// without the logits' download. Refused as a whole, like there, when a rank's route flag is
+    /// set (`Ctx::route_bad`) or a row's maximum is not finite: a caller that must not lose the
+    /// other rows takes [`Self::logits`] for the call then and chooses row by row.
     pub fn argmax_rows(&mut self, out: &Out, r0: usize, rows: usize) -> Result<Vec<u32>, String> {
         if r0 + rows > out.s {
             return Err(format!(
@@ -1095,11 +1097,19 @@ impl<'a> Runner<'a> {
                     c.ops.sv(),
                 )
             })?;
-            Ok((
+            let got = (
                 super::bytes_f32(&val.host(&st)?),
                 super::bytes_i32(&idx.host(&st)?),
                 n,
-            ))
+            );
+            // the stream is drained: the one-token MoEs' pair counts of this forward, which
+            // `Group::head_logits` reads on the logits path
+            if super::bytes_i32(&c.route_bad.host(&st)?)[0] != 0 {
+                return Err(format!(
+                    "rank {r} route: a layer placed other than rows x topk pairs"
+                ));
+            }
+            Ok(got)
         })?;
         let mut best = vec![(f32::NEG_INFINITY, 0u32); rows];
         let mut col = 0usize;
