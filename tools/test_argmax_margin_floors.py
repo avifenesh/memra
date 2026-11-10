@@ -33,6 +33,7 @@ class FloorsCensusTest(unittest.TestCase):
                            capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("every floor row present", r.stdout)
+        self.assertIn("maintained classes gb10, rtx5090, rtxpro6000 each calibrated", r.stdout)
 
     def test_the_battery_lists_two_decode_programs_per_roster_model_on_the_gate_prompt(self):
         cells = census.battery_cells(REPO)
@@ -69,6 +70,42 @@ class FloorsCensusTest(unittest.TestCase):
                                             row("M", "batch", "card A", sha="b" * 64))))
         self.assertEqual(census.missing_rows(CELLS, rows, SHA),
                          [("card A", "own/m", "M", "board-2048", "batch")])
+
+    def test_a_maintained_class_with_no_calibrated_device_fails(self):
+        ci = census.change_impact(REPO)
+        rules, arch = ci.tree_rules(REPO)
+        maintained = ci.maintained_classes(rules, arch)
+        self.assertEqual(maintained, ["gb10", "rtx5090", "rtxpro6000"])
+        class_of = lambda name: ci.device_class_of(rules, name)
+        rows = census.floor_rows("\n".join((
+            row("M", "eager", "NVIDIA GeForce RTX 5090 Laptop GPU"),
+            row("M", "eager", "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"))))
+        self.assertEqual(census.uncalibrated_classes(maintained, rows, class_of), ["gb10"])
+        rows.add(tuple(row("M", "eager", "NVIDIA GB10").split("\t")[:5]))
+        self.assertEqual(census.uncalibrated_classes(maintained, rows, class_of), [])
+        # A class that is not maintained is never demanded, and an unknown name covers nothing.
+        only_h100 = census.floor_rows(row("M", "eager", "NVIDIA H100 80GB HBM3") + "\n" + row("M", "eager", "Some Other GPU"))
+        self.assertEqual(census.uncalibrated_classes(maintained, only_h100, class_of), maintained)
+
+    def test_device_names_map_to_maintained_unmaintained_or_unknown(self):
+        ci = census.change_impact(REPO)
+        rules, arch = ci.tree_rules(REPO)
+        for name, status in (
+            ("NVIDIA GeForce RTX 5090 Laptop GPU", "maintained rtx5090"),
+            ("NVIDIA GeForce RTX 5090", "maintained rtx5090"),  # a desktop card: same class, its own floor rows
+            ("NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition", "maintained rtxpro6000"),
+            ("NVIDIA RTX PRO 6000 Blackwell Workstation Edition", "maintained rtxpro6000"),
+            ("NVIDIA GB10", "maintained gb10"),
+            ("NVIDIA H100 80GB HBM3", "unmaintained h100"),
+            ("NVIDIA B200", "unmaintained b200"),
+            ("Some Other GPU", "unknown"),  # never "unmaintained" by default
+            ("unknown", "unknown"),
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(ci.device_status(rules, arch, name), status)
+                cli = subprocess.run([sys.executable, str(REPO / "tools/change_impact.py"), "--repo", str(REPO),
+                                      "--device-status", name], capture_output=True, text=True)
+                self.assertEqual((cli.returncode, cli.stdout.strip()), (0, status))
 
     def test_an_empty_table_covers_no_device_and_a_malformed_one_is_refused(self):
         self.assertEqual(census.missing_rows(CELLS, census.floor_rows("# only comments\n"), SHA), [])
