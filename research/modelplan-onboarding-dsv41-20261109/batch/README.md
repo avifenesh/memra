@@ -176,8 +176,8 @@ appends the token's bytes (0.43 us), and every prefix reads the same text.
 attention runs on every rank from its own copy of each sequence's state (so a row's key table
 names buffers of the rank's own card), each rank runs its heads and output groups and the columns
 are gathered, and the MoE is the group's own entry (`Group::moe`), so a change of the expert split
-across ranks lands underneath the batched call without touching it. It has not run on more than
-one rank yet. Its gate is in the chain: the `keyed9` plan with two ranks on one card
+across ranks lands underneath the batched call without touching it. Its one-rank-referenced gate
+is in the chain and has not run yet: the `keyed9` plan with two ranks on one card
 (`--devices 0,0`), where a batched or verification row must equal its sequence's own call on two
 ranks, and the hashes of that call must equal the one-rank arm's; then the served chat gate with
 `MEMRA_DSV41_DEVICES=0,0` against the one-rank native references.
@@ -200,6 +200,49 @@ So the served route's calls (8 rows at most) stay inside the bound on 2 and on 4
 gather (events and peer copies) and the others of the same layer stay in kernels. The chain's
 `wide20` case (one call of 20 rows on two ranks: the hidden gather is 322,560 bytes a rank) runs
 that mix against the one-rank bytes.
+
+### First run on four ranks, the full trunk
+
+`487ee70847`, 40 layers resident, one rank a card on four cards (70.3 GiB a rank, loaded in
+11.8 s), `scripts/n4.sh`, 322 s of cards in one lease. The byte reference here is each sequence's
+own one-token call on the same four ranks (one rank cannot hold 40 layers; the speed lane's gate
+ties the four-rank one-token call to one card).
+
+| transport | case | rows equal (logits, taps, device argmax) |
+|---|---|---|
+| device-push | chat8 | 503 / 503 |
+| device-push | nine | 1,242 / 1,242 |
+| device-push | window | 1,384 / 1,384 |
+| device-push | mixed (3.7k and 18k contexts) | 701 / 701 |
+| peer-pull | chat8 | 503 / 503 |
+| peer-pull | wide16 (29 calls of 16 rows) | 480 / 480 |
+
+It is also the first run of the batched call past layer 8: the ratio-1 layers, the candidate pool
+of layer 20 and the six index sources after it.
+
+`batch-time` on device-push, milliseconds a step:
+
+| sequences | 1 | 2 | 4 | 8 | 16 |
+|---|---|---|---|---|---|
+| one call, device argmax (distinct8) | 12.48 | 14.13 | 17.29 | 23.58 | |
+| forward only | 12.19 | 13.86 | 16.96 | 23.07 | |
+| each sequence alone | 12.35 | 23.93 | 47.09 | 93.43 | |
+| one call, device argmax (distinct16 set) | 12.47 | 13.98 | 17.35 | 23.12 | 72.57 |
+| calls of 8 rows | | | | | 46.94 |
+| vLLM, same layout (the lane's baseline) | 7.82 | 9.21 | 11.56 | 14.77 | |
+
+Eight requests share a step at 23.58 ms (339 tokens a second) against 93.43 ms alone, 29.4
+distinct experts a layer. One call of 16 rows is slower than two calls of 8: past 8 rows the
+GEMMs leave the small-M bodies (the expert tiles take three times the launches). The served
+route keeps calls of 8.
+
+A step at one sequence is 2,076 launches a rank (activation quantize 410, dense fp8 GEMM 290, the
+gathers' push and pull 320), 6 us a launch: the one-row step is bound by its launch count. Each
+rank's launches serialized (a card sync after every launch on the rank's thread, which inflates
+the small kernels; the differences are the reading), milliseconds a step a rank, one sequence to
+eight: fused w1 + w3 + SwiGLU tiles 1.57 to 5.53, w2 tiles 0.71 to 2.34, dense fp8 3.89 to 5.08,
+push 1.73 to 2.69, pull 1.22 to 1.88, the per-sequence index path (eight index sources on the full
+trunk) 0.14 to 1.07, fp32 FMA 1.46 to 2.06, mHC mixes 1.38 to 1.93, bf16 GEMM 1.78 to 2.29.
 
 Two review findings on the greedy pick are fixed with it. `Runner::argmax_rows` answers for a call
 as a whole, so one row with a non-finite logit used to fail every running request of the step; the
