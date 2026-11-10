@@ -8672,6 +8672,75 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "FAIL"
                         }
                     );
+
+                    // An independent reference at the deep edges: `fa_decode` and the one-row
+                    // seqs launch against the unsplit f32 attention over the same quantized
+                    // cache (`sdpa_naive_quantized_view`). The split paths quantize Q for the
+                    // dp4a score, so they differ from the reference by design; the check is
+                    // that the distance does not jump at an edge: every edge row within 4x the
+                    // larger control row's distance (257 keys either side of the edge).
+                    let mut ref_rows: Vec<(usize, f32, f32)> = Vec::new(); // (t_kv, fa, seqs)
+                    let mut ref_bad = 0usize;
+                    for &edge in edges
+                        .iter()
+                        .filter(|&&edge| edge >= 16_384 && edge + 257 <= deep_max + 16)
+                    {
+                        let dist = |t_kv: usize| -> R<(f32, f32)> {
+                            let kview = e.view_u8(&kc_a, t_kv * ktb);
+                            let vview = e.view_u8(&vc_a, t_kv * vtb);
+                            let mut o_n = e.zeros(hd * nh_r)?;
+                            e.sdpa_naive_quantized_view(
+                                &q1, &kview, &vview, &mut o_n, hd, nh_r, nhkv_r, 1, t_kv, scale,
+                                true, ktb, vtb,
+                            )?;
+                            let mut o_f = e.zeros(hd * nh_r)?;
+                            e.fa_decode(
+                                &q1, &kview, &vview, &mut o_f, hd, nh_r, nhkv_r, t_kv, scale, ktb,
+                                vtb,
+                            )?;
+                            let c = case(&[(0, t_kv)])?.ok_or("one row is always one rung")?;
+                            let mut o_s = e.zeros(hd * nh_r)?;
+                            seqs(&c, &mut o_s)?;
+                            let (n, f, s) = (e.dtoh(&o_n)?, e.dtoh(&o_f)?, e.dtoh(&o_s)?);
+                            let max_abs = |a: &[f32]| {
+                                a.iter()
+                                    .zip(&n)
+                                    .map(|(x, y)| (x - y).abs())
+                                    .fold(0f32, f32::max)
+                            };
+                            Ok((max_abs(&f), max_abs(&s)))
+                        };
+                        let control = {
+                            let (a, b) = dist(edge - 257)?;
+                            let (c, d) = dist(edge + 257)?;
+                            ref_rows.push((edge - 257, a, b));
+                            ref_rows.push((edge + 257, c, d));
+                            a.max(b).max(c).max(d)
+                        };
+                        for t_kv in [edge - 1, edge, edge + 1, edge + 2, edge + 3, edge + 9] {
+                            let (f, s) = dist(t_kv)?;
+                            ref_rows.push((t_kv, f, s));
+                            if !(f <= 4.0 * control && s <= 4.0 * control) {
+                                ref_bad += 1;
+                                println!(
+                                    "  FA-REF t_kv={t_kv}: max|fa_decode - ref| {f:.3e}, max|seqs - ref| {s:.3e} \
+                                     against control {control:.3e} FAIL"
+                                );
+                            }
+                        }
+                    }
+                    println!(
+                        "FA-REF gqa={} ({nh_r}/{nhkv_r}): fa_decode and the one-row seqs launch against the unsplit \
+                         f32 reference at the deep split edges, (t_kv, max|fa - ref|, max|seqs - ref|) \
+                         {ref_rows:?}: {ref_bad} edge rows past 4x the control {}",
+                        nh_r / nhkv_r,
+                        if ref_bad == 0 {
+                            "OK"
+                        } else {
+                            fails += 1;
+                            "FAIL"
+                        }
+                    );
                 }
 
                 // The served entry on each side of its depth floor: below it every row is a
