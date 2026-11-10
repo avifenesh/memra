@@ -84,7 +84,8 @@ documented landmine (`tools/argmax-margin-gate.sh:12-47`, and
 legitimate arithmetics, so a near-tie position flips between them legitimately.
 `tools/argmax-margin-gate.sh` judges each flip against the cell's calibrated floor instead
 (a near tie is a flip whose gap shift is inside the largest one the two programs show where they
-agree; the battery refuses a cell with no floor row, `docs/TESTING.md`),
+agree; the battery refuses a cell with no floor row on a maintained or unknown device and
+reports it `NOT-JUDGED` on an unmaintained one, `docs/TESTING.md`),
 and also judges the batched serving prime (`prime_cache`) against the tokenwise reference with
 run-gen's calibrated `prime_gate_verdict`: run-spec primes reference and candidate through the
 same `prime_cache`, so without that arm a prime-only regression passed the whole battery. The

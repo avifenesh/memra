@@ -32,8 +32,9 @@ decode's top-1 `j` with margin `m_d`.
   against `j` by at least `m_p + m_d`. Gap shift of a flip: `m_p + m_d`.
 - Gap shift of an agreeing row: `|m_p - m_d|`.
 - Floor: the largest gap shift at an agreeing row of the calibration table.
-- `judge(rows, floor, budget)`: near tie (flip, gap shift <= floor, counted), `WIDE-FLIP`,
-  `WIDE-ROW`, `TOO-MANY-NEAR-TIES`, `UNCALIBRATED-FLIP`.
+- `judge(rows, floor, known, budget)`: near tie (flip, gap shift <= floor, counted), `WIDE-FLIP`,
+  `WIDE-ROW`, `TOO-MANY-NEAR-TIES`, `UNCALIBRATED-FLIP`, and for a known row `KNOWN-ROW` (named,
+  not counted) or `KNOWN-ROW-WIDER`.
 
 The same inequality is why the old rule could not fail: the spread over the contending ids is
 at least `(m_p + m_d) / 2`, which is at least the smaller margin.
@@ -116,13 +117,13 @@ banked log into its floors-table row through the gate's own `--judge --calibrate
 | RTX PRO 6000 Max-Q | Ornith-1.5-35B-A3B | eager | 173 / 2045 | 7 | 0.199 | 1.370 | 2.848 | 3.918 (306) | 41 |
 | RTX PRO 6000 Max-Q | Ornith-1.5-35B-A3B | batch | 181 / 2045 | 5 | 0.195 | 1.504 | 2.763 | 3.695 (1169) | none |
 | RTX 5090 Laptop GPU | Qwen3.8-27B | eager | 42 / 2045 | 4 | 0.047 | 0.340 | 0.960 | 3.730 (1198) | none |
-| RTX 5090 Laptop GPU | Qwen3.8-27B | batch | 40 / 2045 | 3 | 0.045 | 0.364 | 0.663 | 3.088 (1199) | none |
-| RTX PRO 6000 Max-Q | Qwen3.8-27B | eager | 44 / 2045 | 3 | 0.048 | 0.394 | 1.139 | 3.959 (1198) | none |
-| RTX PRO 6000 Max-Q | Qwen3.8-27B | batch | 41 / 2045 | 4 | 0.050 | 0.371 | 1.222 | 4.242 (1198) | none |
+| RTX 5090 Laptop GPU | Qwen3.8-27B | batch | 40 / 2045 | 3 | 0.046 | 0.364 | 0.663 | 3.088 (1199) | none |
+| RTX PRO 6000 Max-Q | Qwen3.8-27B | eager | 44 / 2045 | 3 | 0.048 | 0.394 | 1.139 | 3.960 (1198) | none |
+| RTX PRO 6000 Max-Q | Qwen3.8-27B | batch | 41 / 2045 | 4 | 0.049 | 0.371 | 1.222 | 4.242 (1198) | none |
 | RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | eager | 152 / 2045 | 6 | 0.147 | 1.425 | 2.810 | 4.010 (909) | none |
-| RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | batch | 156 / 2045 | 6 | 0.151 | 1.413 | 2.969 | 3.872 (909) | none |
+| RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | batch | 156 / 2045 | 6 | 0.151 | 1.413 | 2.969 | 3.871 (909) | none |
 | RTX 5090 Laptop GPU | gemma-4-31B q4_0 | eager | 114 / 2100 | 4 | 0.139 | 1.192 | 3.353 | 6.399 (594) | none |
-| RTX 5090 Laptop GPU | gemma-4-26B q4_0 | eager | 250 / 2100 | 6 | 0.278 | 1.918 | 3.421 | 3.557 (1458) | 150, 943, 981, 1013, 1117, 1540 |
+| RTX 5090 Laptop GPU | gemma-4-26B q4_0 | eager | 250 / 2100 | 6 | 0.278 | 1.918 | 3.421 | 3.556 (1458) | 150, 943, 981, 1013, 1117, 1540 |
 <!-- FLOORS-TABLE:END -->
 
 - **Every floor is set by one row and is loose.** The roster floors sit at 3.1 to 4.5 logits
@@ -215,7 +216,7 @@ table as it stands at this commit. A table whose cell has no floor row yet reads
 | the same prompt on main | PASS | FAIL the same way: an agreeing row at 16,385 with margins 14.386 and 7.156 (gap shift 7.23), memra#1175 |
 | the split-rung landing's real-text served-batch cells (`landing-cells/`), main and the landed head | PASS | no flip in either arm; no floor for that prompt, so UNCALIBRATED. Largest agreeing gap shift 1.655 at row 16,378 in both arms (below the rung, identical rows) |
 | GB10-F8F4-GEMM-V3's `p4-16k` cells (3 flips, budget 3) | PASS | no floor for that prompt: its three flips (margin sums 0.044, 0.098, 0.233) are unclassified. Its evidence is the byte-identical tables |
-| gemma-4-26B, RTX 5090 Laptop GPU (budget 3) | PASS | PASS: its two flips are near ties under the floor of 3.557 (row 2,091: 0.097 + 0.048; row 2,096: 0.014 + 1.300, a flip where decode holds its token by 1.3, which this floor does not separate from a tie) |
+| gemma-4-26B, RTX 5090 Laptop GPU (budget 3) | PASS | PASS: its two flips are near ties under the floor of 3.556 (row 2,091: 0.097 + 0.048; row 2,096: 0.014 + 1.300, a flip where decode holds its token by 1.3, which this floor does not separate from a tie) |
 | the other gemma tables (31B on every card, 26B and 12B on the 170-SM card, the Q6K ship artifact) | PASS | no floor on those cells: flips unclassified |
 
 The rule is not tuned around the split-rung cell. It fails, main fails on the same prompt, and

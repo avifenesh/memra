@@ -163,11 +163,6 @@
     },
     {
       "job": "gates",
-      "step": "Argmax-margin input and verdict controls",
-      "sha256": "961aa87d8b804382bace87bed88eb7adc817fb7bb7e5f19c7e42028e324fa055"
-    },
-    {
-      "job": "gates",
       "step": "Push-range fixture (round 1)",
       "sha256": "10bcf1710a99b5489f36ef5c4ea8a1f8489bf20dee7ebc70b423733419cd8581"
     },
@@ -185,6 +180,11 @@
       "job": "gates",
       "step": "Release-battery coverage fixtures (CPU only)",
       "sha256": "e1455ba5e25a7bd5ddd86278e6a0b01b243542f1991e10a63880fbbc56e862f0"
+    },
+    {
+      "job": "gates",
+      "step": "Argmax floors census (CPU only)",
+      "sha256": "a30be9911a46ed28901eaba3e0dfc27c2dec00030c839d221a0916b2198272b9"
     },
     {
       "job": "gates",
@@ -295,6 +295,11 @@
       "job": "build",
       "step": "Parity geometry and argmax instrument tests",
       "sha256": "1fb4778bee977ed08f862ffe242ee4bc16592241e9e1b0adb14b179fb7f854bb"
+    },
+    {
+      "job": "build",
+      "step": "Argmax-margin input and verdict controls",
+      "sha256": "c44187d19b14f5324e4de9e7dbd9d31c0880527ffa48c7b0bb1ae7b164132d6d"
     },
     {
       "job": "build",
@@ -583,6 +588,6 @@
     "support-records",
     "tool-choice"
   ],
-  "full_workflow_sha256": "7bc4b7518bdfe6a6e8981155ec60bf1ea1c5134c66e38b525069f6f0e309418d",
+  "full_workflow_sha256": "c6ec549a5421e8f716662ac3146008eebc03cfa5f857530727aa69c23a2e2770",
   "public_workflow_sha256": "91d87261da2d857d3c1bb70a799495d05b0bad8d4340375303d506b1cd40f825"
 }

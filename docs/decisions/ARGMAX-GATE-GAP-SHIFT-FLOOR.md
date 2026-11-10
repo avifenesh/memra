@@ -168,13 +168,13 @@ record.
 | RTX PRO 6000 Max-Q | Ornith-1.5-35B-A3B | eager | 173 / 2045 | 7 | 0.199 | 1.370 | 2.848 | 3.918 (306) | 41 |
 | RTX PRO 6000 Max-Q | Ornith-1.5-35B-A3B | batch | 181 / 2045 | 5 | 0.195 | 1.504 | 2.763 | 3.695 (1169) | none |
 | RTX 5090 Laptop GPU | Qwen3.8-27B | eager | 42 / 2045 | 4 | 0.047 | 0.340 | 0.960 | 3.730 (1198) | none |
-| RTX 5090 Laptop GPU | Qwen3.8-27B | batch | 40 / 2045 | 3 | 0.045 | 0.364 | 0.663 | 3.088 (1199) | none |
-| RTX PRO 6000 Max-Q | Qwen3.8-27B | eager | 44 / 2045 | 3 | 0.048 | 0.394 | 1.139 | 3.959 (1198) | none |
-| RTX PRO 6000 Max-Q | Qwen3.8-27B | batch | 41 / 2045 | 4 | 0.050 | 0.371 | 1.222 | 4.242 (1198) | none |
+| RTX 5090 Laptop GPU | Qwen3.8-27B | batch | 40 / 2045 | 3 | 0.046 | 0.364 | 0.663 | 3.088 (1199) | none |
+| RTX PRO 6000 Max-Q | Qwen3.8-27B | eager | 44 / 2045 | 3 | 0.048 | 0.394 | 1.139 | 3.960 (1198) | none |
+| RTX PRO 6000 Max-Q | Qwen3.8-27B | batch | 41 / 2045 | 4 | 0.049 | 0.371 | 1.222 | 4.242 (1198) | none |
 | RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | eager | 152 / 2045 | 6 | 0.147 | 1.425 | 2.810 | 4.010 (909) | none |
-| RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | batch | 156 / 2045 | 6 | 0.151 | 1.413 | 2.969 | 3.872 (909) | none |
+| RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | batch | 156 / 2045 | 6 | 0.151 | 1.413 | 2.969 | 3.871 (909) | none |
 | RTX 5090 Laptop GPU | gemma-4-31B q4_0 | eager | 114 / 2100 | 4 | 0.139 | 1.192 | 3.353 | 6.399 (594) | none |
-| RTX 5090 Laptop GPU | gemma-4-26B q4_0 | eager | 250 / 2100 | 6 | 0.278 | 1.918 | 3.421 | 3.557 (1458) | 150, 943, 981, 1013, 1117, 1540 |
+| RTX 5090 Laptop GPU | gemma-4-26B q4_0 | eager | 250 / 2100 | 6 | 0.278 | 1.918 | 3.421 | 3.556 (1458) | 150, 943, 981, 1013, 1117, 1540 |
 <!-- FLOORS-TABLE:END -->
 
 Rows still to come at this commit: Qwen3.8-27B eager and batch on GB10. The change does not
@@ -225,7 +225,7 @@ tree under the floors table as it stands.
 - **The gemma budgets of 3** were derived from "5 of 12 rows flippable", the same test. The
   banked gemma tables hold at most 2 flips in the gate's window. The whole-prompt gemma-4-26B
   cell on the RTX 5090 Laptop GPU has 250 flips in 2,100 rows and up to 6 in one 12-row
-  window; the gate's window holds 2, both near ties under its floor of 3.557 (one of them a
+  window; the gate's window holds 2, both near ties under its floor of 3.556 (one of them a
   flip where decode holds its token by 1.3). The budget is not contradicted at the gate's
   window and is not changed. The whole-prompt gemma-4-31B cell (the model `tools/local-ci.sh`
   gates on the RTX 5090 Laptop GPU) has 114 flips in 2,100 rows and up to 4 in one 12-row
