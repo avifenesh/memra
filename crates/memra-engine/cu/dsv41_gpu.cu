@@ -4785,11 +4785,11 @@ extern "C" int memra_v41_peak(int kind, int blocks, int threads, int iters, floa
 
 // ---------------------------------------------------------------------------------------------
 // Small N-rank gathers inside kernels (the device-push transport). With peer access on the pools a
-// kernel stores straight into another card's memory. The producer packs its region into its slot
-// of every peer's inbox and then stores the gather's sequence number in the slot's word; the
-// consumer's kernel spins on the words of its own inbox and unpacks each slot into the producer's
-// region of its buffer. No event, no host round trip and no copy call sits between a rank's last
-// kernel of a part and its first kernel of the next one.
+// kernel stores straight into another card's memory. A rank's gather kernel packs its region into
+// its slot of every peer's inbox and then stores the gather's sequence number in the slot's word;
+// then it spins on the words of its own inbox and unpacks each slot into the producer's region of
+// its buffer. No event, no host round trip and no copy call sits between a rank's last kernel of a
+// part and its first kernel of the next one.
 // Order: every thread fences its data stores to the system before the block's barrier and the
 // word is stored after it, so a consumer that sees the word reads the data (word_first reverses
 // the two: the gate's control case, which must fail). A slot holds nothing its reader writes, so
@@ -4839,9 +4839,15 @@ __device__ __forceinline__ void v41_blk_move(uint8_t* reg, long pitch, int width
 // The gather's sequence number is the rank's own count of gathers (`*ctr`, in its device memory) plus one:
 // every rank runs the same gathers in the same order, so the counts agree, and no launch carries a number
 // the host computed (a captured launch replays unchanged). `alt` is the byte distance from a producer's
-// slot of an even gather to its slot of an odd one; the push only reads the count, the pull stores it.
-__global__ void v41_push_kernel(const uint8_t* src, long pitch, int width, int rows, V41Push dst, int npeer,
-                                const uint32_t* ctr, long alt, int word_first) {
+// slot of an even gather to its slot of an odd one.
+// One launch a rank a gather: the producer's half (pack the region into every peer's slot, fence, then
+// the number into the slots' words) and, behind a barrier, the consumer's half (spin on the words of the
+// rank's own inbox, unpack each slot into its producer's region of the buffer, count the gather). The two
+// halves were two launches issued back to back on the rank's stream; nothing ran between them, so the
+// order of every store and load is the same and a launch's latency is paid once.
+__global__ void v41_gather_kernel(const uint8_t* src, long pitch, int width, int rows, V41Push dst, V41Pull in,
+                                  int npeer, uint32_t* ctr, long alt, uint8_t* buf, int* bad, int word_first) {
+    __shared__ int go;
     uint32_t seq = *ctr + 1;
     long o = (seq & 1) ? alt : 0;
     if (word_first && threadIdx.x == 0) {
@@ -4851,18 +4857,11 @@ __global__ void v41_push_kernel(const uint8_t* src, long pitch, int width, int r
     for (int p = 0; p < npeer; ++p) v41_blk_move<1>((uint8_t*)src, pitch, width, rows, dst.d[p] + o);
     __threadfence_system();
     __syncthreads();
-    if (!word_first && threadIdx.x == 0) {
-        for (int p = 0; p < npeer; ++p) *(volatile uint32_t*)((uint8_t*)dst.w[p] + o) = seq;
-        __threadfence_system();
-    }
-}
-
-__global__ void v41_pull_kernel(V41Pull in, int npeer, uint32_t* ctr, long alt, uint8_t* dst, int* bad) {
-    __shared__ int go;
-    // every thread reads the count before the barrier; thread 0 stores the new one after the unpack
-    uint32_t seq = *ctr + 1;
-    long o = (seq & 1) ? alt : 0;
     if (threadIdx.x == 0) {
+        if (!word_first) {
+            for (int p = 0; p < npeer; ++p) *(volatile uint32_t*)((uint8_t*)dst.w[p] + o) = seq;
+            __threadfence_system();
+        }
         int ok = 0;
         for (long it = 0; it < V41_PULL_SPIN && !ok; ++it) {
             ok = 1;
@@ -4875,7 +4874,7 @@ __global__ void v41_pull_kernel(V41Pull in, int npeer, uint32_t* ctr, long alt, 
     __syncthreads();
     if (go)
         for (int p = 0; p < npeer; ++p)
-            v41_blk_move<0>(dst + in.off[p], in.pitch[p], in.width[p], in.rows[p], (uint8_t*)in.d[p] + o);
+            v41_blk_move<0>(buf + in.off[p], in.pitch[p], in.width[p], in.rows[p], (uint8_t*)in.d[p] + o);
     __syncthreads();
     if (threadIdx.x == 0) *ctr = seq;
 }
@@ -4885,37 +4884,29 @@ static int v41_push_threads(long bytes) {
     return (int)(t < 32 ? 32 : t > 1024 ? 1024 : t);
 }
 
-// The producer's half of a small gather: `rows` rows of `width` bytes at `src` (`pitch` apart) into the
-// `npeer` slots of `dst` (a host V41Push: the even gathers' slots; an odd gather's are `alt` bytes on), then
-// the gather's number (`*ctr + 1`) into their words.
-extern "C" int memra_v41_push(const void* src, long pitch, int width, int rows, const void* dst, int npeer,
-                              const unsigned* ctr, long alt, int word_first, void* stream) {
+// A small gather on one rank: `rows` rows of `width` bytes at `src` (`pitch` apart) into the `npeer` slots
+// of `dst` (a host V41Push: the even gathers' slots; an odd gather's are `alt` bytes on) with the gather's
+// number (`*ctr + 1`) in their words; then the wait for that number in the `npeer` slots of `in` (a host
+// V41Pull), each unpacked into its region of `buf`, and the gather counted in `*ctr`. A peer that never
+// arrives sets bit 16 of *bad and nothing is unpacked.
+extern "C" int memra_v41_gather(const void* src, long pitch, int width, int rows, const void* dst, const void* in,
+                                int npeer, unsigned* ctr, long alt, void* buf, int* bad, int word_first,
+                                void* stream) {
     if (npeer < 0 || npeer > V41_PUSH_PEERS || width < 0 || rows < 0 || (long)rows * width > V41_PUSH_MAX)
         return 41040;
     if (rows > 1 && pitch < width) return 41040;
     if (!ctr || alt < 0) return 41040;
     V41Push d = *(const V41Push*)dst;
-    v41_push_kernel<<<1, v41_push_threads((long)rows * width), 0, (cudaStream_t)stream>>>(
-        (const uint8_t*)src, pitch, width, rows, d, npeer, (const uint32_t*)ctr, alt, word_first);
-    V41_ERR();
-}
-
-// The consumer's half: wait for the gather's number in the `npeer` slots of `in` (a host V41Pull, the even
-// gathers' slots), unpack each into its region of `dst`, then count the gather in `*ctr`. A peer that never
-// arrives sets bit 16 of *bad and nothing is unpacked.
-extern "C" int memra_v41_pull(const void* in, int npeer, unsigned* ctr, long alt, void* dst, int* bad,
-                              void* stream) {
-    if (npeer < 0 || npeer > V41_PUSH_PEERS || !ctr || alt < 0) return 41041;
     V41Pull s = *(const V41Pull*)in;
-    long most = 0;
+    long most = (long)rows * width;
     for (int p = 0; p < npeer; ++p) {
         long b = (long)s.rows[p] * s.width[p];
         if (s.width[p] < 0 || s.rows[p] < 0 || b > V41_PUSH_MAX || (s.rows[p] > 1 && s.pitch[p] < s.width[p]))
             return 41041;
         most = b > most ? b : most;
     }
-    v41_pull_kernel<<<1, v41_push_threads(most), 0, (cudaStream_t)stream>>>(s, npeer, (uint32_t*)ctr, alt,
-                                                                           (uint8_t*)dst, bad);
+    v41_gather_kernel<<<1, v41_push_threads(most), 0, (cudaStream_t)stream>>>(
+        (const uint8_t*)src, pitch, width, rows, d, s, npeer, (uint32_t*)ctr, alt, (uint8_t*)buf, bad, word_first);
     V41_ERR();
 }
 

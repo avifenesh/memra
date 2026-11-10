@@ -1060,28 +1060,20 @@ impl Group {
                 k += 1;
             }
             let b = blks[r];
-            ck("push", unsafe {
-                ffi::memra_v41_push(
+            ck("gather", unsafe {
+                ffi::memra_v41_gather(
                     (addr[r] + b.off as u64) as *const std::ffi::c_void,
                     b.pitch as i64,
                     b.width as i32,
                     b.rows as i32,
                     &out,
-                    k as i32,
-                    ctr[r] as *const u32,
-                    alt,
-                    word_first,
-                    c.ops.sv(),
-                )
-            })?;
-            ck("pull", unsafe {
-                ffi::memra_v41_pull(
                     &inn,
                     k as i32,
                     ctr[r] as *mut u32,
                     alt,
                     addr[r] as *mut std::ffi::c_void,
                     c.route_bad.p(&st).im(),
+                    word_first,
                     c.ops.sv(),
                 )
             })

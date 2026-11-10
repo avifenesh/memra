@@ -663,30 +663,24 @@ pub mod ffi {
             rows: i32,
             stream: *mut c_void,
         ) -> i32;
-        /// The producer's half of a small gather inside a kernel (`dst`: a [`V41Push`] of the
-        /// even gathers' slots, an odd gather's `alt` bytes on; `ctr`: the rank's count of
-        /// gathers on its card, which numbers this one).
-        pub fn memra_v41_push(
+        /// A small gather on one rank inside one kernel: its region into every peer's slot
+        /// (`dst`: a [`V41Push`] of the even gathers' slots, an odd gather's `alt` bytes on),
+        /// then the peers' slots (`src_in`: a [`V41Pull`]) into `buf`. `ctr`: the rank's count
+        /// of gathers on its card, which numbers this one and counts it. A peer that never
+        /// arrives sets bit 16 of `bad`.
+        pub fn memra_v41_gather(
             src: *const c_void,
             pitch: i64,
             width: i32,
             rows: i32,
             dst: *const V41Push,
-            npeer: i32,
-            ctr: *const u32,
-            alt: i64,
-            word_first: i32,
-            stream: *mut c_void,
-        ) -> i32;
-        /// The consumer's half (`src`: a [`V41Pull`]); it counts the gather in `ctr`. A peer that
-        /// never arrives sets bit 16 of `bad`.
-        pub fn memra_v41_pull(
-            src: *const V41Pull,
+            src_in: *const V41Pull,
             npeer: i32,
             ctr: *mut u32,
             alt: i64,
-            dst: *mut c_void,
+            buf: *mut c_void,
             bad: *mut i32,
+            word_first: i32,
             stream: *mut c_void,
         ) -> i32;
         /// A strided region to (`unpack` 0; 2: the block is on a peer card) or from (1) a
@@ -2886,7 +2880,7 @@ pub struct Ctx {
     pub experts: Option<experts::ExpertCache>,
     /// i32, sticky, read with the step's logits. Bit 0: an N-rank one-token MoE whose plan placed
     /// other than `rows * topk` pairs (`memra_v41_moe_owner`). Bit 16: a small gather whose
-    /// peer never arrived (`memra_v41_pull`).
+    /// peer never arrived (`memra_v41_gather`).
     pub route_bad: Buf,
     /// the card's second stream, made at the first one-token MoE ([`Side`])
     side: Option<Side>,
