@@ -111,6 +111,7 @@ banked log into its floors-table row through the gate's own `--judge --calibrate
 | RTX PRO 6000 Max-Q | Ornith-1.5-35B-A3B | eager | 173 / 2045 | 7 | 0.199 | 1.370 | 2.848 | 3.918 (306) | 41 |
 | RTX PRO 6000 Max-Q | Ornith-1.5-35B-A3B | batch | 181 / 2045 | 5 | 0.195 | 1.504 | 2.763 | 3.695 (1169) | none |
 | RTX 5090 Laptop GPU | Qwen3.8-27B | eager | 42 / 2045 | 4 | 0.047 | 0.340 | 0.960 | 3.730 (1198) | none |
+| RTX 5090 Laptop GPU | Qwen3.8-27B | batch | 40 / 2045 | 3 | 0.045 | 0.364 | 0.663 | 3.088 (1199) | none |
 | RTX PRO 6000 Max-Q | Qwen3.8-27B | eager | 44 / 2045 | 3 | 0.048 | 0.394 | 1.139 | 3.959 (1198) | none |
 | RTX PRO 6000 Max-Q | Qwen3.8-27B | batch | 41 / 2045 | 4 | 0.050 | 0.371 | 1.222 | 4.242 (1198) | none |
 | RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | eager | 152 / 2045 | 6 | 0.147 | 1.425 | 2.810 | 4.010 (909) | none |
@@ -118,11 +119,13 @@ banked log into its floors-table row through the gate's own `--judge --calibrate
 | RTX 5090 Laptop GPU | gemma-4-26B q4_0 | eager | 250 / 2100 | 6 | 0.278 | 1.918 | 3.421 | 3.557 (1458) | 150, 943, 981, 1013, 1117, 1540 |
 <!-- FLOORS-TABLE:END -->
 
-- **Every floor is set by one row and is loose.** The roster floors sit at 3.6 to 4.5 logits
-  where the 99.9th percentile is 1.0 to 4.0. On the dense 27B one row (1,198: prefill margin
-  4.92, decode 8.65 to 9.16) sets the floor on both cards measured (3.73 on the RTX 5090 Laptop
-  GPU, 3.96 and 4.24 on the RTX PRO 6000) where the next agreeing row is at 1.2 to 1.5. A flip
-  whose two margins add up to 3.5 passes as a near tie on these cells. The rule catches the
+- **Every floor is set by one row and is loose.** The roster floors sit at 3.1 to 4.5 logits
+  where the 99.9th percentile is 0.7 to 4.0. On the dense 27B one row sets each floor, with the
+  next agreeing row at 0.84 to 1.69: row 1,198 (prefill margin 4.92, decode 8.65 to 9.16) in
+  three cells (3.73 eager on the RTX 5090 Laptop GPU, 3.96 and 4.24 on the RTX PRO 6000), and
+  row 1,199 (prefill 9.49, decode 12.58) at 3.09 in the RTX 5090 Laptop GPU's batch cell, whose
+  decode holds row 1,198 at 4.95, next to prefill. A flip whose two margins add up to 3 passes
+  as a near tie on these cells. The rule catches the
   flip at margins 14.4 and 2.5 the old rule passed; it does not catch one at 2.0 and 1.5. The
   coordinator kept the maximum with these numbers on the table; the guard for that range is
   memra#1204 (the candidate's rows against main's stored rows at the same positions).
@@ -148,7 +151,7 @@ banked log into its floors-table row through the gate's own `--judge --calibrate
 | RTX 5090, Ornith eager and batch: the last 12 rows of the whole-prompt table against the 12-row table of that card's cell-evidence record at 12c3f554c4 (another build) | byte-identical (`706af873d259891a`, `e356081d72028d74`) |
 | RTX PRO 6000 Max-Q, all four cells: the last 12 rows against the card's cell-evidence record at e6613b4eee22 (another build) | byte-identical (four hashes) |
 | GB10, 27B eager: the last 12 rows of the 128-row timing table against the unit's cell-evidence record | byte-identical (`f5ad5475e41d3eec`) |
-| RTX 5090, 27B eager: the last 12 rows of the whole-prompt table against the card's cell-evidence record (another build) | byte-identical (`b25c41e5e8e34315`) |
+| RTX 5090, 27B eager and batch: the last 12 rows of the whole-prompt table against the card's cell-evidence record at 12c3f554c4 (another build) | byte-identical (`b25c41e5e8e34315`, `4083a49bdc9adb40`) |
 | GB10, Ornith eager and batch: the last 12 rows of the whole-prompt table against the unit's cell-evidence record at 12c3f554c4 | byte-identical (`0d9b64dd0373157a`, `3484571a10e0190c`) |
 | RTX 5090, gemma-4-26B eager: the last 12 rows against the 12-row table banked in `research/gemma-one-program-20261104/` (another build, six days earlier) | byte-identical (`3768249ed8dbaaf2`) |
 | RTX 5090, Ornith eager, the whole prompt twice: main's probe (031f146690) and this branch's probe (`--calibrate`, on 2628ece940's engine), 80 minutes apart with other cells on the card between | all 2,045 rows byte-identical; the two floor rows equal in every data field |
@@ -156,8 +159,8 @@ banked log into its floors-table row through the gate's own `--judge --calibrate
 Two RTX 5090 cells were stopped mid-run for a release ticket and rerun from scratch; a stopped
 cell wrote no table (the probe prints at the end), so there is no partial table to compare.
 
-**Cells still to run at this commit:** Qwen3.8-27B batch on the RTX 5090 Laptop GPU and
-Qwen3.8-27B eager and batch on GB10 (the three roster rows the census still names);
+**Cells still to run at this commit:** Qwen3.8-27B eager and batch on GB10 (the two roster
+rows the census still names);
 gemma-4-31B q4_0 on the RTX 5090 Laptop GPU (`tools/local-ci.sh` runs the gate on it there, and
 the file is on that box only); Qwen3.5-9B NVFP4 eager and batch on GB10 (the model the gate
 script resolves to there when given none). Until a cell's row exists it is UNCALIBRATED and the
@@ -198,8 +201,8 @@ table as it stands at this commit. A table whose cell has no floor row yet reads
 |---|---|---|
 | roster cells in the cell-evidence records, RTX PRO 6000 Max-Q (4 cells) | PASS | PASS. Ornith's flip at row 2,041 (0.240 + 0.038 eager, 0.240 + 0.048 batch) is a near tie under floors of 3.9 and 3.7 |
 | roster cells, RTX 5090 Laptop GPU, Ornith eager and batch | PASS | PASS, no flip; largest agreeing gap shift 0.98 and 0.59 |
-| roster cells, RTX 5090 Laptop GPU 27B eager; GB10 Ornith eager and batch | PASS | PASS, no flip |
-| roster cells still without a row (RTX 5090 Laptop GPU 27B batch; GB10 27B eager and batch) | PASS | no floor row yet: PASS, UNCALIBRATED, no flip |
+| roster cells, RTX 5090 Laptop GPU 27B eager and batch; GB10 Ornith eager and batch | PASS | PASS, no flip |
+| roster cells still without a row (GB10 27B eager and batch) | PASS | no floor row yet: PASS, UNCALIBRATED, no flip |
 | the split-rung lane's synthetic 16,390-token cell, 27B eager, GB10: candidate | PASS | FAIL under any floor measured where the programs agree: a flip at row 16,385 with margins 14.386 and 2.481 (gap shift 16.87) |
 | the same prompt on main | PASS | FAIL the same way: an agreeing row at 16,385 with margins 14.386 and 7.156 (gap shift 7.23), memra#1175 |
 | the split-rung landing's real-text served-batch cells (`landing-cells/`), main and the landed head | PASS | no flip in either arm; no floor for that prompt, so UNCALIBRATED. Largest agreeing gap shift 1.655 at row 16,378 in both arms (below the rung, identical rows) |
