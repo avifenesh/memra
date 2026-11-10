@@ -1,0 +1,28 @@
+gpulock: 5090 leased as claude-code-20261109T235814-1744322 for 6m
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[fa-pool] grow #0 dev=0 o_len 0 -> 104448 ml_len 0 -> 408 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 104448 -> 393216 ml_len 408 -> 1536 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 38MB (max of parked delta 38MB and capture-time pool peak 7MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 393216 -> 786432 ml_len 1536 -> 3072 (retired kept, zero=false)
+turn1 session (split)              [195, 196, 197, 198, 199, 200, 201, 202, 203, 204] first_diff=None
+turn 2 history: 242 tokens (turn 1 generated 49)
+R  generate (plain greedy)         [220, 15, 15, 15, 15, 15, 15, 15, 15, 15] first_diff=None
+R' generate again                  [220, 15, 15, 15, 15, 15, 15, 15, 15, 15] first_diff=None
+A1 generate_spec cold K=1          [220, 15, 15, 15, 15, 15, 15, 15, 15, 15] first_diff=None
+A2 generate_spec cold K=2          [220, 15, 15, 15, 15, 15, 15, 15, 15, 15] first_diff=None
+[fa-pool] grow #3 dev=0 o_len 786432 -> 1572864 ml_len 3072 -> 6144 (retired kept, zero=false)
+A3 generate_spec cold K=3          [220, 15, 15, 15, 15, 15, 15, 15, 15, 15] first_diff=None
+B1 fresh session, no split K=1     [220, 15, 15, 15, 15, 15, 15, 15, 15, 15] first_diff=None
+B2 fresh session, no split K=2     [220, 15, 15, 15, 15, 15, 15, 15, 15, 15] first_diff=None
+B3 fresh session, no split K=3     [220, 15, 15, 15, 15, 15, 15, 15, 15, 15] first_diff=None
+C  fresh session, split Some(224) K=3 [220, 15, 15, 15, 15, 15, 15, 15, 15, 15] first_diff=None
+D  rewound to 96, split Some(224) K=3 [220, 15, 15, 15, 15, 15, 15, 15, 15, 15] first_diff=None
+E  turn 1 again equal to first run: true
+E  parked end + suffix K=3         [220, 15, 15, 15, 15, 15, 15, 15, 15, 15] first_diff=None
+R" generate after the sessions     [220, 15, 15, 15, 15, 15, 15, 15, 15, 15] first_diff=None
