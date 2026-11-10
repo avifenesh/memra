@@ -8,6 +8,8 @@ are the table's own flips above its floor, with their two margins.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | NVIDIA GB10 | Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp | batch | 2045 | 1856 | 189 | 6 | 0.2364 | 1.7071 | 4.0128 | 4.4502 | 306 | none | 6e6650071f22 | `calibration/gb10/ornith-batch/probe.log` |
 | NVIDIA GB10 | Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp | eager | 2045 | 1854 | 191 | 6 | 0.2189 | 1.6159 | 3.0134 | 3.5812 | 727 | none | 6e6650071f22 | `calibration/gb10/ornith-eager/probe.log` |
+| NVIDIA GB10 | Qwen3.5-9B-NVFP4-MTP-GGUF | batch | 2045 | 1881 | 164 | 5 | 0.1644 | 1.5625 | 3.0952 | 4.6464 | 1197 | none | 6e6650071f22 | `calibration/gb10/qwen35-9b-batch/probe.log` |
+| NVIDIA GB10 | Qwen3.5-9B-NVFP4-MTP-GGUF | eager | 2045 | 1882 | 163 | 5 | 0.1570 | 1.5317 | 2.8857 | 4.1477 | 1197 | none | 6e6650071f22 | `calibration/gb10/qwen35-9b-eager/probe.log` |
 | NVIDIA GeForce RTX 5090 Laptop GPU | gemma-4-26B_q4_0-it | eager | 2100 | 1850 | 250 | 6 | 0.2777 | 1.9179 | 3.4214 | 3.5565 | 1458 | 150 (0.902 + 3.072), 943 (0.510 + 4.836), 981 (3.051 + 0.766), 1013 (3.082 + 0.615), 1117 (3.200 + 0.581), 1540 (2.084 + 2.331) | 723a3f7ff8dd | `calibration/rtx5090-laptop/gemma-4-26b-eager/probe.log` |
 | NVIDIA GeForce RTX 5090 Laptop GPU | gemma-4-31B_q4_0-it | eager | 2100 | 1986 | 114 | 4 | 0.1387 | 1.1919 | 3.3530 | 6.3987 | 594 | none | 723a3f7ff8dd | `calibration/rtx5090-laptop/gemma-4-31b-eager/probe.log` |
 | NVIDIA GeForce RTX 5090 Laptop GPU | Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp | batch | 2045 | 1874 | 171 | 5 | 0.1994 | 1.5819 | 3.3391 | 3.9557 | 740 | none | 723a3f7ff8dd | `calibration/rtx5090-laptop/ornith-batch/probe.log` |
