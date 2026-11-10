@@ -15529,7 +15529,7 @@ fn prefix_insert_from_spec_boundary(
                 let kb = pos * l.k_tok_bytes;
                 let vb = pos * l.v_tok_bytes;
                 let (Ok(mut k), Ok(mut v)) =
-                    (engine.alloc_u8(kb.max(1)), engine.alloc_u8(vb.max(1)))
+                    (prefix_plane_alloc(engine, kb), prefix_plane_alloc(engine, vb))
                 else {
                     return; // alloc pressure: publication is an optimization, drop silently
                 };
@@ -15574,7 +15574,7 @@ fn prefix_insert_from_spec_boundary(
             );
             return None;
         }
-        let (Ok(mut k), Ok(mut v)) = (engine.alloc_u8(kb.max(1)), engine.alloc_u8(vb.max(1)))
+        let (Ok(mut k), Ok(mut v)) = (prefix_plane_alloc(engine, kb), prefix_plane_alloc(engine, vb))
         else {
             return None; // alloc pressure: trunk-only entry
         };
