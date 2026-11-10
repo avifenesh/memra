@@ -577,6 +577,22 @@ no flip passes and says `PASS: UNCALIBRATED`, and its agreeing rows are not judg
 release battery passes it for both cells of every roster model and reports the refusal as
 `REFUSED`, so a release needs the floor rows of its roster on the device it runs on.
 
+The device is its exact `nvidia-smi` name: a laptop and a desktop RTX 5090, or a Max-Q and a
+non-Max-Q RTX PRO 6000, are different devices until measured equal, and there is no fallback
+between them. Which device classes are maintained is `tools/change-impact.toml`'s call: the
+classes of its push-gated build targets (`rtx5090`, `rtxpro6000`, `gb10`); a device name
+belongs to the class whose `name` appears in it (`tools/change_impact.py --device-status`).
+With `--require-floor` and no floor row: a device of a maintained class is refused, a name no
+class matches is refused, and a device of a class that is not maintained (H100, B200) prints
+`not judged: device class not maintained, no floor row` and neither passes nor refuses the
+battery (the battery names the cell `NOT-JUDGED`). Calibrating is the first step of bringing
+the battery to a new device.
+
+`python3 tools/test_argmax_margin_floors.py` (`tools/check-argmax-floors.py`) is the census:
+every argmax cell the battery lists (`tools/release-battery.sh --list-argmax-cells`) needs its
+floor row on every device in the table, and every maintained class needs a calibrated device.
+It fails for a new roster model, a half-calibrated device or a maintained class left out.
+
 **Calibrating a cell.** `tools/argmax-margin-gate.sh <model> [--prompt f] [--decode batch]
 --calibrate --logdir research/<lane>/<cell>` runs the probe over every row of the prompt (window
 `all`, T - 3 rows) and prints `CALIBRATION:` and the `FLOOR-ROW:` line; it judges nothing. Add
