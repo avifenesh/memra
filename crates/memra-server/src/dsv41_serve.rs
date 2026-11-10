@@ -532,6 +532,10 @@ struct Stream {
     stop_ids: Vec<u32>,
     budget: usize,
     ids: Vec<u32>,
+    /// the exact bytes of `ids` (`Tokenizer::decode_bytes_special`, a token's bytes after the
+    /// last one's): the stream's text is their lossy UTF-8 reading, `Tokenizer::decode` of every
+    /// id so far without decoding them again at every token
+    bytes: Vec<u8>,
     text: String,
     stop: Option<StopReason>,
     client_gone: bool,
@@ -549,7 +553,9 @@ impl Stream {
             return false;
         }
         self.ids.push(id);
-        let full = self.tok.decode(&self.ids);
+        self.bytes
+            .extend_from_slice(&self.tok.decode_bytes_special(&[id], true));
+        let full = String::from_utf8_lossy(&self.bytes).into_owned();
         let cut = stop_end(&self.text, &full, &self.stops);
         let start = snap(&full, self.text.len());
         if let Some(abs) = cut {
@@ -1444,6 +1450,7 @@ fn serve_loop(
                         stop_ids: pr.req.stop_token_ids.clone(),
                         budget: pr.budget,
                         ids: Vec::new(),
+                        bytes: Vec::new(),
                         text: String::new(),
                         stop: None,
                         client_gone: false,
