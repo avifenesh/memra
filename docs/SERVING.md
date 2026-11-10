@@ -2948,6 +2948,19 @@ neither number scales with `MEMRA_SPEC_BURST` anymore.
   The cost lives at c=8 saturation only: −3.4% agg tok/s for 3.8x better p50
   (newcomer-first vs lockstep-fair; p95 tail pays); c=1 parity. `MEMRA_ADMIT_YIELD=0`
   selects lockstep fairness (both pieces) on tiers that want it. Receipts: `research/admission-20260806/VERDICT.md`.
+- **The entry-yield bound** (memra#1201, 2026-11-10): the round hook's first call runs before
+  round 0, so a burst that begins while a request waits runs no round. A greedy session that
+  entered on a carried pending token then emits nothing, and when the next request is already
+  waiting at its next entry, and the next, it emits nothing for as long as the arrivals last.
+  On GB10 at the default gate, two closed-loop clients of one-token requests with a think time
+  of 200 ms or less held a long greedy request at 1 or 2 tokens in 30 s: the cost model admits
+  those requests to the speculative path, and the cold-first ordering runs their first bursts
+  ahead of it. Now a session yields at a burst's entry with nothing emitted at most once in a
+  row; at the next such entry it runs one round, and that round's hook yields. The long request
+  advances (50 to 139 tokens in the 30 s windows where it emitted 1 or 2, longest gap 1.8 s)
+  while each waiting request pays at most one round every second burst (short-request p50 at most
+  0.1 s higher). It is a liveness guarantee, not a share policy (memra#1211). Content is unchanged: where a burst ends is content-neutral.
+  Receipts: `research/spec-entry-yield-bound-20261110/`.
 - **The burst ends with the public stream** (GB10 decode round 5, 2026-11-09): the round hook
   also ends the burst at the round that commits EOS or a stop id, and when the client is gone.
   Before that, such a request's last burst ran out to its full target on tokens nobody sees, and
