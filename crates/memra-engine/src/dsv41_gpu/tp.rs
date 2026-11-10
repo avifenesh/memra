@@ -131,6 +131,10 @@ pub struct Group {
     inbox: Vec<Buf>,
     /// device-push: the last small gather's sequence number
     push_seq: u32,
+    /// device-push: each rank's inbox of the large gathers, grown to the largest one seen
+    big_in: Vec<Option<Buf>>,
+    /// one large transfer at a time over the group ([`XFER_ENV`])
+    serial_xfer: bool,
     /// the gate's control case: the producer stores the word before the data
     pub push_word_first: bool,
     pub stats: CommStats,
@@ -351,6 +355,19 @@ fn rank_results<T>(out: Vec<Mutex<Option<Result<T, String>>>>) -> Result<Vec<T>,
 /// streams, the kernels and the collectives are the same in both, so are the bytes.
 pub const ISSUE_ENV: &str = "MEMRA_DSV41_TP_ISSUE";
 
+/// `serial`: the large gathers move one transfer at a time over the whole group (a measurement
+/// switch while the collapse of concurrent transfers between the cards is being characterized;
+/// `parallel`, the default, lets every rank transfer at once).
+pub const XFER_ENV: &str = "MEMRA_DSV41_TP_XFER";
+
+fn xfer_serial() -> Result<bool, String> {
+    match std::env::var(XFER_ENV).ok().as_deref() {
+        None | Some("") | Some("parallel") => Ok(false),
+        Some("serial") => Ok(true),
+        Some(x) => Err(format!("{XFER_ENV}={x:?}: want parallel or serial")),
+    }
+}
+
 /// [`Group::each`] over a pool and the rank contexts, for callers that also borrow other fields.
 fn each_in<T, F>(pool: Option<&mut Crew>, cx: &mut [Ctx], f: F) -> Result<Vec<T>, String>
 where
@@ -552,6 +569,8 @@ impl Group {
             rel_ev,
             inbox,
             push_seq: 0,
+            big_in: (0..n).map(|_| None).collect(),
+            serial_xfer: xfer_serial()?,
             push_word_first: false,
             stats: CommStats::default(),
             timed: false,
@@ -647,7 +666,14 @@ impl Group {
         if n == 1 {
             return Ok(());
         }
-        for &(width, rows) in &[(4096usize, 1usize), (2 * 1024 * 1024, 1), (5120, 33)] {
+        // a small flat block, a large one, a small strided one, and a strided one of megabytes
+        // (the packed gather)
+        for &(width, rows) in &[
+            (4096usize, 1usize),
+            (2 * 1024 * 1024, 1),
+            (5120, 33),
+            (5120, 257),
+        ] {
             let pitch = width * n + 64;
             let len = pitch * rows;
             let pat = |r: usize, i: usize| -> u8 {
@@ -715,9 +741,15 @@ impl Group {
         };
         let push = self.transport == TpTransport::DevicePush
             && blks.iter().all(|b| b.bytes() <= ffi::PUSH_MAX);
+        // a strided region goes through a contiguous block on both sides (a small one under
+        // device-push is pushed instead)
+        let packed = self.transport != TpTransport::HostCanonical
+            && blks.iter().any(|b| b.rows > 1 && b.width < b.pitch);
         match self.transport {
             TpTransport::DevicePush if push => self.gather_push(bufs, blks)?,
-            TpTransport::PeerPull | TpTransport::DevicePush if self.pool.is_some() => {
+            TpTransport::DevicePush => self.gather_big_push(bufs, blks)?,
+            TpTransport::PeerPull if packed => self.gather_packed(bufs, blks)?,
+            TpTransport::PeerPull if self.pool.is_some() => {
                 // the same three steps with each rank's calls on its own thread: every producer
                 // publishes, then every consumer pulls on its own stream and releases, then every
                 // producer waits for the releases (each step completes on the host before the next,
@@ -738,8 +770,9 @@ impl Group {
                 })?;
                 let copies = each_in(pool.as_mut(), cx, |c, x| {
                     let mut k = 0u64;
-                    for p in 0..n {
-                        if p == c || blks[p].bytes() == 0 {
+                    // ring order, as in the packed gather
+                    for p in (1..n).map(|j| (c + j) % n) {
+                        if blks[p].bytes() == 0 {
                             continue;
                         }
                         x.ops.st.wait(&pub_ev[p]).map_err(de)?;
@@ -759,7 +792,7 @@ impl Group {
                 })?;
                 self.stats.copies += copies.iter().sum::<u64>();
             }
-            TpTransport::PeerPull | TpTransport::DevicePush => {
+            TpTransport::PeerPull => {
                 for p in 0..n {
                     self.pub_ev[p].record(&self.cx[p].ops.st).map_err(de)?;
                 }
@@ -813,6 +846,188 @@ impl Group {
             self.sync_all()?;
             self.stats.secs += t.elapsed().as_secs_f64();
         }
+        Ok(())
+    }
+
+    /// A gather of strided regions through contiguous blocks. A peer copy of a strided region
+    /// between two cards is issued a row at a time (a 4,096-row block of columns: thousands of
+    /// small transfers, where two ranks on one card get a plain copy), so each producer packs
+    /// its region into a contiguous block with a kernel on its own card, every consumer pulls
+    /// that block with one peer copy and unpacks it into its buffer with a kernel on its card.
+    /// The same publish, pull, release order as the plain peer-pull gather.
+    fn gather_packed(&mut self, bufs: &[&Buf], blks: &[Blk]) -> Result<(), String> {
+        let n = self.n();
+        let addr: Vec<u64> = (0..n)
+            .map(|r| bufs[r].p(&self.cx[r].ops.st).addr())
+            .collect();
+        let Self {
+            pool,
+            cx,
+            pub_ev,
+            rel_ev,
+            serial_xfer,
+            ..
+        } = self;
+        let (pub_ev, rel_ev) = (&*pub_ev, &*rel_ev);
+        let move_blk = |ops: &super::Ops, base: u64, b: Blk, packed: Dp, unpack: i32| {
+            ck("blk_pack", unsafe {
+                ffi::memra_v41_blk_pack(
+                    (base + b.off as u64) as *mut std::ffi::c_void,
+                    b.pitch as i64,
+                    b.width as i64,
+                    b.rows as i64,
+                    packed.m(),
+                    unpack,
+                    ops.sv(),
+                )
+            })
+        };
+        let pk = each_in(pool.as_mut(), cx, |r, c| {
+            let st = c.ops.st.clone();
+            let pk = c.ops.tmp(blks[r].bytes().max(16))?;
+            move_blk(&c.ops, addr[r], blks[r], pk.p(&st), 0)?;
+            pub_ev[r].record(&c.ops.st).map_err(de)?;
+            Ok((pk.p(&st).addr(), pk))
+        })?;
+        let pull = |c: usize, x: &mut Ctx| -> Result<u64, String> {
+            let st = x.ops.st.clone();
+            let mut k = 0u64;
+            // ring order: rank c pulls from c + 1, c + 2, ..., so at any moment a card is the
+            // source of one copy and the destination of one. In rank order every rank pulled
+            // from the same card at once, and a copy that runs alone at 50 GB/s ran at 2.
+            for p in (1..n).map(|j| (c + j) % n) {
+                let bytes = blks[p].bytes();
+                if bytes == 0 {
+                    continue;
+                }
+                let un = x.ops.tmp(bytes)?;
+                x.ops.st.wait(&pub_ev[p]).map_err(de)?;
+                copy_addr(&x.ops, pk[p].0, un.p(&st).addr(), Blk::flat(0, bytes))?;
+                move_blk(&x.ops, addr[c], blks[p], un.p(&st), 1)?;
+                k += 1;
+            }
+            rel_ev[c].record(&x.ops.st).map_err(de)?;
+            Ok(k)
+        };
+        let copies = if *serial_xfer {
+            // one consumer at a time, each behind the release of the one before it (issued here
+            // in rank order); a consumer's own pulls are already one after another
+            let mut v = Vec::with_capacity(n);
+            for c in 0..n {
+                if c > 0 {
+                    cx[c].ops.st.wait(&rel_ev[c - 1]).map_err(de)?;
+                }
+                v.push(pull(c, &mut cx[c])?);
+            }
+            v
+        } else {
+            each_in(pool.as_mut(), cx, pull)?
+        };
+        each_in(pool.as_mut(), cx, |p, x| {
+            for c in 0..n {
+                if c != p {
+                    x.ops.st.wait(&rel_ev[c]).map_err(de)?;
+                }
+            }
+            Ok(())
+        })?;
+        // the packed blocks are freed here, on their own streams, behind the waits above
+        drop(pk);
+        self.stats.copies += copies.iter().sum::<u64>();
+        Ok(())
+    }
+
+    /// A large gather under device-push: no copy call at all. A peer copy between two of these
+    /// cards moves 1.2 to 1.9 GB/s whether the region is strided or contiguous (measured on four
+    /// cards; a kernel that stores into a peer's memory is not bound by it). Each producer's
+    /// pack kernel writes its region straight into its slot of every peer's inbox (a buffer the
+    /// rank keeps, grown to the largest gather seen, so nothing is allocated or mapped in the
+    /// gather) and publishes; each consumer waits for every producer's event, unpacks its slots
+    /// into its buffer and releases; a producer waits for the releases, so a slot is never
+    /// rewritten under its reader.
+    fn gather_big_push(&mut self, bufs: &[&Buf], blks: &[Blk]) -> Result<(), String> {
+        let n = self.n();
+        let size: Vec<usize> = blks.iter().map(|b| (b.bytes() + 255) & !255).collect();
+        // rank c's inbox holds the peers' slots in rank order
+        let slot =
+            |c: usize, p: usize| -> usize { (0..p).filter(|&q| q != c).map(|q| size[q]).sum() };
+        for c in 0..n {
+            let need = slot(c, n).max(256);
+            if self.big_in[c].as_ref().is_none_or(|b| b.len < need) {
+                self.big_in[c] = None;
+                self.big_in[c] = Some(self.cx[c].ops.tmp(need)?);
+            }
+        }
+        let addr: Vec<u64> = (0..n)
+            .map(|r| bufs[r].p(&self.cx[r].ops.st).addr())
+            .collect();
+        let inb: Vec<u64> = (0..n)
+            .map(|r| {
+                self.big_in[r]
+                    .as_ref()
+                    .unwrap()
+                    .p(&self.cx[r].ops.st)
+                    .addr()
+            })
+            .collect();
+        let Self {
+            pool,
+            cx,
+            pub_ev,
+            rel_ev,
+            serial_xfer,
+            ..
+        } = self;
+        let (pub_ev, rel_ev) = (&*pub_ev, &*rel_ev);
+        let move_blk = |ops: &super::Ops, base: u64, b: Blk, packed: u64, mode: i32| {
+            ck("blk_pack", unsafe {
+                ffi::memra_v41_blk_pack(
+                    (base + b.off as u64) as *mut std::ffi::c_void,
+                    b.pitch as i64,
+                    b.width as i64,
+                    b.rows as i64,
+                    packed as *mut std::ffi::c_void,
+                    mode,
+                    ops.sv(),
+                )
+            })
+        };
+        if *serial_xfer {
+            // one transfer at a time: a producer's stores are queued behind the producer
+            // before it (issued here in rank order, so each wait sees this gather's record);
+            // within a producer its peers are already one after another on its stream
+            for p in 0..n {
+                let x = &cx[p];
+                if p > 0 {
+                    x.ops.st.wait(&pub_ev[p - 1]).map_err(de)?;
+                }
+                for c in (0..n).filter(|&c| c != p) {
+                    move_blk(&x.ops, addr[p], blks[p], inb[c] + slot(c, p) as u64, 2)?;
+                }
+                pub_ev[p].record(&x.ops.st).map_err(de)?;
+            }
+        } else {
+            each_in(pool.as_mut(), cx, |p, x| {
+                for c in (0..n).filter(|&c| c != p) {
+                    move_blk(&x.ops, addr[p], blks[p], inb[c] + slot(c, p) as u64, 2)?;
+                }
+                pub_ev[p].record(&x.ops.st).map_err(de)
+            })?;
+        }
+        each_in(pool.as_mut(), cx, |c, x| {
+            for p in (0..n).filter(|&p| p != c) {
+                x.ops.st.wait(&pub_ev[p]).map_err(de)?;
+                move_blk(&x.ops, addr[c], blks[p], inb[c] + slot(c, p) as u64, 1)?;
+            }
+            rel_ev[c].record(&x.ops.st).map_err(de)
+        })?;
+        each_in(pool.as_mut(), cx, |p, x| {
+            for c in (0..n).filter(|&c| c != p) {
+                x.ops.st.wait(&rel_ev[c]).map_err(de)?;
+            }
+            Ok(())
+        })?;
+        self.stats.copies += (n * (n - 1)) as u64;
         Ok(())
     }
 
@@ -951,6 +1166,87 @@ impl Group {
             flagged += (bytes_i32(&self.cx[r].route_bad.host(&st)?)[0] != 0) as u64;
         }
         Ok((diff, flagged))
+    }
+
+    /// How fast the cards move bytes to each other (`dsv41-bench p2p`): blocks of 8, 64 and 256
+    /// MiB by the copy engine (a peer copy issued on the destination's stream) and by a kernel
+    /// storing into the peer's memory (issued on the source's stream), one flow alone and the
+    /// flow sets a gather makes: both directions of a pair, one source read by several cards,
+    /// one card written by several, the ring, and every pair at once. A line a case: GB/s a
+    /// flow, best and median of `reps` (host time from the first issue to every stream drained).
+    pub fn p2p_probe(&mut self, reps: usize) -> Result<Vec<String>, String> {
+        let n = self.n();
+        if n < 2 {
+            return Err("p2p: two ranks or more".into());
+        }
+        let mut sets: Vec<(&str, Vec<(usize, usize)>)> = vec![
+            ("one flow 0>1", vec![(0, 1)]),
+            ("both directions of a pair", vec![(0, 1), (1, 0)]),
+        ];
+        if n >= 3 {
+            sets.push(("one source, two readers", vec![(0, 1), (0, 2)]));
+            sets.push(("one card written by two", vec![(1, 0), (2, 0)]));
+        }
+        if n >= 4 {
+            sets.push(("two disjoint pairs", vec![(0, 1), (2, 3)]));
+        }
+        if n >= 3 {
+            sets.push(("ring", (0..n).map(|r| (r, (r + 1) % n)).collect()));
+            let all: Vec<(usize, usize)> = (0..n)
+                .flat_map(|a| (0..n).filter(move |&b| b != a).map(move |b| (a, b)))
+                .collect();
+            sets.push(("every pair", all));
+        }
+        let mut out = Vec::new();
+        for mib in [8usize, 64, 256] {
+            let size = mib << 20;
+            let src = self.each(|_, c| c.ops.buf(size))?;
+            let dst = self.each(|_, c| c.ops.buf(n * size))?;
+            let sa: Vec<u64> = (0..n)
+                .map(|r| src[r].p(&self.cx[r].ops.st).addr())
+                .collect();
+            let da: Vec<u64> = (0..n)
+                .map(|r| dst[r].p(&self.cx[r].ops.st).addr())
+                .collect();
+            for (name, flows) in &sets {
+                for mech in ["copy", "store"] {
+                    let mut gbs = Vec::with_capacity(reps);
+                    for _ in 0..reps {
+                        self.sync_all()?;
+                        let t0 = Instant::now();
+                        for &(s, d) in flows {
+                            let to = da[d] + (s * size) as u64;
+                            if mech == "copy" {
+                                copy_addr(&self.cx[d].ops, sa[s], to, Blk::flat(0, size))?;
+                            } else {
+                                ck("blk_pack", unsafe {
+                                    ffi::memra_v41_blk_pack(
+                                        sa[s] as *mut std::ffi::c_void,
+                                        size as i64,
+                                        size as i64,
+                                        1,
+                                        to as *mut std::ffi::c_void,
+                                        2,
+                                        self.cx[s].ops.sv(),
+                                    )
+                                })?;
+                            }
+                        }
+                        self.sync_all()?;
+                        gbs.push(size as f64 / 1e9 / t0.elapsed().as_secs_f64());
+                    }
+                    gbs.sort_by(|a, b| b.partial_cmp(a).unwrap());
+                    out.push(format!(
+                        "p2p {mech:5} {mib:3} MiB {name}: {:.1} GB/s a flow best, {:.1} median, {} flows, {:.1} GB/s together",
+                        gbs[0],
+                        gbs[gbs.len() / 2],
+                        flows.len(),
+                        gbs[gbs.len() / 2] * flows.len() as f64,
+                    ));
+                }
+            }
+        }
+        Ok(out)
     }
 
     /// Every rank's share of layer `id`, the ranks loading in parallel.
@@ -1433,6 +1729,8 @@ impl Group {
         let (ne, topk, d, inter) = (g.n_experts, g.topk, g.dim, g.moe_inter);
         let np = rows * topk;
         let trace = self.trace;
+        // a few rows: one bf16 gather of the hidden columns (a gather's latency, not its bytes)
+        let quant = rows > super::SMALL_M;
         let parts = {
             let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
             self.each_mut(&mut trs, |r, c, trr| {
@@ -1452,24 +1750,66 @@ impl Group {
                 if forked {
                     c.split_shared_join()?;
                 }
-                Ok((plan, hb))
+                // many rows: each rank quantizes its own hidden columns and the codes are
+                // gathered, half the bytes of the bf16 rows (the 32-wide quantization blocks lie
+                // inside a rank's columns, so the codes are those of the whole row)
+                let q = if quant {
+                    Some(c.split_quant_own(&lw[r], &hb, np + rows)?)
+                } else {
+                    None
+                };
+                Ok((plan, hb, q))
             })?
         };
-        let (plans, hbs): (Vec<_>, Vec<Buf>) = parts.into_iter().unzip();
-        let refs: Vec<&Buf> = hbs.iter().collect();
-        let blks: Vec<Blk> = lw
-            .iter()
-            .map(|w| Blk {
-                off: w.hid0 * 2,
-                width: w.hid_l * 2,
-                pitch: inter * 2,
-                rows: np + rows,
-            })
-            .collect();
-        self.allgather(&refs, &blks)?;
+        let (mut plans, mut hbs, mut qs) = (vec![], vec![], vec![]);
+        for (plan, hb, q) in parts {
+            plans.push(plan);
+            hbs.push(hb);
+            qs.push(q);
+        }
+        if quant {
+            let codes: Vec<&Buf> = qs.iter().map(|q| &q.as_ref().unwrap().0).collect();
+            let blks: Vec<Blk> = lw
+                .iter()
+                .map(|w| Blk {
+                    off: w.hid0,
+                    width: w.hid_l,
+                    pitch: inter,
+                    rows: np + rows,
+                })
+                .collect();
+            self.allgather(&codes, &blks)?;
+            let scales: Vec<&Buf> = qs.iter().map(|q| &q.as_ref().unwrap().1).collect();
+            let blks: Vec<Blk> = lw
+                .iter()
+                .map(|w| Blk {
+                    off: w.hid0 / 32,
+                    width: w.hid_l / 32,
+                    pitch: inter / 32,
+                    rows: np + rows,
+                })
+                .collect();
+            self.allgather(&scales, &blks)?;
+        } else {
+            let refs: Vec<&Buf> = hbs.iter().collect();
+            let blks: Vec<Blk> = lw
+                .iter()
+                .map(|w| Blk {
+                    off: w.hid0 * 2,
+                    width: w.hid_l * 2,
+                    pitch: inter * 2,
+                    rows: np + rows,
+                })
+                .collect();
+            self.allgather(&refs, &blks)?;
+        }
         self.each(|r, c| {
             let st = c.ops.st.clone();
-            c.split_out(&lw[r], &plans[r], &hbs[r], rows, m[r].at(&st, r0 * d * 2))
+            let out = m[r].at(&st, r0 * d * 2);
+            match &qs[r] {
+                Some((q, sc)) => c.split_out_q(&lw[r], &plans[r], q, sc, rows, out),
+                None => c.split_out(&lw[r], &plans[r], &hbs[r], rows, out),
+            }
         })?;
         let refs: Vec<&Buf> = m.iter().collect();
         let blks: Vec<Blk> = lw
@@ -2012,24 +2352,71 @@ impl Ctx {
         rows: usize,
         out: Dp,
     ) -> Result<(), String> {
+        let st = self.ops.st.clone();
+        let (inter, n) = (self.g.moe_inter, plan.np + rows);
+        let q = self.ops.tmp(n * inter)?;
+        let sc = self.ops.tmp(n * inter / 32)?;
+        self.ops
+            .act_quant(hb.p(&st), inter, Dp::NULL, n, inter, q.p(&st), sc.p(&st))?;
+        self.split_out_q(lw, plan, &q, &sc, rows, out)
+    }
+
+    /// The e4m3 codes and ue8m0 scales of this rank's hidden columns of the first `n` rows of
+    /// `hb`, in their columns of `[n][inter]` codes and `[n][inter / 32]` scales (the other
+    /// columns are the peers').
+    pub fn split_quant_own(
+        &mut self,
+        lw: &LayerW,
+        hb: &Buf,
+        n: usize,
+    ) -> Result<(Buf, Buf), String> {
+        let st = self.ops.st.clone();
+        let (inter, hn, h0) = (self.g.moe_inter, lw.hid_l, lw.hid0);
+        let q = self.ops.tmp(n * inter)?;
+        let sc = self.ops.tmp(n * inter / 32)?;
+        ck("act_quant", unsafe {
+            ffi::memra_v41_act_quant(
+                hb.at(&st, h0 * 2).c(),
+                inter as i64,
+                std::ptr::null(),
+                q.at(&st, h0).m(),
+                inter as i64,
+                sc.at(&st, h0 / 32).m(),
+                (inter / 32) as i64,
+                std::ptr::null_mut(),
+                0,
+                n as i32,
+                hn as i32,
+                self.ops.sv(),
+            )
+        })?;
+        Ok((q, sc))
+    }
+
+    /// [`Self::split_out`] from the hidden rows' codes `q` `[np + rows][inter]` and scales `sc`
+    /// `[np + rows][inter / 32]`: the pairs' rows first, then the shared expert's.
+    pub fn split_out_q(
+        &mut self,
+        lw: &LayerW,
+        plan: &super::MoePlanDev,
+        q: &Buf,
+        sc: &Buf,
+        rows: usize,
+        out: Dp,
+    ) -> Result<(), String> {
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let (d, inter, np, dn) = (g.dim, g.moe_inter, plan.np, lw.shared[1].n);
         let o = self.ops.tmp((np + rows) * dn * 2)?;
-        let aq = self.ops.tmp(np * inter)?;
-        let as_ = self.ops.tmp(np * inter / 32)?;
-        self.ops
-            .act_quant(hb.p(&st), inter, Dp::NULL, np, inter, aq.p(&st), as_.p(&st))?;
-        self.split_tiles(lw, plan, &aq, &as_, inter, 1, o.p(&st), dn)?;
-        self.ops.linear_q(
-            hb.at(&st, np * inter * 2),
-            inter,
+        self.split_tiles(lw, plan, q, sc, inter, 1, o.p(&st), dn)?;
+        self.ops.gemm_q(
+            q.at(&st, np * inter),
+            sc.at(&st, np * inter / 32),
             rows,
             &lw.shared[1],
             o.at(&st, np * dn * 2),
             dn,
             false,
-            &mut self.scr,
         )?;
         ck("moe_combine", unsafe {
             ffi::memra_v41_moe_combine(

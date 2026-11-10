@@ -527,6 +527,17 @@ pub mod ffi {
             bad: *mut i32,
             stream: *mut c_void,
         ) -> i32;
+        /// A strided region to (`unpack` 0; 2: the block is on a peer card) or from (1) a
+        /// contiguous block.
+        pub fn memra_v41_blk_pack(
+            reg: *mut c_void,
+            pitch: i64,
+            width: i64,
+            rows: i64,
+            packed: *mut c_void,
+            unpack: i32,
+            stream: *mut c_void,
+        ) -> i32;
         /// Gate helper: a region of 32-bit words set to a pattern of `(seed, word)`, or with `diff`
         /// the number of its words that differ from the pattern added to `*diff`.
         pub fn memra_v41_pat(
@@ -3615,7 +3626,6 @@ impl Ctx {
                 g.sinkhorn_iters as i32,
                 g.norm_eps,
                 g.hc_eps,
-                parts.p(&st).fm(),
                 mixes.p(&st).fm(),
                 pre.p(&st).fm(),
                 post.p(&st).fm(),

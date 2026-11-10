@@ -43,6 +43,7 @@ fn main() {
         Some("layer") if a.len() > 2 => layer_bench(&a),
         Some("gemm") => gemm_bench(&a),
         Some("ceil") => ceil_bench(&a),
+        Some("p2p") if a.len() > 2 => p2p_bench(&a),
         _ => Err("usage: dsv41-bench layer CKPT --ids F --token-map F --layers L,.. [--prefix N] [--reps R] [--decode D] [--chunk N] [--nvtx] [--out F] | gemm [--reps R] [--out F] | ceil [--out F]".into()),
     };
     match r {
@@ -59,6 +60,36 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+/// `dsv41-bench p2p CKPT --devices 0,1[,2,3] [--reps R]`: how fast the cards move bytes to each
+/// other, by the copy engine and by a kernel storing into the peer, alone and in the flow sets a
+/// gather makes (`Group::p2p_probe`). No weights are loaded.
+fn p2p_bench(a: &[String]) -> Result<String, String> {
+    let ckpt = Path::new(&a[2]);
+    let mc = memra_gguf::config::ModelConfig::from_config_json(&ckpt.join("config.json"))
+        .map_err(|e| e.to_string())?;
+    let g = Geo::from_config(&mc)?;
+    let devices: Vec<usize> = flag(a, "--devices")
+        .ok_or("p2p: --devices")?
+        .split(',')
+        .map(|x| x.parse::<usize>().map_err(|e| e.to_string()))
+        .collect::<Result<_, _>>()?;
+    let reps = flag(a, "--reps")
+        .map(|x| x.parse::<usize>().map_err(|e| e.to_string()))
+        .transpose()?
+        .unwrap_or(5)
+        .max(1);
+    let mut grp = Group::new(&devices, &g, 1024)?;
+    let lines = grp.p2p_probe(reps)?;
+    for l in &lines {
+        println!("{l}");
+    }
+    Ok(format!(
+        "{{\"devices\": {devices:?}, \"transport\": {:?}, \"lines\": {:?}}}\n",
+        grp.transport.name(),
+        lines
+    ))
 }
 
 fn flag(a: &[String], k: &str) -> Option<String> {

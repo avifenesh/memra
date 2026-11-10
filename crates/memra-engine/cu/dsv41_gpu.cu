@@ -3802,6 +3802,63 @@ extern "C" int memra_v41_pull(const void* in, int npeer, unsigned seq, void* dst
     V41_ERR();
 }
 
+// A strided region to and from a contiguous block, for the N-rank gathers of strided regions: a peer copy
+// of a strided region between two cards is issued a row at a time, of a contiguous block it is one
+// transfer. Chunks of 16 bytes (T = uint4), 4 (uint32_t) or 1 (uint8_t), 8 a thread.
+template <typename T>
+__global__ void __launch_bounds__(256) v41_blk_pack_kernel(uint8_t* reg, long pitch, long cw, long rows,
+                                                           uint8_t* packed, int unpack) {
+    long i0 = ((long)blockIdx.x * blockDim.x + threadIdx.x) * 8, total = cw * rows;
+    if (i0 >= total) return;
+    long r = i0 / cw, c = i0 % cw;
+    T v[8];
+    T* at[8];
+#pragma unroll
+    for (int u = 0; u < 8; ++u) {
+        at[u] = nullptr;
+        if (i0 + u < total) {
+            at[u] = (T*)(reg + r * pitch + c * sizeof(T));
+            v[u] = unpack == 1 ? *(const T*)(packed + (i0 + u) * sizeof(T)) : *at[u];
+            if (++c == cw) {
+                c = 0;
+                ++r;
+            }
+        }
+    }
+#pragma unroll
+    for (int u = 0; u < 8; ++u)
+        if (at[u]) {
+            if (unpack == 1) *at[u] = v[u];
+            else *(T*)(packed + (i0 + u) * sizeof(T)) = v[u];
+        }
+    // unpack 2: `packed` is a peer card's memory; the stores are fenced to the system before the kernel ends
+    if (unpack == 2) __threadfence_system();
+}
+
+// rows x width bytes of `reg` (rows `pitch` apart) into `packed` (unpack 0; 2 when `packed` is on a peer
+// card, the large gathers of the device-push transport) or back (unpack 1): 16-byte
+// chunks when everything is a multiple of 16 bytes and 16-byte aligned, 4-byte ones for multiples of 4,
+// bytes otherwise
+extern "C" int memra_v41_blk_pack(void* reg, long pitch, long width, long rows, void* packed, int unpack,
+                                  void* stream) {
+    if (rows <= 0 || width <= 0) return (rows < 0 || width < 0) ? 41045 : 0;
+    uintptr_t all = (uintptr_t)reg | (uintptr_t)packed | (uintptr_t)width | (uintptr_t)pitch;
+    if (pitch < width) return 41045;
+    int unit = all % 16 == 0 ? 16 : all % 4 == 0 ? 4 : 1;
+    long blocks = (width / unit * rows + 8 * 256 - 1) / (8 * 256);
+    if (blocks > 0x7fffffffL) return 41045;
+    if (unit == 16)
+        v41_blk_pack_kernel<uint4><<<(unsigned)blocks, 256, 0, (cudaStream_t)stream>>>(
+            (uint8_t*)reg, pitch, width / 16, rows, (uint8_t*)packed, unpack);
+    else if (unit == 4)
+        v41_blk_pack_kernel<uint32_t><<<(unsigned)blocks, 256, 0, (cudaStream_t)stream>>>(
+            (uint8_t*)reg, pitch, width / 4, rows, (uint8_t*)packed, unpack);
+    else
+        v41_blk_pack_kernel<uint8_t><<<(unsigned)blocks, 256, 0, (cudaStream_t)stream>>>(
+            (uint8_t*)reg, pitch, width, rows, (uint8_t*)packed, unpack);
+    V41_ERR();
+}
+
 // Gate helpers for the small gathers: a region of 32-bit words set to a pattern of (seed, word), and the
 // number of words of a region that differ from it added to *diff.
 __device__ __forceinline__ uint32_t v41_pat(uint32_t seed, uint32_t i) {
