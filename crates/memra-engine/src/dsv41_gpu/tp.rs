@@ -1695,7 +1695,12 @@ impl Group {
         // second stream outside it
         self.each(|_, c| c.side_join())?;
         let n = self.n();
-        let key = (lw[0].id, s);
+        // rank 0's load of the layer names the span: the capture holds that load's weights
+        let key = (lw[0].uid, s);
+        if self.graphs.slots.len() > super::graph::MAX_SPANS {
+            // loads that are gone (layers streamed in and dropped) leave their spans behind
+            self.graphs.slots.clear();
+        }
         // 0: new, 1: seen once, 2: refused, 3: recorded
         let found = match self.graphs.slots.get(&key) {
             None => 0,

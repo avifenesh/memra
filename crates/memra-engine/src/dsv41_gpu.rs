@@ -2158,6 +2158,10 @@ impl Part {
 /// One V4.1 trunk layer's weights on the device (one rank's share under [`Part`]).
 pub struct LayerW {
     pub id: usize,
+    /// this load of the layer, unique in the process: what a captured span of the layer is
+    /// keyed by ([`graph`]), since two loads can share a number (a draft stage and a trunk
+    /// layer, a layer loaded again) and hold other weights at other addresses
+    pub uid: u64,
     pub part: Part,
     /// this card's attention heads `[head0, head0 + heads_l)`
     pub head0: usize,
@@ -2418,8 +2422,10 @@ impl LayerW {
         };
         let hd = g.head_dim;
         let gin = g.heads * hd / g.o_groups;
+        static LOADS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         Ok(Self {
             id,
+            uid: LOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             part,
             head0: heads.start,
             heads_l: heads.len(),

@@ -406,11 +406,16 @@ pub struct GraphStats {
     pub checks: u64,
 }
 
-/// The group's captured spans, by (layer, rows).
+/// The most spans a group keeps: every resident layer of a trunk and a draft at each of the 8
+/// row counts is 400. Past it the map is emptied (a layer that is loaded for every call names a
+/// new span each time and would grow it without end).
+pub const MAX_SPANS: usize = 1024;
+
+/// The group's captured spans, by (the layer's load on rank 0, rows).
 #[derive(Default)]
 pub struct Graphs {
     pub on: bool,
-    pub slots: HashMap<(usize, usize), Slot>,
+    pub slots: HashMap<(u64, usize), Slot>,
     pub stats: GraphStats,
 }
 
