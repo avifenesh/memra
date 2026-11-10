@@ -1,0 +1,14 @@
+dsv41-tpbench: 2 cells x 1 rounds on 2 rank(s) [0, 1], 20/20 layers resident, chunk 8192, max_pos 32785
+  plan prefill-4096: workspace 1.96 GiB + state 0.01 GiB a rank
+  plan prefill-32768: workspace 8.38 GiB + state 0.06 GiB a rank
+  carried state: 1923 B a position a rank (+2.5 MiB of window rings a sequence); reserve 8.44 GiB a device-rank
+[dsv41-tp] ranks=2 devices=[0, 1] transport=peer-pull (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+[dsv41-resident] device 0 ranks [0]: 20 of 20 layers + head resident, 70.25 GiB (70.25 GiB a rank); free 94.46 -> 24.21 GiB of 95.06 GiB; reserve 8.44 GiB; load 8.4s
+[dsv41-resident] device 1 ranks [1]: 20 of 20 layers + head resident, 70.25 GiB (70.25 GiB a rank); free 94.46 -> 24.21 GiB of 95.06 GiB; reserve 8.44 GiB; load 8.4s
+  capacity at 4096 positions: 2273 sequences a rank after one prefill's 1.96 GiB workspace (0.010 GiB state each, 24.21 GiB free a rank)
+  capacity at 32768 positions: 259 sequences a rank after one prefill's 8.38 GiB workspace (0.061 GiB state each, 24.21 GiB free a rank)
+  capacity at 131072 positions: 40 sequences a rank after one prefill's 14.61 GiB workspace (0.237 GiB state each, 24.21 GiB free a rank)
+  capacity at 262144 positions: 0 sequences a rank after one prefill's 29.05 GiB workspace (0.471 GiB state each, 24.21 GiB free a rank)
+dsv41-tpbench: {"argmax":53142,"cell":"prefill-4096","comm":{"bytes":4538630144,"collectives":143,"copies":286,"timed":false,"timed_s":0.0},"end_unix":1794298703.1693137,"forward_s":0.635056383,"forwards":1,"kind":"prefill","layers_streamed":0,"peak_used":[76298700784,76298700784],"prefill_tok_s":5299.091549024192,"prompt_len":4096,"readback_wait_s_per_rank":0.13767974900000002,"round":0,"start_unix":1794298702.3963187,"stream_load_s":1.0110000000000004e-6,"ttft_s":0.772962679}
+dsv41-tpbench: {"argmax":48151,"cell":"prefill-32768","comm":{"bytes":36309041152,"collectives":263,"copies":526,"timed":false,"timed_s":0.0},"end_unix":1794298708.3865442,"forward_s":4.302002953,"forwards":1,"kind":"prefill","layers_streamed":0,"peak_used":[81754812912,81754812912],"prefill_tok_s":6280.839753626654,"prompt_len":32768,"readback_wait_s_per_rank":0.9149789810000001,"round":0,"start_unix":1794298703.1693618,"stream_load_s":1.832999999999999e-6,"ttft_s":5.217136766}
+dsv41-tpbench: done in 15.1s
