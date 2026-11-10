@@ -228,19 +228,43 @@ cell for cell.
 ## Exactness
 
 The bound moves where a burst ends, never what a round computes, and where a burst ends is
-content-neutral. Evidence:
+content-neutral. Evidence on the fix binary (GB10, `gb10/gates/`):
 
-- every greedy long text above (main sweep, arms, fix sweep, workarounds) is prefix-equal to
-  main's text of the same cell;
-- the seeded-invariance gate and the burst-boundary gate on the fix binary: in progress, rows to
-  `gb10/gates/` with the verdicts here;
-- the session gate is an engine binary and the engine is unchanged by this fix (the diff touches
-  `crates/memra-server/src/worker.rs` only).
+- **Seeded-invariance gate** (`tools/seeded-invariance-gate.py --penalised device`): PASS, 54
+  rows over 10 prompts, cases ref, K=0 to 3 and demote. Against the base rows (main + memra#1196's
+  fix, the same engine as v0.141.0; `gates/base-rows/`, compared with `tools/rowcmp.py`): 54 of 54
+  with the same text sha, completion tokens, prompt and cached tokens and acceptance.
+- **Burst-boundary gate** (the memra#1186 lane's `spec-burst-boundary-gate.py --carry no`, the
+  form for a binary without the sampled carry): PASS, 229 rows, grid default, 1:2, 3:2, 3:3.
+  Against the base rows: 229 of 229 with the same text sha, completion tokens, finish, cached
+  tokens, acceptance and rounds. Its yield boot's 23 no-round bursts did not enter on a carried
+  token (the penalised sampled request), as on the base, so the bound did not act there; the
+  stall cells above are where it acts, and their greedy texts are prefix-equal to main's.
+- **The session gate** is an engine binary, and the engine is untouched by this change (the diff
+  touches `crates/memra-server/src/worker.rs` only).
 
-## Normal concurrency
+## Normal concurrency (GB10)
 
-In progress: the c = 1, 2, 4, 8 closed-loop cell (`tools/normal_cell.py`) on main v0.141.0 and on
-the fix, and on the probe at N=1 to count how often the bound acts there.
+`tools/normal_cell.py`, `gb10/normal/`: c closed-loop clients at c = 1, 2, 4, 8, each sending
+three greedy chat requests back to back (max_tokens 160, from sixteen explanation prompts of 58 to 61 tokens), on main v0.141.0 and on the fix, one boot each.
+
+| c | aggregate tok/s, main -> fix | draft length at admission, main / fix | demotions | no-round bursts | texts |
+|---:|---|---|---|---|---|
+| 1 | 24.58 -> 24.61 | K3 x3 / K3 x3 | 0 / 0 | 0 / 0 | equal (3 requests) |
+| 2 | 35.88 -> 35.17 | K3 x6 / K3 x6 | 0 / 0 | 0 / 0 | equal (6 requests) |
+| 4 | 53.23 -> 53.24 | K3 x12 / K3 x12 | 0 / 0 | 0 / 0 | equal (12 requests) |
+| 8 | 79.71 -> 79.45 | K0 x22, K3 x2 / K0 x23, K3 x1 | 2 / 1 | 0 / 0 | equal (24 requests) |
+
+- Neither arm has a no-round burst at any concurrency, so the bound has nothing to act on: it
+  acts only at a burst entry that a waiting request stops with nothing emitted. The draft lengths
+  the cost model chose at c = 1, 2 and 4 are the same in both arms; at c = 8 the far-concurrency
+  rule serves plain and the first one or two admissions differ with the arrival timing of the
+  wave (2 and 1 demotions). Every request's text is equal across the arms.
+- The probe at N=1, which logs every round the bound forces (`[spec-yield] bound:`), ran the same
+  cell (`gb10/normal-probe/`): 0 forced rounds and 0 silent entries at c = 1, 2, 4 and 8, with
+  the same draft lengths (K3 x3, x6, x12; at c = 8 K0 x23 and K3 x1) and aggregates of 24.65,
+  35.20, 53.34 and 79.82 tok/s. In ordinary concurrency the bound does not fire, so it cannot
+  move the cost model's choice there.
 
 ## Binaries
 

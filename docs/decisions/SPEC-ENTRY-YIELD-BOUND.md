@@ -69,6 +69,10 @@ Every cell advances, with a longest gap of 1.77 s against 30.0 to 30.7 s on main
 unchanged. Where the bound acts, the short requests' p50 rises by at most 0.10 s and their p95 by
 0.09 to 0.10 s.
 
+Exactness on the fix binary: the seeded-invariance gate passes (54 rows) and the burst-boundary
+gate passes (229 rows), each with every row's text, completion tokens and acceptance equal to the
+base rows of main + memra#1196's fix.
+
 ## What was chosen and what was not
 
 - **Chosen: the bound at N=1** (`SPEC_ENTRY_YIELD_MAX`). A session yields at a burst's entry
