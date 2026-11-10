@@ -1,0 +1,53 @@
+warning: memra-engine@0.140.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.140.0 ($RUN-src/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.65s
+     Running unittests src/lib.rs ($RUN-target/debug/deps/memra_server-31808d9d7880a566)
+
+running 17 tests
+test worker::stop_string_tests::empty_stop_string_element_never_matches ... ok
+test prompt_ids_tests::stop_token_ids_cap_oov_and_unsigned_shape ... ok
+test worker::stop_string_tests::step_vision_spans_layout ... ok
+test worker::tests::spec_emission_clamps_engine_overshoot_to_the_request_budget ... ok
+test worker::tests::spec_emission_keeps_intermediate_scheduler_surplus_public ... ok
+test prompt_ids_tests::stop_token_ids_parse_validate_and_reach_both_request_builders ... ok
+test worker::tests::spec_emission_publishes_one_event_per_visible_token_id ... ok
+test worker::tests::stop_string_clamp_ends_the_public_burst_on_the_completing_token ... ok
+test worker::tests::stop_strings_end_every_spec_round_partition_on_the_completing_token ... FAILED
+test worker::tests::stop_strings_yield_to_an_earlier_eos_or_stop_id_in_the_slice ... ok
+test worker::tests::stop_token_ids_fence_all_spec_round_partitions_before_decode_or_counting ... ok
+test worker::tests::stop_token_ids_select_the_visible_prefix_and_stop_reason ... ok
+test worker::tests::dspark_burst_hook_ends_at_the_round_that_completes_a_stop_string ... FAILED
+test worker::tests::spec_burst_ends_at_the_round_that_completes_a_stop_string ... FAILED
+test worker::tests::spec_burst_ends_at_the_round_that_commits_eos ... ok
+test tests::stop_token_ids_handlers_return_named_400s ... ok
+test dsv4_serve::stop_reason_tests::eos_stop_ids_and_stop_strings_read_stop ... ok
+
+failures:
+
+---- worker::tests::stop_strings_end_every_spec_round_partition_on_the_completing_token stdout ----
+
+thread 'worker::tests::stop_strings_end_every_spec_round_partition_on_the_completing_token' (3021390) panicked at crates/memra-server/src/worker.rs:38341:25:
+assertion `left == right` failed: ["cd"] split 0/0
+  left: 9
+ right: 4
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- worker::tests::dspark_burst_hook_ends_at_the_round_that_completes_a_stop_string stdout ----
+
+thread 'worker::tests::dspark_burst_hook_ends_at_the_round_that_completes_a_stop_string' (3021383) panicked at crates/memra-server/src/worker.rs:38687:9:
+the round that completes the stop string ends the burst
+
+---- worker::tests::spec_burst_ends_at_the_round_that_completes_a_stop_string stdout ----
+
+thread 'worker::tests::spec_burst_ends_at_the_round_that_completes_a_stop_string' (3021385) panicked at crates/memra-server/src/worker.rs:38591:9:
+the round that completes the stop string ends the burst
+
+
+failures:
+    worker::tests::dspark_burst_hook_ends_at_the_round_that_completes_a_stop_string
+    worker::tests::spec_burst_ends_at_the_round_that_completes_a_stop_string
+    worker::tests::stop_strings_end_every_spec_round_partition_on_the_completing_token
+
+test result: FAILED. 14 passed; 3 failed; 0 ignored; 0 measured; 1161 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p memra-server --lib`

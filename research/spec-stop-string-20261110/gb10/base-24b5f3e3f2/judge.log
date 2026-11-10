@@ -1,0 +1,127 @@
+== spec (mtp) ==
+  t1: stop rows equal to plain decode 1/13; close ms: non-stop median 75 (max 76, n=9), stop rows max 1308.8 (n=13), limit 226
+    stop-row completion tokens: [32, 66, 66, 96, 96, 32, 66, 96, 32, 66, 96, 36, 34] plain [19, 36, 50, 68, 72, 27, 54, 78, 27, 54, 78, 36, 29]
+  greedy: stop rows equal to plain decode 2/13; close ms: non-stop median 0 (max 0, n=9), stop rows max 1196.6 (n=13), limit 100
+    stop-row completion tokens: [32, 32, 64, 64, 96, 32, 64, 96, 32, 64, 96, 32, 33] plain [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 30]
+== small (mtp) ==
+  t1: stop rows equal to plain decode 5/13; close ms: non-stop median 76 (max 77, n=5), stop rows max 508.6 (n=13), limit 227
+    stop-row completion tokens: [20, 37, 50, 69, 73, 30, 54, 80, 30, 54, 80, 36, 29] plain [19, 36, 50, 68, 72, 27, 54, 78, 27, 54, 78, 36, 29]
+  greedy: stop rows equal to plain decode 5/13; close ms: non-stop median 0 (max 0, n=9), stop rows max 208.9 (n=13), limit 100
+    stop-row completion tokens: [18, 32, 46, 61, 73, 25, 55, 81, 29, 55, 81, 32, 30] plain [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 30]
+coverage mtp greedy: spanning stops 0, two stops in one burst 4, confirmed rejected-draft stops 8
+coverage mtp t1: spanning stops 0, two stops in one burst 5, confirmed rejected-draft stops 4
+FAIL spec stop-0-t1: tokens 32 finish stop sha 66c22acccddf6760, plain decode 19 stop 66c22acccddf6760
+FAIL spec stop-0-t1: 0 [spec-stop] receipts for a 32-token stop (want one naming it)
+FAIL spec stop-1-t1: tokens 66 finish stop sha 9e0c918c6be1f5ba, plain decode 36 stop 9e0c918c6be1f5ba
+FAIL spec stop-1-t1: 0 [spec-stop] receipts for a 66-token stop (want one naming it)
+FAIL spec stop-2-t1: tokens 66 finish stop sha c97a8a23d4262f1d, plain decode 50 stop c97a8a23d4262f1d
+FAIL spec stop-2-t1: 0 [spec-stop] receipts for a 66-token stop (want one naming it)
+FAIL spec stop-3-t1: tokens 96 finish stop sha 14f1c0de878bad1b, plain decode 68 stop 14f1c0de878bad1b
+FAIL spec stop-3-t1: 0 [spec-stop] receipts for a 96-token stop (want one naming it)
+FAIL spec stop-4-t1: tokens 96 finish stop sha 584a324db12b42da, plain decode 72 stop 584a324db12b42da
+FAIL spec stop-4-t1: 0 [spec-stop] receipts for a 96-token stop (want one naming it)
+FAIL spec span-0-t1: tokens 32 finish stop sha 5169ed8fa7e6dcf3, plain decode 27 stop 5169ed8fa7e6dcf3
+FAIL spec span-0-t1: 0 [spec-stop] receipts for a 32-token stop (want one naming it)
+FAIL spec span-1-t1: tokens 66 finish stop sha 04fb60d11bcf4c68, plain decode 54 stop 04fb60d11bcf4c68
+FAIL spec span-1-t1: 0 [spec-stop] receipts for a 66-token stop (want one naming it)
+FAIL spec span-2-t1: tokens 96 finish stop sha 7c2632e0fe34ec15, plain decode 78 stop 7c2632e0fe34ec15
+FAIL spec span-2-t1: 0 [spec-stop] receipts for a 96-token stop (want one naming it)
+FAIL spec two-0-t1: tokens 32 finish stop sha 0d473783e4c3db9c, plain decode 27 stop 0d473783e4c3db9c
+FAIL spec two-0-t1: 0 [spec-stop] receipts for a 32-token stop (want one naming it)
+FAIL spec two-1-t1: tokens 66 finish stop sha 011962eae2bba677, plain decode 54 stop 011962eae2bba677
+FAIL spec two-1-t1: 0 [spec-stop] receipts for a 66-token stop (want one naming it)
+FAIL spec two-2-t1: tokens 96 finish stop sha c5ff45eb16ec658c, plain decode 78 stop c5ff45eb16ec658c
+FAIL spec two-2-t1: 0 [spec-stop] receipts for a 96-token stop (want one naming it)
+FAIL spec budget-t1: 0 [spec-stop] receipts for a 36-token stop (want one naming it)
+FAIL spec turn1-t1: tokens 34 finish stop sha 758b60517c03486e, plain decode 29 stop 758b60517c03486e
+FAIL spec turn1-t1: 0 [spec-stop] receipts for a 34-token stop (want one naming it)
+FAIL spec stop-0-t1: closed 485.4 ms after its last visible chunk, limit 226 ms (non-stop median 75 ms, plain decode's hold-back 0 ms)
+FAIL spec stop-1-t1: closed 1308.8 ms after its last visible chunk, limit 374 ms (non-stop median 75 ms, plain decode's hold-back 74 ms)
+FAIL spec stop-2-t1: closed 579.7 ms after its last visible chunk, limit 226 ms (non-stop median 75 ms, plain decode's hold-back 0 ms)
+FAIL spec stop-3-t1: closed 1249.8 ms after its last visible chunk, limit 226 ms (non-stop median 75 ms, plain decode's hold-back 0 ms)
+FAIL spec stop-4-t1: closed 1053.3 ms after its last visible chunk, limit 226 ms (non-stop median 75 ms, plain decode's hold-back 0 ms)
+FAIL spec span-2-t1: closed 776.5 ms after its last visible chunk, limit 517 ms (non-stop median 75 ms, plain decode's hold-back 146 ms)
+FAIL spec two-1-t1: closed 374.2 ms after its last visible chunk, limit 226 ms (non-stop median 75 ms, plain decode's hold-back 0 ms)
+FAIL spec two-2-t1: closed 667.6 ms after its last visible chunk, limit 226 ms (non-stop median 75 ms, plain decode's hold-back 0 ms)
+FAIL spec stop-0-greedy: tokens 32 finish stop sha 5242a8aa7d950b6e, plain decode 16 stop 5242a8aa7d950b6e
+FAIL spec stop-0-greedy: 0 [spec-stop] receipts for a 32-token stop (want one naming it)
+FAIL spec stop-1-greedy: 0 [spec-stop] receipts for a 32-token stop (want one naming it)
+FAIL spec stop-2-greedy: tokens 64 finish stop sha c8ea2a2f121c77b2, plain decode 45 stop c8ea2a2f121c77b2
+FAIL spec stop-2-greedy: 0 [spec-stop] receipts for a 64-token stop (want one naming it)
+FAIL spec stop-3-greedy: tokens 64 finish stop sha 22a971cba1153e2b, plain decode 58 stop 22a971cba1153e2b
+FAIL spec stop-3-greedy: 0 [spec-stop] receipts for a 64-token stop (want one naming it)
+FAIL spec stop-4-greedy: tokens 96 finish stop sha f44b114f69146960, plain decode 73 stop f44b114f69146960
+FAIL spec stop-4-greedy: 0 [spec-stop] receipts for a 96-token stop (want one naming it)
+FAIL spec span-0-greedy: tokens 32 finish stop sha f7d717167d97611a, plain decode 25 stop f7d717167d97611a
+FAIL spec span-0-greedy: 0 [spec-stop] receipts for a 32-token stop (want one naming it)
+FAIL spec span-1-greedy: tokens 64 finish stop sha d4204cd9dd6d48cb, plain decode 53 stop d4204cd9dd6d48cb
+FAIL spec span-1-greedy: 0 [spec-stop] receipts for a 64-token stop (want one naming it)
+FAIL spec span-2-greedy: tokens 96 finish stop sha b633d1e6672afdcd, plain decode 79 stop b633d1e6672afdcd
+FAIL spec span-2-greedy: 0 [spec-stop] receipts for a 96-token stop (want one naming it)
+FAIL spec two-0-greedy: tokens 32 finish stop sha ff4fd409d9770714, plain decode 27 stop ff4fd409d9770714
+FAIL spec two-0-greedy: 0 [spec-stop] receipts for a 32-token stop (want one naming it)
+FAIL spec two-1-greedy: tokens 64 finish stop sha 4d3445172e38d431, plain decode 53 stop 4d3445172e38d431
+FAIL spec two-1-greedy: 0 [spec-stop] receipts for a 64-token stop (want one naming it)
+FAIL spec two-2-greedy: tokens 96 finish stop sha 9c1a6f95402acc0d, plain decode 79 stop 9c1a6f95402acc0d
+FAIL spec two-2-greedy: 0 [spec-stop] receipts for a 96-token stop (want one naming it)
+FAIL spec budget-greedy: 0 [spec-stop] receipts for a 32-token stop (want one naming it)
+FAIL spec turn1-greedy: tokens 33 finish stop sha f7579f736b88ebec, plain decode 30 stop f7579f736b88ebec
+FAIL spec turn1-greedy: 0 [spec-stop] receipts for a 33-token stop (want one naming it)
+FAIL spec stop-0-greedy: closed 608.5 ms after its last visible chunk, limit 100 ms (non-stop median 0 ms, plain decode's hold-back 0 ms)
+FAIL spec stop-2-greedy: closed 1026.5 ms after its last visible chunk, limit 100 ms (non-stop median 0 ms, plain decode's hold-back 0 ms)
+FAIL spec stop-3-greedy: closed 198.4 ms after its last visible chunk, limit 100 ms (non-stop median 0 ms, plain decode's hold-back 0 ms)
+FAIL spec stop-4-greedy: closed 1196.6 ms after its last visible chunk, limit 100 ms (non-stop median 0 ms, plain decode's hold-back 0 ms)
+FAIL spec span-1-greedy: closed 618.8 ms after its last visible chunk, limit 398 ms (non-stop median 0 ms, plain decode's hold-back 149 ms)
+FAIL spec span-2-greedy: closed 883.5 ms after its last visible chunk, limit 391 ms (non-stop median 0 ms, plain decode's hold-back 146 ms)
+FAIL spec two-0-greedy: closed 204.5 ms after its last visible chunk, limit 100 ms (non-stop median 0 ms, plain decode's hold-back 0 ms)
+FAIL spec two-1-greedy: closed 508.9 ms after its last visible chunk, limit 100 ms (non-stop median 0 ms, plain decode's hold-back 0 ms)
+FAIL spec two-2-greedy: closed 802.2 ms after its last visible chunk, limit 100 ms (non-stop median 0 ms, plain decode's hold-back 0 ms)
+FAIL spec turn1-greedy: closed 183.8 ms after its last visible chunk, limit 100 ms (non-stop median 0 ms, plain decode's hold-back 0 ms)
+FAIL small stop-0-t1: tokens 20 finish stop sha 66c22acccddf6760, plain decode 19 stop 66c22acccddf6760
+FAIL small stop-0-t1: 0 [spec-stop] receipts for a 20-token stop (want one naming it)
+FAIL small stop-1-t1: tokens 37 finish stop sha 9e0c918c6be1f5ba, plain decode 36 stop 9e0c918c6be1f5ba
+FAIL small stop-1-t1: 0 [spec-stop] receipts for a 37-token stop (want one naming it)
+FAIL small stop-2-t1: 0 [spec-stop] receipts for a 50-token stop (want one naming it)
+FAIL small stop-3-t1: tokens 69 finish stop sha 14f1c0de878bad1b, plain decode 68 stop 14f1c0de878bad1b
+FAIL small stop-3-t1: 0 [spec-stop] receipts for a 69-token stop (want one naming it)
+FAIL small stop-4-t1: tokens 73 finish stop sha 584a324db12b42da, plain decode 72 stop 584a324db12b42da
+FAIL small stop-4-t1: 0 [spec-stop] receipts for a 73-token stop (want one naming it)
+FAIL small span-0-t1: tokens 30 finish stop sha 5169ed8fa7e6dcf3, plain decode 27 stop 5169ed8fa7e6dcf3
+FAIL small span-0-t1: 0 [spec-stop] receipts for a 30-token stop (want one naming it)
+FAIL small span-1-t1: 0 [spec-stop] receipts for a 54-token stop (want one naming it)
+FAIL small span-2-t1: tokens 80 finish stop sha 7c2632e0fe34ec15, plain decode 78 stop 7c2632e0fe34ec15
+FAIL small span-2-t1: 0 [spec-stop] receipts for a 80-token stop (want one naming it)
+FAIL small two-0-t1: tokens 30 finish stop sha 0d473783e4c3db9c, plain decode 27 stop 0d473783e4c3db9c
+FAIL small two-0-t1: 0 [spec-stop] receipts for a 30-token stop (want one naming it)
+FAIL small two-1-t1: 0 [spec-stop] receipts for a 54-token stop (want one naming it)
+FAIL small two-2-t1: tokens 80 finish stop sha c5ff45eb16ec658c, plain decode 78 stop c5ff45eb16ec658c
+FAIL small two-2-t1: 0 [spec-stop] receipts for a 80-token stop (want one naming it)
+FAIL small budget-t1: 0 [spec-stop] receipts for a 36-token stop (want one naming it)
+FAIL small turn1-t1: 0 [spec-stop] receipts for a 29-token stop (want one naming it)
+FAIL small stop-3-t1: closed 248.5 ms after its last visible chunk, limit 227 ms (non-stop median 76 ms, plain decode's hold-back 0 ms)
+FAIL small two-0-t1: closed 253.3 ms after its last visible chunk, limit 227 ms (non-stop median 76 ms, plain decode's hold-back 0 ms)
+FAIL small stop-0-greedy: tokens 18 finish stop sha 5242a8aa7d950b6e, plain decode 16 stop 5242a8aa7d950b6e
+FAIL small stop-0-greedy: 0 [spec-stop] receipts for a 18-token stop (want one naming it)
+FAIL small stop-1-greedy: 0 [spec-stop] receipts for a 32-token stop (want one naming it)
+FAIL small stop-2-greedy: tokens 46 finish stop sha c8ea2a2f121c77b2, plain decode 45 stop c8ea2a2f121c77b2
+FAIL small stop-2-greedy: 0 [spec-stop] receipts for a 46-token stop (want one naming it)
+FAIL small stop-3-greedy: tokens 61 finish stop sha 22a971cba1153e2b, plain decode 58 stop 22a971cba1153e2b
+FAIL small stop-3-greedy: 0 [spec-stop] receipts for a 61-token stop (want one naming it)
+FAIL small stop-4-greedy: 0 [spec-stop] receipts for a 73-token stop (want one naming it)
+FAIL small span-0-greedy: 0 [spec-stop] receipts for a 25-token stop (want one naming it)
+FAIL small span-1-greedy: tokens 55 finish stop sha d4204cd9dd6d48cb, plain decode 53 stop d4204cd9dd6d48cb
+FAIL small span-1-greedy: 0 [spec-stop] receipts for a 55-token stop (want one naming it)
+FAIL small span-2-greedy: tokens 81 finish stop sha b633d1e6672afdcd, plain decode 79 stop b633d1e6672afdcd
+FAIL small span-2-greedy: 0 [spec-stop] receipts for a 81-token stop (want one naming it)
+FAIL small two-0-greedy: tokens 29 finish stop sha ff4fd409d9770714, plain decode 27 stop ff4fd409d9770714
+FAIL small two-0-greedy: 0 [spec-stop] receipts for a 29-token stop (want one naming it)
+FAIL small two-1-greedy: tokens 55 finish stop sha 4d3445172e38d431, plain decode 53 stop 4d3445172e38d431
+FAIL small two-1-greedy: 0 [spec-stop] receipts for a 55-token stop (want one naming it)
+FAIL small two-2-greedy: tokens 81 finish stop sha 9c1a6f95402acc0d, plain decode 79 stop 9c1a6f95402acc0d
+FAIL small two-2-greedy: 0 [spec-stop] receipts for a 81-token stop (want one naming it)
+FAIL small budget-greedy: 0 [spec-stop] receipts for a 32-token stop (want one naming it)
+FAIL small turn1-greedy: 0 [spec-stop] receipts for a 30-token stop (want one naming it)
+FAIL small stop-2-greedy: closed 104.7 ms after its last visible chunk, limit 100 ms (non-stop median 0 ms, plain decode's hold-back 0 ms)
+FAIL coverage mtp greedy: no stop string began in an earlier commit slice than it completed in
+FAIL coverage mtp t1: no stop string began in an earlier commit slice than it completed in
+STOP-STRING GATE: FAIL (114)

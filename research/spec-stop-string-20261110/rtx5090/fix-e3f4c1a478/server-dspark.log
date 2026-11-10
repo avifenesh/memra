@@ -1,0 +1,504 @@
+[server] build: memra-0.141.0-90d8d124b0f0 (id: source-tree, git: unknown)
+[server] starting; models config = [("q", "$MODELS/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- $MODELS/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[frspec-trim] self-trimmed head: 32768 rows of main output.weight (Q5_K)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy disabled by MEMRA_SPEC_GATE=0: always-spec
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves OFF (whole-entry restore, strict-prefix restore and boundary capture together)
+[dspark] precision=q4 (MEMRA_DFLASH_PREC set)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] q: DSPARK SPEC route armed (drafter attached ($MODELS/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] q: DFlash2 draft head TRIMMED to 32768 rows (FR-Spec d2t; verify stays full-vocab)
+[admission] "q": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+[admission] "q": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
+[prime-walk] model="q" route=dspark supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[topk-shards] engaged: rows=7 cols=32768 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2057 kept=2056 phys_rows=4120
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1744830464,"still_owned_bytes":19590774536,"pool_reserved_bytes":19730006016,"pool_cached_bytes":139231480,"driver_free_bytes":4771151872,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1664MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=dspark transient floor 1544MB (static was 1536MB; measured 1544MB; probe kv charge 119MB, draft-state 0MB, drafted 71 accepted 44; [dev0 peak-mapped 20480MB rest-mapped 18816MB charged 119MB -> 1544MB]; 7.7s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18207
+[meter] admit id=chatcmpl-4e87fc0e54986526a65ca8e63dba36ce tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=17/36 cum=36/78=0.462
+[dspark-acc] ctx=101 burst=19/35 cum=55/113=0.487
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 132 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-9e29bce1e8b37fd3c3ecf2282a0abd24 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +11MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=251 path=spec = 29696 B/token x ctx + 3MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=27 call=27 stack=27 concat=0 slab_resident=1443MB held=3MB cold=12MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=27 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=27 burst=20/40 cum=20/40=0.500
+[dspark-acc] ctx=60 burst=6/21 cum=26/61=0.426
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 75 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-491b9791a8df8c18a59e98a31a1a142f tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-stop] route=dspark stop string completed: completion_tokens=18 burst_slice=6 slice_pos=1/2 burst_public=18 spans_slices=0
+[dspark-acc] ctx=36 burst=13/25 cum=13/25=0.520
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 54 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-361d444afc85c3b3e9bb88b6f6c5ee27 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +5MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=117 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 7MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=12/23 cum=12/23=0.522
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 53 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-8cdd7850a427d8f76c6113213fbd86a2 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +5MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=118 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 7MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=13/25 cum=13/25=0.520
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 54 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-53f5477d4c4cb092b9fa81deb292076c tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-stop] route=dspark stop string completed: completion_tokens=32 burst_slice=13 slice_pos=1/1 burst_public=32 spans_slices=0
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 68 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-7240dd0858a667358a264506b0479521 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +6MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=131 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/40 cum=19/40=0.475
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 67 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-7d8591b8e8c6804df28070f30af7ceea tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +6MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=132 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 68 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-685f566f51650ae89f77fc21d26d2975 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[spec-stop] route=dspark stop string completed: completion_tokens=43 burst_slice=6 slice_pos=1/2 burst_public=11 spans_slices=0
+[dspark-acc] ctx=68 burst=6/14 cum=25/56=0.446
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 79 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-d41c1c9ec49813c3a477767d8917710e tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +6MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=142 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=5/11 cum=24/53=0.453
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 78 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-8cf4b4d1a20ed322437b7fe75e9448ff tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +6MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=143 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=6/14 cum=25/56=0.446
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 79 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-5dee62143c2a88d279f58de4065dd643 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[spec-stop] route=dspark stop string completed: completion_tokens=56 burst_slice=12 slice_pos=1/2 burst_public=24 spans_slices=0
+[dspark-acc] ctx=68 burst=13/28 cum=32/70=0.457
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 92 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-0dedd29c8e2dc3e327b03f9c6b88e818 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +7MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=155 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=12/25 cum=31/67=0.463
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 91 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-e7b93bb5e23d3e8eea20e3adbe485c4d tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +7MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=156 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=13/28 cum=32/70=0.457
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 92 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-5bb9e6341317a9da939a57c27d561cb4 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=17/36 cum=36/78=0.462
+[spec-stop] route=dspark stop string completed: completion_tokens=77 burst_slice=3 slice_pos=3/3 burst_public=12 spans_slices=0
+[dspark-acc] ctx=101 burst=9/12 cum=45/90=0.500
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 113 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-ca748c6ccf08ffe3209f05283f5d8f40 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=176 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 9MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=17/36 cum=36/78=0.462
+[dspark-acc] ctx=101 burst=9/12 cum=45/90=0.500
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 112 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-9237c36583db1d03d99acc2a43b79e20 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=177 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 9MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=17/36 cum=36/78=0.462
+[dspark-acc] ctx=101 burst=9/12 cum=45/90=0.500
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 113 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-59e935e8fb9229ae222c530ac5638e00 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-stop] route=dspark stop string completed: completion_tokens=25 burst_slice=9 slice_pos=2/3 burst_public=25 spans_slices=1
+[dspark-acc] ctx=36 burst=17/32 cum=17/32=0.531
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 61 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-b72d0b97bd8bb5e6ea73ed8a2b983d40 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +5MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=124 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=17/32 cum=17/32=0.531
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 60 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-9852c33b682bc3ffe6255eb79f14fe77 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +5MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=125 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=17/32 cum=17/32=0.531
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 61 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-e35c9b5f365c83a57f374448fdab34e2 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[spec-stop] route=dspark stop string completed: completion_tokens=50 burst_slice=10 slice_pos=1/3 burst_public=18 spans_slices=1
+[dspark-acc] ctx=68 burst=10/22 cum=29/64=0.453
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 86 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-3e727cd8fbf5d61a1259925e95f782f7 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +6MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=149 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=8/20 cum=27/62=0.435
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 85 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-1c7be3ba1e49c07095c0c94419695c13 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +6MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=150 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=10/22 cum=29/64=0.453
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 86 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-050f94b376b1c1a5fcc05e59d0622a63 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=17/36 cum=36/78=0.462
+[spec-stop] route=dspark stop string completed: completion_tokens=84 burst_slice=6 slice_pos=3/3 burst_public=19 spans_slices=0
+[dspark-acc] ctx=101 burst=13/20 cum=49/98=0.500
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 120 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-af257d4497a01b88664497af7b691072 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=183 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 9MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=17/36 cum=36/78=0.462
+[dspark-acc] ctx=101 burst=13/20 cum=49/98=0.500
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 119 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-561a8ee56cd29e316e0b5adf91c37987 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=184 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 9MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=17/36 cum=36/78=0.462
+[dspark-acc] ctx=101 burst=13/20 cum=49/98=0.500
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 120 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-c84cfc08bb01f6b61d6377cd5c4d94d9 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-stop] route=dspark stop string completed: completion_tokens=25 burst_slice=9 slice_pos=2/3 burst_public=25 spans_slices=0
+[dspark-acc] ctx=36 burst=17/32 cum=17/32=0.531
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 61 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-dc766c9cfdea4cd318e23d373fbb3ed6 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +5MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=124 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=17/32 cum=17/32=0.531
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 60 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-790d52c658966517e316f521026e1965 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +5MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=125 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=17/32 cum=17/32=0.531
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 61 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-ae9b52bd0dcb46407def71151224e517 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[spec-stop] route=dspark stop string completed: completion_tokens=50 burst_slice=10 slice_pos=1/3 burst_public=18 spans_slices=0
+[dspark-acc] ctx=68 burst=10/22 cum=29/64=0.453
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 86 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-02bb7f30305c397c219a46467b7e3d7a tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +6MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=149 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=8/20 cum=27/62=0.435
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 85 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-6092980d7af51c84a2bc87e60bb15cd9 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +6MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=150 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=10/22 cum=29/64=0.453
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 86 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-4b3e1f09e5f4cdaa627f595e73e09472 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=17/36 cum=36/78=0.462
+[spec-stop] route=dspark stop string completed: completion_tokens=85 burst_slice=7 slice_pos=1/4 burst_public=20 spans_slices=0
+[dspark-acc] ctx=101 burst=16/23 cum=52/101=0.515
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 121 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-70f8d23caee192854c6a05c2d4c3f5a7 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=184 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 9MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=17/36 cum=36/78=0.462
+[dspark-acc] ctx=101 burst=13/20 cum=49/98=0.500
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 120 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-440bb647580ad555377dd8d76b617ab4 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=185 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 9MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[dspark-acc] ctx=68 burst=17/36 cum=36/78=0.462
+[dspark-acc] ctx=101 burst=16/23 cum=52/101=0.515
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 121 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-837d480695864edd6d9909e4a6e919c8 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +6MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=132 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-stop] route=dspark stop string completed: completion_tokens=32 burst_slice=13 slice_pos=1/1 burst_public=32 spans_slices=0
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 68 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-9e57e3657c88919522f7642e26c10e24 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +6MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=131 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/40 cum=19/40=0.475
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 67 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-23895319190d4d302a470ad856a15770 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +6MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=132 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=19/42 cum=19/42=0.452
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 68 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-5fe2be5efe16494f8d372ccf4872957b tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +60MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=1445 path=spec = 29696 B/token x ctx + 137MB prefill-workspace + 0MB fixed = 180MB
+[admission] prefill workspace held: model="q" prompt=1285 call=1285 stack=1285 concat=0 slab_resident=1443MB held=137MB cold=589MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=1285 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=1285 burst=16/43 cum=16/43=0.372
+[dspark-acc] ctx=1318 burst=19/34 cum=35/77=0.455
+[dspark-acc] ctx=1350 burst=19/38 cum=54/115=0.470
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 1381 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-b580d4b1eed401a92e7836005997a757 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=1285 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-stop] route=dspark stop string completed: completion_tokens=27 burst_slice=14 slice_pos=1/2 burst_public=27 spans_slices=0
+[dspark-acc] ctx=1285 burst=14/37 cum=14/37=0.378
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 1312 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-5c0726bd9507d17b227553fe5cd9d3d2 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +57MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=1375 path=spec = 29696 B/token x ctx + 137MB prefill-workspace + 0MB fixed = 178MB
+[admission] prefill workspace held: model="q" prompt=1285 call=1285 stack=1285 concat=0 slab_resident=1443MB held=137MB cold=589MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=1285 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=1285 burst=13/35 cum=13/35=0.371
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 1311 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-e7d3b18d511a1926095b6486a0c23406 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +57MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=1376 path=spec = 29696 B/token x ctx + 137MB prefill-workspace + 0MB fixed = 178MB
+[admission] prefill workspace held: model="q" prompt=1285 call=1285 stack=1285 concat=0 slab_resident=1443MB held=137MB cold=589MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=1285 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=1285 burst=14/37 cum=14/37=0.378
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 1312 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-6a86e481002681462c0b669d46a307f1 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +61MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=1472 path=spec = 29696 B/token x ctx + 143MB prefill-workspace + 0MB fixed = 187MB
+[admission] prefill workspace held: model="q" prompt=1344 call=1344 stack=1344 concat=0 slab_resident=1443MB held=143MB cold=617MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=1344 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=1344 burst=17/41 cum=17/41=0.415
+[dspark-acc] ctx=1376 burst=20/36 cum=37/77=0.481
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 1408 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-5120c73dbb9866aeff7cd50fcdef83c6 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=17/44 cum=17/44=0.386
+[dspark-acc] ctx=69 burst=18/41 cum=35/85=0.412
+[dspark-acc] ctx=103 burst=16/35 cum=51/120=0.425
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 132 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-6ee7f7d4c107371c04d33188c2cd057f tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +11MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=251 path=spec = 29696 B/token x ctx + 3MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=27 call=27 stack=27 concat=0 slab_resident=1443MB held=3MB cold=12MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=27 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=27 burst=17/44 cum=17/44=0.386
+[dspark-acc] ctx=60 burst=8/26 cum=25/70=0.357
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 79 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-3c0bb1949046f7199bbd6a3b67c8f1ae tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=196 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 10MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-stop] route=dspark stop string completed: completion_tokens=16 burst_slice=8 slice_pos=2/3 burst_public=16 spans_slices=0
+[dspark-acc] ctx=36 burst=9/24 cum=9/24=0.375
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 52 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-7386b5824bd848d1fb52853c711d5b01 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-stop] route=dspark stop string completed: completion_tokens=32 burst_slice=16 slice_pos=2/3 burst_public=32 spans_slices=0
+[dspark-acc] ctx=36 burst=17/44 cum=17/44=0.386
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 68 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-aa6f141b1fa2f68168e995f4664dc977 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=17/44 cum=17/44=0.386
+[spec-stop] route=dspark stop string completed: completion_tokens=45 burst_slice=6 slice_pos=1/3 burst_public=12 spans_slices=0
+[dspark-acc] ctx=69 burst=8/17 cum=25/61=0.410
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 81 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-771c40375b08885e95e87fea9c3fa7a1 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=17/44 cum=17/44=0.386
+[spec-stop] route=dspark stop string completed: completion_tokens=58 burst_slice=13 slice_pos=1/3 burst_public=25 spans_slices=0
+[dspark-acc] ctx=69 burst=14/33 cum=31/77=0.403
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 94 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-b848441fe716f8a2fe1a00c13eb5d7ff tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=17/44 cum=17/44=0.386
+[dspark-acc] ctx=69 burst=18/41 cum=35/85=0.412
+[spec-stop] route=dspark stop string completed: completion_tokens=73 burst_slice=3 slice_pos=2/2 burst_public=6 spans_slices=0
+[dspark-acc] ctx=103 burst=3/8 cum=38/93=0.409
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 109 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-a886d8f9a7b37651fd079a70af2b3cbd tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-stop] route=dspark stop string completed: completion_tokens=25 burst_slice=12 slice_pos=1/3 burst_public=25 spans_slices=1
+[dspark-acc] ctx=36 burst=15/35 cum=15/35=0.429
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 61 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-cd749419f16f78039cb54f59e81980e4 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=17/44 cum=17/44=0.386
+[spec-stop] route=dspark stop string completed: completion_tokens=53 burst_slice=10 slice_pos=1/2 burst_public=20 spans_slices=1
+[dspark-acc] ctx=69 burst=11/27 cum=28/71=0.394
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 89 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-7143f09a55d7485beb64a16ed92068e4 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=17/44 cum=17/44=0.386
+[dspark-acc] ctx=69 burst=18/41 cum=35/85=0.412
+[spec-stop] route=dspark stop string completed: completion_tokens=79 burst_slice=6 slice_pos=3/3 burst_public=12 spans_slices=0
+[dspark-acc] ctx=103 burst=6/14 cum=41/99=0.414
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 115 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-2c78353da6bbe9b74ed5c08d9ee8800f tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-stop] route=dspark stop string completed: completion_tokens=27 burst_slice=12 slice_pos=3/3 burst_public=27 spans_slices=0
+[dspark-acc] ctx=36 burst=15/35 cum=15/35=0.429
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 63 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-6fa888940846310b01b4175db84e4332 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=17/44 cum=17/44=0.386
+[spec-stop] route=dspark stop string completed: completion_tokens=53 burst_slice=10 slice_pos=1/2 burst_public=20 spans_slices=0
+[dspark-acc] ctx=69 burst=11/27 cum=28/71=0.394
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 89 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-e418eb1c970c392349c22b27ce0ff4cc tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=36 burst=17/44 cum=17/44=0.386
+[dspark-acc] ctx=69 burst=18/41 cum=35/85=0.412
+[spec-stop] route=dspark stop string completed: completion_tokens=79 burst_slice=6 slice_pos=3/3 burst_public=12 spans_slices=0
+[dspark-acc] ctx=103 burst=6/14 cum=41/99=0.414
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 115 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-b03c86fdc925c82703d523feaa96f6f5 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +6MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=132 path=spec = 29696 B/token x ctx + 4MB prefill-workspace + 0MB fixed = 8MB
+[admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-stop] route=dspark stop string completed: completion_tokens=32 burst_slice=16 slice_pos=2/2 burst_public=32 spans_slices=0
+[dspark-acc] ctx=36 burst=17/44 cum=17/44=0.386
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 68 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-b62ec5c2ad0a80e20e0836411c2f81f8 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +60MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=1445 path=spec = 29696 B/token x ctx + 137MB prefill-workspace + 0MB fixed = 180MB
+[admission] prefill workspace held: model="q" prompt=1285 call=1285 stack=1285 concat=0 slab_resident=1443MB held=137MB cold=589MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=1285 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=1285 burst=15/43 cum=15/43=0.349
+[dspark-acc] ctx=1317 burst=17/36 cum=32/79=0.405
+[dspark-acc] ctx=1349 burst=20/37 cum=52/116=0.448
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 1381 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-bf525c2738e4bfbd890a96fd5116a66c tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=1285 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-stop] route=dspark stop string completed: completion_tokens=29 burst_slice=16 slice_pos=1/1 burst_public=29 spans_slices=0
+[dspark-acc] ctx=1285 burst=13/41 cum=13/41=0.317
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 1314 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[meter] admit id=chatcmpl-abe11c6297582285126134bad6bab1fd tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +61MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=1474 path=spec = 29696 B/token x ctx + 143MB prefill-workspace + 0MB fixed = 187MB
+[admission] prefill workspace held: model="q" prompt=1346 call=1346 stack=1346 concat=0 slab_resident=1443MB held=143MB cold=617MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=1346 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=1346 burst=17/45 cum=17/45=0.378
+[dspark-acc] ctx=1379 burst=17/35 cum=34/80=0.425
+[worker] dspark-park SKIPPED (grid law): a recurrent trunk's 1410 rows cannot resume exactly and it cannot rewind (no prime boundary of its own was published); session freed (model q)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

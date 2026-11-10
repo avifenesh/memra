@@ -1,0 +1,38 @@
+== spec (mtp) ==
+  t1: stop rows equal to plain decode 13/13; close ms: non-stop median 34 (max 36, n=9), stop rows max 90.4 (n=13), limit 134
+    stop-row completion tokens: [19, 36, 50, 68, 72, 27, 54, 78, 27, 54, 78, 36, 35] plain [19, 36, 50, 68, 72, 27, 54, 78, 27, 54, 78, 36, 35]
+  greedy: stop rows equal to plain decode 13/13; close ms: non-stop median 0 (max 53, n=9), stop rows max 103.3 (n=13), limit 100
+    stop-row completion tokens: [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 29] plain [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 29]
+== small (mtp) ==
+  t1: stop rows equal to plain decode 13/13; close ms: non-stop median 34 (max 122, n=5), stop rows max 160.1 (n=13), limit 134
+    stop-row completion tokens: [19, 36, 50, 68, 72, 27, 54, 78, 27, 54, 78, 36, 35] plain [19, 36, 50, 68, 72, 27, 54, 78, 27, 54, 78, 36, 35]
+  greedy: stop rows equal to plain decode 13/13; close ms: non-stop median 0 (max 60, n=9), stop rows max 104.3 (n=13), limit 100
+    stop-row completion tokens: [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 29] plain [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 29]
+== dspark (dspark) ==
+  t1: stop rows equal to plain decode 0/13; close ms: non-stop median 0 (max 0, n=4), stop rows max 0.1 (n=3), limit 100
+    stop-row completion tokens: [43, 96, 96, 96, 96, 96, 96, 96, 32, 96, 96, 36, 73] plain [19, 36, 50, 68, 72, 27, 54, 78, 27, 54, 78, 36, 35]
+  greedy: stop rows equal to plain decode 13/13; close ms: non-stop median 0 (max 1, n=4), stop rows max 102.0 (n=13), limit 100
+    stop-row completion tokens: [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 29] plain [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 29]
+coverage dspark greedy: spanning stops 2, two stops in one burst 0, confirmed rejected-draft stops 0
+coverage dspark t1: spanning stops 0, two stops in one burst 0, confirmed rejected-draft stops 0
+coverage mtp greedy: spanning stops 6, two stops in one burst 4, confirmed rejected-draft stops 8
+coverage mtp t1: spanning stops 10, two stops in one burst 5, confirmed rejected-draft stops 4
+FAIL dspark free-t1: tokens 96 finish length sha 5fef9084835d769f, plain decode 96 length bf0fdea37d7b81e6
+FAIL dspark eos-t1: tokens 48 finish stop sha cb204c45ecbdb2f8, plain decode 52 stop 72ba9fab5e1ea3a1
+FAIL dspark stop-0-t1: tokens 43 finish stop sha a1d1d5600f0ab6e4, plain decode 19 stop 66c22acccddf6760
+FAIL dspark stop-1-t1: tokens 96 finish length sha 5fef9084835d769f, plain decode 36 stop 9e0c918c6be1f5ba
+FAIL dspark stop-2-t1: tokens 96 finish length sha 5fef9084835d769f, plain decode 50 stop c97a8a23d4262f1d
+FAIL dspark stop-3-t1: tokens 96 finish length sha 5fef9084835d769f, plain decode 68 stop 14f1c0de878bad1b
+FAIL dspark stop-4-t1: tokens 96 finish length sha 5fef9084835d769f, plain decode 72 stop 584a324db12b42da
+FAIL dspark span-0-t1: tokens 96 finish length sha 5fef9084835d769f, plain decode 27 stop 5169ed8fa7e6dcf3
+FAIL dspark span-1-t1: tokens 96 finish length sha 5fef9084835d769f, plain decode 54 stop 04fb60d11bcf4c68
+FAIL dspark span-2-t1: tokens 96 finish length sha 5fef9084835d769f, plain decode 78 stop 7c2632e0fe34ec15
+FAIL dspark two-0-t1: tokens 32 finish stop sha 97a32a8c71f348ba, plain decode 27 stop 0d473783e4c3db9c
+FAIL dspark two-1-t1: tokens 96 finish length sha 5fef9084835d769f, plain decode 54 stop 011962eae2bba677
+FAIL dspark two-2-t1: tokens 96 finish length sha 5fef9084835d769f, plain decode 78 stop c5ff45eb16ec658c
+FAIL dspark budget-t1: tokens 36 finish length sha b13f5d5aa8842af0, plain decode 36 stop 9e0c918c6be1f5ba
+FAIL dspark turnfree-t1: tokens 96 finish length sha 64bc257fa06a21c0, plain decode 96 length abd406bc724d8f60
+FAIL dspark turn1-t1: tokens 73 finish stop sha 11703ac062387271, plain decode 35 stop e0af303967faed0b
+FAIL dspark turn2-t1: tokens 64 finish length sha 2ff0bcf58f4e9dc5, plain decode 64 length aac3dc4c264eb3e9
+FAIL coverage dspark t1: no stop string began in an earlier commit slice than it completed in
+STOP-STRING GATE: FAIL (18)
