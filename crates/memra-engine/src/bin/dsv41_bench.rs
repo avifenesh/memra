@@ -663,6 +663,68 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
             ));
         }
     }
+    // one row's top-k and candidate blocks at long context: the one-block forms against the long-row forms
+    for &t in &[32_768usize, 131_072, 262_144] {
+        let mut rng = Lcg(0x5eed_d541 ^ (t as u64));
+        let mut row = Vec::with_capacity(t * 2);
+        for _ in 0..t {
+            let r = rng.next();
+            row.extend_from_slice(
+                &v::f32_to_bf16_bits((r % 4001) as f32 * 0.005 - 10.0).to_le_bytes(),
+            );
+        }
+        let sc = Buf::from_bytes(&st, &row)?;
+        let (k, cb, cbk) = (512usize, 8usize, 2048usize);
+        let nb = t.div_ceil(cb);
+        let o = ops.buf(k * 4)?;
+        let keep = ops.buf(nb)?;
+        let sv = ops.sv();
+        let a = median(&time_ms(&ops, reps, || {
+            ck("topk", unsafe {
+                ffi::memra_v41_topk(
+                    sc.p(&st).m(),
+                    t as i64,
+                    t as i32,
+                    k as i32,
+                    k as i32,
+                    128,
+                    o.p(&st).im(),
+                    k as i64,
+                    1,
+                    sv,
+                )
+            })
+        })?);
+        let b = median(&time_ms(&ops, reps, || {
+            ops.topk_long(sc.p(&st), t, k, k, 128, o.p(&st))
+        })?);
+        let c = median(&time_ms(&ops, reps, || {
+            ck("candidates", unsafe {
+                ffi::memra_v41_candidates(
+                    sc.p(&st).m(),
+                    t as i64,
+                    t as i32,
+                    cb as i32,
+                    cbk as i32,
+                    (t - 1) as i32,
+                    1,
+                    keep.p(&st).u8m(),
+                    nb as i64,
+                    1,
+                    sv,
+                )
+            })
+        })?);
+        let d = median(&time_ms(&ops, reps, || {
+            ops.candidates_long(sc.p(&st), t, cb, cbk, t - 1, 1, keep.p(&st))
+        })?);
+        eprintln!(
+            "select one row of {t} keys: topk {a:.4} ms one block, {b:.4} ms long form; candidates {c:.4} ms, {d:.4} ms"
+        );
+        out.push(format!(
+            "{{\"op\": \"select_row\", \"t\": {t}, \"topk_ms\": {a:.5}, \"topk_long_ms\": {b:.5}, \"candidates_ms\": {c:.5}, \"candidates_long_ms\": {d:.5}}}"
+        ));
+    }
     // the fp32 FMA linear at the head's and the router's shapes (bf16 weights, fp32 out), by rows
     for &(name, n, k) in &[("head", 129_280usize, 5120usize), ("router", 384, 5120)] {
         let mut rng = Lcg(0x5eed_d541 ^ ((n * 31 + k) as u64));

@@ -224,6 +224,27 @@ pub mod ffi {
             rows: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_v41_topk_long(
+            score: *const c_void,
+            t: i32,
+            k: i32,
+            out_w: i32,
+            offset: i32,
+            out: *mut i32,
+            ws: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_v41_candidates_long(
+            score: *const c_void,
+            t: i32,
+            cb: i32,
+            kblocks: i32,
+            start_pos: i32,
+            ratio: i32,
+            keep: *mut u8,
+            ws: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_v41_route(
             raw: *const f32,
             ldr: i64,
@@ -1365,6 +1386,62 @@ impl Ops {
             m as i32,
             heads as i32,
             512,
+            self.sv()
+        ))
+    }
+}
+
+/// Bytes of the zeroed scratch the one-row selects take (`V41_SN_CNT + 2 * V41_SN_BLOCKS` ints).
+pub const SELECT_LONG_WS: usize = (544 + 2 * 256) * 4;
+
+impl Ops {
+    /// The top-k of one score row (`memra_v41_topk` at one row) as four launches over the row cut
+    /// into blocks: a decode step's selection at long context (225 us for 131,072 keys in the
+    /// one-block form). Same selection, same order.
+    pub fn topk_long(
+        &self,
+        score: Dp,
+        t: usize,
+        k: usize,
+        out_w: usize,
+        offset: usize,
+        out: Dp,
+    ) -> Result<(), String> {
+        let ws = self.buf(SELECT_LONG_WS)?;
+        launch!(memra_v41_topk_long(
+            score.c(),
+            t as i32,
+            k as i32,
+            out_w as i32,
+            offset as i32,
+            out.im(),
+            ws.p(&self.st).im(),
+            self.sv()
+        ))
+    }
+    /// The candidate blocks of one score row (`memra_v41_candidates` at one row, the query at
+    /// `start_pos`), the same way.
+    #[allow(clippy::too_many_arguments)]
+    pub fn candidates_long(
+        &self,
+        score: Dp,
+        t: usize,
+        cb: usize,
+        kblocks: usize,
+        start_pos: usize,
+        ratio: usize,
+        keep: Dp,
+    ) -> Result<(), String> {
+        let ws = self.buf(SELECT_LONG_WS)?;
+        launch!(memra_v41_candidates_long(
+            score.c(),
+            t as i32,
+            cb as i32,
+            kblocks as i32,
+            start_pos as i32,
+            ratio as i32,
+            keep.u8m(),
+            ws.p(&self.st).im(),
             self.sv()
         ))
     }

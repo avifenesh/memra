@@ -635,6 +635,58 @@ words differ, its control caught), decode on three captures: 0 failed. The contr
 fix (`receipts/red1`): the previous head fails `stress/sparse_attn_two_threads_two_widths` with a
 CUDA error, as it has to.
 
+### Kept blocks, the link, and what stays open
+
+Keeping the gather's packed block and landing block per rank across gathers (`f308e48578`)
+removes the collapse on the pair (`receipts/two-pu12`, time to first token at 4,096 / 32,768
+tokens): blocks allocated a gather 0.72 / 22.6 s, kept blocks 0.73 / 4.98 s; one transfer at a
+time on top of kept blocks 0.73 / 5.23 s, so the switch was removed again, and with it the kernel
+stores for large gathers (7.6 GB/s a source against the copy engine's 50). It has not run at four
+ranks on four cards.
+
+Why the per-gather blocks collapsed is not known. Two things it is not. Not the first use of new
+memory: the probe's line for blocks allocated for each copy runs at the kept blocks' 54 to 56
+GB/s (`receipts/p2p-01-pu12`). Not the link: an idle card's link sits at generation 1 and comes
+up within two seconds of load, but with each card's generation sampled every 50 ms through a
+prefill (`receipts/link`) both links are at generation 5 while the per-gather arm's copies crawl.
+That arm is also erratic: the same build gave 0.72 s and 14.85 s for the same 4,096-token prefill
+an hour apart, where the kept-block arm gave 0.73 and 0.77 s. Every lease's telemetry carries the
+link generation and width since then.
+
+### The host inside a prefill: the Engram tables
+
+With the copies out of the way a one-card prefill showed the card waiting for the host 33 ms a
+layer (`receipts/prefill-n1-pu11`), and the host's CUDA calls of the whole forward add up to 20 ms.
+A sampler (`receipts/hostprof-fin1`: the bench under gdb, stopped 30 times by a signal) put every
+sample of the forward in `Ctx::engram`, most in `memcpy`. Each Engram layer (1 and 14) gathers
+about 24 rows a token from a table of 384 million 256-byte rows, 98 GB, memory-mapped from the
+checkpoint. Host-only probe, 98,304 random rows (a 4,096-token prompt):
+
+| how the row's page is held | 1 thread | 8 threads |
+|---|---|---|
+| file mapping, page not yet touched by the process | 6,779 ns a row, 666 ms | 924 ns, 90.8 ms |
+| file mapping, page mapped, 4 KiB | 35.9 ns, 3.5 ms | 11 to 14 ns |
+| anonymous memory, 4 KiB, touched | 31.9 ns | 13.3 ns |
+| anonymous memory, 2 MiB transparent huge pages | 22.0 ns | 17.6 ns |
+
+It is the first touch of the page, 190 times the row. `madvise(MADV_POPULATE_READ)` on the mapping
+populates 38 GB/s, 2.6 s a table, with no memory of its own (the pages are the page cache's), so
+`fb0ac3627c` maps each table when its layer is loaded, once a process, and splits a large gather
+over threads. One card, 8 layers, a first-seen prompt (`receipts/prefillab-en2-n1`): 4,096 tokens
+0.654 / 0.540 -> 0.302 / 0.302 s, 32,768 tokens 3.703 / 3.327 -> 2.277 / 2.286 s; a repeated
+prompt was 0.32 / 2.27 s before and after. The one-row decode step is unchanged (4.915 ms on one
+card both ways, first round included): its two dozen rows a table were not paying the fault in
+this bench. The bench's cells record the process's page faults, so pages the cache drops under
+pressure show as a count.
+
+### One-card candidates measured in the same slot
+
+| change | commit | measured |
+|---|---|---|
+| launcher fix, mHC rows kernel, Engram staging (`1a2bdbef7d`) | landed earlier | flat at one row: 0.552 -> 0.555, 0.530 -> 0.532, 0.438 -> 0.439 ms a layer |
+| staged FP4 expert tiles | `eaa42ee764` | one row 0.555 -> 0.533, 0.530 -> 0.513, 0.437 -> 0.419 ms a layer; 48 tiles 386.5 -> 304.1 us (w1/w3), 337.0 -> 304.2 (w2) |
+| fp32 head, 16-byte loads | `72b2cf30c3` | the head at 1 / 4 / 5 / 8 rows 0.900 -> 0.868, 1.235 -> 1.072, 1.414 -> 1.200, 1.796 -> 1.450 ms |
+
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
 Every change in this lane keeps the bytes of the one-card route. At one row on four ranks three
@@ -716,16 +768,19 @@ weight traffic: 1.1 ms.
 
 | what | where it stands | expected |
 |---|---|---|
+| Four ranks, one row: launches | 11.62 ms a step on four cards (290.6 us a layer all in; 17.55 unsplit). Inside a layer the stream is busy all the time with 52 launches a rank, and the issue thread spends 204 us a layer (2.4 us a launch, 79 us between calls) | one CUDA graph replay a rank a step: the issue cost, and independent kernels overlapping inside the graph; it is the item after which the card, not the launch count, bounds the step |
+| Four ranks, one row: the push limit | gathers of at most 256 KiB a rank go through the push and pull kernels (7.6 GB/s a source); at 8 rows on a pair device-push was 9.42 ms against peer-pull's 8.51 | the limit set from a measurement of small sizes with latency (a store of 16 KB against a copy call between kept blocks) |
+| Prefill on N ranks: gathers | kept blocks measured on a pair only (0.73 / 4.98 s at 4,096 / 32,768 tokens, 20 layers); four ranks last measured with per-gather blocks | at the single-flow rate a layer's 0.66 GB of gathers (four ranks) is about 12 ms; the attention's wo_a columns gathered as codes like the hidden ones take another quarter of the bytes |
+| Prefill: expert tiles | 4.83 ms a rank a layer at 4,096 tokens on four ranks, bound by reading each expert's weights once a 64-row tile (about 700 tiles for 384 experts), not by MMAs | 128-row tiles now that padding is skipped (one read an expert), and the pairs' activation quantized once a token instead of once a pair (rows by index in the tile body) |
 | Expert tiles through shared memory | built, not gated (`v41_gemv_f4s_tiles_kernel` in the working tree): a part of K landed by cp.async, nothing in flight in registers, four blocks an SM | the experts toward the read rate: 706 -> about 400 us a layer at 8 distinct-routed rows, 128 -> about 80 at one |
 | The head at 5 to 8 rows | 2.1 ms against 0.9 at one row: every thread of the 256-thread block runs a chain and the block is bound by its instructions; 16-byte loads of the staged values are built, not gated | about 1.2 ms |
 | Dense FP8 at 8 rows | +0.76 ms on a 9-layer call (the batching lane's per-kernel table); wo_b's terms pass two blocks an SM at 7 and 8 rows | K in parts for the 8-column body, as the tiles have |
 | `act_quant` | 10 launches a layer, 1.2 us each in a stream (0.6 ms a 9-layer call when every launch is synchronized, which is the profiler's floor, not the step's) | folding it into each GEMM block would repeat the quantization in every block; into the producers (the norm before wq_a / wkv and the FFN, SwiGLU before w2) it saves 7 launches, about 10 us a layer |
 | N-rank decode: batching across sequences | each call runs alone through each block, so 8 streams give one stream's tokens/s | the design above: 170 to 250 tokens/s aggregate at 8 streams on four ranks, from measured kernel times |
-| N-rank decode: launches | 48 kernels, 11.5 peer copies, 18 event waits and 6 records a layer a rank; a launch costs the issue thread 2.1 us alone on the card and 2.7 to 3.6 us with four ranks on one context | fusing `act_quant` into its GEMM (11 launches), the mHC pair and `hc_pre` + RMSNorm (4), the plan's three zero-fills: about 20 fewer launches a layer a rank, 0.05 to 0.07 ms of issue time and 0.02 to 0.03 ms of kernel floor |
 | N-rank decode: CUDA graph of a rank's step | not built: buffers are now stable (the free list) and the MoE has no host read at decode, which were its two blockers; positions, key counts and the ring slot have to move from kernel arguments to a small device block | the issue cost of a step (about 0.2 to 0.3 ms a layer a rank) down to one launch a step; only worth it when the cards, not the host, bound the step |
 | Top-k over long rows | rows up to 133,632 keys take the ballot tables since the last commit of this branch (two blocks an SM): layer 20 at 131,072 tokens 253 -> 167 ms (`receipts/prof1-n4-128k`), against 125 at `aec3b0b401`; a decode step's one row of 131,072 keys takes the scan form in one block, 225 us, and the candidate selection 106 | prefill: the 40 ms above `aec3b0b401` on ratio-1 index layers; decode at long context: a select over several blocks, about 0.25 ms a step on an index layer at 131,072 |
 | Decode at long context: the attention's key buffer | every step copies the window ring and the whole compressed KV into one buffer for the sparse attention: 134 MB and 123 us at position 131,072 on a ratio-1 layer, 9 us at 4,096 | a persistent buffer per sequence and kv group with the ring's 128 rows in front: the copy's time, on every compressed-attention layer |
-| Decode experts (3 launches, 113 MB of MXFP4 a token-row) | 0.128 ms a token-row after the exchanged-operand tiles: about 35 us of MMAs and 90 us of reads at 1,250 GB/s | 0.02 ms a row if the reads reach the copy rate; the MMA term needs a tile that holds more weight rows per MMA than 16; across cards an expert split by rows divides both terms by the ranks (not built: loader, plan and one more gather) |
+| Decode experts (3 launches, 113 MB of MXFP4 a token-row) | 0.128 ms a token-row after the exchanged-operand tiles: about 35 us of MMAs and 90 us of reads at 1,250 GB/s | 0.02 ms a row if the reads reach the copy rate; the MMA term needs a tile that holds more weight rows per MMA than 16; across cards the expert split by rows divides both terms by the ranks (built: `173d61cf6f`) |
 | `wo_b` at decode through the staged ring | measured 0.065 to 0.037 ms with the staged kernel, 0.044 now with the deeper load-ahead | 0.007 ms a layer on one card with a K-keyed dispatch; unmeasured at 1,280 columns per rank |
 | Sparse attention | one 86 KB block per SM, 4 warps, load/store unit the busiest pipe; 13% of a 4,096-token prefill, 0.036 ms of a decode layer | a key tile of 32 keys (two blocks per SM) or the 8-warp layout on top of the ldmatrix loads: unmeasured |
 | Decode launch count | 58 kernels a layer, 35 of them under 8 us, each about one memory round trip plus the launch | fusing the `attn_keys` chain and the mHC pair: 0.05..0.08 ms a layer; needs the Rust side |
@@ -756,8 +811,9 @@ weight traffic: 1.1 ms.
   `profab-*`: per-op profiles; `gemm-*`: GEMM shapes; `look-*`, `ncul-*`, `ncu-*`: ncu reports;
   `base`, `check-*`, `ab-*`, `prof-*`: the first half of the lane; `nrank-*`: N-rank decode traces;
   `nrankab-*`: N-rank decode A/Bs; `gates-*`: every byte gate on one build; `four`, `four2`,
-  `four3`: the four-card phases, one lease each: gates, decode A/B, traces, rows, prefill; `two`:
-  the same on a pair; `p2p-*`: the transfer probe; `prefill-n4`: the unsplit route's prefill trace
+  `four3`: the four-card phases, one lease each: gates, decode A/B, traces, rows, prefill; `two`,
+  `two-pu12`, `link`: the same on a pair; `p2p-*`: the transfer probe; `hostprof-*`: host stack
+  samples of a prefill; `prefillab-*`: prefill A/Bs; `prefill-n4`: the unsplit route's prefill trace
   on four cards; `red1`: the control of the launcher fix). nsys and ncu report files are
   not kept; their exports and summaries are. The 250 ms telemetry files are gzipped; the box's
   working directory in the logs reads `$LANE`.

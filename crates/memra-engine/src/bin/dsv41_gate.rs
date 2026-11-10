@@ -1735,6 +1735,68 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             );
         }
     }
+    // the one-row selects over a long row cut into blocks against the one-block forms: a row of few
+    // distinct scores (so the threshold has many ties) with some -inf
+    for &t in &[20_000usize, 131_072, 262_144] {
+        let mut row = Vec::with_capacity(t * 2);
+        for _ in 0..t {
+            let r = rng.next();
+            let bits: u16 = if r.is_multiple_of(23) {
+                0xFF80
+            } else {
+                v::f32_to_bf16_bits((r % 37) as f32 * 0.25 - 3.0)
+            };
+            row.extend_from_slice(&bits.to_le_bytes());
+        }
+        let sc = Buf::from_bytes(&st, &row)?;
+        let (k, offset, cb, cbk) = (512usize, 128usize, 8usize, 2048usize);
+        let nb = t.div_ceil(cb);
+        let (o1, o2) = (ops.buf(k * 4)?, ops.buf(k * 4)?);
+        let (k1, k2) = (ops.buf(nb)?, ops.buf(nb)?);
+        ck("topk", unsafe {
+            ffi::memra_v41_topk(
+                sc.p(&st).m(),
+                t as i64,
+                t as i32,
+                k as i32,
+                k as i32,
+                offset as i32,
+                o1.p(&st).im(),
+                k as i64,
+                1,
+                sv,
+            )
+        })?;
+        ops.topk_long(sc.p(&st), t, k, k, offset, o2.p(&st))?;
+        same(
+            rep,
+            &format!("schedule/select_long/topk_t{t}"),
+            &o2.host(&st)?,
+            &o1.host(&st)?,
+        );
+        ck("candidates", unsafe {
+            ffi::memra_v41_candidates(
+                sc.p(&st).m(),
+                t as i64,
+                t as i32,
+                cb as i32,
+                cbk as i32,
+                (t - 1) as i32,
+                1,
+                k1.p(&st).u8m(),
+                nb as i64,
+                1,
+                sv,
+            )
+        })?;
+        ops.candidates_long(sc.p(&st), t, cb, cbk, t - 1, 1, k2.p(&st))?;
+        same(
+            rep,
+            &format!("schedule/select_long/candidates_t{t}"),
+            &k2.host(&st)?,
+            &k1.host(&st)?,
+        );
+    }
     Ok(())
 }
 

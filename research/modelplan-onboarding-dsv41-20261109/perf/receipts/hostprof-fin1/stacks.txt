@@ -1,0 +1,2009 @@
+== sample 1
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  __memcpy_avx512_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:265
+#1  0x00005555571ebe51 in <memra_engine::dsv41_gpu::Ctx>::engram ()
+#2  0x00005555571e85f3 in <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::zip::Zip<core::slice::iter::IterMut<memra_engine::dsv41_gpu::Ctx>, core::slice::iter::IterMut<&mut memra_engine::dsv41_gpu::Trace>>>, <memra_engine::dsv41_gpu::tp::Group>::each_mut<&mut memra_engine::dsv41_gpu::Trace, (), <memra_engine::dsv41_gpu::decode::Runner>::forward::{closure#9}>::{closure#1}>, core::result::Result<core::convert::Infallible, alloc::string::String>> as core::iter::traits::iterator::Iterator>::next ()
+#3  0x00005555571e58ee in <memra_engine::dsv41_gpu::decode::Runner>::forward ()
+#4  0x000055555714cec9 in dsv41_tpbench::prefill_cell ()
+#5  0x000055555715226d in dsv41_tpbench::run ()
+#6  0x0000555557153bbf in dsv41_tpbench::main ()
+#7  0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#8  0x000055555715ab7b in main ()
+
+== sample 2
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  __memcpy_avx512_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:364
+#1  0x00005555571ec174 in <memra_engine::dsv41_gpu::Ctx>::engram ()
+#2  0x00005555571e85f3 in <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::zip::Zip<core::slice::iter::IterMut<memra_engine::dsv41_gpu::Ctx>, core::slice::iter::IterMut<&mut memra_engine::dsv41_gpu::Trace>>>, <memra_engine::dsv41_gpu::tp::Group>::each_mut<&mut memra_engine::dsv41_gpu::Trace, (), <memra_engine::dsv41_gpu::decode::Runner>::forward::{closure#9}>::{closure#1}>, core::result::Result<core::convert::Infallible, alloc::string::String>> as core::iter::traits::iterator::Iterator>::next ()
+#3  0x00005555571e58ee in <memra_engine::dsv41_gpu::decode::Runner>::forward ()
+#4  0x000055555714cec9 in dsv41_tpbench::prefill_cell ()
+#5  0x000055555715226d in dsv41_tpbench::run ()
+#6  0x0000555557153bbf in dsv41_tpbench::main ()
+#7  0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#8  0x000055555715ab7b in main ()
+
+== sample 3
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  __memcpy_avx512_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:265
+#1  0x00005555571ebe51 in <memra_engine::dsv41_gpu::Ctx>::engram ()
+#2  0x00005555571e85f3 in <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::zip::Zip<core::slice::iter::IterMut<memra_engine::dsv41_gpu::Ctx>, core::slice::iter::IterMut<&mut memra_engine::dsv41_gpu::Trace>>>, <memra_engine::dsv41_gpu::tp::Group>::each_mut<&mut memra_engine::dsv41_gpu::Trace, (), <memra_engine::dsv41_gpu::decode::Runner>::forward::{closure#9}>::{closure#1}>, core::result::Result<core::convert::Infallible, alloc::string::String>> as core::iter::traits::iterator::Iterator>::next ()
+#3  0x00005555571e58ee in <memra_engine::dsv41_gpu::decode::Runner>::forward ()
+#4  0x000055555714cec9 in dsv41_tpbench::prefill_cell ()
+#5  0x000055555715226d in dsv41_tpbench::run ()
+#6  0x0000555557153bbf in dsv41_tpbench::main ()
+#7  0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#8  0x000055555715ab7b in main ()
+
+== sample 4
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  __memcpy_avx512_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:265
+#1  0x00005555571ebe51 in <memra_engine::dsv41_gpu::Ctx>::engram ()
+#2  0x00005555571e85f3 in <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::zip::Zip<core::slice::iter::IterMut<memra_engine::dsv41_gpu::Ctx>, core::slice::iter::IterMut<&mut memra_engine::dsv41_gpu::Trace>>>, <memra_engine::dsv41_gpu::tp::Group>::each_mut<&mut memra_engine::dsv41_gpu::Trace, (), <memra_engine::dsv41_gpu::decode::Runner>::forward::{closure#9}>::{closure#1}>, core::result::Result<core::convert::Infallible, alloc::string::String>> as core::iter::traits::iterator::Iterator>::next ()
+#3  0x00005555571e58ee in <memra_engine::dsv41_gpu::decode::Runner>::forward ()
+#4  0x000055555714cec9 in dsv41_tpbench::prefill_cell ()
+#5  0x000055555715226d in dsv41_tpbench::run ()
+#6  0x0000555557153bbf in dsv41_tpbench::main ()
+#7  0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#8  0x000055555715ab7b in main ()
+
+== sample 5
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  __memcpy_avx512_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:265
+#1  0x00005555571ebe51 in <memra_engine::dsv41_gpu::Ctx>::engram ()
+#2  0x00005555571e85f3 in <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::zip::Zip<core::slice::iter::IterMut<memra_engine::dsv41_gpu::Ctx>, core::slice::iter::IterMut<&mut memra_engine::dsv41_gpu::Trace>>>, <memra_engine::dsv41_gpu::tp::Group>::each_mut<&mut memra_engine::dsv41_gpu::Trace, (), <memra_engine::dsv41_gpu::decode::Runner>::forward::{closure#9}>::{closure#1}>, core::result::Result<core::convert::Infallible, alloc::string::String>> as core::iter::traits::iterator::Iterator>::next ()
+#3  0x00005555571e58ee in <memra_engine::dsv41_gpu::decode::Runner>::forward ()
+#4  0x000055555714cec9 in dsv41_tpbench::prefill_cell ()
+#5  0x000055555715226d in dsv41_tpbench::run ()
+#6  0x0000555557153bbf in dsv41_tpbench::main ()
+#7  0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#8  0x000055555715ab7b in main ()
+
+== sample 6
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  __memcpy_avx512_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:265
+#1  0x00005555571ebe51 in <memra_engine::dsv41_gpu::Ctx>::engram ()
+#2  0x00005555571e85f3 in <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::zip::Zip<core::slice::iter::IterMut<memra_engine::dsv41_gpu::Ctx>, core::slice::iter::IterMut<&mut memra_engine::dsv41_gpu::Trace>>>, <memra_engine::dsv41_gpu::tp::Group>::each_mut<&mut memra_engine::dsv41_gpu::Trace, (), <memra_engine::dsv41_gpu::decode::Runner>::forward::{closure#9}>::{closure#1}>, core::result::Result<core::convert::Infallible, alloc::string::String>> as core::iter::traits::iterator::Iterator>::next ()
+#3  0x00005555571e58ee in <memra_engine::dsv41_gpu::decode::Runner>::forward ()
+#4  0x000055555714cec9 in dsv41_tpbench::prefill_cell ()
+#5  0x000055555715226d in dsv41_tpbench::run ()
+#6  0x0000555557153bbf in dsv41_tpbench::main ()
+#7  0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#8  0x000055555715ab7b in main ()
+
+== sample 7
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc5a5ebab in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc6944cc8 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc5946d53 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc694ff95 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5857290 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5a071b2 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc59f258a in cuStreamSynchronize () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00005555571eb7f5 in <memra_engine::dsv41_gpu::Ctx>::engram ()
+#9  0x00005555571e85f3 in <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::zip::Zip<core::slice::iter::IterMut<memra_engine::dsv41_gpu::Ctx>, core::slice::iter::IterMut<&mut memra_engine::dsv41_gpu::Trace>>>, <memra_engine::dsv41_gpu::tp::Group>::each_mut<&mut memra_engine::dsv41_gpu::Trace, (), <memra_engine::dsv41_gpu::decode::Runner>::forward::{closure#9}>::{closure#1}>, core::result::Result<core::convert::Infallible, alloc::string::String>> as core::iter::traits::iterator::Iterator>::next ()
+#10 0x00005555571e58ee in <memra_engine::dsv41_gpu::decode::Runner>::forward ()
+#11 0x000055555714cec9 in dsv41_tpbench::prefill_cell ()
+#12 0x000055555715226d in dsv41_tpbench::run ()
+#13 0x0000555557153bbf in dsv41_tpbench::main ()
+#14 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#15 0x000055555715ab7b in main ()
+
+== sample 8
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  __memcpy_avx512_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:265
+#1  0x00005555571ebe51 in <memra_engine::dsv41_gpu::Ctx>::engram ()
+#2  0x00005555571e85f3 in <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::zip::Zip<core::slice::iter::IterMut<memra_engine::dsv41_gpu::Ctx>, core::slice::iter::IterMut<&mut memra_engine::dsv41_gpu::Trace>>>, <memra_engine::dsv41_gpu::tp::Group>::each_mut<&mut memra_engine::dsv41_gpu::Trace, (), <memra_engine::dsv41_gpu::decode::Runner>::forward::{closure#9}>::{closure#1}>, core::result::Result<core::convert::Infallible, alloc::string::String>> as core::iter::traits::iterator::Iterator>::next ()
+#3  0x00005555571e58ee in <memra_engine::dsv41_gpu::decode::Runner>::forward ()
+#4  0x000055555714cec9 in dsv41_tpbench::prefill_cell ()
+#5  0x000055555715226d in dsv41_tpbench::run ()
+#6  0x0000555557153bbf in dsv41_tpbench::main ()
+#7  0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#8  0x000055555715ab7b in main ()
+
+== sample 9
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  __memcpy_avx512_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:365
+#1  0x00005555571ec174 in <memra_engine::dsv41_gpu::Ctx>::engram ()
+#2  0x00005555571e85f3 in <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::zip::Zip<core::slice::iter::IterMut<memra_engine::dsv41_gpu::Ctx>, core::slice::iter::IterMut<&mut memra_engine::dsv41_gpu::Trace>>>, <memra_engine::dsv41_gpu::tp::Group>::each_mut<&mut memra_engine::dsv41_gpu::Trace, (), <memra_engine::dsv41_gpu::decode::Runner>::forward::{closure#9}>::{closure#1}>, core::result::Result<core::convert::Infallible, alloc::string::String>> as core::iter::traits::iterator::Iterator>::next ()
+#3  0x00005555571e58ee in <memra_engine::dsv41_gpu::decode::Runner>::forward ()
+#4  0x000055555714cec9 in dsv41_tpbench::prefill_cell ()
+#5  0x000055555715226d in dsv41_tpbench::run ()
+#6  0x0000555557153bbf in dsv41_tpbench::main ()
+#7  0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#8  0x000055555715ab7b in main ()
+
+== sample 10
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc5a5ee91 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc6944cc8 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#12 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#13 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#14 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#15 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#16 0x000055555715226d in dsv41_tpbench::run ()
+#17 0x0000555557153bbf in dsv41_tpbench::main ()
+#18 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#19 0x000055555715ab7b in main ()
+
+== sample 11
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc6944c9c in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#11 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#12 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#13 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#14 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#15 0x000055555715226d in dsv41_tpbench::run ()
+#16 0x0000555557153bbf in dsv41_tpbench::main ()
+#17 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#18 0x000055555715ab7b in main ()
+
+== sample 12
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc587f14e in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc58a8ccc in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc6944bb8 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc6945008 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#12 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#13 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#14 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#15 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#16 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#17 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#18 0x000055555715226d in dsv41_tpbench::run ()
+#19 0x0000555557153bbf in dsv41_tpbench::main ()
+#20 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#21 0x000055555715ab7b in main ()
+
+== sample 13
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc587f287 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc58a8ccc in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc6944bb8 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc6945008 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#12 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#13 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#14 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#15 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#16 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#17 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#18 0x000055555715226d in dsv41_tpbench::run ()
+#19 0x0000555557153bbf in dsv41_tpbench::main ()
+#20 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#21 0x000055555715ab7b in main ()
+
+== sample 14
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc5a5eb7f in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc6944cc8 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#12 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#13 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#14 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#15 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#16 0x000055555715226d in dsv41_tpbench::run ()
+#17 0x0000555557153bbf in dsv41_tpbench::main ()
+#18 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#19 0x000055555715ab7b in main ()
+
+== sample 15
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc587f14e in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc58a8ccc in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc6944bb8 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc6945008 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#12 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#13 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#14 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#15 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#16 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#17 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#18 0x000055555715226d in dsv41_tpbench::run ()
+#19 0x0000555557153bbf in dsv41_tpbench::main ()
+#20 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#21 0x000055555715ab7b in main ()
+
+== sample 16
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc58a8cda in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc6944bb8 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc6945008 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#12 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#13 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#14 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#15 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#16 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#17 0x000055555715226d in dsv41_tpbench::run ()
+#18 0x0000555557153bbf in dsv41_tpbench::main ()
+#19 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#20 0x000055555715ab7b in main ()
+
+== sample 17
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007ffff7fbea0b in ?? ()
+#1  0x00007fffcc2f5a0d in __GI___clock_gettime (clock_id=<optimized out>, tp=<optimized out>) at ../sysdeps/unix/sysv/linux/clock_gettime.c:42
+#2  0x00007fffc597dcf4 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc588cd5b in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#12 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#13 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#14 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#15 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#16 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#17 0x000055555715226d in dsv41_tpbench::run ()
+#18 0x0000555557153bbf in dsv41_tpbench::main ()
+#19 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#20 0x000055555715ab7b in main ()
+
+== sample 18
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007ffff7fbea09 in ?? ()
+#1  0x00007fffcc2f5a0d in __GI___clock_gettime (clock_id=<optimized out>, tp=<optimized out>) at ../sysdeps/unix/sysv/linux/clock_gettime.c:42
+#2  0x00007fffc597dcf4 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc588cd5b in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#12 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#13 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#14 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#15 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#16 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#17 0x000055555715226d in dsv41_tpbench::run ()
+#18 0x0000555557153bbf in dsv41_tpbench::main ()
+#19 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#20 0x000055555715ab7b in main ()
+
+== sample 19
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  __GI___clock_gettime (clock_id=4, tp=0x7fffffffa600) at ../sysdeps/unix/sysv/linux/clock_gettime.c:30
+#1  0x00007fffc597dcf4 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc588cd5b in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#12 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#13 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#14 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#15 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#16 0x000055555715226d in dsv41_tpbench::run ()
+#17 0x0000555557153bbf in dsv41_tpbench::main ()
+#18 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#19 0x000055555715ab7b in main ()
+
+== sample 20
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007ffff7fbea09 in ?? ()
+#1  0x00007fffcc2f5a0d in __GI___clock_gettime (clock_id=<optimized out>, tp=<optimized out>) at ../sysdeps/unix/sysv/linux/clock_gettime.c:42
+#2  0x00007fffc597dcf4 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc588cd5b in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#12 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#13 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#14 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#15 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#16 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#17 0x000055555715226d in dsv41_tpbench::run ()
+#18 0x0000555557153bbf in dsv41_tpbench::main ()
+#19 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#20 0x000055555715ab7b in main ()
+
+== sample 21
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc6944c8f in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#11 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#12 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#13 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#14 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#15 0x000055555715226d in dsv41_tpbench::run ()
+#16 0x0000555557153bbf in dsv41_tpbench::main ()
+#17 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#18 0x000055555715ab7b in main ()
+
+== sample 22
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc5a5ee91 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc6944cc8 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#12 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#13 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#14 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#15 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#16 0x000055555715226d in dsv41_tpbench::run ()
+#17 0x0000555557153bbf in dsv41_tpbench::main ()
+#18 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#19 0x000055555715ab7b in main ()
+
+== sample 23
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc587f114 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc58a8ccc in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc6944bb8 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc6945008 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5946d53 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc694ff95 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5857290 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5a071b2 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc59f258a in cuStreamSynchronize () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00005555571eb7f5 in <memra_engine::dsv41_gpu::Ctx>::engram ()
+#11 0x00005555571e85f3 in <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::zip::Zip<core::slice::iter::IterMut<memra_engine::dsv41_gpu::Ctx>, core::slice::iter::IterMut<&mut memra_engine::dsv41_gpu::Trace>>>, <memra_engine::dsv41_gpu::tp::Group>::each_mut<&mut memra_engine::dsv41_gpu::Trace, (), <memra_engine::dsv41_gpu::decode::Runner>::forward::{closure#9}>::{closure#1}>, core::result::Result<core::convert::Infallible, alloc::string::String>> as core::iter::traits::iterator::Iterator>::next ()
+#12 0x00005555571e58ee in <memra_engine::dsv41_gpu::decode::Runner>::forward ()
+#13 0x000055555714cec9 in dsv41_tpbench::prefill_cell ()
+#14 0x000055555715226d in dsv41_tpbench::run ()
+#15 0x0000555557153bbf in dsv41_tpbench::main ()
+#16 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#17 0x000055555715ab7b in main ()
+
+== sample 24
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc587f27a in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc58a8ccc in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc6944bb8 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc6945008 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5946d53 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc694ff95 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5857290 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5a071b2 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc59f258a in cuStreamSynchronize () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00005555571eb7f5 in <memra_engine::dsv41_gpu::Ctx>::engram ()
+#11 0x00005555571e85f3 in <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::zip::Zip<core::slice::iter::IterMut<memra_engine::dsv41_gpu::Ctx>, core::slice::iter::IterMut<&mut memra_engine::dsv41_gpu::Trace>>>, <memra_engine::dsv41_gpu::tp::Group>::each_mut<&mut memra_engine::dsv41_gpu::Trace, (), <memra_engine::dsv41_gpu::decode::Runner>::forward::{closure#9}>::{closure#1}>, core::result::Result<core::convert::Infallible, alloc::string::String>> as core::iter::traits::iterator::Iterator>::next ()
+#12 0x00005555571e58ee in <memra_engine::dsv41_gpu::decode::Runner>::forward ()
+#13 0x000055555714cec9 in dsv41_tpbench::prefill_cell ()
+#14 0x000055555715226d in dsv41_tpbench::run ()
+#15 0x0000555557153bbf in dsv41_tpbench::main ()
+#16 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#17 0x000055555715ab7b in main ()
+
+== sample 25
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc6944cfe in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc5946d53 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc694ff95 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5857290 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a071b2 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc59f258a in cuStreamSynchronize () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00005555571eb7f5 in <memra_engine::dsv41_gpu::Ctx>::engram ()
+#8  0x00005555571e85f3 in <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::zip::Zip<core::slice::iter::IterMut<memra_engine::dsv41_gpu::Ctx>, core::slice::iter::IterMut<&mut memra_engine::dsv41_gpu::Trace>>>, <memra_engine::dsv41_gpu::tp::Group>::each_mut<&mut memra_engine::dsv41_gpu::Trace, (), <memra_engine::dsv41_gpu::decode::Runner>::forward::{closure#9}>::{closure#1}>, core::result::Result<core::convert::Infallible, alloc::string::String>> as core::iter::traits::iterator::Iterator>::next ()
+#9  0x00005555571e58ee in <memra_engine::dsv41_gpu::decode::Runner>::forward ()
+#10 0x000055555714cec9 in dsv41_tpbench::prefill_cell ()
+#11 0x000055555715226d in dsv41_tpbench::run ()
+#12 0x0000555557153bbf in dsv41_tpbench::main ()
+#13 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#14 0x000055555715ab7b in main ()
+
+== sample 26
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007ffff7fbea09 in ?? ()
+#1  0x00007fffcc2f5a0d in __GI___clock_gettime (clock_id=<optimized out>, tp=<optimized out>) at ../sysdeps/unix/sysv/linux/clock_gettime.c:42
+#2  0x00007fffc597dcf4 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc588cd5b in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#12 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#13 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#14 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#15 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#16 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#17 0x000055555715226d in dsv41_tpbench::run ()
+#18 0x0000555557153bbf in dsv41_tpbench::main ()
+#19 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#20 0x000055555715ab7b in main ()
+
+== sample 27
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007ffff7fbea09 in ?? ()
+#1  0x00007fffcc2f5a0d in __GI___clock_gettime (clock_id=<optimized out>, tp=<optimized out>) at ../sysdeps/unix/sysv/linux/clock_gettime.c:42
+#2  0x00007fffc597dcf4 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc588cd5b in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#12 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#13 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#14 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#15 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#16 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#17 0x000055555715226d in dsv41_tpbench::run ()
+#18 0x0000555557153bbf in dsv41_tpbench::main ()
+#19 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#20 0x000055555715ab7b in main ()
+
+== sample 28
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc5a5e5fb in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc6944fa4 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#12 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#13 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#14 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#15 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#16 0x000055555715226d in dsv41_tpbench::run ()
+#17 0x0000555557153bbf in dsv41_tpbench::main ()
+#18 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#19 0x000055555715ab7b in main ()
+
+== sample 29
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007ffff7fbea09 in ?? ()
+#1  0x00007fffcc2f5a0d in __GI___clock_gettime (clock_id=<optimized out>, tp=<optimized out>) at ../sysdeps/unix/sysv/linux/clock_gettime.c:42
+#2  0x00007fffc597dcf4 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc588cd5b in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#11 0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#12 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#13 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#14 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#15 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#16 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#17 0x000055555715226d in dsv41_tpbench::run ()
+#18 0x0000555557153bbf in dsv41_tpbench::main ()
+#19 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#20 0x000055555715ab7b in main ()
+
+== sample 30
+
+Thread 5 (Thread 0x7f86e65dc000 (LWP 3681643) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 4 (Thread 0x7f88f0bde000 (LWP 3681640) "cuda-EvtHandlr"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7fffc49dd000 (LWP 3681639) "dsv41-tpbench"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a030c in __internal_syscall_cancel (a1=a1@entry=93825030386688, a2=<optimized out>, a3=a3@entry=0, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=4294967295, nr=202) at ./nptl/cancellation.c:49
+#2  0x00007fffcc2a06e7 in __futex_abstimed_wait_common64 (private=1094795585, futex_word=0x5555579b7400, expected=0, op=1094795464, abstime=0x0, cancel=true) at ./nptl/futex-internal.c:57
+#3  __futex_abstimed_wait_common (futex_word=0x5555579b7400, expected=0, clockid=0, abstime=0x0, private=1094795585, cancel=true) at ./nptl/futex-internal.c:87
+#4  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555579b7400, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x7fffc49bc7d0, private=private@entry=0) at ./nptl/futex-internal.c:139
+#5  0x00007fffcc2a3382 in __pthread_cond_wait_common (cond=0x5555579b73e0, mutex=0x5555581c64d0, clockid=<optimized out>, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:421
+#6  ___pthread_cond_timedwait64 (cond=0x5555579b73e0, mutex=0x5555581c64d0, abstime=0x7fffc49bc7d0) at ./nptl/pthread_cond_wait.c:478
+#7  0x00007fffc58af724 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#10 0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7fffc51de000 (LWP 3681631) "cuda0000dc00038"):
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fffcc2a039c in __internal_syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=0, a5=0, a6=0, nr=7) at ./nptl/cancellation.c:49
+#2  __syscall_cancel (a1=<optimized out>, a2=<optimized out>, a3=<optimized out>, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=7) at ./nptl/cancellation.c:75
+#3  0x00007fffcc327c0e in __GI___poll (fds=<optimized out>, nfds=<optimized out>, timeout=<optimized out>) at ../sysdeps/unix/sysv/linux/poll.c:29
+#4  0x00007fffc597eba7 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc5a4ea34 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5966bc3 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffcc2a3dfa in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:454
+#8  0x00007fffcc3375cc in __GI___clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff7f58000 (LWP 3681622) "dsv41-tpbench"):
+#0  0x00007fffc6944dd8 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#1  0x00007fffc588cd1d in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#2  0x00007fffc5a5fc12 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#3  0x00007fffc5a62daf in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#4  0x00007fffc5a62ecd in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#5  0x00007fffc69695b9 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#6  0x00007fffc5827ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#7  0x00007fffc5829d04 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#8  0x00007fffc5a00234 in ?? () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#9  0x00007fffc59f187a in cuMemcpyDtoHAsync_v2 () from /usr/lib/x86_64-linux-gnu/libcuda.so.1
+#10 0x000055555717f7ca in <cudarc::driver::safe::core::CudaStream>::clone_dtoh::<u8, cudarc::driver::safe::core::CudaSlice<u8>> ()
+#11 0x000055555719a3b6 in memra_engine::dsv41_gpu::tp::host_timed ()
+#12 0x0000555557199b4a in <memra_engine::dsv41_gpu::tp::Group>::head_logits::{closure#0} ()
+#13 0x00005555571df4a8 in <memra_engine::dsv41_gpu::decode::Runner>::argmax_last ()
+#14 0x000055555714cfee in dsv41_tpbench::prefill_cell ()
+#15 0x000055555715226d in dsv41_tpbench::run ()
+#16 0x0000555557153bbf in dsv41_tpbench::main ()
+#17 0x0000555557143c63 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> ()
+#18 0x000055555715ab7b in main ()
+

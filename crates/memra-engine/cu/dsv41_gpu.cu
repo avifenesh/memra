@@ -3045,6 +3045,204 @@ extern "C" int memra_v41_candidates(const void* score, long lds, int T, int cb, 
 }
 
 // ---------------------------------------------------------------------------------------------
+// The select over ONE long row (a decode step's top-k and candidate blocks at long context). The
+// one-block form above reads the row's keys four times with 256 threads: 225 us for 131,072 keys.
+// Here the row is cut into blocks of V41_SN_CH keys and the same select runs as four launches over a
+// small zeroed scratch `ws`: the high-byte histogram and the valid count, the low-byte histogram of
+// the threshold's high byte, each block's counts above and equal to the threshold, and the emit,
+// where a block starts at the slots and the equal-key rank the blocks before it used. The
+// selection is the one-block form's: keys above the threshold, then the first equal keys by
+// position, positions ascending.
+#define V41_SN_CH 8192
+#define V41_SN_LO 272
+#define V41_SN_CNT 544
+#define V41_SN_BLOCKS 256
+
+struct V41Sn {
+    int thr, eq_need, need, all;
+};
+
+__device__ V41Sn v41_sn_derive(const int* ws, int k, bool lo) {
+    V41Sn s;
+    int nvalid = ws[256];
+    s.need = min(k, nvalid);
+    s.all = s.need >= nvalid;
+    s.thr = 0;
+    s.eq_need = 0x7FFFFFFF;
+    if (!s.all && s.need > 0) {
+        int cum = 0, hb = 255, lb = 0;
+        for (; hb >= 0; --hb) {
+            if (cum + ws[hb] >= s.need) break;
+            cum += ws[hb];
+        }
+        if (lo) {
+            for (lb = 255; lb >= 0; --lb) {
+                if (cum + ws[V41_SN_LO + lb] >= s.need) break;
+                cum += ws[V41_SN_LO + lb];
+            }
+        }
+        s.thr = (hb << 8) | lb;
+        s.eq_need = s.need - cum;
+    }
+    return s;
+}
+
+// MODE 0: valid count and high-byte histogram; MODE 1: low-byte histogram of the threshold's high byte
+template <int MODE>
+__global__ void __launch_bounds__(256) v41_sn_hist_kernel(V41Keys K, int k, int* __restrict__ ws) {
+    __shared__ int hist[256];
+    __shared__ int s_hb;
+    int tid = threadIdx.x;
+    hist[tid] = 0;
+    if (MODE == 1 && tid == 0) {
+        V41Sn s = v41_sn_derive(ws, k, false);
+        s_hb = (s.all || s.need == 0) ? -1 : (s.thr >> 8);
+    }
+    __syncthreads();
+    int i0 = blockIdx.x * V41_SN_CH, i1 = min(K.n, i0 + V41_SN_CH), cnt = 0;
+    int hb = MODE == 1 ? s_hb : 0;
+    for (int i = i0 + tid; i < i1; i += 256) {
+        int key = K.get(i);
+        if (key >= 0) {
+            if (MODE == 0) {
+                ++cnt;
+                atomicAdd(&hist[key >> 8], 1);
+            } else if ((key >> 8) == hb) {
+                atomicAdd(&hist[key & 0xFF], 1);
+            }
+        }
+    }
+    __syncthreads();
+    if (hist[tid]) atomicAdd(ws + (MODE ? V41_SN_LO : 0) + tid, hist[tid]);
+    if (MODE == 0 && cnt) atomicAdd(ws + 256, cnt);
+}
+
+__global__ void __launch_bounds__(256) v41_sn_count_kernel(V41Keys K, int k, int* __restrict__ ws) {
+    __shared__ int s_thr, s_all, s_gt, s_eq;
+    int tid = threadIdx.x;
+    if (tid == 0) {
+        V41Sn s = v41_sn_derive(ws, k, true);
+        s_thr = s.thr;
+        s_all = s.all;
+        s_gt = 0;
+        s_eq = 0;
+    }
+    __syncthreads();
+    int thr = s_thr;
+    bool all = s_all;
+    int i0 = blockIdx.x * V41_SN_CH, i1 = min(K.n, i0 + V41_SN_CH), gt = 0, eq = 0;
+    for (int i = i0 + tid; i < i1; i += 256) {
+        int key = K.get(i);
+        if (key >= 0) {
+            if (all || key > thr) ++gt;
+            else if (key == thr) ++eq;
+        }
+    }
+    if (gt) atomicAdd(&s_gt, gt);
+    if (eq) atomicAdd(&s_eq, eq);
+    __syncthreads();
+    if (tid == 0) {
+        ws[V41_SN_CNT + 2 * blockIdx.x] = s_gt;
+        ws[V41_SN_CNT + 2 * blockIdx.x + 1] = s_eq;
+    }
+}
+
+// EMIT 0: positions (plus offset) into out, ascending, -1 past the selection; EMIT 1: keep[pos] = 1
+template <int EMIT>
+__global__ void __launch_bounds__(256) v41_sn_emit_kernel(V41Keys K, int k, const int* __restrict__ ws,
+                                                          int* __restrict__ out, int out_w, int offset,
+                                                          uint8_t* __restrict__ keep) {
+    __shared__ int s_thr, s_all, s_eqn, s_eqb, s_slot, s_need;
+    __shared__ int wsum[8];
+    int tid = threadIdx.x, b = blockIdx.x;
+    if (tid == 0) {
+        V41Sn s = v41_sn_derive(ws, k, true);
+        int eqb = 0, slot = 0;
+        for (int j = 0; j < b; ++j) {
+            int g = ws[V41_SN_CNT + 2 * j], e = ws[V41_SN_CNT + 2 * j + 1];
+            slot += g + (s.all ? 0 : max(0, min(e, s.eq_need - eqb)));
+            eqb += e;
+        }
+        s_thr = s.thr;
+        s_all = s.all;
+        s_eqn = s.eq_need;
+        s_eqb = eqb;
+        s_slot = slot;
+        s_need = s.need;
+    }
+    int i0b = b * V41_SN_CH, i1b = min(K.n, i0b + V41_SN_CH);
+    if (EMIT == 1)
+        for (int i = i0b + tid; i < i1b; i += 256) keep[i] = 0;
+    __syncthreads();
+    int thr = s_thr, eq_need = s_eqn;
+    bool all = s_all;
+    // the one-block form's emit on this block's keys: a thread owns 32 contiguous keys
+    const int per = V41_SN_CH / 256;
+    int i0 = min(i1b, i0b + tid * per), i1 = min(i1b, i0 + per);
+    uint32_t gmask = 0u, emask = 0u;
+    int gt = 0, eq = 0;
+    for (int i = i0; i < i1; ++i) {
+        int key = K.get(i);
+        if (key >= 0) {
+            if (all || key > thr) {
+                ++gt;
+                gmask |= 1u << (i - i0);
+            } else if (key == thr) {
+                ++eq;
+                emask |= 1u << (i - i0);
+            }
+        }
+    }
+    int eq_tot;
+    int eq_before = s_eqb + v41_scan_count(eq, wsum, &eq_tot);
+    int take_eq = all ? 0 : max(0, min(eq, eq_need - eq_before));
+    int total;
+    int slot = s_slot + v41_scan_count(gt + take_eq, wsum, &total);
+    for (int i = i0; i < i1; ++i) {
+        bool sel = (gmask >> (i - i0)) & 1u;
+        if (((emask >> (i - i0)) & 1u) && take_eq > 0) {
+            sel = true;
+            --take_eq;
+        }
+        if (sel) {
+            if (EMIT == 0) out[slot++] = i + offset;
+            else keep[i] = 1;
+        }
+    }
+    if (EMIT == 0 && b == 0)
+        for (int i = s_need + tid; i < out_w; i += 256) out[i] = -1;
+}
+
+static int v41_sn_launch(const V41Keys& K, int k, int* ws, int* out, int out_w, int offset, uint8_t* keep,
+                         cudaStream_t st) {
+    int nb = (K.n + V41_SN_CH - 1) / V41_SN_CH;
+    if (nb > V41_SN_BLOCKS || !ws) return 41010;
+    v41_sn_hist_kernel<0><<<nb, 256, 0, st>>>(K, k, ws);
+    v41_sn_hist_kernel<1><<<nb, 256, 0, st>>>(K, k, ws);
+    v41_sn_count_kernel<<<nb, 256, 0, st>>>(K, k, ws);
+    if (keep) v41_sn_emit_kernel<1><<<nb, 256, 0, st>>>(K, k, ws, nullptr, 0, 0, keep);
+    else v41_sn_emit_kernel<0><<<nb, 256, 0, st>>>(K, k, ws, out, out_w, offset, nullptr);
+    V41_ERR();
+}
+
+// `memra_v41_topk` for one row, over a zeroed int scratch of V41_SN_CNT + 2 x V41_SN_BLOCKS words.
+extern "C" int memra_v41_topk_long(const void* score, int T, int k, int out_w, int offset, int* out, int* ws,
+                                   void* stream) {
+    if (k > out_w || T <= 0) return 41010;
+    V41Keys K{(const v41_bf*)score, T, 0, T, -1};
+    return v41_sn_launch(K, k, ws, out, out_w, offset, nullptr, (cudaStream_t)stream);
+}
+
+// `memra_v41_candidates` for one row (the query at `start_pos`), over the same scratch.
+extern "C" int memra_v41_candidates_long(const void* score, int T, int cb, int kblocks, int start_pos, int ratio,
+                                         uint8_t* keep, int* ws, void* stream) {
+    if (cb <= 0 || ratio <= 0 || T <= 0 || !keep) return 41011;
+    int visible = (start_pos + 1) / ratio;
+    V41Keys K{(const v41_bf*)score, (T + cb - 1) / cb, cb, T, visible > 0 ? (visible - 1) / cb : -1};
+    return v41_sn_launch(K, kblocks, ws, nullptr, 0, 0, keep, (cudaStream_t)stream);
+}
+
+// ---------------------------------------------------------------------------------------------
 // MoE gate (sqrtsoftplus): score = sqrt(softplus(raw)); experts by score + bias (top-k, ties to the
 // lower id, descending); weights are the unbiased scores, normalized by (sum + 1e-20) only when
 // top-k > 1, times route_scale. One warp per token; ne <= 1024, topk <= 16.
