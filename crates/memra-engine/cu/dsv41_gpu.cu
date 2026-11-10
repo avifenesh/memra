@@ -1234,6 +1234,146 @@ __global__ void __launch_bounds__(256) v41_gemv_f8t_tiles_kernel(const uint8_t* 
                                      v41_sm_t);
 }
 
+__device__ __forceinline__ void v41_cp8(void* smem, const void* gmem, bool pred) {
+    uint32_t s = (uint32_t)__cvta_generic_to_shared(smem);
+    int n = pred ? 8 : 0;  // 0: the 8 bytes are zero-filled
+    asm volatile("cp.async.ca.shared.global [%0], [%1], 8, %2;\n" ::"r"(s), "l"(gmem), "r"(n));
+}
+
+// The FP4 tile list with nothing in flight held in registers. The 16-column body above loads a warp's
+// next 5 K blocks into registers and waits for them: four memory round trips a block, and registers
+// cap an SM at two blocks, which is what bounds it (a block lives about 20 us for 5 us of MMAs).
+// Here a part of K (Kn blocks) lands in shared memory by cp.async at once: the 16 weight rows'
+// nibbles and scale bytes, the tile's activation rows and their scale bytes. Then every warp runs
+// its K blocks of the part from shared memory, the terms are summed, and the next part lands: one
+// round trip a part, and four blocks an SM. Per output element the program is the 16-column body's
+// (the same from-zero MMA over the same 32 products, (d * sa) * sb, the ascending sum over K).
+// BM: the rows the shared memory is sized for (the plan's tile rows).
+template <int WF, int OUTF>
+__global__ void __launch_bounds__(256, 4) v41_gemv_f4s_tiles_kernel(const uint8_t* __restrict__ A, long lda,
+                                                                    const uint8_t* __restrict__ As, long ldas,
+                                                                    const V41Tile* __restrict__ tiles,
+                                                                    const int* __restrict__ ntiles,
+                                                                    const V41ExpW* __restrict__ ew, int proj, long ldb,
+                                                                    long ldbs, void* __restrict__ C, long ldc, int N,
+                                                                    int K, int Kn, int BM) {
+    extern __shared__ __align__(16) uint8_t v41_f4s_sm[];
+    const V41Tile tl = tiles[blockIdx.y];
+    if ((int)blockIdx.y >= *ntiles) return;
+    const V41ExpW& w = ew[tl.expert];
+    const uint8_t* B = w.w[proj];
+    const uint8_t* Bs = w.s[proj];
+    float bscale2 = w.scale2[proj];
+    const uint8_t* Ar = A + (long)tl.row0 * lda;
+    const uint8_t* Asr = As + (long)tl.row0 * ldas;
+    int M = tl.rows, n0 = blockIdx.x * 16;
+    int tid = threadIdx.x, warp = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
+    int KB = K / 32;
+    const int SW = WF == 2 ? 2 : 1;  // scale bytes a K block
+    int pw = Kn * 16, ps = (Kn * SW + 7) & ~7, pa = Kn * 32, pas = (Kn + 7) & ~7;
+    uint8_t* sW = v41_f4s_sm;        // [16][Kn x 16]: weight nibbles
+    uint8_t* sWs = sW + 16 * pw;     // [16][Kn x SW]: weight scale bytes
+    uint8_t* sA = sWs + 16 * ps;     // [BM][Kn x 32]: activation codes
+    uint8_t* sAs = sA + BM * pa;     // [BM][Kn]: activation scale bytes
+    float* sT = (float*)(sAs + BM * pas);  // [Kn][M][16]: the part's terms
+    int r0 = 2 * t, r1 = r0 + 1;
+    bool out0 = r0 < M, out1 = r1 < M;
+    float acc = 0.f;  // the (row, column) sum of the threads below M * 16
+    for (int p0 = 0; p0 < KB; p0 += Kn) {
+        int nk = min(Kn, KB - p0);
+        for (int q = tid; q < 16 * nk; q += 256) {
+            int r = q / nk, cc = q % nk;
+            bool ok = n0 + r < N;
+            v41_cp16(sW + r * pw + cc * 16, B + (long)(ok ? n0 + r : 0) * ldb + (long)(p0 + cc) * 16, ok);
+        }
+        int ns8 = (nk * SW + 7) / 8;
+        for (int q = tid; q < 16 * ns8; q += 256) {
+            int r = q / ns8, cc = q % ns8;
+            bool ok = n0 + r < N;
+            v41_cp8(sWs + r * ps + cc * 8, Bs + (long)(ok ? n0 + r : 0) * ldbs + (long)p0 * SW + cc * 8, ok);
+        }
+        for (int q = tid; q < M * nk * 2; q += 256) {
+            int r = q / (nk * 2), cc = q % (nk * 2);
+            v41_cp16(sA + r * pa + cc * 16, Ar + (long)r * lda + (long)p0 * 32 + cc * 16, true);
+        }
+        int na8 = (nk + 7) / 8;
+        for (int q = tid; q < M * na8; q += 256) {
+            int r = q / na8, cc = q % na8;
+            v41_cp8(sAs + r * pas + cc * 8, Asr + (long)r * ldas + p0 + cc * 8, true);
+        }
+        v41_cp_commit();
+        v41_cp_wait<0>();
+        __syncthreads();
+        int per = (nk + 7) / 8;
+        int kb0 = warp * per, kb1 = min(nk, kb0 + per);
+        const uint8_t* w0 = sW + g * pw + 2 * t;
+        const uint8_t* w1 = sW + (g + 8) * pw + 2 * t;
+        const uint8_t* ab = sA + (g < M ? g : 0) * pa + 4 * t;
+        for (int kb = kb0; kb < kb1; ++kb) {
+            uint32_t af[4] = {*(const uint16_t*)(w0 + kb * 16), *(const uint16_t*)(w1 + kb * 16),
+                              *(const uint16_t*)(w0 + kb * 16 + 8), *(const uint16_t*)(w1 + kb * 16 + 8)};
+#pragma unroll
+            for (int i = 0; i < 4; ++i) af[i] = v41_fp4_to_e4m3x4(af[i]);
+            uint32_t b0 = 0, b1 = 0;
+            if (g < M) {
+                b0 = *(const uint32_t*)(ab + kb * 32);
+                b1 = *(const uint32_t*)(ab + kb * 32 + 16);
+            }
+            float d[4];
+            v41_mma_e4m3(d, af, b0, b1);
+            if (out0) {
+                float s0 = v41_e8m0(sAs[r0 * pas + kb]), s1 = out1 ? v41_e8m0(sAs[r1 * pas + kb]) : 0.f;
+                float q0, q1;
+                if (WF == 1) {
+                    q0 = v41_e8m0(sWs[g * ps + kb]);
+                    q1 = v41_e8m0(sWs[(g + 8) * ps + kb]);
+                } else {
+                    q0 = __fmul_rn(v41_e4m3f(sWs[g * ps + 2 * kb]), bscale2);
+                    q1 = __fmul_rn(v41_e4m3f(sWs[(g + 8) * ps + 2 * kb]), bscale2);
+                }
+                // d[0], d[1]: weight row n0 + g against activation rows r0, r1; d[2], d[3]: row n0 + g + 8
+                float* tp = sT + ((long)kb * M + r0) * 16 + g;
+                tp[0] = __fmul_rn(__fmul_rn(d[0], s0), q0);
+                tp[8] = __fmul_rn(__fmul_rn(d[2], s0), q1);
+                if (out1) {
+                    tp[16] = __fmul_rn(__fmul_rn(d[1], s1), q0);
+                    tp[24] = __fmul_rn(__fmul_rn(d[3], s1), q1);
+                }
+            }
+        }
+        __syncthreads();
+        if (tid < M * 16) {
+            int r = tid >> 4, cc = tid & 15;
+            int kb = 0;
+            for (; kb + 8 <= nk; kb += 8) {
+                float v[8];
+#pragma unroll
+                for (int u = 0; u < 8; ++u) v[u] = sT[((long)(kb + u) * M + r) * 16 + cc];
+#pragma unroll
+                for (int u = 0; u < 8; ++u) acc = __fadd_rn(acc, v[u]);
+            }
+            for (; kb < nk; ++kb) acc = __fadd_rn(acc, sT[((long)kb * M + r) * 16 + cc]);
+        }
+        // the next part overwrites everything the chains and the sum read
+        if (p0 + Kn < KB) __syncthreads();
+    }
+    if (tid < M * 16) {
+        int r = tid >> 4, cc = tid & 15;
+        int cn = n0 + cc;
+        if (cn < N) {
+            void* c = OUTF ? (void*)((float*)C + (long)tl.row0 * ldc) : (void*)((v41_bf*)C + (long)tl.row0 * ldc);
+            if (OUTF == 0) ((v41_bf*)c)[(long)r * ldc + cn] = v41_f2bf(acc);
+            else ((float*)c)[(long)r * ldc + cn] = acc;
+        }
+    }
+}
+
+// the staged tile kernel's shared memory for Kn K blocks a part and bm rows
+static long v41_f4s_bytes(int kn, int bm, int sw) {
+    return 16L * kn * 16 + 16L * ((kn * sw + 7) & ~7) + (long)bm * kn * 32 + (long)bm * ((kn + 7) & ~7) +
+           (long)kn * bm * 64;
+}
+
 // bm: the plan's tile rows (64 or 128: the pipelined body; <= V41_SM_MAX: every tile has at most that
 // many rows and the small-M body runs); max_tiles bounds *ntiles.
 extern "C" int memra_v41_gemm_f8_tiles(const void* a, long lda, const void* as, long ldas, const void* tiles,
@@ -1246,8 +1386,33 @@ extern "C" int memra_v41_gemm_f8_tiles(const void* a, long lda, const void* as, 
     const uint8_t *A = (const uint8_t*)a, *As = (const uint8_t*)as;
     const V41Tile* T = (const V41Tile*)tiles;
     const V41ExpW* E = (const V41ExpW*)ew;
+    if (bm <= V41_SM_MAX && wfmt != 0 && (k / 32) % 8 == 0) {
+        // FP4 tiles: the staged body, K in as few equal parts as put four blocks on an SM
+        int kb = k / 32, sw = wfmt == 2 ? 2 : 1, kn = 0;
+        for (int parts = 1; parts <= kb / 8; ++parts) {
+            int c = (((kb + parts - 1) / parts) + 7) & ~7;
+            if (v41_f4s_bytes(c, bm, sw) <= 25600) {
+                kn = c;
+                break;
+            }
+        }
+        if (kn > 0) {
+            int smem = (int)v41_f4s_bytes(kn, bm, sw);
+            dim3 grid((n + 15) / 16, max_tiles);
+#define V41_F4S(WF, OF)                                                                                          \
+    do {                                                                                                         \
+        V41_CARVE_MAX((v41_gemv_f4s_tiles_kernel<WF, OF>));                                                      \
+        v41_gemv_f4s_tiles_kernel<WF, OF><<<grid, 256, smem, st>>>(A, lda, As, ldas, T, ntiles, E, proj, ldb, ldbs, \
+                                                                    c, ldc, n, k, kn, bm);                       \
+    } while (0)
+            if (wfmt == 1) { if (out_f32) V41_F4S(1, 1); else V41_F4S(1, 0); }
+            else { if (out_f32) V41_F4S(2, 1); else V41_F4S(2, 0); }
+#undef V41_F4S
+            V41_ERR();
+        }
+    }
     if (bm <= V41_SM_MAX) {
-        // every small-M tile list: the 16-column body (the 8-column body stays with the dense GEMMs)
+        // every other small-M tile list: the 16-column body (the 8-column body stays with the dense GEMMs)
         int smem16 = 0, parts = 1;
         v41_gemv_smem16(bm, k, &smem16, &parts);
         dim3 grid((n + 15) / 16, max_tiles);
