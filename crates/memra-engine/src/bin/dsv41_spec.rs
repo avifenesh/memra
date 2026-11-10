@@ -4,7 +4,7 @@
 //! usage: dsv41-spec CKPT_DIR --plan FILE --out DIR [--token-map FILE] [--devices 0,1]
 //!                   [--streamed] [--cache-slots N] [--cache-reserve-mb N] [--eos ID]
 //!                   [--layers N --resident] [--no-draft] [--copy-keys] [--batch-max N]
-//!                   [--stop-on-fail]
+//!                   [--stop-on-fail] [--select-long-min N]
 //!   MEMRA_FULL_PREC=1        required: the route has one numeric program, the checkpoint's
 //!   MEMRA_DSV41_TOKEN_MAP=F  the Engram compressed token map (raw i32), when --token-map is absent
 //!   --streamed               stream every layer's weights per forward (slow; default is the
@@ -16,6 +16,10 @@
 //!                            head (the head's target layers are not all run): pass --no-draft
 //!   --no-draft               do not load the draft head (verify-rows and rows-time jobs only)
 //!   --stop-on-fail           a failed job ends the run: the jobs after it are skipped and named
+//!   --select-long-min N      a one-row selection over more than N keys takes the long-row top-k
+//!                            and candidate forms (default: top-k over 32,768 keys, candidates never): 0
+//!                            forces them on every decode row, a large N keeps the one-block
+//!                            forms; the two give the same `hashes.txt`
 //!   --copy-keys              decode calls copy the ring and the compressed rows into the call's
 //!                            own key rows (the reference arm of the keyed attention entry);
 //!                            verify-rows and batch-rows write `hashes.txt`, equal between the arms
@@ -326,6 +330,11 @@ fn run() -> Result<(), String> {
         0,
         8192,
     )?;
+    if let Some(n) = num("--select-long-min")? {
+        for c in rn.grp.cx.iter_mut() {
+            c.select_long_min = (n, n);
+        }
+    }
     if a.iter().any(|x| x == "--copy-keys") {
         for c in rn.grp.cx.iter_mut() {
             c.keyed = false;

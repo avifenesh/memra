@@ -2628,6 +2628,13 @@ pub struct Ctx {
     /// per row) instead of a copy of both made for the call; off: the copies (the reference arm
     /// of `dsv41-spec --copy-keys`; a traced call copies too, the gates read the copy)
     pub keyed: bool,
+    /// A one-row selection over more keys than this takes the long-row forms
+    /// ([`Ops::topk_long`], [`Ops::candidates_long`]: the row cut into blocks, the same
+    /// selection): `(top-k, candidates)`. The top-k form is on from where it starts to win
+    /// (32,768 keys). The candidate form wins past 131,072 keys but is off here (never) until
+    /// its gate has run on a trunk that holds the candidate source and its readers (layers 20
+    /// and 24 to 36). `dsv41-spec --select-long-min` sets both for the gates.
+    pub select_long_min: (usize, usize),
 }
 
 /// A second stream on the card for a branch of a one-token layer that depends on nothing the main
@@ -2716,6 +2723,7 @@ impl Ctx {
             route_bad,
             side: None,
             keyed: true,
+            select_long_min: (32_768, usize::MAX),
         })
     }
 
@@ -3032,40 +3040,58 @@ impl Ctx {
                 .cand
                 .as_ref()
                 .ok_or("indexer: candidate pool not allocated")?;
-            ck("candidates", unsafe {
-                ffi::memra_v41_candidates(
-                    score.p(&st).m(),
-                    n_c as i64,
-                    n_c as i32,
-                    g.cand_block as i32,
-                    g.cand_blocks as i32,
-                    (sp + r0) as i32,
-                    ratio as i32,
-                    keep.at(&st, crow * sh.cand_ld).u8m(),
-                    sh.cand_ld as i64,
-                    rows as i32,
-                    self.ops.sv(),
-                )
-            })?;
+            if rows == 1 && n_c > self.select_long_min.1 {
+                // one decode row over a long row of keys: the row cut into blocks
+                self.ops.candidates_long(
+                    score.p(&st),
+                    n_c,
+                    g.cand_block,
+                    g.cand_blocks,
+                    sp + r0,
+                    ratio,
+                    keep.at(&st, crow * sh.cand_ld),
+                )?;
+            } else {
+                ck("candidates", unsafe {
+                    ffi::memra_v41_candidates(
+                        score.p(&st).m(),
+                        n_c as i64,
+                        n_c as i32,
+                        g.cand_block as i32,
+                        g.cand_blocks as i32,
+                        (sp + r0) as i32,
+                        ratio as i32,
+                        keep.at(&st, crow * sh.cand_ld).u8m(),
+                        sh.cand_ld as i64,
+                        rows as i32,
+                        self.ops.sv(),
+                    )
+                })?;
+            }
             self.nv_end();
         }
         self.nv(c"topk");
         let tw = sh.topk_w;
         let out = sh.topk.as_ref().ok_or("indexer: selection not allocated")?;
-        ck("topk", unsafe {
-            ffi::memra_v41_topk(
-                score.p(&st).m(),
-                n_c as i64,
-                n_c as i32,
-                tw as i32,
-                tw as i32,
-                offset as i32,
-                out.at(&st, r0 * tw * 4).im(),
-                tw as i64,
-                rows as i32,
-                self.ops.sv(),
-            )
-        })?;
+        if rows == 1 && n_c > self.select_long_min.0 {
+            self.ops
+                .topk_long(score.p(&st), n_c, tw, tw, offset, out.at(&st, r0 * tw * 4))?;
+        } else {
+            ck("topk", unsafe {
+                ffi::memra_v41_topk(
+                    score.p(&st).m(),
+                    n_c as i64,
+                    n_c as i32,
+                    tw as i32,
+                    tw as i32,
+                    offset as i32,
+                    out.at(&st, r0 * tw * 4).im(),
+                    tw as i64,
+                    rows as i32,
+                    self.ops.sv(),
+                )
+            })?;
+        }
         self.nv_end();
         Ok(())
     }
@@ -3954,39 +3980,62 @@ impl Ctx {
                         if lw.cand_source {
                             let nb = n_c.div_ceil(g.cand_block);
                             let keep = self.ops.tmp(nb.max(1))?;
-                            ck("candidates", unsafe {
-                                ffi::memra_v41_candidates(
-                                    score.p(&st).m(),
-                                    n_c as i64,
-                                    n_c as i32,
-                                    g.cand_block as i32,
-                                    g.cand_blocks as i32,
-                                    r.pos as i32,
-                                    ratio as i32,
-                                    keep.p(&st).u8m(),
-                                    nb as i64,
-                                    1,
-                                    self.ops.sv(),
-                                )
-                            })?;
+                            if n_c > self.select_long_min.1 {
+                                self.ops.candidates_long(
+                                    score.p(&st),
+                                    n_c,
+                                    g.cand_block,
+                                    g.cand_blocks,
+                                    r.pos,
+                                    ratio,
+                                    keep.p(&st),
+                                )?;
+                            } else {
+                                ck("candidates", unsafe {
+                                    ffi::memra_v41_candidates(
+                                        score.p(&st).m(),
+                                        n_c as i64,
+                                        n_c as i32,
+                                        g.cand_block as i32,
+                                        g.cand_blocks as i32,
+                                        r.pos as i32,
+                                        ratio as i32,
+                                        keep.p(&st).u8m(),
+                                        nb as i64,
+                                        1,
+                                        self.ops.sv(),
+                                    )
+                                })?;
+                            }
                             sh.cand = Some(keep);
                             sh.cand_ld = nb;
                             sh.cand_row0 = 0;
                         }
-                        ck("topk", unsafe {
-                            ffi::memra_v41_topk(
-                                score.p(&st).m(),
-                                n_c as i64,
-                                n_c as i32,
-                                g.index_topk.min(n_c) as i32,
-                                tw as i32,
-                                (bases[i] + win) as i32,
-                                out.at(&st, i * tw * 4).im(),
-                                tw as i64,
-                                1,
-                                self.ops.sv(),
-                            )
-                        })?;
+                        if n_c > self.select_long_min.0 {
+                            self.ops.topk_long(
+                                score.p(&st),
+                                n_c,
+                                g.index_topk.min(n_c),
+                                tw,
+                                bases[i] + win,
+                                out.at(&st, i * tw * 4),
+                            )?;
+                        } else {
+                            ck("topk", unsafe {
+                                ffi::memra_v41_topk(
+                                    score.p(&st).m(),
+                                    n_c as i64,
+                                    n_c as i32,
+                                    g.index_topk.min(n_c) as i32,
+                                    tw as i32,
+                                    (bases[i] + win) as i32,
+                                    out.at(&st, i * tw * 4).im(),
+                                    tw as i64,
+                                    1,
+                                    self.ops.sv(),
+                                )
+                            })?;
+                        }
                         has[i] = true;
                     }
                     *sel = BatchSel {
