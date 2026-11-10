@@ -991,7 +991,13 @@ vocabulary). An eager oracle therefore agrees until a near tie and fails there;
 the session's on-grid turn checkpoint (or primes cold) instead of priming a suffix at the parked
 end, which the server refuses since the grid law (memra#1091, memra#1093); it fails if no turn
 rewound; and its continuation burst is compared with the continuation of the previous turn's
-oracle.
+oracle. Its last check is a continuation burst that runs no round (the first commit hook says
+stop, as the server's admission yield does at a burst's entry): the carried token must stay
+pending, `committed` must stay the cache rows and the true history less that token, and the
+burst after it must emit the oracle's tokens. Before memra#1196 the no-round burst pushed the
+carried token into `committed` with no cache row behind it, and the check fails there. It
+also fails, as untested, where no burst ends on a pending token (`MEMRA_SPEC_REPLAY=1`, or a
+sampled run with `MEMRA_SPEC_TEMP` above 0, which the gate's greedy oracle does not serve anyway).
 
 ## Gate integrity: the shapes that report green while verifying nothing
 
