@@ -32,6 +32,7 @@ kernel-check `FA-VERIFY-ROWS` compares the new launch with the seqs launch on th
 - **The count that matters is the second one.** A case whose groups are all one row is the seqs launch on both sides (every T=1 case and a few shallow ones). The cell counts the cases whose rows walk really launched and fails if none did. These cases launch the walk at every depth (`fa_verify_rows_v4_unrouted`), below the served floors too.
 - **The route check:** the served entry on each side of its depth floor. Below it the seqs launch runs; at it the rows walk launches; both equal the seqs launch bit for bit (`FA-VERIFY-ROWS route` lines, every shape, every device).
 - kernel-check's synthetic sections are all green on the three devices (`kernel-check/`).
+- **After the rebase on main fcd66f8963** (which brought levers 1 and 3a): the cell again on GB10 unit 2 and the RTX 5090, the same counts, bitdiff 0, every route line OK (`kernel-check/*-rebased.txt`).
 - `run-spec` K=1..8 is identical to plain on both roster models on the RTX 5090 (`rows28-5090/run-spec-*.txt`, at the lever's first commit).
 
 ## Per attention call

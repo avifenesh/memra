@@ -1,0 +1,15 @@
+FA-VERIFY-ROWS gqa=6 (24/4): fa_verify_rows_v4_deep vs seqs, 1111 cases, 960 launched the rows walk (60 off one split rung, 0 deep depths past the 262144-token cache), 2891893104 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=6 (24/4): floor 2048 keys; T=4 below it (len0=2043) Some((false, 0, false)), at it Some((2047, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=8 (16/2): fa_verify_rows_v4_deep vs seqs, 1111 cases, 960 launched the rows walk (60 off one split rung, 0 deep depths past the 262144-token cache), 1927928736 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=8 (16/2): floor 16384 keys; T=4 below it (len0=16379) Some((false, 0, false)), at it Some((16384, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=4 (16/4): fa_verify_rows_v4_deep vs seqs, 1111 cases, 960 launched the rows walk (60 off one split rung, 0 deep depths past the 262144-token cache), 1927928736 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=4 (16/4): floor 1024 keys; T=4 below it (len0=1019) Some((false, 0, false)), at it Some((1023, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=1 (4/4): fa_verify_rows_v4_deep vs seqs, 1079 cases, 928 launched the rows walk (60 off one split rung, 8 deep depths past the 32768-token cache), 309615480 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=1 (4/4): floor 1024 keys; T=4 below it (len0=1019) Some((false, 0, false)), at it Some((1023, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=2 (8/4): fa_verify_rows_v4_deep vs seqs, 1079 cases, 928 launched the rows walk (60 off one split rung, 8 deep depths past the 32768-token cache), 619230960 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=2 (8/4): floor 1024 keys; T=4 below it (len0=1019) Some((false, 0, false)), at it Some((1023, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=5 (20/4): fa_verify_rows_v4_deep vs seqs, 1079 cases, 928 launched the rows walk (60 off one split rung, 8 deep depths past the 32768-token cache), 1548077400 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=5 (20/4): floor 2048 keys; T=4 below it (len0=2043) Some((false, 0, false)), at it Some((2047, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=7 (28/4): fa_verify_rows_v4_deep vs seqs, 1079 cases, 928 launched the rows walk (60 off one split rung, 8 deep depths past the 32768-token cache), 2167308360 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=7 (28/4): floor 16384 keys; T=4 below it (len0=16379) Some((false, 0, false)), at it Some((16384, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+ALL GREEN (104 cells, 23 skipped)
