@@ -4,9 +4,9 @@ Receipts for memra #1158: `MEMRA_SERVE_BATCH` is retired and the batched schedul
 served path.
 
 **Verdict: the default (speculative) server equals the `MEMRA_SERVE_SPEC=0` server on the batched
-program, on main and on the tree without the round-robin scheduler.** Text and completion tokens
-are equal at a filled 400-token window on both trees, and on main the 400 token ids are equal
-too. No tolerance was needed: the public stream stops at the request budget in both arms.
+program, on main and on the tree without the round-robin scheduler.** Text, completion tokens and
+token ids are equal at a filled 400-token window on both trees, and the candidate's ids equal
+main's. No tolerance was needed: the public stream stops at the request budget in both arms.
 
 ## What was measured
 
@@ -50,16 +50,22 @@ both sides; shard 1 is byte-identical as a file). The tower is side-loaded only 
 The short prompt ends by itself at 211 tokens, so it never reached the 400-token window the check
 names. The window prompt was added for that.
 
-### Spec arm vs plain arm on main, text and token ids (`main/probe/compare.txt`)
+### Spec arm vs plain arm, text and token ids (`*/probe/compare.txt`)
 
 `tools/probe_arm.py` boots one server per arm and sends each prompt twice: chat (text, usage) and
 native completions with `chat: true` (token ids). `tools/probe_compare.py` compares the arms.
 
-| prompt | tokens (plain / spec) | finish | text | ids | speculative rounds (drafted, accepted) |
-|---|---|---|---|---|---|
-| gate | 211 / 211 | stop | equal | equal | 64 (192, 146) |
-| sched | 400 / 400 | length | equal | equal | 149 (447, 250) |
-| essay | 400 / 400 | length | equal | equal | 156 (468, 244) |
+| binaries | prompt | tokens (plain / spec) | finish | text | ids | speculative rounds (drafted, accepted) |
+|---|---|---|---|---|---|---|
+| main | gate | 211 / 211 | stop | equal | equal | 64 (192, 146) |
+| main | sched | 400 / 400 | length | equal | equal | 149 (447, 250) |
+| main | essay | 400 / 400 | length | equal | equal | 156 (468, 244) |
+| candidate | gate | 211 / 211 | stop | equal | equal | 64 (192, 146) |
+| candidate | sched | 400 / 400 | length | equal | equal | 149 (447, 250) |
+| candidate | essay | 400 / 400 | length | equal | equal | 156 (468, 244) |
+
+The candidate's text and ids also equal main's, arm for arm, on all three prompts
+(`candidate/probe/compare-vs-main.txt`).
 
 ### spec-gate exactness harness on main (`main/exactness*/exactness.log`)
 
@@ -92,11 +98,27 @@ change:
   (`main/boot-refusal-test-red-arm.log`: `the retired name is not refused by name`; the third
   test is the non-vacuity arm). On the candidate it passes 3 of 3.
 
+### The rebased candidate (`candidate-rebased/`)
+
+Main moved again after the PR opened, to `8a3e4904c6` (the session-gate oracle fix of memra
+#1146, the GDN packed seam removal, the verify-rows kernel). The branch was rebased onto it: two
+conflicts, both where each side had added an entry to the same list (the Removed doors ledger
+and the audit test's name list), both resolved by keeping both. The required checks were rerun
+on binaries built from the rebased head `62cae34bc1` (`memra-server` `2ade91f9a803`, `run-gen`
+`a9e7e881b014`), same card, one check per lease:
+
+| check | result |
+|---|---|
+| `tools/serve-st-gate.sh <text-dir>` | 0 failed. Check 4: 211 tokens equal (64 speculative rounds), 400 tokens equal (149 rounds). The numbers of main and of the first candidate. |
+| `tools/serve-smoke.sh` (Qwen3.5-9B NVFP4 GGUF and its regime draft) | 0 failed, 47 checks ok. The gemma4 arm skips: its model is not on this box. |
+| boot refusal on the built binary | `0`, `1`, the empty string, `off`, and `0` beside `MEMRA_ENV_AUDIT=warn` refuse by name, exit 1. |
+
 ## Files
 
-- `main/`, `candidate/`: gate, probe and exactness logs with every server log and response.
-  Paths under the run's scratch directory are replaced by `<scratch>`, `<bins-main>`,
-  `<bins-candidate>`, `<repo>` and `<home>`.
+- `main/`, `candidate/`, `candidate-rebased/`: gate, probe, serve-smoke and exactness logs with
+  every server log and response. Paths under the run's scratch directory are replaced by
+  `<scratch>`, `<bins-main>`, `<bins-candidate>`, `<bins-candidate-rebased>`, `<repo>` and
+  `<home>`.
 - `checkpoint/`: the text-trunk copy's manifest.
 - `tools/`: `strip_tower.py`, `probe_arm.py`, `probe_compare.py`, `exactness_nopin.py`.
 

@@ -1,0 +1,19 @@
+# serve-st-gate, 2026-11-10T04:39:36Z
+# tree: 62cae34bc11ab7cb7a58963b9afec961a663b2f7, 0 uncommitted file(s)
+2ade91f9a80372f6138143e29ffdc61a170d9c37c499d61912c3a686cb15c124  <bins-candidate-rebased>/release/memra-server
+a9e7e881b014e9a957814668d910ac552a89b2ac78a9489767a2017e604b721f  <bins-candidate-rebased>/release/run-gen
+10fe847cd5310e44cd8fd7bb366cf13f91d7e584b3fc219b4843de9ec073c1f9  tools/serve-st-gate.sh
+NVIDIA GeForce RTX 5090 Laptop GPU, 615.71.09, 48 MiB, 24463 MiB
+cargo shim: skipping 'build --release -p memra-server' (prebuilt binaries under CARGO_TARGET_DIR)
+cargo shim: skipping 'build --release -p memra-engine --bin run-gen' (prebuilt binaries under CARGO_TARGET_DIR)
+== serve-st-gate: checkpoint /data/ai-ml/hf-models/qwen35-4b-hf-text ==
+  ok: /models lists the ST model
+  ok: chat completion coherent (Paris) via ST template
+identical 64 ids
+  ok: CLI-vs-server greedy token streams identical
+  ok: no quarantine notice (dir checkpoints spec-eligible)
+short: default (spec) text equals the plain serve oracle (709 chars, 211 tokens, 64 speculative rounds)
+window: default (spec) text equals the plain serve oracle (1716 chars, 400 tokens, 149 speculative rounds)
+  ok: default (spec) server == plain serve oracle (400-tok window)
+serve-st-gate: 0 failed
+exit 0
