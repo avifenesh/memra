@@ -1,8 +1,8 @@
 # Verify rows: a speculative verify reads the KV once (GB10 decode round 5, lever 2)
 
-Verdict: shipped. `fa_verify_rows_v4_deep` is bit-identical to the seqs launch it replaces for a verify's rows, on every case of kernel-check's `FA-VERIFY-ROWS` cell on GB10 (both units) and the RTX 5090. On GB10 a speculative round at 131k context goes from 192.3 to 153.5 ms (-20.2%) and at 260k from 294.9 to 221.0 ms (-25.1%); on the RTX 5090 at 28k from 43.3 to 40.2 ms (-7.1%). The served texts are identical and TTFT does not move. The launch is routed by depth: below a measured floor per GQA shape the seqs launch runs, so short contexts and pooled cohorts of short chats are unchanged.
+Verdict: shipped. `fa_verify_rows_v4_deep` is bit-identical to the seqs launch it replaces for a verify's rows, on every case of kernel-check's `FA-VERIFY-ROWS` cell on GB10 (both units), the RTX 5090 and an RTX PRO 6000 Max-Q. On GB10 a speculative round at 131k context goes from 192.3 to 153.5 ms (-20.2%) and at 260k from 294.9 to 221.0 ms (-25.1%); on the RTX 5090 at 28k from 43.3 to 40.2 ms (-7.1%). The served texts are identical and TTFT does not move. The launch is routed by depth: below a measured floor per GQA shape the seqs launch runs, so short contexts and pooled cohorts of short chats are unchanged.
 
-Devices: DGX Spark (GB10, sm_121a), two units, and an RTX 5090 Laptop GPU (sm_120a). Model: Qwen3.8-27B GGUF (NVFP4 trunk, Q5_K output head, 24 heads over 4 KV heads) with the masked MTP draft, served as the launcher serves it (MTP speculative decode, K=3, so T = 4 verify rows). Base of every B arm: main 53eb765421. Date: 2026-11-10.
+Devices: DGX Spark (GB10, sm_121a), two units, and an RTX 5090 Laptop GPU (sm_120a); one RTX PRO 6000 Blackwell Max-Q (sm_120a, 250 W) for the kernel-check cell and the timing grid. Model: Qwen3.8-27B GGUF (NVFP4 trunk, Q5_K output head, 24 heads over 4 KV heads) with the masked MTP draft, served as the launcher serves it (MTP speculative decode, K=3, so T = 4 verify rows). Base of every B arm: main 53eb765421. Date: 2026-11-10.
 
 The design note this follows is `research/gb10-decode-20261109/MULTIROW-ATTN-DESIGN.md` (written before the code). Its estimate was -55 to -70 ms a round at 131k; the measured -38.8 ms is explained in "What the estimate missed".
 
@@ -27,6 +27,7 @@ kernel-check `FA-VERIFY-ROWS` compares the new launch with the seqs launch on th
 | GB10 unit 2, RTX 5090 (the final head) | 24/4, 16/2, 16/4 (to 260k) | 1,111 | 960 | 0 |
 | GB10 unit 2, RTX 5090 (the final head) | 4/4, 8/4, 20/4, 28/4 (to 32k) | 1,079 | 928 | 0 |
 | GB10 unit 1 (99048c1afa: the final kernel, an earlier floor for GQA 5 and 6) | the same seven | as above | as above | 0 |
+| RTX PRO 6000 Max-Q (the PR head's code) | the same seven | as above | 956 and 924 (its split ladder gives a few more one-row cases) | 0 |
 
 - **Cases:** T = 1..9 rows of one cache at depths inside one tile, on tile edges inside one partition class (a row whose bound ends where a tile starts while its group stages more keys), across changes of the partition (two classes in one round), with a group cut by the 32-warp limit, at 4k, 64k, 131k and 260k; two sessions' rows in one launch.
 - **The count that matters is the second one.** A case whose groups are all one row is the seqs launch on both sides (every T=1 case and a few shallow ones). The cell counts the cases whose rows walk really launched and fails if none did. These cases launch the walk at every depth (`fa_verify_rows_v4_unrouted`), below the served floors too.
@@ -37,96 +38,96 @@ kernel-check `FA-VERIFY-ROWS` compares the new launch with the seqs launch on th
 
 ## Per attention call
 
-kernel-check's timing rows (`MEMRA_KC_ROWS_TIME=1`): one full-attention layer's launch for T = 4 rows of one session, the 27B's 24/4 shape, N = 24 per arm, interleaved and synchronized. Medians in ms, at the final head. The RTX 5090 run started at 62 C and peaked at 75 C with no thermal slowdown sample (`kernel-check/rtx5090-gpu-1hz.csv`).
+kernel-check's timing rows (`MEMRA_KC_ROWS_TIME=1`): one full-attention layer's launch for T = 4 rows of one session, the 27B's 24/4 shape, N = 24 per arm, interleaved and synchronized. Medians in ms, at the final head. The RTX 5090 run started at 62 C and peaked at 75 C with no thermal slowdown sample (`kernel-check/rtx5090-gpu-1hz.csv`). The RTX PRO 6000 Max-Q run is one card at its 250 W limit, 46 C before and 52 C after, under `memra-gpu-run` (`kernel-check/pro6000-maxq-lease.txt`).
 
-| depth (keys) | GB10 seqs | GB10 rows | GB10 rows/seqs | RTX 5090 seqs | RTX 5090 rows | RTX 5090 rows/seqs |
-|---:|---:|---:|---:|---:|---:|---:|
-| 1,024 | 0.048 | 0.050 | 1.04 | 0.033 | 0.026 | 0.80 |
-| 2,048 | 0.079 | 0.074 | 0.93 | 0.050 | 0.043 | 0.87 |
-| 4,096 | 0.149 | 0.134 | 0.90 | 0.085 | 0.079 | 0.92 |
-| 8,192 | 0.348 | 0.281 | 0.81 | 0.161 | 0.136 | 0.85 |
-| 12,288 | 0.681 | 0.471 | 0.69 | 0.257 | 0.208 | 0.81 |
-| 16,000 | 0.956 | 0.644 | 0.67 | 0.341 | 0.273 | 0.80 |
-| 17,000 | 0.794 | 0.500 | 0.63 | 0.335 | 0.259 | 0.77 |
-| 24,576 | 1.173 | 0.713 | 0.61 | 0.521 | 0.380 | 0.73 |
-| 32,768 | 1.569 | 0.970 | 0.62 | 0.747 | 0.537 | 0.72 |
-| 131,072 | 6.335 | 3.659 | 0.58 | 2.971 | 2.282 | 0.77 |
-| 262,132 | 12.684 | 7.243 | 0.57 | 5.916 | 4.513 | 0.76 |
+| depth (keys) | GB10 seqs | GB10 rows | GB10 rows/seqs | RTX 5090 seqs | RTX 5090 rows | RTX 5090 rows/seqs | PRO 6000 Max-Q seqs | PRO 6000 Max-Q rows | PRO 6000 Max-Q rows/seqs |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1,024 | 0.048 | 0.050 | 1.04 | 0.033 | 0.026 | 0.80 | 0.030 | 0.035 | 1.18 |
+| 2,048 | 0.079 | 0.074 | 0.93 | 0.050 | 0.043 | 0.87 | 0.032 | 0.032 | 0.99 |
+| 4,096 | 0.149 | 0.134 | 0.90 | 0.085 | 0.079 | 0.92 | 0.056 | 0.055 | 0.98 |
+| 8,192 | 0.348 | 0.281 | 0.81 | 0.161 | 0.136 | 0.85 | 0.101 | 0.086 | 0.85 |
+| 12,288 | 0.681 | 0.471 | 0.69 | 0.257 | 0.208 | 0.81 | 0.149 | 0.133 | 0.89 |
+| 16,000 | 0.956 | 0.644 | 0.67 | 0.341 | 0.273 | 0.80 | 0.189 | 0.161 | 0.85 |
+| 17,000 | 0.794 | 0.500 | 0.63 | 0.335 | 0.259 | 0.77 | 0.178 | 0.133 | 0.74 |
+| 24,576 | 1.173 | 0.713 | 0.61 | 0.521 | 0.380 | 0.73 | 0.255 | 0.209 | 0.82 |
+| 32,768 | 1.569 | 0.970 | 0.62 | 0.747 | 0.537 | 0.72 | 0.334 | 0.256 | 0.77 |
+| 131,072 | 6.335 | 3.659 | 0.58 | 2.971 | 2.282 | 0.77 | 1.789 | 1.220 | 0.68 |
+| 262,132 | 12.684 | 7.243 | 0.57 | 5.916 | 4.513 | 0.76 | 3.982 | 2.609 | 0.66 |
 
-A round has 16 such calls on the 27B. On GB10 the call falls 42% at 131k and 43% at 260k; on the RTX 5090 23% and 24%.
+A round has 16 such calls on the 27B. On GB10 the call falls 42% at 131k and 43% at 260k; on the RTX 5090 23% and 24%; on the RTX PRO 6000 Max-Q 32% and 34%.
 
 ## Routing
 
-The two launches are bit-identical per row, so choosing between them changes no value. The rows walk shares one staged tile among a group's rows and pays for it with a wider block (rows x GQA warps). It loses where a split holds 8 keys and wins with depth, later for a wider block.
+The two launches are bit-identical per row, so choosing between them changes no value. The rows walk shares one staged tile among a group's rows and pays for it with a wider block (rows x GQA warps). It loses on the shortest split rung (8 keys a split on GB10 and the RTX 5090, 16 on the RTX PRO 6000) and wins with depth, later for a wider block.
 
 The grid, rows walk over seqs launch per call, by GQA shape and launch shape. The mark after a ratio: `<` rows faster with the two arms' ranges apart, `>` seqs faster, `~` ranges overlap. A pooled launch is routed row by row; its "routed to" column is the shallowest session's.
 
-| GQA | launch | depth (keys) | split keys | GB10 | RTX 5090 | routed to |
-|---:|---|---:|---:|---:|---:|---|
-| 4 | 1 session x 4 rows | 1,024 | 64 | 0.84 < | 0.72 < | rows walk |
-| 4 | 1 session x 4 rows | 2,048 | 64 | 0.71 < | 0.71 < | rows walk |
-| 4 | 1 session x 4 rows | 4,096 | 64 | 0.69 < | 0.74 < | rows walk |
-| 4 | 1 session x 4 rows | 8,192 | 64 | 0.55 < | 0.67 < | rows walk |
-| 4 | 1 session x 4 rows | 12,288 | 64 | 0.45 < | 0.65 < | rows walk |
-| 4 | 1 session x 4 rows | 16,000 | 64 | 0.39 < | 0.64 < | rows walk |
-| 4 | 1 session x 4 rows | 17,000 | 128 | 0.42 < | 0.63 < | rows walk |
-| 4 | 1 session x 4 rows | 24,576 | 128 | 0.41 < | 0.62 < | rows walk |
-| 4 | 1 session x 4 rows | 32,768 | 128 | 0.43 < | 0.56 < | rows walk |
-| 4 | 1 session x 4 rows | 131,072 | 128 | 0.45 < | 0.55 < | rows walk |
-| 4 | 1 session x 4 rows | 262,132 | 128 | 0.45 < | 0.55 < | rows walk |
-| 4 | 2 sessions x 4 rows | 300 | 8 | 0.88 < | 0.91 ~ | seqs |
-| 4 | 4 sessions x 4 rows | 300 | 8 | 0.94 < | 0.89 < | seqs |
-| 4 | 4 sessions x 4 rows | 1,000 | 64 | 0.63 < | 0.68 < | seqs |
-| 4 | 4 sessions x 4 rows | 2,000 | 64 | 0.63 < | 0.64 < | rows walk |
-| 4 | 4 sessions x 4 rows | 4,000 | 64 | 0.58 < | 0.61 < | rows walk |
-| 4 | 4 sessions x 4 rows | 8,000 | 64 | 0.56 < | 0.61 < | rows walk |
-| 4 | 4 sessions x 4 rows | 20,000 | 128 | 0.44 < | 0.58 < | rows walk |
-| 6 | 1 session x 4 rows | 1,024 | 64 | 1.04 ~ | 0.80 ~ | seqs |
-| 6 | 1 session x 4 rows | 2,048 | 64 | 0.93 < | 0.87 < | rows walk |
-| 6 | 1 session x 4 rows | 4,096 | 64 | 0.90 ~ | 0.92 ~ | rows walk |
-| 6 | 1 session x 4 rows | 8,192 | 64 | 0.81 ~ | 0.85 < | rows walk |
-| 6 | 1 session x 4 rows | 12,288 | 64 | 0.69 < | 0.81 < | rows walk |
-| 6 | 1 session x 4 rows | 16,000 | 64 | 0.67 < | 0.80 < | rows walk |
-| 6 | 1 session x 4 rows | 17,000 | 128 | 0.63 < | 0.77 < | rows walk |
-| 6 | 1 session x 4 rows | 24,576 | 128 | 0.61 < | 0.73 < | rows walk |
-| 6 | 1 session x 4 rows | 32,768 | 128 | 0.62 < | 0.72 < | rows walk |
-| 6 | 1 session x 4 rows | 131,072 | 128 | 0.58 < | 0.77 < | rows walk |
-| 6 | 1 session x 4 rows | 262,132 | 128 | 0.57 < | 0.76 < | rows walk |
-| 6 | 2 sessions x 4 rows | 300 | 8 | 1.16 > | 1.16 > | seqs |
-| 6 | 4 sessions x 4 rows | 300 | 8 | 1.31 > | 1.21 > | seqs |
-| 6 | 4 sessions x 4 rows | 1,000 | 64 | 0.85 < | 0.87 < | seqs |
-| 6 | 4 sessions x 4 rows | 2,000 | 64 | 0.91 < | 0.88 < | seqs |
-| 6 | 4 sessions x 4 rows | 4,000 | 64 | 0.87 ~ | 0.81 < | rows walk |
-| 6 | 4 sessions x 4 rows | 8,000 | 64 | 0.89 ~ | 0.84 < | rows walk |
-| 6 | 4 sessions x 4 rows | 20,000 | 128 | 0.60 < | 0.78 < | rows walk |
-| 8 | 1 session x 4 rows | 1,024 | 64 | 1.16 ~ | 1.32 > | seqs |
-| 8 | 1 session x 4 rows | 2,048 | 64 | 1.14 > | 0.85 < | seqs |
-| 8 | 1 session x 4 rows | 4,096 | 64 | 1.01 ~ | 0.93 ~ | seqs |
-| 8 | 1 session x 4 rows | 8,192 | 64 | 0.97 ~ | 0.98 ~ | seqs |
-| 8 | 1 session x 4 rows | 12,288 | 64 | 0.86 ~ | 0.91 < | seqs |
-| 8 | 1 session x 4 rows | 16,000 | 64 | 0.87 < | 0.93 ~ | seqs |
-| 8 | 1 session x 4 rows | 17,000 | 128 | 0.82 ~ | 0.92 < | rows walk |
-| 8 | 1 session x 4 rows | 24,576 | 128 | 0.73 < | 0.83 < | rows walk |
-| 8 | 1 session x 4 rows | 32,768 | 128 | 0.70 < | 0.86 < | rows walk |
-| 8 | 1 session x 4 rows | 131,072 | 128 | 0.66 < | 0.80 < | rows walk |
-| 8 | 1 session x 4 rows | 262,132 | 128 | 0.65 < | 0.81 < | rows walk |
-| 8 | 2 sessions x 4 rows | 300 | 8 | 1.33 > | 1.22 > | seqs |
-| 8 | 4 sessions x 4 rows | 300 | 8 | 1.35 > | 1.23 > | seqs |
-| 8 | 4 sessions x 4 rows | 1,000 | 64 | 0.93 < | 0.90 ~ | seqs |
-| 8 | 4 sessions x 4 rows | 2,000 | 64 | 1.00 ~ | 0.94 ~ | seqs |
-| 8 | 4 sessions x 4 rows | 4,000 | 64 | 0.95 < | 0.93 < | seqs |
-| 8 | 4 sessions x 4 rows | 8,000 | 64 | 0.92 ~ | 0.86 < | seqs |
-| 8 | 4 sessions x 4 rows | 20,000 | 128 | 0.81 ~ | 0.82 < | rows walk |
+| GQA | launch | depth (keys) | split keys | GB10 | RTX 5090 | PRO 6000 Max-Q | routed to |
+|---:|---|---:|---:|---:|---:|---:|---|
+| 4 | 1 session x 4 rows | 1,024 | 16 | 0.84 < | 0.72 < | 1.02 ~ | rows walk |
+| 4 | 1 session x 4 rows | 2,048 | 64 | 0.71 < | 0.71 < | 0.94 ~ | rows walk |
+| 4 | 1 session x 4 rows | 4,096 | 64 | 0.69 < | 0.74 < | 0.85 ~ | rows walk |
+| 4 | 1 session x 4 rows | 8,192 | 64 | 0.55 < | 0.67 < | 0.72 < | rows walk |
+| 4 | 1 session x 4 rows | 12,288 | 64 | 0.45 < | 0.65 < | 0.74 < | rows walk |
+| 4 | 1 session x 4 rows | 16,000 | 64 | 0.39 < | 0.64 < | 0.70 < | rows walk |
+| 4 | 1 session x 4 rows | 17,000 | 128 | 0.42 < | 0.63 < | 0.62 < | rows walk |
+| 4 | 1 session x 4 rows | 24,576 | 128 | 0.41 < | 0.62 < | 0.67 < | rows walk |
+| 4 | 1 session x 4 rows | 32,768 | 128 | 0.43 < | 0.56 < | 0.63 < | rows walk |
+| 4 | 1 session x 4 rows | 131,072 | 128 | 0.45 < | 0.55 < | 0.53 < | rows walk |
+| 4 | 1 session x 4 rows | 262,132 | 128 | 0.45 < | 0.55 < | 0.56 < | rows walk |
+| 4 | 2 sessions x 4 rows | 300 | 16 | 0.88 < | 0.91 ~ | 0.89 ~ | seqs |
+| 4 | 4 sessions x 4 rows | 300 | 16 | 0.94 < | 0.89 < | 0.90 ~ | seqs |
+| 4 | 4 sessions x 4 rows | 1,000 | 16 | 0.63 < | 0.68 < | 0.84 < | seqs |
+| 4 | 4 sessions x 4 rows | 2,000 | 64 | 0.63 < | 0.64 < |  | rows walk |
+| 4 | 4 sessions x 4 rows | 4,000 | 64 | 0.58 < | 0.61 < | 0.64 < | rows walk |
+| 4 | 4 sessions x 4 rows | 8,000 | 64 | 0.56 < | 0.61 < | 0.60 < | rows walk |
+| 4 | 4 sessions x 4 rows | 20,000 | 128 | 0.44 < | 0.58 < | 0.58 < | rows walk |
+| 6 | 1 session x 4 rows | 1,024 | 16 | 1.04 ~ | 0.80 ~ | 1.18 > | seqs |
+| 6 | 1 session x 4 rows | 2,048 | 64 | 0.93 < | 0.87 < | 0.99 ~ | rows walk |
+| 6 | 1 session x 4 rows | 4,096 | 64 | 0.90 ~ | 0.92 ~ | 0.98 ~ | rows walk |
+| 6 | 1 session x 4 rows | 8,192 | 64 | 0.81 ~ | 0.85 < | 0.85 < | rows walk |
+| 6 | 1 session x 4 rows | 12,288 | 64 | 0.69 < | 0.81 < | 0.89 < | rows walk |
+| 6 | 1 session x 4 rows | 16,000 | 64 | 0.67 < | 0.80 < | 0.85 < | rows walk |
+| 6 | 1 session x 4 rows | 17,000 | 128 | 0.63 < | 0.77 < | 0.74 < | rows walk |
+| 6 | 1 session x 4 rows | 24,576 | 128 | 0.61 < | 0.73 < | 0.82 < | rows walk |
+| 6 | 1 session x 4 rows | 32,768 | 128 | 0.62 < | 0.72 < | 0.77 < | rows walk |
+| 6 | 1 session x 4 rows | 131,072 | 128 | 0.58 < | 0.77 < | 0.68 < | rows walk |
+| 6 | 1 session x 4 rows | 262,132 | 128 | 0.57 < | 0.76 < | 0.66 < | rows walk |
+| 6 | 2 sessions x 4 rows | 300 | 16 | 1.16 > | 1.16 > | 0.95 ~ | seqs |
+| 6 | 4 sessions x 4 rows | 300 | 16 | 1.31 > | 1.21 > | 1.16 > | seqs |
+| 6 | 4 sessions x 4 rows | 1,000 | 16 | 0.85 < | 0.87 < | 1.08 > | seqs |
+| 6 | 4 sessions x 4 rows | 2,000 | 64 | 0.91 < | 0.88 < |  | seqs |
+| 6 | 4 sessions x 4 rows | 4,000 | 64 | 0.87 ~ | 0.81 < | 0.84 < | rows walk |
+| 6 | 4 sessions x 4 rows | 8,000 | 64 | 0.89 ~ | 0.84 < | 0.79 < | rows walk |
+| 6 | 4 sessions x 4 rows | 20,000 | 128 | 0.60 < | 0.78 < | 0.75 < | rows walk |
+| 8 | 1 session x 4 rows | 1,024 | 16 | 1.16 ~ | 1.32 > | 1.16 ~ | seqs |
+| 8 | 1 session x 4 rows | 2,048 | 64 | 1.14 > | 0.85 < | 1.27 ~ | seqs |
+| 8 | 1 session x 4 rows | 4,096 | 64 | 1.01 ~ | 0.93 ~ | 1.04 ~ | seqs |
+| 8 | 1 session x 4 rows | 8,192 | 64 | 0.97 ~ | 0.98 ~ | 1.04 ~ | seqs |
+| 8 | 1 session x 4 rows | 12,288 | 64 | 0.86 ~ | 0.91 < | 1.02 ~ | seqs |
+| 8 | 1 session x 4 rows | 16,000 | 64 | 0.87 < | 0.93 ~ | 0.93 ~ | seqs |
+| 8 | 1 session x 4 rows | 17,000 | 128 | 0.82 ~ | 0.92 < | 0.97 ~ | rows walk |
+| 8 | 1 session x 4 rows | 24,576 | 128 | 0.73 < | 0.83 < | 0.98 ~ | rows walk |
+| 8 | 1 session x 4 rows | 32,768 | 128 | 0.70 < | 0.86 < | 0.85 < | rows walk |
+| 8 | 1 session x 4 rows | 131,072 | 128 | 0.66 < | 0.80 < | 0.70 < | rows walk |
+| 8 | 1 session x 4 rows | 262,132 | 128 | 0.65 < | 0.81 < | 0.78 < | rows walk |
+| 8 | 2 sessions x 4 rows | 300 | 16 | 1.33 > | 1.22 > | 1.21 ~ | seqs |
+| 8 | 4 sessions x 4 rows | 300 | 16 | 1.35 > | 1.23 > | 1.12 > | seqs |
+| 8 | 4 sessions x 4 rows | 1,000 | 16 | 0.93 < | 0.90 ~ | 1.16 > | seqs |
+| 8 | 4 sessions x 4 rows | 2,000 | 64 | 1.00 ~ | 0.94 ~ |  | seqs |
+| 8 | 4 sessions x 4 rows | 4,000 | 64 | 0.95 < | 0.93 < | 0.90 < | seqs |
+| 8 | 4 sessions x 4 rows | 8,000 | 64 | 0.92 ~ | 0.86 < | 0.90 < | seqs |
+| 8 | 4 sessions x 4 rows | 20,000 | 128 | 0.81 ~ | 0.82 < | 0.78 < | rows walk |
 
-The rule (`fa_rows_floor`, one table for every device): a row joins a group only if its key bound is at least
+The rule (`fa_rows_floor`, one table for the three devices): a row joins a group only if its key bound is at least
 
-- **1,024 for GQA up to 4.** The walk is faster at every measured depth from there on both devices.
-- **2,048 for GQA 5 and 6** (the 27B). At 1,024 GB10 is flat (1.04, ranges overlap); from 2,048 the median is lower on both devices at every depth.
-- **16,384 for GQA 7 and 8** (the 128-key split rung). On the 64-key rung the widest block is within noise of the seqs launch on GB10 (1.16 down to 0.86, ranges mostly overlapping); on the 128-key rung it is lower on both devices.
+- **1,024 for GQA up to 4.** The walk is faster at every measured depth from there on GB10 and the RTX 5090, and flat then faster on the RTX PRO 6000 (1.02 at 1,024 with overlapping ranges, 0.94 at 2,048).
+- **2,048 for GQA 5 and 6** (the 27B). At 1,024 GB10 is flat (1.04, ranges overlap) and the RTX PRO 6000 loses (1.18, its 16-key rung); from 2,048 the median is lower on all three devices at every depth (0.99 and 0.98 on the RTX PRO 6000 up to 4,096, then 0.85 and below).
+- **16,384 for GQA 7 and 8** (the 128-key split rung). On the 64-key rung the widest block is within noise of the seqs launch on GB10 (1.16 down to 0.86, ranges mostly overlapping) and at or over it on the RTX PRO 6000 (1.27 down to 0.93); on the 128-key rung it is lower on all three devices.
 
 A row below the floor is a group of one, and a launch whose groups are all one row is the seqs launch itself, with no extra host work. Shapes without a timing row (GQA 1, 2, 5, 7) take their class's floor.
 
-Not measured: an RTX PRO 6000 (188 SMs, its own short split rung). It takes the same table until a probe says otherwise. The probe is one command: `MEMRA_KC_FAST=1 MEMRA_KC_ROWS_DEPTH=262144 MEMRA_KC_ROWS_TIME=1 kernel-check`, then `tools/tables.py`.
+The RTX PRO 6000 Max-Q (188 SMs, a 16-key short rung to 2,048 keys) was probed after the floors were set, and they hold there unchanged: every launch the table sends to the rows walk is at or under the seqs launch on that card, and every launch it loses is on the seqs side. The probe is one command: `MEMRA_KC_FAST=1 MEMRA_KC_ROWS_DEPTH=262144 MEMRA_KC_ROWS_TIME=1 kernel-check`, then `tools/tables.py`.
 
 ## Served
 
@@ -168,7 +169,7 @@ Next, not in this change: overlap staging with compute inside the block (a secon
 
 ## Receipts
 
-- `kernel-check/`: the `FA-VERIFY-ROWS` lines and the summary line per device; the RTX 5090 run's 1 Hz thermal samples.
+- `kernel-check/`: the `FA-VERIFY-ROWS` lines and the summary line per device; the RTX 5090 run's 1 Hz thermal samples; the RTX PRO 6000 Max-Q probe and its lease.
 - `rows131-unit2/`, `rows131-unit1/`, `rows131b-unit1/`, `rows260-unit2/`: GB10 served campaigns (per cell `ab.jsonl`, `guard.log`, `trace.txt`; `rounds-by-request.txt`).
 - `rows28-5090/`: the RTX 5090 served campaign and `run-spec`.
 - `pool-unit2/`, `pool-5090/`: pooled-cohort runs.
