@@ -42,3 +42,7 @@ research/gate-sizing-lock-20261104/raw/** -text whitespace=-blank-at-eol,-traili
 research/modelplan-onboarding-dsv41-20261109/encoding/ref/** -text -whitespace
 research/modelplan-onboarding-dsv41-20261109/encoding/fixtures/** -text -whitespace
 research/modelplan-onboarding-dsv41-20261109/encoding/parse/** -text -whitespace
+
+# The stop-string gate's raw answers and logs, byte-exact: runs.jsonl pins each answer by its sha256 (memra#1207).
+research/spec-stop-string-20261110/**/texts/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
+research/spec-stop-string-20261110/**/*.log -text whitespace=-blank-at-eol,-blank-at-eof
