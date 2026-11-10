@@ -16,7 +16,15 @@ def spec_coverage(lines):
     passed = set()
     current = None
     summaries = 0
+    identities = 0
     for line in lines:
+        # run-spec bit-compares served plain steps with the verify forward before its K sweep
+        # (memra#1146). The token sweep sees a verify forward in another numeric class only at
+        # a near tie, so a log without one MATCH (or the named n/a) line is not coverage.
+        if line.startswith("STEP-IDENTITY:"):
+            if identities or seen or not (line.endswith("-> MATCH") or line.startswith("STEP-IDENTITY: n/a (")):
+                raise ValueError("step identity duplicated, after a speculative K, or not a MATCH")
+            identities += 1
         if line.startswith("[generate_spec K="):
             match = re.match(r"^\[generate_spec K=([1-8])\] ", line)
             if not match or int(match[1]) in seen or summaries:
@@ -34,6 +42,8 @@ def spec_coverage(lines):
             summaries += 1
     if seen != set(range(1, 9)) or passed != seen or summaries != 1:
         raise ValueError(f"expected K=1..8 once each; seen={sorted(seen)}, passed={sorted(passed)}, summaries={summaries}")
+    if identities != 1:
+        raise ValueError("missing STEP-IDENTITY line before the K sweep")
     return "K=1..8 self-consistency, identical to plain target (8/8)"
 
 

@@ -1390,6 +1390,64 @@ pub(crate) fn host_u01(seed: u64, ctr: u32) -> f32 {
     (c0 as f32 + 1.0) * (1.0 / 4294967296.0)
 }
 
+/// What [`HybridModel::served_step_identity`] measured: served plain steps against verify
+/// forwards over the same tokens, from two primes of one prompt.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ServedStepIdentity {
+    /// The server decodes this model through the eager per-session step, not the batched one.
+    pub served_eager: bool,
+    /// Prompt tokens primed before the compared steps.
+    pub primed: usize,
+    /// Tokens per verify forward, and how many forwards.
+    pub columns: usize,
+    pub rounds: usize,
+    pub n_vocab: usize,
+    /// Logits that differ between the two primes of the same prompt (0 on a deterministic
+    /// prime; anything else is a prime defect, not a verify class).
+    pub twin_prime_differing: usize,
+    /// Logits whose bits differ between a plain step and its verify column, over every column
+    /// of every round; a NaN on either side counts.
+    pub differing: usize,
+    pub max_abs_diff: f32,
+    /// Columns whose argmax differs.
+    pub argmax_differing: usize,
+}
+
+impl ServedStepIdentity {
+    pub fn matches(&self) -> bool {
+        self.twin_prime_differing == 0 && self.differing == 0
+    }
+
+    /// The one line the gates print and `tools/release-coverage.py` requires.
+    pub fn line(&self) -> String {
+        let class = if self.served_eager {
+            "eager"
+        } else {
+            "batched"
+        };
+        if self.twin_prime_differing > 0 {
+            return format!(
+                "STEP-IDENTITY: two primes of the same {} tokens differ in {} of {} logits -> \
+                 TWIN-PRIME-MISMATCH",
+                self.primed, self.twin_prime_differing, self.n_vocab
+            );
+        }
+        format!(
+            "STEP-IDENTITY: {} {class} plain steps against one {}-column verify, {} rounds after \
+             {} primed tokens: {} of {} logits differ (max |diff| {}), {} argmax differ -> {}",
+            self.columns,
+            self.columns,
+            self.rounds,
+            self.primed,
+            self.differing,
+            self.columns * self.rounds * self.n_vocab,
+            self.max_abs_diff,
+            self.argmax_differing,
+            if self.matches() { "MATCH" } else { "MISMATCH" }
+        )
+    }
+}
+
 /// Tracked draft positions for [`SpecTelemetry`] (serve K defaults to 3; the run-spec gate
 /// sweeps K=1..8, and MEMRA_SPEC_CAPMAX defaults to 7 — 8 covers every tuned config).
 pub const SPEC_TELEM_POS: usize = 8;
@@ -11794,6 +11852,222 @@ impl HybridModel {
             return false;
         }
         self.mtp.is_some()
+    }
+
+    /// The plain greedy stream a speculative route is gated against (`run-spec`,
+    /// `session-gate`): run-spec's oracle, moved here so every gate takes the same one.
+    ///
+    /// Step35 and the qwen35 (GatedDeltaNet) family serve B=1 on the batched program
+    /// (concurrency cannot steer bytes), and their verify forward is aligned to that class, so
+    /// their oracle steps the production batch step. The older eager `generate` class is about
+    /// 1e-2 away at the top logits on the fast path (up to 0.12 across the vocabulary on
+    /// Qwen3.8-27B), so comparing those verifiers to it is a false red at near ties: MoE learned
+    /// it 2026-08-14 AM, the dense hybrid the same day on Qwen3.8, and the session gate on
+    /// memra#1146. A sharded PP target must likewise stay on a split target step: `generate`
+    /// may select the unsplit device-counter loop, which correctly refuses remote weights
+    /// rather than peer-reading them.
+    ///
+    /// Every other single-device family keeps the longstanding `generate` oracle, the class its
+    /// verify forward runs. For a batch-served model among them that is NOT the class its plain
+    /// decode is served in (memra#1157); [`Self::served_step_identity`] is the check that sees
+    /// it.
+    pub fn generate_spec_oracle(
+        &self,
+        e: &Engine,
+        prompt: &[u32],
+        max_new: usize,
+    ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
+        let model = self;
+        let batched_class = model.spec_oracle_steps_batched();
+        let pp_class = crate::pp::pp_cuts(model.layers.len()).is_some();
+        if !batched_class && !pp_class {
+            return model.generate(e, prompt, max_new);
+        }
+        let mut cache = crate::pp::new_cache(e, &model.cfg, prompt.len() + max_new + 8)?;
+        let t_prime = std::time::Instant::now();
+        let mut logits = if prompt.len() >= crate::hybrid_forward::PRIME_MIN_T
+            && std::env::var("MEMRA_PRIME_TOKENWISE").is_err()
+            && !e.frozen_cpu_experts_prefer_tokenwise_prime()
+        {
+            model.prime_cache(e, prompt, &mut cache, 0)?.0
+        } else {
+            let mut row = Vec::new();
+            for &token in prompt {
+                // The live GDN worker primes cold sub-floor prompts eagerly even though
+                // generated tokens use the batched serving class (#918). Keep the oracle
+                // tied to that request program, rather than copying the speculative prime.
+                row = if batched_class
+                    && !(crate::plan_backend::gdn_dspark_compatible(&model.plan)
+                        && prompt.len() < crate::hybrid_forward::PRIME_MIN_T)
+                {
+                    let mut caches = [&mut cache];
+                    model.decode_step_batch(e, &[token], &mut caches)?.remove(0)
+                } else {
+                    model.decode_step_h(e, token, &mut cache)?.0
+                };
+            }
+            row
+        };
+        e.stream().synchronize()?;
+        crate::PRIME_NANOS.store(
+            t_prime.elapsed().as_nanos() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        let mut out = Vec::with_capacity(max_new);
+        for _ in 0..max_new {
+            let token = crate::forward::argmax(&logits) as u32;
+            out.push(token);
+            logits = if batched_class {
+                let mut caches = [&mut cache];
+                model.decode_step_batch(e, &[token], &mut caches)?.remove(0)
+            } else {
+                model.decode_step_h(e, token, &mut cache)?.0
+            };
+        }
+        Ok(out)
+    }
+
+    /// Whether [`Self::generate_spec_oracle`] steps this model on the batched program: the
+    /// families whose verify forward runs the batched serving class. The verify side's own
+    /// predicates are `sliding_gated_moe_batch_program` and `batched_serving_numeric_class`
+    /// (a GatedDeltaNet trunk); this one also asks for the fused attention gate, which every
+    /// GatedDeltaNet pack today has.
+    pub fn spec_oracle_steps_batched(&self) -> bool {
+        self.uses_sliding_gated_moe_program()
+            || crate::plan_backend::gdn_dspark_compatible(&self.plan)
+    }
+
+    /// Whether a [`Self::served_step_identity`] mismatch fails a gate: the families whose
+    /// verify forward the engine declares in the batched serving class (the oracle's predicate).
+    /// On any other family with an MTP head the line is printed and not enforced: its verify
+    /// forward is still the eager-class walk while serving decodes it on the batched program,
+    /// which is memra#1157's open decision, not something a gate may settle unmeasured.
+    pub fn step_identity_enforced(&self) -> bool {
+        self.spec_oracle_steps_batched()
+    }
+
+    /// STEP IDENTITY (memra#1146): the generic verify forward (`decode_step_t_h`, the forward an
+    /// eager speculative round runs) against the program the server decodes this model with, bit
+    /// for bit. Not covered: the verify-graph replay, the pooled verify and the device-token
+    /// verify, which a route may take in its place; the token-level sweep is their gate. `rounds` times: `columns` consecutive plain steps of the
+    /// served program (the batched step at B=1 for every model the scheduler batch-serves, the
+    /// eager step for an eager-routed one, [`Self::served_decode_is_eager`]) against one
+    /// `columns`-row verify forward over the same tokens, from two caches primed with `prompt`.
+    /// Each round's tokens are the plain program's own greedy continuation, so the verify rows
+    /// are the rows a fully accepted draft would run. The compared logits are every column of
+    /// every round, which also covers the state the earlier columns and rounds left.
+    ///
+    /// A speculative route is exact against served plain decode only if this matches. A verify
+    /// forward in another class agrees on most tokens and leaves the plain text at a near tie,
+    /// which a token-level sweep sees only when a prompt happens to hold one. The target-only
+    /// localizer with more knobs is the `spec-serve-gate` binary.
+    ///
+    /// The two caches are primed one after the other and their prime logits compared, so a
+    /// nondeterministic prime reports as itself. Under a rewrite bundle without a batched-decode
+    /// receipt the batched step falls back to eager rows, and a batched-class verify then reads
+    /// as a mismatch.
+    ///
+    /// `None`: the model has no MTP head, or no generic verify forward to compare (a
+    /// hyper-connection trunk or the gemma program; their speculative routes have their own
+    /// gates).
+    pub fn served_step_identity(
+        &self,
+        e: &Engine,
+        prompt: &[u32],
+        columns: usize,
+        rounds: usize,
+    ) -> Result<Option<ServedStepIdentity>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
+        if self.mtp.is_none()
+            || self.hyper.is_some()
+            || self.uses_gemma_program()
+            || self.is_gemma4_e4b()
+        {
+            return Ok(None);
+        }
+        let columns = columns.clamp(1, 16);
+        let rounds = rounds.max(1);
+        let n_vocab = self.cfg.n_vocab as usize;
+        let served_eager = self.served_decode_is_eager();
+        let ctx = prompt.len() + columns * rounds + 16;
+        let plain_step =
+            |token: u32, cache: &mut Cache| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+                if served_eager {
+                    Ok(self.decode_step_h(e, token, cache)?.0)
+                } else {
+                    let mut caches = [cache];
+                    Ok(self.decode_step_batch(e, &[token], &mut caches)?.remove(0))
+                }
+            };
+        let batched_prime = prompt.len() >= crate::hybrid_forward::PRIME_MIN_T
+            && std::env::var("MEMRA_PRIME_TOKENWISE").is_err()
+            && !e.frozen_cpu_experts_prefer_tokenwise_prime();
+        let prime = |cache: &mut Cache| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+            if batched_prime {
+                return Ok(self.prime_cache(e, prompt, cache, 0)?.0);
+            }
+            let mut row = Vec::new();
+            for &token in prompt {
+                row = plain_step(token, cache)?;
+            }
+            Ok(row)
+        };
+        let bits_differ = |a: f32, b: f32| a.to_bits() != b.to_bits() || a.is_nan() || b.is_nan();
+        // The plain program first: its rows, and the tokens it would emit.
+        let (primed_plain, tokens, reference) = {
+            let mut cache = crate::pp::new_cache(e, &self.cfg, ctx)?;
+            let primed = prime(&mut cache)?;
+            let mut tokens = Vec::with_capacity(columns * rounds);
+            let mut rows: Vec<Vec<f32>> = Vec::with_capacity(columns * rounds);
+            let mut next = crate::forward::argmax(&primed[..n_vocab]) as u32;
+            for _ in 0..columns * rounds {
+                tokens.push(next);
+                let row = plain_step(next, &mut cache)?;
+                next = crate::forward::argmax(&row[..n_vocab]) as u32;
+                rows.push(row);
+            }
+            (primed, tokens, rows)
+        };
+        // Then the verify forwards, from a second prime of the same prompt.
+        let mut cache = crate::pp::new_cache(e, &self.cfg, ctx)?;
+        let primed_verify = prime(&mut cache)?;
+        let twin_prime_differing = (0..n_vocab)
+            .filter(|&i| bits_differ(primed_plain[i], primed_verify[i]))
+            .count();
+        let (mut differing, mut max_abs_diff, mut argmax_differing) = (0usize, 0f32, 0usize);
+        if twin_prime_differing == 0 {
+            for round in 0..rounds {
+                let chunk = &tokens[round * columns..(round + 1) * columns];
+                let pos0 = cache.pos;
+                let got = self.decode_step_t_h(e, chunk, pos0, &mut cache)?.0;
+                for col in 0..columns {
+                    let actual = &got[col * n_vocab..(col + 1) * n_vocab];
+                    let expected = &reference[round * columns + col][..n_vocab];
+                    differing += (0..n_vocab)
+                        .filter(|&i| bits_differ(actual[i], expected[i]))
+                        .count();
+                    max_abs_diff = (0..n_vocab)
+                        .map(|i| (actual[i] - expected[i]).abs())
+                        .filter(|d| !d.is_nan())
+                        .fold(max_abs_diff, f32::max);
+                    argmax_differing += usize::from(
+                        crate::forward::argmax(actual) != crate::forward::argmax(expected),
+                    );
+                }
+            }
+        }
+        Ok(Some(ServedStepIdentity {
+            served_eager,
+            primed: prompt.len(),
+            columns,
+            rounds,
+            n_vocab,
+            twin_prime_differing,
+            differing,
+            max_abs_diff,
+            argmax_differing,
+        }))
     }
 
     fn batched_serving_numeric_class(&self) -> bool {

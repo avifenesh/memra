@@ -121,8 +121,9 @@ class Repo:
             required = coverage.required_cells([self.repo / m for m in ce.MANIFESTS])
             logs = [("kernel", "kernel", "".join(f"{c} CPU-fixture OK\n" for c in sorted(required))
                      + f"ALL GREEN ({len(required)} cells, 0 skipped)\n")]
-            spec = "".join(f"[generate_spec K={k}] 32 tok\nself-consistency: PASS (identical to plain target)\n"
-                           for k in range(1, 9)) + "=== SELF-CONSISTENCY PASS ===\n"
+            spec = ("STEP-IDENTITY: 4 batched plain steps against one 4-column verify -> MATCH\n"
+                    + "".join(f"[generate_spec K={k}] 32 tok\nself-consistency: PASS (identical to plain target)\n"
+                           for k in range(1, 9))) + "=== SELF-CONSISTENCY PASS ===\n"
             # The cells tools/release-battery.sh writes per roster model, in its order: the eager
             # argmax gate, the served-batch argmax gate (`--decode batch`), then run-spec.
             for model in ("model-a", "model-b"):

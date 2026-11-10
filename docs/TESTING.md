@@ -913,6 +913,56 @@ Two things about it are load-bearing, and both are the kind of thing a later rea
    requires the demote line to prove it fired on the target), and a *wrong reference*, whose
    discriminator arm `REF_LOAD` is what surfaced the batch-vs-solo finding above.
 
+### The oracle a speculative route is exact against (memra#1146)
+
+A greedy speculative stream has to equal plain greedy decode **in the numeric class the model's
+plain decode is served in**. The batched scheduler decodes every model on the batched program at
+every width, B=1 included, except the eager-routed ones (`HybridModel::served_decode_is_eager`).
+The verify forward of Step35 (`sliding_gated_moe_batch_program`) and of the qwen35
+(GatedDeltaNet) family (`batched_serving_numeric_class`) runs that class. The eager step of the
+qwen35 family is another program: on Qwen3.8-27B, from one primed cache, the eager step and a
+verify row differ in all 248,320 logits (about 1e-2 at the top ids, up to 0.12 across the
+vocabulary). An eager oracle therefore agrees until a near tie and fails there;
+`session-gate` did, at K=3 with 48 tokens per turn, on GB10 and on the RTX 5090
+(`research/session-gate-oracle-20261110/`).
+
+- **The oracle.** `HybridModel::generate_spec_oracle` (run-spec's oracle, in the engine since
+  memra#1146): the batched step for Step35 and the GatedDeltaNet family; for every other
+  family eager `generate`, or the eager step on a pipeline-split target. `run-spec` and
+  `session-gate` call it. `dspark_q38_gate` keeps its own copy of the batched form and
+  `spec_st_probe` still judges against `generate`.
+- **`STEP-IDENTITY`** (`HybridModel::served_step_identity`): four plain steps of the program the
+  server decodes the model with against one four-row generic verify forward
+  (`decode_step_t_h`) over the same tokens, two rounds, from two primes of a fixed 211-token
+  prompt (off the prime grid, its tail above the prime floor); every logit of every column is
+  bit-compared, and the two primes are compared with each other first. It takes its plain step
+  from `served_decode_is_eager`, not from the oracle's predicate, so it reports the pair serving
+  actually crosses. Not covered: the verify-graph replay (the default verify of the
+  GatedDeltaNet + routed-MoE family), the pooled verify and the device-token verify; the
+  token-level sweep is their gate. `spec-serve-gate` is the target-only localizer for the same
+  comparison, with the widths and step count as arguments.
+- **Who requires it.** `run-spec` prints the line before its K sweep. Where the engine declares
+  the verify forward in the serving class (`step_identity_enforced`: Step35 and the
+  GatedDeltaNet family) anything but `-> MATCH` fails the run before the sweep and its banner;
+  a model with no MTP head or no generic verify forward prints the named `n/a`.
+  `tools/release-coverage.py` (the release battery, `tools/release_qualification.py` and
+  `tools/cell_evidence.py`) requires exactly one line ending `-> MATCH`, or the `n/a`, in a
+  run-spec log. `session-gate` prints it before its turns, at K+1 rows, under the same rule.
+- **What it says.** `MATCH` on the GatedDeltaNet family, measured on the RTX 5090 and GB10
+  (`research/session-gate-oracle-20261110/`). Step35 is declared and enforced but not measured
+  yet: its verify forward is in the batched class by code, and its first run-spec with this
+  check is the measurement. On a batch-served model whose verify forward is still in the eager
+  class (a full-attention trunk with an MTP head: Hy3, MiMo-v2) the engine's own notes say the
+  two programs differ; the line is printed there and not enforced, pending memra#1157. Under a
+  rewrite bundle without a batched-decode receipt the batched step falls back to eager rows,
+  and a batched-class verify then reads as a mismatch.
+
+`session-gate` also takes the resume the served engine takes: on a recurrent trunk it rewinds to
+the session's on-grid turn checkpoint (or primes cold) instead of priming a suffix at the parked
+end, which the server refuses since the grid law (memra#1091, memra#1093); it fails if no turn
+rewound; and its continuation burst is compared with the continuation of the previous turn's
+oracle.
+
 ## Gate integrity: the shapes that report green while verifying nothing
 
 A gate can fail in a way no red ever shows: it runs, prints a pass, and asserted nothing. The

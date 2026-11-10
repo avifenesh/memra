@@ -19,8 +19,12 @@ REQUIRED = [
 ]
 
 
-def spec_output(ks=range(1, 9)):
-    return "".join(
+STEP_IDENTITY = ("STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 24 primed "
+                 "tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ -> MATCH\n")
+
+
+def spec_output(ks=range(1, 9), identity=STEP_IDENTITY):
+    return identity + "".join(
         f"[generate_spec K={k}] 32 tok in 1.000s = 31.00 tok/s\n"
         "  acceptance: 8/16 = 50.0%   self-consistency: PASS (identical to plain target)\n"
         for k in ks
@@ -78,7 +82,7 @@ exit "${FIXTURE_KC_RC:-0}"
         self.write_executable(self.bin / "run-spec", '''#!/usr/bin/env bash
 env > "$FIXTURE_ROOT/spec.env"
 if [ "${FIXTURE_ENV_SENSITIVE:-0}" = 1 ] && [ -n "${MEMRA_SPEC_K:-}" ]; then
-    sed -n '1,2p' "$FIXTURE_ROOT/spec.log"
+    sed -n '1,3p' "$FIXTURE_ROOT/spec.log"
     echo '=== SELF-CONSISTENCY PASS ==='
 else
     cat "$FIXTURE_ROOT/spec.log"
@@ -185,6 +189,11 @@ esac
         self.spec_log.write_text(spec_output(range(8, 0, -1)))
         self.run_battery()
 
+    def test_step_identity_not_applicable_is_accepted(self):
+        self.spec_log.write_text(spec_output(
+            identity="STEP-IDENTITY: n/a (no MTP head or no generic verify forward)\n"))
+        self.run_battery()
+
     def test_spec_incomplete_or_invalid(self):
         cases = {
             "narrowed": spec_output([4]),
@@ -192,6 +201,12 @@ esac
             "missing": spec_output(range(1, 8)),
             "out-of-range": spec_output(range(2, 10)),
             "summary-only": "=== SELF-CONSISTENCY PASS ===\n",
+            "no-step-identity": spec_output(identity=""),
+            "step-identity-mismatch": spec_output(identity=STEP_IDENTITY.replace("-> MATCH", "-> MISMATCH")),
+            "step-identity-twin-prime": spec_output(identity=STEP_IDENTITY.replace("-> MATCH", "-> TWIN-PRIME-MISMATCH")),
+            "step-identity-twice": spec_output(identity=STEP_IDENTITY * 2),
+            "step-identity-after-the-sweep": spec_output(identity="").replace(
+                "=== SELF-CONSISTENCY PASS ===", STEP_IDENTITY + "=== SELF-CONSISTENCY PASS ==="),
             "failed": spec_output().replace("self-consistency: PASS", "self-consistency: FAIL", 1),
             "missing-verdict": spec_output().replace("self-consistency: PASS", "unrelated: PASS", 1),
             "duplicate-verdict": spec_output().replace(
