@@ -62,7 +62,16 @@ through it the gate script call):
   says so, and its agreeing rows are not judged. The release battery runs the gate with
   `--require-floor` and reports such a cell as `REFUSED`.
 - **Per device, no fallback.** A floor is used only on the device it was measured on. There is no
-  default floor and no floor borrowed from another prompt, model or device.
+  default floor and no floor borrowed from another prompt, model or device. The device is its
+  exact `nvidia-smi` name: a laptop and a desktop RTX 5090, or a Max-Q and a non-Max-Q RTX PRO
+  6000, are different devices until measured equal.
+- **Maintained classes.** The classes of push-gated build targets in
+  `tools/change-impact.toml` (`rtx5090`, `rtxpro6000`, `gb10`) are maintained. With
+  `--require-floor` and no floor row, a device of a maintained class is refused and so is a
+  device name no class matches. A device of a class that is not maintained (H100, B200) prints
+  `not judged: device class not maintained, no floor row` and neither passes nor refuses the
+  battery. The census (`tools/check-argmax-floors.py`) demands, for every maintained class, a
+  floor row for every argmax cell the battery lists.
 - **Budgets keep their numbers** (1 per 12 rows by default; 3 for gemma-4-31B, gemma-4-26B and
   Qwen3.8-27B NVFP4 on `p4-16k`). What they count changed: near ties, flips inside the floor.
   The floor says what a near tie is, not how many a window holds, so a budget is still a
