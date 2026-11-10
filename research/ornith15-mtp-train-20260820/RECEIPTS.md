@@ -152,6 +152,13 @@ even at draft len 1.17 — graph draft requires a dense trunk (spec.rs), this SK
 256-expert MoE, so rounds run EAGER. Even 100% acceptance cannot beat plain at 4x round
 cost. Engine lane if spec-on is wanted here: MoE-capable draft graph / fused round.
 
+> **Note, 2026-11-10 (memra#1199), on the paragraph below.** "Margin-EXPLAINED" is true of any
+> flip (the spread at a flip is at least the mean of the two margins) and proves nothing. The
+> paragraph's evidence is the flip count (2) and the margin it quotes for the smaller side
+> (0.1310); the probe table is not in the repo, so the other side's margin is not on record
+> and the flip cannot be re-judged. The rule that replaced the test:
+> `docs/decisions/ARGMAX-GATE-GAP-SHIFT-FLOOR.md`.
+
 **CLI-vs-server diverge@8: NEAR-TIE class, margin-proven** (`fork-triage/`, argmax-margin-
 probe on the v2 GGUF over the gate's rendered prompt): flip@8 margin 0.1310 vs config spread
 0.4179 -> margin-EXPLAINED; 2 flips vs calibrated budget 2; decision-position argmax agrees

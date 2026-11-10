@@ -30,3 +30,7 @@ numbered in campaign order. `summary.txt` is `summarize.py` over all six.
 margin-explained. Its probe table (the gate log without timing lines, before the home path was
 written as `~`) hashes to `a42e74b3f28cbd96`. That is the hash of #1102's tables on unit 1, under
 both mainloops.
+
+> **Note, 2026-11-10 (memra#1199).** "Every flip margin-explained" is true of any flip and is
+> not evidence. What this cell shows is 3 flips against a budget of 3 and a probe table
+> byte-identical to #1102's. See `docs/decisions/ARGMAX-GATE-GAP-SHIFT-FLOOR.md`.

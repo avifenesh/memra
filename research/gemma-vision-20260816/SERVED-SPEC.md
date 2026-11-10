@@ -280,6 +280,13 @@ prefill fix. Not material; the sized follow-up (Q6_K m=8 decode kernel, 840GB/s 
 1.26TB/s, varlen playbook) would close and exceed it — NOT built in this round per
 scope.
 
+> **Note, 2026-11-10 (memra#1199), on the finding below.** "Margin-explained (config_delta >
+> margin)" is true of any flip and is not evidence: the spread at a flip is at least the mean
+> of the two margins. What the finding rests on is the same flip count (2) at pre-merge HEAD
+> and on the box, mirrors on and off. The two flips' margins in the banked table
+> (`gap-receipts/argmax-gate/banked-invocations.txt`): row 2093 0.135 + 0.167, row 2094
+> 0.199 + 0.293. The rule that replaced the test: `docs/decisions/ARGMAX-GATE-GAP-SHIFT-FLOOR.md`.
+
 **Argmax-margin gate finding (filed, non-blocking):** the run-gen prefill-vs-decode
 gate reads flips=2/bad=1 on gemma-31B × board-2048 INVARIANTLY — same result at
 pre-merge HEAD (5090, Q4_0) and on the box (downQ6K) with mirrors ON and OFF
