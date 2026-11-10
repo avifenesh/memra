@@ -1821,7 +1821,10 @@ The gate streams every request (SSE with usage) and boots once per lease:
 - `ref`: `MEMRA_SPEC_K=0`. It takes the stop strings from its own answers, writes `plan.json`
   and runs every row: the reference counts and texts.
 - a speculative boot per arm: the defaults, `--env MEMRA_SPEC_BURST=2` (a burst ends at nearly
-  every round), and `--route dspark` with the DSpark recipe's env.
+  every round), and `--route dspark` with the DSpark recipe's env (with the prefix cache off, as
+  the RTX 5090 recipe runs, and on, where a stop-ended session parks). Every speculative boot runs
+  with `MEMRA_SPEC_GATE=0`, and a row that did not speculate to its end fails: a demotion to
+  plain decode makes a row equal to the reference by construction.
 
 Rows, greedy and at temperature 1 (seeded): a free answer and an EOS answer (the non-stop rows),
 one-word stop strings at five positions, three-word stop strings at three (several tokens, so
@@ -1833,8 +1836,14 @@ per-round drafts `MEMRA_DEBUG_SPEC=1` prints for a warm run of the free request,
 each row's own log). `judge DIR` fails a speculative row whose text, finish reason or completion
 tokens differ from plain decode's (a rejected-draft row is compared with the free row: its stop
 string never completes), a stop-ended row without exactly one `[spec-stop]` receipt naming its
-count, and a stop-ended row that closes later than max(3x, 100 ms more than) the median time
-from last visible chunk to end of response of its boot's non-stop rows. It fails as untested
+count, a session refused at park, and a stop-ended row that closes later than max(3x, 100 ms
+more than) the median time from last visible chunk to end of response of its boot's non-stop
+rows, plus twice the time plain decode's own row took (a stop string of several tokens is held
+back from the stream until it completes or cannot, in plain decode too). DSpark's sampled verify
+is a rejection walk, not plain decode's position-keyed draw, so on that route the sampled rows
+are judged on the route's own stream: their stop strings come from its own answer, and each
+stop row is sent again without stop strings at `max_tokens` equal to its count (the stop string
+must be in the answer) and one less (it must not). It fails as untested
 when, per sampler, no stop string began in an earlier commit slice than it completed in
 (`spans_slices=1`), no request held two stop strings in one burst, or no rejected-draft row was
 confirmed (the last two on MTP boots). The second turn after a stop-ended first turn must
