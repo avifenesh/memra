@@ -67,7 +67,7 @@ native completions with `chat: true` (token ids). `tools/probe_compare.py` compa
 The candidate's text and ids also equal main's, arm for arm, on all three prompts
 (`candidate/probe/compare-vs-main.txt`).
 
-### spec-gate exactness harness on main (`main/exactness*/exactness.log`)
+### spec-gate exactness harness (`main/exactness*/`, `candidate-rebased/exactness/`)
 
 `research/spec-gate-20260806/exactness.py`, Qwen3.5-9B NVFP4 GGUF with its regime draft, five
 arms, one boot each, 768 tokens. Two things about the harness on main, both independent of this
@@ -86,6 +86,7 @@ change:
 | as on main (`main/exactness/`) | byte-identical, 3169 B, 768 tokens | at generated 133 in the log, not parsed | disarmed by the pin | EXACTNESS_INCONCLUSIVE |
 | no pin, old pattern (`main/exactness-nopin/`) | byte-identical, 3169 B | at 133 in the log, not parsed | at 108 in the log, not parsed | EXACTNESS_INCONCLUSIVE |
 | pattern fixed (`main/exactness-fixed/`) | byte-identical, 3169 B | at 133 | disarmed by the pin | EXACTNESS_OK |
+| pattern fixed, rebased candidate (`candidate-rebased/exactness/`) | byte-identical, 3169 B, and equal to main's five | at 133 | disarmed by the pin | EXACTNESS_OK |
 
 ### The boot refusal
 
@@ -111,7 +112,13 @@ on binaries built from the rebased head `62cae34bc1` (`memra-server` `2ade91f9a8
 |---|---|
 | `tools/serve-st-gate.sh <text-dir>` | 0 failed. Check 4: 211 tokens equal (64 speculative rounds), 400 tokens equal (149 rounds). The numbers of main and of the first candidate. |
 | `tools/serve-smoke.sh` (Qwen3.5-9B NVFP4 GGUF and its regime draft) | 0 failed, 47 checks ok. The gemma4 arm skips: its model is not on this box. |
+| `research/spec-gate-20260806/exactness.py` (pattern fixed) | `EXACTNESS_OK`. Five streams byte-identical (3169 B, 768 tokens), forced demotion at generated 133, control overshoot 0. Each of the five streams is byte-identical to main's stream of the same arm. |
 | boot refusal on the built binary | `0`, `1`, the empty string, `off`, and `0` beside `MEMRA_ENV_AUDIT=warn` refuse by name, exit 1. |
+
+Not run on a candidate: the harness without its K pin (the loaded demotion; banked on main
+only) and the gate on a checkpoint with no MTP head (the named skip of check 4; its detection
+was exercised against three local directories and its exit path without a GPU, not in a served
+run). The card went to a landing before those two leases.
 
 ## Files
 
