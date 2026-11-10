@@ -2137,24 +2137,64 @@ impl HybridModel {
     /// P=3000 passed on logit margins; exposed by the 512 rung: kat P=400 flipped 97/160).
     /// With the rung in the fingerprint a capture never straddles it, so the captured
     /// split_keys equals the live ladder on every replay — bit-exact at every t_kv.
-    pub(crate) fn fa_class_of(&self, e: &Engine, t_kv: usize) -> (bool, bool, bool, usize) {
-        let _numeric = self.enter_numeric();
-        let head_dim = self.cfg.head_dim_k as usize;
-        let (nh, nkv) = (self.cfg.n_head as usize, self.cfg.n_head_kv as usize);
-        (
-            e.fa_geom_eager(t_kv, head_dim, nh, nkv, false).0,
-            crate::fa_v4_at_pub(t_kv, nh, nkv),
-            head_dim == 512 && t_kv >= crate::fa512_min_tkv(),
-            crate::fa_split_keys_pub(t_kv, nkv),
-        )
+    ///
+    /// The class is taken per distinct full-attention geometry (head dim, query and KV heads),
+    /// as the captured launches read them: the split ladder's deep rung depends on the KV head
+    /// count, so a layer whose geometry differs from the config's gets its own entry.
+    fn fa_class_at(
+        e: &Engine,
+        t_kv: usize,
+        geoms: &[(usize, usize, usize)],
+    ) -> Vec<(bool, bool, bool, usize)> {
+        geoms
+            .iter()
+            .map(|&(head_dim, nh, nkv)| {
+                (
+                    e.fa_geom_eager(t_kv, head_dim, nh, nkv, false).0,
+                    crate::fa_v4_at_pub(t_kv, nh, nkv),
+                    head_dim == 512 && t_kv >= crate::fa512_min_tkv(),
+                    crate::fa_split_keys_pub(t_kv, nkv),
+                )
+            })
+            .collect()
+    }
+
+    /// The distinct (head dim, query heads, KV heads) the class is taken over: the config's
+    /// scalars first (the fingerprint before the per-geometry read, so a segment boundary that
+    /// existed then still does: segments can only split more often), then every full-attention
+    /// layer's geometry that differs from them, in layer order. A model whose full-attention
+    /// layers all match the config, every model this captures today, gets one entry and the
+    /// same segments as before.
+    fn fa_class_geometries(&self) -> Vec<(usize, usize, usize)> {
+        let mut geoms = vec![(
+            self.cfg.head_dim_k as usize,
+            self.cfg.n_head as usize,
+            self.cfg.n_head_kv as usize,
+        )];
+        for (il, layer) in self.layers.iter().enumerate() {
+            if !matches!(layer.mixer, Mixer::Full(_)) {
+                continue;
+            }
+            let g = self.cfg.full_attention_geometry_at(il as u32);
+            let key = (
+                g.head_dim_k as usize,
+                g.n_head as usize,
+                g.n_head_kv as usize,
+            );
+            if !geoms.contains(&key) {
+                geoms.push(key);
+            }
+        }
+        geoms
     }
 
     /// Last t_kv (clamped to `final_max`) sharing `start`'s eager kernel class.
     pub(crate) fn fa_segment_end(&self, e: &Engine, start: usize, final_max: usize) -> usize {
         let _numeric = self.enter_numeric();
-        let cls = self.fa_class_of(e, start);
+        let geoms = self.fa_class_geometries();
+        let cls = Self::fa_class_at(e, start, &geoms);
         let mut end = start;
-        while end < final_max && self.fa_class_of(e, end + 1) == cls {
+        while end < final_max && Self::fa_class_at(e, end + 1, &geoms) == cls {
             end += 1;
         }
         end
