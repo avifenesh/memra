@@ -14,8 +14,8 @@ declare -A PROMPT_OF
 for p in research/e2e/prompts/*.txt; do
     PROMPT_OF[$(sha256sum "$p" | cut -d' ' -f1)]=$(basename "${p%.txt}")
 done
-echo "| device | model | prompt | decode | rows | agreeing | flips | most flips in 12 rows | floor | set by row | probe sha256 | receipt |" >&2
-echo "|---|---|---|---|---|---|---|---|---|---|---|---|" >&2
+echo "| device | model | decode | rows | agreeing | flips | most flips in 12 rows | p50 | p99 | p99.9 | floor | set by row | known rows: row (margins) | probe sha256 | receipt |" >&2
+echo "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|" >&2
 for res in "$lane"/calibration/*/*/result.txt; do
     dir=$(dirname "$res")
     grep -q '^rc=0' "$res" || { echo "floor_rows: $dir did not finish (no rc=0)" >&2; exit 1; }
@@ -31,9 +31,11 @@ for res in "$lane"/calibration/*/*/result.txt; do
         --prompt "$prompt" --prompt-sha256 "$sha" --decode "$arm" --device "$gpu") \
         || { echo "floor_rows: no floor from $dir: $out" >&2; exit 1; }
     echo "$out" | sed -n 's/^FLOOR-ROW: //p'
+    known=$(echo "$out" | sed -n 's/^FLOOR-ROW: //p' | cut -f12 | tr ';' '\n' \
+        | awk -F: '$1 != "-" { printf "%s%s (%.3f + %.3f)", (n++ ? ", " : ""), $1, $3, $5 } END { if (!n) printf "none" }')
     cal=$(echo "$out" | sed -n 's/^CALIBRATION: //p')
     field() { echo "$cal" | tr ' ' '\n' | sed -n "s/^$1=//p"; }
-    printf '| %s | %s | %s | %s | %s | %s | %s | %s | %.4f | %s | %s | `%s` |\n' "$gpu" "$model" "$prompt" "$arm" \
-        "$(field rows)" "$(field agreeing)" "$(field flips)" "$(field max_flips_in_12)" "$(field floor)" \
-        "$(field set_by_row)" "${probe:0:12}" "${dir#"$lane"/}/probe.log" >&2
+    printf '| %s | %s | %s | %s | %s | %s | %s | %.4f | %.4f | %.4f | %.4f | %s | %s | %s | `%s` |\n' "$gpu" "$model" "$arm" \
+        "$(field rows)" "$(field agreeing)" "$(field flips)" "$(field max_flips_in_12)" "$(field p50)" "$(field p99)" \
+        "$(field p99.9)" "$(field floor)" "$(field set_by_row)" "$known" "${probe:0:12}" "${dir#"$lane"/}/probe.log" >&2
 done

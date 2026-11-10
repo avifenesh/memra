@@ -1,0 +1,35 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+argmax-margin-probe: T=16390 window=12 sm_count=48 model=~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
+decode program: served batch B=1 (decode_step_batch_sampled_lean_masked, greedy device sample, lean) batch_program=Generic MEMRA_SERVE_B1FAST=<unset>
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 73728 ml_len 24 -> 288 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 73728 -> 147456 ml_len 288 -> 576 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 147456 -> 294912 ml_len 576 -> 1152 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 294912 -> 589824 ml_len 1152 -> 2304 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 589824 -> 1179648 ml_len 2304 -> 4608 (retired kept, zero=false)
+[fa-pool] grow #6 dev=0 o_len 1179648 -> 2359296 ml_len 4608 -> 9216 (retired kept, zero=false)
+
+pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree
+16378    72444         6.049985886e0    72444        7.704961777e0    1.391363144e0    yes
+16379    26            1.032705021e1    26           9.865894318e0    3.418397903e-1   yes
+16380    271           5.050239563e-1   271          3.902969360e-1   6.372070312e-2   yes
+16381    285           1.098435402e1    285          1.080383682e1    4.264316559e-1   yes
+16382    434           1.071607590e0    434          1.242427826e0    9.202003479e-2   yes
+16383    11246         9.060401917e-1   11246        6.443519592e-1   3.625259399e-1   yes
+16384    279           1.482227325e0    279          1.157001495e0    2.726936340e-1   yes
+16385    3074          2.655982971e-1   3074         1.687240601e-1   6.244659424e-2   yes
+16386    3817          2.296522141e0    3817         2.226537704e0    1.226024628e-1   yes
+16387    5920          4.202133179e0    5920         4.416603088e0    1.226291656e-1   yes
+16388    8             4.137615204e0    8            4.218513489e0    1.059894562e-1   yes
+16389    1653          9.049442291e0    1653         9.162330627e0    7.701873779e-2   yes
+
+margin distribution (decode config, 12 positions): min 0.1687  p10 0.3903  p50 4.2185  p90 9.8659  max 10.8038
+margin distribution (prefill config): min 0.2656  p50 4.1376  max 10.9844
+DECISION POSITION (the gate's): prefill_top1=1653 decode_top1=1653 margin_p=9.0494 margin_d=9.1623 config_delta_at_ids=0.0770
+  -> the decision margin is BELOW 9/12 sampled positions' margins (rank 10 of 12)
+  -> flip is ARITHMETICALLY POSSIBLE iff config_delta > margin: 0.0770 > 9.0494 = false
+agreement across sampled positions: 12/12 (0 flip(s))
+flip budget: 0 flip(s) vs budget 1 (calibration row: default (1/12-window))
+VERDICT-INPUT: STABLE — no flip, and the config spread cannot reach across the decision margin (structurally safe at this position)
+SERVED-ARGMAX: rows=12 device_mismatch=0

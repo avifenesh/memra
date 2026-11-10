@@ -25,29 +25,29 @@
     argmax-margin-gate: model=model.gguf prompt=prompt.txt window=2 decode=eager canary=0
       device: CPU fixture device
       flip budget: 1 (row: default)
-      FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; research/fixture/gate.log)
+      FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; p50 0.1000, p99 0.2000, p99.9 0.3000; no calibration flip above it; research/fixture/gate.log)
       WIDE-FLIP pos=10 prefill_top1=1 margin_p=14.4000 decode_top1=2 margin_d=2.5000 spread=16.7000 gap_shift=16.9000 > floor=0.4000
-      SUMMARY flips=1 bad=1 near_ties=0 wide_flips=1 wide_rows=0 uncalibrated_flips=0 floor=0.4000 budget=1
+      SUMMARY flips=1 bad=1 near_ties=0 wide_flips=1 wide_rows=0 uncalibrated_flips=0 known_rows=0 known_rows_wider=0 floor=0.4000 budget=1
       PRIME-SUMMARY prime=MATCH
         PRIME-GATE: class=MATCH bp_argmax=7 tw_argmax=7 tw_margin=1.5e0 bp_margin=1.25e0 maxdiff=3.0e-2
-      FAIL: a wide flip, a wide row, a flip with no floor to judge it by, or too many near ties (the lines above name each row)
+      FAIL: a wide flip, a wide row, a known row wider than recorded, a flip with no floor to judge it by, or too many near ties (the lines above name each row)
 == head gate, near-tie: exit 0
     argmax-margin-gate: model=model.gguf prompt=prompt.txt window=2 decode=eager canary=0
       device: CPU fixture device
       flip budget: 1 (row: default)
-      FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; research/fixture/gate.log)
+      FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; p50 0.1000, p99 0.2000, p99.9 0.3000; no calibration flip above it; research/fixture/gate.log)
       near-tie pos=10 prefill_top1=1 margin_p=0.0200 decode_top1=2 margin_d=0.0300 spread=0.0400 gap_shift=0.0500 <= floor=0.4000
-      SUMMARY flips=1 bad=0 near_ties=1 wide_flips=0 wide_rows=0 uncalibrated_flips=0 floor=0.4000 budget=1
+      SUMMARY flips=1 bad=0 near_ties=1 wide_flips=0 wide_rows=0 uncalibrated_flips=0 known_rows=0 known_rows_wider=0 floor=0.4000 budget=1
       PRIME-SUMMARY prime=MATCH
         PRIME-GATE: class=MATCH bp_argmax=7 tw_argmax=7 tw_margin=1.5e0 bp_margin=1.25e0 maxdiff=3.0e-2
-      PASS: no wide flip, no wide row, near ties within the budget
+      PASS: no wide flip, no wide row, no known row wider than recorded, near ties within the budget
 == head gate, wide-row: exit 1
     argmax-margin-gate: model=model.gguf prompt=prompt.txt window=2 decode=eager canary=0
       device: CPU fixture device
       flip budget: 1 (row: default)
-      FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; research/fixture/gate.log)
+      FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; p50 0.1000, p99 0.2000, p99.9 0.3000; no calibration flip above it; research/fixture/gate.log)
       WIDE-ROW pos=10 prefill_top1=1 margin_p=14.4000 decode_top1=1 margin_d=7.2000 spread=7.2000 gap_shift=7.2000 > floor=0.4000
-      SUMMARY flips=0 bad=1 near_ties=0 wide_flips=0 wide_rows=1 uncalibrated_flips=0 floor=0.4000 budget=1
+      SUMMARY flips=0 bad=1 near_ties=0 wide_flips=0 wide_rows=1 uncalibrated_flips=0 known_rows=0 known_rows_wider=0 floor=0.4000 budget=1
       PRIME-SUMMARY prime=MATCH
         PRIME-GATE: class=MATCH bp_argmax=7 tw_argmax=7 tw_margin=1.5e0 bp_margin=1.25e0 maxdiff=3.0e-2
-      FAIL: a wide flip, a wide row, a flip with no floor to judge it by, or too many near ties (the lines above name each row)
+      FAIL: a wide flip, a wide row, a known row wider than recorded, a flip with no floor to judge it by, or too many near ties (the lines above name each row)
