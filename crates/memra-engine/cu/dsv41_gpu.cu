@@ -592,9 +592,23 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
                                                       const uint8_t* __restrict__ B, long ldb,
                                                       const uint8_t* __restrict__ Bs, long ldbs, float bscale2,
                                                       void* __restrict__ C, long ldc, int M, int N, int K, int m0,
-                                                      int n0, uint8_t* sm) {
+                                                      int n0, uint8_t* sm, const int* __restrict__ rix = nullptr) {
     using P = V41Pipe<WF, BM>;
+    // rix: row i of the tile's M is row rix[i] of A and As (the expert tiles over activations quantized
+    // once a token); null: row i
+    auto arow = [&](int i) -> long { return rix ? (long)rix[i] : (long)i; };
     constexpr int BN = P::BN;
+    // a thread copies the same A rows in every stage (its chunks c, c + 256, ...) and reads one row's scale
+    // codes: their rows in A are read once here, not once a stage (a load in front of every stage's copies
+    // would sit in the pipeline's path)
+    constexpr int NCH = (BM * 2 * P::PK + 255) / 256;
+    long ar[NCH];
+#pragma unroll
+    for (int j = 0; j < NCH; ++j) {
+        int r = ((int)threadIdx.x + j * 256) / (2 * P::PK);
+        ar[j] = (r < BM && m0 + r < M) ? arow(m0 + r) : 0;
+    }
+    long asrow = ((int)threadIdx.x < BM && m0 + (int)threadIdx.x < M) ? arow(m0 + (int)threadIdx.x) : 0;
     constexpr int MI = BM / 32;  // 16-row MMA tiles per warp (warp rows BM / 2)
     int tid = threadIdx.x, warp = tid >> 5, lane = tid & 31;
     int g = lane >> 2, t = lane & 3;
@@ -610,11 +624,11 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
         int kb0 = i * P::PK;
         // A: BM rows x CR chunks of 16 B (two per K block)
         constexpr int CR = 2 * P::PK;
-        for (int c = tid; c < BM * CR; c += 256) {
+        for (int c = tid, j = 0; c < BM * CR; c += 256, ++j) {
             int r = c / CR, q = c % CR;
             int kb = kb0 + (q >> 1);
             bool ok = (m0 + r < M) && (kb < KB);
-            const uint8_t* src = ok ? A + (long)(m0 + r) * lda + kb0 * 32 + q * 16 : A;
+            const uint8_t* src = ok ? A + ar[j] * lda + kb0 * 32 + q * 16 : A;
             v41_cp16(sA + r * P::PRS + q * 16, src, ok);
         }
         if (WF == 0) {
@@ -641,9 +655,11 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
         uint32_t code = 0;
         if (i >= NS) return code;
         if (tid < BM) {
-            if (m0 + tid < M)
+            if (m0 + tid < M) {
+                const uint8_t* asr = As + asrow * ldas;
                 for (int u = 0; u < P::PK; ++u)
-                    if (kb0 + u < KB) code |= (uint32_t)As[(long)(m0 + tid) * ldas + kb0 + u] << (8 * u);
+                    if (kb0 + u < KB) code |= (uint32_t)asr[kb0 + u] << (8 * u);
+            }
         } else if (tid >= 128) {
             int c = tid - 128;
             if (WF == 0) {
@@ -1195,7 +1211,8 @@ __global__ void __launch_bounds__(256, BM == 64 ? 2 : 1) v41_gemm_f8_pipe_tiles_
                                                                      const int* __restrict__ ntiles,
                                                                      const V41ExpW* __restrict__ ew, int proj,
                                                                      long ldb, long ldbs, void* __restrict__ C,
-                                                                     long ldc, int N, int K) {
+                                                                     long ldc, int N, int K,
+                                                                     const int* __restrict__ ridx) {
     extern __shared__ __align__(16) uint8_t v41_pipe_sm[];
     // the tile is loaded with the count, not after it: one memory round trip, not two (an entry past
     // the count is inside the list's allocation and is not used)
@@ -1203,9 +1220,11 @@ __global__ void __launch_bounds__(256, BM == 64 ? 2 : 1) v41_gemm_f8_pipe_tiles_
     if ((int)blockIdx.y >= *ntiles) return;
     const V41ExpW& w = ew[tl.expert];
     void* c = OUTF ? (void*)((float*)C + (long)tl.row0 * ldc) : (void*)((v41_bf*)C + (long)tl.row0 * ldc);
-    v41_gemm_f8_pipe_tile<WF, OUTF, BM>(A + (long)tl.row0 * lda, lda, As + (long)tl.row0 * ldas, ldas, w.w[proj], ldb,
-                                        w.s[proj], ldbs, w.scale2[proj], c, ldc, tl.rows, N, K, tl.m0,
-                                        blockIdx.x * 128, v41_pipe_sm);
+    // ridx: the list's row r (a pair, C's row) reads row ridx[r] of A and As (a token's codes, quantized once)
+    long a0 = ridx ? 0 : (long)tl.row0;
+    v41_gemm_f8_pipe_tile<WF, OUTF, BM>(A + a0 * lda, lda, As + a0 * ldas, ldas, w.w[proj], ldb, w.s[proj], ldbs,
+                                        w.scale2[proj], c, ldc, tl.rows, N, K, tl.m0, blockIdx.x * 128, v41_pipe_sm,
+                                        ridx ? ridx + tl.row0 : nullptr);
 }
 
 template <int WF, int OUTF, int SU, int ONE>
@@ -1370,11 +1389,14 @@ static long v41_f4s_bytes(int kn, int bm, int sw) {
 
 // bm: the plan's tile rows (64 or 128: the pipelined body; <= V41_SM_MAX: every tile has at most that
 // many rows and the small-M body runs); max_tiles bounds *ntiles.
-extern "C" int memra_v41_gemm_f8_tiles(const void* a, long lda, const void* as, long ldas, const void* tiles,
-                                       const int* ntiles, int max_tiles, const void* ew, int proj, long ldb, long ldbs,
-                                       int wfmt, void* c, long ldc, int out_f32, int n, int k, int bm, void* stream) {
+// ridx (the pipelined body only): the list's row r reads row ridx[r] of a and as.
+static int v41_gemm_f8_tiles_impl(const void* a, long lda, const void* as, long ldas, const void* tiles,
+                                  const int* ntiles, int max_tiles, const void* ew, int proj, long ldb, long ldbs,
+                                  int wfmt, void* c, long ldc, int out_f32, int n, int k, int bm, const int* ridx,
+                                  void* stream) {
     if (k % 32 || n <= 0 || lda % 16 || max_tiles < 0 || max_tiles > 65535 || proj < 0 || proj > 2) return 41026;
     if (ldb % 16) return 41026;
+    if (ridx && bm != 64 && bm != 128) return 41026;
     if (max_tiles == 0) return 0;
     cudaStream_t st = (cudaStream_t)stream;
     const uint8_t *A = (const uint8_t*)a, *As = (const uint8_t*)as;
@@ -1431,7 +1453,7 @@ extern "C" int memra_v41_gemm_f8_tiles(const void* a, long lda, const void* as, 
         V41_CARVE_MAX((v41_gemm_f8_pipe_tiles_kernel<WF, OF, BMX>));                                           \
         dim3 gp((n + 127) / 128, max_tiles);                                                                   \
         v41_gemm_f8_pipe_tiles_kernel<WF, OF, BMX><<<gp, 256, sm_, st>>>(A, lda, As, ldas, T, ntiles, E, proj, ldb, \
-                                                                          ldbs, c, ldc, n, k);                 \
+                                                                          ldbs, c, ldc, n, k, ridx);           \
     } while (0)
 #define V41_PIPE_TL_BM(WF, OF) \
     do { if (bm == 128) V41_PIPE_TL(WF, OF, 128); else V41_PIPE_TL(WF, OF, 64); } while (0)
@@ -1442,6 +1464,25 @@ extern "C" int memra_v41_gemm_f8_tiles(const void* a, long lda, const void* as, 
 #undef V41_PIPE_TL_BM
 #undef V41_PIPE_TL
     V41_ERR();
+}
+
+extern "C" int memra_v41_gemm_f8_tiles(const void* a, long lda, const void* as, long ldas, const void* tiles,
+                                       const int* ntiles, int max_tiles, const void* ew, int proj, long ldb, long ldbs,
+                                       int wfmt, void* c, long ldc, int out_f32, int n, int k, int bm, void* stream) {
+    return v41_gemm_f8_tiles_impl(a, lda, as, ldas, tiles, ntiles, max_tiles, ew, proj, ldb, ldbs, wfmt, c, ldc,
+                                  out_f32, n, k, bm, nullptr, stream);
+}
+
+// The tile list over activations quantized once a token: the list's row r (a pair, and c's row) reads row
+// ridx[r] of a and as (the pair's token). Tiles of 64 or 128 rows; the bytes are those of the list run over
+// the pairs' gathered copies, which hold the same codes.
+extern "C" int memra_v41_gemm_f8_tiles_rows(const void* a, long lda, const void* as, long ldas, const int* ridx,
+                                            const void* tiles, const int* ntiles, int max_tiles, const void* ew,
+                                            int proj, long ldb, long ldbs, int wfmt, void* c, long ldc, int out_f32,
+                                            int n, int k, int bm, void* stream) {
+    if (!ridx) return 41026;
+    return v41_gemm_f8_tiles_impl(a, lda, as, ldas, tiles, ntiles, max_tiles, ew, proj, ldb, ldbs, wfmt, c, ldc,
+                                  out_f32, n, k, bm, ridx, stream);
 }
 
 extern "C" int memra_v41_gemm_f8(const void* a, long lda, const void* as, long ldas, const void* b, long ldb,

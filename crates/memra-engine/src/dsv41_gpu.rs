@@ -505,6 +505,30 @@ pub mod ffi {
             bm: i32,
             stream: *mut c_void,
         ) -> i32;
+        /// [`memra_v41_gemm_f8_tiles`] over activations quantized once a token: the list's row
+        /// r reads row `ridx[r]` of `a` and `a_s` (tiles of 64 or 128 rows).
+        pub fn memra_v41_gemm_f8_tiles_rows(
+            a: *const c_void,
+            lda: i64,
+            a_s: *const c_void,
+            ldas: i64,
+            ridx: *const i32,
+            tiles: *const c_void,
+            ntiles: *const i32,
+            max_tiles: i32,
+            ew: *const c_void,
+            proj: i32,
+            ldb: i64,
+            ldbs: i64,
+            wfmt: i32,
+            c: *mut c_void,
+            ldc: i64,
+            out_f32: i32,
+            n: i32,
+            k: i32,
+            bm: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_v41_moe_combine(
             slots: *const c_void,
             lds: i64,
@@ -3536,7 +3560,9 @@ impl Ctx {
     /// Tile rows of the grouped expert GEMMs for a slice of `rows` tokens: the small-M kernel
     /// when no expert can hold more than `SMALL_M` rows (a token picks an expert once, so a tile
     /// has at most `rows` rows and the kernel's shared memory is sized for that many), else the
-    /// pipelined tile, 128 rows once the mean expert holds that many.
+    /// pipelined tile, 128 rows once the mean expert holds that many. Measured both ways on one
+    /// card with the padding skipped: 128-row tiles at 4,096 rows (mean 64) are 0.8% slower than
+    /// 64-row ones, 64-row tiles at 32,768 rows 3.5% slower than 128-row ones.
     pub fn moe_bm(&self, rows: usize) -> usize {
         if rows <= SMALL_M {
             rows.max(1)
@@ -3689,17 +3715,30 @@ impl Ctx {
         };
         let exp_tab = cached.unwrap_or(&lw.exp_tab);
         let kdiv = if wfmt == 1 { 32 } else { 16 };
-        let aq = self.ops.tmp(np * d)?;
-        let as_ = self.ops.tmp(np * d / 32)?;
-        self.ops.act_quant(
-            x,
-            d,
-            plan.ptok.at(&st, p0 * 4),
-            n,
-            d,
-            aq.at(&st, p0 * d),
-            as_.at(&st, p0 * d / 32),
-        )?;
+        // many rows, all pairs: the input is quantized once a token and each tile reads its
+        // pairs' tokens through the plan's pair-to-token list (a sixth of the quantization of
+        // the pairs' gathered copies, and the same codes); else the pairs' rows are gathered
+        let by_token = plan.bm > SMALL_M && p0 == 0 && p1 == np;
+        let rows = np / g.topk;
+        let (aq, as_) = if by_token {
+            (self.ops.tmp(rows * d)?, self.ops.tmp(rows * d / 32)?)
+        } else {
+            (self.ops.tmp(np * d)?, self.ops.tmp(np * d / 32)?)
+        };
+        if by_token {
+            self.ops
+                .act_quant(x, d, Dp::NULL, rows, d, aq.p(&st), as_.p(&st))?;
+        } else {
+            self.ops.act_quant(
+                x,
+                d,
+                plan.ptok.at(&st, p0 * 4),
+                n,
+                d,
+                aq.at(&st, p0 * d),
+                as_.at(&st, p0 * d / 32),
+            )?;
+        }
         let gb = self.ops.tmp(np * inter * 2)?;
         let ub = self.ops.tmp(np * inter * 2)?;
         let hb = self.ops.tmp(np * inter * 2)?;
@@ -3728,8 +3767,39 @@ impl Ctx {
                 )
             })
         };
-        tiles(&self.ops, &aq, &as_, d, 0, gb.p(&st), inter)?;
-        tiles(&self.ops, &aq, &as_, d, 2, ub.p(&st), inter)?;
+        let tiles_rows = |ops: &Ops, proj: i32, c: Dp| {
+            ck("gemm_f8_tiles_rows", unsafe {
+                ffi::memra_v41_gemm_f8_tiles_rows(
+                    aq.p(&st).c(),
+                    d as i64,
+                    as_.p(&st).c(),
+                    (d / 32) as i64,
+                    plan.ptok.p(&st).i(),
+                    plan.tiles.p(&st).c(),
+                    plan.ntiles.p(&st).i(),
+                    plan.max_tiles as i32,
+                    exp_tab.p(&st).c(),
+                    proj,
+                    (d / 2) as i64,
+                    (d / kdiv) as i64,
+                    wfmt,
+                    c.m(),
+                    inter as i64,
+                    0,
+                    inter as i32,
+                    d as i32,
+                    plan.bm as i32,
+                    ops.sv(),
+                )
+            })
+        };
+        if by_token {
+            tiles_rows(&self.ops, 0, gb.p(&st))?;
+            tiles_rows(&self.ops, 2, ub.p(&st))?;
+        } else {
+            tiles(&self.ops, &aq, &as_, d, 0, gb.p(&st), inter)?;
+            tiles(&self.ops, &aq, &as_, d, 2, ub.p(&st), inter)?;
+        }
         ck("swiglu", unsafe {
             ffi::memra_v41_swiglu(
                 gb.at(&st, p0 * inter * 2).m(),

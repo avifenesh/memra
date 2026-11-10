@@ -2595,52 +2595,85 @@ impl Ctx {
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let (d, inter, np, hn, h0) = (g.dim, g.moe_inter, plan.np, lw.hid_l, lw.hid0);
-        let aq = self.ops.tmp(np * d)?;
-        let as_ = self.ops.tmp(np * d / 32)?;
-        self.ops
-            .act_quant(x, d, plan.ptok.p(&st), np, d, aq.p(&st), as_.p(&st))?;
-        if plan.bm <= super::SMALL_M {
-            // a few rows: w1, w3 and the SwiGLU in one launch
+        if plan.bm > super::SMALL_M {
+            // many rows: the input quantized once a token, each tile reading its pairs' tokens
+            // through the plan's pair-to-token list (a sixth of the quantization of the pairs'
+            // gathered copies, and the same codes)
+            let rows = np / g.topk;
+            let aq = self.ops.tmp(rows * d)?;
+            let as_ = self.ops.tmp(rows * d / 32)?;
+            self.ops
+                .act_quant(x, d, Dp::NULL, rows, d, aq.p(&st), as_.p(&st))?;
+            let gb = self.ops.tmp(np * hn * 2)?;
+            let ub = self.ops.tmp(np * hn * 2)?;
             let (wfmt, kdiv) = split_fmt(lw)?;
-            return ck("swiglu_tiles", unsafe {
-                ffi::memra_v41_swiglu_tiles(
-                    aq.p(&st).c(),
-                    d as i64,
-                    as_.p(&st).c(),
-                    (d / 32) as i64,
-                    plan.tiles.p(&st).c(),
-                    plan.ntiles.p(&st).i(),
-                    plan.max_tiles as i32,
-                    lw.exp_tab.p(&st).c(),
-                    (d / 2) as i64,
-                    (d / kdiv) as i64,
-                    wfmt,
+            for (proj, out) in [(0, &gb), (2, &ub)] {
+                ck("gemm_f8_tiles_rows", unsafe {
+                    ffi::memra_v41_gemm_f8_tiles_rows(
+                        aq.p(&st).c(),
+                        d as i64,
+                        as_.p(&st).c(),
+                        (d / 32) as i64,
+                        plan.ptok.p(&st).i(),
+                        plan.tiles.p(&st).c(),
+                        plan.ntiles.p(&st).i(),
+                        plan.max_tiles as i32,
+                        lw.exp_tab.p(&st).c(),
+                        proj,
+                        (d / 2) as i64,
+                        (d / kdiv) as i64,
+                        wfmt,
+                        out.p(&st).m(),
+                        hn as i64,
+                        0,
+                        hn as i32,
+                        d as i32,
+                        plan.bm as i32,
+                        self.ops.sv(),
+                    )
+                })?;
+            }
+            return ck("swiglu", unsafe {
+                ffi::memra_v41_swiglu(
+                    gb.p(&st).m(),
+                    ub.p(&st).m(),
+                    hn as i64,
                     plan.pw.p(&st).f(),
                     g.swiglu_limit,
                     hb.at(&st, h0 * 2).m(),
                     inter as i64,
+                    np as i32,
                     hn as i32,
-                    d as i32,
-                    plan.bm as i32,
                     self.ops.sv(),
                 )
             });
         }
-        let gb = self.ops.tmp(np * hn * 2)?;
-        let ub = self.ops.tmp(np * hn * 2)?;
-        self.split_tiles(lw, plan, &aq, &as_, d, 0, gb.p(&st), hn)?;
-        self.split_tiles(lw, plan, &aq, &as_, d, 2, ub.p(&st), hn)?;
-        ck("swiglu", unsafe {
-            ffi::memra_v41_swiglu(
-                gb.p(&st).m(),
-                ub.p(&st).m(),
-                hn as i64,
+        // a few rows: w1, w3 and the SwiGLU in one launch over the pairs' gathered rows
+        let aq = self.ops.tmp(np * d)?;
+        let as_ = self.ops.tmp(np * d / 32)?;
+        self.ops
+            .act_quant(x, d, plan.ptok.p(&st), np, d, aq.p(&st), as_.p(&st))?;
+        let (wfmt, kdiv) = split_fmt(lw)?;
+        ck("swiglu_tiles", unsafe {
+            ffi::memra_v41_swiglu_tiles(
+                aq.p(&st).c(),
+                d as i64,
+                as_.p(&st).c(),
+                (d / 32) as i64,
+                plan.tiles.p(&st).c(),
+                plan.ntiles.p(&st).i(),
+                plan.max_tiles as i32,
+                lw.exp_tab.p(&st).c(),
+                (d / 2) as i64,
+                (d / kdiv) as i64,
+                wfmt,
                 plan.pw.p(&st).f(),
                 g.swiglu_limit,
                 hb.at(&st, h0 * 2).m(),
                 inter as i64,
-                np as i32,
                 hn as i32,
+                d as i32,
+                plan.bm as i32,
                 self.ops.sv(),
             )
         })
