@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs on the rig: the round 5 re-scout cells (after levers 1, 3a and 2) on one GB10 unit, one
+# Runs on the driving machine: the re-scout cells (after round 5's levers 1, 3a and 2) on one GB10 unit, one
 # sparklock lease per cell; the fair queue puts a landing waiter first at every cell boundary.
 # usage: CELLS="decode nsys1k nsys131k nsys260k k4 k5 k3 k6 k2" r6_driver.sh UNIT BIN_DIR
 set -u

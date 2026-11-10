@@ -7,7 +7,8 @@
 #   kN: both cold K rungs pinned to N through their own env, one ~1k and one ~131k cold request
 # The helpers it calls (serve.sh, tsrun.py, pf_long_memra.py, profile_arm2.sh) are the prefill
 # lane's: research/gb10-prefill-20261106/harness/r4/ and tail-fold/.
-# usage: r6_cell.sh NAME BIN_DIR   (NAME: decode, nsys1k, nsys131k, nsys260k, k2..k6)
+#   spN: MEMRA_FA_SPLIT=N, one ~131k and one ~260k cold request
+# usage: r6_cell.sh NAME BIN_DIR   (NAME: decode, nsys1k, nsys131k, nsys260k, k2..k6, sp256, sp512, sp1024)
 set -u
 D=$HOME/.cache/memra-gb10-r4
 BIN=$D/bins/$2

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""r6_ktab.py CELL_DIR...: per served request of a probe cell (pf.jsonl, the timestamped server log with
-MEMRA_TICK_TRACE=1): rounds over the whole answer, tokens per round, ms per round over every burst but
+"""r6_ktab.py CELL_DIR...: per served request of a probe cell (pf.jsonl and the timestamped server log
+with MEMRA_TICK_TRACE=1, or the receipt's trace.txt): rounds over the whole answer, tokens per round, ms per round over every burst but
 the first (which holds the prime), decode tok/s after the first token, and the text's sha256 head."""
 import json, pathlib, re, sys
 ts = re.compile(r"(\d+\.\d+) \[tick-spec\].* wall_ms=([\d.]+) generated=(\d+)->(\d+) rounds=(\d+) drafted=(\d+) accepted=(\d+)")
 for a in sys.argv[1:]:
     d = pathlib.Path(a)
-    ticks = [tuple(float(x) for x in m.groups()) for l in (d / "server.log").read_text(errors="replace").splitlines() if (m := ts.match(l))]
+    log = d / "server.log" if (d / "server.log").exists() else d / "trace.txt"
+    ticks = [tuple(float(x) for x in m.groups()) for l in log.read_text(errors="replace").splitlines() if (m := ts.match(l))]
     for l in (d / "pf.jsonl").read_text().splitlines():
         r = json.loads(l)
         g = [t for t in ticks if r["send_unix"] <= t[0] <= r["send_unix"] + r["total_s"] + 0.5 and t[3] > t[2]]
