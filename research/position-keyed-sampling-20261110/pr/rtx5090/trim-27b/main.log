@@ -1,0 +1,63 @@
+case ref
+     ref    alone  a tokens=240 cached=0 acceptance=None sha=381727999c7538e5
+     ref    alone  b tokens=240 cached=0 acceptance=None sha=2830bf68b8dfe843
+     ref    alone  f tokens=240 cached=0 acceptance=None sha=ed3e17bd47d7718e
+     ref    alone  g tokens=240 cached=0 acceptance=None sha=724217ed0c3ed37a
+     ref    alone  c tokens=240 cached=0 acceptance=None sha=f274f56e4d68f827
+     ref    alone  d tokens=240 cached=0 acceptance=None sha=d1e503eb71b926e0
+     ref    alone e1 tokens=240 cached=0 acceptance=None sha=7ebbccf5a88c1865
+    ref2     cold e2 tokens=237 cached=0 acceptance=None sha=53b7461a086fed75
+case 1
+       1    alone  a tokens=240 cached=0 acceptance=0.7443609022556391 sha=88bc791c42742652
+       1    alone  b tokens=240 cached=0 acceptance=0.6762589928057554 sha=d336932eac8aafee
+       1    alone  f tokens=240 cached=0 acceptance=0.6453900709219859 sha=98d661ba082b16cc
+       1    alone  g tokens=240 cached=0 acceptance=0.6524822695035462 sha=4f522d4495e14e4b
+       1     pair  c tokens=240 cached=0 acceptance=0.7368421052631579 sha=878fd40648e9137f
+       1     pair  d tokens=240 cached=0 acceptance=0.7368421052631579 sha=06270aea211d0936
+       1    turn1 e1 tokens=240 cached=0 acceptance=0.6811594202898551 sha=6b1183aac7910157
+       1  resumed e2 tokens=181 cached=1248 acceptance=0.6203703703703703 sha=a9ecd057c964e8dc
+case 2
+       2    alone  a tokens=240 cached=0 acceptance=0.5446428571428571 sha=36c8195d588ceaee
+       2    alone  b tokens=240 cached=0 acceptance=0.44715447154471544 sha=6699dd4f6e25a4c6
+       2    alone  f tokens=240 cached=0 acceptance=0.5887850467289719 sha=4145d524d79d355d
+       2    alone  g tokens=240 cached=0 acceptance=0.545045045045045 sha=ca8c2afbff7b000d
+       2     pair  c tokens=240 cached=0 acceptance=0.48717948717948717 sha=1a1541604280ca3b
+       2     pair  d tokens=240 cached=0 acceptance=0.5545454545454546 sha=5ed08f6d55700ff5
+       2    turn1 e1 tokens=240 cached=0 acceptance=0.5130434782608696 sha=aba64f91d7e964e1
+       2  resumed e2 tokens=240 cached=1248 acceptance=0.40310077519379844 sha=5cfa1efd9fb2f412
+case 3
+       3    alone  a tokens=240 cached=0 acceptance=0.4807017543859649 sha=815cac0e40424adb
+       3    alone  b tokens=240 cached=0 acceptance=0.3925233644859813 sha=68a790966adb52c2
+       3    alone  f tokens=240 cached=0 acceptance=0.3508771929824561 sha=3002e1367fb7edb3
+       3    alone  g tokens=240 cached=0 acceptance=0.35714285714285715 sha=89a7e88984a6a01a
+       3     pair  c tokens=240 cached=0 acceptance=0.41423948220064727 sha=9dfe7c2d28a0127b
+       3     pair  d tokens=240 cached=0 acceptance=0.41025641025641024 sha=ab9dba968e23f428
+       3    turn1 e1 tokens=240 cached=0 acceptance=0.5296296296296297 sha=02b575be5edb35d3
+       3  resumed e2 tokens=238 cached=1248 acceptance=0.4 sha=3fa5a635f088734d
+
+receipts: prbase/
+SEEDED INVARIANCE: FAIL (24 of 32 rows)
+  1 alone a: differs from the reference after 30 characters
+  1 alone b: differs from the reference after 0 characters
+  1 alone f: differs from the reference after 25 characters
+  1 alone g: differs from the reference after 0 characters
+  1 pair c: differs from the reference after 24 characters
+  1 pair d: differs from the reference after 0 characters
+  1 turn1 e1: differs from the reference after 33 characters
+  1 resumed e2: differs from the reference after 0 characters
+  2 alone a: differs from the reference after 13 characters
+  2 alone b: differs from the reference after 0 characters
+  2 alone f: differs from the reference after 24 characters
+  2 alone g: differs from the reference after 0 characters
+  2 pair c: differs from the reference after 35 characters
+  2 pair d: differs from the reference after 0 characters
+  2 turn1 e1: differs from the reference after 33 characters
+  2 resumed e2: differs from the reference after 0 characters
+  3 alone a: differs from the reference after 13 characters
+  3 alone b: differs from the reference after 0 characters
+  3 alone f: differs from the reference after 25 characters
+  3 alone g: differs from the reference after 0 characters
+  3 pair c: differs from the reference after 24 characters
+  3 pair d: differs from the reference after 0 characters
+  3 turn1 e1: differs from the reference after 25 characters
+  3 resumed e2: differs from the reference after 0 characters

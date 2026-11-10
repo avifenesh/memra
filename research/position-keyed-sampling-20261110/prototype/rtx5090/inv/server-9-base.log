@@ -1,0 +1,68 @@
+[server] build: memra-0.139.0-059f6f58e97e (id: source-tree, git: unknown)
+[server] starting; models config = [("q", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[spec-k] operator pin K=0: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 800MB (800325632 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 5815140352 B (14 resident sessions x 415367168 B served-context session), requested 800325632 B; boot driver free 10053877760 B, post-reserve clamp 8443265024 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18194
+[meter] admit id=chatcmpl-8f679d7092872c2e71a4e6d44a2004d4 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=1750 path=plain = 29696 B/token x ctx + 590MB prefill-workspace + 0MB fixed = 642MB
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=1286 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 311MB (observed 361MB at ctx 1694 path=plain)
+[prefix-cache] insert (seed): 1248 tokens, 194.0MB (resident 194.0MB / 800MB, model q)
+[fa-pool] grow #0 dev=0 o_len 0 -> 129024 ml_len 0 -> 504 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 129024 -> 258048 ml_len 504 -> 1008 (retired kept, zero=false)
+[kv-reuse] park-compact: 1686 of 1694 rows retained in 2.1ms (model q)
+[meter] admit id=chatcmpl-377d96708e335edb7312b6fec1cdbeec tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=500 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 311MB fixed = 342MB
+[worker] plain-affinity: declined (history diverged at 3 of checkpoint 1248; 1 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[fa-pool] grow #2 dev=0 o_len 258048 -> 516096 ml_len 1008 -> 2016 (retired kept, zero=false)
+[kv-reuse] park-compact: 436 of 444 rows retained in 2.0ms (model q)
+[meter] admit id=chatcmpl-f711325a189e4e91bb94461844f14b05 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b495617325a18e2d991b74831d85eea2 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=1703 path=plain = 29696 B/token x ctx + 481MB prefill-workspace + 311MB fixed = 842MB
+[admission] prefill workspace held: model="q" prompt=1239 call=1239 stack=1239 concat=1039 slab_resident=440MB held=481MB cold=568MB
+[worker] plain-affinity: declined (history diverged at 3 of checkpoint 1248; 2 parked, 1239 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=1239 cached=0 lcp=3 active=1 wave=2 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 1216 tokens, 193.0MB (resident 387.0MB / 800MB, model q)
+[admission] request cost: model="q" ctx=1796 path=plain = 29696 B/token x ctx + 580MB prefill-workspace + 311MB fixed = 944MB
+[admission] prefill workspace held: model="q" prompt=1332 call=1039 stack=1039 concat=1039 slab_resident=440MB held=580MB cold=611MB
+[worker] plain-affinity: declined (history diverged at 3 of checkpoint 1248; 2 parked, 1332 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=1332 cached=0 lcp=3 active=2 wave=2 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 311MB (observed 363MB at ctx 1740 path=plain)
+[prefix-cache] insert (seed): 1312 tokens, 195.9MB (resident 582.8MB / 800MB, model q)
+[kv-reuse] park-compact: 1639 of 1647 rows retained in 1.9ms (model q)
+[kv-reuse] park-compact: 1732 of 1740 rows retained in 2.0ms (model q)
+[meter] admit id=chatcmpl-ce9fed0aaa1bbbc89ed90782c4d6ebd4 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=1750 path=plain = 29696 B/token x ctx + 590MB prefill-workspace + 311MB fixed = 953MB
+[worker] plain-affinity: declined (history diverged at 3 of checkpoint 1216; 2 parked, 1286 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=1286 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 1248 tokens, 194.0MB (resident 776.8MB / 800MB, model q)
+[kv-reuse] park-compact: 1686 of 1694 rows retained in 2.0ms (model q)
+[meter] admit id=chatcmpl-96a1a83cbe3b2464f8f1d6c689a1f365 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=2183 path=plain = 29696 B/token x ctx + 789MB prefill-workspace + 311MB fixed = 1165MB
+[kv-reuse] park-compact grow: 1686 -> 2127 rows (request-owned cap; model q)
+[kv-reuse] grid-rewind: plain extension of 1686 committed rows rewound to 1248 (re-priming 438 rows; model q)
+[worker] kv-reuse: 1248 of 1719 prompt tokens resumed (model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=1719 cached=1248 lcp=1248 active=1 wave=1 placement=single-or-non-pp2
+[kv-reuse] park-compact: 1948 of 2127 rows retained in 2.0ms (model q)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

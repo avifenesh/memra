@@ -1,0 +1,39 @@
+case ref
+     ref    alone  a tokens=240 cached=0 acceptance=None sha=381727999c7538e5
+     ref    alone  b tokens=240 cached=0 acceptance=None sha=e84443251444e66c
+     ref    alone  f tokens=240 cached=0 acceptance=None sha=ed3e17bd47d7718e
+     ref    alone  g tokens=240 cached=0 acceptance=None sha=85cbe095a1f60f55
+     ref    alone  c tokens=240 cached=0 acceptance=None sha=f274f56e4d68f827
+     ref    alone  d tokens=240 cached=0 acceptance=None sha=057a275d67888aa8
+     ref    alone e1 tokens=240 cached=0 acceptance=None sha=7ebbccf5a88c1865
+    ref2     cold e2 tokens=226 cached=0 acceptance=None sha=13317764c0c065af
+case 1
+       1    alone  a tokens=240 cached=0 acceptance=0.5228758169934641 sha=381727999c7538e5
+       1    alone  b tokens=240 cached=0 acceptance=0.47468354430379744 sha=e84443251444e66c
+       1    alone  f tokens=240 cached=0 acceptance=0.6884057971014492 sha=ed3e17bd47d7718e
+       1    alone  g tokens=240 cached=0 acceptance=0.46835443037974683 sha=85cbe095a1f60f55
+       1     pair  c tokens=240 cached=0 acceptance=0.5782312925170068 sha=f274f56e4d68f827
+       1     pair  d tokens=240 cached=0 acceptance=0.5608108108108109 sha=057a275d67888aa8
+       1    turn1 e1 tokens=240 cached=0 acceptance=0.6068965517241379 sha=7ebbccf5a88c1865
+       1  resumed e2 tokens=226 cached=1248 acceptance=0.4897959183673469 sha=13317764c0c065af
+case 2
+       2    alone  a tokens=240 cached=0 acceptance=0.42857142857142855 sha=381727999c7538e5
+       2    alone  b tokens=240 cached=0 acceptance=0.35661764705882354 sha=e84443251444e66c
+       2    alone  f tokens=240 cached=0 acceptance=0.5446428571428571 sha=ed3e17bd47d7718e
+       2    alone  g tokens=240 cached=0 acceptance=0.34057971014492755 sha=85cbe095a1f60f55
+       2     pair  c tokens=240 cached=0 acceptance=0.4628099173553719 sha=f274f56e4d68f827
+       2     pair  d tokens=240 cached=0 acceptance=0.4625 sha=057a275d67888aa8
+       2    turn1 e1 tokens=240 cached=0 acceptance=0.38257575757575757 sha=7ebbccf5a88c1865
+       2  resumed e2 tokens=226 cached=1248 acceptance=0.3333333333333333 sha=13317764c0c065af
+case 3
+       3    alone  a tokens=240 cached=0 acceptance=0.31666666666666665 sha=381727999c7538e5
+       3    alone  b tokens=240 cached=0 acceptance=0.2734375 sha=e84443251444e66c
+       3    alone  f tokens=240 cached=0 acceptance=0.42718446601941745 sha=ed3e17bd47d7718e
+       3    alone  g tokens=240 cached=0 acceptance=0.23114355231143552 sha=85cbe095a1f60f55
+       3     pair  c tokens=240 cached=0 acceptance=0.35398230088495575 sha=f274f56e4d68f827
+       3     pair  d tokens=240 cached=0 acceptance=0.3541666666666667 sha=057a275d67888aa8
+       3    turn1 e1 tokens=240 cached=0 acceptance=0.30327868852459017 sha=7ebbccf5a88c1865
+       3  resumed e2 tokens=226 cached=1248 acceptance=0.2421875 sha=13317764c0c065af
+
+receipts: pr/
+SEEDED INVARIANCE: PASS (32 rows, 8 prompts, cases ref,1,2,3)

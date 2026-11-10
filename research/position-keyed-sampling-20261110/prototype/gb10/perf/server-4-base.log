@@ -1,0 +1,220 @@
+[server] build: memra-0.139.0-059f6f58e97e (id: source-tree, git: unknown)
+[server] starting; models config = [("q", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 52248MB (52248309760 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 52248309760 B; boot driver free 108254715904 B, post-reserve clamp 104496619520 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[fa-pool] grow #0 dev=0 o_len 0 -> 202752 ml_len 0 -> 792 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 202752 -> 405504 ml_len 792 -> 1584 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 405504 -> 811008 ml_len 1584 -> 3168 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 811008 -> 1622016 ml_len 3168 -> 6336 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 35MB (max of parked delta 35MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[fa-pool] grow #5 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":8623489024,"still_owned_bytes":16509783872,"pool_reserved_bytes":16710107136,"pool_cached_bytes":200323264,"driver_free_bytes":20566892544,"synchronization_errors":[]}
+[spec-cost] model="q" depth=2048 pooled=true plain_cap=16 round_overhead=27.31ms pooled_overhead=Some((4, 9.546880347560975)) verify_ms[1..16]=[77.3 74.7 74.8 75.6 76.2 76.8 79.1 81.3 83.5 85.8 88.0 90.2 92.4 94.6 96.8 99.0] plain_ms[1..]=[75.8 79.2 82.6 86.0 90.3 94.6 98.9 103.1 107.7 112.3 116.9 121.5 126.0 130.6 135.2 139.8] (45.6s)
+[prime-walk] model="q" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1476395008,"still_owned_bytes":17239592768,"pool_reserved_bytes":17448304640,"pool_cached_bytes":208711872,"driver_free_bytes":19826233344,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1408MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=mtp transient floor 1536MB (static was 1536MB; measured 1245MB; probe kv charge 127MB, draft-state 35MB, drafted 72 accepted 41; [dev0 peak-mapped 18048MB rest-mapped 16640MB charged 162MB -> 1245MB]; 5.2s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[deadline] unified memory (48 SMs, served ctx 8192): streaming TTFT default/max 90000 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 2138000 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18194
+[meter] admit id=chatcmpl-af61228e1b3506848216399b43888e38 tenant=default lane=interactive model="q"
+[spec-cost] model="q" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=498 path=spec = 31552 B/token x ctx + 16MB prefill-workspace + 0MB fixed = 31MB
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=34 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 312MB (observed 326MB at ctx 442 path=spec)
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+[spec-acc] ctx=34 burst=19/42 cum=19/42=0.452
+[spec-acc] ctx=68 burst=19/39 cum=38/81=0.469
+[spec-acc] ctx=101 burst=20/39 cum=58/120=0.483
+[spec-acc] ctx=135 burst=19/36 cum=77/156=0.494
+[spec-cost] model="q" realized n=1 K=3: 22.4 tok/s (now priced from serving)
+[spec-acc] ctx=167 burst=16/48 cum=93/204=0.456
+[spec-acc] ctx=200 burst=19/39 cum=112/243=0.461
+[spec-acc] ctx=233 burst=20/36 cum=132/279=0.473
+[spec-acc] ctx=266 burst=18/42 cum=150/321=0.467
+[spec-acc] ctx=299 burst=19/45 cum=169/366=0.462
+[spec-acc] ctx=334 burst=19/42 cum=188/408=0.461
+[spec-acc] ctx=368 burst=19/39 cum=207/447=0.463
+[spec-acc] ctx=401 burst=20/36 cum=227/483=0.470
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 434 rows hold no resumable state (the checkpoint 34 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-e36392beed47c41c285f706d94042d77 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1703 path=spec = 31552 B/token x ctx + 568MB prefill-workspace + 312MB fixed = 934MB
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1239 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=1239 burst=19/42 cum=19/42=0.452
+[prefix-cache] insert (spec-boundary): 1216 tokens, 195.3MB (resident 195.3MB / 52248MB, model q)
+[spec-acc] ctx=1273 burst=21/36 cum=40/78=0.513
+[spec-acc] ctx=1307 burst=20/36 cum=60/114=0.526
+[spec-acc] ctx=1340 burst=19/42 cum=79/156=0.506
+[spec-acc] ctx=1374 burst=19/36 cum=98/192=0.510
+[spec-acc] ctx=1406 burst=19/42 cum=117/234=0.500
+[spec-acc] ctx=1440 burst=20/33 cum=137/267=0.513
+[spec-acc] ctx=1472 burst=20/39 cum=157/306=0.513
+[spec-acc] ctx=1506 burst=19/39 cum=176/345=0.510
+[spec-acc] ctx=1539 burst=19/39 cum=195/384=0.508
+[spec-acc] ctx=1572 burst=16/45 cum=211/429=0.492
+[spec-acc] ctx=1604 burst=15/51 cum=226/480=0.471
+[spec-acc] ctx=1637 burst=2/3 cum=228/483=0.472
+[meter] admit id=chatcmpl-404172223b7925e673730f864f38b7c8 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=4030 path=spec = 31552 B/token x ctx + 1636MB prefill-workspace + 312MB fixed = 2075MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 1 parked, 3566 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=3566 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 315MB (observed 441MB at ctx 3974 path=spec)
+[spec-acc] ctx=3566 burst=19/39 cum=19/39=0.487
+[prefix-cache] insert (spec-boundary): 3520 tokens, 268.0MB (resident 463.3MB / 52248MB, model q)
+[spec-acc] ctx=3599 burst=22/27 cum=41/66=0.621
+[spec-acc] ctx=3631 burst=18/39 cum=59/105=0.562
+[spec-acc] ctx=3663 burst=18/42 cum=77/147=0.524
+[spec-acc] ctx=3696 burst=18/45 cum=95/192=0.495
+[spec-acc] ctx=3730 burst=16/45 cum=111/237=0.468
+[spec-acc] ctx=3762 burst=18/39 cum=129/276=0.467
+[spec-acc] ctx=3794 burst=18/39 cum=147/315=0.467
+[spec-acc] ctx=3826 burst=21/33 cum=168/348=0.483
+[spec-acc] ctx=3859 burst=18/39 cum=186/387=0.481
+[spec-acc] ctx=3891 burst=17/48 cum=203/435=0.467
+[spec-acc] ctx=3925 burst=18/39 cum=221/474=0.466
+[spec-acc] ctx=3957 burst=7/9 cum=228/483=0.472
+[meter] admit id=chatcmpl-17be7f11ec72acd57edcfe7cd414d1db tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=498 path=spec = 31552 B/token x ctx + 16MB prefill-workspace + 315MB fixed = 347MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 2 parked, 34 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=34 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=34 burst=17/51 cum=17/51=0.333
+[spec-acc] ctx=69 burst=19/45 cum=36/96=0.375
+[spec-acc] ctx=104 burst=18/42 cum=54/138=0.391
+[spec-acc] ctx=137 burst=20/36 cum=74/174=0.425
+[spec-acc] ctx=170 burst=18/39 cum=92/213=0.432
+[spec-acc] ctx=202 burst=19/39 cum=111/252=0.440
+[spec-acc] ctx=235 burst=15/51 cum=126/303=0.416
+[spec-acc] ctx=268 burst=17/45 cum=143/348=0.411
+[spec-acc] ctx=301 burst=18/39 cum=161/387=0.416
+[spec-acc] ctx=333 burst=16/45 cum=177/432=0.410
+[spec-acc] ctx=365 burst=16/45 cum=193/477=0.405
+[spec-acc] ctx=397 burst=21/33 cum=214/510=0.420
+[spec-acc] ctx=430 burst=3/3 cum=217/513=0.423
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 435 rows hold no resumable state (the checkpoint 34 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-98ab5df45a05c9290cc2f8174491b412 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1704 path=spec = 31552 B/token x ctx + 569MB prefill-workspace + 315MB fixed = 938MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 2 parked, 1240 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1240 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=1240 burst=19/39 cum=19/39=0.487
+[prefix-cache] insert (spec-boundary): 1216 tokens, 195.3MB (resident 658.5MB / 52248MB, model q)
+[spec-acc] ctx=1273 burst=21/30 cum=40/69=0.580
+[spec-acc] ctx=1305 burst=21/30 cum=61/99=0.616
+[spec-acc] ctx=1337 burst=18/42 cum=79/141=0.560
+[spec-acc] ctx=1370 burst=20/33 cum=99/174=0.569
+[spec-acc] ctx=1402 burst=19/42 cum=118/216=0.546
+[spec-acc] ctx=1436 burst=19/39 cum=137/255=0.537
+[spec-acc] ctx=1469 burst=19/36 cum=156/291=0.536
+[spec-acc] ctx=1501 burst=18/39 cum=174/330=0.527
+[spec-acc] ctx=1533 burst=18/39 cum=192/369=0.520
+[spec-acc] ctx=1565 burst=21/36 cum=213/405=0.526
+[spec-acc] ctx=1599 burst=20/42 cum=233/447=0.521
+[spec-acc] ctx=1634 burst=3/6 cum=236/453=0.521
+[meter] admit id=chatcmpl-70398ca6151dd1428c4b84fdcbc65caf tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=4161 path=spec = 31552 B/token x ctx + 1696MB prefill-workspace + 315MB fixed = 2143MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 3520; 2 parked, 3697 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=3697 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 316MB (observed 445MB at ctx 4105 path=spec)
+[spec-acc] ctx=3697 burst=21/36 cum=21/36=0.583
+[prefix-cache] insert (spec-boundary): 3680 tokens, 273.0MB (resident 931.6MB / 52248MB, model q)
+[spec-acc] ctx=3731 burst=21/30 cum=42/66=0.636
+[spec-acc] ctx=3763 burst=19/36 cum=61/102=0.598
+[spec-acc] ctx=3795 burst=20/36 cum=81/138=0.587
+[spec-acc] ctx=3828 burst=17/45 cum=98/183=0.536
+[spec-acc] ctx=3861 burst=18/42 cum=116/225=0.516
+[spec-acc] ctx=3894 burst=20/42 cum=136/267=0.509
+[spec-acc] ctx=3929 burst=19/42 cum=155/309=0.502
+[spec-acc] ctx=3963 burst=17/42 cum=172/351=0.490
+[spec-acc] ctx=3995 burst=21/36 cum=193/387=0.499
+[spec-acc] ctx=4029 burst=17/45 cum=210/432=0.486
+[spec-acc] ctx=4062 burst=19/36 cum=229/468=0.489
+[spec-acc] ctx=4094 burst=3/3 cum=232/471=0.493
+[meter] admit id=chatcmpl-0b25a7a3893295b343e0e50aa594c8cc tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=499 path=spec = 31552 B/token x ctx + 16MB prefill-workspace + 316MB fixed = 347MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 2 parked, 35 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=35 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=35 burst=18/48 cum=18/48=0.375
+[spec-acc] ctx=70 burst=12/60 cum=30/108=0.278
+[spec-acc] ctx=102 burst=17/48 cum=47/156=0.301
+[spec-acc] ctx=135 burst=17/45 cum=64/201=0.318
+[spec-acc] ctx=167 burst=19/45 cum=83/246=0.337
+[spec-acc] ctx=201 burst=17/48 cum=100/294=0.340
+[spec-acc] ctx=234 burst=18/42 cum=118/336=0.351
+[spec-acc] ctx=266 burst=19/39 cum=137/375=0.365
+[spec-acc] ctx=298 burst=21/33 cum=158/408=0.387
+[spec-acc] ctx=330 burst=14/60 cum=172/468=0.368
+[spec-acc] ctx=364 burst=20/45 cum=192/513=0.374
+[spec-acc] ctx=399 burst=19/42 cum=211/555=0.380
+[spec-acc] ctx=432 burst=3/3 cum=214/558=0.384
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 435 rows hold no resumable state (the checkpoint 35 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-e9064e095e9a7ead4f2e19fb10bc3a4a tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1703 path=spec = 31552 B/token x ctx + 568MB prefill-workspace + 316MB fixed = 938MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 2 parked, 1239 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1239 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=1239 burst=17/48 cum=17/48=0.354
+[prefix-cache] insert (spec-boundary): 1216 tokens, 195.3MB (resident 1126.8MB / 52248MB, model q)
+[spec-acc] ctx=1273 burst=22/36 cum=39/84=0.464
+[spec-acc] ctx=1307 burst=22/39 cum=61/123=0.496
+[spec-acc] ctx=1342 burst=22/36 cum=83/159=0.522
+[spec-acc] ctx=1376 burst=15/51 cum=98/210=0.467
+[spec-acc] ctx=1408 burst=17/45 cum=115/255=0.451
+[spec-acc] ctx=1440 burst=19/45 cum=134/300=0.447
+[spec-acc] ctx=1474 burst=18/45 cum=152/345=0.441
+[spec-acc] ctx=1507 burst=22/33 cum=174/378=0.460
+[spec-acc] ctx=1540 burst=18/42 cum=192/420=0.457
+[spec-acc] ctx=1572 burst=19/48 cum=211/468=0.451
+[spec-acc] ctx=1607 burst=19/42 cum=230/510=0.451
+[meter] admit id=chatcmpl-6123cbb966dd8238b922ab67a4528479 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=4160 path=spec = 31552 B/token x ctx + 1696MB prefill-workspace + 316MB fixed = 2142MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 3680; 2 parked, 3696 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=3696 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=3696 burst=16/45 cum=16/45=0.356
+[prefix-cache] insert (spec-boundary): 3680 tokens, 273.0MB (resident 1399.9MB / 52248MB, model q)
+[spec-acc] ctx=3728 burst=23/36 cum=39/81=0.481
+[spec-acc] ctx=3763 burst=18/42 cum=57/123=0.463
+[spec-acc] ctx=3795 burst=20/42 cum=77/165=0.467
+[spec-acc] ctx=3829 burst=15/51 cum=92/216=0.426
+[spec-acc] ctx=3861 burst=20/39 cum=112/255=0.439
+[spec-acc] ctx=3894 burst=20/39 cum=132/294=0.449
+[spec-acc] ctx=3927 burst=20/45 cum=152/339=0.448
+[spec-acc] ctx=3962 burst=20/39 cum=172/378=0.455
+[spec-acc] ctx=3995 burst=17/45 cum=189/423=0.447
+[spec-acc] ctx=4027 burst=20/39 cum=209/462=0.452
+[spec-acc] ctx=4060 burst=18/45 cum=227/507=0.448
+[spec-acc] ctx=4093 burst=4/6 cum=231/513=0.450
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
