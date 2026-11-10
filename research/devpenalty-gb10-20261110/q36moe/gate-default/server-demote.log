@@ -1,0 +1,91 @@
+[server] build: memra-0.140.0-f6ba67511536 (id: source-tree, git: unknown)
+[server] starting; models config = [("q", "~/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- ~/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 123.01GB (expert budget 118.42GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 191 tensors
+[worker]   loaded "q": 41 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 42084MB (42084065280 B, derived: 2 x 141885440 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 42084065280 B; boot driver free 87926226944 B, post-reserve clamp 84168130560 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[moe-sk-form] dev=0 qt=6 sms=48 occ128=1 occ32=6 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=249 max_m=646
+[moe-sk-form] dev=0 qt=5 sms=48 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=249 max_m=646
+[moe-sk-form] dev=0 qt=2 sms=48 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=192 max_m=1993
+[fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 3MB; charged per spec admission and gating future captures)
+[spec-vg] MTP verify-graph pool ENGAGED (vt_cap=4)
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":1509949440,"still_owned_bytes":20590592652,"pool_reserved_bytes":20870856704,"pool_cached_bytes":280264052,"driver_free_bytes":12957687808,"synchronization_errors":[]}
+[spec-cost] model="q" depth=2048 pooled=false plain_cap=8 round_overhead=6.63ms draft_step=0.00ms pooled_overhead=None pooled_draft_step=None verify_ms[1..16]=[15.5 17.8 19.6 21.9 24.0 26.2 28.6 30.9 33.1 35.3 37.4 39.6 41.9 44.2 46.5 48.8] plain_ms[1..]=[15.9 19.3 22.4 25.6 29.0 32.4 35.7 39.1] (9.5s)
+[prime-walk] model="q" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":805306368,"still_owned_bytes":20898609996,"pool_reserved_bytes":21273509888,"pool_cached_bytes":374899892,"driver_free_bytes":12513144832,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 768MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=mtp transient floor 1536MB (static was 1536MB; measured 692MB; probe kv charge 41MB, draft-state 34MB, drafted 60 accepted 43; [dev0 peak-mapped 21056MB rest-mapped 20288MB charged 75MB -> 692MB]; 2.1s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[deadline] unified memory (48 SMs, served ctx 8192): streaming TTFT default/max 90000 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 2138000 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18197
+[meter] admit id=chatcmpl-7d340be88df1cb2572f4c80304995d3a tenant=default lane=interactive model="q"
+[spec-cost] model="q" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1590 path=spec = 10208 B/token x ctx + 432MB prefill-workspace + 0MB fixed = 448MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1286 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 130MB (observed 146MB at ctx 1534 path=spec)
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+[spec-acc] ctx=1286 burst=17/42 cum=17/42=0.405
+[prefix-cache] insert (spec-boundary): 1248 tokens, 78.6MB (resident 78.6MB / 42084MB, model q)
+[spec-acc] ctx=1318 burst=19/42 cum=36/84=0.429
+[spec-gate] demoted session to batched decode: FORCED at DEMOTE_AT=60 (test door) (model q, committed 1352, generated 66, sampled, plain draws from philox event 67)
+[spec-cost] model="q" realized n=1 K=0: 65.2 tok/s (now priced from serving)
+[meter] admit id=chatcmpl-b0ba4fbe151b5868ae911be46b34f84d tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=340 path=spec = 10208 B/token x ctx + 12MB prefill-workspace + 130MB fixed = 146MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=36 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=36 burst=19/39 cum=19/39=0.487
+[spec-acc] ctx=69 burst=17/42 cum=36/81=0.444
+[spec-gate] demoted session to batched decode: FORCED at DEMOTE_AT=60 (test door) (model q, committed 101, generated 65, sampled, plain draws from philox event 66)
+[meter] admit id=chatcmpl-5ed13de3c70d5d8c016eb5a51c82dc0d tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1590 path=spec = 10208 B/token x ctx + 432MB prefill-workspace + 130MB fixed = 578MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 1286 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1286 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=1286 burst=19/36 cum=19/36=0.528
+[prefix-cache] insert (spec-boundary): 1248 tokens, 78.6MB (resident 157.2MB / 42084MB, model q)
+[spec-acc] ctx=1318 burst=19/36 cum=38/72=0.528
+[spec-cost] model="q" realized n=1 K=3: 73.9 tok/s (now priced from serving)
+[spec-gate] demoted session to batched decode: FORCED at DEMOTE_AT=60 (test door) (model q, committed 1350, generated 64, sampled, plain draws from philox event 65)
+[meter] admit id=chatcmpl-3a4c003ace970f5632a5de24d65bc4b6 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=340 path=spec = 10208 B/token x ctx + 12MB prefill-workspace + 130MB fixed = 146MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=36 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=36 burst=15/48 cum=15/48=0.312
+[spec-acc] ctx=68 burst=13/57 cum=28/105=0.267
+[spec-gate] demoted session to batched decode: FORCED at DEMOTE_AT=60 (test door) (model q, committed 101, generated 65, sampled, plain draws from philox event 66)
+[device-penalty] sparse sampled rows=1 unique-counts=77 execution=one-ragged-launch raw-logits=preserved
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
