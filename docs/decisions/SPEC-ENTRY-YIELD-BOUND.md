@@ -69,9 +69,16 @@ Every cell advances, with a longest gap of 1.77 s against 30.0 to 30.7 s on main
 unchanged. Where the bound acts, the short requests' p50 rises by at most 0.10 s and their p95 by
 0.09 to 0.10 s.
 
+With no gate owner at all (`MEMRA_SPEC_GATE=0`, every request speculates), on an RTX 5090
+Laptop GPU: main stalls greedy at 2 and 4 clients (1 or 2 tokens in 30 s) and the fix advances
+(36, 73 and 145 tokens, longest gap 1.84 s), texts prefix-equal; a sampled row is unchanged in
+both arms (35 and 38 tokens), since without the sampled carry a sampled burst never enters on a
+carried token.
+
 Exactness on the fix binary: the seeded-invariance gate passes (54 rows) and the burst-boundary
 gate passes (229 rows), each with every row's text, completion tokens and acceptance equal to the
-base rows of main + memra#1196's fix.
+base rows of main + memra#1196's fix; on the RTX 5090 the seeded-invariance gate passes too (54
+rows, equal to that card's base rows).
 
 ## What was chosen and what was not
 
