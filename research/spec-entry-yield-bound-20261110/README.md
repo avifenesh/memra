@@ -225,6 +225,27 @@ cell for cell.
   part way through the window (the acceptance window ages out, see the arms), after which the
   short requests run faster than on main.
 
+## RTX 5090 with `MEMRA_SPEC_GATE=0` (no gate owner)
+
+`rtx5090/gate-off/`: the gate's rollback seam keeps every request speculating at any concurrency,
+so neither the band nor the cost model can demote. One RTX 5090 Laptop GPU, v0.141.0 main
+(`memra-0.141.0-d792eacd8d45`, sm_120a) against the fix (`memra-0.141.0-761aeadf287c`, the PR
+head's tree), one boot each, the same cell. The `t1` row is temperature 1 with a fixed seed.
+
+| class | clients | think ms | long tokens in 30 s, main -> fix | longest gap s | silent no-round bursts | short p50 s | text |
+|---|---:|---:|---|---|---|---|---|
+| greedy | 4 | 0 | 2 -> **36** | 30.73 -> 1.84 | 34 -> 17 | 0.892 -> 0.896 | prefix-equal |
+| greedy | 2 | 0 | 1 -> **73** | 30.43 -> 0.95 | 75 -> 33 | 0.447 -> 0.48 | prefix-equal |
+| greedy | 2 | 200 | 1 -> **145** | 30.08 -> 0.72 | 132 -> 60 | 0.249 -> 0.297 | prefix-equal |
+| t1 | 4 | 0 | 38 -> **35** | 0.93 -> 0.94 | 0 -> 0 | 0.925 -> 0.925 | prefix-equal |
+
+- Greedy stalls on main in every cell, as in the issue's RTX 5090 rows, and advances with the
+  bound (36 to 145 tokens, longest gap 1.84 s).
+- The sampled row is unchanged: without the sampled carry (memra#1186) a sampled burst never
+  enters on a carried token, so it emits its boundary token at every entry and the bound never
+  acts (0 silent bursts in both arms). It crawls at about 1.2 tok/s in both, as on GB10.
+- The short requests' p50 rises by at most 0.05 s here.
+
 ## Exactness
 
 The bound moves where a burst ends, never what a round computes, and where a burst ends is
@@ -240,6 +261,9 @@ content-neutral. Evidence on the fix binary (GB10, `gb10/gates/`):
   tokens, acceptance and rounds. Its yield boot's 23 no-round bursts did not enter on a carried
   token (the penalised sampled request), as on the base, so the bound did not act there; the
   stall cells above are where it acts, and their greedy texts are prefix-equal to main's.
+- **Seeded-invariance gate on the RTX 5090** (the fix at the PR head's tree,
+  `rtx5090/gates/`): PASS, 54 rows; 54 of 54 with the same text sha, tokens and acceptance as the
+  RTX 5090 base rows of main + memra#1196's fix.
 - **The session gate** is an engine binary, and the engine is untouched by this change (the diff
   touches `crates/memra-server/src/worker.rs` only).
 
@@ -272,13 +296,19 @@ Built on one GB10 unit from clean trees: main 3de59bbf80 `memra-0.141.0-d792eacd
 8bbab751...), the fix `memra-0.141.0-dd78f75bcc5a` (sha256 0701bbdc...; its `crates/` tree is the
 fix commit's), the probe `memra-0.140.0-499bcd947707` (sha256 0a9cd2b7...; main 2628ece940 + memra#1196's fix + `tools/probe-arms.patch`; the first build of the probe, 5ec3fffa..., was refused at boot by the env audit and ran no cell).
 The RTX 5090 main build is sm_120a with content id `memra-0.140.0-d1b6c9994da6`, the same as the
-GB10 build of 2628ece940.
+GB10 build of 2628ece940. The RTX 5090 builds for the no-owner cell are v0.141.0 main
+`memra-0.141.0-d792eacd8d45` (sha256 3de1aa6d...) and the PR head's tree
+`memra-0.141.0-761aeadf287c` (sha256 b3733034...; the fix plus its review commit, which changes
+tests and comments only).
 
 ## Files
 
 - `tools/stall_cell.py`: the cell. `tools/normal_cell.py`: the normal-concurrency cell.
   `tools/summarize.py`, `tools/tradeoff.py`: the tables. `tools/probe-arms.patch`: the probe.
-- `gb10/sweep-main/`: main's sweep. `rtx5090/main/`: the RTX 5090 on main. `gb10/workarounds/`:
+- `gb10/sweep-main/`: main's sweep. `gb10/sweep-main141/` and `gb10/sweep-fix/`: v0.141.0 and the
+  fix. `rtx5090/main/`: the RTX 5090 on main. `rtx5090/gate-off/`: the RTX 5090 with
+  `MEMRA_SPEC_GATE=0`. `gb10/gates/`: the exactness gates and their base rows. `gb10/normal/` and
+  `gb10/normal-probe/`: the normal-concurrency cell. `gb10/workarounds/`:
   `MEMRA_ADMIT_YIELD=0` and `MEMRA_SPEC_GATE_MODEL=0`. `gb10/arms/`: the probe arms.
 - Each directory holds `stall.jsonl` (rows), `guard.log` (binary hash, device, temperature and
   load at boot), the server logs, and `texts/` (the long request's text per cell).
