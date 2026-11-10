@@ -1,0 +1,57 @@
+# CPU checks at the code head c73c73eefd and every commit of the branch (dev desk, sm_120a build, cargo --release --locked)
+# per-commit cargo check of memra-engine (lib, bins, tests) and memra-server, oldest first
+check 980ce38063b1c82e6d8a7dca7c722909ef652bf2 engine rc=0
+check 980ce38063b1c82e6d8a7dca7c722909ef652bf2 server rc=0
+check 33ee7f7d04cb4ea62778cc11555a5b0020b06212 engine rc=0
+check 33ee7f7d04cb4ea62778cc11555a5b0020b06212 server rc=0
+check 115fc1ec3eac93038f56662a23e4f381767057cc engine rc=0
+check 115fc1ec3eac93038f56662a23e4f381767057cc server rc=0
+check 717de6014e82227008e7f235788b88b07e0e50f5 engine rc=0
+check 717de6014e82227008e7f235788b88b07e0e50f5 server rc=0
+check adcbda7c8bacd260f2d30cf9ea8172c0343c9df4 engine rc=0
+check adcbda7c8bacd260f2d30cf9ea8172c0343c9df4 server rc=0
+check 83f1494cba6d66cfeb36ddb1f1e63611d1407519 engine rc=0
+check 83f1494cba6d66cfeb36ddb1f1e63611d1407519 server rc=0
+check 9d32e0b1021849f450a59042936d4e7eb8f23d9d engine rc=0
+check 9d32e0b1021849f450a59042936d4e7eb8f23d9d server rc=0
+check c73c73eefd90eaea6b1d848b298d5d67f4afc61a engine rc=0
+check c73c73eefd90eaea6b1d848b298d5d67f4afc61a server rc=0
+# fa_split_ladder_tests and fa_ladder_engine_tests at the head
+test fa_split_ladder_tests::other_parts_and_wide_kv_keep_todays_ladder ... ok
+test fa_split_ladder_tests::gb10_takes_512_keys_past_its_floor ... ok
+test fa_split_ladder_tests::the_rung_is_keyed_on_gb10_only ... ok
+test fa_split_ladder_tests::a_forced_split_needs_a_multiple_of_8 ... ok
+test fa_split_ladder_tests::unmeasured_head_counts_keep_todays_ladder_on_gb10 ... ok
+test fa_split_ladder_tests::kernel_checks_deep_rung_verdict_sees_a_lost_detection ... ok
+test fa_split_ladder_tests::a_verify_graph_rung_never_straddles_a_split_edge ... ok
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 772 filtered out; finished in 0.01s
+test fa_ladder_engine_tests::an_engine_on_a_card_with_another_sm_count_refuses_by_name ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 778 filtered out; finished in 0.00s
+# the same tests with both arms of fa_split_deep_rung removed (the red run)
+test fa_split_ladder_tests::a_forced_split_needs_a_multiple_of_8 ... ok
+test fa_split_ladder_tests::other_parts_and_wide_kv_keep_todays_ladder ... ok
+test fa_split_ladder_tests::kernel_checks_deep_rung_verdict_sees_a_lost_detection ... FAILED
+test fa_split_ladder_tests::unmeasured_head_counts_keep_todays_ladder_on_gb10 ... ok
+test fa_split_ladder_tests::the_rung_is_keyed_on_gb10_only ... ok
+test fa_split_ladder_tests::gb10_takes_512_keys_past_its_floor ... FAILED
+test fa_split_ladder_tests::a_verify_graph_rung_never_straddles_a_split_edge ... ok
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 772 filtered out; finished in 0.01s
+red rc=101
+# workspace clippy --all-targets -D warnings
+clippy c73c73eefd90eaea6b1d848b298d5d67f4afc61a rc=0
+    Finished `release` profile [optimized] target(s) in 3m 49s
+# the memra-server suite
+test result: ok. 1162 passed; 0 failed; 11 ignored; 0 measured; 0 filtered out; finished in 13.72s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+server c73c73eefd90eaea6b1d848b298d5d67f4afc61a rc=0
+# kernel-check binaries, sha256 (GB10 sm_121a builds on the units, RTX 5090 sm_120a builds on the dev desk)
+83463b9472b2a4d5ac5e977a83cec73ceddd36219676aebab938fbe1a1355700  head-9592c2dceb/kernel-check
+60c2d409b63ad9704cea21486f1b06a3428e9ea441b5b6dc5275010d86527cb9  head-bf25fcb629/kernel-check
+60c2d409b63ad9704cea21486f1b06a3428e9ea441b5b6dc5275010d86527cb9  head-c73c73eefd/kernel-check
+83463b9472b2a4d5ac5e977a83cec73ceddd36219676aebab938fbe1a1355700  head-4afad22e11/kernel-check
+a6e9c498315345b2f89781693031ab149984213340d1e182439ab66e22d8707c  rtx5090 head-bf25fcb629/kernel-check
+a6e9c498315345b2f89781693031ab149984213340d1e182439ab66e22d8707c  rtx5090 head-c73c73eefd/kernel-check

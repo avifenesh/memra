@@ -1,0 +1,20 @@
+g260k, the two answers (each arm's three cells write the same text):
+  01-B: 120 tokens, finish stop, text sha256 db5dac5d142471d907ba172612df02076c1851dc354b6ab42b0dec1313e5bf63
+  04-B: 120 tokens, finish stop, text sha256 db5dac5d142471d907ba172612df02076c1851dc354b6ab42b0dec1313e5bf63
+  05-B: 120 tokens, finish stop, text sha256 db5dac5d142471d907ba172612df02076c1851dc354b6ab42b0dec1313e5bf63
+  02-T: 134 tokens, finish stop, text sha256 5275df37e59f0367777633ababf3dffe6e83bc0eac90ae3df8142b03286eba24
+  03-T: 134 tokens, finish stop, text sha256 5275df37e59f0367777633ababf3dffe6e83bc0eac90ae3df8142b03286eba24
+  06-T: 134 tokens, finish stop, text sha256 5275df37e59f0367777633ababf3dffe6e83bc0eac90ae3df8142b03286eba24
+first difference at character 317 (the common prefix is 317 characters)
+
+B (main 42bd4b07e4), first 400 characters:
+TANGERINE-4471
+MARIGOLD-9083
+
+The records are structured as a continuous sequence of 12-word phrases, where each phrase consists of a specific four-word group repeated three times followed by a fourth repetition of the first three words of that group. These four-word groups cycle through a fixed set of ten distinct combinations in a repeating order, with the specific group used for each record det
+
+T (9592c2dceb), first 400 characters:
+TANGERINE-4471
+MARIGOLD-9083
+
+The records are structured as a continuous sequence of 12-word phrases, where each phrase consists of a specific four-word group repeated three times followed by a fourth repetition of the first three words of that group. These four-word groups cycle through a fixed set of ten distinct sequences in a repeating pattern, with the specific group used for each record dete

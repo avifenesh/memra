@@ -1,0 +1,14 @@
+== g1k
+  01-B: 85.244 ms per round over 29 rounds, TTFT 1.125 s, total 5.384 s, 127 tok, text 26ca98d4733a
+  B: 85.244 ms per round (spread 0.000), TTFT 1.125 s, total 5.384 s, N=1
+  02-T: 85.653 ms per round over 29 rounds, TTFT 1.127 s, total 5.401 s, 127 tok, text 26ca98d4733a
+  T: 85.653 ms per round (spread 0.000), TTFT 1.127 s, total 5.401 s, N=1
+  T-B: +0.409 ms per round (+0.48%), every T cell under every B cell: False
+  same text in every cell: True
+== g131k
+  01-B: 150.932 ms per round over 14 rounds, TTFT 117.504 s, total 123.128 s, 95 tok, text e3b0c1e81f9a
+  B: 150.932 ms per round (spread 0.000), TTFT 117.504 s, total 123.128 s, N=1
+  02-T: 138.880 ms per round over 14 rounds, TTFT 117.770 s, total 122.818 s, 95 tok, text e3b0c1e81f9a
+  T: 138.880 ms per round (spread 0.000), TTFT 117.770 s, total 122.818 s, N=1
+  T-B: -12.052 ms per round (-7.98%), every T cell under every B cell: True
+  same text in every cell: True

@@ -1,0 +1,78 @@
+# Boot and request lines of each context's first B and first T cell (tools/boot_lines.py), normalized
+# for timestamps, build ids and sizes. The penalty/sampler/retired-name count matches only
+# [fa-pool] grow lines ('retired kept'), which differ with the split; no server prints a device
+# penalty or sampler line, and the tagged boot and request lines are alike in every context.
+== sp131-unit1 (01-B against 02-T)
+penalty/sampler/retired-name lines: B 4, T 2
+tagged lines: B 28, T 28, alike 28
+  [fa-pool] lines among them: 4
+== sp260-unit1 (01-B against 02-T)
+penalty/sampler/retired-name lines: B 5, T 3
+tagged lines: B 28, T 28, alike 28
+  [fa-pool] lines among them: 5
+== sp32-unit1-764cd39b5b (01-B against 02-T)
+penalty/sampler/retired-name lines: B 2, T 2
+tagged lines: B 28, T 28, alike 28
+  [fa-pool] lines among them: 2
+== sp12-unit1-764cd39b5b (01-B against 02-T)
+penalty/sampler/retired-name lines: B 2, T 2
+tagged lines: B 28, T 28, alike 28
+  [fa-pool] lines among them: 2
+
+== sp32-unit1-764cd39b5b, every tagged line of 01-B (main 031f146690) and 02-T (the code head), normalized
+  B: [server] build: memra-<build> (id: source-tree, git: unknown)
+  B: [server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+  B: [worker] Engine ready (device=0, MEMRA_FAST=true)
+  B: [worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+  B: [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+  B: [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+  B: [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+  B: [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=
+  B: [route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=
+  B: [worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+  B: [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+  B: [spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+  B: [spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+  B: [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+  B: [server] worker ready; serving models: ["q38"]
+  B: [server] listening on http://127.0.0.1:8090
+  B: [admission] per-session draft-state charge: model="q38" +<n> (measured capture high-water)
+  B: [admission] request cost: model="q38" ctx=1607 path=spec = 31552 B/token x ctx + <n> prefill-workspace + <n> fixed = <n>
+  B: [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1031 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+  B: [admission] fixed residual high-water: model="q38" <n> (observed <n> at ctx 1551 path=spec)
+  B: [admission] per-session draft-state charge: model="q38" +<n> (measured capture high-water)
+  B: [admission] request cost: model="q38" ctx=33354 path=spec = 31552 B/token x ctx + <n> prefill-workspace + <n> fixed = <n>
+  B: [worker] spec-affinity: declined (history diverged at 6 of checkpoint 992; 1 parked, 32778 prompt tokens; model q38)
+  B: [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=32778 cached=0 lcp=6 active=1 wave=1 placement=single-or-non-pp2
+  B: [admission] fixed residual high-water: model="q38" <n> (observed <n> at ctx 33298 path=spec)
+  B: [server] SIGTERM: draining (0 in flight, deadline <n>)
+  B: [server] drain complete in <n>; exiting
+  B: [server] GPU worker shutdown complete
+  T: [server] build: memra-<build> (id: source-tree, git: unknown)
+  T: [server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+  T: [worker] Engine ready (device=0, MEMRA_FAST=true)
+  T: [worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+  T: [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+  T: [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+  T: [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+  T: [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=
+  T: [route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=
+  T: [worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+  T: [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+  T: [spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+  T: [spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+  T: [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+  T: [server] worker ready; serving models: ["q38"]
+  T: [server] listening on http://127.0.0.1:8090
+  T: [admission] per-session draft-state charge: model="q38" +<n> (measured capture high-water)
+  T: [admission] request cost: model="q38" ctx=1607 path=spec = 31552 B/token x ctx + <n> prefill-workspace + <n> fixed = <n>
+  T: [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1031 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+  T: [admission] fixed residual high-water: model="q38" <n> (observed <n> at ctx 1551 path=spec)
+  T: [admission] per-session draft-state charge: model="q38" +<n> (measured capture high-water)
+  T: [admission] request cost: model="q38" ctx=33354 path=spec = 31552 B/token x ctx + <n> prefill-workspace + <n> fixed = <n>
+  T: [worker] spec-affinity: declined (history diverged at 6 of checkpoint 992; 1 parked, 32778 prompt tokens; model q38)
+  T: [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=32778 cached=0 lcp=6 active=1 wave=1 placement=single-or-non-pp2
+  T: [admission] fixed residual high-water: model="q38" <n> (observed <n> at ctx 33298 path=spec)
+  T: [server] SIGTERM: draining (0 in flight, deadline <n>)
+  T: [server] drain complete in <n>; exiting
+  T: [server] GPU worker shutdown complete

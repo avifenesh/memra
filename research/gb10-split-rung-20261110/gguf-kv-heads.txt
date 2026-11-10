@@ -1,0 +1,37 @@
+# tools/gguf_kv_heads.py over each gated model's GGUF header and tensor index (no weights read)
+== Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+arch qwen35
+qwen35.attention.head_count 24
+qwen35.attention.head_count_kv 4
+qwen35.attention.key_length 256
+qwen35.context_length 262144
+qwen35.block_count 65
+qwen35.full_attention_interval 4
+attn_k shape -> 4 KV heads in 17 layers (3,7,11,15,19,23...)
+== mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf (the 27B's MTP draft)
+arch qwen35
+qwen35.attention.head_count 24
+qwen35.attention.head_count_kv 4
+qwen35.attention.key_length 256
+qwen35.context_length 262144
+qwen35.block_count 65
+qwen35.full_attention_interval 4
+attn_k shape -> 4 KV heads in 1 layers (64)
+== Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+arch qwen35moe
+qwen35moe.attention.head_count 16
+qwen35moe.attention.head_count_kv 2
+qwen35moe.attention.key_length 256
+qwen35moe.context_length 262144
+qwen35moe.block_count 41
+qwen35moe.full_attention_interval 4
+attn_k shape -> 2 KV heads in 11 layers (3,7,11,15,19,23...)
+== Qwen3.5-9B-Q4_K_M.gguf
+arch qwen35
+qwen35.attention.head_count 16
+qwen35.attention.head_count_kv 4
+qwen35.attention.key_length 256
+qwen35.context_length 262144
+qwen35.block_count 32
+qwen35.full_attention_interval 4
+attn_k shape -> 4 KV heads in 8 layers (3,7,11,15,19,23...)

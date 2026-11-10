@@ -1,0 +1,22 @@
+== g1k
+  01-B: 85.301 ms per round over 29 rounds, TTFT 1.127 s, total 5.389 s, 127 tok, text 26ca98d4733a
+  04-B: 85.261 ms per round over 29 rounds, TTFT 1.126 s, total 5.387 s, 127 tok, text 26ca98d4733a
+  05-B: 85.400 ms per round over 29 rounds, TTFT 1.118 s, total 5.384 s, 127 tok, text 26ca98d4733a
+  B: 85.301 ms per round (spread 0.139), TTFT 1.126 s, total 5.387 s, N=3
+  02-T: 85.179 ms per round over 29 rounds, TTFT 1.127 s, total 5.384 s, 127 tok, text 26ca98d4733a
+  03-T: 85.285 ms per round over 29 rounds, TTFT 1.125 s, total 5.385 s, 127 tok, text 26ca98d4733a
+  06-T: 85.370 ms per round over 29 rounds, TTFT 1.131 s, total 5.394 s, 127 tok, text 26ca98d4733a
+  T: 85.285 ms per round (spread 0.191), TTFT 1.127 s, total 5.385 s, N=3
+  T-B: -0.016 ms per round (-0.02%), every T cell under every B cell: False
+  same text in every cell: True
+== g260k
+  01-B: 211.805 ms per round over 30 rounds, TTFT 313.641 s, total 324.629 s, 120 tok, text db5dac5d1424
+  04-B: 211.245 ms per round over 30 rounds, TTFT 313.874 s, total 324.850 s, 120 tok, text db5dac5d1424
+  05-B: 211.550 ms per round over 30 rounds, TTFT 313.724 s, total 324.718 s, 120 tok, text db5dac5d1424
+  B: 211.550 ms per round (spread 0.560), TTFT 313.724 s, total 324.718 s, N=3
+  02-T: 187.618 ms per round over 44 rounds, TTFT 313.933 s, total 324.951 s, 134 tok, text 5275df37e59f
+  03-T: 187.488 ms per round over 44 rounds, TTFT 313.376 s, total 324.390 s, 134 tok, text 5275df37e59f
+  06-T: 187.181 ms per round over 44 rounds, TTFT 313.706 s, total 324.715 s, 134 tok, text 5275df37e59f
+  T: 187.488 ms per round (spread 0.438), TTFT 313.706 s, total 324.715 s, N=3
+  T-B: -24.062 ms per round (-11.37%), every T cell under every B cell: True
+  same text in every cell: False

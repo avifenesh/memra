@@ -1,0 +1,14 @@
+# cmd
+MEMRA_PROMPT_FILE=$PWD/prompts/deep-16364.txt kt-head-1a4f769861/release/spec-serve-gate $HOME/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf --steps 8 --ts 1,2,4 --spec-k 3
+# rc 0
+# log (prompt token list and capture-time lookups left out)
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[fa-pool] grow #0 dev=0 o_len 0 -> 1572864 ml_len 0 -> 6144 (retired kept, zero=false)
+T=1 rounds=8 differing_logits=0 max_abs=0.000000000e0 argmax_diffs=0 device_argmax_diffs=0
+[fa-pool] grow #1 dev=0 o_len 1572864 -> 3145728 ml_len 6144 -> 12288 (retired kept, zero=false)
+T=2 rounds=8 differing_logits=0 max_abs=0.000000000e0 argmax_diffs=0 device_argmax_diffs=0
+[fa-pool] grow #2 dev=0 o_len 3145728 -> 6291456 ml_len 12288 -> 24576 (retired kept, zero=false)
+T=4 rounds=8 differing_logits=0 max_abs=0.000000000e0 argmax_diffs=0 device_argmax_diffs=0
+[spec] draft-session state high-water: 35MB (max of parked delta 35MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+spec-session K=3 ngen=8 returned=9 drafted=9 accepted=5 public_vs_live=None first_diff=None
+spec-serve-gate: ALL GREEN

@@ -1,0 +1,7 @@
+# request
+{"send_unix": 1794282019.153, "ttft_s": 90.003, "total_s": 90.003, "prompt_tokens": null, "completion_tokens": null, "finish": null, "error": "<HTTPError 408: 'Request Timeout'>", "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "text": ""}
+
+# server lines (capacity, deadline, abort)
+[prefix-cache] on: budget 6152MB (6152257536 B, derived: 2 x 3076128768 B max entry for model "q38" at served ctx 98304 (from MEMRA_CTX; MEMRA_CTX set), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 42361552896 B (13 reside
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[abort] client disconnected: model "q38", prompt 94211 (0 cached, 0 fed), 0 generated — billed to abort point, 95.98s
