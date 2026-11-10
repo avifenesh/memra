@@ -1,0 +1,15 @@
+dsv41-tpbench: 2 cells x 2 rounds on 1 rank(s) [0], 8/8 layers resident, chunk 8192, max_pos 32785
+  plan prefill-4096: workspace 2.50 GiB + state 0.00 GiB a rank
+  plan prefill-32768: workspace 6.05 GiB + state 0.02 GiB a rank
+  carried state: 641 B a position a rank (+1.0 MiB of window rings a sequence); reserve 6.07 GiB a device-rank
+[dsv41-tp] ranks=1 devices=[0] transport=peer-pull (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+[dsv41-resident] device 0 ranks [0]: 8 of 8 layers + head resident, 56.70 GiB (56.70 GiB a rank); free 94.46 -> 37.76 GiB of 95.06 GiB; reserve 6.07 GiB; load 4.9s
+  capacity at 4096 positions: 10294 sequences a rank after one prefill's 2.50 GiB workspace (0.003 GiB state each, 37.76 GiB free a rank)
+  capacity at 32768 positions: 1545 sequences a rank after one prefill's 6.05 GiB workspace (0.021 GiB state each, 37.76 GiB free a rank)
+  capacity at 131072 positions: 274 sequences a rank after one prefill's 16.01 GiB workspace (0.079 GiB state each, 37.76 GiB free a rank)
+  capacity at 262144 positions: 23 sequences a rank after one prefill's 34.00 GiB workspace (0.157 GiB state each, 37.76 GiB free a rank)
+dsv41-tpbench: {"argmax":77473,"cell":"prefill-4096","comm":{"bytes":0,"collectives":0,"copies":0,"timed":false,"timed_s":0.0},"end_unix":1794300675.9791963,"forward_s":0.403291128,"forwards":1,"kind":"prefill","layers_streamed":0,"peak_used":[62080473040],"prefill_tok_s":6262.166505845996,"prompt_len":4096,"readback_wait_s_per_rank":0.25063781300000004,"round":0,"start_unix":1794300675.325088,"stream_load_s":6.5e-7,"ttft_s":0.654086728}
+dsv41-tpbench: {"argmax":56659,"cell":"prefill-32768","comm":{"bytes":0,"collectives":0,"copies":0,"timed":false,"timed_s":0.0},"end_unix":1794300679.6821868,"forward_s":1.845478827,"forwards":1,"kind":"prefill","layers_streamed":0,"peak_used":[65165306832],"prefill_tok_s":8849.224687742031,"prompt_len":32768,"readback_wait_s_per_rank":1.851740216,"round":0,"start_unix":1794300675.979237,"stream_load_s":6.399999999999999e-7,"ttft_s":3.702923268}
+dsv41-tpbench: {"argmax":56659,"cell":"prefill-32768","comm":{"bytes":0,"collectives":0,"copies":0,"timed":false,"timed_s":0.0},"end_unix":1794300681.9496927,"forward_s":0.435380166,"forwards":1,"kind":"prefill","layers_streamed":0,"peak_used":[65165306832],"prefill_tok_s":14451.49390602668,"prompt_len":32768,"readback_wait_s_per_rank":1.8263472770000002,"round":1,"start_unix":1794300679.6822145,"stream_load_s":5.899999999999999e-7,"ttft_s":2.267447242}
+dsv41-tpbench: {"argmax":77473,"cell":"prefill-4096","comm":{"bytes":0,"collectives":0,"copies":0,"timed":false,"timed_s":0.0},"end_unix":1794300682.2667365,"forward_s":0.052851351,"forwards":1,"kind":"prefill","layers_streamed":0,"peak_used":[62250853328],"prefill_tok_s":12920.995431469133,"prompt_len":4096,"readback_wait_s_per_rank":0.264013161,"round":1,"start_unix":1794300681.949714,"stream_load_s":5.009999999999987e-7,"ttft_s":0.31700344}
+dsv41-tpbench: done in 12.5s

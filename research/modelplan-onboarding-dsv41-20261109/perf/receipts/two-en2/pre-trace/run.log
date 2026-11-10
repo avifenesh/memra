@@ -1,0 +1,19 @@
+dsv41-tpbench: 2 cells x 1 rounds on 2 rank(s) [0, 1], 20/20 layers resident, chunk 8192, max_pos 32785
+  plan prefill-4096: workspace 1.96 GiB + state 0.01 GiB a rank
+  plan prefill-32768: workspace 8.38 GiB + state 0.06 GiB a rank
+  carried state: 1923 B a position a rank (+2.5 MiB of window rings a sequence); reserve 8.44 GiB a device-rank
+[dsv41-tp] ranks=2 devices=[0, 1] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+[dsv41-resident] device 0 ranks [0]: 20 of 20 layers + head resident, 70.25 GiB (70.25 GiB a rank); free 94.45 -> 24.20 GiB of 95.06 GiB; reserve 8.44 GiB; load 10.2s
+[dsv41-resident] device 1 ranks [1]: 20 of 20 layers + head resident, 70.25 GiB (70.25 GiB a rank); free 94.45 -> 24.20 GiB of 95.06 GiB; reserve 8.44 GiB; load 10.2s
+  capacity at 4096 positions: 2272 sequences a rank after one prefill's 1.96 GiB workspace (0.010 GiB state each, 24.20 GiB free a rank)
+  capacity at 32768 positions: 259 sequences a rank after one prefill's 8.38 GiB workspace (0.061 GiB state each, 24.20 GiB free a rank)
+  capacity at 131072 positions: 40 sequences a rank after one prefill's 14.61 GiB workspace (0.237 GiB state each, 24.20 GiB free a rank)
+  capacity at 262144 positions: 0 sequences a rank after one prefill's 29.05 GiB workspace (0.471 GiB state each, 24.20 GiB free a rank)
+dsv41-tpbench: {"argmax":53142,"cell":"prefill-4096","comm":{"bytes":4538630144,"collectives":143,"copies":286,"timed":false,"timed_s":0.0},"end_unix":1794302130.2125823,"forward_s":0.356207158,"forwards":1,"kind":"prefill","layers_streamed":0,"page_faults":{"major":0,"minor":11874},"peak_used":[76299412464,76299412464],"prefill_tok_s":8121.589071386707,"prompt_len":4096,"readback_wait_s_per_rank":0.14785524900000002,"round":0,"start_unix":1794302129.7082062,"stream_load_s":1.7819999999999994e-6,"ttft_s":0.5043348}
+dsv41-tpbench: {"argmax":48151,"cell":"prefill-32768","comm":{"bytes":36309041152,"collectives":263,"copies":526,"timed":false,"timed_s":0.0},"end_unix":1794302133.7371318,"forward_s":2.538850752,"forwards":1,"kind":"prefill","layers_streamed":0,"page_faults":{"major":0,"minor":89676},"peak_used":[81755524592,81755524592],"prefill_tok_s":9297.393802480601,"prompt_len":32768,"readback_wait_s_per_rank":0.985352895,"round":0,"start_unix":1794302130.2126257,"stream_load_s":1.8649999999999997e-6,"ttft_s":3.524428533}
+dsv41-tpbench: done in 15.0s
+Collecting data...
+Generating '/tmp/nsys-access/nsys-report-cc53.qdstrm'
+[1/1] [0%                          ] trace.nsys-rep[1/1] [0%                          ] trace.nsys-rep[1/1] [1%                          ] trace.nsys-rep[1/1] [2%                          ] trace.nsys-rep[1/1] [5%                          ] trace.nsys-rep[1/1] [6%                          ] trace.nsys-rep[1/1] [7%                          ] trace.nsys-rep[1/1] [8%                          ] trace.nsys-rep[1/1] [9%                          ] trace.nsys-rep[1/1] [10%                         ] trace.nsys-rep[1/1] [11%                         ] trace.nsys-rep[1/1] [12%                         ] trace.nsys-rep[1/1] [13%                         ] trace.nsys-rep[1/1] [14%                         ] trace.nsys-rep[1/1] [=15%                        ] trace.nsys-rep[1/1] [=16%                        ] trace.nsys-rep[1/1] [=17%                        ] trace.nsys-rep[1/1] [==18%                       ] trace.nsys-rep[1/1] [==19%                       ] trace.nsys-rep[1/1] [==20%                       ] trace.nsys-rep[1/1] [=======================93%  ] trace.nsys-rep[1/1] [=======================96%  ] trace.nsys-rep[1/1] [========================98% ] trace.nsys-rep[1/1] [========================100%] trace.nsys-rep[1/1] [========================100%] trace.nsys-rep
+Generated:
+	$LANE/receipts-perf/two-en2/pre-trace/trace.nsys-rep

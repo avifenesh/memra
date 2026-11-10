@@ -677,7 +677,17 @@ over threads. One card, 8 layers, a first-seen prompt (`receipts/prefillab-en2-n
 prompt was 0.32 / 2.27 s before and after. The one-row decode step is unchanged (4.915 ms on one
 card both ways, first round included): its two dozen rows a table were not paying the fault in
 this bench. The bench's cells record the process's page faults, so pages the cache drops under
-pressure show as a count.
+pressure show as a count. Two ranks on two cards, 20 layers (both Engram layers), first-seen
+prompts (`receipts/two-en2`): 4,096 tokens 0.728 / 0.710 -> 0.481 / 0.477 s, 32,768 tokens
+4.748 / 4.660 -> 3.363 / 3.364 s; the one-row step 7.278 -> 7.287 ms. The 2.6 s a table is with
+the checkpoint in the page cache; after something dropped the cache the first load reads the
+table from disk.
+
+The same pair's traced one-row step (7.33 ms): the main stream is busy 92% of it, so the cards
+bound the step. The 31 us a layer it idles are the local copy calls of the window ring and the
+compressed keys into the attention's key buffer (10 us, 2.4 calls a layer at 4.3 us each), the
+join of the second stream (3 us), and at the step's end 120 us between the logits read-back and
+the next step's first call (the bench scoring 129,280 logits, the runner's step setup).
 
 ### One-card candidates measured in the same slot
 
@@ -686,6 +696,8 @@ pressure show as a count.
 | launcher fix, mHC rows kernel, Engram staging (`1a2bdbef7d`) | landed earlier | flat at one row: 0.552 -> 0.555, 0.530 -> 0.532, 0.438 -> 0.439 ms a layer |
 | staged FP4 expert tiles | `eaa42ee764` | one row 0.555 -> 0.533, 0.530 -> 0.513, 0.437 -> 0.419 ms a layer; 48 tiles 386.5 -> 304.1 us (w1/w3), 337.0 -> 304.2 (w2) |
 | fp32 head, 16-byte loads | `72b2cf30c3` | the head at 1 / 4 / 5 / 8 rows 0.900 -> 0.868, 1.235 -> 1.072, 1.414 -> 1.200, 1.796 -> 1.450 ms |
+| one-row top-k and candidate blocks over a long row (entries, not wired) | `1b7f65695d` | top-k 0.058 / 0.209 / 0.403 -> 0.048 / 0.049 / 0.049 ms at 32,768 / 131,072 / 262,144 keys; candidates 0.035 / 0.106 / 0.197 -> 0.078 / 0.105 / 0.105 ms: the long top-k above 32,768 keys, the long candidates above 131,072 |
+| dense small-M body with K in parts | dropped | one row flat; `wo_b` in an 8-row forward 0.056 -> 0.052 ms, 4 us a layer: not worth a second form of the body |
 
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
