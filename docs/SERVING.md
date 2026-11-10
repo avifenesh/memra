@@ -1601,13 +1601,16 @@ first, confirm it is live, then render the config.
 **PERFORMANCE NOTE.** Both currently served models' vendor recommendations include truncation
 filters (`top_p` < 1 and a positive `top_k`). Declaring `default_top_p` / `default_top_k`
 therefore moves the DEFAULT request shape out of the pure-temperature regime
-(`memra-sampling::Sampler::is_spec_sampling`, `spec.rs`'s `pure_temp`). A filtered request still
-drafts on the captured sampled graph, with the filter inside it (`MEMRA_SPEC_GRAPH_FILTERED`,
-default on); a penalised request drafts on the eager chain, because a graph cannot hold the
-per-round penalty history. Exactness is unaffected — filters apply to draft `q` and target `p`
-alike, and the verify emits the target's own filtered draw, so these requests stay spec-eligible
-and distribution-exact — but the throughput profile of the default path changes, and a client can
-opt back into the pure-temperature regime with an explicit `top_p: 1.0` + `top_k: 0`.
+(`memra-sampling::Sampler::is_spec_sampling`, `spec.rs`'s `pure_temp`). On the MTP route a
+filtered request still drafts on the captured sampled graph, with the filter inside it
+(`MEMRA_SPEC_GRAPH_FILTERED`, default on), and a penalised request drafts on the eager chain,
+because a graph cannot hold the per-round penalty history; the assistant-drafter routes have
+their own draft programs. Exactness is unaffected on every route — the verify emits the target's
+own filtered draw (by position on the MTP route, memra#1154; by the rejection walk, with the
+filter applied to draft `q` and target `p` alike, on the others), so these requests stay
+spec-eligible and distribution-exact — but the throughput profile of the default path changes,
+and a client can opt back into the pure-temperature regime with an explicit `top_p: 1.0` +
+`top_k: 0`.
 `vendor_defaults_leave_the_pure_temp_sampled_spec_regime` pins this so the flip stays measured
 rather than discovered.
 `pricing` accepts `prompt`, `cached_prompt`, `cache_write`, `completion`,

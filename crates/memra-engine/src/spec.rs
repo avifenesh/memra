@@ -79,12 +79,12 @@ fn mtp_chain_graph_on() -> bool {
 /// ON — receipts in the lane RESULTS). ON widens the sampled draft-graph capture from the
 /// pure-temp regime to every truncation-filtered regime (top_k / top_p / min_p): the capture
 /// body runs `filter_stats` + `gumbel_perturb_filtered_ctr` IN-GRAPH, so the draft draws
-/// from the request's filtered distribution, the one the target's own draw comes from.
+/// through the request's filter, the same filter the target's own draw goes through.
 /// (Under the rejection accept this was an exactness condition; since memra#1154 the MTP
 /// verify compares token ids and the match only keeps acceptance up.)
 /// Penalties stay eager either way (the history varies per round and cannot be baked).
-/// The pure-temp capture body is UNTOUCHED by this door (byte-identical to the pre-lane
-/// graph). OFF (=0) restores the pure-temp-only capture guard: filtered requests draft
+/// The pure-temp capture body is UNTOUCHED by this door (the same nodes with the door on
+/// or off). OFF (=0) restores the pure-temp-only capture guard: filtered requests draft
 /// eager, byte-for-byte the pre-lane behavior.
 fn spec_graph_filtered_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -2284,7 +2284,7 @@ struct DraftChainGraphs {
 
 /// Sampled-tail capture pack for `mtp_head_forward_cap`: the persistent buffers and baked
 /// constants of the in-graph categorical draw. `filt: None` = the PURE-TEMP body (gumbel
-/// over the raw softmax), byte-identical to the pre-lane capture; `Some` adds the in-graph
+/// over the raw softmax), the pre-lane capture's draw; `Some` adds the in-graph
 /// truncation filter (`filter_stats` + `gumbel_perturb_filtered_ctr`) so the draft draws
 /// from the request's filtered distribution (lane/step37-draft-graph-serving-20260830).
 struct SampledCapArgs<'a> {
@@ -5324,7 +5324,7 @@ impl HybridModel {
     ///     the pseudo pass only needs h_nextn (op 10) + the scratch append — the lm_head read
     ///     (~1.06ms q6_K on the 9B), argmax and prob are dead weight there. h_nextn's inputs are
     ///     untouched, so the seed value is identical; round-start resets overwrite tok_d/p_d anyway.
-    ///     `sampled_cap` = Some((ctr_d, perturb_d, seed, temp, filt)) captures the SAMPLED twin
+    ///     `sampled_cap` = Some([`SampledCapArgs`]) captures the SAMPLED twin
     ///     (step 3 of the sampled-spec arc): the DEVICE event counter is bumped in-graph and the
     ///     argmax reads GUMBEL-PERTURBED logits — one categorical draw per replay, bit-identical
     ///     to the eager arm's gumbel_perturb at the same (seed, sctr, temp). The head logits are
@@ -5531,8 +5531,8 @@ impl HybridModel {
                 // argmax the PERTURBED logits into tok_d — the in-graph categorical draw.
                 e.sctr_inc(ctr_d)?;
                 match filt {
-                    // PURE-TEMP: gumbel over the raw softmax — byte-identical to the
-                    // pre-lane capture body.
+                    // PURE-TEMP: gumbel over the raw softmax — the pre-lane capture
+                    // body's draw.
                     None => e.gumbel_perturb_ctr_keyed(
                         &logits, perturb_d, d_vocab, seed, ctr_d, temp, idmap,
                     )?,
@@ -8487,10 +8487,10 @@ impl HybridModel {
     /// round wrote, and a follow-up eager head step that attends over them. Since memra#1169
     /// the draft keeps no filter statistics and no head-logit rows, so the probe sees a
     /// step's head logits and filter statistics only through the draw (the token and the
-    /// trimmed id, a p-min-discarded one included) and through the KV rows the later steps
-    /// and the follow-up attend over. It also pins the rows head forward's first-step logits
-    /// and carriers against per-session eager steps from the round-start state, then times
-    /// the two drafts.
+    /// trimmed id, a p-min-discarded one included): a difference between the captured
+    /// graph's head row and the pooled row that flips no draw is not seen. It also pins the
+    /// rows head forward's first-step logits and carriers against per-session eager steps
+    /// from the round-start state, then times the two drafts.
     /// Returns report lines; the sessions are left mid-burst (bench use only).
     pub fn pooled_draft_probe(
         &self,
@@ -12664,7 +12664,9 @@ impl HybridModel {
         // once per round). The head logits are not retained (memra#1154: the verify compares
         // token ids, not distributions).
         // seed/temp are capture-time constants — baked into graph_s, so a pool-resumed request
-        // with a different (seed, temp, k) drops the parked sampled graph and recaptures.
+        // with a different (seed, temp) drops the parked sampled graph and recaptures. So does
+        // a different k: the key still carries it, although no captured node depends on k
+        // since the per-slot logit copies went (memra#1171).
         // COST OF THE FRESH-SEED SERVE DEFAULT (dogfood F4, 2026-08-04): omitting `seed` on a
         // serve request now draws fresh per-request entropy (it used to default to a pinned 0),
         // so a seed-omitting request that RESUMES a parked spec session finds an s_key baked
@@ -13933,7 +13935,7 @@ impl HybridModel {
             if constraint.is_some() {
                 init_logits_host = Some(init_logits.clone());
             }
-            // sampled mode: p-distribution after last_token, for the j==0/base==0 accept test.
+            // sampled mode: p-distribution after last_token, row 0 of the j==0/base==0 walk.
             if sampled {
                 last_col_logits = Some(e.htod(&init_logits)?);
             }
@@ -15305,7 +15307,8 @@ impl HybridModel {
                     pure_temp as u8, sp.top_k, sp.top_p, sp.min_p, dctx.s_key,
                 );
             }
-            // EAGER DRAFT (fallback: MoE head/trunk, huge k, MEMRA_SPEC_NOGRAPH, capture fail).
+            // EAGER DRAFT (a penalised sampled request, and the fallback: MoE head/trunk, huge
+            // k, MEMRA_SPEC_NOGRAPH, capture fail).
             let chain_heads = !self.mtp_extra.is_empty();
             let mut e_tok = *last_token;
             let mut d_seed = e.clone_dtod(h_seed_buf)?;
@@ -17868,6 +17871,7 @@ mod sampled_graph_key_tests {
     }
 
     /// The baked constants stay keyed (this half was always right — regression cover for it).
+    /// K is keyed too, although no captured node depends on it any more (memra#1171).
     #[test]
     fn baked_constants_stay_keyed() {
         let base = pure_temp_key();
