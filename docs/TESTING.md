@@ -521,8 +521,9 @@ run-gen's prefill-vs-decode argmax assert calibrated against the **top-2 margin 
 position**, because a near-tie flip and a real cache bug are the same red until you measure the
 margin (see `research/q8-argmax-20260806/`). Flags:
 `tools/argmax-margin-gate.sh [<model.gguf|hf_dir>] [--prompt f] [--window N] [--max-flips N]
-[--decode eager|batch] [--floors F] [--device NAME] [--require-floor] [--canary] [--logdir D]`,
-and `--calibrate [--receipt PATH]` to measure a floor. **Effective `--window` default is 12**, not the 24
+[--decode eager|batch] [--floors F] [--stored-rows DIR] [--rehash-model] [--device NAME]
+[--require-floor] [--canary] [--logdir D]`, and `--calibrate [--receipt PATH] [--rows-out FILE
+--commit C]` to measure a floor and write main's stored rows. **Effective `--window` default is 12**, not the 24
 the probe binary advertises in its own usage line: the wrapper always passes its own
 `WINDOW=12`. Worth knowing, since window width *is* this gate's
 coverage. Automatic dispatch is limited to `decode.rs`, `forward.rs`, `hybrid_forward.rs`, and
@@ -554,7 +555,7 @@ floor row lists each with its two top-1 ids and margins. A known row inside a ju
 printed and named, and does not fail the cell by itself. A candidate whose gap shift at a known
 row exceeds main's recorded shift at that row fails. A known row covers its own position only.
 The gate's default window, the last 12 rows, holds none of them today. The tighter guard, the
-candidate's rows against main's stored rows at the same positions, is memra#1204.
+candidate's rows against main's stored rows at the same positions, is below (memra#1204).
 
 One function gives the verdict, `memra_engine::argmax_margin::judge`. The wrapper calls it through
 `argmax-margin-probe --judge <log>` on the measured log and on the canary's injected copy. For
@@ -618,6 +619,49 @@ class for that cell (a new kernel order, a new split, a new cache format). The s
 the new row in the record and the PR body. A floor is never raised to turn a red cell green
 without that record.
 
+**Main's stored rows (memra#1204).** The floor judges prefill against decode inside one build; on
+the roster it is 3.1 to 4.5 logits, so a candidate that moves a token by 1 to 3 logits inside the
+window passes it. The second check compares the candidate's window with main's own table for the
+same cell: `tools/argmax-margin-rows/` holds one `.rows` file per cell, keyed by the model's name
+and the sha256 of its bytes, the prompt's name and sha256, the decode program, the exact device
+name and the window, and looked up by that key (never by file name). The comparison is of the
+printed table lines, byte for byte, with no tolerance:
+
+| line | meaning | result |
+|---|---|---|
+| `STORED-ROWS: identical` | every row of the window equals main's | passes |
+| `ROW-DIFF pos=N` + `STORED-ROWS: DIFFERENT` | a row differs; both sides printed (top-1 ids, margins, spread, the `detail` line) | fails |
+| `STORED-ROWS: none` | no stored table for the key: another artifact, prompt, device or window | not applied outside the battery; with `--require-floor`, `NO-STORED-ROWS` (refused) on a maintained or unknown device and `NOT-JUDGED` on an unmaintained class |
+
+A cell passes only if the floor rule and the stored rows both pass, and the release battery
+reports `NO-STORED-ROWS` as `REFUSED`. A stored file that does not parse, and two files for one
+key, are errors, never "none". The model's sha256 comes from a cache,
+`${XDG_CACHE_HOME:-~/.cache}/memra/model-sha256.tsv`, keyed by the resolved path, the size and the
+modification time (of every file, for a checkpoint directory, whose digest is the sha256 of its
+files' `sha256sum` lines in C-locale order). A file rewritten with the same size and
+modification time keeps its cached digest: `--rehash-model` hashes the bytes again. The canary
+writes a stored table from the measured window, moves one margin of its last row by 1 logit in
+a copy and requires the comparison to call the unmoved copy identical and name exactly the moved
+row.
+
+Main's rows for a cell come from the floor row's calibration log: `--calibrate --rows-out FILE
+--commit C` writes the last `--window` rows (default 12) of the measured log, and
+`argmax-margin-probe --judge <receipt> --calibrate --receipt <receipt> <floor key> --model-sha256 S
+--window 12 --rows-out FILE --commit C` does the same from a banked receipt
+(`research/argmax-stored-rows-20261110/tools/seed_rows.sh` for the roster). The census
+(`tools/check-argmax-floors.py`) demands a stored table for the battery window on every battery
+floor row, from that row's receipt: its `receipt` field must be the floor row's and its rows the
+receipt's last 12, byte for byte.
+
+**Changing the stored rows.** A change that moves a row of a roster window is a change of numbers,
+and the stored rows say so before any floor does. A bit-identical change shows no difference. A
+change of numeric class that a decision record accepts recalibrates in the same PR: the new
+calibration log, the new floor row and the new stored table, with the old and the new rows of the
+window shown in the record and the PR body. A stored table is never rewritten to turn a red cell
+green without that record. A lane that gates on its own prompt stores main's rows for that
+prompt from the base arm's calibration, beside its own floors table, and passes the directory
+with `--stored-rows`.
+
 HF directories use the native `SafetensorsSource` loader and their HF tokenizer; GGUF inputs
 retain the GGUF loader and tokenizer. By default (`--decode eager`) this gate compares batched
 prefill with tokenwise **serial decode** (`decode_step`) on the same prompt positions, not the
@@ -666,9 +710,12 @@ synthetic logit rows: a wide-margin flip fails, a near tie inside the floor pass
 the budget fail, a wide row fails, a flip with no floor fails, a known row no wider than recorded
 passes and is named, the same row wider fails, and the old predicate is pinned as true for every
 flip of 20,000 random row pairs), `cargo test -p memra-engine --bin
-argmax-margin-probe` (the `--judge` path) and `python3 tools/test_argmax_margin_gate.py` (the
-wrapper, with a stub measurement and the built probe as the judge; it fails, not skips, when the
-probe is not built).
+argmax-margin-probe` (the `--judge` path, the stored-rows comparison included: a one-logit move
+of one margin and a token change at a near tie pass the floor rule and fail the stored rows) and
+`python3 tools/test_argmax_margin_gate.py` (the wrapper, with a stub measurement and the built
+probe as the judge; it fails, not skips, when the probe is not built; it covers the stored rows'
+outcomes, the digest cache and `--rehash-model`, and the canary against a judge that never
+compares main's rows).
 
 Also 2026-08-06: `accept` (`tools/accept-gate.sh`, the **served-spec acceptance +
 long-text** assertion). It exists because the battery was *provably* blind to a class:

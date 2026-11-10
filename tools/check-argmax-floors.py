@@ -12,11 +12,17 @@ decode program), the maintained device classes (the classes of push-gated build 
     `name` matches), or
   * a device that has any row in the table lacks the row of a battery cell.
 
+  * a battery cell's floor row has no stored table of main's rows for the battery's window in
+    `tools/argmax-margin-rows/` (memra#1204), or the stored table does not come from that floor
+    row's receipt: its receipt must be the floor row's and its rows the receipt's last rows,
+    byte for byte.
+
 So a roster model cannot be added, a device cannot be half calibrated, and a maintained class
 cannot be left out, without its calibration cells. A class that is not maintained (H100, B200)
 is not demanded; the gate reports its cells as not judged.
 
 The floor row must be for the prompt's bytes: its prompt_sha256 is checked against the file.
+A stored table's model_sha256 names the artifact on the device; the census checks its form only.
 
 usage: check-argmax-floors.py [--repo DIR]     exit 0 complete, 1 a row is missing, 2 unreadable
 """
@@ -77,6 +83,85 @@ def bad_receipts(receipts, repo):
     return bad
 
 
+STORED_FIELDS = ("model", "model_sha256", "prompt", "prompt_sha256", "decode", "device", "window",
+                 "commit", "receipt")
+
+# The window the release battery's gate cells judge: the gate's default.
+BATTERY_WINDOW = 12
+
+
+def table_lines(text):
+    """The probe table lines of a log, trailing whitespace dropped (the lines the gate compares)."""
+    out = []
+    for line in text.splitlines():
+        f = line.split()
+        if len(f) >= 7 and f[0].isdigit() and f[1].isdigit():
+            out.append(line.rstrip())
+    return out
+
+
+def stored_table(text, name="stored table"):
+    """One `.rows` file: (header dict, table lines). The form memra_engine::argmax_margin writes."""
+    header, lines = {}, text.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("#") or not line.strip():
+            continue
+        if line == "rows":
+            rows = table_lines("\n".join(lines[i + 1:]))
+            break
+        field, sep, value = line.partition("\t")
+        if not sep or field not in STORED_FIELDS or field in header or not value.strip():
+            raise ValueError(f"{name}: header line {line!r}")
+        header[field] = value
+    else:
+        raise ValueError(f"{name}: no `rows` line")
+    missing = [f for f in STORED_FIELDS if f not in header]
+    if missing:
+        raise ValueError(f"{name}: missing {', '.join(missing)}")
+    if not header["window"].isdigit() or int(header["window"]) != len(rows) or not rows:
+        raise ValueError(f"{name}: {len(rows)} rows for a window of {header['window']}")
+    if len(header["model_sha256"]) != 64 or any(c not in "0123456789abcdef" for c in header["model_sha256"]):
+        raise ValueError(f"{name}: model_sha256 is not a sha256")
+    return header, rows
+
+
+def stored_tables(directory):
+    """[(path, header, rows)] of every `.rows` file of the stored-rows directory."""
+    if not directory.is_dir():
+        return []
+    return [(p, *stored_table(p.read_text(), str(p))) for p in sorted(directory.glob("*.rows"))]
+
+
+def stored_problems(cells, rows, receipts, prompt_sha256, tables, read_receipt):
+    """What is wrong with the stored rows of the battery cells' floor rows: a cell on a covered
+    device without its stored table for the battery window, two tables for one cell, or a table
+    that is not its floor row's receipt's last rows. `read_receipt(path)` gives a receipt's text."""
+    problems = []
+    for key in sorted(rows):
+        model, prompt, sha, decode, device = key
+        if not any((model, prompt, prompt_sha256.get(prompt), decode) == (c[1], c[2], sha, c[3]) for c in cells):
+            continue
+        found = [(p, h, r) for p, h, r in tables
+                 if (h["model"], h["prompt"], h["prompt_sha256"], h["decode"], h["device"]) == key
+                 and int(h["window"]) == BATTERY_WINDOW]
+        if not found:
+            problems.append(f"MISSING stored rows: device={device!r} model={model} prompt={prompt} "
+                            f"decode={decode} window={BATTERY_WINDOW}")
+            continue
+        if len({h["model_sha256"] for _, h, _ in found}) != len(found):
+            problems.append(f"TWO stored tables for one artifact: device={device!r} model={model} decode={decode}")
+        for path, header, stored in found:
+            if header["receipt"] != receipts[key]:
+                problems.append(f"STALE stored rows {path.name}: receipt {header['receipt']} is not the floor "
+                                f"row's {receipts[key]}")
+                continue
+            last = table_lines(read_receipt(header["receipt"]))[-BATTERY_WINDOW:]
+            if last != stored:
+                problems.append(f"STALE stored rows {path.name}: not the last {BATTERY_WINDOW} rows of "
+                                f"{header['receipt']}")
+    return problems
+
+
 def missing_rows(cells, rows, prompt_sha256):
     """The (device, roster id, model, prompt, decode) of every battery cell with no floor row
     on a device the table covers. `prompt_sha256` maps a prompt name to its file's digest."""
@@ -105,6 +190,7 @@ def main():
         cells = battery_cells(repo)
         receipts = {}
         rows = floor_rows((repo / "tools/argmax-margin-floors.tsv").read_text(), receipts)
+        tables = stored_tables(repo / "tools/argmax-margin-rows")
         shas = {}
         for _, _, prompt, _ in cells:
             path = repo / "research/e2e/prompts" / f"{prompt}.txt"
@@ -134,13 +220,27 @@ def main():
               f"decode={key[3]}: {path!r}", file=sys.stderr)
     if unbanked:
         return 1
+    try:
+        stored = stored_problems(cells, rows, receipts, shas, tables, lambda p: (repo / p).read_text())
+    except OSError as err:
+        print(f"check-argmax-floors: {err}", file=sys.stderr)
+        return 2
+    for problem in stored:
+        print(f"check-argmax-floors: {problem}", file=sys.stderr)
     if missing or bare:
         print("check-argmax-floors: calibrate each with tools/argmax-margin-gate.sh <model> "
               "[--decode batch] --calibrate on that device and add the row", file=sys.stderr)
+    if stored:
+        print("check-argmax-floors: store main's rows with tools/argmax-margin-gate.sh <model> "
+              "[--decode batch] --calibrate --rows-out FILE --commit C, or from the floor row's receipt "
+              "with argmax-margin-probe --judge <receipt> --calibrate --rows-out (docs/TESTING.md)",
+              file=sys.stderr)
+    if missing or bare or stored:
         return 1
     print(f"check-argmax-floors: OK: {len(cells)} battery cells x {len(devices)} device(s) "
           f"({', '.join(devices) or 'none'}), every floor row present; maintained classes "
-          f"{', '.join(maintained)} each calibrated")
+          f"{', '.join(maintained)} each calibrated; every battery floor row has main's stored rows "
+          f"for the {BATTERY_WINDOW}-row window, from its receipt")
     return 0
 
 

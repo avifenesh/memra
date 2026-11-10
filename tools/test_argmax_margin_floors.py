@@ -19,6 +19,10 @@ census = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(census)
 
 SHA = {"board-2048": "a" * 64}
+# A receipt's table: 20 rows in the probe's printed form, the last 12 a battery window.
+RECEIPT_ROWS = [f"{p:<8} {7:<13} {'1.000000000e0':<16} {7:<12} {'1.000000000e0':<16} {'1.0e-1':<16} yes"
+                for p in range(2028, 2048)]
+RECEIPT = "pos header\n" + "\n".join(r + "   " for r in RECEIPT_ROWS) + "\nPRIME-GATE: class=MATCH\n"
 CELLS = [("own/m", "M", "board-2048", "eager"), ("own/m", "M", "board-2048", "batch")]
 
 
@@ -34,6 +38,8 @@ class FloorsCensusTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("every floor row present", r.stdout)
         self.assertIn("maintained classes gb10, rtx5090, rtxpro6000 each calibrated", r.stdout)
+        self.assertIn("every battery floor row has main's stored rows for the 12-row window, from its receipt",
+                      r.stdout)
 
     def test_the_battery_lists_two_decode_programs_per_roster_model_on_the_gate_prompt(self):
         cells = census.battery_cells(REPO)
@@ -141,6 +147,62 @@ class FloorsCensusTest(unittest.TestCase):
         receipts = {}
         census.floor_rows((REPO / "tools/argmax-margin-floors.tsv").read_text(), receipts)
         self.assertEqual(census.bad_receipts(receipts, REPO), [])
+    # memra#1204: main's stored rows per battery floor row.
+
+    def stored(self, model="M", decode="eager", device="card A", receipt="research/x/probe.log",
+               rows=None, window=12, sha=SHA["board-2048"], model_sha="c" * 64):
+        rows = RECEIPT_ROWS[-window:] if rows is None else rows
+        text = ("# a comment\n" + "".join(f"{k}\t{v}\n" for k, v in (
+            ("model", model), ("model_sha256", model_sha), ("prompt", "board-2048"), ("prompt_sha256", sha),
+            ("decode", decode), ("device", device), ("window", window), ("commit", "031f146690"),
+            ("receipt", receipt))) + "rows\n" + "".join(r + "\n" for r in rows))
+        return (pathlib.Path(f"{model}-{decode}-{device}.rows"), *census.stored_table(text))
+
+    def problems(self, tables, devices=("card A",)):
+        receipts = {}
+        rows = census.floor_rows("\n".join(row("M", d, dev) for d in ("eager", "batch") for dev in devices), receipts)
+        return census.stored_problems(CELLS, rows, receipts, SHA, tables, lambda p: RECEIPT)
+
+    def test_every_battery_floor_row_needs_its_stored_rows_from_its_receipt(self):
+        both = [self.stored(decode="eager"), self.stored(decode="batch")]
+        self.assertEqual(self.problems(both), [])
+        # One decode program without its table, and a device with none.
+        self.assertEqual(self.problems(both[:1]), ["MISSING stored rows: device='card A' model=M prompt=board-2048 "
+                                                   "decode=batch window=12"])
+        self.assertEqual(len(self.problems(both, devices=("card A", "card B"))), 2)
+        # Another window does not count for the battery's.
+        self.assertIn("MISSING stored rows", self.problems([both[0], self.stored(decode="batch", window=2)])[0])
+
+    def test_a_stored_table_from_another_receipt_or_with_other_rows_is_stale(self):
+        eager = self.stored(decode="eager")
+        other = self.stored(decode="batch", receipt="research/y/probe.log")
+        self.assertEqual(self.problems([eager, other]),
+                         ["STALE stored rows M-batch-card A.rows: receipt research/y/probe.log is not the floor "
+                          "row's research/x/probe.log"])
+        moved = RECEIPT_ROWS[-12:-1] + [RECEIPT_ROWS[-1].replace("1.000000000e0", "1.100000000e0")]
+        self.assertEqual(self.problems([eager, self.stored(decode="batch", rows=moved)]),
+                         ["STALE stored rows M-batch-card A.rows: not the last 12 rows of research/x/probe.log"])
+        self.assertEqual(self.problems([eager, self.stored(decode="batch"), self.stored(decode="batch")]),
+                         ["TWO stored tables for one artifact: device='card A' model=M decode=batch"])
+
+    def test_a_malformed_stored_table_is_refused(self):
+        for bad in ("model\tM\n", "rows\n" + RECEIPT_ROWS[0] + "\n",
+                    "".join(f"{k}\tv\n" for k in census.STORED_FIELDS) + "rows\n"):
+            with self.subTest(bad=bad[:30]):
+                with self.assertRaises(ValueError):
+                    census.stored_table(bad)
+        with self.assertRaises(ValueError):
+            self.stored(model_sha="not-a-sha")
+        with self.assertRaises(ValueError):
+            self.stored(rows=RECEIPT_ROWS[-11:])
+
+    def test_the_tree_stored_rows_parse_with_the_engine(self):
+        # The census's reader and memra_engine::argmax_margin::StoredTable read the same files: every
+        # tracked table parses here with a 64-hex model digest and the battery window.
+        tables = census.stored_tables(REPO / "tools/argmax-margin-rows")
+        self.assertTrue(tables)
+        for path, header, rows in tables:
+            self.assertEqual(int(header["window"]), len(rows), path)
 
     def test_the_prompt_digest_is_the_file_the_gate_reads(self):
         prompt = REPO / "research/e2e/prompts/board-2048.txt"
