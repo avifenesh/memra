@@ -1,0 +1,17 @@
+gpulock: 5090 leased as claude-code-20261109T232809-1453152 for 6m
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[fa-pool] grow #0 dev=0 o_len 0 -> 104448 ml_len 0 -> 408 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 104448 -> 393216 ml_len 408 -> 1536 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 38MB (max of parked delta 38MB and capture-time pool peak 7MB; charged per spec admission and gating future captures)
+turn 1: 24 tok generated, committed=151 -> MATCH
+[fa-pool] grow #2 dev=0 o_len 393216 -> 786432 ml_len 1536 -> 3072 (retired kept, zero=false)
+turn 2: 25 tok generated, committed=241 -> MATCH
+turn 3: 24 tok generated, committed=299 -> MATCH
+turn 4: 24 tok generated, committed=323 -> MATCH
+SESSION GATE: ALL TURNS MATCH

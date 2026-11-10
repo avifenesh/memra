@@ -1,0 +1,27 @@
+gpulock: 5090 leased as claude-code-20261110T001513-1827565 for 6m
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[fa-pool] grow #0 dev=0 o_len 0 -> 104448 ml_len 0 -> 408 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 104448 -> 393216 ml_len 408 -> 1536 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 38MB (max of parked delta 38MB and capture-time pool peak 7MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 393216 -> 786432 ml_len 1536 -> 3072 (retired kept, zero=false)
+history: 243 tokens
+prime: next token 220, top5 [(220, 7.688451), (198, 7.5034), (363, 7.4284315), (256, 6.8810735), (7, 6.8509245)]
+prime twice: 0 of 248320 logits differ in bits; max |diff| 0.000000 at id 0 (5.482314 vs 5.482314)
+plain decode_step at pos 243: top5 [(201, 8.977869), (15, 8.956169), (221, 8.856788), (16, 8.609148), (378, 8.557032)]
+verify 1 row (exact scope): top5 [(15, 8.967237), (201, 8.956566), (221, 8.824658), (16, 8.597178), (378, 8.580304)]
+verify 4 rows, row 0: top5 [(15, 8.967237), (201, 8.956566), (221, 8.824658), (16, 8.597178), (378, 8.580304)]
+verify 1 row (no exact scope): top5 [(15, 8.967237), (201, 8.956566), (221, 8.824658), (16, 8.597178), (378, 8.580304)]
+plain vs verify-1 (exact): 248320 of 248320 logits differ in bits; max |diff| 0.121879 at id 78732 (-1.7228531 vs -1.8447324)
+plain vs verify-4 row 0 (exact): 248320 of 248320 logits differ in bits; max |diff| 0.121879 at id 78732 (-1.7228531 vs -1.8447324)
+verify-1 vs verify-4 row 0: 0 of 248320 logits differ in bits; max |diff| 0.000000 at id 0 (-1.0420585 vs -1.0420585)
+plain vs verify-1 (no exact): 248320 of 248320 logits differ in bits; max |diff| 0.121879 at id 78732 (-1.7228531 vs -1.8447324)
+id 15: plain 8.956169 verify1 8.967237 verify4 8.967237 verify1-noexact 8.967237
+id 201: plain 8.977869 verify1 8.956566 verify4 8.956566 verify1-noexact 8.956566
+id 220: plain 8.102217 verify1 8.117591 verify4 8.117591 verify1-noexact 8.117591
+second step (201) after plain vs after verify-1: 248319 of 248320 logits differ in bits; max |diff| 0.166493 at id 155512 (-1.4662111 vs -1.6327038)
