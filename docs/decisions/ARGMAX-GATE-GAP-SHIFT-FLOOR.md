@@ -166,6 +166,7 @@ last 12 rows of each whole-prompt table equal the 12-row table of its card's rec
 | RTX PRO 6000 Max-Q | Ornith-1.5-35B-A3B | eager | 173 / 2045 | 7 | 0.199 | 1.370 | 2.848 | 3.918 (306) | 41 |
 | RTX PRO 6000 Max-Q | Ornith-1.5-35B-A3B | batch | 181 / 2045 | 5 | 0.195 | 1.504 | 2.763 | 3.695 (1169) | none |
 | RTX 5090 Laptop GPU | Qwen3.8-27B | eager | 42 / 2045 | 4 | 0.047 | 0.340 | 0.960 | 3.730 (1198) | none |
+| RTX 5090 Laptop GPU | Qwen3.8-27B | batch | 40 / 2045 | 3 | 0.045 | 0.364 | 0.663 | 3.088 (1199) | none |
 | RTX PRO 6000 Max-Q | Qwen3.8-27B | eager | 44 / 2045 | 3 | 0.048 | 0.394 | 1.139 | 3.959 (1198) | none |
 | RTX PRO 6000 Max-Q | Qwen3.8-27B | batch | 41 / 2045 | 4 | 0.050 | 0.371 | 1.222 | 4.242 (1198) | none |
 | RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | eager | 152 / 2045 | 6 | 0.147 | 1.425 | 2.810 | 4.010 (909) | none |
@@ -173,17 +174,18 @@ last 12 rows of each whole-prompt table equal the 12-row table of its card's rec
 | RTX 5090 Laptop GPU | gemma-4-26B q4_0 | eager | 250 / 2100 | 6 | 0.278 | 1.918 | 3.421 | 3.557 (1458) | 150, 943, 981, 1013, 1117, 1540 |
 <!-- FLOORS-TABLE:END -->
 
-Rows still to come at this commit: Qwen3.8-27B batch on the RTX 5090 Laptop GPU and
-Qwen3.8-27B eager and batch on GB10. The change does not land before them: the release battery
-refuses a roster cell without its row, and the census test is red until they exist. Outside
-the battery: gemma-4-31B on the RTX 5090 Laptop GPU (`tools/local-ci.sh` runs the gate on it
-there) and Qwen3.5-9B on GB10.
+Rows still to come at this commit: Qwen3.8-27B eager and batch on GB10. The change does not
+land before them: the release battery refuses a roster cell without its row, and the census
+test is red until they exist. Outside the battery: gemma-4-31B on the RTX 5090 Laptop GPU
+(`tools/local-ci.sh` runs the gate on it there) and Qwen3.5-9B on GB10.
 
 What the cells showed, and what was decided with it:
 
-- Every floor is set by one row. On the dense 27B, row 1,198 (prefill margin 4.92, decode 8.65
-  to 9.16) puts the floor at 3.7 to 4.2 on both cards measured, where the next agreeing row is
-  at 1.2 to 1.5 and the p99.9 near 1. On the MoE the top rows are closer together (3.6, 2.9,
+- Every floor is set by one row. On the dense 27B the next agreeing row is at 0.84 to 1.69 and
+  the p99.9 at 0.66 to 1.22: row 1,198 (prefill margin 4.92, decode 8.65 to 9.16) sets the
+  floor at 3.7 to 4.2 in three cells, and row 1,199 (prefill 9.49, decode 12.58) sets it at
+  3.09 in the RTX 5090 Laptop GPU's batch cell, whose decode holds row 1,198 at 4.95, next to
+  prefill. On the MoE the top rows are closer together (3.6, 2.9,
   2.3, 2.2 on one cell).
 - Main's own programs flip above their own floor: Ornith eager at row 41 (margins 1.472 and
   2.899) on both discrete cards and at row 1,809 on the RTX 5090 Laptop GPU (4.079 and 0.070),
@@ -231,7 +233,7 @@ tree under the floors table as it stands.
   change of numeric class can exceed it; the answer is the recalibration procedure, not a
   margin on the floor.
 - The maximum is loose where one row sets it. A flip whose two margins add up to less than a
-  floor of 3.6 to 4.2 logits passes as a near tie on the roster cells. The gate catches the
+  floor of 3.1 to 4.5 logits passes as a near tie on the roster cells. The gate catches the
   flip at margins 14.4 and 2.5 that the old rule passed; it does not catch one at 2.0 and 1.5.
   memra#1204 is the guard for that range.
 - An agreeing row's gap shift is exact only when both programs have the same runner-up;
