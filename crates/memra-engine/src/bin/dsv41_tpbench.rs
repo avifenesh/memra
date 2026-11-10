@@ -334,6 +334,23 @@ fn run() -> Result<(), String> {
         }
         memra_engine::dsv41_gpu::set_wide_rows(v[0], v[1], v[2], v[3], v[4]);
     }
+    // --side-rows KEYS,SHARED,MIX: the most rows of a call whose keys side, shared expert and
+    // mHC mixes run on the second stream
+    if let Some(w) = flag("--side-rows") {
+        let v: Vec<usize> = w
+            .split(',')
+            .map(|x| {
+                x.parse()
+                    .map_err(|_| format!("--side-rows {w:?}: three counts"))
+            })
+            .collect::<Result<_, _>>()?;
+        if v.len() != 3 {
+            return Err(format!("--side-rows {w:?}: three counts"));
+        }
+        for (i, &x) in v.iter().enumerate() {
+            memra_engine::dsv41_gpu::SIDE_LIMITS[i].store(x, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
     let bin = std::fs::read(&a[0])
         .map(|b| sha256_hex(&b))
         .unwrap_or_default();

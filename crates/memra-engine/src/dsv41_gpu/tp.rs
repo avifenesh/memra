@@ -3013,7 +3013,7 @@ impl Ctx {
     ) -> Result<bool, String> {
         let g = self.g.clone();
         let st = self.ops.st.clone();
-        if rows > super::SIDE_ROWS {
+        if rows > super::SIDE_LIMITS[1].load(Ordering::Relaxed) {
             split_hidden_shared(&self.ops, &mut self.scr, &g, lw, x, rows, np, hb)?;
             return Ok(false);
         }

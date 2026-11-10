@@ -1856,7 +1856,9 @@ static long v41_gemv_bf16_warp_smem(int m, int su, int stages) {
     return (long)stages * (m + 8) * (su * 32 + 16);
 }
 
-template <int OUTF>
+// R16: a call of 9 to 16 rows. The tile's 16-wide side then holds 16 rows (rows g + 8 on the same lanes), so
+// a warp's chain over K serves twice the rows with the same MMAs and the same weight fetches.
+template <int OUTF, int R16 = 0>
 __global__ void __launch_bounds__(128) v41_gemv_bf16_kernel(const v41_bf* __restrict__ A, long lda, long sAz,
                                                             const v41_bf* __restrict__ B, long ldb, long sBz,
                                                             void* __restrict__ C, long ldc, long sCz, int M, int N,
@@ -1868,6 +1870,7 @@ __global__ void __launch_bounds__(128) v41_gemv_bf16_kernel(const v41_bf* __rest
     const uint8_t* Ab = (const uint8_t*)(A + (long)blockIdx.z * sAz);
     const uint8_t* Bb = (const uint8_t*)(B + (long)blockIdx.z * sBz);
     bool rowok = g < M;
+    bool rowok8 = R16 && g + 8 < M;
     int P = su * 32 + 16;        // bytes per staged row (+16: bank spread)
     int SB = (M + 8) * P;        // one stage: the M rows, then the 8 weight rows
     uint8_t* wsm = v41_smb + (long)warp * stages * SB;
@@ -1899,6 +1902,7 @@ __global__ void __launch_bounds__(128) v41_gemv_bf16_kernel(const v41_bf* __rest
         __syncwarp();  // stage i landed for every lane
         const uint8_t* st = wsm + (i % stages) * SB;
         const uint8_t* sA = st + (rowok ? g : 0) * P;
+        const uint8_t* sA8 = st + (rowok8 ? g + 8 : 0) * P;
         const uint8_t* sB = st + (M + g) * P;
         int k0 = i * su * 16;
         for (int u0 = 0; u0 < su; u0 += 8) {
@@ -1910,6 +1914,10 @@ __global__ void __launch_bounds__(128) v41_gemv_bf16_kernel(const v41_bf* __rest
                 if (rowok) {
                     af[0] = v41_lds32(sA + u * 32 + t * 4);
                     af[2] = v41_lds32(sA + u * 32 + 16 + t * 4);
+                }
+                if (rowok8) {
+                    af[1] = v41_lds32(sA8 + u * 32 + t * 4);
+                    af[3] = v41_lds32(sA8 + u * 32 + 16 + t * 4);
                 }
                 uint32_t b0 = v41_lds32(sB + u * 32 + t * 4);
                 uint32_t b1 = v41_lds32(sB + u * 32 + 16 + t * 4);
@@ -1926,6 +1934,11 @@ __global__ void __launch_bounds__(128) v41_gemv_bf16_kernel(const v41_bf* __rest
             if (cn < N) {
                 if (OUTF == 0) ((v41_bf*)Cz)[(long)g * ldc + cn] = v41_f2bf(acc[e]);
                 else ((float*)Cz)[(long)g * ldc + cn] = acc[e];
+                if (rowok8) {
+                    // acc[2], acc[3]: row g + 8 against the same two columns
+                    if (OUTF == 0) ((v41_bf*)Cz)[(long)(g + 8) * ldc + cn] = v41_f2bf(acc[2 + e]);
+                    else ((float*)Cz)[(long)(g + 8) * ldc + cn] = acc[2 + e];
+                }
             }
         }
     }
@@ -1935,11 +1948,11 @@ extern "C" int memra_v41_gemm_bf16(const void* a, long lda, long sAz, const void
                                    long ldc, long sCz, int out_f32, int m, int n, int k, int batch, void* stream) {
     if (k % 32 || m < 0 || n <= 0 || batch <= 0 || lda % 8 || ldb % 8 || sAz % 8 || sBz % 8) return 41006;
     if (m == 0) return 0;
-    if (m > V41_SM_MAX && m <= v41_wide[1]) {
-        // the small-row body, a launch a group of rows (a batch's planes keep their strides)
+    if (m > 2 * V41_SM_MAX && m <= v41_wide[1]) {
+        // the small-row body, a launch a group of 16 rows (a batch's planes keep their strides)
         long ce = out_f32 ? 4 : 2;
-        for (int m0 = 0; m0 < m; m0 += V41_SM_MAX) {
-            int mm = m - m0 < V41_SM_MAX ? m - m0 : V41_SM_MAX;
+        for (int m0 = 0; m0 < m; m0 += 2 * V41_SM_MAX) {
+            int mm = m - m0 < 2 * V41_SM_MAX ? m - m0 : 2 * V41_SM_MAX;
             int rc = memra_v41_gemm_bf16((const v41_bf*)a + (long)m0 * lda, lda, sAz, b, ldb, sBz,
                                          (uint8_t*)c + (long)m0 * ldc * ce, ldc, sCz, out_f32, mm, n, k, batch, stream);
             if (rc) return rc;
@@ -1947,7 +1960,8 @@ extern "C" int memra_v41_gemm_bf16(const void* a, long lda, long sAz, const void
         return 0;
     }
     cudaStream_t st = (cudaStream_t)stream;
-    if (m <= V41_SM_MAX) {
+    bool r16 = m > V41_SM_MAX && m <= 2 * V41_SM_MAX && m <= v41_wide[1];
+    if (m <= V41_SM_MAX || r16) {
         // one warp per block with its whole K slice staged while the launch is at most 256 warps
         // and the slice fits a block; else 4 warps per block over the two-stage ring
         long whole = v41_gemv_bf16_warp_smem(m, k / 16, 1);
@@ -1962,9 +1976,15 @@ extern "C" int memra_v41_gemm_bf16(const void* a, long lda, long sAz, const void
         dim3 grid((n + 8 * wpb - 1) / (8 * wpb), 1, batch);
 #define V41_GEMV_BF(OF)                                                                                            \
     do {                                                                                                           \
-        if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_gemv_bf16_kernel<OF>), 96 * 1024);                               \
-        v41_gemv_bf16_kernel<OF><<<grid, 32 * wpb, smem, st>>>((const v41_bf*)a, lda, sAz, (const v41_bf*)b, ldb, \
-                                                                sBz, c, ldc, sCz, m, n, k, su, stages);            \
+        if (r16) {                                                                                                 \
+            if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_gemv_bf16_kernel<OF, 1>), 96 * 1024);                        \
+            v41_gemv_bf16_kernel<OF, 1><<<grid, 32 * wpb, smem, st>>>((const v41_bf*)a, lda, sAz, (const v41_bf*)b, \
+                                                                       ldb, sBz, c, ldc, sCz, m, n, k, su, stages); \
+        } else {                                                                                                   \
+            if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_gemv_bf16_kernel<OF>), 96 * 1024);                           \
+            v41_gemv_bf16_kernel<OF><<<grid, 32 * wpb, smem, st>>>((const v41_bf*)a, lda, sAz, (const v41_bf*)b,   \
+                                                                    ldb, sBz, c, ldc, sCz, m, n, k, su, stages);    \
+        }                                                                                                          \
     } while (0)
         if (out_f32) V41_GEMV_BF(1); else V41_GEMV_BF(0);
 #undef V41_GEMV_BF

@@ -3277,9 +3277,11 @@ fn tp_gate(
             "reported: the N-rank stream against the vendor capture, next to the single-card one",
             format!("rel_l2 N-rank {r_tp:.3e} / single-card {r_1:.3e}, cos {c_tp:.8}"),
         );
-        // Calls of 9 to 32 rows keep the small-row bodies, issued over groups of rows. The
-        // prompt's first 12, 16 and 32 rows as their own call, twice: with every family's limit
-        // at 0 (the pipelined bodies, the reference) and at 32, on the single card and on every
+        // Calls of 9 to 32 rows keep the small-row bodies, issued over groups of rows, and the
+        // shared expert and the mHC mixes on the second stream. The prompt's first 12, 16 and 32
+        // rows as their own call, twice: with every family's limit at 0 and nothing on the
+        // second stream (the pipelined bodies in stream order, the reference), then with the
+        // limits at 32 and the second stream's own limits, on the single card and on every
         // rank; each output of the second against the first. Not on a layer that
         // reads another layer's selection: the capture's selection rows index the full prompt's
         // key rows, not a shorter call's.
@@ -3292,12 +3294,22 @@ fn tp_gate(
                 }
                 let tag = format!("layer{l}/rows{rows}");
                 let mut want: Option<(Vec<u8>, Vec<u8>)> = None;
+                let side: Vec<usize> = v::SIDE_LIMITS
+                    .iter()
+                    .map(|x| x.load(std::sync::atomic::Ordering::Relaxed))
+                    .collect();
                 for wide in [false, true] {
                     // every family through its groups up to 32 rows, whatever the defaults are
                     if wide {
                         v::set_wide_rows(32, 32, 32, 32, 32);
                     } else {
                         v::set_wide_rows(0, 0, 0, 0, 0);
+                    }
+                    for (x, &was) in v::SIDE_LIMITS.iter().zip(&side) {
+                        x.store(
+                            if wide { was } else { 0 },
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
                     }
                     let mut sh1 = Shared::default();
                     load_shared(&f, &pfx, l, &g, s, &mut sh1, &cx.ops)?;

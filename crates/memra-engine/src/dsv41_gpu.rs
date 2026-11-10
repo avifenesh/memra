@@ -874,6 +874,9 @@ impl Drop for Buf {
 /// The largest buffer a [`TmpPool`] keeps. A decode step's temporaries are a few rows of the
 /// model width (the widest is 4 x 5120 fp32 rows of 4 streams, 320 KiB); a prefill's are
 /// megabytes to gigabytes and go back to the device pool as before.
+/// Measured wider (8 MiB a buffer, 256 MiB in all, which holds a 32-row call's 1.3 and 2.6 MB
+/// rows): level on one card and on two at 8 to 64 rows, so the stream-ordered device pool is
+/// not what a wide call waits for and the cap stays.
 const TMP_POOL_MAX_BUF: usize = 1 << 20;
 /// The most a [`TmpPool`] holds. A decode layer has about 45 temporaries alive or free at once,
 /// under 4 MiB; 64 MiB leaves room for several widths and sequences and bounds what one stream
@@ -2945,9 +2948,22 @@ impl Side {
 /// The most pairs the plan builds in one kernel (`V41_PLAN_SMALL` in cu/dsv41_gpu.cu).
 const PLAN_SMALL_PAIRS: usize = 256;
 
-/// The most rows of a forward whose shared expert runs on the side stream: the small-M kernels'
-/// rows. With more rows every GEMM fills the card and there is nothing to run under.
-const SIDE_ROWS: usize = SMALL_M;
+/// The most rows of a call whose branches run on the second stream, by branch: the keys side
+/// under wq_b, the shared expert under the router's chain, the mHC mixes under their sublayer.
+/// Measured with one limit raised at a time (a call of N rows): the shared expert pays at
+/// every width up to the 64 rows measured (two ranks 3.9% at 16 rows, 4.3% at 32, 6.6% at 64;
+/// one rank 2.4% and 5.8% at 16 and 32); the mixes about 2% at 16 and 32 rows on two ranks and
+/// nothing at 64; the keys side is level at every width on one rank (wq_b is a wide launch)
+/// and unmeasured on two, where only the batched step takes it. Public so a bench can move
+/// them.
+pub static SIDE_LIMITS: [std::sync::atomic::AtomicUsize; 3] = [
+    std::sync::atomic::AtomicUsize::new(SMALL_M),
+    std::sync::atomic::AtomicUsize::new(64),
+    std::sync::atomic::AtomicUsize::new(32),
+];
+fn side_limit(which: usize) -> usize {
+    SIDE_LIMITS[which].load(std::sync::atomic::Ordering::Relaxed)
+}
 
 impl Ctx {
     pub fn new(st: Arc<CudaStream>, g: Geo, max_pos: usize) -> Result<Self, String> {
@@ -3646,7 +3662,7 @@ impl Ctx {
         // RoPE (the layer's longest dense launch), and the heads join it before their first
         // read of the keys ([`Self::attn_heads`]). Not when the ranks split the indexer's rows
         // (their selections are gathered on the main stream right after) or under a trace.
-        let fork = s <= SIDE_ROWS && !self.trace && self.index_rows.is_none();
+        let fork = s <= side_limit(0) && !self.trace && self.index_rows.is_none();
         if fork {
             self.side_begin()?;
         }
@@ -4608,7 +4624,7 @@ impl Ctx {
         )?;
         // the rest of the keys side on the second stream, under the heads' wq_b
         // (see [`Self::attn_keys`])
-        let fork = n <= SIDE_ROWS;
+        let fork = n <= side_limit(0);
         if fork {
             self.side_begin()?;
         }
@@ -5257,7 +5273,7 @@ impl Ctx {
         let d = g.dim;
         // one-token forward: the shared expert (it reads only `x`) on the side stream, under the
         // router's chain and the plan; the join is before the combine, the first reader of it
-        let side_shared = if s <= SIDE_ROWS {
+        let side_shared = if s <= side_limit(1) {
             if self.side.is_none() {
                 self.side = Some(Side::new(&st)?);
             }
@@ -5652,7 +5668,7 @@ impl Ctx {
         x: &Buf,
         s: usize,
     ) -> Result<(Buf, Buf, Buf, Buf), String> {
-        if s > SIDE_ROWS {
+        if s > side_limit(2) {
             return self.hc_mix(fn_, sc, base, x, s);
         }
         let st = self.ops.st.clone();
