@@ -1,0 +1,27 @@
+{
+ "jsonl": {
+  "question": "Find the \"tick\" record whose \"seq\" is 20. Report three values from that record exactly as printed: meminfo \"MemAvailable_kB\", meminfo \"MemFree_kB\", and the cpu \"idle\" counter. Answer in two or three sentences.",
+  "known": {
+   "MemAvailable_kB": "105263308",
+   "MemFree_kB": "18168220",
+   "idle": "1247423019"
+  }
+ },
+ "csv": {
+  "question": "Find the row for Afghanistan in the year 1960. Report its population, gdp, co2 and co2_per_capita values exactly as printed. Answer in two or three sentences.",
+  "known": {
+   "population": "9035048",
+   "gdp": "13033254000",
+   "co2": "0.396",
+   "co2_per_capita": "0.044"
+  }
+ },
+ "prose": {
+  "question": "Answer from the text above, in three sentences: who is the landlord of the Spouter-Inn, what is the name of the harpooneer Ishmael shares a bed with there, and what is the name of the preacher at the Whaleman's Chapel?",
+  "known": {
+   "landlord": "Peter Coffin",
+   "harpooneer": "Queequeg",
+   "preacher": "Father Mapple"
+  }
+ }
+}
