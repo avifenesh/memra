@@ -56,8 +56,10 @@ use crate::Engine;
 use crate::tp_transport::{self, TpTransport};
 use cudarc::driver::CudaEvent;
 use memra_gguf::safetensors::StModel;
-use rayon::prelude::*;
-use std::time::Instant;
+use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// A byte region of a rank buffer: `rows` rows of `width` bytes, `pitch` apart, from `off`. A
 /// gather copies a producer's region into the same region of every other rank's buffer.
@@ -142,7 +144,205 @@ pub struct Group {
     pub trace: bool,
     /// one host thread per rank issues that rank's work between collectives (None: this thread
     /// issues the ranks in turn, `MEMRA_DSV41_TP_ISSUE=serial`)
-    pool: Option<rayon::ThreadPool>,
+    pool: Option<Crew>,
+}
+
+/// The largest `[pairs][dim]` bf16 block the N-rank MoE gathers whole from every rank instead of
+/// reading the plan's offsets on the host for each rank's exact rows ([`Group::moe`]): 4 tokens'
+/// pairs. Below it a peer copy takes its fixed latency (at the 49 GB/s measured between two
+/// cards, 256 KiB is 5 us); a prefill chunk's rows are megabytes and keep the exact gather.
+const STAGED_MOE_ROWS_BYTES: usize = 256 << 10;
+
+/// How long an issue thread spins for its next section before it parks. A one-token forward is
+/// some twenty sections a layer, microseconds apart (measured: all but one gap a layer under
+/// 10 us, the one being the routing read a one-token MoE no longer makes), so 200 us keeps the
+/// threads hot through a step; a parked thread costs a wake of 10 to 100 us, paid once a step
+/// while the logits are read. A longer spin only burns the cores other work wants.
+const CREW_SPIN: Duration = Duration::from_micros(200);
+
+type Section<'a> = dyn Fn(usize) + Sync + 'a;
+
+struct CrewShared {
+    /// bumped once a section, after `job` and `left` are set
+    section: AtomicU64,
+    /// the section's body; valid from the bump until `left` is zero
+    job: UnsafeCell<*const Section<'static>>,
+    /// workers that have not finished the section
+    left: AtomicUsize,
+    parked: Vec<AtomicBool>,
+    caller: Mutex<Option<std::thread::Thread>>,
+    caller_parked: AtomicBool,
+    panicked: AtomicBool,
+    stop: AtomicBool,
+}
+
+// SAFETY: `job` is written by the one caller of `Crew::run` before the `section` bump and read by
+// the workers after they see the bump; `run` takes `&mut Crew`, so there is one caller at a time
+unsafe impl Sync for CrewShared {}
+unsafe impl Send for CrewShared {}
+
+/// The issue threads of ranks 1..N; the thread that calls [`Crew::run`] issues rank 0. A section
+/// is handed over through an atomic the threads spin on ([`CREW_SPIN`]), so consecutive sections
+/// of a decode step cost no thread wake.
+struct Crew {
+    sh: Arc<CrewShared>,
+    threads: Vec<std::thread::JoinHandle<()>>,
+}
+
+impl Crew {
+    fn new(n: usize) -> Result<Self, String> {
+        let sh = Arc::new(CrewShared {
+            section: AtomicU64::new(0),
+            job: UnsafeCell::new(std::ptr::null::<fn(usize)>() as *const Section<'static>),
+            left: AtomicUsize::new(0),
+            parked: (1..n).map(|_| AtomicBool::new(false)).collect(),
+            caller: Mutex::new(None),
+            caller_parked: AtomicBool::new(false),
+            panicked: AtomicBool::new(false),
+            stop: AtomicBool::new(false),
+        });
+        let mut threads = Vec::with_capacity(n - 1);
+        for w in 0..n - 1 {
+            let sh = sh.clone();
+            threads.push(
+                std::thread::Builder::new()
+                    .name(format!("dsv41-rank{}", w + 1))
+                    .spawn(move || Self::work(&sh, w))
+                    .map_err(|e| format!("dsv41 tp issue threads: {e}"))?,
+            );
+        }
+        Ok(Self { sh, threads })
+    }
+
+    fn work(sh: &CrewShared, w: usize) {
+        let mut seen = 0u64;
+        loop {
+            let t = Instant::now();
+            let mut spins = 0u32;
+            loop {
+                let s = sh.section.load(Ordering::SeqCst);
+                if s != seen {
+                    seen = s;
+                    break;
+                }
+                if sh.stop.load(Ordering::SeqCst) {
+                    return;
+                }
+                spins = spins.wrapping_add(1);
+                if spins & 1023 != 0 || t.elapsed() < CREW_SPIN {
+                    std::hint::spin_loop();
+                    continue;
+                }
+                // park; the caller unparks a thread it sees parked after its bump, and a bump
+                // between the store and the check below is seen by that check
+                sh.parked[w].store(true, Ordering::SeqCst);
+                if sh.section.load(Ordering::SeqCst) == seen && !sh.stop.load(Ordering::SeqCst) {
+                    std::thread::park();
+                }
+                sh.parked[w].store(false, Ordering::SeqCst);
+            }
+            // SAFETY: the caller set `job` before the bump this thread just saw and keeps the
+            // closure alive until `left` is zero, which this thread's decrement below precedes
+            let f: &Section<'_> = unsafe { &**sh.job.get() };
+            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(w + 1))).is_err() {
+                sh.panicked.store(true, Ordering::SeqCst);
+            }
+            if sh.left.fetch_sub(1, Ordering::SeqCst) == 1
+                && sh.caller_parked.load(Ordering::SeqCst)
+            {
+                if let Some(c) = sh.caller.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+                    c.unpark();
+                }
+            }
+        }
+    }
+
+    /// `f(r)` for every rank: rank 0 on this thread, rank r on worker r - 1. Returns when all
+    /// have finished.
+    fn run(&mut self, f: &Section<'_>) -> Result<(), String> {
+        struct Wait<'a>(&'a CrewShared);
+        impl Drop for Wait<'_> {
+            // also on a panic in rank 0's body: no worker may outlive the closure it borrows
+            fn drop(&mut self) {
+                let sh = self.0;
+                let t = Instant::now();
+                let mut spins = 0u32;
+                while sh.left.load(Ordering::SeqCst) != 0 {
+                    spins = spins.wrapping_add(1);
+                    if spins & 1023 != 0 || t.elapsed() < CREW_SPIN {
+                        std::hint::spin_loop();
+                        continue;
+                    }
+                    sh.caller_parked.store(true, Ordering::SeqCst);
+                    if sh.left.load(Ordering::SeqCst) != 0 {
+                        std::thread::park();
+                    }
+                    sh.caller_parked.store(false, Ordering::SeqCst);
+                }
+            }
+        }
+        let sh = &*self.sh;
+        *sh.caller.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::thread::current());
+        // SAFETY: the lifetime is erased for the workers; `Wait` keeps this frame, and so `f`,
+        // alive until every worker has finished the section
+        unsafe {
+            *sh.job.get() =
+                std::mem::transmute::<*const Section<'_>, *const Section<'static>>(f as *const _);
+        }
+        sh.left.store(self.threads.len(), Ordering::SeqCst);
+        sh.section.fetch_add(1, Ordering::SeqCst);
+        for (w, t) in self.threads.iter().enumerate() {
+            if sh.parked[w].load(Ordering::SeqCst) {
+                t.thread().unpark();
+            }
+        }
+        {
+            let _wait = Wait(sh);
+            f(0);
+        }
+        if sh.panicked.swap(false, Ordering::SeqCst) {
+            return Err("dsv41 tp: a rank's issue thread panicked".into());
+        }
+        Ok(())
+    }
+}
+
+impl Drop for Crew {
+    fn drop(&mut self) {
+        self.sh.stop.store(true, Ordering::SeqCst);
+        for t in self.threads.drain(..) {
+            t.thread().unpark();
+            let _ = t.join();
+        }
+    }
+}
+
+/// A pointer the ranks index disjointly inside one section.
+struct RankPtr<T>(*mut T);
+// SAFETY: every rank's thread touches only its own element
+unsafe impl<T: Send> Sync for RankPtr<T> {}
+impl<T> RankPtr<T> {
+    /// # Safety
+    /// `r` is inside the slice the pointer came from and no other thread holds element `r`.
+    #[allow(clippy::mut_from_ref)]
+    unsafe fn rank(&self, r: usize) -> &mut T {
+        unsafe { &mut *self.0.add(r) }
+    }
+}
+
+/// The results of a section, one slot a rank.
+fn rank_slots<T>(n: usize) -> Vec<Mutex<Option<Result<T, String>>>> {
+    (0..n).map(|_| Mutex::new(None)).collect()
+}
+
+fn rank_results<T>(out: Vec<Mutex<Option<Result<T, String>>>>) -> Result<Vec<T>, String> {
+    out.into_iter()
+        .map(|m| {
+            m.into_inner()
+                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(|| Err("dsv41 tp: a rank's section did not run".into()))
+        })
+        .collect()
 }
 
 /// How the host issues the ranks' work: one thread per rank (the default at N > 1) or this thread
@@ -151,18 +351,23 @@ pub struct Group {
 pub const ISSUE_ENV: &str = "MEMRA_DSV41_TP_ISSUE";
 
 /// [`Group::each`] over a pool and the rank contexts, for callers that also borrow other fields.
-fn each_in<T, F>(pool: Option<&rayon::ThreadPool>, cx: &mut [Ctx], f: F) -> Result<Vec<T>, String>
+fn each_in<T, F>(pool: Option<&mut Crew>, cx: &mut [Ctx], f: F) -> Result<Vec<T>, String>
 where
     T: Send,
     F: Fn(usize, &mut Ctx) -> Result<T, String> + Sync + Send,
 {
     match pool {
-        Some(p) => p.install(|| {
-            cx.par_iter_mut()
-                .enumerate()
-                .map(|(r, c)| f(r, c))
-                .collect()
-        }),
+        Some(p) => {
+            let n = cx.len();
+            assert_eq!(n, p.threads.len() + 1, "dsv41 tp: one issue thread a rank");
+            let (base, out) = (RankPtr(cx.as_mut_ptr()), rank_slots(n));
+            p.run(&|r| {
+                // SAFETY: r < n and each rank runs once, on its own thread
+                let c = unsafe { base.rank(r) };
+                *out[r].lock().unwrap_or_else(|e| e.into_inner()) = Some(f(r, c));
+            })?;
+            rank_results(out)
+        }
         None => cx.iter_mut().enumerate().map(|(r, c)| f(r, c)).collect(),
     }
 }
@@ -325,13 +530,7 @@ impl Group {
             cx.push(Ctx::new(st, g.clone(), max_pos)?);
         }
         let pool = if n > 1 && parallel {
-            Some(
-                rayon::ThreadPoolBuilder::new()
-                    .num_threads(n)
-                    .thread_name(|i| format!("dsv41-rank{i}"))
-                    .build()
-                    .map_err(|e| format!("dsv41 tp issue threads: {e}"))?,
-            )
+            Some(Crew::new(n)?)
         } else {
             None
         };
@@ -387,7 +586,7 @@ impl Group {
         F: Fn(usize, &mut Ctx) -> Result<T, String> + Sync + Send,
     {
         let Self { pool, cx, .. } = self;
-        each_in(pool.as_ref(), cx, f)
+        each_in(pool.as_mut(), cx, f)
     }
 
     /// [`Self::each`] with one per-rank mutable item `us[r]` handed to rank r.
@@ -406,13 +605,21 @@ impl Group {
         }
         let Self { pool, cx, .. } = self;
         match pool {
-            Some(p) => p.install(|| {
-                cx.par_iter_mut()
-                    .zip(us.par_iter_mut())
-                    .enumerate()
-                    .map(|(r, (c, u))| f(r, c, u))
-                    .collect()
-            }),
+            Some(p) => {
+                let n = cx.len();
+                assert_eq!(n, p.threads.len() + 1, "dsv41 tp: one issue thread a rank");
+                let (base, ubase, out) = (
+                    RankPtr(cx.as_mut_ptr()),
+                    RankPtr(us.as_mut_ptr()),
+                    rank_slots(n),
+                );
+                p.run(&|r| {
+                    // SAFETY: r < n == us.len() and each rank runs once, on its own thread
+                    let (c, u) = unsafe { (base.rank(r), ubase.rank(r)) };
+                    *out[r].lock().unwrap_or_else(|e| e.into_inner()) = Some(f(r, c, u));
+                })?;
+                rank_results(out)
+            }
             None => cx
                 .iter_mut()
                 .zip(us.iter_mut())
@@ -511,9 +718,11 @@ impl Group {
                     rel_ev,
                     ..
                 } = self;
-                let (pool, pub_ev, rel_ev) = (pool.as_ref(), &*pub_ev, &*rel_ev);
-                each_in(pool, cx, |r, c| pub_ev[r].record(&c.ops.st).map_err(de))?;
-                let copies = each_in(pool, cx, |c, x| {
+                let (pub_ev, rel_ev) = (&*pub_ev, &*rel_ev);
+                each_in(pool.as_mut(), cx, |r, c| {
+                    pub_ev[r].record(&c.ops.st).map_err(de)
+                })?;
+                let copies = each_in(pool.as_mut(), cx, |c, x| {
                     let mut k = 0u64;
                     for p in 0..n {
                         if p == c || blks[p].bytes() == 0 {
@@ -526,7 +735,7 @@ impl Group {
                     rel_ev[c].record(&x.ops.st).map_err(de)?;
                     Ok(k)
                 })?;
-                each_in(pool, cx, |p, x| {
+                each_in(pool.as_mut(), cx, |p, x| {
                     for c in 0..n {
                         if c != p {
                             x.ops.st.wait(&rel_ev[c]).map_err(de)?;
@@ -949,6 +1158,70 @@ impl Group {
                 c.moe_plan(&sel, &selw, rows, Part { rank: r, n }.range(ne))
             })?
         };
+        let np = rows * topk;
+        if np * d * 2 <= STAGED_MOE_ROWS_BYTES && lw.iter().all(|w| !w.experts.is_empty()) {
+            // A one-token forward: no host read of the plan. The read drained rank 0's stream
+            // in the middle of every layer, and nothing of the second half of the layer could
+            // be queued behind the first. Every rank runs its tile lists over all the pairs
+            // into its own region of a staged buffer, the regions are gathered whole (61 KiB
+            // a rank at one token, where a copy costs its latency, not its bytes), and the
+            // combine reads each pair's row from the region of the rank that owns its expert.
+            let reg = np * d * 2;
+            let parts = self.each(|r, c| {
+                let st = c.ops.st.clone();
+                let x = x2[r].at(&st, r0 * d * 2);
+                let all = c.ops.tmp(n * reg)?;
+                c.experts_tiles(&lw[r], x, &plans[r], 0, np, all.at(&st, r * reg), None)?;
+                let so = c.shared_expert(&lw[r], x, rows)?;
+                Ok((all, so))
+            })?;
+            let (all, shared_out): (Vec<Buf>, Vec<Buf>) = parts.into_iter().unzip();
+            let refs: Vec<&Buf> = all.iter().collect();
+            let blks: Vec<Blk> = (0..n).map(|r| Blk::flat(r * reg, reg)).collect();
+            self.allgather(&refs, &blks)?;
+            self.each(|r, c| {
+                let st = c.ops.st.clone();
+                let ord = c.ops.tmp(np * 4)?;
+                ck("moe_owner", unsafe {
+                    ffi::memra_v41_moe_owner(
+                        plans[r].order.p(&st).i(),
+                        np as i32,
+                        plans[r].off.p(&st).i(),
+                        (ne / n) as i32,
+                        n as i32,
+                        np as i32,
+                        ord.p(&st).im(),
+                        c.route_bad.p(&st).im(),
+                        c.ops.sv(),
+                    )
+                })?;
+                ck("moe_combine", unsafe {
+                    ffi::memra_v41_moe_combine(
+                        all[r].p(&st).c(),
+                        d as i64,
+                        ord.p(&st).i(),
+                        topk as i32,
+                        shared_out[r].p(&st).c(),
+                        d as i64,
+                        m[r].at(&st, r0 * d * 2).m(),
+                        d as i64,
+                        rows as i32,
+                        d as i32,
+                        c.ops.sv(),
+                    )
+                })
+            })?;
+            if trace {
+                for r in 0..n {
+                    let st = self.cx[r].ops.st.clone();
+                    let err = bytes_i32(&plans[r].err.host(&st)?)[0];
+                    if err != 0 {
+                        return Err(format!("rank {r} route: {err} expert ids out of range"));
+                    }
+                }
+            }
+            return Ok(());
+        }
         let off: Vec<usize> = bytes_i32(&host_timed(&plans[0].off, &self.cx[0].ops.st)?)
             .into_iter()
             .map(|x| x as usize)
@@ -960,7 +1233,6 @@ impl Group {
                 rows * topk
             ));
         }
-        let np = rows * topk;
         let parts = self.each(|r, c| {
             let er = Part { rank: r, n }.range(ne);
             let (p0, p1) = (off[er.start], off[er.end]);
@@ -978,10 +1250,10 @@ impl Group {
                 let bases = cache.resolve(&c.ops, lw[r].id, &need)?;
                 let tab = c.cached_expert_table(er.clone(), &need, &bases)?;
                 let so = c.shared_expert(&lw[r], x, rows)?;
-                c.experts_tiles(&lw[r], x, &plans[r], p0, p1, &sl, Some(&tab))?;
+                c.experts_tiles(&lw[r], x, &plans[r], p0, p1, sl.p(&st), Some(&tab))?;
                 so
             } else {
-                c.experts_tiles(&lw[r], x, &plans[r], p0, p1, &sl, None)?;
+                c.experts_tiles(&lw[r], x, &plans[r], p0, p1, sl.p(&st), None)?;
                 c.shared_expert(&lw[r], x, rows)?
             };
             Ok((sl, so, Blk::flat(p0 * d * 2, (p1 - p0) * d * 2)))
@@ -1061,7 +1333,14 @@ impl Group {
             let lg = c.ops.buf(rows * hw[r].n * 4)?;
             c.ops
                 .linear_bf16(x.p(&st), d, rows, &hw[r], lg.p(&st), hw[r].n, true)?;
-            Ok(bytes_f32(&host_timed(&lg, &st)?))
+            let lg = bytes_f32(&host_timed(&lg, &st)?);
+            // the stream is drained: the one-token MoEs' pair counts of this forward
+            if bytes_i32(&c.route_bad.host(&st)?)[0] != 0 {
+                return Err(format!(
+                    "rank {r} route: a layer placed other than rows x topk pairs"
+                ));
+            }
+            Ok(lg)
         })?;
         let mut out = vec![0f32; rows * g.vocab];
         let mut col = 0;
@@ -1456,46 +1735,50 @@ impl MoePlan {
 }
 
 impl Ctx {
-    /// The shared expert on `rows` rows of `x`: bf16 `[rows][dim]`.
+    /// The shared FP8 expert of `rows` rows of `x`: bf16 `[rows][dim]`.
     pub fn shared_expert(&mut self, lw: &LayerW, x: Dp, rows: usize) -> Result<Buf, String> {
         let g = self.g.clone();
-        let st = self.ops.st.clone();
-        let (d, inter) = (g.dim, g.moe_inter);
-        let [s1, s2, s3] = &lw.shared;
-        let gb = self.ops.tmp(rows * inter * 2)?;
-        let ub = self.ops.tmp(rows * inter * 2)?;
-        let hb = self.ops.tmp(rows * inter * 2)?;
-        let out = self.ops.tmp(rows * d * 2)?;
-        self.ops
-            .linear_q(x, d, rows, s1, gb.p(&st), inter, false, &mut self.scr)?;
-        self.ops
-            .linear_q(x, d, rows, s3, ub.p(&st), inter, false, &mut self.scr)?;
-        ck("swiglu", unsafe {
-            ffi::memra_v41_swiglu(
-                gb.p(&st).m(),
-                ub.p(&st).m(),
-                inter as i64,
-                std::ptr::null(),
-                g.swiglu_limit,
-                hb.p(&st).m(),
-                inter as i64,
-                rows as i32,
-                inter as i32,
-                self.ops.sv(),
-            )
-        })?;
-        self.ops.linear_q(
-            hb.p(&st),
-            inter,
-            rows,
-            s2,
-            out.p(&st),
-            d,
-            false,
-            &mut self.scr,
-        )?;
-        Ok(out)
+        shared_expert_on(&self.ops, &mut self.scr, &g, lw, x, rows)
     }
+}
+
+/// [`Ctx::shared_expert`] on `ops`'s stream with `scr` as its activation scratch. `w1` and `w3`
+/// read the same rows, so the rows are quantized once for both.
+pub fn shared_expert_on(
+    ops: &super::Ops,
+    scr: &mut super::Scratch,
+    g: &Geo,
+    lw: &LayerW,
+    x: Dp,
+    rows: usize,
+) -> Result<Buf, String> {
+    let st = ops.st.clone();
+    let (d, inter) = (g.dim, g.moe_inter);
+    let [s1, s2, s3] = &lw.shared;
+    let gb = ops.tmp(rows * inter * 2)?;
+    let ub = ops.tmp(rows * inter * 2)?;
+    let hb = ops.tmp(rows * inter * 2)?;
+    let out = ops.tmp(rows * d * 2)?;
+    let (q, qs) = scr.actq(ops, rows, d)?;
+    ops.act_quant(x, d, Dp::NULL, rows, d, q, qs)?;
+    ops.gemm_q(q, qs, rows, s1, gb.p(&st), inter, false)?;
+    ops.gemm_q(q, qs, rows, s3, ub.p(&st), inter, false)?;
+    ck("swiglu", unsafe {
+        ffi::memra_v41_swiglu(
+            gb.p(&st).m(),
+            ub.p(&st).m(),
+            inter as i64,
+            std::ptr::null(),
+            g.swiglu_limit,
+            hb.p(&st).m(),
+            inter as i64,
+            rows as i32,
+            inter as i32,
+            ops.sv(),
+        )
+    })?;
+    ops.linear_q(hb.p(&st), inter, rows, s2, out.p(&st), d, false, scr)?;
+    Ok(out)
 }
 
 #[cfg(test)]

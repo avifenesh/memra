@@ -2413,11 +2413,15 @@ __device__ int v41_select(const V41Keys& K, int k, int* hist, int* wsum, uint32_
     return total;
 }
 
+// the select's static shared memory: the histogram, the warp sums and its four counters
+#define V41_SEL_STATIC (256 * 4 + 8 * 4 + 4 * 4)
 // the emit tables of a row of n keys: 12 bytes per warp of every 256 keys; 0 (the scan form) when
-// they would not fit a block with room to spare
+// two blocks with their tables and static shared memory would not share an SM's 102.4 KB: rows up
+// to 133,632 keys take the tables (48 KB for the 131,072 keys of a ratio-1 index layer at that
+// many tokens), longer rows the scan form (one block an SM is not measured)
 static int v41_sel_tab_bytes(int n) {
     long b = (long)((n + 255) / 256) * 8 * 12;
-    return b > 0 && b <= 40 * 1024 ? (int)b : 0;
+    return b > 0 && b <= 51200 - V41_SEL_STATIC ? (int)b : 0;
 }
 
 __global__ void __launch_bounds__(256) v41_topk_kernel(const v41_bf* __restrict__ score, long lds, int T, int k,
@@ -2443,6 +2447,13 @@ extern "C" int memra_v41_topk(const void* score, long lds, int T, int k, int out
     // fastest that way (0.040 against 0.062 ms on a 32,768-key row); many rows at once want the
     // strided table form (10.1 against 4.3 ms for 8,192 such rows).
     int tb = rows <= 4 ? 0 : v41_sel_tab_bytes(T);
+    // A block past 48 KB of shared memory (tables and static) needs the limit raised and the whole
+    // of the SM's shared memory, or the second block does not fit. Both are per device and cheap,
+    // and the carveout is set on every call so a row's schedule never depends on the launch before.
+    bool big = tb + V41_SEL_STATIC > 48 * 1024;
+    if (big) cudaFuncSetAttribute(v41_topk_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, tb);
+    cudaFuncSetAttribute(v41_topk_kernel, cudaFuncAttributePreferredSharedMemoryCarveout,
+                         big ? (int)cudaSharedmemCarveoutMaxShared : (int)cudaSharedmemCarveoutDefault);
     v41_topk_kernel<<<rows, 256, tb, (cudaStream_t)stream>>>((const v41_bf*)score, lds, T, k, out_w, offset, out, ldo,
                                                              tb > 0);
     V41_ERR();
@@ -2809,6 +2820,30 @@ extern "C" int memra_v41_moe_combine(const void* slots, long lds, const int* ord
     dim3 grid(rows, (d + 1023) / 1024);
     v41_moe_combine_kernel<<<grid, 256, 0, (cudaStream_t)stream>>>((const v41_bf*)slots, lds, order, topk,
                                                                    (const v41_bf*)shared, ldsh, (v41_bf*)out, ldo, d);
+    V41_ERR();
+}
+
+// N-rank routed-expert rows without a host read of the plan. Every rank writes its experts' rows into region
+// `rank` of a buffer of nr regions of np rows, the regions are gathered whole, and each pair's row is then read
+// from the region of the rank that owns its expert. Pairs are ordered by expert and rank q owns the experts
+// [q * per, (q + 1) * per), so q is the number of boundaries off[r * per], r = 1..nr-1, at or below the pair.
+// out[i] = order[i] + q * np (-1 stays -1). *bad is set when the plan placed other than np pairs, the check
+// the host made on the offsets it read.
+__global__ void v41_moe_owner_kernel(const int* __restrict__ order, int n, const int* __restrict__ off, int per,
+                                     int nr, int np, int* __restrict__ out, int* __restrict__ bad) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i == 0 && off[(long)per * nr] != np) *bad = 1;
+    if (i >= n) return;
+    int p = order[i], q = 0;
+    for (int r = 1; r < nr; ++r) q += p >= off[(long)r * per];
+    out[i] = p < 0 ? p : p + q * np;
+}
+
+extern "C" int memra_v41_moe_owner(const int* order, int n, const int* off, int per, int nr, int np, int* out,
+                                   int* bad, void* stream) {
+    if (n <= 0) return n < 0 ? 41017 : 0;
+    if (per <= 0 || nr <= 0 || np <= 0) return 41017;
+    v41_moe_owner_kernel<<<(n + 255) / 256, 256, 0, (cudaStream_t)stream>>>(order, n, off, per, nr, np, out, bad);
     V41_ERR();
 }
 

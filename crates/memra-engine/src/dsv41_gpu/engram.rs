@@ -310,10 +310,10 @@ impl Stage {
             }
         }
         ops.st
-            .memcpy_htod(&self.rows, &mut self.d_rows.s)
+            .memcpy_htod(&self.rows, &mut *self.d_rows.s)
             .map_err(|e| format!("engram h2d: {e:?}"))?;
         ops.st
-            .memcpy_htod(&self.sc, &mut self.d_sc.s)
+            .memcpy_htod(&self.sc, &mut *self.d_sc.s)
             .map_err(|e| format!("engram h2d: {e:?}"))?;
         Ok(())
     }

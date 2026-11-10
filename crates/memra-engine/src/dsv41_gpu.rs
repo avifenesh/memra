@@ -17,10 +17,12 @@
 //! one token per call with every sequence's state carried the vendor's way ([`decode`]). Serving
 //! is not here yet.
 
-use cudarc::driver::{CudaSlice, CudaStream, DevicePtr};
+use cudarc::driver::{CudaEvent, CudaSlice, CudaStream, DevicePtr};
 use memra_gguf::safetensors::StModel;
+use std::collections::HashMap;
+use std::mem::ManuallyDrop;
 use std::os::raw::c_void;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub mod decode;
 pub mod draft;
@@ -437,6 +439,17 @@ pub mod ffi {
             d: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_v41_moe_owner(
+            order: *const i32,
+            n: i32,
+            off: *const i32,
+            per: i32,
+            nr: i32,
+            np: i32,
+            out: *mut i32,
+            bad: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_v41_index_score_part(
             q: *const c_void,
             ldq: i64,
@@ -527,16 +540,81 @@ impl Dp {
 /// A device byte buffer. Every V4.1 kernel takes untyped pointers; the element type is the
 /// caller's contract (bf16 as raw u16, fp8 and e8m0 as bytes, f32, i32).
 pub struct Buf {
-    pub s: CudaSlice<u8>,
+    pub(crate) s: ManuallyDrop<CudaSlice<u8>>,
     pub len: usize,
+    /// the stream's free list this buffer returns to when it drops (None: it is freed)
+    home: Option<Arc<TmpPool>>,
+}
+
+impl Drop for Buf {
+    fn drop(&mut self) {
+        // SAFETY: `s` is taken once, here, and never touched again
+        let s = unsafe { ManuallyDrop::take(&mut self.s) };
+        if let Some(h) = &self.home {
+            h.put(s);
+        }
+    }
+}
+
+/// The largest buffer a [`TmpPool`] keeps. A decode step's temporaries are a few rows of the
+/// model width (the widest is 4 x 5120 fp32 rows of 4 streams, 320 KiB); a prefill's are
+/// megabytes to gigabytes and go back to the device pool as before.
+const TMP_POOL_MAX_BUF: usize = 1 << 20;
+/// The most a [`TmpPool`] holds. A decode layer has about 45 temporaries alive or free at once,
+/// under 4 MiB; 64 MiB leaves room for several widths and sequences and bounds what one stream
+/// keeps out of the device pool.
+const TMP_POOL_MAX_BYTES: usize = 64 << 20;
+
+/// One stream's freed small buffers, by size, for its next allocation of that size.
+///
+/// A one-token forward allocates and frees about 45 temporaries a layer; through the driver that
+/// is 90 calls a layer on the issuing thread, as many as its kernel launches. A buffer is handed
+/// out again only on the stream that allocated it, and the kernels that write it are issued after
+/// everything that read it before, so the order on the device is the order a stream-ordered free
+/// and allocation give. (A peer stream that reads a buffer holds its producer's stream with an
+/// event until the copy is done, exactly as before a free.)
+#[derive(Default)]
+pub struct TmpPool {
+    free: Mutex<(HashMap<usize, Vec<CudaSlice<u8>>>, usize)>,
+}
+
+impl TmpPool {
+    fn take(&self, n: usize) -> Option<CudaSlice<u8>> {
+        if n > TMP_POOL_MAX_BUF {
+            return None;
+        }
+        let mut f = self.free.lock().unwrap_or_else(|e| e.into_inner());
+        let s = f.0.get_mut(&n)?.pop()?;
+        f.1 -= n;
+        Some(s)
+    }
+    fn put(&self, s: CudaSlice<u8>) {
+        let n = s.len();
+        if n > TMP_POOL_MAX_BUF {
+            return;
+        }
+        let mut f = self.free.lock().unwrap_or_else(|e| e.into_inner());
+        if f.1 + n > TMP_POOL_MAX_BYTES {
+            return;
+        }
+        f.1 += n;
+        f.0.entry(n).or_default().push(s);
+    }
 }
 
 impl Buf {
+    fn own(s: CudaSlice<u8>, len: usize, home: Option<Arc<TmpPool>>) -> Self {
+        Self {
+            s: ManuallyDrop::new(s),
+            len,
+            home,
+        }
+    }
     pub fn zeros(st: &Arc<CudaStream>, len: usize) -> Result<Self, String> {
         let s = st
             .alloc_zeros::<u8>(len.max(1))
             .map_err(|e| format!("alloc {len}: {e:?}"))?;
-        Ok(Self { s, len })
+        Ok(Self::own(s, len, None))
     }
     /// Device memory without the zero fill, for a buffer its kernels write in full before
     /// anything reads it (stream-ordered like every allocation here).
@@ -544,7 +622,33 @@ impl Buf {
         // SAFETY: the bytes are device memory the caller writes before reading; the host never
         // reads them uninitialized (every host copy follows the kernel that wrote them)
         let s = unsafe { st.alloc::<u8>(len.max(1)) }.map_err(|e| format!("alloc {len}: {e:?}"))?;
-        Ok(Self { s, len })
+        Ok(Self::own(s, len, None))
+    }
+    /// [`Self::zeros`] or [`Self::uninit`] through `pool`: a freed buffer of this size when the
+    /// pool has one (zero-filled on the stream when `zero`), and back to the pool on drop.
+    fn pooled(
+        st: &Arc<CudaStream>,
+        pool: &Arc<TmpPool>,
+        len: usize,
+        zero: bool,
+    ) -> Result<Self, String> {
+        let n = len.max(1);
+        let s = match pool.take(n) {
+            Some(mut s) => {
+                if zero {
+                    st.memset_zeros(&mut s)
+                        .map_err(|e| format!("memset {len}: {e:?}"))?;
+                }
+                s
+            }
+            None if zero => st
+                .alloc_zeros::<u8>(n)
+                .map_err(|e| format!("alloc {len}: {e:?}"))?,
+            // SAFETY: as in `uninit`
+            None => unsafe { st.alloc::<u8>(n) }.map_err(|e| format!("alloc {len}: {e:?}"))?,
+        };
+        let home = (n <= TMP_POOL_MAX_BUF).then(|| pool.clone());
+        Ok(Self::own(s, len, home))
     }
     pub fn from_bytes(st: &Arc<CudaStream>, b: &[u8]) -> Result<Self, String> {
         if b.is_empty() {
@@ -553,7 +657,7 @@ impl Buf {
         let s = st
             .clone_htod(b)
             .map_err(|e| format!("htod {}: {e:?}", b.len()))?;
-        Ok(Self { s, len: b.len() })
+        Ok(Self::own(s, b.len(), None))
     }
     pub fn from_f32(st: &Arc<CudaStream>, v: &[f32]) -> Result<Self, String> {
         Self::from_bytes(st, &f32_bytes(v))
@@ -562,7 +666,7 @@ impl Buf {
         Self::from_bytes(st, &i32_bytes(v))
     }
     pub fn p(&self, st: &Arc<CudaStream>) -> Dp {
-        let (p, _g) = self.s.device_ptr(st);
+        let (p, _g) = (*self.s).device_ptr(st);
         Dp(p)
     }
     /// Device address `off` bytes in.
@@ -571,7 +675,9 @@ impl Buf {
         Dp(self.p(st).0 + off as u64)
     }
     pub fn host(&self, st: &Arc<CudaStream>) -> Result<Vec<u8>, String> {
-        let mut v = st.clone_dtoh(&self.s).map_err(|e| format!("dtoh: {e:?}"))?;
+        let mut v = st
+            .clone_dtoh(&*self.s)
+            .map_err(|e| format!("dtoh: {e:?}"))?;
         v.truncate(self.len);
         Ok(v)
     }
@@ -634,6 +740,8 @@ pub fn e8m0_to_f32(b: u8) -> f32 {
 /// The kernels behind one stream, plus the RoPE tables the attention layers read.
 pub struct Ops {
     pub st: Arc<CudaStream>,
+    /// this stream's freed small temporaries ([`TmpPool`])
+    pool: Arc<TmpPool>,
 }
 
 macro_rules! launch {
@@ -644,7 +752,10 @@ macro_rules! launch {
 
 impl Ops {
     pub fn new(st: Arc<CudaStream>) -> Self {
-        Self { st }
+        Self {
+            st,
+            pool: Arc::default(),
+        }
     }
     /// The stream handle for a launch, with its context made current first: the launchers use the
     /// runtime API, which launches on the current device, and a rank's kernels must land on its card.
@@ -658,11 +769,11 @@ impl Ops {
         self.st.synchronize().map_err(|e| format!("sync: {e:?}"))
     }
     pub fn buf(&self, len: usize) -> Result<Buf, String> {
-        Buf::zeros(&self.st, len)
+        Buf::pooled(&self.st, &self.pool, len, true)
     }
     /// A layer temporary its kernels write in full before reading (no zero-fill memset).
     pub fn tmp(&self, len: usize) -> Result<Buf, String> {
-        Buf::uninit(&self.st, len)
+        Buf::pooled(&self.st, &self.pool, len, false)
     }
 
     /// act_quant(x, 32, "ue8m0") of `rows` bf16 rows of `k` (gathered through `rowidx` when it
@@ -1992,7 +2103,56 @@ pub struct Ctx {
     pub nvtx: bool,
     /// this rank's routed experts when the layers hold none ([`LayerW::load_part_with`])
     pub experts: Option<experts::ExpertCache>,
+    /// i32, sticky: an N-rank one-token MoE whose plan placed other than `rows * topk` pairs
+    /// (`memra_v41_moe_owner`); read with the step's logits
+    pub route_bad: Buf,
+    /// the card's second stream, made at the first one-token MoE ([`Side`])
+    side: Option<Side>,
 }
+
+/// A second stream on the card for a branch of a one-token layer that depends on nothing the main
+/// stream is about to compute. At one row most of a layer's kernels are a few blocks waiting on a
+/// dependency chain (the router's fp32 chain, the plan) and leave the card empty; a kernel that
+/// fills it (the shared expert's three GEMMs) costs nothing run under them. The branch has its own
+/// free list and scratch, starts behind an event the main stream records where the branch's inputs
+/// are complete, and the main stream waits for the branch's last kernel before it reads the result.
+pub struct Side {
+    pub ops: Ops,
+    pub scr: Scratch,
+    fork: CudaEvent,
+    join: CudaEvent,
+}
+
+impl Side {
+    fn new(main: &Arc<CudaStream>) -> Result<Self, String> {
+        let cx = main.context();
+        let st = cx.new_stream().map_err(|e| format!("side stream: {e:?}"))?;
+        Ok(Self {
+            ops: Ops::new(st),
+            scr: Scratch::default(),
+            fork: cx.new_event(None).map_err(|e| format!("event: {e:?}"))?,
+            join: cx.new_event(None).map_err(|e| format!("event: {e:?}"))?,
+        })
+    }
+    /// The branch starts after everything issued on `main` so far.
+    fn fork(&self, main: &Arc<CudaStream>) -> Result<(), String> {
+        self.fork
+            .record(main)
+            .and_then(|()| self.ops.st.wait(&self.fork))
+            .map_err(|e| format!("side fork: {e:?}"))
+    }
+    /// What `main` runs next starts after everything issued on the branch so far.
+    fn join(&self, main: &Arc<CudaStream>) -> Result<(), String> {
+        self.join
+            .record(&self.ops.st)
+            .and_then(|()| main.wait(&self.join))
+            .map_err(|e| format!("side join: {e:?}"))
+    }
+}
+
+/// The most rows of a forward whose shared expert runs on the side stream: the small-M kernels'
+/// rows. With more rows every GEMM fills the card and there is nothing to run under.
+const SIDE_ROWS: usize = SMALL_M;
 
 impl Ctx {
     pub fn new(st: Arc<CudaStream>, g: Geo, max_pos: usize) -> Result<Self, String> {
@@ -2015,6 +2175,7 @@ impl Ctx {
             g.yarn_beta_fast,
             g.yarn_beta_slow,
         )?;
+        let route_bad = ops.buf(4)?;
         Ok(Self {
             ops,
             g,
@@ -2029,6 +2190,8 @@ impl Ctx {
             index_rows: None,
             nvtx: false,
             experts: None,
+            route_bad,
+            side: None,
         })
     }
 
@@ -3073,6 +3236,23 @@ impl Ctx {
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let d = g.dim;
+        // one-token forward: the shared expert (it reads only `x`) on the side stream, under the
+        // router's chain and the plan; the join is before the combine, the first reader of it
+        let side_shared = if s <= SIDE_ROWS {
+            if self.side.is_none() {
+                self.side = Some(Side::new(&st)?);
+            }
+            self.nv(c"shared_expert");
+            let o = {
+                let side = self.side.as_mut().unwrap();
+                side.fork(&st)
+                    .and_then(|()| tp::shared_expert_on(&side.ops, &mut side.scr, &g, lw, x, s))
+            };
+            self.nv_end();
+            Some(o?)
+        } else {
+            None
+        };
         self.nv(c"router");
         let (sel, selw) = self.moe_route(lw, x, s)?;
         self.nv_end();
@@ -3086,11 +3266,20 @@ impl Ctx {
         self.nv_end();
         self.nv(c"experts");
         let slots = self.ops.tmp(plan.np * d * 2)?;
-        self.experts_tiles(lw, x, &plan, 0, plan.np, &slots, None)?;
+        self.experts_tiles(lw, x, &plan, 0, plan.np, slots.p(&st), None)?;
         self.nv_end();
-        self.nv(c"shared_expert");
-        let shared = self.shared_expert(lw, x, s)?;
-        self.nv_end();
+        let shared = match side_shared {
+            Some(b) => {
+                self.side.as_ref().unwrap().join(&st)?;
+                b
+            }
+            None => {
+                self.nv(c"shared_expert");
+                let b = self.shared_expert(lw, x, s);
+                self.nv_end();
+                b?
+            }
+        };
         self.nv(c"combine");
         ck("moe_combine", unsafe {
             ffi::memra_v41_moe_combine(
@@ -3252,6 +3441,9 @@ impl Ctx {
     /// exactly this rank's experts (all pairs at N = 1): the pairs' rows of `x` quantized, `w1` and
     /// `w3` as one tile-list launch each, the weighted clamped SwiGLU, `w2` into `slots` (bf16
     /// `[np][dim]`, each pair's row at its plan index). Per row, the per-expert loop's arithmetic.
+    /// A caller that does not know its pair range passes all of `[0, np)`: the tile lists still
+    /// name only this rank's pairs, so the other pairs' rows of the temporaries hold whatever the
+    /// buffers held and their `slots` rows are not written.
     #[allow(clippy::too_many_arguments)]
     pub fn experts_tiles(
         &mut self,
@@ -3260,7 +3452,7 @@ impl Ctx {
         plan: &MoePlanDev,
         p0: usize,
         p1: usize,
-        slots: &Buf,
+        slots: Dp,
         cached: Option<&Buf>,
     ) -> Result<(), String> {
         let g = self.g.clone();
@@ -3352,7 +3544,7 @@ impl Ctx {
             aq2.at(&st, p0 * inter),
             as2.at(&st, p0 * inter / 32),
         )?;
-        tiles(&self.ops, &aq2, &as2, inter, 1, slots.p(&st), d)
+        tiles(&self.ops, &aq2, &as2, inter, 1, slots, d)
     }
 
     /// Single-pass mHC mixes of the stream `x` `[s][hc][dim]`: `(mixes, pre, post, comb)`.
