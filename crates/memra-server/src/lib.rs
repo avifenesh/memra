@@ -23594,10 +23594,10 @@ default_reasoning_effort = "always"
         assert_eq!(cfg.top_k, 0, "omitted top_k = disabled");
         assert_eq!(cfg.min_p, 0.0, "omitted min_p = disabled");
         assert_eq!(cfg.penalty_last_n, 0, "omitted penalties = window off");
-        // and it lands in the PURE-TEMP sampled-spec regime — the one that keeps the
-        // in-graph sampled draft chain (spec.rs `pure_temp`). Filters/penalties would still
-        // be spec-eligible but would drop the draft to the eager chain, so the default
-        // request shape must stay in the fast regime.
+        // and it lands in the PURE-TEMP sampled-spec regime (spec.rs `pure_temp`). Filters
+        // and penalties would still be spec-eligible (a filter runs inside the captured
+        // draft graph, a penalty drops the draft to the eager chain); the default request
+        // shape must stay in the pure-temperature regime.
         assert!(
             memra_engine::sampler::Sampler::new(cfg).is_spec_sampling(),
             "the omitted-temperature default must ride sampled spec's pure-temp regime"
@@ -24810,14 +24810,15 @@ temperature = 0.6
     fn vendor_defaults_leave_the_pure_temp_sampled_spec_regime() {
         // COST OF THE CHANGE, pinned so it is never a surprise (lane/vendor-default-sampling,
         // 2026-08-19). Both served models' vendor recommendations carry TRUNCATION FILTERS
-        // (qwen3.8: top_p 0.95 + top_k 20; gemma-4: top_p 0.95 + top_k 64), and the in-graph
-        // sampled draft chain samples from the RAW softmax — it can hold no per-row filter
-        // stats, so spec.rs engages `graph_s` only in the pure-temp regime and otherwise falls
-        // back to the EAGER draft chain (memra-sampling `is_spec_sampling`, spec.rs `pure_temp`).
+        // (qwen3.8: top_p 0.95 + top_k 20; gemma-4: top_p 0.95 + top_k 64), so the default
+        // request shape leaves the pure-temperature regime (memra-sampling `is_spec_sampling`,
+        // spec.rs `pure_temp`). When this test was written that meant the EAGER draft chain.
+        // Since lane/step37-draft-graph-serving-20260830 the MTP route's captured sampled
+        // graph runs the filter in-graph, and only a penalised request drafts eager.
         //
-        // Nothing about exactness changes: filters are applied symmetrically to draft q and
-        // target p under the rejection verify, so these requests stay spec-ELIGIBLE and
-        // distribution-exact. What changes is which draft chain runs — and it changes for the
+        // Nothing about exactness changes: the verify emits the target's own filtered draw,
+        // so these requests stay spec-ELIGIBLE and distribution-exact. What changes is the
+        // draft's work per round — and it changes for the
         // DEFAULT request shape, i.e. the one most customers send. That trade is the owner's
         // call, not this test's; the test exists so the flip is measured, not discovered.
         let resolved = |d: &SamplingDefaults| {
@@ -24849,8 +24850,8 @@ temperature = 0.6
             assert!(
                 !sampler.is_spec_sampling(),
                 "{name}: vendor top_p/top_k DO leave the pure-temp regime — if this ever \
-                 starts passing, either the vendor numbers changed or the in-graph draft \
-                 learned filters, and the perf note in docs/SERVING.md needs revisiting"
+                 starts passing, the vendor numbers changed, and the perf note in \
+                 docs/SERVING.md needs revisiting"
             );
         }
 

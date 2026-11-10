@@ -16624,9 +16624,10 @@ struct Session {
     /// generate_spec_session BURSTS (K-token draft chains + batched verify) instead of one
     /// decode_step per tick — the CLI-measured spec win (27B p3: 79 vs 40 tok/s) brought to the
     /// serve path. `Some` when: model has an MTP head + MEMRA_SERVE_SPEC!=0 + the sampler is
-    /// EITHER greedy (argmax verify) OR sampled (temperature>0 -> the rejection-sampling
-    /// verify, filters and penalties applied symmetrically to draft q and target p; landed
-    /// 2026-07-09/10, feat/sampled-graph-draft + feat/filtered-spec). Greedy-with-penalties
+    /// EITHER greedy (argmax verify) OR sampled (temperature>0 -> the sampled verify, which
+    /// emits the target's own filtered, penalised draw; landed 2026-07-09/10 as a rejection
+    /// verify, feat/sampled-graph-draft + feat/filtered-spec, and position-keyed on the MTP
+    /// route since memra#1154). Greedy-with-penalties
     /// is the one excluded class (`greedy_penalized`) — the argmax verify would ignore them.
     /// See `spec_eligible` in step_admit for the authoritative predicate.
     /// The SpecSession owns its OWN cache/scratch; `cache` above stays as the (unused) admit
@@ -19811,7 +19812,7 @@ pub fn run(
             };
             // PER-SESSION DRAFT-GRAPH STATE (lane/step37-vram-admission-20260830, defect 2):
             // since the multi-head chain capture, every capturing session parks real device
-            // state (capture-retain keepers, q slots, instantiated graphs' backing) that the
+            // state (capture-retain keepers, instantiated graphs' backing) that the
             // estimate above charged at ZERO. Charge the model's measured high-water per
             // spec-capable admission — session-owned state belongs in the session COST, not
             // in the shared transient reserve. 0 until observed (the boot calibration probe
