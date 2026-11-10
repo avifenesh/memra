@@ -712,6 +712,14 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
         }
     };
 
+    // A tile's last rows and a launch's last columns are padding: a warp whose rows or columns are all
+    // outside (`dead`) computes nothing, and a warp skips each 16-row MMA group that is outside (`lr`).
+    // Live elements run exactly the MMAs and sums they ran before; the padding had no output.
+    bool dead = m0 + wm * (BM / 2) >= M || n0 + wn * 32 >= N;
+    bool lr[MI];
+#pragma unroll
+    for (int mi = 0; mi < MI; ++mi) lr[mi] = m0 + wm * (BM / 2) + mi * 16 < M;
+
     float acc[MI][4][4];
 #pragma unroll
     for (int i = 0; i < MI; ++i)
@@ -761,6 +769,7 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
 #pragma unroll
         for (int kk = 0; kk < P::PK; ++kk) {
             if (i * P::PK + kk >= KB) break;
+            if (dead) continue;
             uint32_t af[MI][4];
 #pragma unroll
             for (int mi = 0; mi < MI; ++mi) {
@@ -786,7 +795,8 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
 #pragma unroll
             for (int ni = 0; ni < 4; ++ni)
 #pragma unroll
-                for (int mi = 0; mi < MI; ++mi) v41_mma_e4m3(d[mi][ni], af[mi], bf[ni][0], bf[ni][1]);
+                for (int mi = 0; mi < MI; ++mi)
+                    if (lr[mi]) v41_mma_e4m3(d[mi][ni], af[mi], bf[ni][0], bf[ni][1]);
             float sa[MI][2];
 #pragma unroll
             for (int mi = 0; mi < MI; ++mi) {
@@ -809,6 +819,7 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
             if (fused && WF == 0) {
 #pragma unroll
                 for (int mi = 0; mi < MI; ++mi) {
+                    if (!lr[mi]) continue;
                     float s0 = __fmul_rn(sa[mi][0], sb[0][0]), s1 = __fmul_rn(sa[mi][1], sb[0][0]);
 #pragma unroll
                     for (int ni = 0; ni < 4; ++ni) {
@@ -823,6 +834,7 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
                 for (int ni = 0; ni < 4; ++ni)
 #pragma unroll
                     for (int mi = 0; mi < MI; ++mi) {
+                        if (!lr[mi]) continue;
                         float sa0 = sa[mi][0], sa1 = sa[mi][1];
                         acc[mi][ni][0] = __fmaf_rn(__fmul_rn(d[mi][ni][0], sa0), sb[ni][0], acc[mi][ni][0]);
                         acc[mi][ni][1] = __fmaf_rn(__fmul_rn(d[mi][ni][1], sa0), sb[ni][1], acc[mi][ni][1]);
@@ -834,6 +846,7 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
                 for (int ni = 0; ni < 4; ++ni)
 #pragma unroll
                     for (int mi = 0; mi < MI; ++mi) {
+                        if (!lr[mi]) continue;
                         float sa0 = sa[mi][0], sa1 = sa[mi][1], sb0 = sb[ni][0], sb1 = sb[ni][1];
                         acc[mi][ni][0] = __fadd_rn(acc[mi][ni][0], __fmul_rn(__fmul_rn(d[mi][ni][0], sa0), sb0));
                         acc[mi][ni][1] = __fadd_rn(acc[mi][ni][1], __fmul_rn(__fmul_rn(d[mi][ni][1], sa0), sb1));
