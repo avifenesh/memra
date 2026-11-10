@@ -626,6 +626,8 @@ impl Group {
         } else {
             None
         };
+        // calls of 9 rows and more: how far the small-row bodies go at this rank count
+        super::set_wide_rows_default(n);
         let mut gr = Self {
             devices: devices.to_vec(),
             engines,
@@ -1518,7 +1520,9 @@ impl Group {
             }
         }
         // many rows on N ranks: each rank computes its share of the mHC mixes' partial sums
-        let split_mix = n > 1 && 8 % n == 0 && s > super::SMALL_M;
+        // (up to the small-row limit each rank runs the one-pass kernel over the whole call)
+        let wide = super::WIDE_MIX.load(Ordering::Relaxed).max(super::SMALL_M);
+        let split_mix = n > 1 && 8 % n == 0 && s > wide;
         let parts = if split_mix {
             Some(self.hc_parts(lw, &h, s, false)?)
         } else {

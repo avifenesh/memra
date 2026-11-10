@@ -16,7 +16,7 @@
 //! usage: dsv41-tpbench CKPT_DIR --token-map FILE --devices 0,1,2,3 --out DIR
 //!                    [--prefill FILE,FILE,...] [--decode FILE[,FILE...] --decode-steps N]
 //!                    [--conc 8,32 --conc-dir DIR --conc-steps N] [--rounds R]
-//!                    [--resident N] [--layers N] [--chunk N] [--plan]
+//!                    [--resident N] [--layers N] [--chunk N] [--wide-rows A,B,C,D,E] [--plan]
 //!   MEMRA_FULL_PREC=1      required (the route's one numeric program)
 //!   --resident N           layers kept on the cards from the start (default: all); the rest
 //!                          stream from the checkpoint mmap per forward (the 2-card rehearsal)
@@ -319,6 +319,21 @@ fn run() -> Result<(), String> {
     let res = rn.load_resident(keep, reserve * per_dev)?;
     // --timed: drain and time every collective (a breakdown run; not for the headline numbers)
     rn.grp.timed = has("--timed");
+    // --wide-rows F8,BF16,FFMA,MIX,TILES: the most rows of a call that keep each family's
+    // small-row body in groups of 8 (the measurement behind the defaults; bytes do not move)
+    if let Some(w) = flag("--wide-rows") {
+        let v: Vec<usize> = w
+            .split(',')
+            .map(|x| {
+                x.parse()
+                    .map_err(|_| format!("--wide-rows {w:?}: five counts"))
+            })
+            .collect::<Result<_, _>>()?;
+        if v.len() != 5 {
+            return Err(format!("--wide-rows {w:?}: five counts"));
+        }
+        memra_engine::dsv41_gpu::set_wide_rows(v[0], v[1], v[2], v[3], v[4]);
+    }
     let bin = std::fs::read(&a[0])
         .map(|b| sha256_hex(&b))
         .unwrap_or_default();

@@ -607,6 +607,9 @@ pub mod ffi {
             bm: i32,
             stream: *mut c_void,
         ) -> i32;
+        /// A bench's choice of the most rows of a call that keep a family's small-row body in
+        /// groups of 8 (0 block-scaled dense, 1 bf16, 2 fp32 FMA, 3 the one-pass mHC kernel).
+        pub fn memra_v41_wide_rows(family: i32, rows: i32);
         pub fn memra_v41_moe_combine(
             slots: *const c_void,
             lds: i64,
@@ -2520,6 +2523,45 @@ fn expert_table(ops: &Ops, experts: &[[QW; 3]]) -> Vec<u8> {
 
 /// Rows of a GEMM that the small-M kernels take (`V41_SM_MAX` in `cu/dsv41_gpu.cu`).
 pub const SMALL_M: usize = 8;
+/// The most rows of a call that keep the small-row bodies, issued over groups of rows
+/// (`v41_wide` in cu/dsv41_gpu.cu): the expert tiles stay 8-row tiles (an expert with more
+/// rows gets several) and the mHC mixes stay on each rank whole. The two limits the walk
+/// itself applies are held here; [`set_wide_rows`] moves all five.
+pub static WIDE_TILES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(48);
+pub static WIDE_MIX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(32);
+
+/// The limits by family (block-scaled dense, bf16, fp32 FMA, the one-pass mHC kernel, the
+/// expert tiles) for a group of `ranks`, from two sweeps of calls of 8 to 128 rows with one
+/// family's limit raised at a time against all at 0. One rank on one card: the dense groups
+/// pay to 12 rows and are level at 16, bf16 to 16, fp32 FMA to 48, mHC to 32, 8-row tiles to
+/// 48. Two ranks on two cards, where a rank's dense launches are half as wide: dense to 24
+/// (level at 32), bf16 to 16, fp32 FMA to 64, mHC to 48, tiles to 64. More ranks take the
+/// two-rank limits until they are measured.
+pub fn wide_rows_for(ranks: usize) -> [usize; 5] {
+    if ranks <= 1 {
+        [16, 16, 48, 32, 48]
+    } else {
+        [24, 16, 64, 48, 64]
+    }
+}
+
+/// The limits of a group of `ranks` ([`wide_rows_for`]), set when the group is made.
+pub fn set_wide_rows_default(ranks: usize) {
+    let [a, b, c, d, e] = wide_rows_for(ranks);
+    set_wide_rows(a, b, c, d, e);
+}
+
+/// A bench's or a gate's limits of the small-row bodies, by family: block-scaled dense, bf16,
+/// fp32 FMA, the one-pass mHC kernel, the expert tiles. Bytes do not depend on them.
+pub fn set_wide_rows(f8: usize, bf16: usize, ffma: usize, mix: usize, tiles: usize) {
+    use std::sync::atomic::Ordering::Relaxed;
+    for (family, rows) in [f8, bf16, ffma, mix].into_iter().enumerate() {
+        // SAFETY: a plain store of a launcher's dispatch limit
+        unsafe { ffi::memra_v41_wide_rows(family as i32, rows as i32) };
+    }
+    WIDE_MIX.store(mix, Relaxed);
+    WIDE_TILES.store(tiles, Relaxed);
+}
 
 /// The MoE dispatch plan of one slice on the device (`memra_v41_moe_plan`): the order of the host
 /// [`tp::MoePlan`] (pairs sorted by expert, tokens ascending inside one; each token's pairs in
@@ -2901,7 +2943,7 @@ impl Side {
 }
 
 /// The most pairs the plan builds in one kernel (`V41_PLAN_SMALL` in cu/dsv41_gpu.cu).
-const PLAN_SMALL_PAIRS: usize = 128;
+const PLAN_SMALL_PAIRS: usize = 256;
 
 /// The most rows of a forward whose shared expert runs on the side stream: the small-M kernels'
 /// rows. With more rows every GEMM fills the card and there is nothing to run under.
@@ -5321,6 +5363,9 @@ impl Ctx {
     pub fn moe_bm(&self, rows: usize) -> usize {
         if rows <= SMALL_M {
             rows.max(1)
+        } else if rows <= WIDE_TILES.load(std::sync::atomic::Ordering::Relaxed) {
+            // a batch of 9 to 32 rows: an expert still holds a row or two, so 8-row tiles
+            SMALL_M
         } else if rows * self.g.topk >= 128 * self.g.n_experts {
             128
         } else {

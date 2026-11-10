@@ -3277,6 +3277,87 @@ fn tp_gate(
             "reported: the N-rank stream against the vendor capture, next to the single-card one",
             format!("rel_l2 N-rank {r_tp:.3e} / single-card {r_1:.3e}, cos {c_tp:.8}"),
         );
+        // Calls of 9 to 32 rows keep the small-row bodies, issued over groups of rows. The
+        // prompt's first 12, 16 and 32 rows as their own call, twice: with every family's limit
+        // at 0 (the pipelined bodies, the reference) and at 32, on the single card and on every
+        // rank; each output of the second against the first. Not on a layer that
+        // reads another layer's selection: the capture's selection rows index the full prompt's
+        // key rows, not a shorter call's.
+        if lw.ratio == 0 || lw.index_source {
+            let (hb, pb) = (h.host(&cx.ops.st)?, pre.host(&cx.ops.st)?);
+            let (rh, rp) = (g.hc * g.dim * 2, g.hc * 4);
+            for rows in [12usize, 16, 32] {
+                if rows >= s {
+                    continue;
+                }
+                let tag = format!("layer{l}/rows{rows}");
+                let mut want: Option<(Vec<u8>, Vec<u8>)> = None;
+                for wide in [false, true] {
+                    // every family through its groups up to 32 rows, whatever the defaults are
+                    if wide {
+                        v::set_wide_rows(32, 32, 32, 32, 32);
+                    } else {
+                        v::set_wide_rows(0, 0, 0, 0, 0);
+                    }
+                    let mut sh1 = Shared::default();
+                    load_shared(&f, &pfx, l, &g, s, &mut sh1, &cx.ops)?;
+                    let (mut ls1, mut tr1) = (LayerState::default(), Trace::default());
+                    let h1 = Buf::from_bytes(&cx.ops.st, &hb[..rows * rh])?;
+                    let p1 = Buf::from_bytes(&cx.ops.st, &pb[..rows * rp])?;
+                    let (o, op) =
+                        cx.block_forward(&lw, &h1, &p1, 0, rows, &mut sh1, &mut ls1, &mut tr1)?;
+                    let (o, op) = (o.host(&cx.ops.st)?, op.host(&cx.ops.st)?);
+                    let mut shn: Vec<Shared> = (0..n).map(|_| Shared::default()).collect();
+                    let (mut hn, mut pn) = (Vec::with_capacity(n), Vec::with_capacity(n));
+                    for r in 0..n {
+                        let ops = &grp.cx[r].ops;
+                        load_shared(&f, &pfx, l, &g, s, &mut shn[r], ops)?;
+                        hn.push(Buf::from_bytes(&ops.st, &hb[..rows * rh])?);
+                        pn.push(Buf::from_bytes(&ops.st, &pb[..rows * rp])?);
+                    }
+                    let mut lsn: Vec<LayerState> = (0..n).map(|_| LayerState::default()).collect();
+                    let mut trn: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
+                    let (on, opn) =
+                        grp.block_forward(&lws, &hn, &pn, 0, rows, &mut shn, &mut lsn, &mut trn)?;
+                    let Some((wh, wp)) = want.as_ref() else {
+                        // the reference pass: the ranks against the single card, as everywhere
+                        for r in 0..n {
+                            let st = &grp.cx[r].ops.st;
+                            same_bytes(
+                                rep,
+                                &format!("{tag}/pipelined/rank{r}/out_stream"),
+                                &on[r].host(st)?,
+                                &o,
+                                "bf16",
+                            );
+                        }
+                        want = Some((o, op));
+                        continue;
+                    };
+                    same_bytes(rep, &format!("{tag}/single/out_stream"), &o, wh, "bf16");
+                    same_bytes(rep, &format!("{tag}/single/out_pre_mix"), &op, wp, "f32");
+                    for r in 0..n {
+                        let st = &grp.cx[r].ops.st;
+                        same_bytes(
+                            rep,
+                            &format!("{tag}/rank{r}/out_stream"),
+                            &on[r].host(st)?,
+                            wh,
+                            "bf16",
+                        );
+                        same_bytes(
+                            rep,
+                            &format!("{tag}/rank{r}/out_pre_mix"),
+                            &opn[r].host(st)?,
+                            wp,
+                            "f32",
+                        );
+                    }
+                }
+            }
+            // back to the group's own limits
+            v::set_wide_rows_default(n);
+        }
         println!(
             "layer {l}: load {load_s:.1}s single-card {ref_s:.2}s {n}-rank {tp_s:.2}s, {} gathers {} copies {:.1} MB",
             st.collectives,
