@@ -1102,9 +1102,15 @@ impl<'a> Runner<'a> {
                 super::bytes_i32(&idx.host(&st)?),
                 n,
             );
-            // the stream is drained: the one-token MoEs' pair counts of this forward, which
-            // `Group::head_logits` reads on the logits path
-            if super::bytes_i32(&c.route_bad.host(&st)?)[0] != 0 {
+            // the stream is drained: this forward's flag (the one-token MoEs' pair counts, a
+            // small gather's missing slice), read as `Group::head_logits` reads it
+            let bad = super::bytes_i32(&c.route_bad.host(&st)?)[0];
+            if bad & 0x10000 != 0 {
+                return Err(format!(
+                    "rank {r}: a peer's slice of a gather never arrived"
+                ));
+            }
+            if bad != 0 {
                 return Err(format!(
                     "rank {r} route: a layer placed other than rows x topk pairs"
                 ));

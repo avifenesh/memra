@@ -619,18 +619,26 @@ pub fn ck(name: &str, rc: i32) -> Result<(), String> {
 
 /// A count of the launches a call issues, by layer and kernel, for a gate binary (off unless
 /// started; one relaxed load a launch when off). Every kernel launch reports through [`ck`] and
-/// every device copy through [`copy_d2d`]. Timed, each report first waits for the card, so a
-/// kernel's entry also holds the time from the report before it to its own end (the launches
-/// run one at a time: what each costs, not what the call takes).
+/// every device copy through [`copy_d2d`]. Timed, each report first waits for its card, so a
+/// kernel's entry also holds the time from the issuing thread's report before it to its own end
+/// (the launches run one at a time: what each costs, not what the call takes). With several
+/// ranks each rank's thread keeps its own clock and the entries sum the ranks; a rank's wait
+/// includes its peers' part of a gather, so the group must issue in parallel then.
 pub mod tally {
+    use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
     use std::time::Instant;
     static ON: AtomicBool = AtomicBool::new(false);
     static TIMED: AtomicBool = AtomicBool::new(false);
     static LAYER: AtomicUsize = AtomicUsize::new(usize::MAX);
-    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
+    /// which start the threads' clocks belong to
+    static EPOCH: AtomicU64 = AtomicU64::new(0);
+    thread_local! {
+        /// this thread's last report: (the start it belongs to, when)
+        static LAST: Cell<Option<(u64, Instant)>> = const { Cell::new(None) };
+    }
     /// `(layer, kernel) -> (launches, nanoseconds)`
     pub type Table = BTreeMap<(usize, String), (u64, u64)>;
     static T: Mutex<Table> = Mutex::new(BTreeMap::new());
@@ -638,7 +646,7 @@ pub mod tally {
     pub fn start(timed: bool) {
         T.lock().unwrap().clear();
         LAYER.store(usize::MAX, Ordering::Relaxed);
-        *LAST.lock().unwrap() = None;
+        EPOCH.fetch_add(1, Ordering::Relaxed);
         TIMED.store(timed, Ordering::Relaxed);
         ON.store(true, Ordering::Relaxed);
     }
@@ -653,11 +661,14 @@ pub mod tally {
     pub fn hit(name: &str) {
         if ON.load(Ordering::Relaxed) {
             let ns = if TIMED.load(Ordering::Relaxed) {
-                // the issuing thread holds the card's context
+                // the issuing thread holds its card's context
                 unsafe { cudarc::driver::sys::cuCtxSynchronize() };
-                let now = Instant::now();
-                let d = LAST.lock().unwrap().replace(now).map(|t| now - t);
-                d.map_or(0, |d| d.as_nanos() as u64)
+                let (now, epoch) = (Instant::now(), EPOCH.load(Ordering::Relaxed));
+                let was = LAST.with(|l| l.replace(Some((epoch, now))));
+                match was {
+                    Some((e, t)) if e == epoch => (now - t).as_nanos() as u64,
+                    _ => 0,
+                }
             } else {
                 0
             };

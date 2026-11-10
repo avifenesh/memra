@@ -4,6 +4,7 @@
 //! usage: dsv41-spec CKPT_DIR --plan FILE --out DIR [--token-map FILE] [--devices 0,1]
 //!                   [--streamed] [--cache-slots N] [--cache-reserve-mb N] [--eos ID]
 //!                   [--layers N --resident] [--no-draft] [--copy-keys] [--batch-max N]
+//!                   [--stop-on-fail]
 //!   MEMRA_FULL_PREC=1        required: the route has one numeric program, the checkpoint's
 //!   MEMRA_DSV41_TOKEN_MAP=F  the Engram compressed token map (raw i32), when --token-map is absent
 //!   --streamed               stream every layer's weights per forward (slow; default is the
@@ -14,6 +15,7 @@
 //!                            too): what a row costs where no expert is fetched. It has no draft
 //!                            head (the head's target layers are not all run): pass --no-draft
 //!   --no-draft               do not load the draft head (verify-rows and rows-time jobs only)
+//!   --stop-on-fail           a failed job ends the run: the jobs after it are skipped and named
 //!   --copy-keys              decode calls copy the ring and the compressed rows into the call's
 //!                            own key rows (the reference arm of the keyed attention entry);
 //!                            verify-rows and batch-rows write `hashes.txt`, equal between the arms
@@ -379,8 +381,19 @@ fn run() -> Result<(), String> {
             .ok_or("the job needs the draft head (no --no-draft)".to_string())
     };
 
+    let stop_on_fail = a.iter().any(|x| x == "--stop-on-fail");
     let mut failed = 0;
-    for j in &jobs {
+    for (ji, j) in jobs.iter().enumerate() {
+        if stop_on_fail && failed > 0 {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "stopped": true,
+                    "skipped": jobs[ji..].iter().map(|j| j.id()).collect::<Vec<_>>(),
+                })
+            );
+            break;
+        }
         let dir = out.join(j.id());
         std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         let t = Instant::now();
@@ -785,6 +798,8 @@ fn batch_time(
             }
             // the first two steps warm the shapes
             let key = format!("{mode}_{w}_ms");
+            // also on stderr as it is measured: a run cut short keeps what it timed
+            eprintln!("dsv41-spec: batch-time {id} {key} {:.3}", med(&ms[2..]));
             out.insert(key, serde_json::json!(med(&ms[2..])));
         }
     }
@@ -822,7 +837,11 @@ fn batch_time(
         step(rn, &mut seqs, 0)?;
         step(rn, &mut seqs, 1)?;
         for (timed, k0) in [(false, 2usize), (true, 4)] {
-            if input[..ws].iter().any(|(_, f)| f.len() < k0 + 2) {
+            // the timed tally waits for the card after every launch, and a rank's wait covers
+            // its peers' part of a gather: the ranks must issue on their own threads
+            if input[..ws].iter().any(|(_, f)| f.len() < k0 + 2)
+                || (timed && rn.grp.n() > 1 && rn.grp.issue_name() != "parallel")
+            {
                 break;
             }
             memra_engine::dsv41_gpu::tally::start(timed);
@@ -1179,6 +1198,9 @@ fn draft_tape(
         timing.insert("draft_ms_median".into(), ms[ms.len() / 2].into());
         timing.insert("draft_ms_min".into(), ms[0].into());
         for timed in [false, true] {
+            if timed && rn.grp.n() > 1 && rn.grp.issue_name() != "parallel" {
+                break;
+            }
             memra_engine::dsv41_gpu::tally::start(timed);
             let r = rn
                 .draft(dw, &mut ds, tok, p, false)

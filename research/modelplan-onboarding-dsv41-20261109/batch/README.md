@@ -182,6 +182,25 @@ one rank yet. Its gate is in the chain: the `keyed9` plan with two ranks on one 
 ranks, and the hashes of that call must equal the one-rank arm's; then the served chat gate with
 `MEMRA_DSV41_DEVICES=0,0` against the one-rank native references.
 
+With the experts on the card and more than one rank, the MoE under the call is the split one
+(`173d61cf6f`, merged: every rank holds its rows of every expert), and its gathers and the
+attention's can run inside kernels (`MEMRA_TP_TRANSPORT=device-push`, `940e7e6289`) when each
+rank's region of a gather is at most 256 KiB. What a call of R rows (a batch or a verification
+block) gathers, bytes a rank:
+
+| gather | bytes a rank | 8 rows, 2 ranks | 8 rows, 4 ranks | first R past 256 KiB at 2 / 4 ranks |
+|---|---|---|---|---|
+| expert hidden columns `[7R][2304/N]` | R x 32,256 / N | 129,024 | 64,512 | 17 / 33 |
+| attention `wo_a` columns `[R][8/N x 1024]` | R x 16,384 / N | 65,536 | 32,768 | 33 / 65 |
+| attention output columns `[R][5120/N]` | R x 10,240 / N | 40,960 | 20,480 | 52 / 103 |
+| MoE output columns `[R][5120/N]` | R x 10,240 / N | 40,960 | 20,480 | 52 / 103 |
+
+So the served route's calls (8 rows at most) stay inside the bound on 2 and on 4 ranks. Past it
+`Group::allgather` decides per gather: the one whose region is too large takes the copy-engine
+gather (events and peer copies) and the others of the same layer stay in kernels. The chain's
+`wide20` case (one call of 20 rows on two ranks: the hidden gather is 322,560 bytes a rank) runs
+that mix against the one-rank bytes.
+
 Two review findings on the greedy pick are fixed with it. `Runner::argmax_rows` answers for a call
 as a whole, so one row with a non-finite logit used to fail every running request of the step; the
 route now takes the chunk's logits when the device pick refuses and each request chooses from its
