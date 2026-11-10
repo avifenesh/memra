@@ -1,0 +1,21 @@
+kvq-rows-probe: T=32768 rows=2048 first=30720 decode=Batch from=Prime sm_count=48 model=~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+prompt ids fnv64=8b20e675016e7d33
+env: MEMRA_FA_SPLIT=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset> MEMRA_SERVE_B1FAST=<unset>
+phase a (forward trunk T=32768): 34.3 s
+PRIME-LAST: row 32767 of the hidden stack vs the prime's own logits: bit-identical=true differing=0 maxdiff=0e0
+phase b (prime T=32768): 21.5 s
+CHECK-A row 31743: forward_last(prompt[..=31743]) vs window row: bit-identical=true differing=0 maxdiff=0e0
+CHECK-B row 31743: prime_cache(prompt[..=31743]) vs window row: bit-identical=true differing=0 maxdiff=0e0
+check phase: 53.4 s
+phase c prefix (Prime, 30720 rows): 20.0 s
+  window row 256/2048: 23.4 s
+  window row 512/2048: 46.9 s
+  window row 768/2048: 70.3 s
+  window row 1024/2048: 93.8 s
+  window row 1280/2048: 117.3 s
+  window row 1536/2048: 140.8 s
+  window row 1792/2048: 164.4 s
+  window row 2048/2048: 187.9 s
+phase c window (2048 rows, served batch B=1): 187.9 s; device-sampled token != host argmax at 0 rows
+rows written: 2048 -> ~/.cache/memra-kvq/runs/jsonl-32768-batch/rows.jsonl
+total after load: 207.9 s

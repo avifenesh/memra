@@ -1,0 +1,18 @@
+kvq-rows-probe: T=32768 rows=2048 first=30720 decode=Eager from=Prime sm_count=48 model=~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+prompt ids fnv64=99404cacaeae198c
+env: MEMRA_FA_SPLIT=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset> MEMRA_SERVE_B1FAST=<unset>
+phase a (forward trunk T=32768): 34.3 s
+PRIME-LAST: row 32767 of the hidden stack vs the prime's own logits: bit-identical=true differing=0 maxdiff=0e0
+phase b (prime T=32768): 21.4 s
+phase c prefix (Prime, 30720 rows): 20.1 s
+  window row 256/2048: 23.5 s
+  window row 512/2048: 46.9 s
+  window row 768/2048: 70.4 s
+  window row 1024/2048: 93.9 s
+  window row 1280/2048: 117.4 s
+  window row 1536/2048: 140.9 s
+  window row 1792/2048: 164.4 s
+  window row 2048/2048: 188.0 s
+phase c window (2048 rows, eager decode_step): 188.0 s; device-sampled token != host argmax at 0 rows
+rows written: 2048 -> ~/.cache/memra-kvq/runs/csv-32768-eager/rows.jsonl
+total after load: 208.0 s
