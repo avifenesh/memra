@@ -2291,6 +2291,45 @@ pub(crate) fn scan_stop_cut(text: &str, full: &str, stops: &[String]) -> Option<
     cut
 }
 
+/// The text a token completes. `open` holds the answer's bytes that are not text yet, the
+/// token's own included; what becomes text leaves it. This is the worker's `utf8_delta` rule: a
+/// tokenizer's byte pieces may split a character across tokens, so an incomplete tail waits for
+/// the token that completes it, and a byte that can start or continue nothing becomes one
+/// U+FFFD. `last`: the answer ends with this token, so a tail still incomplete is read as the
+/// detokenized ids read it (lossy), and the stream's whole text equals `Tokenizer::decode` of
+/// its ids.
+fn text_delta(open: &mut Vec<u8>, last: bool) -> String {
+    let mut done = 0;
+    let mut delta = crate::worker::utf8_delta(open, &mut done);
+    if last && done < open.len() {
+        delta.push_str(&String::from_utf8_lossy(&open[done..]));
+        done = open.len();
+    }
+    open.drain(..done);
+    delta
+}
+
+/// One token's step of a stream's text: `text` is what was sent, `open` the bytes that are not
+/// text yet with the new token's. Returns what to send with the token and whether a stop string
+/// ended the stream there. The text grows only by completed characters ([`text_delta`]) and
+/// ends at the stop cut ([`scan_stop_cut`]).
+fn text_step(
+    text: &mut String,
+    open: &mut Vec<u8>,
+    last: bool,
+    stops: &[String],
+) -> (String, bool) {
+    let old = text.len();
+    let delta = text_delta(open, last);
+    text.push_str(&delta);
+    if let Some(end) = scan_stop_cut(&text[..old], text, stops) {
+        let end = snap(text, end).max(old);
+        text.truncate(end);
+        return (text[old..].to_string(), true);
+    }
+    (delta, false)
+}
+
 struct Emit<'a> {
     tok: &'a Tokenizer,
     tx: &'a crate::worker::EventSender,
@@ -2299,6 +2338,10 @@ struct Emit<'a> {
     stop_token_ids: &'a [u32],
     budget: usize,
     ids: Vec<u32>,
+    /// The answer's bytes that are not text yet ([`text_delta`]): a token that ends inside a
+    /// character leaves its tail here until the next token completes it.
+    open: Vec<u8>,
+    /// The text sent so far.
     text: String,
     /// The engine's stop vocabulary, the one every finish mapper reads (`Eos`, `MaxNew`,
     /// `Callback`); a bare "length" mapped to finish_reason "stop".
@@ -2329,6 +2372,7 @@ impl<'a> Emit<'a> {
             stop_token_ids,
             budget,
             ids: Vec::new(),
+            open: Vec::new(),
             text: String::new(),
             stop_reason: None,
             client_gone: false,
@@ -2361,34 +2405,29 @@ impl<'a> Emit<'a> {
             }
             self.ids.push(id);
             taken += 1;
-            // v1 detok: re-decode the whole tail and diff (O(n^2) chars at serve
-            // lengths — correctness first; the hybrid worker's append-only decoder
-            // is the follow-up if this ever profiles).
-            let full = self.tok.decode(&self.ids);
-            let mut delta = full[snap(&full, self.text.len())..].to_string();
-            let cut = scan_stop_cut(&self.text, &full, self.stop_strings);
-            if let Some(abs) = cut {
-                delta = full[snap(&full, self.text.len())..snap(&full, abs)].to_string();
-                self.text.push_str(&delta);
-                if self
-                    .tx
-                    .send(Event::Token {
-                        id,
-                        text: delta.clone(),
-                    })
-                    .is_err()
-                {
+            // The worker's append-only decoder: this token's bytes are decoded once, and the
+            // stream grows by the characters they complete. A budget that ends the answer inside
+            // a character flushes the open bytes with its last token. Every other ending inside
+            // a character drops them, as the worker does: an end-of-sequence or stop id is not
+            // delivered and no event carries text without a token, and a stop string ends the
+            // text at the stop.
+            self.open
+                .extend_from_slice(&self.tok.decode_bytes_special(&[id], true));
+            let last = self.ids.len() >= self.budget;
+            let (delta, stopped) =
+                text_step(&mut self.text, &mut self.open, last, self.stop_strings);
+            if stopped {
+                if self.tx.send(Event::Token { id, text: delta }).is_err() {
                     self.client_gone = true;
                 }
                 self.stop_reason = Some(StopReason::Callback);
                 break;
             }
-            self.text = full;
             if self.tx.send(Event::Token { id, text: delta }).is_err() {
                 self.client_gone = true;
                 break;
             }
-            if self.ids.len() >= self.budget {
+            if last {
                 self.stop_reason = Some(StopReason::MaxNew);
                 break;
             }
@@ -4570,5 +4609,373 @@ mod stop_reason_tests {
             finish_reason(vec![], &[stop], &[], 8, &[40, 41, 42]),
             "stop"
         );
+    }
+}
+
+/// The stream's text law, on the route's own `Emit` with real token ids: a tokenizer whose
+/// tokens carry the byte patterns under test, and the HTTP layer's own stop cut over what the
+/// stream sent. No model is needed: `Emit` takes ids, whoever chose them.
+#[cfg(test)]
+mod stream_text_tests {
+    use super::Emit;
+    use crate::worker::{Event, event_channel};
+    use memra_tokenizer::{HfTokenizerFiles, Tokenizer};
+
+    const EOS: u32 = 519;
+    const EMOJI: &str = "\u{1f642}"; // f0 9f 99 82
+    const CJK: &str = "\u{75de}"; // e7 97 9e
+    const RARE_CJK: &str = "\u{20bb7}"; // f0 a0 ae b7, outside the basic plane
+    const DSML_CLOSE: &str = "</\u{ff5c}DSML\u{ff5c}tool_calls>";
+
+    /// The byte-level BPE fixture, plus one token for each multi-byte piece a test names, so a
+    /// test puts any byte pattern in one token (the fixture's ids 0..=255 are the 256 bytes).
+    /// Returns the tokenizer and the ids of `pieces`, in order.
+    fn tokens(pieces: &[&[u8]]) -> (Tokenizer, Vec<u32>) {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../memra-tokenizer/tests/fixtures/nfc/imports/nfc");
+        let text = std::fs::read_to_string(dir.join("tokenizer.json")).expect("fixture");
+        let mut json: serde_json::Value = serde_json::from_str(&text).expect("fixture json");
+        let vocab = json["model"]["vocab"].as_object_mut().expect("vocab");
+        let mut byte_names = vec![String::new(); 256];
+        let mut next = 0u64;
+        for (name, id) in vocab.iter() {
+            let id = id.as_u64().expect("id");
+            next = next.max(id + 1);
+            if let Some(slot) = usize::try_from(id)
+                .ok()
+                .and_then(|id| byte_names.get_mut(id))
+            {
+                slot.clone_from(name);
+            }
+        }
+        let mut ids = Vec::new();
+        for piece in pieces {
+            assert!(!piece.is_empty(), "a token carries at least one byte");
+            let name: String = piece
+                .iter()
+                .map(|&byte| byte_names[usize::from(byte)].as_str())
+                .collect();
+            let id = match vocab.get(&name).and_then(serde_json::Value::as_u64) {
+                Some(id) => id,
+                None => {
+                    vocab.insert(name, next.into());
+                    next += 1;
+                    next - 1
+                }
+            };
+            ids.push(u32::try_from(id).expect("id"));
+        }
+        let text = json.to_string();
+        let generation_config = format!("{{\"eos_token_id\": {EOS}}}");
+        let tok = Tokenizer::from_hf_files(&HfTokenizerFiles {
+            origin: &dir,
+            tokenizer_json: &text,
+            tokenizer_config: None,
+            generation_config: Some(&generation_config),
+            chat_template_jinja: None,
+            config: None,
+        })
+        .expect("byte-level BPE fixture with the test's pieces");
+        for (id, piece) in ids.iter().zip(pieces) {
+            assert_eq!(
+                tok.decode_bytes_special(&[*id], true),
+                *piece,
+                "token {id} carries its piece's bytes"
+            );
+        }
+        (tok, ids)
+    }
+
+    /// What the route's stream sent for one answer.
+    #[derive(Debug)]
+    struct Sent {
+        /// The text of each token event, in order.
+        deltas: Vec<String>,
+        /// The ids the stream reports (its token snapshot).
+        ids: Vec<u32>,
+        /// The engine stop reason of the Done event.
+        stop: String,
+        /// How many ids of each round the stream took.
+        taken: Vec<usize>,
+    }
+
+    impl Sent {
+        fn text(&self) -> String {
+            self.deltas.concat()
+        }
+
+        /// The answer a non-streaming client reads: the HTTP layer's cut over the whole text.
+        fn answer(&self, stops: &[String]) -> String {
+            let mut text = self.text();
+            crate::truncate_at_stop(&mut text, stops);
+            text
+        }
+
+        /// The answer a streaming client reads: the HTTP layer's scrubber over the deltas.
+        fn streamed_answer(&self, stops: &[String]) -> String {
+            let mut scrub = crate::StopScrubber::new(stops.to_vec());
+            let mut out = String::new();
+            for delta in &self.deltas {
+                out.push_str(&scrub.push(delta));
+            }
+            out.push_str(&scrub.finish());
+            out
+        }
+    }
+
+    /// Feed the route's stream `rounds` (one id a round is the plain loop, several are a
+    /// speculative round) until it stops, and collect what it sent.
+    fn stream_rounds(
+        tok: &Tokenizer,
+        rounds: &[&[u32]],
+        stop: &[String],
+        eos: &[u32],
+        budget: usize,
+    ) -> Sent {
+        stream_ended_by(tok, rounds, stop, eos, &[], budget)
+    }
+
+    /// [`stream_rounds`] with the request's stop ids.
+    fn stream_ended_by(
+        tok: &Tokenizer,
+        rounds: &[&[u32]],
+        stop: &[String],
+        eos: &[u32],
+        stop_ids: &[u32],
+        budget: usize,
+    ) -> Sent {
+        let (tx, mut rx) = event_channel();
+        let mut emit = Emit::new(tok, &tx, eos.to_vec(), stop, stop_ids, budget);
+        let mut sent = Sent {
+            deltas: Vec::new(),
+            ids: Vec::new(),
+            stop: String::new(),
+            taken: Vec::new(),
+        };
+        let mut drain = |sent: &mut Sent| {
+            while let Ok(event) = rx.try_recv() {
+                match event {
+                    Event::Token { text, .. } => sent.deltas.push(text),
+                    Event::TokenSnapshot(ids) => sent.ids = ids,
+                    Event::Done { stop_reason, .. } => sent.stop = stop_reason,
+                    _ => {}
+                }
+            }
+        };
+        for round in rounds {
+            let took = emit.push_round(round);
+            sent.taken.push(took.taken);
+            drain(&mut sent);
+            if took.stop {
+                break;
+            }
+        }
+        emit.finish(1, 0, 0.0, None);
+        drain(&mut sent);
+        sent
+    }
+
+    /// The plain loop: one id a step.
+    fn stream(tok: &Tokenizer, ids: &[u32], stop: &[String], eos: &[u32], budget: usize) -> Sent {
+        let rounds: Vec<&[u32]> = ids.chunks(1).collect();
+        stream_rounds(tok, &rounds, stop, eos, budget)
+    }
+
+    fn stops(list: &[&str]) -> Vec<String> {
+        list.iter().map(|stop| (*stop).to_string()).collect()
+    }
+
+    #[test]
+    fn a_character_split_across_tokens_is_sent_whole_once_it_completes() {
+        for ch in [EMOJI, RARE_CJK, CJK, "\u{e9}"] {
+            let bytes = ch.as_bytes();
+            // two tokens, at every byte boundary inside the character
+            for cut in 1..bytes.len() {
+                let (tok, ids) = tokens(&[b"ab", &bytes[..cut], &bytes[cut..], b"cd"]);
+                let sent = stream(&tok, &ids, &[], &[], 64);
+                assert_eq!(
+                    sent.deltas,
+                    ["ab", "", ch, "cd"],
+                    "{ch:?} cut at byte {cut}"
+                );
+                assert_eq!(sent.text(), tok.decode(&ids));
+                assert_eq!(sent.ids, ids);
+            }
+            // one token a byte: every boundary at once
+            let pieces: Vec<&[u8]> = bytes.chunks(1).collect();
+            let (tok, ids) = tokens(&pieces);
+            let sent = stream(&tok, &ids, &[], &[], 64);
+            let mut want = vec![String::new(); bytes.len() - 1];
+            want.push(ch.to_string());
+            assert_eq!(sent.deltas, want, "{ch:?} one byte a token");
+            assert_eq!(sent.ids, ids);
+        }
+    }
+
+    #[test]
+    fn sent_text_that_ends_in_a_replacement_character_keeps_the_next_character() {
+        // A token that ends with a byte that starts nothing and the first byte of a character,
+        // then the token that completes the character. The old law sent two replacement
+        // characters for the first and nothing for the second: the character was lost.
+        let (tok, ids) = tokens(&[b"ab", &[0xff, 0xe7], &[0x97, 0x9e], b"cd"]);
+        let sent = stream(&tok, &ids, &[], &[], 64);
+        assert_eq!(sent.deltas, ["ab", "\u{fffd}", CJK, "cd"]);
+        assert_eq!(sent.text(), tok.decode(&ids));
+        let (tok, ids) = tokens(&[b"ok ", &[0x80, 0xf0, 0x9f], &[0x99, 0x82], b"!"]);
+        let sent = stream(&tok, &ids, &[], &[], 64);
+        assert_eq!(sent.deltas, ["ok ", "\u{fffd}", EMOJI, "!"]);
+        assert_eq!(sent.text(), tok.decode(&ids));
+        // an open tail the next token does not complete becomes one U+FFFD with that token
+        let (tok, ids) = tokens(&[&[0xe7, 0x97], b"x"]);
+        let sent = stream(&tok, &ids, &[], &[], 64);
+        assert_eq!(sent.deltas, ["", "\u{fffd}x"]);
+        assert_eq!(sent.text(), tok.decode(&ids));
+    }
+
+    #[test]
+    fn an_answer_whose_budget_ends_inside_a_character_reads_as_its_ids_decode() {
+        // The budget's last token opens a character: its bytes go out with that token, read as
+        // the detokenized ids read them.
+        let (tok, ids) = tokens(&[b"x", &[0xe7, 0x97], &[0x9e]]);
+        let sent = stream(&tok, &ids, &[], &[], 2);
+        assert_eq!(sent.ids, ids[..2]);
+        assert_eq!(sent.stop, "MaxNew");
+        assert_eq!(sent.deltas, ["x", "\u{fffd}"]);
+        assert_eq!(sent.text(), tok.decode(&ids[..2]));
+    }
+
+    #[test]
+    fn a_tail_held_for_its_next_token_is_flushed_when_the_budget_ends_the_answer() {
+        let bytes = EMOJI.as_bytes();
+        let (tok, ids) = tokens(&[b"x", &bytes[..1], &bytes[1..2], &bytes[2..3], &bytes[3..]]);
+        let sent = stream(&tok, &ids, &[], &[], 3);
+        assert_eq!(sent.ids, ids[..3]);
+        assert_eq!(sent.stop, "MaxNew");
+        assert_eq!(sent.deltas, ["x", "", "\u{fffd}"]);
+        assert_eq!(sent.text(), tok.decode(&ids[..3]));
+    }
+
+    /// The stated limit: an end-of-sequence or stop id is not delivered and no event carries
+    /// text without a token, so bytes still open when it arrives are dropped. The ids are whole.
+    #[test]
+    fn an_answer_that_ends_on_eos_or_a_stop_id_inside_a_character_drops_the_open_bytes() {
+        let (tok, ids) = tokens(&[b"x", &[0xe7, 0x97], b"end"]);
+        let fed = [ids[0], ids[1], EOS];
+        let sent = stream(&tok, &fed, &[], &[EOS], 64);
+        assert_eq!(sent.stop, "Eos");
+        assert_eq!(sent.ids, ids[..2]);
+        assert_eq!(sent.deltas, ["x", ""]);
+        // a stop id: the request names the third token as one
+        let rounds: Vec<&[u32]> = ids.chunks(1).collect();
+        let sent = stream_ended_by(&tok, &rounds, &[], &[EOS], &ids[2..], 64);
+        assert_eq!(sent.stop, "Callback");
+        assert_eq!(sent.ids, ids[..2]);
+        assert_eq!(sent.deltas, ["x", ""]);
+    }
+
+    #[test]
+    fn a_stop_string_right_after_a_split_character_keeps_the_character() {
+        // The character completes in the token that also brings a client's stop string.
+        let stop = stops(&["stop"]);
+        let (tok, ids) = tokens(&[b"ab", &[0xe7, 0x97], b"\x9estop and more", b"never"]);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.stop, "Callback");
+        assert_eq!(sent.ids, ids[..3]);
+        assert_eq!(sent.answer(&stop), format!("ab{CJK}"));
+        assert_eq!(sent.streamed_answer(&stop), format!("ab{CJK}"));
+        // the same after text that already ends in a replacement character
+        let (tok, ids) = tokens(&[b"ab", &[0xff, 0xe7], b"\x97\x9estop and more", b"never"]);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.ids, ids[..3]);
+        assert_eq!(sent.answer(&stop), format!("ab\u{fffd}{CJK}"));
+        assert_eq!(sent.streamed_answer(&stop), format!("ab\u{fffd}{CJK}"));
+    }
+
+    /// A parser-closing stop still ends the stream when a token boundary falls inside one of
+    /// its characters. The old law left a replacement character in the text it scanned there,
+    /// so the close never matched and generation ran past the tool call.
+    #[test]
+    fn a_parser_closing_stop_split_inside_a_character_ends_the_stream() {
+        let close = DSML_CLOSE.as_bytes();
+        // `</` and the first byte of the fullwidth bar, then the rest of the close and more
+        let tail = [&close[3..], b" tail"].concat();
+        let (tok, ids) = tokens(&[b"x", &close[..3], &tail, b"never"]);
+        let stop = stops(&[DSML_CLOSE]);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.stop, "Callback");
+        assert_eq!(sent.ids, ids[..3]);
+        assert_eq!(sent.deltas, ["x", "</", &DSML_CLOSE[2..]]);
+    }
+
+    /// Unchanged: a parser-closing stop ends the stream at its close, and nothing after the
+    /// close in the same token goes out.
+    #[test]
+    fn a_parser_closing_stop_still_ends_the_stream_at_its_close() {
+        let close = DSML_CLOSE.as_bytes();
+        let tail = [&close[9..], b" tail"].concat();
+        let (tok, ids) = tokens(&[b"x", &close[..9], &tail, b"never"]);
+        let stop = stops(&["STOP", DSML_CLOSE]);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.stop, "Callback");
+        assert_eq!(sent.ids, ids[..3]);
+        assert_eq!(sent.text(), format!("x{DSML_CLOSE}"));
+    }
+
+    /// Unchanged: a client stop inside one token reads the same answer, blocking and streamed.
+    #[test]
+    fn a_stop_string_inside_one_token_reads_the_same_answer() {
+        let stop = stops(&["STOP"]);
+        let (tok, ids) = tokens(&[b"abc", b"deSTOPxyz", b"never"]);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.stop, "Callback");
+        assert_eq!(sent.ids, ids[..2]);
+        assert_eq!(sent.answer(&stop), "abcde");
+        assert_eq!(sent.streamed_answer(&stop), "abcde");
+    }
+
+    /// Unchanged: tokens that end on character boundaries stream exactly their own text, one
+    /// id a step or in speculative rounds, and the whole equals the one-shot decode.
+    #[test]
+    fn whole_character_tokens_stream_their_own_text() {
+        let texts = [
+            "Hello",
+            ",",
+            " wor",
+            "ld",
+            " caf\u{e9}",
+            " \u{65e5}\u{672c}",
+            "\u{8a9e}",
+            " \u{1f642}",
+            "\u{20bb7}",
+            "!\n",
+        ];
+        let pieces: Vec<&[u8]> = texts.iter().map(|text| text.as_bytes()).collect();
+        let (tok, ids) = tokens(&pieces);
+        let never = stops(&["ZZZ"]);
+        for stop in [&[][..], &never[..]] {
+            let sent = stream(&tok, &ids, stop, &[], 64);
+            assert_eq!(sent.deltas, texts);
+            assert_eq!(sent.text(), tok.decode(&ids));
+            assert_eq!(sent.ids, ids);
+            let rounds: Vec<&[u32]> = ids.chunks(3).collect();
+            let sent = stream_rounds(&tok, &rounds, stop, &[], 64);
+            assert_eq!(sent.deltas, texts);
+            assert_eq!(sent.taken, [3, 3, 3, 1]);
+            assert_eq!(sent.ids, ids);
+        }
+        // the endings read as before: the budget, then an end-of-sequence id
+        let sent = stream(&tok, &ids, &[], &[], 4);
+        assert_eq!(
+            (sent.stop.as_str(), sent.text().as_str()),
+            ("MaxNew", "Hello, world")
+        );
+        let mut fed = ids[..4].to_vec();
+        fed.push(EOS);
+        let sent = stream(&tok, &fed, &[], &[EOS], 64);
+        assert_eq!(
+            (sent.stop.as_str(), sent.text().as_str()),
+            ("Eos", "Hello, world")
+        );
+        assert_eq!(sent.ids, ids[..4]);
     }
 }
