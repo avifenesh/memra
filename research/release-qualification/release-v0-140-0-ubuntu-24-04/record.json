@@ -1,0 +1,87 @@
+{
+  "build": {
+    "path": "build.json",
+    "sha256": "2d8073a3962ead34b7c43b88c5d1d648d4821b438a9bfbde726b78f84da7e828"
+  },
+  "card_models": [
+    "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+  ],
+  "identity_sha256": "c2c9d8b2ad0d7a1157f30f4f3ac96a53fad759ac3dd92105a938f52cc01ce838",
+  "lease": {
+    "path": "lease.json",
+    "sha256": "f81825cdad9cbe93ad08a6a7962a70cb54a061c04f717008d2e35b83023b93ad"
+  },
+  "payloads": {
+    "battery.log": "5ce0ee584477817ee7d64f1eb88ecbd301ad6c1d527d4e5470cd3bc036832c2c",
+    "build.json": "2d8073a3962ead34b7c43b88c5d1d648d4821b438a9bfbde726b78f84da7e828",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cells/1-kernel.log": "de767355f71ad833a1fa98130c74b0a412b1303e8323ff28fb3246ae9505c5da",
+    "cells/2-argmax.log": "8ae4d918ea0f221044f95a55caf6497b14d4857c20c4ad69312bc6d2b27a63a4",
+    "cells/3-argmax-batch.log": "261ac52e8d4fb417fce666747fa85a8f2e76796d78eafdff07e816e22510ca68",
+    "cells/4-spec.log": "b8853eed16e8c5aea1c7d6239fbb2b30a6c534a2361c75c2c9e7d3c9c674b2d3",
+    "cells/5-argmax.log": "a2360d7c7aa520cc854cfc7f4144da2e8967f8cd4bc58060cc2329e9953cf45a",
+    "cells/6-argmax-batch.log": "611d65d3a7129a4ae4bf298bfd89f45fd8dc20bb8769ed89609fe98182fda051",
+    "cells/7-spec.log": "8df04cd8850fbd5a4e2ca48a5b5cfb593443ddd28016a285de854912b98a9a6c",
+    "cells/argmax-1/gate-Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp-board-2048.log": "335a6169af7c68a0c8131345db74b3e38c208a9b5c35808a69bef686733ba4c7",
+    "cells/argmax-4/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-board-2048.log": "aba79435fdb682911dfc0dbbd4287c8ac13b05322052168b8c0ff80818d4b7c3",
+    "cells/argmax-batch-2/gate-Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp-board-2048.batch.log": "b8d65a84d922bd57ae58931d628d27c26f82030008884620a816b220fdb5a724",
+    "cells/argmax-batch-5/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-board-2048.batch.log": "c87707c0beece69da003169716ac02ccecadca29ee7531a00d0aae29e67aed2b",
+    "cells/runs.tsv": "55ea5db0aea32016b59cd49a306fd169b122265a8a6cd426242f322dff88741f",
+    "fetch.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "kernel-check-27b.cells": "4c8382370a988e24bc09f73fac484b2657d73a872116071cacb3e9d486cd74ea",
+    "kernel-check-step35.cells": "1fdf361e60da2d2bb14cea997e12fa2462e4b722c8c86967c5064698c7338951",
+    "lease.json": "f81825cdad9cbe93ad08a6a7962a70cb54a061c04f717008d2e35b83023b93ad",
+    "roster.tsv": "493bd510c96a1382033b551f565f46654ec994f6d4a58c356a562b4319a0743e",
+    "run.json": "d014367f200c6d9823448020f07137caa26788a72e67213969585249eb922d75",
+    "source.json": "3bd389ccfd6f094c3b6ff79d6a579aaf178f052fdff0cc5107e63b4271611427",
+    "telemetry.csv": "ceeba3dfd2863cbe504890285d967a15960f398c0ce39e6b83732fdfa2503760",
+    "topology.txt": "d073641ac388d019907a92071847c879f50240b026b33c8461afe0fdec4d0d3f"
+  },
+  "run": {
+    "path": "run.json",
+    "sha256": "d014367f200c6d9823448020f07137caa26788a72e67213969585249eb922d75"
+  },
+  "schema": "memra-release-qualification-v1",
+  "source": {
+    "path": "source.json",
+    "sha256": "3bd389ccfd6f094c3b6ff79d6a579aaf178f052fdff0cc5107e63b4271611427"
+  },
+  "status": "qualified",
+  "verdicts": [
+    {
+      "kind": "kernel",
+      "model": "kernel",
+      "verdict": "ALL GREEN (122 cells, 115 executed, 10 required, 7 skipped; budget 11)\nSKIP dtype5-Q3_K (missing Q3_K tensor in model /home/access/memra-0140/oracles/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; pinned blk.40.ffn_gate_exps.weight absent)\nSKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf under MEMRA_KC_MODELS_DIR=/home/access/memra-0140/oracles)\nSKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf under MEMRA_KC_MODELS_DIR=/home/access/memra-0140/oracles)\nSKIP nvfp4-27b-shape (missing model Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf under MEMRA_KC_MODELS_DIR=/home/access/memra-0140/oracles)\nSKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf under MEMRA_KC_MODELS_DIR=/home/access/memra-0140/oracles)\nSKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf under MEMRA_KC_MODELS_DIR=/home/access/memra-0140/oracles)\nSKIP sigrouter-served-replay (MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture)"
+    },
+    {
+      "kind": "argmax",
+      "model": "ornith-ai/ornith-1.5-35b-a3b",
+      "verdict": "calibrated argmax PASS"
+    },
+    {
+      "kind": "argmax-batch",
+      "model": "ornith-ai/ornith-1.5-35b-a3b",
+      "verdict": "calibrated served-batch argmax PASS"
+    },
+    {
+      "kind": "spec",
+      "model": "ornith-ai/ornith-1.5-35b-a3b",
+      "verdict": "K=1..8 self-consistency, identical to plain target (8/8)"
+    },
+    {
+      "kind": "argmax",
+      "model": "qwen/qwen3.8-27b",
+      "verdict": "calibrated argmax PASS"
+    },
+    {
+      "kind": "argmax-batch",
+      "model": "qwen/qwen3.8-27b",
+      "verdict": "calibrated served-batch argmax PASS"
+    },
+    {
+      "kind": "spec",
+      "model": "qwen/qwen3.8-27b",
+      "verdict": "K=1..8 self-consistency, identical to plain target (8/8)"
+    }
+  ]
+}
