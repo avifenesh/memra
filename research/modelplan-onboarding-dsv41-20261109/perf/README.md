@@ -1038,6 +1038,83 @@ after the run's first call (`steady.py`), with the burst figure beside it. Raisi
 caps does not change any of this (`receipts/prefillab-w11-pool-r4-n1`: level to 2% slower in the
 long rotation).
 
+### The graph door with several sequences, and a whole layer as one graph
+
+A bug behind the door, fixed in `bafaf69aa5`: a replayed half-layer handed back the capture's own
+pre-mix buffer, which the span's next replay rewrites. One sequence a forward never saw it. A
+`Runner::forward` of several sequences' one-token calls replays a layer's span once a sequence,
+so every sequence but the last read another's pre-mix: 7 of 8 sequences generated other tokens.
+The replayed half now returns a copy. The gate that was missing is `dsv41-tpbench --step-gate`:
+every decode cell's steps with the door off, then on from fresh sequences fed the same rows,
+every step's stream and pre-mix on every rank and its ids compared, as one call a sequence and as
+one batched call. Before the fix 8 sequences as one call a sequence fail 36 of 37 checks
+(`receipts/step-r1`); after it 1 and 8 sequences in both forms pass on one and two ranks
+(`receipts/step-x2`, `step-x2-n2`). The door is off by default, so no default-path number moved.
+
+A whole layer of a batched step as one graph (branch only, not landed). The batched step keeps
+its host data in the rank's step block, so a layer's launches name positions and key tables by
+address and the whole layer can be recorded: inputs followed by address (stream, pre-mix, the
+layer's tables and positions, the selection rows a reader layer takes), and the three launches a
+sequence of an index layer that hold what grows with it (key address and count, position,
+candidate pool) found through the stream's capture state right after each launch and rewritten
+before every replay. Step gate on one rank: 1 and 8 rows x 12 steps, 0 of 37 failed, 99 replays.
+One rank, 9 layers, steady state, 745 steps an arm (`receipts/step-s1`):
+
+| a step, ms | one row | 8 sequences |
+|---|---|---|
+| one call a sequence, host scoring of the logits | 4.912 | 40.47 |
+| the same, the second half of a layer replayed | 4.875 | (the bug above) |
+| the batched step, device argmax | 4.843 | 11.375 |
+| the batched step, the whole layer replayed | 4.800 | 11.253 |
+
+The whole layer replayed is 0.9% of a one-row step and 1.1% at 8 rows on one rank, where the
+card and not the issue thread bounds a layer. It stays on its branch until a four-rank layer is
+close to the issue thread's 204 us; the door is decided then (on by default with its gates, or
+its module deleted). The download and host scan of the logits are 0.07 ms a step.
+
+### Where a four-rank step's wall goes, by layer
+
+`step_wall.py` cuts a traced decode step at every layer's first mix launch, so the layers'
+windows add up to the step's wall. Last night's four-card trace (`four2/trace-B`, 13.30 ms a step
+under the profiler): a typical layer 300 us, 40 of them 12.01 ms, the rest 1.29 ms: the last
+layer's window with the head 450 us above a typical layer (the head's fp32 GEMV 231 us a card,
+the rest the read-back and the host), the two Engram layers 150 us each (an FP8 GEMV of 110 us),
+the kv and index source layers 2, 8, 14 and 20 85 to 100 us each (the fp32 chain 45, bf16 22,
+quantization and the selection), the index layers 24 to 36 42 us each.
+
+### A gather as one launch, and what a removed launch is worth
+
+A small gather was a push and a pull launch back to back on a rank's stream; they are one kernel
+with a barrier between the halves (`c9e06330eb`, exact). Two ranks on two cards, 20 layers, steady
+state, A B B A A B, 1,227 steps an arm (`receipts/nrankab-f2-pair`): a one-row step 7.167 ->
+7.092 ms, every run after below every run before (7.165 / 7.167 / 7.168 against 7.100 / 7.098 /
+7.044); blocks of 4 and 8 rows 9.15 -> 9.11 and 12.71 -> 12.68 (`receipts/prefillab-f2-rows-pair`).
+On one card, where the ranks share the card, it is level (`receipts/nrankab-f1-n4`, `-n2`).
+
+That is 0.9 us a gather where the trace showed 7.7 us for the two kernels. A small kernel's traced
+duration is mostly its own work and its wait, not a floor that a merged launch removes. The class
+"launch-latency-bound small kernels" in the accounting above was priced from traced durations (45
+to 55 us a layer); by this calibration it is worth 2 to 4% of a one-row step, not 16 to 19%.
+
+### The fp32 FMA calls at verify widths
+
+A bf16 weight asked for an fp32 output runs as FMA chains in K order. Three callers a step: the
+router gate (every layer), the ratio-2 compressor's kv and gate rows, the head's logits. A batched
+step of 1 row against 6 rows, one rank, 9 layers, traced (`receipts/steptrace-x2`; the prompts'
+prefill is in the totals):
+
+| a step, ms | 1 row | 6 rows |
+|---|---|---|
+| the head (`v41_gemv_ffma`) | 0.94 | 1.56 |
+| the router and the compressor (`v41_gemv_ffma_narrow`, `_parts`) | 0.43 | 0.70 |
+
+The head at one row is read-bound (1.32 GB once). For 5 to 8 rows it takes the 8-row form: the
+same weights read once, six chains a column, and it becomes chain-bound. The narrow kernel stages
+its 4 weight rows and the call's rows whole in a block; (4 + rows) x 5,128 x 2 bytes passes the
+99 KB limit at 6 rows, so 6 to 8 rows take K in two parts: 34 -> 43 us a launch. On four ranks
+the head splits by ranks and the router does not. Both belong with the order-bound chains (the
+router gate, `wo_a`, the head, the compressor's pair).
+
 ### The page cache under a timed cell
 
 A cell that starts after the page cache was dropped reads its Engram tables from the disk: the
@@ -1169,6 +1246,9 @@ weight traffic: 1.1 ms.
   the host's issue time).
 - `copy_rate.py`, `copy_pairs.py`: the copies of a trace by size (best and median duration and
   rate) and by card pair, with how many are in flight at once.
+- `step_wall.py`: a traced decode step's whole wall by layer index: each layer's median window,
+  and what the heavy ones (the head, the Engram layers, the index layers) add to a typical layer
+  by kernel and host call.
 - `steady.py`: the calls of `dsv41-tpbench` runs by how long the card has been busy (the first
   0.15 s, to 0.5 s, from 0.5 s on): the steady figure a served step pays next to the burst one.
   `trace_rot.py`: kernel time by name of a mixed-width trace against the sum of its widths traced
