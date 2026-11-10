@@ -4279,6 +4279,17 @@ fn dspark_park_rewind_refusal(
     }
 }
 
+/// Whether a retiring DSpark session's cache may enter the park arm: its rows equal its fed
+/// tokens, or, on a recurrent trunk, run past them. A recurrent trunk parks rewound to a prime
+/// boundary inside `fed` (`dspark_park_rewind` refuses one past it), which drops every row past
+/// that boundary. Its rows run past `fed` when the request stopped inside the round that committed
+/// them: on a stop string (memra#1207) or a stop id, the engine commits the whole round and the
+/// public stream ends inside it. Anywhere else a mismatch is the budget-clamp overshoot the gate
+/// exists for.
+fn dspark_park_shape_ok(pos: usize, fed: usize, recurrent: bool) -> bool {
+    pos == fed || (recurrent && pos > fed)
+}
+
 /// THE DSPARK-POOL REWIND at park (memra#1093). A retiring DFlash session's rewind target `g`
 /// (`rewind_boundary`, on the grid) is a capture this session itself published: the prefix entry
 /// that publish inserted (matched by its id, not only its key) holds the trunk's recurrent state
@@ -24158,13 +24169,16 @@ pub fn run(
                 }
             } else if let Some(sess) = s.dspark {
                 // DSPARK PARK (lane/dflash2-session-reuse): the DFlash2 twin of the spec
-                // park above. Integrity gate: cache rows must equal fed tokens (a
-                // budget-clamp overshoot leaves committed rows past the public stream —
-                // that session must not park, a resume would double-serve the overshoot).
-                if reuse_pool_per_namespace() > 0
-                    && s.fed.len() >= REUSE_MIN_PREFIX
-                    && sess.pos() != s.fed.len()
-                {
+                // park above. Integrity gate (`dspark_park_shape_ok`): cache rows must equal fed
+                // tokens (a budget-clamp overshoot leaves committed rows past the public stream —
+                // that session must not park, a resume would double-serve the overshoot), except
+                // on a recurrent trunk, which parks rewound to a prime boundary inside `fed`.
+                let shape_ok = dspark_park_shape_ok(
+                    sess.pos(),
+                    s.fed.len(),
+                    cache_carries_recurrent(&sess.cache),
+                );
+                if reuse_pool_per_namespace() > 0 && s.fed.len() >= REUSE_MIN_PREFIX && !shape_ok {
                     // Fail-closed backstop: the engine now clamps both EOS and max_tokens at
                     // the committed prefix. Any remaining mismatch is an invariant failure,
                     // not the normal max-token path, and must stay loud rather than park poison.
@@ -24175,10 +24189,7 @@ pub fn run(
                         s.fed.len(),
                         s.model
                     );
-                } else if reuse_pool_per_namespace() > 0
-                    && s.fed.len() >= REUSE_MIN_PREFIX
-                    && sess.pos() == s.fed.len()
-                {
+                } else if reuse_pool_per_namespace() > 0 && s.fed.len() >= REUSE_MIN_PREFIX {
                     let mut sess = sess;
                     // THE POOL GRID LAW (memra#1093): every DFlash target is a GDN hybrid, and a
                     // recurrent trunk's rows past its prompt were written by verify and decode, off
@@ -32336,6 +32347,26 @@ fn spec_stop_receipt(
     );
 }
 
+/// The `[spec-stop]` receipt of a burst-cadence emission (gemma, and the DSpark and GLM5 arms
+/// with `MEMRA_SPEC_FIRST_TOKEN_EAGER=0`): the whole public burst is one slice.
+fn spec_stop_receipt_burst(
+    route: &str,
+    generated_before: usize,
+    sent: usize,
+    public_len: usize,
+    spans_bursts: bool,
+) {
+    spec_stop_receipt(
+        route,
+        generated_before + sent,
+        1,
+        sent,
+        public_len,
+        sent,
+        spans_bursts,
+    );
+}
+
 /// A spec burst's continue-verdict at a round boundary. `false` ends the burst at this round,
 /// through the exit a reached burst count takes.
 /// - `admit_keep` is false while a request waits for admission (ADMISSION YIELD above).
@@ -33248,6 +33279,7 @@ fn step_gemma_spec(
     let stop_ids = s.stop_token_ids.clone();
     let (public_len, stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
     let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
+    let burst_from = decoded_visible.len();
     let mut cursor = s.emitted_bytes;
     let mut emit_remaining = request_room;
     let mut eos_seen = false;
@@ -33264,6 +33296,15 @@ fn step_gemma_spec(
         |id| tok_ref.decode_bytes_special(&[id], true),
         |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
     );
+    if emitted.stop_string {
+        spec_stop_receipt_burst(
+            "gemma",
+            s.generated.len(),
+            emitted.sent,
+            public_len,
+            stop_string_start(&decoded_visible, &s.stop_strings).is_some_and(|at| at < burst_from),
+        );
+    }
     // A stop string ends the public burst on the token that completed it (memra#1207). The
     // engine ran the whole burst: this route emits at burst cadence and its engine loop has
     // no round hook to end it there.
@@ -33487,8 +33528,11 @@ fn step_dspark_spec(
     // waited for the whole first burst (`MEMRA_SPEC_BURST`, default 32 tokens at this route's
     // per-token decode cost) even though the prime's boundary token was known before the burst
     // began. ON: the engine hands over every committed slice as its round ends and the worker
-    // emits it immediately. NUMERIC CLASS: none — the ids and their order are the same `burst`
-    // vector on both arms, only event timing moves; the post-burst bookkeeping below is shared.
+    // emits it immediately. NUMERIC CLASS: none — the public ids and their order are the same on
+    // both arms, only event timing moves; the post-burst bookkeeping below is shared. The hook's
+    // continue-verdict ends the ON arm's burst at the round where the public stream ended (EOS, a
+    // stop id or stop string, the client gone; memra#1207), so its `burst` is then a round-aligned
+    // prefix of the OFF arm's, the same public tokens.
     let mut emit = DsparkBurstEmit::new(lm, s, request_room);
     let eager_first_token = emit.eager_first_token;
     let mut flush_cb = |slice: &[u32]| {
@@ -33707,7 +33751,8 @@ fn dspark_burst_post(
             stop_string: stop_string_at.is_some(),
         }
     } else {
-        emit_spec_token_events(
+        let burst_from = decoded_visible.len();
+        let emitted = emit_spec_token_events(
             &burst[..public_len],
             &mut emit_remaining,
             &mut decoded_visible,
@@ -33718,7 +33763,18 @@ fn dspark_burst_post(
             &mut eos_seen,
             |id| tok_ref.decode_bytes_special(&[id], true),
             |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
-        )
+        );
+        if emitted.stop_string {
+            spec_stop_receipt_burst(
+                "dspark",
+                s.generated.len(),
+                emitted.sent,
+                public_len,
+                stop_string_start(&decoded_visible, &stop_strings)
+                    .is_some_and(|at| at < burst_from),
+            );
+        }
+        emitted
     };
     // A stop string ends the public burst on the token that completed it (memra#1207). On
     // the round-cadence arm the hook's verdict also ended the engine burst at that round; on
@@ -34008,11 +34064,12 @@ fn step_glm5_spec(
     // round's accepted drafts + bonus) and the worker emits it immediately — the same
     // pair measured spec TTFT 0.647-0.804 s -> 0.185-0.238 s (plain 0.19-0.21 s) with
     // wall-inclusive tok/s unchanged and the 128-token greedy tape sha identical across
-    // six boots (FLAGS.md row, receipts pointer). NUMERIC CLASS: the burst loop's control
-    // flow never reads the hook and the emitted ids are the same `burst` vector in the
-    // same order — the token stream is byte-identical ON/OFF; only the event timing
-    // moves. The post-burst bookkeeping below (sampler/generated/fed, stop reasons) is
-    // shared by both arms and unchanged.
+    // six boots (FLAGS.md row, receipts pointer). NUMERIC CLASS: the public token stream is
+    // byte-identical ON/OFF; only the event timing moves. The burst loop reads one thing back
+    // from the hook: its continue-verdict, false once the public stream has ended (EOS, a stop
+    // id or stop string, the client gone; memra#1207), which ends the ON arm's burst at that
+    // round, a round-aligned prefix of the OFF arm's burst. The post-burst bookkeeping below
+    // (sampler/generated/fed, stop reasons) is shared by both arms.
     let eager_first_token = spec_first_token_eager_on();
     let eos_ids = s.params.eos.clone();
     let stop_ids = s.stop_token_ids.clone();
@@ -34030,6 +34087,10 @@ fn step_glm5_spec(
     // The burst's public token count at the token that completed a stop string
     // (memra#1207), set by the round-cadence hook.
     let mut stop_string_at: Option<usize> = None;
+    // For the `[spec-stop]` receipt: the request's tokens before this burst and the commit
+    // slices this burst has published.
+    let generated_before = s.generated.len();
+    let mut slices = 0usize;
     // The hook answers the continue-verdict: false once the public stream has ended, and the
     // engine ends the burst at this round (memra#1207).
     let mut flush_cb = |slice: &[u32]| -> bool {
@@ -34041,6 +34102,8 @@ fn step_glm5_spec(
         if let Some(trace) = ttft_trace.as_ref() {
             trace.mark_first_decode();
         }
+        slices += 1;
+        let slice_from = decoded_visible.len();
         let emitted = emit_spec_token_events(
             slice,
             &mut emit_remaining,
@@ -34067,6 +34130,16 @@ fn step_glm5_spec(
             // closed, so the verdict below ends the burst at this round and later slices
             // publish nothing; the rest of this round stays session state.
             stop_string_at = Some(token_events);
+            spec_stop_receipt(
+                "glm5",
+                generated_before + token_events,
+                slices,
+                emitted.sent,
+                slice.len(),
+                token_events,
+                stop_string_start(&decoded_visible, &stop_strings)
+                    .is_some_and(|at| at < slice_from),
+            );
         }
         spec_round_continues(true, !eos_seen && send_ok)
     };
@@ -34128,6 +34201,7 @@ fn step_glm5_spec(
             stop_string: stop_string_at.is_some(),
         }
     } else {
+        let burst_from = decoded_visible.len();
         let emitted = emit_spec_token_events(
             &burst[..public_len],
             &mut emit_remaining,
@@ -34140,6 +34214,16 @@ fn step_glm5_spec(
             |id| tok_ref.decode_bytes_special(&[id], true),
             |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
         );
+        if emitted.stop_string {
+            spec_stop_receipt_burst(
+                "glm5",
+                s.generated.len(),
+                emitted.sent,
+                public_len,
+                stop_string_start(&decoded_visible, &stop_strings)
+                    .is_some_and(|at| at < burst_from),
+            );
+        }
         if emitted.sent > 0 && prof_on {
             first_emit_ms = Some(t_step.elapsed().as_secs_f64() * 1e3);
         }
@@ -38716,6 +38800,30 @@ mod tests {
             "an empty round keeps the burst live"
         );
         assert_eq!(sent, 4);
+    }
+
+    /// memra#1207 review: a DSpark request that ends on a stop string (or a stop id) inside a
+    /// round leaves cache rows past its fed tokens, since the engine commits the whole round. A
+    /// recurrent trunk parks rewound to a prime boundary inside `fed`, so that shape parks; the
+    /// strict equality (the budget-clamp overshoot backstop) stays for every other trunk. Before
+    /// the fix every stop-string-ended DSpark session was refused here and freed.
+    #[test]
+    fn dspark_park_takes_a_recurrent_session_that_stopped_inside_a_round() {
+        use super::dspark_park_shape_ok;
+        assert!(dspark_park_shape_ok(100, 100, true));
+        assert!(dspark_park_shape_ok(100, 100, false));
+        assert!(
+            dspark_park_shape_ok(103, 100, true),
+            "a recurrent session that stopped inside its last round parks rewound"
+        );
+        assert!(
+            !dspark_park_shape_ok(103, 100, false),
+            "a parked end past the public stream would double-serve it"
+        );
+        assert!(
+            !dspark_park_shape_ok(97, 100, true),
+            "rows short of the fed tokens are never a park shape"
+        );
     }
 
     /// memra#659: the open door's budget is its charged output, leaving CTX_SLACK rows past it as

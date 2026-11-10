@@ -33,7 +33,9 @@ The judge fails a speculative row whose text, finish reason or completion tokens
 its plain row (a reject row is compared with the plain free row: its stop string never
 completes). The close: per boot and sampler, every row that ends on a stop string must close
 within max(3 x, 100 ms more than) the median time from last visible chunk to end of response
-of the same boot's non-stop rows. Each stop-ended speculative row must carry one
+of the same boot's non-stop rows, plus twice the time plain decode's row took to close (a
+stop string of several tokens is held back from the stream while it may still complete, in plain
+decode too). Each stop-ended speculative row must carry one
 `[spec-stop]` receipt naming its completion tokens. Coverage, per sampler: the MTP boots must
 hold one stop-ended row whose stop string began in an earlier commit slice than it completed
 in (`spans_slices=1`), one `two` row whose two stop strings fall in one burst, and one reject
@@ -86,6 +88,7 @@ NONSTOP_KINDS = ("free", "eos", "probe", "reject", "turnfree", "turn2")
 ROUND = re.compile(r"\[R(\d+)\] pos=(\d+) out_len=(\d+) last_tok=(\d+) draft=\[([0-9, ]*)\] n_acc=(\d+) "
                    r"bonus=(\d+)")
 SETUP = re.compile(r"\[spec-setup\] .* out=(\d+) cont=(true|false)")
+PARK = re.compile(r"\[worker\] (?:spec-park|dspark-park|spec-reuse|dspark-reuse|spec-affinity)[^\n]*")
 RECEIPT = re.compile(r"\[spec-stop\] route=(\w+) stop string completed: completion_tokens=(\d+) "
                      r"burst_slice=(\d+) slice_pos=(\d+)/(\d+) burst_public=(\d+) spans_slices=([01])")
 
@@ -262,6 +265,7 @@ class Server:
                "ttft_ms": None if o["t_first"] is None else round(o["t_first"] * 1e3, 1),
                "e2e_ms": None if o["t_done"] is None else round(o["t_done"] * 1e3, 1),
                "close_ms": tail, "burst_ends": ends, "receipts": receipts,
+               "park": [m[:200] for m in PARK.findall(chunk)],
                "sha": hashlib.sha256(o["text"].encode()).hexdigest()[:16], "error": o["error"]}
         if row["error"] is None:
             if not o["text"] or not row["completion_tokens"]:
@@ -363,9 +367,10 @@ def run_boot(args):
                     srv.row("two-alone", f"two-{i}-b-{regime}", regime, msgs, samp, MAX_TOKENS, stop=[pair[0]])
                     srv.row("two-alone", f"two-{i}-a-{regime}", regime, msgs, samp, MAX_TOKENS, stop=[pair[1]])
             if ref and p["stop"]:
+                bi = 1 if len(p["stop"]) > 1 else 0
                 n = next((r["completion_tokens"] for r in load_rows(args.out)
-                          if r["case"] == "ref" and r["id"] == f"stop-1-{regime}"), None)
-                p["budget"] = {"stop": p["stop"][1 if len(p["stop"]) > 1 else 0], "max_tokens": n}
+                          if r["case"] == "ref" and r["id"] == f"stop-{bi}-{regime}"), None)
+                p["budget"] = {"stop": p["stop"][bi], "max_tokens": n}
             if p.get("budget", {}).get("max_tokens"):
                 b = p["budget"]
                 srv.row("budget", f"budget-{regime}", regime, msgs, samp, b["max_tokens"], stop=[b["stop"]])
@@ -434,6 +439,15 @@ def judge(out):
         for regime in REGIMES:
             cov = cover.setdefault((route[case], regime), {"spans": 0, "two_one_burst": 0, "reject": 0})
             rr = [r for r in mine if r["regime"] == regime]
+            for kind in ("free", "eos", "stop", "span", "two", "budget", "turn1", "turn2"):
+                if not any(r["kind"] == kind for r in rr):
+                    failures.append(f"{case} {regime}: no {kind} row (the plan or the boot dropped it)")
+            for r in rr:
+                # A stop-ended session must park or be freed by the pool's own rules, never be
+                # refused as an invariant failure (cache rows past its public stream).
+                for line in r.get("park", []):
+                    if "-park REFUSED" in line:
+                        failures.append(f"{case} {r['id']}: {line}")
             stop_equal = stop_total = 0
             for r in rr:
                 want = ref.get(f"free-{regime}" if r["kind"] in ("reject", "probe") else r["id"])
@@ -479,14 +493,23 @@ def judge(out):
             limit = max(3 * med, med + 100)
             worst = max((r["close_ms"] for r in stopped), default=None)
             for r in stopped:
-                if r["close_ms"] > limit:
+                # A stop string of several tokens is held back from the stream while it may
+                # still complete, in plain decode too: its row may also take twice the time plain
+                # decode's row took from its last visible chunk to its end.
+                held = 2 * (ref.get(r["id"], {}).get("close_ms") or 0)
+                if r["close_ms"] > limit + held:
                     failures.append(f"{case} {r['id']}: closed {r['close_ms']} ms after its last visible chunk, "
-                                    f"limit {limit:.0f} ms (non-stop median {med:.0f} ms)")
+                                    f"limit {limit + held:.0f} ms (non-stop median {med:.0f} ms, plain decode's "
+                                    f"hold-back {held / 2:.0f} ms)")
             print(f"  {regime}: stop rows equal to plain decode {stop_equal}/{stop_total}; close ms: non-stop median "
                   f"{med:.0f} (max {max(base):.0f}, n={len(base)}), stop rows max {worst} (n={len(stopped)}), limit "
                   f"{limit:.0f}")
             print(f"    stop-row completion tokens: {[r['completion_tokens'] for r in rr if r['kind'] in STOP_KINDS]} "
                   f"plain {[ref.get(r['id'], {}).get('completion_tokens') for r in rr if r['kind'] in STOP_KINDS]}")
+    if not ref:
+        failures.append("no plain (ref) boot in this DIR")
+    if not cover:
+        failures.append("no speculative boot in this DIR: nothing was compared")
     for (rt, regime), cov in sorted(cover.items()):
         print(f"coverage {rt} {regime}: spanning stops {cov['spans']}, two stops in one burst {cov['two_one_burst']}, "
               f"confirmed rejected-draft stops {cov['reject']}")
