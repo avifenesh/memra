@@ -423,8 +423,7 @@ def full_records_in_tree(repo, ref):
 
 
 def device_class_of(rules, name):
-    found = [cls for cls, row in rules.get("device", {}).items() if row["name"] in name]
-    return found[0] if len(found) == 1 else None
+    return ci.device_class_of(rules, name)
 
 
 def proven_full_records(repo, candidate, rules, arch, log=print):

@@ -274,6 +274,22 @@ esac
         args = (self.root / "argmax-batch.args").read_text().splitlines()
         self.assertEqual(args[:4], [str(self.model), "--decode", "batch", "--require-floor"])
 
+    def test_cell_on_an_unmaintained_device_class_is_not_judged(self):
+        # The gate's NOT-JUDGED outcome (a device class with no push-gated target and no floor
+        # row): the battery names the cell, counts it, and neither passes nor fails on it.
+        line = ("argmax-margin-gate: NOT-JUDGED (not judged: device class h100 not maintained, no floor row; "
+                "device=NVIDIA H100 80GB HBM3)\n")
+        self.argmax_log.write_text(line)
+        self.argmax_batch_log.write_text(line)
+        stdout = self.run_battery()
+        self.assertIn("fixture  argmax-margin  NOT-JUDGED  (not judged: device class h100 not maintained", stdout)
+        self.assertIn("fixture  argmax-margin-batch  NOT-JUDGED  (not judged: device class h100", stdout)
+        self.assertIn("argmax cells NOT JUDGED: 2 (device class not maintained, no floor row)", stdout)
+        self.assertNotIn("argmax-margin  PASS", stdout)
+        self.assertNotIn("argmax-margin-batch  PASS", stdout)
+        # The line with a failing exit code is a failure, not a quiet skip.
+        self.run_battery(expected=1, diagnostic="argmax-margin  FAIL", FIXTURE_ARGMAX_RC="1")
+
     def test_listed_argmax_cells_are_the_gate_calls_the_battery_makes(self):
         # tools/check-argmax-floors.py reads --list-argmax-cells to demand a floor row per cell.
         # The list is honest only if it names exactly the calls the loop makes: one eager and one

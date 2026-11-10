@@ -313,6 +313,52 @@ class GateTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("  WIDE-FLIP pos=11 ", r.stdout)
 
+    def install_device_rules(self):
+        """The files the gate's device-class lookup reads: change_impact.py, its rules and the
+        engine's arch table."""
+        for rel in ("tools/change_impact.py", "tools/change-impact.toml",
+                    "crates/memra-engine/build.rs", "crates/memra-engine/src/cuda_arch.rs"):
+            dest = self.root / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPO / rel, dest)
+
+    def test_require_floor_refuses_a_maintained_or_unknown_device_and_does_not_judge_an_unmaintained_one(self):
+        self.install_device_rules()
+        need = ("--require-floor",)
+        # A device of a maintained class with no row for its exact name is refused: a desktop
+        # RTX 5090 is not the laptop card, a non-Max-Q RTX PRO 6000 is not the Max-Q.
+        for device, status in (("NVIDIA GeForce RTX 5090", "maintained rtx5090"),
+                               ("NVIDIA RTX PRO 6000 Blackwell Workstation Edition", "maintained rtxpro6000"),
+                               ("Some Other GPU", "unknown")):
+            with self.subTest(device=device):
+                r = self.run_gate(ROWS, device=device, extra=need)
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn("argmax-margin-gate: UNCALIBRATED (no floor row", r.stdout)
+                self.assertIn(f"device={device}, device class: {status};", r.stdout)
+                self.assertNotIn("NOT-JUDGED", r.stdout)
+                self.assertNotIn("  PASS:", r.stdout)
+        # A device of a class that is not maintained: named, neither a pass nor a refusal.
+        r = self.run_gate(ROWS, device="NVIDIA H100 80GB HBM3", extra=need)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("argmax-margin-gate: NOT-JUDGED (not judged: device class h100 not maintained, "
+                      "no floor row; device=NVIDIA H100 80GB HBM3)", r.stdout)
+        self.assertNotIn("  PASS:", r.stdout)
+        self.assertNotIn("UNCALIBRATED (no floor row", r.stdout)
+        # Without --require-floor the same device is an ordinary uncalibrated cell.
+        r = self.run_gate(ROWS, device="NVIDIA H100 80GB HBM3")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("  PASS: UNCALIBRATED, no flip.", r.stdout)
+        # A calibrated device is judged whatever its class says.
+        r = self.run_gate(ROWS, extra=need)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("  PASS: no wide flip", r.stdout)
+
+    def test_require_floor_refuses_when_the_device_class_cannot_be_looked_up(self):
+        # No rules in the tree: the lookup fails, and a failed lookup is never "not judged".
+        r = self.run_gate(ROWS, device="NVIDIA H100 80GB HBM3", extra=("--require-floor",))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("device class: unknown;", r.stdout)
+
     def test_floors_table_must_exist_and_parse(self):
         self.floors.write_text("model\tprompt\n")
         r = self.run_gate(ROWS)

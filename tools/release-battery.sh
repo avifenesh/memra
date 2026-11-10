@@ -218,7 +218,7 @@ model_need_mib() {
   echo $(( sz / 1048576 + ${CARD_HEADROOM_MIB:-1536} ))
 }
 
-FAILED=0; MISSING_OWN=0; OWN_ROWS=0; LINES=""
+FAILED=0; MISSING_OWN=0; OWN_ROWS=0; LINES=""; NOT_JUDGED=0
 note() { LINES="${LINES}$1"$'\n'; printf '%s\n' "$1"; }
 
 # Every roster loop uses `read ... || [ -n "$class" ]`: plain `read` returns non-zero on a
@@ -322,7 +322,12 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   save_evidence argmax "$id" "$rc"
   PRIME=$(printf '%s\n' "$OUT" | grep -m1 -o 'PRIME-SUMMARY prime=[A-Za-z:-]*' | cut -d= -f2)
   case "$PRIME" in MATCH|FLIP-NEARTIE|SKIP:tokenwise-served) PRIME_OK=1 ;; *) PRIME_OK=0 ;; esac
-  if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:" && [ "$PRIME_OK" = 1 ]; then
+  if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^argmax-margin-gate: NOT-JUDGED"; then
+    # A device class nobody maintains, with no floor row: the cell is named, and neither
+    # passes nor refuses the battery (tools/argmax-margin-gate.sh, NOT-JUDGED).
+    note "$id  argmax-margin  NOT-JUDGED  $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: NOT-JUDGED.*' | cut -d' ' -f3-)"
+    NOT_JUDGED=$((NOT_JUDGED + 1))
+  elif [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:" && [ "$PRIME_OK" = 1 ]; then
     note "$id  argmax-margin  PASS  $(printf '%s' "$OUT" | grep -m1 -o 'SUMMARY flips=[0-9]* bad=[0-9]*') prime=$PRIME"
   elif [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:"; then
     note "$id  argmax-margin  FAIL  batched-prime arm reported prime=${PRIME:-<none>}, which a release does not accept"
@@ -367,7 +372,10 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
       MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" --decode batch --require-floor --prompt "$ARGMAX_PROMPT" "${argmax_batch_evidence[@]}" 2>&1) || rc=$?
   save_evidence argmax-batch "$id" "$rc"
   SERVED=$(printf '%s\n' "$OUT" | grep -m1 -o 'SERVED-SUMMARY served=[A-Za-z:-]*' | cut -d= -f2)
-  if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:" \
+  if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^argmax-margin-gate: NOT-JUDGED"; then
+    note "$id  argmax-margin-batch  NOT-JUDGED  $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: NOT-JUDGED.*' | cut -d' ' -f3-)"
+    NOT_JUDGED=$((NOT_JUDGED + 1))
+  elif [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:" \
       && { [ "$SERVED" = MATCH ] || [ "$SERVED" = EAGER-ROUTED ]; }; then
     note "$id  argmax-margin-batch  PASS  $(printf '%s' "$OUT" | grep -m1 -o 'SUMMARY flips=[0-9]* bad=[0-9]*') served=$SERVED"
   elif [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:"; then
@@ -415,6 +423,8 @@ if [ "$FAILED" = 0 ]; then
   echo "=== RELEASE BATTERY PASS — paste into the tag message ==="
   echo "  roster: $(shown_path "$ROSTER") ($OWN_ROWS own)"
   printf '%s' "$LINES" | sed 's/^/  /'
+  # Not a pass and not a refusal: the argmax cells of a device class nobody maintains.
+  [ "$NOT_JUDGED" = 0 ] || echo "  argmax cells NOT JUDGED: $NOT_JUDGED (device class not maintained, no floor row)"
   exit 0
 fi
 [ "$MISSING_OWN" = 1 ] && echo "REFUSED: an OWN model was not tested (absent file, or no own row in $(shown_path "$ROSTER")). Neither is skippable." >&2
