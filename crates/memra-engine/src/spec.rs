@@ -14626,7 +14626,12 @@ impl HybridModel {
                     // OUT of `committed` (cache rows == committed); the consuming call
                     // prepends it once its verify commits the row. next_pred is unknowable
                     // without the commit pass — None; callers gate on pending_tok too.
-                    debug_assert_eq!(out.last(), Some(&b), "pending must be the last emitted");
+                    // A burst that ran no round re-stashes the token it was handed, so `out`
+                    // may not end with it.
+                    debug_assert!(
+                        out.last() == Some(&b) || (round == 0 && carried_pending == Some(b)),
+                        "pending must be the last emitted, or the carry of a zero-round burst"
+                    );
                     if let Some(slot) = sess_pending_slot.take() {
                         *slot = Some(b);
                     }
@@ -14697,9 +14702,16 @@ impl HybridModel {
             *sctr_slot = sctr;
             *uctr_slot = uctr;
             committed.extend_from_slice(prompt);
-            if let Some(cb) = carried_pending {
+            if let Some(cb) = carried_pending
+                && !(round == 0 && stashed_pending)
+            {
                 // the consumed carry's cache row landed in round 0's verify (every pending
-                // round commits col 0) — it joins `committed` here, in sequence order.
+                // round commits col 0) — it joins `committed` here, in sequence order. A
+                // burst that ran NO round (the admission yield at its entry, a zero budget,
+                // the context-edge guard) committed nothing: the tail re-stashed the carry
+                // above and it stays out of `committed`, which must equal the cache rows.
+                // Pushing it there left `committed` one token longer than the cache per such
+                // burst, and the token in it twice once its round ran (memra#1196).
                 committed.push(cb);
             }
             if stashed_pending {
@@ -14709,16 +14721,16 @@ impl HybridModel {
                 // memra-gpu-worker and failing 31 of 32 concurrent requests with "worker closed
                 // stream". Reachable because `pending` starts as `carried_pending` (a bonus
                 // stashed by the PREVIOUS burst) while `out` starts empty, and the carry is
-                // deliberately NOT pushed to `out` (line ~3239: the burst that emitted it already
-                // did). So a burst that stashes a pending without emitting anything of its own —
-                // the round loop exits before a push, e.g. the ring drain's `out.len() < max_new`
-                // guard skipping every token under a tight budget — arrives here with
-                // out.len() == 0 and stashed_pending == true.
+                // deliberately NOT pushed to `out` (the burst that emitted it already did). The
+                // one shape that arrives here with out.len() == 0 and stashed_pending == true
+                // is a burst that ran NO round on a carried token: in session mode every round
+                // emits its bonus, so a burst that ran a round has a non-empty `out`.
                 //
                 // The invariant is unchanged: `committed` gets every emitted token EXCEPT the
-                // stashed bonus. With nothing emitted, that is nothing — and the carry pushed
-                // just above is already accounted. Saturating, not a min/assert: an empty `out`
-                // here is a legitimate burst shape, not a corrupt state.
+                // stashed bonus. With nothing emitted, that is nothing: the stashed bonus is
+                // the carry itself, which no round committed (see the guard just above).
+                // Saturating, not a min/assert: an empty `out` here is a legitimate burst
+                // shape, not a corrupt state.
                 let emitted = out.len().saturating_sub(1);
                 committed.extend_from_slice(&out[..emitted]);
             } else {

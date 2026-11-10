@@ -29,6 +29,13 @@
 //! - **The continuation burst** (an empty suffix, the serve pattern) is compared with the
 //!   continuation of the previous turn's oracle, not with a cold prime of rows the session's
 //!   own decode wrote: on a recurrent trunk those are two programs for the same rows.
+//! - **A continuation burst that runs no round** (memra#1196). The server ends a burst at its
+//!   entry when a request waits for admission: the burst's first commit hook says stop. A
+//!   session that entered such a burst on a carried pending token must leave it pending and
+//!   leave `committed` what it was: the cache rows, and the true history less the pending
+//!   token. The next burst must carry on with the oracle's tokens. Before the fix the burst
+//!   pushed the carried token into `committed` although no round had committed its row. Under
+//!   `MEMRA_SPEC_REPLAY=1` no burst ends on a pending token and the check fails as untested.
 //!
 //! usage: session-gate <model.gguf>   (env: MEMRA_SPEC_K, MEMRA_NGEN per turn)
 use memra_engine::Engine;
@@ -234,6 +241,70 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if recurrent && rewound_turns == 0 {
         println!("no turn rewound to a checkpoint: every turn primed cold, no boundary was tested");
         ok = false;
+    }
+    // A continuation burst whose first commit hook says stop (the admission yield at a burst's
+    // entry) runs no round. The carried token stays pending and `committed` stays the cache
+    // rows; the burst after it emits what the oracle emits.
+    if let Some((prev_hist, prev_len)) = prev_turn.as_ref() {
+        let carried = sess.has_pending();
+        let mut stop = |_: &[u32]| false;
+        let (idle, _d, _a) = model.generate_spec_session_sampled_prime_split(
+            &e,
+            &mut sess,
+            &[],
+            n_new,
+            k,
+            Some(SpecSampling::from_cli_env()),
+            None,
+            Some(&mut stop),
+        )?;
+        let (committed_idle, rows_idle) = (sess.committed.len(), sess.kv_position());
+        let still_pending = sess.has_pending();
+        // The session's list is the true history less the token still pending.
+        let list_idle = sess.committed[..] == hist[..hist.len() - usize::from(still_pending)];
+        let (next, _d, _a) = model.generate_spec_session_sampled_prime_split(
+            &e,
+            &mut sess,
+            &[],
+            n_new,
+            k,
+            Some(SpecSampling::from_cli_env()),
+            None,
+            None,
+        )?;
+        let mut got = idle.clone();
+        got.extend_from_slice(&next);
+        let long = model.generate_spec_oracle(&e, prev_hist, prev_len + got.len())?;
+        let reference = &long[(*prev_len).min(long.len())..];
+        let text_ok = !next.is_empty() && got[..] == reference[..got.len().min(reference.len())];
+        hist.extend_from_slice(&got);
+        let list_next = sess.committed[..] == hist[..hist.len() - usize::from(sess.has_pending())];
+        let rows_ok = committed_idle == rows_idle
+            && sess.committed.len() == sess.kv_position()
+            && list_idle
+            && list_next;
+        let m = if carried && still_pending && idle.is_empty() && rows_ok && text_ok {
+            "MATCH"
+        } else {
+            ok = false;
+            "MISMATCH"
+        };
+        println!(
+            "no-round burst: carried token before {carried}, after {still_pending}, {} tok emitted \
+             by it, committed={committed_idle} cache rows={rows_idle}; next burst {} tok, \
+             committed={} cache rows={}; committed is the history {list_idle}/{list_next} -> {m}",
+            idle.len(),
+            next.len(),
+            sess.committed.len(),
+            sess.kv_position()
+        );
+        if !carried {
+            println!("the session held no carried token before the no-round burst: nothing tested");
+        }
+        if !text_ok {
+            println!("  session:   {:?}", &got[..got.len().min(12)]);
+            println!("  reference: {:?}", &reference[..reference.len().min(12)]);
+        }
     }
     println!(
         "{}",
