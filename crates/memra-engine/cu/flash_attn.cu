@@ -7400,6 +7400,232 @@ extern "C" __global__ void fa_decode_combine_seqs(
 }
 
 
+// ===== VERIFY ROWS: one KV read for all rows of a speculative verify (GB10 decode round 5, lever 2) =====
+// A speculative verify attends T = K+1 query rows against ONE session's cache. On the seqs
+// kernel above each row is its own grid z and walks the whole cache, so a round reads the KV T
+// times (15.6 GB per round at 131k and K=3 for 3.89 GB of unique KV;
+// research/gb10-verify-rows-20261109). Here one block per (kv_head, split, ROW GROUP) stages each
+// K/V tile ONCE and every (row, head) warp of the group runs its own walk over it.
+//
+// A row group = consecutive rows of one cache that share the split partition (ns_eff, per) the
+// ONE-PARTITION LAW derives from each row's own T_kv; the host forms the groups
+// (`fa_row_groups`, lib.rs), at most floor(32 / gqa) rows each (a block holds 32 warps). Rows of
+// a group share every t_lo and differ only in the last split's t_hi, by less than the group size.
+//
+// BIT-IDENTITY CONTRACT (kernel-check FA-VERIFY-ROWS pins bitdiff == 0 on the partials and the
+// combined output against the seqs launch): warp (r, wy) computes row r / head kv_head*gqa+wy's
+// partial with the seqs kernel's instruction sequence on the same values:
+//   - its Q is staged by the same quantizer into its own slot;
+//   - the tile is staged by the walk's own code from the same bytes (`fa_v4_deep_stage_k`
+//     verbatim, the V recipe verbatim) up to the GROUP's bound; which thread stores a slot has
+//     no numeric effect, and a row never reads a key past its own bound (every read is guarded
+//     by lane < nt / j < nt with the row's own nt, as in fa_v4_deep_walk);
+//   - score, B2 and B3 are fa_v4_deep_walk's, per warp, in the same tile order (t_lo is shared);
+//   - a tile the row has no key in is skipped whole, as the seqs loop never enters it;
+//   - the partial lands in the seqs layout's slot of its own row, the EMPTY partial included, so
+//     fa_decode_combine_seqs runs unchanged.
+// Default KV module pick (hd256, q8_0 K / q5_1 V), as the seqs deep twin.
+#define FA_ROWS_WARPS 32
+struct fa_v4_rows_q {
+    int   q_ints[FA_ROWS_WARPS][64];   // [row*gqa + wy][64] per-warp quantized Q (v4 slot layout)
+    float q_d[FA_ROWS_WARPS][8];       // [row*gqa + wy][8] per-chunk Q scales
+};
+static_assert(sizeof(fa_v4_rows_q) == 9216, "host shmem sizing mirrors this (lib.rs)");
+
+// A block is at most FA_ROWS_WARPS warps. The host cuts a row group to the function's own
+// CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK, so a target whose build of this kernel needs more
+// registers per thread than a 1,024-thread block allows launches smaller groups instead of failing
+// (a launch bound here cost 5% of the call on GB10: it made the compiler spill).
+extern "C" __global__ void fa_verify_rows_v4_deep(
+        const float* __restrict__ Q,
+        const unsigned long long* __restrict__ kv_ptrs,
+        const int* __restrict__ pos_seq,
+        const int* __restrict__ groups,          // [2G]: first row, row count
+        float* __restrict__ partO, float* __restrict__ partM, float* __restrict__ partL,
+        int head_dim, int n_head, int n_head_kv,
+        float scale, int n_splits_max, int split_keys,
+        long k_tok_bytes, long v_tok_bytes)
+{
+    const int g       = blockIdx.z;
+    const int row0    = groups[2 * g];
+    const int n_rows  = groups[2 * g + 1];
+    const int kv_head = blockIdx.x;
+    const int split   = blockIdx.y;
+    const int gqa     = n_head / n_head_kv;
+    const int wb      = threadIdx.y;             // block warp: row * gqa + wy
+    const int lane    = threadIdx.x;
+    const int r       = wb / gqa;                // row of the group (>= n_rows: staging only)
+    const int wy      = wb - r * gqa;
+    const bool live   = kv_head < n_head_kv && split < n_splits_max && r < n_rows;
+    const int row     = row0 + (live ? r : 0);
+    const int head    = kv_head * gqa + wy;
+    constexpr int dpl = 8;                       // head_dim 256 (dispatch-pinned)
+
+    const uint8_t* K  = (const uint8_t*)kv_ptrs[2 * row0];
+    const uint8_t* V  = (const uint8_t*)kv_ptrs[2 * row0 + 1];
+
+    // This row's partition, from ITS OWN T_kv (the seqs kernel's lines verbatim).
+    const int T_kv   = pos_seq[row] + 1;
+    const int ns_eff = max(1, (T_kv + split_keys - 1) / split_keys);
+    const int per    = (T_kv + ns_eff - 1) / ns_eff;
+    const int t_lo   = split * per;
+    const int t_hi   = (live && split < ns_eff) ? min(T_kv, t_lo + per) : t_lo;
+    // The group's staging bound: its last row has the largest T_kv and the same (ns_eff, per).
+    const int T_max  = pos_seq[row0 + n_rows - 1] + 1;
+    const int ns_mx  = max(1, (T_max + split_keys - 1) / split_keys);
+    const int per_mx = (T_max + ns_mx - 1) / ns_mx;
+    const int t_lo_g = split * per_mx;
+    const int t_hi_g = (kv_head < n_head_kv && split < ns_mx) ? min(T_max, t_lo_g + per_mx) : t_lo_g;
+
+    extern __shared__ unsigned char sm_raw_v4vr[];
+    fa_v4_deep_smem* sm = (fa_v4_deep_smem*)sm_raw_v4vr;      // its K tile; its q arrays unused
+    fa_v4_sv_t* sV = (fa_v4_sv_t*)(sm_raw_v4vr + sizeof(fa_v4_deep_smem));
+    fa_v4_rows_q* sq = (fa_v4_rows_q*)(sm_raw_v4vr + sizeof(fa_v4_deep_smem)
+                                       + (size_t)FA_DEC_TILE * 256 * sizeof(fa_v4_sv_t));
+
+    if (live) {
+        // fa_v4_deep_stage_q verbatim, into this warp's slot.
+        int qq[FA_DEC_MAX_DPL / 4];
+        float dQ;
+        fa_dec_v3_qquant(Q, ((size_t)row * n_head + head) * head_dim, scale, 8, lane, qq, dQ);
+        sq->q_ints[wb][lane * 2]     = qq[0];
+        sq->q_ints[wb][lane * 2 + 1] = qq[1];
+        if ((lane & 3) == 0) sq->q_d[wb][lane >> 2] = dQ;
+    }
+    __syncthreads();
+
+    float m_i = NEG_INF, l_i = 0.0f;
+    float acc[FA_DEC_MAX_DPL];
+    #pragma unroll
+    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) acc[i] = 0.0f;
+    const int kblk0 = (kv_head * head_dim) >> 5;
+
+    // ---- fa_v4_deep_walk, the tile staged once for the group ----
+    const int bt  = wb * WARP_SZ + lane;         // every thread of the block stages
+    const int bsz = WARP_SZ * blockDim.y;
+    fa_deep_prefetch_tile(K, V, t_lo_g, t_hi_g, kblk0, k_tok_bytes, v_tok_bytes, bt, bsz);
+    fa_deep_prefetch_tile(K, V, t_lo_g + FA_DEC_TILE, t_hi_g, kblk0, k_tok_bytes, v_tok_bytes, bt, bsz);
+    for (int t0 = t_lo_g; t0 < t_hi_g; t0 += FA_DEC_TILE) {
+        const int nt_g = min(FA_DEC_TILE, t_hi_g - t0);
+        // stage V (v4 recipe verbatim) + K repack (padded rows), to the group's bound
+        for (int b = bt; b < nt_g * dpl * 4; b += bsz) {
+            const int sub   = b & 3;
+            const int b32   = b >> 2;
+            const int j     = b32 / dpl;
+            const int blk_i = b32 - j * dpl;
+            #if MEMRA_KV_VFMT == 2
+            const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
+                                   + (size_t)(kblk0 + blk_i) * V_BLK_B;
+            fa_v4_sv_t* out = sV + (size_t)j * 256 + (blk_i << 5);
+            #pragma unroll
+            for (int e0 = 0; e0 < 8; ++e0) {
+                const int e2 = sub * 8 + e0;
+                out[e2] = blk[e2];
+            }
+            #else
+            const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
+                                   + (size_t)(kblk0 + blk_i) * 24;
+            uint32_t wdm; memcpy(&wdm, blk, 4);
+            const float d = __half2float(__ushort_as_half((unsigned short)(wdm & 0xFFFFu)));
+            const float m = __half2float(__ushort_as_half((unsigned short)(wdm >> 16)));
+            uint32_t qh; memcpy(&qh, blk + 4, 4);
+            uint32_t qsw[4]; memcpy(qsw, blk + 8, 16);
+            __nv_bfloat16* out = sV + (size_t)j * 256 + (blk_i << 5);
+            __nv_bfloat16 pk[8];
+            #pragma unroll
+            for (int e0 = 0; e0 < 8; ++e0) {
+                const int e2   = sub * 8 + e0;
+                const int byte = (e2 < 16) ? e2 : e2 - 16;
+                const int nib  = (uint8_t)(qsw[byte >> 2] >> (8 * (byte & 3)));
+                const int lo   = (e2 < 16) ? (nib & 0x0F) : (nib >> 4);
+                const int q5   = lo | (int)(((qh >> e2) & 1u) << 4);
+                pk[e0] = __float2bfloat16(d * (float)q5 + m);
+            }
+            uint4 u; memcpy(&u, pk, 16);
+            *(uint4*)&out[sub * 8] = u;
+            #endif
+        }
+        fa_v4_deep_stage_k(K, t0, nt_g, bt, bsz, kblk0, k_tok_bytes, sm);
+        fa_deep_prefetch_tile(K, V, t0 + 2 * FA_DEC_TILE, t_hi_g, kblk0,
+                              k_tok_bytes, v_tok_bytes, bt, bsz);
+        __syncthreads();
+
+        // This row's keys of the tile: nt <= 0 when the tile starts at or past its bound
+        // (warp-uniform; the seqs walk never enters such a tile).
+        const int nt = min(FA_DEC_TILE, t_hi - t0);
+        if (nt > 0) {
+            // ---- V4 SCORE PHASE (fa_v4_deep_walk verbatim; q from this warp's slot) ----
+            float my_score = NEG_INF;
+            if (lane < nt) {
+                float s = 0.0f;
+                #pragma unroll
+                for (int c = 0; c < 8; c++) {
+                    int sumi = 0;
+                    #pragma unroll
+                    for (int w = 0; w < 8; w++)
+                        sumi = __dp4a(sm->k_ints[lane][c * 8 + w], sq->q_ints[wb][c * 8 + w], sumi);
+                    s = __fmaf_rn(__fmul_rn(sm->k_d[lane][c], sq->q_d[wb][c]), (float)sumi, s);
+                }
+                my_score = s;
+            }
+            float tile_max = m_i;
+            {
+                float v = my_score;
+                #pragma unroll
+                for (int off = 16; off > 0; off >>= 1)
+                    v = fmaxf(v, __shfl_xor_sync(0xffffffffu, v, off));
+                tile_max = fmaxf(tile_max, v);
+            }
+
+            // ---- B2 (verbatim) ----
+            const float m_new = tile_max;
+            const float alpha = (m_i == NEG_INF) ? 0.0f : exp2f((m_i - m_new) * LOG2E);
+            const float p_lane = (lane < nt) ? exp2f((my_score - m_new) * LOG2E) : 0.0f;
+            l_i = l_i * alpha + warp_reduce_sum(p_lane);
+            #pragma unroll
+            for (int i = 0; i < dpl; ++i) acc[i] *= alpha;
+            m_i = m_new;
+
+            // ---- B3 (verbatim) ----
+            #pragma unroll 8
+            for (int j = 0; j < nt; ++j) {
+                const float p = __shfl_sync(0xffffffffu, p_lane, j);
+                #if MEMRA_KV_VFMT == 2
+                const uchar2* vj2 = (const uchar2*)(sV + (size_t)j * 256);
+                #pragma unroll
+                for (int i2 = 0; i2 < dpl / 2; ++i2) {
+                    const uchar2 vv = vj2[lane + (i2 << 5)];
+                    acc[2 * i2]     += p * (float)*(const __nv_fp8_e4m3*)&vv.x;
+                    acc[2 * i2 + 1] += p * (float)*(const __nv_fp8_e4m3*)&vv.y;
+                }
+                #else
+                const __nv_bfloat162* vj2 = (const __nv_bfloat162*)(sV + (size_t)j * 256);
+                #pragma unroll
+                for (int i2 = 0; i2 < dpl / 2; ++i2) {
+                    const __nv_bfloat162 vv = vj2[lane + (i2 << 5)];
+                    acc[2 * i2]     += p * __bfloat162float(vv.x);
+                    acc[2 * i2 + 1] += p * __bfloat162float(vv.y);
+                }
+                #endif
+            }
+        }
+        __syncthreads();   // tile fully consumed by every row before restaging
+    }
+
+    if (!live) return;
+    #pragma unroll
+    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) {
+        if (i < dpl) {
+            int d = (lane << 1) + ((i >> 1) << 6) + (i & 1);
+            partO[(((size_t)row * n_head + head) * n_splits_max + split) * head_dim + d] = acc[i];
+        }
+    }
+    if (lane == 0) {
+        partM[((size_t)row * n_head + head) * n_splits_max + split] = m_i;
+        partL[((size_t)row * n_head + head) * n_splits_max + split] = l_i;
+    }
+}
+
 // V4 rows twin (spec verify): grid.z = query row, per-row causal bound — same v4 body, so
 // verify and decode share the numeric config (dispatch parity).
 extern "C" __global__ void fa_decode_vec_q_rows_v4(
