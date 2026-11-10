@@ -244,8 +244,8 @@ impl Sampler {
         self.cfg.temperature <= 0.0
     }
     /// Sampled spec in its FASTEST regime: pure temperature, no truncation filters, no
-    /// penalties. Filters and penalties are also distribution-exact under the rejection
-    /// verify (spec.rs applies both symmetrically to draft q and target p), so they remain
+    /// penalties. Filters and penalties are also distribution-exact under the sampled
+    /// verify (spec.rs emits the target's own filtered, penalised draw), so they remain
     /// spec-ELIGIBLE — see `spec_eligible` in memra-server's worker, the authoritative
     /// predicate. What they cost is the in-graph draft chain: the captured sampled draft
     /// samples from the RAW softmax and can hold neither per-row filter stats nor a varying
