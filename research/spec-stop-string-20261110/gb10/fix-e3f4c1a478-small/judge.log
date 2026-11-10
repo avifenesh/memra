@@ -1,0 +1,9 @@
+== small (mtp) ==
+  t1: stop rows equal to plain decode 13/13; close ms: non-stop median 76 (max 76, n=5), stop rows max 333.6 (n=13), limit 227
+    stop-row completion tokens: [19, 36, 50, 68, 72, 27, 54, 78, 27, 54, 78, 36, 29] plain [19, 36, 50, 68, 72, 27, 54, 78, 27, 54, 78, 36, 29]
+  greedy: stop rows equal to plain decode 13/13; close ms: non-stop median 0 (max 1, n=9), stop rows max 207.7 (n=13), limit 100
+    stop-row completion tokens: [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 30] plain [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 30]
+coverage mtp greedy: spanning stops 3, two stops in one burst 1, confirmed rejected-draft stops 4
+coverage mtp t1: spanning stops 5, two stops in one burst 2, confirmed rejected-draft stops 0
+FAIL coverage mtp t1: no stop string that only a rejected draft completes was seen
+STOP-STRING GATE: FAIL (1)

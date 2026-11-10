@@ -1,0 +1,3 @@
+{"case": "ref", "route": "plain", "env": [], "self_ref": [], "prefix_cache": true}
+{"case": "spec", "route": "mtp", "env": [], "self_ref": [], "prefix_cache": true}
+{"case": "dspark-px", "route": "dspark", "env": ["MEMRA_DSPARK_SPEC=1", "MEMRA_DSPARK_DRAFT=models/memra-q38/Qwen3.8-27B-DFlash2-memra", "MEMRA_FRSPEC_TRIM=$MODELS/q38-ranks-sxc32768.gguf.txt", "MEMRA_DFLASH_PREC=q4", "MEMRA_PREFIX_CACHE_MB=4000", "MEMRA_MTP_SKIP=1"], "self_ref": ["t1"], "prefix_cache": true}
