@@ -84,6 +84,17 @@ PASS; run-spec K=1..8 self-consistency PASS (acceptance 17/98 and 17/112, as bef
 byte-identical (`a42e74b3f28cbd96`); run-gen pp3855 logits are identical with v3, `MEMRA_MMQ_F8F4_V3=0`
 and `MEMRA_MMQ_F8F4_V2=0` (`f81e969042a7e155`), at 3.361 / 3.429 / 3.926 s.
 
+> **Note, 2026-11-10 (memra#1199).** "Every flip margin-explained", here and in the follow-up
+> below, is true of any flip: the spread at a flip is at least the mean of the two margins, so
+> the old per-flip rule could not fail. It is not evidence. What these 16k cells show is the
+> flip count (3 against a budget of 3) and that the probe tables of v3, `MEMRA_MMQ_F8F4_V3=0`
+> and #1102 are byte-identical (`a42e74b3f28cbd96`), so v3 changes no value the probe reads.
+> Under the rule that replaced it ([ARGMAX-GATE-GAP-SHIFT-FLOOR.md](ARGMAX-GATE-GAP-SHIFT-FLOOR.md)):
+> the three flips have margin sums of 0.044, 0.098 and 0.233, and the largest gap shift at an
+> agreeing row of the 12 is 0.596. This cell (Qwen3.8-27B NVFP4 on `p4-16k`, GB10) had no
+> calibrated floor when it ran, so the new rule reads its flips as unclassified, not as near
+> ties; the numbers above stand. `research/argmax-gate-rule-20261110/REJUDGE.md` has the row.
+
 ## Follow-up: CTA-local copies, gate/up on v3 (2026-11-08, ledger rows 44-45)
 
 The independent review of #1102 traced the issuing thread's cost to the copy form. With a

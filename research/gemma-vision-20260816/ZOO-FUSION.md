@@ -56,6 +56,12 @@ as PASS, and every cert line carries its banked invocation):
   the thin-near-tie qwen class. Fixed by a gemma-4-31B calibration row (3 explained
   flips per 12-window, derived from the banked margin distribution p10 0.293 / p50
   2.28, NOT loosened-to-green; every flip must still be individually margin-explained).
+  Note, 2026-11-10 (memra#1199): "margin-explained" and "inside the measured config spread"
+  hold for every flip (the spread at a flip is at least the mean of the two margins), so
+  they are not evidence, and the budget of 3 was derived with that test. The evidence here
+  is the invariant flip count (2) across silicon and mirror arms. The banked table's flips:
+  row 2093 0.135 + 0.167, row 2094 0.199 + 0.293; this artifact and card have no calibrated
+  floor (`docs/decisions/ARGMAX-GATE-GAP-SHIFT-FLOOR.md`).
   Re-run at HEAD: `tools/argmax-margin-gate.sh <shipQ6K-downQ6K>` **PASS on both
   mirror arms** (flips=2, bad=0) and `--canary` teeth intact (injected wide-margin
   flip rejected). Ship-lane attribution receipts:

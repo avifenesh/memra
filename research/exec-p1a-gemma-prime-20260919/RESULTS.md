@@ -56,6 +56,18 @@ EXACT, 24-step streams identical); tickinv **TICK-INVARIANT** (5/20/77 calls + o
 64/256/512/1000 all EXACT). The registry row `GemmaParallelMoeResidual.chunked_prime` flips to
 yes on that receipt; the 26B leaves the monolithic-prime class with the dense gemmas.
 
+> **Note, 2026-11-10 (memra#1199), on the argmax-margin rows of the table above and the
+> paragraph below.** "Margin-explained" is true of any flip: the spread at a flip is at least
+> the mean of the two margins, so the old per-flip rule could not fail. The evidence of these
+> cells is the flip counts against the budgets. The margins quoted below (0.014 / 0.0135) are
+> the smaller side of each flip. Both sides, from the banked tables: 31B, new binary, row 2101:
+> 0.223 (prefill) + 0.459 (decode); 26B after the router fix, row 2091: 0.097 + 0.014, row 2096:
+> 0.0135 + 0.821, so at row 2096 decode holds its token by 0.82 while prefill sits on a tie.
+> "Arithmetically flippable" (a margin below the spread) is the same test and holds at many
+> agreeing rows too. These cells ran on a 170-SM card with no calibrated floor, so the rule
+> that replaced the test (`docs/decisions/ARGMAX-GATE-GAP-SHIFT-FLOOR.md`) reads their flips as
+> unclassified. `research/argmax-gate-rule-20261110/REJUDGE.md` has every row.
+
 argmax-margin on the fixed 26B: flips=2, both margin-explained (margins 0.014 / 0.0135 vs config
 spreads 0.64 / 3.02), decision position agreed — over the UNCALIBRATED default budget of 1. The
 26B had no calibration row; its decode margins are identical across the two binaries (min 0.014,

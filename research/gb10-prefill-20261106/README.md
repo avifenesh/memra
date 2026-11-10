@@ -427,6 +427,14 @@ positions are flippable within the config spread, so its budget is 3 per 12-posi
 gemma rows' rule), every flip must still be margin-explained, and the default prompt keeps the
 model's budget of 1 (`tools/argmax-margin-gate.sh`, `tools/test_argmax_margin_gate.py`).
 
+> **Note, 2026-11-10 (memra#1199).** "Margin-explained" and "flippable within the config spread"
+> in the paragraph above describe a test that holds for every flip (the spread at a flip is at
+> least the mean of the two margins). The evidence of these cells is the flip count (3) and the
+> byte-identical probe tables of v2 and the base (`4800c57de4349345`). The three flips' margin
+> sums are 0.044, 0.098 and 0.233. The rule that replaced the per-flip test, and what it says of
+> this table: `docs/decisions/ARGMAX-GATE-GAP-SHIFT-FLOOR.md`,
+> `research/argmax-gate-rule-20261110/REJUDGE.md`.
+
 
 ## Next exact levers
 
