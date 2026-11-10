@@ -503,6 +503,13 @@ Before tagging, in this order:
    before the CUDA install) and refuses a tag whose checkout says a different version —
    the refusal is the guard doing its job, not an obstacle: a mismatched tag ships
    old-version binaries under a new-version name.
+3. Byte check before captures. Dispatch `gpu-ci.yml` with `build_reuse_only=true` on the release
+   commit and build the `ubuntu-24.04` profile on the capture host. Capture only when the two
+   `build.json` files name the same six digests: `tools/qualify-release.py capture
+   --reference-build <GitHub's build.json>` refuses otherwise. A capture of bytes the runners
+   cannot rebuild qualifies nothing `release.yml` will package (v0.140.0 took two such
+   captures first: the capture host's toolchain carried `rust-src`; the build now refuses it).
+   Details: [Release qualification](RELEASE-QUALIFICATION.md#produce-a-record).
 
 That's it. Two workflows fire on the tag:
 

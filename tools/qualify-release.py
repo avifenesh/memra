@@ -113,6 +113,37 @@ def prepare_build_source(repo, expected, out):
     return release_input_view.materialize(provenance, expected, out / "source")
 
 
+def reproducible_toolchain(root):
+    """Refuse a toolchain whose binaries the release runners cannot rebuild byte for byte.
+    With the rust-src component installed, rustc writes the standard library's panic locations
+    as <sysroot>/lib/rustlib/src/rust/library/...; without it, as /rustc/<hash>/library/....
+    The runners install a rustup minimal toolchain, which has no rust-src, so a build with the
+    component differs from theirs in .rodata and in every digest (v0.140.0's first captures)."""
+    q.require(not (Path(root) / "lib/rustlib/src/rust").exists(),
+              "toolchain carries rust-src: its binaries embed sysroot source paths that a rustup "
+              "minimal toolchain does not; run `rustup component remove rust-src` and rebuild")
+
+
+def same_bytes_as_reference(built, reference):
+    """Refuse a capture of bytes another builder did not reproduce. `reference` is the build.json
+    of a controlled build of the same commit and profile made elsewhere: for ubuntu-24.04, the
+    gpu-ci `build_reuse_only` run on the candidate (artifact build-feedback-diagnostics)."""
+    q.require(isinstance(reference, dict) and isinstance(reference.get("binaries"), dict)
+              and all(isinstance(entry, dict) for entry in reference["binaries"].values()),
+              "reference build is not a build.json")
+    q.require(reference != built, "reference build is this build's own build.json, not another builder's")
+    q.require(reference.get("schema") == built.get("schema"), "reference build has another schema")
+    q.require(reference.get("source_before") == built.get("source_before"),
+              "reference build is of other source inputs")
+    q.require(reference.get("platform") == built.get("platform"),
+              "reference build is for another platform profile")
+    q.require(sorted(reference["binaries"]) == sorted(q.BINARIES), "reference build lacks the release binaries")
+    differ = sorted(name for name in q.BINARIES
+                    if reference["binaries"][name].get("sha256") != built["binaries"][name]["sha256"])
+    q.require(not differ, "build differs from the reference build in " + ", ".join(differ)
+              + "; capture refused (byte check before captures)")
+
+
 def build(args):
     q.require(sys.platform == "linux", "controlled native builds require Linux input isolation")
     bwrap = args.bwrap or shutil.which("bwrap")
@@ -121,13 +152,15 @@ def build(args):
     source = clean_source(args.repo)
     q.require(source["commit"] == args.expected_head, "build checkout differs from requested source")
     q.require(not args.out.is_relative_to(args.repo), "build output/source staging must be outside the input checkout")
+    rustc = Path(subprocess.check_output(["rustup", "which", "--toolchain", "1.97.1", "rustc"], text=True).strip())
+    cargo = Path(subprocess.check_output(["rustup", "which", "--toolchain", "1.97.1", "cargo"], text=True).strip())
+    q.require(cargo.parent.parent == rustc.parent.parent, "cargo/rustc toolchain roots differ")
+    # Before anything is created: a refused toolchain leaves no output directory behind.
+    reproducible_toolchain(rustc.parent.parent)
     args.out.mkdir(parents=True, exist_ok=False)
     build_source = prepare_build_source(args.repo, source, args.out)
     prepare_cargo_home(args.out)
-    rustc = Path(subprocess.check_output(["rustup", "which", "--toolchain", "1.97.1", "rustc"], text=True).strip())
-    cargo = Path(subprocess.check_output(["rustup", "which", "--toolchain", "1.97.1", "cargo"], text=True).strip())
     env = build_environment(args.out, args.nvcc.resolve(), rustc)
-    q.require(cargo.parent.parent == rustc.parent.parent, "cargo/rustc toolchain roots differ")
     # Fetching dependencies never executes workspace build scripts. Compilation is
     # offline inside the isolated view, so it cannot fetch excluded provenance.
     # --quiet here and on the build: fetch.log and build.log are public receipts, and cargo's
@@ -275,6 +308,8 @@ def capture(args):
               "capture requires an isolated v3 build; older provenance is unqualified")
     q.require(q.json_bytes((args.build / "source.json").read_bytes()) == source, "build is for different source")
     q.validate_build(built, source, built["source"], q.Evidence(args.build))
+    if args.reference_build:
+        same_bytes_as_reference(built, q.json_bytes(args.reference_build.read_bytes()))
     args.out.mkdir(parents=True, exist_ok=False)
     for name in ("build.json", "source.json", "build.log", "fetch.log"):
         shutil.copy2(args.build / name, args.out / name)
@@ -415,6 +450,9 @@ def main():
     parser.add_argument("--jobs", type=int, default=8)
     parser.add_argument("--oracles", type=Path)
     parser.add_argument("--lease", type=Path)
+    parser.add_argument("--reference-build", type=Path,
+                        help="capture: a build.json of the same source inputs and profile from another "
+                             "builder; refuse unless all six binary digests are equal")
     parser.add_argument("--name")
     parser.add_argument("--append", action="store_true", help="bank an additional qualified build profile")
     args = parser.parse_args()

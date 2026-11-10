@@ -365,6 +365,20 @@ first such check found two builds of one tree differing only in `.strtab` and
 carried the pid. `crates/memra-engine/build.rs` now zeroes that field
 (`normalize_nvcc_temp_symbols`), and two builds of one tree compare equal with `cmp`.
 
+Run that check before any capture, and give capture the result: `qualify-release.py capture
+--reference-build <the run's build.json>` refuses unless the build's six digests equal the
+reference's (same schema, source inputs and platform profile; not the build's own file). No workflow builds `ubuntu-22.04` before a tag, so
+that profile rests on the same host, image recipe and toolchain as the checked `ubuntu-24.04`
+build; `release.yml` is its first byte check.
+
+The build refuses a toolchain that carries the `rust-src` component. With it rustc writes the
+standard library's panic locations as `<sysroot>/lib/rustlib/src/rust/library/...`; a rustup
+minimal toolchain, as on the release runners, writes `/rustc/<hash>/library/...`. The two builds
+then share `.text` and differ in `.rodata` and in every digest. v0.140.0's first two captures
+were of such a build; they passed and are not banked (`research/release-v0.140.0-20261110/README.md`).
+Install the pinned toolchain with rustup's minimal profile; do not copy one from a development
+machine.
+
 The coordinator supplies the non-serving rig; the physical-card wrapper is
 `tools/memra-gpu-run`. Capture requires the live wrapper/child ancestry, canonical exclusive
 per-UUID FLOCK and exact CUDA-visible UUID. It never acquires locks, rents a rig or evicts another
@@ -416,7 +430,7 @@ placement. The placement of every DSv4 gate binary is in
 ```sh
 tools/memra-gpu-run --gpus "$GPU_UUID" --receipt "$LEASE" --box-lock /tmp/memra-gpu.lock -- \
   python3 tools/qualify-release.py capture --expected-head "$COMMIT" --build "$BUILD" --out "$RUN" \
-  --oracles /data/models/kernel-oracles
+  --oracles /data/models/kernel-oracles --reference-build "$GITHUB_BUILD_JSON"
 ```
 
 Capture stages the six hash-checked build outputs in this isolated checkout's ignored
