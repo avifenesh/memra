@@ -46,3 +46,8 @@ research/modelplan-onboarding-dsv41-20261109/encoding/parse/** -text -whitespace
 # The stop-string gate's raw answers and logs, byte-exact: runs.jsonl pins each answer by its sha256 (memra#1207).
 research/spec-stop-string-20261110/**/texts/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
 research/spec-stop-string-20261110/**/*.log -text whitespace=-blank-at-eol,-blank-at-eof
+
+# memra#1201: the stall cell's raw answer texts and the probe patch stay byte-exact (an answer
+# ends where the cell cut its stream, a patch line can end in a space).
+research/spec-entry-yield-bound-20261110/**/texts/** -text whitespace=-blank-at-eol,-blank-at-eof
+research/spec-entry-yield-bound-20261110/tools/probe-arms.patch -text whitespace=-blank-at-eol,-blank-at-eof
