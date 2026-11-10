@@ -23,6 +23,7 @@ use std::os::raw::c_void;
 use std::sync::Arc;
 
 pub mod decode;
+pub mod draft;
 pub mod engram;
 pub mod experts;
 pub mod tp;
@@ -347,6 +348,28 @@ pub mod ffi {
             ww: i32,
             tot: i32,
             out: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// The index rows of several decode tokens in one forward (window part into
+        /// `[ring | the forward's rows]`, then the selection rows).
+        pub fn memra_v41_attn_idx_rows(
+            sel: *const i32,
+            tw: i32,
+            r0: i32,
+            rows: i32,
+            sp: i32,
+            win: i32,
+            tot: i32,
+            out: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// `row += bias` in fp32 (bias may be null), then the maximum and its lowest index.
+        pub fn memra_v41_add_argmax(
+            row: *mut f32,
+            bias: *const f32,
+            n: i32,
+            out_val: *mut f32,
+            out_idx: *mut i32,
             stream: *mut c_void,
         ) -> i32;
         /// The MoE dispatch plan on the device (`MoePlanDev`).
@@ -1554,12 +1577,30 @@ impl LayerW {
         part: Part,
         routed: bool,
     ) -> Result<Self, String> {
+        Self::load_part_named(ops, stm, g, &format!("layers.{id}"), id, mint, part, routed)
+    }
+
+    /// [`Self::load_part_with`] for the block stored under `prefix`: a trunk layer is
+    /// `layers.<id>`; a draft stage is `mtp.<stage>` at layer index `trunk layers + stage`
+    /// (the config's compress ratios list the draft stages after the trunk), with `g` carrying
+    /// the draft MoE's expert count and top-k.
+    #[allow(clippy::too_many_arguments)]
+    pub fn load_part_named(
+        ops: &Ops,
+        stm: &StModel,
+        g: &Geo,
+        prefix: &str,
+        id: usize,
+        mint: bool,
+        part: Part,
+        routed: bool,
+    ) -> Result<Self, String> {
         Part::check(g, part.n)?;
         let heads = part.range(g.heads);
         let groups = part.range(g.o_groups);
         let dims = part.range(g.dim);
         let experts = part.range(g.n_experts);
-        let p = format!("layers.{id}");
+        let p = prefix.to_string();
         let ratio = g.compress_ratios[id];
         let kv_source = g.kv_sources.contains(&id);
         let index_source = g.index_sources.contains(&id);
@@ -1839,11 +1880,19 @@ impl Shared {
 
 /// One layer's own decode state: the sliding-window ring (bf16 `[window][head_dim]`, position p at
 /// slot p % window) and, on a ratio-2 kv source, the open pair's fp32 kv/gate rows.
+///
+/// A forward of several decode tokens (a drafted block's verification) writes neither: its
+/// window KV rows and its compressor rows wait in `pend_kv` / `pend_c` until
+/// [`Ctx::commit_rows`] copies the kept rows in, so a rejected row never reaches the state.
 #[derive(Default)]
 pub struct LayerState {
     pub ring: Option<Buf>,
     pub c_kv: Option<Buf>,
     pub c_sc: Option<Buf>,
+    /// bf16 `[s][head_dim]`: the uncommitted forward's window KV rows
+    pub pend_kv: Option<Buf>,
+    /// fp32 `[s][head_dim]` kv and gate rows of the uncommitted forward (ratio-2 kv source)
+    pub pend_c: Option<(Buf, Buf)>,
 }
 
 /// Grow `buf` (rows of `row_bytes`) to hold `rows`, keeping its first `cap` rows.
@@ -1900,6 +1949,11 @@ pub struct AttnKeys {
     pub tot: usize,
     pub win: usize,
     pub comp: bool,
+    /// several decode tokens in one forward: the window part is `[ring | the forward's rows]`
+    pub dec_rows: bool,
+    /// the index rows `[rows][tot]` given outright (a draft block: every row reads the same
+    /// ring slots and block rows); None builds them from the position
+    pub idx: Option<Buf>,
 }
 
 /// Runtime pieces shared by every layer on the card.
@@ -1998,6 +2052,29 @@ impl Ctx {
         let oldest = sp % win + 1;
         for (v, slot) in row.iter_mut().zip((oldest..win).chain(0..oldest)) {
             *v = if slot > sp { -1 } else { slot as i32 };
+        }
+    }
+
+    /// The window selection of row `i` of a call of several decode tokens from `sp > 0`
+    /// (`memra_v41_attn_idx_rows`, the host form): the decode row of position `sp + i`
+    /// ([`Self::window_row_decode`]: the ring oldest slot first, -1 for slots it has not reached)
+    /// as entries of `[the ring before the call (win rows) | the call's own rows]`. A slot's
+    /// position is the newest one at or below the row's; a position the call feeds is entry
+    /// `win + (position - sp)`, an older one is its ring slot.
+    pub fn window_row_verify(sp: usize, i: usize, win: usize, row: &mut [i32]) {
+        let p = sp + i;
+        for (j, v) in row.iter_mut().enumerate() {
+            let slot = (p % win + 1 + j) % win;
+            *v = if slot > p {
+                -1
+            } else {
+                let q = p - (p - slot) % win;
+                if q >= sp {
+                    (win + (q - sp)) as i32
+                } else {
+                    slot as i32
+                }
+            };
         }
     }
 
@@ -2376,7 +2453,39 @@ impl Ctx {
             return Ok(Some((lat, 0, n)));
         }
         if s != 1 {
-            return Err("compressor: chunked decode is not implemented".into());
+            // Several decode tokens: the pairs that complete, in order. The first pair takes
+            // the open slot's row when the call starts on an odd position; the rows wait in
+            // `pend_c` for the commit, which leaves the open pair as the one-token program
+            // would. Each pair is pooled by the kernel the one-token call uses, even row first.
+            let odd = sp % 2;
+            let n = (sp + s) / 2 - sp / 2;
+            let lat = if n > 0 {
+                let (pk, ps) = if odd == 1 {
+                    let pk = self.ops.tmp(2 * n * hd * 4)?;
+                    let ps = self.ops.tmp(2 * n * hd * 4)?;
+                    copy_d2d(&self.ops, ckv, 0, &pk, 0, hd * 4)?;
+                    copy_d2d(&self.ops, csc, 0, &ps, 0, hd * 4)?;
+                    copy_d2d(&self.ops, &kvf, 0, &pk, hd * 4, (2 * n - 1) * hd * 4)?;
+                    copy_d2d(&self.ops, &scf, 0, &ps, hd * 4, (2 * n - 1) * hd * 4)?;
+                    (Some(pk), Some(ps))
+                } else {
+                    (None, None)
+                };
+                let lat = self.ops.tmp(n * hd * 2)?;
+                pool(
+                    self,
+                    pk.as_ref().unwrap_or(&kvf),
+                    ps.as_ref().unwrap_or(&scf),
+                    n,
+                    &lat,
+                )?;
+                norm(self, &lat, n)?;
+                Some((lat, sp / 2, n))
+            } else {
+                None
+            };
+            ls.pend_c = Some((kvf, scf));
+            return Ok(lat);
         }
         let slot = sp % 2;
         copy_d2d(&self.ops, &kvf, 0, ckv, slot * hd * 4, hd * 4)?;
@@ -2467,9 +2576,9 @@ impl Ctx {
         let ratio = lw.ratio;
         let win = g.window;
         let comp = ratio > 0;
-        if sp > 0 && s != 1 {
-            return Err("attention: chunked decode is not implemented".into());
-        }
+        // several decode tokens in one forward (a drafted block's verification): each row runs
+        // the one-token program against the ring as it stood plus the rows before it
+        let dec_rows = sp > 0 && s > 1;
         self.nv(c"qr");
         let qr = self.ops.tmp(s * g.q_lora * 2)?;
         self.ops.linear_q(
@@ -2536,30 +2645,33 @@ impl Ctx {
             ls.ring = Some(self.ops.buf(win * hd * 2)?);
         }
         let ring = ls.ring.as_ref().unwrap();
-        // the ring holds position p at slot p % win; a prefill seeds it with its last win rows, as
-        // at most two contiguous runs (split where the slots wrap)
-        let mut p = (sp + s).saturating_sub(win).max(sp);
-        while p < sp + s {
-            let run = (win - p % win).min(sp + s - p);
-            copy_d2d(
-                &self.ops,
-                &kvw,
-                (p - sp) * hd * 2,
-                ring,
-                (p % win) * hd * 2,
-                run * hd * 2,
-            )?;
-            p += run;
+        if !dec_rows {
+            // the ring holds position p at slot p % win; a prefill seeds it with its last win
+            // rows, as at most two contiguous runs (split where the slots wrap)
+            Self::ring_write(&self.ops, &kvw, ring, sp, s, win, hd)?;
         }
-        let (win_rows, ww) = if sp == 0 { (s, s.min(win)) } else { (win, win) };
+        let (win_rows, ww) = if sp == 0 {
+            (s, s.min(win))
+        } else if dec_rows {
+            (win + s, win)
+        } else {
+            (win, win)
+        };
         let n_c = (sp + s).checked_div(ratio).unwrap_or(0);
         let kv_all = self.ops.tmp((win_rows + n_c).max(1) * hd * 2)?;
         if sp == 0 {
             copy_d2d(&self.ops, &kvw, 0, &kv_all, 0, s * hd * 2)?;
         } else {
             copy_d2d(&self.ops, ring, 0, &kv_all, 0, win * hd * 2)?;
+            if dec_rows {
+                copy_d2d(&self.ops, &kvw, 0, &kv_all, win * hd * 2, s * hd * 2)?;
+            }
         }
-        drop(kvw);
+        if dec_rows {
+            ls.pend_kv = Some(kvw);
+        } else {
+            drop(kvw);
+        }
         self.nv_end();
         let c = self.chunk.min(s).max(1);
         if ratio > 0 {
@@ -2665,7 +2777,68 @@ impl Ctx {
             tot,
             win,
             comp,
+            dec_rows,
+            idx: None,
         })
+    }
+
+    /// Rows of `kv` (bf16 `[s][hd]`, positions `sp ..`) into the ring, position p at slot
+    /// p % win: the last `win` of them, as at most two contiguous runs (split where the slots wrap).
+    fn ring_write(
+        ops: &Ops,
+        kv: &Buf,
+        ring: &Buf,
+        sp: usize,
+        s: usize,
+        win: usize,
+        hd: usize,
+    ) -> Result<(), String> {
+        let mut p = (sp + s).saturating_sub(win).max(sp);
+        while p < sp + s {
+            let run = (win - p % win).min(sp + s - p);
+            copy_d2d(
+                ops,
+                kv,
+                (p - sp) * hd * 2,
+                ring,
+                (p % win) * hd * 2,
+                run * hd * 2,
+            )?;
+            p += run;
+        }
+        Ok(())
+    }
+
+    /// Close a forward of several decode tokens from `sp` on this layer: its first `keep` rows
+    /// become state (the ring slots and, on a ratio-2 kv source, the open pair's slots, as the
+    /// one-token program leaves them after position `sp + keep - 1`); the rows past them are
+    /// dropped. A layer the forward did not reach has nothing pending.
+    pub fn commit_rows(
+        &mut self,
+        ls: &mut LayerState,
+        sp: usize,
+        keep: usize,
+    ) -> Result<(), String> {
+        let (win, hd) = (self.g.window, self.g.head_dim);
+        if let Some(kv) = ls.pend_kv.take() {
+            if keep * hd * 2 > kv.len {
+                return Err("commit: more rows than the forward ran".into());
+            }
+            let ring = ls.ring.as_ref().ok_or("commit: the layer has no ring")?;
+            Self::ring_write(&self.ops, &kv, ring, sp, keep, win, hd)?;
+        }
+        if let Some((kvf, scf)) = ls.pend_c.take() {
+            let (ckv, csc) = (
+                ls.c_kv.as_ref().ok_or("commit: no open pair")?,
+                ls.c_sc.as_ref().ok_or("commit: no open pair")?,
+            );
+            for i in keep.saturating_sub(2)..keep {
+                let slot = (sp + i) % 2;
+                copy_d2d(&self.ops, &kvf, i * hd * 4, ckv, slot * hd * 4, hd * 4)?;
+                copy_d2d(&self.ops, &scf, i * hd * 4, csc, slot * hd * 4, hd * 4)?;
+            }
+        }
+        Ok(())
     }
 
     /// The query side of [`Self::attention`] for rows `[r0, r0 + rows)` over this card's heads
@@ -2727,36 +2900,58 @@ impl Ctx {
         // index rows on the device: the window part (`window_row`, or the decode ring oldest slot
         // first), then the selection rows
         self.nv(c"attn_idx_rows");
-        let idx = self.ops.tmp(rows * tot * 4)?;
-        let sel = if tw > 0 {
-            sh.topk
-                .as_ref()
-                .ok_or("attention: no selection from the index source")?
-                .p(&st)
+        let mut built: Option<Buf> = None;
+        let idx = if let Some(given) = k.idx.as_ref() {
+            given.at(&st, r0 * tot * 4)
         } else {
-            Dp::NULL
+            let built = built.insert(self.ops.tmp(rows * tot * 4)?);
+            let sel = if tw > 0 {
+                sh.topk
+                    .as_ref()
+                    .ok_or("attention: no selection from the index source")?
+                    .p(&st)
+            } else {
+                Dp::NULL
+            };
+            if k.dec_rows {
+                ck("attn_idx_rows", unsafe {
+                    ffi::memra_v41_attn_idx_rows(
+                        sel.i(),
+                        tw as i32,
+                        r0 as i32,
+                        rows as i32,
+                        sp as i32,
+                        win as i32,
+                        tot as i32,
+                        built.p(&st).im(),
+                        self.ops.sv(),
+                    )
+                })?;
+            } else {
+                ck("attn_idx", unsafe {
+                    ffi::memra_v41_attn_idx(
+                        sel.i(),
+                        tw as i32,
+                        r0 as i32,
+                        rows as i32,
+                        sp as i32,
+                        win as i32,
+                        ww as i32,
+                        tot as i32,
+                        built.p(&st).im(),
+                        self.ops.sv(),
+                    )
+                })?;
+            }
+            built.p(&st)
         };
-        ck("attn_idx", unsafe {
-            ffi::memra_v41_attn_idx(
-                sel.i(),
-                tw as i32,
-                r0 as i32,
-                rows as i32,
-                sp as i32,
-                win as i32,
-                ww as i32,
-                tot as i32,
-                idx.p(&st).im(),
-                self.ops.sv(),
-            )
-        })?;
         self.nv_end();
         self.nv(c"sparse_attn");
         self.ops.sparse_attn(
             q.p(&st),
             qdim,
             k.kv_all.p(&st),
-            idx.p(&st),
+            idx,
             tot,
             tot,
             lw.sink.p(&st),
@@ -2771,7 +2966,15 @@ impl Ctx {
             tr.qr = Some(clone_buf(&self.ops, &k.qr)?);
             tr.q = Some(clone_buf(&self.ops, q)?);
             tr.kv_all = Some(clone_buf(&self.ops, &k.kv_all)?);
-            tr.idx_all = Some(clone_buf(&self.ops, &idx)?);
+            let ib = self.ops.tmp(rows * tot * 4)?;
+            match (k.idx.as_ref(), built.as_ref()) {
+                (Some(given), _) => {
+                    copy_d2d(&self.ops, given, r0 * tot * 4, &ib, 0, rows * tot * 4)?
+                }
+                (None, Some(b)) => copy_d2d(&self.ops, b, 0, &ib, 0, rows * tot * 4)?,
+                (None, None) => unreachable!("the index rows are given or built"),
+            }
+            tr.idx_all = Some(ib);
             tr.attn_o = Some(clone_buf(&self.ops, o)?);
         }
         self.nv(c"wo_a");
@@ -3437,6 +3640,62 @@ mod tests {
         // 18 octaves of spread cannot be one e4m3 power of two each
         assert!(mint_mxfp4_scales(&[100u8, 118]).is_err());
         assert!(mint_mxfp4_scales(&[0xFF]).is_err());
+    }
+
+    #[test]
+    fn verify_rows_read_the_positions_the_one_token_calls_read() {
+        // the ring as positions: slot j holds the newest position below `upto` with p % win == j
+        let ring_at = |upto: usize, win: usize| -> Vec<Option<usize>> {
+            (0..win)
+                .map(|j| (0..upto).rev().find(|p| p % win == j))
+                .collect()
+        };
+        for win in [4usize, 8, 128] {
+            for sp in [
+                1usize,
+                2,
+                3,
+                win - 1,
+                win,
+                win + 1,
+                2 * win - 2,
+                2 * win + 3,
+                5 * win,
+            ] {
+                for s in 2..=6usize {
+                    let before = ring_at(sp, win);
+                    for i in 0..s {
+                        let p = sp + i;
+                        // the one-token call at p: the ring after its own write, in its row order
+                        let after = ring_at(p + 1, win);
+                        let mut one = vec![0i32; win];
+                        Ctx::window_row_decode(p, win, &mut one);
+                        let want: Vec<Option<usize>> = one
+                            .iter()
+                            .map(|&x| (x >= 0).then(|| after[x as usize].unwrap()))
+                            .collect();
+                        let mut row = vec![0i32; win];
+                        Ctx::window_row_verify(sp, i, win, &mut row);
+                        let got: Vec<Option<usize>> = row
+                            .iter()
+                            .map(|&x| {
+                                (x >= 0).then(|| {
+                                    let x = x as usize;
+                                    if x >= win {
+                                        sp + (x - win)
+                                    } else {
+                                        before[x].unwrap()
+                                    }
+                                })
+                            })
+                            .collect();
+                        assert_eq!(got, want, "win {win} sp {sp} rows {s} row {i}");
+                        // a row never reads a row after it
+                        assert!(row.iter().all(|&x| x < (win + i + 1) as i32));
+                    }
+                }
+            }
+        }
     }
 
     #[test]

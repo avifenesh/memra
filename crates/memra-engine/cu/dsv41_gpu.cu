@@ -1809,6 +1809,92 @@ extern "C" int memra_v41_attn_idx(const int* sel, int tw, int r0, int rows, int 
     V41_ERR();
 }
 
+// The index rows of several decode tokens run in one forward (a drafted block's verification):
+// row i is the decode row of position p = sp + r0 + i, the whole ring oldest slot first, -1 for
+// slots past p, read from [the ring as it stood before the forward (win rows) | the forward's own
+// KV rows]. A slot's position is the newest q <= p with q % win == slot: one of the forward's own
+// rows (q >= sp) is entry win + (q - sp), an older one is the ring's slot. The order, and so the
+// blocked softmax's key order, is the one-token program's; then the selection rows.
+__global__ void v41_attn_idx_rows_kernel(const int* __restrict__ sel, int tw, int r0, int sp, int win, int tot,
+                                         int* __restrict__ out) {
+    int i = blockIdx.x;
+    int p = sp + r0 + i;
+    int* o = out + (long)i * tot;
+    for (int j = threadIdx.x; j < tot; j += blockDim.x) {
+        int v;
+        if (j < win) {
+            int slot = (p % win + 1 + j) % win;
+            if (slot > p) {
+                v = -1;
+            } else {
+                int q = p - (p - slot) % win;
+                v = q >= sp ? win + (q - sp) : slot;
+            }
+        } else {
+            v = sel[(long)(r0 + i) * tw + (j - win)];
+        }
+        o[j] = v;
+    }
+}
+
+extern "C" int memra_v41_attn_idx_rows(const int* sel, int tw, int r0, int rows, int sp, int win, int tot, int* out,
+                                       void* stream) {
+    if (rows <= 0) return rows < 0 ? 41028 : 0;
+    if (win <= 0 || tw < 0 || tot != win + tw || (tw > 0 && !sel) || sp <= 0 || r0 < 0) return 41028;
+    v41_attn_idx_rows_kernel<<<rows, 128, 0, (cudaStream_t)stream>>>(sel, tw, r0, sp, win, tot, out);
+    V41_ERR();
+}
+
+// ---------------------------------------------------------------------------------------------
+// The draft head's pick: row[i] += bias[i] in fp32 (the Markov head's bias added to the block
+// row's logits, vendor `logits[:, i].add_(logits_bias)`), then the largest value and the lowest
+// index holding it. One block; out_val / out_idx are one element each.
+__global__ void __launch_bounds__(1024) v41_add_argmax_kernel(float* __restrict__ row, const float* __restrict__ bias,
+                                                              int n, float* __restrict__ out_val,
+                                                              int* __restrict__ out_idx) {
+    __shared__ float sv[32];
+    __shared__ int si[32];
+    float best = -INFINITY;
+    int bi = 0x7fffffff;
+    for (int i = threadIdx.x; i < n; i += blockDim.x) {
+        float v = bias ? __fadd_rn(row[i], bias[i]) : row[i];
+        if (bias) row[i] = v;
+        if (v > best || (v == best && i < bi)) {
+            best = v;
+            bi = i;
+        }
+    }
+#pragma unroll
+    for (int o = 16; o > 0; o >>= 1) {
+        float ov = __shfl_xor_sync(0xffffffffu, best, o);
+        int oi = __shfl_xor_sync(0xffffffffu, bi, o);
+        if (ov > best || (ov == best && oi < bi)) {
+            best = ov;
+            bi = oi;
+        }
+    }
+    if ((threadIdx.x & 31) == 0) {
+        sv[threadIdx.x >> 5] = best;
+        si[threadIdx.x >> 5] = bi;
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        for (int w = 1; w < (int)(blockDim.x >> 5); ++w)
+            if (sv[w] > best || (sv[w] == best && si[w] < bi)) {
+                best = sv[w];
+                bi = si[w];
+            }
+        *out_val = best;
+        *out_idx = bi;
+    }
+}
+
+extern "C" int memra_v41_add_argmax(float* row, const float* bias, int n, float* out_val, int* out_idx, void* stream) {
+    if (n <= 0 || !row || !out_val || !out_idx) return 41029;
+    v41_add_argmax_kernel<<<1, 1024, 0, (cudaStream_t)stream>>>(row, bias, n, out_val, out_idx);
+    V41_ERR();
+}
+
 // ---------------------------------------------------------------------------------------------
 // CSA2 compressor pooling at ratio 2: out[j] = bf16(kv[2j] * p0 + kv[2j+1] * p1) with p the
 // softmax over the pair of gate scores, per channel (fp32 rows in, bf16 rows out).

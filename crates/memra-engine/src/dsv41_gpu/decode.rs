@@ -16,8 +16,16 @@
 //! vendor's decode program (the whole ring oldest slot first, the compressor's slot update, the
 //! indexer over `end_pos / ratio` keys, one Engram row). Below the window the two programs differ
 //! for the same row (another key order into the blocked softmax), so a generated token is always
-//! fed as a decode call, never prefilled again. More than one token at a position past 0 (chunked
-//! continuation) is not a vendor program and is refused.
+//! fed as a decode call, never prefilled again.
+//!
+//! Several tokens at a position past 0 are a drafted block's verification: every row runs the
+//! one-token decode program of its own position (its ring order, the compressor's pair, the
+//! indexer over its own visible keys, its Engram row) in one pass through each block, reading the
+//! state as it stood plus the rows before it. Every kernel acts per row, so a row's bytes are
+//! those of feeding the tokens one call at a time (`dsv41-gate verify-rows`). Such a call writes
+//! no carried state: the sequence is pending until [`Runner::commit`] keeps a prefix of the rows
+//! (the accepted tokens) and drops the rest, so a rejected draft never reaches the ring, the
+//! compressor's open pair, the row counts or the token history.
 //!
 //! [`Runner::forward`] runs a list of calls layer by layer: each layer's weights are loaded once
 //! (or kept resident) and every call runs through it before the next layer, a sequence's calls in
@@ -54,6 +62,11 @@ pub struct Out {
     /// the call's first position and its token count
     pub sp: usize,
     pub s: usize,
+    /// with [`Runner::set_taps`]: on every rank the draft head's `main_hidden` rows, bf16
+    /// `[tap_rows][taps * dim]`, of the call's last `tap_rows` positions (from row `tap_row0`)
+    pub taps: Vec<Buf>,
+    pub tap_row0: usize,
+    pub tap_rows: usize,
 }
 
 /// One sequence's state on every rank.
@@ -66,6 +79,8 @@ pub struct Seq {
     ls: Vec<Vec<LayerState>>,
     /// `[kv source][rank]`: each kv-source group's compressed KV and index keys
     store: Vec<Vec<Shared>>,
+    /// `(position, rows)` of a several-token decode call not yet committed
+    pending: Option<(usize, usize)>,
 }
 
 impl Seq {
@@ -75,6 +90,10 @@ impl Seq {
     }
     pub fn is_empty(&self) -> bool {
         self.ids.is_empty()
+    }
+    /// The rows of a several-token decode call waiting for [`Runner::commit`].
+    pub fn pending(&self) -> Option<(usize, usize)> {
+        self.pending
     }
 }
 
@@ -94,16 +113,21 @@ pub struct Stats {
 pub struct Runner<'a> {
     pub grp: Group,
     pub g: Geo,
-    stm: &'a StModel,
+    pub(super) stm: &'a StModel,
     ec: Option<EngramConsts>,
     pub n_layers: usize,
     /// positions the RoPE tables and the cache capacities cover
     pub max_pos: usize,
     keep: usize,
     resident: Vec<Option<Vec<LayerW>>>,
-    head: Option<(Vec<Buf>, Vec<BW>)>,
+    pub(super) head: Option<(Vec<Buf>, Vec<BW>)>,
     /// the routed experts in pinned host memory, when they are off the card
     host: Option<Arc<HostExperts>>,
+    /// the draft head's target layers: a forward keeps the mean over the stream copies of each
+    /// one's input ([`Out::taps`])
+    taps: Vec<usize>,
+    /// f32 `[window][hc]` of 1 / hc on every rank (the mean as a collapse)
+    tap_mix: Vec<Buf>,
     pub stats: Stats,
 }
 
@@ -145,8 +169,32 @@ impl<'a> Runner<'a> {
             resident: (0..n_layers).map(|_| None).collect(),
             head: None,
             host: None,
+            taps: Vec::new(),
+            tap_mix: Vec::new(),
             stats: Stats::default(),
         })
+    }
+
+    /// Keep, from the next forward on, the draft head's inputs: for each call the mean over the
+    /// `hc` stream copies at the input of each layer of `layers` (after its Engram, before its
+    /// attention; vendor `Transformer.forward`: `h.mean(dim=2)` at `dspark_target_layer_ids`), for
+    /// the call's last `window` positions. Empty: none.
+    pub fn set_taps(&mut self, layers: &[usize]) -> Result<(), String> {
+        if layers.iter().any(|&l| l >= self.n_layers) || !layers.is_sorted() {
+            return Err(format!(
+                "tap layers {layers:?}: ascending trunk layers below {}",
+                self.n_layers
+            ));
+        }
+        let (hc, win) = (self.g.hc, self.g.window);
+        self.taps = layers.to_vec();
+        self.tap_mix = if layers.is_empty() {
+            Vec::new()
+        } else {
+            let mix = vec![1.0f32 / hc as f32; win * hc];
+            self.grp.each(|_, cx| Buf::from_f32(&cx.ops.st, &mix))?
+        };
+        Ok(())
     }
 
     /// Keep the first `keep` layers on the card from the next forward on (fewer: free the rest).
@@ -420,6 +468,7 @@ impl<'a> Runner<'a> {
             store: (0..self.g.kv_sources.len())
                 .map(|_| (0..n).map(|_| Shared::default()).collect())
                 .collect(),
+            pending: None,
         }
     }
 
@@ -439,7 +488,7 @@ impl<'a> Runner<'a> {
 
     /// The bf16 embedding rows of `tokens` `[s][dim]` (the `hc` copies are made on the device)
     /// and the one-hot carried pre-mix `[s][hc]`.
-    fn embed(&self, tokens: &[u32]) -> Result<(Vec<u8>, Vec<f32>), String> {
+    pub(super) fn embed(&self, tokens: &[u32]) -> Result<(Vec<u8>, Vec<f32>), String> {
         let (hc, d) = (self.g.hc, self.g.dim);
         let (ei, eb) = self.stm.raw("embed.weight").ok_or("embed.weight missing")?;
         if ei.dtype != "BF16" || ei.shape != [self.g.vocab as u64, d as u64] {
@@ -478,9 +527,16 @@ impl<'a> Runner<'a> {
             if s == 0 {
                 return Err("a call needs at least one token".into());
             }
-            if sp > 0 && s != 1 {
+            if let Some((p, n)) = seqs[c.seq].pending {
                 return Err(format!(
-                    "{s} tokens at position {sp}: past the prefill the vendor program takes one token per call"
+                    "sequence {}: {n} rows at position {p} wait for a commit",
+                    c.seq
+                ));
+            }
+            if sp > 0 && s > 1 && calls.iter().filter(|x| x.seq == c.seq).count() > 1 {
+                return Err(format!(
+                    "sequence {}: a call of {s} decode tokens is the sequence's only call of its forward",
+                    c.seq
                 ));
             }
             if sp + s > self.max_pos {
@@ -526,6 +582,18 @@ impl<'a> Runner<'a> {
             .collect();
         let mut tr: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
         let rows: usize = pos.iter().map(|&(_, s)| s).sum();
+        // the draft head's inputs: each call's last `window` rows at every target layer
+        let nt = self.taps.len();
+        let tap_span = |s: usize| (s - s.min(g.window), s.min(g.window));
+        let mut taps: Vec<Vec<Buf>> = Vec::with_capacity(calls.len());
+        for &(_, s) in &pos {
+            taps.push(if nt == 0 {
+                Vec::new()
+            } else {
+                let (_, tr_) = tap_span(s);
+                self.grp.each(|_, cx| cx.ops.tmp(tr_ * nt * g.dim * 2))?
+            });
+        }
         for li in 0..self.n_layers {
             let tl = Instant::now();
             // a resident layer is borrowed, so an error part-way never loses it
@@ -574,6 +642,26 @@ impl<'a> Runner<'a> {
                         cx.engram(stm, &lw[r], &hc_[r], &mine, s, t)
                     })?;
                 }
+                if let Some(ti) = self.taps.iter().position(|&l| l == li) {
+                    let (t0, t_rows) = tap_span(s);
+                    let (hc, d) = (g.hc, g.dim);
+                    let (hs, tb, mix) = (&h[ci], &taps[ci], &self.tap_mix);
+                    self.grp.each(|r, cx| {
+                        let st = cx.ops.st.clone();
+                        super::ck("tap mean", unsafe {
+                            super::ffi::memra_v41_hc_pre(
+                                hs[r].at(&st, t0 * hc * d * 2).c(),
+                                mix[r].p(&st).f(),
+                                t_rows as i32,
+                                hc as i32,
+                                d as i32,
+                                tb[r].at(&st, ti * d * 2).m(),
+                                (nt * d) as i64,
+                                cx.ops.sv(),
+                            )
+                        })
+                    })?;
+                }
                 if let Some(gi) = gi {
                     for (f, st) in fwd[ci].iter_mut().zip(q.store[gi].iter_mut()) {
                         f.swap_group(st);
@@ -609,11 +697,64 @@ impl<'a> Runner<'a> {
         }
         self.stats.forwards += 1;
         self.stats.calls += calls.len();
+        for (c, &(sp, s)) in calls.iter().zip(&pos) {
+            if sp > 0 && s > 1 {
+                seqs[c.seq].pending = Some((sp, s));
+            }
+        }
         Ok(h.into_iter()
             .zip(pre)
             .zip(pos)
-            .map(|((h, pre), (sp, s))| Out { h, pre, sp, s })
+            .zip(taps)
+            .map(|(((h, pre), (sp, s)), taps)| {
+                let (tap_row0, tap_rows) = if taps.is_empty() { (0, 0) } else { tap_span(s) };
+                Out {
+                    h,
+                    pre,
+                    sp,
+                    s,
+                    taps,
+                    tap_row0,
+                    tap_rows,
+                }
+            })
             .collect())
+    }
+
+    /// Close a several-token decode call on `q`: its first `keep` rows (at least one: the first
+    /// token of a verified block is the target's own) become the sequence's state on every
+    /// rank, exactly as feeding those tokens one call at a time leaves it; the rows past them
+    /// are dropped (ring and open-pair rows never written, the compressed rows and index keys
+    /// past the kept length no longer counted, the token history cut).
+    pub fn commit(&mut self, q: &mut Seq, keep: usize) -> Result<(), String> {
+        let (sp, s) = q
+            .pending
+            .ok_or("commit: the sequence has no several-token call open")?;
+        if keep == 0 || keep > s {
+            return Err(format!("commit: {keep} of {s} rows"));
+        }
+        let g = self.g.clone();
+        for li in 0..self.n_layers {
+            let ls = &mut q.ls[li];
+            let mut io: Vec<&mut LayerState> = ls.iter_mut().collect();
+            self.grp
+                .each_mut(&mut io, |_, cx, l| cx.commit_rows(l, sp, keep))?;
+        }
+        for (gi, &k) in g.kv_sources.iter().enumerate() {
+            if k >= self.n_layers {
+                continue;
+            }
+            let ratio = g.compress_ratios[k];
+            if ratio == 0 {
+                continue;
+            }
+            for st in q.store[gi].iter_mut() {
+                st.n_c = (sp + keep) / ratio;
+            }
+        }
+        q.ids.truncate(sp + keep);
+        q.pending = None;
+        Ok(())
     }
 
     /// Logits `[rows][vocab]` of rows `[r0, r0 + rows)` of a call: the collapse with the carried

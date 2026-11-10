@@ -115,6 +115,16 @@ pub struct CommStats {
     pub secs: f64,
 }
 
+/// Which keys side a block's attention runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttnKind {
+    /// a trunk layer: its window ring, compressor, indexer
+    Trunk,
+    /// a DSpark draft stage over its block: every row reads the first `filled` slots of the
+    /// stage's ring of the trunk's rows and then the whole block
+    Draft { filled: usize },
+}
+
 /// N ranks, one engine and one [`Ctx`] each (rank 0 first). Ranks may share a device (the code
 /// path over N streams on one card: proves the partition, not the fabric).
 pub struct Group {
@@ -605,6 +615,19 @@ impl Group {
         mint: bool,
         routed: bool,
     ) -> Result<Vec<LayerW>, String> {
+        self.load_layer_named(stm, g, &format!("layers.{id}"), id, mint, routed)
+    }
+
+    /// [`Self::load_layer_with`] for the block stored under `prefix` ([`LayerW::load_part_named`]).
+    pub fn load_layer_named(
+        &self,
+        stm: &StModel,
+        g: &Geo,
+        prefix: &str,
+        id: usize,
+        mint: bool,
+        routed: bool,
+    ) -> Result<Vec<LayerW>, String> {
         let n = self.n();
         let ops: Vec<&super::Ops> = self.cx.iter().map(|c| &c.ops).collect();
         std::thread::scope(|sc| {
@@ -614,7 +637,16 @@ impl Group {
                 .map(|(r, o)| {
                     let o: &super::Ops = o;
                     sc.spawn(move || {
-                        LayerW::load_part_with(o, stm, g, id, mint, Part { rank: r, n }, routed)
+                        LayerW::load_part_named(
+                            o,
+                            stm,
+                            g,
+                            prefix,
+                            id,
+                            mint,
+                            Part { rank: r, n },
+                            routed,
+                        )
                     })
                 })
                 .collect();
@@ -667,6 +699,24 @@ impl Group {
         ls: &mut [LayerState],
         tr: &mut [Trace],
     ) -> Result<(Vec<Buf>, Vec<Buf>), String> {
+        self.block_forward_kind(lw, h, pre, sp, s, sh, ls, tr, AttnKind::Trunk)
+    }
+
+    /// [`Self::block_forward_owned`] with the attention's keys side chosen by `kind`: a trunk
+    /// layer's, or a draft stage's over its block ([`AttnKind::Draft`]).
+    #[allow(clippy::too_many_arguments)]
+    pub fn block_forward_kind(
+        &mut self,
+        lw: &[LayerW],
+        h: Vec<Buf>,
+        pre: &[Buf],
+        sp: usize,
+        s: usize,
+        sh: &mut [Shared],
+        ls: &mut [LayerState],
+        tr: &mut [Trace],
+        kind: AttnKind,
+    ) -> Result<(Vec<Buf>, Vec<Buf>), String> {
         let n = self.n();
         if lw.len() != n || h.len() != n || pre.len() != n || sh.len() != n || ls.len() != n {
             return Err("tp block_forward: one share per rank".into());
@@ -691,7 +741,7 @@ impl Group {
             a_comb.push(co);
             xs.push(x);
         }
-        let a = self.attention(lw, &xs, sp, s, sh, ls, tr)?;
+        let a = self.attention(lw, &xs, sp, s, sh, ls, tr, kind)?;
         drop(xs);
         let ffn = self.each(|r, c| {
             let w = &lw[r];
@@ -743,13 +793,14 @@ impl Group {
         sh: &mut [Shared],
         ls: &mut [LayerState],
         tr: &mut [Trace],
+        kind: AttnKind,
     ) -> Result<Vec<Buf>, String> {
         let n = self.n();
         let g = self.cx[0].g.clone();
         let (d, hd) = (g.dim, g.head_dim);
         // the indexer's query rows split across the ranks at prefill (measured: `dsv41-gate idx`,
         // research/.../tp/README.md); one decode row is scored on every rank, with nothing to move
-        let split = n > 1 && s >= 2 * n && lw[0].index_source && lw[0].ratio > 0;
+        let split = n > 1 && sp == 0 && s >= 2 * n && lw[0].index_source && lw[0].ratio > 0;
         let per = s.div_ceil(n);
         let span = |r: usize| (r * per).min(s)..((r + 1) * per).min(s);
         let keys = {
@@ -761,7 +812,10 @@ impl Group {
                 .collect();
             self.each_mut(&mut io, |r, c, (shr, lsr, trr)| {
                 c.index_rows = split.then(|| span(r));
-                let k = c.attn_keys(&lw[r], &xs[r], sp, s, shr, lsr, trr);
+                let k = match kind {
+                    AttnKind::Trunk => c.attn_keys(&lw[r], &xs[r], sp, s, shr, lsr, trr),
+                    AttnKind::Draft { filled } => c.draft_keys(&lw[r], &xs[r], sp, s, filled, lsr),
+                };
                 c.index_rows = None;
                 k
             })?
