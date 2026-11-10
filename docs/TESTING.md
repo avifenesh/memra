@@ -1736,6 +1736,35 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
   decision `docs/decisions/PREFIX-CACHE-POLICY.md`. Target-card verdict; the local RTX 5090 replay
   is a follow-up.
 
+### One seeded sampled request writes one text (`tools/seeded-invariance-gate.py`)
+
+The MTP speculative route verifies a sampled round by position (memra#1154,
+`docs/decisions/SAMPLED-VERIFY-POSITION-KEYED.md`): the token at generated position p is the plain
+sampler's own draw at Philox event p. What a seeded request writes may therefore not depend on
+the draft length, on a companion in the batch, on a resume, or on a demotion from speculation to
+plain decode. The gate boots the server once per case and compares texts with the plain
+reference:
+
+- `ref`: `MEMRA_SPEC_K=0`, every prompt alone and cold (the second turn of the conversation in
+  its own boot).
+- `0`, `1`, `2`, `3`: `MEMRA_SPEC_K` pinned; the lone prompts, two prompts sent at once, and a
+  two-turn conversation whose second turn resumes the first.
+- `demote`: no pin, `MEMRA_SPEC_DEMOTE_AT=60`; the server log must show one sampled handoff per
+  request.
+
+Prompts: a 1.2k-token and a 34-token one at temperature 1, a 1.2k-token one at temperature 0.7
+with `top_p` 0.95, a 34-token one with a frequency penalty of 0.4, the pair, the conversation.
+Where plain decode samples a penalised request on the host (`MEMRA_SERVE_DEVPENALTY` off: every
+model and card pair except the dense Qwen35 class on the RTX 5090 and RTX PRO 6000 classes)
+pass `--penalised host`: plain and speculation then draw that prompt from different random
+streams, so its speculative texts are compared with each other. It is a
+serving gate for a change to the sampled verify, the plain sampler's counters, the boundary
+draw, or the demotion handoff; it needs a GPU lease around the whole run (seven short boots).
+A row that tested nothing fails: a speculative case whose request did not speculate, an empty
+answer, a resumed turn that restored nothing, a handoff that left the position key.
+On main before memra#1154 it fails: every K writes another text, and a pair differs from its
+solo runs. Receipts: `research/position-keyed-sampling-20261110/`.
+
 ## Generic spill / tiered KV (memra-tier)
 
 The shared contract is `crates/memra-tier/src/contracts.rs`. The conformance schedules are

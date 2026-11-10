@@ -167,10 +167,10 @@ resident heads retain the existing graph default. See [the capture receipt](../r
     traffic is sampled — which is what the OpenAI surface defaults to (`temperature` 1.0).
     The greedy-only premise ("a sampled hit's first token must be host-sampled") did not
     hold against the code it was protecting: the cold sampled spec path did not host-sample
-    its own first token either — it argmaxed it, as did every continuation burst. Sampled
-    spec is distributionally exact, not byte-equal to plain sampling (see the `sampling`
-    note under the spec-burst arm), so the restore's identity target is the COLD SPEC
-    session, not plain: per seed, a full-cover sampled hit is byte-identical to the cold
+    its own first token either — it argmaxed it, as did every continuation burst. Until
+    memra#1154 sampled spec was distributionally exact, not byte-equal to plain sampling;
+    the MTP route now writes plain decode's text, and the restore's identity target here
+    stays the COLD SPEC session: per seed, a full-cover sampled hit is byte-identical to the cold
     sampled leader, with the same accepted/drafted counts. **That argmax is itself fixed
     since lane/sampled-spec-quality (2026-08-19) — see "Sampled boundary tokens" below —
     and the restore draws its seed by the same rule from the same row, so the per-seed
@@ -1009,6 +1009,26 @@ gated by the official `openai` Python SDK against a live server
   including `temperature: 0` (greedy) and `seed: 0`** — every determinism gate in `tools/`
   and `research/` sends both explicitly, so all of them keep their behavior. Supply a
   `seed` whenever you want reproducibility; omit it to get variation.
+- **What a `seed` pins, by route (memra#1154).** On plain decode and on the MTP speculative
+  route a seeded sampled request writes one text: the token at generated position p is the
+  draw at Philox event p from the target's own filtered row, whatever the draft length is,
+  whether another request shares the batch, whether the conversation resumes or arrives
+  cold, and whether speculation hands the request to plain decode midway
+  (`tools/seeded-invariance-gate.py`, `docs/decisions/SAMPLED-VERIFY-POSITION-KEYED.md`).
+  A penalised request is included: each verify row is penalised over the window plain
+  decode holds at that position. Not position-keyed yet: the DFlash2, GLM5, DSpark and
+  gemma assistant-drafter routes (their verify is the rejection walk, whose draws depend
+  on where rounds fall). On those a seed still pins the text for one fixed serving shape,
+  not across draft lengths or batch companions. Also not covered: a penalised sampled
+  request where the device penalty arm is off (`MEMRA_SERVE_DEVPENALTY`: every model and
+  card pair except the dense Qwen35 class on the RTX 5090 and RTX PRO 6000 classes)
+  draws every plain token on the host, so its speculative text is one text across draft
+  lengths but not plain decode's, and a demotion switches it to the host stream midway.
+  Three rules keep every other request on one stream: a draft head with a trimmed
+  vocabulary draws its noise by token id; a sampled request whose prompt is exactly a
+  parked session's history primes cold instead of taking that session's stashed token;
+  and a grammar-constrained sampled request draws its first token on the device from the
+  masked row, as it draws the later ones.
   Corollary worth knowing: an omitted-`temperature` request is *pure* temperature-1.0
   sampling (`top_p` 1.0, `top_k`/`min_p` disabled, penalties off), which is exactly the
   regime that keeps the in-graph sampled draft chain — so the OpenAI default lands on the
@@ -1583,8 +1603,8 @@ raw softmax and can hold no per-row filter stats, so `spec.rs` engages the captu
 only in the pure-temperature regime and otherwise uses the eager draft chain
 (`memra-sampling::Sampler::is_spec_sampling`, `spec.rs`'s `pure_temp`). Declaring `default_top_p`
 / `default_top_k` therefore moves the DEFAULT request shape onto the eager draft chain. Exactness
-is unaffected — filters apply symmetrically to draft `q` and target `p` under the rejection
-verify, so these requests stay spec-eligible and distribution-exact — but the throughput profile
+is unaffected — filters apply to draft `q` and target `p` alike, and the verify emits the target's own
+filtered draw, so these requests stay spec-eligible and distribution-exact — but the throughput profile
 of the default path changes, and a client can opt back into the fast regime with an explicit
 `top_p: 1.0` + `top_k: 0`. `vendor_defaults_leave_the_pure_temp_sampled_spec_regime` pins this so
 the flip stays measured rather than discovered.

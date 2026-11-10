@@ -487,6 +487,29 @@ def ptoks(r):
     return r["usage"]["prompt_tokens"]
 
 
+# ACCEPTANCE PARITY IS PER DRAFT LENGTH (memra#1154). The cold run and its hit must accept the
+# same drafts: that is the witness that the restored draft plane is the cold plane. It can only be
+# compared when both served the same K. Where the spec cost model owns K it may pick another
+# depth for the hit than for the cold run (its realized rates move between the two requests).
+# Before memra#1154 that also changed the sampled text, so the byte check above caught it; the
+# text no longer depends on K, so a K flip is named and the pair is not compared. At least one
+# pair must compare, or the witness is gone.
+PARITY = {"compared": 0, "skipped": 0}
+def served_k(u):
+    sp = spec(u)
+    return round(sp["drafted"] / sp["rounds"]) if sp and sp.get("rounds") else None
+def parity(label, hit, cold):
+    kh, kc = served_k(hit), served_k(cold)
+    if kh is not None and kc is not None and kh != kc:
+        PARITY["skipped"] += 1
+        print(f"  note: {label}: cold served K={kc}, the hit K={kh}; acceptance parity is per K, not compared")
+        return
+    PARITY["compared"] += 1
+    ok(f"{label} acceptance == cold acceptance exactly",
+       spec(hit) is not None
+       and (spec(hit)["accepted"], spec(hit)["drafted"])
+       == (spec(cold)["accepted"], spec(cold)["drafted"]))
+
 for s in seeds:
     cold, hit = load(f"qwen-on-s{s}-cold"), load(f"qwen-on-s{s}-hit")
     ok(f"s{s} sampled cold engages spec, zero cached",
@@ -506,10 +529,7 @@ for s in seeds:
         # (b) seeded identity vs the cold leader — the sampled arm's exactness standard.
         ok(f"s{s} sampled hit bytes == cold leader bytes (same seed)", text(hit) == text(cold))
         # (c) acceptance parity: the restored draft plane is the cold plane, exactly.
-        ok(f"s{s} sampled hit acceptance == cold acceptance exactly",
-           spec(hit) is not None
-           and (spec(hit)["accepted"], spec(hit)["drafted"])
-           == (spec(cold)["accepted"], spec(cold)["drafted"]))
+        parity(f"s{s} sampled hit", hit, cold)
 
 lead, x1, x2 = load("qwen-on-sx-lead"), load("qwen-on-sx1"), load("qwen-on-sx2")
 ok("sx sampled leader engages spec, zero cached",
@@ -544,10 +564,7 @@ else:
        spec(phit) is not None and spec(phit)["accepted"] > 0)
     ok("sp penalized sampled hit bytes == cold leader bytes (same seed)",
        text(phit) == text(plead))
-    ok("sp penalized sampled hit acceptance == cold acceptance exactly",
-       spec(phit) is not None
-       and (spec(phit)["accepted"], spec(phit)["drafted"])
-       == (spec(plead)["accepted"], spec(plead)["drafted"]))
+    parity("sp penalized sampled hit", phit, plead)
 
 # (e) A REFUSAL IS STILL REAL, in both postures, and it names itself: the `np` cell's leader
 # is GREEDY+penalized, which is spec-INELIGIBLE upstream (`greedy_penalized`), so it serves
@@ -573,8 +590,9 @@ if teeth:
 else:
     ok("fc sampled full-cover hit SPEC ENGAGED (accepted > 0)", spec(fhit) is not None and spec(fhit)["accepted"] > 0)
     ok("fc sampled full-cover hit bytes == cold leader bytes (same seed)", text(fhit) == text(flead))
-    ok("fc sampled full-cover hit acceptance == cold acceptance exactly",
-       spec(fhit) is not None and (spec(fhit)["accepted"], spec(fhit)["drafted"]) == (spec(flead)["accepted"], spec(flead)["drafted"]))
+    parity("fc sampled full-cover hit", fhit, flead)
+    ok(f"acceptance parity compared on at least one sampled pair ({PARITY['compared']} compared, {PARITY['skipped']} at another K)",
+       PARITY["compared"] >= 1)
 
 # --- ITEM 1, the CUSTOMER-VISIBLE probe. Pre-lane every sampled request's FIRST token was
 # `argmax(prime_logits)` — the same token the greedy request emits from the same row, for
@@ -826,8 +844,11 @@ if [ "$ARM" = qwen ]; then
 
     # --- Item 1 boundary-draw log assertions (see the header) ---
     echo "-- boundary draws (Item 1) --"
-    BLINES=$(grep -c "\[spec-boundary\] site=" "$EV/qwen-on-server.log" || true)
-    BDEV=$(grep -c "\[spec-boundary\].*deviates=1" "$EV/qwen-on-server.log" || true)
+    # `site=plain-first` is plain decode's own first token, drawn through the same traced
+    # function since memra#1154; it is not a speculative burst boundary and no door of this
+    # arc governs it, so it is counted out of both figures.
+    BLINES=$(grep "\[spec-boundary\] site=" "$EV/qwen-on-server.log" | grep -vc "site=plain-first" || true)
+    BDEV=$(grep "\[spec-boundary\].*deviates=1" "$EV/qwen-on-server.log" | grep -vc "site=plain-first" || true)
     if [ "$TEETH" = 1 ]; then
         # the door is shut: not a single boundary token may be drawn.
         if [ "$BLINES" = 0 ]; then

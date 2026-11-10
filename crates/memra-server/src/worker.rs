@@ -4427,6 +4427,26 @@ fn grid_rewind_plain(
     Some(e)
 }
 
+/// A sampled request may not resume a parked session at its parked end with nothing to prime
+/// (memra#1154). Such a resume emits the session's stashed boundary token, which the parked
+/// request drew with its own seed and counter (or argmaxed, if it was greedy), where a cold
+/// twin of the new request draws event 0: warm != cold for a seeded request. Refused, the
+/// request primes cold. A recurrent trunk never reaches this: the grid law rewinds it to a
+/// checkpoint and the resume primes. `suffix_len` is the text tier's suffix length, `None` on
+/// the token tier, where the suffix is `prompt_len - committed_len`.
+fn sampled_parked_end_resume_refused(
+    greedy: bool,
+    suffix_len: Option<usize>,
+    prompt_len: usize,
+    committed_len: usize,
+) -> bool {
+    let primes = match suffix_len {
+        Some(len) => len > 0,
+        None => prompt_len > committed_len,
+    };
+    !greedy && !primes
+}
+
 /// What the spec pool's exact or text tier does with the parked session it matched (memra#1093).
 enum SpecExtensionTake {
     /// An attention-only trunk resumes at its parked end, as before the grid law.
@@ -23454,7 +23474,7 @@ pub fn run(
             for &i in &decoding {
                 let generated_before = active[i].generated.len();
                 let lane = active[i].lane;
-                let (cont, next) = advance_sample_emit(&loaded, &mut active[i]);
+                let (cont, next) = advance_sample_emit(&engine, &loaded, &mut active[i]);
                 let emitted = record_output_tokens(
                     generated_before,
                     active[i].generated.len(),
@@ -27649,7 +27669,7 @@ fn admit(
     //     what the OpenAI surface defaults to (temperature 1.0, main.rs default_temperature).
     //     The premise did not survive the code: the COLD sampled spec path did not
     //     host-sample its own first token either — it argmaxed `prime_logits`, as did every
-    //     later continuation burst (the stashed `next_pred`). Sampled spec is
+    //     later continuation burst (the stashed `next_pred`). Sampled spec was then
     //     distributionally exact per its documented contract (step_session, `sampling`),
     //     NOT byte-equal to plain sampling. So refusing sampled hits preserved no property;
     //     it only split ONE request shape across two sampling programs (cold: spec, cached:
@@ -28569,6 +28589,25 @@ fn admit(
                         .remove(index)
                         .sess;
                     match spec_pool_take_extension(engine, lm, sess, &prompt, &req.model) {
+                        SpecExtensionTake::ParkedEnd(sess)
+                            if sampled_parked_end_resume_refused(
+                                sampler.is_greedy(),
+                                suffix.as_deref().map(<[u32]>::len),
+                                prompt.len(),
+                                sess.committed.len(),
+                            ) =>
+                        {
+                            // The session drops here and the request primes cold: its first
+                            // token is then the event-0 draw, as a cold twin's is.
+                            eprintln!(
+                                "[worker] spec-reuse: sampled resume with nothing to prime \
+                                 declined (the parked stash is another request's draw); cold \
+                                 (model {})",
+                                req.model
+                            );
+                            reuse_metrics.spec_misses += 1;
+                            None
+                        }
                         SpecExtensionTake::ParkedEnd(sess) => {
                             text_suffix = suffix;
                             Some(sess)
@@ -28715,9 +28754,9 @@ fn admit(
                 // round draw the counters a cold prime of this prompt draws. Carrying the parked
                 // request's counters made a sampled warm turn leave the cold text even from an
                 // on-grid checkpoint (`research/spec-pool-grid-20261109/`, chat-story-open-t1).
-                // An empty-suffix continuation keeps them: it emits the stash the parked request
-                // drew at its counter, and restarting at 0 would reuse that draw's noise inside
-                // this response.
+                // An empty-suffix continuation keeps them and is greedy-only since memra#1154
+                // (`sampled_parked_end_resume_refused`): a sampled one would emit the stash the
+                // parked request drew, where a cold twin draws event 0.
                 let resume_primes = match &text_suffix {
                     Some(suffix) => !suffix.is_empty(),
                     None => prompt.len() > sess.committed.len(),
@@ -28749,25 +28788,6 @@ fn admit(
                         },
                         req.model
                     ),
-                }
-                // NAMED RESIDUAL (lane/sampled-spec-quality, Item 1). A pool resume whose
-                // prompt EXACTLY equals the parked session's committed tape emits that
-                // session's stashed `next_pred` as its first token — and if the session was
-                // parked by a GREEDY request (the park-time `spec_flush_pending`, which has no
-                // future sampler to draw with) that token is an ARGMAX, which is precisely the
-                // defect this lane removed everywhere else. Every other boundary site draws.
-                // NOT refused: the alternative is re-priming the whole conversation to fix one
-                // token, which is a worse trade for the customer than one argmax per resume of
-                // a zero-new-token request. The two real fixes — retain the boundary logits row
-                // on the parked entry, or mark whether the stash was drawn — are named in
-                // darklanes research/spec-cache-20260818/SAMPLED-QUALITY.md §5.7.
-                if !sampler.is_greedy() && prompt.len() == sess.committed.len() {
-                    eprintln!(
-                        "[worker] spec-reuse: sampled empty-suffix resume takes the PARKED \
-                         session's stashed boundary token (reason: this request's sampler was \
-                         not live when it was stashed) (model {})",
-                        req.model,
-                    );
                 }
                 Some(sess)
             }
@@ -31123,10 +31143,69 @@ fn stage_grammar_mask(engine: &Engine, s: &mut Session) -> Result<(), String> {
     Ok(())
 }
 
+/// The first token of a plain sampled request, drawn as every later one is: the filtered Gumbel
+/// draw at Philox event `plain_draw_ctr(0, base)` (memra#1154). The host sampler used to draw it
+/// from its own stateful RNG, so event 0 went unused and the first token was the one position a
+/// speculative request (whose boundary token is the event-0 draw) could not share with plain
+/// decode. A penalised request penalises the row with the sampler's own window, as its later
+/// device draws do.
+///
+/// `row` is the boundary row the token is drawn from: `last_logits`, or its grammar-masked copy
+/// for a constrained request, whose later tokens are device draws under the device mask.
+///
+/// `Ok(None)` keeps the host sampler, for a request whose later tokens are host-sampled too:
+/// greedy, constrained with a truncation filter, penalised where the device penalty arm is
+/// off, the legacy scheduler,
+/// an eager-served model, or a model whose batched decode is not qualified and falls back to
+/// eager rows (`decode_step_batch` then returns no device draw). One sampler per request: a
+/// failed device draw fails the request instead of handing its first token to the host RNG
+/// while the later ones stay on the device.
+fn plain_first_token_device_draw(
+    engine: &Engine,
+    model: &HybridModel,
+    s: &Session,
+    row: &[f32],
+) -> Result<Option<u32>, String> {
+    if !s.generated.is_empty() || row.is_empty() {
+        return Ok(None);
+    }
+    if !serve_batching()
+        || model.served_decode_is_eager()
+        || !model.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeBatch)
+    {
+        return Ok(None);
+    }
+    let Some(meta) = devsample_meta(s) else {
+        return Ok(None);
+    };
+    if meta.temp <= 0.0 {
+        return Ok(None);
+    }
+    let Some(sp) = spec_sampling_for(&s.sampler) else {
+        return Ok(None);
+    };
+    // The sampler's window as a token list: the penalty kernels count occurrences, so the
+    // order inside the window does not matter.
+    let pen_hist: Vec<u32> = if meta.penalty.is_some() {
+        s.sampler
+            .penalty_counts()
+            .into_iter()
+            .flat_map(|(token, count)| std::iter::repeat_n(token, count as usize))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let mut ctr = plain_draw_ctr(0, s.philox_base);
+    memra_engine::spec::sample_boundary_token(engine, row, &sp, &pen_hist, &mut ctr, "plain-first")
+        .map(Some)
+        .map_err(|err| format!("first-token device draw: {err}"))
+}
+
 /// The decode tick's HOST half: sample from last_logits, emit the token, run the stop
 /// battery. Returns (continue?, Some(next_token) to feed the next step). Extracted from
 /// step_session so the batched scheduler can drive many sessions into ONE engine step.
 fn advance_sample_emit(
+    engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
     s: &mut Session,
 ) -> (bool, Option<u32>) {
@@ -31155,9 +31234,27 @@ fn advance_sample_emit(
                 ))));
                 return (false, None);
             }
-            s.sampler.sample(&row)
+            // The first token of a constrained sampled request is the same device draw its
+            // later tokens are, from the masked row (memra#1154): one sampler per request.
+            match plain_first_token_device_draw(engine, &lm.model, s, &row) {
+                Ok(Some(t)) => t,
+                Ok(None) => s.sampler.sample(&row),
+                Err(err) => {
+                    s.errored = true;
+                    let _ = s.tx.send(Event::Error(EngineError::engine(err)));
+                    return (false, None);
+                }
+            }
         }
-        (None, None) => s.sampler.sample(&s.last_logits),
+        (None, None) => match plain_first_token_device_draw(engine, &lm.model, s, &s.last_logits) {
+            Ok(Some(t)) => t,
+            Ok(None) => s.sampler.sample(&s.last_logits),
+            Err(err) => {
+                s.errored = true;
+                let _ = s.tx.send(Event::Error(EngineError::engine(err)));
+                return (false, None);
+            }
+        },
     };
     if let Some(reason) = stop_token_reason(next, &s.stop_token_ids) {
         finish(s, reason);
@@ -31604,9 +31701,11 @@ fn spec_demote_eligible(constrained: bool) -> bool {
 /// Plain sampled decode draws token `i` as `argmax(filter(logits_i)/T + G(seed, i))`: one
 /// gumbel event per token, the event's stream_pos = the token index. The sampled spec routes
 /// draw from the SAME Philox space (same kernels, same `seed`, `philox4(seed, lane_block,
-/// stream_pos)`) but number their events with a session counter `sctr` that counts every
-/// draft, residual, bonus and boundary draw, so after `g` emitted tokens it sits at some
-/// `S >= g`, usually well above it (each round drafts K and keeps fewer).
+/// stream_pos)`) but number their events with a session counter `sctr`. On the DSpark route
+/// it counts every draft, residual, bonus and boundary draw, so after `g` emitted tokens it
+/// sits at some `S >= g`, usually well above it (each round drafts K and keeps fewer). On the
+/// MTP route since memra#1154 it is the position itself: `S = g + 1` and the base below is 0,
+/// so a demoted MTP request keeps writing the text plain decode writes.
 ///
 /// Continuing the demoted row on the plain rule as-is (`stream_pos = i`) would draw tokens
 /// `g+1..S` with noise vectors the spec prefix already used, some of them on draft rows whose
@@ -32096,7 +32195,7 @@ fn step_session_async_chain(
         return Ok(None);
     }
 
-    let (keep, next) = advance_sample_emit(loaded, s);
+    let (keep, next) = advance_sample_emit(engine, loaded, s);
     let Some(next) = next else {
         return Ok(Some(keep));
     };
@@ -32685,6 +32784,7 @@ fn rider_forward_caps(model: &str, riders: usize) -> Vec<usize> {
 }
 
 struct PlainRiderSet<'s, 'l> {
+    engine: &'l Engine,
     loaded: &'l HashMap<String, LoadedModel>,
     rows: Vec<(usize, &'s mut Session)>,
     live: Vec<bool>,
@@ -32706,7 +32806,7 @@ impl memra_engine::spec::PooledPlainRiders for PlainRiderSet<'_, '_> {
                 continue;
             }
             self.ledger.served.insert(*i);
-            match advance_sample_emit(self.loaded, s) {
+            match advance_sample_emit(self.engine, self.loaded, s) {
                 (false, _) => {
                     self.live[k] = false;
                     self.ledger.finished.push(*i);
@@ -32811,6 +32911,7 @@ fn step_spec_pooled(
     }
     let n_riders = rider_rows.len();
     let mut rider_set = (n_riders > 0).then(|| PlainRiderSet {
+        engine,
         loaded,
         rows: rider_rows,
         live: vec![true; n_riders],
@@ -32947,13 +33048,13 @@ fn step_session(
     // ZERO-prime continuation bursts (SpecSession.next_pred). Each burst emits up to
     // SPEC_BURST_T tokens; between bursts the scheduler round-robins other sessions. Exactness:
     // GREEDY bursts — the session-gate oracle (4 turns incl empty-suffix) pins burst output ==
-    // fresh greedy, byte-identical. SAMPLED bursts (temperature>0, `sampling` below) are
-    // DISTRIBUTIONALLY exact instead: the rejection-sampling verify draws from the same
-    // filtered/penalized target as plain sampled decode, but consumes its own Philox streams
-    // (sess.sctr/uctr), so the token stream is reproducible per (seed, session) rather than
-    // byte-equal to a plain-sampled run. That is the contract, not a gap. A pool resume that
-    // primes restarts the counters at (0,0) (memra#1093), so a resumed turn draws what a cold
-    // session of the same prompt and seed draws.
+    // fresh greedy, byte-identical. SAMPLED bursts (temperature>0, `sampling` below) write
+    // the plain sampler's text since memra#1154: the verify emits, at each generated position,
+    // the draw plain decode makes there (same filtered/penalised target, Philox event = the
+    // position, sess.sctr), whatever the draft length and the burst boundaries are. A pool
+    // resume that primes restarts the counter at 0 (memra#1093), so a resumed turn draws what
+    // a cold session of the same prompt and seed draws; an empty-suffix resume keeps the
+    // parked counter and is the one shape that does not.
     if s.vision.is_some() && s.spec.is_some() {
         // Backstop for the admit gate: a spec burst's turn-1 prime has no overlay seam,
         // so serving a vision session through it would silently prime pad embeddings
@@ -42458,7 +42559,10 @@ mod tests {
         let production = &src[..src.find("\nmod tests {").unwrap()];
         let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(squashed.contains(
-            "match spec_pool_take_extension(engine, lm, sess, &prompt, &req.model) { SpecExtensionTake::ParkedEnd(sess) => { text_suffix = suffix; Some(sess) } SpecExtensionTake::Rewound(sess, committed, pos) => { grid_rewound = Some((committed, pos)); Some(sess) } SpecExtensionTake::Declined => { reuse_metrics.spec_grid_declines += 1; None } }"
+            "match spec_pool_take_extension(engine, lm, sess, &prompt, &req.model) { SpecExtensionTake::ParkedEnd(sess) if sampled_parked_end_resume_refused( sampler.is_greedy(), suffix.as_deref().map(<[u32]>::len), prompt.len(), sess.committed.len(), ) => {"
+        ));
+        assert!(squashed.contains(
+            "SpecExtensionTake::ParkedEnd(sess) => { text_suffix = suffix; Some(sess) } SpecExtensionTake::Rewound(sess, committed, pos) => { grid_rewound = Some((committed, pos)); Some(sess) } SpecExtensionTake::Declined => { reuse_metrics.spec_grid_declines += 1; None } }"
         ));
         assert!(squashed.contains(
             "if !cache_carries_recurrent(sess.cache_ref()) { return SpecExtensionTake::ParkedEnd(sess); }"
@@ -42473,6 +42577,23 @@ mod tests {
         assert!(squashed.contains(
             "let resume_primes = match &text_suffix { Some(suffix) => !suffix.is_empty(), None => prompt.len() > sess.committed.len(), }; if resume_primes { sess.sctr = 0; sess.uctr = 0; } spec_resumed = sess.committed.len(); match (affinity_rewound, grid_rewound) {"
         ));
+    }
+
+    /// memra#1154: a sampled request never resumes a parked end with nothing to prime; its
+    /// first token would be the parked request's draw, not event 0.
+    #[test]
+    fn a_sampled_resume_with_nothing_to_prime_is_refused() {
+        use super::sampled_parked_end_resume_refused as refused;
+        // token tier: the prompt is exactly the committed tape
+        assert!(refused(false, None, 120, 120));
+        // text tier: an empty suffix
+        assert!(refused(false, Some(0), 121, 120));
+        // a resume that primes keeps the pool
+        assert!(!refused(false, None, 136, 120));
+        assert!(!refused(false, Some(3), 121, 120));
+        // greedy keeps the parked end: the stash is the argmax a cold run takes
+        assert!(!refused(true, None, 120, 120));
+        assert!(!refused(true, Some(0), 121, 120));
     }
 
     /// memra#1088: the device-side restore grid law, behaviourally, in the default test set.
