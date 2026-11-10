@@ -1,0 +1,13 @@
+# the fix with the same three tests:
+# cargo test --release --locked -p memra-gguf --lib -- <the three test names>
+# cargo's dependency compile lines before this point are cut.
+    Finished `release` profile [optimized] target(s) in 46.87s
+     Running unittests src/lib.rs (<target>/release/deps/memra_gguf-4e26041f99b48f68)
+
+running 3 tests
+test config::hf_tests::qwen35_vision_geometry_parses_the_qwen3_5_model_type ... ok
+test model_packs::qwen35::vision_census_tests::the_qwen35_4b_tower_geometry_declares_its_297_tensors ... ok
+test model_packs::qwen35::vision_census_tests::the_qwen3_5_vision_model_type_binds_a_bundled_tower ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 416 filtered out; finished in 0.00s
+
