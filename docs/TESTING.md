@@ -761,9 +761,22 @@ Two holes in this stage were closed by that same red (2026-08-06):
   - `tools/serve-st-gate.sh [st_dir]`: an HF **safetensors dir** served end-to-end: `/models`
     lists it, `/v1/chat/completions` returns coherent text through the checkpoint's *own* chat
     template, and the CLI-vs-server exactness contract (same checkpoint, same prompt, same
-    template, greedy → `run-gen`'s ST-dir tokenwise branch and the server's batched-prime +
-    serving decode must produce IDENTICAL id streams). Runs `MEMRA_SERVE_SPEC=0` because with
-    spec on a Token event carries one id per flush. Its last check boots the default
+    template, greedy: `run-gen`'s ST-dir tokenwise branch against the server's batched-prime +
+    serving decode). Runs `MEMRA_SERVE_SPEC=0` because with spec on a Token event carries one
+    id per flush. The two arms are two numeric configs by design, so the check passes on
+    IDENTICAL id streams, and where the streams part it passes only when all three of these
+    hold (memra #1181, the block-128 FP8 class): the step is a near-tie under the CLI's own
+    logits (its token's logit minus the server token's is at most `MEMRA_PRIME_GATE_MARGIN`,
+    default 1.0, the batched-prime gate's margin bound); `run-gen` teacher-forced on the
+    server's ids disagrees with them at that step and nowhere else, so the served tail is
+    the CLI's own (stricter than the law: a second near-tie in the window fails); and a
+    second server boot on the CLI's numeric config writes the CLI's stream exactly. That
+    boot depends on two doors, `MEMRA_SERVE_B1FAST=1` (the eager decode chain) and
+    `MEMRA_CONFIDENCE_TRACE` (which primes the prompt tokenwise; the check requires its
+    file to have rows): on a plan the eager door does not cover, a parted stream fails. A
+    flip on a wide margin, or a server stream that ends where the CLI goes on, fails. The
+    law's full-row drift ceiling is not checked (no door reads the served logits). Its last
+    check boots the default
     (spec-on) server and requires its greedy text and completion tokens to equal the
     `MEMRA_SERVE_SPEC=0` server's on two prompts, one of which fills the 400-token window;
     both arms serve the batched program, the only served path since memra #1158, and the
