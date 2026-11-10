@@ -123,6 +123,25 @@ def pick_word(text, at):
     return None, None
 
 
+def make_plan(free):
+    """The stop strings of one sampler's rows, taken from an answer without stop strings."""
+    p = {"stop": [], "span": [], "two": []}
+    for at in STOP_AT:
+        _, w = pick_word(free, at)
+        if w and w not in p["stop"]:
+            p["stop"].append(w)
+    for at in SPAN_AT:
+        s = pick_span(free, at)
+        if s and s not in p["span"]:
+            p["span"].append(s)
+    for at in TWO_AT:
+        i, w1 = pick_word(free, at)
+        _, w2 = pick_word(free, i + 1) if i is not None else (None, None)
+        if w1 and w2:
+            p["two"].append([w2, w1])
+    return p
+
+
 def pick_span(text, at):
     """Three consecutive words from index `at` on, as written (spaces and inner punctuation),
     first occurring there."""
@@ -335,55 +354,66 @@ def run_boot(args):
         raise SystemExit(f"{args.out} already holds boot {args.case}")
     srv = Server(args, args.case, env)
     extra = {}
+
+    def stop_row(kind, rid, regime, msgs, samp, max_tokens, stop):
+        """A stop row. On a route whose sampled stream is its own (`self_ref`), the request is
+        also sent without its stop strings at max_tokens = its count and one less: the stop
+        string must complete on exactly that token of the route's own stream."""
+        row, text, _ = srv.row(kind, rid, regime, msgs, samp, max_tokens, stop=stop)
+        if self_ref(regime) and row["finish"] == "stop" and row["completion_tokens"]:
+            n = row["completion_tokens"]
+            for m in (n - 1, n):
+                if m > 0:
+                    srv.row("selfref", f"{rid}-at-{m}", regime, msgs, samp, m)
+        return row, text
+
+    def self_ref(regime):
+        return not ref and args.route == "dspark" and regime != "greedy"
+
     try:
         for regime, sampler in REGIMES.items():
             samp = sampler(seed_of(f"stop-{regime}"))
             msgs = user(STOP_PROMPT)
             _, free, _ = srv.row("free", f"free-{regime}", regime, msgs, samp, MAX_TOKENS)
             srv.row("eos", f"eos-{regime}", regime, user(EOS_PROMPT), sampler(seed_of(f"eos-{regime}")), 160)
-            if ref:
-                p = plan[regime] = {"stop": [], "span": [], "two": []}
-                for at in STOP_AT:
-                    _, w = pick_word(free, at)
-                    if w and w not in p["stop"]:
-                        p["stop"].append(w)
-                for at in SPAN_AT:
-                    s = pick_span(free, at)
-                    if s and s not in p["span"]:
-                        p["span"].append(s)
-                for at in TWO_AT:
-                    i, w1 = pick_word(free, at)
-                    _, w2 = pick_word(free, i + 1) if i is not None else (None, None)
-                    if w1 and w2:
-                        p["two"].append([w2, w1])
-            p = plan[regime]
+            # The plain boot picks the stop strings from its own answer; a route whose sampled
+            # stream is its own picks them from that stream, the same way.
+            own = ref or self_ref(regime)
+            if own:
+                p = make_plan(free)
+                if ref:
+                    plan[regime] = p
+                else:
+                    extra.setdefault("own_plan", {})[regime] = p
+            else:
+                p = plan[regime]
             for i, w in enumerate(p["stop"]):
-                srv.row("stop", f"stop-{i}-{regime}", regime, msgs, samp, MAX_TOKENS, stop=[w])
+                stop_row("stop", f"stop-{i}-{regime}", regime, msgs, samp, MAX_TOKENS, [w])
             for i, s in enumerate(p["span"]):
-                srv.row("span", f"span-{i}-{regime}", regime, msgs, samp, MAX_TOKENS, stop=[s])
+                stop_row("span", f"span-{i}-{regime}", regime, msgs, samp, MAX_TOKENS, [s])
             for i, pair in enumerate(p["two"]):
-                srv.row("two", f"two-{i}-{regime}", regime, msgs, samp, MAX_TOKENS, stop=pair)
+                stop_row("two", f"two-{i}-{regime}", regime, msgs, samp, MAX_TOKENS, pair)
                 if ref:  # where each of the pair completes alone
                     srv.row("two-alone", f"two-{i}-b-{regime}", regime, msgs, samp, MAX_TOKENS, stop=[pair[0]])
                     srv.row("two-alone", f"two-{i}-a-{regime}", regime, msgs, samp, MAX_TOKENS, stop=[pair[1]])
-            if ref and p["stop"]:
+            if own and p["stop"]:
                 bi = 1 if len(p["stop"]) > 1 else 0
                 n = next((r["completion_tokens"] for r in load_rows(args.out)
-                          if r["case"] == "ref" and r["id"] == f"stop-{bi}-{regime}"), None)
+                          if r["case"] == args.case and r["id"] == f"stop-{bi}-{regime}"), None)
                 p["budget"] = {"stop": p["stop"][bi], "max_tokens": n}
             if p.get("budget", {}).get("max_tokens"):
                 b = p["budget"]
-                srv.row("budget", f"budget-{regime}", regime, msgs, samp, b["max_tokens"], stop=[b["stop"]])
+                stop_row("budget", f"budget-{regime}", regime, msgs, samp, b["max_tokens"], [b["stop"]])
             # Turn 2 after a turn that ended on a stop string: the second turn restores what
             # the first one parked.
             tmsgs = user(TURN_PROMPTS[regime])
             tsamp = sampler(seed_of(f"turn-{regime}"))
             _, tfree, _ = srv.row("turnfree", f"turnfree-{regime}", regime, tmsgs, tsamp, MAX_TOKENS)
-            if ref:
+            if own:
                 _, w = pick_word(tfree, 24)
                 p["turn"] = w
             if p.get("turn"):
-                _, t1, _ = srv.row("turn1", f"turn1-{regime}", regime, tmsgs, tsamp, MAX_TOKENS, stop=[p["turn"]])
+                _, t1 = stop_row("turn1", f"turn1-{regime}", regime, tmsgs, tsamp, MAX_TOKENS, [p["turn"]])
                 t2 = tmsgs + [{"role": "assistant", "content": t1}, {"role": "user", "content": TURN2}]
                 # The DSpark recipes run with the prefix cache off: only the MTP boots must
                 # restore the parked prefix.
@@ -409,8 +439,9 @@ def run_boot(args):
         plan_path.write_text(json.dumps(plan, indent=1))
     else:
         (args.out / f"reject-{args.case}.json").write_text(json.dumps(extra, indent=1))
-    (args.out / "boots.jsonl").open("a").write(json.dumps({"case": args.case, "route": args.route if not ref else "plain",
-                                                           "env": args.env}) + "\n")
+    (args.out / "boots.jsonl").open("a").write(json.dumps({
+        "case": args.case, "route": args.route if not ref else "plain", "env": args.env,
+        "self_ref": [r for r in REGIMES if self_ref(r)]}) + "\n")
     errors = [r for r in load_rows(args.out) if r["case"] == args.case and r["error"]]
     for r in errors:
         print(f"ERROR {r['id']}: {r['error']}")
@@ -420,6 +451,70 @@ def run_boot(args):
 def load_rows(out):
     p = out / "runs.jsonl"
     return [json.loads(line) for line in p.read_text().splitlines() if line.strip()] if p.exists() else []
+
+
+def close_judge(case, regime, rr, ref, failures):
+    """The close: each stop-ended row against its boot's non-stop rows of the same sampler, plus
+    twice plain decode's own hold-back for that row (a stop string of several tokens is held back
+    from the stream while it may still complete, in plain decode too)."""
+    base = [r["close_ms"] for r in rr if r["kind"] in NONSTOP_KINDS and r["close_ms"] is not None]
+    stopped = [r for r in rr if r["kind"] in STOP_KINDS and r["finish"] == "stop" and r["close_ms"] is not None]
+    if not base:
+        failures.append(f"{case} {regime}: no non-stop row to time the close against")
+        return None, None, None, base, stopped
+    med = statistics.median(base)
+    limit = max(3 * med, med + 100)
+    worst = max((r["close_ms"] for r in stopped), default=None)
+    for r in stopped:
+        # Without a plain row for this stop string (a route judged on its own stream), a
+        # three-word stop string gets a flat 100 ms for its hold-back.
+        held = 2 * (ref[r["id"]].get("close_ms") or 0) if r["id"] in ref else (100 if r["kind"] == "span" else 0)
+        if r["close_ms"] > limit + held:
+            failures.append(f"{case} {r['id']}: closed {r['close_ms']} ms after its last visible chunk, "
+                            f"limit {limit + held:.0f} ms (non-stop median {med:.0f} ms, plain decode's "
+                            f"hold-back {held / 2:.0f} ms)")
+    return med, limit, worst, base, stopped
+
+
+def self_judge(out, case, rr, failures, cov):
+    """A route whose sampled stream is its own: a stop row that stopped must stop on exactly the
+    token of that stream where its stop string completes (the request without stop strings at
+    max_tokens = its count holds the stop string, at one less it does not), and its text is that
+    answer cut at the stop string; a stop row that ran out is its own free answer."""
+    text = lambda rid: (out / "texts" / f"{case}-{rid}.txt").read_text()  # noqa: E731
+    by_id = {r["id"]: r for r in rr}
+    good = total = 0
+    counts = []
+    for r in rr:
+        if r["kind"] not in STOP_KINDS:
+            continue
+        total += 1
+        n = r["completion_tokens"]
+        counts.append(n)
+        stops = r["stop"] or []
+        if r["finish"] == "stop":
+            at, below = by_id.get(f"{r['id']}-at-{n}"), by_id.get(f"{r['id']}-at-{n - 1}")
+            if at is None or (n > 1 and below is None):
+                failures.append(f"{case} {r['id']}: no self-reference rows for its {n}-token stop")
+                continue
+            full = text(at["id"])
+            cut = min((full.find(x) for x in stops if x in full), default=-1)
+            ok = cut >= 0 and (n == 1 or not any(x in text(below["id"]) for x in stops)) and text(r["id"]) == full[:cut]
+            if len(r["receipts"]) != 1 or r["receipts"][0]["completion_tokens"] != n:
+                failures.append(f"{case} {r['id']}: {len(r['receipts'])} [spec-stop] receipts for a {n}-token stop")
+            elif r["receipts"][0]["spans_slices"]:
+                cov["spans"] += 1
+        else:
+            free_id = f"turnfree-{r['regime']}" if r["kind"] == "turn1" else f"free-{r['regime']}"
+            own = text(free_id) if free_id in by_id else ""
+            ok = r["finish"] == "length" and n == r["max_tokens"] and not any(x in text(r["id"]) for x in stops) \
+                and (r["kind"] == "budget" or text(r["id"]) == own)
+        good += ok
+        if not ok:
+            failures.append(f"{case} {r['id']}: {n} tokens, finish {r['finish']}: not where its stop string completes "
+                            "in this route's own stream")
+    print(f"  {rr[0]['regime'] if rr else '?'}: own stream (this route's sampled walk is not plain decode's): stop rows "
+          f"that stop on their completing token {good}/{total}; counts {counts}")
 
 
 def judge(out):
@@ -436,6 +531,7 @@ def judge(out):
         mine = [r for r in rows if r["case"] == case]
         rejects = json.loads((out / f"reject-{case}.json").read_text()) if (out / f"reject-{case}.json").exists() else {}
         print(f"== {case} ({route[case]}) ==")
+        own = next((b.get("self_ref", []) for b in boots if b["case"] == case), [])
         for regime in REGIMES:
             cov = cover.setdefault((route[case], regime), {"spans": 0, "two_one_burst": 0, "reject": 0})
             rr = [r for r in mine if r["regime"] == regime]
@@ -448,6 +544,14 @@ def judge(out):
                 for line in r.get("park", []):
                     if "-park REFUSED" in line:
                         failures.append(f"{case} {r['id']}: {line}")
+            if regime in own:
+                # This route's sampled verify draws its own stream (DSpark's rejection walk is not
+                # plain decode's position-keyed draw), so a row is judged against that stream. Its
+                # close is judged against its own non-stop rows only (no plain hold-back: the stop
+                # strings are its own).
+                self_judge(out, case, rr, failures, cov)
+                close_judge(case, regime, rr, {}, failures)
+                continue
             stop_equal = stop_total = 0
             for r in rr:
                 want = ref.get(f"free-{regime}" if r["kind"] in ("reject", "probe") else r["id"])
@@ -483,24 +587,9 @@ def judge(out):
                         cov["two_one_burst"] += 1
             for c in rejects.get(regime, []):
                 cov["reject"] += bool(c["confirmed"])
-            # The close: stop-ended rows against this boot's non-stop rows.
-            base = [r["close_ms"] for r in rr if r["kind"] in NONSTOP_KINDS and r["close_ms"] is not None]
-            stopped = [r for r in rr if r["kind"] in STOP_KINDS and r["finish"] == "stop" and r["close_ms"] is not None]
-            if not base:
-                failures.append(f"{case} {regime}: no non-stop row to time the close against")
+            med, limit, worst, base, stopped = close_judge(case, regime, rr, ref, failures)
+            if med is None:
                 continue
-            med = statistics.median(base)
-            limit = max(3 * med, med + 100)
-            worst = max((r["close_ms"] for r in stopped), default=None)
-            for r in stopped:
-                # A stop string of several tokens is held back from the stream while it may
-                # still complete, in plain decode too: its row may also take twice the time plain
-                # decode's row took from its last visible chunk to its end.
-                held = 2 * (ref.get(r["id"], {}).get("close_ms") or 0)
-                if r["close_ms"] > limit + held:
-                    failures.append(f"{case} {r['id']}: closed {r['close_ms']} ms after its last visible chunk, "
-                                    f"limit {limit + held:.0f} ms (non-stop median {med:.0f} ms, plain decode's "
-                                    f"hold-back {held / 2:.0f} ms)")
             print(f"  {regime}: stop rows equal to plain decode {stop_equal}/{stop_total}; close ms: non-stop median "
                   f"{med:.0f} (max {max(base):.0f}, n={len(base)}), stop rows max {worst} (n={len(stopped)}), limit "
                   f"{limit:.0f}")
