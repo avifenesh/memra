@@ -948,6 +948,96 @@ The body also beats the one-pass form at 7 and 8 rows, and loses below
 two ranks 1 row +1.3%, 4 rows +2.0%, 5 and 6 rows level, 7 rows -1.4%, 8 rows 12.77 -> 12.48 ms;
 one rank 7 rows -1.4%, 8 rows 9.90 -> 9.53 ms. Dense calls of 7 rows and more take it.
 
+### The second stream above 8 rows, the free list's cap
+
+The three second-stream overlaps stopped at 8 rows with the small-row bodies. One limit raised at
+a time, a call of N rows, ratio to the committed tree (`receipts/prefillab-w11-caps-n2` two ranks,
+20 layers; `receipts/prefillab-w11-caps-n1` one rank, 9 layers):
+
+| | two ranks: 16 rows | 32 | 64 | one rank: 16 rows | 32 |
+|---|---|---|---|---|---|
+| the shared expert under the router's chain | 0.961 | 0.957 | 0.934 | 0.976 | 0.942 |
+| the mHC mixes under their sublayer | 0.978 | 0.983 | 1.003 | 0.990 | 0.992 |
+| the keys side under wq_b | | | | 1.008 | 0.992 |
+| the free list at 8 MiB a buffer, 256 MiB in all | 1.001 | 1.000 | 1.003 | 0.994 | 0.998 |
+| shared expert and mixes together | 0.937 | 0.948 | 0.934 | | |
+
+The shared expert goes to the second stream up to 64 rows and the mixes up to 32
+(`SIDE_LIMITS`); the keys side stays at 8 (level on one rank; on two ranks only the batched step
+takes it). A 32-row call's rows are 1.3 and 2.6 MB against the free list's 1 MiB cap, and raising
+the cap changes nothing: the stream-ordered device pool is not what a wide call waits for. Two
+cards, 20 layers, with both limits: 16 rows 18.87 -> 17.64 ms, 32 rows 27.45 -> 25.97, 64 rows
+46.59 -> 43.23.
+
+### A 16-row form of the bf16 small-row kernel
+
+The small-row bf16 kernel carries 8 rows on the tile's 16-wide side. Its 16-row form (`R16`) holds 16,
+so a warp's chain over K carries twice the rows on the same MMAs, and a call of 9 to 16 rows is one
+launch of it instead of two launches of 8 rows. Alone, against the tree before (second stream held
+at 8 rows; A B C D D C B A, medians of 10):
+
+| a call of N rows, ms | 12 | 16 | 24 | 32 |
+|---|---|---|---|---|
+| two ranks, 20 layers, before | 16.58 | 18.91 | 24.09 | 27.39 |
+| the 16-row form | 16.03 | 18.32 | 24.02 | 27.27 |
+| + groups of 16 up to 32 rows | 16.30 | 18.61 | 23.55 | 26.86 |
+| the 16-row form and the second stream's limits | 15.61 | 18.08 | 23.43 | 26.57 |
+| one rank, 9 layers, before | 12.19 | 14.00 | 17.12 | 19.40 |
+| the 16-row form | 11.85 | 13.98 | 17.13 | 19.42 |
+| + groups of 16 up to 32 rows | 12.04 | 14.15 | 17.54 | 20.20 |
+
+(`receipts/prefillab-w14-bf16-n2`, `-n1`.) The limit stays 16 at both rank counts: groups of 16 up
+to 32 rows gain 2% at 24 and 32 rows on two ranks, lose 1.7% at 12 and 16, and lose at every width
+on one rank. The form and the second stream's limits add: in a run of the tree before, the limits
+alone and both (`receipts/prefillab-w14-side-n2`), the ratios to the tree before are 0.958 / 0.967 /
+0.969 / 0.977 for the limits alone and 0.928 / 0.942 / 0.965 / 0.973 for both at 12 / 16 / 24 / 32
+rows.
+
+The gate's wide cases (calls of 12, 16 and 32 rows, every family's limit at 0 against 32) ran the
+second stream in both passes, so a branch on the second stream above 8 rows had no reference in
+stream order. The reference pass now runs with the three second-stream limits at 0
+(`receipts/gates-w14`, `ggate-w14`, `pairgates-w14`: 0 failed).
+
+### A timed cell and the card's power limit
+
+The same build's 16-row call measured 13.6 ms in a rotation of 8 / 16 / 32 rows and 14.0 to 14.5 in
+12 / 16 / 24 / 32. It is not the widths. One width alone, 48 calls back to back
+(`receipts/longrounds-w14`): 13.08 to 13.12 ms for the first 150 ms, 14.5 at 250 ms, 14.7 to 14.8
+from 400 ms on. Every width alone and in sets of two and three for 6 rounds (`receipts/rot-w14`):
+13.2 to 13.7 in every set; only the four-width set, the one busy for longer than 0.3 s, shows 14.7
+to 14.8. Traces of the rotation and of each width alone (`receipts/rottrace-w14`): every kernel is 1
+to 4% slower in the rotation, small and large alike, the host's launch call costs the same, and no
+call allocates. A uniform factor on every kernel is the clock.
+
+`nvidia-smi` at 20 ms under a run of 3.3 s (read only; its values refresh about twice a second;
+`receipts/clockprobe-w14-*`):
+
+| | first 100 ms | from 1 s on | ratio | settled clock, draw |
+|---|---|---|---|---|
+| one card (card 0), 9 layers, 32 rows | 18.03 ms | 19.98 | 1.108 | 2,272 -> 1,747 MHz at 250.0 W, 69 C |
+| one card (card 1), 9 layers, 32 rows | 17.99 | 19.30 | 1.072 | 2,272 -> 1,807 MHz at 250.0 W, 48 C |
+| one card, 9 layers, one-row decode | 4.66 | 5.05 | 1.084 | 2,280 -> 1,867 MHz at 250.0 W |
+| two cards, 20 layers, one-row decode | 7.13 | 7.27 | 1.019 | 2,280 and 2,227 MHz at 243 and 214 W: no step |
+| two cards, 20 layers, 8 rows | 12.41 | 13.62 | 1.097 | 1,905 and 2,107 MHz at 250.0 W |
+| two cards, 20 layers, 32 rows | 25.86 | 28.24 | 1.092 | 1,845 and 2,032 MHz at 250.0 W |
+
+A card under continuous load reaches its power limit after 0.15 to 1.5 s and its clock settles 8 to
+23% lower; a call then costs 7 to 13% more, the same factor at every width. The settled clock
+depends on the card's temperature (the warmer card settles 60 MHz lower alone and 190 MHz lower in
+the pair), and a pair runs at the pace of its slower card. A one-row decode on two cards stays
+under the limit (each card waits for the other's gathers) and keeps the fast clock; on four cards
+no card passed 214 W in the last four-card pass, so the one-row figures (7.0 to 7.3 ms on two
+cards, 11.62 on four) are steady-state figures. The wide-call figures in the sections above are
+not: their cells are bursts of 0.1 to 0.4 s from an idle card. Ratios inside one interleaved run
+hold (each arm crosses the step at the same place); the absolute ms are low against a served step
+by the factor in the table. In steady state on two cards a call of 8 rows is 13.62 ms and of 32
+rows 28.24.
+
+From here a reported figure is the steady one: the median over calls that start at least 0.5 s
+after the run's first call (`steady.py`), with the burst figure beside it. Raising the free list's
+caps does not change any of this (`receipts/prefillab-w11-pool-r4-n1`: level to 2% slower in the
+long rotation).
+
 ### The page cache under a timed cell
 
 A cell that starts after the page cache was dropped reads its Engram tables from the disk: the
@@ -1079,6 +1169,10 @@ weight traffic: 1.1 ms.
   the host's issue time).
 - `copy_rate.py`, `copy_pairs.py`: the copies of a trace by size (best and median duration and
   rate) and by card pair, with how many are in flight at once.
+- `steady.py`: the calls of `dsv41-tpbench` runs by how long the card has been busy (the first
+  0.15 s, to 0.5 s, from 0.5 s on): the steady figure a served step pays next to the burst one.
+  `trace_rot.py`: kernel time by name of a mixed-width trace against the sum of its widths traced
+  alone.
 - `receipts/`: one directory per comparison (`multi-*`: timed arms with their kernel gates;
   `profab-*`: per-op profiles; `gemm-*`: GEMM shapes; `look-*`, `ncul-*`, `ncu-*`: ncu reports;
   `base`, `check-*`, `ab-*`, `prof-*`: the first half of the lane; `nrank-*`: N-rank decode traces;
