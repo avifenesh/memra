@@ -7353,28 +7353,39 @@ impl SpecCostEntry {
             .fold(0.0, f64::max)
     }
 
-    /// The aggregate tok/s to price (n, k) at: the realized EMA when it has enough samples,
-    /// else `predict(n, k)` scaled by the realized/predicted ratio of the slot `scale_slot`
-    /// picks. 1.0 when none.
+    /// The aggregate tok/s to price (n, k) at (`priced_from` without its source).
     fn priced(&self, n: usize, k: usize, predict: impl Fn(usize, usize) -> f64) -> f64 {
+        self.priced_from(n, k, predict).0
+    }
+
+    /// The aggregate tok/s to price (n, k) at, and where it came from: the realized EMA when
+    /// (n, k) has enough samples, else `predict(n, k)` scaled by the realized/predicted ratio of
+    /// the slot `scale_slot` picks, else the prediction alone. A far concurrency with no measured
+    /// neighbor has no speculative price (0.0), and the verdict serves plain.
+    fn priced_from(
+        &self,
+        n: usize,
+        k: usize,
+        predict: impl Fn(usize, usize) -> f64,
+    ) -> (f64, PriceSource) {
         let predicted = predict(n, k);
         if let Some(r) = self.realized_slot(n, k) {
-            return self.realized_now(k, r);
+            return (self.realized_now(k, r), PriceSource::Realized);
         }
-        // Far concurrency: a spec price needs a measured slot at n or a bounded neighbor;
-        // without one there is no price (0.0), and the verdict serves plain.
-        let far = k > 0 && n >= SPEC_COST_FAR_N;
         match self.scale_slot(n, k) {
             Some(((m, kk), r)) => {
                 let p = predict(m, kk);
                 if p > 0.0 {
-                    predicted * self.realized_now(kk, r) / p
+                    (
+                        predicted * self.realized_now(kk, r) / p,
+                        PriceSource::Scaled(m, kk),
+                    )
                 } else {
-                    predicted
+                    (predicted, PriceSource::Table)
                 }
             }
-            None if far => 0.0,
-            None => predicted,
+            None if spec_cost_far(n, k) => (0.0, PriceSource::Unpriced),
+            None => (predicted, PriceSource::Table),
         }
     }
 
@@ -7388,15 +7399,16 @@ impl SpecCostEntry {
     /// The observation whose realized/predicted ratio scales the prediction at (n, k) when
     /// (n, k) has too few samples: a slot of the same kind (plain for k = 0, any draft length
     /// for k > 0), preferring the same n, then the same k at the nearest n, then any draft
-    /// length at the nearest n. A far concurrency (n >= SPEC_COST_FAR_N, k > 0) looks only
-    /// within SPEC_COST_FAR_NEIGHBOR of n.
+    /// length at the nearest n. A far concurrency looks only within SPEC_COST_FAR_NEIGHBOR of n.
     ///
-    /// Ties break on the slot itself (memra#1212): more samples first (the lower-noise
-    /// ratio), then the lower concurrency, then the shorter draft length. The map's iteration
-    /// order used to pick among equally ranked slots, and that order is random per process,
-    /// so the same state could price, and choose, differently on two boots.
+    /// Ties break on the slots themselves (memra#1212), in this order: the longer history (more
+    /// samples); at a far concurrency, a neighbor that is far itself (rates realized under
+    /// SPEC_COST_FAR_N say little about the verify cost above it); the draft length nearer k;
+    /// the lower concurrency; the shorter draft length. The map's iteration order used to pick
+    /// among equally ranked slots, and that order is random per process, so the same state
+    /// could price, and choose, differently on two boots.
     fn scale_slot(&self, n: usize, k: usize) -> Option<((usize, usize), &RealizedRate)> {
-        let far = k > 0 && n >= SPEC_COST_FAR_N;
+        let far = spec_cost_far(n, k);
         let same_kind = |kk: usize| (kk == 0) == (k == 0);
         let rank = |m: usize, kk: usize| -> (u8, usize) {
             let tier = if m == n {
@@ -7414,21 +7426,46 @@ impl SpecCostEntry {
                 r.samples >= SPEC_COST_REALIZED_MIN && same_kind(*kk) && (*m, *kk) != (n, k)
             })
             .filter(|((m, _), _)| !far || m.abs_diff(n) <= SPEC_COST_FAR_NEIGHBOR)
-            .min_by_key(|((m, kk), r)| (rank(*m, *kk), std::cmp::Reverse(r.samples), *m, *kk))
+            .min_by_key(|((m, kk), r)| {
+                (
+                    rank(*m, *kk),
+                    std::cmp::Reverse(r.samples),
+                    far && *m < SPEC_COST_FAR_N,
+                    kk.abs_diff(k),
+                    *m,
+                    *kk,
+                )
+            })
             .map(|(key, r)| (*key, r))
     }
+}
 
-    /// Where the price at (n, k) comes from, for the verdict log (memra#1212): `realized`
-    /// (its own slot), `(m,K)` (scaled from that slot), `table` (the boot table alone) or
-    /// `none` (a far concurrency with no measured neighbor: no spec price).
-    fn price_source(&self, n: usize, k: usize) -> String {
-        if self.realized_slot(n, k).is_some() {
-            return "realized".to_string();
-        }
-        match self.scale_slot(n, k) {
-            Some(((m, kk), _)) => format!("({m},{kk})"),
-            None if k > 0 && n >= SPEC_COST_FAR_N => "none".to_string(),
-            None => "table".to_string(),
+/// A speculative price at this concurrency needs a measured slot within
+/// SPEC_COST_FAR_NEIGHBOR of n (`SpecCostEntry::priced_from`).
+fn spec_cost_far(n: usize, k: usize) -> bool {
+    k > 0 && n >= SPEC_COST_FAR_N
+}
+
+/// Where a cost-model price came from, for the verdict log (memra#1212).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PriceSource {
+    /// The slot's own realized rate.
+    Realized,
+    /// The prediction scaled by the realized/predicted ratio of slot (n, K).
+    Scaled(usize, usize),
+    /// The boot table's prediction alone.
+    Table,
+    /// No price: a far concurrency with no measured speculative neighbor.
+    Unpriced,
+}
+
+impl std::fmt::Display for PriceSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PriceSource::Realized => f.write_str("realized"),
+            PriceSource::Scaled(m, kk) => write!(f, "({m},{kk})"),
+            PriceSource::Table => f.write_str("table"),
+            PriceSource::Unpriced => f.write_str("none"),
         }
     }
 }
@@ -7528,21 +7565,52 @@ fn spec_plain_ms(t: &memra_engine::spec_cost::SpecCostTable, n: usize, cap: usiz
 
 /// Pure half of the verdict: the best draft length in `0..=rung` for `n` sessions (0 = plain),
 /// with the best draft length's price and the plain price for the log.
+/// The boot table's aggregate tok/s for `m` sessions at draft length `k` (0 = plain), at the
+/// window's acceptance; 0.0 for a draft length the window does not cover.
+fn spec_cost_table_rate(
+    entry: &SpecCostEntry,
+    accept: &memra_engine::spec::SpecTelemetry,
+    m: usize,
+    k: usize,
+) -> f64 {
+    if k == 0 {
+        return m as f64 / spec_plain_ms(&entry.table, m, entry.plain_cap) * 1e3;
+    }
+    match spec_expected_tokens(accept, k) {
+        Some(e) => m as f64 * e / spec_round_ms(&entry.table, m, k, entry.pooled) * 1e3,
+        None => 0.0,
+    }
+}
+
+/// Where `spec_cost_best_k` priced plain and each draft length it considered at `n`, for the
+/// verdict log: `K0=table K1=(1,3) K2=(1,3) K3=realized` (memra#1212).
+fn spec_cost_price_sources(entry: &SpecCostEntry, n: usize, rung: usize) -> String {
+    let Some(accept) = entry
+        .accept
+        .as_ref()
+        .filter(|a| a.rounds >= SPEC_COST_MIN_ROUNDS)
+    else {
+        return "no acceptance history".to_string();
+    };
+    let n = n.max(1);
+    let rate_at = |m: usize, k: usize| spec_cost_table_rate(entry, accept, m, k);
+    let mut out = vec![format!("K0={}", entry.priced_from(n, 0, rate_at).1)];
+    for k in 1..=rung {
+        if spec_expected_tokens(accept, k).is_none() {
+            break;
+        }
+        out.push(format!("K{k}={}", entry.priced_from(n, k, rate_at).1));
+    }
+    out.join(" ")
+}
+
 fn spec_cost_best_k(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<(usize, f64, f64)> {
     let accept = entry
         .accept
         .as_ref()
         .filter(|a| a.rounds >= SPEC_COST_MIN_ROUNDS)?;
     let n = n.max(1);
-    let rate_at = |m: usize, k: usize| -> f64 {
-        if k == 0 {
-            return m as f64 / spec_plain_ms(&entry.table, m, entry.plain_cap) * 1e3;
-        }
-        match spec_expected_tokens(accept, k) {
-            Some(e) => m as f64 * e / spec_round_ms(&entry.table, m, k, entry.pooled) * 1e3,
-            None => 0.0,
-        }
-    };
+    let rate_at = |m: usize, k: usize| spec_cost_table_rate(entry, accept, m, k);
     let plain = entry.priced(n, 0, rate_at);
     let mut best = (0usize, plain);
     let mut best_spec: Option<(usize, f64)> = None;
@@ -7650,16 +7718,11 @@ fn spec_cost_verdict(model: &str, n: usize, rung: usize) -> Option<usize> {
         return None;
     };
     if spec_cost_log_due(model, n, rung, k) {
-        let sources: Vec<String> = (0..=rung)
-            .map(|kk| format!("K{kk}={}", entry.price_source(n, kk)))
-            .collect();
+        let sources = spec_cost_price_sources(entry, n, rung);
         eprintln!(
             "[spec-cost] model={model:?} n={n} rung={rung} -> K={k} (predicted {:.1} vs plain \
              {:.1} tok/s; pooled={}; priced from {})",
-            spec_rate,
-            plain_rate,
-            entry.pooled,
-            sources.join(" ")
+            spec_rate, plain_rate, entry.pooled, sources
         );
     }
     Some(k)
@@ -35680,9 +35743,10 @@ mod tests {
     /// memra#1212: equally ranked slots are picked by a rule on the slots, not by the map's
     /// iteration order. Every build below is a new map with its own random hash keys and the
     /// same slots. Before the rule the price followed the iteration order, so builds disagreed
-    /// (two candidates: all 64 builds agree by chance with probability 2^-63).
+    /// (with two candidates, all 64 builds agree by chance with probability about 1e-16).
     #[test]
     fn spec_cost_tied_slots_price_the_same_on_every_build() {
+        use super::PriceSource;
         let predict = |m: usize, k: usize| (10 * m + k) as f64;
         let min = super::SPEC_COST_REALIZED_MIN;
         let prices = |slots: &[((usize, usize), f64, u32)], n: usize, k: usize| {
@@ -35703,12 +35767,12 @@ mod tests {
             prices(&[((1, 3), 1.0, min), ((3, 3), 0.5, min)], 2, 3),
             vec![23.0]
         );
-        // Tier 0: two other draft lengths at the same n. The shorter one wins: 23 * 0.5.
+        // Tier 0: two other draft lengths at the same n. The one nearer k wins: 23 * 1.0.
         assert_eq!(
             prices(&[((2, 1), 0.5, min), ((2, 2), 1.0, min)], 2, 3),
-            vec![11.5]
+            vec![23.0]
         );
-        // More samples beat a lower concurrency: the n+1 slot has the longer history.
+        // A longer history beats a lower concurrency: the n+1 slot has more samples.
         assert_eq!(
             prices(&[((1, 3), 1.0, min), ((3, 3), 0.5, min + 5)], 2, 3),
             vec![11.5]
@@ -35718,19 +35782,27 @@ mod tests {
             prices(&[((1, 0), 1.0, min), ((3, 0), 0.5, min)], 2, 0),
             vec![20.0]
         );
-        // The far path (n >= SPEC_COST_FAR_N) shares the rule.
+        // The far path (n >= SPEC_COST_FAR_N) shares the rule...
         assert_eq!(
             prices(&[((7, 3), 1.0, min), ((9, 3), 0.5, min)], 8, 3),
             vec![83.0]
         );
-        // The verdict log names the slot that priced it.
+        // ...and at its edge prefers the neighbor that is far itself: 73 * 0.5.
+        assert_eq!(
+            prices(&[((6, 3), 1.0, min), ((8, 3), 0.5, min)], 7, 3),
+            vec![36.5]
+        );
+        // The verdict log's source is the one the price used.
         let mut e = gb10_entry([0.7, 0.5, 0.35]);
         e.realized.insert((1, 3), slot(13.0, min));
         e.realized.insert((3, 3), slot(16.5, min));
-        assert_eq!(e.price_source(2, 3), "(1,3)");
-        assert_eq!(e.price_source(1, 3), "realized");
-        assert_eq!(e.price_source(2, 0), "table");
-        assert_eq!(e.price_source(12, 3), "none");
+        assert_eq!(e.priced_from(2, 3, predict).1, PriceSource::Scaled(1, 3));
+        assert_eq!(e.priced_from(1, 3, predict).1, PriceSource::Realized);
+        assert_eq!(e.priced_from(2, 0, predict).1, PriceSource::Table);
+        assert_eq!(e.priced_from(12, 3, predict).1, PriceSource::Unpriced);
+        // A scaling slot whose own prediction is 0 scales nothing: the table prices it.
+        let zero = |m: usize, k: usize| if (m, k) == (1, 3) { 0.0 } else { predict(m, k) };
+        assert_eq!(e.priced_from(2, 3, zero), (23.0, PriceSource::Table));
     }
 
     /// Far concurrency (n >= 7): spec is never priced by extrapolating slots measured under 7

@@ -51,3 +51,6 @@ research/spec-stop-string-20261110/**/*.log -text whitespace=-blank-at-eol,-blan
 # ends where the cell cut its stream, a patch line can end in a space).
 research/spec-entry-yield-bound-20261110/**/texts/** -text whitespace=-blank-at-eol,-blank-at-eof
 research/spec-entry-yield-bound-20261110/tools/probe-arms.patch -text whitespace=-blank-at-eol,-blank-at-eof
+
+# memra#1212: the tie test's raw red and green cargo logs stay byte-exact.
+research/spec-cost-tie-break-20261110/raw/** -text whitespace=-blank-at-eol,-blank-at-eof
