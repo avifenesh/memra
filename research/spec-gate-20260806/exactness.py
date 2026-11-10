@@ -64,6 +64,10 @@ PROMPT = ("Explain, step by step and in full detail, how a speculative decoding 
           "consequences, and how hysteresis prevents mode thrash.")
 FILLER = ("Write a long, careful essay about the history of memory hierarchies in computer "
           "architecture, from core memory through to HBM stacks.")
+# The demote line's generated count. The line gained a sampler suffix after the count
+# (`generated 133, greedy)`); the old pattern required `)` right after the digits, matched
+# nothing, and every run ended EXACTNESS_INCONCLUSIVE with the demotion in the log (memra #1158).
+GENERATED_RE = r"generated (\d+)[,)]"
 
 
 def post(base, model, prompt, max_tokens, timeout=600):
@@ -297,7 +301,7 @@ def main():
     MIN_GEN = 20
     target_dl, gens = None, []
     for ln in dl:
-        m = re.search(r"generated (\d+)\)", ln)
+        m = re.search(GENERATED_RE, ln)
         if m:
             g = int(m.group(1))
             gens.append(g)
@@ -320,7 +324,7 @@ def main():
     dsolo = out["DEMOTE_SOLO"]
     ds_lines = demote_lines(dsolo["log"])
     ds_gen = [int(m.group(1)) for ln in ds_lines
-              if (m := re.search(r"generated (\d+)\)", ln))]
+              if (m := re.search(GENERATED_RE, ln))]
     p, rp, dp = first_div(ref["text"], dsolo["text"])
     verdicts["PRIMARY_demote_solo_forced_at"] = (f"{ds_gen}" if ds_gen else
                                                  "INCONCLUSIVE: forced demotion never fired")
