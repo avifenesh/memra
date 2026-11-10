@@ -1308,6 +1308,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
     for &(rows, ne, topk, bm) in &[
         (1usize, 16usize, 6usize, 4usize),
         (3, 16, 6, 4),
+        (6, 16, 6, 8),
         (700, 16, 6, 64),
         (900, 16, 6, 128),
     ] {

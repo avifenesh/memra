@@ -589,7 +589,14 @@ const TMP_POOL_MAX_BYTES: usize = 64 << 20;
 /// event until the copy is done, exactly as before a free.)
 #[derive(Default)]
 pub struct TmpPool {
-    free: Mutex<(HashMap<usize, Vec<CudaSlice<u8>>>, usize)>,
+    free: Mutex<TmpFree>,
+}
+
+/// The free buffers by size, and their bytes.
+#[derive(Default)]
+struct TmpFree {
+    by_len: HashMap<usize, Vec<CudaSlice<u8>>>,
+    bytes: usize,
 }
 
 impl TmpPool {
@@ -598,8 +605,8 @@ impl TmpPool {
             return None;
         }
         let mut f = self.free.lock().unwrap_or_else(|e| e.into_inner());
-        let s = f.0.get_mut(&n)?.pop()?;
-        f.1 -= n;
+        let s = f.by_len.get_mut(&n)?.pop()?;
+        f.bytes -= n;
         Some(s)
     }
     fn put(&self, s: CudaSlice<u8>) {
@@ -608,11 +615,11 @@ impl TmpPool {
             return;
         }
         let mut f = self.free.lock().unwrap_or_else(|e| e.into_inner());
-        if f.1 + n > TMP_POOL_MAX_BYTES {
+        if f.bytes + n > TMP_POOL_MAX_BYTES {
             return;
         }
-        f.1 += n;
-        f.0.entry(n).or_default().push(s);
+        f.bytes += n;
+        f.by_len.entry(n).or_default().push(s);
     }
 }
 
@@ -3878,11 +3885,12 @@ impl Ctx {
     }
 
     /// Tile rows of the grouped expert GEMMs for a slice of `rows` tokens: the small-M kernel
-    /// when no expert can hold more than `SMALL_M` rows (a token picks an expert once), else the
+    /// when no expert can hold more than `SMALL_M` rows (a token picks an expert once, so a tile
+    /// has at most `rows` rows and the kernel's shared memory is sized for that many), else the
     /// pipelined tile, 128 rows once the mean expert holds that many.
     pub fn moe_bm(&self, rows: usize) -> usize {
         if rows <= SMALL_M {
-            SMALL_M
+            rows.max(1)
         } else if rows * self.g.topk >= 128 * self.g.n_experts {
             128
         } else {
@@ -3903,7 +3911,12 @@ impl Ctx {
         let (ne, topk) = (g.n_experts, g.topk);
         let np = rows * topk;
         let bm = self.moe_bm(rows);
-        let max_tiles = np.div_ceil(bm) + ex.len().min(np);
+        // an expert's pairs split into tiles of `bm` rows; with `bm >= rows` an expert is one tile
+        let max_tiles = if bm >= rows {
+            ex.len().min(np)
+        } else {
+            np.div_ceil(bm) + ex.len().min(np)
+        };
         let counts = self.ops.tmp(rows.div_ceil(256) * ne * 4)?;
         let plan = MoePlanDev {
             rows,
