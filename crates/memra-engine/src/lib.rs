@@ -1224,38 +1224,67 @@ mod fa_ladder_engine_tests {
 
 #[cfg(test)]
 mod fa_split_ladder_tests {
-    use super::{fa_split_deep_rung, fa_split_ladder};
+    use super::{FaDeepPart, fa_deep_part, fa_split_deep_rung, fa_split_ladder};
 
-    const GB10: i32 = 48;
-    const RTX5090_LAPTOP: i32 = 82;
+    const GB10: (i32, FaDeepPart) = (48, FaDeepPart::Gb10);
+    const RTX5090_LAPTOP: (i32, FaDeepPart) = (82, FaDeepPart::Rtx5090Laptop);
+    const UNMEASURED: FaDeepPart = FaDeepPart::Unmeasured;
+
+    #[test]
+    fn the_rung_is_keyed_on_the_two_measured_parts_only() {
+        assert_eq!(fa_deep_part(true, 48, true), FaDeepPart::Gb10);
+        assert_eq!(fa_deep_part(true, 82, false), FaDeepPart::Rtx5090Laptop);
+        // other 120a parts (a 48-SM discrete card, the 84-SM RTX 5080, the RTX PRO 6000),
+        // and every other family at any SM count (L4 58, A100 108, H100 PCIe 114, H100 SXM
+        // 132), keep today's ladder
+        for (arch_120a, sm, unified) in [
+            (true, 48, false),
+            (true, 84, false),
+            (true, 188, false),
+            (false, 48, true),
+            (false, 58, false),
+            (false, 82, false),
+            (false, 108, false),
+            (false, 114, false),
+            (false, 132, false),
+        ] {
+            assert_eq!(
+                fa_deep_part(arch_120a, sm, unified),
+                UNMEASURED,
+                "{arch_120a} {sm} {unified}"
+            );
+        }
+        for kv in [1, 2, 4, 8] {
+            assert_eq!(fa_split_deep_rung(kv, UNMEASURED), None);
+        }
+    }
 
     #[test]
     fn gb10_takes_512_keys_past_its_floor() {
+        let (sm, part) = GB10;
         // 4 KV heads (Qwen3.8-27B): from the 128 rung's start; 2 (Ornith-1.5-35B-A3B): from 32k.
         for (kv, floor) in [(4, 16_384), (3, 16_384), (2, 32_768), (1, 32_768)] {
-            assert_eq!(fa_split_deep_rung(kv, GB10), Some((floor, 512)), "kv {kv}");
-            assert_eq!(fa_split_ladder(512, kv, GB10), 8);
-            assert_eq!(fa_split_ladder(513, kv, GB10), 64);
-            assert_eq!(fa_split_ladder(16_384, kv, GB10), 64);
-            assert_eq!(
-                fa_split_ladder(floor, kv, GB10),
-                if floor == 16_384 { 64 } else { 128 }
-            );
-            assert_eq!(fa_split_ladder(floor + 1, kv, GB10), 512, "kv {kv}");
-            assert_eq!(fa_split_ladder(262_144, kv, GB10), 512, "kv {kv}");
+            assert_eq!(fa_split_deep_rung(kv, part), Some((floor, 512)), "kv {kv}");
+            for (t_kv, sp) in [(512, 8), (513, 64), (16_384, 64)] {
+                assert_eq!(
+                    fa_split_ladder(t_kv, kv, sm, part),
+                    sp,
+                    "kv {kv} t_kv {t_kv}"
+                );
+            }
+            let below = if floor == 16_384 { 64 } else { 128 };
+            assert_eq!(fa_split_ladder(floor, kv, sm, part), below, "kv {kv}");
+            assert_eq!(fa_split_ladder(floor + 1, kv, sm, part), 512, "kv {kv}");
+            assert_eq!(fa_split_ladder(262_144, kv, sm, part), 512, "kv {kv}");
         }
-        assert_eq!(fa_split_ladder(16_385, 2, GB10), 128);
-        assert_eq!(fa_split_ladder(32_768, 2, GB10), 128);
+        assert_eq!(fa_split_ladder(16_385, 2, sm, part), 128);
     }
 
     #[test]
     fn the_rtx5090_laptop_takes_256_keys_past_its_floor() {
+        let (sm, part) = RTX5090_LAPTOP;
         for (kv, floor) in [(4, 65_536), (3, 65_536), (2, 32_768), (1, 32_768)] {
-            assert_eq!(
-                fa_split_deep_rung(kv, RTX5090_LAPTOP),
-                Some((floor, 256)),
-                "kv {kv}"
-            );
+            assert_eq!(fa_split_deep_rung(kv, part), Some((floor, 256)), "kv {kv}");
             for (t_kv, sp) in [
                 (512, 8),
                 (513, 64),
@@ -1264,23 +1293,19 @@ mod fa_split_ladder_tests {
                 (floor, 128),
             ] {
                 assert_eq!(
-                    fa_split_ladder(t_kv, kv, RTX5090_LAPTOP),
+                    fa_split_ladder(t_kv, kv, sm, part),
                     sp,
                     "kv {kv} t_kv {t_kv}"
                 );
             }
-            assert_eq!(
-                fa_split_ladder(floor + 1, kv, RTX5090_LAPTOP),
-                256,
-                "kv {kv}"
-            );
-            assert_eq!(fa_split_ladder(262_144, kv, RTX5090_LAPTOP), 256, "kv {kv}");
+            assert_eq!(fa_split_ladder(floor + 1, kv, sm, part), 256, "kv {kv}");
+            assert_eq!(fa_split_ladder(262_144, kv, sm, part), 256, "kv {kv}");
         }
     }
 
     #[test]
     fn other_parts_and_wide_kv_keep_todays_ladder() {
-        for sm in [GB10, RTX5090_LAPTOP] {
+        for (sm, part) in [GB10, RTX5090_LAPTOP, (82, UNMEASURED), (48, UNMEASURED)] {
             for (t_kv, sp) in [
                 (8192, 32),
                 (8193, 64),
@@ -1288,14 +1313,34 @@ mod fa_split_ladder_tests {
                 (16_385, 128),
                 (262_144, 128),
             ] {
-                assert_eq!(fa_split_ladder(t_kv, 8, sm), sp, "sm {sm} t_kv {t_kv}");
+                assert_eq!(
+                    fa_split_ladder(t_kv, 8, sm, part),
+                    sp,
+                    "sm {sm} t_kv {t_kv}"
+                );
+            }
+        }
+        for sm in [48, 82, 114] {
+            for kv in [1, 2, 4] {
+                for (t_kv, sp) in [
+                    (512, 8),
+                    (513, 64),
+                    (16_384, 64),
+                    (16_385, 128),
+                    (262_144, 128),
+                ] {
+                    assert_eq!(
+                        fa_split_ladder(t_kv, kv, sm, UNMEASURED),
+                        sp,
+                        "sm {sm} kv {kv} t_kv {t_kv}"
+                    );
+                }
             }
         }
         // The RTX PRO 6000 class: unmeasured at depth, so unchanged, and still the literal
         // ladder of `fa_decode_dcw_rows` (flash_attn.cu).
-        for sm in [128, 170, 188] {
+        for sm in [128, 132, 170, 188] {
             for kv in [2, 4, 8] {
-                assert_eq!(fa_split_deep_rung(kv, sm), None);
                 for (t_kv, sp) in [
                     (2048, 16),
                     (2049, 64),
@@ -1304,7 +1349,7 @@ mod fa_split_ladder_tests {
                     (262_144, 128),
                 ] {
                     assert_eq!(
-                        fa_split_ladder(t_kv, kv, sm),
+                        fa_split_ladder(t_kv, kv, sm, UNMEASURED),
                         sp,
                         "sm {sm} kv {kv} t_kv {t_kv}"
                     );
@@ -1318,13 +1363,13 @@ mod fa_split_ladder_tests {
         // The captured verify sizes its walk at t_kv.next_power_of_two() (spec.rs) and refuses
         // a rung whose split differs from the round's: a floor off a power of two would cost
         // the band below it its graph.
-        for sm in [GB10, RTX5090_LAPTOP, 188] {
+        for (sm, part) in [GB10, RTX5090_LAPTOP, (188, UNMEASURED)] {
             for kv in [1, 2, 4, 8] {
                 for t_kv in 513..=262_144usize {
                     let rung = t_kv.next_power_of_two().max(256);
                     assert_eq!(
-                        fa_split_ladder(rung, kv, sm),
-                        fa_split_ladder(t_kv, kv, sm),
+                        fa_split_ladder(rung, kv, sm, part),
+                        fa_split_ladder(t_kv, kv, sm, part),
                         "sm {sm} kv {kv} t_kv {t_kv}"
                     );
                 }
@@ -1851,9 +1896,10 @@ pub(crate) fn rms_block() -> u32 {
 /// rung comments below): on parts with at least 128 SMs, 16 up to t_kv 2048 (`MEMRA_FA_SP_SHORT`
 /// overrides that rung), 64 up to 16384 and 128 beyond; on smaller parts, 8 up to 512 for
 /// n_head_kv <= 4 and 32 up to 8192 otherwise, then 64 up to 16384 and 128 beyond, except that
-/// for n_head_kv <= 4 a deep rung takes over past a floor (`fa_split_deep_rung`): under 64 SMs
-/// 512 past 16384 with 3 or 4 KV heads and past 32768 with fewer, from 64 to 127 SMs 256 past
-/// 65536 and 32768. The gemma seam
+/// for n_head_kv <= 4 a deep rung takes over past a floor on the two parts it was measured on
+/// (`fa_split_deep_rung`): GB10 takes 512 past 16384 with 3 or 4 KV heads and past 32768 with
+/// fewer; the RTX 5090 Laptop takes 256 past 65536 with 3 or 4 and past 32768 with fewer. The
+/// gemma seam
 /// (the profile's `fa_sp_gemma` with `MEMRA_FA_SP16=1`) takes 16 / 64 / 128 at 8192 / 16384. The split changes
 /// the combine's FP summation order, so every ladder change is a numeric-class change that
 /// kernel-check and run-spec K=1..8 arbitrate. Takes t_kv so eager decode, `_dc` capture and
@@ -1915,7 +1961,32 @@ pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
             return sp;
         }
     }
-    fa_split_ladder(t_kv, n_head_kv, sm_count)
+    let part = fa_deep_part(
+        env!("MEMRA_BUILT_CUDA_ARCH") == "120a",
+        sm_count,
+        fa_unified(),
+    );
+    fa_split_ladder(t_kv, n_head_kv, sm_count, part)
+}
+
+/// The parts the deep rung of the split ladder was measured on ([`fa_split_deep_rung`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FaDeepPart {
+    /// A unified-memory part of the 120a family: GB10 (48 SMs).
+    Gb10,
+    /// A discrete 82-SM part of the 120a family: the RTX 5090 Laptop GPU.
+    Rtx5090Laptop,
+    /// Any other part: no deep rung until it is measured there.
+    Unmeasured,
+}
+
+/// The part class from the build's policy family, the SM count and unified memory. Pure.
+pub(crate) fn fa_deep_part(arch_120a: bool, sm_count: i32, unified: bool) -> FaDeepPart {
+    match (arch_120a, unified, sm_count) {
+        (true, true, _) => FaDeepPart::Gb10,
+        (true, false, 82) => FaDeepPart::Rtx5090Laptop,
+        _ => FaDeepPart::Unmeasured,
+    }
 }
 
 /// The deep rung of the split ladder (GB10 decode round 6, lever 1): `Some((floor, keys))` when
@@ -1923,28 +1994,36 @@ pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
 /// `None` when the part keeps 128 keys a split at every depth past 16,384. Measured with
 /// kernel-check's FA-VERIFY-ROWS timing rows under `MEMRA_FA_SPLIT` (the verify's rows walk, the
 /// seqs launch at four rows and one row, and `fa_decode`, each with its combine;
-/// `research/gb10-split-rung-20261110/`). On a 48-SM part (GB10) a 512-key split is faster than a
-/// 128-key one on every launch from 16k keys with 4 KV heads, and from 32k with 2: below 32k two
-/// KV heads give a 512-key split too few blocks to fill the part, and a single row (plain decode)
-/// is 10 to 18% slower there. On an 82-SM part (the RTX 5090 Laptop) the gain is smaller and
-/// comes later: a 256-key split is faster on every launch from 64k keys with 4 KV heads (one row
-/// is flat to 13% slower between 16k and 49k on the 16/4 shape) and from 32k with 2, and 512 keys
-/// lose one row by up to 3% at 64k there. Each floor is a power of two, so the verify graph's
-/// power-of-two rung never straddles it. Parts with 128 SMs or more keep today's ladder (the
-/// RTX PRO 6000's is also spelled in `fa_decode_dcw_rows`).
-pub fn fa_split_deep_rung(n_head_kv: usize, sm_count: i32) -> Option<(usize, usize)> {
-    match (sm_count, n_head_kv) {
-        (..64, 3..=4) => Some((16_384, 512)),
-        (..64, ..=2) => Some((32_768, 512)),
-        (64..128, 3..=4) => Some((65_536, 256)),
-        (64..128, ..=2) => Some((32_768, 256)),
+/// `research/gb10-split-rung-20261110/`), on the two parts it is keyed on:
+/// - GB10 (48 SMs): a 512-key split is faster than a 128-key one on every launch from 16k keys
+///   with 3 or 4 KV heads, and from 32k with 1 or 2. Below 32k two KV heads give a 512-key split
+///   too few blocks to fill the part, and a single row (plain decode) is 10 to 18% slower there.
+/// - The RTX 5090 Laptop (82 SMs): the gain is smaller and comes later. A 256-key split is
+///   faster on every launch from 64k keys with 3 or 4 KV heads (one row is flat to 13% slower
+///   between 16k and 49k on the 16/4 shape) and from 32k with 1 or 2; 512 keys lose one row by
+///   up to 3% at 64k there.
+///
+/// Each floor is a power of two, so the verify graph's power-of-two rung never straddles it.
+/// Every other part keeps today's ladder (the RTX PRO 6000's is also spelled in
+/// `fa_decode_dcw_rows`).
+pub(crate) fn fa_split_deep_rung(n_head_kv: usize, part: FaDeepPart) -> Option<(usize, usize)> {
+    match (part, n_head_kv) {
+        (FaDeepPart::Gb10, 3..=4) => Some((16_384, 512)),
+        (FaDeepPart::Gb10, ..=2) => Some((32_768, 512)),
+        (FaDeepPart::Rtx5090Laptop, 3..=4) => Some((65_536, 256)),
+        (FaDeepPart::Rtx5090Laptop, ..=2) => Some((32_768, 256)),
         _ => None,
     }
 }
 
-/// The default split ladder, pure over the depth, the KV head count and the device's SM count
-/// ([`fa_split_keys`] adds the env doors and reads the SM count of this process's card).
-pub fn fa_split_ladder(t_kv: usize, n_head_kv: usize, sm_count: i32) -> usize {
+/// The default split ladder, pure over the depth, the KV head count, the device's SM count and
+/// its deep-rung part ([`fa_split_keys`] adds the env doors and reads this process's card).
+pub(crate) fn fa_split_ladder(
+    t_kv: usize,
+    n_head_kv: usize,
+    sm_count: i32,
+    part: FaDeepPart,
+) -> usize {
     if sm_count >= 128 {
         // The big-rig ladder. `fa_decode_dcw_rows` (flash_attn.cu) spells it as a literal:
         // a change here is mirrored there, or the twins diverge.
@@ -1986,7 +2065,7 @@ pub fn fa_split_ladder(t_kv: usize, n_head_kv: usize, sm_count: i32) -> usize {
         } else if t_kv <= 16384 {
             64
         } else {
-            match fa_split_deep_rung(n_head_kv, sm_count) {
+            match fa_split_deep_rung(n_head_kv, part) {
                 Some((floor, keys)) if t_kv > floor => keys,
                 _ => 128,
             }
@@ -2044,6 +2123,24 @@ pub(crate) fn fa_ladder_engine_verdict(
          the other card's FA split class. Serve cards with different SM counts from separate \
          processes"
     ))
+}
+
+/// Whether this process's card has unified memory (GB10), for the split ladder's deep rung:
+/// recorded with `FA_SM_COUNT` by the first `Engine::new`, else read from ordinal 0.
+static FA_UNIFIED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+pub(crate) fn fa_unified() -> bool {
+    *FA_UNIFIED.get_or_init(|| {
+        cudarc::driver::result::init().ok();
+        cudarc::driver::result::device::get(0)
+            .and_then(|d| unsafe {
+                cudarc::driver::result::device::get_attribute(
+                    d,
+                    cudarc::driver::sys::CUdevice_attribute_enum::CU_DEVICE_ATTRIBUTE_INTEGRATED,
+                )
+            })
+            .is_ok_and(|v| v != 0)
+    })
 }
 
 pub(crate) fn fa_sm_count() -> i32 {
@@ -4341,6 +4438,7 @@ impl Engine {
                 .unwrap_or(82)
         };
         fa_ladder_engine_verdict(ordinal, sm_count, *FA_SM_COUNT.get_or_init(|| sm_count))?;
+        FA_UNIFIED.get_or_init(|| crate::unified_memory::is_unified(&gpu.ctx));
         // The MoE in-token prefetch follows this device's card class. An unreadable name
         // classifies as no card and keeps it off.
         let moe_prefetch =
