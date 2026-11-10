@@ -1685,8 +1685,8 @@ impl Group {
     /// records it, and from then on a call is one graph launch a rank, with the graph pointed at
     /// the call's input buffers first when they sit elsewhere than at the launch before. The
     /// first replays are compared with the launch-by-launch run, byte for byte, in the stream
-    /// and in the new pre-mix. The returned pre-mix is the capture's buffer when the span was
-    /// replayed: it holds until the layer's next call.
+    /// and in the new pre-mix. The returned pre-mix is a copy of the capture's buffer, which
+    /// the span's next replay rewrites.
     fn ffn_half_graph(
         &mut self,
         lw: &[LayerW],
@@ -1698,7 +1698,6 @@ impl Group {
         // the attention's mixes: joined on the host, so the span starts with nothing of the
         // second stream outside it
         self.each(|_, c| c.side_join())?;
-        let n = self.n();
         // rank 0's load of the layer names the span: the capture holds that load's weights
         let key = (lw[0].uid, s);
         if self.graphs.slots.len() > super::graph::MAX_SPANS {
@@ -1745,11 +1744,13 @@ impl Group {
                 .collect();
             self.replay(&p.cap, &at)
         };
-        // SAFETY: the piece stays in `graphs` for the group's life, and its pre-mix is
-        // rewritten only by this layer's next replay (see the function's contract)
-        let out = (0..n)
-            .map(|r| unsafe { p.cap.out[r].alias(&self.cx[r].ops.st) })
-            .collect();
+        // The call gets its own copy of the new pre-mix. The capture's buffer is rewritten by
+        // the span's next replay, and in a forward of several sequences that is the next
+        // sequence's call of this layer, issued before this call's next layer reads it.
+        let out = match &res {
+            Ok(_) => self.each(|r, c| super::clone_buf(&c.ops, &p.cap.out[r])),
+            Err(_) => Ok(Vec::new()),
+        };
         if let Ok(moved) = res {
             if p.checked < SELF_CHECKS {
                 p.checked += 1;
@@ -1759,7 +1760,7 @@ impl Group {
             self.graphs.stats.moved += moved as u64;
         }
         self.graphs.slots.insert(key, Slot::Ready(p));
-        res.map(|_| out)
+        res.and(out)
     }
 
     /// Each rank's inputs of the second half, (address, bytes), in [`FfnIn`]'s order.

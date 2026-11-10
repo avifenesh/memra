@@ -15,6 +15,7 @@
 //!
 //! usage: dsv41-tpbench CKPT_DIR --token-map FILE --devices 0,1,2,3 --out DIR
 //!                    [--prefill FILE,FILE,...] [--decode FILE[,FILE...] --decode-steps N]
+//!                    [--batch-step] [--step-gate STEPS]
 //!                    [--conc 8,32 --conc-dir DIR --conc-steps N] [--rounds R]
 //!                    [--resident N] [--layers N] [--chunk N] [--wide-rows A,B,C,D,E] [--plan]
 //!   MEMRA_FULL_PREC=1      required (the route's one numeric program)
@@ -405,6 +406,26 @@ fn run() -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
+    // --batch-step: a decode cell's steps are batched steps (`Runner::forward_batch`: one call
+    // of a row a sequence over the rank's step block) instead of one call a sequence
+    let batch_step = has("--batch-step");
+    // --step-gate STEPS: no timing; every decode cell's steps with the graph door off and on,
+    // compared byte for byte, as one call a sequence and as one batched call
+    if let Some(steps) = num("--step-gate")? {
+        let mut ok = true;
+        for c in &cells {
+            if let Cell::Decode { name, prompts, .. } = c {
+                for batch in [false, true] {
+                    ok &= step_gate(&mut rn, name, prompts, steps, batch)?;
+                }
+            }
+        }
+        return if ok {
+            Ok(())
+        } else {
+            Err("step gate: the graph door changes a batched step".into())
+        };
+    }
     let mut rows = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -431,7 +452,7 @@ fn run() -> Result<(), String> {
                     prompts,
                     steps,
                     ..
-                } => decode_cell(&mut rn, name, prompts, *steps, round, &out, eos)?,
+                } => decode_cell(&mut rn, name, prompts, *steps, round, &out, eos, batch_step)?,
             };
             let mut row = row;
             let peaks: Vec<usize> = rn
@@ -497,6 +518,154 @@ fn prefill_cell(
     }))
 }
 
+/// One pass of a step gate: the prompts prefilled, then `steps` steps of a row a sequence
+/// with the graph door `door`, each step's rows fed from `feed` when given (else the step's own
+/// argmax). `batch`: a step is one batched call (`Runner::forward_batch`); else one
+/// `Runner::forward` of a one-token call a sequence. Returns every step's ids and each rank's
+/// stream and pre-mix bytes (the calls' side by side).
+#[allow(clippy::type_complexity)]
+fn step_pass(
+    rn: &mut Runner,
+    prompts: &[Vec<u32>],
+    steps: usize,
+    door: bool,
+    batch: bool,
+    feed: Option<&[Vec<u32>]>,
+) -> Result<(Vec<Vec<u32>>, Vec<Vec<(Vec<u8>, Vec<u8>)>>), String> {
+    let c = prompts.len();
+    rn.grp.graphs.on = door;
+    let mut seqs: Vec<Seq> = prompts
+        .iter()
+        .map(|p| rn.seq_with_capacity(p.len() + steps + 16))
+        .collect();
+    let calls: Vec<Call> = prompts
+        .iter()
+        .enumerate()
+        .map(|(i, p)| Call {
+            seq: i,
+            tokens: p.clone(),
+        })
+        .collect();
+    let outs = rn.forward(&mut seqs, &calls)?;
+    let mut next = Vec::with_capacity(c);
+    for o in &outs {
+        next.push(rn.argmax_last(o)?);
+    }
+    drop(outs);
+    let (mut ids, mut bytes) = (Vec::with_capacity(steps), Vec::with_capacity(steps));
+    for k in 0..steps {
+        let mut per_rank = Vec::with_capacity(rn.grp.n());
+        let got = if batch {
+            let rows: Vec<(usize, u32)> = next.iter().copied().enumerate().collect();
+            let o = rn.forward_batch(&mut seqs, &rows)?;
+            for r in 0..rn.grp.n() {
+                let st = rn.grp.cx[r].ops.st.clone();
+                per_rank.push((o.h[r].host(&st)?, o.pre[r].host(&st)?));
+            }
+            rn.argmax_rows(&o, 0, c)?
+        } else {
+            let calls: Vec<Call> = next
+                .iter()
+                .enumerate()
+                .map(|(i, &t)| Call {
+                    seq: i,
+                    tokens: vec![t],
+                })
+                .collect();
+            let outs = rn.forward(&mut seqs, &calls)?;
+            for r in 0..rn.grp.n() {
+                let st = rn.grp.cx[r].ops.st.clone();
+                let (mut h, mut pre) = (Vec::new(), Vec::new());
+                for o in &outs {
+                    h.extend(o.h[r].host(&st)?);
+                    pre.extend(o.pre[r].host(&st)?);
+                }
+                per_rank.push((h, pre));
+            }
+            let mut ids = Vec::with_capacity(c);
+            for o in &outs {
+                ids.push(rn.argmax_last(o)?);
+            }
+            ids
+        };
+        next = match feed {
+            Some(f) => f[k].clone(),
+            None => got.clone(),
+        };
+        ids.push(got);
+        bytes.push(per_rank);
+    }
+    Ok((ids, bytes))
+}
+
+/// The graph door on a decode step, byte for byte: the cell's sequences run `steps` steps
+/// with the door off, then fresh sequences run the same rows with it on, and every step's
+/// stream and pre-mix on every rank and its ids are compared. A later step reads the state the
+/// earlier ones wrote, so a wrong write shows in what follows it. `batch`: the step's form
+/// ([`step_pass`]). Both forms are gated: a forward of several one-token calls replays a
+/// layer's span once a sequence, a batched call once.
+fn step_gate(
+    rn: &mut Runner,
+    name: &str,
+    prompts: &[Vec<u32>],
+    steps: usize,
+    batch: bool,
+) -> Result<bool, String> {
+    if !rn.grp.graphs.on {
+        return Err("--step-gate needs MEMRA_DSV41_DECODE_GRAPH=1".into());
+    }
+    let name = &format!("{name}/{}", if batch { "batched" } else { "calls" });
+    let s0 = rn.grp.graphs.stats;
+    let (ids_e, bytes_e) = step_pass(rn, prompts, steps, false, batch, None)?;
+    let (ids_g, bytes_g) = step_pass(rn, prompts, steps, true, batch, Some(&ids_e))?;
+    let s1 = rn.grp.graphs.stats;
+    let (mut checks, mut failed) = (0usize, 0usize);
+    for k in 0..steps {
+        checks += 1;
+        if ids_e[k] != ids_g[k] {
+            failed += 1;
+            println!(
+                "FAIL step/{name}/step{k}/ids: {:?} against {:?}",
+                ids_g[k], ids_e[k]
+            );
+        }
+        for (r, (e, g)) in bytes_e[k].iter().zip(&bytes_g[k]).enumerate() {
+            for (what, x, y) in [("stream", &e.0, &g.0), ("pre_mix", &e.1, &g.1)] {
+                checks += 1;
+                if x != y {
+                    failed += 1;
+                    let at = x.iter().zip(y.iter()).position(|(a, b)| a != b);
+                    println!(
+                        "FAIL step/{name}/step{k}/rank{r}/{what}: {} against {} bytes, first difference at {at:?}",
+                        y.len(),
+                        x.len()
+                    );
+                }
+            }
+        }
+    }
+    let (cap, rep, chk, refused) = (
+        s1.captures - s0.captures,
+        s1.replays - s0.replays,
+        s1.checks - s0.checks,
+        s1.refused - s0.refused,
+    );
+    // the door must have replayed: a pass that stayed launch by launch proves nothing
+    let replayed = rep > 0 && refused == 0;
+    if !replayed {
+        failed += 1;
+    }
+    checks += 1;
+    println!(
+        "{} step/{name}: {} rows x {steps} steps on {} rank(s), door on against off: {checks} checks, {failed} failed; {cap} captures, {rep} replays ({chk} self-checked), {refused} refused",
+        if failed == 0 { "PASS" } else { "FAIL" },
+        prompts.len(),
+        rn.grp.n()
+    );
+    Ok(failed == 0)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn decode_cell(
     rn: &mut Runner,
     name: &str,
@@ -505,6 +674,7 @@ fn decode_cell(
     round: usize,
     out: &Path,
     eos: u32,
+    batch_step: bool,
 ) -> Result<serde_json::Value, String> {
     let c = prompts.len();
     let start = now_unix();
@@ -533,15 +703,23 @@ fn decode_cell(
     let td = Instant::now();
     for _ in 0..steps {
         let ts = Instant::now();
-        let calls: Vec<Call> = (0..c)
-            .map(|i| Call {
-                seq: i,
-                tokens: vec![*gens[i].last().unwrap()],
-            })
-            .collect();
-        let outs = rn.forward(&mut seqs, &calls)?;
-        for (i, o) in outs.iter().enumerate() {
-            gens[i].push(rn.argmax_last(o)?);
+        if batch_step {
+            let rows: Vec<(usize, u32)> = (0..c).map(|i| (i, *gens[i].last().unwrap())).collect();
+            let o = rn.forward_batch(&mut seqs, &rows)?;
+            for (i, t) in rn.argmax_rows(&o, 0, c)?.into_iter().enumerate() {
+                gens[i].push(t);
+            }
+        } else {
+            let calls: Vec<Call> = (0..c)
+                .map(|i| Call {
+                    seq: i,
+                    tokens: vec![*gens[i].last().unwrap()],
+                })
+                .collect();
+            let outs = rn.forward(&mut seqs, &calls)?;
+            for (i, o) in outs.iter().enumerate() {
+                gens[i].push(rn.argmax_last(o)?);
+            }
         }
         step_s.push(ts.elapsed().as_secs_f64());
     }
@@ -561,6 +739,7 @@ fn decode_cell(
     let mean = step_s.iter().sum::<f64>() / step_s.len().max(1) as f64;
     Ok(serde_json::json!({
         "cell": name, "kind": "decode", "round": round, "start_unix": start, "c": c,
+        "batch_step": batch_step,
         "prompt_lens": prompts.iter().map(|p| p.len()).collect::<Vec<_>>(),
         "steps": steps, "ttft_s": ttft, "decode_s": decode_s, "total_s": total,
         "step_s": step_s, "step_mean_s": mean,
