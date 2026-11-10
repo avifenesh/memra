@@ -568,9 +568,9 @@ the two margins, so that never failed and the count was the only working check.
 **Floors** live in `tools/argmax-margin-floors.tsv`, one row per (model, prompt, prompt sha256,
 decode program, device as `nvidia-smi` names it), each with its row count, the row that set it,
 the p50, p99 and p99.9 of the agreeing rows' gap shift (nearest rank), its known rows and its
-receipt. The floor is the maximum, so it can sit far above the bulk: on `board-2048` the first
-six roster floors are 3.6 to 4.2 logits where the p99.9 is 1.1 to 3.3, each set by one row, and the
-row says so. Every key field must match exactly; there is no fallback floor and no floor from
+receipt. The floor is the maximum, so it can sit far above the bulk: on `board-2048` the
+roster floors measured so far are 3.6 to 4.5 logits where the p99.9 is 1.0 to 4.0, each set by one
+row, and the row says so. Every key field must match exactly; there is no fallback floor and no floor from
 another prompt, model or device. A cell with no row is **UNCALIBRATED**: a flip fails, a table with
 no flip passes and says `PASS: UNCALIBRATED`, and its agreeing rows are not judged.
 `--require-floor` refuses such a cell (`argmax-margin-gate: UNCALIBRATED ...`, exit 1); the
