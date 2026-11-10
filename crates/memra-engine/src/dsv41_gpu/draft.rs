@@ -506,6 +506,7 @@ impl<'a> Runner<'a> {
         let mut t = trace.then(DraftTrace::default);
         let st0 = self.grp.cx[0].ops.st.clone();
         for si in 0..dw.cfg.stages {
+            super::tally::layer(si);
             let mut sh: Vec<Shared> = (0..n).map(|_| Shared::default()).collect();
             let mut tr: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
             if let Some(t) = t.as_mut() {
@@ -543,6 +544,8 @@ impl<'a> Runner<'a> {
             }
         }
         // the head: collapse with the carried pre-mix, the last stage's norm, the trunk's fp32 head
+        // (a launch tally files the head under layer 1000 and the picks under 1001)
+        super::tally::layer(1000);
         let (_, hw) = self
             .head
             .as_ref()
@@ -573,6 +576,7 @@ impl<'a> Runner<'a> {
         })?;
         let (xs, lgs): (Vec<Buf>, Vec<Buf>) = heads.into_iter().unzip();
         // the Markov chain of picks: each row's bias comes from the token before it
+        super::tally::layer(1001);
         let ename = format!("mtp.{}.markov_head.embed.weight", dw.cfg.stages - 1);
         let (_, etab) = self.stm.raw(&ename).ok_or("markov embed missing")?;
         let mut prev = tok as usize;
@@ -687,6 +691,7 @@ impl<'a> Runner<'a> {
             prev = best.1;
             out_ids.push(prev as u32);
         }
+        super::tally::layer(usize::MAX);
         // the confidence head: fp32 dot of [collapsed stream | Markov embedding] with its row
         let xh = bf16_to_f32(&xs[0].host(&st0)?);
         let mut conf = Vec::with_capacity(b);

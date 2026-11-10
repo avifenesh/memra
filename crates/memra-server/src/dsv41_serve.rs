@@ -922,6 +922,11 @@ enum Picked {
 /// (`dsv41_gpu::SMALL_M`).
 const BATCH_ROWS_MAX: usize = v41::SMALL_M;
 
+/// One running request's rows of a step: the request, its logits rows (empty when the device
+/// chose), the call that holds them, its first row there, and the device's choice of a batched
+/// greedy row.
+type StepRows<'a> = (usize, Vec<f32>, &'a Out, usize, Option<u32>);
+
 /// `MEMRA_DSV41_BATCH_ROWS`: the one-token steps one decode call carries, 1 (every call alone)
 /// to the small-M limit (unset: the limit).
 fn resolve_batch_rows(raw: Option<&str>) -> Result<usize, String> {
@@ -1658,7 +1663,7 @@ fn serve_loop(
         let mut done = Vec::new();
         // every request's rows with the call that holds them: its own call's from row 0, or its
         // row of a batched call
-        let mut items: Vec<(usize, Vec<f32>, &Out, usize, Option<u32>)> = rows
+        let mut items: Vec<StepRows<'_>> = rows
             .into_iter()
             .zip(&outs)
             .zip(&who)
