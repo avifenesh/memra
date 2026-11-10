@@ -180,8 +180,9 @@ The bound is the fix. A session yields at a burst's entry with nothing emitted a
 row; at its next such entry it runs one round, and that round's hook yields. It acts only after
 a silent entry yield, whoever owns the gate and on either sampling class. N=1 rather than N=0
 or N=2: the trade is the same line, and N=1 keeps the longest gap under 1.8 s in every measured
-cell (2.6 s at N=2, 4.3 s at N=4) while a waiting request pays at most one round every second
-burst. N=0 doubles that cost (short mean +23% and +87% at two clients, against +12% and +43%) and
+cell (2.6 s at N=2, 4.3 s at N=4). Each speculating session that holds a carried token costs a
+waiting request at most one round every second burst; several such sessions add up, and a pooled
+cohort steps before the cold-first loop (these cells have one long stream). N=0 doubles that cost (short mean +23% and +87% at two clients, against +12% and +43%) and
 takes the newcomer-first ordering away at every carried entry.
 
 What it guarantees and what it does not: no outright stall, and a longest gap under about 1.8 s
