@@ -171,6 +171,8 @@ record.
 | RTX 5090 Laptop GPU | Qwen3.8-27B | batch | 40 / 2045 | 3 | 0.046 | 0.364 | 0.663 | 3.088 (1199) | none |
 | RTX PRO 6000 Max-Q | Qwen3.8-27B | eager | 44 / 2045 | 3 | 0.048 | 0.394 | 1.139 | 3.960 (1198) | none |
 | RTX PRO 6000 Max-Q | Qwen3.8-27B | batch | 41 / 2045 | 4 | 0.049 | 0.371 | 1.222 | 4.242 (1198) | none |
+| GB10 | Qwen3.5-9B NVFP4 | eager | 163 / 2045 | 5 | 0.157 | 1.532 | 2.886 | 4.148 (1197) | none |
+| GB10 | Qwen3.5-9B NVFP4 | batch | 164 / 2045 | 5 | 0.164 | 1.563 | 3.095 | 4.646 (1197) | none |
 | RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | eager | 152 / 2045 | 6 | 0.147 | 1.425 | 2.810 | 4.010 (909) | none |
 | RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | batch | 156 / 2045 | 6 | 0.151 | 1.413 | 2.969 | 3.871 (909) | none |
 | RTX 5090 Laptop GPU | gemma-4-31B q4_0 | eager | 114 / 2100 | 4 | 0.139 | 1.192 | 3.353 | 6.399 (594) | none |
@@ -179,7 +181,7 @@ record.
 
 Rows still to come at this commit: Qwen3.8-27B eager and batch on GB10. The change does not
 land before them: the release battery refuses a roster cell without its row, and the census
-test is red until they exist. Outside the battery: Qwen3.5-9B on GB10.
+test is red until they exist.
 
 What the cells showed, and what was decided with it:
 

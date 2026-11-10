@@ -37,6 +37,16 @@ COLUMNS = [
 ]
 
 
+import hashlib  # noqa: E402
+
+PROMPT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "e2e", "prompts")
+PROMPT_OF = {}
+for _name in sorted(os.listdir(PROMPT_DIR)) if os.path.isdir(PROMPT_DIR) else []:
+    if _name.endswith(".txt"):
+        with open(os.path.join(PROMPT_DIR, _name), "rb") as _f:
+            PROMPT_OF[hashlib.sha256(_f.read()).hexdigest()] = _name[:-4]
+
+
 def model_name(path):
     name = os.path.basename(path)
     return name[:-5] if name.endswith(".gguf") else name
@@ -51,6 +61,17 @@ def scan_table_file(tree, root, rel, emit):
         return
     base = os.path.basename(rel)
     from_name = GATE_FILE.match(base)
+    # A raw probe log banked with its cell's result.txt (model, arm and prompt sha256 there).
+    result = {}
+    try:
+        with open(os.path.join(os.path.dirname(path), "result.txt"), encoding="utf-8") as handle:
+            for line in handle:
+                for field in line.split():
+                    if "=" in field:
+                        k, v = field.split("=", 1)
+                        result[k] = v
+    except OSError:
+        pass
     cell = CELL_DIR.search("/" + rel)
     ctx = {}
     gate = {}
@@ -102,6 +123,8 @@ def scan_table_file(tree, root, rel, emit):
             prompt = "p4-16k"
         if not prompt and ("board2048" in base or "board-2048" in base):
             prompt = "board-2048"
+        if not prompt and result.get("prompt_sha256") in PROMPT_OF:
+            prompt = PROMPT_OF[result["prompt_sha256"]]
         model = ctx.get("model") or gate.get("model") or (from_name.group(1) if from_name else "")
         emit({
             "tree": tree,

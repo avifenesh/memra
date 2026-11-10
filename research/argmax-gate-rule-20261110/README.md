@@ -120,6 +120,8 @@ banked log into its floors-table row through the gate's own `--judge --calibrate
 | RTX 5090 Laptop GPU | Qwen3.8-27B | batch | 40 / 2045 | 3 | 0.046 | 0.364 | 0.663 | 3.088 (1199) | none |
 | RTX PRO 6000 Max-Q | Qwen3.8-27B | eager | 44 / 2045 | 3 | 0.048 | 0.394 | 1.139 | 3.960 (1198) | none |
 | RTX PRO 6000 Max-Q | Qwen3.8-27B | batch | 41 / 2045 | 4 | 0.049 | 0.371 | 1.222 | 4.242 (1198) | none |
+| GB10 | Qwen3.5-9B NVFP4 | eager | 163 / 2045 | 5 | 0.157 | 1.532 | 2.886 | 4.148 (1197) | none |
+| GB10 | Qwen3.5-9B NVFP4 | batch | 164 / 2045 | 5 | 0.164 | 1.563 | 3.095 | 4.646 (1197) | none |
 | RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | eager | 152 / 2045 | 6 | 0.147 | 1.425 | 2.810 | 4.010 (909) | none |
 | RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | batch | 156 / 2045 | 6 | 0.151 | 1.413 | 2.969 | 3.871 (909) | none |
 | RTX 5090 Laptop GPU | gemma-4-31B q4_0 | eager | 114 / 2100 | 4 | 0.139 | 1.192 | 3.353 | 6.399 (594) | none |
@@ -147,7 +149,7 @@ banked log into its floors-table row through the gate's own `--judge --calibrate
   not widen it. Which program is right there is memra#1203. The gate's window, the last 12
   rows, holds none of them.
 - **Flip rates differ by model, not by device.** Over the whole prompt: Ornith 8.4 to 9.7% of
-  rows (up to 7 inside one 12-row window), Qwen3.5-9B 7.4 to 7.6% (up to 6), gemma-4-26B 11.9%
+  rows (up to 7 inside one 12-row window), Qwen3.5-9B 7.4 to 8.0% (up to 6), gemma-4-26B 11.9%
   (up to 6), gemma-4-31B 5.4% (up to 4), the 27B 2.0 to 2.2% (up to 4). The flip budgets hold at
   the gate's window (0 or 1 flip there on the roster models, 2 on gemma-4-26B and 1 on
   gemma-4-31B against their budget of 3), not across the prompt. No budget is changed.
@@ -171,8 +173,7 @@ Two RTX 5090 cells were stopped mid-run for a release ticket and rerun from scra
 cell wrote no table (the probe prints at the end), so there is no partial table to compare.
 
 **Cells still to run at this commit:** Qwen3.8-27B eager and batch on GB10 (the two roster
-rows the census still names); Qwen3.5-9B NVFP4 eager and batch on GB10 (the model the gate
-script resolves to there when given none). Until a cell's row exists it is UNCALIBRATED and the
+rows the census still names). Until a cell's row exists it is UNCALIBRATED and the
 release battery refuses it.
 
 Not calibrated here: `ornith-1.0-9b` Q8_0 and `Qwen3.6-27B-Q8_0`, the first two models the gate
