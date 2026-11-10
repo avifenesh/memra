@@ -8561,10 +8561,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "FAIL"
                     }
                 );
+                // Each edge with the split on its two sides (64->512 is the deep rung, 64->128
+                // today's ladder): on 4 KV heads 16,384 is an edge either way.
+                let edge_sides: Vec<String> = edges
+                    .iter()
+                    .map(|&t| format!("{t} ({}->{})", split(t), split(t + 1)))
+                    .collect();
                 println!(
-                    "FA-VERIFY-ROWS rung edges gqa={} ({nh_r}/{nhkv_r}): split ladder edges {edges:?} up to \
+                    "FA-VERIFY-ROWS rung edges gqa={} ({nh_r}/{nhkv_r}): split ladder edges [{}] up to \
                      {deep_max} keys, {edge_cases} cases on their two sides (counted above), {edge_refused} refused {}",
                     nh_r / nhkv_r,
+                    edge_sides.join(", "),
                     if edge_refused == 0 && (edges.is_empty() || edge_cases > 0) {
                         "OK"
                     } else {
@@ -8572,6 +8579,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "FAIL"
                     }
                 );
+                // The deep rung is live where it should be and nowhere else. The expectation
+                // comes from the device's name, not from the ladder's own keying, so a lost
+                // detection (GB10 read as another part) fails here even on 4 KV heads, where
+                // the edge list and every bitdiff above are the same with or without the rung.
+                if std::env::var_os("MEMRA_FA_SPLIT").is_some() {
+                    println!(
+                        "FA-DEEP-RUNG gqa={} ({nh_r}/{nhkv_r}): SKIP (MEMRA_FA_SPLIT forces one split at every depth)",
+                        nh_r / nhkv_r
+                    );
+                } else {
+                    let device = e.ctx().name().unwrap_or_default();
+                    let (ok, seen) = memra_engine::fa_deep_rung_verdict(
+                        device.contains("GB10"),
+                        nhkv_r,
+                        deep_max,
+                        &split,
+                    );
+                    println!(
+                        "FA-DEEP-RUNG gqa={} ({nh_r}/{nhkv_r}): device {device:?}, ladder keyed as {}: {seen} {}",
+                        nh_r / nhkv_r,
+                        memra_engine::fa_deep_part_name(),
+                        if ok {
+                            "OK"
+                        } else {
+                            fails += 1;
+                            "FAIL"
+                        }
+                    );
+                }
 
                 // The device-counter launch (`fa_decode_dc`: the captured decode graph's
                 // attention, and the draft's) against `fa_decode` for one query row, bit for

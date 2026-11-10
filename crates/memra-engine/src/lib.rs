@@ -1224,7 +1224,9 @@ mod fa_ladder_engine_tests {
 
 #[cfg(test)]
 mod fa_split_ladder_tests {
-    use super::{FaDeepPart, fa_deep_part, fa_split_deep_rung, fa_split_ladder};
+    use super::{
+        FaDeepPart, fa_deep_part, fa_deep_rung_verdict, fa_split_deep_rung, fa_split_ladder,
+    };
 
     const GB10: (i32, FaDeepPart) = (48, FaDeepPart::Gb10);
     const UNMEASURED: FaDeepPart = FaDeepPart::Unmeasured;
@@ -1355,6 +1357,32 @@ mod fa_split_ladder_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn kernel_checks_deep_rung_verdict_sees_a_lost_detection() {
+        for kv in [1usize, 2, 3, 4] {
+            // green: a GB10 by name whose ladder took the rung
+            let live = |t: usize| fa_split_ladder(t, kv, 48, FaDeepPart::Gb10);
+            assert!(fa_deep_rung_verdict(true, kv, 262_144, &live).0, "kv {kv}");
+            // red: a GB10 by name whose detection failed (today's ladder); on 4 KV heads the
+            // edge list is [512, 16384] either way, so only this verdict can see it
+            let lost = |t: usize| fa_split_ladder(t, kv, 48, FaDeepPart::Unmeasured);
+            let (ok, what) = fa_deep_rung_verdict(true, kv, 262_144, &lost);
+            assert!(!ok, "kv {kv}: {what}");
+            // another part: today's ladder is green, a rung there is red
+            assert!(fa_deep_rung_verdict(false, kv, 262_144, &lost).0, "kv {kv}");
+            assert!(
+                !fa_deep_rung_verdict(false, kv, 262_144, &live).0,
+                "kv {kv}"
+            );
+            // a cache that stops at the floor cannot show the rung, and says so
+            let floor = fa_split_deep_rung(kv, FaDeepPart::Gb10).unwrap().0;
+            assert!(fa_deep_rung_verdict(true, kv, floor, &lost).0, "kv {kv}");
+        }
+        // wide KV keeps today's ladder on GB10 too
+        let wide = |t: usize| fa_split_ladder(t, 8, 48, FaDeepPart::Gb10);
+        assert!(fa_deep_rung_verdict(true, 8, 262_144, &wide).0);
     }
 }
 
@@ -2660,6 +2688,67 @@ pub fn fa_seqs_eligible(t_kv: usize, head_dim: usize, n_head: usize, n_head_kv: 
 /// Public twin of the crate-private split ladder (kernel-check builds the seqs-vs-loop pin).
 pub fn fa_split_keys_pub(t_kv: usize, n_head_kv: usize) -> usize {
     fa_split_keys(t_kv, n_head_kv)
+}
+
+/// The deep rung's part as this process keyed it (`fa_deep_part`: the build family, the SM
+/// count and unified memory), for kernel-check to print beside the ladder's edges.
+pub fn fa_deep_part_name() -> &'static str {
+    match fa_deep_part(
+        env!("MEMRA_BUILT_CUDA_ARCH") == "120a",
+        fa_sm_count(),
+        fa_unified(),
+    ) {
+        FaDeepPart::Gb10 => "GB10",
+        FaDeepPart::Unmeasured => "unmeasured",
+    }
+}
+
+/// kernel-check's deep-rung presence verdict for one KV head count. `named_gb10` comes from the
+/// device's name, not from `fa_deep_part`, so a part whose detection failed (unified memory read
+/// as false, say) shows here as a missing rung; on 4 KV heads the edge list alone cannot show
+/// it, because 16,384 is an edge with or without the rung. `split` is the live ladder at that KV
+/// head count and `deep_max` the cache depth the cell reaches. On a part named GB10 the split
+/// must change to the rung's size one key past its floor; on any other part no split past
+/// 16,384 may exceed today's 128. Returns whether it holds and what was seen.
+pub fn fa_deep_rung_verdict(
+    named_gb10: bool,
+    n_head_kv: usize,
+    deep_max: usize,
+    split: &dyn Fn(usize) -> usize,
+) -> (bool, String) {
+    let part = if named_gb10 {
+        FaDeepPart::Gb10
+    } else {
+        FaDeepPart::Unmeasured
+    };
+    match fa_split_deep_rung(n_head_kv, part) {
+        Some((floor, keys)) if deep_max > floor => {
+            let (at, past) = (split(floor), split(floor + 1));
+            (
+                at != keys && past == keys,
+                format!(
+                    "{at} keys at {floor} -> {past} at {} (expected {keys} past {floor})",
+                    floor + 1
+                ),
+            )
+        }
+        Some((floor, keys)) => (
+            true,
+            format!(
+                "the {deep_max}-key cache does not pass the floor {floor} ({keys} keys past it)"
+            ),
+        ),
+        None => {
+            let worst = (16_385..=deep_max.max(16_385))
+                .map(split)
+                .max()
+                .unwrap_or(0);
+            (
+                worst <= 128,
+                format!("no deep rung expected: at most {worst} keys a split past 16,384"),
+            )
+        }
+    }
 }
 
 /// Warps of one `fa_verify_rows_v4_deep` block (flash_attn.cu `FA_ROWS_WARPS`): rows x gqa.
