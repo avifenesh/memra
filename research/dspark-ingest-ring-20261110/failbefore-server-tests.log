@@ -1,0 +1,22 @@
+test worker::windowless_drafter_window_tests::site_5_the_cold_drafter_conversion_takes_window_rows ... FAILED
+test worker::windowless_drafter_window_tests::every_window_read_on_the_served_route_is_a_listed_safe_one ... FAILED
+test worker::windowless_drafter_window_tests::site_4_the_restore_block_takes_window_rows ... FAILED
+test worker::windowless_drafter_window_tests::site_3_the_restorable_hit_probe_takes_window_rows ... FAILED
+test worker::windowless_drafter_window_tests::site_2_the_admission_reclaim_spare_takes_window_rows ... FAILED
+test worker::windowless_drafter_window_tests::site_1_the_admission_restore_route_takes_window_rows ... FAILED
+test worker::windowless_drafter_window_tests::the_window_census_fails_on_every_form_of_window_arithmetic ... ok
+thread 'worker::windowless_drafter_window_tests::site_5_the_cold_drafter_conversion_takes_window_rows' panicked at crates/memra-server/src/worker.rs:51944:9:
+the cold-drafter conversion: the drafter window here is not `cfg.window_rows()`: let window = draft.cfg.window_rows(); let suffix_len = prompt.len().saturating_sub(carrier.fed.len());
+thread 'worker::windowless_drafter_window_tests::every_window_read_on_the_served_route_is_a_listed_safe_one' panicked at crates/memra-server/src/worker.rs:51993:9:
+assertion `left == right` failed: a sliding_window read outside the list: take the window from cfg.window_rows()
+  left: ["!is_dflash2 && ctx_cap > cfg.sliding_window", "cfg.sliding_window", "cfg.sliding_window + cfg.block_size", "draft.cfg.sliding_window", "draft.cfg.sliding_window", "draft.cfg.sliding_window", "draft.cfg.sliding_window + draft.cfg.block_size", "draft.cfg.sliding_window + draft.cfg.block_size", "let window = draft.cfg.sliding_window + draft.cfg.block_size", "|d| d.cfg.sliding_window + d.cfg.block_size", "|d| d.cfg.sliding_window + d.cfg.block_size"]
+ right: ["!is_dflash2 && ctx_cap > cfg.sliding_window", "cfg.sliding_window", "draft.cfg.sliding_window", "draft.cfg.sliding_window", "draft.cfg.sliding_window"]
+thread 'worker::windowless_drafter_window_tests::site_4_the_restore_block_takes_window_rows' panicked at crates/memra-server/src/worker.rs:51944:9:
+the restore block: the drafter window here is not `cfg.window_rows()`: let tail_floor_short = dspark_floored_tail_too_short(entry_tail_floor, prompt.len(), draft.cfg.window_rows());
+thread 'worker::windowless_drafter_window_tests::site_3_the_restorable_hit_probe_takes_window_rows' panicked at crates/memra-server/src/worker.rs:51944:9:
+the restorable-hit probe: the drafter window here is not `cfg.window_rows()`: let dspark_tail_window = dspark_draft.as_ref().map(|d| d.cfg.window_rows());
+thread 'worker::windowless_drafter_window_tests::site_2_the_admission_reclaim_spare_takes_window_rows' panicked at crates/memra-server/src/worker.rs:51944:9:
+the admission reclaim spare: the drafter window here is not `cfg.window_rows()`: let tail_window = draft.map(|d| d.cfg.window_rows());
+thread 'worker::windowless_drafter_window_tests::site_1_the_admission_restore_route_takes_window_rows' panicked at crates/memra-server/src/worker.rs:51944:9:
+the admission restore route: the drafter window here is not `cfg.window_rows()`: || dspark_floored_tail_too_short( tail.floor, prompt.len(), cfg.window_rows(), )
+test result: FAILED. 1 passed; 6 failed; 0 ignored; 0 measured; 1166 filtered out; finished in 0.01s

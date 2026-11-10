@@ -1,0 +1,10 @@
+card 74 C at start
+server sha256 a662dd3816bb6558f23290c4fb9c7188de526064e6cb50fd05a1e1ab31a9e4bd
++ env RUST_BACKTRACE=1 MEMRA_DSPARK_VT=ladder dspark-serve-smoke.sh Qwen3.8-27B q38-dspark-agentic memra-server
+== boot 1: dspark route armed ==
+server died
+  12: memra_server::worker::run
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+[worker] PANIC in the GPU worker thread: called `Option::unwrap()` on a `None` value
+[worker] respawn attempt 1/1 in 2s (reloading weights)
+[server] FATAL: worker init failed: worker died during init

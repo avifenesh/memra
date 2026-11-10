@@ -1,0 +1,20 @@
+# excerpt of the base server's log (serve-on.log): the admission charge line, the ring grow and the panic
+[admission] "gate": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 0MB at a 30k cap (ring on: constant above two windows)
+[dflash-kv-ring] grow keep_from=0 kept=0 phys_rows=255 (was 5)
+thread 'memra-gpu-worker' panicked at ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.19.8/src/driver/safe/core.rs:1795:36:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::panic
+   3: core::option::unwrap_failed
+   4: <memra_engine::Engine>::copy_into
+   5: <memra_engine::dflash::DflashDraft>::ingest_ctx
+   6: memra_engine::dflash::ingest_tap_batch
+   7: memra_engine::dflash::apply_tap_batch_op
+   8: <memra_engine::dflash::DflashTapWalker as memra_engine::prime_walker::PrimeWalker>::advance_chunk
+   9: <memra_engine::dflash::DsparkPrimeWalker as memra_engine::prime_walker::PrimeWalker>::advance_chunk
+  10: <memra_engine::hybrid::HybridModel>::dspark_spec_session_new
+  11: memra_server::worker::run_boot_calibration
+  12: memra_server::worker::run
+[worker] PANIC in the GPU worker thread: called `Option::unwrap()` on a `None` value
+[worker] respawn attempt 1/1 in 2s (reloading weights)
+[server] FATAL: worker init failed: worker died during init

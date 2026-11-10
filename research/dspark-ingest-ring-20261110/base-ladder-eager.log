@@ -1,0 +1,27 @@
+card 74 C at start
+binary sha256 eb4eea410b6fdf57bbeaf74b6e91a8efbfd65385d9ede74077883571666a49b7
++ env RUST_BACKTRACE=1 MEMRA_DSPARK_VT=ladder MEMRA_DSPARK_FULLG_DEBUG=1 dspark_q38_gate /data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /data/ai-ml/models/q38-dspark-agentic
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dspark (checkpoint census dflash2=false strategy_dspark=true, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head present, MEMRA_DSPARK_VT set)
+target loaded (65 layers); dspark draft: block 7, taps [4, 16, 28, 40, 52], markov true, yarn true
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 73728 ml_len 24 -> 288 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 73728 -> 147456 ml_len 288 -> 576 (retired kept, zero=false)
+[dflash-kv-ring] grow keep_from=0 kept=0 phys_rows=15 (was 5)
+
+thread 'main' panicked at ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.19.8/src/driver/safe/core.rs:1795:36:
+called `Option::unwrap()` on a `None` value
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::panic
+   3: core::option::unwrap_failed
+   4: <memra_engine::Engine>::copy_into
+   5: <memra_engine::dflash::DflashDraft>::ingest_ctx
+   6: memra_engine::dflash::ingest_tap_batch
+   7: memra_engine::dflash::apply_tap_batch_op
+   8: <memra_engine::hybrid::HybridModel>::generate_spec_dspark
+   9: dspark_q38_gate::main
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.

@@ -1,0 +1,23 @@
+# round 1 (the base gate cells, main fcd66f8963)
+2026-11-10T03:01:09+02:00 base-ladder-eager start
+2026-11-10T03:02:24+02:00 base-ladder-eager rc=101 last: thread 'main' panicked at ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.19.8/src/driver/safe/core.rs:1795:36:
+2026-11-10T03:02:24+02:00 base-default-eager start
+2026-11-10T03:03:46+02:00 base-default-eager rc=101 last: thread 'main' panicked at ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.19.8/src/driver/safe/core.rs:1795:36:
+# round 2 (the base served cell, main fcd66f8963)
+2026-11-10T04:18:11+02:00 serve-base-ladder start
+2026-11-10T04:21:15+02:00 serve-base-ladder rc=1 last: 
+# round 3 (the fixed cells, binaries from d68780eb2e)
+2026-11-10T06:13:33+02:00 fix-ladder-eager start
+2026-11-10T06:13:34+02:00 serve-fix-ladder start
+2026-11-10T06:23:30+02:00 fix-ladder-eager rc=0 last: == dspark_q38_gate: ALL EXACT | mean plain 40.3 tok/s | mean spec 76.0 tok/s | 288 tokens ==
+2026-11-10T06:23:30+02:00 fix-ladder-vg start
+2026-11-10T06:25:05+02:00 serve-fix-default start
+2026-11-10T06:25:05+02:00 serve-fix-ladder rc=0 last: dspark-serve-smoke: ALL GREEN
+2026-11-10T06:44:46+02:00 fix-default-eager start
+2026-11-10T06:44:46+02:00 fix-ladder-vg rc=0 last: == dspark_q38_gate: ALL EXACT | mean plain 34.8 tok/s | mean spec 65.0 tok/s | 288 tokens ==
+2026-11-10T06:46:25+02:00 serve-fix-default rc=0 last: dspark-serve-smoke: ALL GREEN
+2026-11-10T06:46:25+02:00 serve-fix-restore-ladder start
+2026-11-10T07:08:01+02:00 fix-default-eager rc=0 last: == dspark_q38_gate: ALL EXACT | mean plain 43.0 tok/s | mean spec 83.0 tok/s | 288 tokens ==
+2026-11-10T07:08:01+02:00 fix-dflash2-vg start
+2026-11-10T07:09:20+02:00 serve-fix-restore-ladder rc=0 last: dspark-serve-smoke: ALL GREEN
+2026-11-10T07:16:52+02:00 fix-dflash2-vg rc=0 last: == dspark_q38_gate: ALL EXACT | mean plain 42.9 tok/s | mean spec 110.2 tok/s | 288 tokens ==

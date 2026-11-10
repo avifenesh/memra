@@ -1,0 +1,21 @@
+test dflash::dflash_windowless_ring_tests::a_window_whose_double_overflows_still_gets_the_door_off_ring ... FAILED
+test dflash::dflash_windowless_ring_tests::a_windowless_drafter_ring_holds_every_row_and_never_grows ... FAILED
+test dflash::dflash_windowless_ring_tests::a_windowless_grow_never_plans_fewer_rows_than_its_write ... FAILED
+test dflash::dflash_windowless_ring_tests::a_windowless_session_is_charged_its_whole_cap ... FAILED
+thread 'dflash::dflash_windowless_ring_tests::a_window_whose_double_overflows_still_gets_the_door_off_ring' panicked at crates/memra-engine/src/dflash.rs:9688:13:
+assertion `left == right` failed
+  left: 21
+ right: 134
+thread 'dflash::dflash_windowless_ring_tests::a_windowless_drafter_ring_holds_every_row_and_never_grows' panicked at crates/memra-engine/src/dflash.rs:9645:13:
+assertion `left == right` failed: cap 127
+  left: 5
+ right: 134
+thread 'dflash::dflash_windowless_ring_tests::a_windowless_grow_never_plans_fewer_rows_than_its_write' panicked at crates/memra-engine/src/dflash.rs:9713:9:
+assertion `left == right` failed
+  left: Grow { keep_from: 0, phys_rows: 15 }
+ right: Grow { keep_from: 0, phys_rows: 18446744073709551615 }
+thread 'dflash::dflash_windowless_ring_tests::a_windowless_session_is_charged_its_whole_cap' panicked at crates/memra-engine/src/dflash.rs:9700:13:
+assertion `left == right` failed
+  left: 204800
+ right: 335831040
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 766 filtered out; finished in 0.00s

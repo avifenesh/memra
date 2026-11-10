@@ -1,0 +1,73 @@
+# CPU checks for memra#1159, review round 3. Engine and server checks ran on a dev box with no GPU (CUDA 13.1 nvcc, MEMRA_CUDA_ARCH=120a); local checks on the branch.
+
+## fail before: main 8a3e4904c6 plus only the two appended test modules (failbefore-*-tests.log)
+$ cargo test --release --locked -p memra-engine --lib dflash_windowless_ring_tests
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 766 filtered out; finished in 0.00s
+$ cargo test --release --locked -p memra-server --lib windowless_drafter_window_tests
+test result: FAILED. 1 passed; 6 failed; 0 ignored; 0 measured; 1166 filtered out; finished in 0.01s
+# (the census self-test passes on main by design: it tests the census, not the code)
+
+## pass after: the branch code (d68780eb2e)
+$ cargo test --release --locked -p memra-engine --lib dflash
+test result: ok. 66 passed; 0 failed; 0 ignored; 0 measured; 706 filtered out; finished in 0.82s
+$ cargo test --release --locked -p memra-server
+test result: ok. 1165 passed; 0 failed; 11 ignored; 0 measured; 0 filtered out; finished in 13.70s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+total: 1172 passed, 0 failed, 11 ignored
+$ cargo clippy --release --all-targets -p memra-engine -p memra-server -- -D warnings
+    Finished `release` profile [optimized] target(s) in 29.35s
+clippy rc=0
+# the new tests, each ok on the branch:
+test dflash::dflash_kv_ring_tests::a_windowless_grow_is_refused_by_the_plane_size_check ... ok
+test dflash::dflash_kv_ring_tests::window_rows_saturates_for_a_drafter_with_no_sliding_layer ... ok
+test dflash::dflash_windowless_ring_tests::a_window_whose_double_overflows_still_gets_the_door_off_ring ... ok
+test dflash::dflash_windowless_ring_tests::a_windowless_drafter_ring_holds_every_row_and_never_grows ... ok
+test dflash::dflash_windowless_ring_tests::a_windowless_session_is_charged_its_whole_cap ... ok
+test dflash::dflash_windowless_ring_tests::a_windowless_grow_never_plans_fewer_rows_than_its_write ... ok
+test worker::tests::a_windowless_drafter_never_takes_the_cold_drafter_conversion ... ok
+test worker::tests::a_windowless_drafter_restores_only_a_full_tail ... ok
+test worker::tests::a_windowless_floored_tail_entry_is_not_restorable ... ok
+test worker::windowless_drafter_window_tests::every_window_read_on_the_served_route_is_a_listed_safe_one ... ok
+test worker::windowless_drafter_window_tests::site_1_the_admission_restore_route_takes_window_rows ... ok
+test worker::windowless_drafter_window_tests::site_2_the_admission_reclaim_spare_takes_window_rows ... ok
+test worker::windowless_drafter_window_tests::site_3_the_restorable_hit_probe_takes_window_rows ... ok
+test worker::windowless_drafter_window_tests::site_5_the_cold_drafter_conversion_takes_window_rows ... ok
+test worker::windowless_drafter_window_tests::the_window_census_fails_on_every_form_of_window_arithmetic ... ok
+test worker::windowless_drafter_window_tests::site_4_the_restore_block_takes_window_rows ... ok
+
+## local
+$ python3 -m unittest tools/fast-gate/test_plan.py
+Ran 46 tests in 6.093s
+OK
+$ cargo fmt --all -- --check
+clean
+$ git diff --check 8a3e4904c6
+clean
+$ bash tools/check-flags.sh
+check-flags: no uncovered runtime names
+check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+flags-row-shape: 1046 rows within 4000 chars, default cells within 300, one decide-by each, 55 history sections all linked
+$ python3 tools/cell_evidence.py need
+  cell sm_120a:numeric  [push-gated]  <- crates/memra-engine/src/dflash.rs
+  cell sm_120a:serving  [push-gated]  <- crates/memra-server/src/worker.rs
+  cell sm_120a:perf     [push-gated]  <- crates/memra-engine/src/dflash.rs, crates/memra-server/src/worker.rs
+  cell sm_121a:numeric  [push-gated]  <- crates/memra-engine/src/dflash.rs
+  cell sm_121a:serving  [push-gated]  <- crates/memra-server/src/worker.rs
+  cell sm_121a:perf     [push-gated]  <- crates/memra-engine/src/dflash.rs, crates/memra-server/src/worker.rs
+  cell sm_100a:numeric  [daily/pre-tag]  <- crates/memra-engine/src/dflash.rs
+  cell sm_100a:serving  [daily/pre-tag]  <- crates/memra-server/src/worker.rs
+  cell sm_100a:perf     [daily/pre-tag]  <- crates/memra-engine/src/dflash.rs, crates/memra-server/src/worker.rs
+  cell sm_90a:numeric  [daily/pre-tag]  <- crates/memra-engine/src/dflash.rs
+  cell sm_90a:serving  [daily/pre-tag]  <- crates/memra-server/src/worker.rs
+  cell sm_90a:perf     [daily/pre-tag]  <- crates/memra-engine/src/dflash.rs, crates/memra-server/src/worker.rs
+  cell sm_89:numeric  [daily/pre-tag]  <- crates/memra-engine/src/dflash.rs
+  cell sm_89:serving  [daily/pre-tag]  <- crates/memra-server/src/worker.rs
+  cell sm_89:perf     [daily/pre-tag]  <- crates/memra-engine/src/dflash.rs, crates/memra-server/src/worker.rs
+  sm_100a: battery,perf,serving (daily/pre-tag)
+  sm_120a: battery,perf,serving (push-gated)
+  sm_121a: battery,perf,serving (push-gated)
+  sm_89: battery,perf,serving (daily/pre-tag)
+  sm_90a: battery,perf,serving (daily/pre-tag)
