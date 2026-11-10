@@ -3058,7 +3058,16 @@ impl HybridModel {
                     }
                     ph_mark(e, 2, ph_last)?;
                     // ---- phase B: attention (all B sequences) ----
-                    if seqs_fa {
+                    // The step's pick holds for this layer only if its own geometry agrees: the
+                    // eligibility and the split read the launch's head counts (the deep rung
+                    // depends on the KV head count), so a layer whose geometry differs from the
+                    // config's takes the per-seq loop instead of another layer's split.
+                    let layer_seqs_fa = seqs_fa
+                        && ctx.t_kvs.iter().all(|&t| {
+                            crate::fa_seqs_eligible(t, head_dim, n_head, n_head_kv)
+                                && crate::fa_split_keys(t, n_head_kv) == sp0
+                        });
+                    if layer_seqs_fa {
                         let (ktb, vtb) = {
                             let kvl = caches[0].kv[il].as_ref().unwrap();
                             (kvl.k_tok_bytes, kvl.v_tok_bytes)
