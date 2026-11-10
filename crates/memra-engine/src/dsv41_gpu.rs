@@ -2531,17 +2531,17 @@ pub static WIDE_TILES: std::sync::atomic::AtomicUsize = std::sync::atomic::Atomi
 pub static WIDE_MIX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(32);
 
 /// The limits by family (block-scaled dense, bf16, fp32 FMA, the one-pass mHC kernel, the
-/// expert tiles) for a group of `ranks`, from two sweeps of calls of 8 to 128 rows with one
-/// family's limit raised at a time against all at 0. One rank on one card: the dense groups
-/// pay to 12 rows and are level at 16, bf16 to 16, fp32 FMA to 48, mHC to 32, 8-row tiles to
-/// 48. Two ranks on two cards, where a rank's dense launches are half as wide: dense to 24
-/// (level at 32), bf16 to 16, fp32 FMA to 64, mHC to 48, tiles to 64. More ranks take the
-/// two-rank limits until they are measured.
+/// expert tiles) for a group of `ranks`, from sweeps of calls of 8 to 128 rows with one
+/// family's limit raised at a time against all at 0. One rank on one card: the dense body
+/// with K in parts pays to 16 rows and is level with the 32-row pipelined tile to 32, bf16 to
+/// 16, fp32 FMA to 48, mHC to 32, 8-row tiles to 48. Two ranks on two cards, where a rank's
+/// dense launches are half as wide: dense to 48 (level at 64), bf16 to 16, fp32 FMA to 64, mHC
+/// to 48, tiles to 64. More ranks take the two-rank limits until they are measured.
 pub fn wide_rows_for(ranks: usize) -> [usize; 5] {
     if ranks <= 1 {
-        [16, 16, 48, 32, 48]
+        [24, 16, 48, 32, 48]
     } else {
-        [24, 16, 64, 48, 64]
+        [48, 16, 64, 48, 64]
     }
 }
 

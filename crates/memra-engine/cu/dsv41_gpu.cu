@@ -572,7 +572,7 @@ __device__ __forceinline__ void v41_cp_wait() {
 template <int WF, int BM>
 struct V41Pipe {
     static constexpr int BN = 128;
-    static constexpr int PK = BM == 64 ? 3 : 4;   // 32-wide K blocks per stage
+    static constexpr int PK = BM == 128 ? 4 : 3;  // 32-wide K blocks per stage
     static constexpr int PS = 2;                  // stages in flight
     static constexpr int PRS = PK * 32 + 16;      // smem bytes per e4m3 row of a stage (+16: conflict-free ldmatrix)
     static constexpr int PRR = PK * 16 + 16;      // smem bytes per raw fp4 row of a stage
@@ -891,7 +891,7 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
 }
 
 template <int WF, int OUTF, int BM>
-__global__ void __launch_bounds__(256, BM == 64 ? 2 : 1) v41_gemm_f8_pipe_kernel(const uint8_t* __restrict__ A, long lda,
+__global__ void __launch_bounds__(256, BM <= 64 ? 2 : 1) v41_gemm_f8_pipe_kernel(const uint8_t* __restrict__ A, long lda,
                                                                const uint8_t* __restrict__ As, long ldas,
                                                                const uint8_t* __restrict__ B, long ldb,
                                                                const uint8_t* __restrict__ Bs, long ldbs,
@@ -917,7 +917,13 @@ __global__ void __launch_bounds__(256, BM == 64 ? 2 : 1) v41_gemm_f8_pipe_kernel
 // 12). Families: 0 block-scaled dense, 1 bf16, 2 fp32 FMA, 3 the one-pass mHC kernel. Rows are
 // independent in every one of them, so a row's bytes do not depend on the group it runs in. The limits
 // are measured per family and rank count (`wide_rows_for` in src/dsv41_gpu.rs); these are one rank's.
-static int v41_wide[4] = {16, 16, 48, 32};
+static int v41_wide[4] = {24, 16, 48, 32};
+// The fewest rows of a dense call that take the body with K in parts (v41_gemv_f8_rows_kernel); below it
+// the one-pass body runs. Measured with the limit moved (a call of N rows, parts body against one-pass):
+// two ranks on two cards 1.3% slower at one row, 2.0% at 4, level at 5 and 6, 1.4% faster at 7, 2.2% at 8;
+// one rank level at 5 and 6, 1.4% faster at 7, 4.1% at 8 (the one-pass form's terms pass two blocks an SM
+// at 7 and 8 rows of K = 5,120).
+#define V41_PARTS_MIN 7
 // A group's limits, or a gate's or bench's choice of them.
 extern "C" void memra_v41_wide_rows(int family, int rows) {
     if (family >= 0 && family < 4) v41_wide[family] = rows;
@@ -929,11 +935,7 @@ extern "C" void memra_v41_wide_rows(int family, int rows) {
 __device__ __forceinline__ uint32_t v41_ldg32(const uint8_t* p) { return __ldg((const unsigned int*)p); }
 __device__ __forceinline__ uint32_t v41_ldg16(const uint8_t* p) { return (uint32_t)__ldg((const unsigned short*)p); }
 
-// R16: a call of 9 to 16 rows. The MMA tile's 16-wide side then holds 16 activation rows (rows g + 8 on the
-// same lanes), so one pass over the weight serves twice the rows with the same MMAs; each element is still
-// the tile's own MMA from zero and the same scaled sum. Its own instantiation: the second rows' fragments
-// cost the 8-row form registers it uses to load ahead.
-template <int WF, int OUTF, int SU, int R16 = 0>
+template <int WF, int OUTF, int SU>
 __device__ __forceinline__ void v41_gemv_f8_cols(const uint8_t* __restrict__ A, long lda,
                                                  const uint8_t* __restrict__ As, long ldas,
                                                  const uint8_t* __restrict__ B, long ldb,
@@ -946,32 +948,22 @@ __device__ __forceinline__ void v41_gemv_f8_cols(const uint8_t* __restrict__ A, 
     int kb0 = warp * per, kb1 = min(KB, kb0 + per);
     int col = n0 + g;  // this lane's B column (fragment column g)
     bool colok = col < N;
-    bool rowok = g < M;  // this lane's A row (fragment rows g; rows g + 8 hold one only under R16)
-    bool rowok8 = R16 && g + 8 < M;
+    bool rowok = g < M;  // this lane's A row (fragment rows g; rows g + 8 never hold one)
     const uint8_t* arow = A + (long)(rowok ? g : 0) * lda;
-    const uint8_t* arow8 = A + (long)(rowok8 ? g + 8 : 0) * lda;
     const uint8_t* brow = B + (long)(colok ? col : 0) * ldb;
     const uint8_t* srow = As + (long)(rowok ? g : 0) * ldas;
-    const uint8_t* srow8 = As + (long)(rowok8 ? g + 8 : 0) * ldas;
     // the scale columns of this lane's two output columns (n0 + 2t, n0 + 2t + 1)
     int c0 = n0 + 2 * t, c1 = c0 + 1;
     for (int k = kb0; k < kb1; k += SU) {
         // every load of the next SU K blocks first (fragments and scale bytes), then their MMAs
         uint32_t a0[SU], a2[SU], b0[SU], b1[SU];
-        uint32_t a1[R16 ? SU : 1], a3[R16 ? SU : 1];
-        uint8_t sac[SU], sbc0[SU], sbc1[SU], sac8[R16 ? SU : 1];
+        uint8_t sac[SU], sbc0[SU], sbc1[SU];
 #pragma unroll
         for (int u = 0; u < SU; ++u) {
             int kb = k + u;
             a0[u] = a2[u] = b0[u] = b1[u] = 0;
             sac[u] = sbc0[u] = sbc1[u] = 0;
-            if (R16) a1[u] = a3[u] = sac8[u] = 0;
             if (kb < kb1) {
-                if (rowok8) {
-                    a1[u] = v41_ldg32(arow8 + kb * 32 + t * 4);
-                    a3[u] = v41_ldg32(arow8 + kb * 32 + 16 + t * 4);
-                    sac8[u] = srow8[kb];
-                }
                 if (rowok) {
                     a0[u] = v41_ldg32(arow + kb * 32 + t * 4);
                     a2[u] = v41_ldg32(arow + kb * 32 + 16 + t * 4);
@@ -1001,7 +993,7 @@ __device__ __forceinline__ void v41_gemv_f8_cols(const uint8_t* __restrict__ A, 
         for (int u = 0; u < SU; ++u) {
             int kb = k + u;
             if (kb >= kb1) break;
-            uint32_t af[4] = {a0[u], R16 ? a1[u] : 0u, a2[u], R16 ? a3[u] : 0u};
+            uint32_t af[4] = {a0[u], 0u, a2[u], 0u};
             uint32_t bb0 = b0[u], bb1 = b1[u];
             if (WF != 0) {
                 bb0 = v41_fp4_to_e4m3x4(bb0);
@@ -1025,12 +1017,6 @@ __device__ __forceinline__ void v41_gemv_f8_cols(const uint8_t* __restrict__ A, 
                 float* tp = sT + ((long)kb * M + g) * 8 + 2 * t;
                 tp[0] = __fmul_rn(__fmul_rn(d[0], sa), sb0);
                 tp[1] = __fmul_rn(__fmul_rn(d[1], sa), sb1);
-                if (rowok8) {
-                    // d[2], d[3]: row g + 8 against the same two columns
-                    float sa8 = v41_e8m0(sac8[u]);
-                    tp[64] = __fmul_rn(__fmul_rn(d[2], sa8), sb0);
-                    tp[65] = __fmul_rn(__fmul_rn(d[3], sa8), sb1);
-                }
             }
         }
     }
@@ -1055,15 +1041,164 @@ __device__ __forceinline__ void v41_gemv_f8_cols(const uint8_t* __restrict__ A, 
     }
 }
 
-template <int WF, int OUTF, int SU, int R16 = 0>
+template <int WF, int OUTF, int SU>
 __global__ void __launch_bounds__(256) v41_gemv_f8_kernel(const uint8_t* __restrict__ A, long lda,
                                                           const uint8_t* __restrict__ As, long ldas,
                                                           const uint8_t* __restrict__ B, long ldb,
                                                           const uint8_t* __restrict__ Bs, long ldbs, float bscale2,
                                                           void* __restrict__ C, long ldc, int M, int N, int K) {
     extern __shared__ float v41_sm_t[];
-    v41_gemv_f8_cols<WF, OUTF, SU, R16>(A, lda, As, ldas, B, ldb, Bs, ldbs, bscale2, C, ldc, M, N, K,
-                                        blockIdx.x * 8, v41_sm_t);
+    v41_gemv_f8_cols<WF, OUTF, SU>(A, lda, As, ldas, B, ldb, Bs, ldbs, bscale2, C, ldc, M, N, K, blockIdx.x * 8,
+                               v41_sm_t);
+}
+
+// The 8-column body for a call of 7 to 32 rows, K in parts. Both bodies above are bound by their shape at
+// these row counts, not by reads or MMAs: the pipelined tile walks K serially inside a block (K / 96 stages
+// of about 1.3 us: 375 us a rank a layer for a 32-row call on two ranks where the dense weights are 55 us
+// of reads), and the one-pass form holds all of K's terms in shared memory, which leaves one block an SM
+// (and at K = 8,192 does not fit 16 rows at all). Here a part of K (Kp blocks) is split over the eight
+// warps; a warp loads the weight fragments of its K blocks once, then runs them against each set of 16
+// activation rows (the tile's 16-wide side holds 16 of them), writing the scaled terms of the part to
+// shared memory; the (row, column) threads add the part's terms in K order onto the sum they carry, and
+// the next part follows. A block holds a part's terms only (24 KB), so four share an SM, and a weight is
+// read once for all the rows. Per element: the same MMA from zero over the same 32 products, (d * sa) *
+// sb, the ascending fp32 sum over K blocks.
+#define V41_ROWS_SU 6  // the most K blocks a warp takes in a part
+template <int WF, int OUTF>
+__global__ void __launch_bounds__(256) v41_gemv_f8_rows_kernel(const uint8_t* __restrict__ A, long lda,
+                                                               const uint8_t* __restrict__ As, long ldas,
+                                                               const uint8_t* __restrict__ B, long ldb,
+                                                               const uint8_t* __restrict__ Bs, long ldbs,
+                                                               float bscale2, void* __restrict__ C, long ldc, int M,
+                                                               int N, int K, int Kp) {
+    extern __shared__ float v41_sm_r[];
+    float* sT = v41_sm_r;  // [Kp][M][8]: the part's terms
+    constexpr int SU = V41_ROWS_SU;
+    int n0 = blockIdx.x * 8;
+    int tid = threadIdx.x, warp = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
+    int KB = K / 32;
+    int col = n0 + g;  // this lane's B column (fragment column g)
+    bool colok = col < N;
+    const uint8_t* brow = B + (long)(colok ? col : 0) * ldb;
+    // the scale columns of this lane's two output columns (n0 + 2t, n0 + 2t + 1)
+    int c0 = n0 + 2 * t, c1 = c0 + 1;
+    int RS = (M + 15) / 16;  // sets of 16 activation rows
+    float acc = 0.f;         // the (row, column) sum of the threads below M * 8
+    for (int p0 = 0; p0 < KB; p0 += Kp) {
+        int nk = min(Kp, KB - p0);
+        int per = (nk + 7) / 8;
+        int kb0 = p0 + warp * per, kb1 = min(p0 + nk, kb0 + per);
+        // this warp's weight fragments and scale bytes of the part, once for every row set
+        uint32_t b0[SU], b1[SU];
+        uint8_t sbc0[SU], sbc1[SU];
+#pragma unroll
+        for (int u = 0; u < SU; ++u) {
+            int kb = kb0 + u;
+            b0[u] = b1[u] = 0;
+            sbc0[u] = sbc1[u] = 0;
+            if (kb < kb1) {
+                if (WF == 0) {
+                    if (c0 < N) sbc0[u] = Bs[(long)(n0 >> 5) * ldbs + kb];
+                } else if (WF == 1) {
+                    if (c0 < N) sbc0[u] = Bs[(long)c0 * ldbs + kb];
+                    if (c1 < N) sbc1[u] = Bs[(long)c1 * ldbs + kb];
+                } else {
+                    if (c0 < N) sbc0[u] = Bs[(long)c0 * ldbs + 2 * kb];
+                    if (c1 < N) sbc1[u] = Bs[(long)c1 * ldbs + 2 * kb];
+                }
+                if (colok) {
+                    if (WF == 0) {
+                        b0[u] = v41_ldg32(brow + kb * 32 + t * 4);
+                        b1[u] = v41_ldg32(brow + kb * 32 + 16 + t * 4);
+                    } else {
+                        b0[u] = v41_fp4_to_e4m3x4(v41_ldg16(brow + kb * 16 + 2 * t));
+                        b1[u] = v41_fp4_to_e4m3x4(v41_ldg16(brow + kb * 16 + 8 + 2 * t));
+                    }
+                }
+            }
+        }
+        for (int rs = 0; rs < RS; ++rs) {
+            int ra = rs * 16 + g, rb = ra + 8;  // this lane's two A rows of the set
+            bool oka = ra < M, okb = rb < M;
+            const uint8_t* arow = A + (long)(oka ? ra : 0) * lda;
+            const uint8_t* arow8 = A + (long)(okb ? rb : 0) * lda;
+            const uint8_t* srow = As + (long)(oka ? ra : 0) * ldas;
+            const uint8_t* srow8 = As + (long)(okb ? rb : 0) * ldas;
+            uint32_t a0[SU], a1[SU], a2[SU], a3[SU];
+            uint8_t sac[SU], sac8[SU];
+#pragma unroll
+            for (int u = 0; u < SU; ++u) {
+                int kb = kb0 + u;
+                a0[u] = a1[u] = a2[u] = a3[u] = 0;
+                sac[u] = sac8[u] = 0;
+                if (kb < kb1) {
+                    if (oka) {
+                        a0[u] = v41_ldg32(arow + kb * 32 + t * 4);
+                        a2[u] = v41_ldg32(arow + kb * 32 + 16 + t * 4);
+                        sac[u] = srow[kb];
+                    }
+                    if (okb) {
+                        a1[u] = v41_ldg32(arow8 + kb * 32 + t * 4);
+                        a3[u] = v41_ldg32(arow8 + kb * 32 + 16 + t * 4);
+                        sac8[u] = srow8[kb];
+                    }
+                }
+            }
+#pragma unroll
+            for (int u = 0; u < SU; ++u) {
+                int kb = kb0 + u;
+                if (kb >= kb1) break;
+                uint32_t af[4] = {a0[u], a1[u], a2[u], a3[u]};
+                float d[4];
+                v41_mma_e4m3(d, af, b0[u], b1[u]);
+                if (oka) {
+                    float sb0 = 0.f, sb1 = 0.f;
+                    if (WF == 0) {
+                        float sv = (c0 < N) ? v41_e8m0(sbc0[u]) : 0.f;
+                        sb0 = sb1 = sv;
+                    } else if (WF == 1) {
+                        if (c0 < N) sb0 = v41_e8m0(sbc0[u]);
+                        if (c1 < N) sb1 = v41_e8m0(sbc1[u]);
+                    } else {
+                        if (c0 < N) sb0 = __fmul_rn(v41_e4m3f(sbc0[u]), bscale2);
+                        if (c1 < N) sb1 = __fmul_rn(v41_e4m3f(sbc1[u]), bscale2);
+                    }
+                    // d[0], d[1]: row ra against the lane's two columns; d[2], d[3]: row rb
+                    float sa = v41_e8m0(sac[u]);
+                    float* tp = sT + ((long)(kb - p0) * M + ra) * 8 + 2 * t;
+                    tp[0] = __fmul_rn(__fmul_rn(d[0], sa), sb0);
+                    tp[1] = __fmul_rn(__fmul_rn(d[1], sa), sb1);
+                    if (okb) {
+                        float sa8 = v41_e8m0(sac8[u]);
+                        tp[64] = __fmul_rn(__fmul_rn(d[2], sa8), sb0);
+                        tp[65] = __fmul_rn(__fmul_rn(d[3], sa8), sb1);
+                    }
+                }
+            }
+        }
+        __syncthreads();
+        if (tid < M * 8) {
+            int r = tid >> 3, cc = tid & 7;
+            int kb = 0;
+            for (; kb + 8 <= nk; kb += 8) {
+                float v[8];
+#pragma unroll
+                for (int u = 0; u < 8; ++u) v[u] = sT[((long)(kb + u) * M + r) * 8 + cc];
+#pragma unroll
+                for (int u = 0; u < 8; ++u) acc = __fadd_rn(acc, v[u]);
+            }
+            for (; kb < nk; ++kb) acc = __fadd_rn(acc, sT[((long)kb * M + r) * 8 + cc]);
+        }
+        // the next part overwrites the terms the sums read
+        __syncthreads();
+    }
+    if (tid < M * 8) {
+        int r = tid >> 3, cn = n0 + (tid & 7);
+        if (cn < N) {
+            if (OUTF == 0) ((v41_bf*)C)[(long)r * ldc + cn] = v41_f2bf(acc);
+            else ((float*)C)[(long)r * ldc + cn] = acc;
+        }
+    }
 }
 
 // The small-M body with the MMA's operands exchanged. The tile is 16 x 8: above, its 8-wide side holds
@@ -1526,14 +1661,11 @@ extern "C" int memra_v41_gemm_f8(const void* a, long lda, const void* as, long l
                                  int m, int n, int k, void* stream) {
     if (k % 32 || m < 0 || n <= 0 || lda % 16 || ldb % 16) return 41005;
     if (m == 0) return 0;
-    int sm8 = 0, sm16 = 0;
-    // a group: 16 rows through the two-row-set form when a block holds its terms, else 8
-    int grp = v41_gemv_smem(2 * V41_SM_MAX, k, &sm16) ? 2 * V41_SM_MAX : V41_SM_MAX;
-    if (m > grp && m <= v41_wide[0] && v41_gemv_smem(V41_SM_MAX, k, &sm8)) {
-        // the small-row body, a launch a group of rows
+    if (m > 32 && m <= v41_wide[0]) {
+        // the small-row body, a launch a group of 32 rows
         long ce = out_f32 ? 4 : 2;
-        for (int m0 = 0; m0 < m; m0 += grp) {
-            int mm = m - m0 < grp ? m - m0 : grp;
+        for (int m0 = 0; m0 < m; m0 += 32) {
+            int mm = m - m0 < 32 ? m - m0 : 32;
             int rc = memra_v41_gemm_f8((const uint8_t*)a + (long)m0 * lda, lda, (const uint8_t*)as + (long)m0 * ldas,
                                        ldas, b, ldb, bs, ldbs, bscale2, wfmt, (uint8_t*)c + (long)m0 * ldc * ce, ldc,
                                        out_f32, mm, n, k, stream);
@@ -1541,23 +1673,35 @@ extern "C" int memra_v41_gemm_f8(const void* a, long lda, const void* as, long l
         }
         return 0;
     }
+    if (m >= V41_PARTS_MIN && m <= 32 && (m <= V41_SM_MAX || m <= v41_wide[0]) && wfmt >= 0 && wfmt <= 2) {
+        // 7 to 32 rows: K in parts of as many blocks as keep a part's terms within 24 KB (four blocks an
+        // SM) and a warp's share within its registers
+        int kp = (24576 / (32 * m)) & ~7;
+        if (kp > 8 * V41_ROWS_SU) kp = 8 * V41_ROWS_SU;
+        if (kp < 8) kp = 8;
+        int smr = kp * m * 32;
+        cudaStream_t sr = (cudaStream_t)stream;
+        dim3 gr((n + 7) / 8);
+#define V41_ROWS_F8(WF, OF)                                                                                    \
+    v41_gemv_f8_rows_kernel<WF, OF><<<gr, 256, smr, sr>>>((const uint8_t*)a, lda, (const uint8_t*)as, ldas,    \
+                                                          (const uint8_t*)b, ldb, (const uint8_t*)bs, ldbs,    \
+                                                          bscale2, c, ldc, m, n, k, kp)
+        if (wfmt == 0) { if (out_f32) V41_ROWS_F8(0, 1); else V41_ROWS_F8(0, 0); }
+        else if (wfmt == 1) { if (out_f32) V41_ROWS_F8(1, 1); else V41_ROWS_F8(1, 0); }
+        else { if (out_f32) V41_ROWS_F8(2, 1); else V41_ROWS_F8(2, 0); }
+#undef V41_ROWS_F8
+        V41_ERR();
+    }
     cudaStream_t st = (cudaStream_t)stream;
     const uint8_t *A = (const uint8_t*)a, *As = (const uint8_t*)as, *B = (const uint8_t*)b, *Bs = (const uint8_t*)bs;
     int smem = 0;
-    bool r16 = m > V41_SM_MAX && m <= 2 * V41_SM_MAX && m <= v41_wide[0];
-    if ((m <= V41_SM_MAX || r16) && v41_gemv_smem(m, k, &smem)) {
+    if (m <= V41_SM_MAX && v41_gemv_smem(m, k, &smem)) {
         dim3 grid((n + 7) / 8);
 #define V41_GEMV_F8_U(WF, OF, SUX)                                                                              \
     do {                                                                                                        \
-        if (r16) {                                                                                              \
-            if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_gemv_f8_kernel<WF, OF, SUX, 1>), 96 * 1024);              \
-            v41_gemv_f8_kernel<WF, OF, SUX, 1><<<grid, 256, smem, st>>>(A, lda, As, ldas, B, ldb, Bs, ldbs,     \
-                                                                         bscale2, c, ldc, m, n, k);             \
-        } else {                                                                                                \
-            if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_gemv_f8_kernel<WF, OF, SUX>), 96 * 1024);                 \
-            v41_gemv_f8_kernel<WF, OF, SUX><<<grid, 256, smem, st>>>(A, lda, As, ldas, B, ldb, Bs, ldbs,        \
-                                                                      bscale2, c, ldc, m, n, k);                \
-        }                                                                                                       \
+        if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_gemv_f8_kernel<WF, OF, SUX>), 96 * 1024);                     \
+        v41_gemv_f8_kernel<WF, OF, SUX><<<grid, 256, smem, st>>>(A, lda, As, ldas, B, ldb, Bs, ldbs, bscale2, c, \
+                                                                  ldc, m, n, k);                                \
     } while (0)
 #define V41_GEMV_F8(WF, OF) \
     do { if (k / 32 > 64) V41_GEMV_F8_U(WF, OF, 10); else V41_GEMV_F8_U(WF, OF, 8); } while (0)
@@ -1580,8 +1724,14 @@ extern "C" int memra_v41_gemm_f8(const void* a, long lda, const void* as, long l
         v41_gemm_f8_pipe_kernel<WF, OF, BMX><<<gp, 256, sm_, st>>>(A, lda, As, ldas, B, ldb, Bs, ldbs, bscale2, \
                                                                     c, ldc, m, n, k);                           \
     } while (0)
-#define V41_PIPE_F8_BM(WF, OF) \
-    do { if (m >= 128) V41_PIPE_F8(WF, OF, 128); else V41_PIPE_F8(WF, OF, 64); } while (0)
+// (a call of at most 32 rows: a 32-row tile, where all 8 warps hold rows; in a 64-row tile half of them
+// would hold padding)
+#define V41_PIPE_F8_BM(WF, OF)                                \
+    do {                                                      \
+        if (m >= 128) V41_PIPE_F8(WF, OF, 128);               \
+        else if (m <= 32) V41_PIPE_F8(WF, OF, 32);            \
+        else V41_PIPE_F8(WF, OF, 64);                         \
+    } while (0)
         if (wfmt == 0) { if (out_f32) V41_PIPE_F8_BM(0, 1); else V41_PIPE_F8_BM(0, 0); }
         else if (wfmt == 1) { if (out_f32) V41_PIPE_F8_BM(1, 1); else V41_PIPE_F8_BM(1, 0); }
         else if (wfmt == 2) { if (out_f32) V41_PIPE_F8_BM(2, 1); else V41_PIPE_F8_BM(2, 0); }
@@ -2065,6 +2215,22 @@ extern "C" int memra_v41_gemm_ffma(const void* a, long lda, const void* b, long 
                                    int k, void* stream) {
     if (k % 32 || m < 0 || n <= 0) return 41023;
     if (m == 0) return 0;
+    if (m > V41_SM_MAX && m <= 32 && m <= v41_wide[2] && n <= 4096 && lda % 8 == 0 && ldb % 8 == 0) {
+        // a narrow output (the router's gate, the compressor) at 9 to 32 rows: the narrow kernel's block is
+        // already 4 columns x 32 chains, so the whole call is one launch with K in as many parts as let
+        // the block hold the rows (a chain is still its K fmas in K order); else the groups below
+        for (int parts = 2; parts <= 8; parts *= 2) {
+            int kp = k / parts;
+            int smem = (V41_SMF_NC + m) * (kp + 8) * 2;
+            if (k % parts == 0 && kp % 8 == 0 && smem <= 99 * 1024) {
+                cudaStream_t st = (cudaStream_t)stream;
+                if (smem > 48 * 1024) V41_SMEM_LIMIT(v41_gemv_ffma_narrow_parts_kernel, 99 * 1024);
+                v41_gemv_ffma_narrow_parts_kernel<<<(n + V41_SMF_NC - 1) / V41_SMF_NC, 128, smem, st>>>(
+                    (const v41_bf*)a, lda, (const v41_bf*)b, ldb, c, ldc, m, n, k, kp);
+                V41_ERR();
+            }
+        }
+    }
     if (m > V41_SM_MAX && m <= v41_wide[2] && lda % 8 == 0 && ldb % 8 == 0) {
         // the small-row body, a launch a group of rows
         for (int m0 = 0; m0 < m; m0 += V41_SM_MAX) {
