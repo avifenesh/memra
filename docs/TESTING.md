@@ -1847,7 +1847,11 @@ must be in the answer) and one less (it must not). It fails as untested
 when, per sampler, no stop string began in an earlier commit slice than it completed in
 (`spans_slices=1`), no request held two stop strings in one burst, or no rejected-draft row was
 confirmed (the last two on MTP boots). The second turn after a stop-ended first turn must
-restore a prefix on MTP boots (the DSpark recipe runs with the prefix cache off). A GPU lease is
+restore a prefix on MTP boots. A DSpark boot with the prefix cache on also runs a cold
+conversation whose first turn ends on a stop string: that session must park rewound to its own
+prime boundary and the second turn resume it from the pool (before the fix's review it was
+refused at park). DSpark admits cold sessions only, so a DSpark request that restored a prefix
+runs on plain decode and is judged as plain decode. A GPU lease is
 the caller's business, one per boot. Receipts: `research/spec-stop-string-20261110/`.
 
 ## Generic spill / tiered KV (memra-tier)
