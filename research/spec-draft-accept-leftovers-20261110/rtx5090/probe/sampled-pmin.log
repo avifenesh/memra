@@ -1,0 +1,26 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[fa-pool] grow #0 dev=0 o_len 0 -> 55296 ml_len 0 -> 216 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 55296 -> 110592 ml_len 216 -> 432 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): prob_of_token_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): prob_of_token_final_f32
+[spec] draft-session state high-water: 36MB (max of parked delta 36MB and capture-time pool peak 5MB; charged per spec admission and gating future captures)
+session 0: depth 512 k=4 sampled cold burst 16 tokens
+[fa-pool] grow #2 dev=0 o_len 110592 -> 221184 ml_len 432 -> 864 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 221184 -> 442368 ml_len 864 -> 1728 (retired kept, zero=false)
+session 1: depth 549 k=4 sampled cold burst 19 tokens
+session 2: depth 586 k=3 sampled cold burst 17 tokens
+session 3: depth 623 k=2 sampled cold burst 16 tokens
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphSampled, GraphSampled, GraphSampled, GraphSampled])
+ROWS-STEP b=4: logits rows, carriers and KV rows vs per-session eager steps: BITWISE EQUAL
+  member 0: arm=GraphSampled k_this=4 head steps=2 drafted=1 sctr 17->19: BITWISE EQUAL
+  member 1: arm=GraphSampled k_this=4 head steps=2 drafted=1 sctr 20->22: BITWISE EQUAL
+  member 2: arm=GraphSampled k_this=3 head steps=2 drafted=1 sctr 18->20: BITWISE EQUAL
+  member 3: arm=GraphSampled k_this=2 head steps=2 drafted=2 sctr 17->19: BITWISE EQUAL
+ROUND-DRAFT n=4 ks=[4, 4, 3, 2]: tokens, ids, counters, draft-KV, follow-up: BITWISE EQUAL
+DRAFT-TIME n=4 ks=[4, 4, 3, 2]: serial 11.988 ms, pooled 4.032 ms, 2.97x (median of 5)
