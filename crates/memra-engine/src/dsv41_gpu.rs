@@ -3576,13 +3576,6 @@ impl Ctx {
     ) -> Result<AttnKeys, String> {
         let g = self.g.clone();
         let st = self.ops.st.clone();
-        let hd = g.head_dim;
-        let ratio = lw.ratio;
-        let win = g.window;
-        let comp = ratio > 0;
-        // several decode tokens in one forward (a drafted block's verification): each row runs
-        // the one-token program against the ring as it stood plus the rows before it
-        let dec_rows = sp > 0 && s > 1;
         self.nv(c"qr");
         let qr = self.ops.tmp(s * g.q_lora * 2)?;
         self.ops.linear_q(
@@ -3606,6 +3599,44 @@ impl Ctx {
             g.norm_eps,
         )?;
         self.nv_end();
+        // Everything else of the keys side reads `x` and `qr` and nothing the heads' query
+        // projection writes. On a few rows it runs on the second stream, under wq_b and its
+        // RoPE (the layer's longest dense launch), and the heads join it before their first
+        // read of the keys ([`Self::attn_heads`]). Not when the ranks split the indexer's rows
+        // (their selections are gathered on the main stream right after) or under a trace.
+        let fork = s <= SIDE_ROWS && !self.trace && self.index_rows.is_none();
+        if fork {
+            self.side_begin()?;
+        }
+        let k = self.attn_keys_rest(lw, x, qr, sp, s, sh, ls, tr);
+        if fork {
+            self.side_end();
+        }
+        k
+    }
+
+    /// [`Self::attn_keys`] after `qr`: on the stream the rank issues on.
+    #[allow(clippy::too_many_arguments)]
+    fn attn_keys_rest(
+        &mut self,
+        lw: &LayerW,
+        x: &Buf,
+        qr: Buf,
+        sp: usize,
+        s: usize,
+        sh: &mut Shared,
+        ls: &mut LayerState,
+        tr: &mut Trace,
+    ) -> Result<AttnKeys, String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let hd = g.head_dim;
+        let ratio = lw.ratio;
+        let win = g.window;
+        let comp = ratio > 0;
+        // several decode tokens in one forward (a drafted block's verification): each row runs
+        // the one-token program against the ring as it stood plus the rows before it
+        let dec_rows = sp > 0 && s > 1;
         // this call's window KV: kv_norm(wkv(x)), RoPE, fp8 per-32 quant-dequant
         self.nv(c"kv_window");
         let kvw = self.ops.tmp(s * hd * 2)?;
@@ -4511,13 +4542,7 @@ impl Ctx {
     ) -> Result<AttnKeys, String> {
         let g = self.g.clone();
         let st = self.ops.st.clone();
-        let (hd, win, ratio) = (g.head_dim, g.window, lw.ratio);
-        let comp = ratio > 0;
         let n = rows.len();
-        let tab = |section: usize| Dp(step.blk.addr() + (step.sl.off + section * n) as u64);
-        // the layer's tables: byte offsets a row (see `step_layer_bytes`)
-        let (t_ring, t_ckv, t_csc, t_pkv, t_psc, t_ik, t_ca, t_epos, t_base, t_nsel) =
-            (24, 32, 40, 48, 56, 64, 72, 80, 84, 88);
         let qr = self.ops.tmp(n * g.q_lora * 2)?;
         self.ops.linear_q(
             x.p(&st),
@@ -4539,6 +4564,40 @@ impl Ctx {
             g.q_lora,
             g.norm_eps,
         )?;
+        // the rest of the keys side on the second stream, under the heads' wq_b
+        // (see [`Self::attn_keys`])
+        let fork = n <= SIDE_ROWS;
+        if fork {
+            self.side_begin()?;
+        }
+        let k = self.attn_keys_step_rest(lw, x, qr, pos, step, rows, sel);
+        if fork {
+            self.side_end();
+        }
+        k
+    }
+
+    /// [`Self::attn_keys_step`] after `qr`: on the stream the rank issues on.
+    #[allow(clippy::too_many_arguments)]
+    fn attn_keys_step_rest(
+        &mut self,
+        lw: &LayerW,
+        x: &Buf,
+        qr: Buf,
+        pos: Dp,
+        step: StepRef<'_>,
+        rows: &mut [BatchRow<'_>],
+        sel: &mut BatchSel,
+    ) -> Result<AttnKeys, String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let (hd, win, ratio) = (g.head_dim, g.window, lw.ratio);
+        let comp = ratio > 0;
+        let n = rows.len();
+        let tab = |section: usize| Dp(step.blk.addr() + (step.sl.off + section * n) as u64);
+        // the layer's tables: byte offsets a row (see `step_layer_bytes`)
+        let (t_ring, t_ckv, t_csc, t_pkv, t_psc, t_ik, t_ca, t_epos, t_base, t_nsel) =
+            (24, 32, 40, 48, 56, 64, 72, 80, 84, 88);
         // every row's window KV into its ring slot
         let kvw = self.ops.tmp(n * hd * 2)?;
         self.ops.linear_q(
@@ -4969,6 +5028,9 @@ impl Ctx {
         self.nv_end();
         // index rows on the device: the window part (`window_row`, or the decode ring oldest slot
         // first), then the selection rows
+        // the keys side ran on the second stream under the projection above (a few rows): what
+        // follows reads the ring, the compressed rows and the selection it wrote
+        self.side_join()?;
         self.nv(c"attn_idx_rows");
         let mut built: Option<Buf> = None;
         let idx = if let Some(given) = k.idx.as_ref() {
@@ -5555,6 +5617,32 @@ impl Ctx {
         let side = self.side.as_ref().unwrap();
         side.fork(&st)?;
         hc_mix_on(&side.ops, &self.g, fn_, sc, base, x, s)
+    }
+
+    /// From here to [`Self::side_end`] this rank issues on its second stream: the branch starts
+    /// after everything issued on the main stream so far, and the rank's kernels and scratch are
+    /// exchanged with the branch's, so every launch and temporary in between is the branch's.
+    /// What the branch writes is read after [`Self::side_join`].
+    pub fn side_begin(&mut self) -> Result<(), String> {
+        let st = self.ops.st.clone();
+        if self.side.is_none() {
+            self.side = Some(Side::new(&st)?);
+        }
+        let side = self.side.as_mut().unwrap();
+        side.fork(&st)?;
+        std::mem::swap(&mut self.ops, &mut side.ops);
+        std::mem::swap(&mut self.scr, &mut side.scr);
+        Ok(())
+    }
+
+    /// Back on the main stream after [`Self::side_begin`] (the branch is not joined here).
+    pub fn side_end(&mut self) {
+        let side = self
+            .side
+            .as_mut()
+            .expect("side_begin made the second stream");
+        std::mem::swap(&mut self.ops, &mut side.ops);
+        std::mem::swap(&mut self.scr, &mut side.scr);
     }
 
     /// The main stream waits for everything issued on the second stream (a no-op without one).
