@@ -1,0 +1,9 @@
+MEMRA_SPEC_SETUP_TRACE=1: each burst on the engine's clock; ms per burst (mean), then ms per round of the request
+class     bursts rounds  init feed  capture   fill  round loop    tail   per round:   init  capture   fill     loop   tail      sum  client decode
+warm           2     20       0.01     0.01   0.00      1037.9    0.20                0.00     0.00   0.00   103.79   0.02   103.81         103.82
+greedy        12    170       0.00     0.03   0.00      1407.3    0.18                0.00     0.00   0.00    99.34   0.01    99.35          99.36
+t1            13    163      75.77     0.03   0.00      1248.5   69.70                5.58     0.00   0.00    99.57   5.56   110.71         110.73
+chat          13    160      75.73     0.03   0.00      1240.0   75.96                5.68     0.00   0.00   100.75   6.17   112.61         112.62
+pen           12    171      75.57     0.03   0.00      1449.5   75.99                4.86     0.00   0.00   101.72   5.33   111.92         111.93
+greedy-b      12    170       0.00     0.03   0.00      1413.1    0.18                0.00     0.00   0.00    99.75   0.01    99.76          99.78
+init feed: continuation bursts only (the cold burst's init holds the prime). The door adds one stream synchronize per burst, at its tail.

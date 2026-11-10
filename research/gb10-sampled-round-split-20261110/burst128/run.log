@@ -1,0 +1,14 @@
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:18196/v1/models && exit 0 || exit 1 (deadline 12m00s, every 3s)
+waitfor: not yet
+waitfor: MET after 1m00s
+2026-11-10T13:27:38+02:00 ready
+warm meadow-short 36 48 20 60 27 0.2355 23.34 102.84 84083f0a1ba09bc5 None
+greedy islands-1k 1239 400 170 510 230 1.2322 23.73 99.15 7c78c239723e82b9 None
+t1 rivers-1k 1239 400 163 489 234 1.2338 23.9 102.7 e12ce14478d9edba None
+chat glaciers-1k 1240 400 164 492 234 1.2374 23.51 103.74 101d6a1450a2d9c4 None
+pen lakes-1k 1239 400 175 525 222 1.2228 21.88 104.48 034295cf6b7f9737 None
+greedy-b deserts-1k 1285 400 170 510 229 1.3248 23.74 99.13 158e3abf8067cecf None
+2026-11-10T13:29:33+02:00 driver rc=0
+waitfor: gone 467509 (deadline 3m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

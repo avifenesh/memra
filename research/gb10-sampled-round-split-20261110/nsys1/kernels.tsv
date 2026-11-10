@@ -1,0 +1,335 @@
+class	phase	op	count	count_per_round	us_each	ms_per_round
+greedy	solo-init	matvec NVFP4	496	2.918	135.31	0.39479
+greedy	solo-init	output head Q5_K	1	0.006	5106.85	0.03004
+greedy	solo-init	norms, quantize, glue	642	3.776	2.86	0.01081
+greedy	solo-init	GDN scan and conv	144	0.847	7.72	0.00654
+greedy	solo-init	attention	32	0.188	15.11	0.00284
+greedy	solo-init	DtoD	64	0.376	1.56	0.00059
+greedy	solo-init	HtoD	67	0.394	0.48	0.00019
+greedy	solo-init	idle (host)				0.00812
+greedy	after-init	DtoH	1	0.006	24.13	0.00014
+greedy	after-init	memset	12	0.071	1.81	0.00013
+greedy	after-init	DtoD	3	0.018	5.39	0.00010
+greedy	after-init	HtoD	2	0.012	0.45	0.00001
+greedy	after-init	idle (host)				0.00061
+greedy	draft-fwd	output head Q5_K	512	3.012	5208.83	15.68777
+greedy	draft-fwd	matvec NVFP4	4096	24.094	136.69	3.29336
+greedy	draft-fwd	norms, quantize, glue	12288	72.282	2.14	0.15469
+greedy	draft-fwd	attention	1024	6.024	14.98	0.09024
+greedy	draft-fwd	memset	9728	57.224	0.98	0.05603
+greedy	draft-fwd	DtoD	1098	6.459	0.94	0.00607
+greedy	draft-fwd	idle (host)				0.06062
+greedy	draft-draw	DtoH	510	3.000	9.55	0.02865
+greedy	draft-draw	norms, quantize, glue	525	3.088	8.73	0.02697
+greedy	draft-draw	DtoD	710	4.176	6.22	0.02598
+greedy	draft-draw	argmax_partial_f32	512	3.012	6.37	0.01918
+greedy	draft-draw	memset	102	0.600	11.89	0.00714
+greedy	draft-draw	argmax_final_f32	512	3.012	1.26	0.00380
+greedy	draft-draw	HtoD	348	2.047	0.33	0.00067
+greedy	draft-draw	idle (host)				0.09515
+greedy	verify	matvec NVFP4	43520	256.000	255.23	65.33810
+greedy	verify	output head Q5_K	170	1.000	5057.61	5.05761
+greedy	verify	GDN scan and conv	24480	144.000	16.38	2.35928
+greedy	verify	norms, quantize, glue	98430	579.000	2.85	1.64885
+greedy	verify	attention	5440	32.000	32.84	1.05075
+greedy	verify	HtoD	11050	65.000	0.42	0.02747
+greedy	verify	idle (host)				1.69907
+greedy	verify-draw	argmax_partial_f32	679	3.994	6.22	0.02486
+greedy	verify-draw	argmax_final_f32	679	3.994	1.78	0.00711
+greedy	verify-draw	DtoH	170	1.000	2.98	0.00298
+greedy	verify-draw	idle (host)				0.02377
+greedy	commit	DtoD	18678	109.871	14.43	1.58514
+greedy	commit	copy_batch_uniform_f32	258	1.518	693.56	1.05258
+greedy	commit	matvec NVFP4	510	3.000	69.70	0.20911
+greedy	commit	memset	2336	13.741	3.57	0.04910
+greedy	commit	norms, quantize, glue	1700	10.000	3.04	0.03036
+greedy	commit	HtoD	3522	20.718	0.35	0.00720
+greedy	commit	idle (host)				0.42449
+greedy	solo-tail	matvec NVFP4	496	2.918	131.62	0.38403
+greedy	solo-tail	output head Q5_K	1	0.006	5130.72	0.03018
+greedy	solo-tail	norms, quantize, glue	642	3.776	2.46	0.00929
+greedy	solo-tail	GDN scan and conv	144	0.847	7.22	0.00612
+greedy	solo-tail	attention	32	0.188	19.15	0.00361
+greedy	solo-tail	DtoD	64	0.376	0.98	0.00037
+greedy	solo-tail	HtoD	67	0.394	0.31	0.00012
+greedy	solo-tail	idle (host)				0.00770
+greedy	after-tail	DtoH	1	0.006	10153.31	0.05973
+greedy	after-tail	matvec NVFP4	3	0.018	59.46	0.00105
+greedy	after-tail	norms, quantize, glue	10	0.059	3.52	0.00021
+greedy	after-tail	memset	5	0.029	1.23	0.00004
+greedy	after-tail	DtoD	2	0.012	0.98	0.00001
+greedy	after-tail	HtoD	2	0.012	0.59	0.00001
+greedy	after-tail	idle (host)				0.00214
+t1	solo-init	matvec NVFP4	6448	39.558	133.12	5.26602
+t1	solo-init	output head Q5_K	13	0.080	5169.50	0.41229
+t1	solo-init	norms, quantize, glue	8346	51.202	2.64	0.13495
+t1	solo-init	GDN scan and conv	1872	11.485	7.55	0.08667
+t1	solo-init	attention	416	2.552	16.99	0.04337
+t1	solo-init	DtoD	832	5.104	1.12	0.00573
+t1	solo-init	HtoD	871	5.344	0.37	0.00197
+t1	solo-init	idle (host)				0.10750
+t1	after-init	DtoD	2260	13.865	13.34	0.18496
+t1	after-init	DtoH	15	0.092	624.12	0.05743
+t1	after-init	memset	1206	7.399	5.63	0.04168
+t1	after-init	HtoD	59	0.362	4.66	0.00169
+t1	after-init	filter_stats_coop_f32	1	0.006	21.22	0.00013
+t1	after-init	gumbel_perturb_filtered_f32	1	0.006	5.54	0.00003
+t1	after-init	argmax_partial_f32	1	0.006	4.35	0.00003
+t1	after-init	argmax_final_f32	1	0.006	1.41	0.00001
+t1	after-init	idle (host)				0.07435
+t1	draft-fwd	output head Q5_K	491	3.012	5211.91	15.69968
+t1	draft-fwd	matvec NVFP4	3928	24.098	137.00	3.30154
+t1	draft-fwd	norms, quantize, glue	11784	72.294	2.13	0.15385
+t1	draft-fwd	attention	982	6.025	15.21	0.09166
+t1	draft-fwd	memset	9329	57.233	0.98	0.05620
+t1	draft-fwd	DtoD	1056	6.479	0.87	0.00564
+t1	draft-fwd	idle (host)				0.07601
+t1	draft-draw	norms, quantize, glue	504	3.092	9.13	0.02824
+t1	draft-draw	DtoD	689	4.227	5.80	0.02452
+t1	draft-draw	gumbel_perturb_ctr_f32	491	3.012	6.13	0.01845
+t1	draft-draw	argmax_partial_f32	491	3.012	2.42	0.00728
+t1	draft-draw	memset	102	0.626	11.59	0.00725
+t1	draft-draw	DtoH	489	3.000	2.15	0.00644
+t1	draft-draw	memra_sctr_inc	491	3.012	1.44	0.00433
+t1	draft-draw	argmax_final_f32	491	3.012	1.31	0.00394
+t1	draft-draw	HtoD	336	2.061	0.50	0.00103
+t1	draft-draw	idle (host)				0.10918
+t1	verify	matvec NVFP4	41728	256.000	256.05	65.54983
+t1	verify	output head Q5_K	163	1.000	5092.64	5.09264
+t1	verify	GDN scan and conv	23472	144.000	16.36	2.35610
+t1	verify	norms, quantize, glue	94377	579.000	2.91	1.68640
+t1	verify	attention	5216	32.000	32.44	1.03815
+t1	verify	HtoD	10595	65.000	0.47	0.03034
+t1	verify	idle (host)				1.70977
+t1	verify-draw	filter_stats_coop_f32	326	2.000	23.43	0.04686
+t1	verify-draw	DtoD	652	4.000	5.91	0.02362
+t1	verify-draw	gumbel_perturb_filtered_col_f32	652	4.000	5.87	0.02348
+t1	verify-draw	argmax_partial_f32	652	4.000	2.99	0.01195
+t1	verify-draw	argmax_final_f32	652	4.000	1.39	0.00556
+t1	verify-draw	DtoH	163	1.000	3.34	0.00334
+t1	verify-draw	memset	676	4.147	0.61	0.00251
+t1	verify-draw	HtoD	163	1.000	0.42	0.00042
+t1	verify-draw	idle (host)				0.05065
+t1	commit	DtoD	16003	98.178	14.68	1.44091
+t1	commit	copy_batch_uniform_f32	232	1.423	705.40	1.00400
+t1	commit	matvec NVFP4	480	2.945	72.47	0.21341
+t1	commit	norms, quantize, glue	1600	9.816	3.31	0.03248
+t1	commit	memset	1120	6.871	1.87	0.01282
+t1	commit	HtoD	3410	20.920	0.40	0.00839
+t1	commit	idle (host)				0.34390
+t1	solo-tail	matvec NVFP4	5952	36.515	131.99	4.81949
+t1	solo-tail	output head Q5_K	12	0.074	5131.37	0.37777
+t1	solo-tail	norms, quantize, glue	7704	47.264	2.51	0.11856
+t1	solo-tail	GDN scan and conv	1728	10.601	7.28	0.07720
+t1	solo-tail	attention	384	2.356	16.59	0.03908
+t1	solo-tail	DtoD	768	4.712	1.00	0.00470
+t1	solo-tail	HtoD	804	4.933	0.35	0.00173
+t1	solo-tail	idle (host)				0.09745
+t1	after-tail	DtoH	48	0.294	1025.97	0.30212
+t1	after-tail	matvec NVFP4	36	0.221	64.11	0.01416
+t1	after-tail	DtoD	70	0.429	5.52	0.00237
+t1	after-tail	norms, quantize, glue	120	0.736	2.99	0.00220
+t1	after-tail	memset	154	0.945	2.09	0.00197
+t1	after-tail	HtoD	84	0.515	3.47	0.00179
+t1	after-tail	filter_stats_coop_f32	12	0.074	23.86	0.00176
+t1	after-tail	gumbel_perturb_filtered_f32	12	0.074	5.51	0.00041
+t1	after-tail	argmax_partial_f32	12	0.074	4.35	0.00032
+t1	after-tail	argmax_final_f32	12	0.074	1.78	0.00013
+t1	after-tail	idle (host)				0.01527
+chat	solo-init	matvec NVFP4	6448	40.300	132.87	5.35447
+chat	solo-init	output head Q5_K	13	0.081	5131.95	0.41697
+chat	solo-init	norms, quantize, glue	8346	52.163	2.61	0.13595
+chat	solo-init	GDN scan and conv	1872	11.700	7.45	0.08715
+chat	solo-init	attention	416	2.600	16.30	0.04238
+chat	solo-init	DtoD	832	5.200	1.02	0.00531
+chat	solo-init	HtoD	871	5.444	0.38	0.00204
+chat	solo-init	idle (host)				0.10796
+chat	after-init	DtoD	2355	14.719	13.42	0.19746
+chat	after-init	memset	1200	7.500	5.75	0.04315
+chat	after-init	DtoH	13	0.081	426.02	0.03461
+chat	after-init	HtoD	62	0.388	4.40	0.00171
+chat	after-init	idle (host)				0.07561
+chat	draft-fwd	output head Q5_K	482	3.013	5213.67	15.70617
+chat	draft-fwd	matvec NVFP4	3856	24.100	137.19	3.30631
+chat	draft-fwd	norms, quantize, glue	11568	72.300	2.16	0.15646
+chat	draft-fwd	attention	964	6.025	15.02	0.09049
+chat	draft-fwd	memset	9158	57.237	0.98	0.05626
+chat	draft-fwd	DtoD	1038	6.487	0.88	0.00572
+chat	draft-fwd	idle (host)				0.05428
+chat	draft-draw	filter_stats_coop_f32	482	3.013	219.27	0.66055
+chat	draft-draw	norms, quantize, glue	495	3.094	9.07	0.02805
+chat	draft-draw	DtoD	682	4.263	6.33	0.02696
+chat	draft-draw	gumbel_perturb_filtered_ctr_f32	482	3.013	4.22	0.01272
+chat	draft-draw	memset	102	0.637	12.47	0.00795
+chat	draft-draw	argmax_partial_f32	482	3.013	2.45	0.00737
+chat	draft-draw	DtoH	480	3.000	2.14	0.00643
+chat	draft-draw	memra_sctr_inc	482	3.013	1.43	0.00431
+chat	draft-draw	argmax_final_f32	482	3.013	1.31	0.00394
+chat	draft-draw	HtoD	330	2.062	0.40	0.00083
+chat	draft-draw	idle (host)				0.09814
+chat	verify	matvec NVFP4	40960	256.000	255.51	65.41057
+chat	verify	output head Q5_K	160	1.000	5078.72	5.07872
+chat	verify	GDN scan and conv	23040	144.000	16.34	2.35359
+chat	verify	norms, quantize, glue	92640	579.000	2.89	1.67058
+chat	verify	attention	5120	32.000	32.31	1.03387
+chat	verify	HtoD	10400	65.000	0.42	0.02744
+chat	verify	idle (host)				1.69559
+chat	verify-draw	filter_stats_coop_f32	320	2.000	224.86	0.44973
+chat	verify-draw	DtoD	640	4.000	5.80	0.02319
+chat	verify-draw	gumbel_perturb_filtered_col_f32	640	4.000	3.36	0.01343
+chat	verify-draw	argmax_partial_f32	640	4.000	2.98	0.01191
+chat	verify-draw	argmax_final_f32	640	4.000	1.39	0.00557
+chat	verify-draw	DtoH	160	1.000	3.98	0.00398
+chat	verify-draw	memset	666	4.162	0.55	0.00230
+chat	verify-draw	HtoD	160	1.000	0.39	0.00039
+chat	verify-draw	idle (host)				0.04762
+chat	commit	DtoD	15603	97.519	14.65	1.42851
+chat	commit	copy_batch_uniform_f32	240	1.500	704.59	1.05689
+chat	commit	matvec NVFP4	471	2.944	71.23	0.20967
+chat	commit	norms, quantize, glue	1570	9.812	3.36	0.03292
+chat	commit	memset	1099	6.869	1.88	0.01289
+chat	commit	HtoD	3456	21.600	0.37	0.00801
+chat	commit	idle (host)				0.37953
+chat	solo-tail	matvec NVFP4	6448	40.300	132.15	5.32564
+chat	solo-tail	output head Q5_K	13	0.081	5156.42	0.41896
+chat	solo-tail	norms, quantize, glue	8346	52.163	2.52	0.13143
+chat	solo-tail	GDN scan and conv	1872	11.700	7.27	0.08510
+chat	solo-tail	attention	416	2.600	16.68	0.04338
+chat	solo-tail	DtoD	832	5.200	1.02	0.00532
+chat	solo-tail	HtoD	871	5.444	0.36	0.00198
+chat	solo-tail	idle (host)				0.10676
+chat	after-tail	DtoH	52	0.325	611.83	0.19885
+chat	after-tail	filter_stats_coop_f32	13	0.081	219.27	0.01782
+chat	after-tail	matvec NVFP4	39	0.244	64.12	0.01563
+chat	after-tail	norms, quantize, glue	130	0.812	3.13	0.00254
+chat	after-tail	DtoD	73	0.456	5.52	0.00252
+chat	after-tail	memset	164	1.025	2.12	0.00217
+chat	after-tail	HtoD	88	0.550	3.46	0.00191
+chat	after-tail	argmax_partial_f32	13	0.081	6.35	0.00052
+chat	after-tail	gumbel_perturb_filtered_f32	13	0.081	3.05	0.00025
+chat	after-tail	argmax_final_f32	13	0.081	1.57	0.00013
+chat	after-tail	idle (host)				0.01886
+pen	solo-init	matvec NVFP4	5952	34.807	132.60	4.61539
+pen	solo-init	output head Q5_K	12	0.070	5212.22	0.36577
+pen	solo-init	norms, quantize, glue	7704	45.053	2.61	0.11773
+pen	solo-init	GDN scan and conv	1728	10.105	7.69	0.07770
+pen	solo-init	attention	384	2.246	16.74	0.03758
+pen	solo-init	DtoD	768	4.491	1.06	0.00477
+pen	solo-init	HtoD	804	4.702	0.40	0.00186
+pen	solo-init	idle (host)				0.09373
+pen	after-init	DtoD	2355	13.772	14.03	0.19317
+pen	after-init	DtoH	12	0.070	2163.99	0.15186
+pen	after-init	memset	1215	7.105	6.16	0.04375
+pen	after-init	norms, quantize, glue	13	0.076	286.51	0.02178
+pen	after-init	HtoD	66	0.386	4.52	0.00175
+pen	after-init	idle (host)				0.07386
+pen	draft-fwd	output head Q5_K	513	3.000	5214.83	15.64450
+pen	draft-fwd	matvec NVFP4	4104	24.000	137.44	3.29855
+pen	draft-fwd	norms, quantize, glue	12312	72.000	2.22	0.15951
+pen	draft-fwd	attention	1026	6.000	15.41	0.09248
+pen	draft-fwd	memset	9747	57.000	1.14	0.06505
+pen	draft-fwd	DtoD	1026	6.000	1.13	0.00677
+pen	draft-fwd	idle (host)				0.24336
+pen	draft-draw	filter_stats_coop_f32	513	3.000	212.46	0.63739
+pen	draft-draw	penalize_logits_f32	513	3.000	84.60	0.25379
+pen	draft-draw	DtoH	1539	9.000	2.35	0.02115
+pen	draft-draw	DtoD	513	3.000	4.93	0.01480
+pen	draft-draw	memset	2064	12.070	0.95	0.01148
+pen	draft-draw	gumbel_perturb_filtered_f32	513	3.000	3.27	0.00981
+pen	draft-draw	argmax_partial_f32	513	3.000	2.50	0.00749
+pen	draft-draw	argmax_final_f32	513	3.000	1.54	0.00461
+pen	draft-draw	HtoD	1539	9.000	0.33	0.00298
+pen	draft-draw	idle (host)				0.18281
+pen	verify	matvec NVFP4	43776	256.000	256.09	65.55997
+pen	verify	output head Q5_K	171	1.000	5090.95	5.09095
+pen	verify	GDN scan and conv	24624	144.000	16.40	2.36119
+pen	verify	norms, quantize, glue	99009	579.000	2.91	1.68390
+pen	verify	attention	5472	32.000	32.64	1.04452
+pen	verify	HtoD	11115	65.000	0.47	0.03047
+pen	verify	idle (host)				1.70244
+pen	verify-draw	filter_stats_coop_f32	342	2.000	223.13	0.44626
+pen	verify-draw	penalize_logits_rows_inc_f32	171	1.000	82.85	0.08285
+pen	verify-draw	DtoD	684	4.000	6.11	0.02443
+pen	verify-draw	gumbel_perturb_filtered_col_f32	684	4.000	4.18	0.01670
+pen	verify-draw	argmax_partial_f32	684	4.000	2.92	0.01166
+pen	verify-draw	argmax_final_f32	684	4.000	1.39	0.00558
+pen	verify-draw	DtoH	171	1.000	4.35	0.00435
+pen	verify-draw	memset	696	4.070	0.49	0.00200
+pen	verify-draw	HtoD	342	2.000	0.51	0.00101
+pen	verify-draw	idle (host)				0.05284
+pen	commit	DtoD	16740	97.895	14.62	1.43143
+pen	commit	copy_batch_uniform_f32	266	1.556	710.52	1.10525
+pen	commit	matvec NVFP4	507	2.965	70.98	0.21044
+pen	commit	norms, quantize, glue	1690	9.883	3.32	0.03278
+pen	commit	memset	1342	7.848	2.10	0.01648
+pen	commit	HtoD	3766	22.023	0.40	0.00870
+pen	commit	idle (host)				0.35645
+pen	solo-tail	matvec NVFP4	5952	34.807	132.68	4.61836
+pen	solo-tail	output head Q5_K	12	0.070	5139.87	0.36069
+pen	solo-tail	norms, quantize, glue	7704	45.053	2.58	0.11611
+pen	solo-tail	GDN scan and conv	1728	10.105	7.55	0.07624
+pen	solo-tail	attention	384	2.246	17.04	0.03827
+pen	solo-tail	DtoD	768	4.491	1.04	0.00465
+pen	solo-tail	HtoD	804	4.702	0.34	0.00162
+pen	solo-tail	idle (host)				0.09231
+pen	after-tail	DtoH	48	0.281	468.46	0.13150
+pen	after-tail	filter_stats_coop_f32	12	0.070	212.42	0.01491
+pen	after-tail	matvec NVFP4	36	0.211	64.09	0.01349
+pen	after-tail	penalize_logits_f32	12	0.070	87.16	0.00612
+pen	after-tail	DtoD	70	0.409	5.46	0.00224
+pen	after-tail	norms, quantize, glue	120	0.702	3.05	0.00214
+pen	after-tail	memset	154	0.901	2.10	0.00189
+pen	after-tail	HtoD	93	0.544	3.22	0.00175
+pen	after-tail	argmax_partial_f32	12	0.070	3.61	0.00025
+pen	after-tail	gumbel_perturb_filtered_f32	12	0.070	2.99	0.00021
+pen	after-tail	argmax_final_f32	12	0.070	2.58	0.00018
+pen	after-tail	idle (host)				0.02009
+greedy-b	solo-init	matvec NVFP4	496	2.988	135.10	0.40368
+greedy-b	solo-init	output head Q5_K	1	0.006	5118.14	0.03083
+greedy-b	solo-init	norms, quantize, glue	642	3.867	2.85	0.01100
+greedy-b	solo-init	GDN scan and conv	144	0.867	8.52	0.00739
+greedy-b	solo-init	attention	32	0.193	15.37	0.00296
+greedy-b	solo-init	DtoD	64	0.386	1.06	0.00041
+greedy-b	solo-init	HtoD	67	0.404	0.40	0.00016
+greedy-b	solo-init	idle (host)				0.00839
+greedy-b	after-init	DtoH	1	0.006	19759.62	0.11903
+greedy-b	after-init	memset	12	0.072	0.75	0.00005
+greedy-b	after-init	DtoD	3	0.018	1.35	0.00002
+greedy-b	after-init	HtoD	2	0.012	0.27	0.00000
+greedy-b	after-init	idle (host)				0.00064
+greedy-b	draft-fwd	output head Q5_K	503	3.030	5197.81	15.74999
+greedy-b	draft-fwd	matvec NVFP4	4024	24.241	136.38	3.30608
+greedy-b	draft-fwd	norms, quantize, glue	12072	72.723	2.11	0.15336
+greedy-b	draft-fwd	attention	1006	6.060	15.70	0.09517
+greedy-b	draft-fwd	memset	9557	57.572	0.97	0.05578
+greedy-b	draft-fwd	DtoD	1080	6.506	0.86	0.00558
+greedy-b	draft-fwd	idle (host)				0.06263
+greedy-b	draft-draw	matvec NVFP4	154	0.928	253.82	0.23547
+greedy-b	draft-draw	DtoH	501	3.018	16.46	0.04967
+greedy-b	draft-draw	norms, quantize, glue	860	5.181	6.62	0.03428
+greedy-b	draft-draw	DtoD	701	4.223	5.78	0.02440
+greedy-b	draft-draw	argmax_partial_f32	503	3.030	6.31	0.01913
+greedy-b	draft-draw	GDN scan and conv	90	0.542	15.97	0.00866
+greedy-b	draft-draw	memset	102	0.614	11.57	0.00711
+greedy-b	draft-draw	attention	18	0.108	37.08	0.00402
+greedy-b	draft-draw	argmax_final_f32	503	3.030	1.24	0.00376
+greedy-b	draft-draw	HtoD	382	2.301	0.26	0.00060
+greedy-b	draft-draw	idle (host)				0.10789
+greedy-b	verify	matvec NVFP4	42496	256.000	255.65	65.44686
+greedy-b	verify	output head Q5_K	166	1.000	5074.66	5.07466
+greedy-b	verify	GDN scan and conv	23904	144.000	16.64	2.39565
+greedy-b	verify	norms, quantize, glue	96114	579.000	2.88	1.67000
+greedy-b	verify	attention	5312	32.000	33.83	1.08256
+greedy-b	verify	HtoD	10790	65.000	0.42	0.02715
+greedy-b	verify	idle (host)				1.69464
+greedy-b	verify-draw	argmax_partial_f32	663	3.994	6.42	0.02564
+greedy-b	verify-draw	argmax_final_f32	663	3.994	1.46	0.00583
+greedy-b	verify-draw	DtoH	166	1.000	3.44	0.00344
+greedy-b	verify-draw	idle (host)				0.02403
+greedy-b	commit	DtoD	18360	110.602	14.60	1.61463
+greedy-b	commit	copy_batch_uniform_f32	254	1.530	696.87	1.06629
+greedy-b	commit	matvec NVFP4	498	3.000	69.85	0.20954
+greedy-b	commit	memset	2307	13.898	3.81	0.05296
+greedy-b	commit	norms, quantize, glue	1660	10.000	3.12	0.03124
+greedy-b	commit	HtoD	3459	20.837	0.37	0.00767
+greedy-b	commit	idle (host)				0.40898

@@ -1,0 +1,1264 @@
+request -4, +2888.4 ms to +2988.6 ms from its first kernel: 1447 intervals
++  2888.491 ms     1 x K add_f32                                          2.1 us
++  2888.493 ms     1 x K rms_norm_f32_v2                                  6.3 us
++  2888.499 ms     1 x K quantize_q8_1                                    1.5 us
++  2888.503 ms     1 x K qmatvec_q5_K_mmvq_b4_r2                       5381.5 us
++  2893.887 ms     4 x C DtoD                                            22.8 us    3.973 MB
++  2893.919 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2893.920 ms     3 x M memset                                           0.9 us    0.000 MB
++  2893.923 ms     2 x K filter_stats_coop_f32                           45.1 us
++  2893.973 ms     1 x M memset                                           0.2 us    0.000 MB
++  2893.974 ms     1 x K gumbel_perturb_filtered_col_f32                  5.8 us
++  2893.983 ms     1 x K argmax_partial_f32                               4.4 us
++  2893.989 ms     1 x K argmax_final_f32                                 1.4 us
++  2893.994 ms     1 x K gumbel_perturb_filtered_col_f32                  5.7 us
++  2894.002 ms     1 x K argmax_partial_f32                               2.5 us
++  2894.006 ms     1 x K argmax_final_f32                                 1.4 us
++  2894.010 ms     1 x K gumbel_perturb_filtered_col_f32                  5.7 us
++  2894.018 ms     1 x K argmax_partial_f32                               2.4 us
++  2894.022 ms     1 x K argmax_final_f32                                 1.4 us
++  2894.026 ms     1 x K gumbel_perturb_filtered_col_f32                  5.6 us
++  2894.034 ms     1 x K argmax_partial_f32                               2.3 us
++  2894.038 ms     1 x K argmax_final_f32                                 1.3 us
++  2894.041 ms     1 x C DtoH                                             2.8 us    0.000 MB
++  2894.062 ms     2 x C HtoD                                             0.5 us    0.002 MB
++  2894.068 ms     2 x K copy_batch_uniform_f32                        1412.4 us
++  2895.484 ms    16 x C HtoD                                             5.2 us    0.000 MB
++  2895.507 ms     1 x M memset                                           1.3 us    0.020 MB
++  2895.509 ms     1 x C DtoD                                             1.5 us    0.020 MB
++  2895.511 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2895.515 ms     1 x M memset                                           1.2 us    0.020 MB
++  2895.517 ms     1 x C DtoD                                             1.4 us    0.020 MB
++  2895.521 ms     2 x C HtoD                                             0.6 us    0.000 MB
++  2895.527 ms     1 x K embed_gather_u32_t                               4.5 us
++  2895.534 ms     1 x M memset                                           1.2 us    0.020 MB
++  2895.535 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2895.541 ms     1 x M memset                                           1.5 us    0.020 MB
++  2895.542 ms     1 x K rms_norm_f32_v2                                  4.0 us
++  2895.547 ms     1 x M memset                                           1.2 us    0.041 MB
++  2895.551 ms     2 x C DtoD                                             2.4 us    0.041 MB
++  2895.554 ms     1 x K quantize_q8_1                                    3.3 us
++  2895.556 ms     1 x K qmatvec_nvfp4_mmvq_mr2_rp                      182.9 us
++  2895.741 ms     1 x M memset                                           1.2 us    0.020 MB
++  2895.742 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2895.746 ms     1 x K quantize_q8_1                                    1.4 us
++  2895.748 ms     1 x K qmatvec_nvfp4_mmvq_mr2_rp                       17.4 us
++  2895.765 ms     1 x K quantize_q8_1                                    1.4 us
++  2895.767 ms     1 x K qmatvec_nvfp4_mmvq_mr2_rp                       17.2 us
++  2895.786 ms     1 x M memset                                           0.9 us    0.004 MB
++  2895.788 ms     1 x K rms_norm_f32_v2                                  4.0 us
++  2895.795 ms     1 x K rope_neox_f32                                    1.6 us
++  2895.799 ms     1 x K append_quantize_kv_q8_0_q5_1_rows                3.1 us
++  2895.804 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2895.806 ms    98 x C DtoD                                          1484.9 us  156.934 MB
++  2897.493 ms     3 x C HtoD                                             1.1 us    0.000 MB
++  2897.497 ms     1 x C DtoD                                             1.4 us    0.020 MB
++  2897.499 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2897.503 ms     1 x K embed_gather_u32                                 6.1 us
++  2897.509 ms     1 x M memset                                           1.0 us    0.020 MB
++  2897.510 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2897.514 ms     1 x M memset                                           1.0 us    0.020 MB
++  2897.515 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2897.519 ms     1 x M memset                                           0.9 us    0.041 MB
++  2897.520 ms     2 x C DtoD                                             1.6 us    0.041 MB
++  2897.522 ms     1 x K quantize_q8_1                                    1.6 us
++  2897.524 ms     1 x K qmatvec_nvfp4_mmvq_mr2_rp                      174.7 us
++  2897.698 ms     1 x M memset                                           1.0 us    0.020 MB
++  2897.700 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2897.703 ms     1 x K quantize_q8_1                                    1.6 us
++  2897.705 ms     3 x K qmatvec_nvfp4_mmvq_mr2_rp                      194.6 us
++  2897.900 ms     2 x M memset                                           1.8 us    0.049 MB
++  2897.902 ms     1 x K q_gate_split_f32                                 1.6 us
++  2897.903 ms     1 x M memset                                           0.9 us    0.025 MB
++  2897.904 ms     1 x K rms_norm_f32_v2                                  2.0 us
++  2897.909 ms     1 x M memset                                           0.9 us    0.004 MB
++  2897.912 ms     1 x K rms_norm_f32_v2                                  1.8 us
++  2897.914 ms     2 x K rope_neox_f32                                    2.6 us
++  2897.917 ms     1 x K append_quantize_kv_q8_0_q5_1_dc                  1.7 us
++  2897.919 ms     1 x K inc_i32                                          1.2 us
++  2897.920 ms     4 x M memset                                           5.6 us    0.669 MB
++  2897.932 ms     1 x K fa_decode_vec_q_v4_deep_dc                      29.9 us
++  2897.962 ms     1 x K fa_decode_combine_f32                            3.0 us
++  2897.965 ms     1 x M memset                                           0.9 us    0.025 MB
++  2897.966 ms     1 x K sigmoid_f32                                      1.1 us
++  2897.967 ms     1 x M memset                                           0.9 us    0.025 MB
++  2897.968 ms     1 x K mul_f32                                          1.1 us
++  2897.969 ms     1 x K quantize_q8_1                                    1.6 us
++  2897.971 ms     1 x K qmatvec_nvfp4_mmvq_mr2_rp                       87.1 us
++  2898.058 ms     1 x M memset                                           1.0 us    0.020 MB
++  2898.059 ms     1 x K add_f32                                          1.5 us
++  2898.061 ms     1 x M memset                                           1.0 us    0.020 MB
++  2898.062 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2898.066 ms     1 x K quantize_q8_1                                    1.6 us
++  2898.068 ms     2 x K qmatvec_nvfp4_mmvq_mr2_rp                      455.8 us
++  2898.523 ms     1 x M memset                                           1.2 us    0.070 MB
++  2898.524 ms     1 x K silu_mul_f32                                     2.0 us
++  2898.526 ms     1 x K quantize_q8_1                                    1.6 us
++  2898.528 ms     1 x K qmatvec_nvfp4_mmvq_mr2_rp                      233.7 us
++  2898.762 ms     1 x M memset                                           1.2 us    0.020 MB
++  2898.763 ms     1 x K add_f32                                          1.5 us
++  2898.764 ms     1 x M memset                                           1.0 us    0.020 MB
++  2898.765 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2898.769 ms     1 x K quantize_q8_1                                    1.6 us
++  2898.771 ms     1 x K qmatvec_q5_K_mmvq_il                          5184.1 us
++  2903.955 ms     1 x K memra_sctr_inc                                   1.4 us
++  2903.956 ms     1 x K gumbel_perturb_ctr_f32                           6.5 us
++  2903.963 ms     1 x K argmax_partial_f32                               2.2 us
++  2903.965 ms     1 x K argmax_final_f32                                 1.3 us
++  2903.967 ms     1 x C DtoD                                             1.1 us    0.020 MB
++  2903.968 ms     1 x K inc_i32                                          1.4 us
++  2903.978 ms     1 x C DtoH                                             2.1 us    0.000 MB
++  2904.006 ms     1 x K embed_gather_u32                                 3.7 us  idle before 26.4 us
++  2904.010 ms     1 x M memset                                           1.1 us    0.020 MB
++  2904.011 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2904.015 ms     1 x M memset                                           1.0 us    0.020 MB
++  2904.016 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2904.020 ms     1 x M memset                                           0.9 us    0.041 MB
++  2904.021 ms     2 x C DtoD                                             1.6 us    0.041 MB
++  2904.023 ms     1 x K quantize_q8_1                                    1.6 us
++  2904.025 ms     1 x K qmatvec_nvfp4_mmvq_mr2_rp                      135.6 us
++  2904.160 ms     1 x M memset                                           1.0 us    0.020 MB
++  2904.161 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2904.165 ms     1 x K quantize_q8_1                                    1.6 us
++  2904.167 ms     3 x K qmatvec_nvfp4_mmvq_mr2_rp                      185.0 us
++  2904.352 ms     2 x M memset                                           1.8 us    0.049 MB
++  2904.354 ms     1 x K q_gate_split_f32                                 1.6 us
++  2904.355 ms     1 x M memset                                           0.9 us    0.025 MB
++  2904.356 ms     1 x K rms_norm_f32_v2                                  1.9 us
++  2904.361 ms     1 x M memset                                           0.9 us    0.004 MB
++  2904.364 ms     1 x K rms_norm_f32_v2                                  1.9 us
++  2904.366 ms     2 x K rope_neox_f32                                    2.6 us
++  2904.369 ms     1 x K append_quantize_kv_q8_0_q5_1_dc                  1.7 us
++  2904.371 ms     1 x K inc_i32                                          1.2 us
++  2904.372 ms     4 x M memset                                           3.5 us    0.669 MB
++  2904.382 ms     1 x K fa_decode_vec_q_v4_deep_dc                      24.5 us
++  2904.407 ms     1 x K fa_decode_combine_f32                            3.2 us
++  2904.410 ms     1 x M memset                                           1.0 us    0.025 MB
++  2904.411 ms     1 x K sigmoid_f32                                      1.1 us
++  2904.412 ms     1 x M memset                                           0.9 us    0.025 MB
++  2904.413 ms     1 x K mul_f32                                          1.1 us
++  2904.415 ms     1 x K quantize_q8_1                                    1.6 us
++  2904.416 ms     1 x K qmatvec_nvfp4_mmvq_mr2_rp                       79.6 us
++  2904.496 ms     1 x M memset                                           1.0 us    0.020 MB
++  2904.497 ms     1 x K add_f32                                          1.6 us
++  2904.499 ms     1 x M memset                                           1.0 us    0.020 MB
++  2904.500 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2904.504 ms     1 x K quantize_q8_1                                    1.6 us
++  2904.505 ms     2 x K qmatvec_nvfp4_mmvq_mr2_rp                      435.8 us
++  2904.941 ms     1 x M memset                                           1.2 us    0.070 MB
++  2904.942 ms     1 x K silu_mul_f32                                     2.0 us
++  2904.944 ms     1 x K quantize_q8_1                                    1.6 us
++  2904.946 ms     1 x K qmatvec_nvfp4_mmvq_mr2_rp                      223.6 us
++  2905.169 ms     1 x M memset                                           1.2 us    0.020 MB
++  2905.170 ms     1 x K add_f32                                          1.5 us
++  2905.172 ms     1 x M memset                                           1.0 us    0.020 MB
++  2905.173 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2905.177 ms     1 x K quantize_q8_1                                    1.6 us
++  2905.179 ms     1 x K qmatvec_q5_K_mmvq_il                          5187.0 us
++  2910.366 ms     1 x K memra_sctr_inc                                   1.4 us
++  2910.367 ms     1 x K gumbel_perturb_ctr_f32                           5.5 us
++  2910.372 ms     1 x K argmax_partial_f32                               2.3 us
++  2910.375 ms     1 x K argmax_final_f32                                 1.3 us
++  2910.376 ms     1 x C DtoD                                             1.1 us    0.020 MB
++  2910.378 ms     1 x K inc_i32                                          1.5 us
++  2910.383 ms     1 x C DtoH                                             2.0 us    0.000 MB
++  2910.404 ms     1 x K embed_gather_u32                                 1.9 us
++  2910.406 ms     1 x M memset                                           1.0 us    0.020 MB
++  2910.407 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2910.411 ms     1 x M memset                                           1.0 us    0.020 MB
++  2910.412 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2910.416 ms     1 x M memset                                           0.9 us    0.041 MB
++  2910.417 ms     2 x C DtoD                                             1.6 us    0.041 MB
++  2910.419 ms     1 x K quantize_q8_1                                    1.6 us
++  2910.421 ms     1 x K qmatvec_nvfp4_mmvq_mr2_rp                      134.2 us
++  2910.555 ms     1 x M memset                                           1.0 us    0.020 MB
++  2910.556 ms     1 x K rms_norm_f32_v2                                  3.6 us
++  2910.560 ms     1 x K quantize_q8_1                                    1.5 us
++  2910.562 ms     3 x K qmatvec_nvfp4_mmvq_mr2_rp                      184.9 us
++  2910.746 ms     2 x M memset                                           2.0 us    0.049 MB
++  2910.749 ms     1 x K q_gate_split_f32                                 1.6 us
++  2910.750 ms     1 x M memset                                           0.9 us    0.025 MB
++  2910.751 ms     1 x K rms_norm_f32_v2                                  2.0 us
++  2910.756 ms     1 x M memset                                           0.9 us    0.004 MB
++  2910.759 ms     1 x K rms_norm_f32_v2                                  1.9 us
++  2910.761 ms     2 x K rope_neox_f32                                    2.6 us
++  2910.764 ms     1 x K append_quantize_kv_q8_0_q5_1_dc                  1.8 us
++  2910.766 ms     1 x K inc_i32                                          1.1 us
++  2910.767 ms     4 x M memset                                           3.4 us    0.669 MB
++  2910.777 ms     1 x K fa_decode_vec_q_v4_deep_dc                      24.5 us
++  2910.802 ms     1 x K fa_decode_combine_f32                            3.0 us
++  2910.805 ms     1 x M memset                                           1.0 us    0.025 MB
++  2910.806 ms     1 x K sigmoid_f32                                      1.1 us
++  2910.807 ms     1 x M memset                                           1.0 us    0.025 MB
++  2910.808 ms     1 x K mul_f32                                          1.1 us
++  2910.809 ms     1 x K quantize_q8_1                                    1.6 us
++  2910.811 ms     1 x K qmatvec_nvfp4_mmvq_mr2_rp                       79.7 us
++  2910.891 ms     1 x M memset                                           1.0 us    0.020 MB
++  2910.892 ms     1 x K add_f32                                          1.6 us
++  2910.894 ms     1 x M memset                                           1.0 us    0.020 MB
++  2910.895 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2910.899 ms     1 x K quantize_q8_1                                    1.6 us
++  2910.900 ms     2 x K qmatvec_nvfp4_mmvq_mr2_rp                      434.9 us
++  2911.335 ms     1 x M memset                                           1.2 us    0.070 MB
++  2911.336 ms     1 x K silu_mul_f32                                     2.0 us
++  2911.338 ms     1 x K quantize_q8_1                                    1.6 us
++  2911.340 ms     1 x K qmatvec_nvfp4_mmvq_mr2_rp                      222.8 us
++  2911.563 ms     1 x M memset                                           1.2 us    0.020 MB
++  2911.564 ms     1 x K add_f32                                          1.5 us
++  2911.565 ms     1 x M memset                                           1.0 us    0.020 MB
++  2911.566 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2911.570 ms     1 x K quantize_q8_1                                    1.7 us
++  2911.572 ms     1 x K qmatvec_q5_K_mmvq_il                          5196.8 us
++  2916.769 ms     1 x K memra_sctr_inc                                   1.4 us
++  2916.770 ms     1 x K gumbel_perturb_ctr_f32                           5.5 us
++  2916.776 ms     1 x K argmax_partial_f32                               2.3 us
++  2916.778 ms     1 x K argmax_final_f32                                 1.3 us
++  2916.779 ms     1 x C DtoD                                             1.1 us    0.020 MB
++  2916.781 ms     1 x K inc_i32                                          1.4 us
++  2916.785 ms     1 x C DtoH                                             1.8 us    0.000 MB
++  2916.795 ms     2 x C HtoD                                             0.4 us    0.000 MB
++  2916.802 ms     1 x K embed_gather_u32_t                               4.1 us
++  2916.808 ms     1 x C HtoD                                             0.2 us    0.000 MB
++  2916.811 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2916.816 ms     1 x K quantize_q8_1                                    3.3 us
++  2916.822 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                225.0 us
++  2917.049 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2917.051 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.7 us
++  2917.058 ms     1 x K gdn_prep_decode_b_f32                            3.7 us
++  2917.064 ms     1 x K gdn_scan_s128_tsnap                             43.6 us
++  2917.110 ms     1 x K gated_rmsnorm_q8_1                               2.3 us
++  2917.113 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       116.4 us
++  2917.230 ms     1 x K add_rms_norm_f32_v2                              6.1 us
++  2917.236 ms     1 x K quantize_q8_1                                    1.7 us
++  2917.239 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                465.1 us
++  2917.707 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2917.713 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       237.4 us
++  2917.953 ms     1 x K add_f32                                          2.0 us
++  2917.955 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2917.959 ms     1 x K quantize_q8_1                                    1.4 us
++  2917.963 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                216.4 us
++  2918.181 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2918.182 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                3.9 us
++  2918.188 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2918.192 ms     1 x K gdn_scan_s128_tsnap                             40.0 us
++  2918.234 ms     1 x K gated_rmsnorm_q8_1                               2.3 us
++  2918.238 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       115.6 us
++  2918.353 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2918.359 ms     1 x K quantize_q8_1                                    1.8 us
++  2918.363 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                459.9 us
++  2918.824 ms     1 x K silu_mul_scaled_q8_1                             3.6 us
++  2918.831 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       238.9 us
++  2919.072 ms     1 x K add_f32                                          2.1 us
++  2919.074 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2919.078 ms     1 x K quantize_q8_1                                    1.5 us
++  2919.082 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                218.0 us
++  2919.301 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2919.303 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.2 us
++  2919.310 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2919.314 ms     1 x K gdn_scan_s128_tsnap                             39.9 us
++  2919.356 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2919.360 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       116.7 us
++  2919.477 ms     1 x K add_rms_norm_f32_v2                              6.5 us
++  2919.483 ms     1 x K quantize_q8_1                                    1.7 us
++  2919.486 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                462.3 us
++  2919.950 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2919.956 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       239.6 us
++  2920.199 ms     1 x K add_f32                                          1.8 us
++  2920.201 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2920.204 ms     1 x K quantize_q8_1                                    1.4 us
++  2920.209 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                188.1 us
++  2920.399 ms     1 x K q_gate_split_f32                                 1.6 us
++  2920.401 ms     2 x K rms_norm_f32_v2                                  6.2 us
++  2920.410 ms     2 x K rope_neox_f32                                    2.8 us
++  2920.417 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2920.419 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                2.8 us
++  2920.424 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    56.2 us
++  2920.481 ms     1 x K fa_decode_combine_seqs                           4.3 us
++  2920.487 ms     1 x K sigmoid_f32                                      1.3 us
++  2920.491 ms     1 x K mul_f32                                          1.2 us
++  2920.493 ms     1 x K quantize_q8_1                                    1.5 us
++  2920.496 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        94.4 us
++  2920.590 ms     1 x K add_rms_norm_f32_v2                              6.1 us
++  2920.596 ms     1 x K quantize_q8_1                                    1.6 us
++  2920.601 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                460.4 us
++  2921.063 ms     1 x K silu_mul_scaled_q8_1                             3.7 us
++  2921.069 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       232.9 us
++  2921.305 ms     1 x K add_f32                                          2.1 us
++  2921.307 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2921.311 ms     1 x K quantize_q8_1                                    1.5 us
++  2921.315 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                217.6 us
++  2921.534 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2921.535 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                5.5 us
++  2921.542 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2921.546 ms     1 x K gdn_scan_s128_tsnap                             42.0 us
++  2921.590 ms     1 x K gated_rmsnorm_q8_1                               2.2 us
++  2921.593 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       117.0 us
++  2921.710 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2921.717 ms     1 x K quantize_q8_1                                    1.5 us
++  2921.720 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                460.3 us
++  2922.182 ms     1 x K silu_mul_scaled_q8_1                             3.7 us
++  2922.188 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       237.2 us
++  2922.428 ms     1 x K add_f32                                          2.3 us
++  2922.430 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2922.434 ms     1 x K quantize_q8_1                                    1.4 us
++  2922.438 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.2 us
++  2922.655 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2922.657 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                3.8 us
++  2922.663 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2922.668 ms     1 x K gdn_scan_s128_tsnap                             38.1 us
++  2922.709 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2922.713 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       116.5 us
++  2922.829 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2922.835 ms     1 x K quantize_q8_1                                    1.9 us
++  2922.840 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                466.5 us
++  2923.308 ms     1 x K silu_mul_scaled_q8_1                             4.1 us
++  2923.314 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       240.7 us
++  2923.558 ms     1 x K add_f32                                          2.0 us
++  2923.560 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2923.563 ms     1 x K quantize_q8_1                                    1.4 us
++  2923.567 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                216.2 us
++  2923.785 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2923.787 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.4 us
++  2923.794 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2923.798 ms     1 x K gdn_scan_s128_tsnap                             46.5 us
++  2923.846 ms     1 x K gated_rmsnorm_q8_1                               2.3 us
++  2923.850 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       115.3 us
++  2923.966 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2923.972 ms     1 x K quantize_q8_1                                    1.5 us
++  2923.975 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                458.1 us
++  2924.435 ms     1 x K silu_mul_scaled_q8_1                             3.8 us
++  2924.441 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       241.4 us
++  2924.684 ms     1 x K add_f32                                          2.0 us
++  2924.686 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2924.690 ms     1 x K quantize_q8_1                                    1.5 us
++  2924.694 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                193.1 us
++  2924.890 ms     1 x K q_gate_split_f32                                 1.8 us
++  2924.892 ms     2 x K rms_norm_f32_v2                                  5.2 us
++  2924.900 ms     2 x K rope_neox_f32                                    3.0 us
++  2924.908 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2924.909 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                3.6 us
++  2924.914 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    52.8 us
++  2924.969 ms     1 x K fa_decode_combine_seqs                           4.4 us
++  2924.975 ms     1 x K sigmoid_f32                                      1.3 us
++  2924.979 ms     1 x K mul_f32                                          1.3 us
++  2924.980 ms     1 x K quantize_q8_1                                    1.5 us
++  2924.983 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        93.9 us
++  2925.077 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2925.083 ms     1 x K quantize_q8_1                                    1.6 us
++  2925.086 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                461.2 us
++  2925.550 ms     1 x K silu_mul_scaled_q8_1                             3.7 us
++  2925.556 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       243.1 us
++  2925.801 ms     1 x K add_f32                                          1.9 us
++  2925.803 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2925.807 ms     1 x K quantize_q8_1                                    1.5 us
++  2925.811 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                219.0 us
++  2926.033 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2926.034 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.1 us
++  2926.042 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2926.046 ms     1 x K gdn_scan_s128_tsnap                             41.5 us
++  2926.089 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2926.093 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       121.0 us
++  2926.214 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2926.220 ms     1 x K quantize_q8_1                                    1.7 us
++  2926.224 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                458.8 us
++  2926.685 ms     1 x K silu_mul_scaled_q8_1                             3.8 us
++  2926.691 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       239.7 us
++  2926.933 ms     1 x K add_f32                                          2.2 us
++  2926.935 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2926.939 ms     1 x K quantize_q8_1                                    1.5 us
++  2926.943 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                216.6 us
++  2927.160 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2927.162 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.5 us
++  2927.169 ms     1 x K gdn_prep_decode_b_f32                            1.8 us
++  2927.173 ms     1 x K gdn_scan_s128_tsnap                             40.4 us
++  2927.215 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2927.219 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       114.1 us
++  2927.333 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2927.339 ms     1 x K quantize_q8_1                                    1.6 us
++  2927.342 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                463.8 us
++  2927.809 ms     1 x K silu_mul_scaled_q8_1                             3.8 us
++  2927.815 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       246.4 us
++  2928.063 ms     1 x K add_f32                                          2.3 us
++  2928.065 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2928.069 ms     1 x K quantize_q8_1                                    1.4 us
++  2928.073 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.6 us
++  2928.291 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2928.293 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.1 us
++  2928.300 ms     1 x K gdn_prep_decode_b_f32                            1.8 us
++  2928.304 ms     1 x K gdn_scan_s128_tsnap                             48.8 us
++  2928.355 ms     1 x K gated_rmsnorm_q8_1                               2.2 us
++  2928.359 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       110.6 us
++  2928.470 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2928.476 ms     1 x K quantize_q8_1                                    1.7 us
++  2928.480 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                459.9 us
++  2928.942 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2928.948 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       231.3 us
++  2929.181 ms     1 x K add_f32                                          2.2 us
++  2929.183 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2929.187 ms     1 x K quantize_q8_1                                    1.5 us
++  2929.192 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                190.9 us
++  2929.385 ms     1 x K q_gate_split_f32                                 1.9 us
++  2929.387 ms     2 x K rms_norm_f32_v2                                  6.2 us
++  2929.395 ms     2 x K rope_neox_f32                                    2.9 us
++  2929.403 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2929.404 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                3.4 us
++  2929.410 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    53.6 us
++  2929.465 ms     1 x K fa_decode_combine_seqs                           4.6 us
++  2929.471 ms     1 x K sigmoid_f32                                      1.2 us
++  2929.475 ms     1 x K mul_f32                                          1.3 us
++  2929.476 ms     1 x K quantize_q8_1                                    1.5 us
++  2929.479 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        89.2 us
++  2929.569 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2929.575 ms     1 x K quantize_q8_1                                    1.6 us
++  2929.579 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                454.3 us
++  2930.035 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2930.041 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       238.6 us
++  2930.282 ms     1 x K add_f32                                          2.2 us
++  2930.284 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2930.288 ms     1 x K quantize_q8_1                                    1.4 us
++  2930.292 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                219.1 us
++  2930.513 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2930.515 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.4 us
++  2930.522 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2930.526 ms     1 x K gdn_scan_s128_tsnap                             39.8 us
++  2930.568 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2930.572 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       117.2 us
++  2930.689 ms     1 x K add_rms_norm_f32_v2                              6.5 us
++  2930.695 ms     1 x K quantize_q8_1                                    1.7 us
++  2930.700 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                461.6 us
++  2931.165 ms     1 x K silu_mul_scaled_q8_1                             3.8 us
++  2931.171 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       233.3 us
++  2931.407 ms     1 x K add_f32                                          2.3 us
++  2931.409 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2931.413 ms     1 x K quantize_q8_1                                    1.5 us
++  2931.417 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.4 us
++  2931.633 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2931.635 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.1 us
++  2931.642 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2931.646 ms     1 x K gdn_scan_s128_tsnap                             41.0 us
++  2931.689 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2931.693 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       117.5 us
++  2931.810 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2931.817 ms     1 x K quantize_q8_1                                    1.7 us
++  2931.821 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                456.3 us
++  2932.280 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2932.286 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       237.7 us
++  2932.527 ms     1 x K add_f32                                          2.1 us
++  2932.529 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2932.533 ms     1 x K quantize_q8_1                                    1.6 us
++  2932.537 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                216.2 us
++  2932.756 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2932.757 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.1 us
++  2932.764 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2932.768 ms     1 x K gdn_scan_s128_tsnap                             45.0 us
++  2932.816 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2932.819 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       114.8 us
++  2932.934 ms     1 x K add_rms_norm_f32_v2                              6.5 us
++  2932.940 ms     1 x K quantize_q8_1                                    1.8 us
++  2932.945 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                451.7 us
++  2933.399 ms     1 x K silu_mul_scaled_q8_1                             3.5 us
++  2933.405 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       240.1 us
++  2933.648 ms     1 x K add_f32                                          1.8 us
++  2933.650 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2933.654 ms     1 x K quantize_q8_1                                    1.4 us
++  2933.658 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                188.2 us
++  2933.850 ms     1 x K q_gate_split_f32                                 1.6 us
++  2933.852 ms     2 x K rms_norm_f32_v2                                  5.0 us
++  2933.858 ms     2 x K rope_neox_f32                                    2.9 us
++  2933.866 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2933.867 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                3.4 us
++  2933.872 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    55.9 us
++  2933.931 ms     1 x K fa_decode_combine_seqs                           4.7 us
++  2933.937 ms     1 x K sigmoid_f32                                      1.3 us
++  2933.941 ms     1 x K mul_f32                                          1.6 us
++  2933.942 ms     1 x K quantize_q8_1                                    1.5 us
++  2933.945 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        88.6 us
++  2934.034 ms     1 x K add_rms_norm_f32_v2                              6.6 us
++  2934.040 ms     1 x K quantize_q8_1                                    1.6 us
++  2934.045 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                462.0 us
++  2934.509 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2934.515 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       244.2 us
++  2934.762 ms     1 x K add_f32                                          2.1 us
++  2934.764 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2934.768 ms     1 x K quantize_q8_1                                    1.4 us
++  2934.772 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.3 us
++  2934.989 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2934.991 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.7 us
++  2934.998 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2935.002 ms     1 x K gdn_scan_s128_tsnap                             41.8 us
++  2935.046 ms     1 x K gated_rmsnorm_q8_1                               2.5 us
++  2935.050 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       113.3 us
++  2935.163 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2935.169 ms     1 x K quantize_q8_1                                    1.8 us
++  2935.173 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                460.2 us
++  2935.635 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2935.641 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       237.1 us
++  2935.880 ms     1 x K add_f32                                          2.0 us
++  2935.882 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2935.886 ms     1 x K quantize_q8_1                                    1.6 us
++  2935.891 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                220.4 us
++  2936.112 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2936.114 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.4 us
++  2936.121 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2936.125 ms     1 x K gdn_scan_s128_tsnap                             40.2 us
++  2936.167 ms     1 x K gated_rmsnorm_q8_1                               2.2 us
++  2936.171 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       118.0 us
++  2936.289 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2936.295 ms     1 x K quantize_q8_1                                    1.7 us
++  2936.299 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                452.2 us
++  2936.753 ms     1 x K silu_mul_scaled_q8_1                             3.8 us
++  2936.759 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       239.2 us
++  2937.001 ms     1 x K add_f32                                          2.1 us
++  2937.003 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2937.007 ms     1 x K quantize_q8_1                                    1.7 us
++  2937.011 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.7 us
++  2937.229 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2937.230 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.1 us
++  2937.237 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2937.241 ms     1 x K gdn_scan_s128_tsnap                             40.0 us
++  2937.284 ms     1 x K gated_rmsnorm_q8_1                               2.5 us
++  2937.288 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       111.5 us
++  2937.400 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2937.406 ms     1 x K quantize_q8_1                                    1.6 us
++  2937.409 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                456.0 us
++  2937.867 ms     1 x K silu_mul_scaled_q8_1                             4.1 us
++  2937.873 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       248.7 us
++  2938.124 ms     1 x K add_f32                                          2.1 us
++  2938.126 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2938.130 ms     1 x K quantize_q8_1                                    1.7 us
++  2938.134 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                194.1 us
++  2938.330 ms     1 x K q_gate_split_f32                                 1.6 us
++  2938.332 ms     2 x K rms_norm_f32_v2                                  6.4 us
++  2938.340 ms     2 x K rope_neox_f32                                    2.8 us
++  2938.348 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2938.349 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                3.7 us
++  2938.354 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    55.4 us
++  2938.413 ms     1 x K fa_decode_combine_seqs                           4.6 us
++  2938.419 ms     1 x K sigmoid_f32                                      1.3 us
++  2938.423 ms     1 x K mul_f32                                          1.6 us
++  2938.424 ms     1 x K quantize_q8_1                                    1.7 us
++  2938.427 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        90.9 us
++  2938.518 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2938.525 ms     1 x K quantize_q8_1                                    1.6 us
++  2938.530 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                460.9 us
++  2938.993 ms     1 x K silu_mul_scaled_q8_1                             4.2 us
++  2938.999 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       238.9 us
++  2939.240 ms     1 x K add_f32                                          2.1 us
++  2939.242 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2939.246 ms     1 x K quantize_q8_1                                    1.4 us
++  2939.250 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                221.2 us
++  2939.473 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2939.475 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                3.9 us
++  2939.482 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2939.486 ms     1 x K gdn_scan_s128_tsnap                             42.4 us
++  2939.530 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2939.534 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       116.3 us
++  2939.650 ms     1 x K add_rms_norm_f32_v2                              6.7 us
++  2939.656 ms     1 x K quantize_q8_1                                    1.7 us
++  2939.661 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                454.7 us
++  2940.119 ms     1 x K silu_mul_scaled_q8_1                             3.6 us
++  2940.125 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       236.3 us
++  2940.363 ms     1 x K add_f32                                          2.1 us
++  2940.365 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2940.368 ms     1 x K quantize_q8_1                                    1.4 us
++  2940.373 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                214.2 us
++  2940.589 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2940.591 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.5 us
++  2940.598 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2940.602 ms     1 x K gdn_scan_s128_tsnap                             41.1 us
++  2940.646 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2940.650 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       118.6 us
++  2940.769 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2940.775 ms     1 x K quantize_q8_1                                    1.7 us
++  2940.778 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                458.7 us
++  2941.239 ms     1 x K silu_mul_scaled_q8_1                             3.8 us
++  2941.245 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       233.8 us
++  2941.482 ms     1 x K add_f32                                          2.1 us
++  2941.484 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2941.488 ms     1 x K quantize_q8_1                                    1.4 us
++  2941.492 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.3 us
++  2941.709 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2941.711 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.5 us
++  2941.718 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2941.722 ms     1 x K gdn_scan_s128_tsnap                             41.3 us
++  2941.766 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2941.770 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       122.5 us
++  2941.893 ms     1 x K add_rms_norm_f32_v2                              6.1 us
++  2941.899 ms     1 x K quantize_q8_1                                    1.6 us
++  2941.903 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                453.9 us
++  2942.358 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2942.364 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       235.4 us
++  2942.602 ms     1 x K add_f32                                          1.8 us
++  2942.604 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2942.608 ms     1 x K quantize_q8_1                                    1.4 us
++  2942.612 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                187.7 us
++  2942.803 ms     1 x K q_gate_split_f32                                 2.2 us
++  2942.805 ms     2 x K rms_norm_f32_v2                                  5.0 us
++  2942.813 ms     2 x K rope_neox_f32                                    2.8 us
++  2942.821 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2942.822 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                3.5 us
++  2942.827 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    53.0 us
++  2942.882 ms     1 x K fa_decode_combine_seqs                           4.5 us
++  2942.888 ms     1 x K sigmoid_f32                                      1.3 us
++  2942.893 ms     1 x K mul_f32                                          1.6 us
++  2942.894 ms     1 x K quantize_q8_1                                    1.5 us
++  2942.897 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        88.8 us
++  2942.986 ms     1 x K add_rms_norm_f32_v2                              6.5 us
++  2942.992 ms     1 x K quantize_q8_1                                    1.4 us
++  2942.996 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                463.6 us
++  2943.462 ms     1 x K silu_mul_scaled_q8_1                             4.1 us
++  2943.468 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       242.7 us
++  2943.714 ms     1 x K add_f32                                          2.1 us
++  2943.716 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2943.720 ms     1 x K quantize_q8_1                                    1.4 us
++  2943.724 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.5 us
++  2943.942 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2943.943 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                3.9 us
++  2943.950 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2943.954 ms     1 x K gdn_scan_s128_tsnap                             39.7 us
++  2943.996 ms     1 x K gated_rmsnorm_q8_1                               2.6 us
++  2944.000 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       123.0 us
++  2944.122 ms     1 x K add_rms_norm_f32_v2                              6.1 us
++  2944.129 ms     1 x K quantize_q8_1                                    1.6 us
++  2944.133 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                454.3 us
++  2944.588 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2944.595 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       232.2 us
++  2944.829 ms     1 x K add_f32                                          2.0 us
++  2944.831 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2944.835 ms     1 x K quantize_q8_1                                    1.4 us
++  2944.840 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                219.1 us
++  2945.060 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2945.061 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.9 us
++  2945.069 ms     1 x K gdn_prep_decode_b_f32                            1.8 us
++  2945.073 ms     1 x K gdn_scan_s128_tsnap                             40.3 us
++  2945.115 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2945.119 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       116.6 us
++  2945.235 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2945.241 ms     1 x K quantize_q8_1                                    1.7 us
++  2945.246 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                451.3 us
++  2945.699 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2945.706 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       233.0 us
++  2945.940 ms     1 x K add_f32                                          2.0 us
++  2945.942 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2945.946 ms     1 x K quantize_q8_1                                    1.9 us
++  2945.951 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                212.3 us
++  2946.165 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2946.167 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.6 us
++  2946.174 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2946.178 ms     1 x K gdn_scan_s128_tsnap                             40.9 us
++  2946.220 ms     1 x K gated_rmsnorm_q8_1                               2.2 us
++  2946.224 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       117.9 us
++  2946.342 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2946.348 ms     1 x K quantize_q8_1                                    1.6 us
++  2946.351 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                458.4 us
++  2946.811 ms     1 x K silu_mul_scaled_q8_1                             3.6 us
++  2946.818 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       231.7 us
++  2947.051 ms     1 x K add_f32                                          2.0 us
++  2947.053 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2947.057 ms     1 x K quantize_q8_1                                    1.5 us
++  2947.062 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                189.3 us
++  2947.253 ms     1 x K q_gate_split_f32                                 2.0 us
++  2947.255 ms     2 x K rms_norm_f32_v2                                  6.1 us
++  2947.263 ms     2 x K rope_neox_f32                                    3.1 us
++  2947.271 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2947.272 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                3.4 us
++  2947.277 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    53.4 us
++  2947.333 ms     1 x K fa_decode_combine_seqs                           4.4 us
++  2947.339 ms     1 x K sigmoid_f32                                      1.3 us
++  2947.343 ms     1 x K mul_f32                                          1.5 us
++  2947.344 ms     1 x K quantize_q8_1                                    1.6 us
++  2947.347 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        90.1 us
++  2947.437 ms     1 x K add_rms_norm_f32_v2                              6.0 us
++  2947.443 ms     1 x K quantize_q8_1                                    1.6 us
++  2947.447 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                460.6 us
++  2947.910 ms     1 x K silu_mul_scaled_q8_1                             3.6 us
++  2947.916 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       236.5 us
++  2948.156 ms     1 x K add_f32                                          1.8 us
++  2948.158 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2948.162 ms     1 x K quantize_q8_1                                    1.5 us
++  2948.166 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                217.9 us
++  2948.387 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2948.389 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.3 us
++  2948.396 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2948.400 ms     1 x K gdn_scan_s128_tsnap                             41.0 us
++  2948.443 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2948.447 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       111.2 us
++  2948.558 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2948.564 ms     1 x K quantize_q8_1                                    1.8 us
++  2948.568 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                468.3 us
++  2949.038 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2949.044 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       234.1 us
++  2949.280 ms     1 x K add_f32                                          1.8 us
++  2949.282 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2949.286 ms     1 x K quantize_q8_1                                    1.7 us
++  2949.291 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.1 us
++  2949.507 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2949.509 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.4 us
++  2949.516 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2949.520 ms     1 x K gdn_scan_s128_tsnap                             43.6 us
++  2949.565 ms     1 x K gated_rmsnorm_q8_1                               2.2 us
++  2949.569 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       111.1 us
++  2949.680 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2949.686 ms     1 x K quantize_q8_1                                    1.8 us
++  2949.691 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                464.5 us
++  2950.158 ms     1 x K silu_mul_scaled_q8_1                             3.7 us
++  2950.164 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       241.0 us
++  2950.408 ms     1 x K add_f32                                          2.2 us
++  2950.410 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2950.414 ms     1 x K quantize_q8_1                                    1.4 us
++  2950.418 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                221.6 us
++  2950.641 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2950.642 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                3.9 us
++  2950.649 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2950.653 ms     1 x K gdn_scan_s128_tsnap                             41.9 us
++  2950.699 ms     1 x K gated_rmsnorm_q8_1                               2.3 us
++  2950.703 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       116.5 us
++  2950.819 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2950.825 ms     1 x K quantize_q8_1                                    1.7 us
++  2950.829 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                459.3 us
++  2951.289 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2951.295 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       233.0 us
++  2951.530 ms     1 x K add_f32                                          2.3 us
++  2951.532 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2951.536 ms     1 x K quantize_q8_1                                    1.4 us
++  2951.540 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                188.9 us
++  2951.732 ms     1 x K q_gate_split_f32                                 1.6 us
++  2951.734 ms     2 x K rms_norm_f32_v2                                  5.0 us
++  2951.740 ms     2 x K rope_neox_f32                                    2.8 us
++  2951.748 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2951.749 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                3.5 us
++  2951.754 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    52.7 us
++  2951.810 ms     1 x K fa_decode_combine_seqs                           4.6 us
++  2951.816 ms     1 x K sigmoid_f32                                      1.2 us
++  2951.820 ms     1 x K mul_f32                                          1.3 us
++  2951.821 ms     1 x K quantize_q8_1                                    1.5 us
++  2951.824 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        90.2 us
++  2951.914 ms     1 x K add_rms_norm_f32_v2                              6.5 us
++  2951.921 ms     1 x K quantize_q8_1                                    1.4 us
++  2951.924 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                457.5 us
++  2952.384 ms     1 x K silu_mul_scaled_q8_1                             3.8 us
++  2952.390 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       237.1 us
++  2952.630 ms     1 x K add_f32                                          1.8 us
++  2952.632 ms     1 x K rms_norm_f32_v2                                  4.9 us
++  2952.637 ms     1 x K quantize_q8_1                                    1.4 us
++  2952.640 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                214.9 us
++  2952.857 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2952.858 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.5 us
++  2952.865 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2952.869 ms     1 x K gdn_scan_s128_tsnap                             47.2 us
++  2952.919 ms     1 x K gated_rmsnorm_q8_1                               2.3 us
++  2952.923 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       109.6 us
++  2953.032 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2953.038 ms     1 x K quantize_q8_1                                    1.5 us
++  2953.042 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                464.1 us
++  2953.508 ms     1 x K silu_mul_scaled_q8_1                             4.1 us
++  2953.515 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       237.6 us
++  2953.754 ms     1 x K add_f32                                          1.9 us
++  2953.756 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2953.760 ms     1 x K quantize_q8_1                                    1.4 us
++  2953.765 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.2 us
++  2953.982 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2953.984 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                3.9 us
++  2953.991 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2953.995 ms     1 x K gdn_scan_s128_tsnap                             39.5 us
++  2954.037 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2954.041 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       116.7 us
++  2954.158 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2954.164 ms     1 x K quantize_q8_1                                    1.5 us
++  2954.168 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                469.8 us
++  2954.641 ms     1 x K silu_mul_scaled_q8_1                             3.8 us
++  2954.647 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       239.9 us
++  2954.889 ms     1 x K add_f32                                          2.1 us
++  2954.891 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2954.895 ms     1 x K quantize_q8_1                                    1.5 us
++  2954.899 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                216.2 us
++  2955.117 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2955.118 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.0 us
++  2955.125 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2955.129 ms     1 x K gdn_scan_s128_tsnap                             42.1 us
++  2955.175 ms     1 x K gated_rmsnorm_q8_1                               2.3 us
++  2955.179 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       121.3 us
++  2955.300 ms     1 x K add_rms_norm_f32_v2                              6.5 us
++  2955.306 ms     1 x K quantize_q8_1                                    2.0 us
++  2955.311 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                452.9 us
++  2955.765 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2955.771 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       239.2 us
++  2956.013 ms     1 x K add_f32                                          2.0 us
++  2956.015 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2956.019 ms     1 x K quantize_q8_1                                    1.7 us
++  2956.024 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                189.5 us
++  2956.215 ms     1 x K q_gate_split_f32                                 1.7 us
++  2956.217 ms     2 x K rms_norm_f32_v2                                  6.4 us
++  2956.225 ms     2 x K rope_neox_f32                                    2.9 us
++  2956.233 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2956.234 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                2.6 us
++  2956.239 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    52.6 us
++  2956.294 ms     1 x K fa_decode_combine_seqs                           4.6 us
++  2956.300 ms     1 x K sigmoid_f32                                      1.4 us
++  2956.304 ms     1 x K mul_f32                                          1.3 us
++  2956.305 ms     1 x K quantize_q8_1                                    1.5 us
++  2956.308 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        91.1 us
++  2956.399 ms     1 x K add_rms_norm_f32_v2                              6.1 us
++  2956.405 ms     1 x K quantize_q8_1                                    1.6 us
++  2956.410 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                455.2 us
++  2956.867 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2956.873 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       235.5 us
++  2957.111 ms     1 x K add_f32                                          2.0 us
++  2957.113 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2957.117 ms     1 x K quantize_q8_1                                    1.5 us
++  2957.121 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                217.5 us
++  2957.340 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2957.342 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                5.3 us
++  2957.348 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2957.352 ms     1 x K gdn_scan_s128_tsnap                             45.8 us
++  2957.400 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2957.404 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       116.5 us
++  2957.520 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2957.526 ms     1 x K quantize_q8_1                                    1.6 us
++  2957.531 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                457.1 us
++  2957.991 ms     1 x K silu_mul_scaled_q8_1                             3.7 us
++  2957.997 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       243.0 us
++  2958.243 ms     1 x K add_f32                                          2.0 us
++  2958.244 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2958.248 ms     1 x K quantize_q8_1                                    1.5 us
++  2958.253 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                225.0 us
++  2958.480 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2958.481 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                3.9 us
++  2958.488 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2958.492 ms     1 x K gdn_scan_s128_tsnap                             43.9 us
++  2958.538 ms     1 x K gated_rmsnorm_q8_1                               2.3 us
++  2958.542 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       113.2 us
++  2958.655 ms     1 x K add_rms_norm_f32_v2                              6.5 us
++  2958.662 ms     1 x K quantize_q8_1                                    1.6 us
++  2958.665 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                460.4 us
++  2959.128 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2959.134 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       239.0 us
++  2959.375 ms     1 x K add_f32                                          1.8 us
++  2959.377 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2959.381 ms     1 x K quantize_q8_1                                    1.4 us
++  2959.385 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                218.9 us
++  2959.607 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2959.609 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.7 us
++  2959.616 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2959.620 ms     1 x K gdn_scan_s128_tsnap                             43.3 us
++  2959.665 ms     1 x K gated_rmsnorm_q8_1                               2.3 us
++  2959.669 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       112.4 us
++  2959.781 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2959.787 ms     1 x K quantize_q8_1                                    1.7 us
++  2959.791 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                462.5 us
++  2960.256 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2960.262 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       232.7 us
++  2960.496 ms     1 x K add_f32                                          2.3 us
++  2960.499 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2960.502 ms     1 x K quantize_q8_1                                    1.4 us
++  2960.507 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                190.1 us
++  2960.698 ms     1 x K q_gate_split_f32                                 1.7 us
++  2960.700 ms     2 x K rms_norm_f32_v2                                  5.2 us
++  2960.709 ms     2 x K rope_neox_f32                                    2.9 us
++  2960.716 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2960.717 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                2.5 us
++  2960.722 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    55.6 us
++  2960.780 ms     1 x K fa_decode_combine_seqs                           4.5 us
++  2960.786 ms     1 x K sigmoid_f32                                      1.3 us
++  2960.790 ms     1 x K mul_f32                                          1.5 us
++  2960.791 ms     1 x K quantize_q8_1                                    1.5 us
++  2960.795 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        87.4 us
++  2960.882 ms     1 x K add_rms_norm_f32_v2                              6.1 us
++  2960.888 ms     1 x K quantize_q8_1                                    1.7 us
++  2960.893 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                452.5 us
++  2961.348 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2961.354 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       238.0 us
++  2961.594 ms     1 x K add_f32                                          2.3 us
++  2961.596 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2961.600 ms     1 x K quantize_q8_1                                    1.5 us
++  2961.604 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                211.6 us
++  2961.817 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2961.819 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                6.3 us
++  2961.828 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2961.831 ms     1 x K gdn_scan_s128_tsnap                             43.9 us
++  2961.878 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2961.882 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       115.4 us
++  2961.997 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2962.003 ms     1 x K quantize_q8_1                                    1.7 us
++  2962.008 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                456.4 us
++  2962.467 ms     1 x K silu_mul_scaled_q8_1                             4.1 us
++  2962.474 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       236.8 us
++  2962.713 ms     1 x K add_f32                                          2.0 us
++  2962.715 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2962.719 ms     1 x K quantize_q8_1                                    1.4 us
++  2962.724 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                216.5 us
++  2962.942 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2962.944 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                3.9 us
++  2962.951 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2962.955 ms     1 x K gdn_scan_s128_tsnap                             45.6 us
++  2963.003 ms     1 x K gated_rmsnorm_q8_1                               2.2 us
++  2963.007 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       115.6 us
++  2963.123 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2963.129 ms     1 x K quantize_q8_1                                    1.5 us
++  2963.132 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                457.4 us
++  2963.591 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2963.597 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       238.3 us
++  2963.838 ms     1 x K add_f32                                          1.9 us
++  2963.840 ms     1 x K rms_norm_f32_v2                                  4.0 us
++  2963.844 ms     1 x K quantize_q8_1                                    1.6 us
++  2963.848 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.5 us
++  2964.064 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2964.066 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                6.8 us
++  2964.075 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2964.079 ms     1 x K gdn_scan_s128_tsnap                             43.8 us
++  2964.125 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2964.129 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       119.7 us
++  2964.249 ms     1 x K add_rms_norm_f32_v2                              6.0 us
++  2964.255 ms     1 x K quantize_q8_1                                    1.8 us
++  2964.258 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                454.0 us
++  2964.715 ms     1 x K silu_mul_scaled_q8_1                             3.8 us
++  2964.721 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       237.6 us
++  2964.961 ms     1 x K add_f32                                          1.9 us
++  2964.963 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2964.967 ms     1 x K quantize_q8_1                                    1.5 us
++  2964.971 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                189.7 us
++  2965.163 ms     1 x K q_gate_split_f32                                 1.9 us
++  2965.165 ms     2 x K rms_norm_f32_v2                                  6.1 us
++  2965.173 ms     2 x K rope_neox_f32                                    2.8 us
++  2965.181 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2965.182 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                2.6 us
++  2965.187 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    55.4 us
++  2965.244 ms     1 x K fa_decode_combine_seqs                           4.6 us
++  2965.251 ms     1 x K sigmoid_f32                                      1.2 us
++  2965.255 ms     1 x K mul_f32                                          1.3 us
++  2965.256 ms     1 x K quantize_q8_1                                    1.5 us
++  2965.259 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        86.6 us
++  2965.346 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2965.352 ms     1 x K quantize_q8_1                                    1.8 us
++  2965.356 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                456.4 us
++  2965.814 ms     1 x K silu_mul_scaled_q8_1                             4.1 us
++  2965.820 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       236.4 us
++  2966.060 ms     1 x K add_f32                                          2.1 us
++  2966.062 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2966.066 ms     1 x K quantize_q8_1                                    1.5 us
++  2966.070 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                216.3 us
++  2966.289 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2966.290 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.8 us
++  2966.297 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2966.301 ms     1 x K gdn_scan_s128_tsnap                             43.4 us
++  2966.346 ms     1 x K gated_rmsnorm_q8_1                               2.3 us
++  2966.350 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       119.4 us
++  2966.470 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2966.476 ms     1 x K quantize_q8_1                                    1.6 us
++  2966.481 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                449.2 us
++  2966.933 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2966.939 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       237.4 us
++  2967.178 ms     1 x K add_f32                                          2.2 us
++  2967.180 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2967.184 ms     1 x K quantize_q8_1                                    1.5 us
++  2967.188 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.0 us
++  2967.405 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2967.406 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                3.9 us
++  2967.413 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2967.417 ms     1 x K gdn_scan_s128_tsnap                             40.5 us
++  2967.461 ms     1 x K gated_rmsnorm_q8_1                               2.3 us
++  2967.464 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       113.9 us
++  2967.578 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2967.585 ms     1 x K quantize_q8_1                                    2.0 us
++  2967.589 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                470.5 us
++  2968.061 ms     1 x K silu_mul_scaled_q8_1                             3.7 us
++  2968.067 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       235.9 us
++  2968.304 ms     1 x K add_f32                                          2.1 us
++  2968.306 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2968.310 ms     1 x K quantize_q8_1                                    1.4 us
++  2968.315 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                214.0 us
++  2968.530 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2968.532 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                6.3 us
++  2968.541 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2968.545 ms     1 x K gdn_scan_s128_tsnap                             44.4 us
++  2968.592 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2968.596 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       118.5 us
++  2968.715 ms     1 x K add_rms_norm_f32_v2                              6.5 us
++  2968.721 ms     1 x K quantize_q8_1                                    1.7 us
++  2968.725 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                459.6 us
++  2969.188 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2969.194 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       241.4 us
++  2969.437 ms     1 x K add_f32                                          2.3 us
++  2969.439 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2969.443 ms     1 x K quantize_q8_1                                    1.8 us
++  2969.447 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                186.9 us
++  2969.637 ms     1 x K q_gate_split_f32                                 2.3 us
++  2969.639 ms     2 x K rms_norm_f32_v2                                  5.1 us
++  2969.647 ms     2 x K rope_neox_f32                                    2.8 us
++  2969.654 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2969.656 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                2.5 us
++  2969.661 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    56.0 us
++  2969.718 ms     1 x K fa_decode_combine_seqs                           4.6 us
++  2969.725 ms     1 x K sigmoid_f32                                      1.2 us
++  2969.729 ms     1 x K mul_f32                                          1.3 us
++  2969.730 ms     1 x K quantize_q8_1                                    1.5 us
++  2969.733 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        93.4 us
++  2969.826 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2969.833 ms     1 x K quantize_q8_1                                    1.5 us
++  2969.836 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                456.6 us
++  2970.295 ms     1 x K silu_mul_scaled_q8_1                             4.1 us
++  2970.301 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       228.5 us
++  2970.532 ms     1 x K add_f32                                          1.8 us
++  2970.533 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2970.537 ms     1 x K quantize_q8_1                                    1.6 us
++  2970.542 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                209.8 us
++  2970.754 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2970.756 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.2 us
++  2970.763 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2970.767 ms     1 x K gdn_scan_s128_tsnap                             40.6 us
++  2970.809 ms     1 x K gated_rmsnorm_q8_1                               2.6 us
++  2970.813 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       119.2 us
++  2970.932 ms     1 x K add_rms_norm_f32_v2                              6.5 us
++  2970.939 ms     1 x K quantize_q8_1                                    1.8 us
++  2970.942 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                456.0 us
++  2971.400 ms     1 x K silu_mul_scaled_q8_1                             4.1 us
++  2971.406 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       237.9 us
++  2971.647 ms     1 x K add_f32                                          1.8 us
++  2971.649 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2971.652 ms     1 x K quantize_q8_1                                    1.6 us
++  2971.657 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.4 us
++  2971.873 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2971.875 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.6 us
++  2971.882 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2971.886 ms     1 x K gdn_scan_s128_tsnap                             41.7 us
++  2971.931 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2971.934 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       116.1 us
++  2972.050 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2972.056 ms     1 x K quantize_q8_1                                    1.6 us
++  2972.060 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                460.2 us
++  2972.523 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2972.529 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       238.7 us
++  2972.770 ms     1 x K add_f32                                          2.2 us
++  2972.772 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2972.776 ms     1 x K quantize_q8_1                                    1.4 us
++  2972.780 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.2 us
++  2972.997 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2972.998 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                6.3 us
++  2973.007 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2973.012 ms     1 x K gdn_scan_s128_tsnap                             41.3 us
++  2973.056 ms     1 x K gated_rmsnorm_q8_1                               2.3 us
++  2973.060 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       119.9 us
++  2973.179 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2973.185 ms     1 x K quantize_q8_1                                    1.6 us
++  2973.189 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                451.0 us
++  2973.642 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2973.649 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       240.0 us
++  2973.891 ms     1 x K add_f32                                          2.0 us
++  2973.893 ms     1 x K rms_norm_f32_v2                                  4.1 us
++  2973.897 ms     1 x K quantize_q8_1                                    1.6 us
++  2973.902 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                187.6 us
++  2974.092 ms     1 x K q_gate_split_f32                                 1.8 us
++  2974.094 ms     2 x K rms_norm_f32_v2                                  6.3 us
++  2974.102 ms     2 x K rope_neox_f32                                    2.8 us
++  2974.110 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2974.111 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                2.5 us
++  2974.116 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    55.6 us
++  2974.174 ms     1 x K fa_decode_combine_seqs                           4.3 us
++  2974.180 ms     1 x K sigmoid_f32                                      1.3 us
++  2974.184 ms     1 x K mul_f32                                          1.5 us
++  2974.185 ms     1 x K quantize_q8_1                                    1.4 us
++  2974.188 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        96.5 us
++  2974.285 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2974.291 ms     1 x K quantize_q8_1                                    1.6 us
++  2974.296 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                453.8 us
++  2974.752 ms     1 x K silu_mul_scaled_q8_1                             3.7 us
++  2974.758 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       234.5 us
++  2974.996 ms     1 x K add_f32                                          1.8 us
++  2974.998 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2975.002 ms     1 x K quantize_q8_1                                    1.5 us
++  2975.006 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                220.9 us
++  2975.230 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2975.232 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                6.6 us
++  2975.241 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2975.245 ms     1 x K gdn_scan_s128_tsnap                             44.8 us
++  2975.291 ms     1 x K gated_rmsnorm_q8_1                               2.6 us
++  2975.295 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       114.7 us
++  2975.410 ms     1 x K add_rms_norm_f32_v2                              6.0 us
++  2975.416 ms     1 x K quantize_q8_1                                    1.9 us
++  2975.420 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                458.9 us
++  2975.882 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2975.888 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       235.8 us
++  2976.127 ms     1 x K add_f32                                          2.5 us
++  2976.129 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2976.133 ms     1 x K quantize_q8_1                                    1.4 us
++  2976.137 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                218.5 us
++  2976.358 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2976.359 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.1 us
++  2976.366 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2976.370 ms     1 x K gdn_scan_s128_tsnap                             42.8 us
++  2976.415 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2976.419 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       119.0 us
++  2976.538 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2976.544 ms     1 x K quantize_q8_1                                    1.4 us
++  2976.549 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                453.6 us
++  2977.004 ms     1 x K silu_mul_scaled_q8_1                             4.1 us
++  2977.010 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       234.7 us
++  2977.247 ms     1 x K add_f32                                          2.0 us
++  2977.249 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2977.253 ms     1 x K quantize_q8_1                                    1.5 us
++  2977.257 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                214.7 us
++  2977.474 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2977.475 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.8 us
++  2977.482 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2977.486 ms     1 x K gdn_scan_s128_tsnap                             43.3 us
++  2977.532 ms     1 x K gated_rmsnorm_q8_1                               2.5 us
++  2977.535 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       109.6 us
++  2977.645 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2977.651 ms     1 x K quantize_q8_1                                    1.7 us
++  2977.654 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                467.3 us
++  2978.123 ms     1 x K silu_mul_scaled_q8_1                             4.1 us
++  2978.130 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       239.1 us
++  2978.371 ms     1 x K add_f32                                          2.0 us
++  2978.373 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2978.377 ms     1 x K quantize_q8_1                                    1.4 us
++  2978.382 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                192.9 us
++  2978.576 ms     1 x K q_gate_split_f32                                 2.4 us
++  2978.578 ms     2 x K rms_norm_f32_v2                                  6.1 us
++  2978.586 ms     2 x K rope_neox_f32                                    2.8 us
++  2978.594 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2978.595 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                2.6 us
++  2978.600 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    53.4 us
++  2978.656 ms     1 x K fa_decode_combine_seqs                           4.4 us
++  2978.662 ms     1 x K sigmoid_f32                                      1.4 us
++  2978.666 ms     1 x K mul_f32                                          1.3 us
++  2978.667 ms     1 x K quantize_q8_1                                    1.5 us
++  2978.670 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        89.6 us
++  2978.760 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2978.766 ms     1 x K quantize_q8_1                                    1.6 us
++  2978.771 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                457.2 us
++  2979.229 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2979.235 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       235.0 us
++  2979.473 ms     1 x K add_f32                                          2.1 us
++  2979.475 ms     1 x K rms_norm_f32_v2                                  4.0 us
++  2979.479 ms     1 x K quantize_q8_1                                    1.4 us
++  2979.483 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                211.0 us
++  2979.696 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2979.697 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.8 us
++  2979.704 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2979.709 ms     1 x K gdn_scan_s128_tsnap                             41.8 us
++  2979.753 ms     1 x K gated_rmsnorm_q8_1                               2.3 us
++  2979.757 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       120.7 us
++  2979.877 ms     1 x K add_rms_norm_f32_v2                              6.0 us
++  2979.883 ms     1 x K quantize_q8_1                                    1.8 us
++  2979.888 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                447.9 us
++  2980.338 ms     1 x K silu_mul_scaled_q8_1                             3.7 us
++  2980.344 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       234.8 us
++  2980.582 ms     1 x K add_f32                                          2.0 us
++  2980.584 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2980.588 ms     1 x K quantize_q8_1                                    1.5 us
++  2980.592 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                213.7 us
++  2980.808 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2980.810 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.3 us
++  2980.816 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2980.821 ms     1 x K gdn_scan_s128_tsnap                             43.0 us
++  2980.866 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2980.870 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       119.7 us
++  2980.989 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2980.995 ms     1 x K quantize_q8_1                                    1.8 us
++  2980.999 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                451.7 us
++  2981.452 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2981.458 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       242.0 us
++  2981.703 ms     1 x K add_f32                                          2.3 us
++  2981.706 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2981.709 ms     1 x K quantize_q8_1                                    1.4 us
++  2981.714 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                214.1 us
++  2981.929 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2981.931 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                5.4 us
++  2981.938 ms     1 x K gdn_prep_decode_b_f32                            1.7 us
++  2981.942 ms     1 x K gdn_scan_s128_tsnap                             41.7 us
++  2981.985 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2981.989 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       111.8 us
++  2982.101 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2982.107 ms     1 x K quantize_q8_1                                    1.5 us
++  2982.111 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                455.6 us
++  2982.570 ms     1 x K silu_mul_scaled_q8_1                             4.3 us
++  2982.576 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       239.6 us
++  2982.818 ms     1 x K add_f32                                          2.0 us
++  2982.820 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2982.823 ms     1 x K quantize_q8_1                                    1.5 us
++  2982.828 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                186.5 us
++  2983.017 ms     1 x K q_gate_split_f32                                 1.9 us
++  2983.019 ms     2 x K rms_norm_f32_v2                                  5.2 us
++  2983.027 ms     2 x K rope_neox_f32                                    2.8 us
++  2983.035 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2983.036 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                2.6 us
++  2983.042 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    55.5 us
++  2983.100 ms     1 x K fa_decode_combine_seqs                           4.4 us
++  2983.106 ms     1 x K sigmoid_f32                                      1.4 us
++  2983.110 ms     1 x K mul_f32                                          1.5 us
++  2983.111 ms     1 x K quantize_q8_1                                    1.5 us
++  2983.114 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        85.7 us
++  2983.200 ms     1 x K add_rms_norm_f32_v2                              6.5 us
++  2983.206 ms     1 x K quantize_q8_1                                    1.7 us
++  2983.211 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                455.2 us
++  2983.667 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2983.673 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       240.2 us
++  2983.916 ms     1 x K add_f32                                          2.1 us
++  2983.919 ms     1 x K rms_norm_f32_v2                                  3.9 us
++  2983.922 ms     1 x K quantize_q8_1                                    1.8 us
++  2983.927 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                223.5 us
++  2984.151 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2984.153 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                5.9 us
++  2984.162 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2984.166 ms     1 x K gdn_scan_s128_tsnap                             42.1 us
++  2984.210 ms     1 x K gated_rmsnorm_q8_1                               2.5 us
++  2984.214 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       116.5 us
++  2984.330 ms     1 x K add_rms_norm_f32_v2                              6.1 us
++  2984.336 ms     1 x K quantize_q8_1                                    1.5 us
++  2984.340 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                456.3 us
++  2984.798 ms     1 x K silu_mul_scaled_q8_1                             4.0 us
++  2984.804 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       238.8 us
++  2985.045 ms     1 x K add_f32                                          1.8 us
++  2985.047 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2985.050 ms     1 x K quantize_q8_1                                    1.6 us
++  2985.055 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                213.2 us
++  2985.270 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2985.272 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                3.8 us
++  2985.279 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2985.283 ms     1 x K gdn_scan_s128_tsnap                             45.1 us
++  2985.331 ms     1 x K gated_rmsnorm_q8_1                               2.4 us
++  2985.335 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       122.1 us
++  2985.457 ms     1 x K add_rms_norm_f32_v2                              6.4 us
++  2985.464 ms     1 x K quantize_q8_1                                    1.9 us
++  2985.468 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                450.5 us
++  2985.920 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2985.926 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       239.0 us
++  2986.168 ms     1 x K add_f32                                          1.8 us
++  2986.170 ms     1 x K rms_norm_f32_v2                                  3.7 us
++  2986.174 ms     1 x K quantize_q8_1                                    1.6 us
++  2986.178 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                215.5 us
++  2986.396 ms     1 x C HtoD                                             0.5 us    0.000 MB
++  2986.398 ms     1 x K ssm_conv1d_fused_decode_tloop_f32                4.9 us
++  2986.404 ms     1 x K gdn_prep_decode_b_f32                            1.6 us
++  2986.409 ms     1 x K gdn_scan_s128_tsnap                             49.7 us
++  2986.460 ms     1 x K gated_rmsnorm_q8_1                               2.0 us
++  2986.464 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       112.2 us
++  2986.576 ms     1 x K add_rms_norm_f32_v2                              6.2 us
++  2986.582 ms     1 x K quantize_q8_1                                    1.5 us
++  2986.587 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                449.2 us
++  2987.038 ms     1 x K silu_mul_scaled_q8_1                             3.9 us
++  2987.044 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       235.9 us
++  2987.283 ms     1 x K add_f32                                          2.3 us
++  2987.285 ms     1 x K rms_norm_f32_v2                                  3.8 us
++  2987.289 ms     1 x K quantize_q8_1                                    1.5 us
++  2987.293 ms     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                183.7 us
++  2987.480 ms     1 x K q_gate_split_f32                                 1.9 us
++  2987.481 ms     2 x K rms_norm_f32_v2                                  6.1 us
++  2987.490 ms     2 x K rope_neox_f32                                    2.8 us
++  2987.498 ms     1 x C HtoD                                             0.4 us    0.000 MB
++  2987.499 ms     1 x K append_quantize_kv_q8_0_q5_1_seqs                2.3 us
++  2987.504 ms     1 x K fa_decode_vec_q_seqs_v4_deep                    53.8 us
++  2987.561 ms     1 x K fa_decode_combine_seqs                           4.4 us
++  2987.567 ms     1 x K sigmoid_f32                                      1.3 us
++  2987.571 ms     1 x K mul_f32                                          1.3 us
++  2987.572 ms     1 x K quantize_q8_1                                    1.5 us
++  2987.575 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                        86.6 us
++  2987.662 ms     1 x K add_rms_norm_f32_v2                              6.3 us
++  2987.668 ms     1 x K quantize_q8_1                                    1.5 us
++  2987.672 ms     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                458.5 us
++  2988.134 ms     1 x K silu_mul_scaled_q8_1                             3.8 us
++  2988.140 ms     1 x K qmatvec_nvfp4_mmvq_b4_rp                       237.6 us
++  2988.381 ms     1 x K add_f32                                          1.8 us
++  2988.383 ms     1 x K rms_norm_f32_v2                                  6.3 us
++  2988.389 ms     1 x K quantize_q8_1                                    1.5 us
++  2988.393 ms     1 x K qmatvec_q5_K_mmvq_b4_r2                       5046.8 us

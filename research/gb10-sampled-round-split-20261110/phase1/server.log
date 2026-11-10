@@ -1,0 +1,301 @@
+[server] build: memra-0.140.0-aa43454a1157 (id: source-tree, git: unknown)
+[server] starting; models config = [("q", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 52294MB (52293711872 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 52293711872 B; boot driver free 108345520128 B, post-reserve clamp 104587423744 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[fa-pool] grow #0 dev=0 o_len 0 -> 202752 ml_len 0 -> 792 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 202752 -> 405504 ml_len 792 -> 1584 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 405504 -> 811008 ml_len 1584 -> 3168 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 811008 -> 1622016 ml_len 3168 -> 6336 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 35MB (max of parked delta 35MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[spec-stats] rounds=4 full_accept=1 len_hist=[0, 0, 0, 4] per_slot=[1/4=0.250 1/4=0.250 1/4=0.250] total=3/12=0.250 tok_per_round=1.750
+[spec-phase] draft=85.3ms (21.3%) verify-issue=16.1ms (4.0%) verify-wait=294.7ms (73.5%) commit-host=4.8ms (1.2%) rounds=4
+[spec-stats] rounds=33 full_accept=14 len_hist=[0, 0, 0, 33] per_slot=[27/33=0.818 23/33=0.697 14/33=0.424] total=64/99=0.646 tok_per_round=2.939
+[spec-phase] draft=694.7ms (21.0%) verify-issue=121.2ms (3.7%) verify-wait=2453.3ms (74.2%) commit-host=37.0ms (1.1%) rounds=33
+[spec-stats] rounds=5 full_accept=0 len_hist=[0, 0, 0, 5] per_slot=[2/5=0.400 0/5=0.000 0/5=0.000] total=2/15=0.133 tok_per_round=1.400
+[spec-phase] draft=108.1ms (21.3%) verify-issue=18.8ms (3.7%) verify-wait=373.5ms (73.5%) commit-host=7.6ms (1.5%) rounds=5
+[spec-stats] rounds=5 full_accept=0 len_hist=[0, 0, 0, 5] per_slot=[2/5=0.400 2/5=0.400 0/5=0.000] total=4/15=0.267 tok_per_round=1.800
+[spec-phase] draft=107.8ms (21.4%) verify-issue=18.4ms (3.6%) verify-wait=369.7ms (73.5%) commit-host=7.4ms (1.5%) rounds=5
+[spec-stats] rounds=5 full_accept=0 len_hist=[0, 0, 0, 5] per_slot=[2/5=0.400 1/5=0.200 0/5=0.000] total=3/15=0.200 tok_per_round=1.600
+[spec-phase] draft=107.1ms (21.3%) verify-issue=18.0ms (3.6%) verify-wait=370.7ms (73.7%) commit-host=7.2ms (1.4%) rounds=5
+[spec-stats] rounds=5 full_accept=0 len_hist=[0, 0, 0, 5] per_slot=[2/5=0.400 1/5=0.200 0/5=0.000] total=3/15=0.200 tok_per_round=1.600
+[spec-phase] draft=107.3ms (21.3%) verify-issue=18.2ms (3.6%) verify-wait=370.6ms (73.6%) commit-host=7.2ms (1.4%) rounds=5
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[fa-pool] grow #5 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+[spec-stats] rounds=24 full_accept=24 len_hist=[0, 0, 0, 24] per_slot=[24/24=1.000 24/24=1.000 24/24=1.000] total=72/72=1.000 tok_per_round=4.000
+[spec-phase] draft=655.3ms (19.0%) verify-issue=975.1ms (28.3%) verify-wait=1731.3ms (50.2%) commit-host=85.9ms (2.5%) rounds=24
+[spec-stats] rounds=24 full_accept=24 len_hist=[0, 0, 0, 24] per_slot=[24/24=1.000 24/24=1.000 24/24=1.000] total=72/72=1.000 tok_per_round=4.000
+[spec-phase] draft=641.7ms (18.6%) verify-issue=2775.3ms (80.6%) verify-wait=5.8ms (0.2%) commit-host=20.9ms (0.6%) rounds=24
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[spec-stats] rounds=31 full_accept=21 len_hist=[0, 0, 0, 31] per_slot=[25/31=0.806 22/31=0.710 21/31=0.677] total=68/93=0.731 tok_per_round=3.194
+[spec-phase] draft=803.6ms (19.0%) verify-issue=3363.0ms (79.7%) verify-wait=8.4ms (0.2%) commit-host=44.5ms (1.1%) rounds=31
+[spec-stats] rounds=41 full_accept=7 len_hist=[0, 0, 0, 41] per_slot=[24/41=0.585 24/41=0.585 7/41=0.171] total=55/123=0.447 tok_per_round=2.341
+[spec-phase] draft=1018.3ms (19.5%) verify-issue=2883.3ms (55.2%) verify-wait=1218.1ms (23.3%) commit-host=103.8ms (2.0%) rounds=41
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":8589934592,"still_owned_bytes":16509783880,"pool_reserved_bytes":16743661568,"pool_cached_bytes":233877688,"driver_free_bytes":29783248896,"synchronization_errors":[]}
+[spec-cost] model="q" depth=2048 pooled=true plain_cap=16 round_overhead=24.53ms draft_step=0.00ms pooled_overhead=Some((4, 7.253432817073168)) pooled_draft_step=None verify_ms[1..16]=[77.0 74.9 75.2 75.7 76.4 77.1 78.5 80.0 82.5 85.0 87.5 90.0 92.1 94.2 96.3 98.5] plain_ms[1..]=[75.8 78.8 82.6 86.4 90.3 94.2 98.1 102.0 106.9 111.7 116.5 121.3 126.1 130.9 135.8 140.6] (44.9s)
+[prime-walk] model="q" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec-stats] rounds=28 full_accept=6 len_hist=[0, 0, 0, 28] per_slot=[19/28=0.679 10/28=0.357 6/28=0.214] total=35/84=0.417 tok_per_round=2.250
+[spec-phase] draft=612.1ms (21.2%) verify-issue=103.2ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=2175.2ms (75.3%) rounds=28
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1543503872,"still_owned_bytes":17239592784,"pool_reserved_bytes":17448304640,"pool_cached_bytes":208711856,"driver_free_bytes":29071978496,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1472MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=mtp transient floor 1536MB (static was 1536MB; measured 1309MB; probe kv charge 127MB, draft-state 35MB, drafted 84 accepted 35; [dev0 peak-mapped 18112MB rest-mapped 16640MB charged 162MB -> 1309MB]; 5.6s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[deadline] unified memory (48 SMs, served ctx 8192): streaming TTFT default/max 90000 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 2138000 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18196
+[meter] admit id=chatcmpl-8c500314da9b4e5ff165e0939ba51bb7 tenant=default lane=interactive model="q"
+[spec-cost] model="q" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=148 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 0MB fixed = 21MB
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 311MB (observed 313MB at ctx 92 path=spec)
+[spec-stats] rounds=12 full_accept=4 len_hist=[0, 0, 0, 12] per_slot=[10/12=0.833 5/12=0.417 4/12=0.333] total=19/36=0.528 tok_per_round=2.583
+[spec-phase] draft=252.6ms (20.6%) verify-issue=366.4ms (29.9%) verify-wait=590.0ms (48.2%) commit-host=15.8ms (1.3%) rounds=12
+[spec-acc] ctx=36 burst=19/36 cum=19/36=0.528
+[spec-stats] rounds=8 full_accept=0 len_hist=[0, 0, 0, 8] per_slot=[6/8=0.750 2/8=0.250 0/8=0.000] total=8/24=0.333 tok_per_round=2.000
+[spec-phase] draft=169.6ms (20.5%) verify-issue=237.4ms (28.6%) verify-wait=408.0ms (49.2%) commit-host=14.0ms (1.7%) rounds=8
+[spec-acc] ctx=68 burst=8/24 cum=27/60=0.450
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 83 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-c697633af77caf24b6a3e8288c08f171 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1703 path=spec = 31552 B/token x ctx + 568MB prefill-workspace + 311MB fixed = 933MB
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1239 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 311MB (observed 363MB at ctx 1647 path=spec)
+[spec-stats] rounds=16 full_accept=3 len_hist=[0, 0, 0, 16] per_slot=[11/16=0.688 3/16=0.188 3/16=0.188] total=17/48=0.354 tok_per_round=2.062
+[spec-phase] draft=335.2ms (21.0%) verify-issue=85.7ms (5.4%) verify-wait=1154.4ms (72.2%) commit-host=24.5ms (1.5%) rounds=16
+[spec-acc] ctx=1239 burst=17/48 cum=17/48=0.354
+[prefix-cache] insert (spec-boundary): 1216 tokens, 195.3MB (resident 195.3MB / 52294MB, model q)
+[spec-stats] rounds=12 full_accept=7 len_hist=[0, 0, 0, 12] per_slot=[8/12=0.667 7/12=0.583 7/12=0.583] total=22/36=0.611 tok_per_round=2.833
+[spec-phase] draft=251.7ms (21.1%) verify-issue=43.5ms (3.6%) verify-wait=884.8ms (74.3%) commit-host=10.7ms (0.9%) rounds=12
+[spec-acc] ctx=1273 burst=22/36 cum=39/84=0.464
+[spec-stats] rounds=13 full_accept=5 len_hist=[0, 0, 0, 13] per_slot=[10/13=0.769 7/13=0.538 5/13=0.385] total=22/39=0.564 tok_per_round=2.692
+[spec-phase] draft=273.5ms (21.2%) verify-issue=47.7ms (3.7%) verify-wait=954.0ms (73.9%) commit-host=15.2ms (1.2%) rounds=13
+[spec-acc] ctx=1307 burst=22/39 cum=61/123=0.496
+[spec-stats] rounds=12 full_accept=4 len_hist=[0, 0, 0, 12] per_slot=[10/12=0.833 8/12=0.667 4/12=0.333] total=22/36=0.611 tok_per_round=2.833
+[spec-phase] draft=252.6ms (21.2%) verify-issue=43.3ms (3.6%) verify-wait=882.4ms (74.0%) commit-host=14.9ms (1.2%) rounds=12
+[spec-acc] ctx=1342 burst=22/36 cum=83/159=0.522
+[spec-cost] model="q" realized n=1 K=3: 28.2 tok/s (now priced from serving)
+[spec-stats] rounds=17 full_accept=1 len_hist=[0, 0, 0, 17] per_slot=[12/17=0.706 2/17=0.118 1/17=0.059] total=15/51=0.294 tok_per_round=1.882
+[spec-phase] draft=356.8ms (21.0%) verify-issue=61.4ms (3.6%) verify-wait=1256.0ms (73.8%) commit-host=27.6ms (1.6%) rounds=17
+[spec-acc] ctx=1376 burst=15/51 cum=98/210=0.467
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 5/15=0.333 2/15=0.133] total=17/45=0.378 tok_per_round=2.133
+[spec-phase] draft=314.6ms (21.0%) verify-issue=54.1ms (3.6%) verify-wait=1104.7ms (73.8%) commit-host=22.8ms (1.5%) rounds=15
+[spec-acc] ctx=1408 burst=17/45 cum=115/255=0.451
+[spec-stats] rounds=15 full_accept=3 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 6/15=0.400 3/15=0.200] total=19/45=0.422 tok_per_round=2.267
+[spec-phase] draft=314.5ms (21.2%) verify-issue=54.1ms (3.6%) verify-wait=1096.2ms (73.8%) commit-host=21.4ms (1.4%) rounds=15
+[spec-acc] ctx=1440 burst=19/45 cum=134/300=0.447
+[spec-stats] rounds=15 full_accept=3 len_hist=[0, 0, 0, 15] per_slot=[9/15=0.600 6/15=0.400 3/15=0.200] total=18/45=0.400 tok_per_round=2.200
+[spec-phase] draft=314.4ms (21.2%) verify-issue=54.1ms (3.6%) verify-wait=1096.2ms (73.8%) commit-host=21.4ms (1.4%) rounds=15
+[spec-acc] ctx=1474 burst=18/45 cum=152/345=0.441
+[spec-stats] rounds=11 full_accept=5 len_hist=[0, 0, 0, 11] per_slot=[10/11=0.909 7/11=0.636 5/11=0.455] total=22/33=0.667 tok_per_round=3.000
+[spec-phase] draft=231.7ms (21.3%) verify-issue=39.7ms (3.7%) verify-wait=803.7ms (73.9%) commit-host=11.8ms (1.1%) rounds=11
+[spec-acc] ctx=1507 burst=22/33 cum=174/378=0.460
+[spec-stats] rounds=14 full_accept=4 len_hist=[0, 0, 0, 14] per_slot=[8/14=0.571 6/14=0.429 4/14=0.286] total=18/42=0.429 tok_per_round=2.286
+[spec-phase] draft=296.5ms (21.4%) verify-issue=50.5ms (3.6%) verify-wait=1022.6ms (73.7%) commit-host=18.3ms (1.3%) rounds=14
+[spec-acc] ctx=1540 burst=18/42 cum=192/420=0.457
+[spec-stats] rounds=16 full_accept=1 len_hist=[0, 0, 0, 16] per_slot=[11/16=0.688 7/16=0.438 1/16=0.062] total=19/48=0.396 tok_per_round=2.188
+[spec-phase] draft=336.6ms (21.2%) verify-issue=58.7ms (3.7%) verify-wait=1168.7ms (73.5%) commit-host=25.9ms (1.6%) rounds=16
+[spec-acc] ctx=1572 burst=19/48 cum=211/468=0.451
+[spec-stats] rounds=14 full_accept=3 len_hist=[0, 0, 0, 14] per_slot=[10/14=0.714 6/14=0.429 3/14=0.214] total=19/42=0.452 tok_per_round=2.357
+[spec-phase] draft=293.7ms (21.1%) verify-issue=50.5ms (3.6%) verify-wait=1025.3ms (73.8%) commit-host=19.7ms (1.4%) rounds=14
+[spec-acc] ctx=1607 burst=19/42 cum=230/510=0.451
+[meter] admit id=chatcmpl-6cbe2f5f408291f15495171cf769ce94 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1703 path=spec = 31552 B/token x ctx + 568MB prefill-workspace + 311MB fixed = 933MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 1 parked, 1239 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1239 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+[spec-stats] rounds=13 full_accept=3 len_hist=[0, 0, 0, 13] per_slot=[9/13=0.692 6/13=0.462 3/13=0.231] total=18/39=0.462 tok_per_round=2.385
+[spec-phase] draft=274.3ms (21.1%) verify-issue=87.6ms (6.7%) verify-wait=0.0ms (0.0%) commit-host=938.9ms (72.2%) rounds=13
+[spec-acc] ctx=1239 burst=18/39 cum=18/39=0.462
+[prefix-cache] insert (spec-boundary): 1216 tokens, 195.3MB (resident 390.6MB / 52294MB, model q)
+[spec-stats] rounds=12 full_accept=6 len_hist=[0, 0, 0, 12] per_slot=[9/12=0.750 7/12=0.583 6/12=0.500] total=22/36=0.611 tok_per_round=2.833
+[spec-phase] draft=253.4ms (21.3%) verify-issue=43.4ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=891.8ms (75.0%) rounds=12
+[spec-acc] ctx=1271 burst=22/36 cum=40/75=0.533
+[spec-stats] rounds=11 full_accept=5 len_hist=[0, 0, 0, 11] per_slot=[9/11=0.818 8/11=0.727 5/11=0.455] total=22/33=0.667 tok_per_round=3.000
+[spec-phase] draft=234.0ms (21.3%) verify-issue=39.9ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=823.0ms (75.0%) rounds=11
+[spec-acc] ctx=1306 burst=22/33 cum=62/108=0.574
+[spec-stats] rounds=16 full_accept=1 len_hist=[0, 0, 0, 16] per_slot=[10/16=0.625 5/16=0.312 1/16=0.062] total=16/48=0.333 tok_per_round=2.000
+[spec-phase] draft=337.5ms (21.1%) verify-issue=59.2ms (3.7%) verify-wait=0.0ms (0.0%) commit-host=1206.0ms (75.2%) rounds=16
+[spec-acc] ctx=1340 burst=16/48 cum=78/156=0.500
+[spec-stats] rounds=14 full_accept=3 len_hist=[0, 0, 0, 14] per_slot=[10/14=0.714 4/14=0.286 3/14=0.214] total=17/42=0.405 tok_per_round=2.214
+[spec-phase] draft=297.6ms (21.3%) verify-issue=50.6ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=1049.8ms (75.1%) rounds=14
+[spec-acc] ctx=1373 burst=17/42 cum=95/198=0.480
+[spec-stats] rounds=12 full_accept=5 len_hist=[0, 0, 0, 12] per_slot=[8/12=0.667 6/12=0.500 5/12=0.417] total=19/36=0.528 tok_per_round=2.583
+[spec-phase] draft=252.9ms (21.2%) verify-issue=44.0ms (3.7%) verify-wait=0.0ms (0.0%) commit-host=895.1ms (75.1%) rounds=12
+[spec-acc] ctx=1405 burst=19/36 cum=114/234=0.487
+[spec-stats] rounds=15 full_accept=3 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 4/15=0.267 3/15=0.200] total=17/45=0.378 tok_per_round=2.133
+[spec-phase] draft=316.6ms (21.3%) verify-issue=54.8ms (3.7%) verify-wait=0.0ms (0.0%) commit-host=1116.9ms (75.0%) rounds=15
+[spec-acc] ctx=1437 burst=17/45 cum=131/279=0.470
+[spec-stats] rounds=15 full_accept=5 len_hist=[0, 0, 0, 15] per_slot=[9/15=0.600 5/15=0.333 5/15=0.333] total=19/45=0.422 tok_per_round=2.267
+[spec-phase] draft=315.8ms (21.1%) verify-issue=54.9ms (3.7%) verify-wait=0.0ms (0.0%) commit-host=1124.6ms (75.2%) rounds=15
+[spec-acc] ctx=1470 burst=19/45 cum=150/324=0.463
+[spec-stats] rounds=12 full_accept=5 len_hist=[0, 0, 0, 12] per_slot=[8/12=0.667 6/12=0.500 5/12=0.417] total=19/36=0.528 tok_per_round=2.583
+[spec-phase] draft=252.8ms (21.0%) verify-issue=44.0ms (3.7%) verify-wait=0.0ms (0.0%) commit-host=907.3ms (75.3%) rounds=12
+[spec-acc] ctx=1505 burst=19/36 cum=169/360=0.469
+[spec-stats] rounds=14 full_accept=3 len_hist=[0, 0, 0, 14] per_slot=[10/14=0.714 7/14=0.500 3/14=0.214] total=20/42=0.476 tok_per_round=2.429
+[spec-phase] draft=294.3ms (21.0%) verify-issue=50.8ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=1057.4ms (75.4%) rounds=14
+[spec-acc] ctx=1537 burst=20/42 cum=189/402=0.470
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[10/13=0.769 8/13=0.615 2/13=0.154] total=20/39=0.513 tok_per_round=2.538
+[spec-phase] draft=276.4ms (21.2%) verify-issue=47.7ms (3.7%) verify-wait=0.0ms (0.0%) commit-host=980.0ms (75.2%) rounds=13
+[spec-acc] ctx=1572 burst=20/39 cum=209/441=0.474
+[spec-stats] rounds=16 full_accept=3 len_hist=[0, 0, 0, 16] per_slot=[7/16=0.438 5/16=0.312 3/16=0.188] total=15/48=0.312 tok_per_round=1.938
+[spec-phase] draft=336.3ms (21.0%) verify-issue=59.0ms (3.7%) verify-wait=0.0ms (0.0%) commit-host=1205.9ms (75.3%) rounds=16
+[spec-acc] ctx=1606 burst=15/48 cum=224/489=0.458
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0, 0, 0] per_slot=[0/0 0/0 0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-phase] draft=0.0ms (NaN%) verify-issue=0.0ms (NaN%) verify-wait=0.0ms (NaN%) commit-host=0.0ms (NaN%) rounds=0
+[meter] admit id=chatcmpl-dacfbf5b7611441d8bd3cf81ebba5540 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1704 path=spec = 31552 B/token x ctx + 569MB prefill-workspace + 311MB fixed = 934MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 2 parked, 1240 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1240 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 311MB (observed 363MB at ctx 1648 path=spec)
+[spec-stats] rounds=13 full_accept=4 len_hist=[0, 0, 0, 13] per_slot=[10/13=0.769 5/13=0.385 4/13=0.308] total=19/39=0.487 tok_per_round=2.462
+[spec-phase] draft=281.5ms (21.5%) verify-issue=76.0ms (5.8%) verify-wait=0.0ms (0.0%) commit-host=954.4ms (72.8%) rounds=13
+[spec-acc] ctx=1240 burst=19/39 cum=19/39=0.487
+[prefix-cache] insert (spec-boundary): 1216 tokens, 195.3MB (resident 585.8MB / 52294MB, model q)
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 7/13=0.538 2/13=0.154] total=20/39=0.513 tok_per_round=2.538
+[spec-phase] draft=283.2ms (21.6%) verify-issue=51.7ms (4.0%) verify-wait=0.0ms (0.0%) commit-host=974.0ms (74.4%) rounds=13
+[spec-acc] ctx=1273 burst=20/39 cum=39/78=0.500
+[spec-stats] rounds=10 full_accept=5 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 7/10=0.700 5/10=0.500] total=22/30=0.733 tok_per_round=3.200
+[spec-phase] draft=217.3ms (21.8%) verify-issue=36.2ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=745.5ms (74.6%) rounds=10
+[spec-acc] ctx=1307 burst=22/30 cum=61/108=0.565
+[spec-stats] rounds=14 full_accept=3 len_hist=[0, 0, 0, 14] per_slot=[10/14=0.714 6/14=0.429 3/14=0.214] total=19/42=0.452 tok_per_round=2.357
+[spec-phase] draft=306.4ms (21.9%) verify-issue=50.6ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=1045.0ms (74.5%) rounds=14
+[spec-acc] ctx=1340 burst=19/42 cum=80/150=0.533
+[spec-stats] rounds=13 full_accept=3 len_hist=[0, 0, 0, 13] per_slot=[10/13=0.769 5/13=0.385 3/13=0.231] total=18/39=0.462 tok_per_round=2.385
+[spec-phase] draft=281.1ms (21.6%) verify-issue=47.4ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=975.7ms (74.8%) rounds=13
+[spec-acc] ctx=1374 burst=18/39 cum=98/189=0.519
+[spec-stats] rounds=13 full_accept=4 len_hist=[0, 0, 0, 13] per_slot=[9/13=0.692 6/13=0.462 4/13=0.308] total=19/39=0.487 tok_per_round=2.462
+[spec-phase] draft=283.2ms (21.5%) verify-issue=47.7ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=983.3ms (74.8%) rounds=13
+[spec-acc] ctx=1406 burst=19/39 cum=117/228=0.513
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[9/12=0.750 8/12=0.667 3/12=0.250] total=20/36=0.556 tok_per_round=2.667
+[spec-phase] draft=262.2ms (21.6%) verify-issue=44.1ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=906.8ms (74.8%) rounds=12
+[spec-acc] ctx=1439 burst=20/36 cum=137/264=0.519
+[spec-stats] rounds=16 full_accept=2 len_hist=[0, 0, 0, 16] per_slot=[8/16=0.500 7/16=0.438 2/16=0.125] total=17/48=0.354 tok_per_round=2.062
+[spec-phase] draft=348.1ms (21.5%) verify-issue=58.3ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=1209.9ms (74.9%) rounds=16
+[spec-acc] ctx=1472 burst=17/48 cum=154/312=0.494
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[10/13=0.769 6/13=0.462 2/13=0.154] total=18/39=0.462 tok_per_round=2.385
+[spec-phase] draft=282.7ms (21.6%) verify-issue=47.0ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=979.0ms (74.8%) rounds=13
+[spec-acc] ctx=1506 burst=18/39 cum=172/351=0.490
+[spec-stats] rounds=13 full_accept=4 len_hist=[0, 0, 0, 13] per_slot=[10/13=0.769 6/13=0.462 4/13=0.308] total=20/39=0.513 tok_per_round=2.538
+[spec-phase] draft=282.3ms (21.5%) verify-issue=47.5ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=982.1ms (74.9%) rounds=13
+[spec-acc] ctx=1538 burst=20/39 cum=192/390=0.492
+[spec-stats] rounds=18 full_accept=1 len_hist=[0, 0, 0, 18] per_slot=[9/18=0.500 4/18=0.222 1/18=0.056] total=14/54=0.259 tok_per_round=1.778
+[spec-phase] draft=389.0ms (21.5%) verify-issue=65.0ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=1357.2ms (74.9%) rounds=18
+[spec-acc] ctx=1572 burst=14/54 cum=206/444=0.464
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[9/11=0.818 8/11=0.727 4/11=0.364] total=21/33=0.636 tok_per_round=2.909
+[spec-phase] draft=240.1ms (21.8%) verify-issue=39.7ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=823.3ms (74.6%) rounds=11
+[spec-acc] ctx=1605 burst=21/33 cum=227/477=0.476
+[spec-stats] rounds=1 full_accept=0 len_hist=[0, 0, 0, 1] per_slot=[1/1=1.000 1/1=1.000 0/1=0.000] total=2/3=0.667 tok_per_round=3.000
+[spec-phase] draft=23.0ms (22.7%) verify-issue=3.6ms (3.5%) verify-wait=0.0ms (0.0%) commit-host=74.5ms (73.8%) rounds=1
+[spec-acc] ctx=1638 burst=2/3 cum=229/480=0.477
+[meter] admit id=chatcmpl-1cf004afbd168476c7058cb620d2c940 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1703 path=spec = 31552 B/token x ctx + 568MB prefill-workspace + 311MB fixed = 933MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 2 parked, 1239 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1239 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[10/14=0.714 5/14=0.357 2/14=0.143] total=17/42=0.405 tok_per_round=2.214
+[spec-phase] draft=309.4ms (21.7%) verify-issue=68.1ms (4.8%) verify-wait=0.0ms (0.0%) commit-host=1047.5ms (73.5%) rounds=14
+[spec-acc] ctx=1239 burst=17/42 cum=17/42=0.405
+[prefix-cache] insert (spec-boundary): 1216 tokens, 195.3MB (resident 781.1MB / 52294MB, model q)
+[spec-stats] rounds=11 full_accept=5 len_hist=[0, 0, 0, 11] per_slot=[9/11=0.818 8/11=0.727 5/11=0.455] total=22/33=0.667 tok_per_round=3.000
+[spec-phase] draft=243.5ms (22.0%) verify-issue=44.8ms (4.1%) verify-wait=0.0ms (0.0%) commit-host=816.5ms (73.9%) rounds=11
+[spec-acc] ctx=1271 burst=22/33 cum=39/75=0.520
+[spec-stats] rounds=13 full_accept=5 len_hist=[0, 0, 0, 13] per_slot=[9/13=0.692 6/13=0.462 5/13=0.385] total=20/39=0.513 tok_per_round=2.538
+[spec-phase] draft=288.9ms (22.1%) verify-issue=47.7ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=971.0ms (74.3%) rounds=13
+[spec-acc] ctx=1305 burst=20/39 cum=59/114=0.518
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 4/10=0.400] total=22/30=0.733 tok_per_round=3.200
+[spec-phase] draft=222.8ms (22.0%) verify-issue=36.2ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=754.8ms (74.5%) rounds=10
+[spec-acc] ctx=1339 burst=22/30 cum=81/144=0.562
+[spec-stats] rounds=15 full_accept=3 len_hist=[0, 0, 0, 15] per_slot=[7/15=0.467 6/15=0.400 3/15=0.200] total=16/45=0.356 tok_per_round=2.067
+[spec-phase] draft=333.9ms (22.0%) verify-issue=54.3ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=1129.4ms (74.4%) rounds=15
+[spec-acc] ctx=1372 burst=16/45 cum=97/189=0.513
+[spec-stats] rounds=18 full_accept=2 len_hist=[0, 0, 0, 18] per_slot=[11/18=0.611 3/18=0.167 2/18=0.111] total=16/54=0.296 tok_per_round=1.889
+[spec-phase] draft=400.2ms (21.9%) verify-issue=65.8ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=1361.9ms (74.5%) rounds=18
+[spec-acc] ctx=1404 burst=16/54 cum=113/243=0.465
+[spec-stats] rounds=13 full_accept=5 len_hist=[0, 0, 0, 13] per_slot=[7/13=0.538 6/13=0.462 5/13=0.385] total=18/39=0.462 tok_per_round=2.385
+[spec-phase] draft=289.4ms (22.0%) verify-issue=47.6ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=979.2ms (74.4%) rounds=13
+[spec-acc] ctx=1439 burst=18/39 cum=131/282=0.465
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[10/14=0.714 6/14=0.429 2/14=0.143] total=18/42=0.429 tok_per_round=2.286
+[spec-phase] draft=313.2ms (22.0%) verify-issue=51.2ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=1059.9ms (74.4%) rounds=14
+[spec-acc] ctx=1471 burst=18/42 cum=149/324=0.460
+[spec-stats] rounds=18 full_accept=2 len_hist=[0, 0, 0, 18] per_slot=[9/18=0.500 3/18=0.167 2/18=0.111] total=14/54=0.259 tok_per_round=1.778
+[spec-phase] draft=402.0ms (21.8%) verify-issue=66.1ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=1372.8ms (74.6%) rounds=18
+[spec-acc] ctx=1504 burst=14/54 cum=163/378=0.431
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 6/14=0.429 2/14=0.143] total=19/42=0.452 tok_per_round=2.357
+[spec-phase] draft=312.4ms (21.9%) verify-issue=50.6ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=1062.4ms (74.5%) rounds=14
+[spec-acc] ctx=1537 burst=19/42 cum=182/420=0.433
+[spec-stats] rounds=16 full_accept=0 len_hist=[0, 0, 0, 16] per_slot=[11/16=0.688 6/16=0.375 0/16=0.000] total=17/48=0.354 tok_per_round=2.062
+[spec-phase] draft=357.2ms (21.8%) verify-issue=58.0ms (3.5%) verify-wait=0.0ms (0.0%) commit-host=1220.5ms (74.6%) rounds=16
+[spec-acc] ctx=1571 burst=17/48 cum=199/468=0.425
+[spec-stats] rounds=15 full_accept=4 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 5/15=0.333 4/15=0.267] total=19/45=0.422 tok_per_round=2.267
+[spec-phase] draft=333.2ms (22.0%) verify-issue=54.2ms (3.6%) verify-wait=0.0ms (0.0%) commit-host=1126.0ms (74.4%) rounds=15
+[spec-acc] ctx=1605 burst=19/45 cum=218/513=0.425
+[meter] admit id=chatcmpl-60ddfb9de9c6c16abacee439563db533 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1749 path=spec = 31552 B/token x ctx + 589MB prefill-workspace + 311MB fixed = 956MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 2 parked, 1285 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1285 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 311MB (observed 364MB at ctx 1693 path=spec)
+[spec-stats] rounds=13 full_accept=4 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 5/13=0.385 4/13=0.308] total=21/39=0.538 tok_per_round=2.615
+[spec-phase] draft=270.8ms (20.8%) verify-issue=70.0ms (5.4%) verify-wait=939.8ms (72.3%) commit-host=18.7ms (1.4%) rounds=13
+[spec-acc] ctx=1285 burst=21/39 cum=21/39=0.538
+[prefix-cache] insert (spec-boundary): 1248 tokens, 196.3MB (resident 977.4MB / 52294MB, model q)
+[spec-stats] rounds=15 full_accept=3 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 5/15=0.333 3/15=0.200] total=18/45=0.400 tok_per_round=2.200
+[spec-phase] draft=315.7ms (21.1%) verify-issue=54.5ms (3.6%) verify-wait=1105.7ms (73.8%) commit-host=21.6ms (1.4%) rounds=15
+[spec-acc] ctx=1320 burst=18/45 cum=39/84=0.464
+[spec-stats] rounds=9 full_accept=7 len_hist=[0, 0, 0, 9] per_slot=[9/9=1.000 8/9=0.889 7/9=0.778] total=24/27=0.889 tok_per_round=3.667
+[spec-phase] draft=189.4ms (21.2%) verify-issue=32.8ms (3.7%) verify-wait=663.6ms (74.4%) commit-host=5.7ms (0.6%) rounds=9
+[spec-acc] ctx=1353 burst=24/27 cum=63/111=0.568
+[spec-stats] rounds=14 full_accept=6 len_hist=[0, 0, 0, 14] per_slot=[8/14=0.571 7/14=0.500 6/14=0.429] total=21/42=0.500 tok_per_round=2.500
+[spec-phase] draft=294.0ms (21.2%) verify-issue=50.9ms (3.7%) verify-wait=1029.3ms (74.1%) commit-host=15.6ms (1.1%) rounds=14
+[spec-acc] ctx=1386 burst=21/42 cum=84/153=0.549
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[11/15=0.733 5/15=0.333 1/15=0.067] total=17/45=0.378 tok_per_round=2.133
+[spec-phase] draft=314.7ms (20.9%) verify-issue=55.2ms (3.7%) verify-wait=1111.4ms (73.8%) commit-host=24.3ms (1.6%) rounds=15
+[spec-acc] ctx=1421 burst=17/45 cum=101/198=0.510
+[spec-stats] rounds=12 full_accept=4 len_hist=[0, 0, 0, 12] per_slot=[10/12=0.833 7/12=0.583 4/12=0.333] total=21/36=0.583 tok_per_round=2.750
+[spec-phase] draft=252.0ms (21.2%) verify-issue=43.3ms (3.6%) verify-wait=879.1ms (73.9%) commit-host=15.0ms (1.3%) rounds=12
+[spec-acc] ctx=1453 burst=21/36 cum=122/234=0.521
+[spec-stats] rounds=15 full_accept=3 len_hist=[0, 0, 0, 15] per_slot=[11/15=0.733 5/15=0.333 3/15=0.200] total=19/45=0.422 tok_per_round=2.267
+[spec-phase] draft=314.6ms (21.2%) verify-issue=54.3ms (3.7%) verify-wait=1095.7ms (73.7%) commit-host=21.5ms (1.4%) rounds=15
+[spec-acc] ctx=1486 burst=19/45 cum=141/279=0.505
+[spec-stats] rounds=16 full_accept=1 len_hist=[0, 0, 0, 16] per_slot=[10/16=0.625 6/16=0.375 1/16=0.062] total=17/48=0.354 tok_per_round=2.062
+[spec-phase] draft=335.5ms (21.1%) verify-issue=57.7ms (3.6%) verify-wait=1169.5ms (73.6%) commit-host=26.5ms (1.7%) rounds=16
+[spec-acc] ctx=1520 burst=17/48 cum=158/327=0.483
+[spec-stats] rounds=14 full_accept=3 len_hist=[0, 0, 0, 14] per_slot=[10/14=0.714 6/14=0.429 3/14=0.214] total=19/42=0.452 tok_per_round=2.357
+[spec-phase] draft=296.3ms (21.3%) verify-issue=50.5ms (3.6%) verify-wait=1022.2ms (73.6%) commit-host=19.9ms (1.4%) rounds=14
+[spec-acc] ctx=1553 burst=19/42 cum=177/369=0.480
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 6/15=0.400 2/15=0.133] total=18/45=0.400 tok_per_round=2.200
+[spec-phase] draft=317.0ms (21.2%) verify-issue=55.9ms (3.7%) verify-wait=1097.6ms (73.4%) commit-host=25.2ms (1.7%) rounds=15
+[spec-acc] ctx=1586 burst=18/45 cum=195/414=0.471
+[spec-stats] rounds=15 full_accept=4 len_hist=[0, 0, 0, 15] per_slot=[9/15=0.600 7/15=0.467 4/15=0.267] total=20/45=0.444 tok_per_round=2.333
+[spec-phase] draft=316.1ms (21.2%) verify-issue=54.8ms (3.7%) verify-wait=1096.8ms (73.7%) commit-host=20.6ms (1.4%) rounds=15
+[spec-acc] ctx=1619 burst=20/45 cum=215/459=0.468
+[spec-stats] rounds=17 full_accept=1 len_hist=[0, 0, 0, 17] per_slot=[11/17=0.647 2/17=0.118 1/17=0.059] total=14/51=0.275 tok_per_round=1.824
+[spec-phase] draft=356.5ms (21.1%) verify-issue=61.2ms (3.6%) verify-wait=1243.9ms (73.6%) commit-host=28.0ms (1.7%) rounds=17
+[spec-acc] ctx=1654 burst=14/51 cum=229/510=0.449
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

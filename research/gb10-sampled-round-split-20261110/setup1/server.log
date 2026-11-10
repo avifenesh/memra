@@ -1,0 +1,221 @@
+[server] build: memra-0.140.0-aa43454a1157 (id: source-tree, git: unknown)
+[server] starting; models config = [("q", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 52273MB (52273389568 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 52273389568 B; boot driver free 108304875520 B, post-reserve clamp 104546779136 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[fa-pool] grow #0 dev=0 o_len 0 -> 202752 ml_len 0 -> 792 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 202752 -> 405504 ml_len 792 -> 1584 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 405504 -> 811008 ml_len 1584 -> 3168 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 811008 -> 1622016 ml_len 3168 -> 6336 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 35MB (max of parked delta 35MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=403.08ms tail=0.20ms total=403.58ms out=8 cont=false
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=3301.60ms tail=0.16ms total=3301.80ms out=97 cont=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=504.48ms tail=0.26ms total=505.05ms out=8 cont=false
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=503.79ms tail=0.21ms total=504.31ms out=10 cont=false
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=500.29ms tail=0.21ms total=500.81ms out=9 cont=false
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=502.11ms tail=0.17ms total=502.58ms out=9 cont=false
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[fa-pool] grow #5 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=3459.35ms tail=0.16ms total=3459.57ms out=96 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=3453.51ms tail=2.99ms total=3456.53ms out=96 cont=true
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=4228.10ms tail=1.67ms total=4229.79ms out=99 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=5227.24ms tail=0.21ms total=5227.48ms out=96 cont=true
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":8623489024,"still_owned_bytes":16509783880,"pool_reserved_bytes":16710107136,"pool_cached_bytes":200323256,"driver_free_bytes":29834510336,"synchronization_errors":[]}
+[spec-cost] model="q" depth=2048 pooled=true plain_cap=16 round_overhead=24.52ms draft_step=0.00ms pooled_overhead=Some((4, 7.304463890243902)) pooled_draft_step=None verify_ms[1..16]=[76.2 74.8 74.7 75.5 76.6 77.6 79.0 80.4 82.5 84.7 86.9 89.1 91.4 93.7 96.0 98.3] plain_ms[1..]=[75.6 78.8 82.5 86.2 90.5 94.8 99.1 103.4 108.1 112.8 117.4 122.1 126.8 131.5 136.1 140.8] (44.9s)
+[prime-walk] model="q" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec-setup] init=0.34ms cap=0.01ms fill=0.00ms rounds=2866.08ms tail=77.69ms total=2944.11ms out=64 cont=false
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1543503872,"still_owned_bytes":17239592784,"pool_reserved_bytes":17414750208,"pool_cached_bytes":175157424,"driver_free_bytes":29120086016,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1472MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=mtp transient floor 1536MB (static was 1536MB; measured 1309MB; probe kv charge 127MB, draft-state 35MB, drafted 84 accepted 35; [dev0 peak-mapped 18080MB rest-mapped 16608MB charged 162MB -> 1309MB]; 5.6s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[deadline] unified memory (48 SMs, served ctx 8192): streaming TTFT default/max 90000 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 2138000 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18196
+[meter] admit id=chatcmpl-a59845b09e4da14e24bab0b5d667a3f5 tenant=default lane=interactive model="q"
+[spec-cost] model="q" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=148 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 0MB fixed = 21MB
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 312MB (observed 315MB at ctx 92 path=spec)
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=1238.93ms tail=0.19ms total=1239.43ms out=32 cont=false
+[spec-acc] ctx=36 burst=19/36 cum=19/36=0.528
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=836.82ms tail=0.20ms total=837.05ms out=16 cont=true
+[spec-acc] ctx=68 burst=8/24 cum=27/60=0.450
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 83 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-9bed123183d422687e1ef9e5650cb9ec tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1703 path=spec = 31552 B/token x ctx + 568MB prefill-workspace + 312MB fixed = 934MB
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1239 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=1591.92ms tail=0.15ms total=1592.37ms out=34 cont=false
+[spec-acc] ctx=1239 burst=17/48 cum=17/48=0.354
+[prefix-cache] insert (spec-boundary): 1216 tokens, 195.3MB (resident 195.3MB / 52273MB, model q)
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1182.49ms tail=0.15ms total=1182.67ms out=34 cont=true
+[spec-acc] ctx=1273 burst=22/36 cum=39/84=0.464
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1292.17ms tail=0.16ms total=1292.37ms out=35 cont=true
+[spec-acc] ctx=1307 burst=22/39 cum=61/123=0.496
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1194.02ms tail=0.20ms total=1194.25ms out=34 cont=true
+[spec-acc] ctx=1342 burst=22/36 cum=83/159=0.522
+[spec-cost] model="q" realized n=1 K=3: 28.3 tok/s (now priced from serving)
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1701.81ms tail=0.20ms total=1702.05ms out=32 cont=true
+[spec-acc] ctx=1376 burst=15/51 cum=98/210=0.467
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1489.60ms tail=0.20ms total=1489.82ms out=32 cont=true
+[spec-acc] ctx=1408 burst=17/45 cum=115/255=0.451
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1492.16ms tail=0.16ms total=1492.35ms out=34 cont=true
+[spec-acc] ctx=1440 burst=19/45 cum=134/300=0.447
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1487.66ms tail=0.20ms total=1487.89ms out=33 cont=true
+[spec-acc] ctx=1474 burst=18/45 cum=152/345=0.441
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1088.26ms tail=0.21ms total=1088.50ms out=33 cont=true
+[spec-acc] ctx=1507 burst=22/33 cum=174/378=0.460
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1386.88ms tail=0.19ms total=1387.11ms out=32 cont=true
+[spec-acc] ctx=1540 burst=18/42 cum=192/420=0.457
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1591.26ms tail=0.15ms total=1591.45ms out=35 cont=true
+[spec-acc] ctx=1572 burst=19/48 cum=211/468=0.451
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1388.97ms tail=0.16ms total=1389.16ms out=33 cont=true
+[spec-acc] ctx=1607 burst=19/42 cum=230/510=0.451
+[meter] admit id=chatcmpl-49760cbd6cbe81ebc247ce548e551d45 tenant=default lane=interactive model="q"
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 1 parked, 1239 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1239 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+[spec-setup] init=0.35ms cap=0.01ms fill=0.00ms rounds=1303.87ms tail=76.53ms total=1380.76ms out=32 cont=false
+[spec-acc] ctx=1239 burst=18/39 cum=18/39=0.462
+[prefix-cache] insert (spec-boundary): 1216 tokens, 195.3MB (resident 390.6MB / 52273MB, model q)
+[spec-setup] init=74.95ms cap=0.04ms fill=0.00ms rounds=1189.67ms tail=75.15ms total=1339.81ms out=35 cont=true
+[spec-acc] ctx=1271 burst=22/36 cum=40/75=0.533
+[spec-setup] init=75.72ms cap=0.04ms fill=0.00ms rounds=1093.75ms tail=75.12ms total=1244.63ms out=34 cont=true
+[spec-acc] ctx=1306 burst=22/33 cum=62/108=0.574
+[spec-setup] init=75.67ms cap=0.03ms fill=0.00ms rounds=1590.19ms tail=75.10ms total=1741.00ms out=33 cont=true
+[spec-acc] ctx=1340 burst=16/48 cum=78/156=0.500
+[spec-setup] init=75.73ms cap=0.04ms fill=0.00ms rounds=1393.48ms tail=75.21ms total=1544.46ms out=32 cont=true
+[spec-acc] ctx=1373 burst=17/42 cum=95/198=0.480
+[spec-setup] init=75.60ms cap=0.04ms fill=0.00ms rounds=1193.06ms tail=75.24ms total=1343.94ms out=32 cont=true
+[spec-acc] ctx=1405 burst=19/36 cum=114/234=0.487
+[spec-setup] init=75.80ms cap=0.03ms fill=0.00ms rounds=1497.38ms tail=75.18ms total=1648.39ms out=33 cont=true
+[spec-acc] ctx=1437 burst=17/45 cum=131/279=0.470
+[spec-setup] init=76.03ms cap=0.03ms fill=0.00ms rounds=1500.06ms tail=75.78ms total=1651.90ms out=35 cont=true
+[spec-acc] ctx=1470 burst=19/45 cum=150/324=0.463
+[spec-setup] init=75.66ms cap=0.03ms fill=0.00ms rounds=1191.79ms tail=75.20ms total=1342.68ms out=32 cont=true
+[spec-acc] ctx=1505 burst=19/36 cum=169/360=0.469
+[spec-setup] init=75.89ms cap=0.03ms fill=0.00ms rounds=1391.95ms tail=75.24ms total=1543.11ms out=35 cont=true
+[spec-acc] ctx=1537 burst=20/42 cum=189/402=0.470
+[spec-setup] init=76.43ms cap=0.03ms fill=0.00ms rounds=1293.82ms tail=75.25ms total=1445.54ms out=34 cont=true
+[spec-acc] ctx=1572 burst=20/39 cum=209/441=0.474
+[spec-setup] init=75.89ms cap=0.03ms fill=0.00ms rounds=1591.21ms tail=75.29ms total=1742.42ms out=32 cont=true
+[spec-acc] ctx=1606 burst=15/48 cum=224/489=0.458
+[spec-setup] init=75.86ms cap=0.03ms fill=0.00ms rounds=0.43ms tail=1.81ms total=78.13ms out=1 cont=true
+[meter] admit id=chatcmpl-20db7ee2fdd3b983acfc1e3c0e3f14c2 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1704 path=spec = 31552 B/token x ctx + 569MB prefill-workspace + 312MB fixed = 935MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 2 parked, 1240 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1240 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.35ms cap=0.01ms fill=0.00ms rounds=1316.88ms tail=75.29ms total=1392.53ms out=33 cont=false
+[spec-acc] ctx=1240 burst=19/39 cum=19/39=0.487
+[prefix-cache] insert (spec-boundary): 1216 tokens, 195.3MB (resident 585.8MB / 52273MB, model q)
+[spec-setup] init=75.68ms cap=0.04ms fill=0.00ms rounds=1315.43ms tail=76.10ms total=1467.25ms out=34 cont=true
+[spec-acc] ctx=1273 burst=20/39 cum=39/78=0.500
+[spec-setup] init=74.97ms cap=0.04ms fill=0.00ms rounds=1004.77ms tail=75.80ms total=1155.57ms out=33 cont=true
+[spec-acc] ctx=1307 burst=22/30 cum=61/108=0.565
+[spec-setup] init=76.22ms cap=0.03ms fill=0.00ms rounds=1408.93ms tail=76.12ms total=1561.29ms out=34 cont=true
+[spec-acc] ctx=1340 burst=19/42 cum=80/150=0.533
+[spec-setup] init=76.38ms cap=0.03ms fill=0.00ms rounds=1309.91ms tail=75.85ms total=1462.18ms out=32 cont=true
+[spec-acc] ctx=1374 burst=18/39 cum=98/189=0.519
+[spec-setup] init=77.46ms cap=0.03ms fill=0.00ms rounds=1309.24ms tail=75.88ms total=1462.61ms out=33 cont=true
+[spec-acc] ctx=1406 burst=19/39 cum=117/228=0.513
+[spec-setup] init=75.69ms cap=0.03ms fill=0.00ms rounds=1211.75ms tail=76.05ms total=1363.52ms out=33 cont=true
+[spec-acc] ctx=1439 burst=20/36 cum=137/264=0.519
+[spec-setup] init=74.98ms cap=0.03ms fill=0.00ms rounds=1612.91ms tail=76.11ms total=1764.04ms out=34 cont=true
+[spec-acc] ctx=1472 burst=17/48 cum=154/312=0.494
+[spec-setup] init=74.97ms cap=0.03ms fill=0.00ms rounds=1311.94ms tail=76.96ms total=1463.90ms out=32 cont=true
+[spec-acc] ctx=1506 burst=18/39 cum=172/351=0.490
+[spec-setup] init=75.05ms cap=0.04ms fill=0.00ms rounds=1305.99ms tail=76.61ms total=1457.69ms out=34 cont=true
+[spec-acc] ctx=1538 burst=20/39 cum=192/390=0.492
+[spec-setup] init=75.82ms cap=0.03ms fill=0.00ms rounds=1809.13ms tail=75.52ms total=1960.50ms out=33 cont=true
+[spec-acc] ctx=1572 burst=14/54 cum=206/444=0.464
+[spec-setup] init=76.45ms cap=0.03ms fill=0.00ms rounds=1101.59ms tail=75.53ms total=1253.60ms out=33 cont=true
+[spec-acc] ctx=1605 burst=21/33 cum=227/477=0.476
+[spec-setup] init=75.06ms cap=0.04ms fill=0.00ms rounds=102.17ms tail=75.60ms total=252.87ms out=4 cont=true
+[spec-acc] ctx=1638 burst=2/3 cum=229/480=0.477
+[meter] admit id=chatcmpl-459cbb8f5b1f443f3eea8212969c52f4 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1703 path=spec = 31552 B/token x ctx + 568MB prefill-workspace + 312MB fixed = 934MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 2 parked, 1239 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1239 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=1420.97ms tail=76.12ms total=1497.43ms out=32 cont=false
+[spec-acc] ctx=1239 burst=17/42 cum=17/42=0.405
+[prefix-cache] insert (spec-boundary): 1216 tokens, 195.3MB (resident 781.1MB / 52273MB, model q)
+[spec-setup] init=75.74ms cap=0.03ms fill=0.00ms rounds=1120.42ms tail=75.57ms total=1271.77ms out=34 cont=true
+[spec-acc] ctx=1271 burst=22/33 cum=39/75=0.520
+[spec-setup] init=76.36ms cap=0.04ms fill=0.00ms rounds=1315.34ms tail=76.21ms total=1467.95ms out=34 cont=true
+[spec-acc] ctx=1305 burst=20/39 cum=59/114=0.518
+[spec-setup] init=75.74ms cap=0.03ms fill=0.00ms rounds=1015.32ms tail=77.00ms total=1168.09ms out=33 cont=true
+[spec-acc] ctx=1339 burst=22/30 cum=81/144=0.562
+[spec-setup] init=74.97ms cap=0.03ms fill=0.00ms rounds=1528.24ms tail=76.23ms total=1679.46ms out=32 cont=true
+[spec-acc] ctx=1372 burst=16/45 cum=97/189=0.513
+[spec-setup] init=74.93ms cap=0.03ms fill=0.00ms rounds=1835.51ms tail=75.42ms total=1985.89ms out=35 cont=true
+[spec-acc] ctx=1404 burst=16/54 cum=113/243=0.465
+[spec-setup] init=75.78ms cap=0.03ms fill=0.00ms rounds=1323.72ms tail=76.23ms total=1475.77ms out=32 cont=true
+[spec-acc] ctx=1439 burst=18/39 cum=131/282=0.465
+[spec-setup] init=74.97ms cap=0.03ms fill=0.00ms rounds=1422.86ms tail=76.28ms total=1574.14ms out=33 cont=true
+[spec-acc] ctx=1471 burst=18/42 cum=149/324=0.460
+[spec-setup] init=74.98ms cap=0.03ms fill=0.00ms rounds=1826.80ms tail=75.54ms total=1977.35ms out=33 cont=true
+[spec-acc] ctx=1504 burst=14/54 cum=163/378=0.431
+[spec-setup] init=75.85ms cap=0.03ms fill=0.00ms rounds=1418.99ms tail=76.04ms total=1570.92ms out=34 cont=true
+[spec-acc] ctx=1537 burst=19/42 cum=182/420=0.433
+[spec-setup] init=75.41ms cap=0.03ms fill=0.00ms rounds=1634.79ms tail=75.58ms total=1785.82ms out=34 cont=true
+[spec-acc] ctx=1571 burst=17/48 cum=199/468=0.425
+[spec-setup] init=76.56ms cap=0.03ms fill=0.00ms rounds=1531.09ms tail=75.61ms total=1683.29ms out=35 cont=true
+[spec-acc] ctx=1605 burst=19/45 cum=218/513=0.425
+[meter] admit id=chatcmpl-cf8d0ca0072192de0ec0e914648853a7 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1749 path=spec = 31552 B/token x ctx + 589MB prefill-workspace + 312MB fixed = 957MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1216; 2 parked, 1285 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1285 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=1296.15ms tail=0.15ms total=1296.61ms out=35 cont=false
+[spec-acc] ctx=1285 burst=21/39 cum=21/39=0.538
+[prefix-cache] insert (spec-boundary): 1248 tokens, 196.3MB (resident 977.4MB / 52273MB, model q)
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1496.43ms tail=0.15ms total=1496.62ms out=33 cont=true
+[spec-acc] ctx=1320 burst=18/45 cum=39/84=0.464
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=888.34ms tail=0.16ms total=888.54ms out=33 cont=true
+[spec-acc] ctx=1353 burst=24/27 cum=63/111=0.568
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1384.75ms tail=0.16ms total=1384.95ms out=35 cont=true
+[spec-acc] ctx=1386 burst=21/42 cum=84/153=0.549
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1504.34ms tail=0.19ms total=1504.57ms out=32 cont=true
+[spec-acc] ctx=1421 burst=17/45 cum=101/198=0.510
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1190.72ms tail=0.20ms total=1190.95ms out=33 cont=true
+[spec-acc] ctx=1453 burst=21/36 cum=122/234=0.521
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1495.89ms tail=0.16ms total=1496.08ms out=34 cont=true
+[spec-acc] ctx=1486 burst=19/45 cum=141/279=0.505
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1596.90ms tail=0.21ms total=1597.14ms out=33 cont=true
+[spec-acc] ctx=1520 burst=17/48 cum=158/327=0.483
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1401.55ms tail=0.26ms total=1401.84ms out=33 cont=true
+[spec-acc] ctx=1553 burst=19/42 cum=177/369=0.480
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1500.67ms tail=0.13ms total=1500.84ms out=33 cont=true
+[spec-acc] ctx=1586 burst=18/45 cum=195/414=0.471
+[spec-setup] init=0.01ms cap=0.06ms fill=0.00ms rounds=1494.49ms tail=0.16ms total=1494.71ms out=35 cont=true
+[spec-acc] ctx=1619 burst=20/45 cum=215/459=0.468
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1706.60ms tail=0.20ms total=1706.83ms out=31 cont=true
+[spec-acc] ctx=1654 burst=14/51 cum=229/510=0.449
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

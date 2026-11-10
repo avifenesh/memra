@@ -1,0 +1,8 @@
+MEMRA_SPEC_PHASE=1: the round loop on the engine's clock, ms per round; outside = client decode time less the round loops
+class     bursts rounds    draft   verify commit-host  in the round loop  client decode  outside  outside per burst
+warm           2     20    21.11    80.09        1.49             102.69         103.06     0.37                3.7
+greedy        12    170    21.01    77.01        1.38              99.40          99.46     0.05                0.8
+t1            13    163    21.12     3.90       74.83              99.84         111.03    11.19              140.3
+chat          13    160    21.75     3.84       75.07             100.66         112.53    11.87              146.1
+pen           12    171    22.26     3.77       75.45             101.48         111.70    10.23              145.7
+greedy-b      12    170    21.02    77.03        1.43              99.48          99.53     0.06                0.8
