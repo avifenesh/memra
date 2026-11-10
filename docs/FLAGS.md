@@ -1696,7 +1696,7 @@ What else used the seam:
 - No model: gemma4 and the hyper trunk are eager-routed inside the batched scheduler
   (`served_decode_is_eager`).
 
-Deleted: `serve_batching()` and its 13 call sites, the round-robin loop in the tick, the prefill
+Deleted: `serve_batching()` and every call site, the round-robin loop in the tick, the prefill
 phase of `step_session` (only that loop reached it; `prefill_tick` is the one prime site and
 `step_session` refuses a session that is still prefilling), `step_session_async_chain`,
 `advance_token_emit`, `serve_async_chain_k`, `legacy_async_chain_width`, `async_chain_devsample`,
