@@ -1,0 +1,23 @@
+[dsv41-tp] ranks=4 devices=[0, 1, 2, 3] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+gather     1 KiB a rank in 1 rows, 4 ranks: in kernels 5.1 us, kept blocks 28.0 us
+gather     1 KiB a rank in 8 rows, 4 ranks: in kernels 5.4 us, kept blocks 27.6 us
+gather     2 KiB a rank in 1 rows, 4 ranks: in kernels 5.6 us, kept blocks 27.6 us
+gather     2 KiB a rank in 8 rows, 4 ranks: in kernels 6.0 us, kept blocks 27.4 us
+gather     4 KiB a rank in 1 rows, 4 ranks: in kernels 7.2 us, kept blocks 32.7 us
+gather     4 KiB a rank in 8 rows, 4 ranks: in kernels 7.2 us, kept blocks 30.4 us
+gather     8 KiB a rank in 1 rows, 4 ranks: in kernels 8.5 us, kept blocks 43.0 us
+gather     8 KiB a rank in 8 rows, 4 ranks: in kernels 8.2 us, kept blocks 43.7 us
+gather    16 KiB a rank in 1 rows, 4 ranks: in kernels 14.5 us, kept blocks 47.0 us
+gather    16 KiB a rank in 8 rows, 4 ranks: in kernels 10.7 us, kept blocks 45.6 us
+gather    32 KiB a rank in 1 rows, 4 ranks: in kernels 17.8 us, kept blocks 54.5 us
+gather    32 KiB a rank in 8 rows, 4 ranks: in kernels 15.3 us, kept blocks 54.2 us
+gather    64 KiB a rank in 1 rows, 4 ranks: in kernels 32.2 us, kept blocks 76.4 us
+gather    64 KiB a rank in 8 rows, 4 ranks: in kernels 24.6 us, kept blocks 77.1 us
+gather   128 KiB a rank in 1 rows, 4 ranks: in kernels 39.3 us, kept blocks 119.0 us
+gather   128 KiB a rank in 8 rows, 4 ranks: in kernels 42.7 us, kept blocks 115.7 us
+gather   256 KiB a rank in 1 rows, 4 ranks: in kernels 73.9 us, kept blocks 273.7 us
+gather   256 KiB a rank in 8 rows, 4 ranks: in kernels 77.2 us, kept blocks 276.1 us
+gather   512 KiB a rank in 1 rows, 4 ranks: in kernels 143.1 us, kept blocks 644.8 us
+gather   512 KiB a rank in 8 rows, 4 ranks: in kernels 149.5 us, kept blocks 651.3 us
+gather  1024 KiB a rank in 1 rows, 4 ranks: in kernels 284.1 us, kept blocks 1404.3 us
+gather  1024 KiB a rank in 8 rows, 4 ranks: in kernels 306.0 us, kept blocks 1391.7 us

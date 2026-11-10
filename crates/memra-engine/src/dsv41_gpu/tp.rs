@@ -462,12 +462,8 @@ fn de(e: impl std::fmt::Debug) -> String {
     format!("{e:?}")
 }
 
-/// Device-to-device copy of `b` from `src` into the same region of `dst`, on `ops`'s stream.
-fn copy_blk(ops: &super::Ops, src: &Buf, dst: &Buf, b: Blk) -> Result<(), String> {
-    copy_addr(ops, src.p(&ops.st).addr(), dst.p(&ops.st).addr(), b)
-}
-
-/// [`copy_blk`] between two device base addresses.
+/// Device-to-device copy of region `b` from base address `src` into the same region at `dst`,
+/// on `ops`'s stream, by plain device addresses (a strided region as one 2D copy).
 fn copy_addr(ops: &super::Ops, src: u64, dst: u64, b: Blk) -> Result<(), String> {
     use cudarc::driver::sys::*;
     if b.bytes() == 0 {
@@ -503,6 +499,46 @@ fn copy_addr(ops: &super::Ops, src: u64, dst: u64, b: Blk) -> Result<(), String>
         return Err(format!("dsv41 tp copy: {r:?}"));
     }
     Ok(())
+}
+
+/// A copy between two ranks' cards: region `b` of the rank buffer at `src` (on the card of
+/// context `src_ctx`) into the same region at `dst`, on `ops`'s stream (the destination's),
+/// through the peer copy call that names both contexts. A contiguous region (one row, or rows
+/// with no gap) is one call; a strided one never reaches here (the packed gather moves it
+/// through contiguous blocks) and keeps [`copy_addr`]. WHY: on four cards a copy by plain device
+/// address out of a peer's stream-ordered pool block, issued on the consumer's stream, runs at
+/// 2.5-2.9 GB/s a rank where the peer call between the same blocks runs at about 50; cudaMalloc
+/// blocks or a copy issued by the producer run at 50 too (p2p-probe2 in the perf receipts).
+/// Same stream and the same events, so the transport's laws hold unchanged.
+fn copy_peer(ops: &super::Ops, dst: u64, src_ctx: usize, src: u64, b: Blk) -> Result<(), String> {
+    use cudarc::driver::sys::*;
+    if b.bytes() == 0 {
+        return Ok(());
+    }
+    if b.rows > 1 && b.width < b.pitch {
+        return copy_addr(ops, src, dst, b);
+    }
+    let r = unsafe {
+        cuMemcpyPeerAsync(
+            dst + b.off as u64,
+            ops.st.context().cu_ctx(),
+            src + b.off as u64,
+            src_ctx as CUcontext,
+            b.bytes(),
+            ops.sv() as CUstream,
+        )
+    };
+    if r != CUresult::CUDA_SUCCESS {
+        return Err(format!("dsv41 tp peer copy: {r:?}"));
+    }
+    Ok(())
+}
+
+/// Each rank's context handle, for [`copy_peer`] (as an integer, so the rank threads can share it).
+fn cu_ctxs(cx: &[Ctx]) -> Vec<usize> {
+    cx.iter()
+        .map(|c| c.ops.st.context().cu_ctx() as usize)
+        .collect()
 }
 
 /// Region `b` of `src` into packed host bytes (`width` per row); drains the stream.
@@ -907,6 +943,7 @@ impl Group {
                     ..
                 } = self;
                 let (pub_ev, rel_ev) = (&*pub_ev, &*rel_ev);
+                let ctx = cu_ctxs(cx);
                 each_in(pool.as_mut(), cx, |r, c| {
                     pub_ev[r].record(&c.ops.st).map_err(de)
                 })?;
@@ -918,7 +955,7 @@ impl Group {
                             continue;
                         }
                         x.ops.st.wait(&pub_ev[p]).map_err(de)?;
-                        copy_addr(&x.ops, addr[p], addr[c], blks[p])?;
+                        copy_peer(&x.ops, addr[c], ctx[p], addr[p], blks[p])?;
                         k += 1;
                     }
                     rel_ev[c].record(&x.ops.st).map_err(de)?;
@@ -938,13 +975,21 @@ impl Group {
                 for p in 0..n {
                     self.pub_ev[p].record(&self.cx[p].ops.st).map_err(de)?;
                 }
+                let ctx = cu_ctxs(&self.cx);
                 for c in 0..n {
                     for p in 0..n {
                         if p == c || blks[p].bytes() == 0 {
                             continue;
                         }
                         self.cx[c].ops.st.wait(&self.pub_ev[p]).map_err(de)?;
-                        copy_blk(&self.cx[c].ops, bufs[p], bufs[c], blks[p])?;
+                        let (st_p, st_c) = (&self.cx[p].ops.st, &self.cx[c].ops.st);
+                        copy_peer(
+                            &self.cx[c].ops,
+                            bufs[c].p(st_c).addr(),
+                            ctx[p],
+                            bufs[p].p(st_p).addr(),
+                            blks[p],
+                        )?;
                         self.stats.copies += 1;
                     }
                 }
@@ -995,11 +1040,10 @@ impl Group {
     /// region into its kept block with a kernel on its own card and publishes; every consumer
     /// pulls that block with one peer copy a peer, in ring order, into its kept inbox, unpacks
     /// it into its buffer with a kernel on its card and releases; a producer waits for the
-    /// releases, so its block is never repacked under a reader. Both ends of every peer copy are
-    /// buffers the cards have already exchanged: a peer copy between such buffers runs at 50
-    /// GB/s here, between blocks allocated for the gather at 2 (the first peer access to new
-    /// pool memory pays for mapping it; measured as the copy path of a four-card prefill and by
-    /// `dsv41-bench p2p`). The blocks grow to the largest gather seen.
+    /// releases, so its block is never repacked under a reader. The blocks live across gathers
+    /// and grow to the largest gather seen. Every pull is [`copy_peer`]: the same pull by plain
+    /// device addresses out of a peer's pool block ran at 2.5-2.9 GB/s a rank on four cards
+    /// (it was the copy path of a four-card prefill), the peer call at about 50.
     fn gather_packed(&mut self, bufs: &[&Buf], blks: &[Blk]) -> Result<(), String> {
         let n = self.n();
         let size: Vec<usize> = blks.iter().map(|b| (b.bytes() + 255) & !255).collect();
@@ -1027,6 +1071,7 @@ impl Group {
                 .collect()
         };
         let (inb, pk) = (kept(&self.big_in, &self.cx), kept(&self.pk_keep, &self.cx));
+        let ctx = cu_ctxs(&self.cx);
         let Self {
             pool,
             cx,
@@ -1063,7 +1108,7 @@ impl Group {
                 }
                 let to = inb[c] + slot(c, p) as u64;
                 x.ops.st.wait(&pub_ev[p]).map_err(de)?;
-                copy_addr(&x.ops, pk[p], to, Blk::flat(0, bytes))?;
+                copy_peer(&x.ops, to, ctx[p], pk[p], Blk::flat(0, bytes))?;
                 move_blk(&x.ops, addr[c], blks[p], to, 1)?;
                 k += 1;
             }
@@ -1223,7 +1268,8 @@ impl Group {
 
     /// How fast the cards move bytes to each other (`dsv41-bench p2p`): blocks of 8, 64 and 256
     /// MiB by the copy engine between blocks kept across the reps (`copy`), by the copy engine
-    /// between blocks allocated for each rep (`fresh`), and by a kernel storing into the peer's
+    /// between blocks allocated for each rep (`fresh`), both through the gathers' peer call
+    /// ([`copy_peer`]), and by a kernel storing into the peer's
     /// memory (`store`, issued on the source's stream), one flow alone and the
     /// flow sets a gather makes: both directions of a pair, one source read by several cards,
     /// one card written by several, the ring, and every pair at once. A line a case: GB/s a
@@ -1252,6 +1298,7 @@ impl Group {
             sets.push(("every pair", all));
         }
         let mut out = Vec::new();
+        let ctx = cu_ctxs(&self.cx);
         for mib in [8usize, 64, 256] {
             let size = mib << 20;
             let src = self.each(|_, c| c.ops.buf(size))?;
@@ -1287,10 +1334,10 @@ impl Group {
                         for (fi, &(s, d)) in flows.iter().enumerate() {
                             let to = da[d] + (s * size) as u64;
                             if mech == "copy" {
-                                copy_addr(&self.cx[d].ops, sa[s], to, Blk::flat(0, size))?;
+                                copy_peer(&self.cx[d].ops, to, ctx[s], sa[s], Blk::flat(0, size))?;
                             } else if mech == "fresh" {
                                 let (from, to) = ends[fi];
-                                copy_addr(&self.cx[d].ops, from, to, Blk::flat(0, size))?;
+                                copy_peer(&self.cx[d].ops, to, ctx[s], from, Blk::flat(0, size))?;
                             } else {
                                 ck("blk_pack", unsafe {
                                     ffi::memra_v41_blk_pack(
