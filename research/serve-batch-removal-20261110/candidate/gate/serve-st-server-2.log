@@ -1,0 +1,44 @@
+[server] build: memra-0.140.0-609fd625669f (id: source-tree, git: unknown)
+[server] starting; models config = [("st", "/data/ai-ml/hf-models/qwen35-4b-hf-text", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "st" <- /data/ai-ml/hf-models/qwen35-4b-hf-text
+[tensor-contract] bound 441 semantic tensors (pack qwen35, HfSafetensors, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 249 tensors
+[worker]   loaded "st": 33 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] st: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="st" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[fa-pool] grow #0 dev=0 o_len 0 -> 2162688 ml_len 0 -> 8448 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 2162688 -> 4325376 ml_len 8448 -> 16896 (retired kept, zero=false)
+[device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":6274678784,"still_owned_bytes":10184024064,"pool_reserved_bytes":10368319488,"pool_cached_bytes":184295424,"driver_free_bytes":14550171648,"synchronization_errors":[]}
+[wave-probe] 32 sessions at depth 2048: two 16-row waves 40.1 ms, one 32-row wave 40.6 ms (tensor-core tier 40.4 ms) -> wave cap 16, tensor-core b32 off (7.8s; released 5984MB of cached pool to the driver)
+[worker] st: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 7890MB (7890010112 B, derived: 2 x 3945005056 B max entry for model "st" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 336797368320 B (76 resident sessions x 4431544320 B served-context session), requested 7890010112 B; boot driver free 14550171648 B, post-reserve clamp 12939558912 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "st": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["st"]
+[server] listening on http://127.0.0.1:8180
+[meter] admit id=chatcmpl-5175dd81a5f12d015752115991d6d0f1 tenant=default lane=interactive model="st"
+[admission] request cost: model="st" ctx=487 path=plain = 14848 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 13MB
+[spec-k] model="st" tenant="" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="st" 104MB (observed 110MB at ctx 431 path=plain)
+[kv-reuse] park-compact: 233 of 431 rows retained in 0.9ms (model st)
+[meter] admit id=chatcmpl-0de970d4a6a48a33f8d17140b9d3130a tenant=default lane=interactive model="st"
+[admission] request cost: model="st" ctx=534 path=plain = 14848 B/token x ctx + 17MB prefill-workspace + 104MB fixed = 128MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 70 prompt tokens; model st)
+[spec-k] model="st" tenant="" K=0 source=eligibility-fallback prompt=70 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] seed REFUSED (grid): prompt 70 tokens is off the 32-token prime grid and its aligned boundary 32 is under the 64 token entry floor; no entry published (model st)
+[admission] fixed residual high-water: model="st" 104MB (observed 111MB at ctx 478 path=plain)
+[kv-reuse] park-compact: 470 of 478 rows retained in 0.9ms (model st)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
