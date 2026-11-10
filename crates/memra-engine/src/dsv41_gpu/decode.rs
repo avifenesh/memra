@@ -729,10 +729,32 @@ pub fn prefill_workspace_bytes(g: &Geo, n: usize, s: usize, chunk: usize) -> usi
             * 2
             * (d + d / 32 + 3 * g.moe_inter * 2 + g.moe_inter + g.moe_inter / 32)
         + c * (3 * g.moe_inter * 2 + d * 2 + g.n_experts * 4);
+    // experts split by rows (N ranks, experts on the card): a MoE slice of `moe_slice(chunk)` rows
+    // holds the full hidden rows of its pairs and of the shared expert, the quantized pair inputs
+    // and hidden rows, this rank's gate and up slices and output columns, and the routing
+    let moe = if n > 1 {
+        let cm = moe_slice(chunk).min(s).max(1);
+        let pm = cm * g.topk;
+        let (inter, hn, dn) = (g.moe_inter, g.moe_inter.div_ceil(n), d.div_ceil(n));
+        let split = 2 * rows
+            + (pm + cm) * (inter * 2 + 2 * hn * 2 + dn * 2)
+            + pm * (d + d / 32 + inter + inter / 32)
+            + cm * (d + d / 32 + inter + inter / 32 + g.n_experts * 4)
+            + pm * 4 * 4;
+        moe.max(split)
+    } else {
+        moe
+    };
     let mixes = 2 * s * ((2 + hc) * hc + 2 * hc + hc * hc) * 4;
     let engram = c * (d * (hc + 1) * 2 + g.engram_cols() * g.engram_head_dim * 3);
     let peak = stream + attn.max(moe) + mixes + engram;
     peak + peak / 10 + (512 << 20)
+}
+
+/// The MoE slice of a forward whose query slices are `chunk` rows: four of them, so that a routed
+/// expert's rows fill whole tiles (384 experts, 6 a token: 128 rows an expert at 8,192 rows).
+pub fn moe_slice(chunk: usize) -> usize {
+    4 * chunk
 }
 
 /// Logits kept per step, as many as the oracle tape's `top_ids`/`top_vals`.

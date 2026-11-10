@@ -922,7 +922,14 @@ impl Group {
             x2.push(x);
             m.push(mm);
         }
-        let cm = self.cx[0].chunk.min(s).max(1);
+        // split experts: the MoE slice of one card (four query slices), so an expert's rows fill
+        // whole tiles; the other N-rank paths keep the query slice their gathers were sized for
+        let cm = if lw.iter().all(|w| w.split) {
+            super::decode::moe_slice(self.cx[0].chunk)
+        } else {
+            self.cx[0].chunk
+        };
+        let cm = cm.min(s).max(1);
         for r0 in (0..s).step_by(cm) {
             let rows = cm.min(s - r0);
             self.moe(lw, &x2, r0, rows, &m, tr)?;
@@ -1083,6 +1090,9 @@ impl Group {
                 &mut tr[0],
             );
         }
+        if lw.iter().all(|w| w.split) {
+            return self.moe_split(lw, x2, r0, rows, m, tr);
+        }
         let trace = self.trace;
         let plans = {
             let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
@@ -1238,6 +1248,84 @@ impl Group {
         // The slot, plan and shared-expert buffers are freed next on their own streams, after
         // the combine; a peer's copy out of a slot is ordered before the free by the gather's
         // release event, which the producer's stream waits on.
+        Ok(())
+    }
+
+    /// [`Self::moe`] with every expert split by rows across the ranks ([`LayerW::split`]). Every
+    /// rank routes and plans all the experts, computes its hidden columns of every routed pair and
+    /// of the shared expert, the hidden columns are gathered, every rank computes its output
+    /// columns from the full hidden rows and combines them itself (each token's expert rows in
+    /// ascending expert id, then the shared expert: the unsplit order, per column), and the output
+    /// columns are gathered. Each step is row-wise, so the bytes are the one-card MoE's. A rank
+    /// reads 1/N of every routed expert whatever the routing, nothing is read back to the host,
+    /// and the gathers are `[pairs + rows][inter]` and `[rows][dim]` instead of `[pairs][dim]`.
+    fn moe_split(
+        &mut self,
+        lw: &[LayerW],
+        x2: &[Buf],
+        r0: usize,
+        rows: usize,
+        m: &[Buf],
+        tr: &mut [Trace],
+    ) -> Result<(), String> {
+        let g = self.cx[0].g.clone();
+        let (ne, topk, d, inter) = (g.n_experts, g.topk, g.dim, g.moe_inter);
+        let np = rows * topk;
+        let trace = self.trace;
+        let parts = {
+            let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
+            self.each_mut(&mut trs, |r, c, trr| {
+                let st = c.ops.st.clone();
+                let x = x2[r].at(&st, r0 * d * 2);
+                let (sel, selw) = c.moe_route(&lw[r], x, rows)?;
+                if trace {
+                    trr.route_sel
+                        .extend_from_slice(&bytes_i32(&host_timed(&sel, &st)?));
+                    trr.route_w
+                        .extend_from_slice(&bytes_f32(&host_timed(&selw, &st)?));
+                }
+                let plan = c.moe_plan(&sel, &selw, rows, 0..ne)?;
+                let hb = c.ops.tmp((np + rows) * inter * 2)?;
+                c.split_hidden(&lw[r], x, rows, &plan, &hb)?;
+                Ok((plan, hb))
+            })?
+        };
+        let (plans, hbs): (Vec<_>, Vec<Buf>) = parts.into_iter().unzip();
+        let refs: Vec<&Buf> = hbs.iter().collect();
+        let blks: Vec<Blk> = lw
+            .iter()
+            .map(|w| Blk {
+                off: w.hid0 * 2,
+                width: w.hid_l * 2,
+                pitch: inter * 2,
+                rows: np + rows,
+            })
+            .collect();
+        self.allgather(&refs, &blks)?;
+        self.each(|r, c| {
+            let st = c.ops.st.clone();
+            c.split_out(&lw[r], &plans[r], &hbs[r], rows, m[r].at(&st, r0 * d * 2))
+        })?;
+        let refs: Vec<&Buf> = m.iter().collect();
+        let blks: Vec<Blk> = lw
+            .iter()
+            .map(|w| Blk {
+                off: r0 * d * 2 + w.dim0 * 2,
+                width: w.shared[1].n * 2,
+                pitch: d * 2,
+                rows,
+            })
+            .collect();
+        self.allgather(&refs, &blks)?;
+        if trace {
+            for r in 0..self.n() {
+                let st = self.cx[r].ops.st.clone();
+                let err = bytes_i32(&plans[r].err.host(&st)?)[0];
+                if err != 0 {
+                    return Err(format!("rank {r} route: {err} expert ids out of range"));
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1677,6 +1765,163 @@ impl MoePlan {
 }
 
 impl Ctx {
+    /// The split MoE's first half on this rank: its hidden columns `[hid0, hid0 + hid_l)` of every
+    /// routed pair (rows `[0, np)` of `hb`) and of the shared expert (rows `[np, np + rows)`), `hb`
+    /// bf16 `[np + rows][inter]`. w1 and w3 of the rank's hidden rows, then the SwiGLU, which is
+    /// per element.
+    pub fn split_hidden(
+        &mut self,
+        lw: &LayerW,
+        x: Dp,
+        rows: usize,
+        plan: &super::MoePlanDev,
+        hb: &Buf,
+    ) -> Result<(), String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let (d, inter, np, hn, h0) = (g.dim, g.moe_inter, plan.np, lw.hid_l, lw.hid0);
+        let aq = self.ops.tmp(np * d)?;
+        let as_ = self.ops.tmp(np * d / 32)?;
+        self.ops
+            .act_quant(x, d, plan.ptok.p(&st), np, d, aq.p(&st), as_.p(&st))?;
+        let gb = self.ops.tmp(np * hn * 2)?;
+        let ub = self.ops.tmp(np * hn * 2)?;
+        self.split_tiles(lw, plan, &aq, &as_, d, 0, gb.p(&st), hn)?;
+        self.split_tiles(lw, plan, &aq, &as_, d, 2, ub.p(&st), hn)?;
+        let swiglu = |ops: &super::Ops, gp: Dp, up: Dp, pw: *const f32, out: Dp, n: usize| {
+            ck("swiglu", unsafe {
+                ffi::memra_v41_swiglu(
+                    gp.m(),
+                    up.m(),
+                    hn as i64,
+                    pw,
+                    g.swiglu_limit,
+                    out.m(),
+                    inter as i64,
+                    n as i32,
+                    hn as i32,
+                    ops.sv(),
+                )
+            })
+        };
+        swiglu(
+            &self.ops,
+            gb.p(&st),
+            ub.p(&st),
+            plan.pw.p(&st).f(),
+            hb.at(&st, h0 * 2),
+            np,
+        )?;
+        let (q, qs) = self.scr.actq(&self.ops, rows, d)?;
+        self.ops.act_quant(x, d, Dp::NULL, rows, d, q, qs)?;
+        let gs = self.ops.tmp(rows * hn * 2)?;
+        let us = self.ops.tmp(rows * hn * 2)?;
+        self.ops
+            .gemm_q(q, qs, rows, &lw.shared[0], gs.p(&st), hn, false)?;
+        self.ops
+            .gemm_q(q, qs, rows, &lw.shared[2], us.p(&st), hn, false)?;
+        swiglu(
+            &self.ops,
+            gs.p(&st),
+            us.p(&st),
+            std::ptr::null(),
+            hb.at(&st, np * inter * 2 + h0 * 2),
+            rows,
+        )
+    }
+
+    /// The split MoE's second half on this rank: its output columns `[dim0, dim0 + n)` of every
+    /// pair and of the shared expert from the gathered hidden rows `hb`, combined into the same
+    /// columns of `out` (`[rows][dim]`).
+    pub fn split_out(
+        &mut self,
+        lw: &LayerW,
+        plan: &super::MoePlanDev,
+        hb: &Buf,
+        rows: usize,
+        out: Dp,
+    ) -> Result<(), String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let (d, inter, np, dn) = (g.dim, g.moe_inter, plan.np, lw.shared[1].n);
+        let o = self.ops.tmp((np + rows) * dn * 2)?;
+        let aq = self.ops.tmp(np * inter)?;
+        let as_ = self.ops.tmp(np * inter / 32)?;
+        self.ops
+            .act_quant(hb.p(&st), inter, Dp::NULL, np, inter, aq.p(&st), as_.p(&st))?;
+        self.split_tiles(lw, plan, &aq, &as_, inter, 1, o.p(&st), dn)?;
+        self.ops.linear_q(
+            hb.at(&st, np * inter * 2),
+            inter,
+            rows,
+            &lw.shared[1],
+            o.at(&st, np * dn * 2),
+            dn,
+            false,
+            &mut self.scr,
+        )?;
+        ck("moe_combine", unsafe {
+            ffi::memra_v41_moe_combine(
+                o.p(&st).c(),
+                dn as i64,
+                plan.order.p(&st).i(),
+                g.topk as i32,
+                o.at(&st, np * dn * 2).c(),
+                dn as i64,
+                Dp(out.addr() + (lw.dim0 * 2) as u64).m(),
+                d as i64,
+                rows as i32,
+                dn as i32,
+                self.ops.sv(),
+            )
+        })
+    }
+
+    /// One projection of the split experts over the plan's tile list: `nout` rows of every routed
+    /// expert's weight (this rank's slice) against the quantized rows `a`, into `c` `[np][nout]`.
+    #[allow(clippy::too_many_arguments)]
+    fn split_tiles(
+        &self,
+        lw: &LayerW,
+        plan: &super::MoePlanDev,
+        a: &Buf,
+        a_s: &Buf,
+        k: usize,
+        proj: i32,
+        c: Dp,
+        nout: usize,
+    ) -> Result<(), String> {
+        let st = self.ops.st.clone();
+        let (wfmt, kdiv) = match lw.experts.first().map(|w| w[0].fmt) {
+            Some(super::QFmt::Mxfp4) => (1, 32),
+            Some(super::QFmt::Nvfp4Minted { .. }) => (2, 16),
+            _ => return Err("split experts: no FP4 experts on the rank".into()),
+        };
+        ck("gemm_f8_tiles", unsafe {
+            ffi::memra_v41_gemm_f8_tiles(
+                a.p(&st).c(),
+                k as i64,
+                a_s.p(&st).c(),
+                (k / 32) as i64,
+                plan.tiles.p(&st).c(),
+                plan.ntiles.p(&st).i(),
+                plan.max_tiles as i32,
+                lw.exp_tab.p(&st).c(),
+                proj,
+                (k / 2) as i64,
+                (k / kdiv) as i64,
+                wfmt,
+                c.m(),
+                nout as i64,
+                0,
+                nout as i32,
+                k as i32,
+                plan.bm as i32,
+                self.ops.sv(),
+            )
+        })
+    }
+
     /// The shared FP8 expert of `rows` rows of `x`: bf16 `[rows][dim]`.
     pub fn shared_expert(&mut self, lw: &LayerW, x: Dp, rows: usize) -> Result<Buf, String> {
         let g = self.g.clone();

@@ -1303,6 +1303,45 @@ pub fn load_fp8_rows(
     })
 }
 
+/// Rows `rows` of the FP4 expert weight `{p}` ([`load_fp4`]): the weight rows and their scale rows.
+/// A minted weight takes its `scale2` from the whole tensor, so a slice holds the bytes the whole
+/// weight would.
+pub fn load_fp4_rows(
+    ops: &Ops,
+    stm: &StModel,
+    p: &str,
+    n: usize,
+    k: usize,
+    rows: std::ops::Range<usize>,
+    mint: bool,
+) -> Result<QW, String> {
+    if rows.end > n {
+        return Err(format!("{p}: rows {rows:?} of {n}"));
+    }
+    let (iw, bw) = raw(stm, &format!("{p}.weight"))?;
+    want(iw, p, "I8", &[n as u64, (k / 2) as u64])?;
+    let (is, bs) = raw(stm, &format!("{p}.scale"))?;
+    want(is, p, "F8_E8M0", &[n as u64, (k / 32) as u64])?;
+    let w = Buf::from_bytes(&ops.st, &bw[rows.start * (k / 2)..rows.end * (k / 2)])?;
+    if !mint {
+        return Ok(QW {
+            w,
+            s: Buf::from_bytes(&ops.st, &bs[rows.start * (k / 32)..rows.end * (k / 32)])?,
+            n: rows.len(),
+            k,
+            fmt: QFmt::Mxfp4,
+        });
+    }
+    let (sc, scale2) = mint_mxfp4_scales(bs).map_err(|e| format!("{p}: {e}"))?;
+    Ok(QW {
+        w,
+        s: Buf::from_bytes(&ops.st, &sc[rows.start * (k / 16)..rows.end * (k / 16)])?,
+        n: rows.len(),
+        k,
+        fmt: QFmt::Nvfp4Minted { scale2 },
+    })
+}
+
 /// FP4 expert weight `{p}.weight` (I8 pairs) / `{p}.scale` (ue8m0 per 32), optionally minted.
 pub fn load_fp4(
     ops: &Ops,
@@ -1650,6 +1689,12 @@ impl Part {
                 g.dim
             ));
         }
+        if !g.moe_inter.is_multiple_of(n) || !(g.moe_inter / n).is_multiple_of(32) {
+            return fail(format!(
+                "the experts' {} hidden rows do not split into whole 32-row scale blocks",
+                g.moe_inter
+            ));
+        }
         if !g.n_experts.is_multiple_of(n) {
             return fail(format!("{} experts do not split evenly", g.n_experts));
         }
@@ -1672,6 +1717,12 @@ pub struct LayerW {
     pub groups_l: usize,
     /// this card's `wo_b` output rows start (`wo_b.n` of them)
     pub dim0: usize,
+    /// the routed and shared experts are split by rows across the ranks (N ranks, experts on the
+    /// card): this rank holds hidden rows `[hid0, hid0 + hid_l)` of every w1 and w3 and output rows
+    /// `[dim0, dim0 + wo_b.n)` of every w2
+    pub split: bool,
+    pub hid0: usize,
+    pub hid_l: usize,
     /// `experts[i]` is routed expert `expert0 + i`
     pub expert0: usize,
     pub ratio: usize,
@@ -1819,23 +1870,54 @@ impl LayerW {
         } else {
             None
         };
-        let expert0 = experts.start;
-        let mut experts_w = Vec::with_capacity(experts.len());
-        for e in experts.filter(|_| routed) {
+        // N ranks with the experts on the card: every expert is split by rows like a TP MLP (w1
+        // and w3 by hidden rows, w2 by output rows), the shared expert with them; a rank then reads
+        // 1/N of every routed expert whatever the routing, and combines its own output columns
+        let split = part.n > 1 && routed;
+        let hid = part.range(g.moe_inter);
+        let (inter, dim) = (g.moe_inter, g.dim);
+        let expert0 = if split { 0 } else { experts.start };
+        let erange = if split { 0..g.n_experts } else { experts };
+        let mut experts_w = Vec::with_capacity(erange.len());
+        for e in erange.filter(|_| routed) {
             let ep = format!("{p}.ffn.experts.{e}");
-            experts_w.push([
-                load_fp4(ops, stm, &format!("{ep}.w1"), g.moe_inter, g.dim, mint)?,
-                load_fp4(ops, stm, &format!("{ep}.w2"), g.dim, g.moe_inter, mint)?,
-                load_fp4(ops, stm, &format!("{ep}.w3"), g.moe_inter, g.dim, mint)?,
-            ]);
+            experts_w.push(if split {
+                [
+                    load_fp4_rows(ops, stm, &format!("{ep}.w1"), inter, dim, hid.clone(), mint)?,
+                    load_fp4_rows(
+                        ops,
+                        stm,
+                        &format!("{ep}.w2"),
+                        dim,
+                        inter,
+                        dims.clone(),
+                        mint,
+                    )?,
+                    load_fp4_rows(ops, stm, &format!("{ep}.w3"), inter, dim, hid.clone(), mint)?,
+                ]
+            } else {
+                [
+                    load_fp4(ops, stm, &format!("{ep}.w1"), inter, dim, mint)?,
+                    load_fp4(ops, stm, &format!("{ep}.w2"), dim, inter, mint)?,
+                    load_fp4(ops, stm, &format!("{ep}.w3"), inter, dim, mint)?,
+                ]
+            });
         }
         let exp_tab = Buf::from_bytes(&ops.st, &expert_table(ops, &experts_w))?;
         let sp = format!("{p}.ffn.shared_experts");
-        let shared = [
-            load_fp8(ops, stm, &format!("{sp}.w1"), g.moe_inter, g.dim)?,
-            load_fp8(ops, stm, &format!("{sp}.w2"), g.dim, g.moe_inter)?,
-            load_fp8(ops, stm, &format!("{sp}.w3"), g.moe_inter, g.dim)?,
-        ];
+        let shared = if split {
+            [
+                load_fp8_rows(ops, stm, &format!("{sp}.w1"), inter, dim, hid.clone())?,
+                load_fp8_rows(ops, stm, &format!("{sp}.w2"), dim, inter, dims.clone())?,
+                load_fp8_rows(ops, stm, &format!("{sp}.w3"), inter, dim, hid.clone())?,
+            ]
+        } else {
+            [
+                load_fp8(ops, stm, &format!("{sp}.w1"), inter, dim)?,
+                load_fp8(ops, stm, &format!("{sp}.w2"), dim, inter)?,
+                load_fp8(ops, stm, &format!("{sp}.w3"), inter, dim)?,
+            ]
+        };
         let engram = if let Some(ei) = g.engram_layers.iter().position(|&l| l == id) {
             let cols = g.engram_cols();
             let table = format!("{p}.engram.embed");
@@ -1875,6 +1957,9 @@ impl LayerW {
             group0: groups.start,
             groups_l: groups.len(),
             dim0: dims.start,
+            split,
+            hid0: hid.start,
+            hid_l: hid.len(),
             expert0,
             ratio,
             kv_source,
@@ -3585,7 +3670,7 @@ impl Ctx {
         // the MoE runs `chunk` tokens at a time: each token's experts still add in ascending id order
         let m = self.ops.tmp(s * d * 2)?;
         // larger slices here: the per-expert loop runs once per slice
-        let cm = (4 * self.chunk).min(s).max(1);
+        let cm = decode::moe_slice(self.chunk).min(s).max(1);
         for r0 in (0..s).step_by(cm) {
             let rows = cm.min(s - r0);
             self.moe(lw, x2.at(&st, r0 * d * 2), rows, m.at(&st, r0 * d * 2), tr)?;
