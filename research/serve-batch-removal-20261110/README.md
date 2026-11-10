@@ -115,17 +115,44 @@ on binaries built from the rebased head `62cae34bc1` (`memra-server` `2ade91f9a8
 | `research/spec-gate-20260806/exactness.py` (pattern fixed) | `EXACTNESS_OK`. Five streams byte-identical (3169 B, 768 tokens), forced demotion at generated 133, control overshoot 0. Each of the five streams is byte-identical to main's stream of the same arm. |
 | boot refusal on the built binary | `0`, `1`, the empty string, `off`, and `0` beside `MEMRA_ENV_AUDIT=warn` refuse by name, exit 1. |
 
-Not run on a candidate: the harness without its K pin (the loaded demotion; banked on main
-only) and the gate on a checkpoint with no MTP head (the named skip of check 4; its detection
-was exercised against three local directories and its exit path without a GPU, not in a served
-run). The card went to a landing before those two leases.
+The harness without its K pin and the gate on a checkpoint with no MTP head were not run on this
+build (the card went to a landing); both ran on the next one, below.
+
+### The candidate on main `42bd4b07e4` (`candidate-main-42bd4b07e4/`)
+
+Main moved a third time, to `42bd4b07e4` (the position-keyed sampled verify of memra #1154, the
+DSpark drafter window). That landing touched `worker.rs`: one conflict, inside the device-chain
+function this branch deletes (main changed one call in it; the deletion stands), and one new
+caller of `serve_batching()` in `plain_first_token_device_draw`, which lost that term. Every
+gate was rerun on binaries built from `b0f52315d4` (`memra-server` `896e16c9a30b`, `run-gen`
+`cd1338ab9fe4`), same card, one check per lease:
+
+| check | result |
+|---|---|
+| `tools/serve-st-gate.sh <text-dir>` | 0 failed. Check 4: 211 tokens equal (64 speculative rounds), 400 tokens equal (149 rounds). |
+| `tools/serve-smoke.sh` | 0 failed, 47 checks ok (the gemma4 arm skips: no model on this box). |
+| `exactness.py` (pattern fixed) | `EXACTNESS_OK`. Five streams byte-identical (3169 B, 768 tokens), forced demotion at generated 133. |
+| `exactness.py` without its K pin (`tools/exactness_nopin.py`) | `EXACTNESS_OK`. The loaded DEMOTE arm demoted on the target at generated 118 of 768 and its stream is byte-identical to the loaded reference; forced demotion at 133. |
+| boot refusal on the built binary | `0`, `1`, the empty string, `off`, and `0` beside `MEMRA_ENV_AUDIT=warn` refuse by name, exit 1. |
+
+In both exactness runs each of the five streams is byte-identical to the stream of the same arm
+on the first main (`fcd66f8963`).
+
+**Check 4's named skip, in a served run** (`candidate-main-42bd4b07e4/gate-no-mtp-skip/`): on a
+safetensors directory with no `mtp.*` tensors (a synthetic block-128 FP8 Qwen3-1.7B) the gate
+prints `skip: check 4 (spec exactness): the checkpoint carries no embedded MTP tensors` and its
+summary line carries `(check 4 skipped: no MTP head)`. The gate's verdict on that directory is
+`1 failed`, for another reason: check 3 (CLI against server, 64 greedy ids) diverges at token 34.
+The same divergence, same token and ids, appears with main's server and engine
+(`main-42bd4b07e4/gate-no-mtp-skip/`, binaries of main plus the config-only fix of memra #1166),
+so it is on main and this branch does not cause it. It is filed as memra #1181.
 
 ## Files
 
-- `main/`, `candidate/`, `candidate-rebased/`: gate, probe, serve-smoke and exactness logs with
-  every server log and response. Paths under the run's scratch directory are replaced by
-  `<scratch>`, `<bins-main>`, `<bins-candidate>`, `<bins-candidate-rebased>`, `<repo>` and
-  `<home>`.
+- `main/`, `candidate/`, `candidate-rebased/`, `candidate-main-42bd4b07e4/`,
+  `main-42bd4b07e4/`: gate, probe, serve-smoke and exactness logs with every server log and
+  response. Paths under the run's scratch directory are replaced by placeholders in angle
+  brackets (`<scratch>`, `<bins-main>`, `<bins-candidate>`, `<repo>`, `<home>` and the like).
 - `checkpoint/`: the text-trunk copy's manifest.
 - `tools/`: `strip_tower.py`, `probe_arm.py`, `probe_compare.py`, `exactness_nopin.py`.
 
