@@ -12,8 +12,11 @@ import sys
 
 r, layers = sys.argv[1], int(sys.argv[2])
 rows = {}
-print("| run | arm | tokens | round | first token s | ms/layer | tok/s | issue s | gathers | copies | GB copied | peak GiB a rank |")
-print("|---|---|---|---|---|---|---|---|---|---|---|---|")
+print(
+    "| run | arm | tokens | round | first token s | ms/layer | tok/s | issue s | gathers | copies | GB copied "
+    "| peak GiB a rank | page faults minor / major |"
+)
+print("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 for d in sorted(glob.glob(os.path.join(r, "run*-*"))):
     if not os.path.isdir(d):
         continue
@@ -32,10 +35,13 @@ for d in sorted(glob.glob(os.path.join(r, "run*-*"))):
         n, f, issue = c["prompt_len"], c["ttft_s"], c["forward_s"]
         cm = c.get("comm", {})
         peak = max(c.get("peak_used", [0])) / 2**30
+        # a cell that read its pages from the disk has major faults: a cold page cache, not the engine
+        pf = c.get("page_faults", {})
+        faults = f"{pf.get('minor', '-')} / {pf.get('major', '-')}"
         rows.setdefault((arm, n), []).append(f)
         print(
             f"| {run} | {arm} | {n} | {c['round']} | {f:.4f} | {f / layers * 1e3:.2f} | {n / f:.0f} | {issue:.4f} | "
-            f"{cm.get('collectives', 0)} | {cm.get('copies', 0)} | {cm.get('bytes', 0) / 1e9:.2f} | {peak:.2f} |"
+            f"{cm.get('collectives', 0)} | {cm.get('copies', 0)} | {cm.get('bytes', 0) / 1e9:.2f} | {peak:.2f} | {faults} |"
         )
 print()
 print("| arm | tokens | runs | best ms | median ms | median ms/layer | median tok/s |")
@@ -45,9 +51,15 @@ for (arm, n), v in sorted(rows.items(), key=lambda x: (x[0][1], x[0][0])):
     m = statistics.median(v)
     print(f"| {arm} | {n} | {len(v)} | {b * 1e3:.2f} | {m * 1e3:.2f} | {m / layers * 1e3:.3f} | {n / m:.0f} |")
 print()
+# the base arm: A, or U (the unsplit build of a night pass) when no arm is A
+arms = {k[0] for k in rows}
+base = "A" if "A" in arms else "U"
 for n in sorted({k[1] for k in rows}):
-    for arm in sorted({k[0] for k in rows} - {"A"}):
-        if ("A", n) in rows and (arm, n) in rows:
-            a, b = min(rows[("A", n)]), min(rows[(arm, n)])
-            am, bm = statistics.median(rows[("A", n)]), statistics.median(rows[(arm, n)])
-            print(f"{n} tokens: {arm}/A best {b / a:.3f} (A {a * 1e3:.2f} ms, {arm} {b * 1e3:.2f} ms), median {bm / am:.3f}")
+    for arm in sorted(arms - {base}):
+        if (base, n) in rows and (arm, n) in rows:
+            a, b = min(rows[(base, n)]), min(rows[(arm, n)])
+            am, bm = statistics.median(rows[(base, n)]), statistics.median(rows[(arm, n)])
+            print(
+                f"{n} tokens: {arm}/{base} best {b / a:.3f} ({base} {a * 1e3:.2f} ms, {arm} {b * 1e3:.2f} ms), "
+                f"median {bm / am:.3f}"
+            )

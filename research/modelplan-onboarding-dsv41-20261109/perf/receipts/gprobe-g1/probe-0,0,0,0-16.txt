@@ -1,0 +1,5 @@
+[dsv41-tp] ranks=4 devices=[0, 0, 0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+graph probe: 4 ranks, 16 launches a rank, 16 kernel nodes in rank 0's graph
+one by one: issue 33.9 us (2.12 a launch a rank), done 75.2 us (4.70 a launch)
+one graph: launch call 5.6 us (0.351 a node a rank), done 65.3 us (4.08 a node)
+node parameter update: 0.082 us a node
