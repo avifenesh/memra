@@ -99,8 +99,9 @@ Three forms ran, each named by its log:
 | RTX 5090 | Qwen3.6-35B-A3B UD-IQ4_XS with its external draft (qwen35_moe), as `tools/local-ci.sh` runs it | run-spec K=1..8 | 0 of 1,986,560 differ (4 columns, 2 rounds) -> MATCH | 8 of 8 K pass, SELF-CONSISTENCY PASS | `rtx5090/run-spec-head-q36moe-k1-8.log` |
 | GB10 | Qwen3.8-27B (qwen35) | session-gate 3 / 48 | 0 of 1,986,560 differ (4 columns, 2 rounds) -> MATCH | 4 of 4 turns MATCH, 2 rewound | `gb10/gate-head-q27-k3-48.log` |
 | GB10 | Qwen3.8-27B (qwen35) | session-gate 2 / 24 | 0 of 1,489,920 differ (3 columns, 2 rounds) -> MATCH | 4 of 4 turns MATCH, 2 rewound | `gb10/gate-head-q27-def.log` |
-
-Queued on GB10 at this head, to be added: Qwen3.8-27B run-spec K=3, Qwen3.5-9B session-gate 3 / 48, Qwen3.6-35B-A3B UD-IQ4_XS session-gate 3 / 48.
+| GB10 | Qwen3.8-27B (qwen35) | run-spec K=3 | 0 of 1,986,560 differ (4 columns, 2 rounds) -> MATCH | 1 of 1 K pass, SELF-CONSISTENCY PASS | `gb10/run-spec-head-q27-k3.log` |
+| GB10 | Qwen3.5-9B (qwen35) | session-gate 3 / 48 | 0 of 1,986,560 differ (4 columns, 2 rounds) -> MATCH | 4 of 4 turns MATCH, 2 rewound | `gb10/gate-head-q9-k3-48.log` |
+| GB10 | Qwen3.6-35B-A3B UD-IQ4_XS (qwen35_moe) | session-gate 3 / 48 | 0 of 1,986,560 differ (4 columns, 2 rounds) -> MATCH | 4 of 4 turns MATCH, 2 rewound | `gb10/gate-head-q36moe-k3-48.log` |
 <!-- end head rows -->
 
 ## What changed
@@ -129,11 +130,11 @@ Queued on GB10 at this head, to be added: Qwen3.8-27B run-spec K=3, Qwen3.5-9B s
 Which speculative routes the check covers, and what it says:
 
 <!-- scope rows -->
-- qwen35 (GatedDeltaNet, dense): Qwen3.8-27B on the RTX 5090 and GB10: `MATCH`. Qwen3.5-9B on
-  GB10 is queued at this head.
-- qwen35_moe (GatedDeltaNet, routed MoE): Ornith-1.5-35B-A3B and Qwen3.6-35B-A3B (with its
-  external draft, the form `tools/local-ci.sh` runs) on the RTX 5090: `MATCH`. Qwen3.6-35B-A3B
-  on GB10 is queued at this head.
+- qwen35 (GatedDeltaNet, dense): Qwen3.8-27B on the RTX 5090 and GB10, Qwen3.5-9B on GB10:
+  `MATCH`.
+- qwen35_moe (GatedDeltaNet, routed MoE): Ornith-1.5-35B-A3B on the RTX 5090, Qwen3.6-35B-A3B
+  on the RTX 5090 (with its external draft, the form `tools/local-ci.sh` runs) and on GB10:
+  `MATCH`.
 - `MEMRA_FAST=0` on Qwen3.8-27B (RTX 5090): `MATCH`. The check holds on the oracle path too.
 <!-- end scope rows -->
 

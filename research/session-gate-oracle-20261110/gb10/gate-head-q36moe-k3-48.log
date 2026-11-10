@@ -1,0 +1,26 @@
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 122.47GB (expert budget 117.88GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 191 tensors
+trunk: recurrent; turn resume: the served one (rewind to an on-grid turn checkpoint, else cold; grid 32); the parked-end resume is refused
+[moe-sk-form] dev=0 qt=6 sms=48 occ128=1 occ32=6 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=204 max_m=91
+[moe-sk-form] dev=0 qt=5 sms=48 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=204 max_m=91
+[moe-sk-form] dev=0 qt=2 sms=48 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=129 max_m=150
+[fa-pool] grow #0 dev=0 o_len 0 -> 110592 ml_len 0 -> 432 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 110592 -> 221184 ml_len 432 -> 864 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 221184 -> 442368 ml_len 864 -> 1728 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 442368 -> 884736 ml_len 1728 -> 3456 (retired kept, zero=false)
+STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 211 primed tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ -> MATCH
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 3MB; charged per spec admission and gating future captures)
+[spec-vg] MTP verify-graph pool ENGAGED (vt_cap=4)
+turn 1: cold, 48 tok generated, committed=175 -> MATCH
+[fa-pool] grow #4 dev=0 o_len 884736 -> 1769472 ml_len 3456 -> 6912 (retired kept, zero=false)
+turn 2: rewound to 96, 48 tok generated, committed=288 -> MATCH
+turn 3: rewound to 224, 48 tok generated, committed=370 -> MATCH
+turn 4: continuation burst, 48 tok generated, committed=418 -> MATCH
+SESSION GATE: ALL TURNS MATCH
