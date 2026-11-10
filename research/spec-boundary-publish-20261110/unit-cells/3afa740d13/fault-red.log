@@ -1,0 +1,15 @@
+
+running 1 test
+[prefix-cache] insert (spec-boundary): 97 tokens, 0.0MB (resident 0.0MB / 268MB, model specpub-fault-0)
+
+thread 'worker::tests::spec_boundary_publish_drops_a_plane_whose_copy_failed' (158808) panicked at crates/memra-server/src/worker.rs:47185:17:
+tiny: an entry was published although the copy of the first trunk K failed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test worker::tests::spec_boundary_publish_drops_a_plane_whose_copy_failed ... FAILED
+
+failures:
+
+failures:
+    worker::tests::spec_boundary_publish_drops_a_plane_whose_copy_failed
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1176 filtered out; finished in 0.36s
