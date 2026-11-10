@@ -4939,6 +4939,33 @@ impl Engine {
         row_max: f32,
         th: f32,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gumbel_perturb_filtered_keyed(x, y, n, seed, stream_pos, temp, row_max, th, None)
+    }
+
+    /// `gumbel_perturb_filtered` with the noise key chosen by the caller (memra#1154).
+    /// `idmap: Some(map)` keys row i's Gumbel noise by `map[i]` instead of i: a trimmed MTP
+    /// draft head passes its device draft-row -> token-id map, so each token gets the noise
+    /// the full-vocabulary target row gives it at the same event and the draft's draw stays
+    /// coupled with the position-keyed verify. `None` is the row-index key, bit-identical to
+    /// `gumbel_perturb_filtered`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gumbel_perturb_filtered_keyed(
+        &self,
+        x: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        n: usize,
+        seed: u64,
+        stream_pos: u32,
+        temp: f32,
+        row_max: f32,
+        th: f32,
+        idmap: Option<&CudaSlice<u32>>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        assert!(
+            idmap.is_none_or(|m| m.len() >= n),
+            "gumbel id map shorter than the row"
+        );
+        let null: u64 = 0;
         let f = self.func("gumbel_perturb_filtered_f32");
         let (ni, slo, shi) = (n as i32, (seed & 0xFFFF_FFFF) as u32, (seed >> 32) as u32);
         let cfg = LaunchConfig {
@@ -4957,6 +4984,10 @@ impl Engine {
             .arg(&temp)
             .arg(&row_max)
             .arg(&th);
+        match idmap {
+            Some(m) => b.arg(m),
+            None => b.arg(&null),
+        };
         unsafe {
             b.launch(cfg)?;
         }
@@ -6752,6 +6783,28 @@ impl Engine {
         ctr: &CudaSlice<u32>,
         temp: f32,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gumbel_perturb_ctr_keyed(x, y, n, seed, ctr, temp, None)
+    }
+
+    /// `gumbel_perturb_ctr` with the noise key chosen by the caller: `idmap` as in
+    /// `gumbel_perturb_filtered_keyed` (memra#1154). A captured graph bakes the map's
+    /// address, so the map must live as long as the graph replays.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gumbel_perturb_ctr_keyed(
+        &self,
+        x: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        n: usize,
+        seed: u64,
+        ctr: &CudaSlice<u32>,
+        temp: f32,
+        idmap: Option<&CudaSlice<u32>>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        assert!(
+            idmap.is_none_or(|m| m.len() >= n),
+            "gumbel id map shorter than the row"
+        );
+        let null: u64 = 0;
         let f = self.func("gumbel_perturb_ctr_f32");
         let (ni, slo, shi) = (n as i32, (seed & 0xFFFF_FFFF) as u32, (seed >> 32) as u32);
         let cfg = LaunchConfig {
@@ -6768,6 +6821,10 @@ impl Engine {
             .arg(&shi)
             .arg(ctr)
             .arg(&temp);
+        match idmap {
+            Some(m) => b.arg(m),
+            None => b.arg(&null),
+        };
         unsafe {
             b.launch(cfg)?;
         }
@@ -6793,6 +6850,30 @@ impl Engine {
         stat_max: &CudaSlice<f32>,
         stat_th: &CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gumbel_perturb_filtered_ctr_keyed(x, y, n, seed, ctr, temp, stat_max, stat_th, None)
+    }
+
+    /// `gumbel_perturb_filtered_ctr` with the noise key chosen by the caller: `idmap` as in
+    /// `gumbel_perturb_filtered_keyed` (memra#1154). A captured graph bakes the map's
+    /// address, so the map must live as long as the graph replays.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gumbel_perturb_filtered_ctr_keyed(
+        &self,
+        x: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        n: usize,
+        seed: u64,
+        ctr: &CudaSlice<u32>,
+        temp: f32,
+        stat_max: &CudaSlice<f32>,
+        stat_th: &CudaSlice<f32>,
+        idmap: Option<&CudaSlice<u32>>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        assert!(
+            idmap.is_none_or(|m| m.len() >= n),
+            "gumbel id map shorter than the row"
+        );
+        let null: u64 = 0;
         let f = self.func("gumbel_perturb_filtered_ctr_f32");
         let (ni, slo, shi) = (n as i32, (seed & 0xFFFF_FFFF) as u32, (seed >> 32) as u32);
         let cfg = LaunchConfig {
@@ -6811,6 +6892,10 @@ impl Engine {
             .arg(&temp)
             .arg(stat_max)
             .arg(stat_th);
+        match idmap {
+            Some(m) => b.arg(m),
+            None => b.arg(&null),
+        };
         unsafe {
             b.launch(cfg)?;
         }

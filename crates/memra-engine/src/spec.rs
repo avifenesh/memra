@@ -2305,6 +2305,8 @@ struct SampledCapArgs<'a> {
     seed: u64,
     temp: f32,
     filt: Option<SampledCapFilter<'a>>,
+    /// `DraftGraphCtx::g_idmap`: the noise key of a trimmed head's in-graph draw.
+    idmap: Option<&'a CudaSlice<u32>>,
 }
 
 /// In-graph truncation-filter nodes: the stat slots `filter_stats` fills and the perturb
@@ -2337,6 +2339,16 @@ pub(crate) struct DraftGraphCtx {
     g_th: CudaSlice<f32>,
     g_z: CudaSlice<f32>,
     g_mx: CudaSlice<f32>,
+    /// TRIMMED HEAD NOISE KEY (memra#1154): the device copy of `MtpHead::d2t` (draft row ->
+    /// target token id), `None` on an untrimmed head. Every sampled draft draw of this
+    /// context (eager, pooled, captured) keys its Gumbel noise by it, so a token gets the
+    /// noise the target's full-vocabulary row gives it at the same Philox event and the
+    /// draft stays coupled with the position-keyed verify. It lives here because the sampled
+    /// graphs bake its address: uploaded by `prepare_spec_draft` on the first sampled burst,
+    /// before any sampled capture, and never replaced afterwards. The map is a constant of
+    /// the model the session belongs to (every chain head carries the same one), so the
+    /// sampled graph's key needs no field for it.
+    g_idmap: Option<CudaSlice<u32>>,
     q_slots: Vec<CudaSlice<f32>>,
     /// DRAFT-SIDE GRAMMAR MASK (lane/draft-mask): packed allowed-set words over the DRAFT
     /// head's vocab, at a STABLE address so the captured draft graph's mask node reads the
@@ -2457,6 +2469,7 @@ impl DraftGraphCtx {
             g_th: e.zeros(1)?,
             g_z: e.zeros(1)?,
             g_mx: e.zeros(1)?,
+            g_idmap: None,
             q_slots: Vec::new(),
             g_dmask: e.alloc_u32_zeroed(1)?,
             graph_masked: false,
@@ -5528,6 +5541,7 @@ impl HybridModel {
                 seed,
                 temp,
                 filt,
+                idmap,
             }) = sampled_cap
             {
                 // SAMPLED chain: retain q (raw head logits -> persistent q_out_d; the matmul's
@@ -5539,7 +5553,9 @@ impl HybridModel {
                 match filt {
                     // PURE-TEMP: gumbel over the raw softmax — byte-identical to the
                     // pre-lane capture body.
-                    None => e.gumbel_perturb_ctr(&logits, perturb_d, d_vocab, seed, ctr_d, temp)?,
+                    None => e.gumbel_perturb_ctr_keyed(
+                        &logits, perturb_d, d_vocab, seed, ctr_d, temp, idmap,
+                    )?,
                     // FILTERED (lane/step37-draft-graph-serving-20260830): the SAME
                     // filter_stats program the eager arm and the accept path run (the
                     // wrapper's coop/plain choice is deployment-keyed, never per-call), then
@@ -5552,8 +5568,8 @@ impl HybridModel {
                             &logits, d_vocab, f.rows0, f.th, f.z, f.mx, d_vocab, 1, temp, f.top_k,
                             f.top_p, f.min_p,
                         )?;
-                        e.gumbel_perturb_filtered_ctr(
-                            &logits, perturb_d, d_vocab, seed, ctr_d, temp, f.mx, f.th,
+                        e.gumbel_perturb_filtered_ctr_keyed(
+                            &logits, perturb_d, d_vocab, seed, ctr_d, temp, f.mx, f.th, idmap,
                         )?;
                     }
                 }
@@ -12353,6 +12369,14 @@ impl HybridModel {
             dctx.g_q = e.zeros(d_vocab)?;
             dctx.g_perturb = e.zeros(d_vocab)?;
         }
+        // Trimmed head: the sampled draws key their noise by token id (`g_idmap`). Uploaded
+        // once per context, before any sampled capture can bake its address.
+        if sampled
+            && dctx.g_idmap.is_none()
+            && let Some(map) = &mtp.d2t
+        {
+            dctx.g_idmap = Some(e.htod_u32_v(map)?);
+        }
         // DRAFT-SIDE GRAMMAR MASK (lane/draft-mask, 2026-08-04): the drafter samples the
         // grammar's legal set, so proposals are legal BY CONSTRUCTION and the verify-side
         // truncation (the correctness backstop) stops cutting every tight-schema round.
@@ -12747,6 +12771,7 @@ impl HybridModel {
                     g_th,
                     g_z,
                     g_mx,
+                    g_idmap,
                     ..
                 } = &mut dctx;
                 let with_prob = p_min > 0.0;
@@ -12823,6 +12848,7 @@ impl HybridModel {
                                     } else {
                                         None
                                     },
+                                    idmap: g_idmap.as_ref(),
                                 }),
                                 None, // constrained spec is greedy-only
                             )
@@ -12930,6 +12956,7 @@ impl HybridModel {
                 g_th,
                 g_z,
                 g_mx,
+                g_idmap,
                 ..
             } = &mut dctx;
             // CAPTURE-RETAIN (#68 fix): same keeper contract as the greedy capture above.
@@ -12974,6 +13001,7 @@ impl HybridModel {
                             } else {
                                 None
                             },
+                            idmap: g_idmap.as_ref(),
                         }),
                         None, // constrained spec is greedy-only — sampled never carries a hook
                     )
@@ -15565,8 +15593,16 @@ impl HybridModel {
                     )?;
                     let (th, z, mx) = (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0]);
                     let pb = perturb_buf.as_mut().unwrap();
-                    e.gumbel_perturb_filtered(
-                        &q_row, pb, d_vocab, sp_seed, *sctr, sp_temp, mx, th,
+                    e.gumbel_perturb_filtered_keyed(
+                        &q_row,
+                        pb,
+                        d_vocab,
+                        sp_seed,
+                        *sctr,
+                        sp_temp,
+                        mx,
+                        th,
+                        dctx.g_idmap.as_ref(),
                     )?;
                     *sctr += 1;
                     draft_logits.push(q_row);
@@ -16308,7 +16344,7 @@ impl HybridModel {
                         sp.top_p,
                         sp.min_p,
                     )?;
-                    e.gumbel_perturb_filtered_ctr(
+                    e.gumbel_perturb_filtered_ctr_keyed(
                         &row,
                         &mut dctx.g_perturb,
                         d_vocab,
@@ -16317,15 +16353,17 @@ impl HybridModel {
                         sp_temp,
                         &dctx.g_mx,
                         &dctx.g_th,
+                        dctx.g_idmap.as_ref(),
                     )?;
                 } else {
-                    e.gumbel_perturb_ctr(
+                    e.gumbel_perturb_ctr_keyed(
                         &row,
                         &mut dctx.g_perturb,
                         d_vocab,
                         sp_seed,
                         &dctx.g_ctr,
                         sp_temp,
+                        dctx.g_idmap.as_ref(),
                     )?;
                 }
                 e.argmax_token_device_into(&dctx.g_perturb, &mut dctx.g_tok, d_vocab)?;
@@ -16381,8 +16419,16 @@ impl HybridModel {
                     )?;
                     let (th, z, mx) = (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0]);
                     let pb = perturb_buf.as_mut().unwrap();
-                    e.gumbel_perturb_filtered(
-                        &q_row, pb, d_vocab, sp_seed, *sctr, sp_temp, mx, th,
+                    e.gumbel_perturb_filtered_keyed(
+                        &q_row,
+                        pb,
+                        d_vocab,
+                        sp_seed,
+                        *sctr,
+                        sp_temp,
+                        mx,
+                        th,
+                        dctx.g_idmap.as_ref(),
                     )?;
                     *sctr += 1;
                     draft_logits.push(q_row);
