@@ -609,6 +609,14 @@ impl<'a> Runner<'a> {
         }
         self.stats.forwards += 1;
         self.stats.calls += calls.len();
+        if self.grp.graphs.on {
+            // a replayed layer's pre-mix is its capture's buffer, rewritten by the layer's next
+            // replay: a call's result gets its own
+            for p in pre.iter_mut() {
+                let own = self.grp.each(|r, c| super::clone_buf(&c.ops, &p[r]))?;
+                *p = own;
+            }
+        }
         Ok(h.into_iter()
             .zip(pre)
             .zip(pos)

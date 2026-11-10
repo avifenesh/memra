@@ -27,6 +27,7 @@ use std::sync::{Arc, Mutex};
 pub mod decode;
 pub mod engram;
 pub mod experts;
+pub mod graph;
 pub mod tp;
 
 pub mod ffi {
@@ -556,7 +557,9 @@ pub mod ffi {
             rows: i32,
             stream: *mut c_void,
         ) -> i32;
-        /// The producer's half of a small gather inside a kernel (`dst`: a [`V41Push`]).
+        /// The producer's half of a small gather inside a kernel (`dst`: a [`V41Push`] of the
+        /// even gathers' slots, an odd gather's `alt` bytes on; `ctr`: the rank's count of
+        /// gathers on its card, which numbers this one).
         pub fn memra_v41_push(
             src: *const c_void,
             pitch: i64,
@@ -564,15 +567,18 @@ pub mod ffi {
             rows: i32,
             dst: *const V41Push,
             npeer: i32,
-            seq: u32,
+            ctr: *const u32,
+            alt: i64,
             word_first: i32,
             stream: *mut c_void,
         ) -> i32;
-        /// The consumer's half (`src`: a [`V41Pull`]); a peer that never arrives sets bit 16 of `bad`.
+        /// The consumer's half (`src`: a [`V41Pull`]); it counts the gather in `ctr`. A peer that
+        /// never arrives sets bit 16 of `bad`.
         pub fn memra_v41_pull(
             src: *const V41Pull,
             npeer: i32,
-            seq: u32,
+            ctr: *mut u32,
+            alt: i64,
             dst: *mut c_void,
             bad: *mut i32,
             stream: *mut c_void,
@@ -662,16 +668,29 @@ impl Dp {
 pub struct Buf {
     pub(crate) s: ManuallyDrop<CudaSlice<u8>>,
     pub len: usize,
-    /// the stream's free list this buffer returns to when it drops (None: it is freed)
-    home: Option<Arc<TmpPool>>,
+    home: Home,
+}
+
+/// Where a buffer's memory goes when the buffer drops.
+enum Home {
+    /// back to the device pool
+    Free,
+    /// to its stream's free list
+    Pool(Arc<TmpPool>),
+    /// nowhere: the memory is another buffer's ([`Buf::alias`])
+    Alias,
 }
 
 impl Drop for Buf {
     fn drop(&mut self) {
         // SAFETY: `s` is taken once, here, and never touched again
         let s = unsafe { ManuallyDrop::take(&mut self.s) };
-        if let Some(h) = &self.home {
-            h.put(s);
+        match &self.home {
+            Home::Free => drop(s),
+            Home::Pool(h) => h.put(s),
+            Home::Alias => {
+                let _ = s.leak();
+            }
         }
     }
 }
@@ -696,6 +715,11 @@ const TMP_POOL_MAX_BYTES: usize = 64 << 20;
 #[derive(Default)]
 pub struct TmpPool {
     free: Mutex<TmpFree>,
+    /// the free list of a stream capture ([`graph`]): every buffer the captured launches use
+    /// comes from it and stays in it, whatever its size, because the graph holds the addresses;
+    /// what it lacks is allocated outside the stream's order (a stream-ordered allocation inside
+    /// a capture would become a node of the graph)
+    capture: bool,
 }
 
 /// The free buffers by size, and their bytes.
@@ -707,7 +731,7 @@ struct TmpFree {
 
 impl TmpPool {
     fn take(&self, n: usize) -> Option<CudaSlice<u8>> {
-        if n > TMP_POOL_MAX_BUF {
+        if n > TMP_POOL_MAX_BUF && !self.capture {
             return None;
         }
         let mut f = self.free.lock().unwrap_or_else(|e| e.into_inner());
@@ -717,11 +741,11 @@ impl TmpPool {
     }
     fn put(&self, s: CudaSlice<u8>) {
         let n = s.len();
-        if n > TMP_POOL_MAX_BUF {
+        if n > TMP_POOL_MAX_BUF && !self.capture {
             return;
         }
         let mut f = self.free.lock().unwrap_or_else(|e| e.into_inner());
-        if f.bytes + n > TMP_POOL_MAX_BYTES {
+        if f.bytes + n > TMP_POOL_MAX_BYTES && !self.capture {
             return;
         }
         f.bytes += n;
@@ -730,7 +754,7 @@ impl TmpPool {
 }
 
 impl Buf {
-    fn own(s: CudaSlice<u8>, len: usize, home: Option<Arc<TmpPool>>) -> Self {
+    fn own(s: CudaSlice<u8>, len: usize, home: Home) -> Self {
         Self {
             s: ManuallyDrop::new(s),
             len,
@@ -741,7 +765,7 @@ impl Buf {
         let s = st
             .alloc_zeros::<u8>(len.max(1))
             .map_err(|e| format!("alloc {len}: {e:?}"))?;
-        Ok(Self::own(s, len, None))
+        Ok(Self::own(s, len, Home::Free))
     }
     /// Device memory without the zero fill, for a buffer its kernels write in full before
     /// anything reads it (stream-ordered like every allocation here).
@@ -749,7 +773,7 @@ impl Buf {
         // SAFETY: the bytes are device memory the caller writes before reading; the host never
         // reads them uninitialized (every host copy follows the kernel that wrote them)
         let s = unsafe { st.alloc::<u8>(len.max(1)) }.map_err(|e| format!("alloc {len}: {e:?}"))?;
-        Ok(Self::own(s, len, None))
+        Ok(Self::own(s, len, Home::Free))
     }
     /// [`Self::zeros`] or [`Self::uninit`] through `pool`: a freed buffer of this size when the
     /// pool has one (zero-filled on the stream when `zero`), and back to the pool on drop.
@@ -768,13 +792,34 @@ impl Buf {
                 }
                 s
             }
+            None if pool.capture => {
+                st.context()
+                    .bind_to_thread()
+                    .map_err(|e| format!("bind: {e:?}"))?;
+                // SAFETY: `n` bytes of device memory owned by the slice made from them, which
+                // frees them when it drops; written before read as in `uninit`, or zeroed here
+                let mut s = unsafe {
+                    let p = cudarc::driver::result::malloc_sync(n)
+                        .map_err(|e| format!("alloc {len}: {e:?}"))?;
+                    st.upgrade_device_ptr::<u8>(p, n)
+                };
+                if zero {
+                    st.memset_zeros(&mut s)
+                        .map_err(|e| format!("memset {len}: {e:?}"))?;
+                }
+                s
+            }
             None if zero => st
                 .alloc_zeros::<u8>(n)
                 .map_err(|e| format!("alloc {len}: {e:?}"))?,
             // SAFETY: as in `uninit`
             None => unsafe { st.alloc::<u8>(n) }.map_err(|e| format!("alloc {len}: {e:?}"))?,
         };
-        let home = (n <= TMP_POOL_MAX_BUF).then(|| pool.clone());
+        let home = if n <= TMP_POOL_MAX_BUF || pool.capture {
+            Home::Pool(pool.clone())
+        } else {
+            Home::Free
+        };
         Ok(Self::own(s, len, home))
     }
     pub fn from_bytes(st: &Arc<CudaStream>, b: &[u8]) -> Result<Self, String> {
@@ -784,7 +829,7 @@ impl Buf {
         let s = st
             .clone_htod(b)
             .map_err(|e| format!("htod {}: {e:?}", b.len()))?;
-        Ok(Self::own(s, b.len(), None))
+        Ok(Self::own(s, b.len(), Home::Free))
     }
     pub fn from_f32(st: &Arc<CudaStream>, v: &[f32]) -> Result<Self, String> {
         Self::from_bytes(st, &f32_bytes(v))
@@ -795,6 +840,16 @@ impl Buf {
     pub fn p(&self, st: &Arc<CudaStream>) -> Dp {
         let (p, _g) = (*self.s).device_ptr(st);
         Dp(p)
+    }
+    /// A second handle on this buffer's memory that frees nothing when it drops.
+    ///
+    /// # Safety
+    /// The caller keeps the buffer alive, and its bytes meaningful, for as long as the alias is
+    /// read: the alias does not hold it.
+    pub unsafe fn alias(&self, st: &Arc<CudaStream>) -> Self {
+        // SAFETY: the address and length of a live allocation; `Home::Alias` never frees it
+        let s = unsafe { st.upgrade_device_ptr::<u8>(self.p(st).addr(), self.s.len()) };
+        Self::own(s, self.len, Home::Alias)
     }
     /// Device address `off` bytes in.
     pub fn at(&self, st: &Arc<CudaStream>, off: usize) -> Dp {

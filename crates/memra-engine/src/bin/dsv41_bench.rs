@@ -44,6 +44,7 @@ fn main() {
         Some("gemm") => gemm_bench(&a),
         Some("ceil") => ceil_bench(&a),
         Some("p2p") if a.len() > 2 => p2p_bench(&a),
+        Some("graph") if a.len() > 2 => graph_bench(&a),
         _ => Err("usage: dsv41-bench layer CKPT --ids F --token-map F --layers L,.. [--prefix N] [--reps R] [--decode D] [--chunk N] [--nvtx] [--out F] | gemm [--reps R] [--out F] | ceil [--out F]".into()),
     };
     match r {
@@ -88,6 +89,37 @@ fn p2p_bench(a: &[String]) -> Result<String, String> {
     Ok(format!(
         "{{\"devices\": {devices:?}, \"transport\": {:?}, \"lines\": {:?}}}\n",
         grp.transport.name(),
+        lines
+    ))
+}
+
+/// `dsv41-bench graph CKPT --devices 0,1 [--launches 64] [--reps 9]`: what a launch, a graph
+/// launch and a node parameter update cost ([`Group::graph_probe`]).
+fn graph_bench(a: &[String]) -> Result<String, String> {
+    let ckpt = Path::new(&a[2]);
+    let mc = memra_gguf::config::ModelConfig::from_config_json(&ckpt.join("config.json"))
+        .map_err(|e| e.to_string())?;
+    let g = Geo::from_config(&mc)?;
+    let devices: Vec<usize> = flag(a, "--devices")
+        .ok_or("graph: --devices")?
+        .split(',')
+        .map(|x| x.parse::<usize>().map_err(|e| e.to_string()))
+        .collect::<Result<_, _>>()?;
+    let num = |k: &str, d: usize| -> Result<usize, String> {
+        Ok(flag(a, k)
+            .map(|x| x.parse::<usize>().map_err(|e| e.to_string()))
+            .transpose()?
+            .unwrap_or(d)
+            .max(1))
+    };
+    let (k, reps) = (num("--launches", 64)?, num("--reps", 9)?);
+    let mut grp = Group::new(&devices, &g, 1024)?;
+    let lines = grp.graph_probe(k, reps)?;
+    for l in &lines {
+        println!("{l}");
+    }
+    Ok(format!(
+        "{{\"devices\": {devices:?}, \"launches\": {k}, \"lines\": {:?}}}\n",
         lines
     ))
 }
