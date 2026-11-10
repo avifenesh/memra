@@ -32,6 +32,28 @@ pub mod tp;
 
 pub mod ffi {
     use std::os::raw::c_void;
+    /// Peers of one rank in a small gather inside kernels (`V41_PUSH_PEERS`).
+    pub const PUSH_PEERS: usize = 7;
+    /// The largest region a rank pushes (`V41_PUSH_MAX`).
+    pub const PUSH_MAX: usize = 256 << 10;
+    /// Device addresses of each peer's inbox slot for a producer: payload and word.
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    pub struct V41Push {
+        pub d: [u64; PUSH_PEERS],
+        pub w: [u64; PUSH_PEERS],
+    }
+    /// Each producer's slot in a rank's inbox (payload, word) and its region of the rank buffer.
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    pub struct V41Pull {
+        pub d: [u64; PUSH_PEERS],
+        pub w: [u64; PUSH_PEERS],
+        pub off: [i64; PUSH_PEERS],
+        pub pitch: [i64; PUSH_PEERS],
+        pub width: [i32; PUSH_PEERS],
+        pub rows: [i32; PUSH_PEERS],
+    }
     // Return codes: 0 ok, 10000 + cudaError_t, 41xxx for a refused contract (cu/dsv41_gpu.cu).
     unsafe extern "C" {
         pub fn memra_v41_act_quant(
@@ -225,6 +247,28 @@ pub mod ffi {
             ldo: i64,
             rows: i32,
             inter: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// h = SwiGLU(w1 a, w3 a) * wrow of a small-M tile list in one launch (FP4 experts).
+        pub fn memra_v41_swiglu_tiles(
+            a: *const c_void,
+            lda: i64,
+            a_s: *const c_void,
+            ldas: i64,
+            tiles: *const c_void,
+            ntiles: *const i32,
+            max_tiles: i32,
+            ew: *const c_void,
+            ldb: i64,
+            ldbs: i64,
+            wfmt: i32,
+            wrow: *const f32,
+            limit: f32,
+            h: *mut c_void,
+            ldh: i64,
+            n: i32,
+            k: i32,
+            bm: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_v41_scatter_add(
@@ -517,6 +561,38 @@ pub mod ffi {
             out: *mut c_void,
             ldo: i64,
             rows: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// The producer's half of a small gather inside a kernel (`dst`: a [`V41Push`]).
+        pub fn memra_v41_push(
+            src: *const c_void,
+            pitch: i64,
+            width: i32,
+            rows: i32,
+            dst: *const V41Push,
+            npeer: i32,
+            seq: u32,
+            word_first: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// The consumer's half (`src`: a [`V41Pull`]); a peer that never arrives sets bit 16 of `bad`.
+        pub fn memra_v41_pull(
+            src: *const V41Pull,
+            npeer: i32,
+            seq: u32,
+            dst: *mut c_void,
+            bad: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// Gate helper: a region of 32-bit words set to a pattern of `(seed, word)`, or with `diff`
+        /// the number of its words that differ from the pattern added to `*diff`.
+        pub fn memra_v41_pat(
+            reg: *mut c_void,
+            pitch_w: i64,
+            width_w: i32,
+            rows: i32,
+            seed: u32,
+            diff: *mut i32,
             stream: *mut c_void,
         ) -> i32;
         /// Instruction ceilings (measurement, `dsv41-bench ceil`).
@@ -1448,6 +1524,45 @@ pub fn load_fp8_rows(
     })
 }
 
+/// Rows `rows` of the FP4 expert weight `{p}` ([`load_fp4`]): the weight rows and their scale rows.
+/// A minted weight takes its `scale2` from the whole tensor, so a slice holds the bytes the whole
+/// weight would.
+pub fn load_fp4_rows(
+    ops: &Ops,
+    stm: &StModel,
+    p: &str,
+    n: usize,
+    k: usize,
+    rows: std::ops::Range<usize>,
+    mint: bool,
+) -> Result<QW, String> {
+    if rows.end > n {
+        return Err(format!("{p}: rows {rows:?} of {n}"));
+    }
+    let (iw, bw) = raw(stm, &format!("{p}.weight"))?;
+    want(iw, p, "I8", &[n as u64, (k / 2) as u64])?;
+    let (is, bs) = raw(stm, &format!("{p}.scale"))?;
+    want(is, p, "F8_E8M0", &[n as u64, (k / 32) as u64])?;
+    let w = Buf::from_bytes(&ops.st, &bw[rows.start * (k / 2)..rows.end * (k / 2)])?;
+    if !mint {
+        return Ok(QW {
+            w,
+            s: Buf::from_bytes(&ops.st, &bs[rows.start * (k / 32)..rows.end * (k / 32)])?,
+            n: rows.len(),
+            k,
+            fmt: QFmt::Mxfp4,
+        });
+    }
+    let (sc, scale2) = mint_mxfp4_scales(bs).map_err(|e| format!("{p}: {e}"))?;
+    Ok(QW {
+        w,
+        s: Buf::from_bytes(&ops.st, &sc[rows.start * (k / 16)..rows.end * (k / 16)])?,
+        n: rows.len(),
+        k,
+        fmt: QFmt::Nvfp4Minted { scale2 },
+    })
+}
+
 /// FP4 expert weight `{p}.weight` (I8 pairs) / `{p}.scale` (ue8m0 per 32), optionally minted.
 pub fn load_fp4(
     ops: &Ops,
@@ -1795,6 +1910,12 @@ impl Part {
                 g.dim
             ));
         }
+        if !g.moe_inter.is_multiple_of(n) || !(g.moe_inter / n).is_multiple_of(32) {
+            return fail(format!(
+                "the experts' {} hidden rows do not split into whole 32-row scale blocks",
+                g.moe_inter
+            ));
+        }
         if !g.n_experts.is_multiple_of(n) {
             return fail(format!("{} experts do not split evenly", g.n_experts));
         }
@@ -1817,6 +1938,12 @@ pub struct LayerW {
     pub groups_l: usize,
     /// this card's `wo_b` output rows start (`wo_b.n` of them)
     pub dim0: usize,
+    /// the routed and shared experts are split by rows across the ranks (N ranks, experts on the
+    /// card): this rank holds hidden rows `[hid0, hid0 + hid_l)` of every w1 and w3 and output rows
+    /// `[dim0, dim0 + wo_b.n)` of every w2
+    pub split: bool,
+    pub hid0: usize,
+    pub hid_l: usize,
     /// `experts[i]` is routed expert `expert0 + i`
     pub expert0: usize,
     pub ratio: usize,
@@ -1982,23 +2109,54 @@ impl LayerW {
         } else {
             None
         };
-        let expert0 = experts.start;
-        let mut experts_w = Vec::with_capacity(experts.len());
-        for e in experts.filter(|_| routed) {
+        // N ranks with the experts on the card: every expert is split by rows like a TP MLP (w1
+        // and w3 by hidden rows, w2 by output rows), the shared expert with them; a rank then reads
+        // 1/N of every routed expert whatever the routing, and combines its own output columns
+        let split = part.n > 1 && routed;
+        let hid = part.range(g.moe_inter);
+        let (inter, dim) = (g.moe_inter, g.dim);
+        let expert0 = if split { 0 } else { experts.start };
+        let erange = if split { 0..g.n_experts } else { experts };
+        let mut experts_w = Vec::with_capacity(erange.len());
+        for e in erange.filter(|_| routed) {
             let ep = format!("{p}.ffn.experts.{e}");
-            experts_w.push([
-                load_fp4(ops, stm, &format!("{ep}.w1"), g.moe_inter, g.dim, mint)?,
-                load_fp4(ops, stm, &format!("{ep}.w2"), g.dim, g.moe_inter, mint)?,
-                load_fp4(ops, stm, &format!("{ep}.w3"), g.moe_inter, g.dim, mint)?,
-            ]);
+            experts_w.push(if split {
+                [
+                    load_fp4_rows(ops, stm, &format!("{ep}.w1"), inter, dim, hid.clone(), mint)?,
+                    load_fp4_rows(
+                        ops,
+                        stm,
+                        &format!("{ep}.w2"),
+                        dim,
+                        inter,
+                        dims.clone(),
+                        mint,
+                    )?,
+                    load_fp4_rows(ops, stm, &format!("{ep}.w3"), inter, dim, hid.clone(), mint)?,
+                ]
+            } else {
+                [
+                    load_fp4(ops, stm, &format!("{ep}.w1"), inter, dim, mint)?,
+                    load_fp4(ops, stm, &format!("{ep}.w2"), dim, inter, mint)?,
+                    load_fp4(ops, stm, &format!("{ep}.w3"), inter, dim, mint)?,
+                ]
+            });
         }
         let exp_tab = Buf::from_bytes(&ops.st, &expert_table(ops, &experts_w))?;
         let sp = format!("{p}.ffn.shared_experts");
-        let shared = [
-            load_fp8(ops, stm, &format!("{sp}.w1"), g.moe_inter, g.dim)?,
-            load_fp8(ops, stm, &format!("{sp}.w2"), g.dim, g.moe_inter)?,
-            load_fp8(ops, stm, &format!("{sp}.w3"), g.moe_inter, g.dim)?,
-        ];
+        let shared = if split {
+            [
+                load_fp8_rows(ops, stm, &format!("{sp}.w1"), inter, dim, hid.clone())?,
+                load_fp8_rows(ops, stm, &format!("{sp}.w2"), dim, inter, dims.clone())?,
+                load_fp8_rows(ops, stm, &format!("{sp}.w3"), inter, dim, hid.clone())?,
+            ]
+        } else {
+            [
+                load_fp8(ops, stm, &format!("{sp}.w1"), inter, dim)?,
+                load_fp8(ops, stm, &format!("{sp}.w2"), dim, inter)?,
+                load_fp8(ops, stm, &format!("{sp}.w3"), inter, dim)?,
+            ]
+        };
         let engram = if let Some(ei) = g.engram_layers.iter().position(|&l| l == id) {
             let cols = g.engram_cols();
             let table = format!("{p}.engram.embed");
@@ -2038,6 +2196,9 @@ impl LayerW {
             group0: groups.start,
             groups_l: groups.len(),
             dim0: dims.start,
+            split,
+            hid0: hid.start,
+            hid_l: hid.len(),
             expert0,
             ratio,
             kv_source,
@@ -2318,8 +2479,9 @@ pub struct Ctx {
     pub nvtx: bool,
     /// this rank's routed experts when the layers hold none ([`LayerW::load_part_with`])
     pub experts: Option<experts::ExpertCache>,
-    /// i32, sticky: an N-rank one-token MoE whose plan placed other than `rows * topk` pairs
-    /// (`memra_v41_moe_owner`); read with the step's logits
+    /// i32, sticky, read with the step's logits. Bit 0: an N-rank one-token MoE whose plan placed
+    /// other than `rows * topk` pairs (`memra_v41_moe_owner`). Bit 16: a small gather whose
+    /// peer never arrived (`memra_v41_pull`).
     pub route_bad: Buf,
     /// the card's second stream, made at the first one-token MoE ([`Side`])
     side: Option<Side>,
@@ -2368,6 +2530,9 @@ impl Side {
             .map_err(|e| format!("side join: {e:?}"))
     }
 }
+
+/// The most pairs the plan builds in one kernel (`V41_PLAN_SMALL` in cu/dsv41_gpu.cu).
+const PLAN_SMALL_PAIRS: usize = 128;
 
 /// The most rows of a forward whose shared expert runs on the side stream: the small-M kernels'
 /// rows. With more rows every GEMM fills the card and there is nothing to run under.
@@ -4237,7 +4402,14 @@ impl Ctx {
         } else {
             np.div_ceil(bm) + ex.len().min(np)
         };
-        let counts = self.ops.tmp(rows.div_ceil(256) * ne * 4)?;
+        // a few rows: one kernel writes every output, nothing needs a zero-fill (`V41_PLAN_SMALL`)
+        let small = np <= PLAN_SMALL_PAIRS;
+        let zeroed = |ops: &Ops, len: usize| if small { ops.tmp(len) } else { ops.buf(len) };
+        let counts = self.ops.tmp(if small {
+            4
+        } else {
+            rows.div_ceil(256) * ne * 4
+        })?;
         let plan = MoePlanDev {
             rows,
             np,
@@ -4245,13 +4417,13 @@ impl Ctx {
             max_tiles,
             off: self.ops.tmp((ne + 1) * 4)?,
             // zeroed: a pair the placement skips (an out-of-range id) still names token 0
-            ptok: self.ops.buf(np * 4)?,
-            pw: self.ops.buf(np * 4)?,
+            ptok: zeroed(&self.ops, np * 4)?,
+            pw: zeroed(&self.ops, np * 4)?,
             order: self.ops.tmp(np * 4)?,
             tiles: self.ops.tmp(max_tiles * 16)?,
             ntiles: self.ops.tmp(4)?,
             // counted with atomics: starts at zero
-            err: self.ops.buf(4)?,
+            err: zeroed(&self.ops, 4)?,
         };
         ck("moe_plan", unsafe {
             ffi::memra_v41_moe_plan(
@@ -4595,7 +4767,7 @@ impl Ctx {
         // the MoE runs `chunk` tokens at a time: each token's experts still add in ascending id order
         let m = self.ops.tmp(s * d * 2)?;
         // larger slices here: the per-expert loop runs once per slice
-        let cm = (4 * self.chunk).min(s).max(1);
+        let cm = decode::moe_slice(self.chunk).min(s).max(1);
         for r0 in (0..s).step_by(cm) {
             let rows = cm.min(s - r0);
             self.moe(lw, x2.at(&st, r0 * d * 2), rows, m.at(&st, r0 * d * 2), tr)?;

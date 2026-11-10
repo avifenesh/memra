@@ -271,8 +271,64 @@ layers 2, 20, 21 (three runs an arm, spreads under 1%, hashes identical):
 | the shared expert on the card's second stream, under the router chain and the plan (`13d16037b4`) | 0.615, 0.593, 0.500 | 0.592, 0.568, 0.475 | 0.961, 0.959, 0.950 | `multi-f1` (0.947, 0.951, 0.937 on quiet cores, `multi-x1`) |
 | expert tiles with the MMA's operands exchanged, up to 8 rows (`3c83d8c1a6`) | 0.591, 0.568, 0.476 | 0.563, 0.535, 0.446 | 0.953, 0.942, 0.937 | `multi-m3` |
 | the one-part tile instance without the loop over parts of K (`9ea7ec0b7f`) | 0.563, 0.539, 0.446 | 0.552, 0.529, 0.437 | 0.981, 0.983, 0.980 | `multi-m5` |
+| fp32 FMA small-M for 5..8 rows in one launch (`74e1e68de1`), the keyed attention entry (`9500e9960a`) | 0.550, 0.528, 0.436 | 0.557, 0.530, 0.437 | flat | `multi-m7`, `multi-k1` |
 
-Three-layer mean times 40, without the head: 20.2 ms a step (22.9 at `29aeeee39f`).
+Three-layer mean times 40, without the head: 20.2 ms a step (22.9 at `29aeeee39f`). `1a2bdbef7d`
+(launchers, mHC rows, Engram staging) is gated (`gates-a1`) and not yet timed.
+
+## Calls of 2 to 8 rows (a drafted block's verification, a batch of sequences)
+
+- The tile list scales with its tiles, not worse. One projection launch, one row a tile
+  (`receipts/gemm-k2`): 6 / 12 / 29 / 48 expert tiles take 43.9 / 78.6 / 237.5 / 386.5 us for w1 or
+  w3 and 37.8 / 68.0 / 202.9 / 337.0 for w2: 21 us a distinct expert at 6 tiles, 23 at 29 and 48
+  (15 tiles of two rows: 19.6). In an 8-token forward of layer 21 the experts are 706 us of 1,144
+  (`receipts/rows-k1`); a block lives about 20 us for 5 us of MMAs, waiting on four load rounds
+  whose K blocks it holds in registers.
+- mHC mixes: the one-token kernel ran only for exactly one row; 2 to 8 rows took the 16-token pass,
+  53 us against 6.7, twice a layer. `1a2bdbef7d` gives the one-token kernel a block column a token
+  up to 8 rows (`schedule/hc_mixes/rows8` in the kernel gate: its rows equal the 16-token pass's).
+- The fp32 FMA linears (router gate on every layer, the head once a call) took at most 4 rows a
+  launch, so 5 to 8 rows ran them twice: a fixed step of about 2 ms on a 9-layer call (the batching
+  lane's rows table: 10.48 -> 12.91 ms from 4 to 5 rows). `74e1e68de1`: one launch (8 rows on a
+  256-thread block for the head; K landed in two halves for the router), and the step is gone
+  (10.28 -> 11.50).
+- The Engram staging buffers were copied whole to the device on every call. They are sized for the
+  largest prefill chunk so far: 50.3 MB after one of 8,192 tokens, 0.88 ms of every decode step per
+  Engram layer (`receipts/nrank-k1-n1-9l`, 128,745 tokens of context), 23 MB after a 3,745-token
+  prompt. `1a2bdbef7d` copies the call's rows.
+- Launchers: a kernel's shared-memory limit is one setting a function a context. The launchers set
+  it to the call's size before each launch, so two threads on one card with different sizes could
+  launch above the limit the other had set (CUDA error 1 or 701 in a pipeline whose stages share a
+  card). `1a2bdbef7d` sets each limit and carveout once a device; the kernel gate's
+  `stress/sparse_attn_two_threads_two_widths` holds it.
+- `9500e9960a` adds `memra_v41_sparse_attn_keys`: a query row's window rows and compressed rows
+  named by a table entry, so a decode step reads the ring and the compressed KV where they live
+  (the copy into one key buffer is 134 MB and 123 us a layer at position 131,072 on a ratio-1
+  layer) and a batch reads each sequence's own.
+
+## One row against vLLM, by family (us a layer)
+
+vLLM nightly on a 9-layer copy of the checkpoint, one card, one graph replay a step (the baseline
+lane's nsys profile, kernel time a step / 9) against this route at about 4k context on a plain
+layer (`receipts/prof1-m1-4k`, the per-launch table above):
+
+| family | vLLM | here | note |
+|---|---|---|---|
+| dense MXFP8 linears | 132 (5.3 launches at 24.7) | 138 (wq_a 9, wq_b 29, wkv 6, wo_b 43, shared expert 38, `act_quant` 13) | level |
+| MoE: grouped GEMM and helpers | 107 + 19 | 128 + 22 | the tiles read at 0.9 TB/s where theirs is at the bus |
+| bf16 GEMM: wo_a and the router | 47 | 46 to 50 + 23 to 29 | wo_a is read-bound; the router is this route's fp32 FMA chain |
+| mHC with its norms | 27 | 40 | four launches a half-layer against two fused |
+| sparse attention | 19 | 37 at 640 keys | the same schedule; four blocks walk ten key tiles in turn |
+| norms, quant, RoPE, KV insert | about 28 | about 28 | level |
+| Engram staging copy | 0 | 47 (0.42 ms a call at 3.7k) | removed by `1a2bdbef7d` |
+| head, ms a step | 0.94 + 0.13 | 0.92 | 1.32 GB of bf16 at 1.44 TB/s: read-bound |
+| layer | about 380 | about 467 + 47 | |
+
+The router: its 23 to 29 us are 5,120 dependent fmas an output, the reference schedule's order. A
+faster router needs a different reduction order, which is not a schedule change: it would be the
+first item of this route to need a distribution-level gate against the vendor floor (router ids
+and weights over a corpus) instead of the byte gate. vLLM runs the router as a bf16 GEMM launch;
+that is the precedent. Not opened.
 
 The second stream: a branch that depends on nothing the main stream is about to compute starts
 behind a fork event and is joined before its first reader. The shared expert reads only the FFN
@@ -480,6 +536,10 @@ weight traffic: 1.1 ms.
 
 | what | where it stands | expected |
 |---|---|---|
+| Expert tiles through shared memory | built, not gated (`v41_gemv_f4s_tiles_kernel` in the working tree): a part of K landed by cp.async, nothing in flight in registers, four blocks an SM | the experts toward the read rate: 706 -> about 400 us a layer at 8 distinct-routed rows, 128 -> about 80 at one |
+| The head at 5 to 8 rows | 2.1 ms against 0.9 at one row: every thread of the 256-thread block runs a chain and the block is bound by its instructions; 16-byte loads of the staged values are built, not gated | about 1.2 ms |
+| Dense FP8 at 8 rows | +0.76 ms on a 9-layer call (the batching lane's per-kernel table); wo_b's terms pass two blocks an SM at 7 and 8 rows | K in parts for the 8-column body, as the tiles have |
+| `act_quant` | 10 launches a layer, 1.2 us each in a stream (0.6 ms a 9-layer call when every launch is synchronized, which is the profiler's floor, not the step's) | folding it into each GEMM block would repeat the quantization in every block; into the producers (the norm before wq_a / wkv and the FFN, SwiGLU before w2) it saves 7 launches, about 10 us a layer |
 | N-rank decode: batching across sequences | each call runs alone through each block, so 8 streams give one stream's tokens/s | the design above: 170 to 250 tokens/s aggregate at 8 streams on four ranks, from measured kernel times |
 | N-rank decode: launches | 48 kernels, 11.5 peer copies, 18 event waits and 6 records a layer a rank; a launch costs the issue thread 2.1 us alone on the card and 2.7 to 3.6 us with four ranks on one context | fusing `act_quant` into its GEMM (11 launches), the mHC pair and `hc_pre` + RMSNorm (4), the plan's three zero-fills: about 20 fewer launches a layer a rank, 0.05 to 0.07 ms of issue time and 0.02 to 0.03 ms of kernel floor |
 | N-rank decode: CUDA graph of a rank's step | not built: buffers are now stable (the free list) and the MoE has no host read at decode, which were its two blockers; positions, key counts and the ring slot have to move from kernel arguments to a small device block | the issue cost of a step (about 0.2 to 0.3 ms a layer a rank) down to one launch a step; only worth it when the cards, not the host, bound the step |

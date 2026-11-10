@@ -152,6 +152,12 @@ pub struct Group {
     pub transport_flag: &'static str,
     pub_ev: Vec<CudaEvent>,
     rel_ev: Vec<CudaEvent>,
+    /// device-push: each rank's inbox, two slots a producer ([`Group::gather_push`])
+    inbox: Vec<Buf>,
+    /// device-push: the last small gather's sequence number
+    push_seq: u32,
+    /// the gate's control case: the producer stores the word before the data
+    pub push_word_first: bool,
     pub stats: CommStats,
     /// synchronize and time every collective (measurement runs)
     pub timed: bool,
@@ -167,6 +173,12 @@ pub struct Group {
 /// pairs. Below it a peer copy takes its fixed latency (at the 49 GB/s measured between two
 /// cards, 256 KiB is 5 us); a prefill chunk's rows are megabytes and keep the exact gather.
 const STAGED_MOE_ROWS_BYTES: usize = 256 << 10;
+
+/// Bytes ahead of a slot's payload in a device-push inbox: the sequence word, padded so the
+/// payload starts on its own cache lines.
+const PUSH_HDR: usize = 256;
+/// One producer's slot in a rank's inbox.
+const PUSH_SLOT: usize = PUSH_HDR + ffi::PUSH_MAX;
 
 /// How long an issue thread spins for its next section before it parks. A one-token forward is
 /// some twenty sections a layer, microseconds apart (measured: all but one gap a layer under
@@ -506,9 +518,10 @@ impl Group {
         let n = devices.len();
         Part::check(g, n)?;
         let (transport, flag) = tp_transport::transport_env()?;
-        if transport == TpTransport::DevicePush {
+        if transport == TpTransport::DevicePush && n > ffi::PUSH_PEERS + 1 {
             return Err(format!(
-                "{flag}=device-push: the dsv41 route moves its blocks with host-canonical or peer-pull"
+                "{flag}=device-push: at most {} ranks",
+                ffi::PUSH_PEERS + 1
             ));
         }
         let parallel = issue_parallel()?;
@@ -524,7 +537,7 @@ impl Group {
             engines.push(e);
         }
         let distinct = |a: usize, b: usize| devices[a] != devices[b];
-        if transport == TpTransport::PeerPull {
+        if transport != TpTransport::HostCanonical {
             for a in 0..n {
                 for b in 0..n {
                     if a != b && distinct(a, b) {
@@ -537,11 +550,17 @@ impl Group {
         let mut cx = Vec::with_capacity(n);
         let mut pub_ev = Vec::with_capacity(n);
         let mut rel_ev = Vec::with_capacity(n);
+        let mut inbox = Vec::new();
         for e in &engines {
             let st = e.stream();
             pub_ev.push(st.context().new_event(None).map_err(de)?);
             rel_ev.push(st.context().new_event(None).map_err(de)?);
-            cx.push(Ctx::new(st, g.clone(), max_pos)?);
+            let c = Ctx::new(st, g.clone(), max_pos)?;
+            if transport == TpTransport::DevicePush {
+                // zeroed: no word holds a sequence number before the first gather
+                inbox.push(c.ops.buf(2 * n * PUSH_SLOT)?);
+            }
+            cx.push(c);
         }
         let pool = if n > 1 && parallel {
             Some(Crew::new(n)?)
@@ -556,6 +575,9 @@ impl Group {
             transport_flag: flag,
             pub_ev,
             rel_ev,
+            inbox,
+            push_seq: 0,
+            push_word_first: false,
             stats: CommStats::default(),
             timed: false,
             trace: false,
@@ -716,8 +738,11 @@ impl Group {
         } else {
             None
         };
+        let push = self.transport == TpTransport::DevicePush
+            && blks.iter().all(|b| b.bytes() <= ffi::PUSH_MAX);
         match self.transport {
-            TpTransport::PeerPull if self.pool.is_some() => {
+            TpTransport::DevicePush if push => self.gather_push(bufs, blks)?,
+            TpTransport::PeerPull | TpTransport::DevicePush if self.pool.is_some() => {
                 // the same three steps with each rank's calls on its own thread: every producer
                 // publishes, then every consumer pulls on its own stream and releases, then every
                 // producer waits for the releases (each step completes on the host before the next,
@@ -759,7 +784,7 @@ impl Group {
                 })?;
                 self.stats.copies += copies.iter().sum::<u64>();
             }
-            TpTransport::PeerPull => {
+            TpTransport::PeerPull | TpTransport::DevicePush => {
                 for p in 0..n {
                     self.pub_ev[p].record(&self.cx[p].ops.st).map_err(de)?;
                 }
@@ -803,7 +828,6 @@ impl Group {
                     }
                 }
             }
-            TpTransport::DevicePush => return Err("allgather: device-push is not armed".into()),
         }
         self.stats.collectives += 1;
         self.stats.bytes += blks
@@ -815,6 +839,143 @@ impl Group {
             self.stats.secs += t.elapsed().as_secs_f64();
         }
         Ok(())
+    }
+
+    /// A gather of regions of at most [`ffi::PUSH_MAX`] bytes inside kernels (device-push): each
+    /// rank's push kernel packs its region into its slot of every peer's inbox and then stores
+    /// this gather's sequence number in the slot's word; each rank's pull kernel, queued right
+    /// behind it, spins on the words of its own inbox and unpacks the slots into its buffer. Two
+    /// launches a rank and nothing else: no event, no copy call, no host wait. Slots alternate
+    /// with the sequence number: a rank cannot push gather g + 2 before its pull of g + 1 saw
+    /// every peer's word, and a peer pushes g + 1 after its own pull of g, so a slot is never
+    /// rewritten under its reader. Larger regions keep the copy-engine gather (peer-pull).
+    fn gather_push(&mut self, bufs: &[&Buf], blks: &[Blk]) -> Result<(), String> {
+        let n = self.n();
+        self.push_seq = self.push_seq.wrapping_add(1);
+        let (seq, word_first) = (self.push_seq, self.push_word_first as i32);
+        let slot = move |producer: usize| ((seq as usize & 1) * n + producer) * PUSH_SLOT;
+        let addr: Vec<u64> = (0..n)
+            .map(|r| bufs[r].p(&self.cx[r].ops.st).addr())
+            .collect();
+        let inbox: Vec<u64> = (0..n)
+            .map(|r| self.inbox[r].p(&self.cx[r].ops.st).addr())
+            .collect();
+        let Self { pool, cx, .. } = self;
+        each_in(pool.as_mut(), cx, |r, c| {
+            let st = c.ops.st.clone();
+            let (mut out, mut inn) = (ffi::V41Push::default(), ffi::V41Pull::default());
+            let mut k = 0;
+            for p in (0..n).filter(|&p| p != r) {
+                out.w[k] = inbox[p] + slot(r) as u64;
+                out.d[k] = out.w[k] + PUSH_HDR as u64;
+                inn.w[k] = inbox[r] + slot(p) as u64;
+                inn.d[k] = inn.w[k] + PUSH_HDR as u64;
+                inn.off[k] = blks[p].off as i64;
+                inn.pitch[k] = blks[p].pitch as i64;
+                inn.width[k] = blks[p].width as i32;
+                inn.rows[k] = blks[p].rows as i32;
+                k += 1;
+            }
+            let b = blks[r];
+            ck("push", unsafe {
+                ffi::memra_v41_push(
+                    (addr[r] + b.off as u64) as *const std::ffi::c_void,
+                    b.pitch as i64,
+                    b.width as i32,
+                    b.rows as i32,
+                    &out,
+                    k as i32,
+                    seq,
+                    word_first,
+                    c.ops.sv(),
+                )
+            })?;
+            ck("pull", unsafe {
+                ffi::memra_v41_pull(
+                    &inn,
+                    k as i32,
+                    seq,
+                    addr[r] as *mut std::ffi::c_void,
+                    c.route_bad.p(&st).im(),
+                    c.ops.sv(),
+                )
+            })
+        })?;
+        self.stats.copies += (n * (n - 1)) as u64;
+        Ok(())
+    }
+
+    /// The gate's stress of the small gathers: `gathers` gathers over five region shapes with no
+    /// host wait between them, every rank setting its region to a pattern of (gather, rank) right
+    /// before a gather and counting right after it the words of every region that differ from
+    /// the producer's pattern. Returns `(words that differed, ranks whose sticky flag is set)`:
+    /// `(0, 0)` when every consumer read what was pushed. `word_first`: the control, the producer
+    /// stores the word before the data, which this must catch.
+    pub fn gather_stress(
+        &mut self,
+        gathers: usize,
+        word_first: bool,
+    ) -> Result<(u64, u64), String> {
+        let n = self.n();
+        // (words a row, rows) of a rank's region: one word, a one-token hidden gather, an output
+        // row, a strided block, the largest push
+        let shapes = [
+            (1usize, 1usize),
+            (288, 7),
+            (640, 1),
+            (2048, 3),
+            (ffi::PUSH_MAX / 4, 1),
+        ];
+        let was = std::mem::replace(&mut self.push_word_first, word_first);
+        let cnt = self.each(|_, c| c.ops.buf(4))?;
+        for (si, &(w, rows)) in shapes.iter().enumerate() {
+            let pitch_w = n * w + 16;
+            let bufs = self.each(|_, c| c.ops.buf(pitch_w * 4 * rows))?;
+            let refs: Vec<&Buf> = bufs.iter().collect();
+            let blks: Vec<Blk> = (0..n)
+                .map(|r| Blk {
+                    off: r * w * 4,
+                    width: w * 4,
+                    pitch: pitch_w * 4,
+                    rows,
+                })
+                .collect();
+            let pat = |c: &Ctx, b: &Buf, p: usize, seed: u32, diff: Dp| {
+                let st = c.ops.st.clone();
+                ck("pat", unsafe {
+                    ffi::memra_v41_pat(
+                        b.at(&st, p * w * 4).m(),
+                        pitch_w as i64,
+                        w as i32,
+                        rows as i32,
+                        seed,
+                        diff.im(),
+                        c.ops.sv(),
+                    )
+                })
+            };
+            for g in 0..gathers.div_ceil(shapes.len()) {
+                let seed = |p: usize| ((si * 1_000_003 + g) * 8 + p) as u32;
+                self.each(|r, c| pat(c, &bufs[r], r, seed(r), Dp::NULL))?;
+                self.allgather(&refs, &blks)?;
+                self.each(|r, c| {
+                    let st = c.ops.st.clone();
+                    (0..n).try_for_each(|p| pat(c, &bufs[r], p, seed(p), cnt[r].p(&st)))
+                })?;
+                if g % 512 == 511 {
+                    self.sync_all()?;
+                }
+            }
+            self.sync_all()?;
+        }
+        self.push_word_first = was;
+        let (mut diff, mut flagged) = (0u64, 0u64);
+        for r in 0..n {
+            let st = self.cx[r].ops.st.clone();
+            diff += bytes_i32(&cnt[r].host(&st)?)[0] as u64;
+            flagged += (bytes_i32(&self.cx[r].route_bad.host(&st)?)[0] != 0) as u64;
+        }
+        Ok((diff, flagged))
     }
 
     /// Every rank's share of layer `id`, the ranks loading in parallel.
@@ -1047,7 +1208,14 @@ impl Group {
             x2.push(x);
             m.push(mm);
         }
-        let cm = self.cx[0].chunk.min(s).max(1);
+        // split experts: the MoE slice of one card (four query slices), so an expert's rows fill
+        // whole tiles; the other N-rank paths keep the query slice their gathers were sized for
+        let cm = if lw.iter().all(|w| w.split) {
+            super::decode::moe_slice(self.cx[0].chunk)
+        } else {
+            self.cx[0].chunk
+        };
+        let cm = cm.min(s).max(1);
         for r0 in (0..s).step_by(cm) {
             let rows = cm.min(s - r0);
             self.moe(lw, &x2, r0, rows, &m, tr)?;
@@ -1228,6 +1396,9 @@ impl Group {
                 &mut tr[0],
             );
         }
+        if lw.iter().all(|w| w.split) {
+            return self.moe_split(lw, x2, r0, rows, m, tr);
+        }
         let trace = self.trace;
         let plans = {
             let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
@@ -1387,6 +1558,88 @@ impl Group {
         Ok(())
     }
 
+    /// [`Self::moe`] with every expert split by rows across the ranks ([`LayerW::split`]). Every
+    /// rank routes and plans all the experts, computes its hidden columns of every routed pair and
+    /// of the shared expert, the hidden columns are gathered, every rank computes its output
+    /// columns from the full hidden rows and combines them itself (each token's expert rows in
+    /// ascending expert id, then the shared expert: the unsplit order, per column), and the output
+    /// columns are gathered. Each step is row-wise, so the bytes are the one-card MoE's. A rank
+    /// reads 1/N of every routed expert whatever the routing, nothing is read back to the host,
+    /// and the gathers are `[pairs + rows][inter]` and `[rows][dim]` instead of `[pairs][dim]`.
+    fn moe_split(
+        &mut self,
+        lw: &[LayerW],
+        x2: &[Buf],
+        r0: usize,
+        rows: usize,
+        m: &[Buf],
+        tr: &mut [Trace],
+    ) -> Result<(), String> {
+        let g = self.cx[0].g.clone();
+        let (ne, topk, d, inter) = (g.n_experts, g.topk, g.dim, g.moe_inter);
+        let np = rows * topk;
+        let trace = self.trace;
+        let parts = {
+            let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
+            self.each_mut(&mut trs, |r, c, trr| {
+                let st = c.ops.st.clone();
+                let x = x2[r].at(&st, r0 * d * 2);
+                let hb = c.ops.tmp((np + rows) * inter * 2)?;
+                let forked = c.split_shared_fork(&lw[r], x, rows, np, &hb)?;
+                let (sel, selw) = c.moe_route(&lw[r], x, rows)?;
+                if trace {
+                    trr.route_sel
+                        .extend_from_slice(&bytes_i32(&host_timed(&sel, &st)?));
+                    trr.route_w
+                        .extend_from_slice(&bytes_f32(&host_timed(&selw, &st)?));
+                }
+                let plan = c.moe_plan(&sel, &selw, rows, 0..ne)?;
+                c.split_hidden(&lw[r], x, &plan, &hb)?;
+                if forked {
+                    c.split_shared_join()?;
+                }
+                Ok((plan, hb))
+            })?
+        };
+        let (plans, hbs): (Vec<_>, Vec<Buf>) = parts.into_iter().unzip();
+        let refs: Vec<&Buf> = hbs.iter().collect();
+        let blks: Vec<Blk> = lw
+            .iter()
+            .map(|w| Blk {
+                off: w.hid0 * 2,
+                width: w.hid_l * 2,
+                pitch: inter * 2,
+                rows: np + rows,
+            })
+            .collect();
+        self.allgather(&refs, &blks)?;
+        self.each(|r, c| {
+            let st = c.ops.st.clone();
+            c.split_out(&lw[r], &plans[r], &hbs[r], rows, m[r].at(&st, r0 * d * 2))
+        })?;
+        let refs: Vec<&Buf> = m.iter().collect();
+        let blks: Vec<Blk> = lw
+            .iter()
+            .map(|w| Blk {
+                off: r0 * d * 2 + w.dim0 * 2,
+                width: w.shared[1].n * 2,
+                pitch: d * 2,
+                rows,
+            })
+            .collect();
+        self.allgather(&refs, &blks)?;
+        if trace {
+            for r in 0..self.n() {
+                let st = self.cx[r].ops.st.clone();
+                let err = bytes_i32(&plans[r].err.host(&st)?)[0];
+                if err != 0 {
+                    return Err(format!("rank {r} route: {err} expert ids out of range"));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Logits of rows `[r0, r0 + rows)`: the collapse with the carried pre-mix and the final norm
     /// on every rank, each rank's vocab rows of the fp32 head, gathered on the host `[rows][vocab]`.
     pub fn head_logits(
@@ -1423,7 +1676,13 @@ impl Group {
                 .linear_bf16(x.p(&st), d, rows, &hw[r], lg.p(&st), hw[r].n, true)?;
             let lg = bytes_f32(&host_timed(&lg, &st)?);
             // the stream is drained: the one-token MoEs' pair counts of this forward
-            if bytes_i32(&c.route_bad.host(&st)?)[0] != 0 {
+            let bad = bytes_i32(&c.route_bad.host(&st)?)[0];
+            if bad & 0x10000 != 0 {
+                return Err(format!(
+                    "rank {r}: a peer's slice of a gather never arrived"
+                ));
+            }
+            if bad != 0 {
                 return Err(format!(
                     "rank {r} route: a layer placed other than rows x topk pairs"
                 ));
@@ -1823,6 +2082,193 @@ impl MoePlan {
 }
 
 impl Ctx {
+    /// The split MoE's first half on this rank for the routed pairs: its hidden columns
+    /// `[hid0, hid0 + hid_l)` of every pair, rows `[0, np)` of `hb` (bf16 `[np + rows][inter]`).
+    /// w1 and w3 of the rank's hidden rows, then the SwiGLU, which is per element. The shared
+    /// expert's rows are [`split_hidden_shared`].
+    pub fn split_hidden(
+        &mut self,
+        lw: &LayerW,
+        x: Dp,
+        plan: &super::MoePlanDev,
+        hb: &Buf,
+    ) -> Result<(), String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let (d, inter, np, hn, h0) = (g.dim, g.moe_inter, plan.np, lw.hid_l, lw.hid0);
+        let aq = self.ops.tmp(np * d)?;
+        let as_ = self.ops.tmp(np * d / 32)?;
+        self.ops
+            .act_quant(x, d, plan.ptok.p(&st), np, d, aq.p(&st), as_.p(&st))?;
+        if plan.bm <= super::SMALL_M {
+            // a few rows: w1, w3 and the SwiGLU in one launch
+            let (wfmt, kdiv) = split_fmt(lw)?;
+            return ck("swiglu_tiles", unsafe {
+                ffi::memra_v41_swiglu_tiles(
+                    aq.p(&st).c(),
+                    d as i64,
+                    as_.p(&st).c(),
+                    (d / 32) as i64,
+                    plan.tiles.p(&st).c(),
+                    plan.ntiles.p(&st).i(),
+                    plan.max_tiles as i32,
+                    lw.exp_tab.p(&st).c(),
+                    (d / 2) as i64,
+                    (d / kdiv) as i64,
+                    wfmt,
+                    plan.pw.p(&st).f(),
+                    g.swiglu_limit,
+                    hb.at(&st, h0 * 2).m(),
+                    inter as i64,
+                    hn as i32,
+                    d as i32,
+                    plan.bm as i32,
+                    self.ops.sv(),
+                )
+            });
+        }
+        let gb = self.ops.tmp(np * hn * 2)?;
+        let ub = self.ops.tmp(np * hn * 2)?;
+        self.split_tiles(lw, plan, &aq, &as_, d, 0, gb.p(&st), hn)?;
+        self.split_tiles(lw, plan, &aq, &as_, d, 2, ub.p(&st), hn)?;
+        ck("swiglu", unsafe {
+            ffi::memra_v41_swiglu(
+                gb.p(&st).m(),
+                ub.p(&st).m(),
+                hn as i64,
+                plan.pw.p(&st).f(),
+                g.swiglu_limit,
+                hb.at(&st, h0 * 2).m(),
+                inter as i64,
+                np as i32,
+                hn as i32,
+                self.ops.sv(),
+            )
+        })
+    }
+
+    /// The split MoE's second half on this rank: its output columns `[dim0, dim0 + n)` of every
+    /// pair and of the shared expert from the gathered hidden rows `hb`, combined into the same
+    /// columns of `out` (`[rows][dim]`).
+    pub fn split_out(
+        &mut self,
+        lw: &LayerW,
+        plan: &super::MoePlanDev,
+        hb: &Buf,
+        rows: usize,
+        out: Dp,
+    ) -> Result<(), String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let (d, inter, np, dn) = (g.dim, g.moe_inter, plan.np, lw.shared[1].n);
+        let o = self.ops.tmp((np + rows) * dn * 2)?;
+        let aq = self.ops.tmp(np * inter)?;
+        let as_ = self.ops.tmp(np * inter / 32)?;
+        self.ops
+            .act_quant(hb.p(&st), inter, Dp::NULL, np, inter, aq.p(&st), as_.p(&st))?;
+        self.split_tiles(lw, plan, &aq, &as_, inter, 1, o.p(&st), dn)?;
+        self.ops.linear_q(
+            hb.at(&st, np * inter * 2),
+            inter,
+            rows,
+            &lw.shared[1],
+            o.at(&st, np * dn * 2),
+            dn,
+            false,
+            &mut self.scr,
+        )?;
+        ck("moe_combine", unsafe {
+            ffi::memra_v41_moe_combine(
+                o.p(&st).c(),
+                dn as i64,
+                plan.order.p(&st).i(),
+                g.topk as i32,
+                o.at(&st, np * dn * 2).c(),
+                dn as i64,
+                Dp(out.addr() + (lw.dim0 * 2) as u64).m(),
+                d as i64,
+                rows as i32,
+                dn as i32,
+                self.ops.sv(),
+            )
+        })
+    }
+
+    /// One projection of the split experts over the plan's tile list: `nout` rows of every routed
+    /// expert's weight (this rank's slice) against the quantized rows `a`, into `c` `[np][nout]`.
+    #[allow(clippy::too_many_arguments)]
+    fn split_tiles(
+        &self,
+        lw: &LayerW,
+        plan: &super::MoePlanDev,
+        a: &Buf,
+        a_s: &Buf,
+        k: usize,
+        proj: i32,
+        c: Dp,
+        nout: usize,
+    ) -> Result<(), String> {
+        let st = self.ops.st.clone();
+        let (wfmt, kdiv) = split_fmt(lw)?;
+        ck("gemm_f8_tiles", unsafe {
+            ffi::memra_v41_gemm_f8_tiles(
+                a.p(&st).c(),
+                k as i64,
+                a_s.p(&st).c(),
+                (k / 32) as i64,
+                plan.tiles.p(&st).c(),
+                plan.ntiles.p(&st).i(),
+                plan.max_tiles as i32,
+                lw.exp_tab.p(&st).c(),
+                proj,
+                (k / 2) as i64,
+                (k / kdiv) as i64,
+                wfmt,
+                c.m(),
+                nout as i64,
+                0,
+                nout as i32,
+                k as i32,
+                plan.bm as i32,
+                self.ops.sv(),
+            )
+        })
+    }
+
+    /// The split MoE's shared expert on the side stream when the forward is a few rows (it reads
+    /// only `x`, so it runs under the router's chain and the plan), else on the main stream.
+    /// Returns whether the caller owes a [`Self::split_shared_join`] before `hb` is read.
+    pub fn split_shared_fork(
+        &mut self,
+        lw: &LayerW,
+        x: Dp,
+        rows: usize,
+        np: usize,
+        hb: &Buf,
+    ) -> Result<bool, String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        if rows > super::SIDE_ROWS {
+            split_hidden_shared(&self.ops, &mut self.scr, &g, lw, x, rows, np, hb)?;
+            return Ok(false);
+        }
+        if self.side.is_none() {
+            self.side = Some(super::Side::new(&st)?);
+        }
+        let side = self.side.as_mut().unwrap();
+        side.fork(&st)?;
+        split_hidden_shared(&side.ops, &mut side.scr, &g, lw, x, rows, np, hb)?;
+        Ok(true)
+    }
+
+    /// The main stream waits for the side stream's shared expert.
+    pub fn split_shared_join(&self) -> Result<(), String> {
+        match &self.side {
+            Some(s) => s.join(&self.ops.st),
+            None => Err("split MoE: no side stream to join".into()),
+        }
+    }
+
     /// The shared FP8 expert of `rows` rows of `x`: bf16 `[rows][dim]`.
     pub fn shared_expert(&mut self, lw: &LayerW, x: Dp, rows: usize) -> Result<Buf, String> {
         let g = self.g.clone();
@@ -1867,6 +2313,52 @@ pub fn shared_expert_on(
     })?;
     ops.linear_q(hb.p(&st), inter, rows, s2, out.p(&st), d, false, scr)?;
     Ok(out)
+}
+
+/// The tile kernels' weight format code and scale divisor of a rank's FP4 experts.
+fn split_fmt(lw: &LayerW) -> Result<(i32, usize), String> {
+    match lw.experts.first().map(|w| w[0].fmt) {
+        Some(super::QFmt::Mxfp4) => Ok((1, 32)),
+        Some(super::QFmt::Nvfp4Minted { .. }) => Ok((2, 16)),
+        _ => Err("split experts: no FP4 experts on the rank".into()),
+    }
+}
+
+/// The split MoE's first half on a rank for the shared expert, on `ops`' stream: its hidden columns
+/// `[hid0, hid0 + hid_l)` of every token, rows `[np, np + rows)` of `hb` (bf16 `[np + rows][inter]`).
+#[allow(clippy::too_many_arguments)]
+pub fn split_hidden_shared(
+    ops: &super::Ops,
+    scr: &mut super::Scratch,
+    g: &Geo,
+    lw: &LayerW,
+    x: Dp,
+    rows: usize,
+    np: usize,
+    hb: &Buf,
+) -> Result<(), String> {
+    let st = ops.st.clone();
+    let (d, inter, hn, h0) = (g.dim, g.moe_inter, lw.hid_l, lw.hid0);
+    let (q, qs) = scr.actq(ops, rows, d)?;
+    ops.act_quant(x, d, Dp::NULL, rows, d, q, qs)?;
+    let gs = ops.tmp(rows * hn * 2)?;
+    let us = ops.tmp(rows * hn * 2)?;
+    ops.gemm_q(q, qs, rows, &lw.shared[0], gs.p(&st), hn, false)?;
+    ops.gemm_q(q, qs, rows, &lw.shared[2], us.p(&st), hn, false)?;
+    ck("swiglu", unsafe {
+        ffi::memra_v41_swiglu(
+            gs.p(&st).m(),
+            us.p(&st).m(),
+            hn as i64,
+            std::ptr::null(),
+            g.swiglu_limit,
+            hb.at(&st, np * inter * 2 + h0 * 2).m(),
+            inter as i64,
+            rows as i32,
+            hn as i32,
+            ops.sv(),
+        )
+    })
 }
 
 #[cfg(test)]

@@ -1331,7 +1331,8 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         );
     };
     // (m, n, k, weight format, activation scale code range)
-    let cases: [(usize, usize, usize, i32, (u8, u8)); 12] = [
+    type GemmCase = (usize, usize, usize, i32, (u8, u8));
+    let cases: [GemmCase; 12] = [
         (1, 1280, 5120, 0, (118, 130)),
         (3, 4096, 1280, 0, (118, 130)),
         (4, 2304, 5120, 1, (118, 130)),
@@ -1417,7 +1418,8 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
     // the device plan against the host plan, then the tile-list dispatch against the reference
     // GEMM run per expert, on a 16-expert slice
     for &(rows, ne, topk, bm) in &[
-        (1usize, 16usize, 6usize, 4usize),
+        (1usize, 16usize, 6usize, 1usize),
+        (1, 16, 6, 4),
         (3, 16, 6, 4),
         (6, 16, 6, 8),
         (700, 16, 6, 64),
@@ -1531,7 +1533,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             )
         })?;
         let want = ops.buf(np * n * 2)?;
-        for e in 0..ne {
+        for (e, wt) in wts.iter().enumerate().take(ne) {
             let (p0, p1) = (host.off[e], host.off[e + 1]);
             if p1 == p0 {
                 continue;
@@ -1542,9 +1544,9 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                     k as i64,
                     a_s.at(&st, p0 * (k / 32)).c(),
                     (k / 32) as i64,
-                    wts[e].0.p(&st).c(),
+                    wt.0.p(&st).c(),
                     (k / 2) as i64,
-                    wts[e].1.p(&st).c(),
+                    wt.1.p(&st).c(),
                     (k / 32) as i64,
                     1.0,
                     1,
@@ -1564,6 +1566,94 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             &got.host(&st)?,
             &want.host(&st)?,
         );
+        if bm <= 8 {
+            // w1, w3 and the SwiGLU in one launch vs the three launches. The table's third
+            // projection is the next expert's weight, so gate and up differ.
+            let mut tab2 = Vec::with_capacity(ne * 64);
+            for e in 0..ne {
+                let (w1, w3) = (&wts[e], &wts[(e + 1) % ne]);
+                for x in [&w1.0, &w1.0, &w3.0, &w1.1, &w1.1, &w3.1] {
+                    tab2.extend_from_slice(&x.p(&st).addr().to_le_bytes());
+                }
+                for _ in 0..3 {
+                    tab2.extend_from_slice(&1.0f32.to_le_bytes());
+                }
+                tab2.extend_from_slice(&0i32.to_le_bytes());
+            }
+            let tab2 = Buf::from_bytes(&st, &tab2)?;
+            let (gb, ub) = (ops.buf(np * n * 2)?, ops.buf(np * n * 2)?);
+            for (proj, c) in [(0, &gb), (2, &ub)] {
+                ck("gemm_f8_tiles", unsafe {
+                    ffi::memra_v41_gemm_f8_tiles(
+                        a.p(&st).c(),
+                        k as i64,
+                        a_s.p(&st).c(),
+                        (k / 32) as i64,
+                        tiles.p(&st).c(),
+                        ntiles.p(&st).i(),
+                        max_tiles as i32,
+                        tab2.p(&st).c(),
+                        proj,
+                        (k / 2) as i64,
+                        (k / 32) as i64,
+                        1,
+                        c.p(&st).m(),
+                        n as i64,
+                        0,
+                        n as i32,
+                        k as i32,
+                        bm as i32,
+                        sv,
+                    )
+                })?;
+            }
+            // hidden rows 2,400 wide at a column offset, as the split MoE writes them
+            let (ldh, h0) = (n + 96, 64usize);
+            let (want_h, got_h) = (ops.buf(np * ldh * 2)?, ops.buf(np * ldh * 2)?);
+            ck("swiglu", unsafe {
+                ffi::memra_v41_swiglu(
+                    gb.p(&st).m(),
+                    ub.p(&st).m(),
+                    n as i64,
+                    pw.p(&st).f(),
+                    10.0,
+                    want_h.at(&st, h0 * 2).m(),
+                    ldh as i64,
+                    np as i32,
+                    n as i32,
+                    sv,
+                )
+            })?;
+            ck("swiglu_tiles", unsafe {
+                ffi::memra_v41_swiglu_tiles(
+                    a.p(&st).c(),
+                    k as i64,
+                    a_s.p(&st).c(),
+                    (k / 32) as i64,
+                    tiles.p(&st).c(),
+                    ntiles.p(&st).i(),
+                    max_tiles as i32,
+                    tab2.p(&st).c(),
+                    (k / 2) as i64,
+                    (k / 32) as i64,
+                    1,
+                    pw.p(&st).f(),
+                    10.0,
+                    got_h.at(&st, h0 * 2).m(),
+                    ldh as i64,
+                    n as i32,
+                    k as i32,
+                    bm as i32,
+                    sv,
+                )
+            })?;
+            same(
+                rep,
+                &format!("schedule/swiglu_tiles/rows{rows}_bm{bm}"),
+                &got_h.host(&st)?,
+                &want_h.host(&st)?,
+            );
+        }
     }
 
     // small-M bf16 and fp32-FMA kernels: rows 0..m of an 8-row tile-kernel run
@@ -3009,6 +3099,28 @@ fn tp_gate(
     let max_pos = (s + 64).max(1024);
     let mut grp = v::tp::Group::new(devices, &g, max_pos)?;
     grp.trace = true;
+    if grp.transport == memra_engine::tp_transport::TpTransport::DevicePush {
+        // the small gathers inside kernels: 20,000 back to back, every consumer checking every
+        // producer's region; then the control, the word stored before the data, which must show
+        let (diff, flagged) = grp.gather_stress(20_000, false)?;
+        rep.raw(
+            "stress/push_gather",
+            diff == 0 && flagged == 0,
+            "every consumer reads what every producer pushed",
+            format!(
+                "20000 gathers on devices {devices:?}: {diff} words differ, {flagged} ranks flagged"
+            ),
+        );
+        let (diff, flagged) = grp.gather_stress(2_000, true)?;
+        rep.raw(
+            "stress/push_gather_control_word_first",
+            diff > 0 && flagged == 0,
+            "the word before the data is caught (words differ)",
+            format!(
+                "2000 gathers on devices {devices:?}: {diff} words differ, {flagged} ranks flagged"
+            ),
+        );
+    }
     let e = memra_engine::Engine::new(devices[0]).map_err(|e| e.to_string())?;
     let mut cx = Ctx::new(e.stream(), g.clone(), max_pos)?;
     cx.trace = true;

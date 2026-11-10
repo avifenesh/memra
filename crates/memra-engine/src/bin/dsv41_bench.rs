@@ -130,7 +130,8 @@ fn rows_of(ops: &Ops, b: &Buf, r0: usize, n: usize, rb: usize) -> Result<Buf, St
 }
 
 /// The layer runtime under test: the N-rank group at N = 1 (the path the decode runner and the
-/// multi-card route take) or the one-card `Ctx::block_forward`.
+/// multi-card route take) or the one-card `Ctx::block_forward`. One value a process.
+#[allow(clippy::large_enum_variant)]
 enum Rt {
     One(Ctx, memra_engine::Engine),
     Grp(Group),
