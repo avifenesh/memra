@@ -35,6 +35,24 @@
 //! runs every call alone through each block, so a request's numbers are the same served alone or
 //! beside others (the serve receipts gate this byte for byte).
 //!
+//! Drafting (`MEMRA_DSV41_DRAFT=1`; off until the route's served gates and its A/B have run
+//! with it, `docs/FLAGS.md`). The checkpoint's DSpark head (`dsv41_gpu::draft`) drafts a block
+//! after a step: the request's decode call then carries its next token and drafted ones, each
+//! row run as the one-token decode program of its position (`decode::Runner::forward`,
+//! byte-identical to feeding the tokens one call at a time: `dsv41-spec verify-rows`). The route
+//! chooses each row's token exactly as it chooses a plain step's (the same penalties window and
+//! position-keyed draw), keeps the drafts that equal those choices from the front, commits those
+//! rows and drops the rest. So a request's tokens are the undrafted route's, greedy or sampled,
+//! and a draft only decides how many tokens a step yields. The draft is always the head's argmax
+//! (a one-hot proposal).
+//!
+//! What a step verifies is priced, never fixed: the route keeps what its decode calls cost by
+//! their rows (`draft::RowCost`, filled from its own steps, so it is this residency's table) and
+//! each step verifies the depth with the most expected tokens per millisecond under the
+//! confidence head's survival (`draft::price_depth`); a request whose drafted steps yield less
+//! than its one-token steps would stops drafting for a stretch (`draft::DraftGate`).
+//! `MEMRA_DSV41_DRAFT_DEPTH` caps the depth.
+//!
 //! Sampling. Greedy is the argmax, the lowest id among equal maxima (the decode lane's rule, so a
 //! served greedy answer is `dsv41-run --gen`'s). Temperature, top-p and top-k draw through the
 //! DSv4 route's position-keyed host sampler (`dsv4_sample_row`, seeded and reproducible),
@@ -45,16 +63,17 @@
 //! parser closes the call), and the token budget.
 //!
 //! Deliberate limits, stated: `response_format`/grammar refused by name; image parts are refused
-//! by the HTTP layer (no V4.1 vision program); no DSpark drafts, prefix cache or CUDA graphs.
+//! by the HTTP layer (no V4.1 vision program); no prefix cache or CUDA graphs.
 
 use crate::dsv4_admit::Admission;
 use crate::dsv4_serve::{admission_answer, fail_request, scan_stop_cut_with, settle, snap};
 use crate::health::RouteHealth;
 use crate::route_telemetry::{RouteLoad, RouteRun, ServeStats};
-use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request};
+use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsage};
 use memra_engine::decode::StopReason;
 use memra_engine::dsv4_gpu::{Dsv4PenaltyCfg, Dsv4SampleCfg, dsv4_penalize_row, dsv4_sample_row};
 use memra_engine::dsv41_gpu::decode::{Call, Runner, Seq};
+use memra_engine::dsv41_gpu::draft::{DraftGate, DraftSeq, DraftW, RowCost, price_depth};
 use memra_engine::dsv41_gpu::engram::{EngramConsts, token_map_from_file};
 use memra_engine::dsv41_gpu::experts::{HostExperts, Layout};
 use memra_engine::dsv41_gpu::{self as v41, Geo};
@@ -115,10 +134,20 @@ pub(crate) struct MemModel {
     pub group_ratios: [usize; 4],
     pub n_groups: usize,
     pub chunk: usize,
+    /// rows of a decode call: 1, or with the draft head its block plus the token before it
+    pub decode_rows: usize,
+    /// draft stages (0: no draft head); each keeps a window ring per sequence
+    pub draft_stages: usize,
 }
 
 impl MemModel {
+    #[cfg(test)]
     fn of(g: &Geo, layers: usize, chunk: usize) -> Self {
+        Self::with_draft(g, layers, chunk, 0, 0)
+    }
+
+    /// [`Self::of`] with a draft head of `stages` stages drafting `block` tokens.
+    fn with_draft(g: &Geo, layers: usize, chunk: usize, stages: usize, block: usize) -> Self {
         let mut group_ratios = [0usize; 4];
         let n_groups = g.kv_sources.len().min(4);
         for (i, &k) in g.kv_sources.iter().take(4).enumerate() {
@@ -141,6 +170,8 @@ impl MemModel {
             group_ratios,
             n_groups,
             chunk,
+            decode_rows: if stages > 0 { block + 1 } else { 1 },
+            draft_stages: stages,
         }
     }
 
@@ -148,7 +179,7 @@ impl MemModel {
     /// ratio-2 compressor's open pair (fp32 kv and gate), per kv-source group the compressed KV
     /// (bf16 rows of `head_dim`) and the index keys (bf16 rows of `index_dim`).
     pub fn state_bytes(&self, cap: usize) -> u64 {
-        let ring = self.layers * self.window * self.head_dim * 2;
+        let ring = (self.layers + self.draft_stages) * self.window * self.head_dim * 2;
         let pairs = self.layers * 2 * 2 * self.head_dim * 4;
         let rows: usize = self.group_ratios[..self.n_groups]
             .iter()
@@ -186,12 +217,16 @@ impl MemModel {
         (per_tok * s + per_slice) as u64 + quadratic
     }
 
-    /// The transient of one decode call at up to `cap` positions: the heads' key rows (window plus
-    /// every compressed row), the index scores and candidate row, and one row's slice terms.
+    /// The transient of one decode call at up to `cap` positions: the heads' key rows (window,
+    /// the call's own rows and every compressed row), each row's index scores and candidate row,
+    /// and the rows' slice terms. A draft block's own forward is smaller than its verification.
     pub fn decode_bytes(&self, cap: usize) -> u64 {
-        let keys = (self.window + cap) * self.head_dim * 2;
-        let scores = cap * 2 + cap / 8;
-        (keys + scores) as u64 + self.prefill_bytes(1)
+        let rows = self.decode_rows.max(1);
+        // a one-token call reads the ring alone; a block's rows sit between it and the compressed rows
+        let own = if rows > 1 { rows } else { 0 };
+        let keys = (self.window + own + cap) * self.head_dim * 2;
+        let scores = rows * (cap * 2 + cap / 8);
+        (keys + scores) as u64 + self.prefill_bytes(rows)
     }
 }
 
@@ -528,7 +563,7 @@ impl Stream {
         true
     }
 
-    fn finish(&self, n_prompt: usize, elapsed_s: f64) {
+    fn finish(&self, n_prompt: usize, elapsed_s: f64, spec: Option<SpecUsage>) {
         if self.client_gone {
             return;
         }
@@ -539,7 +574,7 @@ impl Stream {
             n_prompt,
             n_cached: 0,
             elapsed_s,
-            spec: None,
+            spec,
         });
     }
 }
@@ -573,6 +608,15 @@ struct Active {
     window: Vec<u32>,
     t0: Instant,
     steps: usize,
+    /// the draft head's rings for this sequence (None: the route serves without the head)
+    ds: Option<DraftSeq>,
+    /// the drafted tokens the step's decode call carries after `next`
+    drafts: Vec<u32>,
+    /// whether this step ran the draft head for the request (its cost counts even at depth 0)
+    drafted: bool,
+    /// whether the request's drafts pay (it skips the head for a stretch when they do not)
+    gate: DraftGate,
+    usage: SpecUsage,
 }
 
 /// A request past rendering, waiting for its memory.
@@ -699,7 +743,10 @@ impl Book {
     /// largest decode call), plus the margin.
     fn state(&self, cap: usize) -> u64 {
         match &self.resident {
-            Some((g, _)) => v41::decode::seq_state_bytes(g, self.model.layers, cap) as u64,
+            Some((g, _)) => {
+                (v41::decode::seq_state_bytes(g, self.model.layers, cap)
+                    + self.model.draft_stages * g.window * g.head_dim * 2) as u64
+            }
             None => self.model.state_bytes(cap),
         }
     }
@@ -838,6 +885,58 @@ struct Up<'a> {
     rn: Runner<'a>,
     book: Book,
     max_slots: usize,
+    /// the DSpark draft head and the drafts verified per step at most (None: serving without it)
+    draft: Option<(DraftW, usize)>,
+    /// what this residency's decode calls cost by their rows, and a draft, from the route's own
+    /// steps
+    price: Price,
+}
+
+/// The route's own costs, in milliseconds: a decode call by its rows and one draft.
+struct Price {
+    rows: RowCost,
+    draft_ms: f64,
+}
+
+impl Price {
+    fn new(max_rows: usize) -> Self {
+        Self {
+            rows: RowCost::new(max_rows),
+            draft_ms: 0.0,
+        }
+    }
+
+    fn note_draft(&mut self, ms: f64) {
+        self.draft_ms = if self.draft_ms > 0.0 {
+            self.draft_ms + 0.25 * (ms - self.draft_ms)
+        } else {
+            ms
+        };
+    }
+}
+
+/// `MEMRA_DSV41_DRAFT`: `1` drafts with the checkpoint's DSpark head; unset or `0` serves
+/// without it.
+fn resolve_draft(raw: Option<&str>) -> Result<bool, String> {
+    match raw.map(str::trim) {
+        None | Some("") | Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(x) => Err(format!("MEMRA_DSV41_DRAFT {x:?} is not 0 or 1")),
+    }
+}
+
+/// `MEMRA_DSV41_DRAFT_DEPTH`: the drafts verified per step, 1 to the head's block (unset: the
+/// block).
+fn resolve_draft_depth(raw: Option<&str>, block: usize) -> Result<usize, String> {
+    match raw.map(str::trim) {
+        None | Some("") => Ok(block),
+        Some(x) => match x.parse::<usize>() {
+            Ok(n) if (1..=block).contains(&n) => Ok(n),
+            _ => Err(format!(
+                "MEMRA_DSV41_DRAFT_DEPTH {x:?} is not a draft count from 1 to the head's block of {block}"
+            )),
+        },
+    }
 }
 
 fn bring_up<'a>(
@@ -861,6 +960,16 @@ fn bring_up<'a>(
             cfg.name
         );
     }
+    let want_draft = resolve_draft(std::env::var("MEMRA_DSV41_DRAFT").ok().as_deref())?;
+    if want_draft && trunk != full_trunk {
+        eprintln!(
+            "[dsv41-serve] {}: a shortened trunk has no draft head (its target layers are not all run)",
+            cfg.name
+        );
+    }
+    let want_draft = want_draft && trunk == full_trunk;
+    let mut draft: Option<(DraftW, usize)> = None;
+    let mut warm: Option<Warm> = None;
     let ec = EngramConsts::derive(&g, token_map_from_file(&cfg.token_map)?)?;
     let mut rn = Runner::new(
         stm,
@@ -920,7 +1029,17 @@ fn bring_up<'a>(
                 gib((b.free_after / b.ranks.len()) as u64),
             );
         }
-        warm_up(&mut rn, cfg)?;
+        if want_draft {
+            draft = Some(load_draft(&mut rn, &mc, &cfg.name)?);
+            // the head took its share of every card
+            let mem = rn.device_mem()?;
+            for (_, ranks) in rn.device_ranks() {
+                for &r in &ranks {
+                    left[r] = (mem[ranks[0]].0 / ranks.len()) as u64;
+                }
+            }
+        }
+        warm = warm_up(&mut rn, cfg, draft.as_ref())?;
         (resident, 0, 0)
     } else {
         let threads = std::thread::available_parallelism().map_or(8, |n| n.get());
@@ -932,6 +1051,10 @@ fn bring_up<'a>(
             cfg.name, host.bytes, host.fill_s
         );
         let resident = rn.experts_off_card(host)?;
+        if want_draft {
+            // before the ceiling is read and the cache grows: the head's weights stay on the card
+            draft = Some(load_draft(&mut rn, &mc, &cfg.name)?);
+        }
         // one slice can route to every expert of the rank's range: the cache never goes below
         // that; every routed expert of every layer on one rank is the most it can ever use
         let floor = per_rank.div_ceil(v41::experts::SLAB_SLOTS as u64)
@@ -947,8 +1070,11 @@ fn bring_up<'a>(
             v41::experts::device_memory(&c.ops)?.0
         });
     }
+    let (stages, block) = draft
+        .as_ref()
+        .map_or((0, 0), |(dw, _)| (dw.cfg.stages, dw.cfg.block));
     let book = Book {
-        model: MemModel::of(&g, trunk, PREFILL_CHUNK),
+        model: MemModel::with_draft(&g, trunk, PREFILL_CHUNK, stages, block),
         ceiling,
         floor_cache,
         resident: on_card.then(|| (g.clone(), n)),
@@ -977,7 +1103,7 @@ fn bring_up<'a>(
         cfg.sessions,
     );
     if !on_card {
-        warm_up(&mut rn, cfg)?;
+        warm = warm_up(&mut rn, cfg, draft.as_ref())?;
     }
     // what the memory book admits with the route idle: the longest session, and how many
     // sessions of the benchmark's shapes at once
@@ -998,11 +1124,45 @@ fn bring_up<'a>(
         ),
         cfg.sessions,
     );
+    // the cost table starts from the warm-up's two shapes and a draft
+    let mut price = Price::new(block + 1);
+    if let Some(w) = warm {
+        price.rows.observe(1, w.one_ms);
+        price.rows.observe(w.rows, w.rows_ms);
+        price.note_draft(w.draft_ms);
+    }
     Ok(Up {
         rn,
         book,
         max_slots,
+        draft,
+        price,
     })
+}
+
+/// The draft head beside the trunk: its stages on the ranks' cards, the trunk's taps on, and the
+/// drafts verified per step.
+fn load_draft(
+    rn: &mut Runner<'_>,
+    mc: &memra_gguf::config::ModelConfig,
+    name: &str,
+) -> Result<(DraftW, usize), String> {
+    let t = Instant::now();
+    let dw = DraftW::load(rn, mc)?;
+    let depth = resolve_draft_depth(
+        std::env::var("MEMRA_DSV41_DRAFT_DEPTH").ok().as_deref(),
+        dw.cfg.block,
+    )?;
+    eprintln!(
+        "[dsv41-serve] {name}: DSpark draft head: {} stages of {} experts (top {}), block {}, target layers {:?}, {depth} drafts verified per step; loaded in {:.1}s",
+        dw.cfg.stages,
+        dw.cfg.n_experts,
+        dw.cfg.topk,
+        dw.cfg.block,
+        dw.cfg.targets,
+        t.elapsed().as_secs_f64()
+    );
+    Ok((dw, depth))
 }
 
 /// Whether every rank's routed experts (`routed` bytes a rank, all layers) fit the cards: a card
@@ -1017,10 +1177,27 @@ fn experts_on_card(routed: u64, devices: &[usize], free: &[u64]) -> bool {
     })
 }
 
-/// Run the program once, a two-token prompt and one decode call, freed after. With the trunk
-/// resident this is also what loads every layer's share and the head.
-fn warm_up(rn: &mut Runner, cfg: &EngineCfg) -> Result<(), String> {
-    let mut seqs = vec![rn.seq_with_capacity(8)];
+/// What the warm-up measured with the draft head: a one-token call, a call of `rows` rows and a
+/// draft, in milliseconds (each the second run of its shape).
+struct Warm {
+    one_ms: f64,
+    rows: usize,
+    rows_ms: f64,
+    draft_ms: f64,
+}
+
+/// Run the program once, a two-token prompt and decode calls, freed after. With the trunk
+/// resident this is also what loads every layer's share and the head. With the draft head it
+/// also runs a draft and a full block's verification twice each and returns their times: the
+/// first prices of the route's cost table, which its own steps then correct.
+fn warm_up(
+    rn: &mut Runner,
+    cfg: &EngineCfg,
+    draft: Option<&(DraftW, usize)>,
+) -> Result<Option<Warm>, String> {
+    let argmax = |row: &[f32]| memra_engine::dsv41_gpu::decode::argmax(row) as u32;
+    let mut seqs = vec![rn.seq_with_capacity(32)];
+    let mut ds = draft.map(|(dw, _)| dw.seq(rn));
     let probe = vec![cfg.eos, cfg.eos];
     let t = Instant::now();
     let outs = rn.forward(
@@ -1030,25 +1207,80 @@ fn warm_up(rn: &mut Runner, cfg: &EngineCfg) -> Result<(), String> {
             tokens: probe,
         }],
     )?;
-    let row = rn.logits(&outs[0], outs[0].s - 1, 1)?;
-    let t1 = memra_engine::dsv41_gpu::decode::argmax(&row) as u32;
+    let mut tok = argmax(&rn.logits(&outs[0], outs[0].s - 1, 1)?);
+    if let (Some((dw, _)), Some(ds)) = (draft, ds.as_mut()) {
+        let o = &outs[0];
+        rn.draft_commit(dw, ds, o, o.tap_row0, o.tap_rows, false)?;
+    }
     drop(outs);
-    let outs = rn.forward(
-        &mut seqs,
-        &[Call {
-            seq: 0,
-            tokens: vec![t1],
-        }],
-    )?;
-    rn.logits(&outs[0], 0, 1)?;
-    drop(outs);
+    // two one-token calls: the second is timed
+    let mut one_ms = 0.0;
+    for _ in 0..2 {
+        let t1 = Instant::now();
+        let outs = rn.forward(
+            &mut seqs,
+            &[Call {
+                seq: 0,
+                tokens: vec![tok],
+            }],
+        )?;
+        tok = argmax(&rn.logits(&outs[0], 0, 1)?);
+        one_ms = t1.elapsed().as_secs_f64() * 1e3;
+        if let (Some((dw, _)), Some(ds)) = (draft, ds.as_mut()) {
+            rn.draft_commit(dw, ds, &outs[0], 0, 1, false)?;
+        }
+    }
+    let mut warm = None;
+    if let (Some((dw, _)), Some(ds)) = (draft, ds.as_mut()) {
+        // a draft and its block's verification, twice each; the block is dropped, then run
+        // again and its first row kept
+        let mut draft_ms = 0.0;
+        let mut ids = Vec::new();
+        for _ in 0..2 {
+            let td = Instant::now();
+            ids = rn.draft(dw, ds, tok, seqs[0].len(), false)?.ids;
+            draft_ms = td.elapsed().as_secs_f64() * 1e3;
+        }
+        let mut tokens = vec![tok];
+        tokens.extend_from_slice(&ids);
+        let rows = tokens.len();
+        let mut rows_ms = 0.0;
+        for pass in 0..2 {
+            let tv = Instant::now();
+            let outs = rn.forward(
+                &mut seqs,
+                &[Call {
+                    seq: 0,
+                    tokens: tokens.clone(),
+                }],
+            )?;
+            rn.logits(&outs[0], 0, rows)?;
+            rows_ms = tv.elapsed().as_secs_f64() * 1e3;
+            if pass == 0 {
+                rn.discard(&mut seqs[0])?;
+            } else {
+                rn.commit(&mut seqs[0], 1)?;
+                rn.draft_commit(dw, ds, &outs[0], 0, 1, false)?;
+            }
+        }
+        warm = Some(Warm {
+            one_ms,
+            rows,
+            rows_ms,
+            draft_ms,
+        });
+    }
     drop(seqs);
     eprintln!(
-        "[dsv41-serve] {}: warm-up prefill and decode call in {:.1}s",
+        "[dsv41-serve] {}: warm-up in {:.1}s; one-token call {one_ms:.1} ms{}",
         cfg.name,
-        t.elapsed().as_secs_f64()
+        t.elapsed().as_secs_f64(),
+        warm.as_ref().map_or(String::new(), |w| format!(
+            ", {}-row call {:.1} ms, draft {:.1} ms",
+            w.rows, w.rows_ms, w.draft_ms
+        ))
     );
-    Ok(())
+    Ok(warm)
 }
 
 fn pool_peak_reset(rn: &Runner) {
@@ -1181,6 +1413,11 @@ fn serve_loop(
                         window,
                         t0: Instant::now(),
                         steps: 0,
+                        ds: up.draft.as_ref().map(|(dw, _)| dw.seq(&up.rn)),
+                        drafts: Vec::new(),
+                        drafted: false,
+                        gate: DraftGate::new(),
+                        usage: SpecUsage::default(),
                     });
                     new_call = Some((act.len() - 1, pr.prompt));
                 }
@@ -1205,7 +1442,8 @@ fn serve_loop(
         if act.is_empty() {
             continue;
         }
-        // the step: the new prompt's prefill and one decode call per running request
+        // the step: the new prompt's prefill and one decode call per running request (its next
+        // token, and with the draft head the block drafted after it)
         let new_at = new_call.as_ref().map(|(i, _)| *i);
         let mut calls = Vec::with_capacity(act.len());
         let mut who = Vec::with_capacity(act.len());
@@ -1215,15 +1453,6 @@ fn serve_loop(
                 tokens: prompt,
             });
             who.push(i);
-        }
-        for (i, a) in act.iter().enumerate() {
-            if let Some(t) = a.next {
-                calls.push(Call {
-                    seq: i,
-                    tokens: vec![t],
-                });
-                who.push(i);
-            }
         }
         let predicted = up.book.live_need(
             &act.iter()
@@ -1237,15 +1466,47 @@ fn serve_loop(
         pool_peak_reset(&up.rn);
         let ts = Instant::now();
         let stepped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut draft_ms = Vec::new();
+            for (i, a) in act.iter_mut().enumerate() {
+                a.drafts.clear();
+                a.drafted = false;
+                let Some(t) = a.next else { continue };
+                if let (Some((dw, depth)), Some(ds)) = (up.draft.as_ref(), a.ds.as_mut()) {
+                    // a drafted row is worth running only while the budget has room past `t`'s
+                    // successor, and the head only while the request's drafts pay
+                    let room = a.stream.budget.saturating_sub(a.stream.ids.len() + 1);
+                    if (*depth).min(room) > 0 && a.gate.drafts() {
+                        let td = Instant::now();
+                        let d = up.rn.draft(dw, ds, t, seqs[i].len(), false)?;
+                        draft_ms.push(td.elapsed().as_secs_f64() * 1e3);
+                        let k = price_depth(
+                            &d.conf,
+                            &up.price.rows,
+                            up.price.draft_ms,
+                            (*depth).min(room),
+                        );
+                        a.drafts.extend_from_slice(&d.ids[..k]);
+                        a.drafted = true;
+                    }
+                }
+                let mut tokens = Vec::with_capacity(1 + a.drafts.len());
+                tokens.push(t);
+                tokens.extend_from_slice(&a.drafts);
+                calls.push(Call { seq: i, tokens });
+                who.push(i);
+            }
+            let tf = Instant::now();
             let outs = up.rn.forward(&mut seqs, &calls)?;
             let mut rows = Vec::with_capacity(outs.len());
             for o in &outs {
-                rows.push(up.rn.logits(o, o.s - 1, 1)?);
+                // a prompt's last row; every row of a decode call
+                let (r0, n) = if o.sp == 0 { (o.s - 1, 1) } else { (0, o.s) };
+                rows.push(up.rn.logits(o, r0, n)?);
             }
-            Ok::<_, String>(rows)
+            Ok::<_, String>((outs, rows, draft_ms, tf.elapsed().as_secs_f64() * 1e3))
         }));
-        let rows = match stepped {
-            Ok(Ok(rows)) => rows,
+        let (outs, rows, draft_ms, forward_ms) = match stepped {
+            Ok(Ok(x)) => x,
             Ok(Err(e)) => {
                 fail_all(
                     &mut act,
@@ -1278,40 +1539,116 @@ fn serve_loop(
         last_step = Instant::now();
         let (cs, slots) = up.rn.cache_stats();
         eprintln!(
-            "[dsv41-step] calls={} prefill={} step_s={step_s:.3} transient_peak={transient} \
-             predicted_live_need={predicted} cache_slots={slots:?} hits={} misses={} h2d_bytes={}",
+            "[dsv41-step] calls={} prefill={} decode_rows={} step_s={step_s:.3} \
+             transient_peak={transient} predicted_live_need={predicted} cache_slots={slots:?} \
+             hits={} misses={} h2d_bytes={}",
             calls.len(),
             new_at.map_or(0, |i| act[i].prompt_len),
+            outs.iter().filter(|o| o.sp > 0).map(|o| o.s).sum::<usize>(),
             cs.hits,
             cs.misses,
             cs.h2d_bytes
         );
-        // sample, emit, finish
+        // the route's own costs: a draft, and a decode call by its rows when the forward's calls
+        // all had the same rows (each call runs alone through each block, so they share it evenly)
+        for &ms in &draft_ms {
+            up.price.note_draft(ms);
+        }
+        if let Some(first) = outs.first()
+            && first.sp > 0
+            && outs.iter().all(|o| o.sp > 0 && o.s == first.s)
+        {
+            up.price
+                .rows
+                .observe(first.s, forward_ms / outs.len() as f64);
+        }
+        // choose, emit, commit, finish
+        let vocab = up.rn.g.vocab;
         let mut done = Vec::new();
-        for (row, &i) in rows.into_iter().zip(&who) {
+        for ((row, o), &i) in rows.into_iter().zip(&outs).zip(&who) {
             let a = &mut act[i];
-            let pos = a.prompt_len + a.stream.ids.len();
-            let t = match choose(row, pos, a.sample.as_ref(), a.pen.as_ref(), &a.window) {
-                Ok(t) => t,
-                Err(e) => {
-                    let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
-                        "deepseek-v4.1 sampler: {e}"
-                    ))));
-                    a.stream.client_gone = true;
-                    done.push(i);
-                    continue;
-                }
+            let fail = |a: &mut Active, what: &str, e: String| {
+                let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
+                    "deepseek-v4.1 {what}: {e}"
+                ))));
+                a.stream.client_gone = true;
             };
+            // a prompt's taps seed the draft rings
+            if o.sp == 0
+                && let (Some((dw, _)), Some(ds)) = (up.draft.as_ref(), a.ds.as_mut())
+                && let Err(e) = up.rn.draft_commit(dw, ds, o, o.tap_row0, o.tap_rows, false)
+            {
+                fail(a, "draft seed", e);
+                done.push(i);
+                continue;
+            }
+            // Row r is the target's distribution after the call's token r. Each row's token is
+            // chosen as a plain step's (the penalties window and the position-keyed draw see the
+            // tokens emitted so far); a draft stands while it equals that choice, and the first
+            // row whose choice differs from the draft after it ends the block.
+            let n_rows = row.len() / vocab;
+            let drafted = n_rows - 1;
+            let mut kept = 0usize;
+            let mut live = true;
             a.steps += 1;
-            if a.stream.push(t) {
+            for r in 0..n_rows {
+                let pos = a.prompt_len + a.stream.ids.len();
+                let lg = row[r * vocab..(r + 1) * vocab].to_vec();
+                let t = match choose(lg, pos, a.sample.as_ref(), a.pen.as_ref(), &a.window) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        fail(a, "sampler", e);
+                        live = false;
+                        break;
+                    }
+                };
+                kept = r + 1;
+                if !a.stream.push(t) {
+                    live = false;
+                    break;
+                }
                 if a.pen.is_some() {
                     a.window.push(t);
                 }
+                if r < drafted && t == a.drafts[r] {
+                    continue;
+                }
                 a.next = Some(t);
-            } else {
+                break;
+            }
+            if drafted > 0 {
+                a.usage.rounds += 1;
+                a.usage.drafted += drafted as u64;
+                a.usage.accepted += kept.saturating_sub(1) as u64;
+            }
+            // what the drafted step yielded against one-token steps, at the route's prices
+            if a.drafted
+                && let (Some(call), Some(plain)) = (up.price.rows.ms(n_rows), up.price.rows.ms(1))
+            {
+                a.gate.observe(kept, call + up.price.draft_ms, plain);
+            }
+            if !live {
                 done.push(i);
+                continue;
+            }
+            // the kept rows become the sequence's state; the rejected ones never reach it
+            if o.sp > 0 {
+                let mut r = Ok(());
+                if o.s > 1 {
+                    r = up.rn.commit(&mut seqs[i], kept);
+                }
+                if r.is_ok()
+                    && let (Some((dw, _)), Some(ds)) = (up.draft.as_ref(), a.ds.as_mut())
+                {
+                    r = up.rn.draft_commit(dw, ds, o, 0, kept, false).map(|_| ());
+                }
+                if let Err(e) = r {
+                    fail(a, "commit", e);
+                    done.push(i);
+                }
             }
         }
+        drop(outs);
         // finish from the back so swap_remove keeps the other indices valid
         done.sort_unstable();
         for &i in done.iter().rev() {
@@ -1372,7 +1709,18 @@ fn intake(
 
 fn finish(mut a: Active, health: &Arc<RouteHealth>) {
     let elapsed = a.t0.elapsed().as_secs_f64();
-    a.stream.finish(a.prompt_len, elapsed);
+    let spec = a.ds.is_some().then_some(a.usage);
+    if spec.is_some() {
+        eprintln!(
+            "[dsv41-draft] request_id={:?} rounds={} drafted={} accepted={} tokens={}",
+            a.req.request_id,
+            a.usage.rounds,
+            a.usage.drafted,
+            a.usage.accepted,
+            a.stream.ids.len()
+        );
+    }
+    a.stream.finish(a.prompt_len, elapsed, spec);
     let stats = ServeStats {
         tokens_out: a.stream.ids.len(),
         n_prompt: a.prompt_len,
@@ -1404,6 +1752,36 @@ fn fail_all(act: &mut Vec<Active>, seqs: &mut Vec<Seq>, health: &Arc<RouteHealth
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_draft_door_is_off_unless_set_and_refuses_other_values() {
+        assert_eq!(resolve_draft(None), Ok(false));
+        assert_eq!(resolve_draft(Some("")), Ok(false));
+        assert_eq!(resolve_draft(Some("0")), Ok(false));
+        assert_eq!(resolve_draft(Some(" 1 ")), Ok(true));
+        assert!(resolve_draft(Some("yes")).is_err());
+        assert_eq!(resolve_draft_depth(None, 5), Ok(5));
+        assert_eq!(resolve_draft_depth(Some("3"), 5), Ok(3));
+        assert!(resolve_draft_depth(Some("0"), 5).is_err());
+        assert!(resolve_draft_depth(Some("6"), 5).is_err());
+        assert!(resolve_draft_depth(Some("x"), 5).is_err());
+    }
+
+    #[test]
+    fn a_draft_head_adds_its_rings_and_its_rows_to_the_memory_book() {
+        let plain = flash();
+        let mut with = flash();
+        with.decode_rows = 6;
+        with.draft_stages = 3;
+        // three more rings of 128 rows of 512 bf16
+        assert_eq!(
+            with.state_bytes(4096) - plain.state_bytes(4096),
+            3 * 128 * 512 * 2
+        );
+        // a block's call books more than a one-token call, and the one-token call is unchanged
+        assert!(with.decode_bytes(4096) > plain.decode_bytes(4096));
+        assert_eq!(plain.decode_rows, 1);
+    }
 
     fn flash() -> MemModel {
         let mut ratios = vec![0, 0];

@@ -20,7 +20,12 @@ memra-server
 - Chat requests render with `encoding_dsv41` and parse V4.1's DSML tool calls and reasoning.
   `reasoning_effort` takes `none` (chat mode), the levels, or the numeric budget `"1"`..`"100"`.
 - Greedy, temperature, top-p, top-k, seeds, penalties and stop strings are served; `min_p`,
-  `response_format`, image parts and DSpark drafts are not.
+  `response_format` and image parts are not.
+- DSpark drafting (`MEMRA_DSV41_DRAFT=1`) is off by default. The draft head and the
+  several-token verification call are gated at the engine (the head on the vendor's floor, a
+  verification row byte-identical to its one-token call, drafted greedy equal to plain greedy);
+  the served route's gates with drafting on have not run. Receipts:
+  `research/modelplan-onboarding-dsv41-20261109/dspark/`.
 - `MEMRA_DSV41_DEVICES=a,b,...` names the cards of an N-rank split. Residency follows the cards:
   four ranks on four 96 GB cards hold the whole trunk, and the route then uses no host store.
   That arm has no gate evidence yet; the record covers one card.
