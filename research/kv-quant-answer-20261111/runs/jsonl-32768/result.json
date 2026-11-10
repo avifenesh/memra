@@ -1,0 +1,20 @@
+{
+ "cmd": [
+  "~/.cache/memra-1177a/bins/kvq_rows_probe",
+  "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+  "~/.cache/memra-1177a/runs/jsonl-32768/ids.json",
+  "--ids",
+  "--rows",
+  "2124",
+  "--decode",
+  "batch",
+  "--decode-from",
+  "prime",
+  "--out",
+  "~/.cache/memra-1177a/runs/jsonl-32768/rows.jsonl"
+ ],
+ "exit": 0,
+ "wall_s": 278.2,
+ "min_mem_available_kb": 90863124,
+ "killed_at_memory_floor": false
+}
