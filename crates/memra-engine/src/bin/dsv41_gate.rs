@@ -3010,6 +3010,28 @@ fn tp_gate(
     let max_pos = (s + 64).max(1024);
     let mut grp = v::tp::Group::new(devices, &g, max_pos)?;
     grp.trace = true;
+    if grp.transport == memra_engine::tp_transport::TpTransport::DevicePush {
+        // the small gathers inside kernels: 20,000 back to back, every consumer checking every
+        // producer's region; then the control, the word stored before the data, which must show
+        let (diff, flagged) = grp.gather_stress(20_000, false)?;
+        rep.raw(
+            "stress/push_gather",
+            diff == 0 && flagged == 0,
+            "every consumer reads what every producer pushed",
+            format!(
+                "20000 gathers on devices {devices:?}: {diff} words differ, {flagged} ranks flagged"
+            ),
+        );
+        let (diff, flagged) = grp.gather_stress(2_000, true)?;
+        rep.raw(
+            "stress/push_gather_control_word_first",
+            diff > 0 && flagged == 0,
+            "the word before the data is caught (words differ)",
+            format!(
+                "2000 gathers on devices {devices:?}: {diff} words differ, {flagged} ranks flagged"
+            ),
+        );
+    }
     let e = memra_engine::Engine::new(devices[0]).map_err(|e| e.to_string())?;
     let mut cx = Ctx::new(e.stream(), g.clone(), max_pos)?;
     cx.trace = true;

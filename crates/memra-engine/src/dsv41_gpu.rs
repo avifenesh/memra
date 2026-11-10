@@ -31,6 +31,28 @@ pub mod tp;
 
 pub mod ffi {
     use std::os::raw::c_void;
+    /// Peers of one rank in a small gather inside kernels (`V41_PUSH_PEERS`).
+    pub const PUSH_PEERS: usize = 7;
+    /// The largest region a rank pushes (`V41_PUSH_MAX`).
+    pub const PUSH_MAX: usize = 256 << 10;
+    /// Device addresses of each peer's inbox slot for a producer: payload and word.
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    pub struct V41Push {
+        pub d: [u64; PUSH_PEERS],
+        pub w: [u64; PUSH_PEERS],
+    }
+    /// Each producer's slot in a rank's inbox (payload, word) and its region of the rank buffer.
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    pub struct V41Pull {
+        pub d: [u64; PUSH_PEERS],
+        pub w: [u64; PUSH_PEERS],
+        pub off: [i64; PUSH_PEERS],
+        pub pitch: [i64; PUSH_PEERS],
+        pub width: [i32; PUSH_PEERS],
+        pub rows: [i32; PUSH_PEERS],
+    }
     // Return codes: 0 ok, 10000 + cudaError_t, 41xxx for a refused contract (cu/dsv41_gpu.cu).
     unsafe extern "C" {
         pub fn memra_v41_act_quant(
@@ -460,6 +482,38 @@ pub mod ffi {
             out: *mut c_void,
             ldo: i64,
             rows: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// The producer's half of a small gather inside a kernel (`dst`: a [`V41Push`]).
+        pub fn memra_v41_push(
+            src: *const c_void,
+            pitch: i64,
+            width: i32,
+            rows: i32,
+            dst: *const V41Push,
+            npeer: i32,
+            seq: u32,
+            word_first: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// The consumer's half (`src`: a [`V41Pull`]); a peer that never arrives sets bit 16 of `bad`.
+        pub fn memra_v41_pull(
+            src: *const V41Pull,
+            npeer: i32,
+            seq: u32,
+            dst: *mut c_void,
+            bad: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// Gate helper: a region of 32-bit words set to a pattern of `(seed, word)`, or with `diff`
+        /// the number of its words that differ from the pattern added to `*diff`.
+        pub fn memra_v41_pat(
+            reg: *mut c_void,
+            pitch_w: i64,
+            width_w: i32,
+            rows: i32,
+            seed: u32,
+            diff: *mut i32,
             stream: *mut c_void,
         ) -> i32;
         /// Instruction ceilings (measurement, `dsv41-bench ceil`).
@@ -2196,8 +2250,9 @@ pub struct Ctx {
     pub nvtx: bool,
     /// this rank's routed experts when the layers hold none ([`LayerW::load_part_with`])
     pub experts: Option<experts::ExpertCache>,
-    /// i32, sticky: an N-rank one-token MoE whose plan placed other than `rows * topk` pairs
-    /// (`memra_v41_moe_owner`); read with the step's logits
+    /// i32, sticky, read with the step's logits. Bit 0: an N-rank one-token MoE whose plan placed
+    /// other than `rows * topk` pairs (`memra_v41_moe_owner`). Bit 16: a small gather whose
+    /// peer never arrived (`memra_v41_pull`).
     pub route_bad: Buf,
     /// the card's second stream, made at the first one-token MoE ([`Side`])
     side: Option<Side>,

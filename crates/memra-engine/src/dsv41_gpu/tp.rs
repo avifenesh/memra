@@ -127,6 +127,12 @@ pub struct Group {
     pub transport_flag: &'static str,
     pub_ev: Vec<CudaEvent>,
     rel_ev: Vec<CudaEvent>,
+    /// device-push: each rank's inbox, two slots a producer ([`Group::gather_push`])
+    inbox: Vec<Buf>,
+    /// device-push: the last small gather's sequence number
+    push_seq: u32,
+    /// the gate's control case: the producer stores the word before the data
+    pub push_word_first: bool,
     pub stats: CommStats,
     /// synchronize and time every collective (measurement runs)
     pub timed: bool,
@@ -142,6 +148,12 @@ pub struct Group {
 /// pairs. Below it a peer copy takes its fixed latency (at the 49 GB/s measured between two
 /// cards, 256 KiB is 5 us); a prefill chunk's rows are megabytes and keep the exact gather.
 const STAGED_MOE_ROWS_BYTES: usize = 256 << 10;
+
+/// Bytes ahead of a slot's payload in a device-push inbox: the sequence word, padded so the
+/// payload starts on its own cache lines.
+const PUSH_HDR: usize = 256;
+/// One producer's slot in a rank's inbox.
+const PUSH_SLOT: usize = PUSH_HDR + ffi::PUSH_MAX;
 
 /// How long an issue thread spins for its next section before it parks. A one-token forward is
 /// some twenty sections a layer, microseconds apart (measured: all but one gap a layer under
@@ -481,9 +493,10 @@ impl Group {
         let n = devices.len();
         Part::check(g, n)?;
         let (transport, flag) = tp_transport::transport_env()?;
-        if transport == TpTransport::DevicePush {
+        if transport == TpTransport::DevicePush && n > ffi::PUSH_PEERS + 1 {
             return Err(format!(
-                "{flag}=device-push: the dsv41 route moves its blocks with host-canonical or peer-pull"
+                "{flag}=device-push: at most {} ranks",
+                ffi::PUSH_PEERS + 1
             ));
         }
         let parallel = issue_parallel()?;
@@ -499,7 +512,7 @@ impl Group {
             engines.push(e);
         }
         let distinct = |a: usize, b: usize| devices[a] != devices[b];
-        if transport == TpTransport::PeerPull {
+        if transport != TpTransport::HostCanonical {
             for a in 0..n {
                 for b in 0..n {
                     if a != b && distinct(a, b) {
@@ -512,11 +525,17 @@ impl Group {
         let mut cx = Vec::with_capacity(n);
         let mut pub_ev = Vec::with_capacity(n);
         let mut rel_ev = Vec::with_capacity(n);
+        let mut inbox = Vec::new();
         for e in &engines {
             let st = e.stream();
             pub_ev.push(st.context().new_event(None).map_err(de)?);
             rel_ev.push(st.context().new_event(None).map_err(de)?);
-            cx.push(Ctx::new(st, g.clone(), max_pos)?);
+            let c = Ctx::new(st, g.clone(), max_pos)?;
+            if transport == TpTransport::DevicePush {
+                // zeroed: no word holds a sequence number before the first gather
+                inbox.push(c.ops.buf(2 * n * PUSH_SLOT)?);
+            }
+            cx.push(c);
         }
         let pool = if n > 1 && parallel {
             Some(Crew::new(n)?)
@@ -531,6 +550,9 @@ impl Group {
             transport_flag: flag,
             pub_ev,
             rel_ev,
+            inbox,
+            push_seq: 0,
+            push_word_first: false,
             stats: CommStats::default(),
             timed: false,
             trace: false,
@@ -691,8 +713,11 @@ impl Group {
         } else {
             None
         };
+        let push = self.transport == TpTransport::DevicePush
+            && blks.iter().all(|b| b.bytes() <= ffi::PUSH_MAX);
         match self.transport {
-            TpTransport::PeerPull if self.pool.is_some() => {
+            TpTransport::DevicePush if push => self.gather_push(bufs, blks)?,
+            TpTransport::PeerPull | TpTransport::DevicePush if self.pool.is_some() => {
                 // the same three steps with each rank's calls on its own thread: every producer
                 // publishes, then every consumer pulls on its own stream and releases, then every
                 // producer waits for the releases (each step completes on the host before the next,
@@ -734,7 +759,7 @@ impl Group {
                 })?;
                 self.stats.copies += copies.iter().sum::<u64>();
             }
-            TpTransport::PeerPull => {
+            TpTransport::PeerPull | TpTransport::DevicePush => {
                 for p in 0..n {
                     self.pub_ev[p].record(&self.cx[p].ops.st).map_err(de)?;
                 }
@@ -778,7 +803,6 @@ impl Group {
                     }
                 }
             }
-            TpTransport::DevicePush => return Err("allgather: device-push is not armed".into()),
         }
         self.stats.collectives += 1;
         self.stats.bytes += blks
@@ -790,6 +814,143 @@ impl Group {
             self.stats.secs += t.elapsed().as_secs_f64();
         }
         Ok(())
+    }
+
+    /// A gather of regions of at most [`ffi::PUSH_MAX`] bytes inside kernels (device-push): each
+    /// rank's push kernel packs its region into its slot of every peer's inbox and then stores
+    /// this gather's sequence number in the slot's word; each rank's pull kernel, queued right
+    /// behind it, spins on the words of its own inbox and unpacks the slots into its buffer. Two
+    /// launches a rank and nothing else: no event, no copy call, no host wait. Slots alternate
+    /// with the sequence number: a rank cannot push gather g + 2 before its pull of g + 1 saw
+    /// every peer's word, and a peer pushes g + 1 after its own pull of g, so a slot is never
+    /// rewritten under its reader. Larger regions keep the copy-engine gather (peer-pull).
+    fn gather_push(&mut self, bufs: &[&Buf], blks: &[Blk]) -> Result<(), String> {
+        let n = self.n();
+        self.push_seq = self.push_seq.wrapping_add(1);
+        let (seq, word_first) = (self.push_seq, self.push_word_first as i32);
+        let slot = move |producer: usize| ((seq as usize & 1) * n + producer) * PUSH_SLOT;
+        let addr: Vec<u64> = (0..n)
+            .map(|r| bufs[r].p(&self.cx[r].ops.st).addr())
+            .collect();
+        let inbox: Vec<u64> = (0..n)
+            .map(|r| self.inbox[r].p(&self.cx[r].ops.st).addr())
+            .collect();
+        let Self { pool, cx, .. } = self;
+        each_in(pool.as_mut(), cx, |r, c| {
+            let st = c.ops.st.clone();
+            let (mut out, mut inn) = (ffi::V41Push::default(), ffi::V41Pull::default());
+            let mut k = 0;
+            for p in (0..n).filter(|&p| p != r) {
+                out.w[k] = inbox[p] + slot(r) as u64;
+                out.d[k] = out.w[k] + PUSH_HDR as u64;
+                inn.w[k] = inbox[r] + slot(p) as u64;
+                inn.d[k] = inn.w[k] + PUSH_HDR as u64;
+                inn.off[k] = blks[p].off as i64;
+                inn.pitch[k] = blks[p].pitch as i64;
+                inn.width[k] = blks[p].width as i32;
+                inn.rows[k] = blks[p].rows as i32;
+                k += 1;
+            }
+            let b = blks[r];
+            ck("push", unsafe {
+                ffi::memra_v41_push(
+                    (addr[r] + b.off as u64) as *const std::ffi::c_void,
+                    b.pitch as i64,
+                    b.width as i32,
+                    b.rows as i32,
+                    &out,
+                    k as i32,
+                    seq,
+                    word_first,
+                    c.ops.sv(),
+                )
+            })?;
+            ck("pull", unsafe {
+                ffi::memra_v41_pull(
+                    &inn,
+                    k as i32,
+                    seq,
+                    addr[r] as *mut std::ffi::c_void,
+                    c.route_bad.p(&st).im(),
+                    c.ops.sv(),
+                )
+            })
+        })?;
+        self.stats.copies += (n * (n - 1)) as u64;
+        Ok(())
+    }
+
+    /// The gate's stress of the small gathers: `gathers` gathers over five region shapes with no
+    /// host wait between them, every rank setting its region to a pattern of (gather, rank) right
+    /// before a gather and counting right after it the words of every region that differ from
+    /// the producer's pattern. Returns `(words that differed, ranks whose sticky flag is set)`:
+    /// `(0, 0)` when every consumer read what was pushed. `word_first`: the control, the producer
+    /// stores the word before the data, which this must catch.
+    pub fn gather_stress(
+        &mut self,
+        gathers: usize,
+        word_first: bool,
+    ) -> Result<(u64, u64), String> {
+        let n = self.n();
+        // (words a row, rows) of a rank's region: one word, a one-token hidden gather, an output
+        // row, a strided block, the largest push
+        let shapes = [
+            (1usize, 1usize),
+            (288, 7),
+            (640, 1),
+            (2048, 3),
+            (ffi::PUSH_MAX / 4, 1),
+        ];
+        let was = std::mem::replace(&mut self.push_word_first, word_first);
+        let cnt = self.each(|_, c| c.ops.buf(4))?;
+        for (si, &(w, rows)) in shapes.iter().enumerate() {
+            let pitch_w = n * w + 16;
+            let bufs = self.each(|_, c| c.ops.buf(pitch_w * 4 * rows))?;
+            let refs: Vec<&Buf> = bufs.iter().collect();
+            let blks: Vec<Blk> = (0..n)
+                .map(|r| Blk {
+                    off: r * w * 4,
+                    width: w * 4,
+                    pitch: pitch_w * 4,
+                    rows,
+                })
+                .collect();
+            let pat = |c: &Ctx, b: &Buf, p: usize, seed: u32, diff: Dp| {
+                let st = c.ops.st.clone();
+                ck("pat", unsafe {
+                    ffi::memra_v41_pat(
+                        b.at(&st, p * w * 4).m(),
+                        pitch_w as i64,
+                        w as i32,
+                        rows as i32,
+                        seed,
+                        diff.im(),
+                        c.ops.sv(),
+                    )
+                })
+            };
+            for g in 0..gathers.div_ceil(shapes.len()) {
+                let seed = |p: usize| ((si * 1_000_003 + g) * 8 + p) as u32;
+                self.each(|r, c| pat(c, &bufs[r], r, seed(r), Dp::NULL))?;
+                self.allgather(&refs, &blks)?;
+                self.each(|r, c| {
+                    let st = c.ops.st.clone();
+                    (0..n).try_for_each(|p| pat(c, &bufs[r], p, seed(p), cnt[r].p(&st)))
+                })?;
+                if g % 512 == 511 {
+                    self.sync_all()?;
+                }
+            }
+            self.sync_all()?;
+        }
+        self.push_word_first = was;
+        let (mut diff, mut flagged) = (0u64, 0u64);
+        for r in 0..n {
+            let st = self.cx[r].ops.st.clone();
+            diff += bytes_i32(&cnt[r].host(&st)?)[0] as u64;
+            flagged += (bytes_i32(&self.cx[r].route_bad.host(&st)?)[0] != 0) as u64;
+        }
+        Ok((diff, flagged))
     }
 
     /// Every rank's share of layer `id`, the ranks loading in parallel.
@@ -1365,7 +1526,13 @@ impl Group {
                 .linear_bf16(x.p(&st), d, rows, &hw[r], lg.p(&st), hw[r].n, true)?;
             let lg = bytes_f32(&host_timed(&lg, &st)?);
             // the stream is drained: the one-token MoEs' pair counts of this forward
-            if bytes_i32(&c.route_bad.host(&st)?)[0] != 0 {
+            let bad = bytes_i32(&c.route_bad.host(&st)?)[0];
+            if bad & 0x10000 != 0 {
+                return Err(format!(
+                    "rank {r}: a peer's slice of a gather never arrived"
+                ));
+            }
+            if bad != 0 {
                 return Err(format!(
                     "rank {r} route: a layer placed other than rows x topk pairs"
                 ));

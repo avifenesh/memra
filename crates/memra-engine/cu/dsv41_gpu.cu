@@ -3523,3 +3523,144 @@ extern "C" int memra_v41_peak(int kind, int blocks, int threads, int iters, floa
     }
     V41_ERR();
 }
+
+// ---------------------------------------------------------------------------------------------
+// Small N-rank gathers inside kernels (the device-push transport). With peer access on the pools a
+// kernel stores straight into another card's memory. The producer packs its region into its slot
+// of every peer's inbox and then stores the gather's sequence number in the slot's word; the
+// consumer's kernel spins on the words of its own inbox and unpacks each slot into the producer's
+// region of its buffer. No event, no host round trip and no copy call sits between a rank's last
+// kernel of a part and its first kernel of the next one.
+// Order: every thread fences its data stores to the system before the block's barrier and the
+// word is stored after it, so a consumer that sees the word reads the data (word_first reverses
+// the two: the gate's control case, which must fail). A slot holds nothing its reader writes, so
+// no cache line has a writer on each card, and it is rewritten two gathers later, when its reader
+// is done (the caller's law: every rank pushes and pulls in every gather and the slots alternate).
+
+#define V41_PUSH_PEERS 7
+#define V41_PUSH_MAX (256 << 10)
+#define V41_PULL_SPIN (1L << 31)  // polls before a peer is given up for dead (about a minute)
+
+struct V41Push {
+    uint8_t* d[V41_PUSH_PEERS];   // each peer's slot for this producer: the payload
+    uint32_t* w[V41_PUSH_PEERS];  // and the word
+};
+struct V41Pull {
+    const uint8_t* d[V41_PUSH_PEERS];   // each producer's slot in this rank's inbox: the payload
+    const uint32_t* w[V41_PUSH_PEERS];  // and the word
+    long off[V41_PUSH_PEERS];           // the producer's region of the rank buffer: byte offset,
+    long pitch[V41_PUSH_PEERS];         // row pitch,
+    int width[V41_PUSH_PEERS];          // row bytes,
+    int rows[V41_PUSH_PEERS];           // rows
+};
+
+// rows x width bytes between a region (rows `pitch` apart) and its packed copy. PACK 1: region to
+// packed, 0: packed to region. 32-bit words when everything is word aligned, bytes otherwise.
+template <int PACK>
+__device__ __forceinline__ void v41_blk_move(uint8_t* reg, long pitch, int width, int rows, uint8_t* packed) {
+    int total = rows * width;
+    bool flat = rows <= 1 || pitch == width;
+    if (((((uintptr_t)reg) | ((uintptr_t)packed) | (uintptr_t)pitch | (uintptr_t)width) & 3) == 0) {
+        int ww = width >> 2;
+        for (int i = threadIdx.x; i < (total >> 2); i += blockDim.x) {
+            uint32_t* a = flat ? (uint32_t*)reg + i : (uint32_t*)(reg + (long)(i / ww) * pitch) + (i % ww);
+            uint32_t* b = (uint32_t*)packed + i;
+            if (PACK) *b = *a;
+            else *a = *b;
+        }
+    } else {
+        for (int i = threadIdx.x; i < total; i += blockDim.x) {
+            uint8_t* a = flat ? reg + i : reg + (long)(i / width) * pitch + (i % width);
+            if (PACK) packed[i] = *a;
+            else *a = packed[i];
+        }
+    }
+}
+
+__global__ void v41_push_kernel(const uint8_t* src, long pitch, int width, int rows, V41Push dst, int npeer,
+                                uint32_t seq, int word_first) {
+    if (word_first && threadIdx.x == 0) {
+        for (int p = 0; p < npeer; ++p) *(volatile uint32_t*)dst.w[p] = seq;
+        __threadfence_system();
+    }
+    for (int p = 0; p < npeer; ++p) v41_blk_move<1>((uint8_t*)src, pitch, width, rows, dst.d[p]);
+    __threadfence_system();
+    __syncthreads();
+    if (!word_first && threadIdx.x == 0) {
+        for (int p = 0; p < npeer; ++p) *(volatile uint32_t*)dst.w[p] = seq;
+        __threadfence_system();
+    }
+}
+
+__global__ void v41_pull_kernel(V41Pull in, int npeer, uint32_t seq, uint8_t* dst, int* bad) {
+    __shared__ int go;
+    if (threadIdx.x == 0) {
+        int ok = 0;
+        for (long it = 0; it < V41_PULL_SPIN && !ok; ++it) {
+            ok = 1;
+            for (int p = 0; p < npeer; ++p) ok &= (*(volatile const uint32_t*)in.w[p] == seq) ? 1 : 0;
+        }
+        go = ok;
+        if (!ok) *bad = *bad | 0x10000;  // sticky, read with the step's logits
+    }
+    __syncthreads();
+    if (!go) return;
+    for (int p = 0; p < npeer; ++p)
+        v41_blk_move<0>(dst + in.off[p], in.pitch[p], in.width[p], in.rows[p], (uint8_t*)in.d[p]);
+}
+
+static int v41_push_threads(long bytes) {
+    long t = ((bytes + 3) / 4 + 31) / 32 * 32;
+    return (int)(t < 32 ? 32 : t > 1024 ? 1024 : t);
+}
+
+// The producer's half of a small gather: `rows` rows of `width` bytes at `src` (`pitch` apart) into the
+// `npeer` slots of `dst` (a host V41Push), then `seq` into their words.
+extern "C" int memra_v41_push(const void* src, long pitch, int width, int rows, const void* dst, int npeer,
+                              unsigned seq, int word_first, void* stream) {
+    if (npeer < 0 || npeer > V41_PUSH_PEERS || width < 0 || rows < 0 || (long)rows * width > V41_PUSH_MAX)
+        return 41040;
+    if (rows > 1 && pitch < width) return 41040;
+    V41Push d = *(const V41Push*)dst;
+    v41_push_kernel<<<1, v41_push_threads((long)rows * width), 0, (cudaStream_t)stream>>>(
+        (const uint8_t*)src, pitch, width, rows, d, npeer, seq, word_first);
+    V41_ERR();
+}
+
+// The consumer's half: wait for `seq` in the `npeer` slots of `in` (a host V41Pull), then unpack each into its
+// region of `dst`. A peer that never arrives sets bit 16 of *bad and nothing is unpacked.
+extern "C" int memra_v41_pull(const void* in, int npeer, unsigned seq, void* dst, int* bad, void* stream) {
+    if (npeer < 0 || npeer > V41_PUSH_PEERS) return 41041;
+    V41Pull s = *(const V41Pull*)in;
+    long most = 0;
+    for (int p = 0; p < npeer; ++p) {
+        long b = (long)s.rows[p] * s.width[p];
+        if (s.width[p] < 0 || s.rows[p] < 0 || b > V41_PUSH_MAX || (s.rows[p] > 1 && s.pitch[p] < s.width[p]))
+            return 41041;
+        most = b > most ? b : most;
+    }
+    v41_pull_kernel<<<1, v41_push_threads(most), 0, (cudaStream_t)stream>>>(s, npeer, seq, (uint8_t*)dst, bad);
+    V41_ERR();
+}
+
+// Gate helpers for the small gathers: a region of 32-bit words set to a pattern of (seed, word), and the
+// number of words of a region that differ from it added to *diff.
+__device__ __forceinline__ uint32_t v41_pat(uint32_t seed, uint32_t i) {
+    uint32_t x = (i + 1u) * 0x9E3779B1u ^ (seed + 0x7F4A7C15u) * 0x85EBCA6Bu;
+    return x ^ (x >> 15);
+}
+__global__ void v41_pat_kernel(uint32_t* reg, long pitch_w, int width_w, int rows, uint32_t seed, int* diff) {
+    int total = rows * width_w, bad = 0;
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < total; i += gridDim.x * blockDim.x) {
+        uint32_t* a = reg + (long)(i / width_w) * pitch_w + (i % width_w);
+        if (diff) bad += *a != v41_pat(seed, i);
+        else *a = v41_pat(seed, i);
+    }
+    if (diff && bad) atomicAdd(diff, bad);
+}
+extern "C" int memra_v41_pat(void* reg, long pitch_w, int width_w, int rows, unsigned seed, int* diff, void* stream) {
+    if (width_w <= 0 || rows <= 0 || pitch_w < width_w) return 41042;
+    v41_pat_kernel<<<1, v41_push_threads((long)rows * width_w * 4), 0, (cudaStream_t)stream>>>(
+        (uint32_t*)reg, pitch_w, width_w, rows, seed, diff);
+    V41_ERR();
+}
