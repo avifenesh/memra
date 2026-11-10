@@ -1,0 +1,26 @@
+gate-B-device-push start 13:28:22
+gate-B-device-push rc 0 end 13:28:40
+gate-B-device-push: 360 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1]: 977419 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+dec-run1-A start 13:28:40
+dec-run1-A rc 0 end 13:28:53
+dec-run2-B start 13:28:53
+dec-run2-B rc 0 end 13:29:07
+dec-run3-B start 13:29:07
+dec-run3-B rc 0 end 13:29:21
+dec-run4-A start 13:29:21
+dec-run4-A rc 0 end 13:29:35
+dec-run5-A start 13:29:35
+dec-run5-A rc 0 end 13:29:48
+dec-run6-B start 13:29:48
+dec-run6-B rc 0 end 13:30:02
+rows-run1-A start 13:30:02
+rows-run1-A rc 0 end 13:30:15
+rows-run2-B start 13:30:15
+rows-run2-B rc 0 end 13:30:28
+rows-run3-B start 13:30:28
+rows-run3-B rc 0 end 13:30:41
+rows-run4-A start 13:30:41
+rows-run4-A rc 0 end 13:30:54
+FOUR-INNER-DONE

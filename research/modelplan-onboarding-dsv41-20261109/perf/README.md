@@ -834,6 +834,72 @@ rows an expert, the rule picks 64) 351.2 against 345.3 ms, 0.8% slower even with
 skipped; 64-row tiles at 32,768 rows (the rule picks 128) 2,695.9 against 2,591.2 ms, 3.5%
 slower. The rule stands.
 
+### The keys side under wq_b
+
+After wq_a and its norm the rest of the keys side (the window KV into the ring, the compressor, the
+index keys, the index query and selection, the appends) reads only x and qr. On calls of at most 8
+rows it now runs on the second stream under wq_b and its RoPE, and the heads join it before their
+first read of the keys (`6daaffa1ef`). Two cards, 20 layers (`receipts/pair-m2`): one-row decode
+7.179 -> 7.148 ms. Small, and far under the 17 us a layer the kernel table suggested: wq_b is a
+wide launch and a branch under it gets little of the card, where the shared expert under the
+router's narrow chain got most of its time back.
+
+### Calls of 9 to 64 rows
+
+Above 8 rows every family left its small-row body for the 64-row pipelined one. A call of N rows
+on two cards, 20 layers (`receipts/wide-m2`): 12.7 ms at 8 rows, 35.3 at 12, 38.5 at 16, 44.5 at
+32, 50.3 at 64. So the cost is one step of 22.7 ms between 8 and 12 rows, and two calls of 8 beat
+one of 16. In a traced 16-row call the pipelined expert tiles are 38% of the kernel time, the
+pipelined dense body 21%, the router's gate through the 64 x 64 fp32 tile kernel 18%, bf16 7%, the
+mHC pass split across the ranks 5%.
+
+Now a call of 9 rows and more keeps the small-row bodies up to a limit a family, issued once a
+group of rows inside the call: 8-row expert tiles (an expert with more rows gets several), the
+fp32 FMA and bf16 small-row kernels once a group of 8, the one-token mHC kernel a row, and for the
+block-scaled dense GEMM a 16-row form of the 8-column body: the tensor-core tile's 16-wide side
+held 8 activation rows and 8 rows of zeros, and the second 8 rows now ride on the same MMAs, so a
+weight is read once for twice the rows.
+
+Where each family's groups stop paying, from sweeps with one family's limit raised at a time
+against all at 0 (ms a call, the family's column minus "none"; `receipts/widesweep-w3-n2` two
+ranks on two cards, 20 layers; `receipts/widesweep-w3-n1` one rank, 9 layers):
+
+| two ranks, rows | none | dense | bf16 | fp32 FMA | mHC | tiles |
+|---|---|---|---|---|---|---|
+| 12 | 35.4 | -5.5 | -0.9 | -6.0 | -1.5 | -4.1 |
+| 16 | 38.4 | -3.9 | -0.9 | -5.7 | -1.6 | -5.1 |
+| 24 | 42.3 | -1.9 | -0.1 | -5.0 | -1.4 | -5.4 |
+| 32 | 44.4 | +0.2 | +0.8 | -4.2 | -1.1 | -5.1 |
+| 48 | 47.9 | +4.3 | +2.3 | -2.9 | -0.8 | -3.5 |
+| 64 | 50.4 | +8.3 | +4.1 | -1.5 | -0.2 | -2.0 |
+| 96 | 54.5 | +17.0 | +7.7 | +2.0 | +0.7 | +1.0 |
+
+On one rank a dense launch is twice as wide and its groups pay only to 12 rows (level at 16,
++1.6 ms at 24); bf16 to 16, fp32 FMA to 48, mHC to 32, tiles to 48. The limits are therefore per
+family and rank count (`wide_rows_for`): one rank 16 / 16 / 48 / 32 / 48, two ranks and more
+24 / 16 / 64 / 48 / 64 (dense, bf16, fp32 FMA, mHC, tiles); four ranks take the two-rank limits
+until they are measured.
+
+| a call of N rows, ms | 8 | 12 | 16 | 24 | 32 | 48 | 64 |
+|---|---|---|---|---|---|---|---|
+| two cards, 20 layers, before | 12.7 | 35.4 | 38.4 | 42.3 | 44.4 | 47.9 | 50.4 |
+| two cards, each family at its limit | 12.7 | 17.7 | 21.3 | 28.6 | 34.0 | 40.7 | 46.7 |
+| one card, 9 layers, before | 9.8 | | 22.7 | | 26.1 | | |
+| one card, the defaults (`receipts/prefillab-w4-wide-n1`) | 9.8 | | 15.0 | | 21.1 | | |
+
+One call of 32 rows on two cards is 34.0 ms where four calls of 8 are 50.3. What is left in a
+32-row call on one card (`receipts/wide-w4-n1`, kernel time a layer): the 8-row expert tiles 54%
+(they read each routed expert's weights once, which is the bytes a batch of distinct routes has to
+read), the pipelined dense body 20%, the fp32 FMA groups 11%, bf16 7%.
+
+Gate: a row's bytes do not depend on the group it runs in, and the gate checks it on the same
+call: the prompt's first 12, 16 and 32 rows as one call with every limit at 0 (the pipelined
+bodies) and with every family through its groups, output against output, on the single card and on
+each rank, on layers 1, 2, 14, 20 and 24. (A first form compared a short call with the same rows
+of the full prefill; that holds on a layer without compressed keys and not on a kv source, where
+the selection width follows the call's key count and the attention sums a row's keys in another
+grouping.)
+
 ### The page cache under a timed cell
 
 A cell that starts after the page cache was dropped reads its Engram tables from the disk: the
@@ -976,6 +1042,7 @@ weight traffic: 1.1 ms.
   update costs; `gather-*`: a gather by size, in kernels against kept blocks; `ggate-*`,
   `pairgates-*`: the tp gates under the graph door and on a pair; `pair-g3`: the three-arm pair
   pass of the staged fused launch and the graph half; `night-pair`: the rehearsal of a four-card
-  pass on a pair). nsys and ncu report files are
+  pass on a pair; `wide-*`, `widesweep-*`: calls of 8 to 128 rows and the per-family limits of
+  the small-row bodies). nsys and ncu report files are
   not kept; their exports and summaries are. The 250 ms telemetry files are gzipped; the box's
   working directory in the logs reads `$LANE`.
