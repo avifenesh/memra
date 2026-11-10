@@ -29978,6 +29978,21 @@ fn contains_stop_string(decoded: &[u8], stop_strings: &[String]) -> bool {
         .any(|stop| !stop.is_empty() && full.contains(stop.as_str()))
 }
 
+/// The byte offset where the earliest-starting stop string begins in `decoded`, for the
+/// `[spec-stop]` receipt line (memra#1207). Diagnostics only: the stop decision is
+/// `contains_stop_string`.
+fn stop_string_start(decoded: &[u8], stop_strings: &[String]) -> Option<usize> {
+    stop_strings
+        .iter()
+        .filter(|stop| !stop.is_empty() && stop.len() <= decoded.len())
+        .filter_map(|stop| {
+            decoded
+                .windows(stop.len())
+                .position(|w| w == stop.as_bytes())
+        })
+        .min()
+}
+
 /// Publish one token-id event and advance the receipt counter only after the channel accepted it.
 fn send_token_event(s: &mut Session, id: u32, text: String) -> bool {
     if !send_observed_event(
@@ -30063,14 +30078,42 @@ pub(crate) fn stop_token_reason(id: u32, stop_ids: &[u32]) -> Option<StopReason>
     stop_ids.contains(&id).then_some(StopReason::Callback)
 }
 
+/// The public prefix of a burst once the emission is known: a stop string that completed on
+/// the burst's `stop_string_at`-th public token (memra#1207) ends the request there, and that
+/// token is the last one counted, as in plain decode. Without one the id rule's result stands.
+fn spec_stop_string_clamp(
+    public_len: usize,
+    stop: Option<StopReason>,
+    stop_string_at: Option<usize>,
+) -> (usize, Option<StopReason>) {
+    match stop_string_at {
+        Some(n) => {
+            debug_assert!(
+                n <= public_len,
+                "a stop string completes on a public token of the burst"
+            );
+            (n.min(public_len), Some(StopReason::Callback))
+        }
+        None => (public_len, stop),
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct SpecEmitResult {
     sent: usize,
     send_ok: bool,
+    /// The last token sent completed one of the request's stop strings (memra#1207). `sent`
+    /// counts through it and nothing after it in the slice was decoded, sent or counted.
+    stop_string: bool,
 }
 
 /// Emit a speculative commit slice one token id at a time. `remaining` is the request-owned
 /// emission budget, deliberately separate from the engine's committed/cache-row count.
+///
+/// Stop strings are checked here, after every token, on the bytes plain decode checks
+/// (`advance_sample_emit`): the token that completes one is sent and counted, the terminal
+/// latch closes, and the rest of the slice stays engine state only. A check after the whole
+/// burst counted every token of the burst (memra#1207).
 #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 fn emit_spec_token_events<D, S>(
     tokens: &[u32],
@@ -30079,6 +30122,7 @@ fn emit_spec_token_events<D, S>(
     cursor: &mut usize,
     eos_ids: &[u32],
     stop_ids: &[u32],
+    stop_strings: &[String],
     eos_seen: &mut bool,
     mut decode: D,
     mut send: S,
@@ -30100,7 +30144,8 @@ where
             break;
         }
         *remaining -= 1;
-        let text = if eos_ids.contains(&id) {
+        let eos = eos_ids.contains(&id);
+        let text = if eos {
             // EOS is still a generated/billed token id, but its marker text is never streamed.
             *eos_seen = true;
             String::new()
@@ -30113,6 +30158,12 @@ where
             break;
         }
         result.sent += 1;
+        // Plain decode's order: push, send, then the stop-string check. EOS adds no text.
+        if !eos && contains_stop_string(decoded, stop_strings) {
+            *eos_seen = true; // the same terminal latch: later slices publish nothing
+            result.stop_string = true;
+            break;
+        }
     }
     result
 }
@@ -32142,6 +32193,14 @@ struct SpecBurstEmit<'t> {
     flush_tx: EventSender,
     eos_ids: Vec<u32>,
     stop_ids: Vec<u32>,
+    stop_strings: Vec<String>,
+    /// The burst's public token count at the token that completed a stop string
+    /// (memra#1207): `spec_burst_post` ends the request's public vectors there.
+    stop_string_at: Option<usize>,
+    /// Tokens the request had generated before this burst, and the commit slices this burst
+    /// has published: the `[spec-stop]` receipt line names where a stop string completed.
+    generated_before: usize,
+    slices: usize,
 }
 
 impl<'t> SpecBurstEmit<'t> {
@@ -32166,6 +32225,7 @@ impl<'t> SpecBurstEmit<'t> {
         let flush_tx = s.tx.clone();
         let eos_ids = s.params.eos.clone();
         let stop_ids = s.stop_token_ids.clone();
+        let stop_strings = s.stop_strings.clone();
         SpecBurstEmit {
             admit_yield,
             tok,
@@ -32178,6 +32238,10 @@ impl<'t> SpecBurstEmit<'t> {
             flush_tx,
             eos_ids,
             stop_ids,
+            stop_strings,
+            stop_string_at: None,
+            generated_before: s.generated.len(),
+            slices: 0,
         }
     }
 
@@ -32208,6 +32272,8 @@ impl<'t> SpecBurstEmit<'t> {
         if !self.send_ok {
             return false; // client already gone: nobody reads this burst
         }
+        self.slices += 1;
+        let slice_from = self.decoded_visible.len();
         let emitted = emit_spec_token_events(
             slice,
             &mut self.emit_remaining,
@@ -32215,6 +32281,7 @@ impl<'t> SpecBurstEmit<'t> {
             &mut self.cursor,
             &self.eos_ids,
             &self.stop_ids,
+            &self.stop_strings,
             &mut self.eos_seen,
             |id| tok.decode_bytes_special(&[id], true),
             |event| send_observed_event(flush_tx, model, lane, emission_clock, event),
@@ -32224,15 +32291,57 @@ impl<'t> SpecBurstEmit<'t> {
         // `tokens_emitted`; advance it at the send so a post-flush OOM never replays.
         *tokens_emitted += emitted.sent;
         self.send_ok = emitted.send_ok;
+        if emitted.stop_string {
+            // STOP STRING AT THE ROUND HOOK (memra#1207): the request ends on this token.
+            // The latch is closed, so the verdict below ends the burst at this round, and
+            // `spec_burst_post` counts through this token. The receipt names the place: the
+            // request's completion token, the burst's commit slice, the position in it, and
+            // whether the stop string began before this slice (in an earlier round or burst).
+            self.stop_string_at = Some(self.token_events);
+            spec_stop_receipt(
+                "mtp",
+                self.generated_before + self.token_events,
+                self.slices,
+                emitted.sent,
+                slice.len(),
+                self.token_events,
+                stop_string_start(&self.decoded_visible, &self.stop_strings)
+                    .is_some_and(|at| at < slice_from),
+            );
+        }
         spec_round_continues(keep, !self.eos_seen && self.send_ok)
     }
+}
+
+/// The always-on receipt of a stop string that completed at a speculative route's round hook
+/// (memra#1207), one line per stop-ended burst: the request's completion token count through
+/// the completing token, the burst's commit slice that held it (1-based), its position in that
+/// slice, the burst's public token count, and whether the stop string began in an earlier
+/// slice (a round or burst boundary inside the stop string).
+#[allow(clippy::too_many_arguments)] // allow: one receipt line's fields, printed in order
+fn spec_stop_receipt(
+    route: &str,
+    completion_tokens: usize,
+    slice_no: usize,
+    slice_pos: usize,
+    slice_len: usize,
+    burst_public: usize,
+    spans_slices: bool,
+) {
+    eprintln!(
+        "[spec-stop] route={route} stop string completed: completion_tokens={completion_tokens} \
+         burst_slice={slice_no} slice_pos={slice_pos}/{slice_len} burst_public={burst_public} \
+         spans_slices={}",
+        spans_slices as u8
+    );
 }
 
 /// A spec burst's continue-verdict at a round boundary. `false` ends the burst at this round,
 /// through the exit a reached burst count takes.
 /// - `admit_keep` is false while a request waits for admission (ADMISSION YIELD above).
 /// - `stream_open` is false once the public stream has ended: an EOS or stop id was committed,
-///   or the client is gone. Every later round commits only tokens nobody sees, and the last
+///   a stop string completed (memra#1207), or the client is gone. Every later round commits
+///   only tokens nobody sees, and the last
 ///   burst used to run them out to its full target (up to 32 tokens' worth of rounds, about a
 ///   fifth of a 100-token answer's decode on GB10, research/gb10-decode-20261109). Ending
 ///   there moves no visible token: the stream is already complete.
@@ -32271,6 +32380,7 @@ fn spec_burst_post(
         token_events,
         eos_ids,
         stop_ids,
+        stop_string_at,
         ..
     } = emit;
     let spec = s.spec.as_mut().expect("spec_burst_post on a spec session");
@@ -32300,7 +32410,11 @@ fn spec_burst_post(
         s.fed.push(tok);
         s.sampler.accept(tok);
     }
-    let (public_len, mut stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
+    let (public_len, stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
+    // A stop string that completed at the round hook ends the public burst on its token
+    // (memra#1207). The rest of that round is committed engine state, like the tokens after
+    // an EOS: in `SpecSession::committed` and the cache, never in the worker's public vectors.
+    let (public_len, mut stop) = spec_stop_string_clamp(public_len, stop, stop_string_at);
     let public_burst = &burst[..public_len];
     if send_ok {
         debug_assert_eq!(
@@ -32330,9 +32444,12 @@ fn spec_burst_post(
         abort_log(s);
         return Ok(false);
     }
-    if stop.is_none() && contains_stop_string(&s.decoded_bytes, &s.stop_strings) {
-        stop = Some(StopReason::Callback);
-    }
+    // The stop-string check ran at the round hook, after every token (memra#1207). Every
+    // decoded byte passed through it, so none is left to find here.
+    debug_assert!(
+        stop.is_some() || !contains_stop_string(&s.decoded_bytes, &s.stop_strings),
+        "a stop string completed in the burst and the round hook did not latch it"
+    );
     if stop.is_none() && s.generated.len() >= s.budget {
         stop = Some(StopReason::MaxNew);
     }
@@ -33129,24 +33246,33 @@ fn step_gemma_spec(
     // later increment) — same helper, same one-event-per-public-id receipt.
     let eos_ids = s.params.eos.clone();
     let stop_ids = s.stop_token_ids.clone();
-    let (public_len, mut stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
-    let public_burst = &burst[..public_len];
+    let (public_len, stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
     let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
     let mut cursor = s.emitted_bytes;
     let mut emit_remaining = request_room;
     let mut eos_seen = false;
     let tok_ref = &lm.tok;
     let emitted = emit_spec_token_events(
-        public_burst,
+        &burst[..public_len],
         &mut emit_remaining,
         &mut decoded_visible,
         &mut cursor,
         &eos_ids,
         &stop_ids,
+        &s.stop_strings,
         &mut eos_seen,
         |id| tok_ref.decode_bytes_special(&[id], true),
         |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
     );
+    // A stop string ends the public burst on the token that completed it (memra#1207). The
+    // engine ran the whole burst: this route emits at burst cadence and its engine loop has
+    // no round hook to end it there.
+    let (public_len, mut stop) = spec_stop_string_clamp(
+        public_len,
+        stop,
+        emitted.stop_string.then_some(emitted.sent),
+    );
+    let public_burst = &burst[..public_len];
     for &tok in public_burst {
         s.sampler.accept(tok);
         push_generated(&mut s.generated, &s.model, s.t0, tok);
@@ -33169,9 +33295,10 @@ fn step_gemma_spec(
             "one token event per public gemma spec token"
         );
     }
-    if stop.is_none() && contains_stop_string(&s.decoded_bytes, &s.stop_strings) {
-        stop = Some(StopReason::Callback);
-    }
+    debug_assert!(
+        stop.is_some() || !contains_stop_string(&s.decoded_bytes, &s.stop_strings),
+        "a stop string completed in the burst and the emission did not latch it"
+    );
     if stop.is_none() && s.generated.len() >= s.budget {
         stop = Some(StopReason::MaxNew);
     }
@@ -33422,6 +33549,14 @@ struct DsparkBurstEmit<'t> {
     tok: &'t memra_tokenizer::Tokenizer,
     eos_ids: Vec<u32>,
     stop_ids: Vec<u32>,
+    stop_strings: Vec<String>,
+    /// The burst's public token count at the token that completed a stop string
+    /// (memra#1207), set by the round-cadence hook.
+    stop_string_at: Option<usize>,
+    /// Tokens the request had generated before this burst, and the commit slices this burst
+    /// has published, for the `[spec-stop]` receipt line.
+    generated_before: usize,
+    slices: usize,
     decoded_visible: Vec<u8>,
     cursor: usize,
     emit_remaining: usize,
@@ -33439,6 +33574,10 @@ impl<'t> DsparkBurstEmit<'t> {
             tok: &lm.tok,
             eos_ids: s.params.eos.clone(),
             stop_ids: s.stop_token_ids.clone(),
+            stop_strings: s.stop_strings.clone(),
+            stop_string_at: None,
+            generated_before: s.generated.len(),
+            slices: 0,
             decoded_visible: std::mem::take(&mut s.decoded_bytes),
             cursor: s.emitted_bytes,
             emit_remaining: request_room,
@@ -33450,7 +33589,9 @@ impl<'t> DsparkBurstEmit<'t> {
         }
     }
 
-    /// The round-cadence flush (eager-first-token arm).
+    /// The round-cadence flush (eager-first-token arm). Returns the continue-verdict: false
+    /// once the public stream has ended (EOS, a stop id, a completed stop string, the client
+    /// gone), and the engine ends the burst at this round (memra#1207).
     fn flush(
         &mut self,
         slice: &[u32],
@@ -33458,12 +33599,14 @@ impl<'t> DsparkBurstEmit<'t> {
         lane: crate::lanes::Lane,
         emission_clock: &mut crate::hybrid_telemetry::EmissionClock,
         tokens_emitted: &mut usize,
-    ) {
+    ) -> bool {
         if self.eos_seen || self.emit_remaining == 0 || slice.is_empty() || !self.send_ok {
             // post-EOS / budget exhausted / nothing new / client gone: the tail stays
             // committed in the session; accounting happens post-burst.
-            return;
+            return spec_round_continues(true, !self.eos_seen && self.send_ok);
         }
+        self.slices += 1;
+        let slice_from = self.decoded_visible.len();
         if let Some(trace) = self.ttft_trace.as_ref() {
             trace.mark_first_decode();
         }
@@ -33475,6 +33618,7 @@ impl<'t> DsparkBurstEmit<'t> {
             &mut self.cursor,
             &self.eos_ids,
             &self.stop_ids,
+            &self.stop_strings,
             &mut self.eos_seen,
             |id| tok.decode_bytes_special(&[id], true),
             |event| send_observed_event(flush_tx, model, lane, emission_clock, event),
@@ -33486,6 +33630,23 @@ impl<'t> DsparkBurstEmit<'t> {
         // replaying tokens the client already has.
         *tokens_emitted += emitted.sent;
         self.send_ok = emitted.send_ok;
+        if emitted.stop_string {
+            // The request's public stream ends on this token (memra#1207). The latch is
+            // closed, so the verdict below ends the burst at this round and later slices
+            // publish nothing; the rest of this round stays session state.
+            self.stop_string_at = Some(self.token_events);
+            spec_stop_receipt(
+                "dspark",
+                self.generated_before + self.token_events,
+                self.slices,
+                emitted.sent,
+                slice.len(),
+                self.token_events,
+                stop_string_start(&self.decoded_visible, &self.stop_strings)
+                    .is_some_and(|at| at < slice_from),
+            );
+        }
+        spec_round_continues(true, !self.eos_seen && self.send_ok)
     }
 }
 
@@ -33505,6 +33666,8 @@ fn dspark_burst_post(
         tok: tok_ref,
         eos_ids,
         stop_ids,
+        stop_strings,
+        stop_string_at,
         mut decoded_visible,
         mut cursor,
         mut emit_remaining,
@@ -33533,28 +33696,39 @@ fn dspark_burst_post(
     {
         trace.mark_first_decode();
     }
-    let (public_len, mut stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
-    let public_burst = &burst[..public_len];
+    let (public_len, stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
     let emitted = if eager_first_token {
         // Every public id already went out at round cadence; the shared stopping rule
-        // (budget, first EOS inclusive) makes the flushed count equal `public_len`.
+        // (budget, first EOS inclusive, a completed stop string) makes the flushed count
+        // equal the public length.
         SpecEmitResult {
             sent: token_events,
             send_ok,
+            stop_string: stop_string_at.is_some(),
         }
     } else {
         emit_spec_token_events(
-            public_burst,
+            &burst[..public_len],
             &mut emit_remaining,
             &mut decoded_visible,
             &mut cursor,
             &eos_ids,
             &stop_ids,
+            &stop_strings,
             &mut eos_seen,
             |id| tok_ref.decode_bytes_special(&[id], true),
             |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
         )
     };
+    // A stop string ends the public burst on the token that completed it (memra#1207). On
+    // the round-cadence arm the hook's verdict also ended the engine burst at that round; on
+    // the burst-cadence arm (`MEMRA_SPEC_FIRST_TOKEN_EAGER=0`) the burst ran to its target.
+    let (public_len, mut stop) = spec_stop_string_clamp(
+        public_len,
+        stop,
+        emitted.stop_string.then_some(emitted.sent),
+    );
+    let public_burst = &burst[..public_len];
     for &tok in public_burst {
         s.sampler.accept(tok);
         push_generated(&mut s.generated, &s.model, s.t0, tok);
@@ -33578,9 +33752,10 @@ fn dspark_burst_post(
         emitted.sent, public_len,
         "one token event per public dspark spec token"
     );
-    if stop.is_none() && contains_stop_string(&s.decoded_bytes, &s.stop_strings) {
-        stop = Some(StopReason::Callback);
-    }
+    debug_assert!(
+        stop.is_some() || !contains_stop_string(&s.decoded_bytes, &s.stop_strings),
+        "a stop string completed in the burst and the emission did not latch it"
+    );
     if stop.is_none() && s.generated.len() >= s.budget {
         stop = Some(StopReason::MaxNew);
     }
@@ -33851,11 +34026,17 @@ fn step_glm5_spec(
     let mut first_emit_ms: Option<f64> = None;
     let flush_tx = s.tx.clone();
     let ttft_trace = s.ttft.clone();
-    let mut flush_cb = |slice: &[u32]| {
+    let stop_strings = s.stop_strings.clone();
+    // The burst's public token count at the token that completed a stop string
+    // (memra#1207), set by the round-cadence hook.
+    let mut stop_string_at: Option<usize> = None;
+    // The hook answers the continue-verdict: false once the public stream has ended, and the
+    // engine ends the burst at this round (memra#1207).
+    let mut flush_cb = |slice: &[u32]| -> bool {
         if eos_seen || emit_remaining == 0 || slice.is_empty() || !send_ok {
             // post-EOS / budget exhausted / nothing new / client gone: the tail stays
             // committed in the session; accounting happens post-burst.
-            return;
+            return spec_round_continues(true, !eos_seen && send_ok);
         }
         if let Some(trace) = ttft_trace.as_ref() {
             trace.mark_first_decode();
@@ -33867,6 +34048,7 @@ fn step_glm5_spec(
             &mut cursor,
             &eos_ids,
             &stop_ids,
+            &stop_strings,
             &mut eos_seen,
             |id| tok_ref.decode_bytes_special(&[id], true),
             |event| send_observed_event(&flush_tx, &s.model, s.lane, &mut s.emission_clock, event),
@@ -33880,6 +34062,13 @@ fn step_glm5_spec(
         // later round of this burst takes the honest error instead of a replay.
         s.tokens_emitted += emitted.sent;
         send_ok = emitted.send_ok;
+        if emitted.stop_string {
+            // The request's public stream ends on this token (memra#1207). The latch is
+            // closed, so the verdict below ends the burst at this round and later slices
+            // publish nothing; the rest of this round stays session state.
+            stop_string_at = Some(token_events);
+        }
+        spec_round_continues(true, !eos_seen && send_ok)
     };
     let sess = s.glm5.as_mut().unwrap();
     let rounds_before = sess.rounds;
@@ -33928,23 +34117,25 @@ fn step_glm5_spec(
     {
         trace.mark_first_decode();
     }
-    let (public_len, mut stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
-    let public_burst = &burst[..public_len];
+    let (public_len, stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
     let emitted = if eager_first_token {
         // Every public id already went out at round cadence; the shared stopping rule
-        // (budget, first EOS inclusive) makes the flushed count equal `public_len`.
+        // (budget, first EOS inclusive, a completed stop string) makes the flushed count
+        // equal the public length.
         SpecEmitResult {
             sent: token_events,
             send_ok,
+            stop_string: stop_string_at.is_some(),
         }
     } else {
         let emitted = emit_spec_token_events(
-            public_burst,
+            &burst[..public_len],
             &mut emit_remaining,
             &mut decoded_visible,
             &mut cursor,
             &eos_ids,
             &stop_ids,
+            &stop_strings,
             &mut eos_seen,
             |id| tok_ref.decode_bytes_special(&[id], true),
             |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
@@ -33954,6 +34145,15 @@ fn step_glm5_spec(
         }
         emitted
     };
+    // A stop string ends the public burst on the token that completed it (memra#1207). On
+    // the round-cadence arm the hook's verdict also ended the engine burst at that round; on
+    // the burst-cadence arm (`MEMRA_SPEC_FIRST_TOKEN_EAGER=0`) the burst ran to its target.
+    let (public_len, mut stop) = spec_stop_string_clamp(
+        public_len,
+        stop,
+        emitted.stop_string.then_some(emitted.sent),
+    );
+    let public_burst = &burst[..public_len];
     if prof_on {
         // ONE line per request, after the first burst's emission: the engine buckets
         // (session creation + round 1 + the burst wall) beside the worker marks.
@@ -34041,9 +34241,10 @@ fn step_glm5_spec(
         emitted.sent, public_len,
         "one token event per public glm5 spec token"
     );
-    if stop.is_none() && contains_stop_string(&s.decoded_bytes, &s.stop_strings) {
-        stop = Some(StopReason::Callback);
-    }
+    debug_assert!(
+        stop.is_some() || !contains_stop_string(&s.decoded_bytes, &s.stop_strings),
+        "a stop string completed in the burst and the emission did not latch it"
+    );
     if stop.is_none() && s.generated.len() >= s.budget {
         stop = Some(StopReason::MaxNew);
     }
@@ -35820,13 +36021,14 @@ mod tests {
         prefix_budget_ctx, prefix_entry_geometry_bytes,
     };
     use super::{DraftVerdict, draft_verdict, draft_verdict_message};
+    use super::{DsparkBurstEmit, EventSender, SpecBurstEmit};
     use super::{
-        Event, cached_hit_needs_first_token, carried_prime_batch_eligible, emit_spec_token_events,
-        interactive_prefill_budget, interactive_prime_batch_take, prefill_tick_take,
-        record_output_progress, record_output_tokens, solo_widen_fresh, spec_round_continues,
-        spec_visible_prefix, stop_token_reason, summarize_confidence, utf8_delta,
+        Event, cached_hit_needs_first_token, carried_prime_batch_eligible, contains_stop_string,
+        emit_spec_token_events, interactive_prefill_budget, interactive_prime_batch_take,
+        prefill_tick_take, record_output_progress, record_output_tokens, solo_widen_fresh,
+        spec_round_continues, spec_stop_string_clamp, spec_visible_prefix, stop_token_reason,
+        summarize_confidence, utf8_delta,
     };
-    use super::{EventSender, SpecBurstEmit};
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
     use super::{
         HostPrefixCache, HostPrefixEntry, PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION,
@@ -38022,6 +38224,7 @@ mod tests {
                         &mut cursor,
                         &[5],
                         &[stop_id],
+                        &[],
                         &mut terminal,
                         |id| {
                             assert!(id < stop_id);
@@ -38050,6 +38253,173 @@ mod tests {
         }
     }
 
+    /// Plain decode's count for a stop string: push a token, then check the decoded bytes
+    /// (`advance_sample_emit`). The reference every speculative partition must equal.
+    fn plain_stop_string_count(tokens: &[u32], budget: usize, stops: &[String]) -> usize {
+        let mut decoded = Vec::new();
+        for (i, &id) in tokens.iter().take(budget).enumerate() {
+            decoded.extend_from_slice(&ascii_decode(id));
+            if contains_stop_string(&decoded, stops) {
+                return i + 1;
+            }
+        }
+        tokens.len().min(budget)
+    }
+
+    #[test]
+    fn stop_strings_end_every_spec_round_partition_on_the_completing_token() {
+        // memra#1207. Tokens 0..=6 decode to "abcdefg". A stop string can complete inside a
+        // round, on its last token, or span two rounds. Every partition must publish and
+        // count through the completing token, as plain decode does, and nothing after it.
+        let tokens = [0u32, 1, 2, 3, 4, 5, 6];
+        let stops = |list: &[&str]| -> Vec<String> { list.iter().map(|s| s.to_string()).collect() };
+        for (stop_strings, budget, want) in [
+            (stops(&["cd"]), 16, 4),       // completes on the fourth token
+            (stops(&["a"]), 16, 1),        // on the first token of the request
+            (stops(&["g"]), 16, 7),        // on the last token of the burst
+            (stops(&["ef", "bc"]), 16, 3), // two stop strings: the first to complete wins
+            (stops(&["cd"]), 4, 4),        // on the last token of the budget
+            (stops(&["de"]), 4, 4),        // the budget ends first: no stop string
+            (stops(&["xy"]), 16, 7),       // never completes
+            (stops(&[]), 16, 7),           // a request without stop strings
+        ] {
+            let plain = plain_stop_string_count(&tokens, budget, &stop_strings);
+            assert_eq!(plain, want, "plain decode's count for {stop_strings:?}");
+            let completes = {
+                let text: Vec<u8> = tokens[..plain]
+                    .iter()
+                    .flat_map(|&id| ascii_decode(id))
+                    .collect();
+                contains_stop_string(&text, &stop_strings)
+            };
+            for split_a in 0..=tokens.len() {
+                for split_b in split_a..=tokens.len() {
+                    let mut remaining = budget;
+                    let mut decoded = Vec::new();
+                    let mut cursor = 0;
+                    let mut terminal = false;
+                    let mut ids = Vec::new();
+                    let mut text = String::new();
+                    let mut sent = 0;
+                    let mut stop_hits = 0;
+                    let mut stop_at = None;
+                    for slice in [
+                        &tokens[..split_a],
+                        &tokens[split_a..split_b],
+                        &tokens[split_b..],
+                        &[0, 1][..], // a later round: must publish nothing after a stop
+                    ] {
+                        if terminal || remaining == 0 {
+                            continue; // the hooks' own early return
+                        }
+                        let result = emit_spec_token_events(
+                            slice,
+                            &mut remaining,
+                            &mut decoded,
+                            &mut cursor,
+                            &[],
+                            &[],
+                            &stop_strings,
+                            &mut terminal,
+                            ascii_decode,
+                            |event| {
+                                if let Event::Token { id, text: delta } = event {
+                                    ids.push(id);
+                                    text.push_str(&delta);
+                                }
+                                true
+                            },
+                        );
+                        assert!(result.send_ok);
+                        sent += result.sent;
+                        if result.stop_string {
+                            stop_hits += 1;
+                            stop_at = Some(sent);
+                        }
+                    }
+                    if completes {
+                        assert_eq!(sent, plain, "{stop_strings:?} split {split_a}/{split_b}");
+                        assert_eq!(ids, tokens[..plain]);
+                        assert_eq!(stop_hits, 1);
+                        assert_eq!(stop_at, Some(plain));
+                        assert!(terminal);
+                        assert_eq!(remaining, budget - plain);
+                        assert_eq!(
+                            spec_stop_string_clamp(tokens.len().min(budget), None, stop_at),
+                            (plain, Some(StopReason::Callback))
+                        );
+                    } else {
+                        assert_eq!(stop_hits, 0);
+                        assert!(!terminal);
+                        // No stop: the budget is the only fence, and the later round's two
+                        // tokens are public when room is left.
+                        assert_eq!(sent, (tokens.len() + 2).min(budget));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stop_strings_yield_to_an_earlier_eos_or_stop_id_in_the_slice() {
+        // EOS (id 2) comes before the token that would complete "cd": EOS ends the request,
+        // counted, and its text is never decoded. A stop id (3) is never decoded either, so
+        // it cannot complete a stop string.
+        let stops = vec!["cd".to_string()];
+        for (eos, stop_ids, want_ids) in [
+            (vec![2u32], vec![], vec![0u32, 1, 2]),
+            (vec![], vec![3u32], vec![0, 1, 2]),
+        ] {
+            let mut remaining = 16;
+            let mut decoded = Vec::new();
+            let mut cursor = 0;
+            let mut terminal = false;
+            let mut ids = Vec::new();
+            let result = emit_spec_token_events(
+                &[0, 1, 2, 3, 4],
+                &mut remaining,
+                &mut decoded,
+                &mut cursor,
+                &eos,
+                &stop_ids,
+                &stops,
+                &mut terminal,
+                ascii_decode,
+                |event| {
+                    if let Event::Token { id, .. } = event {
+                        ids.push(id);
+                    }
+                    true
+                },
+            );
+            assert_eq!(ids, want_ids);
+            assert!(!result.stop_string);
+            assert!(terminal);
+        }
+    }
+
+    #[test]
+    fn stop_string_clamp_ends_the_public_burst_on_the_completing_token() {
+        assert_eq!(
+            spec_stop_string_clamp(5, None, Some(3)),
+            (3, Some(StopReason::Callback))
+        );
+        // An EOS later in the same burst is past the stop: the stop string is the reason.
+        assert_eq!(
+            spec_stop_string_clamp(5, Some(StopReason::Eos), Some(2)),
+            (2, Some(StopReason::Callback))
+        );
+        assert_eq!(
+            spec_stop_string_clamp(5, Some(StopReason::Eos), None),
+            (5, Some(StopReason::Eos))
+        );
+        assert_eq!(spec_stop_string_clamp(5, None, None), (5, None));
+        assert_eq!(
+            crate::stop_reason_to_finish(&format!("{:?}", StopReason::Callback)),
+            "stop"
+        );
+    }
+
     #[test]
     fn spec_emission_keeps_intermediate_scheduler_surplus_public() {
         let requested_max = 64usize;
@@ -38068,6 +38438,7 @@ mod tests {
             &mut remaining,
             &mut decoded,
             &mut cursor,
+            &[],
             &[],
             &[],
             &mut eos_seen,
@@ -38116,6 +38487,10 @@ mod tests {
             flush_tx: tx,
             eos_ids: vec![eos],
             stop_ids: vec![stop],
+            stop_strings: Vec::new(),
+            stop_string_at: None,
+            generated_before: 0,
+            slices: 0,
         };
         let mut clock = crate::hybrid_telemetry::EmissionClock::default();
         let mut sent = 0usize;
@@ -38169,6 +38544,178 @@ mod tests {
             "the admission yield still ends it"
         );
         assert!(spec_round_continues(true, true));
+    }
+
+    /// memra#1207, through the real round hook: the flush whose slice completes a stop string
+    /// answers false, so the engine ends the burst at that round, and the hook records the
+    /// burst's public count through the completing token. Before the fix the hook knew no stop
+    /// strings: each of these flushes said "continue" and published the whole slice.
+    #[test]
+    fn spec_burst_ends_at_the_round_that_completes_a_stop_string() {
+        let tok = chatml_fixture_tokenizer("spec-burst-stop-string");
+        let (a, nl) = (0u32, 1u32); // "a" and "\n"
+        let emit = |tx: EventSender, stops: &[&str], room: usize| SpecBurstEmit {
+            admit_yield: false,
+            tok: &tok,
+            decoded_visible: Vec::new(),
+            cursor: 0,
+            emit_remaining: room,
+            eos_seen: false,
+            send_ok: true,
+            token_events: 0,
+            flush_tx: tx,
+            eos_ids: vec![tok.eos_id()],
+            stop_ids: Vec::new(),
+            stop_strings: stops.iter().map(|s| s.to_string()).collect(),
+            stop_string_at: None,
+            generated_before: 0,
+            slices: 0,
+        };
+        let mut clock = crate::hybrid_telemetry::EmissionClock::default();
+        let mut flush = |e: &mut SpecBurstEmit, slice: &[u32], sent: &mut usize| {
+            e.flush(
+                slice,
+                None,
+                "m",
+                crate::lanes::Lane::Interactive,
+                &mut clock,
+                sent,
+            )
+        };
+
+        // Inside a round: "\n\n" completes on the round's third token of five.
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx, &["\n\n"], 64);
+        let mut sent = 0usize;
+        assert!(flush(&mut e, &[a, nl], &mut sent), "no stop string yet");
+        assert!(
+            !flush(&mut e, &[a, nl, nl, a, a], &mut sent),
+            "the round that completes the stop string ends the burst"
+        );
+        assert_eq!(sent, 5, "two tokens, then three through the stop");
+        assert_eq!(e.stop_string_at, Some(5));
+        assert_eq!(e.decoded_visible, b"a\na\n\n");
+        assert!(
+            !flush(&mut e, &[a], &mut sent),
+            "no later round restarts it"
+        );
+        assert_eq!(sent, 5);
+
+        // Across a round boundary: its first character ends one round, its last opens the next.
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx, &["\n\n"], 64);
+        let mut sent = 0usize;
+        assert!(flush(&mut e, &[a, nl], &mut sent));
+        assert!(!flush(&mut e, &[nl, a], &mut sent));
+        assert_eq!(sent, 3);
+        assert_eq!(e.stop_string_at, Some(3));
+
+        // Two stop strings in one round: the first to complete ends it.
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx, &["\n\n", "aa"], 64);
+        let mut sent = 0usize;
+        assert!(!flush(&mut e, &[nl, a, a, nl, nl], &mut sent));
+        assert_eq!(sent, 3);
+        assert_eq!(e.stop_string_at, Some(3));
+
+        // On the last token of the budget: counted, and still a stop.
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx, &["\n\n"], 3);
+        let mut sent = 0usize;
+        assert!(!flush(&mut e, &[a, nl, nl, a], &mut sent));
+        assert_eq!(sent, 3);
+        assert_eq!(e.stop_string_at, Some(3));
+        assert_eq!(
+            spec_stop_string_clamp(3, None, e.stop_string_at),
+            (3, Some(StopReason::Callback))
+        );
+
+        // A request without stop strings publishes the same slices and continues.
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx, &[], 64);
+        let mut sent = 0usize;
+        assert!(flush(&mut e, &[a, nl], &mut sent));
+        assert!(flush(&mut e, &[a, nl, nl, a, a], &mut sent));
+        assert_eq!(sent, 7);
+        assert_eq!(e.stop_string_at, None);
+    }
+
+    /// memra#1207 on the dspark route's round hook (serial and pooled bursts share it): the
+    /// flush whose slice completes a stop string answers false, so the engine's `live` ends
+    /// the burst at that round, and the hook counts through the completing token. A stop id
+    /// ends the burst the same way. Before the fix the hook returned nothing and published
+    /// every slice of the burst.
+    #[test]
+    fn dspark_burst_hook_ends_at_the_round_that_completes_a_stop_string() {
+        let tok = chatml_fixture_tokenizer("dspark-burst-stop-string");
+        let (a, nl) = (0u32, 1u32); // "a" and "\n"
+        let emit = |tx: EventSender, stops: &[&str], stop_ids: Vec<u32>| DsparkBurstEmit {
+            eager_first_token: true,
+            tok: &tok,
+            eos_ids: vec![tok.eos_id()],
+            stop_ids,
+            stop_strings: stops.iter().map(|s| s.to_string()).collect(),
+            stop_string_at: None,
+            generated_before: 4,
+            slices: 0,
+            decoded_visible: Vec::new(),
+            cursor: 0,
+            emit_remaining: 64,
+            eos_seen: false,
+            send_ok: true,
+            token_events: 0,
+            flush_tx: tx,
+            ttft_trace: None,
+        };
+        let mut clock = crate::hybrid_telemetry::EmissionClock::default();
+        let mut flush = |e: &mut DsparkBurstEmit, slice: &[u32], sent: &mut usize| {
+            e.flush(
+                slice,
+                "m",
+                crate::lanes::Lane::Interactive,
+                &mut clock,
+                sent,
+            )
+        };
+
+        // Across a round boundary: the first "\n" ends one round, the second opens the next.
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx, &["\n\n"], Vec::new());
+        let mut sent = 0usize;
+        assert!(flush(&mut e, &[a], &mut sent), "the anchor alone: continue");
+        assert!(flush(&mut e, &[a, nl], &mut sent), "no stop string yet");
+        assert!(
+            !flush(&mut e, &[nl, a, a], &mut sent),
+            "the round that completes the stop string ends the burst"
+        );
+        assert_eq!(sent, 4, "three tokens, then one through the stop");
+        assert_eq!(e.token_events, 4);
+        assert_eq!(e.stop_string_at, Some(4));
+        assert!(
+            !flush(&mut e, &[a], &mut sent),
+            "no later round restarts it"
+        );
+        assert_eq!(sent, 4);
+
+        // A stop id ends the burst at its round too (it is never public).
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx, &[], vec![nl]);
+        let mut sent = 0usize;
+        assert!(!flush(&mut e, &[a, a, nl, a], &mut sent));
+        assert_eq!(sent, 2);
+        assert_eq!(e.stop_string_at, None);
+
+        // A request without stop strings or stop ids continues through every round.
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx, &[], Vec::new());
+        let mut sent = 0usize;
+        assert!(flush(&mut e, &[a], &mut sent));
+        assert!(flush(&mut e, &[nl, nl, a], &mut sent));
+        assert!(
+            flush(&mut e, &[], &mut sent),
+            "an empty round keeps the burst live"
+        );
+        assert_eq!(sent, 4);
     }
 
     /// memra#659: the open door's budget is its charged output, leaving CTX_SLACK rows past it as
@@ -38274,6 +38821,7 @@ mod tests {
             &mut cursor,
             &[],
             &[],
+            &[],
             &mut eos_seen,
             ascii_decode,
             |event| {
@@ -38311,6 +38859,7 @@ mod tests {
             &mut decoded,
             &mut cursor,
             &[9],
+            &[],
             &[],
             &mut eos_seen,
             ascii_decode,
@@ -48663,7 +49212,7 @@ mod tests {
             .expect("step_glm5_spec exists");
         let glm5_body = &glm5[..glm5.find("\nfn ").unwrap_or(glm5.len())];
         let hook_start = glm5_body
-            .find("let mut flush_cb = |slice: &[u32]| {")
+            .find("let mut flush_cb = |slice: &[u32]| -> bool {")
             .expect("the glm5 flush closure exists");
         let hook_end = glm5_body
             .find("let sess = s.glm5.as_mut().unwrap();")

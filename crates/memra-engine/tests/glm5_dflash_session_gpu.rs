@@ -2308,7 +2308,8 @@ fn gpu_dflash_streamed_burst_slices_concat_to_the_unhooked_burst() {
         let (burst, d, a) = h
             .model
             .glm5_spec_session_burst_streamed(&h.engine, &mut sess, max_new, k, &[], &mut |s| {
-                slices.push(s.to_vec())
+                slices.push(s.to_vec());
+                true
             })
             .expect("streamed burst");
         let concat: Vec<u32> = slices.iter().flatten().copied().collect();

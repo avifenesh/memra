@@ -6444,10 +6444,12 @@ impl crate::hybrid::HybridModel {
     /// one, each later round's accepted drafts plus bonus after it. Slices are disjoint and
     /// concatenate to the returned vector.
     ///
-    /// NUMERIC CLASS: none. The round loop never reads the hook, the tokens handed to it are
-    /// the same `out` vector in the same order, and the hook fires only after the round's
-    /// fallible work (commit/rollback and the draft ingest) has already succeeded. Only event
-    /// timing moves.
+    /// NUMERIC CLASS: none. The tokens handed to the hook are the same `out` vector in the
+    /// same order, and the hook fires only after the round's fallible work (commit/rollback
+    /// and the draft ingest) has already succeeded. Only event timing moves. The loop reads
+    /// one thing back: the hook's continue-verdict, `false` once the request's stream has
+    /// ended (memra#1207), which ends the burst at that round boundary, the exit a reached
+    /// `burst_target` takes.
     #[allow(clippy::too_many_arguments)] // allow: the burst's own arity plus the commit hook
     pub fn dspark_spec_session_burst_streamed(
         &self,
@@ -6596,6 +6598,7 @@ impl crate::hybrid::HybridModel {
             drafted: 0,
             accepted_n: 0,
             on_commit,
+            keep_going: true,
         })
     }
 
@@ -7166,7 +7169,9 @@ impl crate::hybrid::HybridModel {
         // so the round's tokens are final and can be published before the burst ends.
         // Placed before the `done` return so a terminal round flushes too.
         if let Some(cb) = burst.on_commit.as_mut() {
-            cb(&burst.out[burst.flushed..]);
+            // The continue-verdict (memra#1207): false once the request's stream has ended,
+            // and `live` ends the burst at this round boundary, as a reached target does.
+            burst.keep_going = cb(&burst.out[burst.flushed..]);
             burst.flushed = burst.out.len();
         }
         if sess.done {
@@ -7468,7 +7473,7 @@ fn dspark_rows_argmax(
 }
 
 /// A pooled dspark burst's round-cadence hook, owned by its request.
-pub type DsparkPooledHook<'a> = Box<dyn FnMut(&[u32]) + 'a>;
+pub type DsparkPooledHook<'a> = Box<dyn FnMut(&[u32]) -> bool + 'a>;
 
 /// One session's continuation burst in a pooled dspark cohort
 /// (`HybridModel::dspark_spec_sessions_pooled`): the serial `dspark_spec_session_burst`
@@ -7508,12 +7513,15 @@ struct DsparkBurst<'m, 'h> {
     drafted: usize,
     accepted_n: usize,
     on_commit: Option<crate::glm_spec::CommitHook<'h>>,
+    /// The commit hook's last continue-verdict (memra#1207); true without a hook.
+    keep_going: bool,
 }
 
 impl DsparkBurst<'_, '_> {
-    /// The serial loop's condition: room left in this burst and the session not terminal.
+    /// The serial loop's condition: room left in this burst, the session not terminal, and
+    /// the commit hook's last verdict "continue" (memra#1207).
     fn live(&self, sess: &DsparkSpecSession) -> bool {
-        self.out.len() < self.burst_target && !sess.done
+        self.keep_going && self.out.len() < self.burst_target && !sess.done
     }
 
     /// Whether this round's verify reads raw logits (the sampled and greedy-penalised arms)
