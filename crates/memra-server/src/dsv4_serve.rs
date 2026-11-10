@@ -2253,8 +2253,6 @@ fn logits_step(
     m.gpu.decode_step_logits_complete(state)
 }
 
-/// Streaming state shared by every route: incremental detok, EOS, stop strings,
-/// budget — one place, so plain and spec paths cannot diverge on stop semantics.
 /// Snap a byte index backward to the nearest char boundary. Every byte cut into
 /// UTF-8 text in this route goes through this — the DSML markers (fullwidth
 /// '\u{ff5c}', 3 bytes) and ordinary typography ('\u{2019}' curly apostrophe, the
@@ -2267,28 +2265,31 @@ pub(crate) fn snap(s: &str, mut i: usize) -> usize {
     i
 }
 
-/// Stop-string scan over the running text (matches may straddle deltas): returns
-/// the byte cut in `full` where generation stops, or None. The two PARSER-CLOSING
-/// stops stay IN the stream (worker law: "the close stays in the stream so the
-/// parser finishes the span" — dsv4 DSML close + gemma `<tool_call|>`); user stops
-/// are exclusive. Extracted from Emit::push so the multi-byte window arithmetic has
-/// a toothed unit gate (both boundary panics were found LIVE, never by a test).
-pub(crate) fn scan_stop_cut(text: &str, full: &str, stops: &[String]) -> Option<usize> {
-    let delta = &full[snap(full, text.len())..];
-    let scan_from = snap(text, text.len().saturating_sub(64));
-    let probe = format!("{}{}", &text[scan_from..], delta);
-    let mut cut: Option<usize> = None;
-    for ss in stops {
-        if let Some(p) = probe.find(ss.as_str()) {
-            let abs = scan_from + p;
-            let inclusive = ss == "</\u{ff5c}DSML\u{ff5c}tool_calls>" || ss == "<tool_call|>";
-            let end = if inclusive { abs + ss.len() } else { abs };
-            // never rewind past already-emitted text
-            let end = end.max(text.len()).min(full.len());
-            cut = Some(cut.map_or(end, |c: usize| c.min(end)));
-        }
-    }
-    cut
+/// Where the stream ends when a stop string completes in `full`, whose first `sent.len()` bytes
+/// went out before this token: the end of the completed stop that starts first, the one the
+/// HTTP layer cuts at (None: no stop).
+///
+/// The stream carries the whole stop and nothing after it. The HTTP layer finds the complete
+/// stop text and cuts at its start (`truncate_at_stop`, the stream scrubbers), so a client's
+/// stop that completes across two tokens leaves no part of itself in the answer. A cut before
+/// the stop cannot take back the part already sent, and it hides the stop from the HTTP layer.
+/// A parser-closing stop (the DSML close of a tool request) ends the stream the same way: the
+/// close stays in the stream so the parser finishes the span.
+///
+/// A stop that completes now ends in the new text, so it starts less than its own length
+/// before it: the look-back is the stop's length less one byte, whatever that is. No stop lies
+/// wholly in the sent text, because the stream would have ended there.
+fn stop_end(sent: &str, full: &str, stops: &[String]) -> Option<usize> {
+    stops
+        .iter()
+        .filter(|stop| !stop.is_empty())
+        .filter_map(|stop| {
+            let from = snap(full, sent.len().saturating_sub(stop.len() - 1));
+            let start = from + full[from..].find(stop.as_str())?;
+            Some((start, start + stop.len()))
+        })
+        .min()
+        .map(|(_, end)| end)
 }
 
 /// The text a token completes. `open` holds the answer's bytes that are not text yet, the
@@ -2312,7 +2313,7 @@ fn text_delta(open: &mut Vec<u8>, last: bool) -> String {
 /// One token's step of a stream's text: `text` is what was sent, `open` the bytes that are not
 /// text yet with the new token's. Returns what to send with the token and whether a stop string
 /// ended the stream there. The text grows only by completed characters ([`text_delta`]) and
-/// ends at the stop cut ([`scan_stop_cut`]).
+/// ends with the completed stop that starts first ([`stop_end`]).
 fn text_step(
     text: &mut String,
     open: &mut Vec<u8>,
@@ -2322,7 +2323,7 @@ fn text_step(
     let old = text.len();
     let delta = text_delta(open, last);
     text.push_str(&delta);
-    if let Some(end) = scan_stop_cut(&text[..old], text, stops) {
+    if let Some(end) = stop_end(&text[..old], text, stops) {
         let end = snap(text, end).max(old);
         text.truncate(end);
         return (text[old..].to_string(), true);
@@ -2330,6 +2331,8 @@ fn text_step(
     (delta, false)
 }
 
+/// Streaming state shared by every route: incremental detok, EOS, stop strings, budget.
+/// One place, so plain and spec paths cannot diverge on stop semantics.
 struct Emit<'a> {
     tok: &'a Tokenizer,
     tx: &'a crate::worker::EventSender,
@@ -4299,28 +4302,31 @@ mod prefill_chunk_flag_tests {
 
 #[cfg(test)]
 mod unicode_window_tests {
-    use super::{RoundTake, processed_prefix_tokens, scan_stop_cut, snap};
+    use super::{RoundTake, processed_prefix_tokens, snap, stop_end};
     // Only the boundary red arm needs the driver's commit arithmetic, so it is imported here
     // rather than at module scope where the serving build would carry an unused name.
     use memra_engine::dsv4_gpu::round_commit_rows;
 
-    /// The box10 owner-serve panic class: a long generation whose fixed-offset scan
-    /// window (len-64) lands INSIDE a multi-byte char ('’', 3 bytes). Both live
-    /// panics (fullwidth '｜' in the tools cell, '’' in owner serve) are this shape.
+    /// The box10 owner-serve panic class: a long generation whose scan look-back lands
+    /// INSIDE a multi-byte char ('’', 3 bytes). Both live panics (fullwidth '｜' in the
+    /// tools cell, '’' in owner serve) are this shape.
     #[test]
     fn multibyte_scan_window_never_panics_and_cuts_correctly() {
-        // text dominated by curly apostrophes so len-64 is essentially never a boundary
-        let base: String = "it\u{2019}s ".repeat(200); // 6 bytes/char-group, '’' is 3 bytes
-        for extra in 0..8 {
-            let text = format!("{}{}", base, "x".repeat(extra));
-            let full = format!("{text}tail STOP more");
-            let stops = vec!["STOP".to_string()];
-            let cut = scan_stop_cut(&text, &full, &stops).expect("stop found");
-            assert_eq!(
-                &full[..cut],
-                format!("{text}tail "),
-                "exclusive stop cuts before STOP"
-            );
+        // Text of curly apostrophes, and stops of every length up to nine bytes: the look-back
+        // (the stop's length less one) lands on each byte of a '’' for some pair.
+        let base: String = "it\u{2019}s ".repeat(200); // 7 bytes a group, '’' is 3 of them
+        let stop = "STOP-STOP";
+        for len in 1..=stop.len() {
+            let stops = vec![stop[stop.len() - len..].to_string()];
+            for extra in 0..8 {
+                let text = format!("{}{}", base, "x".repeat(extra));
+                let full = format!("{text}tail {stop} more");
+                let end = stop_end(&text, &full, &stops).expect("stop found");
+                let first = full
+                    .find(stops[0].as_str())
+                    .expect("the stop is in the text");
+                assert_eq!(end, first + len, "the stream ends with the first stop");
+            }
         }
         // snap itself: any index inside '’' walks back to its start
         let s = "a\u{2019}b";
@@ -4330,29 +4336,42 @@ mod unicode_window_tests {
         assert_eq!(snap(s, 99), s.len());
     }
 
-    /// The inclusive parser-closing stops stay in the stream even when the close's
-    /// final byte straddles a delta (the S6 tool_calls-null finding).
+    /// The parser-closing stop stays in the stream even when the close's final byte
+    /// straddles a delta (the S6 tool_calls-null finding).
     #[test]
     fn dsml_close_is_inclusive_and_straddle_safe() {
         let close = "</\u{ff5c}DSML\u{ff5c}tool_calls>";
         // emitted text ends mid-close (missing final '>'), the next delta completes it
         let text = format!("{}{}", "r".repeat(80), &close[..close.len() - 1]);
         let full = format!("{text}>");
-        let cut = scan_stop_cut(&text, &full, &[close.to_string()]).expect("close found");
-        assert_eq!(
-            cut,
-            full.len(),
-            "inclusive stop keeps the whole close in-stream"
-        );
-        // and a user stop straddling stays exclusive but never rewinds emitted text
+        let end = stop_end(&text, &full, &[close.to_string()]).expect("close found");
+        assert_eq!(end, full.len(), "the whole close stays in the stream");
+        // a client stop that straddles ends the stream the same way, at the stop's end
         let text2 = format!("{}{}", "y\u{2019}".repeat(50), "ST");
         let full2 = format!("{text2}OP after");
-        let cut2 = scan_stop_cut(&text2, &full2, &["STOP".to_string()]).expect("stop");
-        assert_eq!(
-            cut2,
-            text2.len(),
-            "exclusive straddle clamps at emitted text"
-        );
+        let end2 = stop_end(&text2, &full2, &["STOP".to_string()]).expect("stop");
+        assert_eq!(&full2[..end2], format!("{text2}OP"));
+    }
+
+    /// Of the stops that complete in one step, the one that starts first ends the stream: it
+    /// is the one the HTTP layer cuts at.
+    #[test]
+    fn of_the_stops_that_complete_in_one_step_the_one_that_starts_first_ends_the_stream() {
+        let stops = |list: &[&str]| {
+            list.iter()
+                .map(|stop| (*stop).to_string())
+                .collect::<Vec<_>>()
+        };
+        // nested, either list order: "abcd" starts first and ends last
+        assert_eq!(stop_end("", "xabcd!", &stops(&["bc", "abcd"])), Some(5));
+        assert_eq!(stop_end("", "xabcd!", &stops(&["abcd", "bc"])), Some(5));
+        // the outer stop straddles the sent text, the inner one is whole in the new text
+        assert_eq!(stop_end("xa", "xabcd!", &stops(&["bc", "abcd"])), Some(5));
+        // two stops that start at the same byte: the shorter one, either list order
+        assert_eq!(stop_end("", "xabcd!", &stops(&["abcd", "ab"])), Some(3));
+        assert_eq!(stop_end("", "xabcd!", &stops(&["ab", "abcd"])), Some(3));
+        // disjoint: the earlier one, whatever the list order
+        assert_eq!(stop_end("", "ab cd", &stops(&["cd", "ab"])), Some(2));
     }
 
     #[test]
@@ -4891,6 +4910,58 @@ mod stream_text_tests {
         assert_eq!(sent.streamed_answer(&stop), format!("ab\u{fffd}{CJK}"));
     }
 
+    #[test]
+    fn a_stop_string_that_completes_across_two_tokens_leaves_no_part_of_itself() {
+        // stop `:"A` over the tokens `:"` (sent before the stop is known) and `Au"}`
+        let stop = stops(&[":\"A", DSML_CLOSE]);
+        let pieces: [&[u8]; 4] = [b"{\"iron\":\"Fe\",\"gold\"", b":\"", b"Au\"}", b"never"];
+        let (tok, ids) = tokens(&pieces);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.stop, "Callback");
+        assert_eq!(sent.ids, ids[..3]);
+        assert_eq!(sent.answer(&stop), "{\"iron\":\"Fe\",\"gold\"");
+        assert_eq!(sent.streamed_answer(&stop), "{\"iron\":\"Fe\",\"gold\"");
+        // the same inside one speculative round: the stream takes the completing token, no more
+        let sent = stream_rounds(&tok, &[ids.as_slice()], &stop, &[], 64);
+        assert_eq!(sent.taken, [3]);
+        assert_eq!(sent.ids, ids[..3]);
+        assert_eq!(sent.answer(&stop), "{\"iron\":\"Fe\",\"gold\"");
+    }
+
+    #[test]
+    fn a_stop_string_that_straddles_the_next_token_leaves_no_part_of_itself() {
+        let stop = stops(&["stop"]);
+        // after a split character
+        let (tok, ids) = tokens(&[b"ab", &[0xe7, 0x97], b"\x9est", b"op tail", b"never"]);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.stop, "Callback");
+        assert_eq!(sent.ids, ids[..4]);
+        assert_eq!(sent.answer(&stop), format!("ab{CJK}"));
+        assert_eq!(sent.streamed_answer(&stop), format!("ab{CJK}"));
+        // over three tokens
+        let (tok, ids) = tokens(&[b"go ", b"s", b"to", b"p!", b"never"]);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.ids, ids[..4]);
+        assert_eq!(sent.answer(&stop), "go ");
+        assert_eq!(sent.streamed_answer(&stop), "go ");
+    }
+
+    #[test]
+    fn a_stop_string_longer_than_the_old_scan_window_ends_the_stream() {
+        // 100 bytes, one a token: when the last one arrives, 99 bytes of the stop are sent
+        let long = "0123456789".repeat(10);
+        let stop = stops(&[long.as_str()]);
+        let mut pieces: Vec<&[u8]> = vec![b"go "];
+        pieces.extend(long.as_bytes().chunks(1));
+        pieces.extend([&b"!"[..], b"never"]);
+        let (tok, ids) = tokens(&pieces);
+        let sent = stream(&tok, &ids, &stop, &[], 256);
+        assert_eq!(sent.stop, "Callback");
+        assert_eq!(sent.ids, ids[..101]);
+        assert_eq!(sent.answer(&stop), "go ");
+        assert_eq!(sent.streamed_answer(&stop), "go ");
+    }
+
     /// A parser-closing stop still ends the stream when a token boundary falls inside one of
     /// its characters. The old law left a replacement character in the text it scanned there,
     /// so the close never matched and generation ran past the tool call.
@@ -4931,6 +5002,76 @@ mod stream_text_tests {
         assert_eq!(sent.ids, ids[..2]);
         assert_eq!(sent.answer(&stop), "abcde");
         assert_eq!(sent.streamed_answer(&stop), "abcde");
+    }
+
+    /// The stream carries a client's stop whole and nothing after it. The surfaces that name
+    /// the stop an answer ended on (the Messages route's `stop_sequence`) find it there; a
+    /// stream cut before the stop left them nothing to find. The surfaces that cut no stop (the
+    /// memra-native stream, reasoning text) get none of the token's text past the stop.
+    #[test]
+    fn a_client_stop_reaches_the_http_layer_whole_and_nothing_after_it() {
+        let stop = stops(&["STOP"]);
+        let (tok, ids) = tokens(&[b"abc", b"deSTOPxyz", b"never"]);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.deltas, ["abc", "deSTOP"]);
+        let mut scrub = crate::surfaces::SurfaceScrubber::new(stop.clone());
+        let mut out = String::new();
+        for delta in &sent.deltas {
+            out.push_str(&scrub.push(delta));
+        }
+        out.push_str(&scrub.finish());
+        assert_eq!(out, "abcde");
+        assert_eq!(scrub.matched(), Some("STOP"));
+    }
+
+    /// The look-back for a stop is its length less one byte, and it may land inside a
+    /// character of the sent text.
+    #[test]
+    fn a_multi_byte_stop_whose_look_back_lands_inside_a_character_is_found() {
+        let stop = stops(&["\u{75de}ab"]);
+        let (tok, ids) = tokens(&[CJK.as_bytes(), CJK.as_bytes(), b"ab!", b"never"]);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.stop, "Callback");
+        assert_eq!(sent.ids, ids[..3]);
+        assert_eq!(sent.answer(&stop), CJK);
+        assert_eq!(sent.streamed_answer(&stop), CJK);
+    }
+
+    /// The completed stop that starts first ends the stream, whichever kind it is: a client's
+    /// stop later in the token that closes a tool call sends nothing past the close.
+    #[test]
+    fn a_client_stop_after_the_close_in_one_token_sends_nothing_past_the_close() {
+        let close = DSML_CLOSE.as_bytes();
+        let tail = [&close[9..], b" tail STOP more"].concat();
+        let (tok, ids) = tokens(&[b"x", &close[..9], &tail, b"never"]);
+        let stop = stops(&["STOP", DSML_CLOSE]);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.stop, "Callback");
+        assert_eq!(sent.ids, ids[..3]);
+        assert_eq!(sent.text(), format!("x{DSML_CLOSE}"));
+    }
+
+    /// One stop inside another, both whole in one token: the answer is cut at the one that
+    /// starts first, as it was. The rule itself is pinned on `stop_end`.
+    #[test]
+    fn of_two_stops_in_one_token_the_answer_is_cut_at_the_one_that_starts_first() {
+        let stop = stops(&["bc", "abcd"]);
+        let (tok, ids) = tokens(&[b"xabcd!", b"never"]);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.stop, "Callback");
+        assert_eq!(sent.answer(&stop), "x");
+        assert_eq!(sent.streamed_answer(&stop), "x");
+    }
+
+    /// An empty stop string matches everywhere. Request intake drops empty elements; the stream
+    /// ignores one all the same, as the worker does.
+    #[test]
+    fn an_empty_stop_string_never_ends_the_stream() {
+        let stop = stops(&["", "ZZZ"]);
+        let (tok, ids) = tokens(&[b"abc", b"def"]);
+        let sent = stream(&tok, &ids, &stop, &[], 64);
+        assert_eq!(sent.stop, "MaxNew");
+        assert_eq!(sent.deltas, ["abc", "def"]);
     }
 
     /// Unchanged: tokens that end on character boundaries stream exactly their own text, one
