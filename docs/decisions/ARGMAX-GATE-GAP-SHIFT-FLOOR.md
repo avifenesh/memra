@@ -171,13 +171,13 @@ last 12 rows of each whole-prompt table equal the 12-row table of its card's rec
 | RTX PRO 6000 Max-Q | Qwen3.8-27B | batch | 41 / 2045 | 4 | 0.050 | 0.371 | 1.222 | 4.242 (1198) | none |
 | RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | eager | 152 / 2045 | 6 | 0.147 | 1.425 | 2.810 | 4.010 (909) | none |
 | RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | batch | 156 / 2045 | 6 | 0.151 | 1.413 | 2.969 | 3.872 (909) | none |
+| RTX 5090 Laptop GPU | gemma-4-31B q4_0 | eager | 114 / 2100 | 4 | 0.139 | 1.192 | 3.353 | 6.399 (594) | none |
 | RTX 5090 Laptop GPU | gemma-4-26B q4_0 | eager | 250 / 2100 | 6 | 0.278 | 1.918 | 3.421 | 3.557 (1458) | 150, 943, 981, 1013, 1117, 1540 |
 <!-- FLOORS-TABLE:END -->
 
 Rows still to come at this commit: Qwen3.8-27B eager and batch on GB10. The change does not
 land before them: the release battery refuses a roster cell without its row, and the census
-test is red until they exist. Outside the battery: gemma-4-31B on the RTX 5090 Laptop GPU
-(`tools/local-ci.sh` runs the gate on it there) and Qwen3.5-9B on GB10.
+test is red until they exist. Outside the battery: Qwen3.5-9B on GB10.
 
 What the cells showed, and what was decided with it:
 
@@ -225,7 +225,11 @@ tree under the floors table as it stands.
   cell on the RTX 5090 Laptop GPU has 250 flips in 2,100 rows and up to 6 in one 12-row
   window; the gate's window holds 2, both near ties under its floor of 3.557 (one of them a
   flip where decode holds its token by 1.3). The budget is not contradicted at the gate's
-  window and is not changed. The gemma-4-31B cell is still to run.
+  window and is not changed. The whole-prompt gemma-4-31B cell (the model `tools/local-ci.sh`
+  gates on the RTX 5090 Laptop GPU) has 114 flips in 2,100 rows and up to 4 in one 12-row
+  window; the gate's window holds 1, a near tie (margins 0.223 and 0.377) under its floor of
+  6.399, which one agreeing row sets (row 594: prefill 0.426, decode 6.825; the next is at
+  3.37). Its last 12 rows equal both 12-row tables banked in `research/gemma-one-program-20261104/`.
 
 ## Limits
 
