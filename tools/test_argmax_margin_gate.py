@@ -70,10 +70,13 @@ class GateTest(unittest.TestCase):
                                  "1.000000000e-1", "2.000000000e-1", "3.000000000e-1", known,
                                  "research/fixture/gate.log")) + "\n")
 
-    def stub_probe(self, output, blind_judge=False):
+    def stub_probe(self, output, blind_judge=False, lying_judge=False):
         """The stub: `--judge` goes to the real probe, a measurement prints `output`. A blind
-        judge drops `--stored-rows DIR` first: a judge that never compares main's rows."""
+        judge drops `--stored-rows DIR` first: a judge that never compares main's rows. A lying
+        judge prints the real verdict and always exits 0."""
         judge = "exec '" + str(REAL_PROBE) + "' \"$@\""
+        if lying_judge:
+            judge = "'" + str(REAL_PROBE) + "' \"$@\"; exit 0"
         if blind_judge:
             judge = ("for a in \"$@\"; do shift; if [ \"$skip\" = 1 ]; then skip=0; continue; fi; "
                      "if [ \"$a\" = --stored-rows ]; then skip=1; continue; fi; set -- \"$@\" \"$a\"; done; " + judge)
@@ -84,10 +87,10 @@ class GateTest(unittest.TestCase):
         self.probe.chmod(0o700)
 
     def run_gate(self, output, model=None, extra=(), env=None, prime=PRIME_MATCH, device=DEVICE,
-                 blind_judge=False):
+                 blind_judge=False, lying_judge=False):
         if prime is not None:
             output = output + "\n" + prime if output else prime
-        self.stub_probe(output, blind_judge)
+        self.stub_probe(output, blind_judge, lying_judge)
         # The model digest cache lives under the fixture, not the caller's home.
         return subprocess.run(["bash", str(self.gate), str(model or self.gguf),
             "--prompt", str(self.prompt), "--window", "2", "--logdir", str(self.root / "logs"),
@@ -423,7 +426,7 @@ class GateTest(unittest.TestCase):
                       "    detail pos=11 the examination line", r.stdout)
         self.assertNotIn("ROW-DIFF pos=10", r.stdout)
         self.assertIn("  STORED-ROWS: DIFFERENT (1 of 2 positions differ from main's rows", r.stdout)
-        self.assertIn("or a row that differs from main's stored rows", r.stdout)
+        self.assertIn("  FAIL: the window differs from main's stored rows", r.stdout)
         # A token change at a margin under the floor: a near tie to the floor rule, a difference here.
         tie = "10 1 1.0000 1 1.0000 0.1000 yes\n11 3 1.0e-2 2 1.0e-2 2.0e-2 NO"
         r = self.run_gate(tie)
@@ -447,7 +450,7 @@ class GateTest(unittest.TestCase):
         self.add_floor("model", self.prompt, "eager", device="another device")
         r = self.run_gate(ROWS, device="another device")
         self.assertIn('  STORED-ROWS: none (no stored table for model=model ', r.stdout)
-        self.assertIn('device="another device" window=2;', r.stdout)
+        self.assertIn('device="another device" window=2 experts=none;', r.stdout)
         self.prompt.write_text("Other prompt bytes.\n")
         r = self.run_gate(ROWS)
         self.assertIn("  STORED-ROWS: none (no stored table", r.stdout)
@@ -498,14 +501,17 @@ class GateTest(unittest.TestCase):
         cache = (self.root / "cache/memra/model-sha256.tsv").read_text().splitlines()
         self.assertEqual(len(cache), 1)
         self.assertTrue(cache[0].startswith(f"{self.gguf.resolve()}\t3 "), cache)
-        # Same size and modification time, other bytes: the cache cannot see it ...
+        # Same size, the modification time set back, other bytes: the change time moved, so the
+        # cache does not hand out the old digest.
         stat = self.gguf.stat()
         self.gguf.write_bytes(b"abd")
         os.utime(self.gguf, ns=(stat.st_atime_ns, stat.st_mtime_ns))
-        r = self.run_gate(ROWS)
-        self.assertIn(f"  model sha256: {old} (cached)", r.stdout)
-        # ... and --rehash-model reads the bytes.
         new = hashlib.sha256(b"abd").hexdigest()
+        r = self.run_gate(ROWS)
+        self.assertIn(f"  model sha256: {new} (hashed)", r.stdout)
+        r = self.run_gate(ROWS)
+        self.assertIn(f"  model sha256: {new} (cached)", r.stdout)
+        # --rehash-model reads the bytes whatever the cache holds.
         r = self.run_gate(ROWS, extra=("--rehash-model",))
         self.assertIn(f"  model sha256: {new} (hashed)", r.stdout)
         # Another size is another key. A symlink is keyed by the file it resolves to.
@@ -526,6 +532,85 @@ class GateTest(unittest.TestCase):
         (self.hf / "b.json").write_bytes(b"{ }")
         r = self.run_gate(ROWS, model=self.hf)
         self.assertIn("(hashed)", r.stdout)
+
+    def test_a_floor_rule_failure_is_a_fail_with_or_without_stored_rows(self):
+        # Under --require-floor a missing stored table refuses (or does not judge) only a cell
+        # the floor rule passed: a wide flip is a FAIL, never NO-STORED-ROWS or NOT-JUDGED.
+        self.install_device_rules()
+        (self.root / "tools/argmax-margin-rows").mkdir()
+        for device in ("NVIDIA GeForce RTX 5090", "NVIDIA H100 80GB HBM3"):
+            with self.subTest(device=device):
+                self.add_floor("model", self.prompt, "eager", device=device)
+                r = self.run_gate(WIDE_FLIP, device=device, extra=("--require-floor",))
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn("  WIDE-FLIP pos=10 ", r.stdout)
+                self.assertIn("  FAIL: a wide flip", r.stdout)
+                self.assertIn("(no stored rows for this cell", r.stdout)
+                self.assertNotIn("NO-STORED-ROWS", r.stdout)
+                self.assertNotIn("NOT-JUDGED", r.stdout)
+
+    def test_a_differing_row_fails_whatever_the_judges_exit_code(self):
+        self.store_rows(ROWS)
+        moved = "10 1 1.0000 1 1.0000 0.1000 yes\n11 2 1.0000 2 1.2000 0.1000 yes"
+        r = self.run_gate(moved, lying_judge=True)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("  STORED-ROWS: DIFFERENT", r.stdout)
+        self.assertIn("  FAIL: the window differs from main's stored rows", r.stdout)
+        self.assertNotIn("PASS:", r.stdout)
+        # The canary does not pass on a judge that exits 0 on a difference.
+        r = self.run_gate(ROWS, extra=("--canary",), lying_judge=True)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("CANARY FAIL", r.stdout)
+
+    def test_the_tree_stored_rows_parse_with_the_engine_and_compare_identical(self):
+        # Every tracked stored table read by the built probe: a log made of its own rows is
+        # identical to it under its own key, through the tree's directory.
+        rows_dir = REPO / "tools/argmax-margin-rows"
+        tables = sorted(rows_dir.glob("*.rows"))
+        self.assertTrue(tables)
+        for path in tables:
+            with self.subTest(table=path.name):
+                head, _, body = path.read_text().partition("\nrows\n")
+                h = dict(l.split("\t", 1) for l in head.splitlines() if "\t" in l and not l.startswith("#"))
+                log = self.root / "tree-table.log"
+                # The run's own expert placement, as the engine prints it.
+                placed = {"resident": "[moe] resident-experts decision (dev0): experts 1.00GB + trunk 1.00GB "
+                                      "vs free 9.00GB (expert budget 6.00GB) -> RESIDENT\n",
+                          "slru": "[moe] resident-experts decision (dev0): experts 1.00GB + trunk 1.00GB "
+                                  "vs free 3.00GB (expert budget 0.00GB) -> SLRU cache\n",
+                          "none": ""}[h["experts"]]
+                log.write_text(placed + "pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree\n"
+                               + body)
+                r = subprocess.run([str(REAL_PROBE), "--judge", str(log), "--max-flips", h["window"],
+                                    "--model", h["model"], "--prompt", h["prompt"], "--prompt-sha256", h["prompt_sha256"],
+                                    "--decode", h["decode"], "--device", h["device"], "--model-sha256", h["model_sha256"],
+                                    "--window", h["window"], "--stored-rows", str(rows_dir)],
+                                   capture_output=True, text=True, timeout=20)
+                self.assertIn("STORED-ROWS: identical (" + h["window"] + " rows equal main's", r.stdout, r.stderr)
+
+    def test_a_run_whose_experts_were_placed_otherwise_is_not_compared_and_is_refused(self):
+        # Main's rows measured with the MoE experts resident; the same window from a run whose
+        # experts went to the SLRU cache (another program) is not compared, and the battery's
+        # switch refuses it with the placement named.
+        self.install_device_rules()
+        resident = ("[moe] resident-experts decision (dev0): experts 1.00GB + trunk 1.00GB vs free 9.00GB "
+                    "(expert budget 6.00GB) -> RESIDENT")
+        slru = ("[moe] resident-experts decision (dev0): experts 1.00GB + trunk 1.00GB vs free 3.00GB "
+                "(expert budget 0.00GB) -> SLRU cache")
+        device = "NVIDIA GeForce RTX 5090"
+        self.add_floor("model", self.prompt, "eager", device=device)
+        self.store_rows(resident + "\n" + ROWS, device=device)
+        r = self.run_gate(resident + "\n" + ROWS, device=device, extra=("--require-floor",))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("  STORED-ROWS: identical ", r.stdout)
+        r = self.run_gate(slru + "\n" + ROWS, device=device)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("  STORED-ROWS: none (not comparable: this run's MoE experts are slru, main's rows "
+                      "for this cell were measured with experts resident;", r.stdout)
+        r = self.run_gate(slru + "\n" + ROWS, device=device, extra=("--require-floor",))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("argmax-margin-gate: NO-STORED-ROWS (not comparable: this run's MoE experts are slru", r.stdout)
+        self.assertIn("rerun with the card free enough for the experts to stay resident", r.stdout)
 
     def test_canary_moves_one_margin_and_requires_exactly_that_row_diff(self):
         for model, extra, prime in ((self.gguf, (), PRIME_MATCH), (self.hf, BATCH, SERVED_MATCH)):
@@ -555,7 +640,7 @@ class GateTest(unittest.TestCase):
         text = path.read_text()
         sha = hashlib.sha256(self.prompt.read_bytes()).hexdigest()
         self.assertIn(f"model\tmodel\nmodel_sha256\t{hashlib.sha256(b'').hexdigest()}\nprompt\tprompt\n"
-                      f"prompt_sha256\t{sha}\ndecode\teager\ndevice\t{DEVICE}\nwindow\t2\ncommit\tfixture\n"
+                      f"prompt_sha256\t{sha}\ndecode\teager\ndevice\t{DEVICE}\nwindow\t2\nexperts\tnone\ncommit\tfixture\n"
                       "receipt\tresearch/fixture/cal.log\nrows\n"
                       "11 2 5.0 2 5.75 0.8 yes\n12 3 2.0e-2 4 3.0e-2 4.0e-2 NO\n", text)
         r = self.run_gate("11 2 5.0 2 5.75 0.8 yes\n12 3 2.0e-2 4 3.0e-2 4.0e-2 NO")

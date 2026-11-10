@@ -19,6 +19,14 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLICATION = "research/release-qualification/"
 POINTER = PUBLICATION + "current.json"
 BINARIES = ("kernel-check", "run-gen", "run-spec", "argmax-margin-probe", "memra-server", "tok-parity")
+def stored_rows_identical(lines):
+    """An argmax cell's window equals main's stored rows (memra#1204): exactly one
+    `STORED-ROWS: identical` line and no other STORED-ROWS verdict. The battery runs the gate with
+    --require-floor on a maintained device, where a cell without stored rows is refused."""
+    verdicts = [line for line in lines if line.startswith("STORED-ROWS: ")]
+    return len(verdicts) == 1 and verdicts[0].startswith("STORED-ROWS: identical ")
+
+
 # Batched-prime classes an argmax cell may report (tools/argmax-margin-gate.sh PRIME-SUMMARY).
 ARGMAX_PRIME_PASS = ("MATCH", "FLIP-NEARTIE", "SKIP:tokenwise-served")
 MANIFESTS = ("tools/kernel-check-27b.cells", "tools/kernel-check-step35.cells")
@@ -421,6 +429,7 @@ def cell_verdicts(run, evidence, repo, head):
             served = [line for line in lines if line.startswith("SERVED-SUMMARY served=")]
             require(sum(line.startswith("PASS:") for line in lines) == 1
                     and any(re.search(r"SUMMARY flips=\d+ bad=0\b", line) for line in lines)
+                    and stored_rows_identical(lines)
                     and served in (["SERVED-SUMMARY served=MATCH"],
                                    ["SERVED-SUMMARY served=EAGER-ROUTED"])
                     and not any("SKIP" in line or line.startswith("FAIL") for line in lines),
@@ -434,6 +443,7 @@ def cell_verdicts(run, evidence, repo, head):
             prime_ok = len(prime) == 1 and prime[0].split("=", 1)[1] in ARGMAX_PRIME_PASS
             require(sum(line.startswith("PASS:") for line in lines) == 1
                     and any(re.search(r"SUMMARY flips=\d+ bad=0\b", line) for line in lines)
+                    and stored_rows_identical(lines)
                     and prime_ok
                     and not any(("SKIP" in line and not line.startswith(("PRIME-SUMMARY", "PRIME-GATE:")))
                                 or line.startswith("FAIL") for line in lines),

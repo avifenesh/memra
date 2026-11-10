@@ -419,8 +419,9 @@ fn parse_judge_args(args: &[String]) -> Result<JudgeArgs, String> {
     Ok(out)
 }
 
-/// The stored-table key of a judge call.
-fn stored_key(args: &JudgeArgs) -> StoredKey {
+/// The stored-table key of a judge call on `log`: the arguments, and where the log's MoE
+/// experts ran (read from the log's own decision lines).
+fn stored_key(args: &JudgeArgs, log: &str) -> StoredKey {
     StoredKey {
         model: args.model.clone(),
         model_sha256: args.model_sha256.clone(),
@@ -429,6 +430,7 @@ fn stored_key(args: &JudgeArgs) -> StoredKey {
         decode: args.decode.clone(),
         device: args.device.clone(),
         window: args.window,
+        experts: argmax_margin::experts_of(log).into(),
     }
 }
 
@@ -443,7 +445,7 @@ fn stored_table_of(args: &JudgeArgs, log: &str) -> Result<StoredTable, String> {
         ));
     }
     Ok(StoredTable {
-        key: stored_key(args),
+        key: stored_key(args, log),
         commit: args.commit.clone(),
         receipt: args.receipt.clone(),
         rows: lines[lines.len() - args.window..].to_vec(),
@@ -459,19 +461,40 @@ fn stored_rows_verdict(
     tables: &[StoredTable],
     detail: &dyn Fn(usize) -> Option<String>,
 ) -> Result<(String, bool), String> {
-    let key = stored_key(args);
+    let key = stored_key(args, log);
     let Some(table) = argmax_margin::find_stored(tables, &key)? else {
+        // A table for every field but the expert placement: the run took another dispatch
+        // program than main's rows (the SLRU cache on a card without room for the experts).
+        if let Some(other) = tables.iter().find(|t| {
+            t.key.experts != key.experts
+                && StoredKey {
+                    experts: key.experts.clone(),
+                    ..t.key.clone()
+                } == key
+        }) {
+            return Ok((
+                format!(
+                    "STORED-ROWS: none (not comparable: this run's MoE experts are {}, main's \
+                     rows for this cell were measured with experts {}; the table is not compared \
+                     with main's)\n",
+                    key.experts, other.key.experts
+                ),
+                false,
+            ));
+        }
         return Ok((
             format!(
                 "STORED-ROWS: none (no stored table for model={} model_sha256={} prompt={} \
-                 sha256={} decode={} device={:?} window={}; the table is not compared with main's)\n",
+                 sha256={} decode={} device={:?} window={} experts={}; the table is not compared \
+                 with main's)\n",
                 key.model,
                 key.model_sha256,
                 key.prompt,
                 key.prompt_sha256,
                 key.decode,
                 key.device,
-                key.window
+                key.window,
+                key.experts
             ),
             false,
         ));
@@ -1372,6 +1395,44 @@ mod tests {
         // No directory named: the guard is not run and prints nothing.
         let (text, _) = judge_log(&judge_args(&[]), &table(&moved), Some(FLOORS), None).unwrap();
         assert!(!text.contains("STORED-ROWS"), "{text}");
+    }
+
+    #[test]
+    fn a_run_whose_moe_experts_were_placed_otherwise_is_not_compared() {
+        // Main's rows measured with the experts resident; the same window from a run that put
+        // them in the SLRU cache (another dispatch program) is no stored table, said so, and a
+        // run measured that way stores its own placement.
+        let resident = "[moe] resident-experts decision (dev0): experts 1.00GB + trunk 1.00GB vs free 9.00GB (expert budget 6.00GB) -> RESIDENT\n";
+        let slru = "[moe] resident-experts decision (dev0): experts 1.00GB + trunk 1.00GB vs free 3.00GB (expert budget 0.00GB) -> SLRU cache\n";
+        let a = stored_args(&[
+            "--calibrate",
+            "--receipt",
+            "r",
+            "--rows-out",
+            "x.rows",
+            "--commit",
+            "c",
+        ]);
+        let tables =
+            vec![stored_table_of(&a, &format!("{resident}{}", table(&main_window()))).unwrap()];
+        assert_eq!(tables[0].key.experts, "resident");
+        let same = format!("{resident}{}", table(&main_window()));
+        let (text, code) =
+            judge_log(&stored_args(&[]), &same, Some(FLOORS), Some(&tables)).unwrap();
+        assert_eq!(code, 0, "{text}");
+        assert!(text.contains("STORED-ROWS: identical "), "{text}");
+        for (other, placed) in [(slru.to_string(), "slru"), (String::new(), "none")] {
+            let log = format!("{other}{}", table(&main_window()));
+            let (text, code) =
+                judge_log(&stored_args(&[]), &log, Some(FLOORS), Some(&tables)).unwrap();
+            assert_eq!(code, 0, "{text}");
+            assert!(
+                text.contains(&format!(
+                    "STORED-ROWS: none (not comparable: this run's MoE experts are {placed}, main's rows for this cell were measured with experts resident;"
+                )),
+                "{text}"
+            );
+        }
     }
 
     #[test]

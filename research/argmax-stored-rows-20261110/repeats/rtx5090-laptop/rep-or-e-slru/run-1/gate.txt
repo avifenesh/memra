@@ -1,0 +1,59 @@
+argmax-margin-gate: model=Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf prompt=board-2048.txt window=12 decode=eager canary=0
+  device: NVIDIA GeForce RTX 5090 Laptop GPU
+  model sha256: 72ff9600aa2b0de77a5b27041a84448c2ce88c7b2055529fc23b3cd5bf518fd3 (cached)
+  flip budget: 1 (row: default)
+  FLOOR: 3.5582 (largest gap shift over 1846 agreeing rows, set by row 306; p50 0.1972, p99 1.5224, p99.9 2.2653; known rows (calibration flips above it, memra#1203): 41 (shift 4.3718), 1809 (shift 4.1497); research/argmax-gate-rule-20261110/calibration/rtx5090-laptop/ornith-eager/probe.log)
+  SUMMARY flips=0 bad=0 near_ties=0 wide_flips=0 wide_rows=0 uncalibrated_flips=0 known_rows=0 known_rows_wider=0 floor=3.5582 budget=1
+  ROW-DIFF pos=2036
+    stored (main): prefill_top1=24822 margin_p=8.701321602e0 decode_top1=24822 margin_d=8.518913269e0 spread=1.188983917e-1
+    candidate:     prefill_top1=24822 margin_p=8.746060371e0 decode_top1=24822 margin_d=8.518913269e0 spread=1.563868523e-1
+    detail pos=2036 prefill: top1=24822 ".rs" 16.2901 top2=2318 ".sh" 7.5440 margin=8.7461 at-decode-top1=16.2901 | decode: top1=24822 ".rs" 16.2193 top2=2318 ".sh" 7.7004 margin=8.5189 at-prefill-top1=16.2193 | spread=0.1564 gap_shift=0.2271
+  ROW-DIFF pos=2037
+    stored (main): prefill_top1=63 margin_p=1.118469238e0 decode_top1=63 margin_d=1.210300446e0 spread=7.147789001e-2
+    candidate:     prefill_top1=63 margin_p=9.608421326e-1 decode_top1=63 margin_d=1.210300446e0 spread=2.070541382e-1
+    detail pos=2037 prefill: top1=63 "`" 17.7662 top2=7561 "`," 16.8053 margin=0.9608 at-decode-top1=17.7662 | decode: top1=63 "`" 17.9732 top2=7561 "`," 16.7629 margin=1.2103 at-prefill-top1=17.9732 | spread=0.2071 gap_shift=0.2495
+  ROW-DIFF pos=2038
+    stored (main): prefill_top1=318 margin_p=7.163505554e-1 decode_top1=318 margin_d=7.237071991e-1 spread=1.164474487e-1
+    candidate:     prefill_top1=318 margin_p=7.590541840e-1 decode_top1=318 margin_d=7.237071991e-1 spread=7.264137268e-2
+    detail pos=2038 prefill: top1=318 " (" 19.5779 top2=11069 " →" 18.8188 margin=0.7591 at-decode-top1=19.5779 | decode: top1=318 " (" 19.5052 top2=11069 " →" 18.7815 margin=0.7237 at-prefill-top1=19.5052 | spread=0.0726 gap_shift=0.0353
+  ROW-DIFF pos=2039
+    stored (main): prefill_top1=42714 margin_p=9.470367432e-1 decode_top1=42714 margin_d=6.170597076e-1 spread=2.959938049e-1
+    candidate:     prefill_top1=42714 margin_p=3.846015930e-1 decode_top1=42714 margin_d=6.170597076e-1 spread=5.660095215e-1
+    detail pos=2039 prefill: top1=42714 "fat" 18.2009 top2=50 "S" 17.8163 margin=0.3846 at-decode-top1=18.2009 | decode: top1=42714 "fat" 18.7670 top2=50 "S" 18.1499 margin=0.6171 at-prefill-top1=18.7670 | spread=0.5660 gap_shift=0.2325
+  ROW-DIFF pos=2040
+    stored (main): prefill_top1=40049 margin_p=7.587457657e0 decode_top1=40049 margin_d=8.568016052e0 spread=7.420063019e-1
+    candidate:     prefill_top1=40049 margin_p=7.840295792e0 decode_top1=40049 margin_d=8.568016052e0 spread=3.913993835e-1
+    detail pos=2040 prefill: top1=40049 "inja" 21.8359 top2=620 "cc" 13.9957 margin=7.8403 at-decode-top1=21.8359 | decode: top1=40049 "inja" 22.2273 top2=620 "cc" 13.6593 margin=8.5680 at-prefill-top1=22.2273 | spread=0.3914 gap_shift=0.7277
+  ROW-DIFF pos=2041
+    stored (main): prefill_top1=681 margin_p=2.401103973e-1 decode_top1=681 margin_d=3.759765625e-2 spread=1.278419495e-1
+    candidate:     prefill_top1=681 margin_p=2.542037964e-1 decode_top1=681 margin_d=3.759765625e-2 spread=3.517704010e-1
+    detail pos=2041 prefill: top1=681 ")," 17.3485 top2=8 ")" 17.0943 margin=0.2542 at-decode-top1=17.3485 | decode: top1=681 ")," 16.9967 top2=8 ")" 16.9591 margin=0.0376 at-prefill-top1=16.9967 | spread=0.3518 gap_shift=0.2166
+  ROW-DIFF pos=2042
+    stored (main): prefill_top1=681 margin_p=2.567424774e-1 decode_top1=681 margin_d=1.086120605e-1 spread=1.347103119e-1
+    candidate:     prefill_top1=681 margin_p=3.083591461e-1 decode_top1=681 margin_d=1.086120605e-1 spread=1.053867340e-1
+    detail pos=2042 prefill: top1=681 ")," 18.7646 top2=8 ")" 18.4562 margin=0.3084 at-decode-top1=18.7646 | decode: top1=681 ")," 18.6592 top2=8 ")" 18.5506 margin=0.1086 at-prefill-top1=18.6592 | spread=0.1054 gap_shift=0.1997
+  ROW-DIFF pos=2043
+    stored (main): prefill_top1=735 margin_p=5.995883942e-1 decode_top1=735 margin_d=5.080127716e-1 spread=2.003974915e-1
+    candidate:     prefill_top1=735 margin_p=6.434516907e-1 decode_top1=735 margin_d=5.080127716e-1 spread=2.998199463e-1
+    detail pos=2043 prefill: top1=735 " |" 20.3223 top2=1892 " —" 19.6789 margin=0.6435 at-decode-top1=20.3223 | decode: top1=735 " |" 20.0225 top2=1892 " —" 19.5145 margin=0.5080 at-prefill-top1=20.0225 | spread=0.2998 gap_shift=0.1354
+  ROW-DIFF pos=2044
+    stored (main): prefill_top1=264 margin_p=2.385614395e0 decode_top1=264 margin_d=2.556728363e0 spread=2.371940613e-1
+    candidate:     prefill_top1=264 margin_p=2.506561279e0 decode_top1=264 margin_d=2.556728363e0 spread=1.911334991e-1
+    detail pos=2044 prefill: top1=264 " a" 19.0380 top2=2972 " **" 16.5315 margin=2.5066 at-decode-top1=19.0380 | decode: top1=264 " a" 18.8971 top2=2972 " **" 16.3403 margin=2.5567 at-prefill-top1=18.8971 | spread=0.1911 gap_shift=0.0502
+  ROW-DIFF pos=2045
+    stored (main): prefill_top1=2972 margin_p=2.528703690e0 decode_top1=2972 margin_d=2.166429520e0 spread=3.190574646e-1
+    candidate:     prefill_top1=2972 margin_p=2.427259445e0 decode_top1=2972 margin_d=2.166429520e0 spread=2.504863739e-1
+    detail pos=2045 prefill: top1=2972 " **" 18.4872 top2=8400 " fat" 16.0599 margin=2.4273 at-decode-top1=18.4872 | decode: top1=2972 " **" 18.4769 top2=8400 " fat" 16.3104 margin=2.1664 at-prefill-top1=18.4769 | spread=0.2505 gap_shift=0.2608
+  ROW-DIFF pos=2046
+    stored (main): prefill_top1=42714 margin_p=3.829055786e0 decode_top1=42714 margin_d=4.003623962e0 spread=1.271286011e-1
+    candidate:     prefill_top1=42714 margin_p=3.323940277e0 decode_top1=42714 margin_d=4.003623962e0 spread=4.040641785e-1
+    detail pos=2046 prefill: top1=42714 "fat" 19.7732 top2=27653 "`." 16.4492 margin=3.3239 at-decode-top1=19.7732 | decode: top1=42714 "fat" 20.0488 top2=27653 "`." 16.0452 margin=4.0036 at-prefill-top1=20.0488 | spread=0.4041 gap_shift=0.6797
+  ROW-DIFF pos=2047
+    stored (main): prefill_top1=2131 margin_p=1.213752747e0 decode_top1=2131 margin_d=1.157195091e0 spread=6.974563599e-1
+    candidate:     prefill_top1=2131 margin_p=1.423104286e0 decode_top1=2131 margin_d=1.157195091e0 spread=3.585557938e-1
+    detail pos=2047 prefill: top1=2131 "ux" 11.8538 top2=17 "2" 10.4307 margin=1.4231 at-decode-top1=11.8538 | decode: top1=2131 "ux" 11.4952 top2=17 "2" 10.3380 margin=1.1572 at-prefill-top1=11.4952 | spread=0.3586 gap_shift=0.2659
+  STORED-ROWS: DIFFERENT (12 of 12 positions differ from main's rows, measured at 031f146690; research/argmax-gate-rule-20261110/calibration/rtx5090-laptop/ornith-eager/probe.log)
+  PRIME-SUMMARY prime=MATCH
+    PRIME-GATE: class=MATCH bp_argmax=2131 tw_argmax=2131 tw_margin=1.157195091e0 bp_margin=7.839183807e-1 maxdiff=1.634703875e0
+  FAIL: a wide flip, a wide row, a known row wider than recorded, a flip with no floor to judge it by, too many near ties, or a row that differs from main's stored rows (the lines above name each row)
+  raw: run-1-235051/gate-Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp-board-2048.log

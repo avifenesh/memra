@@ -50,7 +50,8 @@ pub fn plain() -> &'static str { golden!("plain") }
 CHAT_V2 = CHAT_V1.replace("pub fn plain()", "pub fn plain_default()")
 DEVICE = {"name": "NVIDIA GeForce RTX 5090 Laptop GPU", "uuid_sha256": "0" * 64,
           "compute_cap": "12.0", "driver": "CPU fixture"}
-BATCH_LOG = "  SUMMARY flips=0 bad=0\n  SERVED-SUMMARY served=MATCH\n  PASS: CPU fixture calibrated verdict\n"
+STORED_LINE = "  STORED-ROWS: identical (12 rows equal main's, measured at 031f146690; research/x/probe.log)\n"
+BATCH_LOG = "  SUMMARY flips=0 bad=0\n" + STORED_LINE + "  SERVED-SUMMARY served=MATCH\n  PASS: CPU fixture calibrated verdict\n"
 
 
 class Repo:
@@ -109,7 +110,8 @@ class Repo:
 
     def record(self, commit, kinds, *, device_class="rtx5090", device=DEVICE, target="120a", slowdown=0.0,
                name=None, accept=None, serve_tail="serve-smoke: 0 failed", perf_base=None, models=("model-a", "model-b"),
-               batch_log=BATCH_LOG):
+               batch_log=BATCH_LOG, argmax_log=None):
+        argmax_log = argmax_log or ("SUMMARY flips=0 bad=0\n" + STORED_LINE + "  PASS: CPU fixture calibrated verdict\n")
         out = self.root / f"evidence-{len(list(self.root.glob('evidence-*')))}"
         (out / "battery").mkdir(parents=True)
         shutil.copy2(self.repo / "tools/release-roster.tsv", out / "roster.tsv")
@@ -127,7 +129,7 @@ class Repo:
             # The cells tools/release-battery.sh writes per roster model, in its order: the eager
             # argmax gate, the served-batch argmax gate (`--decode batch`), then run-spec.
             for model in ("model-a", "model-b"):
-                logs.append(("argmax", model, "SUMMARY flips=0 bad=0\n  PASS: CPU fixture calibrated verdict\n"))
+                logs.append(("argmax", model, argmax_log))
                 if batch_log is not None:
                     logs.append(("argmax-batch", model, batch_log))
                 logs.append(("spec", model, spec))
@@ -251,6 +253,17 @@ class CellGate(unittest.TestCase):
         self.assertIn("served-batch argmax cell model-a did not pass its calibrated gate", mismatch["failures"][0])
         unserved = self.f.record(code, ["battery"], batch_log=BATCH_LOG.replace("  SERVED-SUMMARY served=MATCH\n", ""))
         self.assertEqual(unserved["status"], "fail")
+        # memra#1204: a passing argmax cell carries exactly one STORED-ROWS: identical line.
+        for bad in ("SUMMARY flips=0 bad=0\n  PASS: CPU fixture calibrated verdict\n",
+                    "SUMMARY flips=0 bad=0\n" + STORED_LINE.replace("identical", "DIFFERENT")
+                    + "  PASS: CPU fixture calibrated verdict\n",
+                    "SUMMARY flips=0 bad=0\n  STORED-ROWS: none (no stored table)\n  PASS: CPU fixture calibrated verdict\n"):
+            with self.subTest(argmax_log=bad[:60]):
+                unstored = self.f.record(code, ["battery"], argmax_log=bad)
+                self.assertEqual(unstored["status"], "fail")
+                self.assertIn("argmax cell model-a did not pass its calibrated gate", unstored["failures"][0])
+        unstored = self.f.record(code, ["battery"], batch_log=BATCH_LOG.replace(STORED_LINE, ""))
+        self.assertEqual(unstored["status"], "fail")
         eager = self.f.record(code, ["battery"], name="eager-routed",
                               batch_log=BATCH_LOG.replace("served=MATCH", "served=EAGER-ROUTED"))
         self.assertEqual(eager["status"], "pass", eager["failures"])
