@@ -101,6 +101,12 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("native-checkpoint", value["transitive_impact"])
         self.assert_development_only(value)
 
+    def test_a_drafter_change_plans_the_windowless_dspark_gate(self):
+        for path in ("crates/memra-engine/src/dflash.rs", "crates/memra-engine/src/bin/dspark_q38_gate.rs"):
+            with self.subTest(path=path):
+                self.assertIn("dsparkq38", plan.make_plan([path])["probes"])
+        self.assertNotIn("dsparkq38", plan.make_plan(["crates/memra-engine/src/spec.rs"])["probes"])
+
     def test_prefill_numeric_change_keeps_measured_acceptance_blind_spot(self):
         value = plan.make_plan(["crates/memra-engine/cu/mmq_nvfp4_w4a8.cu"])
         self.assertIn("accept", value["probes"])
@@ -433,6 +439,27 @@ class CheckoutAndWrapperTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("samp: SKIP", result.stdout)
         self.assertNotIn("samp: PASS", result.stdout)
+
+    def test_a_cmd_probe_whose_artifact_is_absent_skips_before_running(self):
+        self.script(self.repo / "tools/fake-check.sh",
+                    'printf "fake-check ran\\n" >> "$CALLS"\nprintf "fake-check: PASS\\n"\n')
+        args = f"{self.root / 'absent.gguf'} {self.root / 'absent-drafter'}"
+        self.replace_probe("dsparkq38", ["cmd", "tools/fake-check.sh", args, "-", "-"])
+        result = self.wrapper("--probes", "dsparkq38")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("dsparkq38: SKIP (no artifact at", result.stdout)
+        self.assertNotIn("dsparkq38: PASS", result.stdout)
+        ran = self.calls.read_text() if self.calls.exists() else ""
+        self.assertNotIn("fake-check ran", ran, "an absent artifact must skip before the command")
+
+    def test_a_cmd_probe_with_its_artifacts_present_runs(self):
+        self.script(self.repo / "tools/fake-check.sh", 'printf "fake-check: PASS\\n"\n')
+        model, drafter = self.root / "model.gguf", self.root / "drafter"
+        model.write_text("CPU fixture, not a real model")
+        drafter.mkdir()
+        self.replace_probe("dsparkq38", ["cmd", "tools/fake-check.sh", f"{model} {drafter}", "-", "-"])
+        result = self.wrapper("--probes", "dsparkq38")
+        self.assertIn("dsparkq38: PASS", result.stdout)
 
     def setup_model_probe(self, probe, kind, log):
         model = self.repo / "model.gguf"

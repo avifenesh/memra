@@ -71,6 +71,9 @@
 # --- engine Rust: spec/draft pipeline (spec.rs also hosts the sampled-spec host Philox mirror —
 # samp oracles the device twins the greedy spec probes never run) ---
 ^crates/memra-engine/src/(spec|gemma_spec|dflash|eagle|round_stream)\.rs$	synthetic	samp,accept	q35spec,g31spec
+# The DSpark drafter ring, prime ingest and round live in dflash.rs; dsparkq38 runs them on the
+# windowless DSpark drafter with the ladder window (memra#1159), which samp/accept/q35spec never load.
+^crates/memra-engine/src/(dflash\.rs|bin/dspark_q38_gate\.rs)$	synthetic	dsparkq38	-
 # --- engine Rust: MoE residency/spill. THE PROBE-REGIME LESSON (2026-08-03): on a 24GB rig
 # every MoE probe model loads RESIDENT (whole bank in device slabs), so the SLRU cache, the
 # staged moe_cached_gemm* loop, and the spill paths are NEVER exercised by a naked probe — a
