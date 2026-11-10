@@ -26,6 +26,8 @@
 #include <math.h>
 #include <stdint.h>
 
+#include <atomic>
+
 typedef uint16_t v41_bf;  // raw bf16 bits
 
 #define V41_ERR()                                                   \
@@ -33,6 +35,28 @@ typedef uint16_t v41_bf;  // raw bf16 bits
         cudaError_t e_ = cudaGetLastError();                        \
         return e_ == cudaSuccess ? 0 : 10000 + (int)e_;             \
     } while (0)
+
+// A kernel's dynamic shared-memory limit and its carveout are attributes of the function in a
+// context, not of a launch. Each is set once a device, to the most the kernel ever asks for (the
+// first time a launch needs more than the default 48 KB), and never to a call's own size: two threads issuing on one card with different sizes would otherwise launch
+// above the limit the other had just set (CUDA error 1 or 701 in a pipeline of stages sharing a
+// card). `kernel` goes in parentheses when it is a template instance.
+#define V41_ONCE_A_DEVICE(stmt)                                          \
+    do {                                                                 \
+        static std::atomic<unsigned long long> done_{0};                 \
+        int dev_ = 0;                                                    \
+        cudaGetDevice(&dev_);                                            \
+        unsigned long long bit_ = 1ull << (dev_ & 63);                   \
+        if (!(done_.load(std::memory_order_relaxed) & bit_)) {           \
+            stmt;                                                        \
+            done_.fetch_or(bit_, std::memory_order_relaxed);             \
+        }                                                                \
+    } while (0)
+#define V41_SMEM_LIMIT(kernel, bytes) \
+    V41_ONCE_A_DEVICE(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, bytes))
+#define V41_CARVE_MAX(kernel)                                                                        \
+    V41_ONCE_A_DEVICE(cudaFuncSetAttribute(kernel, cudaFuncAttributePreferredSharedMemoryCarveout, \
+                                           cudaSharedmemCarveoutMaxShared))
 
 // ---------------------------------------------------------------------------------------------
 // scalar helpers
@@ -1224,10 +1248,8 @@ extern "C" int memra_v41_gemm_f8_tiles(const void* a, long lda, const void* as, 
 #define V41_PIPE_TL(WF, OF, BMX)                                                                               \
     do {                                                                                                       \
         int sm_ = V41Pipe<WF, BMX>::SMEM;                                                                      \
-        cudaFuncSetAttribute(v41_gemm_f8_pipe_tiles_kernel<WF, OF, BMX>,                                       \
-                             cudaFuncAttributeMaxDynamicSharedMemorySize, sm_);                                \
-        cudaFuncSetAttribute(v41_gemm_f8_pipe_tiles_kernel<WF, OF, BMX>,                                       \
-                             cudaFuncAttributePreferredSharedMemoryCarveout, cudaSharedmemCarveoutMaxShared);  \
+        V41_SMEM_LIMIT((v41_gemm_f8_pipe_tiles_kernel<WF, OF, BMX>), sm_);                                     \
+        V41_CARVE_MAX((v41_gemm_f8_pipe_tiles_kernel<WF, OF, BMX>));                                           \
         dim3 gp((n + 127) / 128, max_tiles);                                                                   \
         v41_gemm_f8_pipe_tiles_kernel<WF, OF, BMX><<<gp, 256, sm_, st>>>(A, lda, As, ldas, T, ntiles, E, proj, ldb, \
                                                                           ldbs, c, ldc, n, k);                 \
@@ -1255,9 +1277,7 @@ extern "C" int memra_v41_gemm_f8(const void* a, long lda, const void* as, long l
         dim3 grid((n + 7) / 8);
 #define V41_GEMV_F8_U(WF, OF, SUX)                                                                              \
     do {                                                                                                        \
-        if (smem > 48 * 1024)                                                                                  \
-            cudaFuncSetAttribute(v41_gemv_f8_kernel<WF, OF, SUX>, cudaFuncAttributeMaxDynamicSharedMemorySize, \
-                                 smem);                                                                         \
+        if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_gemv_f8_kernel<WF, OF, SUX>), 96 * 1024);                     \
         v41_gemv_f8_kernel<WF, OF, SUX><<<grid, 256, smem, st>>>(A, lda, As, ldas, B, ldb, Bs, ldbs, bscale2, c, \
                                                                   ldc, m, n, k);                                \
     } while (0)
@@ -1276,10 +1296,8 @@ extern "C" int memra_v41_gemm_f8(const void* a, long lda, const void* as, long l
 #define V41_PIPE_F8(WF, OF, BMX)                                                                                \
     do {                                                                                                        \
         int sm_ = V41Pipe<WF, BMX>::SMEM;                                                                       \
-        cudaFuncSetAttribute(v41_gemm_f8_pipe_kernel<WF, OF, BMX>, cudaFuncAttributeMaxDynamicSharedMemorySize, \
-                             sm_);                                                                              \
-        cudaFuncSetAttribute(v41_gemm_f8_pipe_kernel<WF, OF, BMX>, cudaFuncAttributePreferredSharedMemoryCarveout, \
-                             cudaSharedmemCarveoutMaxShared);                                                   \
+        V41_SMEM_LIMIT((v41_gemm_f8_pipe_kernel<WF, OF, BMX>), sm_);                                            \
+        V41_CARVE_MAX((v41_gemm_f8_pipe_kernel<WF, OF, BMX>));                                                  \
         dim3 gp((n + 127) / 128, (m + BMX - 1) / BMX);                                                          \
         v41_gemm_f8_pipe_kernel<WF, OF, BMX><<<gp, 256, sm_, st>>>(A, lda, As, ldas, B, ldb, Bs, ldbs, bscale2, \
                                                                     c, ldc, m, n, k);                           \
@@ -1505,8 +1523,7 @@ extern "C" int memra_v41_gemm_bf16(const void* a, long lda, long sAz, const void
         dim3 grid((n + 8 * wpb - 1) / (8 * wpb), 1, batch);
 #define V41_GEMV_BF(OF)                                                                                            \
     do {                                                                                                           \
-        if (smem > 48 * 1024)                                                                                      \
-            cudaFuncSetAttribute(v41_gemv_bf16_kernel<OF>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);     \
+        if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_gemv_bf16_kernel<OF>), 96 * 1024);                               \
         v41_gemv_bf16_kernel<OF><<<grid, 32 * wpb, smem, st>>>((const v41_bf*)a, lda, sAz, (const v41_bf*)b, ldb, \
                                                                 sBz, c, ldc, sCz, m, n, k, su, stages);            \
     } while (0)
@@ -1760,14 +1777,11 @@ extern "C" int memra_v41_gemm_ffma(const void* a, long lda, const void* b, long 
         if ((V41_SMF_NC + m) * (kp + 8) * 2 > 99 * 1024) kp = k / 2;
         int smem = (V41_SMF_NC + m) * (kp + 8) * 2;
         if (n <= 4096 && smem <= 99 * 1024 && kp == k) {
-            if (smem > 48 * 1024)
-                cudaFuncSetAttribute(v41_gemv_ffma_narrow_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+            if (smem > 48 * 1024) V41_SMEM_LIMIT(v41_gemv_ffma_narrow_kernel, 99 * 1024);
             v41_gemv_ffma_narrow_kernel<<<(n + V41_SMF_NC - 1) / V41_SMF_NC, 128, smem, st>>>(
                 (const v41_bf*)a, lda, (const v41_bf*)b, ldb, c, ldc, m, n, k);
         } else if (n <= 4096 && smem <= 99 * 1024 && kp % 8 == 0) {
-            if (smem > 48 * 1024)
-                cudaFuncSetAttribute(v41_gemv_ffma_narrow_parts_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                     smem);
+            if (smem > 48 * 1024) V41_SMEM_LIMIT(v41_gemv_ffma_narrow_parts_kernel, 99 * 1024);
             v41_gemv_ffma_narrow_parts_kernel<<<(n + V41_SMF_NC - 1) / V41_SMF_NC, 128, smem, st>>>(
                 (const v41_bf*)a, lda, (const v41_bf*)b, ldb, c, ldc, m, n, k, kp);
         } else if (m <= 4) {
@@ -2007,8 +2021,7 @@ extern "C" int memra_v41_sparse_attn(const void* q, long ldq, const void* kv, co
     // the tiles plus the row's indices (rounded up to key blocks); a block holds at most 99 KB
     int smem = V41_ASMEM0 + (topk + V41_AK - 1) / V41_AK * V41_AK * 4;
     if (smem > 99 * 1024) return 41007;
-    // per device and cheap: set it on every call so a second card never launches without it
-    cudaFuncSetAttribute(v41_sparse_attn_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+    V41_SMEM_LIMIT(v41_sparse_attn_kernel, 99 * 1024);
     dim3 grid(m, heads / V41_AH);
     v41_sparse_attn_kernel<<<grid, 128, smem, (cudaStream_t)stream>>>(
         (const v41_bf*)q, ldq, (const v41_bf*)kv, nullptr, idx, ldi, topk, sink, scale, (v41_bf*)o, ldo);
@@ -2023,7 +2036,7 @@ extern "C" int memra_v41_sparse_attn_keys(const void* q, long ldq, const void* k
     if (m == 0) return 0;
     int smem = V41_ASMEM0 + (topk + V41_AK - 1) / V41_AK * V41_AK * 4;
     if (smem > 99 * 1024) return 41007;
-    cudaFuncSetAttribute(v41_sparse_attn_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+    V41_SMEM_LIMIT(v41_sparse_attn_kernel, 99 * 1024);
     dim3 grid(m, heads / V41_AH);
     v41_sparse_attn_kernel<<<grid, 128, smem, (cudaStream_t)stream>>>(
         (const v41_bf*)q, ldq, nullptr, (const V41KeyRef*)keys, idx, ldi, topk, sink, scale, (v41_bf*)o, ldo);
@@ -2243,8 +2256,7 @@ __global__ void __launch_bounds__(128) v41_index_score_kernel(const v41_bf* __re
 #define V41_INDEX_LAUNCH(MI, PART, ...)                                                                          \
     do {                                                                                                         \
         /* 18 KB a block: the largest shared-memory split, so five blocks share an SM */                         \
-        cudaFuncSetAttribute(v41_index_score_kernel<MI, PART>, cudaFuncAttributePreferredSharedMemoryCarveout,   \
-                             cudaSharedmemCarveoutMaxShared);                                                    \
+        V41_CARVE_MAX((v41_index_score_kernel<MI, PART>));                                                       \
         dim3 grid((T + 63) / 64, (rows + V41_IQB - 1) / V41_IQB);                                                \
         v41_index_score_kernel<MI, PART><<<grid, 128, 0, (cudaStream_t)stream>>>(__VA_ARGS__);                   \
     } while (0)
@@ -2529,6 +2541,10 @@ static int v41_sel_tab_bytes(int n) {
     return b > 0 && b <= 51200 - V41_SEL_STATIC ? (int)b : 0;
 }
 
+// BIG: the instance for tables past 48 KB with the static shared memory (rows of more than about
+// 125k keys): it has its own limit and the whole of the SM's shared memory, so that two of its
+// blocks share an SM, and the other instance's launches never see either setting
+template <int BIG>
 __global__ void __launch_bounds__(256) v41_topk_kernel(const v41_bf* __restrict__ score, long lds, int T, int k,
                                                        int out_w, int offset, int* __restrict__ out, long ldo,
                                                        int tabs) {
@@ -2552,15 +2568,15 @@ extern "C" int memra_v41_topk(const void* score, long lds, int T, int k, int out
     // fastest that way (0.040 against 0.062 ms on a 32,768-key row); many rows at once want the
     // strided table form (10.1 against 4.3 ms for 8,192 such rows).
     int tb = rows <= 4 ? 0 : v41_sel_tab_bytes(T);
-    // A block past 48 KB of shared memory (tables and static) needs the limit raised and the whole
-    // of the SM's shared memory, or the second block does not fit. Both are per device and cheap,
-    // and the carveout is set on every call so a row's schedule never depends on the launch before.
-    bool big = tb + V41_SEL_STATIC > 48 * 1024;
-    if (big) cudaFuncSetAttribute(v41_topk_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, tb);
-    cudaFuncSetAttribute(v41_topk_kernel, cudaFuncAttributePreferredSharedMemoryCarveout,
-                         big ? (int)cudaSharedmemCarveoutMaxShared : (int)cudaSharedmemCarveoutDefault);
-    v41_topk_kernel<<<rows, 256, tb, (cudaStream_t)stream>>>((const v41_bf*)score, lds, T, k, out_w, offset, out, ldo,
-                                                             tb > 0);
+    if (tb + V41_SEL_STATIC > 48 * 1024) {
+        V41_SMEM_LIMIT(v41_topk_kernel<1>, 51200 - V41_SEL_STATIC);
+        V41_CARVE_MAX(v41_topk_kernel<1>);
+        v41_topk_kernel<1><<<rows, 256, tb, (cudaStream_t)stream>>>((const v41_bf*)score, lds, T, k, out_w, offset, out,
+                                                                    ldo, tb > 0);
+    } else {
+        v41_topk_kernel<0><<<rows, 256, tb, (cudaStream_t)stream>>>((const v41_bf*)score, lds, T, k, out_w, offset, out,
+                                                                    ldo, tb > 0);
+    }
     V41_ERR();
 }
 
@@ -3034,6 +3050,10 @@ __global__ void __launch_bounds__(128) v41_hc_mixes_part1_kernel(const v41_bf* _
                                                                  const float* __restrict__ fn, int nmix, int n,
                                                                  float* __restrict__ parts) {
     extern __shared__ __align__(16) uint8_t v41_hc1_sm[];
+    // block column = token: each of a few rows (a decode step, a drafted block's verification, a
+    // batch of sequences) gets the one-token schedule on its own blocks
+    x += (long)blockIdx.x * n;
+    parts += (long)blockIdx.x * 8 * (nmix + 1);
     int steps = (n + 255) / 256;
     int b = blockIdx.y, w = threadIdx.x >> 5, lane = threadIdx.x & 31;
     int j = blockIdx.z * 4 + w;  // chain: a mix, the square sum (nmix), or none
@@ -3158,10 +3178,11 @@ extern "C" int memra_v41_hc_mixes(const void* x, const float* fn, const float* s
     if (rows <= 0) return rows < 0 ? 41016 : 0;
     cudaStream_t st = (cudaStream_t)stream;
     int n1 = hc * d, smem1 = ((n1 + 255) / 256) * (64 + 4 * 128);
-    if (rows == 1 && smem1 <= 99 * 1024 && n1 % 8 == 0 && (uintptr_t)fn % 16 == 0) {
-        if (smem1 > 48 * 1024)
-            cudaFuncSetAttribute(v41_hc_mixes_part1_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem1);
-        v41_hc_mixes_part1_kernel<<<dim3(1, 8, (nmix + 4) / 4), 128, smem1, st>>>((const v41_bf*)x, fn, nmix, n1, parts);
+    if (rows <= V41_SM_MAX && smem1 <= 99 * 1024 && n1 % 8 == 0 && (uintptr_t)fn % 16 == 0) {
+        // up to 8 rows: the one-token kernel a row (6.7 us, where the 16-token pass takes 53)
+        if (smem1 > 48 * 1024) V41_SMEM_LIMIT(v41_hc_mixes_part1_kernel, 99 * 1024);
+        v41_hc_mixes_part1_kernel<<<dim3(rows, 8, (nmix + 4) / 4), 128, smem1, st>>>((const v41_bf*)x, fn, nmix, n1,
+                                                                                   parts);
     } else if (rows == 1) {
         v41_hc_mixes_part_kernel<1, 40><<<dim3(1, 8), 32 * (nmix + 1), 0, st>>>((const v41_bf*)x, fn, nmix, hc * d,
                                                                                rows, parts);

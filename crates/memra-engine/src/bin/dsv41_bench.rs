@@ -633,7 +633,16 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
     }
     // grouped MXFP4 experts through the tile-list dispatch: w1/w3 (n 2304, k 5120) and w2 (n 5120,
     // k 2304), `ng` experts of `rows` rows, tiles as `Ctx::moe_bm` picks them for that slice
-    for &(ng, rows) in &[(6usize, 1usize), (64, 64), (384, 64), (384, 512)] {
+    for &(ng, rows) in &[
+        (6usize, 1usize),
+        (12, 1),
+        (29, 1),
+        (48, 1),
+        (15, 2),
+        (64, 64),
+        (384, 64),
+        (384, 512),
+    ] {
         let bm = if rows <= v::SMALL_M {
             v::SMALL_M
         } else if rows >= 128 {

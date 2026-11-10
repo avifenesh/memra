@@ -496,6 +496,9 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
         }
     }
     // sink sparse attention
+    // (rows, heads, keys, q, kv, idx, sink, scale, output) of each fixture, for the two-thread run
+    #[allow(clippy::type_complexity)]
+    let mut sattn: Vec<(usize, usize, usize, [Vec<u8>; 4], f32, Vec<u8>)> = Vec::new();
     for dir in sorted_dirs(root, "sattn_")? {
         let f = Fx::open(&dir)?;
         let qs = f.shape("q"); // [1, m, 64, 512]
@@ -520,6 +523,14 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
             m,
             h,
         )?;
+        sattn.push((
+            m,
+            h,
+            k,
+            [q.host(&st)?, kv.host(&st)?, idx.host(&st)?, sink.host(&st)?],
+            f.meta_f("scale") as f32,
+            o.host(&st)?,
+        ));
         // the keyed entry on two separate buffers (the first half of the key rows as the window,
         // the rest as the compressed rows) against the one-buffer entry: byte for byte
         {
@@ -576,6 +587,70 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
             0.25,
         );
     }
+    // Two threads on the card, each on its own stream, launching the attention with different
+    // index widths at once: a kernel's shared-memory limit is one setting a function a context, so
+    // a launcher that set it to the call's own size let one thread launch above the limit the
+    // other had just set (CUDA error 1 or 701). Every launch must succeed and write the bytes of
+    // the one-thread run.
+    if sattn.len() >= 2 {
+        let fails = std::sync::Mutex::new(Vec::<String>::new());
+        std::thread::scope(|sc| {
+            for (ti, (m, h, k, bufs, scale, want)) in sattn.iter().take(2).enumerate() {
+                let (st, fails) = (&st, &fails);
+                sc.spawn(move || {
+                    let run = || -> Result<(), String> {
+                        let s2 = st
+                            .context()
+                            .new_stream()
+                            .map_err(|e| format!("stream: {e:?}"))?;
+                        let o2 = Ops::new(s2.clone());
+                        let q = Buf::from_bytes(&s2, &bufs[0])?;
+                        let kv = Buf::from_bytes(&s2, &bufs[1])?;
+                        let idx = Buf::from_bytes(&s2, &bufs[2])?;
+                        let sink = Buf::from_bytes(&s2, &bufs[3])?;
+                        let o = o2.buf(m * h * 512 * 2)?;
+                        for it in 0..400 {
+                            o2.sparse_attn(
+                                q.p(&s2),
+                                h * 512,
+                                kv.p(&s2),
+                                idx.p(&s2),
+                                *k,
+                                *k,
+                                sink.p(&s2),
+                                *scale,
+                                o.p(&s2),
+                                h * 512,
+                                *m,
+                                *h,
+                            )?;
+                            if it % 16 == 15 {
+                                o2.sync()?;
+                            }
+                        }
+                        if &o.host(&s2)? != want {
+                            return Err("bytes differ from the one-thread run".into());
+                        }
+                        Ok(())
+                    };
+                    if let Err(e) = run() {
+                        fails.lock().unwrap().push(format!("thread {ti}: {e}"));
+                    }
+                });
+            }
+        });
+        let fails = fails.into_inner().unwrap();
+        rep.raw(
+            "stress/sparse_attn_two_threads_two_widths",
+            fails.is_empty(),
+            "800 launches from two threads succeed and match the one-thread bytes",
+            if fails.is_empty() {
+                "ok".into()
+            } else {
+                fails.join("; ")
+            },
+        );
+    }
     // mHC
     {
         let f = Fx::open(&root.join("hc"))?;
@@ -615,20 +690,21 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
         rep.f32rel("hc/pre", &f32h(&ops, &pre)?, &f.f32s("pre")?, 1e-5);
         rep.f32rel("hc/post", &f32h(&ops, &post)?, &f.f32s("post")?, 1e-5);
         rep.f32rel("hc/comb", &f32h(&ops, &comb)?, &f.f32s("comb")?, 1e-5);
-        // the one-token instance (decode) against row 0 of the many-token run, byte for byte
-        {
-            let mixes1 = ops.buf(nm * 4)?;
-            let pre1 = ops.buf(hc * 4)?;
-            let post1 = ops.buf(hc * 4)?;
-            let comb1 = ops.buf(hc * hc * 4)?;
-            let parts1 = ops.buf(8 * (nm + 1) * 4)?;
+        // the one-token schedule (a decode step; up to 8 rows of a verification or a batch) against
+        // the first rows of the many-token run, byte for byte
+        for r1 in [1usize, s.min(8)] {
+            let mixes1 = ops.buf(r1 * nm * 4)?;
+            let pre1 = ops.buf(r1 * hc * 4)?;
+            let post1 = ops.buf(r1 * hc * 4)?;
+            let comb1 = ops.buf(r1 * hc * hc * 4)?;
+            let parts1 = ops.buf(r1 * 8 * (nm + 1) * 4)?;
             ck("hc_mixes", unsafe {
                 ffi::memra_v41_hc_mixes(
                     x.p(&st).m(),
                     fn_.p(&st).f(),
                     sc.p(&st).f(),
                     base.p(&st).f(),
-                    1,
+                    r1 as i32,
                     hc as i32,
                     d as i32,
                     20,
@@ -643,18 +719,18 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
                 )
             })?;
             for (nm_, one, all, n1) in [
-                ("mixes", &mixes1, &mixes, nm * 4),
-                ("pre", &pre1, &pre, hc * 4),
-                ("post", &post1, &post, hc * 4),
-                ("comb", &comb1, &comb, hc * hc * 4),
+                ("mixes", &mixes1, &mixes, r1 * nm * 4),
+                ("pre", &pre1, &pre, r1 * hc * 4),
+                ("post", &post1, &post, r1 * hc * 4),
+                ("comb", &comb1, &comb, r1 * hc * hc * 4),
             ] {
                 let a = one.host(&st)?;
                 let b = all.host(&st)?;
                 let same = a[..n1] == b[..n1];
                 rep.raw(
-                    &format!("schedule/hc_mixes/one_token/{nm_}"),
+                    &format!("schedule/hc_mixes/rows{r1}/{nm_}"),
                     same,
-                    "the one-token instance writes row 0's bytes",
+                    "the one-token schedule writes the many-token run's first rows",
                     format!("{n1} bytes"),
                 );
             }
