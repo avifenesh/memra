@@ -1,0 +1,2133 @@
+[server] build: memra-0.140.0-682a87637204 (id: source-tree, git: unknown)
+[server] starting; models config = [("q", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 51877MB (51876653056 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 51876653056 B; boot driver free 107511402496 B, post-reserve clamp 103753306112 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
+[prime-walk] model="q" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[spec-boundary] site=cold-prime sampled=279 argmax=279 deviates=0 temp=0.7 sctr=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 10MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 1597440 -> 3194880 ml_len 6240 -> 12480 (retired kept, zero=false)
+[spec-setup] init=0.35ms cap=0.01ms fill=0.00ms rounds=2866.49ms tail=0.20ms total=2867.04ms out=64 cont=false
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1476395008,"still_owned_bytes":17212248912,"pool_reserved_bytes":17347641344,"pool_cached_bytes":135392432,"driver_free_bytes":35934498816,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1408MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=mtp transient floor 1536MB (static was 1536MB; measured 1239MB; probe kv charge 127MB, draft-state 41MB, drafted 84 accepted 35; [dev0 peak-mapped 17952MB rest-mapped 16544MB charged 168MB -> 1239MB]; 5.6s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[deadline] unified memory: operator deadline doors set; streaming TTFT max 600000 ms, SSE prefill commit off
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18198
+[meter] admit id=chatcmpl-22834bb36c68aa682bdf4132c90d448e tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=249 path=spec = 31552 B/token x ctx + 11MB prefill-workspace + 0MB fixed = 19MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=25 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 312MB (observed 318MB at ctx 193 path=spec)
+[spec-boundary] site=cold-prime sampled=32 argmax=32 deviates=0 temp=1 sctr=0
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+[spec-setup] init=0.33ms cap=0.01ms fill=0.00ms rounds=108.67ms tail=0.02ms total=109.03ms out=5 cont=false
+[spec-acc] ctx=25 burst=3/3 cum=3/3=1.000
+[spec-carry] site=burst-entry token=279 event=5
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=102.88ms tail=0.02ms total=102.93ms out=4 cont=true
+[spec-acc] ctx=30 burst=3/3 cum=6/6=1.000
+[spec-carry] site=burst-entry token=2919 event=9
+[spec-setup] init=0.01ms cap=0.05ms fill=0.00ms rounds=205.01ms tail=0.23ms total=205.30ms out=4 cont=true
+[spec-acc] ctx=34 burst=2/6 cum=8/12=0.667
+[spec-carry] site=burst-entry token=264 event=13
+[spec-setup] init=0.01ms cap=0.92ms fill=0.01ms rounds=104.16ms tail=0.09ms total=105.18ms out=4 cont=true
+[spec-acc] ctx=38 burst=3/3 cum=11/15=0.733
+[spec-carry] site=burst-entry token=2512 event=17
+[spec-setup] init=0.01ms cap=0.05ms fill=0.00ms rounds=203.44ms tail=0.18ms total=203.67ms out=5 cont=true
+[spec-acc] ctx=42 burst=3/6 cum=14/21=0.667
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 46 rows hold no resumable state (the checkpoint 25 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-acc51b3fa6a06ef7bfd6f9bcbe6e23e1 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=249 path=spec = 31552 B/token x ctx + 11MB prefill-workspace + 312MB fixed = 331MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=25 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=98.98ms tail=0.14ms total=99.43ms out=5 cont=false
+[spec-acc] ctx=25 burst=3/3 cum=3/3=1.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=102.56ms tail=0.19ms total=102.77ms out=3 cont=true
+[spec-acc] ctx=30 burst=2/3 cum=5/6=0.833
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.30ms tail=0.20ms total=103.53ms out=2 cont=true
+[spec-acc] ctx=33 burst=1/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.64ms tail=0.21ms total=102.88ms out=2 cont=true
+[spec-acc] ctx=35 burst=1/3 cum=7/12=0.583
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.89ms tail=0.20ms total=103.12ms out=3 cont=true
+[spec-acc] ctx=37 burst=2/3 cum=9/15=0.600
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.90ms tail=0.20ms total=103.13ms out=2 cont=true
+[spec-acc] ctx=40 burst=1/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.01ms tail=0.16ms total=204.20ms out=5 cont=true
+[spec-acc] ctx=42 burst=3/6 cum=13/24=0.542
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 46 rows hold no resumable state (the checkpoint 25 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-abab439ba3f37399b71f02de83b144b6 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=251 path=spec = 31552 B/token x ctx + 12MB prefill-workspace + 312MB fixed = 332MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=27 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=68809 argmax=32 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.36ms cap=0.00ms fill=0.00ms rounds=100.85ms tail=0.18ms total=101.39ms out=3 cont=false
+[spec-acc] ctx=27 burst=1/3 cum=1/3=0.333
+[spec-carry] site=burst-entry token=40554 event=3
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.08ms tail=0.17ms total=101.28ms out=4 cont=true
+[spec-acc] ctx=30 burst=3/3 cum=4/6=0.667
+[spec-carry] site=burst-entry token=14419 event=7
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.93ms tail=0.20ms total=103.16ms out=2 cont=true
+[spec-acc] ctx=34 burst=1/3 cum=5/9=0.556
+[spec-carry] site=burst-entry token=2119 event=9
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.52ms tail=0.21ms total=103.76ms out=2 cont=true
+[spec-acc] ctx=36 burst=1/3 cum=6/12=0.500
+[spec-carry] site=burst-entry token=2272 event=11
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.07ms tail=0.20ms total=103.31ms out=2 cont=true
+[spec-acc] ctx=38 burst=1/3 cum=7/15=0.467
+[spec-carry] site=burst-entry token=8097 event=13
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.68ms tail=0.17ms total=101.88ms out=4 cont=true
+[spec-acc] ctx=40 burst=3/3 cum=10/18=0.556
+[spec-carry] site=burst-entry token=17722 event=17
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.42ms tail=0.19ms total=103.64ms out=3 cont=true
+[spec-acc] ctx=44 burst=2/3 cum=12/21=0.571
+[spec-carry] site=burst-entry token=958 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.57ms tail=0.20ms total=103.81ms out=2 cont=true
+[spec-acc] ctx=47 burst=1/3 cum=13/24=0.542
+[spec-carry] site=burst-entry token=310 event=22
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.99ms tail=0.16ms total=207.19ms out=2 cont=true
+[spec-acc] ctx=49 burst=0/6 cum=13/30=0.433
+[spec-carry] site=burst-entry token=18677 event=24
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=103.94ms tail=0.15ms total=104.13ms out=3 cont=true
+[spec-acc] ctx=51 burst=2/3 cum=15/33=0.455
+[spec-carry] site=burst-entry token=1345 event=27
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=208.33ms tail=0.18ms total=208.56ms out=2 cont=true
+[spec-acc] ctx=54 burst=0/6 cum=15/39=0.385
+[spec-carry] site=burst-entry token=8851 event=29
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.61ms tail=0.18ms total=104.83ms out=3 cont=true
+[spec-acc] ctx=56 burst=2/3 cum=17/42=0.405
+[spec-carry] site=burst-entry token=1325 event=32
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.23ms tail=0.19ms total=104.46ms out=2 cont=true
+[spec-acc] ctx=59 burst=1/3 cum=18/45=0.400
+[spec-carry] site=burst-entry token=21254 event=34
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.09ms tail=0.20ms total=104.31ms out=2 cont=true
+[spec-acc] ctx=61 burst=1/3 cum=19/48=0.396
+[spec-carry] site=burst-entry token=279 event=36
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.35ms tail=0.19ms total=104.57ms out=3 cont=true
+[spec-acc] ctx=63 burst=2/3 cum=21/51=0.412
+[spec-carry] site=burst-entry token=2272 event=39
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.36ms tail=0.20ms total=208.59ms out=3 cont=true
+[spec-acc] ctx=66 burst=1/6 cum=22/57=0.386
+[spec-carry] site=burst-entry token=61909 event=42
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.62ms tail=0.21ms total=104.86ms out=2 cont=true
+[spec-acc] ctx=69 burst=1/3 cum=23/60=0.383
+[spec-carry] site=burst-entry token=6420 event=44
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.70ms tail=0.19ms total=207.92ms out=2 cont=true
+[spec-acc] ctx=71 burst=0/6 cum=23/66=0.348
+[spec-carry] site=burst-entry token=28299 event=46
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=207.58ms tail=0.18ms total=207.79ms out=5 cont=true
+[spec-acc] ctx=73 burst=3/6 cum=26/72=0.361
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 77 rows hold no resumable state (the checkpoint 27 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-70b402c2ce5c9a4db7a13d85f20f19e9 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=27 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=4274 argmax=32 deviates=1 temp=0.7 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=103.11ms tail=0.18ms total=103.62ms out=3 cont=false
+[spec-acc] ctx=27 burst=1/3 cum=1/3=0.333
+[spec-carry] site=burst-entry token=11795 event=3
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=206.23ms tail=0.19ms total=206.45ms out=2 cont=true
+[spec-acc] ctx=30 burst=0/6 cum=1/9=0.111
+[spec-carry] site=burst-entry token=2272 event=5
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=104.43ms tail=0.19ms total=104.65ms out=3 cont=true
+[spec-acc] ctx=32 burst=2/3 cum=3/12=0.250
+[spec-carry] site=burst-entry token=7099 event=8
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.00ms tail=0.20ms total=104.24ms out=2 cont=true
+[spec-acc] ctx=35 burst=1/3 cum=4/15=0.267
+[spec-carry] site=burst-entry token=6817 event=10
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.02ms tail=0.20ms total=104.26ms out=3 cont=true
+[spec-acc] ctx=37 burst=2/3 cum=6/18=0.333
+[spec-carry] site=burst-entry token=3294 event=13
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.12ms tail=0.20ms total=104.35ms out=2 cont=true
+[spec-acc] ctx=40 burst=1/3 cum=7/21=0.333
+[spec-carry] site=burst-entry token=40182 event=15
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.36ms tail=0.21ms total=207.60ms out=3 cont=true
+[spec-acc] ctx=42 burst=1/6 cum=8/27=0.296
+[spec-carry] site=burst-entry token=1690 event=18
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.99ms tail=0.18ms total=103.20ms out=4 cont=true
+[spec-acc] ctx=45 burst=3/3 cum=11/30=0.367
+[spec-carry] site=burst-entry token=3150 event=22
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.70ms tail=0.20ms total=104.94ms out=3 cont=true
+[spec-acc] ctx=49 burst=2/3 cum=13/33=0.394
+[spec-carry] site=burst-entry token=321 event=25
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.73ms tail=0.20ms total=104.96ms out=2 cont=true
+[spec-acc] ctx=52 burst=1/3 cum=14/36=0.389
+[spec-carry] site=burst-entry token=5684 event=27
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.86ms tail=0.20ms total=105.09ms out=3 cont=true
+[spec-acc] ctx=54 burst=2/3 cum=16/39=0.410
+[spec-carry] site=burst-entry token=10458 event=30
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=105.59ms tail=0.20ms total=105.82ms out=2 cont=true
+[spec-acc] ctx=57 burst=1/3 cum=17/42=0.405
+[spec-carry] site=burst-entry token=5272 event=32
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.57ms tail=0.20ms total=208.80ms out=4 cont=true
+[spec-acc] ctx=59 burst=2/6 cum=19/48=0.396
+[spec-carry] site=burst-entry token=17312 event=36
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.42ms tail=0.20ms total=105.65ms out=2 cont=true
+[spec-acc] ctx=63 burst=1/3 cum=20/51=0.392
+[spec-carry] site=burst-entry token=7698 event=38
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=210.10ms tail=0.20ms total=210.33ms out=4 cont=true
+[spec-acc] ctx=65 burst=2/6 cum=22/57=0.386
+[spec-carry] site=burst-entry token=7065 event=42
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=209.57ms tail=0.19ms total=209.79ms out=2 cont=true
+[spec-acc] ctx=69 burst=0/6 cum=22/63=0.349
+[spec-carry] site=burst-entry token=21254 event=44
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.69ms tail=0.21ms total=105.93ms out=2 cont=true
+[spec-acc] ctx=71 burst=1/3 cum=23/66=0.348
+[spec-carry] site=burst-entry token=5790 event=46
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.60ms tail=0.20ms total=106.83ms out=3 cont=true
+[spec-acc] ctx=73 burst=2/3 cum=25/69=0.362
+[spec-carry] site=burst-entry token=364 event=49
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=210.40ms tail=0.19ms total=210.62ms out=2 cont=true
+[spec-acc] ctx=76 burst=0/6 cum=25/75=0.333
+[spec-carry] site=burst-entry token=82507 event=51
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.02ms tail=0.20ms total=106.25ms out=3 cont=true
+[spec-acc] ctx=78 burst=2/3 cum=27/78=0.346
+[spec-carry] site=burst-entry token=16070 event=54
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=211.45ms tail=0.20ms total=211.67ms out=4 cont=true
+[spec-acc] ctx=81 burst=2/6 cum=29/84=0.345
+[spec-carry] site=burst-entry token=2119 event=58
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=105.18ms tail=0.18ms total=105.39ms out=4 cont=true
+[spec-acc] ctx=85 burst=3/3 cum=32/87=0.368
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 88 rows hold no resumable state (the checkpoint 27 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-7c7113ecdef110baeb5a28cb75b37560 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=27 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=92857 argmax=32 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=101.83ms tail=0.18ms total=102.34ms out=3 cont=false
+[spec-acc] ctx=27 burst=1/3 cum=1/3=0.333
+[spec-carry] site=burst-entry token=1301 event=3
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=204.32ms tail=0.18ms total=204.53ms out=5 cont=true
+[spec-acc] ctx=30 burst=3/6 cum=4/9=0.444
+[spec-carry] site=burst-entry token=28043 event=8
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.09ms tail=0.19ms total=104.31ms out=3 cont=true
+[spec-acc] ctx=35 burst=2/3 cum=6/12=0.500
+[spec-carry] site=burst-entry token=2272 event=11
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.49ms tail=0.20ms total=103.72ms out=2 cont=true
+[spec-acc] ctx=38 burst=1/3 cum=7/15=0.467
+[spec-carry] site=burst-entry token=12495 event=13
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.26ms tail=0.20ms total=205.50ms out=2 cont=true
+[spec-acc] ctx=40 burst=0/6 cum=7/21=0.333
+[spec-carry] site=burst-entry token=466 event=15
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.68ms tail=0.20ms total=103.91ms out=2 cont=true
+[spec-acc] ctx=42 burst=1/3 cum=8/24=0.333
+[spec-carry] site=burst-entry token=11661 event=17
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.45ms tail=0.20ms total=104.68ms out=2 cont=true
+[spec-acc] ctx=44 burst=1/3 cum=9/27=0.333
+[spec-carry] site=burst-entry token=2791 event=19
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.97ms tail=0.20ms total=206.20ms out=2 cont=true
+[spec-acc] ctx=46 burst=0/6 cum=9/33=0.273
+[spec-carry] site=burst-entry token=82507 event=21
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.13ms tail=0.20ms total=206.36ms out=2 cont=true
+[spec-acc] ctx=48 burst=0/6 cum=9/39=0.231
+[spec-carry] site=burst-entry token=15749 event=23
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.63ms tail=0.21ms total=106.86ms out=2 cont=true
+[spec-acc] ctx=50 burst=1/3 cum=10/42=0.238
+[spec-carry] site=burst-entry token=54814 event=25
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.47ms tail=0.20ms total=206.70ms out=3 cont=true
+[spec-acc] ctx=52 burst=1/6 cum=11/48=0.229
+[spec-carry] site=burst-entry token=22525 event=28
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=105.71ms tail=0.20ms total=105.93ms out=3 cont=true
+[spec-acc] ctx=55 burst=2/3 cum=13/51=0.255
+[spec-carry] site=burst-entry token=6805 event=31
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.90ms tail=0.20ms total=208.13ms out=4 cont=true
+[spec-acc] ctx=58 burst=2/6 cum=15/57=0.263
+[spec-carry] site=burst-entry token=4081 event=35
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.76ms tail=0.20ms total=105.00ms out=2 cont=true
+[spec-acc] ctx=62 burst=1/3 cum=16/60=0.267
+[spec-carry] site=burst-entry token=1048 event=37
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.24ms tail=0.20ms total=106.47ms out=2 cont=true
+[spec-acc] ctx=64 burst=1/3 cum=17/63=0.270
+[spec-carry] site=burst-entry token=1248 event=39
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.97ms tail=0.17ms total=105.18ms out=4 cont=true
+[spec-acc] ctx=66 burst=3/3 cum=20/66=0.303
+[spec-carry] site=burst-entry token=4203 event=43
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.88ms tail=0.21ms total=106.12ms out=2 cont=true
+[spec-acc] ctx=70 burst=1/3 cum=21/69=0.304
+[spec-carry] site=burst-entry token=16099 event=45
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.12ms tail=0.21ms total=105.37ms out=2 cont=true
+[spec-acc] ctx=72 burst=1/3 cum=22/72=0.306
+[spec-carry] site=burst-entry token=33101 event=47
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.45ms tail=0.18ms total=207.67ms out=5 cont=true
+[spec-acc] ctx=74 burst=3/6 cum=25/78=0.321
+[spec-carry] site=burst-entry token=24115 event=52
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.67ms tail=0.20ms total=105.90ms out=3 cont=true
+[spec-acc] ctx=79 burst=2/3 cum=27/81=0.333
+[spec-carry] site=burst-entry token=17415 event=55
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=209.04ms tail=0.18ms total=209.25ms out=5 cont=true
+[spec-acc] ctx=82 burst=3/6 cum=30/87=0.345
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 86 rows hold no resumable state (the checkpoint 27 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-e8e3e0f34819198669cc31d8ddc29832 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=27 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=101.32ms tail=0.14ms total=101.76ms out=5 cont=false
+[spec-acc] ctx=27 burst=3/3 cum=3/3=1.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=202.01ms tail=0.15ms total=202.18ms out=5 cont=true
+[spec-acc] ctx=32 burst=3/6 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.49ms tail=0.15ms total=102.68ms out=4 cont=true
+[spec-acc] ctx=37 burst=3/3 cum=9/12=0.750
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.80ms tail=0.16ms total=101.99ms out=4 cont=true
+[spec-acc] ctx=41 burst=3/3 cum=12/15=0.800
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.97ms tail=0.16ms total=102.17ms out=4 cont=true
+[spec-acc] ctx=45 burst=3/3 cum=15/18=0.833
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=203.78ms tail=0.16ms total=203.97ms out=5 cont=true
+[spec-acc] ctx=49 burst=3/6 cum=18/24=0.750
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=103.41ms tail=0.16ms total=103.60ms out=4 cont=true
+[spec-acc] ctx=54 burst=3/3 cum=21/27=0.778
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=103.95ms tail=0.20ms total=104.19ms out=2 cont=true
+[spec-acc] ctx=58 burst=1/3 cum=22/30=0.733
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.02ms tail=0.20ms total=104.26ms out=2 cont=true
+[spec-acc] ctx=60 burst=1/3 cum=23/33=0.697
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.15ms tail=0.20ms total=104.38ms out=3 cont=true
+[spec-acc] ctx=62 burst=2/3 cum=25/36=0.694
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.65ms tail=0.20ms total=207.89ms out=2 cont=true
+[spec-acc] ctx=65 burst=0/6 cum=25/42=0.595
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=205.56ms tail=0.16ms total=205.75ms out=5 cont=true
+[spec-acc] ctx=67 burst=3/6 cum=28/48=0.583
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.77ms tail=0.20ms total=105.00ms out=3 cont=true
+[spec-acc] ctx=72 burst=2/3 cum=30/51=0.588
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.48ms tail=0.20ms total=105.71ms out=3 cont=true
+[spec-acc] ctx=75 burst=2/3 cum=32/54=0.593
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.68ms tail=0.18ms total=208.89ms out=2 cont=true
+[spec-acc] ctx=78 burst=0/6 cum=32/60=0.533
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.91ms tail=0.14ms total=104.08ms out=4 cont=true
+[spec-acc] ctx=80 burst=3/3 cum=35/63=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.43ms tail=0.15ms total=106.62ms out=4 cont=true
+[spec-acc] ctx=84 burst=3/3 cum=38/66=0.576
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 87 rows hold no resumable state (the checkpoint 27 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-5215a550c0eb515331f8837414c2b40c tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=252 path=spec = 31552 B/token x ctx + 13MB prefill-workspace + 312MB fixed = 332MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=28 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=82739 argmax=82739 deviates=0 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.01ms fill=0.00ms rounds=101.03ms tail=0.12ms total=101.49ms out=5 cont=false
+[spec-acc] ctx=28 burst=3/3 cum=3/3=1.000
+[spec-carry] site=burst-entry token=310 event=5
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=103.77ms tail=0.19ms total=103.98ms out=2 cont=true
+[spec-acc] ctx=33 burst=1/3 cum=4/6=0.667
+[spec-carry] site=burst-entry token=34725 event=7
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.40ms tail=0.18ms total=103.62ms out=2 cont=true
+[spec-acc] ctx=35 burst=1/3 cum=5/9=0.556
+[spec-carry] site=burst-entry token=303 event=9
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=204.62ms tail=0.18ms total=204.85ms out=4 cont=true
+[spec-acc] ctx=37 burst=2/6 cum=7/15=0.467
+[spec-carry] site=burst-entry token=7065 event=13
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.90ms tail=0.20ms total=104.14ms out=3 cont=true
+[spec-acc] ctx=41 burst=2/3 cum=9/18=0.500
+[spec-carry] site=burst-entry token=506 event=16
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=204.90ms tail=0.21ms total=205.14ms out=3 cont=true
+[spec-acc] ctx=44 burst=1/6 cum=10/24=0.417
+[spec-carry] site=burst-entry token=59666 event=19
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.15ms tail=0.20ms total=205.39ms out=2 cont=true
+[spec-acc] ctx=47 burst=0/6 cum=10/30=0.333
+[spec-carry] site=burst-entry token=34613 event=21
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.84ms tail=0.19ms total=205.06ms out=5 cont=true
+[spec-acc] ctx=49 burst=3/6 cum=13/36=0.361
+[spec-carry] site=burst-entry token=17793 event=26
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.12ms tail=0.20ms total=206.35ms out=4 cont=true
+[spec-acc] ctx=54 burst=2/6 cum=15/42=0.357
+[spec-carry] site=burst-entry token=37266 event=30
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.54ms tail=0.18ms total=103.75ms out=4 cont=true
+[spec-acc] ctx=58 burst=3/3 cum=18/45=0.400
+[spec-carry] site=burst-entry token=27224 event=34
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.50ms tail=0.21ms total=104.74ms out=2 cont=true
+[spec-acc] ctx=62 burst=1/3 cum=19/48=0.396
+[spec-carry] site=burst-entry token=13523 event=36
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.38ms tail=0.22ms total=104.62ms out=2 cont=true
+[spec-acc] ctx=64 burst=1/3 cum=20/51=0.392
+[spec-carry] site=burst-entry token=14989 event=38
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.30ms tail=0.21ms total=207.54ms out=4 cont=true
+[spec-acc] ctx=66 burst=2/6 cum=22/57=0.386
+[spec-carry] site=burst-entry token=27676 event=42
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.93ms tail=0.19ms total=104.14ms out=4 cont=true
+[spec-acc] ctx=70 burst=3/3 cum=25/60=0.417
+[spec-carry] site=burst-entry token=3050 event=46
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.17ms tail=0.20ms total=208.41ms out=4 cont=true
+[spec-acc] ctx=74 burst=2/6 cum=27/66=0.409
+[spec-carry] site=burst-entry token=68968 event=50
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.10ms tail=0.20ms total=105.33ms out=3 cont=true
+[spec-acc] ctx=78 burst=2/3 cum=29/69=0.420
+[spec-carry] site=burst-entry token=21873 event=53
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.22ms tail=0.22ms total=105.46ms out=2 cont=true
+[spec-acc] ctx=81 burst=1/3 cum=30/72=0.417
+[spec-carry] site=burst-entry token=11 event=55
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.93ms tail=0.20ms total=106.16ms out=2 cont=true
+[spec-acc] ctx=83 burst=1/3 cum=31/75=0.413
+[spec-carry] site=burst-entry token=795 event=57
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.60ms tail=0.22ms total=105.85ms out=2 cont=true
+[spec-acc] ctx=85 burst=1/3 cum=32/78=0.410
+[spec-carry] site=burst-entry token=2919 event=59
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.58ms tail=0.21ms total=105.82ms out=2 cont=true
+[spec-acc] ctx=87 burst=1/3 cum=33/81=0.407
+[spec-carry] site=burst-entry token=9883 event=61
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.28ms tail=0.20ms total=104.50ms out=4 cont=true
+[spec-acc] ctx=89 burst=3/3 cum=36/84=0.429
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 92 rows hold no resumable state (the checkpoint 28 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-4138a229344db40abae1d47245a8a8ad tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=28 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=99.08ms tail=0.15ms total=99.54ms out=5 cont=false
+[spec-acc] ctx=28 burst=3/3 cum=3/3=1.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=103.49ms tail=0.19ms total=103.70ms out=2 cont=true
+[spec-acc] ctx=33 burst=1/3 cum=4/6=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.79ms tail=0.19ms total=103.01ms out=3 cont=true
+[spec-acc] ctx=35 burst=2/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.00ms tail=0.19ms total=204.23ms out=3 cont=true
+[spec-acc] ctx=38 burst=1/6 cum=7/15=0.467
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.02ms tail=0.19ms total=103.24ms out=3 cont=true
+[spec-acc] ctx=41 burst=2/3 cum=9/18=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.05ms tail=0.20ms total=104.29ms out=2 cont=true
+[spec-acc] ctx=44 burst=1/3 cum=10/21=0.476
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.84ms tail=0.20ms total=205.07ms out=3 cont=true
+[spec-acc] ctx=46 burst=1/6 cum=11/27=0.407
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.43ms tail=0.15ms total=204.62ms out=5 cont=true
+[spec-acc] ctx=49 burst=3/6 cum=14/33=0.424
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.89ms tail=0.19ms total=104.11ms out=2 cont=true
+[spec-acc] ctx=54 burst=1/3 cum=15/36=0.417
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.74ms tail=0.19ms total=103.96ms out=3 cont=true
+[spec-acc] ctx=56 burst=2/3 cum=17/39=0.436
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.02ms tail=0.20ms total=104.25ms out=2 cont=true
+[spec-acc] ctx=59 burst=1/3 cum=18/42=0.429
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.03ms tail=0.20ms total=104.26ms out=2 cont=true
+[spec-acc] ctx=61 burst=1/3 cum=19/45=0.422
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.18ms tail=0.20ms total=207.41ms out=3 cont=true
+[spec-acc] ctx=63 burst=1/6 cum=20/51=0.392
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.86ms tail=0.19ms total=207.08ms out=3 cont=true
+[spec-acc] ctx=66 burst=1/6 cum=21/57=0.368
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.50ms tail=0.20ms total=104.73ms out=2 cont=true
+[spec-acc] ctx=69 burst=1/3 cum=22/60=0.367
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.73ms tail=0.16ms total=103.92ms out=4 cont=true
+[spec-acc] ctx=71 burst=3/3 cum=25/63=0.397
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=105.00ms tail=0.19ms total=105.21ms out=2 cont=true
+[spec-acc] ctx=75 burst=1/3 cum=26/66=0.394
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.48ms tail=0.16ms total=103.67ms out=4 cont=true
+[spec-acc] ctx=77 burst=3/3 cum=29/69=0.420
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.29ms tail=0.20ms total=105.52ms out=2 cont=true
+[spec-acc] ctx=81 burst=1/3 cum=30/72=0.417
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.26ms tail=0.20ms total=105.49ms out=2 cont=true
+[spec-acc] ctx=83 burst=1/3 cum=31/75=0.413
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.91ms tail=0.19ms total=106.14ms out=2 cont=true
+[spec-acc] ctx=85 burst=1/3 cum=32/78=0.410
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.37ms tail=0.19ms total=105.59ms out=3 cont=true
+[spec-acc] ctx=87 burst=2/3 cum=34/81=0.420
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.18ms tail=0.15ms total=104.36ms out=4 cont=true
+[spec-acc] ctx=90 burst=3/3 cum=37/84=0.440
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=203.41ms tail=0.16ms total=203.60ms out=5 cont=true
+[spec-acc] ctx=94 burst=3/6 cum=40/90=0.444
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.11ms tail=0.15ms total=99.29ms out=4 cont=true
+[spec-acc] ctx=99 burst=3/3 cum=43/93=0.462
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 102 rows hold no resumable state (the checkpoint 28 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-fc62e7e60f1698dcc6e57bdb6fbbecb0 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=28 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=25642 argmax=25642 deviates=0 temp=1 sctr=0
+[spec-setup] init=0.38ms cap=0.00ms fill=0.00ms rounds=100.85ms tail=0.17ms total=101.41ms out=3 cont=false
+[spec-acc] ctx=28 burst=1/3 cum=1/3=0.333
+[spec-carry] site=burst-entry token=7739 event=3
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=102.56ms tail=0.19ms total=102.78ms out=2 cont=true
+[spec-acc] ctx=31 burst=1/3 cum=2/6=0.333
+[spec-carry] site=burst-entry token=8214 event=5
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=203.88ms tail=0.28ms total=204.19ms out=3 cont=true
+[spec-acc] ctx=33 burst=1/6 cum=3/12=0.250
+[spec-carry] site=burst-entry token=1472 event=8
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=203.32ms tail=0.18ms total=203.53ms out=5 cont=true
+[spec-acc] ctx=36 burst=3/6 cum=6/18=0.333
+[spec-carry] site=burst-entry token=27034 event=13
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.88ms tail=0.19ms total=205.10ms out=3 cont=true
+[spec-acc] ctx=41 burst=1/6 cum=7/24=0.292
+[spec-carry] site=burst-entry token=47388 event=16
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.00ms tail=0.19ms total=104.22ms out=3 cont=true
+[spec-acc] ctx=44 burst=2/3 cum=9/27=0.333
+[spec-carry] site=burst-entry token=364 event=19
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.27ms tail=0.20ms total=205.51ms out=3 cont=true
+[spec-acc] ctx=47 burst=1/6 cum=10/33=0.303
+[spec-carry] site=burst-entry token=1439 event=22
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.57ms tail=0.20ms total=205.79ms out=2 cont=true
+[spec-acc] ctx=50 burst=0/6 cum=10/39=0.256
+[spec-carry] site=burst-entry token=5190 event=24
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.55ms tail=0.19ms total=206.77ms out=2 cont=true
+[spec-acc] ctx=52 burst=0/6 cum=10/45=0.222
+[spec-carry] site=burst-entry token=4751 event=26
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.80ms tail=0.19ms total=104.02ms out=3 cont=true
+[spec-acc] ctx=54 burst=2/3 cum=12/48=0.250
+[spec-carry] site=burst-entry token=85171 event=29
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.07ms tail=0.20ms total=104.30ms out=2 cont=true
+[spec-acc] ctx=57 burst=1/3 cum=13/51=0.255
+[spec-carry] site=burst-entry token=1962 event=31
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.14ms tail=0.19ms total=104.37ms out=3 cont=true
+[spec-acc] ctx=59 burst=2/3 cum=15/54=0.278
+[spec-carry] site=burst-entry token=466 event=34
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.90ms tail=0.20ms total=105.14ms out=2 cont=true
+[spec-acc] ctx=62 burst=1/3 cum=16/57=0.281
+[spec-carry] site=burst-entry token=13 event=36
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.94ms tail=0.19ms total=207.16ms out=4 cont=true
+[spec-acc] ctx=64 burst=2/6 cum=18/63=0.286
+[spec-carry] site=burst-entry token=86792 event=40
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.46ms tail=0.20ms total=207.69ms out=4 cont=true
+[spec-acc] ctx=68 burst=2/6 cum=20/69=0.290
+[spec-carry] site=burst-entry token=3186 event=44
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.92ms tail=0.18ms total=104.14ms out=4 cont=true
+[spec-acc] ctx=72 burst=3/3 cum=23/72=0.319
+[spec-carry] site=burst-entry token=21873 event=48
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.57ms tail=0.20ms total=208.80ms out=3 cont=true
+[spec-acc] ctx=76 burst=1/6 cum=24/78=0.308
+[spec-carry] site=burst-entry token=1345 event=51
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.65ms tail=0.20ms total=208.88ms out=2 cont=true
+[spec-acc] ctx=79 burst=0/6 cum=24/84=0.286
+[spec-carry] site=burst-entry token=2107 event=53
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=209.80ms tail=0.19ms total=210.03ms out=4 cont=true
+[spec-acc] ctx=81 burst=2/6 cum=26/90=0.289
+[spec-carry] site=burst-entry token=63282 event=57
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.52ms tail=0.20ms total=105.75ms out=2 cont=true
+[spec-acc] ctx=85 burst=1/3 cum=27/93=0.290
+[spec-carry] site=burst-entry token=13343 event=59
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.70ms tail=0.21ms total=105.93ms out=2 cont=true
+[spec-acc] ctx=87 burst=1/3 cum=28/96=0.292
+[spec-carry] site=burst-entry token=18188 event=61
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.29ms tail=0.17ms total=105.49ms out=4 cont=true
+[spec-acc] ctx=89 burst=3/3 cum=31/99=0.313
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 92 rows hold no resumable state (the checkpoint 28 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-cb469f31eb187d070f6b9fbc09396235 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=28 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=11718 argmax=25642 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=102.93ms tail=0.17ms total=103.44ms out=3 cont=false
+[spec-acc] ctx=28 burst=1/3 cum=1/3=0.333
+[spec-carry] site=burst-entry token=27158 event=3
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=202.87ms tail=0.18ms total=203.07ms out=5 cont=true
+[spec-acc] ctx=31 burst=3/6 cum=4/9=0.444
+[spec-carry] site=burst-entry token=20359 event=8
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.47ms tail=0.20ms total=103.71ms out=2 cont=true
+[spec-acc] ctx=36 burst=1/3 cum=5/12=0.417
+[spec-carry] site=burst-entry token=1083 event=10
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.88ms tail=0.20ms total=206.12ms out=2 cont=true
+[spec-acc] ctx=38 burst=0/6 cum=5/18=0.278
+[spec-carry] site=burst-entry token=539 event=12
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.57ms tail=0.18ms total=103.79ms out=3 cont=true
+[spec-acc] ctx=40 burst=2/3 cum=7/21=0.333
+[spec-carry] site=burst-entry token=41439 event=15
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.64ms tail=0.19ms total=205.87ms out=3 cont=true
+[spec-acc] ctx=43 burst=1/6 cum=8/27=0.296
+[spec-carry] site=burst-entry token=27028 event=18
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.51ms tail=0.19ms total=206.73ms out=4 cont=true
+[spec-acc] ctx=46 burst=2/6 cum=10/33=0.303
+[spec-carry] site=burst-entry token=904 event=22
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.12ms tail=0.20ms total=104.35ms out=2 cont=true
+[spec-acc] ctx=50 burst=1/3 cum=11/36=0.306
+[spec-carry] site=burst-entry token=303 event=24
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.28ms tail=0.18ms total=104.50ms out=3 cont=true
+[spec-acc] ctx=52 burst=2/3 cum=13/39=0.333
+[spec-carry] site=burst-entry token=11 event=27
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.32ms tail=0.19ms total=104.55ms out=3 cont=true
+[spec-acc] ctx=55 burst=2/3 cum=15/42=0.357
+[spec-carry] site=burst-entry token=20438 event=30
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.86ms tail=0.19ms total=208.08ms out=2 cont=true
+[spec-acc] ctx=58 burst=0/6 cum=15/48=0.312
+[spec-carry] site=burst-entry token=11407 event=32
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.61ms tail=0.20ms total=104.84ms out=2 cont=true
+[spec-acc] ctx=60 burst=1/3 cum=16/51=0.314
+[spec-carry] site=burst-entry token=9903 event=34
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.80ms tail=0.19ms total=105.02ms out=3 cont=true
+[spec-acc] ctx=62 burst=2/3 cum=18/54=0.333
+[spec-carry] site=burst-entry token=1049 event=37
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.43ms tail=0.19ms total=103.65ms out=4 cont=true
+[spec-acc] ctx=65 burst=3/3 cum=21/57=0.368
+[spec-carry] site=burst-entry token=8842 event=41
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=209.04ms tail=0.19ms total=209.26ms out=2 cont=true
+[spec-acc] ctx=69 burst=0/6 cum=21/63=0.333
+[spec-carry] site=burst-entry token=2593 event=43
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.81ms tail=0.18ms total=104.02ms out=4 cont=true
+[spec-acc] ctx=71 burst=3/3 cum=24/66=0.364
+[spec-carry] site=burst-entry token=34378 event=47
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.47ms tail=0.20ms total=105.70ms out=2 cont=true
+[spec-acc] ctx=75 burst=1/3 cum=25/69=0.362
+[spec-carry] site=burst-entry token=7875 event=49
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=210.04ms tail=0.20ms total=210.27ms out=3 cont=true
+[spec-acc] ctx=77 burst=1/6 cum=26/75=0.347
+[spec-carry] site=burst-entry token=82507 event=52
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.95ms tail=0.18ms total=208.16ms out=5 cont=true
+[spec-acc] ctx=80 burst=3/6 cum=29/81=0.358
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 84 rows hold no resumable state (the checkpoint 28 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-6fb6c8c58b96fd12554e08c15cb7eb55 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=28 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=99.84ms tail=0.14ms total=100.29ms out=5 cont=false
+[spec-acc] ctx=28 burst=3/3 cum=3/3=1.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=206.22ms tail=0.20ms total=206.44ms out=2 cont=true
+[spec-acc] ctx=33 burst=0/6 cum=3/9=0.333
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.51ms tail=0.20ms total=104.74ms out=2 cont=true
+[spec-acc] ctx=35 burst=1/3 cum=4/12=0.333
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.56ms tail=0.20ms total=206.80ms out=2 cont=true
+[spec-acc] ctx=37 burst=0/6 cum=4/18=0.222
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=102.92ms tail=0.16ms total=103.11ms out=4 cont=true
+[spec-acc] ctx=39 burst=3/3 cum=7/21=0.333
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.48ms tail=0.21ms total=105.72ms out=2 cont=true
+[spec-acc] ctx=43 burst=1/3 cum=8/24=0.333
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.72ms tail=0.21ms total=104.96ms out=2 cont=true
+[spec-acc] ctx=45 burst=1/3 cum=9/27=0.333
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.85ms tail=0.20ms total=105.08ms out=3 cont=true
+[spec-acc] ctx=47 burst=2/3 cum=11/30=0.367
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.39ms tail=0.21ms total=103.63ms out=2 cont=true
+[spec-acc] ctx=50 burst=1/3 cum=12/33=0.364
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.77ms tail=0.20ms total=208.00ms out=2 cont=true
+[spec-acc] ctx=52 burst=0/6 cum=12/39=0.308
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.71ms tail=0.15ms total=102.88ms out=4 cont=true
+[spec-acc] ctx=54 burst=3/3 cum=15/42=0.357
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.25ms tail=0.18ms total=104.47ms out=3 cont=true
+[spec-acc] ctx=58 burst=2/3 cum=17/45=0.378
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.21ms tail=0.19ms total=104.43ms out=2 cont=true
+[spec-acc] ctx=61 burst=1/3 cum=18/48=0.375
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.17ms tail=0.17ms total=208.37ms out=2 cont=true
+[spec-acc] ctx=63 burst=0/6 cum=18/54=0.333
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=205.54ms tail=0.15ms total=205.72ms out=5 cont=true
+[spec-acc] ctx=65 burst=3/6 cum=21/60=0.350
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.58ms tail=0.45ms total=104.07ms out=4 cont=true
+[spec-acc] ctx=70 burst=3/3 cum=24/63=0.381
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 73 rows hold no resumable state (the checkpoint 28 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-f9208266326cc19cc43334111e142e5c tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=131 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 332MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=44 argmax=80116 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=101.90ms tail=0.19ms total=102.42ms out=4 cont=false
+[spec-acc] ctx=36 burst=2/3 cum=2/3=0.667
+[spec-carry] site=burst-entry token=30191 event=4
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=204.63ms tail=0.19ms total=204.85ms out=3 cont=true
+[spec-acc] ctx=40 burst=1/6 cum=3/9=0.333
+[spec-carry] site=burst-entry token=48176 event=7
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.15ms tail=0.35ms total=206.53ms out=4 cont=true
+[spec-acc] ctx=43 burst=2/6 cum=5/15=0.333
+[spec-carry] site=burst-entry token=69572 event=11
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.64ms tail=0.18ms total=102.85ms out=4 cont=true
+[spec-acc] ctx=47 burst=3/3 cum=8/18=0.444
+[spec-carry] site=burst-entry token=9084 event=15
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.02ms tail=0.19ms total=104.24ms out=3 cont=true
+[spec-acc] ctx=51 burst=2/3 cum=10/21=0.476
+[spec-carry] site=burst-entry token=37266 event=18
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.11ms tail=0.21ms total=104.36ms out=2 cont=true
+[spec-acc] ctx=54 burst=1/3 cum=11/24=0.458
+[spec-carry] site=burst-entry token=2785 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.74ms tail=0.18ms total=205.96ms out=5 cont=true
+[spec-acc] ctx=56 burst=3/6 cum=14/30=0.467
+[spec-carry] site=burst-entry token=561 event=25
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=207.07ms tail=0.20ms total=207.29ms out=2 cont=true
+[spec-acc] ctx=61 burst=0/6 cum=14/36=0.389
+[spec-carry] site=burst-entry token=369 event=27
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.29ms tail=0.20ms total=207.52ms out=2 cont=true
+[spec-acc] ctx=63 burst=0/6 cum=14/42=0.333
+[spec-carry] site=burst-entry token=2094 event=29
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.29ms tail=0.20ms total=208.52ms out=4 cont=true
+[spec-acc] ctx=65 burst=2/6 cum=16/48=0.333
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 68 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-69439fe7e7cc320c44df2898d73a40ae tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=132 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 332MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=44 argmax=80116 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=101.57ms tail=0.18ms total=102.09ms out=4 cont=false
+[spec-acc] ctx=36 burst=2/3 cum=2/3=0.667
+[spec-carry] site=burst-entry token=30191 event=4
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=206.90ms tail=0.19ms total=207.12ms out=3 cont=true
+[spec-acc] ctx=40 burst=1/6 cum=3/9=0.333
+[spec-carry] site=burst-entry token=48176 event=7
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.89ms tail=0.20ms total=208.11ms out=4 cont=true
+[spec-acc] ctx=43 burst=2/6 cum=5/15=0.333
+[spec-carry] site=burst-entry token=69572 event=11
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.26ms tail=0.18ms total=102.47ms out=4 cont=true
+[spec-acc] ctx=47 burst=3/3 cum=8/18=0.444
+[spec-carry] site=burst-entry token=9084 event=15
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.06ms tail=0.19ms total=104.29ms out=3 cont=true
+[spec-acc] ctx=51 burst=2/3 cum=10/21=0.476
+[spec-carry] site=burst-entry token=37266 event=18
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.12ms tail=0.20ms total=106.35ms out=2 cont=true
+[spec-acc] ctx=54 burst=1/3 cum=11/24=0.458
+[spec-carry] site=burst-entry token=2785 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.56ms tail=0.18ms total=206.77ms out=5 cont=true
+[spec-acc] ctx=56 burst=3/6 cum=14/30=0.467
+[spec-carry] site=burst-entry token=561 event=25
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.28ms tail=0.21ms total=207.52ms out=2 cont=true
+[spec-acc] ctx=61 burst=0/6 cum=14/36=0.389
+[spec-carry] site=burst-entry token=369 event=27
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.03ms tail=0.20ms total=208.26ms out=2 cont=true
+[spec-acc] ctx=63 burst=0/6 cum=14/42=0.333
+[spec-carry] site=burst-entry token=2094 event=29
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.51ms tail=0.20ms total=207.75ms out=4 cont=true
+[spec-acc] ctx=65 burst=2/6 cum=16/48=0.333
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 68 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-f6824c35334f6280794c159db346060b tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=133 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 332MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=44 argmax=80116 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=102.47ms tail=0.16ms total=102.97ms out=4 cont=false
+[spec-acc] ctx=36 burst=2/3 cum=2/3=0.667
+[spec-carry] site=burst-entry token=30191 event=4
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=207.65ms tail=0.39ms total=208.07ms out=3 cont=true
+[spec-acc] ctx=40 burst=1/6 cum=3/9=0.333
+[spec-carry] site=burst-entry token=48176 event=7
+[spec-setup] init=0.00ms cap=0.51ms fill=0.00ms rounds=206.39ms tail=0.15ms total=207.06ms out=4 cont=true
+[spec-acc] ctx=43 burst=2/6 cum=5/15=0.333
+[spec-carry] site=burst-entry token=69572 event=11
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.09ms tail=0.17ms total=103.30ms out=4 cont=true
+[spec-acc] ctx=47 burst=3/3 cum=8/18=0.444
+[spec-carry] site=burst-entry token=9084 event=15
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.01ms tail=0.19ms total=105.24ms out=3 cont=true
+[spec-acc] ctx=51 burst=2/3 cum=10/21=0.476
+[spec-carry] site=burst-entry token=37266 event=18
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.02ms tail=0.19ms total=104.24ms out=2 cont=true
+[spec-acc] ctx=54 burst=1/3 cum=11/24=0.458
+[spec-carry] site=burst-entry token=2785 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.11ms tail=0.18ms total=205.32ms out=5 cont=true
+[spec-acc] ctx=56 burst=3/6 cum=14/30=0.467
+[spec-carry] site=burst-entry token=561 event=25
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.23ms tail=0.19ms total=208.45ms out=2 cont=true
+[spec-acc] ctx=61 burst=0/6 cum=14/36=0.389
+[spec-carry] site=burst-entry token=369 event=27
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.32ms tail=0.20ms total=207.54ms out=2 cont=true
+[spec-acc] ctx=63 burst=0/6 cum=14/42=0.333
+[spec-carry] site=burst-entry token=2094 event=29
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.34ms tail=0.19ms total=208.56ms out=4 cont=true
+[spec-acc] ctx=65 burst=2/6 cum=16/48=0.333
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 68 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-6b059d0d6d517595d1afc65f1ea7f341 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=163 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 333MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=44 argmax=80116 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=101.98ms tail=0.19ms total=102.51ms out=4 cont=false
+[spec-acc] ctx=36 burst=2/3 cum=2/3=0.667
+[spec-carry] site=burst-entry token=30191 event=4
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=204.89ms tail=0.20ms total=205.11ms out=3 cont=true
+[spec-acc] ctx=40 burst=1/6 cum=3/9=0.333
+[spec-carry] site=burst-entry token=48176 event=7
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.01ms tail=0.19ms total=206.23ms out=4 cont=true
+[spec-acc] ctx=43 burst=2/6 cum=5/15=0.333
+[spec-carry] site=burst-entry token=69572 event=11
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.26ms tail=0.18ms total=104.47ms out=4 cont=true
+[spec-acc] ctx=47 burst=3/3 cum=8/18=0.444
+[spec-carry] site=burst-entry token=9084 event=15
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.00ms tail=0.19ms total=106.22ms out=3 cont=true
+[spec-acc] ctx=51 burst=2/3 cum=10/21=0.476
+[spec-carry] site=burst-entry token=37266 event=18
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.33ms tail=0.20ms total=105.56ms out=2 cont=true
+[spec-acc] ctx=54 burst=1/3 cum=11/24=0.458
+[spec-carry] site=burst-entry token=2785 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.85ms tail=0.19ms total=207.07ms out=5 cont=true
+[spec-acc] ctx=56 burst=3/6 cum=14/30=0.467
+[spec-carry] site=burst-entry token=561 event=25
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=209.84ms tail=0.19ms total=210.06ms out=2 cont=true
+[spec-acc] ctx=61 burst=0/6 cum=14/36=0.389
+[spec-carry] site=burst-entry token=369 event=27
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.93ms tail=0.20ms total=207.16ms out=2 cont=true
+[spec-acc] ctx=63 burst=0/6 cum=14/42=0.333
+[spec-carry] site=burst-entry token=2094 event=29
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.92ms tail=0.20ms total=208.15ms out=4 cont=true
+[spec-acc] ctx=65 burst=2/6 cum=16/48=0.333
+[spec-carry] site=burst-entry token=48330 event=33
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.17ms tail=0.19ms total=103.39ms out=4 cont=true
+[spec-acc] ctx=69 burst=3/3 cum=19/51=0.373
+[spec-carry] site=burst-entry token=321 event=37
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.58ms tail=0.18ms total=103.80ms out=4 cont=true
+[spec-acc] ctx=73 burst=3/3 cum=22/54=0.407
+[spec-carry] site=burst-entry token=310 event=41
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.90ms tail=0.21ms total=106.13ms out=2 cont=true
+[spec-acc] ctx=77 burst=1/3 cum=23/57=0.404
+[spec-carry] site=burst-entry token=13016 event=43
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.83ms tail=0.19ms total=104.05ms out=4 cont=true
+[spec-acc] ctx=79 burst=3/3 cum=26/60=0.433
+[spec-carry] site=burst-entry token=13 event=47
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.58ms tail=0.20ms total=105.81ms out=3 cont=true
+[spec-acc] ctx=83 burst=2/3 cum=28/63=0.444
+[spec-carry] site=burst-entry token=80116 event=50
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.98ms tail=0.18ms total=208.19ms out=5 cont=true
+[spec-acc] ctx=86 burst=3/6 cum=31/69=0.449
+[spec-carry] site=burst-entry token=10258 event=55
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.65ms tail=0.19ms total=106.88ms out=3 cont=true
+[spec-acc] ctx=91 burst=2/3 cum=33/72=0.458
+[spec-carry] site=burst-entry token=29593 event=58
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.96ms tail=0.20ms total=104.19ms out=3 cont=true
+[spec-acc] ctx=94 burst=2/3 cum=35/75=0.467
+[spec-carry] site=burst-entry token=13 event=61
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=198.38ms tail=0.20ms total=198.61ms out=4 cont=true
+[spec-acc] ctx=97 burst=2/6 cum=37/81=0.457
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 100 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-528b5c2bcc808b1e431b98480a9e348e tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=164 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 333MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=44 argmax=80116 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=101.95ms tail=0.18ms total=102.46ms out=4 cont=false
+[spec-acc] ctx=36 burst=2/3 cum=2/3=0.667
+[spec-carry] site=burst-entry token=30191 event=4
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=205.96ms tail=0.18ms total=206.17ms out=3 cont=true
+[spec-acc] ctx=40 burst=1/6 cum=3/9=0.333
+[spec-carry] site=burst-entry token=48176 event=7
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.98ms tail=0.19ms total=205.19ms out=4 cont=true
+[spec-acc] ctx=43 burst=2/6 cum=5/15=0.333
+[spec-carry] site=burst-entry token=69572 event=11
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.07ms tail=0.17ms total=102.27ms out=4 cont=true
+[spec-acc] ctx=47 burst=3/3 cum=8/18=0.444
+[spec-carry] site=burst-entry token=9084 event=15
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.57ms tail=0.18ms total=104.78ms out=3 cont=true
+[spec-acc] ctx=51 burst=2/3 cum=10/21=0.476
+[spec-carry] site=burst-entry token=37266 event=18
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.87ms tail=0.20ms total=104.10ms out=2 cont=true
+[spec-acc] ctx=54 burst=1/3 cum=11/24=0.458
+[spec-carry] site=burst-entry token=2785 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.72ms tail=0.17ms total=204.92ms out=5 cont=true
+[spec-acc] ctx=56 burst=3/6 cum=14/30=0.467
+[spec-carry] site=burst-entry token=561 event=25
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.50ms tail=0.19ms total=207.73ms out=2 cont=true
+[spec-acc] ctx=61 burst=0/6 cum=14/36=0.389
+[spec-carry] site=burst-entry token=369 event=27
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.04ms tail=0.19ms total=207.27ms out=2 cont=true
+[spec-acc] ctx=63 burst=0/6 cum=14/42=0.333
+[spec-carry] site=burst-entry token=2094 event=29
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=207.99ms tail=0.19ms total=208.21ms out=4 cont=true
+[spec-acc] ctx=65 burst=2/6 cum=16/48=0.333
+[spec-carry] site=burst-entry token=48330 event=33
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.37ms tail=0.19ms total=103.59ms out=4 cont=true
+[spec-acc] ctx=69 burst=3/3 cum=19/51=0.373
+[spec-carry] site=burst-entry token=321 event=37
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.52ms tail=0.18ms total=103.74ms out=4 cont=true
+[spec-acc] ctx=73 burst=3/3 cum=22/54=0.407
+[spec-carry] site=burst-entry token=310 event=41
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.19ms tail=0.20ms total=105.42ms out=2 cont=true
+[spec-acc] ctx=77 burst=1/3 cum=23/57=0.404
+[spec-carry] site=burst-entry token=13016 event=43
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=103.76ms tail=0.18ms total=103.96ms out=4 cont=true
+[spec-acc] ctx=79 burst=3/3 cum=26/60=0.433
+[spec-carry] site=burst-entry token=13 event=47
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.08ms tail=0.19ms total=106.30ms out=3 cont=true
+[spec-acc] ctx=83 burst=2/3 cum=28/63=0.444
+[spec-carry] site=burst-entry token=80116 event=50
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.93ms tail=0.18ms total=208.14ms out=5 cont=true
+[spec-acc] ctx=86 burst=3/6 cum=31/69=0.449
+[spec-carry] site=burst-entry token=10258 event=55
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=105.93ms tail=0.19ms total=106.15ms out=3 cont=true
+[spec-acc] ctx=91 burst=2/3 cum=33/72=0.458
+[spec-carry] site=burst-entry token=29593 event=58
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.01ms tail=0.19ms total=104.23ms out=3 cont=true
+[spec-acc] ctx=94 burst=2/3 cum=35/75=0.467
+[spec-carry] site=burst-entry token=13 event=61
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=199.02ms tail=0.19ms total=199.24ms out=4 cont=true
+[spec-acc] ctx=97 burst=2/6 cum=37/81=0.457
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 100 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-3b5aa1063627a6f65f36f803d81fd2ef tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=165 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 333MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=44 argmax=80116 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=101.82ms tail=0.18ms total=102.33ms out=4 cont=false
+[spec-acc] ctx=36 burst=2/3 cum=2/3=0.667
+[spec-carry] site=burst-entry token=30191 event=4
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=205.51ms tail=0.31ms total=205.84ms out=3 cont=true
+[spec-acc] ctx=40 burst=1/6 cum=3/9=0.333
+[spec-carry] site=burst-entry token=48176 event=7
+[spec-setup] init=0.00ms cap=0.50ms fill=0.00ms rounds=209.34ms tail=0.16ms total=210.01ms out=4 cont=true
+[spec-acc] ctx=43 burst=2/6 cum=5/15=0.333
+[spec-carry] site=burst-entry token=69572 event=11
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.19ms tail=0.18ms total=102.40ms out=4 cont=true
+[spec-acc] ctx=47 burst=3/3 cum=8/18=0.444
+[spec-carry] site=burst-entry token=9084 event=15
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.94ms tail=0.18ms total=104.16ms out=3 cont=true
+[spec-acc] ctx=51 burst=2/3 cum=10/21=0.476
+[spec-carry] site=burst-entry token=37266 event=18
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.88ms tail=0.19ms total=104.11ms out=2 cont=true
+[spec-acc] ctx=54 burst=1/3 cum=11/24=0.458
+[spec-carry] site=burst-entry token=2785 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.29ms tail=0.18ms total=207.51ms out=5 cont=true
+[spec-acc] ctx=56 burst=3/6 cum=14/30=0.467
+[spec-carry] site=burst-entry token=561 event=25
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.90ms tail=0.19ms total=207.12ms out=2 cont=true
+[spec-acc] ctx=61 burst=0/6 cum=14/36=0.389
+[spec-carry] site=burst-entry token=369 event=27
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=208.95ms tail=0.13ms total=209.12ms out=2 cont=true
+[spec-acc] ctx=63 burst=0/6 cum=14/42=0.333
+[spec-carry] site=burst-entry token=2094 event=29
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=208.02ms tail=0.15ms total=208.21ms out=4 cont=true
+[spec-acc] ctx=65 burst=2/6 cum=16/48=0.333
+[spec-carry] site=burst-entry token=48330 event=33
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=103.57ms tail=0.16ms total=103.78ms out=4 cont=true
+[spec-acc] ctx=69 burst=3/3 cum=19/51=0.373
+[spec-carry] site=burst-entry token=321 event=37
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.34ms tail=0.18ms total=104.55ms out=4 cont=true
+[spec-acc] ctx=73 burst=3/3 cum=22/54=0.407
+[spec-carry] site=burst-entry token=310 event=41
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.62ms tail=0.17ms total=105.82ms out=2 cont=true
+[spec-acc] ctx=77 burst=1/3 cum=23/57=0.404
+[spec-carry] site=burst-entry token=13016 event=43
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.13ms tail=0.17ms total=104.33ms out=4 cont=true
+[spec-acc] ctx=79 burst=3/3 cum=26/60=0.433
+[spec-carry] site=burst-entry token=13 event=47
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=105.80ms tail=0.17ms total=106.01ms out=3 cont=true
+[spec-acc] ctx=83 burst=2/3 cum=28/63=0.444
+[spec-carry] site=burst-entry token=80116 event=50
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=209.22ms tail=0.15ms total=209.41ms out=5 cont=true
+[spec-acc] ctx=86 burst=3/6 cum=31/69=0.449
+[spec-carry] site=burst-entry token=10258 event=55
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=108.47ms tail=0.17ms total=108.68ms out=3 cont=true
+[spec-acc] ctx=91 burst=2/3 cum=33/72=0.458
+[spec-carry] site=burst-entry token=29593 event=58
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.29ms tail=0.19ms total=104.51ms out=3 cont=true
+[spec-acc] ctx=94 burst=2/3 cum=35/75=0.467
+[spec-carry] site=burst-entry token=13 event=61
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=198.37ms tail=0.18ms total=198.58ms out=4 cont=true
+[spec-acc] ctx=97 burst=2/6 cum=37/81=0.457
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 100 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-b2a9fa0db04ee2d95027cefd042d0574 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=131 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 332MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=102.37ms tail=1.44ms total=104.12ms out=2 cont=false
+[spec-acc] ctx=36 burst=0/3 cum=0/3=0.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=102.59ms tail=0.22ms total=102.83ms out=4 cont=true
+[spec-acc] ctx=38 burst=3/3 cum=3/6=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.79ms tail=0.16ms total=103.98ms out=4 cont=true
+[spec-acc] ctx=42 burst=3/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.33ms tail=0.20ms total=105.56ms out=2 cont=true
+[spec-acc] ctx=46 burst=1/3 cum=7/12=0.583
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.88ms tail=0.19ms total=106.11ms out=2 cont=true
+[spec-acc] ctx=48 burst=1/3 cum=8/15=0.533
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.16ms tail=0.19ms total=105.38ms out=3 cont=true
+[spec-acc] ctx=50 burst=2/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.85ms tail=0.15ms total=206.03ms out=5 cont=true
+[spec-acc] ctx=53 burst=3/6 cum=13/24=0.542
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=104.25ms tail=0.20ms total=104.47ms out=2 cont=true
+[spec-acc] ctx=58 burst=1/3 cum=14/27=0.519
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.87ms tail=0.16ms total=105.06ms out=4 cont=true
+[spec-acc] ctx=60 burst=3/3 cum=17/30=0.567
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.14ms tail=0.19ms total=106.37ms out=2 cont=true
+[spec-acc] ctx=64 burst=1/3 cum=18/33=0.545
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.84ms tail=0.20ms total=106.08ms out=2 cont=true
+[spec-acc] ctx=66 burst=1/3 cum=19/36=0.528
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 67 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-af89302dccefc72e29ddaf9375f366fc tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=132 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 332MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=101.58ms tail=1.43ms total=103.31ms out=2 cont=false
+[spec-acc] ctx=36 burst=0/3 cum=0/3=0.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=102.34ms tail=0.14ms total=102.51ms out=4 cont=true
+[spec-acc] ctx=38 burst=3/3 cum=3/6=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.98ms tail=0.14ms total=104.15ms out=4 cont=true
+[spec-acc] ctx=42 burst=3/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.18ms tail=0.20ms total=105.42ms out=2 cont=true
+[spec-acc] ctx=46 burst=1/3 cum=7/12=0.583
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.96ms tail=0.20ms total=105.19ms out=2 cont=true
+[spec-acc] ctx=48 burst=1/3 cum=8/15=0.533
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.11ms tail=0.19ms total=105.33ms out=3 cont=true
+[spec-acc] ctx=50 burst=2/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.11ms tail=0.15ms total=207.29ms out=5 cont=true
+[spec-acc] ctx=53 burst=3/6 cum=13/24=0.542
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.59ms tail=0.20ms total=105.83ms out=2 cont=true
+[spec-acc] ctx=58 burst=1/3 cum=14/27=0.519
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.30ms tail=0.15ms total=104.48ms out=4 cont=true
+[spec-acc] ctx=60 burst=3/3 cum=17/30=0.567
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.02ms tail=0.19ms total=106.25ms out=2 cont=true
+[spec-acc] ctx=64 burst=1/3 cum=18/33=0.545
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.72ms tail=0.20ms total=106.95ms out=2 cont=true
+[spec-acc] ctx=66 burst=1/3 cum=19/36=0.528
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 67 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-ee6a4ae60f32302e5e596e9520cec629 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=133 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 332MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=99.66ms tail=1.42ms total=101.39ms out=2 cont=false
+[spec-acc] ctx=36 burst=0/3 cum=0/3=0.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.52ms tail=0.15ms total=101.69ms out=4 cont=true
+[spec-acc] ctx=38 burst=3/3 cum=3/6=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.89ms tail=0.15ms total=102.08ms out=4 cont=true
+[spec-acc] ctx=42 burst=3/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.53ms tail=0.19ms total=103.75ms out=2 cont=true
+[spec-acc] ctx=46 burst=1/3 cum=7/12=0.583
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.27ms tail=0.20ms total=104.50ms out=2 cont=true
+[spec-acc] ctx=48 burst=1/3 cum=8/15=0.533
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.80ms tail=0.19ms total=104.02ms out=3 cont=true
+[spec-acc] ctx=50 burst=2/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.54ms tail=0.16ms total=204.73ms out=5 cont=true
+[spec-acc] ctx=53 burst=3/6 cum=13/24=0.542
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.28ms tail=0.20ms total=104.50ms out=2 cont=true
+[spec-acc] ctx=58 burst=1/3 cum=14/27=0.519
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.42ms tail=0.15ms total=103.61ms out=4 cont=true
+[spec-acc] ctx=60 burst=3/3 cum=17/30=0.567
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.40ms tail=0.20ms total=104.63ms out=2 cont=true
+[spec-acc] ctx=64 burst=1/3 cum=18/33=0.545
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.53ms tail=0.20ms total=104.76ms out=2 cont=true
+[spec-acc] ctx=66 burst=1/3 cum=19/36=0.528
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.18ms tail=0.20ms total=106.41ms out=2 cont=true
+[spec-acc] ctx=68 burst=1/3 cum=20/39=0.513
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 69 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-2ccb6df91d5658a8d710257fe60806ba tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=163 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 333MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=100.23ms tail=1.41ms total=101.94ms out=2 cont=false
+[spec-acc] ctx=36 burst=0/3 cum=0/3=0.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=102.61ms tail=0.15ms total=102.78ms out=4 cont=true
+[spec-acc] ctx=38 burst=3/3 cum=3/6=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.84ms tail=0.16ms total=102.03ms out=4 cont=true
+[spec-acc] ctx=42 burst=3/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.46ms tail=0.19ms total=103.68ms out=2 cont=true
+[spec-acc] ctx=46 burst=1/3 cum=7/12=0.583
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.21ms tail=0.19ms total=104.44ms out=2 cont=true
+[spec-acc] ctx=48 burst=1/3 cum=8/15=0.533
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=104.38ms tail=0.22ms total=104.63ms out=3 cont=true
+[spec-acc] ctx=50 burst=2/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.29ms tail=0.15ms total=204.47ms out=5 cont=true
+[spec-acc] ctx=53 burst=3/6 cum=13/24=0.542
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=104.06ms tail=0.20ms total=104.30ms out=2 cont=true
+[spec-acc] ctx=58 burst=1/3 cum=14/27=0.519
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.63ms tail=0.16ms total=102.83ms out=4 cont=true
+[spec-acc] ctx=60 burst=3/3 cum=17/30=0.567
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.40ms tail=0.21ms total=106.65ms out=2 cont=true
+[spec-acc] ctx=64 burst=1/3 cum=18/33=0.545
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.74ms tail=0.22ms total=105.99ms out=2 cont=true
+[spec-acc] ctx=66 burst=1/3 cum=19/36=0.528
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.70ms tail=0.20ms total=106.94ms out=2 cont=true
+[spec-acc] ctx=68 burst=1/3 cum=20/39=0.513
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.04ms tail=0.19ms total=106.26ms out=3 cont=true
+[spec-acc] ctx=70 burst=2/3 cum=22/42=0.524
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.19ms tail=0.20ms total=106.43ms out=2 cont=true
+[spec-acc] ctx=73 burst=1/3 cum=23/45=0.511
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.92ms tail=0.20ms total=107.15ms out=2 cont=true
+[spec-acc] ctx=75 burst=1/3 cum=24/48=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=209.77ms tail=0.19ms total=210.00ms out=4 cont=true
+[spec-acc] ctx=77 burst=2/6 cum=26/54=0.481
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=208.62ms tail=0.20ms total=208.85ms out=3 cont=true
+[spec-acc] ctx=81 burst=1/6 cum=27/60=0.450
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.98ms tail=0.19ms total=106.20ms out=3 cont=true
+[spec-acc] ctx=84 burst=2/3 cum=29/63=0.460
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.79ms tail=0.15ms total=207.98ms out=5 cont=true
+[spec-acc] ctx=87 burst=3/6 cum=32/69=0.464
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.86ms tail=0.19ms total=209.08ms out=4 cont=true
+[spec-acc] ctx=92 burst=2/6 cum=34/75=0.453
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.82ms tail=0.19ms total=101.04ms out=3 cont=true
+[spec-acc] ctx=96 burst=2/3 cum=36/78=0.462
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 98 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-0c22a1af06b1305296d1306ff6a0f2fe tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=164 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 333MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=99.75ms tail=1.41ms total=101.47ms out=2 cont=false
+[spec-acc] ctx=36 burst=0/3 cum=0/3=0.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.52ms tail=0.15ms total=101.70ms out=4 cont=true
+[spec-acc] ctx=38 burst=3/3 cum=3/6=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.77ms tail=0.16ms total=101.96ms out=4 cont=true
+[spec-acc] ctx=42 burst=3/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.98ms tail=0.21ms total=104.22ms out=2 cont=true
+[spec-acc] ctx=46 burst=1/3 cum=7/12=0.583
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.54ms tail=0.20ms total=103.77ms out=2 cont=true
+[spec-acc] ctx=48 burst=1/3 cum=8/15=0.533
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.60ms tail=0.20ms total=103.83ms out=3 cont=true
+[spec-acc] ctx=50 burst=2/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.23ms tail=0.16ms total=204.42ms out=5 cont=true
+[spec-acc] ctx=53 burst=3/6 cum=13/24=0.542
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.70ms tail=0.20ms total=104.93ms out=2 cont=true
+[spec-acc] ctx=58 burst=1/3 cum=14/27=0.519
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.57ms tail=0.16ms total=102.76ms out=4 cont=true
+[spec-acc] ctx=60 burst=3/3 cum=17/30=0.567
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.33ms tail=0.20ms total=104.56ms out=2 cont=true
+[spec-acc] ctx=64 burst=1/3 cum=18/33=0.545
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.30ms tail=0.20ms total=104.54ms out=2 cont=true
+[spec-acc] ctx=66 burst=1/3 cum=19/36=0.528
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.48ms tail=0.20ms total=104.71ms out=2 cont=true
+[spec-acc] ctx=68 burst=1/3 cum=20/39=0.513
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.26ms tail=0.19ms total=105.48ms out=3 cont=true
+[spec-acc] ctx=70 burst=2/3 cum=22/42=0.524
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.18ms tail=0.19ms total=105.41ms out=2 cont=true
+[spec-acc] ctx=73 burst=1/3 cum=23/45=0.511
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.12ms tail=0.17ms total=105.33ms out=2 cont=true
+[spec-acc] ctx=75 burst=1/3 cum=24/48=0.500
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=210.75ms tail=0.17ms total=210.96ms out=4 cont=true
+[spec-acc] ctx=77 burst=2/6 cum=26/54=0.481
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=209.31ms tail=0.20ms total=209.53ms out=3 cont=true
+[spec-acc] ctx=81 burst=1/6 cum=27/60=0.450
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.27ms tail=0.18ms total=105.49ms out=3 cont=true
+[spec-acc] ctx=84 burst=2/3 cum=29/63=0.460
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.54ms tail=0.15ms total=208.72ms out=5 cont=true
+[spec-acc] ctx=87 burst=3/6 cum=32/69=0.464
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.86ms tail=0.19ms total=209.08ms out=4 cont=true
+[spec-acc] ctx=92 burst=2/6 cum=34/75=0.453
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.91ms tail=0.19ms total=100.13ms out=3 cont=true
+[spec-acc] ctx=96 burst=2/3 cum=36/78=0.462
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.65ms tail=0.19ms total=100.87ms out=3 cont=true
+[spec-acc] ctx=99 burst=2/3 cum=38/81=0.469
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 101 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-822145e9d2718b837d28cdf52acdd8ff tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=165 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 333MB
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=100.93ms tail=1.42ms total=102.65ms out=2 cont=false
+[spec-acc] ctx=36 burst=0/3 cum=0/3=0.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.69ms tail=0.15ms total=101.86ms out=4 cont=true
+[spec-acc] ctx=38 burst=3/3 cum=3/6=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.07ms tail=0.14ms total=102.24ms out=4 cont=true
+[spec-acc] ctx=42 burst=3/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=104.54ms tail=0.17ms total=104.76ms out=2 cont=true
+[spec-acc] ctx=46 burst=1/3 cum=7/12=0.583
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=106.93ms tail=0.17ms total=107.15ms out=2 cont=true
+[spec-acc] ctx=48 burst=1/3 cum=8/15=0.533
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=104.34ms tail=0.16ms total=104.54ms out=3 cont=true
+[spec-acc] ctx=50 burst=2/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.16ms tail=0.16ms total=204.36ms out=5 cont=true
+[spec-acc] ctx=53 burst=3/6 cum=13/24=0.542
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.23ms tail=0.20ms total=104.46ms out=2 cont=true
+[spec-acc] ctx=58 burst=1/3 cum=14/27=0.519
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.56ms tail=0.14ms total=102.73ms out=4 cont=true
+[spec-acc] ctx=60 burst=3/3 cum=17/30=0.567
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.01ms tail=0.21ms total=105.26ms out=2 cont=true
+[spec-acc] ctx=64 burst=1/3 cum=18/33=0.545
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.50ms tail=0.20ms total=104.73ms out=2 cont=true
+[spec-acc] ctx=66 burst=1/3 cum=19/36=0.528
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.42ms tail=0.20ms total=104.66ms out=2 cont=true
+[spec-acc] ctx=68 burst=1/3 cum=20/39=0.513
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.68ms tail=0.19ms total=104.91ms out=3 cont=true
+[spec-acc] ctx=70 burst=2/3 cum=22/42=0.524
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.74ms tail=0.20ms total=104.97ms out=2 cont=true
+[spec-acc] ctx=73 burst=1/3 cum=23/45=0.511
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.99ms tail=0.20ms total=106.23ms out=2 cont=true
+[spec-acc] ctx=75 burst=1/3 cum=24/48=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.19ms tail=0.19ms total=208.41ms out=4 cont=true
+[spec-acc] ctx=77 burst=2/6 cum=26/54=0.481
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=209.19ms tail=0.19ms total=209.42ms out=3 cont=true
+[spec-acc] ctx=81 burst=1/6 cum=27/60=0.450
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.63ms tail=0.19ms total=105.85ms out=3 cont=true
+[spec-acc] ctx=84 burst=2/3 cum=29/63=0.460
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=209.22ms tail=0.12ms total=209.37ms out=5 cont=true
+[spec-acc] ctx=87 burst=3/6 cum=32/69=0.464
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=210.23ms tail=0.17ms total=210.45ms out=4 cont=true
+[spec-acc] ctx=92 burst=2/6 cum=34/75=0.453
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.19ms tail=0.18ms total=100.41ms out=3 cont=true
+[spec-acc] ctx=96 burst=2/3 cum=36/78=0.462
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.41ms tail=0.17ms total=100.62ms out=3 cont=true
+[spec-acc] ctx=99 burst=2/3 cum=38/81=0.469
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 101 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-7f691f548b8519a0add4d609a251f8b6 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=226 path=spec = 31552 B/token x ctx + 19MB prefill-workspace + 312MB fixed = 338MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=42 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=plain-first sampled=90 argmax=90 deviates=0 temp=1 sctr=0
+[constrained] q: 95 masked steps, mask total 0.78 ms (0.008 ms/step)
+[meter] admit id=chatcmpl-18135f382ecbd64cf2458b624b0f28fa tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 42 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=42 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.32ms cap=0.01ms fill=0.00ms rounds=102.19ms tail=0.02ms total=102.54ms out=5 cont=false
+[spec-acc] ctx=42 burst=3/3 cum=3/3=1.000
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=105.90ms tail=0.04ms total=105.97ms out=3 cont=true
+[spec-acc] ctx=47 burst=2/3 cum=5/6=0.833
+[spec-setup] init=0.01ms cap=0.05ms fill=0.00ms rounds=207.50ms tail=0.20ms total=207.75ms out=2 cont=true
+[spec-acc] ctx=50 burst=0/6 cum=5/12=0.417
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.26ms tail=0.16ms total=102.46ms out=4 cont=true
+[spec-acc] ctx=52 burst=3/3 cum=8/15=0.533
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.65ms tail=0.17ms total=102.85ms out=4 cont=true
+[spec-acc] ctx=56 burst=3/3 cum=11/18=0.611
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.30ms tail=0.17ms total=205.50ms out=5 cont=true
+[spec-acc] ctx=60 burst=3/6 cum=14/24=0.583
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.74ms tail=0.16ms total=103.93ms out=4 cont=true
+[spec-acc] ctx=65 burst=3/3 cum=17/27=0.630
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.38ms tail=0.17ms total=103.58ms out=4 cont=true
+[spec-acc] ctx=69 burst=3/3 cum=20/30=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.85ms tail=0.20ms total=105.09ms out=2 cont=true
+[spec-acc] ctx=73 burst=1/3 cum=21/33=0.636
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.44ms tail=0.17ms total=103.65ms out=4 cont=true
+[spec-acc] ctx=75 burst=3/3 cum=24/36=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.26ms tail=0.21ms total=105.50ms out=3 cont=true
+[spec-acc] ctx=79 burst=2/3 cum=26/39=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=209.80ms tail=0.21ms total=210.04ms out=2 cont=true
+[spec-acc] ctx=82 burst=0/6 cum=26/45=0.578
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.34ms tail=0.21ms total=105.58ms out=2 cont=true
+[spec-acc] ctx=84 burst=1/3 cum=27/48=0.562
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.51ms tail=0.21ms total=105.76ms out=2 cont=true
+[spec-acc] ctx=86 burst=1/3 cum=28/51=0.549
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=210.10ms tail=0.21ms total=210.34ms out=3 cont=true
+[spec-acc] ctx=88 burst=1/6 cum=29/57=0.509
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=209.62ms tail=0.21ms total=209.86ms out=2 cont=true
+[spec-acc] ctx=91 burst=0/6 cum=29/63=0.460
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.33ms tail=0.21ms total=106.57ms out=2 cont=true
+[spec-acc] ctx=93 burst=1/3 cum=30/66=0.455
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.01ms tail=0.21ms total=105.26ms out=2 cont=true
+[spec-acc] ctx=95 burst=1/3 cum=31/69=0.449
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.92ms tail=0.21ms total=100.16ms out=2 cont=true
+[spec-acc] ctx=97 burst=1/3 cum=32/72=0.444
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.42ms tail=0.21ms total=101.66ms out=3 cont=true
+[spec-acc] ctx=99 burst=2/3 cum=34/75=0.453
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.01ms tail=0.17ms total=100.20ms out=4 cont=true
+[spec-acc] ctx=102 burst=3/3 cum=37/78=0.474
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.63ms tail=0.21ms total=101.87ms out=2 cont=true
+[spec-acc] ctx=106 burst=1/3 cum=38/81=0.469
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.41ms tail=0.16ms total=200.60ms out=5 cont=true
+[spec-acc] ctx=108 burst=3/6 cum=41/87=0.471
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.32ms tail=0.41ms total=101.76ms out=2 cont=true
+[spec-acc] ctx=113 burst=1/3 cum=42/90=0.467
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.60ms tail=0.22ms total=101.85ms out=2 cont=true
+[spec-acc] ctx=115 burst=1/3 cum=43/93=0.462
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.98ms tail=0.21ms total=100.22ms out=2 cont=true
+[spec-acc] ctx=117 burst=1/3 cum=44/96=0.458
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.22ms tail=0.17ms total=99.43ms out=4 cont=true
+[spec-acc] ctx=119 burst=3/3 cum=47/99=0.475
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.46ms tail=0.22ms total=101.71ms out=2 cont=true
+[spec-acc] ctx=123 burst=1/3 cum=48/102=0.471
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.55ms tail=0.22ms total=101.80ms out=2 cont=true
+[spec-acc] ctx=125 burst=1/3 cum=49/105=0.467
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.35ms tail=0.21ms total=101.60ms out=2 cont=true
+[spec-acc] ctx=127 burst=1/3 cum=50/108=0.463
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=198.77ms tail=0.21ms total=199.01ms out=3 cont=true
+[spec-acc] ctx=129 burst=1/6 cum=51/114=0.447
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.25ms tail=0.16ms total=100.44ms out=4 cont=true
+[spec-acc] ctx=132 burst=3/3 cum=54/117=0.462
+[constrained] q: 94 masked steps, mask total 0.66 ms (0.007 ms/step)
+[draft-mask] q: 39 clones 0.12 ms (0.003 ms/clone), 117 draft masks 0.70 ms (0.006 ms/mask)
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 135 rows hold no resumable state (the checkpoint 42 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-1872a2c65824259b65672bc8a66ec9b3 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=196 path=spec = 31552 B/token x ctx + 17MB prefill-workspace + 312MB fixed = 334MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=1073 argmax=80116 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=101.30ms tail=0.19ms total=101.83ms out=4 cont=false
+[spec-acc] ctx=36 burst=2/3 cum=2/3=0.667
+[spec-carry] site=burst-entry token=264 event=4
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.71ms tail=0.18ms total=101.92ms out=4 cont=true
+[spec-acc] ctx=40 burst=3/3 cum=5/6=0.833
+[spec-carry] site=burst-entry token=10258 event=8
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.06ms tail=0.18ms total=102.28ms out=4 cont=true
+[spec-acc] ctx=44 burst=3/3 cum=8/9=0.889
+[spec-carry] site=burst-entry token=3566 event=12
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.45ms tail=0.21ms total=104.69ms out=2 cont=true
+[spec-acc] ctx=48 burst=1/3 cum=9/12=0.750
+[spec-carry] site=burst-entry token=17708 event=14
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.76ms tail=0.20ms total=103.99ms out=3 cont=true
+[spec-acc] ctx=50 burst=2/3 cum=11/15=0.733
+[spec-carry] site=burst-entry token=321 event=17
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.93ms tail=0.21ms total=206.18ms out=3 cont=true
+[spec-acc] ctx=53 burst=1/6 cum=12/21=0.571
+[spec-carry] site=burst-entry token=13 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.09ms tail=0.21ms total=104.33ms out=2 cont=true
+[spec-acc] ctx=56 burst=1/3 cum=13/24=0.542
+[spec-carry] site=burst-entry token=369 event=22
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.10ms tail=0.21ms total=105.34ms out=2 cont=true
+[spec-acc] ctx=58 burst=1/3 cum=14/27=0.519
+[spec-carry] site=burst-entry token=264 event=24
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.73ms tail=0.20ms total=206.96ms out=2 cont=true
+[spec-acc] ctx=60 burst=0/6 cum=14/33=0.424
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 61 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-adbf48c0e9ae94c935a7d98b3947a4bd tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=1073 argmax=80116 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.38ms cap=0.00ms fill=0.00ms rounds=101.59ms tail=0.18ms total=102.15ms out=4 cont=false
+[spec-acc] ctx=36 burst=2/3 cum=2/3=0.667
+[spec-carry] site=burst-entry token=264 event=4
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=103.25ms tail=0.18ms total=103.45ms out=4 cont=true
+[spec-acc] ctx=40 burst=3/3 cum=5/6=0.833
+[spec-carry] site=burst-entry token=10258 event=8
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.13ms tail=0.18ms total=102.34ms out=4 cont=true
+[spec-acc] ctx=44 burst=3/3 cum=8/9=0.889
+[spec-carry] site=burst-entry token=3566 event=12
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.25ms tail=0.20ms total=105.49ms out=2 cont=true
+[spec-acc] ctx=48 burst=1/3 cum=9/12=0.750
+[spec-carry] site=burst-entry token=17708 event=14
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.13ms tail=0.20ms total=105.36ms out=3 cont=true
+[spec-acc] ctx=50 burst=2/3 cum=11/15=0.733
+[spec-carry] site=burst-entry token=321 event=17
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=206.50ms tail=0.20ms total=206.73ms out=3 cont=true
+[spec-acc] ctx=53 burst=1/6 cum=12/21=0.571
+[spec-carry] site=burst-entry token=13 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.66ms tail=0.21ms total=105.90ms out=2 cont=true
+[spec-acc] ctx=56 burst=1/3 cum=13/24=0.542
+[spec-carry] site=burst-entry token=369 event=22
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.16ms tail=0.21ms total=104.41ms out=2 cont=true
+[spec-acc] ctx=58 burst=1/3 cum=14/27=0.519
+[spec-carry] site=burst-entry token=264 event=24
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.30ms tail=0.18ms total=207.52ms out=2 cont=true
+[spec-acc] ctx=60 burst=0/6 cum=14/33=0.424
+[spec-carry] site=burst-entry token=4088 event=26
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.17ms tail=0.17ms total=105.38ms out=4 cont=true
+[spec-acc] ctx=62 burst=3/3 cum=17/36=0.472
+[spec-carry] site=burst-entry token=264 event=30
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.26ms tail=0.19ms total=106.48ms out=3 cont=true
+[spec-acc] ctx=66 burst=2/3 cum=19/39=0.487
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 68 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-f195c04ff89ae809d52ce918869e27d8 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=1073 argmax=80116 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=102.46ms tail=0.19ms total=102.99ms out=4 cont=false
+[spec-acc] ctx=36 burst=2/3 cum=2/3=0.667
+[spec-carry] site=burst-entry token=264 event=4
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=102.42ms tail=0.16ms total=102.61ms out=4 cont=true
+[spec-acc] ctx=40 burst=3/3 cum=5/6=0.833
+[spec-carry] site=burst-entry token=10258 event=8
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.91ms tail=0.18ms total=103.13ms out=4 cont=true
+[spec-acc] ctx=44 burst=3/3 cum=8/9=0.889
+[spec-carry] site=burst-entry token=3566 event=12
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.93ms tail=0.20ms total=106.16ms out=2 cont=true
+[spec-acc] ctx=48 burst=1/3 cum=9/12=0.750
+[spec-carry] site=burst-entry token=17708 event=14
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.09ms tail=0.18ms total=105.30ms out=3 cont=true
+[spec-acc] ctx=50 burst=2/3 cum=11/15=0.733
+[spec-carry] site=burst-entry token=321 event=17
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.44ms tail=0.20ms total=207.67ms out=3 cont=true
+[spec-acc] ctx=53 burst=1/6 cum=12/21=0.571
+[spec-carry] site=burst-entry token=13 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.11ms tail=0.20ms total=106.34ms out=2 cont=true
+[spec-acc] ctx=56 burst=1/3 cum=13/24=0.542
+[spec-carry] site=burst-entry token=369 event=22
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.22ms tail=0.20ms total=104.44ms out=2 cont=true
+[spec-acc] ctx=58 burst=1/3 cum=14/27=0.519
+[spec-carry] site=burst-entry token=264 event=24
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.05ms tail=0.18ms total=208.26ms out=2 cont=true
+[spec-acc] ctx=60 burst=0/6 cum=14/33=0.424
+[spec-carry] site=burst-entry token=4088 event=26
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.34ms tail=0.17ms total=104.54ms out=4 cont=true
+[spec-acc] ctx=62 burst=3/3 cum=17/36=0.472
+[spec-carry] site=burst-entry token=264 event=30
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.59ms tail=0.19ms total=105.82ms out=3 cont=true
+[spec-acc] ctx=66 burst=2/3 cum=19/39=0.487
+[spec-carry] site=burst-entry token=795 event=33
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.55ms tail=0.18ms total=106.77ms out=2 cont=true
+[spec-acc] ctx=69 burst=1/3 cum=20/42=0.476
+[spec-carry] site=burst-entry token=9856 event=35
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=107.35ms tail=0.18ms total=107.57ms out=3 cont=true
+[spec-acc] ctx=71 burst=2/3 cum=22/45=0.489
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 73 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-edcc786dcf1547b91e243b0e8c4fd23a tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=1073 argmax=80116 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.34ms cap=0.00ms fill=0.00ms rounds=102.56ms tail=0.19ms total=103.09ms out=4 cont=false
+[spec-acc] ctx=36 burst=2/3 cum=2/3=0.667
+[spec-carry] site=burst-entry token=264 event=4
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.55ms tail=0.19ms total=101.77ms out=4 cont=true
+[spec-acc] ctx=40 burst=3/3 cum=5/6=0.833
+[spec-carry] site=burst-entry token=10258 event=8
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.21ms tail=0.19ms total=103.44ms out=4 cont=true
+[spec-acc] ctx=44 burst=3/3 cum=8/9=0.889
+[spec-carry] site=burst-entry token=3566 event=12
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.68ms tail=0.20ms total=103.91ms out=2 cont=true
+[spec-acc] ctx=48 burst=1/3 cum=9/12=0.750
+[spec-carry] site=burst-entry token=17708 event=14
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.68ms tail=0.20ms total=103.91ms out=3 cont=true
+[spec-acc] ctx=50 burst=2/3 cum=11/15=0.733
+[spec-carry] site=burst-entry token=321 event=17
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.68ms tail=0.20ms total=206.91ms out=3 cont=true
+[spec-acc] ctx=53 burst=1/6 cum=12/21=0.571
+[spec-carry] site=burst-entry token=13 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.07ms tail=0.21ms total=104.31ms out=2 cont=true
+[spec-acc] ctx=56 burst=1/3 cum=13/24=0.542
+[spec-carry] site=burst-entry token=369 event=22
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.08ms tail=0.21ms total=104.33ms out=2 cont=true
+[spec-acc] ctx=58 burst=1/3 cum=14/27=0.519
+[spec-carry] site=burst-entry token=264 event=24
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.60ms tail=0.19ms total=206.82ms out=2 cont=true
+[spec-acc] ctx=60 burst=0/6 cum=14/33=0.424
+[spec-carry] site=burst-entry token=4088 event=26
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.47ms tail=0.19ms total=103.70ms out=4 cont=true
+[spec-acc] ctx=62 burst=3/3 cum=17/36=0.472
+[spec-carry] site=burst-entry token=264 event=30
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.78ms tail=0.20ms total=105.01ms out=3 cont=true
+[spec-acc] ctx=66 burst=2/3 cum=19/39=0.487
+[spec-carry] site=burst-entry token=795 event=33
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.67ms tail=0.21ms total=104.91ms out=2 cont=true
+[spec-acc] ctx=69 burst=1/3 cum=20/42=0.476
+[spec-carry] site=burst-entry token=9856 event=35
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.71ms tail=0.20ms total=104.94ms out=3 cont=true
+[spec-acc] ctx=71 burst=2/3 cum=22/45=0.489
+[spec-carry] site=burst-entry token=14260 event=38
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=207.30ms tail=0.18ms total=207.51ms out=5 cont=true
+[spec-acc] ctx=74 burst=3/6 cum=25/51=0.490
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 78 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-7a9384960402ab57ace1dd6c4300d1a8 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=1073 argmax=80116 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=102.06ms tail=0.19ms total=102.58ms out=4 cont=false
+[spec-acc] ctx=36 burst=2/3 cum=2/3=0.667
+[spec-carry] site=burst-entry token=264 event=4
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=102.37ms tail=0.18ms total=102.57ms out=4 cont=true
+[spec-acc] ctx=40 burst=3/3 cum=5/6=0.833
+[spec-carry] site=burst-entry token=10258 event=8
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.10ms tail=0.19ms total=102.32ms out=4 cont=true
+[spec-acc] ctx=44 burst=3/3 cum=8/9=0.889
+[spec-carry] site=burst-entry token=3566 event=12
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.77ms tail=0.21ms total=104.01ms out=2 cont=true
+[spec-acc] ctx=48 burst=1/3 cum=9/12=0.750
+[spec-carry] site=burst-entry token=17708 event=14
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.39ms tail=0.20ms total=104.63ms out=3 cont=true
+[spec-acc] ctx=50 burst=2/3 cum=11/15=0.733
+[spec-carry] site=burst-entry token=321 event=17
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.02ms tail=0.20ms total=206.24ms out=3 cont=true
+[spec-acc] ctx=53 burst=1/6 cum=12/21=0.571
+[spec-carry] site=burst-entry token=13 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.01ms tail=0.20ms total=104.25ms out=2 cont=true
+[spec-acc] ctx=56 burst=1/3 cum=13/24=0.542
+[spec-carry] site=burst-entry token=369 event=22
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.15ms tail=0.20ms total=104.38ms out=2 cont=true
+[spec-acc] ctx=58 burst=1/3 cum=14/27=0.519
+[spec-carry] site=burst-entry token=264 event=24
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.38ms tail=0.19ms total=208.61ms out=2 cont=true
+[spec-acc] ctx=60 burst=0/6 cum=14/33=0.424
+[spec-carry] site=burst-entry token=4088 event=26
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.27ms tail=0.19ms total=104.49ms out=4 cont=true
+[spec-acc] ctx=62 burst=3/3 cum=17/36=0.472
+[spec-carry] site=burst-entry token=264 event=30
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.64ms tail=0.20ms total=104.87ms out=3 cont=true
+[spec-acc] ctx=66 burst=2/3 cum=19/39=0.487
+[spec-carry] site=burst-entry token=795 event=33
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.82ms tail=0.20ms total=107.06ms out=2 cont=true
+[spec-acc] ctx=69 burst=1/3 cum=20/42=0.476
+[spec-carry] site=burst-entry token=9856 event=35
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.45ms tail=0.20ms total=106.68ms out=3 cont=true
+[spec-acc] ctx=71 burst=2/3 cum=22/45=0.489
+[spec-carry] site=burst-entry token=14260 event=38
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.27ms tail=0.18ms total=208.49ms out=5 cont=true
+[spec-acc] ctx=74 burst=3/6 cum=25/51=0.490
+[spec-carry] site=burst-entry token=10856 event=43
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.68ms tail=0.22ms total=106.93ms out=2 cont=true
+[spec-acc] ctx=79 burst=1/3 cum=26/54=0.481
+[spec-carry] site=burst-entry token=561 event=45
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.94ms tail=0.21ms total=106.18ms out=2 cont=true
+[spec-acc] ctx=81 burst=1/3 cum=27/57=0.474
+[spec-carry] site=burst-entry token=8524 event=47
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.45ms tail=0.21ms total=105.69ms out=2 cont=true
+[spec-acc] ctx=83 burst=1/3 cum=28/60=0.467
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 84 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-8c3eab84395d6c09e90d275edb961b32 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=99.64ms tail=1.45ms total=101.39ms out=2 cont=false
+[spec-acc] ctx=36 burst=0/3 cum=0/3=0.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.47ms tail=0.15ms total=101.64ms out=4 cont=true
+[spec-acc] ctx=38 burst=3/3 cum=3/6=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.80ms tail=0.16ms total=102.00ms out=4 cont=true
+[spec-acc] ctx=42 burst=3/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.62ms tail=0.20ms total=205.85ms out=3 cont=true
+[spec-acc] ctx=46 burst=1/6 cum=7/15=0.467
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.09ms tail=0.17ms total=102.28ms out=4 cont=true
+[spec-acc] ctx=49 burst=3/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.84ms tail=0.20ms total=104.07ms out=2 cont=true
+[spec-acc] ctx=53 burst=1/3 cum=11/21=0.524
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.76ms tail=0.20ms total=104.00ms out=2 cont=true
+[spec-acc] ctx=55 burst=1/3 cum=12/24=0.500
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 56 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-e5c4b606c3b5f828381c09ae8ea71977 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=101.47ms tail=1.42ms total=103.19ms out=2 cont=false
+[spec-acc] ctx=36 burst=0/3 cum=0/3=0.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.42ms tail=0.15ms total=101.60ms out=4 cont=true
+[spec-acc] ctx=38 burst=3/3 cum=3/6=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.76ms tail=0.16ms total=101.96ms out=4 cont=true
+[spec-acc] ctx=42 burst=3/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.79ms tail=0.20ms total=206.03ms out=3 cont=true
+[spec-acc] ctx=46 burst=1/6 cum=7/15=0.467
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.11ms tail=0.17ms total=102.31ms out=4 cont=true
+[spec-acc] ctx=49 burst=3/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.82ms tail=0.21ms total=104.07ms out=2 cont=true
+[spec-acc] ctx=53 burst=1/3 cum=11/21=0.524
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.80ms tail=0.21ms total=104.05ms out=2 cont=true
+[spec-acc] ctx=55 burst=1/3 cum=12/24=0.500
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=103.83ms tail=0.21ms total=104.06ms out=2 cont=true
+[spec-acc] ctx=57 burst=1/3 cum=13/27=0.481
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.63ms tail=0.21ms total=104.87ms out=3 cont=true
+[spec-acc] ctx=59 burst=2/3 cum=15/30=0.500
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 61 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-a2542a1bf2ff7d95cd2a6bf8cd56162e tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=101.05ms tail=1.43ms total=102.79ms out=2 cont=false
+[spec-acc] ctx=36 burst=0/3 cum=0/3=0.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.44ms tail=0.15ms total=101.62ms out=4 cont=true
+[spec-acc] ctx=38 burst=3/3 cum=3/6=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.80ms tail=0.16ms total=102.00ms out=4 cont=true
+[spec-acc] ctx=42 burst=3/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.55ms tail=0.20ms total=205.78ms out=3 cont=true
+[spec-acc] ctx=46 burst=1/6 cum=7/15=0.467
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.05ms tail=0.15ms total=102.23ms out=4 cont=true
+[spec-acc] ctx=49 burst=3/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.80ms tail=0.20ms total=104.03ms out=2 cont=true
+[spec-acc] ctx=53 burst=1/3 cum=11/21=0.524
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.79ms tail=0.20ms total=104.02ms out=2 cont=true
+[spec-acc] ctx=55 burst=1/3 cum=12/24=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.29ms tail=0.21ms total=105.53ms out=2 cont=true
+[spec-acc] ctx=57 burst=1/3 cum=13/27=0.481
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=106.21ms tail=0.29ms total=106.53ms out=3 cont=true
+[spec-acc] ctx=59 burst=2/3 cum=15/30=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=206.50ms tail=0.19ms total=206.72ms out=4 cont=true
+[spec-acc] ctx=62 burst=2/6 cum=17/36=0.472
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.01ms tail=0.16ms total=103.20ms out=4 cont=true
+[spec-acc] ctx=66 burst=3/3 cum=20/39=0.513
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.52ms tail=0.21ms total=105.76ms out=2 cont=true
+[spec-acc] ctx=70 burst=1/3 cum=21/42=0.500
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 71 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-7df93322aacf5976c6a1475d861ef56e tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=100.11ms tail=1.46ms total=101.87ms out=2 cont=false
+[spec-acc] ctx=36 burst=0/3 cum=0/3=0.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.44ms tail=0.15ms total=101.61ms out=4 cont=true
+[spec-acc] ctx=38 burst=3/3 cum=3/6=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.83ms tail=0.16ms total=102.02ms out=4 cont=true
+[spec-acc] ctx=42 burst=3/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=205.78ms tail=0.20ms total=206.01ms out=3 cont=true
+[spec-acc] ctx=46 burst=1/6 cum=7/15=0.467
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.07ms tail=0.16ms total=102.26ms out=4 cont=true
+[spec-acc] ctx=49 burst=3/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.06ms tail=0.20ms total=104.29ms out=2 cont=true
+[spec-acc] ctx=53 burst=1/3 cum=11/21=0.524
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.13ms tail=0.18ms total=104.35ms out=2 cont=true
+[spec-acc] ctx=55 burst=1/3 cum=12/24=0.500
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=104.62ms tail=0.28ms total=104.94ms out=2 cont=true
+[spec-acc] ctx=57 burst=1/3 cum=13/27=0.481
+[spec-setup] init=0.00ms cap=0.05ms fill=0.00ms rounds=106.32ms tail=0.17ms total=106.53ms out=3 cont=true
+[spec-acc] ctx=59 burst=2/3 cum=15/30=0.500
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=206.58ms tail=0.19ms total=206.81ms out=4 cont=true
+[spec-acc] ctx=62 burst=2/6 cum=17/36=0.472
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.02ms tail=0.15ms total=103.21ms out=4 cont=true
+[spec-acc] ctx=66 burst=3/3 cum=20/39=0.513
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.77ms tail=0.19ms total=104.99ms out=2 cont=true
+[spec-acc] ctx=70 burst=1/3 cum=21/42=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.27ms tail=0.20ms total=208.50ms out=4 cont=true
+[spec-acc] ctx=72 burst=2/6 cum=23/48=0.479
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.00ms tail=0.19ms total=208.22ms out=2 cont=true
+[spec-acc] ctx=76 burst=0/6 cum=23/54=0.426
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.02ms tail=0.20ms total=105.25ms out=3 cont=true
+[spec-acc] ctx=78 burst=2/3 cum=25/57=0.439
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 80 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-e2cd147f08189d68650b7ea5c12cabd3 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=100.29ms tail=1.45ms total=102.05ms out=2 cont=false
+[spec-acc] ctx=36 burst=0/3 cum=0/3=0.000
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.49ms tail=0.14ms total=101.66ms out=4 cont=true
+[spec-acc] ctx=38 burst=3/3 cum=3/6=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.86ms tail=0.15ms total=102.05ms out=4 cont=true
+[spec-acc] ctx=42 burst=3/3 cum=6/9=0.667
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=205.77ms tail=0.20ms total=205.99ms out=3 cont=true
+[spec-acc] ctx=46 burst=1/6 cum=7/15=0.467
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.32ms tail=0.16ms total=102.51ms out=4 cont=true
+[spec-acc] ctx=49 burst=3/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.82ms tail=0.21ms total=104.07ms out=2 cont=true
+[spec-acc] ctx=53 burst=1/3 cum=11/21=0.524
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.26ms tail=0.19ms total=104.48ms out=2 cont=true
+[spec-acc] ctx=55 burst=1/3 cum=12/24=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.13ms tail=0.20ms total=104.36ms out=2 cont=true
+[spec-acc] ctx=57 burst=1/3 cum=13/27=0.481
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.82ms tail=0.18ms total=105.04ms out=3 cont=true
+[spec-acc] ctx=59 burst=2/3 cum=15/30=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=207.19ms tail=0.16ms total=207.38ms out=4 cont=true
+[spec-acc] ctx=62 burst=2/6 cum=17/36=0.472
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=103.31ms tail=0.14ms total=103.50ms out=4 cont=true
+[spec-acc] ctx=66 burst=3/3 cum=20/39=0.513
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.00ms tail=0.18ms total=105.22ms out=2 cont=true
+[spec-acc] ctx=70 burst=1/3 cum=21/42=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.36ms tail=0.19ms total=208.58ms out=4 cont=true
+[spec-acc] ctx=72 burst=2/6 cum=23/48=0.479
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=208.19ms tail=0.19ms total=208.41ms out=2 cont=true
+[spec-acc] ctx=76 burst=0/6 cum=23/54=0.426
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=104.94ms tail=0.19ms total=105.16ms out=3 cont=true
+[spec-acc] ctx=78 burst=2/3 cum=25/57=0.439
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=209.36ms tail=0.21ms total=209.60ms out=3 cont=true
+[spec-acc] ctx=81 burst=1/6 cum=26/63=0.413
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=105.29ms tail=0.21ms total=105.53ms out=2 cont=true
+[spec-acc] ctx=84 burst=1/3 cum=27/66=0.409
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 85 rows hold no resumable state (the checkpoint 36 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-e46af1d02854d53999f8f83248285c30 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1414 path=spec = 31552 B/token x ctx + 590MB prefill-workspace + 312MB fixed = 946MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 1286 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=1286 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=760 argmax=760 deviates=0 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=102.20ms tail=0.02ms total=102.55ms out=3 cont=false
+[spec-acc] ctx=1286 burst=1/3 cum=1/3=0.333
+[prefix-cache] insert (spec-boundary): 1248 tokens, 196.3MB (resident 196.3MB / 51877MB, model q)
+[spec-carry] site=burst-entry token=2002 event=3
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=103.13ms tail=0.02ms total=103.18ms out=2 cont=true
+[spec-acc] ctx=1289 burst=1/3 cum=2/6=0.333
+[spec-carry] site=burst-entry token=2915 event=5
+[spec-setup] init=0.01ms cap=0.05ms fill=0.00ms rounds=99.68ms tail=0.16ms total=99.89ms out=4 cont=true
+[spec-acc] ctx=1291 burst=3/3 cum=5/9=0.556
+[spec-carry] site=burst-entry token=11 event=9
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.28ms tail=0.19ms total=103.51ms out=2 cont=true
+[spec-acc] ctx=1295 burst=1/3 cum=6/12=0.500
+[spec-carry] site=burst-entry token=56127 event=11
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.39ms tail=0.19ms total=102.61ms out=2 cont=true
+[spec-acc] ctx=1297 burst=1/3 cum=7/15=0.467
+[spec-carry] site=burst-entry token=1593 event=13
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.62ms tail=0.20ms total=101.85ms out=3 cont=true
+[spec-acc] ctx=1299 burst=2/3 cum=9/18=0.500
+[spec-carry] site=burst-entry token=795 event=16
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.56ms tail=0.20ms total=102.79ms out=3 cont=true
+[spec-acc] ctx=1302 burst=2/3 cum=11/21=0.524
+[spec-carry] site=burst-entry token=18856 event=19
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=100.98ms tail=0.18ms total=101.19ms out=4 cont=true
+[spec-acc] ctx=1305 burst=3/3 cum=14/24=0.583
+[spec-carry] site=burst-entry token=2305 event=23
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.06ms tail=0.19ms total=101.28ms out=3 cont=true
+[spec-acc] ctx=1309 burst=2/3 cum=16/27=0.593
+[spec-carry] site=burst-entry token=24944 event=26
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.27ms tail=0.20ms total=102.51ms out=2 cont=true
+[spec-acc] ctx=1312 burst=1/3 cum=17/30=0.567
+[spec-carry] site=burst-entry token=42724 event=28
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.58ms tail=0.20ms total=101.80ms out=2 cont=true
+[spec-acc] ctx=1314 burst=1/3 cum=18/33=0.545
+[spec-carry] site=burst-entry token=2919 event=30
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.50ms tail=0.20ms total=102.73ms out=2 cont=true
+[spec-acc] ctx=1316 burst=1/3 cum=19/36=0.528
+[spec-carry] site=burst-entry token=16243 event=32
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.40ms tail=0.21ms total=102.64ms out=2 cont=true
+[spec-acc] ctx=1318 burst=1/3 cum=20/39=0.513
+[spec-carry] site=burst-entry token=4134 event=34
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.10ms tail=0.19ms total=101.32ms out=4 cont=true
+[spec-acc] ctx=1320 burst=3/3 cum=23/42=0.548
+[spec-carry] site=burst-entry token=48176 event=38
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=203.37ms tail=0.38ms total=203.78ms out=4 cont=true
+[spec-acc] ctx=1324 burst=2/6 cum=25/48=0.521
+[spec-carry] site=burst-entry token=6745 event=42
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=203.66ms tail=0.20ms total=203.89ms out=4 cont=true
+[spec-acc] ctx=1328 burst=2/6 cum=27/54=0.500
+[spec-carry] site=burst-entry token=189406 event=46
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=102.57ms tail=0.20ms total=102.80ms out=3 cont=true
+[spec-acc] ctx=1332 burst=2/3 cum=29/57=0.509
+[spec-carry] site=burst-entry token=660 event=49
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.56ms tail=0.20ms total=102.79ms out=2 cont=true
+[spec-acc] ctx=1335 burst=1/3 cum=30/60=0.500
+[spec-carry] site=burst-entry token=34129 event=51
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=103.05ms tail=0.20ms total=103.27ms out=2 cont=true
+[spec-acc] ctx=1337 burst=1/3 cum=31/63=0.492
+[spec-carry] site=burst-entry token=5077 event=53
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.01ms tail=0.18ms total=101.23ms out=4 cont=true
+[spec-acc] ctx=1339 burst=3/3 cum=34/66=0.515
+[spec-carry] site=burst-entry token=3074 event=57
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.21ms tail=0.20ms total=101.44ms out=2 cont=true
+[spec-acc] ctx=1343 burst=1/3 cum=35/69=0.507
+[spec-carry] site=burst-entry token=321 event=59
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=200.32ms tail=0.20ms total=200.55ms out=2 cont=true
+[spec-acc] ctx=1345 burst=0/6 cum=35/75=0.467
+[spec-carry] site=burst-entry token=10018 event=61
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=103.03ms tail=0.21ms total=103.27ms out=2 cont=true
+[spec-acc] ctx=1347 burst=1/3 cum=36/78=0.462
+[spec-carry] site=burst-entry token=1061 event=63
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.14ms tail=0.20ms total=101.37ms out=3 cont=true
+[spec-acc] ctx=1349 burst=2/3 cum=38/81=0.469
+[spec-boundary] site=flush-pending sampled=16545 argmax=20352 deviates=1 temp=1 sctr=66
+[meter] admit id=chatcmpl-fb4dcbe79544631741ee2dee0698eda2 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1543 path=spec = 31552 B/token x ctx + 634MB prefill-workspace + 312MB fixed = 995MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 1383 prompt tokens; model q)
+[prefix-cache] hit: 1248 of 1383 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 1248 of 1383 prompt tokens + draft plane from cache [suffix queued] (model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=1383 cached=1248 lcp=1248 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=21365 argmax=1206 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.39ms cap=0.00ms fill=0.00ms rounds=108.59ms tail=0.01ms total=109.00ms out=3 cont=false
+[spec-acc] ctx=135 burst=1/3 cum=1/3=0.333
+[prefix-cache] insert (spec-boundary): 1344 tokens, 199.3MB (resident 395.6MB / 51877MB, model q)
+[spec-carry] site=burst-entry token=23810 event=3
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=202.63ms tail=0.15ms total=202.82ms out=2 cont=true
+[spec-acc] ctx=138 burst=0/6 cum=1/9=0.111
+[spec-carry] site=burst-entry token=25524 event=5
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=101.07ms tail=0.18ms total=101.30ms out=3 cont=true
+[spec-acc] ctx=140 burst=2/3 cum=3/12=0.250
+[spec-carry] site=burst-entry token=2002 event=8
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.63ms tail=0.17ms total=99.84ms out=4 cont=true
+[spec-acc] ctx=143 burst=3/3 cum=6/15=0.400
+[spec-carry] site=burst-entry token=2614 event=12
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.20ms tail=0.20ms total=101.44ms out=2 cont=true
+[spec-acc] ctx=147 burst=1/3 cum=7/18=0.389
+[spec-carry] site=burst-entry token=13769 event=14
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.86ms tail=0.19ms total=201.08ms out=4 cont=true
+[spec-acc] ctx=149 burst=2/6 cum=9/24=0.375
+[spec-carry] site=burst-entry token=10779 event=18
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.08ms tail=0.20ms total=101.31ms out=2 cont=true
+[spec-acc] ctx=153 burst=1/3 cum=10/27=0.370
+[spec-carry] site=burst-entry token=17833 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.96ms tail=0.21ms total=101.20ms out=2 cont=true
+[spec-acc] ctx=155 burst=1/3 cum=11/30=0.367
+[spec-carry] site=burst-entry token=189406 event=22
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.05ms tail=0.20ms total=101.28ms out=3 cont=true
+[spec-acc] ctx=157 burst=2/3 cum=13/33=0.394
+[spec-carry] site=burst-entry token=25 event=25
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.34ms tail=0.19ms total=100.56ms out=4 cont=true
+[spec-acc] ctx=160 burst=3/3 cum=16/36=0.444
+[spec-carry] site=burst-entry token=220 event=29
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.20ms tail=0.21ms total=101.43ms out=2 cont=true
+[spec-acc] ctx=164 burst=1/3 cum=17/39=0.436
+[spec-carry] site=burst-entry token=39716 event=31
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.67ms tail=0.19ms total=99.88ms out=4 cont=true
+[spec-acc] ctx=166 burst=3/3 cum=20/42=0.476
+[spec-carry] site=burst-entry token=321 event=35
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.48ms tail=0.21ms total=200.72ms out=3 cont=true
+[spec-acc] ctx=170 burst=1/6 cum=21/48=0.438
+[spec-carry] site=burst-entry token=64700 event=38
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.23ms tail=0.19ms total=100.44ms out=4 cont=true
+[spec-acc] ctx=173 burst=3/3 cum=24/51=0.471
+[spec-carry] site=burst-entry token=4475 event=42
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.46ms tail=0.20ms total=200.69ms out=4 cont=true
+[spec-acc] ctx=177 burst=2/6 cum=26/57=0.456
+[spec-carry] site=burst-entry token=78161 event=46
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.25ms tail=0.20ms total=101.48ms out=3 cont=true
+[spec-acc] ctx=181 burst=2/3 cum=28/60=0.467
+[spec-carry] site=burst-entry token=9147 event=49
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.27ms tail=0.17ms total=200.48ms out=5 cont=true
+[spec-acc] ctx=184 burst=3/6 cum=31/66=0.470
+[spec-carry] site=burst-entry token=39741 event=54
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=103.74ms tail=0.18ms total=103.96ms out=3 cont=true
+[spec-acc] ctx=189 burst=2/3 cum=33/69=0.478
+[spec-carry] site=burst-entry token=1083 event=57
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=101.24ms tail=0.20ms total=101.48ms out=2 cont=true
+[spec-acc] ctx=192 burst=1/3 cum=34/72=0.472
+[spec-carry] site=burst-entry token=41275 event=59
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.47ms tail=0.20ms total=200.71ms out=4 cont=true
+[spec-acc] ctx=194 burst=2/6 cum=36/78=0.462
+[spec-carry] site=burst-entry token=24469 event=63
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.64ms tail=0.20ms total=101.88ms out=2 cont=true
+[spec-acc] ctx=198 burst=1/3 cum=37/81=0.457
+[spec-carry] site=burst-entry token=4202 event=65
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.15ms tail=0.21ms total=101.39ms out=2 cont=true
+[spec-acc] ctx=200 burst=1/3 cum=38/84=0.452
+[spec-carry] site=burst-entry token=321 event=67
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.38ms tail=0.21ms total=200.62ms out=3 cont=true
+[spec-acc] ctx=202 burst=1/6 cum=39/90=0.433
+[spec-carry] site=burst-entry token=13522 event=70
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.92ms tail=0.21ms total=201.16ms out=3 cont=true
+[spec-acc] ctx=205 burst=1/6 cum=40/96=0.417
+[spec-carry] site=burst-entry token=314 event=73
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=199.06ms tail=0.18ms total=199.27ms out=5 cont=true
+[spec-acc] ctx=208 burst=3/6 cum=43/102=0.422
+[spec-carry] site=burst-entry token=91451 event=78
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.43ms tail=0.21ms total=200.67ms out=3 cont=true
+[spec-acc] ctx=213 burst=1/6 cum=44/108=0.407
+[spec-carry] site=burst-entry token=9307 event=81
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=201.06ms tail=0.20ms total=201.28ms out=2 cont=true
+[spec-acc] ctx=216 burst=0/6 cum=44/114=0.386
+[spec-carry] site=burst-entry token=27224 event=83
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.37ms tail=0.22ms total=200.62ms out=3 cont=true
+[spec-acc] ctx=218 burst=1/6 cum=45/120=0.375
+[spec-carry] site=burst-entry token=16570 event=86
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=204.09ms tail=0.20ms total=204.32ms out=2 cont=true
+[spec-acc] ctx=221 burst=0/6 cum=45/126=0.357
+[spec-carry] site=burst-entry token=12076 event=88
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.13ms tail=0.21ms total=101.37ms out=2 cont=true
+[spec-acc] ctx=223 burst=1/3 cum=46/129=0.357
+[spec-carry] site=burst-entry token=11 event=90
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.65ms tail=0.18ms total=99.86ms out=4 cont=true
+[spec-acc] ctx=225 burst=3/3 cum=49/132=0.371
+[spec-carry] site=burst-entry token=10379 event=94
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.47ms tail=0.21ms total=200.71ms out=4 cont=true
+[spec-acc] ctx=229 burst=2/6 cum=51/138=0.370
+[spec-boundary] site=flush-pending sampled=799 argmax=3074 deviates=1 temp=1 sctr=98
+[meter] admit id=cmpl-3742e7350ea361df3f86f74f564e18c2 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=331 path=spec = 31552 B/token x ctx + 100MB prefill-workspace + 312MB fixed = 422MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 219 prompt tokens; model q)
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 1248; 2 parked, 219 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=219 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=279 argmax=198 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.34ms cap=0.01ms fill=0.00ms rounds=107.00ms tail=0.01ms total=107.36ms out=3 cont=false
+[spec-acc] ctx=219 burst=1/3 cum=1/3=0.333
+[prefix-cache] insert (spec-boundary): 192 tokens, 163.0MB (resident 558.6MB / 51877MB, model q)
+[spec-carry] site=burst-entry token=7189 event=3
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=200.33ms tail=0.15ms total=200.51ms out=2 cont=true
+[spec-acc] ctx=222 burst=0/6 cum=1/9=0.111
+[spec-carry] site=burst-entry token=10379 event=5
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=99.70ms tail=0.17ms total=99.92ms out=4 cont=true
+[spec-acc] ctx=224 burst=3/3 cum=4/12=0.333
+[spec-carry] site=burst-entry token=90533 event=9
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=100.57ms tail=0.18ms total=100.79ms out=3 cont=true
+[spec-acc] ctx=228 burst=2/3 cum=6/15=0.400
+[spec-carry] site=burst-entry token=2532 event=12
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=100.41ms tail=0.20ms total=100.66ms out=2 cont=true
+[spec-acc] ctx=231 burst=1/3 cum=7/18=0.389
+[spec-carry] site=burst-entry token=1132 event=14
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.40ms tail=0.21ms total=100.64ms out=2 cont=true
+[spec-acc] ctx=233 burst=1/3 cum=8/21=0.381
+[spec-carry] site=burst-entry token=90533 event=16
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.36ms tail=0.22ms total=100.61ms out=2 cont=true
+[spec-acc] ctx=235 burst=1/3 cum=9/24=0.375
+[spec-carry] site=burst-entry token=64 event=18
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=199.62ms tail=0.21ms total=199.86ms out=2 cont=true
+[spec-acc] ctx=237 burst=0/6 cum=9/30=0.300
+[spec-carry] site=burst-entry token=1231 event=20
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=199.01ms tail=0.22ms total=199.26ms out=2 cont=true
+[spec-acc] ctx=239 burst=0/6 cum=9/36=0.250
+[spec-carry] site=burst-entry token=2973 event=22
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=99.00ms tail=0.19ms total=99.22ms out=4 cont=true
+[spec-acc] ctx=241 burst=3/3 cum=12/39=0.308
+[spec-carry] site=burst-entry token=18253 event=26
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.73ms tail=0.19ms total=99.95ms out=4 cont=true
+[spec-acc] ctx=245 burst=3/3 cum=15/42=0.357
+[spec-carry] site=burst-entry token=25328 event=30
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.55ms tail=0.22ms total=100.81ms out=2 cont=true
+[spec-acc] ctx=249 burst=1/3 cum=16/45=0.356
+[spec-carry] site=burst-entry token=220 event=32
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.44ms tail=0.21ms total=100.68ms out=2 cont=true
+[spec-acc] ctx=251 burst=1/3 cum=17/48=0.354
+[spec-carry] site=burst-entry token=18 event=34
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.44ms tail=0.20ms total=100.68ms out=3 cont=true
+[spec-acc] ctx=253 burst=2/3 cum=19/51=0.373
+[spec-carry] site=burst-entry token=19434 event=37
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.49ms tail=0.22ms total=100.74ms out=3 cont=true
+[spec-acc] ctx=256 burst=2/3 cum=21/54=0.389
+[spec-carry] site=burst-entry token=220 event=40
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=199.92ms tail=0.23ms total=200.18ms out=3 cont=true
+[spec-acc] ctx=259 burst=1/6 cum=22/60=0.367
+[spec-carry] site=burst-entry token=24 event=43
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.41ms tail=0.22ms total=100.66ms out=2 cont=true
+[spec-acc] ctx=262 burst=1/3 cum=23/63=0.365
+[spec-carry] site=burst-entry token=23 event=45
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.02ms tail=0.19ms total=99.25ms out=4 cont=true
+[spec-acc] ctx=264 burst=3/3 cum=26/66=0.394
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 267 rows hold no resumable state (the checkpoint 219 is off the 32-token prime grid); freed (model q)
+[meter] admit id=cmpl-6436e531f161aead0c75783ccbbd4c1a tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=427 path=spec = 31552 B/token x ctx + 122MB prefill-workspace + 312MB fixed = 448MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 267 prompt tokens; model q)
+[prefix-cache] hit: 192 of 267 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 192 of 267 prompt tokens + draft plane from cache [suffix queued] (model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=267 cached=192 lcp=192 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=424 argmax=1141 deviates=1 temp=1 sctr=0
+[spec-setup] init=0.33ms cap=0.00ms fill=0.00ms rounds=99.75ms tail=0.17ms total=100.25ms out=5 cont=false
+[spec-acc] ctx=75 burst=3/3 cum=3/3=1.000
+[prefix-cache] insert (spec-boundary): 224 tokens, 164.0MB (resident 722.6MB / 51877MB, model q)
+[spec-carry] site=burst-entry token=17 event=5
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=102.13ms tail=0.03ms total=102.18ms out=2 cont=true
+[spec-acc] ctx=80 burst=1/3 cum=4/6=0.667
+[spec-carry] site=burst-entry token=15 event=7
+[spec-setup] init=0.01ms cap=0.05ms fill=0.00ms rounds=197.98ms tail=0.17ms total=198.21ms out=5 cont=true
+[spec-acc] ctx=82 burst=3/6 cum=7/12=0.583
+[spec-carry] site=burst-entry token=20 event=12
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=199.99ms tail=0.21ms total=200.23ms out=2 cont=true
+[spec-acc] ctx=87 burst=0/6 cum=7/18=0.389
+[spec-carry] site=burst-entry token=318 event=14
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=199.18ms tail=0.20ms total=199.42ms out=2 cont=true
+[spec-acc] ctx=89 burst=0/6 cum=7/24=0.292
+[spec-carry] site=burst-entry token=23 event=16
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.55ms tail=0.21ms total=100.80ms out=2 cont=true
+[spec-acc] ctx=91 burst=1/3 cum=8/27=0.296
+[spec-carry] site=burst-entry token=310 event=18
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.10ms tail=0.19ms total=99.33ms out=4 cont=true
+[spec-acc] ctx=93 burst=3/3 cum=11/30=0.367
+[spec-carry] site=burst-entry token=18 event=22
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.60ms tail=0.21ms total=200.84ms out=3 cont=true
+[spec-acc] ctx=97 burst=1/6 cum=12/36=0.333
+[spec-carry] site=burst-entry token=8 event=25
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=100.90ms tail=0.21ms total=101.13ms out=2 cont=true
+[spec-acc] ctx=100 burst=1/3 cum=13/39=0.333
+[spec-carry] site=burst-entry token=2984 event=27
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.04ms tail=0.19ms total=101.26ms out=3 cont=true
+[spec-acc] ctx=102 burst=2/3 cum=15/42=0.357
+[spec-carry] site=burst-entry token=30097 event=30
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.95ms tail=0.21ms total=101.19ms out=2 cont=true
+[spec-acc] ctx=105 burst=1/3 cum=16/45=0.356
+[spec-carry] site=burst-entry token=12594 event=32
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.56ms tail=0.20ms total=101.79ms out=3 cont=true
+[spec-acc] ctx=107 burst=2/3 cum=18/48=0.375
+[spec-carry] site=burst-entry token=1754 event=35
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.69ms tail=0.21ms total=100.94ms out=2 cont=true
+[spec-acc] ctx=110 burst=1/3 cum=19/51=0.373
+[spec-carry] site=burst-entry token=271 event=37
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.89ms tail=0.22ms total=101.14ms out=2 cont=true
+[spec-acc] ctx=112 burst=1/3 cum=20/54=0.370
+[spec-carry] site=burst-entry token=513 event=39
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.91ms tail=0.20ms total=101.15ms out=3 cont=true
+[spec-acc] ctx=114 burst=2/3 cum=22/57=0.386
+[spec-carry] site=burst-entry token=22157 event=42
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.42ms tail=0.18ms total=99.64ms out=4 cont=true
+[spec-acc] ctx=117 burst=3/3 cum=25/60=0.417
+[spec-carry] site=burst-entry token=5020 event=46
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.44ms tail=0.18ms total=100.65ms out=4 cont=true
+[spec-acc] ctx=121 burst=3/3 cum=28/63=0.444
+[spec-carry] site=burst-entry token=16484 event=50
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.29ms tail=0.19ms total=99.51ms out=4 cont=true
+[spec-acc] ctx=125 burst=3/3 cum=31/66=0.470
+[spec-carry] site=burst-entry token=13 event=54
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.89ms tail=0.22ms total=101.14ms out=2 cont=true
+[spec-acc] ctx=129 burst=1/3 cum=32/69=0.464
+[spec-carry] site=burst-entry token=2015 event=56
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=200.06ms tail=0.21ms total=200.30ms out=3 cont=true
+[spec-acc] ctx=131 burst=1/6 cum=33/75=0.440
+[spec-carry] site=burst-entry token=491 event=59
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.46ms tail=0.22ms total=200.71ms out=2 cont=true
+[spec-acc] ctx=134 burst=0/6 cum=33/81=0.407
+[spec-carry] site=burst-entry token=421 event=61
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=199.38ms tail=0.21ms total=199.62ms out=2 cont=true
+[spec-acc] ctx=136 burst=0/6 cum=33/87=0.379
+[spec-carry] site=burst-entry token=449 event=63
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.25ms tail=0.19ms total=99.47ms out=4 cont=true
+[spec-acc] ctx=138 burst=3/3 cum=36/90=0.400
+[spec-carry] site=burst-entry token=506 event=67
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=100.32ms tail=0.19ms total=100.54ms out=4 cont=true
+[spec-acc] ctx=142 burst=3/3 cum=39/93=0.419
+[spec-carry] site=burst-entry token=11 event=71
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=199.76ms tail=0.21ms total=200.00ms out=4 cont=true
+[spec-acc] ctx=146 burst=2/6 cum=41/99=0.414
+[spec-carry] site=burst-entry token=5474 event=75
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.22ms tail=0.19ms total=99.45ms out=4 cont=true
+[spec-acc] ctx=150 burst=3/3 cum=44/102=0.431
+[spec-carry] site=burst-entry token=22294 event=79
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.38ms tail=0.19ms total=99.60ms out=4 cont=true
+[spec-acc] ctx=154 burst=3/3 cum=47/105=0.448
+[spec-carry] site=burst-entry token=314 event=83
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.16ms tail=0.19ms total=100.38ms out=4 cont=true
+[spec-acc] ctx=158 burst=3/3 cum=50/108=0.463
+[spec-carry] site=burst-entry token=19 event=87
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.54ms tail=0.19ms total=99.77ms out=4 cont=true
+[spec-acc] ctx=162 burst=3/3 cum=53/111=0.477
+[spec-carry] site=burst-entry token=16 event=91
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.77ms tail=0.22ms total=101.03ms out=2 cont=true
+[spec-acc] ctx=166 burst=1/3 cum=54/114=0.474
+[spec-carry] site=burst-entry token=11 event=93
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=99.35ms tail=0.21ms total=99.59ms out=4 cont=true
+[spec-acc] ctx=168 burst=3/3 cum=57/117=0.487
+[spec-boundary] site=flush-pending sampled=553 argmax=8 deviates=1 temp=1 sctr=97
+[meter] admit id=chatcmpl-ba0dcf03c6e035396ef228f62556b21a tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1413 path=spec = 31552 B/token x ctx + 589MB prefill-workspace + 312MB fixed = 946MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 1285 prompt tokens; model q)
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1344; 2 parked, 1285 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=1285 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=99.33ms tail=0.15ms total=99.79ms out=3 cont=false
+[spec-acc] ctx=1285 burst=1/3 cum=1/3=0.333
+[prefix-cache] insert (spec-boundary): 1248 tokens, 196.3MB (resident 918.9MB / 51877MB, model q)
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=103.94ms tail=0.02ms total=103.99ms out=2 cont=true
+[spec-acc] ctx=1288 burst=1/3 cum=2/6=0.333
+[spec-setup] init=0.01ms cap=0.05ms fill=0.00ms rounds=102.46ms tail=0.18ms total=102.70ms out=2 cont=true
+[spec-acc] ctx=1290 burst=1/3 cum=3/9=0.333
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=102.40ms tail=0.19ms total=102.63ms out=2 cont=true
+[spec-acc] ctx=1292 burst=1/3 cum=4/12=0.333
+[spec-setup] init=0.00ms cap=0.04ms fill=0.00ms rounds=103.15ms tail=0.19ms total=103.39ms out=2 cont=true
+[spec-acc] ctx=1294 burst=1/3 cum=5/15=0.333
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=202.11ms tail=0.18ms total=202.33ms out=3 cont=true
+[spec-acc] ctx=1296 burst=1/6 cum=6/21=0.286
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=104.96ms tail=0.19ms total=105.19ms out=2 cont=true
+[spec-acc] ctx=1299 burst=1/3 cum=7/24=0.292
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=202.04ms tail=0.21ms total=202.29ms out=3 cont=true
+[spec-acc] ctx=1301 burst=1/6 cum=8/30=0.267
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.91ms tail=0.19ms total=101.13ms out=3 cont=true
+[spec-acc] ctx=1304 burst=2/3 cum=10/33=0.303
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=102.33ms tail=0.20ms total=102.55ms out=3 cont=true
+[spec-acc] ctx=1307 burst=2/3 cum=12/36=0.333
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.82ms tail=0.20ms total=101.05ms out=3 cont=true
+[spec-acc] ctx=1310 burst=2/3 cum=14/39=0.359
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.80ms tail=0.21ms total=101.04ms out=2 cont=true
+[spec-acc] ctx=1313 burst=1/3 cum=15/42=0.357
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=202.26ms tail=0.16ms total=202.44ms out=5 cont=true
+[spec-acc] ctx=1315 burst=3/6 cum=18/48=0.375
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=201.43ms tail=0.21ms total=201.67ms out=3 cont=true
+[spec-acc] ctx=1320 burst=1/6 cum=19/54=0.352
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.25ms tail=0.21ms total=102.49ms out=2 cont=true
+[spec-acc] ctx=1323 burst=1/3 cum=20/57=0.351
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.93ms tail=0.21ms total=103.17ms out=2 cont=true
+[spec-acc] ctx=1325 burst=1/3 cum=21/60=0.350
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=100.87ms tail=0.16ms total=101.06ms out=4 cont=true
+[spec-acc] ctx=1327 burst=3/3 cum=24/63=0.381
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=99.55ms tail=0.16ms total=99.74ms out=4 cont=true
+[spec-acc] ctx=1331 burst=3/3 cum=27/66=0.409
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.02ms tail=0.16ms total=101.21ms out=4 cont=true
+[spec-acc] ctx=1335 burst=3/3 cum=30/69=0.435
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.80ms tail=0.16ms total=201.00ms out=5 cont=true
+[spec-acc] ctx=1339 burst=3/6 cum=33/75=0.440
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.10ms tail=0.22ms total=101.35ms out=2 cont=true
+[spec-acc] ctx=1344 burst=1/3 cum=34/78=0.436
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.38ms tail=0.16ms total=99.57ms out=4 cont=true
+[spec-acc] ctx=1346 burst=3/3 cum=37/81=0.457
+[meter] admit id=chatcmpl-cb6c515f536fe2f8c18a3f47d516a076 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1542 path=spec = 31552 B/token x ctx + 634MB prefill-workspace + 312MB fixed = 994MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 1382 prompt tokens; model q)
+[prefix-cache] hit: 1248 of 1382 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 1248 of 1382 prompt tokens + draft plane from cache [suffix queued] (model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=1382 cached=1248 lcp=1248 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=100.99ms tail=1.46ms total=102.75ms out=2 cont=false
+[spec-acc] ctx=134 burst=0/3 cum=0/3=0.000
+[prefix-cache] insert (spec-boundary): 1344 tokens, 199.3MB (resident 1118.2MB / 51877MB, model q)
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=202.53ms tail=0.17ms total=202.73ms out=2 cont=true
+[spec-acc] ctx=136 burst=0/6 cum=0/9=0.000
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=100.86ms tail=0.19ms total=101.09ms out=3 cont=true
+[spec-acc] ctx=138 burst=2/3 cum=2/12=0.167
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.59ms tail=0.21ms total=200.83ms out=4 cont=true
+[spec-acc] ctx=141 burst=2/6 cum=4/18=0.222
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.32ms tail=0.20ms total=102.56ms out=3 cont=true
+[spec-acc] ctx=145 burst=2/3 cum=6/21=0.286
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.38ms tail=0.20ms total=102.61ms out=3 cont=true
+[spec-acc] ctx=148 burst=2/3 cum=8/24=0.333
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.89ms tail=0.16ms total=101.08ms out=4 cont=true
+[spec-acc] ctx=151 burst=3/3 cum=11/27=0.407
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.99ms tail=0.20ms total=101.22ms out=3 cont=true
+[spec-acc] ctx=155 burst=2/3 cum=13/30=0.433
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.68ms tail=0.20ms total=200.92ms out=2 cont=true
+[spec-acc] ctx=158 burst=0/6 cum=13/36=0.361
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.52ms tail=0.15ms total=99.70ms out=4 cont=true
+[spec-acc] ctx=160 burst=3/3 cum=16/39=0.410
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=201.50ms tail=0.21ms total=201.74ms out=4 cont=true
+[spec-acc] ctx=164 burst=2/6 cum=18/45=0.400
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.71ms tail=0.22ms total=200.96ms out=3 cont=true
+[spec-acc] ctx=168 burst=1/6 cum=19/51=0.373
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.88ms tail=0.21ms total=101.12ms out=2 cont=true
+[spec-acc] ctx=171 burst=1/3 cum=20/54=0.370
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=202.78ms tail=0.22ms total=203.03ms out=3 cont=true
+[spec-acc] ctx=173 burst=1/6 cum=21/60=0.350
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=202.14ms tail=0.17ms total=202.34ms out=5 cont=true
+[spec-acc] ctx=176 burst=3/6 cum=24/66=0.364
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=201.64ms tail=0.22ms total=201.89ms out=2 cont=true
+[spec-acc] ctx=181 burst=0/6 cum=24/72=0.333
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.85ms tail=0.21ms total=101.10ms out=2 cont=true
+[spec-acc] ctx=183 burst=1/3 cum=25/75=0.333
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.56ms tail=0.22ms total=101.81ms out=2 cont=true
+[spec-acc] ctx=185 burst=1/3 cum=26/78=0.333
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.45ms tail=0.16ms total=99.64ms out=4 cont=true
+[spec-acc] ctx=187 burst=3/3 cum=29/81=0.358
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=200.23ms tail=0.21ms total=200.46ms out=2 cont=true
+[spec-acc] ctx=191 burst=0/6 cum=29/87=0.333
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.89ms tail=0.21ms total=101.12ms out=3 cont=true
+[spec-acc] ctx=193 burst=2/3 cum=31/90=0.344
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.64ms tail=0.20ms total=101.87ms out=3 cont=true
+[spec-acc] ctx=196 burst=2/3 cum=33/93=0.355
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.97ms tail=0.21ms total=101.21ms out=2 cont=true
+[spec-acc] ctx=199 burst=1/3 cum=34/96=0.354
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.80ms tail=0.22ms total=101.05ms out=2 cont=true
+[spec-acc] ctx=201 burst=1/3 cum=35/99=0.354
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.93ms tail=0.22ms total=101.18ms out=2 cont=true
+[spec-acc] ctx=203 burst=1/3 cum=36/102=0.353
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.87ms tail=0.21ms total=101.11ms out=3 cont=true
+[spec-acc] ctx=205 burst=2/3 cum=38/105=0.362
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.65ms tail=0.22ms total=101.90ms out=2 cont=true
+[spec-acc] ctx=208 burst=1/3 cum=39/108=0.361
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.82ms tail=0.22ms total=101.07ms out=2 cont=true
+[spec-acc] ctx=210 burst=1/3 cum=40/111=0.360
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.87ms tail=0.21ms total=101.11ms out=3 cont=true
+[spec-acc] ctx=212 burst=2/3 cum=42/114=0.368
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=198.67ms tail=0.16ms total=198.86ms out=5 cont=true
+[spec-acc] ctx=215 burst=3/6 cum=45/120=0.375
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=101.69ms tail=0.21ms total=101.93ms out=3 cont=true
+[spec-acc] ctx=220 burst=2/3 cum=47/123=0.382
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.01ms tail=0.22ms total=200.26ms out=3 cont=true
+[spec-acc] ctx=223 burst=1/6 cum=48/129=0.372
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=100.89ms tail=0.22ms total=101.13ms out=2 cont=true
+[spec-acc] ctx=226 burst=1/3 cum=49/132=0.371
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=200.56ms tail=0.22ms total=200.81ms out=3 cont=true
+[spec-acc] ctx=228 burst=1/6 cum=50/138=0.362
+[meter] admit id=cmpl-aea227318a826d57c77689ade4ee3153 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=339 path=spec = 31552 B/token x ctx + 104MB prefill-workspace + 312MB fixed = 426MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 227 prompt tokens; model q)
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 1248; 2 parked, 227 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=227 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=100.76ms tail=0.01ms total=101.08ms out=3 cont=false
+[spec-acc] ctx=227 burst=1/3 cum=1/3=0.333
+[prefix-cache] insert (spec-boundary): 192 tokens, 163.0MB (resident 1281.1MB / 51877MB, model q)
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=201.30ms tail=0.13ms total=201.47ms out=5 cont=true
+[spec-acc] ctx=230 burst=3/6 cum=4/9=0.444
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=100.49ms tail=0.19ms total=100.72ms out=2 cont=true
+[spec-acc] ctx=235 burst=1/3 cum=5/12=0.417
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=100.41ms tail=0.15ms total=100.60ms out=4 cont=true
+[spec-acc] ctx=237 burst=3/3 cum=8/15=0.533
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=102.07ms tail=0.20ms total=102.29ms out=3 cont=true
+[spec-acc] ctx=241 burst=2/3 cum=10/18=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.86ms tail=0.20ms total=102.10ms out=3 cont=true
+[spec-acc] ctx=244 burst=2/3 cum=12/21=0.571
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.10ms tail=0.16ms total=103.29ms out=3 cont=true
+[spec-acc] ctx=247 burst=2/3 cum=14/24=0.583
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=102.30ms tail=0.15ms total=102.51ms out=3 cont=true
+[spec-acc] ctx=250 burst=2/3 cum=16/27=0.593
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=103.68ms tail=0.19ms total=103.91ms out=3 cont=true
+[spec-acc] ctx=253 burst=2/3 cum=18/30=0.600
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=101.99ms tail=0.18ms total=102.21ms out=3 cont=true
+[spec-acc] ctx=256 burst=2/3 cum=20/33=0.606
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=101.75ms tail=0.19ms total=101.98ms out=2 cont=true
+[spec-acc] ctx=259 burst=1/3 cum=21/36=0.583
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.62ms tail=0.15ms total=99.80ms out=4 cont=true
+[spec-acc] ctx=261 burst=3/3 cum=24/39=0.615
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.00ms tail=0.21ms total=102.24ms out=2 cont=true
+[spec-acc] ctx=265 burst=1/3 cum=25/42=0.595
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.29ms tail=0.16ms total=100.49ms out=4 cont=true
+[spec-acc] ctx=267 burst=3/3 cum=28/45=0.622
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.42ms tail=0.17ms total=100.62ms out=4 cont=true
+[spec-acc] ctx=271 burst=3/3 cum=31/48=0.646
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 274 rows hold no resumable state (the checkpoint 227 is off the 32-token prime grid); freed (model q)
+[meter] admit id=cmpl-853908fedabd95e0355cef426bcc5670 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=435 path=spec = 31552 B/token x ctx + 126MB prefill-workspace + 312MB fixed = 451MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 275 prompt tokens; model q)
+[prefix-cache] hit: 192 of 275 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 192 of 275 prompt tokens + draft plane from cache [suffix queued] (model q)
+[spec-k] model="q" tenant="" K=3 source=operator-pin prompt=275 cached=192 lcp=192 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=100.38ms tail=0.19ms total=100.87ms out=4 cont=false
+[spec-acc] ctx=83 burst=2/3 cum=2/3=0.667
+[prefix-cache] insert (spec-boundary): 256 tokens, 165.0MB (resident 1446.1MB / 51877MB, model q)
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=102.93ms tail=0.02ms total=102.98ms out=3 cont=true
+[spec-acc] ctx=87 burst=2/3 cum=4/6=0.667
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=198.55ms tail=0.15ms total=198.74ms out=5 cont=true
+[spec-acc] ctx=90 burst=3/6 cum=7/12=0.583
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.93ms tail=0.29ms total=102.26ms out=2 cont=true
+[spec-acc] ctx=95 burst=1/3 cum=8/15=0.533
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.43ms tail=0.16ms total=101.63ms out=4 cont=true
+[spec-acc] ctx=97 burst=3/3 cum=11/18=0.611
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.66ms tail=0.20ms total=102.89ms out=2 cont=true
+[spec-acc] ctx=101 burst=1/3 cum=12/21=0.571
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=100.99ms tail=0.13ms total=101.16ms out=4 cont=true
+[spec-acc] ctx=103 burst=3/3 cum=15/24=0.625
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=101.24ms tail=0.16ms total=101.45ms out=2 cont=true
+[spec-acc] ctx=107 burst=1/3 cum=16/27=0.593
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=99.29ms tail=0.15ms total=99.48ms out=4 cont=true
+[spec-acc] ctx=109 burst=3/3 cum=19/30=0.633
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=102.80ms tail=0.14ms total=102.98ms out=4 cont=true
+[spec-acc] ctx=113 burst=3/3 cum=22/33=0.667
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=99.54ms tail=0.15ms total=99.74ms out=4 cont=true
+[spec-acc] ctx=117 burst=3/3 cum=25/36=0.694
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=99.43ms tail=0.16ms total=99.64ms out=4 cont=true
+[spec-acc] ctx=121 burst=3/3 cum=28/39=0.718
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=100.73ms tail=0.20ms total=100.97ms out=3 cont=true
+[spec-acc] ctx=125 burst=2/3 cum=30/42=0.714
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=100.66ms tail=0.21ms total=100.90ms out=3 cont=true
+[spec-acc] ctx=128 burst=2/3 cum=32/45=0.711
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=102.06ms tail=0.21ms total=102.30ms out=2 cont=true
+[spec-acc] ctx=131 burst=1/3 cum=33/48=0.688
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.35ms tail=0.17ms total=99.56ms out=4 cont=true
+[spec-acc] ctx=133 burst=3/3 cum=36/51=0.706
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=103.23ms tail=0.20ms total=103.47ms out=3 cont=true
+[spec-acc] ctx=137 burst=2/3 cum=38/54=0.704
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.02ms tail=0.21ms total=102.26ms out=3 cont=true
+[spec-acc] ctx=140 burst=2/3 cum=40/57=0.702
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.77ms tail=0.17ms total=100.98ms out=4 cont=true
+[spec-acc] ctx=143 burst=3/3 cum=43/60=0.717
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.11ms tail=0.17ms total=100.31ms out=4 cont=true
+[spec-acc] ctx=147 burst=3/3 cum=46/63=0.730
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=99.70ms tail=0.16ms total=99.89ms out=4 cont=true
+[spec-acc] ctx=151 burst=3/3 cum=49/66=0.742
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=101.02ms tail=0.19ms total=101.25ms out=3 cont=true
+[spec-acc] ctx=155 burst=2/3 cum=51/69=0.739
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.29ms tail=0.21ms total=102.54ms out=2 cont=true
+[spec-acc] ctx=158 burst=1/3 cum=52/72=0.722
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=100.75ms tail=0.20ms total=100.98ms out=3 cont=true
+[spec-acc] ctx=160 burst=2/3 cum=54/75=0.720
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=103.19ms tail=0.19ms total=103.41ms out=3 cont=true
+[spec-acc] ctx=163 burst=2/3 cum=56/78=0.718
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.55ms tail=0.17ms total=102.75ms out=3 cont=true
+[spec-acc] ctx=166 burst=2/3 cum=58/81=0.716
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=102.27ms tail=0.20ms total=102.50ms out=3 cont=true
+[spec-acc] ctx=169 burst=2/3 cum=60/84=0.714
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=100.68ms tail=0.16ms total=100.88ms out=4 cont=true
+[spec-acc] ctx=172 burst=3/3 cum=63/87=0.724
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=101.34ms tail=0.22ms total=101.59ms out=2 cont=true
+[spec-acc] ctx=176 burst=1/3 cum=64/90=0.711
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=99.20ms tail=0.18ms total=99.41ms out=4 cont=true
+[spec-acc] ctx=178 burst=3/3 cum=67/93=0.720
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

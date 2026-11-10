@@ -1,0 +1,254 @@
+case ref
+       ref eos-short-t1           tokens=21 finish=stop cached=0 ends=[] sha=0afb35fe67543ec5
+       ref eos-short-greedy       tokens=22 finish=stop cached=0 ends=[] sha=e2241247fc2fb158
+       ref eos-mid-t1             tokens=50 finish=stop cached=0 ends=[] sha=b22086edbcd58bd4
+       ref eos-mid-chat           tokens=61 finish=stop cached=0 ends=[] sha=a00f32f7c09a84f7
+       ref eos-mid-pen            tokens=58 finish=stop cached=0 ends=[] sha=862866ab0b994f96
+       ref eos-mid-greedy         tokens=59 finish=stop cached=0 ends=[] sha=b43858268181d6b7
+       ref eos-mid2-t1            tokens=63 finish=stop cached=0 ends=[] sha=befc0cf83cfdf056
+       ref eos-mid2-greedy        tokens=73 finish=stop cached=0 ends=[] sha=23a70e7966539ce5
+       ref eos-mid3-t1            tokens=64 finish=stop cached=0 ends=[] sha=8182da1c3a1b42c7
+       ref eos-mid3-pen           tokens=55 finish=stop cached=0 ends=[] sha=3c6f5c10ac117c62
+       ref eos-mid3-greedy        tokens=43 finish=stop cached=0 ends=[] sha=ad25c0b7f1c97393
+       ref budget-31-t1           tokens=31 finish=length cached=0 ends=[] sha=e9d4a9256758d006
+       ref budget-32-t1           tokens=32 finish=length cached=0 ends=[] sha=af2bae7693f219a4
+       ref budget-33-t1           tokens=33 finish=length cached=0 ends=[] sha=469812cae13cc00e
+       ref budget-63-t1           tokens=63 finish=length cached=0 ends=[] sha=f69a2625b20ed2d1
+       ref budget-64-t1           tokens=64 finish=length cached=0 ends=[] sha=7341362e6ffe30bb
+       ref budget-65-t1           tokens=65 finish=length cached=0 ends=[] sha=64b7277a48f53647
+       ref budget-31-greedy       tokens=31 finish=length cached=0 ends=[] sha=92437b13bb7268c3
+       ref budget-32-greedy       tokens=32 finish=length cached=0 ends=[] sha=3f35ae639fd4677b
+       ref budget-33-greedy       tokens=33 finish=length cached=0 ends=[] sha=4ddbf9b0936d31a4
+       ref budget-63-greedy       tokens=63 finish=length cached=0 ends=[] sha=9b5fd9b31bc7ed8a
+       ref budget-64-greedy       tokens=64 finish=length cached=0 ends=[] sha=5a276325f0a38d35
+       ref budget-65-greedy       tokens=65 finish=length cached=0 ends=[] sha=24b608bd29c61893
+       ref grammar-t1             tokens=95 finish=stop cached=0 ends=[] sha=b95d8e2b73fbcf47
+       ref grammar-greedy         tokens=94 finish=stop cached=0 ends=[] sha=538c074c3b6fd1d4
+       ref stopfree-t1            tokens=96 finish=length cached=0 ends=[] sha=ca43bc01f607f3d4
+       ref stop-0-t1              tokens=25 finish=stop cached=0 ends=[] sha=7ef4a6925bd1c98a
+       ref stop-1-t1              tokens=31 finish=stop cached=0 ends=[] sha=573f4883174ca05b
+       ref stop-2-t1              tokens=36 finish=stop cached=0 ends=[] sha=35fcee97e79fe0f2
+       ref stop-3-t1              tokens=42 finish=stop cached=0 ends=[] sha=71c6aea3af55511e
+       ref stop-4-t1              tokens=49 finish=stop cached=0 ends=[] sha=35eff654d1de2047
+       ref stopfree-greedy        tokens=96 finish=length cached=0 ends=[] sha=64fcd02775944e17
+       ref stop-0-greedy          tokens=20 finish=stop cached=0 ends=[] sha=32d621e0e8701cdb
+       ref stop-1-greedy          tokens=26 finish=stop cached=0 ends=[] sha=693252b9f731a500
+       ref stop-2-greedy          tokens=35 finish=stop cached=0 ends=[] sha=f368787d899f1009
+       ref stop-3-greedy          tokens=44 finish=stop cached=0 ends=[] sha=e515992282216f7e
+       ref stop-4-greedy          tokens=49 finish=stop cached=0 ends=[] sha=5b74af8642c7bcff
+       ref turn1-t1               tokens=64 finish=length cached=0 ends=[] sha=cb88a282c60b7fa1
+       ref park1-t1               tokens=48 finish=length cached=0 ends=[] sha=7c673a85067594da
+       ref turn1-greedy           tokens=64 finish=length cached=0 ends=[] sha=f1ad415ec4051486
+       ref park1-greedy           tokens=48 finish=length cached=0 ends=[] sha=a6f311375a0a8bc0
+       ref yield-pen              tokens=200 finish=length cached=0 ends=[] sha=8d5ea5d8ee4a0293
+       ref yield-t1               tokens=200 finish=length cached=0 ends=[] sha=a2eecd61f7fce2f9
+      ref2 turn2-t1               tokens=96 finish=length cached=0 ends=[] sha=c019f8693b626dba
+      ref2 park2-t1               tokens=96 finish=length cached=0 ends=[] sha=444f5b418552a2aa
+      ref2 turn2-greedy           tokens=96 finish=length cached=0 ends=[] sha=56d40447720bcba4
+      ref2 park2-greedy           tokens=96 finish=length cached=0 ends=[] sha=a52d9e5d9581e4a1
+case spec
+      spec eos-short-t1           tokens=21 finish=stop cached=0 ends=[22] sha=0afb35fe67543ec5
+      spec eos-short-greedy       tokens=22 finish=stop cached=0 ends=[22] sha=e2241247fc2fb158
+      spec eos-mid-t1             tokens=50 finish=stop cached=0 ends=[32, 51] sha=b22086edbcd58bd4
+      spec eos-mid-chat           tokens=61 finish=stop cached=0 ends=[32, 62] sha=a00f32f7c09a84f7
+      spec eos-mid-pen            tokens=58 finish=stop cached=0 ends=[32, 60] sha=862866ab0b994f96
+      spec eos-mid-greedy         tokens=59 finish=stop cached=0 ends=[33, 61] sha=b43858268181d6b7
+      spec eos-mid2-t1            tokens=63 finish=stop cached=0 ends=[34, 65] sha=befc0cf83cfdf056
+      spec eos-mid2-greedy        tokens=73 finish=stop cached=0 ends=[33, 66, 75] sha=23a70e7966539ce5
+      spec eos-mid3-t1            tokens=64 finish=stop cached=0 ends=[34, 65] sha=8182da1c3a1b42c7
+      spec eos-mid3-pen           tokens=55 finish=stop cached=0 ends=[32, 57] sha=3c6f5c10ac117c62
+      spec eos-mid3-greedy        tokens=43 finish=stop cached=0 ends=[33, 46] sha=ad25c0b7f1c97393
+      spec budget-31-t1           tokens=31 finish=length cached=0 ends=[33] sha=e9d4a9256758d006
+      spec budget-32-t1           tokens=32 finish=length cached=0 ends=[33] sha=af2bae7693f219a4
+      spec budget-33-t1           tokens=33 finish=length cached=0 ends=[33] sha=469812cae13cc00e
+      spec budget-63-t1           tokens=63 finish=length cached=0 ends=[33, 65] sha=f69a2625b20ed2d1
+      spec budget-64-t1           tokens=64 finish=length cached=0 ends=[33, 65] sha=7341362e6ffe30bb
+      spec budget-65-t1           tokens=65 finish=length cached=0 ends=[33, 65] sha=64b7277a48f53647
+      spec budget-31-greedy       tokens=31 finish=length cached=0 ends=[32] sha=92437b13bb7268c3
+      spec budget-32-greedy       tokens=32 finish=length cached=0 ends=[32] sha=3f35ae639fd4677b
+      spec budget-33-greedy       tokens=33 finish=length cached=0 ends=[32, 34] sha=4ddbf9b0936d31a4
+      spec budget-63-greedy       tokens=63 finish=length cached=0 ends=[32, 63] sha=9b5fd9b31bc7ed8a
+      spec budget-64-greedy       tokens=64 finish=length cached=0 ends=[32, 66] sha=5a276325f0a38d35
+      spec budget-65-greedy       tokens=65 finish=length cached=0 ends=[32, 66] sha=24b608bd29c61893
+      spec grammar-t1             tokens=95 finish=stop cached=0 ends=[] sha=b95d8e2b73fbcf47
+      spec grammar-greedy         tokens=94 finish=stop cached=0 ends=[33, 66, 94] sha=538c074c3b6fd1d4
+      spec stop-0-t1              tokens=33 finish=stop cached=0 ends=[33] sha=7ef4a6925bd1c98a
+      spec stop-1-t1              tokens=33 finish=stop cached=0 ends=[33] sha=573f4883174ca05b
+      spec stop-2-t1              tokens=67 finish=stop cached=0 ends=[33, 67] sha=35fcee97e79fe0f2
+      spec stop-3-t1              tokens=67 finish=stop cached=0 ends=[33, 67] sha=71c6aea3af55511e
+      spec stop-4-t1              tokens=67 finish=stop cached=0 ends=[33, 67] sha=35eff654d1de2047
+      spec stop-0-greedy          tokens=34 finish=stop cached=0 ends=[34] sha=32d621e0e8701cdb
+      spec stop-1-greedy          tokens=34 finish=stop cached=0 ends=[34] sha=693252b9f731a500
+      spec stop-2-greedy          tokens=66 finish=stop cached=0 ends=[34, 66] sha=f368787d899f1009
+      spec stop-3-greedy          tokens=66 finish=stop cached=0 ends=[34, 66] sha=e515992282216f7e
+      spec stop-4-greedy          tokens=66 finish=stop cached=0 ends=[34, 66] sha=5b74af8642c7bcff
+      spec turn1-t1               tokens=64 finish=length cached=0 ends=[32, 66] sha=cb88a282c60b7fa1
+      spec turn2-t1               tokens=96 finish=length cached=1248 ends=[35, 67, 98] sha=c019f8693b626dba
+      spec park1-t1               tokens=48 finish=length cached=0 ends=[32, 49] sha=7c673a85067594da
+      spec park2-t1               tokens=96 finish=length cached=192 ends=[32, 67, 97] sha=444f5b418552a2aa
+      spec turn1-greedy           tokens=64 finish=length cached=0 ends=[35, 65] sha=f1ad415ec4051486
+      spec turn2-greedy           tokens=96 finish=length cached=1248 ends=[34, 67, 97] sha=56d40447720bcba4
+      spec park1-greedy           tokens=48 finish=length cached=0 ends=[32, 48] sha=a6f311375a0a8bc0
+      spec park2-greedy           tokens=96 finish=length cached=192 ends=[34, 68, 99] sha=a52d9e5d9581e4a1
+case k1-b2
+     k1-b2 eos-short-t1           tokens=21 finish=stop cached=0 ends=[13, 16, 18, 21] sha=0afb35fe67543ec5
+     k1-b2 eos-short-greedy       tokens=22 finish=stop cached=0 ends=[14, 17, 20, 22] sha=e2241247fc2fb158
+     k1-b2 eos-mid-t1             tokens=50 finish=stop cached=0 ends=[44, 46, 49, 50] sha=b22086edbcd58bd4
+     k1-b2 eos-mid-chat           tokens=61 finish=stop cached=0 ends=[54, 57, 60, 61] sha=a00f32f7c09a84f7
+     k1-b2 eos-mid-pen            tokens=58 finish=stop cached=0 ends=[51, 54, 56, 59] sha=862866ab0b994f96
+     k1-b2 eos-mid-greedy         tokens=59 finish=stop cached=0 ends=[52, 55, 57, 59] sha=b43858268181d6b7
+     k1-b2 eos-mid2-t1            tokens=63 finish=stop cached=0 ends=[55, 58, 61, 64] sha=befc0cf83cfdf056
+     k1-b2 eos-mid2-greedy        tokens=73 finish=stop cached=0 ends=[67, 69, 71, 73] sha=23a70e7966539ce5
+     k1-b2 eos-mid3-t1            tokens=64 finish=stop cached=0 ends=[57, 59, 61, 64] sha=8182da1c3a1b42c7
+     k1-b2 eos-mid3-pen           tokens=55 finish=stop cached=0 ends=[47, 49, 52, 55] sha=3c6f5c10ac117c62
+     k1-b2 eos-mid3-greedy        tokens=43 finish=stop cached=0 ends=[38, 40, 42, 44] sha=ad25c0b7f1c97393
+     k1-b2 budget-31-t1           tokens=31 finish=length cached=0 ends=[26, 28, 30, 31] sha=e9d4a9256758d006
+     k1-b2 budget-32-t1           tokens=32 finish=length cached=0 ends=[26, 28, 30, 33] sha=af2bae7693f219a4
+     k1-b2 budget-33-t1           tokens=33 finish=length cached=0 ends=[26, 28, 30, 33] sha=469812cae13cc00e
+     k1-b2 budget-63-t1           tokens=63 finish=length cached=0 ends=[56, 59, 62, 63] sha=f69a2625b20ed2d1
+     k1-b2 budget-64-t1           tokens=64 finish=length cached=0 ends=[56, 59, 62, 64] sha=7341362e6ffe30bb
+     k1-b2 budget-65-t1           tokens=65 finish=length cached=0 ends=[59, 62, 64, 65] sha=64b7277a48f53647
+     k1-b2 budget-31-greedy       tokens=31 finish=length cached=0 ends=[26, 28, 30, 32] sha=92437b13bb7268c3
+     k1-b2 budget-32-greedy       tokens=32 finish=length cached=0 ends=[26, 28, 30, 32] sha=3f35ae639fd4677b
+     k1-b2 budget-33-greedy       tokens=33 finish=length cached=0 ends=[28, 30, 32, 34] sha=4ddbf9b0936d31a4
+     k1-b2 budget-63-greedy       tokens=63 finish=length cached=0 ends=[56, 59, 61, 63] sha=9b5fd9b31bc7ed8a
+     k1-b2 budget-64-greedy       tokens=64 finish=length cached=0 ends=[59, 61, 63, 65] sha=5a276325f0a38d35
+     k1-b2 budget-65-greedy       tokens=65 finish=length cached=0 ends=[59, 61, 63, 65] sha=24b608bd29c61893
+     k1-b2 grammar-t1             tokens=95 finish=stop cached=0 ends=[] sha=b95d8e2b73fbcf47
+     k1-b2 grammar-greedy         tokens=94 finish=stop cached=0 ends=[87, 90, 92, 94] sha=538c074c3b6fd1d4
+     k1-b2 stop-0-t1              tokens=26 finish=stop cached=0 ends=[20, 22, 24, 26] sha=7ef4a6925bd1c98a
+     k1-b2 stop-1-t1              tokens=32 finish=stop cached=0 ends=[24, 26, 29, 32] sha=573f4883174ca05b
+     k1-b2 stop-2-t1              tokens=38 finish=stop cached=0 ends=[29, 32, 35, 38] sha=35fcee97e79fe0f2
+     k1-b2 stop-3-t1              tokens=43 finish=stop cached=0 ends=[35, 38, 41, 43] sha=71c6aea3af55511e
+     k1-b2 stop-4-t1              tokens=49 finish=stop cached=0 ends=[41, 43, 46, 49] sha=35eff654d1de2047
+     k1-b2 stop-0-greedy          tokens=21 finish=stop cached=0 ends=[15, 17, 19, 21] sha=32d621e0e8701cdb
+     k1-b2 stop-1-greedy          tokens=27 finish=stop cached=0 ends=[21, 23, 25, 27] sha=693252b9f731a500
+     k1-b2 stop-2-greedy          tokens=35 finish=stop cached=0 ends=[29, 31, 33, 35] sha=f368787d899f1009
+     k1-b2 stop-3-greedy          tokens=44 finish=stop cached=0 ends=[37, 39, 41, 44] sha=e515992282216f7e
+     k1-b2 stop-4-greedy          tokens=50 finish=stop cached=0 ends=[44, 46, 48, 50] sha=5b74af8642c7bcff
+     k1-b2 turn1-t1               tokens=64 finish=length cached=0 ends=[57, 59, 61, 64] sha=cb88a282c60b7fa1
+     k1-b2 turn2-t1               tokens=96 finish=length cached=1248 ends=[88, 91, 94, 97] sha=c019f8693b626dba
+     k1-b2 park1-t1               tokens=48 finish=length cached=0 ends=[40, 43, 45, 48] sha=7c673a85067594da
+     k1-b2 park2-t1               tokens=96 finish=length cached=192 ends=[88, 91, 93, 96] sha=444f5b418552a2aa
+     k1-b2 turn1-greedy           tokens=64 finish=length cached=0 ends=[57, 60, 63, 65] sha=f1ad415ec4051486
+     k1-b2 turn2-greedy           tokens=96 finish=length cached=1248 ends=[90, 92, 94, 97] sha=56d40447720bcba4
+     k1-b2 park1-greedy           tokens=48 finish=length cached=0 ends=[42, 44, 46, 48] sha=a6f311375a0a8bc0
+     k1-b2 park2-greedy           tokens=96 finish=length cached=192 ends=[90, 92, 94, 97] sha=a52d9e5d9581e4a1
+case k3-b2
+     k3-b2 eos-short-t1           tokens=21 finish=stop cached=0 ends=[10, 13, 17, 22] sha=0afb35fe67543ec5
+     k3-b2 eos-short-greedy       tokens=22 finish=stop cached=0 ends=[12, 15, 17, 22] sha=e2241247fc2fb158
+     k3-b2 eos-mid-t1             tokens=50 finish=stop cached=0 ends=[42, 44, 46, 51] sha=b22086edbcd58bd4
+     k3-b2 eos-mid-chat           tokens=61 finish=stop cached=0 ends=[50, 54, 58, 63] sha=a00f32f7c09a84f7
+     k3-b2 eos-mid-pen            tokens=58 finish=stop cached=0 ends=[47, 52, 55, 60] sha=862866ab0b994f96
+     k3-b2 eos-mid-greedy         tokens=59 finish=stop cached=0 ends=[51, 53, 57, 61] sha=b43858268181d6b7
+     k3-b2 eos-mid2-t1            tokens=63 finish=stop cached=0 ends=[55, 58, 61, 66] sha=befc0cf83cfdf056
+     k3-b2 eos-mid2-greedy        tokens=73 finish=stop cached=0 ends=[62, 66, 71, 75] sha=23a70e7966539ce5
+     k3-b2 eos-mid3-t1            tokens=64 finish=stop cached=0 ends=[57, 59, 61, 66] sha=8182da1c3a1b42c7
+     k3-b2 eos-mid3-pen           tokens=55 finish=stop cached=0 ends=[47, 49, 52, 57] sha=3c6f5c10ac117c62
+     k3-b2 eos-mid3-greedy        tokens=43 finish=stop cached=0 ends=[35, 37, 42, 46] sha=ad25c0b7f1c97393
+     k3-b2 budget-31-t1           tokens=31 finish=length cached=0 ends=[25, 27, 29, 33] sha=e9d4a9256758d006
+     k3-b2 budget-32-t1           tokens=32 finish=length cached=0 ends=[25, 27, 29, 33] sha=af2bae7693f219a4
+     k3-b2 budget-33-t1           tokens=33 finish=length cached=0 ends=[25, 27, 29, 33] sha=469812cae13cc00e
+     k3-b2 budget-63-t1           tokens=63 finish=length cached=0 ends=[55, 58, 62, 63] sha=f69a2625b20ed2d1
+     k3-b2 budget-64-t1           tokens=64 finish=length cached=0 ends=[55, 58, 62, 64] sha=7341362e6ffe30bb
+     k3-b2 budget-65-t1           tokens=65 finish=length cached=0 ends=[58, 62, 64, 65] sha=64b7277a48f53647
+     k3-b2 budget-31-greedy       tokens=31 finish=length cached=0 ends=[24, 28, 30, 32] sha=92437b13bb7268c3
+     k3-b2 budget-32-greedy       tokens=32 finish=length cached=0 ends=[24, 28, 30, 32] sha=3f35ae639fd4677b
+     k3-b2 budget-33-greedy       tokens=33 finish=length cached=0 ends=[28, 30, 32, 34] sha=4ddbf9b0936d31a4
+     k3-b2 budget-63-greedy       tokens=63 finish=length cached=0 ends=[51, 56, 60, 63] sha=9b5fd9b31bc7ed8a
+     k3-b2 budget-64-greedy       tokens=64 finish=length cached=0 ends=[56, 60, 63, 66] sha=5a276325f0a38d35
+     k3-b2 budget-65-greedy       tokens=65 finish=length cached=0 ends=[56, 60, 63, 66] sha=24b608bd29c61893
+     k3-b2 grammar-t1             tokens=95 finish=stop cached=0 ends=[] sha=b95d8e2b73fbcf47
+     k3-b2 grammar-greedy         tokens=94 finish=stop cached=0 ends=[85, 87, 90, 94] sha=538c074c3b6fd1d4
+     k3-b2 stop-0-t1              tokens=26 finish=stop cached=0 ends=[20, 22, 24, 26] sha=7ef4a6925bd1c98a
+     k3-b2 stop-1-t1              tokens=31 finish=stop cached=0 ends=[22, 24, 26, 31] sha=573f4883174ca05b
+     k3-b2 stop-2-t1              tokens=38 finish=stop cached=0 ends=[26, 31, 35, 38] sha=35fcee97e79fe0f2
+     k3-b2 stop-3-t1              tokens=43 finish=stop cached=0 ends=[31, 35, 38, 43] sha=71c6aea3af55511e
+     k3-b2 stop-4-t1              tokens=49 finish=stop cached=0 ends=[38, 43, 46, 49] sha=35eff654d1de2047
+     k3-b2 stop-0-greedy          tokens=21 finish=stop cached=0 ends=[13, 17, 19, 21] sha=32d621e0e8701cdb
+     k3-b2 stop-1-greedy          tokens=26 finish=stop cached=0 ends=[19, 21, 23, 26] sha=693252b9f731a500
+     k3-b2 stop-2-greedy          tokens=36 finish=stop cached=0 ends=[26, 30, 34, 36] sha=f368787d899f1009
+     k3-b2 stop-3-greedy          tokens=45 finish=stop cached=0 ends=[36, 40, 42, 45] sha=e515992282216f7e
+     k3-b2 stop-4-greedy          tokens=50 finish=stop cached=0 ends=[42, 45, 48, 50] sha=5b74af8642c7bcff
+     k3-b2 turn1-t1               tokens=64 finish=length cached=0 ends=[58, 60, 63, 64] sha=cb88a282c60b7fa1
+     k3-b2 turn2-t1               tokens=96 finish=length cached=1248 ends=[88, 92, 94, 98] sha=c019f8693b626dba
+     k3-b2 park1-t1               tokens=48 finish=length cached=0 ends=[37, 42, 45, 50] sha=7c673a85067594da
+     k3-b2 park2-t1               tokens=96 finish=length cached=192 ends=[86, 91, 93, 98] sha=444f5b418552a2aa
+     k3-b2 turn1-greedy           tokens=64 finish=length cached=0 ends=[54, 59, 61, 65] sha=f1ad415ec4051486
+     k3-b2 turn2-greedy           tokens=96 finish=length cached=1248 ends=[89, 92, 94, 97] sha=56d40447720bcba4
+     k3-b2 park1-greedy           tokens=48 finish=length cached=0 ends=[38, 40, 44, 48] sha=a6f311375a0a8bc0
+     k3-b2 park2-greedy           tokens=96 finish=length cached=192 ends=[89, 93, 95, 99] sha=a52d9e5d9581e4a1
+case k3-b3
+     k3-b3 eos-short-t1           tokens=21 finish=stop cached=0 ends=[8, 13, 17, 22] sha=0afb35fe67543ec5
+     k3-b3 eos-short-greedy       tokens=22 finish=stop cached=0 ends=[12, 15, 18, 22] sha=e2241247fc2fb158
+     k3-b3 eos-mid-t1             tokens=50 finish=stop cached=0 ends=[40, 44, 47, 52] sha=b22086edbcd58bd4
+     k3-b3 eos-mid-chat           tokens=61 finish=stop cached=0 ends=[50, 54, 58, 63] sha=a00f32f7c09a84f7
+     k3-b3 eos-mid-pen            tokens=58 finish=stop cached=0 ends=[47, 52, 55, 60] sha=862866ab0b994f96
+     k3-b3 eos-mid-greedy         tokens=59 finish=stop cached=0 ends=[48, 51, 57, 61] sha=b43858268181d6b7
+     k3-b3 eos-mid2-t1            tokens=63 finish=stop cached=0 ends=[53, 57, 61, 66] sha=befc0cf83cfdf056
+     k3-b3 eos-mid2-greedy        tokens=73 finish=stop cached=0 ends=[62, 66, 71, 75] sha=23a70e7966539ce5
+     k3-b3 eos-mid3-t1            tokens=64 finish=stop cached=0 ends=[52, 57, 61, 66] sha=8182da1c3a1b42c7
+     k3-b3 eos-mid3-pen           tokens=55 finish=stop cached=0 ends=[47, 50, 53, 58] sha=3c6f5c10ac117c62
+     k3-b3 eos-mid3-greedy        tokens=43 finish=stop cached=0 ends=[33, 36, 42, 46] sha=ad25c0b7f1c97393
+     k3-b3 budget-31-t1           tokens=31 finish=length cached=0 ends=[21, 26, 29, 33] sha=e9d4a9256758d006
+     k3-b3 budget-32-t1           tokens=32 finish=length cached=0 ends=[21, 26, 29, 33] sha=af2bae7693f219a4
+     k3-b3 budget-33-t1           tokens=33 finish=length cached=0 ends=[21, 26, 29, 33] sha=469812cae13cc00e
+     k3-b3 budget-63-t1           tokens=63 finish=length cached=0 ends=[55, 58, 62, 63] sha=f69a2625b20ed2d1
+     k3-b3 budget-64-t1           tokens=64 finish=length cached=0 ends=[55, 58, 62, 64] sha=7341362e6ffe30bb
+     k3-b3 budget-65-t1           tokens=65 finish=length cached=0 ends=[55, 58, 62, 67] sha=64b7277a48f53647
+     k3-b3 budget-31-greedy       tokens=31 finish=length cached=0 ends=[17, 22, 28, 32] sha=92437b13bb7268c3
+     k3-b3 budget-32-greedy       tokens=32 finish=length cached=0 ends=[17, 22, 28, 32] sha=3f35ae639fd4677b
+     k3-b3 budget-33-greedy       tokens=33 finish=length cached=0 ends=[22, 28, 32, 34] sha=4ddbf9b0936d31a4
+     k3-b3 budget-63-greedy       tokens=63 finish=length cached=0 ends=[51, 56, 60, 63] sha=9b5fd9b31bc7ed8a
+     k3-b3 budget-64-greedy       tokens=64 finish=length cached=0 ends=[56, 60, 63, 66] sha=5a276325f0a38d35
+     k3-b3 budget-65-greedy       tokens=65 finish=length cached=0 ends=[56, 60, 63, 66] sha=24b608bd29c61893
+     k3-b3 grammar-t1             tokens=95 finish=stop cached=0 ends=[] sha=b95d8e2b73fbcf47
+     k3-b3 grammar-greedy         tokens=94 finish=stop cached=0 ends=[81, 85, 88, 94] sha=538c074c3b6fd1d4
+     k3-b3 stop-0-t1              tokens=30 finish=stop cached=0 ends=[17, 20, 24, 30] sha=7ef4a6925bd1c98a
+     k3-b3 stop-1-t1              tokens=33 finish=stop cached=0 ends=[20, 24, 30, 33] sha=573f4883174ca05b
+     k3-b3 stop-2-t1              tokens=38 finish=stop cached=0 ends=[24, 30, 33, 38] sha=35fcee97e79fe0f2
+     k3-b3 stop-3-t1              tokens=43 finish=stop cached=0 ends=[30, 33, 38, 43] sha=71c6aea3af55511e
+     k3-b3 stop-4-t1              tokens=49 finish=stop cached=0 ends=[38, 43, 46, 49] sha=35eff654d1de2047
+     k3-b3 stop-0-greedy          tokens=21 finish=stop cached=0 ends=[10, 13, 17, 21] sha=32d621e0e8701cdb
+     k3-b3 stop-1-greedy          tokens=26 finish=stop cached=0 ends=[13, 17, 21, 26] sha=693252b9f731a500
+     k3-b3 stop-2-greedy          tokens=37 finish=stop cached=0 ends=[26, 30, 34, 37] sha=f368787d899f1009
+     k3-b3 stop-3-greedy          tokens=45 finish=stop cached=0 ends=[34, 37, 40, 45] sha=e515992282216f7e
+     k3-b3 stop-4-greedy          tokens=54 finish=stop cached=0 ends=[40, 45, 48, 54] sha=5b74af8642c7bcff
+     k3-b3 turn1-t1               tokens=64 finish=length cached=0 ends=[53, 58, 61, 66] sha=cb88a282c60b7fa1
+     k3-b3 turn2-t1               tokens=96 finish=length cached=1248 ends=[88, 92, 95, 96] sha=c019f8693b626dba
+     k3-b3 park1-t1               tokens=48 finish=length cached=0 ends=[37, 42, 45, 50] sha=7c673a85067594da
+     k3-b3 park2-t1               tokens=96 finish=length cached=192 ends=[84, 90, 93, 98] sha=444f5b418552a2aa
+     k3-b3 turn1-greedy           tokens=64 finish=length cached=0 ends=[50, 54, 59, 65] sha=f1ad415ec4051486
+     k3-b3 turn2-greedy           tokens=96 finish=length cached=1248 ends=[89, 92, 95, 97] sha=56d40447720bcba4
+     k3-b3 park1-greedy           tokens=48 finish=length cached=0 ends=[32, 38, 44, 48] sha=a6f311375a0a8bc0
+     k3-b3 park2-greedy           tokens=96 finish=length cached=192 ends=[86, 89, 93, 99] sha=a52d9e5d9581e4a1
+case yield
+     yield yield-pen              tokens=200 finish=length cached=0 ends=[269, 270, 271, 276] sha=8d5ea5d8ee4a0293
+     yield yield-t1               tokens=200 finish=length cached=0 ends=[143, 177, 210, 240] sha=a2eecd61f7fce2f9
+case load
+      load yield-pen              tokens=200 finish=length cached=0 ends=[44, 45, 46, 47] sha=8d5ea5d8ee4a0293
+      load yield-t1               tokens=200 finish=length cached=0 ends=[29, 30, 31, 32] sha=a2eecd61f7fce2f9
+case refctx
+    refctx ctx-t1                 tokens=602 finish=length cached=0 ends=[] sha=acf9095ec304419f
+    refctx ctx-pen                tokens=602 finish=length cached=0 ends=[] sha=7c836dc58fdd14fc
+    refctx ctx-greedy             tokens=602 finish=length cached=0 ends=[] sha=0d0006eef29c7d74
+case ctx
+       ctx ctx-t1                 tokens=600 finish=length cached=0 ends=[500, 533, 566, 600] sha=9dbb5a2095b27d2c
+       ctx ctx-pen                tokens=599 finish=length cached=0 ends=[522, 554, 586, 599] sha=e58d21e3e0bdbe45
+       ctx ctx-greedy             tokens=600 finish=length cached=0 ends=[522, 555, 587, 600] sha=a4d49c25a2a4dc70
+
+placement of the request's last token (rows that end on a burst boundary / first after one):
+     eos sampled: on the boundary 5, first after it 2
+     eos  greedy: on the boundary 6, first after it 3
+    stop sampled: on the boundary 4, first after it 7
+    stop  greedy: on the boundary 4, first after it 9
+  budget sampled: on the boundary 14, first after it 6
+  budget  greedy: on the boundary 9, first after it 9
+yield boot: 23 continuation bursts ran no round, 0 of them entered on a carried token; 0 demotions
+load boot: 2 continuation bursts ran no round, 2 demotions to plain decode
+carry: 1186 boundary draws at a sampled burst's tail, 0 sampled bursts entered on a carried token, over 98 sampled speculative rows
+  reported: carry: 1186 sampled bursts committed their pending token with a tail pass (expected of a binary from before memra#1186)
+  reported: carry: no sampled burst entered on a carried token (expected of a binary from before memra#1186)
+
+receipts: boundary-base/
+SPEC BURST BOUNDARY: PASS (229 rows, grid default,1:2,3:2,3:3)
