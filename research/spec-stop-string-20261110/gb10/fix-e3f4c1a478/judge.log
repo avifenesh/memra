@@ -1,0 +1,15 @@
+== spec (mtp) ==
+  t1: stop rows equal to plain decode 13/13; close ms: non-stop median 75 (max 78, n=9), stop rows max 180.6 (n=13), limit 225
+    stop-row completion tokens: [19, 36, 50, 68, 72, 27, 54, 78, 27, 54, 78, 36, 29] plain [19, 36, 50, 68, 72, 27, 54, 78, 27, 54, 78, 36, 29]
+  greedy: stop rows equal to plain decode 13/13; close ms: non-stop median 0 (max 0, n=9), stop rows max 208.2 (n=13), limit 100
+    stop-row completion tokens: [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 30] plain [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 30]
+== dspark-px (dspark) ==
+  t1: own stream (this route's sampled walk is not plain decode's): stop rows that stop on their completing token 13/13; counts [18, 32, 43, 59, 72, 25, 51, 81, 25, 51, 81, 32, 27]
+  greedy: stop rows equal to plain decode 13/13; close ms: non-stop median 0 (max 0, n=4), stop rows max 180.4 (n=13), limit 100
+    stop-row completion tokens: [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 30] plain [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 30]
+== dspark-px: cold conversation: turn 1 35 tokens, finish stop, parked rewound False; turn 2 resumed from the pool False, cached 1216; the restore switch is on: the prefix cache serves the next turn
+coverage dspark greedy: spanning stops 2, two stops in one burst 0, confirmed rejected-draft stops 0
+coverage dspark t1: spanning stops 3, two stops in one burst 0, confirmed rejected-draft stops 0
+coverage mtp greedy: spanning stops 3, two stops in one burst 3, confirmed rejected-draft stops 4
+coverage mtp t1: spanning stops 5, two stops in one burst 3, confirmed rejected-draft stops 4
+STOP-STRING GATE: PASS

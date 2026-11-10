@@ -35,6 +35,11 @@ rewound to a prime boundary inside its fed tokens, so that shape now enters the 
   the DFlash2 drafter at q4 with the 32,768-row rank trim (the RTX 5090 recipe).
 - One RTX 5090 Laptop GPU; one DGX Spark (GB10). `MEMRA_CTX=8192`, `MEMRA_MAX_SESSIONS=2`, one
   request at a time, every request streamed with usage.
+- Two GB10 units: the first ran the base and the 663379cd6a fix, the second the e3f4c1a478 fix
+  (its own plain boot, `gb10/fix-e3f4c1a478/`), with the binary built there and copied to the
+  first unit for its small-burst boot (same sha256). `session-gate` is byte-identical across the
+  two fix heads on each device class (sha256 595c2329... on GB10, 232e5a13... on the RTX 5090), so
+  its GB10 run covers both heads.
 - Binaries. Base (the red arm): the release head 24b5f3e3f2, whose crates and tools equal main
   3de59bbf80's. Fix: built before the lane was rebased onto main, from 387141ae14 and 081a5d7101;
   their `crates/` trees equal 663379cd6a's and e3f4c1a478's on this branch (`git diff --quiet`),
@@ -79,7 +84,12 @@ route's own stream, where the stop string must complete on exactly the row's las
 | GB10 fix 663379cd6a | spec (mtp) | greedy | 13/13 | 0 / 207 | 0 / 1 |
 | GB10 fix 663379cd6a | small (mtp) | t1 | 13/13 | 77 / 334 | 75 / 78 |
 | GB10 fix 663379cd6a | small (mtp) | greedy | 13/13 | 0 / 210 | 0 / 1 |
-GB10-FINAL-ROWS
+| GB10 (second unit) fix e3f4c1a478 | spec (mtp) | t1 | 13/13 | 77 / 181 | 75 / 78 |
+| GB10 (second unit) fix e3f4c1a478 | spec (mtp) | greedy | 13/13 | 0 / 208 | 0 / 0 |
+| GB10 (second unit) fix e3f4c1a478 | dspark-px | t1 | 13/13 | 0 / 88 | 0 / 0 |
+| GB10 (second unit) fix e3f4c1a478 | dspark-px | greedy | 13/13 | 0 / 180 | 0 / 0 |
+| GB10 fix e3f4c1a478 | small (mtp) | t1 | 13/13 | 77 / 334 | 76 / 76 |
+| GB10 fix e3f4c1a478 | small (mtp) | greedy | 13/13 | 0 / 208 | 0 / 1 |
 
 The base's counts are its burst ends: on the RTX 5090 at the default burst, temperature 1, 32,
 66, 66, 96, 96 for the one-word rows where plain decode counts 19, 36, 50, 68, 72. A stop row
@@ -119,7 +129,9 @@ Each is a coverage requirement of the gate, met per sampler on every fix device:
   heads; the engine code is the same) and on GB10 (`session-gate-*.log`).
 - DSpark park after a stop (the review's finding): with the prefix cache on, the 663379cd6a binary
   logs `dspark-park REFUSED ... budget-clamped overshoot` for 16 stop-ended sessions
-  (`rtx5090/px-663379cd6a/`); e3f4c1a478 logs none. COLD-TURN-RESULT
+  (`rtx5090/px-663379cd6a/`); e3f4c1a478 logs none. In the cold conversation (prefix cache on, `px3-*`: a first turn that ends on a stop string inside a round, then a second turn), the 663379cd6a binary refuses the stop-ended session at park (`cache pos 1265 != 1264 fed tokens`) and the second turn finds nothing in the pool; on e3f4c1a478 the session parks rewound to its prime boundary (1,216) and the second turn resumes it from the pool. A first pair of these runs (`px2-*`) stopped on a paragraph break that the answer never wrote in 96 tokens; the gate failed it as untested and the stop string changed. On GB10 the DSpark restore switch is on by default, so
+  the pool parks nothing by design and the second turn restores 1,216 tokens from the prefix cache
+  (`gb10/fix-e3f4c1a478/`, no park refusal).
 
 ## CPU tests
 
@@ -141,6 +153,10 @@ On the dev desk (nvcc 13.1, `MEMRA_CUDA_ARCH=120a`):
   decode (`cost model prefers plain`), and every later sampled row of that boot ran on plain
   decode: equal to the reference by construction. Speculative boots now run with
   `MEMRA_SPEC_GATE=0`, and a row that did not speculate fails. The rerun is `gb10/fix-663379cd6a/`.
+- At `MEMRA_SPEC_BURST=2` the sampled rows yield no rejected-draft candidate on any device (most
+  bursts there run one round, and the candidate picker skips a burst's first round, whose context
+  tail it cannot rebuild). The default-burst boots confirm 4 per device. A DIR that holds only a
+  small-burst boot (`gb10/fix-e3f4c1a478-small/`) therefore fails that one coverage line.
 - DSpark's sampled rows cannot be compared with plain decode's sampled stream; the first DSpark
   boot (`rtx5090/fix-663379cd6a/`, judged by the gate before its own-stream rule) fails there for
   that reason only. The final DSpark boots are judged on the route's own stream.
@@ -152,10 +168,17 @@ On the dev desk (nvcc 13.1, `MEMRA_CUDA_ARCH=120a`):
   DSpark's, not run on a device.
 - Pooled cohorts: the gate sends one request at a time. A stopped member of a pooled cohort still
   gets its `Done` when the cohort call returns, as an EOS-ended member does on main (memra#1209).
-GB10-NOT-RUN
+- DSpark with the prefix cache off on GB10: DSpark on GB10 ran with the prefix cache on (the
+  restore switch is on there by default, so the next turn restores from the prefix cache, not the
+  pool; the gate accepts that path).
 
 ## Receipts
 
+- `rtx5090/`: `base-24b5f3e3f2/` (red), `fix-663379cd6a/` and `fix-e3f4c1a478/` (the two fix
+  heads), `px-663379cd6a/` (DSpark, prefix cache on, the first fix head), `px2-*`/`px3-*` (the
+  cold conversation on both fix heads). `gb10/`: `base-24b5f3e3f2/`, `fix-663379cd6a/` (with
+  `fix-663379cd6a-first/`, the demoted run), `fix-e3f4c1a478/` (second unit: plain, default
+  burst, DSpark) and `fix-e3f4c1a478-small/`.
 - `rtx5090/`, `gb10/`: one directory per gate DIR (`runs.jsonl`, `server-<boot>.log`,
   `env-<boot>.json`, `plan.json`, `reject-<boot>.json`, `texts/`, `judge.log`), and the
   `session-gate-*.log` runs. Machine paths are replaced by `$MODELS`, `$RUN` and `$HOME`.

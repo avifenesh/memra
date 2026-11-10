@@ -1,0 +1,9 @@
+== dspark-px (dspark) ==
+  t1: own stream (this route's sampled walk is not plain decode's): stop rows that stop on their completing token 12/12; counts [18, 32, 43, 56, 77, 25, 50, 84, 25, 50, 85, 32, 27]; not judged (their reference rows ran on plain decode after a prefix restore): ['turn1-t1']
+  greedy: stop rows equal to plain decode 13/13; close ms: non-stop median 0 (max 32, n=4), stop rows max 102.3 (n=13), limit 100
+    stop-row completion tokens: [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 29] plain [16, 32, 45, 58, 73, 25, 53, 79, 27, 53, 79, 32, 29]
+== dspark-px: cold conversation: turn 1 96 tokens, finish length, parked rewound True; turn 2 resumed from the pool True, cached 1216
+coverage dspark greedy: spanning stops 2, two stops in one burst 0, confirmed rejected-draft stops 0
+coverage dspark t1: spanning stops 2, two stops in one burst 0, confirmed rejected-draft stops 0
+FAIL dspark-px coldturn1: did not end on its stop string (finish length): nothing tested
+STOP-STRING GATE: FAIL (1)
