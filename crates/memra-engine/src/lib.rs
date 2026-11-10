@@ -2233,6 +2233,14 @@ pub struct Engine {
     #[allow(clippy::type_complexity)]
     // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fa_part_retired: Mutex<Vec<(CudaSlice<f32>, CudaSlice<f32>, CudaSlice<f32>)>>,
+    /// The verify-rows launch's last row-group table on the device, with the groups it holds:
+    /// a verify round sends the same groups for every full-attention layer, so one upload
+    /// serves the round (`fa_verify_rows_v4`). Never baked into a graph.
+    #[allow(clippy::type_complexity)] // allow: the groups and their device table, one pair
+    fa_rows_table: Mutex<Option<(Vec<(usize, usize)>, CudaSlice<i32>)>>,
+    /// Warps one `fa_verify_rows_v4_deep` block may hold on this device (the kernel build's
+    /// thread limit / 32); 0 until the first rows launch reads it.
+    fa_rows_block_warps: std::sync::atomic::AtomicUsize,
     /// name -> resolved CudaFunction (capture-safe lookups; see `func`).
     fn_cache: Mutex<std::collections::HashMap<String, CudaFunction>>,
     f16_scratch: Mutex<Option<crate::f16_ffi::F16Scratch>>,
@@ -2425,6 +2433,100 @@ pub fn fa_seqs_eligible(t_kv: usize, head_dim: usize, n_head: usize, n_head_kv: 
 /// Public twin of the crate-private split ladder (kernel-check builds the seqs-vs-loop pin).
 pub fn fa_split_keys_pub(t_kv: usize, n_head_kv: usize) -> usize {
     fa_split_keys(t_kv, n_head_kv)
+}
+
+/// Warps of one `fa_verify_rows_v4_deep` block (flash_attn.cu `FA_ROWS_WARPS`): rows x gqa.
+pub const FA_ROWS_WARPS: usize = 32;
+
+/// The depth from which the verify-rows walk is routed, by GQA (query heads per KV head): a row
+/// whose key bound is below it attends through the seqs launch's program (a group of one). The
+/// two launches are bit-identical per row, so the floor only chooses the faster one.
+///
+/// Measured per attention call on GB10 and the RTX 5090 (kernel-check FA-VERIFY-ROWS timing
+/// rows, `research/gb10-verify-rows-20261109/`): the walk shares one staged tile among a
+/// group's rows and pays for it with a wider block (rows x GQA warps), so it loses on the
+/// 8-key split rung and wins with depth, later for a wider block. Each floor is the first
+/// measured depth from which the walk is faster on both devices with the two arms' ranges
+/// apart: 1,024 keys for GQA up to 4, 2,048 for GQA 5 and 6 (the 27B), and the 128-key split
+/// rung (16,384) for GQA 7 and 8. A shape without a timing row takes its class's floor.
+pub fn fa_rows_floor(n_head: usize, n_head_kv: usize) -> usize {
+    match n_head / n_head_kv.max(1) {
+        0..=4 => 1024,
+        5..=6 => 2048,
+        _ => 16_384,
+    }
+}
+
+/// Row groups for [`Engine::fa_verify_rows_v4`]: maximal runs of consecutive rows that read
+/// the same cache (`cache_of[row]` equal), have ascending key bounds at or past
+/// [`fa_rows_floor`] and share the split partition the ONE-PARTITION LAW derives from each
+/// row's own `t_kv` at `split_keys` (ns_eff = ceil(t_kv / split_keys), per = ceil(t_kv /
+/// ns_eff)), cut to at most `FA_ROWS_WARPS / gqa` rows (one block's warps). Rows of a group
+/// share every split's start and differ only in the last split's end, so one block can stage
+/// each tile once for all of them. Returns (first row, row count) pairs that tile
+/// `0..t_kv.len()`.
+pub fn fa_row_groups(
+    t_kv: &[usize],
+    cache_of: &[usize],
+    split_keys: usize,
+    n_head: usize,
+    n_head_kv: usize,
+) -> Vec<(usize, usize)> {
+    let floor = fa_rows_floor(n_head, n_head_kv);
+    fa_row_groups_in(
+        t_kv,
+        cache_of,
+        split_keys,
+        n_head,
+        n_head_kv,
+        FA_ROWS_WARPS,
+        floor,
+    )
+}
+
+/// [`fa_row_groups`] for a block of at most `block_warps` warps (the launch passes what the
+/// kernel's build allows on this device, never more than `FA_ROWS_WARPS`) and a given depth
+/// floor (0 groups at every depth: kernel-check's bit-identity cases).
+fn fa_row_groups_in(
+    t_kv: &[usize],
+    cache_of: &[usize],
+    split_keys: usize,
+    n_head: usize,
+    n_head_kv: usize,
+    block_warps: usize,
+    floor: usize,
+) -> Vec<(usize, usize)> {
+    assert_eq!(
+        t_kv.len(),
+        cache_of.len(),
+        "fa_row_groups: one cache id per row"
+    );
+    let gqa = (n_head / n_head_kv.max(1)).max(1);
+    let cap = (block_warps.min(FA_ROWS_WARPS) / gqa).max(1);
+    let class = |t: usize| {
+        let ns_eff = t.div_ceil(split_keys).max(1);
+        (ns_eff, t.div_ceil(ns_eff))
+    };
+    let mut groups: Vec<(usize, usize)> = Vec::new();
+    for r in 0..t_kv.len() {
+        let joins = match groups.last() {
+            Some(&(row0, n)) => {
+                let prev = row0 + n - 1;
+                n < cap
+                    && t_kv[row0] >= floor
+                    && cache_of[r] == cache_of[prev]
+                    && t_kv[r] > t_kv[prev]
+                    && class(t_kv[r]) == class(t_kv[row0])
+            }
+            None => false,
+        };
+        if joins {
+            groups.last_mut().unwrap().1 += 1;
+        } else {
+            groups.push((r, 1));
+        }
+    }
+    groups
 }
 
 /// A raw pinned (page-locked, CACHEABLE — flags=0, not write-combined) host allocation for
@@ -4201,6 +4303,8 @@ impl Engine {
             fa_vf16_scratch: Mutex::new(None),
             fa_part_pool: Mutex::new(None),
             fa_part_retired: Mutex::new(Vec::new()),
+            fa_rows_table: Mutex::new(None),
+            fa_rows_block_warps: std::sync::atomic::AtomicUsize::new(0),
             fn_cache: Mutex::new(Default::default()),
             f16_scratch: Mutex::new(None),
             f16_mirror_spent: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
@@ -29908,12 +30012,242 @@ impl Engine {
         k_tok_bytes: usize,
         v_tok_bytes: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.fa_seqs_attend(
+            q,
+            kv_ptrs,
+            pos_seq,
+            o,
+            head_dim,
+            n_head,
+            n_head_kv,
+            b_n,
+            t_kv_max,
+            scale,
+            split_keys,
+            k_tok_bytes,
+            v_tok_bytes,
+            None,
+        )
+    }
+
+    /// VERIFY ROWS (GB10 decode round 5, lever 2): the seqs attention for rows that share a
+    /// cache, with ONE KV read per row group instead of one per row. Same arguments and the
+    /// same output as [`Self::fa_decode_batch_seqs_v4`] on the same rows, plus the host's copy
+    /// of `pos_seq` (`pos_host`, the values the kernel reads its key bounds from) and each
+    /// row's cache id (`cache_of`; rows with one id read the same K/V pointers). The groups
+    /// come from [`fa_row_groups`] on exactly those positions, so the host and the kernel
+    /// agree on every row's split partition. `fa_verify_rows_v4_deep` stages each K/V tile
+    /// once per group and every (row, head) warp runs the seqs walk over it, writing the seqs
+    /// layout's own partial slot, so the partials and the combined rows are BIT-IDENTICAL to
+    /// the seqs launch (kernel-check FA-VERIFY-ROWS). Callers gate exactly as for the seqs
+    /// twin.
+    ///
+    /// ROUTING: rows shallower than [`fa_rows_floor`] stay groups of one, and a launch whose
+    /// groups are all one row is the seqs launch itself. Returns true when the rows walk
+    /// launched.
+    #[allow(clippy::too_many_arguments)]
+    pub fn fa_verify_rows_v4(
+        &self,
+        q: &CudaSlice<f32>,
+        kv_ptrs: &cudarc::driver::CudaView<u64>,
+        pos_seq: &CudaSlice<i32>,
+        o: &mut CudaSlice<f32>,
+        head_dim: usize,
+        n_head: usize,
+        n_head_kv: usize,
+        b_n: usize,
+        t_kv_max: usize,
+        scale: f32,
+        split_keys: usize,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        pos_host: &[i32],
+        cache_of: &[usize],
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let floor = fa_rows_floor(n_head, n_head_kv);
+        self.fa_verify_rows_at(
+            q,
+            kv_ptrs,
+            pos_seq,
+            o,
+            head_dim,
+            n_head,
+            n_head_kv,
+            b_n,
+            t_kv_max,
+            scale,
+            split_keys,
+            k_tok_bytes,
+            v_tok_bytes,
+            pos_host,
+            cache_of,
+            floor,
+        )
+    }
+
+    /// kernel-check only: [`Self::fa_verify_rows_v4`] with the rows walk at every depth (no
+    /// routing floor), so the bit-identity cases cover the walk below the routed depths too.
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn fa_verify_rows_v4_unrouted(
+        &self,
+        q: &CudaSlice<f32>,
+        kv_ptrs: &cudarc::driver::CudaView<u64>,
+        pos_seq: &CudaSlice<i32>,
+        o: &mut CudaSlice<f32>,
+        head_dim: usize,
+        n_head: usize,
+        n_head_kv: usize,
+        b_n: usize,
+        t_kv_max: usize,
+        scale: f32,
+        split_keys: usize,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        pos_host: &[i32],
+        cache_of: &[usize],
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        self.fa_verify_rows_at(
+            q,
+            kv_ptrs,
+            pos_seq,
+            o,
+            head_dim,
+            n_head,
+            n_head_kv,
+            b_n,
+            t_kv_max,
+            scale,
+            split_keys,
+            k_tok_bytes,
+            v_tok_bytes,
+            pos_host,
+            cache_of,
+            0,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn fa_verify_rows_at(
+        &self,
+        q: &CudaSlice<f32>,
+        kv_ptrs: &cudarc::driver::CudaView<u64>,
+        pos_seq: &CudaSlice<i32>,
+        o: &mut CudaSlice<f32>,
+        head_dim: usize,
+        n_head: usize,
+        n_head_kv: usize,
+        b_n: usize,
+        t_kv_max: usize,
+        scale: f32,
+        split_keys: usize,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        pos_host: &[i32],
+        cache_of: &[usize],
+        floor: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if head_dim != 256 || pos_host.len() != b_n || cache_of.len() != b_n {
+            return Err(format!(
+                "fa_verify_rows_v4: head_dim {head_dim} (the walk is hd256), {} positions and {} \
+                 cache ids for {b_n} rows",
+                pos_host.len(),
+                cache_of.len()
+            )
+            .into());
+        }
+        // No row at the floor: every group is one row, which is the seqs launch. Shallow
+        // rounds (and the pooled cohorts of short chats) pay nothing for the route.
+        if pos_host.iter().all(|&p| (p as usize) + 1 < floor) {
+            self.fa_seqs_attend(
+                q,
+                kv_ptrs,
+                pos_seq,
+                o,
+                head_dim,
+                n_head,
+                n_head_kv,
+                b_n,
+                t_kv_max,
+                scale,
+                split_keys,
+                k_tok_bytes,
+                v_tok_bytes,
+                None,
+            )?;
+            return Ok(false);
+        }
+        let t_kv: Vec<usize> = pos_host.iter().map(|&p| p as usize + 1).collect();
+        // The block's warp budget on this device: the kernel build's own thread limit, read
+        // once per engine.
+        let block_warps = match self.fa_rows_block_warps.load(Ordering::Relaxed) {
+            0 => {
+                let w = (self
+                    .func("fa_verify_rows_v4_deep")
+                    .max_threads_per_block()?
+                    .max(32) as usize)
+                    / 32;
+                self.fa_rows_block_warps.store(w, Ordering::Relaxed);
+                w
+            }
+            w => w,
+        };
+        let groups = fa_row_groups_in(
+            &t_kv,
+            cache_of,
+            split_keys,
+            n_head,
+            n_head_kv,
+            block_warps,
+            floor,
+        );
+        // Groups of one row each are the seqs launch itself (one row per block).
+        let rows_walk = groups.len() < b_n;
+        self.fa_seqs_attend(
+            q,
+            kv_ptrs,
+            pos_seq,
+            o,
+            head_dim,
+            n_head,
+            n_head_kv,
+            b_n,
+            t_kv_max,
+            scale,
+            split_keys,
+            k_tok_bytes,
+            v_tok_bytes,
+            rows_walk.then_some(&groups[..]),
+        )?;
+        Ok(rows_walk)
+    }
+
+    /// The body of the seqs attention: partial buffers, one walk launch (z = sequence, or
+    /// z = row group when `groups` is given) and the seqs combine.
+    #[allow(clippy::too_many_arguments)]
+    fn fa_seqs_attend(
+        &self,
+        q: &CudaSlice<f32>,
+        kv_ptrs: &cudarc::driver::CudaView<u64>,
+        pos_seq: &CudaSlice<i32>,
+        o: &mut CudaSlice<f32>,
+        head_dim: usize,
+        n_head: usize,
+        n_head_kv: usize,
+        b_n: usize,
+        t_kv_max: usize,
+        scale: f32,
+        split_keys: usize,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        groups: Option<&[(usize, usize)]>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         debug_assert!(head_dim == 256, "seqs twin is v4-stamped (hd256 only)");
         // The seqs twin is the v4 program, so it carries the v4 q-array capacity. Callers gate
         // through `fa_seqs_eligible`, which already checks it; this refuses a caller that did not.
         if n_head / n_head_kv.max(1) > FA_V4_GQA_MAX {
             return Err(format!(
-                "fa_decode_batch_seqs_v4: gqa {} > v4 q-array capacity {FA_V4_GQA_MAX}",
+                "fa_seqs_attend: gqa {} > v4 q-array capacity {FA_V4_GQA_MAX}",
                 n_head / n_head_kv.max(1)
             )
             .into());
@@ -29970,19 +30304,64 @@ impl Engine {
         let gqa = (n_head / n_head_kv).max(1) as u32;
         // The deep twin (fa_v4_deep_walk: padded K-tile rows + tile+2 L2 prefetch, the eager
         // B=1 arm's walk) on the default module: fa_v4_deep_smem (12160B) + sV bf16 tile.
-        let f = self.func("fa_decode_vec_q_seqs_v4_deep");
-        let shmem = (12160 + 32 * head_dim * 2) as u32;
         use cudarc::driver::sys::CUfunction_attribute_enum as A;
-        f.set_attribute(
-            A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-            shmem as i32,
-        )?;
-        let cfg = LaunchConfig {
-            grid_dim: (n_head_kv as u32, n_splits_max as u32, b_n as u32),
-            block_dim: (32, gqa, 1),
-            shared_mem_bytes: shmem,
-        };
-        {
+        if let Some(groups) = groups {
+            // One block per (kv_head, split, row group): fa_v4_deep_smem + the sV tile + the
+            // group's Q slots (fa_v4_rows_q, 32 warps). The block carries the largest
+            // group's warps; a smaller group's spare warps only stage.
+            let mut table_guard = self.fa_rows_table.lock().unwrap();
+            if table_guard.as_ref().map(|(g, _)| g.as_slice()) != Some(groups) {
+                let table: Vec<i32> = groups
+                    .iter()
+                    .flat_map(|&(row0, n)| [row0 as i32, n as i32])
+                    .collect();
+                *table_guard = Some((groups.to_vec(), self.htod_i32(&table)?));
+            }
+            let table_d = &table_guard.as_ref().unwrap().1;
+            let rows_max = groups.iter().map(|g| g.1).max().unwrap_or(1) as u32;
+            let f = self.func("fa_verify_rows_v4_deep");
+            let shmem = (12160 + 32 * head_dim * 2 + 9216) as u32;
+            f.set_attribute(
+                A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+                shmem as i32,
+            )?;
+            let cfg = LaunchConfig {
+                grid_dim: (n_head_kv as u32, n_splits_max as u32, groups.len() as u32),
+                block_dim: (32, rows_max * gqa, 1),
+                shared_mem_bytes: shmem,
+            };
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(q)
+                .arg(kv_ptrs)
+                .arg(pos_seq)
+                .arg(table_d)
+                .arg(&mut *part_o)
+                .arg(&mut *part_m)
+                .arg(&mut *part_l)
+                .arg(&hd)
+                .arg(&nh)
+                .arg(&nhkv)
+                .arg(&scale)
+                .arg(&nspm)
+                .arg(&spk)
+                .arg(&ktb)
+                .arg(&vtb);
+            unsafe {
+                b.launch(cfg)?;
+            }
+        } else {
+            let f = self.func("fa_decode_vec_q_seqs_v4_deep");
+            let shmem = (12160 + 32 * head_dim * 2) as u32;
+            f.set_attribute(
+                A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+                shmem as i32,
+            )?;
+            let cfg = LaunchConfig {
+                grid_dim: (n_head_kv as u32, n_splits_max as u32, b_n as u32),
+                block_dim: (32, gqa, 1),
+                shared_mem_bytes: shmem,
+            };
             let __s_b = self.gpu.stream();
             let mut b = __s_b.launch_builder(&f);
             b.arg(q)
@@ -31629,6 +32008,53 @@ impl Engine {
     /// layers pass min(bucket, window)); the pool's retire-on-grow keeps captured addresses
     /// alive across bucket growth.
     #[allow(clippy::too_many_arguments)]
+    /// kernel-check only: fill the seqs attention's partial pool (O, M, L) with one bit pattern,
+    /// so a slot a walk kernel leaves unwritten shows in [`Self::fa_part_peek`]. False when the
+    /// pool does not exist yet or is smaller than the launch needs (run the launch once first).
+    #[doc(hidden)]
+    pub fn fa_part_poke(
+        &self,
+        o_len: usize,
+        ml_len: usize,
+        bits: u32,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let mut guard = self.fa_part_pool.lock().unwrap();
+        let Some(pg) = guard.as_mut() else {
+            return Ok(false);
+        };
+        if pg.0.len() < o_len || pg.1.len() < ml_len {
+            return Ok(false);
+        }
+        let fill = self.htod(&vec![f32::from_bits(bits); o_len.max(ml_len)])?;
+        self.copy_into(&mut pg.0, 0, &fill, o_len)?;
+        self.copy_into(&mut pg.1, 0, &fill, ml_len)?;
+        self.copy_into(&mut pg.2, 0, &fill, ml_len)?;
+        Ok(true)
+    }
+
+    /// kernel-check only: the first `o_len` / `ml_len` words of the seqs attention's partial
+    /// pool (O, M, L) as the last launch left them.
+    #[doc(hidden)]
+    #[allow(clippy::type_complexity)] // allow: the pool's own (O, M, L) triple
+    pub fn fa_part_peek(
+        &self,
+        o_len: usize,
+        ml_len: usize,
+    ) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
+        let guard = self.fa_part_pool.lock().unwrap();
+        let pg = guard.as_ref().ok_or("fa partial pool not allocated")?;
+        if pg.0.len() < o_len || pg.1.len() < ml_len {
+            return Err("fa partial pool smaller than the launch".into());
+        }
+        // Only the launch's words: the pool keeps its largest size, and reading all of it for
+        // every small case is gigabytes of readback.
+        Ok((
+            self.dtoh_view(&pg.0.slice(0..o_len))?,
+            self.dtoh_view(&pg.1.slice(0..ml_len))?,
+            self.dtoh_view(&pg.2.slice(0..ml_len))?,
+        ))
+    }
+
     /// Retire-on-grow ensure for the fa partial pool (see the #68 comment on the eager
     /// twin). Split out so graph capture can pre-run it OUTSIDE the capture region — an
     /// alloc inside a captured section becomes a mem node, and child graphs reject those.

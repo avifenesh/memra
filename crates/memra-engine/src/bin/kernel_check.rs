@@ -8228,6 +8228,467 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        // --- FA-VERIFY-ROWS (GB10 decode round 5, lever 2): fa_verify_rows_v4_deep vs the seqs
+        // launch on the SAME Q, cache bytes and positions: BIT identity on the partials (O, M,
+        // L, every slot of the launch, from two different pool fills so an unwritten slot
+        // shows) and on the combined rows. One block per (kv_head, split, row group) stages each
+        // K/V tile once for all rows of the group; each (row, head) warp must reproduce the
+        // seqs kernel's partial exactly. Cases: T = 1..9 rows of one cache at depths inside
+        // one tile, on tile edges inside one partition class (a row whose bound ends where a
+        // tile starts while its group stages more keys), across changes of `per` and of
+        // `ns_eff` (two partition classes in one round), with a row group cut by the 32-warp
+        // block limit, at 4k, 64k, 131k and 260k; two sessions' rows in one launch. GQA
+        // shapes: the roster's and the pooled-cohort cell's (24/4, 16/2, 16/4) with the deep
+        // cases, and gqa 1, 2, 5 and 7 at shallow depth. The line counts the cases whose rows
+        // walk really launched (a case of one-row groups is the seqs launch on both sides).
+        // The cases launch the walk at every depth (`fa_verify_rows_v4_unrouted`); the route
+        // line then checks the served entry on each side of its depth floor (`fa_rows_floor`):
+        // the seqs launch below it, the rows walk at it, both bit-identical to the seqs launch.
+        // MEMRA_KC_FAST=1 keeps the shallow cases only, unless MEMRA_KC_ROWS_DEPTH asks.
+        {
+            use cudarc::driver::{CudaSlice, DevicePtr};
+            type R<T> = Result<T, Box<dyn std::error::Error>>;
+            let (kbb, vbb) = memra_engine::kv_blk_bytes();
+            let fast = std::env::var("MEMRA_KC_FAST").as_deref() == Ok("1");
+            let deep_ask: usize = std::env::var("MEMRA_KC_ROWS_DEPTH")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(if fast { 32_768 } else { 262_144 })
+                .max(32_768);
+            let timing = std::env::var("MEMRA_KC_ROWS_TIME").as_deref() == Ok("1");
+            for (nh_r, nhkv_r, deep_geom) in [
+                (24usize, 4usize, true),
+                (16, 2, true),
+                (16, 4, true),
+                (4, 4, false),
+                (8, 4, false),
+                (20, 4, false),
+                (28, 4, false),
+            ] {
+                let deep_max = if deep_geom { deep_ask } else { 32_768 };
+                let hd = 256usize;
+                let kvd = hd * nhkv_r;
+                let (ktb, vtb) = ((kvd / 32) * kbb, (kvd / 32) * vbb);
+                let scale = 1.0 / (hd as f32).sqrt();
+                // One deep cache (and a second, shallower one for the two-session cases), built
+                // by the z-batched append in chunks: every row of a chunk lands in the same
+                // cache at its own slot, as a verify appends its rows.
+                let chunk = 4096usize;
+                let pools: Vec<(CudaSlice<f32>, CudaSlice<f32>)> = (0..4)
+                    .map(|s| {
+                        let k: Vec<f32> = (0..kvd * chunk)
+                            .map(|i| pr(i + 101 + 977 * s) * 0.2)
+                            .collect();
+                        let v: Vec<f32> = (0..kvd * chunk)
+                            .map(|i| pr(i + 211 + 1409 * s) * 0.2)
+                            .collect();
+                        Ok::<_, Box<dyn std::error::Error>>((e.htod(&k)?, e.htod(&v)?))
+                    })
+                    .collect::<Result<_, _>>()?;
+                let es = e.gpu.stream();
+                let build = |depth: usize,
+                             salt: usize|
+                 -> Result<
+                    (CudaSlice<u8>, CudaSlice<u8>),
+                    Box<dyn std::error::Error>,
+                > {
+                    let kc = e.alloc_u8(depth * ktb)?;
+                    let vc = e.alloc_u8(depth * vtb)?;
+                    let (pk, pv) = {
+                        let (pk, _g) = kc.device_ptr(&es);
+                        let (pv, _g2) = vc.device_ptr(&es);
+                        (pk, pv)
+                    };
+                    let tbl: Vec<u64> = (0..chunk).flat_map(|_| [pk, pv]).collect();
+                    let tbl_d = e.htod_u64(&tbl)?;
+                    let mut base = 0usize;
+                    while base < depth {
+                        let n = chunk.min(depth - base);
+                        let pos: Vec<i32> = (0..n).map(|i| (base + i) as i32).collect();
+                        let pos_d = e.htod_i32(&pos)?;
+                        let (kp, vp) = &pools[(base / chunk + salt) % pools.len()];
+                        e.append_kv_quantized_seqs(
+                            kp,
+                            vp,
+                            &tbl_d.slice(0..2 * n),
+                            &pos_d,
+                            n,
+                            kvd,
+                            kvd,
+                            ktb,
+                            vtb,
+                        )?;
+                        base += n;
+                    }
+                    Ok((kc, vc))
+                };
+                let (kc_a, vc_a) = build(deep_max + 16, 0)?;
+                let (kc_b, vc_b) = build(32_768 + 16, 1)?;
+                let ptr = |c: &CudaSlice<u8>| c.device_ptr(&es).0;
+                let (pa, pb) = ((ptr(&kc_a), ptr(&vc_a)), (ptr(&kc_b), ptr(&vc_b)));
+                let q_all: Vec<f32> = (0..hd * nh_r * 18).map(|i| pr(i + 31) * 0.2).collect();
+                let qd_all = e.htod(&q_all)?;
+
+                // One launch's inputs. rows = (cache id, t_kv) per row, in launch order; an even
+                // id reads the deep cache, an odd id the shallow one.
+                struct Case {
+                    t: usize,
+                    t_kv_max: usize,
+                    sp: usize,
+                    tbl: CudaSlice<u64>,
+                    pos: Vec<i32>,
+                    pos_d: CudaSlice<i32>,
+                    cache_of: Vec<usize>,
+                    q: CudaSlice<f32>,
+                }
+                let case = |rows: &[(usize, usize)]| -> R<Option<Case>> {
+                    let t = rows.len();
+                    let sp = memra_engine::fa_split_keys_pub(rows[0].1, nhkv_r);
+                    if rows
+                        .iter()
+                        .any(|r| memra_engine::fa_split_keys_pub(r.1, nhkv_r) != sp)
+                    {
+                        return Ok(None); // rows on two split rungs never share a launch
+                    }
+                    let tbl: Vec<u64> = rows
+                        .iter()
+                        .flat_map(|r| {
+                            let p = if r.0 % 2 == 0 { pa } else { pb };
+                            [p.0, p.1]
+                        })
+                        .collect();
+                    let pos: Vec<i32> = rows.iter().map(|r| (r.1 - 1) as i32).collect();
+                    let mut q = e.zeros(hd * nh_r * t)?;
+                    e.copy_into(&mut q, 0, &qd_all, hd * nh_r * t)?;
+                    Ok(Some(Case {
+                        t,
+                        t_kv_max: rows.iter().map(|r| r.1).max().unwrap(),
+                        sp,
+                        tbl: e.htod_u64(&tbl)?,
+                        pos_d: e.htod_i32(&pos)?,
+                        pos,
+                        cache_of: rows.iter().map(|r| r.0).collect(),
+                        q,
+                    }))
+                };
+                let seqs = |c: &Case, o: &mut CudaSlice<f32>| {
+                    e.fa_decode_batch_seqs_v4(
+                        &c.q,
+                        &c.tbl.slice(0..2 * c.t),
+                        &c.pos_d,
+                        o,
+                        hd,
+                        nh_r,
+                        nhkv_r,
+                        c.t,
+                        c.t_kv_max,
+                        scale,
+                        c.sp,
+                        ktb,
+                        vtb,
+                    )
+                };
+                // The walk at every depth. `cache_of` decides the row groups: the case's own
+                // ids, or another split of the same rows (the timing rows' 2-row blocks).
+                let rows_walk = |c: &Case, o: &mut CudaSlice<f32>, cache_of: &[usize]| {
+                    e.fa_verify_rows_v4_unrouted(
+                        &c.q,
+                        &c.tbl.slice(0..2 * c.t),
+                        &c.pos_d,
+                        o,
+                        hd,
+                        nh_r,
+                        nhkv_r,
+                        c.t,
+                        c.t_kv_max,
+                        scale,
+                        c.sp,
+                        ktb,
+                        vtb,
+                        &c.pos,
+                        cache_of,
+                    )
+                };
+
+                // (bitdiff, rows walk launched, words compared), or None off one split rung
+                let run = |rows: &[(usize, usize)]| -> R<Option<(usize, bool, usize)>> {
+                    let Some(c) = case(rows)? else {
+                        return Ok(None);
+                    };
+                    let n_splits_max = c.t_kv_max.div_ceil(c.sp);
+                    let (o_len, ml_len) =
+                        (c.t * nh_r * n_splits_max * hd, c.t * nh_r * n_splits_max);
+                    let mut o_s = e.zeros(hd * nh_r * c.t)?;
+                    seqs(&c, &mut o_s)?; // sizes the pool
+                    let mut launched = false;
+                    let mut parts = Vec::new();
+                    for (arm, bits) in [(0, 0x5a5a_5a5au32), (1, 0x5a5a_5a5a), (1, 0xa5a5_a5a5)] {
+                        if !e.fa_part_poke(o_len, ml_len, bits)? {
+                            return Err("fa partial pool smaller than the launch".into());
+                        }
+                        let mut o = e.zeros(hd * nh_r * c.t)?;
+                        if arm == 0 {
+                            seqs(&c, &mut o)?;
+                        } else {
+                            launched = rows_walk(&c, &mut o, &c.cache_of)?;
+                        }
+                        let (po, pm, pl) = e.fa_part_peek(o_len, ml_len)?;
+                        parts.push((e.dtoh(&o)?, po, pm, pl));
+                    }
+                    let diff = |a: &[f32], b: &[f32]| {
+                        a.iter()
+                            .zip(b)
+                            .filter(|(x, y)| x.to_bits() != y.to_bits())
+                            .count()
+                    };
+                    let mut bad = 0usize;
+                    for other in &parts[1..] {
+                        bad += diff(&parts[0].0, &other.0)
+                            + diff(&parts[0].1, &other.1)
+                            + diff(&parts[0].2, &other.2)
+                            + diff(&parts[0].3, &other.3);
+                    }
+                    Ok(Some((bad, launched, o_len + 2 * ml_len)))
+                };
+
+                let (mut cases, mut skipped, mut bad_total, mut words) =
+                    (0usize, 0usize, 0usize, 0usize);
+                let (mut walked, mut deep_skipped) = (0usize, 0usize);
+                let mut report = |name: &str, r: Option<(usize, bool, usize)>| match r {
+                    None => skipped += 1,
+                    Some((bad, launched, w)) => {
+                        cases += 1;
+                        bad_total += bad;
+                        words += w;
+                        walked += launched as usize;
+                        if bad != 0 {
+                            println!("  FA-VERIFY-ROWS {name}: bitdiff={bad} FAIL");
+                        }
+                    }
+                };
+                // one cache: every T at shallow and mid depths around tile and partition edges
+                let mut len0s: Vec<usize> = vec![1, 20, 27, 28, 29, 30, 31, 32, 33];
+                for c in [64usize, 96, 128, 256, 512, 1024, 2048, 4096, 8192, 16384] {
+                    len0s.extend(c - 5..=c + 2);
+                }
+                len0s.extend([200, 777, 3000, 5001, 12000]);
+                // A bound that ends where a tile starts, inside one partition class: the last
+                // split holds whole tiles for one row and one key more for the next (these
+                // depths give it on the 8, 32 and 64 rungs of the split ladders).
+                for edge in [295usize, 423, 1055, 2079, 4063, 6111, 12_223, 16_255] {
+                    len0s.extend(edge - 2..=edge + 1);
+                }
+                for &len0 in &len0s {
+                    for t in 1..=9usize {
+                        let rows: Vec<(usize, usize)> = (0..t).map(|r| (0, len0 + r + 1)).collect();
+                        report(&format!("len0={len0} T={t}"), run(&rows)?);
+                    }
+                }
+                // deep: 64k, 131k (a tile edge inside a class, then across a multiple of the
+                // split rung) and the context's end
+                for len0 in [
+                    65_531usize,
+                    65_536,
+                    100_003,
+                    131_037,
+                    131_039,
+                    131_067,
+                    131_072,
+                    262_132,
+                ] {
+                    if len0 + 9 > deep_max + 16 {
+                        deep_skipped += 1;
+                        continue;
+                    }
+                    for t in [2usize, 4, 6, 9] {
+                        let rows: Vec<(usize, usize)> = (0..t).map(|r| (0, len0 + r + 1)).collect();
+                        report(&format!("len0={len0} T={t}"), run(&rows)?);
+                    }
+                }
+                // two sessions in one launch (the pooled verify): each session's rows are its
+                // own groups, sessions never share a block
+                for (la, ta, lb, tb) in [
+                    (4000usize, 4usize, 4500usize, 4usize),
+                    (4093, 4, 6000, 3),
+                    (7000, 9, 5118, 7),
+                    (8100, 2, 8100, 2),
+                    (4062, 4, 2078, 4),
+                ] {
+                    let mut rows: Vec<(usize, usize)> = (0..ta).map(|r| (0, la + r + 1)).collect();
+                    rows.extend((0..tb).map(|r| (1, lb + r + 1)));
+                    report(&format!("two sessions {la}+{ta} / {lb}+{tb}"), run(&rows)?);
+                }
+                // A run that never launched the rows walk compared the seqs launch with itself.
+                let ok = bad_total == 0 && walked > 0;
+                println!(
+                    "FA-VERIFY-ROWS gqa={} ({nh_r}/{nhkv_r}): fa_verify_rows_v4_deep vs seqs, {cases} cases, {walked} \
+                     launched the rows walk ({skipped} off one split rung, {deep_skipped} deep depths past the \
+                     {deep_max}-token cache), {words} partial words x 2 fills + the combined rows: bitdiff={bad_total} {}",
+                    nh_r / nhkv_r,
+                    if ok {
+                        "OK"
+                    } else {
+                        fails += 1;
+                        "FAIL"
+                    }
+                );
+
+                // The served entry on each side of its depth floor: below it every row is a
+                // group of one and the seqs launch runs; at it the rows walk launches. Both
+                // sides must equal the seqs launch bit for bit.
+                {
+                    let floor = memra_engine::fa_rows_floor(nh_r, nhkv_r);
+                    let routed = |len0: usize| -> R<Option<(bool, usize, bool)>> {
+                        let rows: Vec<(usize, usize)> = (0..4).map(|r| (0, len0 + r + 1)).collect();
+                        let Some(c) = case(&rows)? else {
+                            return Ok(None);
+                        };
+                        let t_kv: Vec<usize> = rows.iter().map(|r| r.1).collect();
+                        let expect =
+                            memra_engine::fa_row_groups(&t_kv, &c.cache_of, c.sp, nh_r, nhkv_r)
+                                .len()
+                                < 4;
+                        let mut o_s = e.zeros(hd * nh_r * 4)?;
+                        seqs(&c, &mut o_s)?;
+                        let mut o_r = e.zeros(hd * nh_r * 4)?;
+                        let walked = e.fa_verify_rows_v4(
+                            &c.q,
+                            &c.tbl.slice(0..8),
+                            &c.pos_d,
+                            &mut o_r,
+                            hd,
+                            nh_r,
+                            nhkv_r,
+                            4,
+                            c.t_kv_max,
+                            scale,
+                            c.sp,
+                            ktb,
+                            vtb,
+                            &c.pos,
+                            &c.cache_of,
+                        )?;
+                        let (a, b) = (e.dtoh(&o_s)?, e.dtoh(&o_r)?);
+                        let bad = a
+                            .iter()
+                            .zip(&b)
+                            .filter(|(x, y)| x.to_bits() != y.to_bits())
+                            .count();
+                        Ok(Some((walked, bad, expect)))
+                    };
+                    // below: the last row is still under the floor; at: the first row is on it
+                    let below = routed(floor - 5)?;
+                    let mut at = None;
+                    for len0 in floor - 1..floor + 64 {
+                        // the first depth at the floor whose four rows share a partition class
+                        if let Some(r) = routed(len0)?.filter(|r| r.2) {
+                            at = Some((len0, r));
+                            break;
+                        }
+                    }
+                    let ok = matches!(below, Some((false, 0, false)))
+                        && matches!(at, Some((_, (true, 0, true))));
+                    println!(
+                        "FA-VERIFY-ROWS route gqa={} ({nh_r}/{nhkv_r}): floor {floor} keys; T=4 below it (len0={}) {below:?}, \
+                         at it {at:?} as (rows walk launched, bitdiff vs seqs, groups expected): {}",
+                        nh_r / nhkv_r,
+                        floor - 5,
+                        if ok {
+                            "OK"
+                        } else {
+                            fails += 1;
+                            "FAIL"
+                        }
+                    );
+                }
+
+                // per-call time, interleaved and synchronized (MEMRA_KC_ROWS_TIME=1): one
+                // session's 4 rows (K=3) by depth, with the 2-row block shape, then the pooled
+                // verify's shape (several sessions of 4 rows)
+                if deep_geom && timing {
+                    let time = |c: &Case, arms: &[Option<&[usize]>]| -> R<Vec<(f64, f64, f64)>> {
+                        let mut o = e.zeros(hd * nh_r * c.t)?;
+                        let mut ms: Vec<Vec<f64>> = vec![Vec::new(); arms.len()];
+                        let order: Vec<usize> =
+                            (0..arms.len()).chain((0..arms.len()).rev()).collect();
+                        for _ in 0..12 {
+                            for &arm in &order {
+                                e.stream().synchronize()?;
+                                let t0 = std::time::Instant::now();
+                                match arms[arm] {
+                                    None => seqs(c, &mut o)?,
+                                    Some(ids) => rows_walk(c, &mut o, ids).map(|_| ())?,
+                                }
+                                e.stream().synchronize()?;
+                                ms[arm].push(t0.elapsed().as_secs_f64() * 1e3);
+                            }
+                        }
+                        Ok(ms
+                            .iter_mut()
+                            .map(|v| {
+                                v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                                (v[v.len() / 2], v[0], v[v.len() - 1])
+                            })
+                            .collect())
+                    };
+                    for len0 in [
+                        1024usize, 2048, 4096, 8192, 12_288, 16_000, 17_000, 24_576, 32_768,
+                        131_072, 262_132,
+                    ] {
+                        if len0 + 4 > deep_max + 16 {
+                            continue;
+                        }
+                        let rows: Vec<(usize, usize)> = (0..4).map(|r| (0, len0 + r + 1)).collect();
+                        let Some(c) = case(&rows)? else { continue };
+                        // 2-row blocks: the same rows declared as two caches' pairs
+                        let m = time(&c, &[None, Some(&[0, 0, 0, 0]), Some(&[0, 0, 2, 2])])?;
+                        println!(
+                            "FA-VERIFY-ROWS time gqa={} len0={len0} T=4 sp={}: seqs {:.4} ms ({:.4}-{:.4}), rows {:.4} ms \
+                             ({:.4}-{:.4}), rows in pairs {:.4} ms ({:.4}-{:.4}), N=24 each",
+                            nh_r / nhkv_r,
+                            c.sp,
+                            m[0].0,
+                            m[0].1,
+                            m[0].2,
+                            m[1].0,
+                            m[1].1,
+                            m[1].2,
+                            m[2].0,
+                            m[2].1,
+                            m[2].2
+                        );
+                    }
+                    for (sessions, depth) in [
+                        (2usize, 300usize),
+                        (4, 300),
+                        (4, 1000),
+                        (4, 2000),
+                        (4, 4000),
+                        (4, 8000),
+                        (4, 20_000),
+                    ] {
+                        let rows: Vec<(usize, usize)> = (0..sessions)
+                            .flat_map(|s| (0..4).map(move |r| (s, depth + 37 * s + r + 1)))
+                            .collect();
+                        let Some(c) = case(&rows)? else { continue };
+                        let m = time(&c, &[None, Some(&c.cache_of)])?;
+                        println!(
+                            "FA-VERIFY-ROWS time gqa={} pooled {sessions} sessions x 4 rows depth~{depth} sp={}: seqs \
+                             {:.4} ms ({:.4}-{:.4}), rows {:.4} ms ({:.4}-{:.4}), N=24 each",
+                            nh_r / nhkv_r,
+                            c.sp,
+                            m[0].0,
+                            m[0].1,
+                            m[0].2,
+                            m[1].0,
+                            m[1].1,
+                            m[1].2
+                        );
+                    }
+                }
+            }
+        }
+
         // --- ARC B: fa_prefill_view_ws (dequant-once bf16 workspace) vs fa_prefill_view: BYTE
         // identity. The workspace stores __float2bfloat16(dq_*_elem(...)) — the identical value
         // fa_prefill_q stages to smem — and fa_prefill_qw's MMA/softmax/PV code is byte-identical,

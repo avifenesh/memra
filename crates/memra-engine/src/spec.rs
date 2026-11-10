@@ -9163,8 +9163,10 @@ impl HybridModel {
             }
             let n = b - a;
             let t_kv_max = *t_kv_rows[a..b].iter().max().unwrap();
+            // A session's rows share its cache: one KV read per row group, sessions apart. The
+            // groups come from the positions the kernel reads (`pos.host`).
             if n == t {
-                e.fa_decode_batch_seqs_v4(
+                e.fa_verify_rows_v4(
                     &q_n,
                     &tbl_d.slice(0..2 * t),
                     pos.dev,
@@ -9178,13 +9180,15 @@ impl HybridModel {
                     sp,
                     ktb,
                     vtb,
+                    &pos.host[..t],
+                    &row_seg,
                 )?;
             } else {
                 let mut q_run = e.uninit(n * q_dim)?;
                 e.dtod_copy_view(&q_n.slice(a * q_dim..b * q_dim), &mut q_run)?;
                 let pos_run = e.htod_i32(&pos.host[a..b])?;
                 let mut a_run = e.uninit(n * q_dim)?;
-                e.fa_decode_batch_seqs_v4(
+                e.fa_verify_rows_v4(
                     &q_run,
                     &tbl_d.slice(2 * a..2 * b),
                     &pos_run,
@@ -9198,6 +9202,8 @@ impl HybridModel {
                     sp,
                     ktb,
                     vtb,
+                    &pos.host[a..b],
+                    &row_seg[a..b],
                 )?;
                 e.dtod_copy_into(&a_run, &mut attn, a * q_dim)?;
             }
@@ -9470,22 +9476,47 @@ impl HybridModel {
                     )?;
                     if graph_cap.is_none() {
                         cache.kv[il].as_mut().unwrap().len += t;
+                        // Eager: every row reads this one cache, so the rows attend through
+                        // the verify-rows walk, one KV read per row group (bit-identical to
+                        // the seqs launch per row; kernel-check FA-VERIFY-ROWS).
+                        // Row r's position, the value `pos_d` holds for it.
+                        let pos_host: Vec<i32> = (0..t).map(|r| (pos0 + r) as i32).collect();
+                        e.fa_verify_rows_v4(
+                            &q,
+                            &kv_tbl.slice(kv_off..kv_off + 2 * t),
+                            pos_d,
+                            &mut attn,
+                            head_dim,
+                            n_head,
+                            n_head_kv,
+                            t,
+                            size_kv_max,
+                            scale,
+                            sp,
+                            ktb,
+                            vtb,
+                            &pos_host,
+                            &vec![0; t],
+                        )?;
+                    } else {
+                        // Captured: a round's row groups depend on its position, which a
+                        // replay cannot rebake, so the graph keeps the seqs launch.
+                        e.fa_decode_batch_seqs_v4(
+                            &q,
+                            &kv_tbl.slice(kv_off..kv_off + 2 * t),
+                            pos_d,
+                            &mut attn,
+                            head_dim,
+                            n_head,
+                            n_head_kv,
+                            t,
+                            size_kv_max,
+                            scale,
+                            sp,
+                            ktb,
+                            vtb,
+                        )?;
                     }
-                    e.fa_decode_batch_seqs_v4(
-                        &q,
-                        &kv_tbl.slice(kv_off..kv_off + 2 * t),
-                        pos_d,
-                        &mut attn,
-                        head_dim,
-                        n_head,
-                        n_head_kv,
-                        t,
-                        size_kv_max,
-                        scale,
-                        sp,
-                        ktb,
-                        vtb,
-                    )?;
                 } else {
                     if pos_rows.is_none() {
                         *pos_rows = Some(
