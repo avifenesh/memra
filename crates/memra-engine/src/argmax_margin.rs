@@ -1087,4 +1087,41 @@ mod tests {
             assert!(parse_floors(bad).is_err(), "{bad}");
         }
     }
+
+    /// The tree's floors table, read with the judge's own parser, and every row against its
+    /// receipt: the row must be exactly the `--calibrate` line of the receipt's table, so a hand
+    /// edit, a stale row or a receipt that is not the one measured fails on CPU (memra#1199).
+    #[test]
+    fn the_tree_floors_table_parses_and_every_row_is_its_receipts_calibration() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let text = std::fs::read_to_string(root.join("tools/argmax-margin-floors.tsv"))
+            .expect("tools/argmax-margin-floors.tsv");
+        let rows = parse_floors(&text).expect("the tree's floors table parses");
+        assert!(!rows.is_empty());
+        for line in text
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        {
+            let f: Vec<&str> = line.split('\t').collect();
+            let receipt = f[12];
+            // (tools/check-argmax-floors.py requires the receipt directory; this only keeps the
+            // read inside the tree.)
+            assert!(
+                !receipt.starts_with('/') && !receipt.split('/').any(|c| c == ".."),
+                "receipt {receipt:?} is not a path in the tree"
+            );
+            let log = std::fs::read_to_string(root.join(receipt))
+                .unwrap_or_else(|e| panic!("receipt {receipt}: {e}"));
+            let table = parse_table(&log).unwrap_or_else(|e| panic!("receipt {receipt}: {e}"));
+            let cal = calibrate(&table).unwrap_or_else(|| panic!("receipt {receipt}: no floor"));
+            let key = FloorKey {
+                model: f[0],
+                prompt: f[1],
+                prompt_sha256: f[2],
+                decode: f[3],
+                device: f[4],
+            };
+            assert_eq!(floor_line(&key, &cal, receipt), line, "{receipt}");
+        }
+    }
 }

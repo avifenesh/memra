@@ -72,7 +72,8 @@
 #               no floor row: the cell prints "not judged: device class not maintained, no
 #               floor row", exits 0 with no PASS line, and neither passes nor refuses the
 #               battery. A device of a maintained class without its row, and a device name no
-#               class matches, are refused.
+#               class matches, are refused. The prime and served checks need no floor: a
+#               structured prime or a served-token mismatch fails the cell on every device.
 #
 # For every flip and every wide row the gate prints the clause, both top-1 ids and margins,
 # the spread, the gap shift and the floor, and under it the probe's `detail` line: both
@@ -234,6 +235,8 @@ fi
 # model's row. Measured on the NVFP4-Q5K-mtp artifact only, so the row matches the NVFP4
 # artifacts. The wrapper prints the row it used.
 BUDGET_ROW="--max-flips"
+# A calibration judges nothing, so it has no budget (and its window is "all", not a number).
+[ $CALIBRATE = 0 ] || { MAX_FLIPS=0; BUDGET_ROW="none (calibration)"; }
 if [ -z "$MAX_FLIPS" ]; then
     case "$(basename "$MODEL")|$(basename "$PROMPT")" in
         Qwen3.8-27B-NVFP4*"|p4-16k.txt") MAX_FLIPS=$(( (3 * WINDOW + 11) / 12 )); BUDGET_ROW="Qwen3.8-27B NVFP4 on p4-16k (3/12-window)" ;;
@@ -274,6 +277,11 @@ fi
 MODEL_NAME=$(basename "${MODEL%.gguf}")
 PROMPT_NAME=$(basename "${PROMPT%.txt}")
 PROMPT_SHA=$(sha256sum "$PROMPT" | cut -d' ' -f1)
+# CUDA's default device order is fastest first and nvidia-smi's is the PCI bus order: on a host
+# with two card models, CUDA device 0 and nvidia-smi's first row can be different cards. The
+# probe opens CUDA device 0, so the gate puts CUDA in the bus order unless the caller chose one
+# (the release battery exports the same).
+export CUDA_DEVICE_ORDER="${CUDA_DEVICE_ORDER:-PCI_BUS_ID}"
 if [ -z "$DEVICE" ]; then
     DEVICE=$(nvidia-smi ${CUDA_VISIBLE_DEVICES:+-i "${CUDA_VISIBLE_DEVICES%%,*}"} \
         --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
@@ -380,6 +388,10 @@ if [ $CALIBRATE = 1 ]; then
     [ "$DECODE" = batch ] && echo "  SERVED-SUMMARY served=$SERVED" || echo "  PRIME-SUMMARY prime=$PRIME"
     echo "  raw: $LOG_SHOWN"
     if [ "$rc" -ne 0 ]; then echo "  FAIL: the table gives no floor"; exit 1; fi
+    if [ "$PRIME" = MISMATCH-STRUCTURED ] || [ "$SERVED" = MISMATCH ]; then
+        echo "  FAIL: main's own cell fails its prime or served check; a floor is not taken from it"
+        exit 1
+    fi
     echo "  CALIBRATED: add the FLOOR-ROW line to $FLOORS with its banked log as the receipt"
     exit 0
 fi
@@ -454,6 +466,18 @@ if [ $CANARY = 1 ]; then
     echo "               reading its own margins; this gate has no teeth."
     exit 1
 fi
+# The prime and served checks need no floor, so they fail a cell on every device, before the
+# refusal of an uncalibrated cell and before NOT-JUDGED.
+if [ "$PRIME" = MISMATCH-STRUCTURED ]; then
+    echo "  FAIL: the batched serving prime (prime_cache) diverges structurally from the tokenwise reference"
+    echo "  raw: $LOG_SHOWN"
+    exit 1
+fi
+if [ "$SERVED" = MISMATCH ]; then
+    echo "  FAIL: the served batch program's device-sampled token differs from the host argmax of its own row"
+    echo "  raw: $LOG_SHOWN"
+    exit 1
+fi
 if [ $UNCALIBRATED = 1 ] && [ $REQUIRE_FLOOR = 1 ]; then
     # Which device classes are maintained is tools/change-impact.toml's call: the classes of
     # its push-gated build targets. A device of one of them with no floor row for its exact
@@ -467,16 +491,6 @@ if [ $UNCALIBRATED = 1 ] && [ $REQUIRE_FLOOR = 1 ]; then
             exit 0 ;;
     esac
     echo "argmax-margin-gate: UNCALIBRATED (no floor row in $FLOORS for model=$MODEL_NAME prompt=$PROMPT_NAME sha256=$PROMPT_SHA decode=$DECODE device=$DEVICE, device class: ${STATUS:-unknown}; calibrate with --calibrate)"
-    echo "  raw: $LOG_SHOWN"
-    exit 1
-fi
-if [ "$PRIME" = MISMATCH-STRUCTURED ]; then
-    echo "  FAIL: the batched serving prime (prime_cache) diverges structurally from the tokenwise reference"
-    echo "  raw: $LOG_SHOWN"
-    exit 1
-fi
-if [ "$SERVED" = MISMATCH ]; then
-    echo "  FAIL: the served batch program's device-sampled token differs from the host argmax of its own row"
     echo "  raw: $LOG_SHOWN"
     exit 1
 fi

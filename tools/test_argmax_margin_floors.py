@@ -123,6 +123,25 @@ class FloorsCensusTest(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 census.battery_cells(REPO, roster)
 
+    def test_a_receipt_must_be_a_banked_file_of_the_tree(self):
+        receipts = {}
+        census.floor_rows("\n".join((row("M", "eager", "card A"), row("M", "batch", "card A"))), receipts)
+        with tempfile.TemporaryDirectory(prefix="memra-floors-test-") as tmp:
+            repo = pathlib.Path(tmp)
+            (repo / "research/x").mkdir(parents=True)
+            (repo / "research/x/probe.log").write_text("table\n")
+            self.assertEqual(census.bad_receipts(receipts, repo), [])
+            for path in ("/home/user/.cache/gate.log", "research/../x/probe.log", "research/y/probe.log",
+                         "logs/probe.log"):
+                with self.subTest(path=path):
+                    key = next(iter(receipts))
+                    self.assertEqual(census.bad_receipts({key: path}, repo), [(key, path)])
+
+    def test_the_tree_receipts_are_banked(self):
+        receipts = {}
+        census.floor_rows((REPO / "tools/argmax-margin-floors.tsv").read_text(), receipts)
+        self.assertEqual(census.bad_receipts(receipts, REPO), [])
+
     def test_the_prompt_digest_is_the_file_the_gate_reads(self):
         prompt = REPO / "research/e2e/prompts/board-2048.txt"
         digest = hashlib.sha256(prompt.read_bytes()).hexdigest()

@@ -273,8 +273,6 @@ jobs:
       # exactly like the gates it protects, which is why every one of them is HERE.
       - name: Gate-integrity teeth fixture (round 2)
         run: tools/test_gate_integrity_r2.sh
-      - name: Argmax-margin input and verdict controls
-        run: python3 tools/test_argmax_margin_gate.py
       - name: Push-range fixture (round 1)
         run: |
           python3 tools/test_push_range_setup.py
@@ -511,6 +509,18 @@ jobs:
       - name: Parity geometry and argmax instrument tests
         if: ${{ needs.changes.result != 'success' || needs.changes.outputs.engine != 'false' }}
         run: cargo test --release -p memra-engine --bin dflash_parity --bin dspark_q38_parity --bin argmax-margin-probe
+        env:
+          MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+          MEMRA_CUDA_ARCH: "120a"
+
+      # The argmax margin gate's wrapper controls (GATE-INTEGRITY round 2, moved here by
+      # memra#1199): the measurement is a stub and the verdict is the built probe's --judge,
+      # memra_engine::argmax_margin::judge, so the release binary is built first. The test fails,
+      # never skips, without it. Nothing in it touches the CUDA driver.
+      - name: Argmax-margin input and verdict controls
+        run: |
+          cargo build --release -p memra-engine --bin argmax-margin-probe
+          python3 tools/test_argmax_margin_gate.py
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"

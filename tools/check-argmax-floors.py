@@ -49,8 +49,9 @@ def battery_cells(repo, roster=None):
     return cells
 
 
-def floor_rows(text):
-    """{(model, prompt, prompt_sha256, decode, device)} of the floors table."""
+def floor_rows(text, receipts=None):
+    """{(model, prompt, prompt_sha256, decode, device)} of the floors table. `receipts`, when
+    given a dict, is filled with each key's receipt path."""
     rows = set()
     for n, line in enumerate(text.splitlines(), 1):
         if not line.strip() or line.startswith("#"):
@@ -59,7 +60,21 @@ def floor_rows(text):
         if len(fields) != 13:
             raise ValueError(f"floors line {n}: expected 13 tab-separated fields")
         rows.add(tuple(fields[:5]))
+        if receipts is not None:
+            receipts[tuple(fields[:5])] = fields[12]
     return rows
+
+
+def bad_receipts(receipts, repo):
+    """The floor rows whose receipt is not a banked file of the tree: a path under research/,
+    relative, without '..', that exists. (The judge's own parser and the recomputation of every
+    row from its receipt are the engine test
+    the_tree_floors_table_parses_and_every_row_is_its_receipts_calibration.)"""
+    bad = []
+    for key, path in sorted(receipts.items()):
+        if not path.startswith("research/") or ".." in path.split("/") or not (repo / path).is_file():
+            bad.append((key, path))
+    return bad
 
 
 def missing_rows(cells, rows, prompt_sha256):
@@ -88,7 +103,8 @@ def main():
     repo = pathlib.Path(args.repo)
     try:
         cells = battery_cells(repo)
-        rows = floor_rows((repo / "tools/argmax-margin-floors.tsv").read_text())
+        receipts = {}
+        rows = floor_rows((repo / "tools/argmax-margin-floors.tsv").read_text(), receipts)
         shas = {}
         for _, _, prompt, _ in cells:
             path = repo / "research/e2e/prompts" / f"{prompt}.txt"
@@ -112,6 +128,12 @@ def main():
         print(f"check-argmax-floors: MISSING device: maintained class {cls} "
               f"({rules['device'][cls]['name']}) has no calibrated device: {len(cells)} floor rows needed",
               file=sys.stderr)
+    unbanked = bad_receipts(receipts, repo)
+    for key, path in unbanked:
+        print(f"check-argmax-floors: RECEIPT not banked in the tree: device={key[4]!r} model={key[0]} "
+              f"decode={key[3]}: {path!r}", file=sys.stderr)
+    if unbanked:
+        return 1
     if missing or bare:
         print("check-argmax-floors: calibrate each with tools/argmax-margin-gate.sh <model> "
               "[--decode batch] --calibrate on that device and add the row", file=sys.stderr)

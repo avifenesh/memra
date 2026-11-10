@@ -176,8 +176,11 @@ a flip whose gap shift (the sum of the two programs' top-2 margins) is inside th
 calibrated floor is a near tie counted against the budget; a flip or an agreeing row above the
 floor fails; a row the floor row lists as known is named and fails only when the candidate's gap
 shift there exceeds main's recorded one. Each cell has its own floor row in `tools/argmax-margin-floors.tsv`, keyed by model,
-prompt, decode program and device. The battery runs the gate with `--require-floor`, so a cell
-with no floor row on the device it runs on is `REFUSED`, never passed as uncalibrated. They
+prompt and the sha256 of its bytes, decode program and the exact device name. The battery runs
+the gate with `--require-floor`, so a cell with no floor row on the device it runs on is
+`REFUSED` on a device of a maintained class (`rtx5090`, `rtxpro6000`, `gb10`) or an unknown name,
+never passed as uncalibrated; on a device of a class nobody maintains (H100, B200) it is
+`NOT-JUDGED`, which neither passes nor refuses the battery. They
 differ in the program on the decode side.
 
 | Cell (`runs.tsv` kind / receipt) | Decode side | Extra requirement |

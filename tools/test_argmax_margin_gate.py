@@ -353,6 +353,26 @@ class GateTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("  PASS: no wide flip", r.stdout)
 
+    def test_not_judged_never_hides_a_prime_or_served_failure(self):
+        # The prime and served checks need no floor: on a device nobody maintains, with no floor
+        # row, a structured prime or a served-token mismatch still fails the cell.
+        self.install_device_rules()
+        h100 = "NVIDIA H100 80GB HBM3"
+        prime = PRIME_MATCH.replace("class=MATCH", "class=MISMATCH-STRUCTURED")
+        r = self.run_gate(ROWS, device=h100, extra=("--require-floor",), prime=prime)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("diverges structurally from the tokenwise reference", r.stdout)
+        self.assertNotIn("NOT-JUDGED", r.stdout)
+        r = self.run_gate(ROWS, device=h100, extra=(*BATCH, "--require-floor"),
+                          prime="SERVED-ARGMAX: rows=2 device_mismatch=1")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("device-sampled token differs from the host argmax", r.stdout)
+        self.assertNotIn("NOT-JUDGED", r.stdout)
+        # A clean table there is still not judged.
+        r = self.run_gate(ROWS, device=h100, extra=("--require-floor",))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("argmax-margin-gate: NOT-JUDGED", r.stdout)
+
     def test_require_floor_refuses_when_the_device_class_cannot_be_looked_up(self):
         # No rules in the tree: the lookup fails, and a failed lookup is never "not judged".
         r = self.run_gate(ROWS, device="NVIDIA H100 80GB HBM3", extra=("--require-floor",))
@@ -404,6 +424,37 @@ class GateTest(unittest.TestCase):
                 self.assertNotIn("SUMMARY flips=", r.stdout)
                 self.assertIn("  CALIBRATED: add the FLOOR-ROW line", r.stdout)
         self.assertEqual(self.run_gate(rows, extra=("--calibrate", "--canary")).returncode, 2)
+
+    def test_calibrate_runs_for_the_models_and_prompts_with_a_budget_row(self):
+        # The budget rows compute from the window, and a calibration's window is "all": the
+        # calibration has no budget and must not trip over that arithmetic.
+        rows = "10 1 2.0 1 2.25 0.3 yes\n11 2 5.0 2 5.75 0.8 yes"
+        long_prompt = self.root / "p4-16k.txt"
+        long_prompt.write_text("A long prompt fixture.\n")
+        for name, prompt in (("gemma-4-31B_q4_0-it.gguf", self.prompt), ("gemma-4-26B_q4_0-it.gguf", self.prompt),
+                             ("Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", long_prompt)):
+            with self.subTest(model=name, prompt=prompt.name):
+                model = self.root / name
+                model.touch()
+                self.stub_probe(rows + "\n" + PRIME_MATCH)
+                r = subprocess.run(["bash", str(self.gate), str(model), "--prompt", str(prompt),
+                    "--logdir", str(self.root / "logs"), "--device", DEVICE, "--calibrate",
+                    "--receipt", "research/lane/cal.log"], capture_output=True, text=True, timeout=20,
+                    env=FIXTURE_ENV)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn("  FLOOR-ROW: " + model.stem + "\t" + prompt.stem + "\t", r.stdout)
+                self.assertNotIn("unbound variable", r.stderr)
+
+    def test_calibrate_takes_no_floor_from_a_cell_main_fails(self):
+        rows = "10 1 2.0 1 2.25 0.3 yes\n11 2 5.0 2 5.75 0.8 yes"
+        for extra, line in (((), PRIME_MATCH.replace("class=MATCH", "class=MISMATCH-STRUCTURED")),
+                            (BATCH, "SERVED-ARGMAX: rows=2 device_mismatch=1")):
+            with self.subTest(decode=extra):
+                r = self.run_gate(rows, extra=(*extra, "--calibrate", "--receipt", "research/lane/cal.log"),
+                                  prime=line)
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn("a floor is not taken from it", r.stdout)
+                self.assertNotIn("CALIBRATED:", r.stdout)
 
     def test_per_prompt_budget_covers_only_its_model_and_prompt(self):
         def table(flips, window=12):
