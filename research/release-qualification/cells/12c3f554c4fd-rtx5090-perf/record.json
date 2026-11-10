@@ -1,0 +1,155 @@
+{
+ "build": {
+  "binaries": {
+   "argmax-margin-probe": {
+    "bytes": 40248272,
+    "sha256": "ec27bb195396e4afaa380653c42930af3426a329d55f7d39226d581a858fb08a"
+   },
+   "kernel-check": {
+    "bytes": 34209352,
+    "sha256": "8e6b72ee7154d482b0d5456fbe361cbb2df28bd49ab31604c202c549b79da44b"
+   },
+   "memra-server": {
+    "bytes": 60721344,
+    "sha256": "011f8c7642ecbb194cf03bd45811eaa3ad34e762ef0309161c7b45a5d048684e"
+   },
+   "run-gen": {
+    "bytes": 42371288,
+    "sha256": "a3292b784ccfa84d48cf1926ad984dee54e6066bc71bead564696ea63bbe63ae"
+   },
+   "run-spec": {
+    "bytes": 42316880,
+    "sha256": "0c3c8196a6ba271f22f6cc27c26dab58df8f325dbe8212325b6e96fdef932a71"
+   },
+   "tok-parity": {
+    "bytes": 1388008,
+    "sha256": "0beb528f796adf5881eccd80432e55d98e19e67409e2ec1cb6a269c8540a50ba"
+   }
+  },
+  "env": {
+   "CARGO_BUILD_JOBS": "2",
+   "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+   "CARGO_PROFILE_RELEASE_LTO": "fat"
+  },
+  "target": "120a",
+  "toolchain": {
+   "nvcc": "Build cuda_12.4.r12.4/compiler.34097967_0",
+   "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+  }
+ },
+ "device": {
+  "class": "rtx5090",
+  "compute_cap": "12.0",
+  "driver": "615.71.09",
+  "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+  "uuid_sha256": "c196c02e3db86b6730538a53b5b28e4db96deca41d4bfde3f97b9a682da5a1c8"
+ },
+ "failures": [],
+ "finished": "2026-11-10T13:27:41.545325+00:00",
+ "inputs_sha256": "9712dd95f4945f38425fddedfa9a781076865758294b1c5b189b9e18f077da6c",
+ "kinds": {
+  "perf": {
+   "accepted_regression": null,
+   "base_commit": "031f14669046c5ec1e9f0e0d7f5a143b7d28aa17",
+   "baseline": "interleaved",
+   "runs": [
+    {
+     "arm": "A",
+     "log": "perf/01-A-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/02-B-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/03-B-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/04-A-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/05-A-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/06-B-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/07-A-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/08-B-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/09-B-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/10-A-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/11-A-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/12-B-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    }
+   ],
+   "verdicts": {
+    "ornith-ai/ornith-1.5-35b-a3b": {
+     "base_median": 121.04,
+     "candidate_median": 121.65,
+     "delta_pct": 0.5,
+     "regressed": false
+    },
+    "qwen/qwen3.8-27b": {
+     "base_median": 31.19,
+     "candidate_median": 31.18,
+     "delta_pct": -0.03,
+     "regressed": false
+    }
+   }
+  }
+ },
+ "payloads": {
+  "build.log": "38163d0c4df2d85efb4b7b06bf10a6f1508389759f4154b0593ba7b8909d94ce",
+  "perf/01-A-ornith-ai_ornith-1.5-35b-a3b.log": "c892223277793b0d90f6ecea82934521ee49cac49d7b73baa48d64de13e7a27d",
+  "perf/02-B-ornith-ai_ornith-1.5-35b-a3b.log": "d926acdd176c60d8f91a7b6f28a274dcabe6d7532564dd4dc430e730c0a95e3f",
+  "perf/03-B-ornith-ai_ornith-1.5-35b-a3b.log": "9592123e91a4dffb494755cd54d9daa57ed0276154bfca19ae6f65ddf4be77e4",
+  "perf/04-A-ornith-ai_ornith-1.5-35b-a3b.log": "7643c29e979c1e416738b562e8d0e63211105fc254ca548a4e1113fc8ff3053c",
+  "perf/05-A-ornith-ai_ornith-1.5-35b-a3b.log": "c1d605555953789efe7c04e150cdb2f5ccb0f17a754ac8fabb1a1e794dd9904e",
+  "perf/06-B-ornith-ai_ornith-1.5-35b-a3b.log": "9642b70fc4e7c515412cf12713457851b0e73afb8078d90652a294be9d100bb3",
+  "perf/07-A-qwen_qwen3.8-27b.log": "63c9d7ffe0d94e33e4e8e27f37ebace368af3e29f7511ba60c4cbd07335ebb68",
+  "perf/08-B-qwen_qwen3.8-27b.log": "9a532b0763c5dafd5eaf049f05323c11551088c5cfeb31112db83e396ebe24ba",
+  "perf/09-B-qwen_qwen3.8-27b.log": "61cba20097a7f186d32a62f694d2c19e31f49cc6afc96cf4589389b683c9cd65",
+  "perf/10-A-qwen_qwen3.8-27b.log": "517020407131e3e962629dbaafb81ccc61c175254a74ecb380c359ce5486965b",
+  "perf/11-A-qwen_qwen3.8-27b.log": "915f5813af75df57faacf9830cfa89163c41110f08bb64f24f6cba04bf93d2c2",
+  "perf/12-B-qwen_qwen3.8-27b.log": "58ea79f3d9b06918bc4cec55dba457d60947b1149289234c72319e3c8a4ce55f",
+  "perf/prompt.txt": "a56691ecf645da1b1f582426fde6a81d7655b0a00d789bc619c233e26499438c",
+  "roster.tsv": "493bd510c96a1382033b551f565f46654ec994f6d4a58c356a562b4319a0743e"
+ },
+ "schema": "memra-cell-evidence-v1",
+ "started": "2026-11-10T13:22:16.644974+00:00",
+ "status": "pass",
+ "target": "120a",
+ "tested_commit": "12c3f554c4fdc3992fea68acf3a1eb6a2f943e6b"
+}
