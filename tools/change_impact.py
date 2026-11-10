@@ -174,6 +174,39 @@ def device_target(rules, arch, device):
     return arch.target_for_cap(row["compute_cap"])
 
 
+def device_class_of(rules, name):
+    """The device class of a device name as nvidia-smi reports it: the one `[device.X]` row
+    whose `name` appears in it. None when no row or more than one matches."""
+    found = [cls for cls, row in rules.get("device", {}).items() if row["name"] in name]
+    return found[0] if len(found) == 1 else None
+
+
+def maintained_classes(rules, arch):
+    """The device classes of push-gated build targets: the ones every push is proven on."""
+    return sorted(cls for cls in rules.get("device", {}) if push_gated(rules, device_target(rules, arch, cls)))
+
+
+def device_status(rules, arch, name):
+    """`maintained <class>`, `unmaintained <class>` or `unknown` for a device name. A device
+    of a maintained class is one whose gates must be calibrated; a device of a class with no
+    push-gated target is not maintained; a name no row matches is unknown, never unmaintained."""
+    cls = device_class_of(rules, name)
+    if cls is None:
+        return "unknown"
+    return ("maintained " if cls in maintained_classes(rules, arch) else "unmaintained ") + cls
+
+
+def tree_rules(repo):
+    """The rules and the arch table of a working tree (not of a commit)."""
+    repo = Path(repo)
+    try:
+        cuda_arch = (repo / CUDA_ARCH_RS).read_text() if (repo / CUDA_ARCH_RS).exists() else None
+        arch = parse_arch_table((repo / BUILD_RS).read_text(), cuda_arch)
+        return load_rules((repo / RULES_PATH).read_text(), arch), arch
+    except OSError as error:
+        raise ImpactError(f"cannot read the rules of {repo}: {error}") from error
+
+
 # --------------------------------------------------------------------- classifier
 
 def _comment_line(line):
@@ -585,7 +618,18 @@ def main():
     parser.add_argument("--head", default="HEAD")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--rules", type=Path, help="what-if: classify with this rules file instead of the head's")
+    parser.add_argument("--device-status", metavar="NAME",
+                        help="print `maintained <class>`, `unmaintained <class>` or `unknown` for a device "
+                             "name as nvidia-smi reports it, from the working tree's rules, and exit")
     args = parser.parse_args()
+    if args.device_status is not None:
+        try:
+            rules, arch = tree_rules(args.repo)
+        except ImpactError as error:
+            print(f"change impact: REFUSED: {error}", file=sys.stderr)
+            return 1
+        print(device_status(rules, arch, args.device_status))
+        return 0
     try:
         base = _git(args.repo, "merge-base", args.base, args.head).stdout.decode().strip()
         impact, _, _ = impact_between(args.repo, base, args.head,

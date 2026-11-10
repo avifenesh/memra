@@ -64,7 +64,15 @@
 #               A flip then cannot be classified and FAILS; a table with no flip passes and
 #               says UNCALIBRATED, and its agreeing rows are not judged. --require-floor (the
 #               release battery passes it) refuses instead. There is no fallback floor and no
-#               floor borrowed from another prompt, model or device.
+#               floor borrowed from another prompt, model or device. The device is its exact
+#               nvidia-smi name: a laptop and a desktop RTX 5090, or a Max-Q and a non-Max-Q
+#               RTX PRO 6000, are different devices until measured equal.
+#   NOT-JUDGED  with --require-floor, on a device whose class is not maintained (no
+#               push-gated build target in tools/change-impact.toml: H100, B200) and that has
+#               no floor row: the cell prints "not judged: device class not maintained, no
+#               floor row", exits 0 with no PASS line, and neither passes nor refuses the
+#               battery. A device of a maintained class without its row, and a device name no
+#               class matches, are refused.
 #
 # For every flip and every wide row the gate prints the clause, both top-1 ids and margins,
 # the spread, the gap shift and the floor, and under it the probe's `detail` line: both
@@ -447,7 +455,18 @@ if [ $CANARY = 1 ]; then
     exit 1
 fi
 if [ $UNCALIBRATED = 1 ] && [ $REQUIRE_FLOOR = 1 ]; then
-    echo "argmax-margin-gate: UNCALIBRATED (no floor row in $FLOORS for model=$MODEL_NAME prompt=$PROMPT_NAME sha256=$PROMPT_SHA decode=$DECODE device=$DEVICE; calibrate with --calibrate)"
+    # Which device classes are maintained is tools/change-impact.toml's call: the classes of
+    # its push-gated build targets. A device of one of them with no floor row for its exact
+    # name is refused, and so is a name no class matches or a lookup that fails. Only a device
+    # of a class that is not maintained is "not judged".
+    STATUS=$(python3 tools/change_impact.py --repo . --device-status "$DEVICE" 2>/dev/null) || STATUS=unknown
+    case "$STATUS" in
+        "unmaintained "*)
+            echo "argmax-margin-gate: NOT-JUDGED (not judged: device class ${STATUS#unmaintained } not maintained, no floor row; device=$DEVICE)"
+            echo "  raw: $LOG_SHOWN"
+            exit 0 ;;
+    esac
+    echo "argmax-margin-gate: UNCALIBRATED (no floor row in $FLOORS for model=$MODEL_NAME prompt=$PROMPT_NAME sha256=$PROMPT_SHA decode=$DECODE device=$DEVICE, device class: ${STATUS:-unknown}; calibrate with --calibrate)"
     echo "  raw: $LOG_SHOWN"
     exit 1
 fi
