@@ -8,6 +8,7 @@ are the table's own flips above its floor, with their two margins.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | NVIDIA GB10 | Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp | batch | 2045 | 1856 | 189 | 6 | 0.2364 | 1.7071 | 4.0128 | 4.4502 | 306 | none | 6e6650071f22 | `calibration/gb10/ornith-batch/probe.log` |
 | NVIDIA GB10 | Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp | eager | 2045 | 1854 | 191 | 6 | 0.2189 | 1.6159 | 3.0134 | 3.5812 | 727 | none | 6e6650071f22 | `calibration/gb10/ornith-eager/probe.log` |
+| NVIDIA GB10 | Qwen3.8-27B-NVFP4-Q5K-mtp | batch | 2045 | 1966 | 79 | 4 | 0.0833 | 0.6266 | 1.0436 | 2.1258 | 1198 | 1512 (1.807 + 0.547) | 6e6650071f22 | `calibration/gb10/q38-batch/probe.log` |
 | NVIDIA GB10 | Qwen3.8-27B-NVFP4-Q5K-mtp | eager | 2045 | 1963 | 82 | 4 | 0.0847 | 0.6671 | 1.2674 | 1.5695 | 1198 | 1512 (1.807 + 1.207) | 6e6650071f22 | `calibration/gb10/q38-eager/probe.log` |
 | NVIDIA GB10 | Qwen3.5-9B-NVFP4-MTP-GGUF | batch | 2045 | 1881 | 164 | 5 | 0.1644 | 1.5625 | 3.0952 | 4.6464 | 1197 | none | 6e6650071f22 | `calibration/gb10/qwen35-9b-batch/probe.log` |
 | NVIDIA GB10 | Qwen3.5-9B-NVFP4-MTP-GGUF | eager | 2045 | 1882 | 163 | 5 | 0.1570 | 1.5317 | 2.8857 | 4.1477 | 1197 | none | 6e6650071f22 | `calibration/gb10/qwen35-9b-eager/probe.log` |
