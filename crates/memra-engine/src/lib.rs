@@ -1945,7 +1945,7 @@ pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
         // here on step37: 33 of 45 layers at t_kv=512). At 16 the tile loop runs
         // HALF-EMPTY (FA_DEC_TILE=32 -> nt=16 per split), so the V staging pass moves a
         // half tile per iteration and the combine carries 2x the partials; 32 makes each
-        // split exactly one full tile. A global MEMRA_FA_SPLIT cannot isolate this — it
+        // split exactly one full tile. A global MEMRA_FA_SPLIT cannot isolate this: it
         // moves the deep-ctx rung too, where more splits measured worse.
         // NUMERIC-CLASS door (key partition -> different per-split partials/combine):
         // new tape + battery, exactly like every other split-ladder change.
@@ -2080,7 +2080,10 @@ pub(crate) fn fa_split_ladder(
 /// own card. It is one value per process on purpose: split planners and FA dispatch read it
 /// from free functions and must agree. Before any Engine exists it falls back to querying
 /// ordinal 0. `Engine::new` refuses a later engine whose card has a different SM count
-/// (`fa_ladder_engine_verdict`), so no engine runs another card's ladder.
+/// (`fa_ladder_engine_verdict`). The ladder also reads `FA_UNIFIED`, a second process value
+/// that verdict does not compare, so two cards with one SM count and different memory kinds in
+/// one process would share the first card's deep rung; a unified-memory part is the only card
+/// in its box today (one lock for both values is memra#1178).
 static FA_SM_COUNT: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
 
 /// `MEMRA_FA3=1` forces the FA3 wgmma prefill, which only an sm_90a build carries: build.rs
