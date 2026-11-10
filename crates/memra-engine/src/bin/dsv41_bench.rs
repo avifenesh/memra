@@ -82,7 +82,15 @@ fn p2p_bench(a: &[String]) -> Result<String, String> {
         .unwrap_or(5)
         .max(1);
     let mut grp = Group::new(&devices, &g, 1024)?;
-    let lines = grp.p2p_probe(reps)?;
+    let mut lines = if a.iter().any(|x| x == "--gathers-only") {
+        Vec::new()
+    } else {
+        grp.p2p_probe(reps)?
+    };
+    if grp.transport == memra_engine::tp_transport::TpTransport::DevicePush {
+        // what a gather costs by size, in kernels against through the kept blocks
+        lines.extend(grp.gather_probe(64, reps)?);
+    }
     for l in &lines {
         println!("{l}");
     }

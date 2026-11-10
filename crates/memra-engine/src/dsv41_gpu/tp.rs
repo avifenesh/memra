@@ -175,6 +175,16 @@ const STAGED_MOE_ROWS_BYTES: usize = 256 << 10;
 const PUSH_HDR: usize = 256;
 /// One producer's slot in a rank's inbox.
 const PUSH_SLOT: usize = PUSH_HDR + ffi::PUSH_MAX;
+/// The most bytes a rank stores into its peers in one gather inside kernels
+/// ([`Group::gather_push`]: its region times its peers); a gather that would store more goes
+/// through the kept blocks and the copy engine ([`Group::gather_packed`]). A push is one block
+/// of a kernel storing the region into every peer, so its time grows with the bytes (4.4 us at
+/// 1 KiB, 16.7 at 128 KiB, 27.4 at 256 KiB on two cards); a copy-engine gather pays launches,
+/// events and copy calls first and then moves bytes at the link's rate (14.5, 23.2, 25.5 us).
+/// The two cross at 227 KiB on two cards (`dsv41-bench p2p`'s `gather` lines, three runs within
+/// 0.5 us). With more peers the kernel stores the region once a peer, so the bound is on the
+/// stores, not on the region.
+const PUSH_LIMIT: usize = 224 << 10;
 
 /// How long an issue thread spins for its next section before it parks. A one-token forward is
 /// some twenty sections a layer, microseconds apart (measured: all but one gap a layer under
@@ -513,7 +523,17 @@ impl Group {
     pub fn new(devices: &[usize], g: &Geo, max_pos: usize) -> Result<Self, String> {
         let n = devices.len();
         Part::check(g, n)?;
-        let (transport, flag) = tp_transport::transport_env()?;
+        // no transport named: the measured winner on two cards at every width of a decode call
+        // and in prefill, the gathers inside kernels up to the push limit and through kept
+        // blocks above it (one rank moves nothing; more ranks than an inbox holds keep the
+        // build's default)
+        let named = !tp_transport::set_transport_names().is_empty();
+        let unset = if n > 1 && n <= ffi::PUSH_PEERS + 1 {
+            TpTransport::DevicePush
+        } else {
+            tp_transport::default_transport()
+        };
+        let (mut transport, flag) = tp_transport::transport_env_or(unset)?;
         if transport == TpTransport::DevicePush && n > ffi::PUSH_PEERS + 1 {
             return Err(format!(
                 "{flag}=device-push: at most {} ranks",
@@ -534,11 +554,24 @@ impl Group {
         }
         let distinct = |a: usize, b: usize| devices[a] != devices[b];
         if transport != TpTransport::HostCanonical {
-            for a in 0..n {
+            'grant: for a in 0..n {
                 for b in 0..n {
                     if a != b && distinct(a, b) {
-                        crate::tp::grant_peer_access(&engines[a], &engines[b], "dsv41 tp")
-                            .map_err(|e| e.to_string())?;
+                        match crate::tp::grant_peer_access(&engines[a], &engines[b], "dsv41 tp") {
+                            Ok(()) => {}
+                            // a named transport that cannot run refuses the load; the default
+                            // falls back to the one that needs no access between the cards
+                            Err(e) if named => return Err(e.to_string()),
+                            Err(e) => {
+                                eprintln!(
+                                    "[dsv41-tp] no peer access between devices {} and {} ({e}): \
+                                     the gathers go through the host",
+                                    devices[a], devices[b]
+                                );
+                                transport = TpTransport::HostCanonical;
+                                break 'grant;
+                            }
+                        }
                     }
                 }
             }
@@ -748,7 +781,7 @@ impl Group {
             None
         };
         let push = self.transport == TpTransport::DevicePush
-            && blks.iter().all(|b| b.bytes() <= ffi::PUSH_MAX);
+            && blks.iter().all(|b| b.bytes() * (n - 1) <= PUSH_LIMIT);
         if self.capturing && !push {
             // the other gathers wait on events and issue copy calls from the host
             return Err("allgather: only a gather inside kernels can be recorded".into());
@@ -955,7 +988,7 @@ impl Group {
         Ok(())
     }
 
-    /// A gather of regions of at most [`ffi::PUSH_MAX`] bytes inside kernels (device-push): each
+    /// A gather whose ranks each store at most [`PUSH_LIMIT`] bytes, inside kernels (device-push): each
     /// rank's push kernel packs its region into its slot of every peer's inbox and then stores
     /// this gather's sequence number in the slot's word; each rank's pull kernel, queued right
     /// behind it, spins on the words of its own inbox and unpacks the slots into its buffer. Two
@@ -1046,7 +1079,7 @@ impl Group {
             (288, 7),
             (640, 1),
             (2048, 3),
-            (ffi::PUSH_MAX / 4, 1),
+            (PUSH_LIMIT / (n - 1).max(1) / 4, 1),
         ];
         let was = std::mem::replace(&mut self.push_word_first, word_first);
         let cnt = self.each(|_, c| c.ops.buf(4))?;
@@ -1200,6 +1233,65 @@ impl Group {
                     ));
                 }
             }
+        }
+        Ok(out)
+    }
+
+    /// What one gather costs by the size of a rank's region, inside kernels against through the
+    /// kept blocks and the copy engine (device-push only): `gathers` gathers back to back with
+    /// one wait at the end, microseconds a gather, the median of `reps`. One row of the given
+    /// bytes a rank, and the same bytes as 8 strided rows. This is what sets [`PUSH_LIMIT`].
+    pub fn gather_probe(&mut self, gathers: usize, reps: usize) -> Result<Vec<String>, String> {
+        let n = self.n();
+        if n < 2 || self.transport != TpTransport::DevicePush {
+            return Err("gather probe: two ranks or more on device-push".into());
+        }
+        let mut out = Vec::new();
+        let mut kib = 1usize;
+        while kib << 10 <= ffi::PUSH_MAX {
+            for rows in [1usize, 8] {
+                let width = (kib << 10) / rows;
+                // a rank's region: its columns of `rows` rows, the row a word longer than the
+                // ranks' columns so the region is strided
+                let pitch = n * width + 16;
+                let bufs = self.each(|_, c| c.ops.buf(pitch * rows))?;
+                let refs: Vec<&Buf> = bufs.iter().collect();
+                let blks: Vec<Blk> = (0..n)
+                    .map(|r| Blk {
+                        off: r * width,
+                        width,
+                        pitch,
+                        rows,
+                    })
+                    .collect();
+                let mut us = [Vec::new(), Vec::new()];
+                for _ in 0..reps.max(1) {
+                    for (m, v) in us.iter_mut().enumerate() {
+                        self.sync_all()?;
+                        let t0 = Instant::now();
+                        for _ in 0..gathers.max(1) {
+                            if m == 0 {
+                                self.gather_push(&refs, &blks)?;
+                            } else {
+                                self.gather_packed(&refs, &blks)?;
+                            }
+                        }
+                        self.sync_all()?;
+                        v.push(t0.elapsed().as_secs_f64() * 1e6 / gathers.max(1) as f64);
+                    }
+                }
+                let med = |v: &mut Vec<f64>| {
+                    v.sort_by(|a, b| a.total_cmp(b));
+                    v[v.len() / 2]
+                };
+                let [a, b] = &mut us;
+                out.push(format!(
+                    "gather {kib:5} KiB a rank in {rows} rows, {n} ranks: in kernels {:.1} us, kept blocks {:.1} us",
+                    med(a),
+                    med(b)
+                ));
+            }
+            kib *= 2;
         }
         Ok(out)
     }

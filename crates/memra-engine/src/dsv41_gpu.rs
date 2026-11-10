@@ -34,8 +34,9 @@ pub mod ffi {
     use std::os::raw::c_void;
     /// Peers of one rank in a small gather inside kernels (`V41_PUSH_PEERS`).
     pub const PUSH_PEERS: usize = 7;
-    /// The largest region a rank pushes (`V41_PUSH_MAX`).
-    pub const PUSH_MAX: usize = 256 << 10;
+    /// The largest region a push kernel takes (`V41_PUSH_MAX`): the size of an inbox slot. What
+    /// a gather actually pushes is bounded by `tp`'s measured limit, at most this.
+    pub const PUSH_MAX: usize = 1 << 20;
     /// Device addresses of each peer's inbox slot for a producer: payload and word.
     #[repr(C)]
     #[derive(Default, Clone, Copy)]

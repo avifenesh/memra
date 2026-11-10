@@ -4214,7 +4214,7 @@ extern "C" int memra_v41_peak(int kind, int blocks, int threads, int iters, floa
 // is done (the caller's law: every rank pushes and pulls in every gather and the slots alternate).
 
 #define V41_PUSH_PEERS 7
-#define V41_PUSH_MAX (256 << 10)
+#define V41_PUSH_MAX (1 << 20)  // an inbox slot's payload; the caller pushes less (its measured limit)
 #define V41_PULL_SPIN (1L << 31)  // polls before a peer is given up for dead (about a minute)
 
 struct V41Push {
