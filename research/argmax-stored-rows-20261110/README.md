@@ -130,3 +130,5 @@ four cells.
 - `model-sha256.tsv`: the model digests per device.
 - `seeds.txt`: the seed run's output; `against-records.md`: the comparison.
 - `repeats/`: the GPU repeat cells, one directory per cell and run (`runs.txt` per cell).
+- `expert-placement/`: the resident and SLRU windows side by side and one served greedy request on
+  each placement (the texts differ after 95 characters); the follow-up issue's receipts.
