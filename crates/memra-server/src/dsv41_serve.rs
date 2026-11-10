@@ -228,14 +228,16 @@ impl MemModel {
         (per_tok * s + per_slice) as u64 + quadratic
     }
 
-    /// The transient of one decode call at up to `cap` positions: the heads' key rows (window,
-    /// the call's own rows and every compressed row), each row's index scores and candidate row,
-    /// and the rows' slice terms. A draft block's own forward is smaller than its verification.
+    /// The transient of one decode call at up to `cap` positions: the heads' key rows the call
+    /// makes for itself (the window with a block's own rows after it; the compressed rows are
+    /// read where they live, `memra_v41_sparse_attn_keys`, so they are no transient), each row's
+    /// index scores and candidate row, and the rows' slice terms. A draft block's own forward is
+    /// smaller than its verification.
     pub fn decode_bytes(&self, cap: usize) -> u64 {
         let rows = self.decode_rows.max(1);
-        // a one-token call reads the ring alone; a block's rows sit between it and the compressed rows
+        // a one-token call reads the ring in place; a block's rows sit after a copy of it
         let own = if rows > 1 { rows } else { 0 };
-        let keys = (self.window + own + cap) * self.head_dim * 2;
+        let keys = (self.window + own) * self.head_dim * 2;
         let scores = rows * (cap * 2 + cap / 8);
         (keys + scores) as u64 + self.prefill_bytes(rows)
     }
