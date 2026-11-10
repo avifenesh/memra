@@ -36,6 +36,11 @@
 //!   token. The next burst must carry on with the oracle's tokens. Before the fix the burst
 //!   pushed the carried token into `committed` although no round had committed its row. Under
 //!   `MEMRA_SPEC_REPLAY=1` no burst ends on a pending token and the check fails as untested.
+//! - **A continuation burst the hook stops mid-burst** (memra#1207). The server ends a burst at
+//!   the round that completes a stop string and parks the session for the next turn. The hook
+//!   says stop after its second slice: the burst must end there with `committed` equal to the
+//!   cache rows and to the true history less the pending token, and the next burst must carry
+//!   on with the oracle's tokens.
 //!
 //! usage: session-gate <model.gguf>   (env: MEMRA_SPEC_K, MEMRA_NGEN per turn)
 use memra_engine::Engine;
@@ -300,6 +305,83 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         if !carried {
             println!("the session held no carried token before the no-round burst: nothing tested");
+        }
+        if !text_ok {
+            println!("  session:   {:?}", &got[..got.len().min(12)]);
+            println!("  reference: {:?}", &reference[..reference.len().min(12)]);
+        }
+    }
+    // A continuation burst whose commit hook says stop after its second slice (memra#1207: the
+    // server ends a burst at the round that completes a stop string, and parks the session for
+    // the next turn). The burst ends at that round with `committed` equal to the cache rows and
+    // to the history less the pending token, and the burst after it emits what the oracle emits.
+    if let Some((prev_hist, _)) = prev_turn.as_ref() {
+        // Everything the session emitted since the turn the oracle continues.
+        let since = hist.len() - prev_hist.len();
+        let mut slices = 0usize;
+        let mut stop_after_two = |s: &[u32]| {
+            if !s.is_empty() {
+                slices += 1;
+            }
+            slices < 2
+        };
+        let (cut, _d, _a) = model.generate_spec_session_sampled_prime_split(
+            &e,
+            &mut sess,
+            &[],
+            n_new,
+            k,
+            Some(SpecSampling::from_cli_env()),
+            None,
+            Some(&mut stop_after_two),
+        )?;
+        let (committed_cut, rows_cut) = (sess.committed.len(), sess.kv_position());
+        let pending_cut = sess.has_pending();
+        let mut hist_cut = hist.clone();
+        hist_cut.extend_from_slice(&cut);
+        let list_cut = sess.committed[..] == hist_cut[..hist_cut.len() - usize::from(pending_cut)];
+        let (next, _d, _a) = model.generate_spec_session_sampled_prime_split(
+            &e,
+            &mut sess,
+            &[],
+            n_new,
+            k,
+            Some(SpecSampling::from_cli_env()),
+            None,
+            None,
+        )?;
+        let mut got = cut.clone();
+        got.extend_from_slice(&next);
+        let long = model.generate_spec_oracle(&e, prev_hist, since + got.len())?;
+        let reference = &long[since.min(long.len())..];
+        let text_ok = !next.is_empty() && got[..] == reference[..got.len().min(reference.len())];
+        hist.extend_from_slice(&got);
+        let list_next = sess.committed[..] == hist[..hist.len() - usize::from(sess.has_pending())];
+        let rows_ok = committed_cut == rows_cut
+            && sess.committed.len() == sess.kv_position()
+            && list_cut
+            && list_next;
+        // The hook must have stopped the burst: two slices published and fewer tokens than the
+        // burst's target, or the check tested nothing.
+        let stopped = slices == 2 && cut.len() < n_new;
+        let m = if stopped && rows_ok && text_ok {
+            "MATCH"
+        } else {
+            ok = false;
+            "MISMATCH"
+        };
+        println!(
+            "stopped burst: the hook said stop after {slices} slices, {} of {n_new} tok emitted, \
+             pending {pending_cut}, committed={committed_cut} cache rows={rows_cut}; next burst \
+             {} tok, committed={} cache rows={}; committed is the history {list_cut}/{list_next} \
+             -> {m}",
+            cut.len(),
+            next.len(),
+            sess.committed.len(),
+            sess.kv_position()
+        );
+        if !stopped {
+            println!("the hook's stop did not end the burst early: nothing tested");
         }
         if !text_ok {
             println!("  session:   {:?}", &got[..got.len().min(12)]);
