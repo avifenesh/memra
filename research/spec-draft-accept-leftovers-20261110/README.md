@@ -5,10 +5,11 @@ before and after, on both devices, on the captured and on the eager draft chain,
 pooled pair. On GB10 the pure-temperature sampled class decodes 0.3% faster (0.32 to 0.44 ms off
 a 107 to 109 ms round, the after arm faster in 105 of 108 boot pairs); the filtered class gains
 0.1% (63 of 108, the size of the greedy control's own spread); the penalised class and the
-greedy control do not move. The RTX 5090 timed cell is still running (its exactness cells are
-done); its rows follow in this directory. A sampled round on GB10 stays 7 to 10 ms longer than a
-greedy one (107 to 111 ms against 99.5 to 101.8 ms): these leftovers were under half a
-millisecond of that gap, so the gap is somewhere else. The change lands as a dead-code removal.
+greedy control do not move. On the RTX 5090 the timed cell does not resolve a change: the card
+ran throttled, the untouched greedy control itself read 1.022 and the two graph-drafted sampled
+classes 0.997 and 1.002. A sampled round on GB10 stays 7 to 10 ms longer than a greedy one (107
+to 111 ms against 99.5 to 101.8 ms): these leftovers were under half a millisecond of that gap,
+so the gap is somewhere else. The change lands as a dead-code removal.
 
 Model: Qwen3.8-27B NVFP4 + Q5_K GGUF with its MTP head, context 8,192, two sessions, thinking
 off, every switch at the device default. Devices: an RTX 5090 Laptop GPU (sm_120a) and GB10, one
@@ -69,7 +70,7 @@ tokens, acceptance).
 | RTX 5090 | the same gate with `MEMRA_SPEC_NOGRAPH=1`, the eager draft chain (`rtx5090/gate-eager-*.log`) | PASS | PASS | 54 | 54 |
 | RTX 5090 | pooled-draft probe, 7 cells (`rtx5090/probe/cells.txt`) | | PASS | | |
 | GB10 | the gate with `--penalised host`, 7 boots (`gb10/gate-*.log`) | PASS | PASS | 54 | 54 |
-| RTX 5090 | the perf cell, 12 prompts in 6 boots per arm | | | running | |
+| RTX 5090 | the perf cell, 12 prompts in 6 boots per arm | | | 144 | one text and one acceptance per prompt across the 12 boots |
 | GB10 | the perf cell, 12 prompts in 6 boots per arm | | | 144 | one text and one acceptance per prompt across the 12 boots |
 
 - The gate's rows: four lone prompts (temperature 1 long and short, temperature 0.7 with top_p
@@ -143,8 +144,44 @@ this change removes.
 
 ### RTX 5090 (`rtx5090/perf/`)
 
-Running: twelve boots, one per lease, queued behind other work on the card. This section is
-filled when they finish.
+N = 6 boots per arm, 144 requests, 0 errors. K is the device's own: 3 on the short prompt, 2 on the
+two long ones.
+
+Thermal regime: hot and throttled in every boot. The card is shared and did not cool before the
+first boot (73 C after a ten-minute wait for 62 C). Busy medians 86 to 87 C (89 to 92 C
+maximum), SM clock 1,335 to 1,522 MHz (mean 1,404 MHz over the before boots, 1,418 MHz over the
+after boots), 124 to 138 W, thermal throttle flags set in all twelve boots. A class's decode rate
+ranges over 3 to 20% of its median from boot to boot.
+
+| class | K | decode tok/s before | after | ratio | wins | tokens per round | round ms before | after | change ms |
+|---|---:|---:|---:|---:|---|---:|---:|---:|---:|
+| t1-short | 3 | 67.38 | 67.27 | 0.998 | 19 of 36 | 2.37 | 35.20 | 35.26 | +0.06 |
+| t1-1k | 2 | 64.78 | 64.84 | 1.001 | 18 of 36 | 2.18 | 33.65 | 33.62 | -0.03 |
+| t1-4k | 2 | 58.74 | 58.28 | 0.992 | 15 of 36 | 2.04 | 34.77 | 35.04 | +0.28 |
+| chat-short | 3 | 55.61 | 54.96 | 0.988 | 17 of 36 | 2.20 | 39.54 | 40.01 | +0.46 |
+| chat-1k | 2 | 61.89 | 62.38 | 1.008 | 22 of 36 | 2.25 | 36.35 | 36.07 | -0.28 |
+| chat-4k | 2 | 57.98 | 58.64 | 1.011 | 23 of 36 | 2.12 | 36.56 | 36.16 | -0.41 |
+| greedy-short | 3 | 55.45 | 57.77 | 1.042 | 27 of 36 | 2.15 | 38.69 | 37.14 | -1.55 |
+| greedy-1k | 2 | 63.69 | 64.80 | 1.018 | 26 of 36 | 2.17 | 34.05 | 33.46 | -0.59 |
+| greedy-4k | 2 | 62.91 | 63.32 | 1.007 | 22 of 36 | 2.13 | 33.82 | 33.60 | -0.22 |
+| pen-short | 3 | 55.15 | 56.83 | 1.030 | 27 of 36 | 2.32 | 42.13 | 40.89 | -1.25 |
+| pen-1k | 2 | 58.91 | 59.67 | 1.013 | 23 of 36 | 2.17 | 36.91 | 36.44 | -0.47 |
+| pen-4k | 2 | 55.92 | 56.58 | 1.012 | 22 of 36 | 2.10 | 37.61 | 37.18 | -0.43 |
+
+| pool | classes | decode ratio, geometric mean | round ms change, mean |
+|---|---:|---:|---:|
+| temperature 1 (pure-temperature graph draft) | 3 | 0.997 | +0.10 |
+| temperature 0.7, top_p 0.95 (filtered graph draft) | 3 | 1.002 | -0.08 |
+| both graph-drafted sampled classes | 6 | 1.000 | +0.01 |
+| penalised (eager sampled draft) | 3 | 1.018 | -0.72 |
+| greedy control | 3 | 1.022 | -0.79 |
+
+Not resolved on this card. The greedy control, whose code is untouched, reads 1.022 (0.79 ms a
+round), more than any sampled class moves. The penalised class moves with it (1.018), and the two
+graph-drafted sampled classes read 0.997 and 1.002. No per-class difference is significant at
+N = 6: the after arm wins 15 to 27 of 36 boot pairs, and 31 are needed at p = 0.05 (two-sided
+Mann-Whitney). The removed work is on the order of 0.1 ms of a 34 to 42 ms round here; a cell
+with this spread cannot see it. What the RTX 5090 contributes is the exactness above.
 
 ## An earlier form, not kept
 
