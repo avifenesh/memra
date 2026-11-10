@@ -1802,10 +1802,23 @@ extern "C" int memra_v41_gemm_ffma(const void* a, long lda, const void* b, long 
 #define V41_APS 144   // bytes per 64-element bf16 P row
 #define V41_ASMEM0 (V41_AH * V41_ARS + V41_AK * V41_ARS + V41_AH * V41_APS + 4 * 16 * 4 * 2)  // + the row's indices
 
+// A query row's keys when they are not one buffer (`memra_v41_sparse_attn_keys`): index i below
+// `nwin` is row i of `win` (the window ring, or a prefill's own rows), any other index row i - nwin
+// of `comp` (the group's compressed KV). A decode step then reads the ring and the compressed KV
+// where they live, and every row of a batch its own sequence's.
+struct V41KeyRef {
+    const v41_bf* win;
+    const v41_bf* comp;
+    int nwin;
+    int pad;
+};
+
 __global__ void __launch_bounds__(128) v41_sparse_attn_kernel(const v41_bf* __restrict__ q, long ldq,
-                                                              const v41_bf* __restrict__ kv, const int* __restrict__ idx,
-                                                              long ldi, int topk, const float* __restrict__ sink,
-                                                              float scale, v41_bf* __restrict__ o, long ldo) {
+                                                              const v41_bf* __restrict__ kv,
+                                                              const V41KeyRef* __restrict__ keys,
+                                                              const int* __restrict__ idx, long ldi, int topk,
+                                                              const float* __restrict__ sink, float scale,
+                                                              v41_bf* __restrict__ o, long ldo) {
     extern __shared__ __align__(16) uint8_t sm[];
     uint8_t* sQ = sm;
     uint8_t* sKV = sQ + V41_AH * V41_ARS;
@@ -1815,6 +1828,17 @@ __global__ void __launch_bounds__(128) v41_sparse_attn_kernel(const v41_bf* __re
     int* sIdx = (int*)(sSum + 64);  // [nblk * V41_AK]: the row's indices, -1 past topk
     int mq = blockIdx.x, h0 = blockIdx.y * V41_AH;
     int tid = threadIdx.x, w = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
+    // the row's key bases: one buffer, or its reference (read with the tiles below in flight; first
+    // used after the indices are in)
+    const v41_bf* kwin = kv;
+    const v41_bf* kcomp = kv;
+    int nwin = 0x7fffffff;
+    if (keys) {
+        const V41KeyRef kr = keys[mq];
+        kwin = kr.win;
+        nwin = kr.nwin;
+        kcomp = (const v41_bf*)((const uint8_t*)kr.comp - (long)kr.nwin * V41_AD * 2);
+    }
 
     // every copy of a tile in flight at once (cp.async), then one wait: the gathers are latency-bound
     const uint8_t* qg = (const uint8_t*)(q + (long)mq * ldq + (long)h0 * V41_AD);
@@ -1852,7 +1876,8 @@ __global__ void __launch_bounds__(128) v41_sparse_attn_kernel(const v41_bf* __re
         for (int i = tid; i < V41_AK * 64; i += 128) {
             int r = i >> 6, c = i & 63;
             int ix = bIdx[r];
-            const uint8_t* src = (const uint8_t*)(kv + (long)(ix >= 0 ? ix : 0) * V41_AD) + c * 16;
+            const v41_bf* kb = ix < nwin ? kwin : kcomp;
+            const uint8_t* src = (const uint8_t*)(kb + (long)(ix >= 0 ? ix : 0) * V41_AD) + c * 16;
             v41_cp16(sKV + r * V41_ARS + c * 16, src, ix >= 0);  // a missing key lands as zeros
         }
         v41_cp_commit();
@@ -1986,7 +2011,22 @@ extern "C" int memra_v41_sparse_attn(const void* q, long ldq, const void* kv, co
     cudaFuncSetAttribute(v41_sparse_attn_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
     dim3 grid(m, heads / V41_AH);
     v41_sparse_attn_kernel<<<grid, 128, smem, (cudaStream_t)stream>>>(
-        (const v41_bf*)q, ldq, (const v41_bf*)kv, idx, ldi, topk, sink, scale, (v41_bf*)o, ldo);
+        (const v41_bf*)q, ldq, (const v41_bf*)kv, nullptr, idx, ldi, topk, sink, scale, (v41_bf*)o, ldo);
+    V41_ERR();
+}
+
+// The same attention with each query row's keys named by `keys[row]` (V41KeyRef) instead of one buffer.
+extern "C" int memra_v41_sparse_attn_keys(const void* q, long ldq, const void* keys, const int* idx, long ldi,
+                                          int topk, const float* sink, float scale, void* o, long ldo, int m,
+                                          int heads, int hd, void* stream) {
+    if (hd != V41_AD || heads % V41_AH || m < 0 || topk < 0 || ldq % 8 || ldo % 8 || !keys) return 41007;
+    if (m == 0) return 0;
+    int smem = V41_ASMEM0 + (topk + V41_AK - 1) / V41_AK * V41_AK * 4;
+    if (smem > 99 * 1024) return 41007;
+    cudaFuncSetAttribute(v41_sparse_attn_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+    dim3 grid(m, heads / V41_AH);
+    v41_sparse_attn_kernel<<<grid, 128, smem, (cudaStream_t)stream>>>(
+        (const v41_bf*)q, ldq, nullptr, (const V41KeyRef*)keys, idx, ldi, topk, sink, scale, (v41_bf*)o, ldo);
     V41_ERR();
 }
 
