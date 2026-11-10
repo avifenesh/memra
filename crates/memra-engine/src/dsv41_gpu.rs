@@ -248,6 +248,28 @@ pub mod ffi {
             inter: i32,
             stream: *mut c_void,
         ) -> i32;
+        /// h = SwiGLU(w1 a, w3 a) * wrow of a small-M tile list in one launch (FP4 experts).
+        pub fn memra_v41_swiglu_tiles(
+            a: *const c_void,
+            lda: i64,
+            a_s: *const c_void,
+            ldas: i64,
+            tiles: *const c_void,
+            ntiles: *const i32,
+            max_tiles: i32,
+            ew: *const c_void,
+            ldb: i64,
+            ldbs: i64,
+            wfmt: i32,
+            wrow: *const f32,
+            limit: f32,
+            h: *mut c_void,
+            ldh: i64,
+            n: i32,
+            k: i32,
+            bm: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_v41_scatter_add(
             src: *const c_void,
             lds: i64,
@@ -2298,6 +2320,9 @@ impl Side {
     }
 }
 
+/// The most pairs the plan builds in one kernel (`V41_PLAN_SMALL` in cu/dsv41_gpu.cu).
+const PLAN_SMALL_PAIRS: usize = 128;
+
 /// The most rows of a forward whose shared expert runs on the side stream: the small-M kernels'
 /// rows. With more rows every GEMM fills the card and there is nothing to run under.
 const SIDE_ROWS: usize = SMALL_M;
@@ -3367,7 +3392,14 @@ impl Ctx {
         } else {
             np.div_ceil(bm) + ex.len().min(np)
         };
-        let counts = self.ops.tmp(rows.div_ceil(256) * ne * 4)?;
+        // a few rows: one kernel writes every output, nothing needs a zero-fill (`V41_PLAN_SMALL`)
+        let small = np <= PLAN_SMALL_PAIRS;
+        let zeroed = |ops: &Ops, len: usize| if small { ops.tmp(len) } else { ops.buf(len) };
+        let counts = self.ops.tmp(if small {
+            4
+        } else {
+            rows.div_ceil(256) * ne * 4
+        })?;
         let plan = MoePlanDev {
             rows,
             np,
@@ -3375,13 +3407,13 @@ impl Ctx {
             max_tiles,
             off: self.ops.tmp((ne + 1) * 4)?,
             // zeroed: a pair the placement skips (an out-of-range id) still names token 0
-            ptok: self.ops.buf(np * 4)?,
-            pw: self.ops.buf(np * 4)?,
+            ptok: zeroed(&self.ops, np * 4)?,
+            pw: zeroed(&self.ops, np * 4)?,
             order: self.ops.tmp(np * 4)?,
             tiles: self.ops.tmp(max_tiles * 16)?,
             ntiles: self.ops.tmp(4)?,
             // counted with atomics: starts at zero
-            err: self.ops.buf(4)?,
+            err: zeroed(&self.ops, 4)?,
         };
         ck("moe_plan", unsafe {
             ffi::memra_v41_moe_plan(

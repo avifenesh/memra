@@ -1438,6 +1438,8 @@ impl Group {
             self.each_mut(&mut trs, |r, c, trr| {
                 let st = c.ops.st.clone();
                 let x = x2[r].at(&st, r0 * d * 2);
+                let hb = c.ops.tmp((np + rows) * inter * 2)?;
+                let forked = c.split_shared_fork(&lw[r], x, rows, np, &hb)?;
                 let (sel, selw) = c.moe_route(&lw[r], x, rows)?;
                 if trace {
                     trr.route_sel
@@ -1446,8 +1448,10 @@ impl Group {
                         .extend_from_slice(&bytes_f32(&host_timed(&selw, &st)?));
                 }
                 let plan = c.moe_plan(&sel, &selw, rows, 0..ne)?;
-                let hb = c.ops.tmp((np + rows) * inter * 2)?;
-                c.split_hidden(&lw[r], x, rows, &plan, &hb)?;
+                c.split_hidden(&lw[r], x, &plan, &hb)?;
+                if forked {
+                    c.split_shared_join()?;
+                }
                 Ok((plan, hb))
             })?
         };
@@ -1932,15 +1936,14 @@ impl MoePlan {
 }
 
 impl Ctx {
-    /// The split MoE's first half on this rank: its hidden columns `[hid0, hid0 + hid_l)` of every
-    /// routed pair (rows `[0, np)` of `hb`) and of the shared expert (rows `[np, np + rows)`), `hb`
-    /// bf16 `[np + rows][inter]`. w1 and w3 of the rank's hidden rows, then the SwiGLU, which is
-    /// per element.
+    /// The split MoE's first half on this rank for the routed pairs: its hidden columns
+    /// `[hid0, hid0 + hid_l)` of every pair, rows `[0, np)` of `hb` (bf16 `[np + rows][inter]`).
+    /// w1 and w3 of the rank's hidden rows, then the SwiGLU, which is per element. The shared
+    /// expert's rows are [`split_hidden_shared`].
     pub fn split_hidden(
         &mut self,
         lw: &LayerW,
         x: Dp,
-        rows: usize,
         plan: &super::MoePlanDev,
         hb: &Buf,
     ) -> Result<(), String> {
@@ -1951,50 +1954,51 @@ impl Ctx {
         let as_ = self.ops.tmp(np * d / 32)?;
         self.ops
             .act_quant(x, d, plan.ptok.p(&st), np, d, aq.p(&st), as_.p(&st))?;
+        if plan.bm <= super::SMALL_M {
+            // a few rows: w1, w3 and the SwiGLU in one launch
+            let (wfmt, kdiv) = split_fmt(lw)?;
+            return ck("swiglu_tiles", unsafe {
+                ffi::memra_v41_swiglu_tiles(
+                    aq.p(&st).c(),
+                    d as i64,
+                    as_.p(&st).c(),
+                    (d / 32) as i64,
+                    plan.tiles.p(&st).c(),
+                    plan.ntiles.p(&st).i(),
+                    plan.max_tiles as i32,
+                    lw.exp_tab.p(&st).c(),
+                    (d / 2) as i64,
+                    (d / kdiv) as i64,
+                    wfmt,
+                    plan.pw.p(&st).f(),
+                    g.swiglu_limit,
+                    hb.at(&st, h0 * 2).m(),
+                    inter as i64,
+                    hn as i32,
+                    d as i32,
+                    plan.bm as i32,
+                    self.ops.sv(),
+                )
+            });
+        }
         let gb = self.ops.tmp(np * hn * 2)?;
         let ub = self.ops.tmp(np * hn * 2)?;
         self.split_tiles(lw, plan, &aq, &as_, d, 0, gb.p(&st), hn)?;
         self.split_tiles(lw, plan, &aq, &as_, d, 2, ub.p(&st), hn)?;
-        let swiglu = |ops: &super::Ops, gp: Dp, up: Dp, pw: *const f32, out: Dp, n: usize| {
-            ck("swiglu", unsafe {
-                ffi::memra_v41_swiglu(
-                    gp.m(),
-                    up.m(),
-                    hn as i64,
-                    pw,
-                    g.swiglu_limit,
-                    out.m(),
-                    inter as i64,
-                    n as i32,
-                    hn as i32,
-                    ops.sv(),
-                )
-            })
-        };
-        swiglu(
-            &self.ops,
-            gb.p(&st),
-            ub.p(&st),
-            plan.pw.p(&st).f(),
-            hb.at(&st, h0 * 2),
-            np,
-        )?;
-        let (q, qs) = self.scr.actq(&self.ops, rows, d)?;
-        self.ops.act_quant(x, d, Dp::NULL, rows, d, q, qs)?;
-        let gs = self.ops.tmp(rows * hn * 2)?;
-        let us = self.ops.tmp(rows * hn * 2)?;
-        self.ops
-            .gemm_q(q, qs, rows, &lw.shared[0], gs.p(&st), hn, false)?;
-        self.ops
-            .gemm_q(q, qs, rows, &lw.shared[2], us.p(&st), hn, false)?;
-        swiglu(
-            &self.ops,
-            gs.p(&st),
-            us.p(&st),
-            std::ptr::null(),
-            hb.at(&st, np * inter * 2 + h0 * 2),
-            rows,
-        )
+        ck("swiglu", unsafe {
+            ffi::memra_v41_swiglu(
+                gb.p(&st).m(),
+                ub.p(&st).m(),
+                hn as i64,
+                plan.pw.p(&st).f(),
+                g.swiglu_limit,
+                hb.at(&st, h0 * 2).m(),
+                inter as i64,
+                np as i32,
+                hn as i32,
+                self.ops.sv(),
+            )
+        })
     }
 
     /// The split MoE's second half on this rank: its output columns `[dim0, dim0 + n)` of every
@@ -2059,11 +2063,7 @@ impl Ctx {
         nout: usize,
     ) -> Result<(), String> {
         let st = self.ops.st.clone();
-        let (wfmt, kdiv) = match lw.experts.first().map(|w| w[0].fmt) {
-            Some(super::QFmt::Mxfp4) => (1, 32),
-            Some(super::QFmt::Nvfp4Minted { .. }) => (2, 16),
-            _ => return Err("split experts: no FP4 experts on the rank".into()),
-        };
+        let (wfmt, kdiv) = split_fmt(lw)?;
         ck("gemm_f8_tiles", unsafe {
             ffi::memra_v41_gemm_f8_tiles(
                 a.p(&st).c(),
@@ -2087,6 +2087,40 @@ impl Ctx {
                 self.ops.sv(),
             )
         })
+    }
+
+    /// The split MoE's shared expert on the side stream when the forward is a few rows (it reads
+    /// only `x`, so it runs under the router's chain and the plan), else on the main stream.
+    /// Returns whether the caller owes a [`Self::split_shared_join`] before `hb` is read.
+    pub fn split_shared_fork(
+        &mut self,
+        lw: &LayerW,
+        x: Dp,
+        rows: usize,
+        np: usize,
+        hb: &Buf,
+    ) -> Result<bool, String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        if rows > super::SIDE_ROWS {
+            split_hidden_shared(&self.ops, &mut self.scr, &g, lw, x, rows, np, hb)?;
+            return Ok(false);
+        }
+        if self.side.is_none() {
+            self.side = Some(super::Side::new(&st)?);
+        }
+        let side = self.side.as_mut().unwrap();
+        side.fork(&st)?;
+        split_hidden_shared(&side.ops, &mut side.scr, &g, lw, x, rows, np, hb)?;
+        Ok(true)
+    }
+
+    /// The main stream waits for the side stream's shared expert.
+    pub fn split_shared_join(&self) -> Result<(), String> {
+        match &self.side {
+            Some(s) => s.join(&self.ops.st),
+            None => Err("split MoE: no side stream to join".into()),
+        }
     }
 
     /// The shared FP8 expert of `rows` rows of `x`: bf16 `[rows][dim]`.
@@ -2133,6 +2167,52 @@ pub fn shared_expert_on(
     })?;
     ops.linear_q(hb.p(&st), inter, rows, s2, out.p(&st), d, false, scr)?;
     Ok(out)
+}
+
+/// The tile kernels' weight format code and scale divisor of a rank's FP4 experts.
+fn split_fmt(lw: &LayerW) -> Result<(i32, usize), String> {
+    match lw.experts.first().map(|w| w[0].fmt) {
+        Some(super::QFmt::Mxfp4) => Ok((1, 32)),
+        Some(super::QFmt::Nvfp4Minted { .. }) => Ok((2, 16)),
+        _ => Err("split experts: no FP4 experts on the rank".into()),
+    }
+}
+
+/// The split MoE's first half on a rank for the shared expert, on `ops`' stream: its hidden columns
+/// `[hid0, hid0 + hid_l)` of every token, rows `[np, np + rows)` of `hb` (bf16 `[np + rows][inter]`).
+#[allow(clippy::too_many_arguments)]
+pub fn split_hidden_shared(
+    ops: &super::Ops,
+    scr: &mut super::Scratch,
+    g: &Geo,
+    lw: &LayerW,
+    x: Dp,
+    rows: usize,
+    np: usize,
+    hb: &Buf,
+) -> Result<(), String> {
+    let st = ops.st.clone();
+    let (d, inter, hn, h0) = (g.dim, g.moe_inter, lw.hid_l, lw.hid0);
+    let (q, qs) = scr.actq(ops, rows, d)?;
+    ops.act_quant(x, d, Dp::NULL, rows, d, q, qs)?;
+    let gs = ops.tmp(rows * hn * 2)?;
+    let us = ops.tmp(rows * hn * 2)?;
+    ops.gemm_q(q, qs, rows, &lw.shared[0], gs.p(&st), hn, false)?;
+    ops.gemm_q(q, qs, rows, &lw.shared[2], us.p(&st), hn, false)?;
+    ck("swiglu", unsafe {
+        ffi::memra_v41_swiglu(
+            gs.p(&st).m(),
+            us.p(&st).m(),
+            hn as i64,
+            std::ptr::null(),
+            g.swiglu_limit,
+            hb.at(&st, np * inter * 2 + h0 * 2).m(),
+            inter as i64,
+            rows as i32,
+            hn as i32,
+            ops.sv(),
+        )
+    })
 }
 
 #[cfg(test)]
