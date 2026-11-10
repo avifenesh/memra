@@ -2957,9 +2957,11 @@ neither number scales with `MEMRA_SPEC_BURST` anymore.
   those requests to the speculative path, and the cold-first ordering runs their first bursts
   ahead of it. Now a session yields at a burst's entry with nothing emitted at most once in a
   row; at the next such entry it runs one round, and that round's hook yields. The long request
-  advances (50 to 139 tokens in the 30 s windows where it emitted 1 or 2, longest gap 1.8 s)
-  while each waiting request pays at most one round every second burst (short-request p50 at most
-  0.1 s higher). It is a liveness guarantee, not a share policy (memra#1211). Content is unchanged: where a burst ends is content-neutral.
+  advances (50 to 139 tokens in the 30 s windows where it emitted 1 or 2, longest gap 1.8 s), and
+  short-request p50 rises by at most 0.1 s. Each speculating session that holds a carried token
+  costs a waiting request at most one round every second burst; several such sessions add up,
+  and a pooled cohort steps before the cold-first loop. It is a liveness guarantee, not a share
+  policy (memra#1211). Content is unchanged: where a burst ends is content-neutral.
   Receipts: `research/spec-entry-yield-bound-20261110/`.
 - **The burst ends with the public stream** (GB10 decode round 5, 2026-11-09): the round hook
   also ends the burst at the round that commits EOS or a stop id, and when the client is gone.

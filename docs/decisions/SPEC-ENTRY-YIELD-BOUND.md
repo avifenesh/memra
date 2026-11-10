@@ -79,8 +79,10 @@ unchanged. Where the bound acts, the short requests' p50 rises by at most 0.10 s
 - **Why N=1.** Across N the trade is close to linear. In the two-client cells, where nothing
   demotes, the bound buys 10.0 to 12.5 long-stream tokens per second of added short-request
   latency at N = 0, 1, 2 and 4 alike. N only sets the split. N=1 keeps the longest gap under
-  1.8 s in every measured cell (2.6 s at N=2, 4.3 s at N=4), and a waiting request pays at most
-  one round (about 0.1 s on GB10) every second burst. N=0 (a round at every waiting entry)
+  1.8 s in every measured cell (2.6 s at N=2, 4.3 s at N=4). Each speculating session that holds
+  a carried token costs a waiting request at most one round (about 0.1 s on GB10) every second
+  burst; several such sessions add up, and a pooled cohort steps before the cold-first loop (the
+  receipts cover one long stream). N=0 (a round at every waiting entry)
   doubles that cost (short mean +23% and +87% at two clients, against +12% and +43%) and drops
   the newcomer-first ordering at every carried entry.
 - **What it guarantees, and what it does not.** It guarantees no outright stall. It is a

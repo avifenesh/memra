@@ -32205,10 +32205,13 @@ fn spec_burst_pre(
 /// when its burst begins.) The bound: a session yields at a burst entry with nothing emitted at
 /// most this many times in a row; at the next such entry it runs one round, whose own hook then
 /// yields. Where a burst ends is content-neutral (the burst-boundary and seeded-invariance gates),
-/// so the bound moves when tokens come, never which. Measured at N = 1, 2, 4
-/// (`research/spec-entry-yield-bound-20261110/`): about 12 long-stream tokens per second of added
-/// short-request latency at every N; N = 1 keeps the longest gap under 1.8 s in every cell and
-/// costs a waiting request at most one round every second burst.
+/// so the bound moves when tokens come, never which. Measured at N = 0, 1, 2, 4
+/// (`research/spec-entry-yield-bound-20261110/`): about 10 to 12.5 more long-stream tokens per
+/// added second of short-request latency at every N. N = 1 keeps the longest gap under 1.8 s in
+/// every cell. Each speculating session that holds a carried token costs a waiting request at
+/// most one round every second burst; with several such sessions their rounds add up, and a
+/// pooled cohort's forced round also runs ahead of the tick's newcomers (the cohort steps before
+/// the cold-first loop). The share between the two classes is memra#1211.
 const SPEC_ENTRY_YIELD_MAX: u32 = 1;
 
 /// The MTP spec burst's SSE emission state: one per burst, fed by the engine's round-cadence
@@ -32399,9 +32402,11 @@ fn spec_stop_receipt_burst(
 impl SpecBurstEmit<'_> {
     /// The entry-yield bound (`SPEC_ENTRY_YIELD_MAX`). `admit_keep` is the admission verdict
     /// of this hook call and `silent` says the call carries no token. Only a burst's entry
-    /// call can be a silent yield: every later call follows a round, and a round always
-    /// commits a token. A session that already yielded silently the allowed number of times
-    /// keeps going instead, for one round: the round's own hook call then yields.
+    /// call can be a silent yield that matters: a round's hook call carries at least the
+    /// round's bonus (session mode, the only mode the worker runs), and the burst's closing
+    /// call can be silent but its verdict is ignored, so it leaves the count alone. A session
+    /// that already yielded silently the allowed number of times keeps going instead, for one
+    /// round: the round's own hook call then yields.
     fn bound_entry_yield(&mut self, admit_keep: bool, silent: bool) -> bool {
         let entry = std::mem::replace(&mut self.entry, false);
         if !silent {
@@ -38659,6 +38664,58 @@ mod tests {
         let mut e = burst(SPEC_ENTRY_YIELD_MAX);
         assert!(!e.bound_entry_yield(false, false));
         assert_eq!(e.entry_yields, 0);
+    }
+
+    /// The entry-yield bound's wiring (memra#1201): the counter is read into each burst's
+    /// emission state, the round hook asks the bound before it returns, and the post-burst
+    /// settle writes the count back before any return. Without any one of the three the bound
+    /// does nothing, and `spec_entry_yield_is_bounded` still passes.
+    #[test]
+    fn spec_entry_yield_bound_is_wired() {
+        let strip = |src: &str| -> String {
+            src.lines()
+                .map(|l| l.split("//").next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = strip(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let emit_impl = live
+            .split("impl<'t> SpecBurstEmit<'t> {")
+            .nth(1)
+            .expect("SpecBurstEmit's impl exists");
+        let method = |name: &str| -> String {
+            let body = emit_impl
+                .split(name)
+                .nth(1)
+                .unwrap_or_else(|| panic!("{name} exists"));
+            squash(&body[..body.find("\n    }\n").expect("the method ends")])
+        };
+        assert!(
+            method("fn new(").contains("entry_yields: s.spec_entry_yields,"),
+            "each burst's emission state starts from the session's count"
+        );
+        let flush = method("fn flush(");
+        let ask = flush
+            .find("let keep = self.bound_entry_yield(keep, slice.is_empty());")
+            .expect("the round hook asks the bound with the call's own slice");
+        assert!(
+            flush.find("return").is_some_and(|r| ask < r),
+            "the round hook asks the bound before its first return"
+        );
+        let post = live
+            .split("fn spec_burst_post(")
+            .nth(1)
+            .expect("spec_burst_post exists");
+        let post = squash(&post[..post.find("\n}\n").expect("spec_burst_post ends")]);
+        let back = post
+            .find("s.spec_entry_yields = entry_yields;")
+            .expect("the settle writes the count back");
+        assert!(
+            post.find("return").is_some_and(|r| back < r),
+            "the count is written back before any return"
+        );
     }
 
     /// A burst ends at the round its public stream ends, through the real round hook: the flush
