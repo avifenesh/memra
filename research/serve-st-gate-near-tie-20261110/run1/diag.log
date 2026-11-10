@@ -1,0 +1,21 @@
+cli: exit 0
+cli ids: [32313, 11, 279, 1196, 374, 10161, 369, 279, 6722, 315, 9625, 13, 6771, 752, 1744, 13, 358, 1414, 429, 9625, 374, 264, 3146, 304, 4505, 13, 576, 6722, 9720, 525, 5990, 279, 7772, 9720, 323, 279, 4948, 18652, 13, 1752, 9625, 11, 358, 19091, 429, 12095, 374, 279, 6722, 13, 6771, 752, 7683, 13, 7414, 11, 12095, 374, 279, 6722, 315, 9625, 13, 1084]
+srv: 64 ids, first difference from cli at 34: cli=[323, 279, 4948, 18652, 13] srv=[13, 358, 6099, 429, 12095]
+srv-b1fast: 64 ids, first difference from cli at 25: cli=[13, 576, 6722, 9720, 525] srv-b1fast=[11, 323, 279, 6722, 374]
+srv-twprime: 64 ids, first difference from cli at 34: cli=[323, 279, 4948, 18652, 13] srv-twprime=[13, 12095, 374, 279, 8538]
+srv-both: 64 ids, first difference from cli at None
+cli-forced-33: exit 0
+cli program, step 33: top 9720=36.0946, 24824=30.1180, 15662=29.9749, 3283=29.0460; gap top1-top2 5.9766; logit[323]=26.1392 logit[13]=17.0398 (difference +9.0994)
+cli-forced-34: exit 0
+cli program, step 34: top 323=32.5524, 13=32.3283, 11=31.7550, 304=25.7848; gap top1-top2 0.2241; logit[323]=32.5524 logit[13]=32.3283 (difference +0.2241)
+cli-forced-35: exit 0
+cli program, step 35: top 279=30.6618, 4948=28.3977, 3033=26.1299, 3545=25.0969; gap top1-top2 2.2641; logit[323]=12.1670 logit[13]=10.4255 (difference +1.7416)
+bisect-tile-prime: exit 0
+  bisect-tile-prime: loaded Qwen3: prompt=23 prefix=33 probe=9720 watch=[323, 13]
+  bisect-tile-prime: production B=1: argmax=13 top2=(13:33.219604, 323:32.550339) maxdiff_vs_b1=0.000e0 l[323]=32.550339 l[13]=33.219604
+  bisect-tile-prime: verify T=1: argmax=13 top2=(13:33.219604, 323:32.550339) maxdiff_vs_b1=0.000e0 l[323]=32.550339 l[13]=33.219604
+bisect-tokenwise-prime: exit 0
+  bisect-tokenwise-prime: loaded Qwen3: prompt=23 prefix=33 probe=9720 watch=[323, 13]
+  bisect-tokenwise-prime: production B=1: argmax=323 top2=(323:32.552444, 13:32.328300) maxdiff_vs_b1=0.000e0 l[323]=32.552444 l[13]=32.328300
+  bisect-tokenwise-prime: verify T=1: argmax=323 top2=(323:32.552444, 13:32.328300) maxdiff_vs_b1=0.000e0 l[323]=32.552444 l[13]=32.328300
+DONE

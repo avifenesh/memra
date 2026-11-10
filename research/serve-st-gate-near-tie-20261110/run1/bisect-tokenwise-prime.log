@@ -1,0 +1,13 @@
+[tensor-contract] bound 311 semantic tensors (pack qwen3, HfSafetensors, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded Qwen3: prompt=23 prefix=33 probe=9720 watch=[323, 13]
+[fa-pool] grow #0 dev=0 o_len 0 -> 2048 ml_len 0 -> 16 (retired kept, zero=false)
+production B=1: argmax=323 top2=(323:32.552444, 13:32.328300) maxdiff_vs_b1=0.000e0 l[323]=32.552444 l[13]=32.328300
+verify T=1: argmax=323 top2=(323:32.552444, 13:32.328300) maxdiff_vs_b1=0.000e0 l[323]=32.552444 l[13]=32.328300
+verify T=2 col0: argmax=323 top2=(323:32.552444, 13:32.328300) maxdiff_vs_b1=0.000e0 l[323]=32.552444 l[13]=32.328300
+T=2 filler token: 323
+per-layer residual maxdiff: verify T=1 vs verify T=2 col0
+  layer  0: maxdiff=0.000e0
+  layer  1: maxdiff=0.000e0
+  layer  2: maxdiff=0.000e0
+  layer 27: maxdiff=0.000e0
+shape-bisect: first_nonzero=None worst_layer=0 worst_maxdiff=0.000e0

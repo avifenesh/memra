@@ -1,0 +1,17 @@
+# serve-st-gate, 2026-11-10T09:12:32Z, gate script tree a75b77f9e8d10ad5e6db21c3af1527f3b6f0a07a + 3 uncommitted file(s)
+78dbebe73fa4760244d82533c2abcb6e880e4bfb300aff53efe175cf0c7430bc  ~/.cache/memra-1093r/pk/m1181/bin/memra-server
+a158eadcccb814f7ed407c08b2302e61b1718350c94480e88ada0bbc3389dc8d  ~/.cache/memra-1093r/pk/m1181/bin/run-gen
+caec97650e1edfc9dc1061c9519f74d9418eacb9d680a2c416fb210a1ce81847  tools/serve-st-gate.sh
+NVIDIA GeForce RTX 5090 Laptop GPU, 615.71.09
+cargo shim: skipping cargo build --release -p memra-server
+cargo shim: skipping cargo build --release -p memra-engine --bin run-gen
+== serve-st-gate: checkpoint /data/ai-ml/hf-models/qwen3-1.7b-blk128fp8-synth ==
+  ok: /models lists the ST model
+  ok: chat completion coherent (Paris) via ST template
+DIVERGE at token 34: cli=[323, 279, 4948, 18652, 13] srv=[13, 358, 6099, 429, 12095] (lens 64/64)
+token 34 under the CLI's logits: its token 323 = 32.5524, the server's 13 = 32.3283, margin 0.2241 (bound 0.1)
+  FAIL: CLI-vs-server exactness: the streams part at token 34 on a margin above the near-tie bound
+  skip: check 4 (spec exactness): the checkpoint carries no embedded MTP tensors, so the default server does not speculate
+serve-st-gate: 1 failed (check 4 skipped: no MTP head)
+serve-st-gate: logs kept in fp8-synth-tight-bound
+exit 1
