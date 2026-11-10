@@ -1223,6 +1223,103 @@ mod fa_ladder_engine_tests {
 }
 
 #[cfg(test)]
+mod fa_split_ladder_tests {
+    use super::{fa_split_deep_rung, fa_split_ladder};
+
+    const GB10: i32 = 48;
+    const RTX5090_LAPTOP: i32 = 82;
+
+    #[test]
+    fn gb10_takes_512_keys_past_its_floor() {
+        // 4 KV heads (Qwen3.8-27B): from the 128 rung's start; 2 (Ornith-1.5-35B-A3B): from 32k.
+        for (kv, floor) in [(4, 16_384), (3, 16_384), (2, 32_768), (1, 32_768)] {
+            assert_eq!(fa_split_deep_rung(kv, GB10), Some((floor, 512)), "kv {kv}");
+            assert_eq!(fa_split_ladder(512, kv, GB10), 8);
+            assert_eq!(fa_split_ladder(513, kv, GB10), 64);
+            assert_eq!(fa_split_ladder(16_384, kv, GB10), 64);
+            assert_eq!(
+                fa_split_ladder(floor, kv, GB10),
+                if floor == 16_384 { 64 } else { 128 }
+            );
+            assert_eq!(fa_split_ladder(floor + 1, kv, GB10), 512, "kv {kv}");
+            assert_eq!(fa_split_ladder(262_144, kv, GB10), 512, "kv {kv}");
+        }
+        assert_eq!(fa_split_ladder(16_385, 2, GB10), 128);
+        assert_eq!(fa_split_ladder(32_768, 2, GB10), 128);
+    }
+
+    #[test]
+    fn other_parts_and_wide_kv_keep_todays_ladder() {
+        for sm in [GB10, RTX5090_LAPTOP] {
+            for (t_kv, sp) in [
+                (8192, 32),
+                (8193, 64),
+                (16_384, 64),
+                (16_385, 128),
+                (262_144, 128),
+            ] {
+                assert_eq!(fa_split_ladder(t_kv, 8, sm), sp, "sm {sm} t_kv {t_kv}");
+            }
+        }
+        for kv in [1, 2, 4] {
+            assert_eq!(fa_split_deep_rung(kv, RTX5090_LAPTOP), None);
+            for (t_kv, sp) in [
+                (512, 8),
+                (513, 64),
+                (16_384, 64),
+                (16_385, 128),
+                (262_144, 128),
+            ] {
+                assert_eq!(
+                    fa_split_ladder(t_kv, kv, RTX5090_LAPTOP),
+                    sp,
+                    "kv {kv} t_kv {t_kv}"
+                );
+            }
+        }
+        // The RTX PRO 6000 class: unmeasured at depth, so unchanged, and still the literal
+        // ladder of `fa_decode_dcw_rows` (flash_attn.cu).
+        for sm in [128, 170, 188] {
+            for kv in [2, 4, 8] {
+                assert_eq!(fa_split_deep_rung(kv, sm), None);
+                for (t_kv, sp) in [
+                    (2048, 16),
+                    (2049, 64),
+                    (16_384, 64),
+                    (16_385, 128),
+                    (262_144, 128),
+                ] {
+                    assert_eq!(
+                        fa_split_ladder(t_kv, kv, sm),
+                        sp,
+                        "sm {sm} kv {kv} t_kv {t_kv}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_verify_graph_rung_never_straddles_a_split_edge() {
+        // The captured verify sizes its walk at t_kv.next_power_of_two() (spec.rs) and refuses
+        // a rung whose split differs from the round's: a floor off a power of two would cost
+        // the band below it its graph.
+        for sm in [GB10, RTX5090_LAPTOP, 188] {
+            for kv in [1, 2, 4, 8] {
+                for t_kv in 513..=262_144usize {
+                    let rung = t_kv.next_power_of_two().max(256);
+                    assert_eq!(
+                        fa_split_ladder(rung, kv, sm),
+                        fa_split_ladder(t_kv, kv, sm),
+                        "sm {sm} kv {kv} t_kv {t_kv}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod numeric_profile_coload_tests {
     use super::{
         Engine, NumericProfile, fa_v4_at, fa_vec_min_tkv, rms_block, step_tp_w8_on, w8_hybrid_on,
@@ -1739,7 +1836,9 @@ pub(crate) fn rms_block() -> u32 {
 /// every context. Unset, the split follows a ctx-adaptive, SM-aware ladder (the receipts are in the
 /// rung comments below): on parts with at least 128 SMs, 16 up to t_kv 2048 (`MEMRA_FA_SP_SHORT`
 /// overrides that rung), 64 up to 16384 and 128 beyond; on smaller parts, 8 up to 512 for
-/// n_head_kv <= 4 and 32 up to 8192 otherwise, then 64 up to 16384 and 128 beyond. The gemma seam
+/// n_head_kv <= 4 and 32 up to 8192 otherwise, then 64 up to 16384 and 128 beyond, except that
+/// for n_head_kv <= 4 a part under 64 SMs takes 512 past its deep floor (`fa_split_deep_rung`:
+/// 16384 with 3 or 4 KV heads, 32768 with fewer). The gemma seam
 /// (the profile's `fa_sp_gemma` with `MEMRA_FA_SP16=1`) takes 16 / 64 / 128 at 8192 / 16384. The split changes
 /// the combine's FP summation order, so every ladder change is a numeric-class change that
 /// kernel-check and run-spec K=1..8 arbitrate. Takes t_kv so eager decode, `_dc` capture and
@@ -1781,27 +1880,55 @@ pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
             128
         };
     }
-    let big_rig = fa_sm_count() >= 128;
-    if big_rig {
-        let _ = n_head_kv;
+    let sm_count = fa_sm_count();
+    if sm_count >= 128 && t_kv <= 2048 {
+        // MEMRA_FA_SP_SHORT=N: the big-rig SHORT rung only (the SWA layers' capped t_kv lands
+        // here on step37: 33 of 45 layers at t_kv=512). At 16 the tile loop runs
+        // HALF-EMPTY (FA_DEC_TILE=32 -> nt=16 per split), so the V staging pass moves a
+        // half tile per iteration and the combine carries 2x the partials; 32 makes each
+        // split exactly one full tile. A global MEMRA_FA_SPLIT cannot isolate this — it
+        // moves the deep-ctx rung too, where more splits measured worse.
+        // NUMERIC-CLASS door (key partition -> different per-split partials/combine):
+        // new tape + battery, exactly like every other split-ladder change.
+        static SHORT: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+        if let Some(sp) = *SHORT.get_or_init(|| {
+            std::env::var("MEMRA_FA_SP_SHORT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .filter(|&s: &usize| s >= 8 && s % 8 == 0)
+        }) {
+            return sp;
+        }
+    }
+    fa_split_ladder(t_kv, n_head_kv, sm_count)
+}
+
+/// The deep rung of the split ladder (GB10 decode round 6, lever 1): `Some((floor, keys))` when
+/// a split holds `keys` keys past `floor` keys of cache on this part for this KV head count,
+/// `None` when the part keeps 128 keys a split at every depth past 16,384. Measured with
+/// kernel-check's FA-VERIFY-ROWS timing rows under `MEMRA_FA_SPLIT` (the verify's rows walk, the
+/// seqs launch at four rows and one row, and `fa_decode`, each with its combine;
+/// `research/gb10-split-rung-20261110/`). On a 48-SM part (GB10) a 512-key split is faster than a
+/// 128-key one on every launch from 16k keys with 4 KV heads, and from 32k with 2: below 32k two
+/// KV heads give a 512-key split too few blocks to fill the part, and a single row (plain decode)
+/// is 10 to 18% slower there. Each floor is a power of two, so the verify graph's power-of-two
+/// rung never straddles it. Parts with 64 SMs or more keep today's ladder (the RTX PRO 6000's is
+/// also spelled in `fa_decode_dcw_rows`).
+pub fn fa_split_deep_rung(n_head_kv: usize, sm_count: i32) -> Option<(usize, usize)> {
+    match (sm_count, n_head_kv) {
+        (..64, 3..=4) => Some((16_384, 512)),
+        (..64, ..=2) => Some((32_768, 512)),
+        _ => None,
+    }
+}
+
+/// The default split ladder, pure over the depth, the KV head count and the device's SM count
+/// ([`fa_split_keys`] adds the env doors and reads the SM count of this process's card).
+pub fn fa_split_ladder(t_kv: usize, n_head_kv: usize, sm_count: i32) -> usize {
+    if sm_count >= 128 {
+        // The big-rig ladder. `fa_decode_dcw_rows` (flash_attn.cu) spells it as a literal:
+        // a change here is mirrored there, or the twins diverge.
         if t_kv <= 2048 {
-            // MEMRA_FA_SP_SHORT=N: the SHORT rung only (the SWA layers' capped t_kv lands
-            // here on step37: 33 of 45 layers at t_kv=512). At 16 the tile loop runs
-            // HALF-EMPTY (FA_DEC_TILE=32 -> nt=16 per split), so the V staging pass moves a
-            // half tile per iteration and the combine carries 2x the partials; 32 makes each
-            // split exactly one full tile. A global MEMRA_FA_SPLIT cannot isolate this — it
-            // moves the deep-ctx rung too, where more splits measured worse.
-            // NUMERIC-CLASS door (key partition -> different per-split partials/combine):
-            // new tape + battery, exactly like every other split-ladder change.
-            static SHORT: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
-            if let Some(sp) = *SHORT.get_or_init(|| {
-                std::env::var("MEMRA_FA_SP_SHORT")
-                    .ok()
-                    .and_then(|v| v.parse().ok())
-                    .filter(|&s: &usize| s >= 8 && s % 8 == 0)
-            }) {
-                return sp;
-            }
             16
         } else if t_kv <= 16384 {
             64
@@ -1829,21 +1956,27 @@ pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
         // ties sp64 within noise in the mid band and loses at d4096 -> no extra rung.
         // Boundary 3072 -> 512: sp8 keeps only the short-ctx band it was validated on
         // (ctx128-512); sp64 takes over where the deep kernel made combine the bill.
+        // DEEP RUNG (2026-11-10, GB10 decode round 6 lever 1): at depth the partials are the
+        // call's bill again (a 131k cache at 128 keys a split is 1,024 splits; a four-row
+        // verify writes and its combine reads 101 MB of partials against 243 MB of KV), so
+        // a part that fills its grid with fewer splits takes bigger ones past a measured
+        // floor (`fa_split_deep_rung`).
         if t_kv <= 512 {
             8
         } else if t_kv <= 16384 {
             64
         } else {
-            128
+            match fa_split_deep_rung(n_head_kv, sm_count) {
+                Some((floor, keys)) if t_kv > floor => keys,
+                _ => 128,
+            }
         }
+    } else if t_kv <= 8192 {
+        32
+    } else if t_kv <= 16384 {
+        64
     } else {
-        if t_kv <= 8192 {
-            32
-        } else if t_kv <= 16384 {
-            64
-        } else {
-            128
-        }
+        128
     }
 }
 
