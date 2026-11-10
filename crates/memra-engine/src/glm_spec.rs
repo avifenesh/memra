@@ -201,8 +201,12 @@ use cudarc::driver::CudaSlice;
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 /// Round-cadence commit hook of `glm5_spec_session_burst_streamed` (lane/b200-spec-ttft-
-/// 20260902): called with every newly committed slice of a burst, in order, disjoint.
-pub type CommitHook<'a> = &'a mut dyn FnMut(&[u32]);
+/// 20260902) and the dspark streamed burst: called with every newly committed slice of a
+/// burst, in order, disjoint. It answers the continue-verdict (memra#1207): `false` ends the
+/// burst at this round boundary, through the exit a reached burst target takes. The caller
+/// says `false` once the request's public stream has ended (EOS, a stop id, a completed stop
+/// string, the client gone): every later round would commit only tokens nobody receives.
+pub type CommitHook<'a> = &'a mut dyn FnMut(&[u32]) -> bool;
 
 /// `MEMRA_GLM5_SPEC=1` routes `generate_spec` to the glm5 T-parallel loop. Default OFF:
 /// unset/0 keeps the standing `refuse_hyper` refusal, so serving is byte-identical to the
@@ -2699,10 +2703,12 @@ impl HybridModel {
     /// `on_commit` sse-cadence pattern): `on_commit` is called with every newly committed
     /// slice of the burst — first the prime's anchor alone, then each round's `j` accepted
     /// drafts + bonus — as DISJOINT, IN-ORDER slices whose concatenation IS the returned
-    /// burst, byte for byte. The hook returns nothing and the loop's control flow never
+    /// burst, byte for byte. While the hook answers `true` the loop's control flow never
     /// reads it, so the tokens produced are exactly `glm5_spec_session_burst`'s; only WHEN
-    /// the caller learns them moves (from burst end to round end). Without a hook the
-    /// first token of a cold session waits for the whole `target`-token burst.
+    /// the caller learns them moves (from burst end to round end). A `false` ends the burst
+    /// at that round boundary, as a reached `target` does, so the burst is a round-aligned
+    /// prefix of the unhooked one (memra#1207: the request's stream has ended). Without a
+    /// hook the first token of a cold session waits for the whole `target`-token burst.
     pub fn glm5_spec_session_burst_streamed(
         &self,
         e: &Engine,
@@ -2801,6 +2807,9 @@ impl HybridModel {
         let mut hook_ns: u64 = 0;
         // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
         let mut flushed = 0usize;
+        // The hook's continue-verdict (memra#1207): false once the request's stream has
+        // ended, and the burst ends at this round boundary, as a reached target ends it.
+        let mut keep_going = true;
         if !sess.anchor_emitted {
             // The prime's boundary token: emitted exactly once, by the first burst.
             out.push(sess.anchor);
@@ -2810,14 +2819,14 @@ impl HybridModel {
             }
             if let Some(cb) = on_commit.as_mut() {
                 let t_cb = first_burst.map(|_| std::time::Instant::now());
-                cb(&out[flushed..]);
+                keep_going = cb(&out[flushed..]);
                 if let Some(t_cb) = t_cb {
                     hook_ns += t_cb.elapsed().as_nanos() as u64;
                 }
                 flushed = out.len();
             }
         }
-        while out.len() < target && !sess.done {
+        while keep_going && out.len() < target && !sess.done {
             // Context guard: a round appends up to k+1 trunk rows from `cache.pos` (and the
             // draft plane stays <= pos + k), so the next round must fit with one row slack.
             if sess.cache.pos + k + 2 > sess.max_ctx {
@@ -2873,7 +2882,7 @@ impl HybridModel {
                 // sse-cadence: this round's accepted drafts + bonus are committed — hand
                 // the caller exactly the not-yet-flushed tail (disjoint, in order).
                 let t_cb = first_burst.map(|_| std::time::Instant::now());
-                cb(&out[flushed..]);
+                keep_going = cb(&out[flushed..]);
                 if let Some(t_cb) = t_cb {
                     hook_ns += t_cb.elapsed().as_nanos() as u64;
                 }
