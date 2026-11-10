@@ -2091,9 +2091,11 @@ addresses (capture transients not retained + the fa-partials pool freeing grown-
 buffers the capture baked) — reproducible on GGUF session bursts at n>=600 too. Fixed
 via capture-retain keepers on `DraftGraphCtx` + retire-on-grow for the fa partials pool;
 the quarantine is lifted and dir checkpoints are spec-eligible by default
-(`MEMRA_SERVE_SPEC=0` is the rollback door). Gate: `tools/serve-st-gate.sh` — item 3 pins
+(`MEMRA_SERVE_SPEC=0` is the rollback door). Gate: `tools/serve-st-gate.sh` — item 3 holds
 the CLI ST-dir branch and the server to identical greedy token streams on a 64-token
-window, and item 4 pins the DEFAULT (spec-on) server against the **plain serve oracle**
+window, or, where the two numeric configs part, to the near-tie law (memra #1181: a margin
+within the batched-prime gate's bound at the parting step, a served tail that is the CLI's
+own, and an identical stream from the server on the CLI's config), and item 4 pins the DEFAULT (spec-on) server against the **plain serve oracle**
 (`MEMRA_SERVE_SPEC=0`: same worker, same batched program, speculation off) at a
 400-token window: text and completion tokens must be equal, on a short prompt and on one
 that fills the window (the public stream stops at the request budget in both arms, so

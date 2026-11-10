@@ -5,14 +5,40 @@
 #   1. /models lists the ST model.
 #   2. /v1/chat/completions returns coherent text through the checkpoint's own chat
 #      template (tokenizer_config chat_template / chat_template.jinja).
-#   3. EXACTNESS: the SAME checkpoint, SAME prompt through the SAME template, greedy —
-#      run-gen's ST dir branch (tokenwise decode) and the server (batched prime +
-#      serving decode) must produce IDENTICAL token id streams. The server arm runs
+#   3. EXACTNESS: the SAME checkpoint, SAME prompt through the SAME template, greedy:
+#      run-gen's ST dir branch (tokenwise prime, eager decode) against the server
+#      (batched prime + serving decode). The server arm runs
 #      MEMRA_SERVE_SPEC=0: with spec on, Token events carry ONE id per flush (per spec
 #      round since sse-cadence 2026-08-05; per burst before) so
 #      the response `tokens` array is not the per-token stream (worker contract, not a
-#      bug). The only tolerated difference is the trailing EOS id (the CLI stream
-#      includes it, server Token events stop before it).
+#      bug). The trailing EOS id is tolerated (the CLI stream includes it, server Token
+#      events stop before it).
+#      The two arms are two numeric configs by design (prefill GEMM at m=T against the
+#      decode GEMV at m=1, the batched decode body against the eager chain), so their
+#      streams are IDENTICAL only while no step is a near-tie. The check passes on
+#      identical streams. Where they part (memra #1181: the block-128 FP8 class, whose
+#      prime tile is not bit-identical to the m=1 path), it passes only when ALL of these
+#      hold, and prints the step and the margin:
+#        a. the step is a near-tie under the CLI's own logits: the CLI's logit for its
+#           token minus its logit for the server's token is at most
+#           MEMRA_PRIME_GATE_MARGIN (default 1.0, the margin bound of the batched-prime
+#           gate #46 in crates/memra-engine/src/forward.rs). A flip on a wide margin
+#           cannot come from FP composition and fails;
+#        b. the served stream after that step is the CLI's own: run-gen teacher-forced
+#           on the server's ids disagrees with them at the parting step and nowhere
+#           else. This is stricter than the law (a second near-tie later in the window
+#           fails and has to be priced by hand);
+#        c. the difference is the numeric config and nothing else: a second server boot
+#           on the CLI's config (MEMRA_SERVE_B1FAST=1 for the eager decode chain,
+#           MEMRA_CONFIDENCE_TRACE for the tokenwise prime) produces the CLI's stream
+#           exactly. THIS BOOT DEPENDS ON TWO DOORS: the trace door must keep priming
+#           the prompt tokenwise (the check requires its file to have rows) and the
+#           eager door must cover the plan. On a plan the eager door does not cover
+#           (decode_batch.rs lists them: the Qwen3.5 MoE class and others) a parted
+#           stream fails here; there is no same-config arm for it yet.
+#      A server stream that ends where the CLI goes on has no server token to price and
+#      fails. The law's drift ceiling (MEMRA_PRIME_GATE_MAXDIFF over the full row) is not
+#      checked: no door reads the served logits.
 #   4. ST SERVE-SPEC exactness (#68 closed 2026-08-04, quarantine LIFTED): the DEFAULT
 #      server (spec bursts ON for MTP dir checkpoints) must produce the greedy text of
 #      the plain serve oracle (MEMRA_SERVE_SPEC=0: the same worker and the same batched
@@ -148,27 +174,108 @@ assert "paris" in text.lower(), f"incoherent answer: {text[:200]!r}"
 assert r["usage"]["completion_tokens"] > 0, "no completion tokens"
 ' && PASS "chat completion coherent (Paris) via ST template" || FAIL "chat completion coherent"
 
-# 3. exactness: server greedy token ids == CLI greedy token ids (same template render).
-SRV_TOKENS=$(curl -sf -m 300 $BASE/v1/completions -H 'Content-Type: application/json' \
-  -d "{\"model\":\"st\",\"prompt\":\"$PROMPT\",\"chat\":true,
-       \"max_tokens\":$NGEN,\"temperature\":0}" \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["tokens"])')
-python3 - "$CLI_TOKENS" "$SRV_TOKENS" <<'EOF'
+# 3. exactness: server greedy token ids against CLI greedy token ids (same template render).
+srv_tokens() {  # the 64-token greedy completion of the gate prompt, as a Python list
+  curl -sf -m 300 $BASE/v1/completions -H 'Content-Type: application/json' \
+    -d "{\"model\":\"st\",\"prompt\":\"$PROMPT\",\"chat\":true,
+         \"max_tokens\":$NGEN,\"temperature\":0}" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["tokens"])'
+}
+# Exit 0 identical (EOS tolerated), 3 parted at a step both arms have a token for (prints
+# "PART <step> <cli id> <server id>"), 1 anything else.
+compare_streams() {  # $1 = CLI list, $2 = server list
+  python3 - "$1" "$2" <<'EOF'
 import ast, sys
 cli = ast.literal_eval(sys.argv[1])
 srv = ast.literal_eval(sys.argv[2])
 # Server Token events stop BEFORE the EOS id; the CLI stream includes it.
-ok = cli == srv or (len(cli) == len(srv) + 1 and cli[:-1] == srv)
-if not ok:
-    div = next((i for i, (a, b) in enumerate(zip(cli, srv)) if a != b), min(len(cli), len(srv)))
-    print(f"DIVERGE at token {div}: cli={cli[div:div+5]} srv={srv[div:div+5]} "
-          f"(lens {len(cli)}/{len(srv)})")
-    sys.exit(1)
-print(f"identical {len(srv)} ids (cli {len(cli)} incl. trailing eos)"
-      if len(cli) != len(srv) else f"identical {len(srv)} ids")
+if cli == srv or (len(cli) == len(srv) + 1 and cli[:-1] == srv):
+    print(f"identical {len(srv)} ids (cli {len(cli)} incl. trailing eos)"
+          if len(cli) != len(srv) else f"identical {len(srv)} ids")
+    sys.exit(0)
+div = next((i for i, (a, b) in enumerate(zip(cli, srv)) if a != b), min(len(cli), len(srv)))
+print(f"DIVERGE at token {div}: cli={cli[div:div+5]} srv={srv[div:div+5]} "
+      f"(lens {len(cli)}/{len(srv)})")
+if div < len(cli) and div < len(srv):
+    print(f"PART {div} {cli[div]} {srv[div]}")
+    sys.exit(3)
+sys.exit(1)
 EOF
-[ $? -eq 0 ] && PASS "CLI-vs-server greedy token streams identical" \
-             || FAIL "CLI-vs-server exactness"
+}
+SRV_TOKENS=$(srv_tokens)
+CMP=$(compare_streams "$CLI_TOKENS" "$SRV_TOKENS"); CMP_RC=$?
+echo "$CMP" | grep -v '^PART '
+if [ $CMP_RC -eq 0 ]; then
+  PASS "CLI-vs-server greedy token streams identical"
+elif [ $CMP_RC -eq 3 ]; then
+  # The streams part at a step both arms have a token for. Two numeric configs may part on
+  # a near-tie and on nothing else. One run-gen run teacher-forced on the SERVER's ids gives
+  # the CLI's logit row at the parting step (the prefix before it is common, so it is the
+  # row the CLI drew its own token from) and counts every step where the CLI's argmax is
+  # not the server's token: rules a and b. Then the server on the CLI's config: rule c.
+  read -r _ DIV CLI_ID SRV_ID <<< "$(echo "$CMP" | grep '^PART ')"
+  MARGIN_BOUND="${MEMRA_PRIME_GATE_MARGIN:-1.0}"
+  echo "$SRV_TOKENS" > "$ST_TMP/serve-st-srv.ids"
+  N_SRV=$(echo "$SRV_TOKENS" | tr -cs '0-9' '\n' | grep -c .)
+  WHY=
+  MEMRA_CHAT=1 MEMRA_NGEN=$N_SRV MEMRA_FORCE_TOKENS_FILE="$ST_TMP/serve-st-srv.ids" \
+    MEMRA_FORCE_LOGITS_AT=$DIV MEMRA_FORCE_LOGITS_FILE="$ST_TMP/serve-st-cli-row.f32" \
+    "${CARGO_TARGET_DIR:-target}"/release/run-gen "$ST" --prompt "$PROMPT" \
+    > "$ST_TMP/serve-st-cli-forced.log" 2>&1 \
+    || WHY="run-gen teacher-forced on the server's ids failed"
+  if [ -z "$WHY" ]; then
+    python3 - "$ST_TMP/serve-st-cli-row.f32" "$DIV" "$CLI_ID" "$SRV_ID" "$MARGIN_BOUND" <<'EOF' \
+      || WHY="the streams part at token $DIV on a margin above the near-tie bound"
+import struct, sys
+raw = open(sys.argv[1], "rb").read()
+row = struct.unpack(f"<{len(raw) // 4}f", raw)
+div, cli_id, srv_id, bound = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), float(sys.argv[5])
+top = max(range(len(row)), key=row.__getitem__)
+margin = row[cli_id] - row[srv_id]
+print(f"token {div} under the CLI's logits: its token {cli_id} = {row[cli_id]:.4f}, the server's "
+      f"{srv_id} = {row[srv_id]:.4f}, margin {margin:.4f} (bound {bound})")
+if top != cli_id:
+    print(f"the CLI's argmax at token {div} of the forced run is {top}, not its own token {cli_id}")
+    sys.exit(1)
+sys.exit(0 if margin <= bound else 1)
+EOF
+  fi
+  rm -f "$ST_TMP/serve-st-cli-row.f32"
+  if [ -z "$WHY" ]; then
+    TF=$(grep '^teacher-forced EXACTNESS' "$ST_TMP/serve-st-cli-forced.log" | tail -1)
+    echo "the CLI on the server's ids: ${TF:-no EXACTNESS line}"
+    case "$TF" in
+      *"disagreements=1/"*" first_at=$DIV "*) ;;
+      *) WHY="after token $DIV the served stream is not the CLI's argmax path (more than the one near-tie step differs)" ;;
+    esac
+  fi
+  if [ -z "$WHY" ]; then
+    stop_server
+    TRACE=$ST_TMP/serve-st-confidence.jsonl
+    case "$TRACE" in
+      *[[:space:]]*) WHY="the run directory's path holds whitespace, which the same-config boot's environment cannot carry" ;;
+    esac
+  fi
+  if [ -z "$WHY" ]; then
+    if start_server "MEMRA_SERVE_SPEC=0 MEMRA_SERVE_B1FAST=1 MEMRA_CONFIDENCE_TRACE=$TRACE"; then
+      SAME_TOKENS=$(srv_tokens)
+      SAME=$(compare_streams "$CLI_TOKENS" "$SAME_TOKENS") \
+        || WHY="the server on the CLI's numeric config (MEMRA_SERVE_B1FAST=1 and MEMRA_CONFIDENCE_TRACE's tokenwise prime) does not write the CLI's stream"
+      echo "server on the CLI's numeric config: $(echo "$SAME" | grep -v '^PART ')"
+      [ -s "$TRACE" ] \
+        || WHY="MEMRA_CONFIDENCE_TRACE wrote no rows: the tokenwise-prime door the same-config boot relies on did not engage"
+    else
+      WHY="the same-config server boot did not come up"
+    fi
+  fi
+  if [ -z "$WHY" ]; then
+    PASS "CLI-vs-server streams part at token $DIV on a near-tie between two numeric configs; the served tail is the CLI's and the server on the CLI's config is identical"
+  else
+    FAIL "CLI-vs-server exactness: $WHY"
+  fi
+else
+  FAIL "CLI-vs-server exactness"
+fi
 
 stop_server
 
