@@ -1,0 +1,20 @@
+# Boot and request lines of each context's first B and first T cell (tools/boot_lines.py), normalized
+# for timestamps, build ids and sizes. The penalty/sampler/retired-name count matches only
+# [fa-pool] grow lines ('retired kept'), which differ with the split; no server prints a device
+# penalty or sampler line, and the tagged boot and request lines are alike in every context.
+== sp131-unit1 (01-B against 02-T)
+penalty/sampler/retired-name lines: B 4, T 2
+tagged lines: B 28, T 28, alike 28
+  [fa-pool] lines among them: 4
+== sp260-unit1 (01-B against 02-T)
+penalty/sampler/retired-name lines: B 5, T 3
+tagged lines: B 28, T 28, alike 28
+  [fa-pool] lines among them: 5
+== sp32-unit1-764cd39b5b (01-B against 02-T)
+penalty/sampler/retired-name lines: B 2, T 2
+tagged lines: B 28, T 28, alike 28
+  [fa-pool] lines among them: 2
+== sp12-unit1-764cd39b5b (01-B against 02-T)
+penalty/sampler/retired-name lines: B 2, T 2
+tagged lines: B 28, T 28, alike 28
+  [fa-pool] lines among them: 2

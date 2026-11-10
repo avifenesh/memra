@@ -1,0 +1,40 @@
+# cmd
+CARGO_TARGET_DIR=$PWD/kt-head-764cd39b5b bash src-1a4f769861/tools/argmax-margin-gate.sh $HOME/models/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf --prompt $PWD/prompts/p4-16390.txt --logdir $PWD/cells/am-9b-p4-16390-e-764cd39b5b/gate
+# rc 0
+# gate
+argmax-margin-gate: model=Qwen3.5-9B-Q4_K_M.gguf prompt=p4-16390.txt window=12 decode=eager canary=0
+  flip budget: 1 (row: default)
+  SUMMARY flips=0 bad=0
+  PRIME-SUMMARY prime=MATCH
+    PRIME-GATE: class=MATCH bp_argmax=1653 tw_argmax=1653 tw_margin=6.871545792e0 bp_margin=6.951185226e0 maxdiff=8.195281029e-1
+  PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+  raw: ~/.cache/memra-split-rung/cells/am-9b-p4-16390-e-764cd39b5b/gate/gate-Qwen3.5-9B-Q4_K_M-p4-16390.log
+# probe (pool growth lines left out)
+[tensor-contract] bound 427 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 201 tensors
+argmax-margin-probe: T=16390 window=12 sm_count=48 model=~/models/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf
+env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
+
+pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree
+16378    72444         1.295715714e1    72444        1.239832497e1    7.801589966e-1   yes
+16379    26            1.029410458e1    26           8.089233398e0    2.837608337e0    yes
+16380    198           1.950807571e0    198          1.875349045e0    3.898239136e-1   yes
+16381    285           9.981639862e0    285          9.891565323e0    2.949123383e-1   yes
+16382    434           2.175247192e0    434          2.430154800e0    1.606426239e-1   yes
+16383    11246         5.836963654e-1   11246        2.536544800e-1   6.854419708e-1   yes
+16384    279           1.315612793e0    279          1.337876320e0    4.738855362e-1   yes
+16385    3545          4.743690491e-1   3545         3.376350403e-1   1.312580109e-1   yes
+16386    3817          3.561281204e0    3817         3.781679153e0    1.743431091e-1   yes
+16387    5920          2.527025223e0    5920         2.695726395e0    1.372528076e-1   yes
+16388    12            3.216266632e-1   12           5.759429932e-2   2.057685852e-1   yes
+16389    1653          6.599159241e0    1653         6.871545792e0    7.917537689e-1   yes
+
+margin distribution (decode config, 12 positions): min 0.0576  p10 0.2537  p50 2.6957  p90 9.8916  max 12.3983
+margin distribution (prefill config): min 0.3216  p50 2.5270  max 12.9572
+DECISION POSITION (the gate's): prefill_top1=1653 decode_top1=1653 margin_p=6.5992 margin_d=6.8715 config_delta_at_ids=0.7918
+  -> the decision margin is BELOW 8/12 sampled positions' margins (rank 9 of 12)
+  -> flip is ARITHMETICALLY POSSIBLE iff config_delta > margin: 0.7918 > 6.5992 = false
+agreement across sampled positions: 12/12 (0 flip(s))
+flip budget: 0 flip(s) vs budget 1 (calibration row: default (1/12-window))
+VERDICT-INPUT: STABLE — no flip, and the config spread cannot reach across the decision margin (structurally safe at this position)
+PRIME-GATE: class=MATCH bp_argmax=1653 tw_argmax=1653 tw_margin=6.871545792e0 bp_margin=6.951185226e0 maxdiff=8.195281029e-1
