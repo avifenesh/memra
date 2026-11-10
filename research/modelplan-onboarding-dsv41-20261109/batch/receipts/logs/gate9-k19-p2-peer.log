@@ -1,0 +1,22 @@
+server ready after 6 s
+[dsv41-serve] v41: MEMRA_DSV41_TRUNK_LAYERS: 9 of the 40 trunk layers run. The answers are NOT the checkpoint's; this is a rehearsal of the route's memory and serving loop
+[dsv41-serve] v41: card 0 ranks [0]: weights 31.97 GiB resident (31.97 GiB a rank) in 5.0s, 62.45 GiB of 95.06 GiB left for requests (62.45 GiB a rank)
+[dsv41-serve] v41: card 1 ranks [1]: weights 31.97 GiB resident (31.97 GiB a rank) in 5.0s, 62.49 GiB of 95.06 GiB left for requests (62.49 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.0s; one-token call 3.9 ms
+[dsv41-serve] v41: 2 rank(s) on devices [0, 1]; routed experts on the cards; resident weights [34332482712, 34332482712] bytes per rank; ceiling [67059356004, 67092910436] bytes; expert cache [] slots of 18800640 bytes (floor 0 slots, all 0); max_seq 32768; 8 
+[dsv41-serve] v41: capacity: the longest session with the route idle is 32768 positions (max_seq 32768); at once: 4096 sessions of 1,536 positions (1,024-token prompts), 4096 of 4,608 (4,096-token prompts), 1323 of 32,768, 1320 of 131,072; MEMRA_MAX_SESSIONS 8
+2367
+[dsv41-step] calls=2 prefill=16 decode_rows=2 step_s=0.024 transient_peak=35439530 predicted_live_need=1618199065 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=2 prefill=42 decode_rows=3 step_s=0.029 transient_peak=39208690 predicted_live_need=1628167299 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=2 prefill=31 decode_rows=4 step_s=0.029 transient_peak=37945538 predicted_live_need=1623948689 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+render: PASS 7 prompts tokenized through /v1/tokenize vs the tape ids
+solo: PASS served greedy content and token counts equal dsv41-run --gen on 7 cases
+batched: PASS five concurrent requests answer byte for byte as solo
+stream: PASS 200 deltas of sys_json
+sampled: PASS seed 1017, T 0.8, top_p 0.95, top_k 40: two solo runs and one beside four others
+stops: PASS stop 'lle' cuts sys_json at its first occurrence; max_tokens 5 cuts gsm with finish length
+penalties: PASS frequency 0.5, presence 0.3 greedy: served, identical twice
+budget: PASS 63 -> 200 (reasoning 95 chars), 101 -> 400
+speed: story 200 {'prompt_tokens': 22, 'completion_tokens': 128, 'total_tokens': 150, 'prompt_tokens_details': {'cached_tokens': 0}, 'elapsed_s': 0.535543098} in 0.5s
+CHAT-GATE PASS
+serve_gate9 gate9-k19-p2-peer rc 0

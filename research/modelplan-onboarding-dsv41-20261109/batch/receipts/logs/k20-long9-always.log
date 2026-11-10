@@ -1,0 +1,13 @@
+11:35:36 long9: lease on GPU1 (GPU-<uuid>), receipt $LANE/leases/spec-long9-20261110T113536; GPU2  56, 30 %, 0x0000000000000400, 137255157 us, 0 us
+host memory before: Mem:            1002          39         572           9         405         963
+dsv41-spec: decode64k_en_continue done in 11.5s
+dsv41-spec: needle4800 done in 15.0s
+dsv41-spec: longmix done in 20.7s
+dsv41-spec: expert cache CacheStats { lookups: 0, hits: 0, misses: 0, h2d_bytes: 0, evictions: 0, slabs_released: 0, slabs_grown: 0 }, slots []
+{"job":"verify-rows","id":"decode32k_he_summary","pass":true,"prompt":41098,"steps":96,"rows":96,"logit_rows_equal":96,"tap_rows_equal":96,"blocks":31,"rejected_rows":24,"first_bad":null,"arm_a_s":3.917107836,"arm_b_s":0.267314708}
+{"job":"verify-rows","id":"decode64k_en_continue","pass":true,"prompt":64443,"steps":92,"rows":92,"logit_rows_equal":92,"tap_rows_equal":92,"blocks":29,"rejected_rows":22,"first_bad":null,"arm_a_s":5.875749541,"arm_b_s":0.259709966}
+{"job":"verify-rows","id":"needle4800","pass":true,"prompt":73520,"steps":346,"rows":346,"logit_rows_equal":346,"tap_rows_equal":346,"blocks":109,"rejected_rows":86,"first_bad":null,"arm_a_s":7.895807178,"arm_b_s":0.970590313}
+{"job":"batch-rows","id":"longmix","pass":true,"sequences":4,"prompts":[42,73520,24,18343],"steps":[20,346,42,155],"rows":563,"logit_rows_equal":563,"tap_rows_equal":563,"device_argmax_equal":563,"calls_by_width":[0,191,113,22,19,0,0,0,0],"first_bad":null,"arm_a_s":10.596668308,"arm_b_s":10.102314416}
+SPEC-DONE jobs 4 failed 0
+spec_run rc 0
+11:36:39 long9: lease ended rc 0; GPU2  58, 33 %, 0x0000000000000400, 137255157 us, 0 us

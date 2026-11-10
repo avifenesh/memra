@@ -8,7 +8,7 @@
 #  B. peer-pull, plan n4b with --batch-max 16: batch-rows chat8 again (the transport is not the variable) and
 #     batch-rows wide16 (calls of 16 rows).
 # usage: n4.sh TAG        env: DEVICES (default 0,1,2,3), LAYERS (default 40), SPEC_BIN (default spec/bin/TAG/dsv41-spec),
-#        STEPS (default "A B")
+#        STEPS (default "A B"), N4A_PLAN (default n4a; n4t = the two batch-time jobs only)
 # Outputs: spec/out/TAG-n4a, spec/out/TAG-n4b; the tables: python3 spec/scripts/cmp_arms.py spec/out TAG-n4a
 set -u
 TAG=$1
@@ -64,7 +64,7 @@ EOF
   [ $rc -eq 0 ] && [ $prc -eq 0 ]
 }
 case " $STEPS " in *" A "*)
-  if ! run n4a device-push n4a; then
+  if ! run n4a device-push ${N4A_PLAN:-n4a}; then
     echo "N4 RED in step A (device-push): the run stopped at the job above; stderr tail:"
     tail -n 5 $S/out/$TAG-n4a/stderr.log | cut -c1-300
     exit 1

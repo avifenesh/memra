@@ -10,6 +10,8 @@
 # env: ARMS (default "one peer device device peer one"), RUN0 (the runs are numbered from RUN0 + 1), LINKLOG=1 (see
 #      serve_bench.sh: a warm-up request and the cards' PCIe link state around it)
 set -u
+drops() { journalctl -k --no-pager 2>/dev/null | grep drop_caches | tail -n 2 | awk '{print $3" "$(NF-1)" "$NF}' | tr '\n' ';'; }
+echo "$(date +%H:%M:%S) page-cache drops before: $(drops)"
 TAG=$1; P=$2
 S=$LANE/spec
 TL=$LANE/bin/tp4_lease.sh
@@ -29,3 +31,4 @@ for arm in ${ARMS:-one peer device device peer one}; do
 done
 python3 $S/scripts/ab_summary.py $S/out/ps-$TAG
 echo "PAIR-SERVE-DONE $TAG"
+echo "$(date +%H:%M:%S) page-cache drops after: $(drops)"

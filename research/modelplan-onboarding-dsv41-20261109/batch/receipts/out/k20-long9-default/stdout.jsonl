@@ -1,0 +1,5 @@
+{"job":"verify-rows","id":"decode32k_he_summary","pass":true,"prompt":41098,"steps":96,"rows":96,"logit_rows_equal":96,"tap_rows_equal":96,"blocks":31,"rejected_rows":24,"first_bad":null,"arm_a_s":3.766123475,"arm_b_s":0.255588032}
+{"job":"verify-rows","id":"decode64k_en_continue","pass":true,"prompt":64443,"steps":92,"rows":92,"logit_rows_equal":92,"tap_rows_equal":92,"blocks":29,"rejected_rows":22,"first_bad":null,"arm_a_s":5.6338910559999995,"arm_b_s":0.248585}
+{"job":"verify-rows","id":"needle4800","pass":true,"prompt":73520,"steps":346,"rows":346,"logit_rows_equal":346,"tap_rows_equal":346,"blocks":109,"rejected_rows":86,"first_bad":null,"arm_a_s":7.550301256,"arm_b_s":0.917611399}
+{"job":"batch-rows","id":"longmix","pass":true,"sequences":4,"prompts":[42,73520,24,18343],"steps":[20,346,42,155],"rows":563,"logit_rows_equal":563,"tap_rows_equal":563,"device_argmax_equal":563,"calls_by_width":[0,191,113,22,19,0,0,0,0],"first_bad":null,"arm_a_s":10.250199133,"arm_b_s":9.721253601}
+SPEC-DONE jobs 4 failed 0

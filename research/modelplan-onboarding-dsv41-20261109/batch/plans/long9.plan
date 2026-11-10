@@ -1,0 +1,4 @@
+verify-rows decode32k_he_summary $LANE/dec/ids/decode32k_he_summary.prompt.i32 $LANE/dec/ids/decode32k_he_summary.gen.i32
+verify-rows decode64k_en_continue $LANE/dec/ids/decode64k_en_continue.prompt.i32 $LANE/dec/ids/decode64k_en_continue.gen.i32
+verify-rows needle4800 $LANE/dec/ids/needle4800.prompt.i32 $LANE/spec/ids/cross128.force.i32
+batch-rows longmix $LANE/dec/ids/gsm.prompt.i32 $LANE/dec/ids/gsm.gen.i32 $LANE/dec/ids/needle4800.prompt.i32 $LANE/spec/ids/cross128.force.i32 $LANE/dec/ids/code.prompt.i32 $LANE/dec/ids/code.gen.i32 $LANE/dec/ids/needle1200.prompt.i32 $LANE/dec/ids/hebrew_para.gen.i32

@@ -16,8 +16,10 @@ KEY=memra-dsv41-spec-gate
 mkdir -p $O
 cd $D
 sha256sum $T/memra-server $T/dsv41-run > $O/sha256.txt
-REF=$S/greedy9
-if [ ! -f $REF/greedy/needle1200/gen.i32 ]; then
+# GATE_LAYERS=full: the whole trunk, against the lane's full-trunk native references (GATE_REF, default $D/dec)
+LAYERS=${GATE_LAYERS:-9}
+if [ "$LAYERS" = full ]; then REF=${GATE_REF:-$D/dec}; TRUNK=(); else REF=$S/greedy9; TRUNK=(MEMRA_DSV41_TRUNK_LAYERS=$LAYERS); fi
+if [ "$LAYERS" != full ] && [ ! -f $REF/greedy/needle1200/gen.i32 ]; then
   mkdir -p $REF/greedy
   : > $REF/cases.txt
   for c in capital gsm multiturn sys_json hebrew needle needle1200; do echo "$c $D/dec/ids/$c.prompt.i32" >> $REF/cases.txt; done
@@ -27,7 +29,7 @@ if [ ! -f $REF/greedy/needle1200/gen.i32 ]; then
 fi
 printf '%s\n' "$@" > $O/arm.env
 env MEMRA_MODELS=v41=DeepSeek-V4.1-Flash-1017 MEMRA_ADDR=$ADDR MEMRA_API_KEY=$KEY MEMRA_DSV41_TOKEN_MAP=$TM \
-  MEMRA_DSV41_TRUNK_LAYERS=9 MEMRA_CTX=32768 MEMRA_MAX_SESSIONS=8 "$@" $T/memra-server > $O/server.log 2>&1 &
+  "${TRUNK[@]}" MEMRA_CTX=32768 MEMRA_MAX_SESSIONS=8 "$@" $T/memra-server > $O/server.log 2>&1 &
 SRV=$!
 ready=0
 for _ in $(seq 1 300); do

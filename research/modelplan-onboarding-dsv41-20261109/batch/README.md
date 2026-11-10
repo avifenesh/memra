@@ -7,8 +7,9 @@ mixed chat and long-context sequences, both sides of the 128-token window, one 1
 beside short ones, and a batch that changes width as sequences finish. The same holds on two ranks
 against one rank (both device transports) and on four ranks on four cards over the full 40-layer
 trunk. The served route steps its running requests in such calls and answers byte for byte as it
-does one request at a time. On the 9-layer all-resident trunk, eight requests at once went from
-163 to 465 tokens a second (2.86x) on one card at 250 W, with no cost to a lone request. On four
+does one request at a time. On the 9-layer all-resident trunk, eight requests at once go from
+175 to 539 tokens a second (3.08x) on one card at 250 W on the final head, with no cost to a lone
+request. On four
 cards and the full trunk eight requests share a 23.6 ms step (339 tokens a second) against 93.4 ms
 one after another. On a pair of cards the 9-layer call takes 8.5 ms for eight sequences (16.7 on
 one card) and the served route reaches 644 to 777 tokens a second for eight requests. The baselines are ahead on both shapes (vLLM: 1,007 tokens a second on the
@@ -27,7 +28,7 @@ the lane's baselines were measured on. It is not the model; no quality claim com
 
 Commits on `dsv41/batch-20261110` (on top of the drafting branch's `df3751407c`, with the speed
 lane's heads merged in as they were gated: `13d16037b4`, `3c83d8c1a6`, `74e1e68de1`, `9500e9960a`,
-`1a2bdbef7d`, `5d74b1db2a`, `76fc85cbae`, `72b2cf30c3`):
+`1a2bdbef7d`, `5d74b1db2a`, `76fc85cbae`, `72b2cf30c3`, `fb0ac3627c`, `1b7f65695d`):
 
 | commit | what |
 |---|---|
@@ -42,6 +43,8 @@ lane's heads merged in as they were gated: `13d16037b4`, `3c83d8c1a6`, `74e1e68d
 | `487ee70847` | `dsv41-spec` on the rank group: per-rank timed tally, `--stop-on-fail`; the gather flag in `argmax_rows` |
 | `e0cee9a9df` | the route's memory book stops booking the compressed rows a decode call used to copy |
 | `3eeedf89fa` | the draft's pick chain reduces over several blocks through one 64-bit key |
+| `23b7b75ca5` | decode selections take the long-row top-k past 32,768 keys; the long candidate form wired, off |
+| `ce9830ad29` | a batched step takes its host data from one block a rank; pooling over all rows; selection width classes; a lone step is a batch of one |
 
 ## What a batched call is
 
@@ -137,6 +140,64 @@ one-token call 6.05 / 5.95 / 6.05 ms at 3.7k tokens of context and 6.79 / 6.57 /
 copies were worth 1.5 to 3%, most at long context. Taking 244 per-sequence copies out of the
 8-sequence call bought 0.2 ms: the call waits on the card, not on its small launches.
 
+The lane's one-card bar at the same 250 W cap (vLLM, plain 9-layer step): 4.34 ms at one row,
+7.63 ms at 8 rows of one text, 7.81 ms for 8 chats (989 tokens a second). The final head here:
+4.65 ms at one sequence, 12.82 ms at 8 distinct chats, 539 tokens a second served.
+
+### Long rows of keys
+
+A one-row index selection over more than 32,768 keys takes the speed lane's long-row top-k
+(`Ops::topk_long`, `23b7b75ca5`): a one-token call's selection, and each sequence's row of a
+batched call. On the 9-layer trunk only ratio-2 layers select, so a row passes that count above
+65.5k tokens of context. `scripts/long_gate.sh`: verify-rows at 41k, 64k and 73.5k tokens (at
+73.5k the one-token arm runs the long form against the block arm's one-block kernel, 346 of 346
+rows) and a batched mix of a 73.5k and an 18k sequence beside two short ones (563 of 563), three
+times: default thresholds, never long, long on every decode row. 4 of 4 jobs each and the hashes
+of all four jobs identical across the three. The long candidate form is wired and off: its source
+(layer 20) and readers need the full trunk, so its gate is a four-card step (`scripts/n4_long.sh`).
+
+### One block of host data a step
+
+A step's launches now take everything the host knows from one block a rank (`StepBlock`: pinned
+host memory and a device buffer that stays where it is while the batch is at most 8 rows wide),
+written and uploaded once before the step's first launch. For `n` rows, in order: the rows'
+positions (`n` i32), the carried pre-mix (`n x 4` f32), the embedding rows (`n x 5120` bf16, on a
+row boundary of their own pitch), each Engram layer's gathered rows and scales, then 92 bytes a
+row for every layer (`step_layer_bytes`): the heads' key references (24 bytes), the ring slot
+address, the open pair's slot addresses for the kv and the gate row and the pair's two buffer
+addresses, the index-key and the compressed-row append addresses (null when the row completes no
+latent), the latent group's position, the region base and the selection count. The layout depends
+on the row count and the layer count alone. `Ctx::plan_keys_step` does, a layer at a time before
+any launch, what the host used to do between launches (sizing what a completing row appends to,
+counting the rows, deciding the selection width); `Ctx::attn_keys_step` then issues the layer.
+
+Two things make a layer's launches the same at every step. The ratio-2 pooling runs over all
+rows (`memra_v41_comp_pool2_keys`: each row's pair read where its sequence keeps it), and the
+norm, the index-key projection, the RoPE, the fp4 steps and the two appends that follow run on
+all rows too; a row whose pair is open gives a latent that is appended nowhere (a null address).
+And the selection width is one of a few classes (64, 128, 256, 512), the rows padded with -1.
+What still takes the key count and the position as launch parameters is one launch a sequence on
+an index source: the index score, the candidate pool and the top-k. A lone step is a batch of one
+(the server no longer has a plain-call case for it).
+
+The gate is the copy path, which keeps the old program (`dsv41-spec --copy-keys`: per-layer
+uploads, the pooling of each completing sequence by the one-pair kernel, the exact selection
+width): 12 of 12 jobs in each arm and the hashes of the 8 gate jobs identical, on one rank and on
+two (both transports), calls of 16 and 20 rows included, and the served chat gate 9 of 9 on one
+rank and on two. A call of one sequence is 448 launches on 9 layers, one of eight 476, the same
+on both parities of a ratio-2 pair (the old path: 437 and 481, a source layer's set depending on
+the parity).
+
+Served, the two builds A B B A on one card (`scripts/ab_serve_builds.sh`, `23b7b75ca5` against
+`ce9830ad29`; the driver's cache drop fell on the third and fourth runs, so that pair was run
+once more): decode_c1 198.4 / 189.8 / 191.3 against 197.9 / 194.2 / 198.8 tokens a second, conc8
+577.1 / 551.3 / 557.0 against 565.7 / 557.4 / 564.6; the served step 5.00 to 5.05 ms at one row
+on both builds and 11.5 to 12.1 against 11.8 to 12.0 at eight. So a lone request pays nothing
+for going through the batched call, and at eight requests the step path is even with the old
+one: the uploads it removes were not what a card-bound step waits on. It is the groundwork for
+replaying a step as a captured graph, not a speedup of its own.
+
+## Where an 8-sequence call goes
 ## Where an 8-sequence call goes
 
 `batch-time` counts the launches of two consecutive steps by layer and kernel (`dsv41_gpu::tally`,
@@ -190,6 +251,7 @@ three samples a run; A is `MEMRA_DSV41_BATCH_ROWS=1`, every step its own call):
 | `4203c2fb2f` | 156.2 / 154.2 / 154.8 | 405.4 / 402.1 / 407.5 | 2.62x | 171.5 / 167.0 / 164.4 | 163.4 / 163.8 / 163.3 |
 | `a7a5add916` | 151.3 / 153.2 / 155.0 | 441.5 / 436.2 / 435.3 | 2.85x | 170.5 / 162.7 / 165.6 | 164.5 / 164.5 / 163.5 |
 | `487ee70847` (another card) | 154.1 / 163.1 / 162.6 | 461.6 / 464.8 / 464.8 | 2.86x | 171.8 / 174.5 / 173.6 | 173.2 / 175.1 / 173.8 |
+| `395e64da77` (that card again) | 173.6 / 174.0 / 176.4, 177.7 | 533.8 / 536.9 / 540.8, 547.5 | 3.08x | 187.3 / 186.5 / 158.5, 195.6 | 185.5 / 185.9 / 186.5, 188.2 |
 
 On `4203c2fb2f` a lone request paid about 2% for going through the batched call; `a7a5add916`
 sends it through the plain call and the single-request medians are within the alone arm's spread.
@@ -204,8 +266,20 @@ token arrives at 1.44 s), the 512 steps 7.8 s, and what the engine thread does b
 0.4 ms a step. So the aggregate (436) sits 17% under the pure decode rate of the step (8 / 15.2 ms
 = 526): prefill throughput counts in this workload too.
 
+The `395e64da77` row holds eight runs. Another engine's start on the box dropped the page cache
+of the checkpoint files in the middle of its A B B A A B (the route maps the Engram tables from
+those files and this head does not populate them at load), so its fifth and sixth runs came
+after the drop: the fifth's single-request cell reads 158.5 (and the run took 169 s against 115
+to 118), every other cell of the two is in line with the runs before. The arm pair was run once
+more (the values after the commas); the ratio is over the medians of all four runs an arm.
+
 On `487ee70847` the served eight-row step averages 14.45 to 14.56 ms and a request decodes at
-63.8 tokens a second.
+63.8 tokens a second; on `395e64da77`, the final head, 12.24 to 12.33 ms and 74.3.
+
+The final head (`395e64da77`) repeats the whole chain green on one card: the keyed gate (the 8
+hash files identical between the arms and to the earlier build's), calls of 16 and 20 rows, two
+ranks on one card on both transports against one rank (hashes, calls of 20 rows, the served chat
+gate), the standard plan 22 of 22, the served chat gate.
 
 `7137c8efb2` takes one piece of that between-calls time out: the stream decoded every generated id
 again at every token (8.8 us a token averaged over a 512-token answer, growing with it); it now
@@ -254,6 +328,23 @@ The same plan and compares on a pair of cards, a rank a card, on the merged head
 | two cards, device-push, forward only | 3.16 | 3.77 | 5.28 | 8.26 |
 | vLLM, one card (the lane's baseline) | 4.02 | 4.59 | 6.17 | 7.14 |
 
+The pair gates repeat green on `31c80f0a96` (the speed lane's `fb0ac3627c` in: 12 of 12 on each
+transport, hashes and calls of 20 rows equal to the final one-card head's one-rank arm, served
+chat gate 9 of 9 each). Two builds on the pair, A B B A on each transport on a quiet box
+(`scripts/ab_pair.sh`; medians of two runs, which agree within 1%), device argmax, 1 / 2 / 4 / 8
+sequences:
+
+| build | peer-pull | device-push |
+|---|---|---|
+| `3d63df643d` | 3.91 / 4.58 / 5.92 / 8.47 | 3.68 / 4.18 / 5.55 / 8.28 |
+| `31c80f0a96` | 3.92 / 4.52 / 5.72 / 8.18 | 3.65 / 4.12 / 5.31 / 7.99 |
+
+Summed over the two ranks at 8 sequences, each kernel's own time a step: the split hidden launch
+(w1 + w3 + SwiGLU tiles) 5.12 to 5.13 ms, unchanged (the staged tile body of `72b2cf30c3` does not
+reach it), the w2 tiles 2.17 to 2.00, the fp32 FMA GEMM 2.61 to 2.29, everything else within 0.1.
+On the quiet box device-push leads peer-pull at every width in the gate binary; served, peer-pull
+led at eight requests (below).
+
 The second card buys 1.4x at one sequence and 1.97x at eight. A one-token call is 4.13 ms and an
 8-row verification call 7.78 ms on peer-pull (5.5 and 14.0 on one rank), the same at 3.7k, 18k and
 41k tokens of context.
@@ -269,11 +360,18 @@ three samples a run, runs interleaved one / peer / device / device / peer / one)
 
 The first peer-pull run is left out: its prompts took 7 to 8 s to first token (0.3 s elsewhere)
 and its rounds climbed from 153 to 239 (conc8) and 502 to 624 (dconc8) tokens a second while the
-first card drew 137 W; the next peer-pull server was fast from its first request. The cause was
-not found. An idle card of this box reports its PCIe link at generation 1 (the loaded ones at 5),
-and two later peer-pull runs logged the links: generation 1 before the server starts, 5 on both
-cards once the weights are loaded and before the first request, 5 to the end. So the link is up
-before a request arrives and does not explain that run.
+first card drew 137 W; the next peer-pull server was fast from its first request. The kernel log
+explains it: another session's driver on the box writes `drop_caches` before each of its engine
+starts, and did so at 09:57:50 and 09:58:19, inside that run (09:57:49 to 10:00:44). The route
+maps the Engram tables from the checkpoint files, so after a drop every Engram row of a prompt
+and of the first steps is a cold page (this build did not populate the tables at load). It is
+not the transport and not the PCIe link: an idle card of this box reports its link at generation
+1, and two later peer-pull runs logged generation 5 on both cards once the weights are loaded,
+before the first request. The same driver dropped the cache at 10:49:41 / 10:50:10 (the first two
+leases of the one-card chain on `395e64da77`: gates, their times are not used) and at 11:39:20 /
+11:39:48 (inside the pair's two-build A B B A below: its runs agree within 1% before and after,
+the timed cells exclude the load). The lane's lease scripts now record the last drops before and
+after every lease.
 
 Peer-pull leads at eight requests in every clean run (755 against 667 tokens a second, medians)
 and the two transports are even for a lone request (235 against 233), so the one-row edge
@@ -380,8 +478,10 @@ summaries (without the per-step server logs), the logs and one row per GPU lease
 box's paths and card ids removed; `plans/` and `scripts/` are what produced them (`chain.sh` is
 the one-card chain of the final head, `n4.sh` the four-card step, `cmp_arms.py` the hash compare
 and the tables; `pair_serve.sh` the served cell on a pair; `ab_spec.sh` two builds on one card).
-Final-head runs are the `k15-*` directories, the pair's the `k16-*` and `ps-k16` ones, the two
-builds' A B B A `abt-k16-k18`.
+The runs by build: `k15-*` is `487ee70847`, `k16-*` and `ps-k16` the pair on `3d63df643d`,
+`abt-k16-k18` the two builds' A B B A, `k18-*` and `ab-k18` the head `395e64da77`, `k19-*` the
+pair on `31c80f0a96`, `abp-k16-k19` the two builds on the pair, `k20-long9-*` the long-row gate,
+`k22-*` and `abs-k20-k22` the step block's gate chain and served A B B A (`ce9830ad29`).
 
 ## Not done
 
@@ -391,5 +491,6 @@ builds' A B B A `abt-k16-k18`.
   of 8, and a 32-request step on four cards is about four 23 ms calls.
 - The per-sequence index path (score, top-k, candidates from a key table): 0.25 ms of the call on
   9 layers, about 0.9 ms on the full trunk at 8 sequences.
-- The served route on four cards (this block's four-card run is the gate binary's).
+- The served route on four cards (this block's four-card run is the gate binary's;
+  `scripts/n4_serve.sh` is ready), and the long candidate form's gate there.
 - Drafting through the server (the door stays off): its served gates, acceptance and A/B.

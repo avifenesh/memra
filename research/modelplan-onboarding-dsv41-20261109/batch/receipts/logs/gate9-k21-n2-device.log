@@ -1,0 +1,25 @@
+12:14:46 gate9n2device: lease on GPU1 (GPU-<uuid>), receipt $LANE/leases/spec-gate9n2device-20261110T121445; GPU2  83, 73 %, 0x0000000000000004, 137255157 us, 0 us
+server ready after 8 s
+[dsv41-serve] v41: MEMRA_DSV41_TRUNK_LAYERS: 9 of the 40 trunk layers run. The answers are NOT the checkpoint's; this is a rehearsal of the route's memory and serving loop
+[dsv41-serve] v41: card 0 ranks [0, 1]: weights 63.95 GiB resident (31.97 GiB a rank) in 6.3s, 30.42 GiB of 95.06 GiB left for requests (15.21 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.0s; one-token call 5.4 ms
+[dsv41-serve] v41: 2 rank(s) on devices [0, 0]; routed experts on the cards; resident weights [34332482712, 34332482712] bytes per rank; ceiling [16333462884, 16333462884] bytes; expert cache [] slots of 18800640 bytes (floor 0 slots, all 0); max_seq 32768; 8 
+[dsv41-serve] v41: capacity: the longest session with the route idle is 32768 positions (max_seq 32768); at once: 3907 sessions of 1,536 positions (1,024-token prompts), 1854 of 4,608 (4,096-token prompts), 147 of 32,768, 145 of 131,072; MEMRA_MAX_SESSIONS 8
+[dsv41-serve] v41: up in 6.6s
+2490
+[dsv41-step] calls=2 prefill=31 decode_rows=2 step_s=0.040 transient_peak=7284736 predicted_live_need=1623948689 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=2 prefill=42 decode_rows=3 step_s=0.047 transient_peak=11405312 predicted_live_need=1628167299 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=2 prefill=16 decode_rows=2 step_s=0.031 transient_peak=327936 predicted_live_need=1618199065 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+render: PASS 7 prompts tokenized through /v1/tokenize vs the tape ids
+solo: FAIL served greedy content and token counts equal dsv41-run --gen on 7 cases
+batched: FAIL five concurrent requests answer byte for byte as solo
+stream: FAIL 200 deltas of sys_json
+sampled: FAIL seed 1017, T 0.8, top_p 0.95, top_k 40: two solo runs and one beside four others
+stops: FAIL stop 'lle' cuts sys_json at its first occurrence; max_tokens 5 cuts gsm with finish length
+penalties: PASS frequency 0.5, presence 0.3 greedy: served, identical twice
+budget: PASS 63 -> 200 (reasoning 118 chars), 101 -> 400
+speed: story 200 {'prompt_tokens': 22, 'completion_tokens': 128, 'total_tokens': 150, 'prompt_tokens_details': {'cached_tokens': 0}, 'elapsed_s': 0.797589076} in 0.8s
+CHAT-GATE FAIL
+serve_gate9 gate9-k21-n2-device rc 1
+12:15:14 gate9n2device: page-cache drops before: 11:39:20 drop_caches: 3;11:39:48 drop_caches: 3; after: 11:39:20 drop_caches: 3;11:39:48 drop_caches: 3; 
+12:15:14 gate9n2device: lease ended rc 1; GPU2  77, 66 %, 0x0000000000000400, 137255157 us, 0 us

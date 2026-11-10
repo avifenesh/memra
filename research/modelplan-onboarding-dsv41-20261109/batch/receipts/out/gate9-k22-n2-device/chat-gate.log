@@ -1,0 +1,10 @@
+render: PASS 7 prompts tokenized through /v1/tokenize vs the tape ids
+solo: PASS served greedy content and token counts equal dsv41-run --gen on 7 cases
+batched: PASS five concurrent requests answer byte for byte as solo
+stream: PASS 200 deltas of sys_json
+sampled: PASS seed 1017, T 0.8, top_p 0.95, top_k 40: two solo runs and one beside four others
+stops: PASS stop 'lle' cuts sys_json at its first occurrence; max_tokens 5 cuts gsm with finish length
+penalties: PASS frequency 0.5, presence 0.3 greedy: served, identical twice
+budget: PASS 63 -> 200 (reasoning 95 chars), 101 -> 400
+speed: story 200 {'prompt_tokens': 22, 'completion_tokens': 128, 'total_tokens': 150, 'prompt_tokens_details': {'cached_tokens': 0}, 'elapsed_s': 0.781456275} in 0.8s
+CHAT-GATE PASS

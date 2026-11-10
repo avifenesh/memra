@@ -30,9 +30,19 @@ UUID=$(nvidia-smi --query-gpu=index,uuid --format=csv,noheader | awk -F', ' -v i
 R=$D/leases/spec-$NAME-$(date +%Y%m%dT%H%M%S)
 mkdir -p "$R"
 nvidia-smi --query-gpu=index,uuid,power.limit,temperature.gpu,fan.speed,clocks.gr --format=csv > "$R/cards.csv"
-echo "$(date +%H:%M:%S) $NAME: lease on GPU$CARD ($UUID), receipt $R"
+# the neighbour card (GPU2, another session's): temperature, fan and thermal-slowdown counters at the lease's start and end
+G2Q="nvidia-smi -i 2 --query-gpu=timestamp,index,temperature.gpu,fan.speed,clocks_event_reasons.active,clocks_event_reasons_counters.sw_thermal_slowdown,clocks_event_reasons_counters.hw_thermal_slowdown --format=csv"
+$G2Q > "$R/gpu2.csv"
+# the last page-cache drops in the kernel log (another session's driver writes drop_caches before its engine
+# starts): a drop inside a timed run makes its load and its first Engram rows cold
+drops() { journalctl -k --no-pager 2>/dev/null | grep drop_caches | tail -n 2 | awk '{print $3" "$(NF-1)" "$NF}' | tr '\n' ';'; }
+echo "before: $(drops)" > "$R/drops.txt"
+echo "$(date +%H:%M:%S) $NAME: lease on GPU$CARD ($UUID), receipt $R; GPU2 $(sed -n 2p "$R/gpu2.csv" | cut -d, -f3-)"
 $D/bin/memra-gpu-run --gpus "$UUID" --receipt "$R" --box-lock $LOCK_DIR/gpu$CARD.lock \
   --timeout "$TO" --wait 1800 -- taskset -c ${SPEC_CPUS:-28-31,60-63} "$@"
 rc=$?
-echo "$(date +%H:%M:%S) $NAME: lease ended rc $rc"
+$G2Q | sed -n 2p >> "$R/gpu2.csv"
+echo "after: $(drops)" >> "$R/drops.txt"
+echo "$(date +%H:%M:%S) $NAME: page-cache drops $(cat "$R/drops.txt" | tr '\n' ' ')"
+echo "$(date +%H:%M:%S) $NAME: lease ended rc $rc; GPU2 $(tail -n 1 "$R/gpu2.csv" | cut -d, -f3-)"
 exit $rc

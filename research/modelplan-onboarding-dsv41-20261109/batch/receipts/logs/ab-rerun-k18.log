@@ -1,0 +1,13 @@
+11:11:25 run 7 arm A rc 0
+11:12:18 run 8 arm B rc 0
+alone    c1     [187.32, 186.51, 158.5, 195.59] median 186.9
+alone    conc8  [173.56, 173.98, 176.38, 177.71] median 175.2
+alone    req    [22.415, 22.46, 22.755, 22.915] median 22.6
+alone    conc8 clock MHz [1789, 1765, 1778, 1811] ttft max s [1.4268, 1.4129, 1.3508, 1.3292]
+batched  c1     [185.45, 185.91, 186.47, 188.18] median 186.2
+batched  conc8  [533.76, 536.88, 540.84, 547.51] median 538.9
+batched  req    [74.06, 74.29, 74.68, 75.645] median 74.5
+batched  conc8 clock MHz [1582, 1566, 1528, 1546] ttft max s [1.3201, 1.2887, 1.2803, 1.2554]
+conc8 batched/alone 3.08x
+decode_c1 batched/alone 0.996x
+AB-RERUN-DONE k18

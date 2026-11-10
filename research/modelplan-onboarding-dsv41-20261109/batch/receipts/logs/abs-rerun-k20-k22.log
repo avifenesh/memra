@@ -1,0 +1,11 @@
+12:43:46 run 5 k22 rc 0 abs-r5: page-cache drops before: 12:40:48 drop_caches: 3;12:41:18 drop_caches: 3; after: 12:40:48 drop_caches: 3;12:41:18 drop_caches: 3; 
+12:44:38 run 6 k20 rc 0 abs-r6: page-cache drops before: 12:40:48 drop_caches: 3;12:41:18 drop_caches: 3; after: 12:40:48 drop_caches: 3;12:41:18 drop_caches: 3; 
+k20      c1     [198.36, 189.78, 191.25] median 191.2
+k20      conc8  [577.12, 551.26, 556.98] median 557.0
+k20      req    [79.675, 75.995, 76.8] median 76.8
+k20      conc8 clock MHz [1659, 1568, 1582] ttft max s [1.2115, 1.2349, 1.2183]
+k22      c1     [197.88, 194.24, 198.79] median 197.9
+k22      conc8  [565.65, 557.37, 564.56] median 564.6
+k22      req    [77.935, 76.875, 77.775] median 77.8
+k22      conc8 clock MHz [1624, 1603, 1626] ttft max s [1.1911, 1.2191, 1.1925]
+ABS-RERUN-DONE
