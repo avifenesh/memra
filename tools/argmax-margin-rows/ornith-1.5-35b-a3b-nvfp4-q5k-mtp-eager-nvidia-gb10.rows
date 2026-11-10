@@ -1,0 +1,24 @@
+# Main's argmax margin probe rows for one gate cell (memra#1204). The gate compares a
+# candidate's table for this window with these lines, byte for byte.
+model	Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp
+model_sha256	72ff9600aa2b0de77a5b27041a84448c2ce88c7b2055529fc23b3cd5bf518fd3
+prompt	board-2048
+prompt_sha256	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc
+decode	eager
+device	NVIDIA GB10
+window	12
+commit	031f146690
+receipt	research/argmax-gate-rule-20261110/calibration/gb10/ornith-eager/probe.log
+rows
+2036     24822         8.460777283e0    24822        8.518913269e0    2.192625999e-1   yes
+2037     63            7.791175842e-1   63           1.210300446e0    5.006408691e-1   yes
+2038     318           6.520118713e-1   318          7.237071991e-1   1.736145020e-1   yes
+2039     42714         9.556617737e-1   42714        6.170597076e-1   2.616462708e-1   yes
+2040     40049         7.654417038e0    40049        8.568016052e0    7.916355133e-1   yes
+2041     681           2.773532867e-1   681          3.759765625e-2   2.715473175e-1   yes
+2042     681           3.763027191e-1   681          1.086120605e-1   1.376113892e-1   yes
+2043     735           7.628612518e-1   735          5.080127716e-1   1.878700256e-1   yes
+2044     264           2.674997330e0    264          2.556728363e0    2.030830383e-1   yes
+2045     2972          2.050842285e0    2972         2.166429520e0    2.302341461e-1   yes
+2046     42714         4.006238937e0    42714        4.003623962e0    3.031539917e-2   yes
+2047     2131          7.025051117e-1   2131         1.157195091e0    6.325540543e-1   yes

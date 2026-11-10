@@ -1,0 +1,24 @@
+# Main's argmax margin probe rows for one gate cell (memra#1204). The gate compares a
+# candidate's table for this window with these lines, byte for byte.
+model	Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp
+model_sha256	72ff9600aa2b0de77a5b27041a84448c2ce88c7b2055529fc23b3cd5bf518fd3
+prompt	board-2048
+prompt_sha256	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc
+decode	batch
+device	NVIDIA GeForce RTX 5090 Laptop GPU
+window	12
+commit	031f146690
+receipt	research/argmax-gate-rule-20261110/calibration/rtx5090-laptop/ornith-batch/probe.log
+rows
+2036     24822         8.701321602e0    24822        8.221403122e0    4.703369141e-1   yes
+2037     63            1.118469238e0    63           1.260702133e0    1.025238037e-1   yes
+2038     318           7.163505554e-1   318          8.524818420e-1   1.986465454e-1   yes
+2039     42714         9.470367432e-1   42714        5.376815796e-1   3.431777954e-1   yes
+2040     40049         7.587457657e0    40049        7.445582390e0    3.132257462e-1   yes
+2041     681           2.401103973e-1   681          6.676483154e-2   1.311912537e-1   yes
+2042     681           2.567424774e-1   681          1.109828949e-1   1.117801666e-1   yes
+2043     735           5.995883942e-1   735          4.608535767e-1   2.608642578e-1   yes
+2044     264           2.385614395e0    264          2.688825607e0    2.600784302e-1   yes
+2045     2972          2.528703690e0    2972         2.668021202e0    1.563768387e-1   yes
+2046     42714         3.829055786e0    42714        3.753444672e0    6.257247925e-2   yes
+2047     2131          1.213752747e0    2131         6.205425262e-1   1.091283798e0    yes

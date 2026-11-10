@@ -1,0 +1,8 @@
+FLOOR: 3.5582 (largest gap shift over 1846 agreeing rows, set by row 306; p50 0.1972, p99 1.5224, p99.9 2.2653; known rows (calibration flips above it, memra#1203): 41 (shift 4.3718), 1809 (shift 4.1497); research/argmax-gate-rule-20261110/calibration/rtx5090-laptop/ornith-eager/probe.log)
+near-tie pos=2037 prefill_top1=63 margin_p=1.1185 decode_top1=99999 margin_d=0.0500 spread=0.0715 gap_shift=1.1685 <= floor=3.5582
+SUMMARY flips=1 bad=0 near_ties=1 wide_flips=0 wide_rows=0 uncalibrated_flips=0 known_rows=0 known_rows_wider=0 floor=3.5582 budget=1
+ROW-DIFF pos=2037
+  stored (main): prefill_top1=63 margin_p=1.118469238e0 decode_top1=63 margin_d=1.210300446e0 spread=7.147789001e-2
+  candidate:     prefill_top1=63 margin_p=1.118469238e0 decode_top1=99999 margin_d=5.000000075e-2 spread=7.147789001e-2 FLIP
+STORED-ROWS: DIFFERENT (1 of 12 positions differ from main's rows, measured at 031f146690; research/argmax-gate-rule-20261110/calibration/rtx5090-laptop/ornith-eager/probe.log)
+exit=1

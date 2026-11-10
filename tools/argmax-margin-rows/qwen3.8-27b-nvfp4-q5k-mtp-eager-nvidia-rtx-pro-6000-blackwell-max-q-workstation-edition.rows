@@ -1,0 +1,24 @@
+# Main's argmax margin probe rows for one gate cell (memra#1204). The gate compares a
+# candidate's table for this window with these lines, byte for byte.
+model	Qwen3.8-27B-NVFP4-Q5K-mtp
+model_sha256	1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a
+prompt	board-2048
+prompt_sha256	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc
+decode	eager
+device	NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition
+window	12
+commit	031f146690
+receipt	research/argmax-gate-rule-20261110/calibration/rtxpro6000-maxq/q38-eager/probe.log
+rows
+2036     24822         1.090445423e1    24822        1.089648533e1    8.927154541e-2   yes
+2037     63            2.095954895e0    63           2.176393509e0    1.070404053e-1   yes
+2038     318           4.975013733e-1   318          6.255187988e-1   6.960678101e-2   yes
+2039     77            6.622791290e-1   77           6.887283325e-1   4.930305481e-2   yes
+2040     40049         5.847123146e0    40049        5.901087761e0    9.961700439e-2   yes
+2041     681           5.187492371e-1   681          4.962520599e-1   5.734443665e-2   yes
+2042     681           7.433319092e-1   681          6.933574677e-1   5.488204956e-2   yes
+2043     11069         4.842796326e-1   11069        4.474945068e-1   5.205917358e-2   yes
+2044     264           2.461299896e0    264          2.577905655e0    1.014137268e-1   yes
+2045     2972          1.387479782e0    2972         1.349269867e0    2.095603943e-2   yes
+2046     42714         2.579936981e0    42714        2.602527618e0    1.130828857e-1   yes
+2047     485           9.376869202e-1   485          1.063982010e0    1.110744476e-1   yes

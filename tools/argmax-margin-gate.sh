@@ -484,6 +484,7 @@ if [ $CALIBRATE = 1 ]; then
     if [ "$rc" -ne 0 ]; then echo "  FAIL: the table gives no floor"; exit 1; fi
     if [ "$PRIME" = MISMATCH-STRUCTURED ] || [ "$SERVED" = MISMATCH ]; then
         echo "  FAIL: main's own cell fails its prime or served check; a floor is not taken from it"
+        [ -z "$ROWS_OUT" ] || rm -f -- "$ROWS_OUT"   # nor its stored rows
         exit 1
     fi
     echo "  CALIBRATED: add the FLOOR-ROW line to $FLOORS with its banked log as the receipt"

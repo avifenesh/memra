@@ -643,6 +643,13 @@ class GateTest(unittest.TestCase):
                 self.assertEqual(r.returncode, 1, r.stdout)
                 self.assertIn("a floor is not taken from it", r.stdout)
                 self.assertNotIn("CALIBRATED:", r.stdout)
+        # Nor are its stored rows kept.
+        rows_out = self.root / "cell.rows"
+        r = self.run_gate(rows, extra=("--calibrate", "--receipt", "research/lane/cal.log", "--rows-out",
+                                       str(rows_out), "--commit", "c"),
+                          prime=PRIME_MATCH.replace("class=MATCH", "class=MISMATCH-STRUCTURED"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertFalse(rows_out.exists())
 
     def test_per_prompt_budget_covers_only_its_model_and_prompt(self):
         def table(flips, window=12):
