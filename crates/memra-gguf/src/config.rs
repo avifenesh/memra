@@ -3812,8 +3812,9 @@ pub struct HfConfig {
     /// Parsed in `parse()` when vision_config.model_type == "qwen4_exp" (the generic
     /// VisionConfig parse reads gemma key names and does not speak this file).
     pub qwen4exp_vision: Option<Qwen4ExpVisionConfig>,
-    /// Parsed in `parse()` when vision_config.model_type == "qwen3_5_vision" (Qwen3.5/3.6/
-    /// 3.8 dense and MoE). Same tower geometry keys as qwen4_exp.
+    /// Parsed in `parse()` when vision_config.model_type is "qwen3_5_vision" (the Qwen3.8-27B
+    /// exports) or "qwen3_5" (the official Qwen3.5 4B, 4B-Base and 9B checkpoints write the
+    /// trunk's model_type there, memra #1166). Same tower geometry keys as qwen4_exp.
     pub qwen35_vision: Option<Qwen4ExpVisionConfig>,
     // ---- Step-3.5 / Step-3.7-Flash (`step3p5` text config) ----
     pub attention_other_num_heads: Option<u32>,
@@ -4184,7 +4185,10 @@ impl HfConfig {
                     )?,
                     window_size: req_u("window_size")?,
                 });
-            } else if matches!(vision_type.as_deref(), Some("qwen4_exp" | "qwen3_5_vision")) {
+            } else if matches!(
+                vision_type.as_deref(),
+                Some("qwen4_exp" | "qwen3_5_vision" | "qwen3_5")
+            ) {
                 let family = vision_type.as_deref().unwrap_or_default();
                 let req = |key: &str| -> Result<u32, String> {
                     vision.u32(key)?.ok_or_else(|| {
@@ -5466,6 +5470,47 @@ pub(crate) mod hf_tests {
         let partial = HfConfig::try_parse(&with(&vision.replace("\"depth\": 27, ", ""))).unwrap();
         assert!(partial.qwen35_vision.is_none());
         assert_eq!(partial.hidden_size, 2048, "the text model still parses");
+    }
+
+    /// memra #1166: the official Qwen3.5-4B checkpoint writes `"model_type": "qwen3_5"` inside
+    /// `vision_config` (the trunk's model_type, not `qwen3_5_vision`), with the same geometry
+    /// keys. This is that checkpoint's `vision_config`, verbatim. Before the fix the geometry
+    /// stayed unset, the qwen35 pack censused no tower, and the bind refused the 297 bundled
+    /// `model.visual.*` tensors as extras.
+    #[test]
+    fn qwen35_vision_geometry_parses_the_qwen3_5_model_type() {
+        let vision = r#"{"deepstack_visual_indexes": [], "depth": 24,
+            "hidden_act": "gelu_pytorch_tanh", "hidden_size": 1024, "in_channels": 3,
+            "initializer_range": 0.02, "intermediate_size": 4096, "model_type": "qwen3_5",
+            "num_heads": 16, "num_position_embeddings": 2304, "out_hidden_size": 2560,
+            "patch_size": 16, "spatial_merge_size": 2, "temporal_patch_size": 2}"#;
+        let cfg = HfConfig::try_parse(&QWEN3_17B.replacen(
+            "\"vocab_size\": 151936",
+            &format!("\"vocab_size\": 151936,\n      \"vision_config\": {vision}"),
+            1,
+        ))
+        .unwrap();
+        let g = cfg
+            .qwen35_vision
+            .as_ref()
+            .expect("the qwen3_5 vision model_type carries the tower geometry");
+        assert_eq!(
+            (
+                g.depth,
+                g.hidden_size,
+                g.intermediate_size,
+                g.out_hidden_size
+            ),
+            (24, 1024, 4096, 2560)
+        );
+        assert_eq!(
+            (g.num_heads, g.num_position_embeddings, g.patch_size),
+            (16, 2304, 16)
+        );
+        assert_eq!(
+            (g.spatial_merge_size, g.temporal_patch_size, g.in_channels),
+            (2, 2, 3)
+        );
     }
 
     #[test]

@@ -8,6 +8,13 @@ Owner directive: serve vision (image AND video), one-day lane, back to perf afte
   intermediate 4304, gelu_pytorch_tanh, patch 16, spatial_merge 2, temporal_patch 2,
   num_position_embeddings 2304 (LEARNED absolute pos, 48x48 grid, bilinear-interp per
   image grid — NOT rope), out_hidden 5120, deepstack []. dtype bf16, ~700M params.
+- Other towers (added 2026-11-10, memra #1166): the official Qwen3.5 checkpoints write
+  `"model_type": "qwen3_5"` inside vision_config, not `qwen3_5_vision`, with the same keys.
+  The Qwen3.5-4B tower is depth 24, hidden 1024, intermediate 4096, out_hidden 2560 (297
+  tensors in the trunk shards). The trunk contract censuses it as vision-owned, so the
+  checkpoint binds and serves text. The tower executor here is fixed to the 27B geometry
+  above: pointing `MEMRA_VISION_DIR` at the 4B directory fails the tower load at boot, and
+  no Qwen3.5 tower has a parity receipt.
 - text side rope_scaling: **null** — NO M-RoPE. Vision tokens take standard sequential
   positions in the TRUNK. The TOWER, however, carries its own 2D vision rope
   (Qwen3_5VisionRotaryEmbedding, theta 10000, head_dim/2 angles split h/w 18+18,

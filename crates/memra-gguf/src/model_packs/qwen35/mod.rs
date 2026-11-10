@@ -50,9 +50,11 @@ pub static PACK: ModelPack = ModelPack {
 /// The canonical trunk contract plus the qwen3_5 ViT when the trunk shards bundle it.
 ///
 /// The tower is side-loaded at serving (`MEMRA_VISION_DIR`, `memra_engine::vision`), never part
-/// of the plan. Most quantized trunks strip it, but some (NVIDIA's NVFP4 export of Qwen3.8-27B)
-/// ship the 333 BF16 `model.visual.*` tensors in the same shards. They are censused here as
-/// vision-owned with their exact geometry from `vision_config`, so the trunk loader's
+/// of the plan. Most quantized trunks strip it, but some checkpoints ship the BF16
+/// `model.visual.*` tensors in the trunk shards: NVIDIA's NVFP4 export of Qwen3.8-27B (333
+/// tensors, `vision_config.model_type` `qwen3_5_vision`) and the official Qwen3.5 checkpoints
+/// (297 on the 4B, which write the trunk's `qwen3_5` there, memra #1166). They are censused
+/// here as vision-owned with their exact geometry from `vision_config`, so the trunk loader's
 /// consumption audit leaves them to the vision owner instead of the bind refusing them as
 /// extras. They are optional because a stripped trunk with the same config carries none; a
 /// partial tower still refuses when the vision side-load reads it.
@@ -158,11 +160,12 @@ mod vision_census_tests {
         "in_channels":3}"#;
 
     fn config(with_vision: bool) -> ModelConfig {
-        let vision = if with_vision {
-            format!(",{VISION}")
-        } else {
-            String::new()
-        };
+        config_with(with_vision.then_some(VISION))
+    }
+
+    /// A tiny qwen3_5 trunk config with the given `vision_config` member, or none.
+    fn config_with(vision: Option<&str>) -> ModelConfig {
+        let vision = vision.map(|v| format!(",{v}")).unwrap_or_default();
         ModelConfig::from_hf(&HfConfig::parse(&format!(
             r#"{{"model_type":"qwen3_5","num_hidden_layers":4,
             "num_nextn_predict_layers":1,"hidden_size":8,
@@ -267,5 +270,90 @@ mod vision_census_tests {
             text_contract.requirements.len(),
             contract.requirements.len() - vision.len()
         );
+    }
+
+    /// memra #1166: the official Qwen3.5 checkpoints (4B, 4B-Base, 9B) write the trunk's
+    /// model_type, `qwen3_5`, inside `vision_config`, where the Qwen3.8-27B exports write
+    /// `qwen3_5_vision`. The geometry keys are the same. A checkpoint that bundles the tower
+    /// under that spelling must bind exactly as one under the other: before the fix the
+    /// contract declared no tower and this bind refused with "extra checkpoint tensors", the
+    /// refusal `run-gen` and the server printed for the official Qwen3.5-4B directory.
+    #[test]
+    fn the_qwen3_5_vision_model_type_binds_a_bundled_tower() {
+        let schema = |cfg: &ModelConfig| {
+            qwen35_tensor_schema(
+                cfg,
+                &canonical_plan(cfg).unwrap(),
+                CheckpointDialect::HfSafetensors,
+                ContractOptions::default(),
+            )
+            .unwrap()
+        };
+        let reference = config(true);
+        let official = config_with(Some(&VISION.replace("qwen3_5_vision", "qwen3_5")));
+        // The checkpoint: the trunk plus every tower tensor, as the reference spelling censuses it.
+        let checkpoint = census(&schema(&reference), true);
+        let tower = checkpoint
+            .iter()
+            .filter(|e| e.name.starts_with("model.visual."))
+            .count();
+        assert_eq!(tower, 12 * 2 + 9);
+
+        let contract = schema(&official);
+        if let Err(err) = contract.bind(&checkpoint) {
+            panic!("a tower bundled under vision model_type qwen3_5 must bind: {err}");
+        }
+        assert_eq!(official.qwen35_vision, reference.qwen35_vision);
+        // The stripped trunk of the same config still binds, and a wrong tower shape still refuses.
+        contract.bind(&census(&contract, false)).unwrap();
+        let mut bad = census(&schema(&reference), true);
+        bad.iter_mut()
+            .find(|e| e.name == "model.visual.pos_embed.weight")
+            .unwrap()
+            .shape = vec![15, 8];
+        assert!(contract.bind(&bad).is_err());
+    }
+
+    /// memra #1166: the official Qwen3.5-4B tower geometry, sent through the schema. The
+    /// checkpoint's shards carry 297 `model.visual.*` tensors (12 a block at depth 24, 6 merger,
+    /// the patch weight and bias, the position table) with these shapes; the contract must
+    /// declare exactly that, or the bind still refuses them.
+    #[test]
+    fn the_qwen35_4b_tower_geometry_declares_its_297_tensors() {
+        // The checkpoint's vision_config, verbatim, on the tiny trunk.
+        let cfg = config_with(Some(
+            r#""vision_config":{"deepstack_visual_indexes":[],"depth":24,
+            "hidden_act":"gelu_pytorch_tanh","hidden_size":1024,"in_channels":3,
+            "initializer_range":0.02,"intermediate_size":4096,"model_type":"qwen3_5",
+            "num_heads":16,"num_position_embeddings":2304,"out_hidden_size":2560,
+            "patch_size":16,"spatial_merge_size":2,"temporal_patch_size":2}"#,
+        ));
+        let contract = qwen35_tensor_schema(
+            &cfg,
+            &canonical_plan(&cfg).unwrap(),
+            CheckpointDialect::HfSafetensors,
+            ContractOptions::default(),
+        )
+        .unwrap();
+        let vision: Vec<_> = contract
+            .requirements
+            .iter()
+            .filter(|r| matches!(r.owner, TensorOwner::Vision(_)))
+            .collect();
+        assert_eq!(vision.len(), 297);
+        let shape = |name: &str| {
+            vision
+                .iter()
+                .find(|r| r.names[0] == format!("model.visual.{name}"))
+                .unwrap_or_else(|| panic!("{name} is not declared"))
+                .shape
+                .clone()
+        };
+        assert_eq!(shape("patch_embed.proj.weight"), vec![1024, 3, 2, 16, 16]);
+        assert_eq!(shape("pos_embed.weight"), vec![2304, 1024]);
+        assert_eq!(shape("merger.linear_fc1.weight"), vec![4096, 4096]);
+        assert_eq!(shape("merger.linear_fc2.weight"), vec![2560, 4096]);
+        assert_eq!(shape("blocks.23.attn.qkv.weight"), vec![3072, 1024]);
+        assert_eq!(shape("blocks.23.mlp.linear_fc1.weight"), vec![4096, 1024]);
     }
 }
