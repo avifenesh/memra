@@ -1,0 +1,13 @@
+argmax-margin-gate: model=Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf prompt=board-2048.txt window=12 decode=eager canary=1
+  device: NVIDIA GeForce RTX 5090 Laptop GPU
+  flip budget: 1 (row: default)
+  [canary] injected a WIDE flip (pos 9999, margins 1000 and 1000, gap shift 2000)
+           that no floor covers; the judge must reject that row
+  [canary] injected a MISMATCH-STRUCTURED batched-prime line; the reader saw: MISMATCH-STRUCTURED
+  FLOOR: 3.5582 (largest gap shift over 1846 agreeing rows, set by row 306; p50 0.1972, p99 1.5224, p99.9 2.2653; known rows (calibration flips above it, memra#1203): 41 (shift 4.3718), 1809 (shift 4.1497); research/argmax-gate-rule-20261110/calibration/rtx5090-laptop/ornith-eager/probe.log)
+  WIDE-FLIP pos=9999 prefill_top1=111111 margin_p=1000.0000 decode_top1=222222 margin_d=1000.0000 spread=1000.0000 gap_shift=2000.0000 > floor=3.5582
+  SUMMARY flips=1 bad=1 near_ties=0 wide_flips=1 wide_rows=0 uncalibrated_flips=0 known_rows=0 known_rows_wider=0 floor=3.5582 budget=1
+  PRIME-SUMMARY prime=MATCH
+    PRIME-GATE: class=MATCH bp_argmax=2131 tw_argmax=2131 tw_margin=1.157195091e0 bp_margin=9.429826736e-1 maxdiff=1.908407331e0
+  CANARY PASS: the judge rejected the injected wide flip as required (teeth)
+  raw: ~/.cache/memra-gate-rule/cells/g-or-e-canary/gate/gate-Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp-board-2048.canary.log

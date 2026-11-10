@@ -1,0 +1,7 @@
+argmax-margin-gate: model=Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf prompt=board-2048.txt window=all decode=eager canary=0
+  device: NVIDIA GeForce RTX 5090 Laptop GPU
+  CALIBRATION: rows=2045 agreeing=1846 flips=199 floor=3.558178902e0 set_by_row=306 p50=1.972351074e-1 p99=1.522388458e0 p99.9=2.265349388e0 flips_above_floor=2 max_flips_in_12=5
+  FLOOR-ROW: Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp	board-2048	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc	eager	NVIDIA GeForce RTX 5090 Laptop GPU	3.558178902e0	1846	306	1.972351074e-1	1.522388458e0	2.265349388e0	41:18:1.472389221e0:15:2.899415970e0;1809:22:4.079244614e0:332:7.047653198e-2	~/.cache/memra-gate-rule/cells/g-or-e-cal/gate/gate-Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp-board-2048.calibrate.log
+  PRIME-SUMMARY prime=MATCH
+  raw: ~/.cache/memra-gate-rule/cells/g-or-e-cal/gate/gate-Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp-board-2048.calibrate.log
+  CALIBRATED: add the FLOOR-ROW line to tools/argmax-margin-floors.tsv with its banked log as the receipt
