@@ -41,8 +41,9 @@
 # disagree about i against j by at least margin_p + margin_d. At an agreeing row they disagree
 # about the top-1 against the runner-up by |margin_p - margin_d|. That number is the row's GAP
 # SHIFT. The FLOOR of a (model, prompt, decode program, device) is the largest gap shift at an
-# agreeing row over the whole prompt, measured once by --calibrate and kept, with its row
-# count and the row that set it, in tools/argmax-margin-floors.tsv.
+# agreeing row over the whole prompt, measured once by --calibrate and kept in
+# tools/argmax-margin-floors.tsv with its row count, the row that set it, the p50, p99 and
+# p99.9 of the agreeing rows' gap shift (how loose the maximum is) and its known rows.
 #
 #   near tie    a flip whose gap shift is inside the floor. Counted against --max-flips.
 #   WIDE-FLIP   a flip whose gap shift is above the floor. FAILS at any count: one program
@@ -52,6 +53,13 @@
 #               a decision by more than their calibrated difference without crossing it.
 #   TOO-MANY-NEAR-TIES   more near ties than the budget. FAILS: a near tie is isolated by
 #               nature, a broken kernel disagrees repeatedly.
+#   KNOWN-ROW   a calibration can hold flips above its own floor: rows where main's two
+#               programs already disagree by more than at any agreeing row of the prompt
+#               (memra#1203). The floor row lists them with their recorded shift. A known row
+#               inside a judged window is printed and named, and does not fail the cell by
+#               itself. It is not counted against the budget.
+#   KNOWN-ROW-WIDER   a candidate whose gap shift at a known row exceeds main's recorded
+#               shift at that row FAILS.
 #   UNCALIBRATED  no floor row for this model, prompt (by sha256), decode program and device.
 #               A flip then cannot be classified and FAILS; a table with no flip passes and
 #               says UNCALIBRATED, and its agreeing rows are not judged. --require-floor (the
@@ -458,11 +466,11 @@ if [ $jrc -eq 0 ]; then
         echo "  PASS: UNCALIBRATED, no flip. No floor row for this model, prompt, decode program and"
         echo "        device, so agreeing rows were not judged (calibrate with --calibrate)"
     else
-        echo "  PASS: no wide flip, no wide row, near ties within the budget"
+        echo "  PASS: no wide flip, no wide row, no known row wider than recorded, near ties within the budget"
     fi
     echo "  raw: $LOG_SHOWN"
     exit 0
 fi
-echo "  FAIL: a wide flip, a wide row, a flip with no floor to judge it by, or too many near ties (the lines above name each row)"
+echo "  FAIL: a wide flip, a wide row, a known row wider than recorded, a flip with no floor to judge it by, or too many near ties (the lines above name each row)"
 echo "  raw: $LOG_SHOWN"
 exit 1

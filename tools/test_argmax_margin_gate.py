@@ -57,15 +57,17 @@ class GateTest(unittest.TestCase):
         self.hf = self.root / "hf-model"
         self.hf.mkdir()
         self.floors = self.root / "tools/argmax-margin-floors.tsv"
-        self.floors.write_text("# model\tprompt\tprompt_sha256\tdecode\tdevice\tfloor\trows\tset_by_row\treceipt\n")
+        self.floors.write_text("# model\tprompt\tprompt_sha256\tdecode\tdevice\tfloor\trows\tset_by_row\tp50\tp99"
+                               "\tp999\tknown_rows\treceipt\n")
         for model in ("model", "hf-model"):
             for decode in ("eager", "batch"):
                 self.add_floor(model, self.prompt, decode)
 
-    def add_floor(self, model, prompt, decode, floor=FLOOR, device=DEVICE):
+    def add_floor(self, model, prompt, decode, floor=FLOOR, device=DEVICE, known="-"):
         sha = hashlib.sha256(prompt.read_bytes()).hexdigest()
         with self.floors.open("a") as out:
             out.write("\t".join((model, prompt.stem, sha, decode, device, floor, "2040", "2047",
+                                 "1.000000000e-1", "2.000000000e-1", "3.000000000e-1", known,
                                  "research/fixture/gate.log")) + "\n")
 
     def stub_probe(self, output):
@@ -232,6 +234,7 @@ class GateTest(unittest.TestCase):
         r = self.run_gate(WIDE_FLIP + "\n" + detail)
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("  FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; "
+                      "p50 0.1000, p99 0.2000, p99.9 0.3000; no calibration flip above it; "
                       "research/fixture/gate.log)", r.stdout)
         self.assertIn("  WIDE-FLIP pos=10 prefill_top1=1 margin_p=14.4000 decode_top1=2 margin_d=2.5000 "
                       "spread=16.7000 gap_shift=16.9000 > floor=0.4000", r.stdout)
@@ -285,6 +288,31 @@ class GateTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("UNCALIBRATED-FLIP pos=10 ", r.stdout)
 
+    def test_known_row_is_named_and_passes_unless_the_candidate_widens_it(self):
+        # Main's calibration flipped row 10 at margins 1.5 and 2.5, above its floor of 0.4: a
+        # known row, kept in the floor row with its shift (4.0).
+        self.floors.write_text("")
+        self.add_floor("model", self.prompt, "eager", known="10:18:1.5e0:15:2.5e0")
+        same = "10 18 1.5e0 15 2.5e0 2.6e0 NO\n11 2 1.0 2 1.0 0.1 yes"
+        r = self.run_gate(same + "\ndetail pos=10 the examination line")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("known rows (calibration flips above it, memra#1203): 10 (shift 4.0000)", r.stdout)
+        self.assertIn("  KNOWN-ROW pos=10 prefill_top1=18 margin_p=1.5000 decode_top1=15 margin_d=2.5000 "
+                      "spread=2.6000 gap_shift=4.0000 <= recorded=4.0000 (calibration: prefill_top1=18 "
+                      "margin_p=1.5000 decode_top1=15 margin_d=2.5000; memra#1203) floor=0.4000", r.stdout)
+        self.assertIn("    detail pos=10 the examination line", r.stdout)
+        self.assertIn("SUMMARY flips=1 bad=0 near_ties=0 ", r.stdout)
+        self.assertIn("  PASS: no wide flip", r.stdout)
+        # A candidate whose gap shift at that row exceeds main's recorded shift fails.
+        r = self.run_gate("10 18 1.5e0 15 2.75e0 2.9e0 NO\n11 2 1.0 2 1.0 0.1 yes")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("  KNOWN-ROW-WIDER pos=10 ", r.stdout)
+        self.assertIn("gap_shift=4.2500 > recorded=4.0000 ", r.stdout)
+        # The known row covers its own position only.
+        r = self.run_gate("10 2 1.0 2 1.0 0.1 yes\n11 18 1.5e0 15 2.5e0 2.6e0 NO")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("  WIDE-FLIP pos=11 ", r.stdout)
+
     def test_floors_table_must_exist_and_parse(self):
         self.floors.write_text("model\tprompt\n")
         r = self.run_gate(ROWS)
@@ -321,9 +349,10 @@ class GateTest(unittest.TestCase):
                 self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
                 self.assertEqual(self.probe_args()[:3], [str(self.gguf), str(self.prompt), "all"])
                 self.assertIn("  CALIBRATION: rows=3 agreeing=2 flips=1 floor=7.500000000e-1 set_by_row=11 "
+                              "p50=7.500000000e-1 p99=7.500000000e-1 p99.9=7.500000000e-1 flips_above_floor=0 "
                               "max_flips_in_12=1", r.stdout)
                 self.assertIn(f"  FLOOR-ROW: model\tprompt\t{sha}\t{decode}\t{DEVICE}\t7.500000000e-1\t2\t11\t"
-                              "research/lane/cal.log", r.stdout)
+                              "7.500000000e-1\t7.500000000e-1\t7.500000000e-1\t-\tresearch/lane/cal.log", r.stdout)
                 # A calibration judges nothing: no verdict line of any kind.
                 self.assertNotIn("PASS", r.stdout)
                 self.assertNotIn("SUMMARY flips=", r.stdout)

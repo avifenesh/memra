@@ -17,6 +17,12 @@
 //! above the floor is a wide row and fails. With no floor a flip cannot be classified and
 //! fails; agreeing rows are not judged and the verdict says so.
 //!
+//! **Known rows.** A calibration can hold flips above its own floor: rows where main's two
+//! programs already disagree by more than they do at any agreeing row. The floor row lists
+//! them with their recorded shift. A known row inside a judged window is printed and named,
+//! and does not fail the cell by itself. A candidate whose gap shift at a known row exceeds
+//! main's recorded shift at that row fails.
+//!
 //! The rule this replaced called a flip "margin-explained" when the spread at the contending
 //! ids exceeded the smaller margin. The spread is at least the mean of the two margins at any
 //! flip, so that held for every flip and could not fail (the `tests` module pins it).
@@ -183,8 +189,51 @@ pub fn parse_table(log: &str) -> Result<Vec<Row>, String> {
     Ok(rows)
 }
 
-/// What a wide window measured: the floor it sets.
+/// A flip of the calibrated binary whose gap shift is above its own floor: a row where main's
+/// two programs disagree by more than they do at any agreeing row of the prompt. It is kept
+/// in the floor row with its shift, so the gate names it when a judged window holds it and a
+/// candidate may not widen it (memra#1203 asks which program is right at these rows).
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct KnownRow {
+    pub pos: usize,
+    pub prefill_top1: usize,
+    pub margin_p: f32,
+    pub decode_top1: usize,
+    pub margin_d: f32,
+}
+
+impl KnownRow {
+    /// The recorded gap shift: the margin sum of the calibration flip.
+    pub fn gap_shift(&self) -> f32 {
+        self.margin_p + self.margin_d
+    }
+
+    /// `pos:prefill_top1:margin_p:decode_top1:margin_d`, the floors-table form.
+    fn encode(&self) -> String {
+        format!(
+            "{}:{}:{:.9e}:{}:{:.9e}",
+            self.pos, self.prefill_top1, self.margin_p, self.decode_top1, self.margin_d
+        )
+    }
+
+    fn decode(text: &str) -> Option<KnownRow> {
+        let f: Vec<&str> = text.split(':').collect();
+        let [pos, p1, mp, d1, md] = f.as_slice() else {
+            return None;
+        };
+        let margin = |s: &str| s.parse::<f32>().ok().filter(|v| v.is_finite() && *v >= 0.0);
+        Some(KnownRow {
+            pos: pos.parse().ok()?,
+            prefill_top1: p1.parse().ok()?,
+            margin_p: margin(mp)?,
+            decode_top1: d1.parse().ok()?,
+            margin_d: margin(md)?,
+        })
+    }
+}
+
+/// What a wide window measured: the floor it sets, and how loose that floor is.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Calibration {
     /// Largest gap shift at an agreeing row.
     pub floor: f32,
@@ -194,23 +243,47 @@ pub struct Calibration {
     pub agreeing: usize,
     /// Flips in the window (not part of the floor).
     pub flips: usize,
+    /// The median, 99th and 99.9th percentile of the agreeing rows' gap shift (nearest rank).
+    /// A floor far above them was set by one or two rows.
+    pub p50: f32,
+    pub p99: f32,
+    pub p999: f32,
+    /// The calibration table's own flips whose gap shift is above the floor.
+    pub known: Vec<KnownRow>,
 }
 
 /// The floor a table sets, or None when no row agrees.
 pub fn calibrate(rows: &[Row]) -> Option<Calibration> {
-    let mut best: Option<(f32, usize)> = None;
-    let mut agreeing = 0usize;
-    for r in rows.iter().filter(|r| !r.is_flip()) {
-        agreeing += 1;
-        if best.is_none_or(|(s, _)| r.gap_shift() > s) {
-            best = Some((r.gap_shift(), r.pos));
-        }
-    }
-    best.map(|(floor, set_by_row)| Calibration {
+    let mut agree: Vec<(f32, usize)> = rows
+        .iter()
+        .filter(|r| !r.is_flip())
+        .map(|r| (r.gap_shift(), r.pos))
+        .collect();
+    // The first row at the maximum sets the floor.
+    let &(floor, set_by_row) = agree
+        .iter()
+        .reduce(|best, r| if r.0 > best.0 { r } else { best })?;
+    agree.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let rank = |p: f64| agree[((agree.len() - 1) as f64 * p).round() as usize].0;
+    Some(Calibration {
         floor,
         set_by_row,
-        agreeing,
-        flips: rows.len() - agreeing,
+        agreeing: agree.len(),
+        flips: rows.len() - agree.len(),
+        p50: rank(0.5),
+        p99: rank(0.99),
+        p999: rank(0.999),
+        known: rows
+            .iter()
+            .filter(|r| r.is_flip() && r.gap_shift() > floor)
+            .map(|r| KnownRow {
+                pos: r.pos,
+                prefill_top1: r.prefill_top1,
+                margin_p: r.margin_p,
+                decode_top1: r.decode_top1,
+                margin_d: r.margin_d,
+            })
+            .collect(),
     })
 }
 
@@ -236,6 +309,11 @@ pub enum Clause {
     WideRow,
     /// A flip with no floor to judge it by. Fails.
     UncalibratedFlip,
+    /// A known row of the calibration, no wider here than it was recorded. Printed and named;
+    /// it does not fail the cell by itself and is not counted against the budget.
+    KnownRow,
+    /// A known row whose gap shift here exceeds the recorded one. Fails.
+    KnownRowWider,
 }
 
 impl Clause {
@@ -245,11 +323,13 @@ impl Clause {
             Clause::WideFlip => "WIDE-FLIP",
             Clause::WideRow => "WIDE-ROW",
             Clause::UncalibratedFlip => "UNCALIBRATED-FLIP",
+            Clause::KnownRow => "KNOWN-ROW",
+            Clause::KnownRowWider => "KNOWN-ROW-WIDER",
         }
     }
 
     pub fn fails(self) -> bool {
-        !matches!(self, Clause::NearTie)
+        !matches!(self, Clause::NearTie | Clause::KnownRow)
     }
 }
 
@@ -260,8 +340,10 @@ pub struct Verdict {
     pub budget: usize,
     pub flips: usize,
     pub near_ties: usize,
-    /// Every flip and every wide row, in table order.
+    /// Every flip, every wide row and every known row in the table, in table order.
     pub findings: Vec<(Row, Clause)>,
+    /// The known rows the table was judged with.
+    pub known: Vec<KnownRow>,
     /// Near ties above the budget.
     pub over_budget: bool,
 }
@@ -285,15 +367,36 @@ impl Verdict {
             None => "none".into(),
         };
         for (r, clause) in &self.findings {
-            let relation = match clause {
-                Clause::NearTie => "<=",
-                Clause::WideFlip | Clause::WideRow => ">",
-                Clause::UncalibratedFlip => "vs",
+            let against = match clause {
+                Clause::NearTie => format!("<= floor={floor}"),
+                Clause::WideFlip | Clause::WideRow => format!("> floor={floor}"),
+                Clause::UncalibratedFlip => format!("vs floor={floor}"),
+                Clause::KnownRow | Clause::KnownRowWider => {
+                    let k = self
+                        .known
+                        .iter()
+                        .find(|k| k.pos == r.pos)
+                        .expect("a known-row finding has its known row");
+                    format!(
+                        "{} recorded={:.4} (calibration: prefill_top1={} margin_p={:.4} \
+                         decode_top1={} margin_d={:.4}; memra#1203) floor={floor}",
+                        if *clause == Clause::KnownRow {
+                            "<="
+                        } else {
+                            ">"
+                        },
+                        k.gap_shift(),
+                        k.prefill_top1,
+                        k.margin_p,
+                        k.decode_top1,
+                        k.margin_d,
+                    )
+                }
             };
             let _ = writeln!(
                 out,
                 "{} pos={} prefill_top1={} margin_p={:.4} decode_top1={} margin_d={:.4} \
-                 spread={:.4} gap_shift={:.4} {relation} floor={floor}",
+                 spread={:.4} gap_shift={:.4} {against}",
                 clause.name(),
                 r.pos,
                 r.prefill_top1,
@@ -318,31 +421,40 @@ impl Verdict {
         let _ = writeln!(
             out,
             "SUMMARY flips={} bad={} near_ties={} wide_flips={} wide_rows={} uncalibrated_flips={} \
-             floor={floor} budget={}",
+             known_rows={} known_rows_wider={} floor={floor} budget={}",
             self.flips,
             self.bad(),
             self.near_ties,
             count(Clause::WideFlip),
             count(Clause::WideRow),
             count(Clause::UncalibratedFlip),
+            count(Clause::KnownRow),
+            count(Clause::KnownRowWider),
             self.budget,
         );
         out
     }
 }
 
-/// Judge a table against a floor and a near-tie budget. This is the gate's only verdict
-/// function: the probe's `--judge` mode calls it on the table of a log.
-pub fn judge(rows: &[Row], floor: Option<f32>, budget: usize) -> Verdict {
+/// Judge a table against a floor, the floor's known rows and a near-tie budget. This is the
+/// gate's only verdict function: the probe's `--judge` mode calls it on the table of a log.
+///
+/// A row at a known position is judged by its recorded shift, not by the floor: at or below
+/// it the row is named and passes; above it the row fails. Every other row is judged by the
+/// floor.
+pub fn judge(rows: &[Row], floor: Option<f32>, known: &[KnownRow], budget: usize) -> Verdict {
     let mut findings = Vec::new();
     let (mut flips, mut near_ties) = (0usize, 0usize);
     for r in rows {
-        let clause = match (r.is_flip(), floor) {
-            (true, None) => Some(Clause::UncalibratedFlip),
-            (true, Some(f)) if r.gap_shift() > f => Some(Clause::WideFlip),
-            (true, Some(_)) => Some(Clause::NearTie),
-            (false, Some(f)) if r.gap_shift() > f => Some(Clause::WideRow),
-            (false, _) => None,
+        let recorded = floor.and(known.iter().find(|k| k.pos == r.pos));
+        let clause = match (recorded, r.is_flip(), floor) {
+            (Some(k), _, _) if r.gap_shift() > k.gap_shift() => Some(Clause::KnownRowWider),
+            (Some(_), _, _) => Some(Clause::KnownRow),
+            (None, true, None) => Some(Clause::UncalibratedFlip),
+            (None, true, Some(f)) if r.gap_shift() > f => Some(Clause::WideFlip),
+            (None, true, Some(_)) => Some(Clause::NearTie),
+            (None, false, Some(f)) if r.gap_shift() > f => Some(Clause::WideRow),
+            (None, false, _) => None,
         };
         if r.is_flip() {
             flips += 1;
@@ -360,6 +472,7 @@ pub fn judge(rows: &[Row], floor: Option<f32>, budget: usize) -> Verdict {
         flips,
         near_ties,
         findings,
+        known: known.to_vec(),
         over_budget: near_ties > budget,
     }
 }
@@ -381,8 +494,37 @@ pub struct FloorRow {
     /// Agreeing rows the floor is the maximum of.
     pub rows: usize,
     pub set_by_row: usize,
+    /// The median, 99th and 99.9th percentile of the agreeing rows' gap shift: how far above
+    /// the bulk the floor sits.
+    pub p50: f32,
+    pub p99: f32,
+    pub p999: f32,
+    /// The calibration table's own flips above the floor (`-` in the table for none).
+    pub known: Vec<KnownRow>,
     /// The calibration receipt, a path in this repo.
     pub receipt: String,
+}
+
+impl FloorRow {
+    /// The `FLOOR:` line the judge prints: the floor, what it is the maximum of and how loose
+    /// it is.
+    pub fn describe(&self) -> String {
+        let known = match self.known.as_slice() {
+            [] => "no calibration flip above it".to_string(),
+            rows => format!(
+                "known rows (calibration flips above it, memra#1203): {}",
+                rows.iter()
+                    .map(|k| format!("{} (shift {:.4})", k.pos, k.gap_shift()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        };
+        format!(
+            "{:.4} (largest gap shift over {} agreeing rows, set by row {}; p50 {:.4}, p99 \
+             {:.4}, p99.9 {:.4}; {known}; {})",
+            self.floor, self.rows, self.set_by_row, self.p50, self.p99, self.p999, self.receipt
+        )
+    }
 }
 
 /// What a floor row is looked up by.
@@ -395,8 +537,9 @@ pub struct FloorKey<'a> {
     pub device: &'a str,
 }
 
-/// Parse the floors table: tab-separated, `#` comments. A malformed row, a floor that is
-/// negative or not finite, or two rows with one key is an error.
+/// Parse the floors table: tab-separated, `#` comments. A malformed row, a number that is
+/// negative or not finite, percentiles out of order, a known row inside the floor, or two rows
+/// with one key is an error.
 pub fn parse_floors(text: &str) -> Result<Vec<FloorRow>, String> {
     let mut rows: Vec<FloorRow> = Vec::new();
     for (n, line) in text.lines().enumerate() {
@@ -404,21 +547,50 @@ pub fn parse_floors(text: &str) -> Result<Vec<FloorRow>, String> {
             continue;
         }
         let f: Vec<&str> = line.split('\t').collect();
-        if f.len() != 9 || f.iter().any(|s| s.trim().is_empty()) {
+        if f.len() != 13 || f.iter().any(|s| s.trim().is_empty()) {
             return Err(format!(
-                "floors line {}: expected 9 tab-separated fields",
+                "floors line {}: expected 13 tab-separated fields",
                 n + 1
             ));
         }
-        let floor: f32 = f[5]
-            .parse()
-            .map_err(|_| format!("floors line {}: floor {:?}", n + 1, f[5]))?;
-        if !floor.is_finite() || floor < 0.0 {
+        let number = |name: &str, text: &str| -> Result<f32, String> {
+            let v: f32 = text
+                .parse()
+                .map_err(|_| format!("floors line {}: {name} {text:?}", n + 1))?;
+            if !v.is_finite() || v < 0.0 {
+                return Err(format!(
+                    "floors line {}: {name} {text:?} is negative or not finite",
+                    n + 1
+                ));
+            }
+            Ok(v)
+        };
+        let floor = number("floor", f[5])?;
+        let (p50, p99, p999) = (
+            number("p50", f[8])?,
+            number("p99", f[9])?,
+            number("p99.9", f[10])?,
+        );
+        if p50 > p99 || p99 > p999 || p999 > floor {
             return Err(format!(
-                "floors line {}: floor {:?} is negative or not finite",
-                n + 1,
-                f[5]
+                "floors line {}: p50 <= p99 <= p99.9 <= floor does not hold",
+                n + 1
             ));
+        }
+        let mut known = Vec::new();
+        if f[11] != "-" {
+            for entry in f[11].split(';') {
+                let k = KnownRow::decode(entry)
+                    .ok_or_else(|| format!("floors line {}: known row {entry:?}", n + 1))?;
+                if k.gap_shift() <= floor || known.iter().any(|o: &KnownRow| o.pos == k.pos) {
+                    return Err(format!(
+                        "floors line {}: known row {} is inside the floor or listed twice",
+                        n + 1,
+                        k.pos
+                    ));
+                }
+                known.push(k);
+            }
         }
         if !matches!(f[3], "eager" | "batch") {
             return Err(format!("floors line {}: decode {:?}", n + 1, f[3]));
@@ -436,7 +608,11 @@ pub fn parse_floors(text: &str) -> Result<Vec<FloorRow>, String> {
             set_by_row: f[7]
                 .parse()
                 .map_err(|_| format!("floors line {}: set_by_row {:?}", n + 1, f[7]))?,
-            receipt: f[8].into(),
+            p50,
+            p99,
+            p999,
+            known,
+            receipt: f[12].into(),
         };
         if rows.iter().any(|r| {
             (&r.model, &r.prompt, &r.prompt_sha256, &r.decode, &r.device)
@@ -468,8 +644,16 @@ pub fn find_floor<'a>(rows: &'a [FloorRow], key: &FloorKey<'_>) -> Option<&'a Fl
 
 /// The floors-table line a calibration sets, tab-separated in column order.
 pub fn floor_line(key: &FloorKey<'_>, cal: &Calibration, receipt: &str) -> String {
+    let known = match cal.known.as_slice() {
+        [] => "-".to_string(),
+        rows => rows
+            .iter()
+            .map(KnownRow::encode)
+            .collect::<Vec<_>>()
+            .join(";"),
+    };
     format!(
-        "{}\t{}\t{}\t{}\t{}\t{:.9e}\t{}\t{}\t{}",
+        "{}\t{}\t{}\t{}\t{}\t{:.9e}\t{}\t{}\t{:.9e}\t{:.9e}\t{:.9e}\t{known}\t{}",
         key.model,
         key.prompt,
         key.prompt_sha256,
@@ -478,6 +662,9 @@ pub fn floor_line(key: &FloorKey<'_>, cal: &Calibration, receipt: &str) -> Strin
         cal.floor,
         cal.agreeing,
         cal.set_by_row,
+        cal.p50,
+        cal.p99,
+        cal.p999,
         receipt
     )
 }
@@ -554,7 +741,7 @@ mod tests {
         let r = row(7, &[(1, 25.0), (2, 10.6)], &[(1, 9.5), (2, 12.0)]);
         assert!(r.is_flip());
         assert!(old_rule_explains(&r));
-        let v = judge(&[r], Some(1.0), 1);
+        let v = judge(&[r], Some(1.0), &[], 1);
         assert_eq!(v.findings, vec![(r, Clause::WideFlip)]);
         assert!(!v.passes());
         assert_eq!((v.flips, v.near_ties, v.bad()), (1, 0, 1));
@@ -566,7 +753,7 @@ mod tests {
         let r = row(3, &[(1, 10.02), (2, 10.0)], &[(1, 10.0), (2, 10.03)]);
         assert!(r.is_flip());
         assert!((r.gap_shift() - 0.05).abs() < 1e-4);
-        let v = judge(&[r], Some(0.4), 1);
+        let v = judge(&[r], Some(0.4), &[], 1);
         assert_eq!(v.findings, vec![(r, Clause::NearTie)]);
         assert!(v.passes());
         assert_eq!((v.flips, v.near_ties, v.bad()), (1, 1, 0));
@@ -582,18 +769,18 @@ mod tests {
             margin_d: 0.25,
             spread: 0.3,
         };
-        assert!(judge(&[r], Some(0.5), 1).passes());
-        assert!(!judge(&[r], Some(0.499_999), 1).passes());
+        assert!(judge(&[r], Some(0.5), &[], 1).passes());
+        assert!(!judge(&[r], Some(0.499_999), &[], 1).passes());
     }
 
     #[test]
     fn near_ties_above_the_budget_fail() {
         let tie = |pos| row(pos, &[(1, 10.02), (2, 10.0)], &[(1, 10.0), (2, 10.03)]);
         let rows = [tie(1), tie(2), tie(3)];
-        let v = judge(&rows, Some(0.4), 2);
+        let v = judge(&rows, Some(0.4), &[], 2);
         assert!(v.over_budget);
         assert_eq!((v.flips, v.near_ties, v.bad()), (3, 3, 1));
-        assert!(judge(&rows, Some(0.4), 3).passes());
+        assert!(judge(&rows, Some(0.4), &[], 3).passes());
         assert!(
             v.report(&|_| None)
                 .contains("TOO-MANY-NEAR-TIES 3 > budget 2")
@@ -605,22 +792,22 @@ mod tests {
         // memra#1175 on main: both programs pick id 1, at margins 14.4 and 7.2.
         let r = row(5, &[(1, 25.0), (2, 10.6)], &[(1, 20.0), (2, 12.8)]);
         assert!(!r.is_flip());
-        let v = judge(&[r], Some(1.5), 1);
+        let v = judge(&[r], Some(1.5), &[], 1);
         assert_eq!(v.findings, vec![(r, Clause::WideRow)]);
         assert!(!v.passes());
         assert_eq!(v.flips, 0);
         // The same row inside a floor that covers it is not a finding.
-        assert!(judge(&[r], Some(8.0), 1).findings.is_empty());
+        assert!(judge(&[r], Some(8.0), &[], 1).findings.is_empty());
     }
 
     #[test]
     fn without_a_floor_a_flip_fails_and_agreeing_rows_are_not_judged() {
         let tie = row(3, &[(1, 10.02), (2, 10.0)], &[(1, 10.0), (2, 10.03)]);
         let wide_row = row(5, &[(1, 25.0), (2, 10.6)], &[(1, 20.0), (2, 12.8)]);
-        let v = judge(&[tie, wide_row], None, 1);
+        let v = judge(&[tie, wide_row], None, &[], 1);
         assert_eq!(v.findings, vec![(tie, Clause::UncalibratedFlip)]);
         assert!(!v.passes());
-        let v = judge(&[wide_row], None, 1);
+        let v = judge(&[wide_row], None, &[], 1);
         assert!(v.passes() && v.findings.is_empty());
         assert!(v.report(&|_| None).contains("floor=none"));
     }
@@ -628,7 +815,7 @@ mod tests {
     #[test]
     fn the_report_names_the_row_the_clause_and_the_floor() {
         let r = row(7, &[(1, 25.0), (2, 10.6)], &[(1, 9.5), (2, 12.0)]);
-        let v = judge(&[r], Some(1.0), 1);
+        let v = judge(&[r], Some(1.0), &[], 1);
         let text = v.report(&|pos| (pos == 7).then(|| "detail pos=7 ...".to_string()));
         let first = text.lines().next().unwrap();
         assert!(
@@ -714,14 +901,102 @@ mod tests {
         let cal = calibrate(&rows).unwrap();
         assert_eq!((cal.set_by_row, cal.agreeing, cal.flips), (2, 3, 1));
         assert_eq!(cal.floor.to_bits(), rows[1].gap_shift().to_bits());
+        // Three agreeing rows, nearest rank: the median is the middle one, both high
+        // percentiles are the largest. The flip (0.05) is inside the floor: no known row.
+        assert_eq!((cal.p50, cal.p99, cal.p999), (0.75, cal.floor, cal.floor));
+        assert!(cal.known.is_empty());
         // The floor passes the table it came from: the row that set it sits exactly on it.
-        assert!(judge(&rows, Some(cal.floor), 1).passes());
+        assert!(judge(&rows, Some(cal.floor), &cal.known, 1).passes());
         assert!(calibrate(&rows[2..3]).is_none());
         assert_eq!(max_flips_in_window(&rows, 2), 1);
         assert_eq!(
             max_flips_in_window(&[rows[2], rows[2], rows[0], rows[2]], 3),
             2
         );
+    }
+
+    /// A calibration table with one flip above its own floor (margins 14.4 and 2.5 at row 9),
+    /// and the calibration it gives.
+    fn table_with_a_known_row() -> (Vec<Row>, Calibration) {
+        let rows = vec![
+            row(1, &[(1, 12.0), (2, 10.0)], &[(1, 12.5), (2, 10.0)]),
+            row(2, &[(1, 12.0), (2, 10.0)], &[(1, 13.25), (2, 10.0)]),
+            row(9, &[(1, 25.0), (2, 10.6)], &[(1, 9.5), (2, 12.0)]),
+        ];
+        let cal = calibrate(&rows).unwrap();
+        (rows, cal)
+    }
+
+    #[test]
+    fn a_calibration_flip_above_its_floor_is_recorded_as_a_known_row() {
+        let (rows, cal) = table_with_a_known_row();
+        assert_eq!(cal.floor, 1.25);
+        assert_eq!(cal.known.len(), 1);
+        let k = cal.known[0];
+        assert_eq!((k.pos, k.prefill_top1, k.decode_top1), (9, 1, 2));
+        assert_eq!(k.gap_shift().to_bits(), rows[2].gap_shift().to_bits());
+        // Without the known rows the same table fails on that flip: it is not silently inside
+        // the floor.
+        let v = judge(&rows, Some(cal.floor), &[], 1);
+        assert_eq!(v.findings, vec![(rows[2], Clause::WideFlip)]);
+    }
+
+    #[test]
+    fn a_known_row_no_wider_than_recorded_passes_and_is_named() {
+        let (rows, cal) = table_with_a_known_row();
+        // Main's own table: the known row sits exactly on its recorded shift.
+        let v = judge(&rows, Some(cal.floor), &cal.known, 1);
+        assert_eq!(v.findings, vec![(rows[2], Clause::KnownRow)]);
+        assert!(v.passes());
+        // Named, not counted as a near tie, and it does not use the budget.
+        assert_eq!((v.flips, v.near_ties, v.bad()), (1, 0, 0));
+        assert!(judge(&rows, Some(cal.floor), &cal.known, 0).passes());
+        let text = v.report(&|_| None);
+        let first = text.lines().next().unwrap();
+        assert!(
+            first.starts_with(
+                "KNOWN-ROW pos=9 prefill_top1=1 margin_p=14.4000 decode_top1=2 margin_d=2.5000 "
+            ),
+            "{first}"
+        );
+        assert!(
+            first.ends_with(
+                "gap_shift=16.9000 <= recorded=16.9000 (calibration: prefill_top1=1 \
+                 margin_p=14.4000 decode_top1=2 margin_d=2.5000; memra#1203) floor=1.2500"
+            ),
+            "{first}"
+        );
+        assert!(text.contains(" known_rows=1 known_rows_wider=0 "), "{text}");
+        // A candidate that narrows the row, or stops flipping there, is named and passes too.
+        let narrower = row(9, &[(1, 25.0), (2, 10.6)], &[(1, 11.0), (2, 12.0)]);
+        let agreeing = row(9, &[(1, 25.0), (2, 10.6)], &[(1, 20.0), (2, 12.8)]);
+        for r in [narrower, agreeing] {
+            let v = judge(&[rows[0], rows[1], r], Some(cal.floor), &cal.known, 1);
+            assert_eq!(v.findings, vec![(r, Clause::KnownRow)], "{r:?}");
+            assert!(v.passes());
+        }
+    }
+
+    #[test]
+    fn a_known_row_wider_than_recorded_fails() {
+        let (rows, cal) = table_with_a_known_row();
+        // The candidate holds decode's token by 2.6 where main held it by 2.5.
+        let wider = row(9, &[(1, 25.0), (2, 10.6)], &[(1, 9.5), (2, 12.1)]);
+        assert!(wider.gap_shift() > cal.known[0].gap_shift());
+        let v = judge(&[rows[0], rows[1], wider], Some(cal.floor), &cal.known, 1);
+        assert_eq!(v.findings, vec![(wider, Clause::KnownRowWider)]);
+        assert!(!v.passes());
+        let text = v.report(&|_| None);
+        assert!(text.starts_with("KNOWN-ROW-WIDER pos=9 "), "{text}");
+        assert!(text.contains(" > recorded=16.9000 "), "{text}");
+        assert!(
+            text.contains(" bad=1 ") && text.contains(" known_rows_wider=1 "),
+            "{text}"
+        );
+        // A known row covers its own position only: the same flip one row later is a wide flip.
+        let elsewhere = row(10, &[(1, 25.0), (2, 10.6)], &[(1, 9.5), (2, 12.0)]);
+        let v = judge(&[elsewhere], Some(cal.floor), &cal.known, 1);
+        assert_eq!(v.findings, vec![(elsewhere, Clause::WideFlip)]);
     }
 
     #[test]
@@ -738,6 +1013,16 @@ mod tests {
             set_by_row: 2047,
             agreeing: 2040,
             flips: 5,
+            p50: 0.05,
+            p99: 0.21,
+            p999: 0.33,
+            known: vec![KnownRow {
+                pos: 41,
+                prefill_top1: 18,
+                margin_p: 1.472,
+                decode_top1: 15,
+                margin_d: 2.899,
+            }],
         };
         let line = floor_line(&key, &cal, "research/x/gate.log");
         let table = format!("# comment\n\n{line}\n");
@@ -746,6 +1031,15 @@ mod tests {
         let found = find_floor(&rows, &key).unwrap();
         assert_eq!(found.floor.to_bits(), cal.floor.to_bits());
         assert_eq!((found.rows, found.set_by_row), (2040, 2047));
+        assert_eq!((found.p50, found.p99, found.p999), (0.05, 0.21, 0.33));
+        // The known row survives the table bit for bit, so its recorded shift does too.
+        assert_eq!(found.known, cal.known);
+        assert_eq!(
+            found.describe(),
+            "0.4081 (largest gap shift over 2040 agreeing rows, set by row 2047; p50 0.0500, \
+             p99 0.2100, p99.9 0.3300; known rows (calibration flips above it, memra#1203): 41 \
+             (shift 4.3710); research/x/gate.log)"
+        );
         for other in [
             FloorKey {
                 model: "m2",
@@ -771,9 +1065,26 @@ mod tests {
             assert!(find_floor(&rows, &other).is_none(), "{other:?}");
         }
         assert!(parse_floors(&format!("{line}\n{line}\n")).is_err());
-        assert!(parse_floors("m\tp\ts\teager\td\t-1.0\t5\t3\tr").is_err());
-        assert!(parse_floors("m\tp\ts\teager\td\tnan\t5\t3\tr").is_err());
-        assert!(parse_floors("m\tp\ts\tgraph\td\t1.0\t5\t3\tr").is_err());
-        assert!(parse_floors("m\tp\ts\teager\td\t1.0\t5\t3").is_err());
+        let good = "m\tp\ts\teager\td\t1.0\t5\t3\t0.25\t0.5\t0.75\t-\tr";
+        assert_eq!(
+            parse_floors(good).unwrap()[0].describe(),
+            "1.0000 (largest gap shift over 5 agreeing rows, set by row 3; p50 0.2500, p99 \
+             0.5000, p99.9 0.7500; no calibration flip above it; r)"
+        );
+        for bad in [
+            "m\tp\ts\teager\td\t-1.0\t5\t3\t0.25\t0.5\t0.75\t-\tr", // negative floor
+            "m\tp\ts\teager\td\tnan\t5\t3\t0.25\t0.5\t0.75\t-\tr",
+            "m\tp\ts\tgraph\td\t1.0\t5\t3\t0.25\t0.5\t0.75\t-\tr", // unknown decode program
+            "m\tp\ts\teager\td\t1.0\t5\t3\t0.25\t0.5\t0.75\t-",    // 12 fields
+            "m\tp\ts\teager\td\t1.0\t5\t3\tr",                     // the first 9-field form
+            "m\tp\ts\teager\td\t1.0\t5\t3\t0.6\t0.5\t0.75\t-\tr",  // p50 above p99
+            "m\tp\ts\teager\td\t1.0\t5\t3\t0.25\t0.5\t1.5\t-\tr",  // p99.9 above the floor
+            "m\tp\ts\teager\td\t1.0\t5\t3\t0.25\t0.5\t0.75\t41\tr", // a bare position
+            "m\tp\ts\teager\td\t1.0\t5\t3\t0.25\t0.5\t0.75\t41:1:0.2:2:0.3\tr", // inside the floor
+            "m\tp\ts\teager\td\t1.0\t5\t3\t0.25\t0.5\t0.75\t41:1:2.0:2:3.0;41:1:2.0:2:3.0\tr",
+            "m\tp\ts\teager\td\t1.0\t5\t3\t0.25\t0.5\t0.75\t41:1:x:2:3.0\tr",
+        ] {
+            assert!(parse_floors(bad).is_err(), "{bad}");
+        }
     }
 }

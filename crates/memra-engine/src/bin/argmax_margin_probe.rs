@@ -402,13 +402,17 @@ fn judge_log(args: &JudgeArgs, log: &str, floors: Option<&str>) -> Result<(Strin
         let cal = argmax_margin::calibrate(&rows).ok_or("no agreeing row to calibrate from")?;
         return Ok((
             format!(
-                "CALIBRATION: rows={} agreeing={} flips={} floor={:.9e} set_by_row={} \
-                 max_flips_in_12={}\nFLOOR-ROW: {}\n",
+                "CALIBRATION: rows={} agreeing={} flips={} floor={:.9e} set_by_row={} p50={:.9e} \
+                 p99={:.9e} p99.9={:.9e} flips_above_floor={} max_flips_in_12={}\nFLOOR-ROW: {}\n",
                 rows.len(),
                 cal.agreeing,
                 cal.flips,
                 cal.floor,
                 cal.set_by_row,
+                cal.p50,
+                cal.p99,
+                cal.p999,
+                cal.known.len(),
                 argmax_margin::max_flips_in_window(&rows, 12),
                 argmax_margin::floor_line(&key, &cal, &args.receipt),
             ),
@@ -421,17 +425,19 @@ fn judge_log(args: &JudgeArgs, log: &str, floors: Option<&str>) -> Result<(Strin
     };
     let row = argmax_margin::find_floor(&table, &key);
     let mut out = match row {
-        Some(r) => format!(
-            "FLOOR: {:.4} (largest gap shift over {} agreeing rows, set by row {}; {})\n",
-            r.floor, r.rows, r.set_by_row, r.receipt
-        ),
+        Some(r) => format!("FLOOR: {}\n", r.describe()),
         None => format!(
             "FLOOR: none (UNCALIBRATED: no floor row for model={} prompt={} sha256={} decode={} \
              device={:?}; a flip fails, agreeing rows are not judged)\n",
             args.model, args.prompt, args.prompt_sha256, args.decode, args.device
         ),
     };
-    let verdict = argmax_margin::judge(&rows, row.map(|r| r.floor), args.max_flips);
+    let verdict = argmax_margin::judge(
+        &rows,
+        row.map(|r| r.floor),
+        row.map_or(&[], |r| r.known.as_slice()),
+        args.max_flips,
+    );
     let detail = |pos: usize| {
         let head = format!("detail pos={pos} ");
         log.lines()
@@ -828,8 +834,10 @@ mod tests {
         }
     }
 
-    const FLOORS: &str = "# model\tprompt\tsha\tdecode\tdevice\tfloor\trows\tset_by_row\treceipt\n\
-        m\tboard-2048\tabc\teager\tdevice A\t4.0e-1\t2040\t2047\tresearch/x/gate.log\n";
+    const FLOORS: &str = "# model\tprompt\tsha\tdecode\tdevice\tfloor\trows\tset_by_row\tp50\tp99\tp999\tknown_rows\treceipt\n\
+        m\tboard-2048\tabc\teager\tdevice A\t4.0e-1\t2040\t2047\t1.0e-1\t2.0e-1\t3.0e-1\t-\tresearch/x/gate.log\n";
+    /// The same cell with one known row: main's calibration flipped row 41 at margins 1.5 and 2.5.
+    const FLOORS_KNOWN: &str = "m\tboard-2048\tabc\teager\tdevice A\t4.0e-1\t2040\t2047\t1.0e-1\t2.0e-1\t3.0e-1\t41:18:1.5e0:15:2.5e0\tresearch/x/gate.log\n";
 
     fn judge_args(extra: &[&str]) -> JudgeArgs {
         let mut list = vec![
@@ -884,7 +892,7 @@ mod tests {
         let clean = [row(10, 1, 2.0, 1, 2.1), row(11, 2, 5.0, 2, 5.3)];
         let (text, code) = judge_log(&judge_args(&[]), &table(&clean), Some(FLOORS)).unwrap();
         assert_eq!(code, 0, "{text}");
-        assert!(text.starts_with("FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; research/x/gate.log)\n"), "{text}");
+        assert!(text.starts_with("FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; p50 0.1000, p99 0.2000, p99.9 0.3000; no calibration flip above it; research/x/gate.log)\n"), "{text}");
         assert!(text.contains("SUMMARY flips=0 bad=0 "), "{text}");
 
         let mut wide = clean.to_vec();
@@ -966,8 +974,8 @@ mod tests {
         assert_eq!(code, 0);
         assert_eq!(
             text,
-            "CALIBRATION: rows=3 agreeing=2 flips=1 floor=7.500000000e-1 set_by_row=11 max_flips_in_12=1\n\
-             FLOOR-ROW: m\tboard-2048\tabc\teager\tdevice A\t7.500000000e-1\t2\t11\tresearch/x/gate.log\n"
+            "CALIBRATION: rows=3 agreeing=2 flips=1 floor=7.500000000e-1 set_by_row=11 p50=7.500000000e-1 p99=7.500000000e-1 p99.9=7.500000000e-1 flips_above_floor=0 max_flips_in_12=1\n\
+             FLOOR-ROW: m\tboard-2048\tabc\teager\tdevice A\t7.500000000e-1\t2\t11\t7.500000000e-1\t7.500000000e-1\t7.500000000e-1\t-\tresearch/x/gate.log\n"
         );
         // The printed row parses, and judges its own table green.
         let line = text
@@ -978,6 +986,71 @@ mod tests {
             .unwrap();
         let (_, code) = judge_log(&judge_args(&[]), &table(&rows), Some(line)).unwrap();
         assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn a_known_row_in_the_window_is_named_and_passes_unless_it_is_wider() {
+        // Main's calibration recorded row 41 as a flip at margins 1.5 and 2.5 (shift 4.0),
+        // above the floor of 0.4. The same row in a judged window is named and passes.
+        let same = [row(40, 1, 2.0, 1, 2.1), row(41, 18, 1.5, 15, 2.5)];
+        let log = format!("{}detail pos=41 the examination line\n", table(&same));
+        let (text, code) = judge_log(&judge_args(&[]), &log, Some(FLOORS_KNOWN)).unwrap();
+        assert_eq!(code, 0, "{text}");
+        assert!(text.starts_with("FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; p50 0.1000, p99 0.2000, p99.9 0.3000; known rows (calibration flips above it, memra#1203): 41 (shift 4.0000); research/x/gate.log)\n"), "{text}");
+        assert!(
+            text.contains(
+                "KNOWN-ROW pos=41 prefill_top1=18 margin_p=1.5000 decode_top1=15 margin_d=2.5000 "
+            ),
+            "{text}"
+        );
+        assert!(text.contains("gap_shift=4.0000 <= recorded=4.0000 (calibration: prefill_top1=18 margin_p=1.5000 decode_top1=15 margin_d=2.5000; memra#1203) floor=0.4000\n  detail pos=41 the examination line\n"), "{text}");
+        assert!(
+            text.contains("SUMMARY flips=1 bad=0 near_ties=0 "),
+            "{text}"
+        );
+        assert!(text.contains(" known_rows=1 known_rows_wider=0 "), "{text}");
+
+        // A candidate whose gap shift at that row exceeds main's recorded shift fails.
+        let wider = [row(40, 1, 2.0, 1, 2.1), row(41, 18, 1.5, 15, 2.75)];
+        let (text, code) = judge_log(&judge_args(&[]), &table(&wider), Some(FLOORS_KNOWN)).unwrap();
+        assert_eq!(code, 1, "{text}");
+        assert!(text.contains("KNOWN-ROW-WIDER pos=41 "), "{text}");
+        assert!(
+            text.contains("gap_shift=4.2500 > recorded=4.0000 "),
+            "{text}"
+        );
+        assert!(text.contains(" known_rows=0 known_rows_wider=1 "), "{text}");
+
+        // Without the known row in the floor row, main's own flip there is a wide flip.
+        let (text, code) = judge_log(&judge_args(&[]), &table(&same), Some(FLOORS)).unwrap();
+        assert_eq!(code, 1, "{text}");
+        assert!(text.contains("WIDE-FLIP pos=41 "), "{text}");
+    }
+
+    #[test]
+    fn calibration_lists_its_own_flips_above_the_floor_as_known_rows() {
+        let rows = [
+            row(10, 1, 2.0, 1, 2.25),
+            row(11, 2, 5.0, 2, 5.75),
+            row(41, 18, 1.5, 15, 2.5),
+        ];
+        let a = judge_args(&["--calibrate", "--receipt", "research/x/gate.log"]);
+        let (text, _) = judge_log(&a, &table(&rows), None).unwrap();
+        assert!(text.contains(" flips_above_floor=1 "), "{text}");
+        let line = text
+            .lines()
+            .nth(1)
+            .unwrap()
+            .strip_prefix("FLOOR-ROW: ")
+            .unwrap();
+        assert!(
+            line.contains("\t41:18:1.500000000e0:15:2.500000000e0\t"),
+            "{line}"
+        );
+        // The printed row judges its own table green, the known row named.
+        let (text, code) = judge_log(&judge_args(&[]), &table(&rows), Some(line)).unwrap();
+        assert_eq!(code, 0, "{text}");
+        assert!(text.contains("KNOWN-ROW pos=41 "), "{text}");
     }
 
     #[test]
