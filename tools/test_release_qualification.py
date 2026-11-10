@@ -546,6 +546,78 @@ class QualificationTests(unittest.TestCase):
         self.assertFalse((destination / "unmanifested-link").exists())
         self.assertTrue((destination / "record.json").is_file())
 
+    def test_build_and_capture_refuse_bytes_the_release_runners_cannot_rebuild(self):
+        import argparse
+        spec = importlib.util.spec_from_file_location("qualification_bytes", ROOT / "tools/qualify-release.py")
+        tool = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool)
+        with tempfile.TemporaryDirectory(prefix="memra-toolchain-") as raw:
+            root = Path(raw) / "toolchain"
+            (root / "bin").mkdir(parents=True)
+            # A rustup minimal toolchain has no rust-src; rustc-dev's own tree is not it.
+            (root / "lib/rustlib/rustc-src/rust").mkdir(parents=True)
+            tool.reproducible_toolchain(root)
+            (root / "lib/rustlib/src/rust/library").mkdir(parents=True)
+            with self.assertRaisesRegex(q.GateError, "toolchain carries rust-src"):
+                tool.reproducible_toolchain(root)
+            # build() itself refuses that toolchain, before it creates anything.
+            out = Path(raw) / "out"
+            args = argparse.Namespace(repo=Path(raw) / "repo", expected_head="c" * 40, out=out,
+                                      nvcc=Path(raw) / "nvcc", bwrap=Path("/usr/bin/true"), jobs=1)
+            which = [f"{root}/bin/rustc\n", f"{root}/bin/cargo\n"]
+            with patch.object(tool, "clean_source", return_value={"commit": "c" * 40}), \
+                    patch.object(tool.subprocess, "check_output", side_effect=which):
+                with self.assertRaisesRegex(q.GateError, "toolchain carries rust-src"):
+                    tool.build(args)
+            self.assertFalse(out.exists())
+
+            # Capture's byte check against another builder's build.json of the same inputs and profile.
+            built = {"schema": "memra-native-build-v3", "recipe": {"policy": "controlled-cargo-v3"},
+                     "command": ["/usr/bin/bwrap"], "source": {"path": "source.json"},
+                     "source_before": q.digest(b"inputs"),
+                     "platform": {"profile": "ubuntu-24.04", "machine": "x86_64", "glibc": "2.39"},
+                     "binaries": {name: {"bytes": 1, "sha256": q.digest(name.encode())} for name in q.BINARIES}}
+            elsewhere = copy.deepcopy(built)
+            elsewhere["command"] = ["/usr/local/libexec/bwrap"]
+            tool.same_bytes_as_reference(built, elsewhere)
+
+            def refused(pattern, change):
+                other = copy.deepcopy(elsewhere)
+                change(other)
+                with self.assertRaisesRegex(q.GateError, pattern):
+                    tool.same_bytes_as_reference(built, other)
+            refused("differs from the reference build in tok-parity",
+                    lambda o: o["binaries"]["tok-parity"].update(sha256=q.digest(b"another .rodata")))
+            refused("another platform profile", lambda o: o["platform"].update(profile="ubuntu-22.04"))
+            refused("another schema", lambda o: o.update(schema="memra-native-build-v2"))
+            refused("other source inputs", lambda o: o.update(source_before=q.digest(b"another commit")))
+            refused("lacks the release binaries", lambda o: o["binaries"].pop("run-gen"))
+            refused("not a build.json", lambda o: o["binaries"].update({"run-gen": "digest"}))
+            with self.assertRaisesRegex(q.GateError, "this build's own build.json"):
+                tool.same_bytes_as_reference(built, copy.deepcopy(built))
+            for shape in ([], None, "x", {"binaries": []}):
+                with self.assertRaisesRegex(q.GateError, "not a build.json"):
+                    tool.same_bytes_as_reference(built, shape)
+
+            # capture() runs that check before it creates its output directory.
+            staged = Path(raw) / "build"
+            staged.mkdir()
+            source = {"commit": "c" * 40}
+            (staged / "build.json").write_text(json.dumps(built))
+            (staged / "source.json").write_text(json.dumps(source))
+            differing = copy.deepcopy(elsewhere)
+            differing["binaries"]["kernel-check"]["sha256"] = q.digest(b"rust-src build")
+            reference = Path(raw) / "github-build.json"
+            reference.write_text(json.dumps(differing))
+            run = Path(raw) / "run"
+            args = argparse.Namespace(repo=Path(raw) / "repo", expected_head="c" * 40, build=staged, out=run,
+                                      oracles=Path(raw) / "oracles", reference_build=reference)
+            with patch.object(tool, "live_lease", return_value={"requested_uuids": []}), \
+                    patch.object(tool, "clean_source", return_value=source), \
+                    patch.object(tool.q, "validate_build", return_value=None):
+                with self.assertRaisesRegex(q.GateError, "differs from the reference build in kernel-check"):
+                    tool.capture(args)
+            self.assertFalse(run.exists())
+
     def test_release_and_push_wiring_and_retired_waiver(self):
         hook = (ROOT / "tools/hooks/pre-push").read_text()
         self.assertIn("release_qualification.py push", hook)

@@ -234,7 +234,10 @@ print("capability-network-boundary-pass")
             out = self.root / name
             args = argparse.Namespace(repo=repo, expected_head=source["commit"], out=out,
                                       nvcc=nvcc, bwrap=Path(bwrap), jobs=1)
-            with patch.dict(os.environ, {"CARGO_HOME": str(empty_cache), "CUDA_VISIBLE_DEVICES": ""}):
+            # This fixture proves input isolation, not byte parity with the release runners, so it
+            # runs on a development toolchain too: one with rust-src, which a real build refuses.
+            with patch.dict(os.environ, {"CARGO_HOME": str(empty_cache), "CUDA_VISIBLE_DEVICES": ""}), \
+                    patch.object(capture, "reproducible_toolchain", lambda root: None):
                 try:
                     capture.build(args)
                 except q.GateError:
