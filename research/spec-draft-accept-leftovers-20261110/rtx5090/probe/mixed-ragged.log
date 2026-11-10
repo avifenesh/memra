@@ -1,0 +1,26 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[fa-pool] grow #0 dev=0 o_len 0 -> 55296 ml_len 0 -> 216 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 55296 -> 110592 ml_len 216 -> 432 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 36MB (max of parked delta 36MB and capture-time pool peak 5MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 110592 -> 221184 ml_len 432 -> 864 (retired kept, zero=false)
+session 0: depth 512 k=3 greedy cold burst 16 tokens
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+session 1: depth 549 k=2 sampled cold burst 18 tokens
+[fa-pool] grow #3 dev=0 o_len 221184 -> 442368 ml_len 864 -> 1728 (retired kept, zero=false)
+session 2: depth 586 k=4 greedy cold burst 19 tokens
+session 3: depth 623 k=3 sampled cold burst 16 tokens
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphSampled, GraphGreedy, GraphSampled])
+ROWS-STEP b=4: logits rows, carriers and KV rows vs per-session eager steps: BITWISE EQUAL
+  member 0: arm=GraphGreedy k_this=3 head steps=3 drafted=3 sctr 0->0: BITWISE EQUAL
+  member 1: arm=GraphSampled k_this=2 head steps=2 drafted=2 sctr 19->21: BITWISE EQUAL
+  member 2: arm=GraphGreedy k_this=4 head steps=4 drafted=4 sctr 0->0: BITWISE EQUAL
+  member 3: arm=GraphSampled k_this=3 head steps=3 drafted=3 sctr 17->20: BITWISE EQUAL
+ROUND-DRAFT n=4 ks=[3, 2, 4, 3]: tokens, ids, counters, draft-KV, follow-up: BITWISE EQUAL
+DRAFT-TIME n=4 ks=[3, 2, 4, 3]: serial 18.559 ms, pooled 7.343 ms, 2.53x (median of 5)

@@ -1,0 +1,17 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[fa-pool] grow #0 dev=0 o_len 0 -> 55296 ml_len 0 -> 216 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 55296 -> 110592 ml_len 216 -> 432 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 110592 -> 221184 ml_len 432 -> 864 (retired kept, zero=false)
+session 0: depth 512 k=3 sampled cold burst 18 tokens
+session 1: depth 549 k=3 sampled cold burst 19 tokens
+[fa-pool] grow #3 dev=0 o_len 221184 -> 442368 ml_len 864 -> 1728 (retired kept, zero=false)
+session 2: depth 586 k=3 sampled cold burst 17 tokens
+session 3: depth 623 k=3 sampled cold burst 16 tokens
+[spec-pool] pooled rows draft engaged: 4 members (arms [Eager, Eager, Eager, Eager])
+ROWS-STEP b=4: logits rows, carriers and KV rows vs per-session eager steps: BITWISE EQUAL
+  member 0: arm=Eager k_this=3 head steps=3 drafted=3 sctr 19->22: BITWISE EQUAL
+  member 1: arm=Eager k_this=3 head steps=3 drafted=3 sctr 20->23: BITWISE EQUAL
+  member 2: arm=Eager k_this=3 head steps=3 drafted=3 sctr 18->21: BITWISE EQUAL
+  member 3: arm=Eager k_this=3 head steps=3 drafted=3 sctr 17->20: BITWISE EQUAL
+ROUND-DRAFT n=4 ks=[3, 3, 3, 3]: tokens, ids, counters, draft-KV, follow-up: BITWISE EQUAL
+DRAFT-TIME n=4 ks=[3, 3, 3, 3]: serial 18.697 ms, pooled 6.486 ms, 2.88x (median of 5)

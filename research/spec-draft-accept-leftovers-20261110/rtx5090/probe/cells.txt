@@ -1,0 +1,104 @@
+== greedy-ragged: ~/.cache/memra-1160/bin/decode-batch-bench-after /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf --pooled-draft 3,3,2,4 --ctx 512 --reps 5
+greedy-ragged rc=0
+[spec] draft-session state high-water: 36MB (max of parked delta 36MB and capture-time pool peak 5MB; charged per spec admission and gating future captures)
+session 0: depth 512 k=3 greedy cold burst 16 tokens
+session 1: depth 549 k=3 greedy cold burst 17 tokens
+session 2: depth 586 k=2 greedy cold burst 18 tokens
+session 3: depth 623 k=4 greedy cold burst 18 tokens
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+ROWS-STEP b=4: logits rows, carriers and KV rows vs per-session eager steps: BITWISE EQUAL
+  member 0: arm=GraphGreedy k_this=3 head steps=3 drafted=3 sctr 0->0: BITWISE EQUAL
+  member 1: arm=GraphGreedy k_this=3 head steps=3 drafted=3 sctr 0->0: BITWISE EQUAL
+  member 2: arm=GraphGreedy k_this=2 head steps=2 drafted=2 sctr 0->0: BITWISE EQUAL
+  member 3: arm=GraphGreedy k_this=4 head steps=4 drafted=4 sctr 0->0: BITWISE EQUAL
+ROUND-DRAFT n=4 ks=[3, 3, 2, 4]: tokens, ids, counters, draft-KV, follow-up: BITWISE EQUAL
+DRAFT-TIME n=4 ks=[3, 3, 2, 4]: serial 19.696 ms, pooled 7.632 ms, 2.58x (median of 5)
+== mixed-ragged: ~/.cache/memra-1160/bin/decode-batch-bench-after /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf --pooled-draft 3,2,4,3 --ctx 512 --reps 5 --temp 0.8
+mixed-ragged rc=0
+[spec] draft-session state high-water: 36MB (max of parked delta 36MB and capture-time pool peak 5MB; charged per spec admission and gating future captures)
+session 0: depth 512 k=3 greedy cold burst 16 tokens
+session 1: depth 549 k=2 sampled cold burst 18 tokens
+session 2: depth 586 k=4 greedy cold burst 19 tokens
+session 3: depth 623 k=3 sampled cold burst 16 tokens
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphSampled, GraphGreedy, GraphSampled])
+ROWS-STEP b=4: logits rows, carriers and KV rows vs per-session eager steps: BITWISE EQUAL
+  member 0: arm=GraphGreedy k_this=3 head steps=3 drafted=3 sctr 0->0: BITWISE EQUAL
+  member 1: arm=GraphSampled k_this=2 head steps=2 drafted=2 sctr 19->21: BITWISE EQUAL
+  member 2: arm=GraphGreedy k_this=4 head steps=4 drafted=4 sctr 0->0: BITWISE EQUAL
+  member 3: arm=GraphSampled k_this=3 head steps=3 drafted=3 sctr 17->20: BITWISE EQUAL
+ROUND-DRAFT n=4 ks=[3, 2, 4, 3]: tokens, ids, counters, draft-KV, follow-up: BITWISE EQUAL
+DRAFT-TIME n=4 ks=[3, 2, 4, 3]: serial 18.559 ms, pooled 7.343 ms, 2.53x (median of 5)
+== sampled-pmin: env MEMRA_SPEC_PMIN=0.3 ~/.cache/memra-1160/bin/decode-batch-bench-after /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf --pooled-draft 4,4,3,2 --ctx 512 --reps 5 --temp 0.8 --all-sampled
+sampled-pmin rc=0
+[spec] draft-session state high-water: 36MB (max of parked delta 36MB and capture-time pool peak 5MB; charged per spec admission and gating future captures)
+session 0: depth 512 k=4 sampled cold burst 16 tokens
+session 1: depth 549 k=4 sampled cold burst 19 tokens
+session 2: depth 586 k=3 sampled cold burst 17 tokens
+session 3: depth 623 k=2 sampled cold burst 16 tokens
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphSampled, GraphSampled, GraphSampled, GraphSampled])
+ROWS-STEP b=4: logits rows, carriers and KV rows vs per-session eager steps: BITWISE EQUAL
+  member 0: arm=GraphSampled k_this=4 head steps=2 drafted=1 sctr 17->19: BITWISE EQUAL
+  member 1: arm=GraphSampled k_this=4 head steps=2 drafted=1 sctr 20->22: BITWISE EQUAL
+  member 2: arm=GraphSampled k_this=3 head steps=2 drafted=1 sctr 18->20: BITWISE EQUAL
+  member 3: arm=GraphSampled k_this=2 head steps=2 drafted=2 sctr 17->19: BITWISE EQUAL
+ROUND-DRAFT n=4 ks=[4, 4, 3, 2]: tokens, ids, counters, draft-KV, follow-up: BITWISE EQUAL
+DRAFT-TIME n=4 ks=[4, 4, 3, 2]: serial 11.988 ms, pooled 4.032 ms, 2.97x (median of 5)
+== filtered: ~/.cache/memra-1160/bin/decode-batch-bench-after /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf --pooled-draft 3,3,3,3 --ctx 512 --reps 5 --temp 0.8 --top-p 0.9 --all-sampled
+filtered rc=0
+[spec] draft-session state high-water: 36MB (max of parked delta 36MB and capture-time pool peak 5MB; charged per spec admission and gating future captures)
+session 0: depth 512 k=3 sampled cold burst 16 tokens
+session 1: depth 549 k=3 sampled cold burst 16 tokens
+session 2: depth 586 k=3 sampled cold burst 17 tokens
+session 3: depth 623 k=3 sampled cold burst 18 tokens
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphSampled, GraphSampled, GraphSampled, GraphSampled])
+ROWS-STEP b=4: logits rows, carriers and KV rows vs per-session eager steps: BITWISE EQUAL
+  member 0: arm=GraphSampled k_this=3 head steps=3 drafted=3 sctr 17->20: BITWISE EQUAL
+  member 1: arm=GraphSampled k_this=3 head steps=3 drafted=3 sctr 17->20: BITWISE EQUAL
+  member 2: arm=GraphSampled k_this=3 head steps=3 drafted=3 sctr 18->21: BITWISE EQUAL
+  member 3: arm=GraphSampled k_this=3 head steps=3 drafted=3 sctr 19->22: BITWISE EQUAL
+ROUND-DRAFT n=4 ks=[3, 3, 3, 3]: tokens, ids, counters, draft-KV, follow-up: BITWISE EQUAL
+DRAFT-TIME n=4 ks=[3, 3, 3, 3]: serial 20.035 ms, pooled 8.223 ms, 2.44x (median of 5)
+== penalized: ~/.cache/memra-1160/bin/decode-batch-bench-after /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf --pooled-draft 3,3,3,3 --ctx 512 --reps 5 --temp 0.8 --pen --all-sampled
+penalized rc=0
+session 0: depth 512 k=3 sampled cold burst 18 tokens
+session 1: depth 549 k=3 sampled cold burst 19 tokens
+session 2: depth 586 k=3 sampled cold burst 17 tokens
+session 3: depth 623 k=3 sampled cold burst 16 tokens
+[spec-pool] pooled rows draft engaged: 4 members (arms [Eager, Eager, Eager, Eager])
+ROWS-STEP b=4: logits rows, carriers and KV rows vs per-session eager steps: BITWISE EQUAL
+  member 0: arm=Eager k_this=3 head steps=3 drafted=3 sctr 19->22: BITWISE EQUAL
+  member 1: arm=Eager k_this=3 head steps=3 drafted=3 sctr 20->23: BITWISE EQUAL
+  member 2: arm=Eager k_this=3 head steps=3 drafted=3 sctr 18->21: BITWISE EQUAL
+  member 3: arm=Eager k_this=3 head steps=3 drafted=3 sctr 17->20: BITWISE EQUAL
+ROUND-DRAFT n=4 ks=[3, 3, 3, 3]: tokens, ids, counters, draft-KV, follow-up: BITWISE EQUAL
+DRAFT-TIME n=4 ks=[3, 3, 3, 3]: serial 18.697 ms, pooled 6.486 ms, 2.88x (median of 5)
+== eager-sampled: env MEMRA_SPEC_NOGRAPH=1 ~/.cache/memra-1160/bin/decode-batch-bench-after /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf --pooled-draft 3,2,4,3 --ctx 512 --reps 5 --temp 0.8 --all-sampled
+eager-sampled rc=0
+session 0: depth 512 k=3 sampled cold burst 16 tokens
+session 1: depth 549 k=2 sampled cold burst 18 tokens
+session 2: depth 586 k=4 sampled cold burst 17 tokens
+session 3: depth 623 k=3 sampled cold burst 16 tokens
+[spec-pool] pooled rows draft engaged: 4 members (arms [Eager, Eager, Eager, Eager])
+ROWS-STEP b=4: logits rows, carriers and KV rows vs per-session eager steps: BITWISE EQUAL
+  member 0: arm=Eager k_this=3 head steps=3 drafted=3 sctr 17->20: BITWISE EQUAL
+  member 1: arm=Eager k_this=2 head steps=2 drafted=2 sctr 19->21: BITWISE EQUAL
+  member 2: arm=Eager k_this=4 head steps=4 drafted=4 sctr 18->22: BITWISE EQUAL
+  member 3: arm=Eager k_this=3 head steps=3 drafted=3 sctr 17->20: BITWISE EQUAL
+ROUND-DRAFT n=4 ks=[3, 2, 4, 3]: tokens, ids, counters, draft-KV, follow-up: BITWISE EQUAL
+DRAFT-TIME n=4 ks=[3, 2, 4, 3]: serial 18.488 ms, pooled 7.726 ms, 2.39x (median of 5)
+== eager-filtered: env MEMRA_SPEC_NOGRAPH=1 ~/.cache/memra-1160/bin/decode-batch-bench-after /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf --pooled-draft 3,3,3,3 --ctx 512 --reps 5 --temp 0.8 --top-p 0.9 --all-sampled
+eager-filtered rc=0
+session 0: depth 512 k=3 sampled cold burst 16 tokens
+session 1: depth 549 k=3 sampled cold burst 16 tokens
+session 2: depth 586 k=3 sampled cold burst 17 tokens
+session 3: depth 623 k=3 sampled cold burst 18 tokens
+[spec-pool] pooled rows draft engaged: 4 members (arms [Eager, Eager, Eager, Eager])
+ROWS-STEP b=4: logits rows, carriers and KV rows vs per-session eager steps: BITWISE EQUAL
+  member 0: arm=Eager k_this=3 head steps=3 drafted=3 sctr 17->20: BITWISE EQUAL
+  member 1: arm=Eager k_this=3 head steps=3 drafted=3 sctr 17->20: BITWISE EQUAL
+  member 2: arm=Eager k_this=3 head steps=3 drafted=3 sctr 18->21: BITWISE EQUAL
+  member 3: arm=Eager k_this=3 head steps=3 drafted=3 sctr 19->22: BITWISE EQUAL
+ROUND-DRAFT n=4 ks=[3, 3, 3, 3]: tokens, ids, counters, draft-KV, follow-up: BITWISE EQUAL
+DRAFT-TIME n=4 ks=[3, 3, 3, 3]: serial 20.203 ms, pooled 8.239 ms, 2.45x (median of 5)
+cells rc=0: 7 of 7, ROUND-DRAFT equal: 7, MISMATCH lines: 0
+POOLED-DRAFT PROBE: PASS
