@@ -88,7 +88,7 @@ COLD_TURN = "Reef field notes. " + " ".join(
     f"Note {i}: the reef survey records one measurement per site, and a later visit extends the "
     f"same record with a new reading." for i in range(1, 46)) + \
     "\n\nWrite about 300 words, in several paragraphs, on what these notes say about reefs."
-COLD_STOP = "\n\n"
+COLD_STOP = " the "  # inside the first sentences of nearly any English answer
 STOP_AT = (14, 24, 34, 44, 54)  # word index in the reference answer; the first free word at or after
 SPAN_AT = (18, 38, 58)
 TWO_AT = (20, 40, 60)
