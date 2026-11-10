@@ -1,0 +1,21 @@
+dsv41-tpbench: 2 cells x 1 rounds on 4 rank(s) [0, 1, 2, 3], 40/40 layers resident, chunk 8192, max_pos 32785
+  plan prefill-4096: workspace 1.69 GiB + state 0.02 GiB a rank
+  plan prefill-32768: workspace 7.24 GiB + state 0.10 GiB a rank
+  carried state: 3205 B a position a rank (+5.0 MiB of window rings a sequence); reserve 7.34 GiB a device-rank
+[dsv41-tp] ranks=4 devices=[0, 1, 2, 3] transport=peer-pull (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+[dsv41-resident] device 0 ranks [0]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.45 -> 24.16 GiB of 95.06 GiB; reserve 7.34 GiB; load 11.9s
+[dsv41-resident] device 1 ranks [1]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.45 -> 24.16 GiB of 95.06 GiB; reserve 7.34 GiB; load 11.9s
+[dsv41-resident] device 2 ranks [2]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.45 -> 24.16 GiB of 95.06 GiB; reserve 7.34 GiB; load 11.9s
+[dsv41-resident] device 3 ranks [3]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.45 -> 24.16 GiB of 95.06 GiB; reserve 7.34 GiB; load 11.9s
+  capacity at 4096 positions: 1313 sequences a rank after one prefill's 1.69 GiB workspace (0.017 GiB state each, 24.16 GiB free a rank)
+  capacity at 32768 positions: 164 sequences a rank after one prefill's 7.24 GiB workspace (0.103 GiB state each, 24.16 GiB free a rank)
+  capacity at 131072 positions: 26 sequences a rank after one prefill's 13.53 GiB workspace (0.396 GiB state each, 24.16 GiB free a rank)
+  capacity at 262144 positions: 0 sequences a rank after one prefill's 26.58 GiB workspace (0.786 GiB state each, 24.16 GiB free a rank)
+dsv41-tpbench: {"argmax":48,"cell":"prefill-4096","comm":{"bytes":34175188992,"collectives":168,"copies":2016,"timed":false,"timed_s":0.0},"end_unix":1794288276.44207,"forward_s":4.352316007,"forwards":1,"kind":"prefill","layers_streamed":0,"peak_used":[76233471440,76233471440,76233471440,76233471440],"prefill_tok_s":533.0170804882298,"prompt_len":4096,"readback_wait_s_per_rank":3.3304364962500004,"round":0,"start_unix":1794288268.757456,"stream_load_s":1.6030000000000004e-6,"ttft_s":7.684556743}
+dsv41-tpbench: {"argmax":646,"cell":"prefill-32768","comm":{"bytes":273401511936,"collectives":408,"copies":4896,"timed":false,"timed_s":0.0},"end_unix":1794288336.931494,"forward_s":44.156879081,"forwards":1,"kind":"prefill","layers_streamed":0,"peak_used":[80944572112,80944572112,80944572112,80944572112],"prefill_tok_s":541.7155869610747,"prompt_len":32768,"readback_wait_s_per_rank":16.332224168,"round":0,"start_unix":1794288276.4421117,"stream_load_s":2.212999999999999e-6,"ttft_s":60.489306176}
+dsv41-tpbench: done in 81.3s
+Collecting data...
+Generating '/tmp/nsys-access/nsys-report-042e.qdstrm'
+[1/1] [0%                          ] trace.nsys-rep[1/1] [0%                          ] trace.nsys-rep[1/1] [1%                          ] trace.nsys-rep[1/1] [2%                          ] trace.nsys-rep[1/1] [5%                          ] trace.nsys-rep[1/1] [6%                          ] trace.nsys-rep[1/1] [7%                          ] trace.nsys-rep[1/1] [8%                          ] trace.nsys-rep[1/1] [9%                          ] trace.nsys-rep[1/1] [10%                         ] trace.nsys-rep[1/1] [11%                         ] trace.nsys-rep[1/1] [12%                         ] trace.nsys-rep[1/1] [13%                         ] trace.nsys-rep[1/1] [14%                         ] trace.nsys-rep[1/1] [=15%                        ] trace.nsys-rep[1/1] [=16%                        ] trace.nsys-rep[1/1] [=17%                        ] trace.nsys-rep[1/1] [==18%                       ] trace.nsys-rep[1/1] [==19%                       ] trace.nsys-rep[1/1] [==20%                       ] trace.nsys-rep[1/1] [=======================93%  ] trace.nsys-rep[1/1] [=======================96%  ] trace.nsys-rep[1/1] [========================98% ] trace.nsys-rep[1/1] [========================100%] trace.nsys-rep[1/1] [========================100%] trace.nsys-rep
+Generated:
+	$LANE/receipts-perf/four/pre-trace/trace.nsys-rep
