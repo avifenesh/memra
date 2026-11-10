@@ -7354,19 +7354,48 @@ impl SpecCostEntry {
     }
 
     /// The aggregate tok/s to price (n, k) at: the realized EMA when it has enough samples,
-    /// else `predict(n, k)` scaled by the realized/predicted ratio of the closest observation of
-    /// the same kind (plain for k = 0, any draft length for k > 0), preferring the same n, then
-    /// the same k at the nearest n, then any draft length at the nearest n. 1.0 when none.
+    /// else `predict(n, k)` scaled by the realized/predicted ratio of the slot `scale_slot`
+    /// picks. 1.0 when none.
     fn priced(&self, n: usize, k: usize, predict: impl Fn(usize, usize) -> f64) -> f64 {
         let predicted = predict(n, k);
-        let ok = |_kk: usize, r: &RealizedRate| r.samples >= SPEC_COST_REALIZED_MIN;
-        if let Some(r) = self.realized.get(&(n, k))
-            && ok(k, r)
-        {
+        if let Some(r) = self.realized_slot(n, k) {
             return self.realized_now(k, r);
         }
         // Far concurrency: a spec price needs a measured slot at n or a bounded neighbor;
         // without one there is no price (0.0), and the verdict serves plain.
+        let far = k > 0 && n >= SPEC_COST_FAR_N;
+        match self.scale_slot(n, k) {
+            Some(((m, kk), r)) => {
+                let p = predict(m, kk);
+                if p > 0.0 {
+                    predicted * self.realized_now(kk, r) / p
+                } else {
+                    predicted
+                }
+            }
+            None if far => 0.0,
+            None => predicted,
+        }
+    }
+
+    /// The slot at (n, k) itself, when it has enough samples to replace its prediction.
+    fn realized_slot(&self, n: usize, k: usize) -> Option<&RealizedRate> {
+        self.realized
+            .get(&(n, k))
+            .filter(|r| r.samples >= SPEC_COST_REALIZED_MIN)
+    }
+
+    /// The observation whose realized/predicted ratio scales the prediction at (n, k) when
+    /// (n, k) has too few samples: a slot of the same kind (plain for k = 0, any draft length
+    /// for k > 0), preferring the same n, then the same k at the nearest n, then any draft
+    /// length at the nearest n. A far concurrency (n >= SPEC_COST_FAR_N, k > 0) looks only
+    /// within SPEC_COST_FAR_NEIGHBOR of n.
+    ///
+    /// Ties break on the slot itself (memra#1212): more samples first (the lower-noise
+    /// ratio), then the lower concurrency, then the shorter draft length. The map's iteration
+    /// order used to pick among equally ranked slots, and that order is random per process,
+    /// so the same state could price, and choose, differently on two boots.
+    fn scale_slot(&self, n: usize, k: usize) -> Option<((usize, usize), &RealizedRate)> {
         let far = k > 0 && n >= SPEC_COST_FAR_N;
         let same_kind = |kk: usize| (kk == 0) == (k == 0);
         let rank = |m: usize, kk: usize| -> (u8, usize) {
@@ -7379,25 +7408,27 @@ impl SpecCostEntry {
             };
             (tier, m.abs_diff(n))
         };
-        let best = self
-            .realized
+        self.realized
             .iter()
-            .filter(|((m, kk), r)| ok(*kk, r) && same_kind(*kk) && (*m, *kk) != (n, k))
+            .filter(|((m, kk), r)| {
+                r.samples >= SPEC_COST_REALIZED_MIN && same_kind(*kk) && (*m, *kk) != (n, k)
+            })
             .filter(|((m, _), _)| !far || m.abs_diff(n) <= SPEC_COST_FAR_NEIGHBOR)
-            .min_by_key(|((m, kk), _)| rank(*m, *kk));
-        if far && best.is_none() {
-            return 0.0;
+            .min_by_key(|((m, kk), r)| (rank(*m, *kk), std::cmp::Reverse(r.samples), *m, *kk))
+            .map(|(key, r)| (*key, r))
+    }
+
+    /// Where the price at (n, k) comes from, for the verdict log (memra#1212): `realized`
+    /// (its own slot), `(m,K)` (scaled from that slot), `table` (the boot table alone) or
+    /// `none` (a far concurrency with no measured neighbor: no spec price).
+    fn price_source(&self, n: usize, k: usize) -> String {
+        if self.realized_slot(n, k).is_some() {
+            return "realized".to_string();
         }
-        match best {
-            Some(((m, kk), r)) => {
-                let p = predict(*m, *kk);
-                if p > 0.0 {
-                    predicted * self.realized_now(*kk, r) / p
-                } else {
-                    predicted
-                }
-            }
-            None => predicted,
+        match self.scale_slot(n, k) {
+            Some(((m, kk), _)) => format!("({m},{kk})"),
+            None if k > 0 && n >= SPEC_COST_FAR_N => "none".to_string(),
+            None => "table".to_string(),
         }
     }
 }
@@ -7619,10 +7650,16 @@ fn spec_cost_verdict(model: &str, n: usize, rung: usize) -> Option<usize> {
         return None;
     };
     if spec_cost_log_due(model, n, rung, k) {
+        let sources: Vec<String> = (0..=rung)
+            .map(|kk| format!("K{kk}={}", entry.price_source(n, kk)))
+            .collect();
         eprintln!(
             "[spec-cost] model={model:?} n={n} rung={rung} -> K={k} (predicted {:.1} vs plain \
-             {:.1} tok/s; pooled={})",
-            spec_rate, plain_rate, entry.pooled
+             {:.1} tok/s; pooled={}; priced from {})",
+            spec_rate,
+            plain_rate,
+            entry.pooled,
+            sources.join(" ")
         );
     }
     Some(k)
@@ -35638,6 +35675,62 @@ mod tests {
             last: std::time::Instant::now(),
             accept_e: 0.0,
         }
+    }
+
+    /// memra#1212: equally ranked slots are picked by a rule on the slots, not by the map's
+    /// iteration order. Every build below is a new map with its own random hash keys and the
+    /// same slots. Before the rule the price followed the iteration order, so builds disagreed
+    /// (two candidates: all 64 builds agree by chance with probability 2^-63).
+    #[test]
+    fn spec_cost_tied_slots_price_the_same_on_every_build() {
+        let predict = |m: usize, k: usize| (10 * m + k) as f64;
+        let min = super::SPEC_COST_REALIZED_MIN;
+        let prices = |slots: &[((usize, usize), f64, u32)], n: usize, k: usize| {
+            let mut seen = std::collections::BTreeSet::new();
+            for _ in 0..64 {
+                let mut e = gb10_entry([0.7, 0.5, 0.35]);
+                for &(key, ratio, samples) in slots {
+                    e.realized
+                        .insert(key, slot(predict(key.0, key.1) * ratio, samples));
+                }
+                seen.insert(e.priced(n, k, predict).to_bits());
+            }
+            seen.into_iter().map(f64::from_bits).collect::<Vec<_>>()
+        };
+        // Tier 1: the same draft length at n-1 and n+1, one realized at its prediction, the
+        // other at half. The lower concurrency wins: 23 * 1.0.
+        assert_eq!(
+            prices(&[((1, 3), 1.0, min), ((3, 3), 0.5, min)], 2, 3),
+            vec![23.0]
+        );
+        // Tier 0: two other draft lengths at the same n. The shorter one wins: 23 * 0.5.
+        assert_eq!(
+            prices(&[((2, 1), 0.5, min), ((2, 2), 1.0, min)], 2, 3),
+            vec![11.5]
+        );
+        // More samples beat a lower concurrency: the n+1 slot has the longer history.
+        assert_eq!(
+            prices(&[((1, 3), 1.0, min), ((3, 3), 0.5, min + 5)], 2, 3),
+            vec![11.5]
+        );
+        // Plain neighbors tie the same way.
+        assert_eq!(
+            prices(&[((1, 0), 1.0, min), ((3, 0), 0.5, min)], 2, 0),
+            vec![20.0]
+        );
+        // The far path (n >= SPEC_COST_FAR_N) shares the rule.
+        assert_eq!(
+            prices(&[((7, 3), 1.0, min), ((9, 3), 0.5, min)], 8, 3),
+            vec![83.0]
+        );
+        // The verdict log names the slot that priced it.
+        let mut e = gb10_entry([0.7, 0.5, 0.35]);
+        e.realized.insert((1, 3), slot(13.0, min));
+        e.realized.insert((3, 3), slot(16.5, min));
+        assert_eq!(e.price_source(2, 3), "(1,3)");
+        assert_eq!(e.price_source(1, 3), "realized");
+        assert_eq!(e.price_source(2, 0), "table");
+        assert_eq!(e.price_source(12, 3), "none");
     }
 
     /// Far concurrency (n >= 7): spec is never priced by extrapolating slots measured under 7
