@@ -156,27 +156,39 @@ the rung starts past 16,384, and the roster's 12-row tables in the cell-evidence
 byte-identical between c7708aec49 and 12c3f554c4 on GB10 and on the RTX 5090 Laptop GPU. The
 last 12 rows of each whole-prompt table equal the 12-row table of its card's record.
 
-| device | model | decode | flips of 2,045 | p50 | p99 | p99.9 | floor (row) | known rows |
-|---|---|---|---|---|---|---|---|---|
-| RTX 5090 Laptop GPU | Ornith-1.5-35B-A3B | eager | 199 | 0.197 | 1.522 | 2.265 | 3.558 (306) | 41, 1809 |
-| RTX 5090 Laptop GPU | Ornith-1.5-35B-A3B | batch | 171 | 0.199 | 1.582 | 3.339 | 3.956 (740) | none |
-| RTX PRO 6000 Max-Q | Ornith-1.5-35B-A3B | eager | 173 | 0.199 | 1.370 | 2.848 | 3.918 (306) | 41 |
-| RTX PRO 6000 Max-Q | Ornith-1.5-35B-A3B | batch | 181 | 0.195 | 1.504 | 2.763 | 3.695 (1169) | none |
-| RTX PRO 6000 Max-Q | Qwen3.8-27B | eager | 44 | 0.048 | 0.394 | 1.139 | 3.960 (1198) | none |
-| RTX PRO 6000 Max-Q | Qwen3.8-27B | batch | 41 | 0.049 | 0.371 | 1.222 | 4.242 (1198) | none |
+<!-- FLOORS-TABLE:START -->
+| device | model | decode | flips / rows | most flips in 12 rows | p50 | p99 | p99.9 | floor (row) | known rows |
+|---|---|---|---|---|---|---|---|---|---|
+| GB10 | Ornith-1.5-35B-A3B | eager | 191 / 2045 | 6 | 0.219 | 1.616 | 3.013 | 3.581 (727) | none |
+| GB10 | Ornith-1.5-35B-A3B | batch | 189 / 2045 | 6 | 0.236 | 1.707 | 4.013 | 4.450 (306) | none |
+| RTX 5090 Laptop GPU | Ornith-1.5-35B-A3B | eager | 199 / 2045 | 5 | 0.197 | 1.522 | 2.265 | 3.558 (306) | 41, 1809 |
+| RTX 5090 Laptop GPU | Ornith-1.5-35B-A3B | batch | 171 / 2045 | 5 | 0.199 | 1.582 | 3.339 | 3.956 (740) | none |
+| RTX PRO 6000 Max-Q | Ornith-1.5-35B-A3B | eager | 173 / 2045 | 7 | 0.199 | 1.370 | 2.848 | 3.918 (306) | 41 |
+| RTX PRO 6000 Max-Q | Ornith-1.5-35B-A3B | batch | 181 / 2045 | 5 | 0.195 | 1.504 | 2.763 | 3.695 (1169) | none |
+| RTX 5090 Laptop GPU | Qwen3.8-27B | eager | 42 / 2045 | 4 | 0.047 | 0.340 | 0.960 | 3.730 (1198) | none |
+| RTX PRO 6000 Max-Q | Qwen3.8-27B | eager | 44 / 2045 | 3 | 0.048 | 0.394 | 1.139 | 3.959 (1198) | none |
+| RTX PRO 6000 Max-Q | Qwen3.8-27B | batch | 41 / 2045 | 4 | 0.050 | 0.371 | 1.222 | 4.242 (1198) | none |
+| RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | eager | 152 / 2045 | 6 | 0.147 | 1.425 | 2.810 | 4.010 (909) | none |
+| RTX 5090 Laptop GPU | Qwen3.5-9B NVFP4 | batch | 156 / 2045 | 6 | 0.151 | 1.413 | 2.969 | 3.872 (909) | none |
+| RTX 5090 Laptop GPU | gemma-4-26B q4_0 | eager | 250 / 2100 | 6 | 0.278 | 1.918 | 3.421 | 3.557 (1458) | 150, 943, 981, 1013, 1117, 1540 |
+<!-- FLOORS-TABLE:END -->
 
-Rows still to come at this commit: Qwen3.8-27B eager and batch on the RTX 5090 Laptop GPU and
-the four roster cells on GB10. The change does not land before them: the release battery
-refuses a roster cell without its row.
+Rows still to come at this commit: Qwen3.8-27B batch on the RTX 5090 Laptop GPU and
+Qwen3.8-27B eager and batch on GB10. The change does not land before them: the release battery
+refuses a roster cell without its row, and the census test is red until they exist. Outside
+the battery: gemma-4-31B on the RTX 5090 Laptop GPU (`tools/local-ci.sh` runs the gate on it
+there) and Qwen3.5-9B on GB10.
 
 What the cells showed, and what was decided with it:
 
-- Every floor is set by one row. On the dense 27B, row 1,198 (prefill margin 4.92, decode 8.88
-  and 9.16) puts the floor near 4 where the next agreeing row is at 1.5 and the p99.9 near
-  1.2. On the MoE the top rows are closer together (3.6, 2.9, 2.3, 2.2 on one cell).
-- Main's own programs flip above their own floor on the MoE: Ornith eager at row 41 (margins
-  1.472 and 2.899) on both cards and at row 1,809 on the RTX 5090 Laptop GPU (4.079 and
-  0.070). The gate's window, the last 12 rows, holds none of them.
+- Every floor is set by one row. On the dense 27B, row 1,198 (prefill margin 4.92, decode 8.65
+  to 9.16) puts the floor at 3.7 to 4.2 on both cards measured, where the next agreeing row is
+  at 1.2 to 1.5 and the p99.9 near 1. On the MoE the top rows are closer together (3.6, 2.9,
+  2.3, 2.2 on one cell).
+- Main's own programs flip above their own floor: Ornith eager at row 41 (margins 1.472 and
+  2.899) on both discrete cards and at row 1,809 on the RTX 5090 Laptop GPU (4.079 and 0.070),
+  none on GB10; gemma-4-26B at six rows on the RTX 5090 Laptop GPU. The gate's window, the
+  last 12 rows, holds none of them.
 - The coordinator's ruling on those numbers: the floor stays the maximum; each floor row states
   its percentiles; a calibration flip above its own floor is a known row, printed and named
   when a window holds it, failing only when a candidate widens it. Issues: memra#1203 (the
@@ -190,9 +202,9 @@ What the cells showed, and what was decided with it:
 tree under the floors table as it stands.
 
 - **The roster's cells pass.** On the RTX PRO 6000 Max-Q, Ornith's one flip (row 2,041, margins
-  0.240 and 0.038 eager, 0.240 and 0.048 batch) is a near tie. On the RTX 5090 Laptop GPU
-  Ornith holds no flip. The cells whose rows are still to come read UNCALIBRATED and hold no
-  flip.
+  0.240 and 0.038 eager, 0.240 and 0.048 batch) is a near tie. On the RTX 5090 Laptop GPU and
+  on GB10 the calibrated roster cells hold no flip. The cells whose rows are still to come
+  read UNCALIBRATED and hold no flip.
 - **The split-rung lane's synthetic cell fails, and so does main on the same prompt.** On the
   16,390-token synthetic record document (Qwen3.8-27B, GB10, eager) the candidate flips row
   16,385 with margins 14.386 and 2.481, a gap shift of 16.87. Main does not flip it and holds
@@ -206,9 +218,12 @@ tree under the floors table as it stands.
   the phrase is true of any flip, and their evidence is the flip counts and, where they have
   them, byte-identical probe tables. Their cells have no floor, so their flips read as
   unclassified.
-- **The gemma-4-31B budget of 3** was derived from "5 of 12 rows flippable", the same test.
-  The banked gemma tables hold at most 2 flips. The number stays until a whole-prompt gemma
-  cell says otherwise.
+- **The gemma budgets of 3** were derived from "5 of 12 rows flippable", the same test. The
+  banked gemma tables hold at most 2 flips in the gate's window. The whole-prompt gemma-4-26B
+  cell on the RTX 5090 Laptop GPU has 250 flips in 2,100 rows and up to 6 in one 12-row
+  window; the gate's window holds 2, both near ties under its floor of 3.557 (one of them a
+  flip where decode holds its token by 1.3). The budget is not contradicted at the gate's
+  window and is not changed. The gemma-4-31B cell is still to run.
 
 ## Limits
 
