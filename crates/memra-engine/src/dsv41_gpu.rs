@@ -2897,6 +2897,9 @@ pub struct Ctx {
     pub select_long_min: (usize, usize),
     /// this rank's step block ([`StepBlock`]), made at the first batched step
     pub step: Option<StepBlock>,
+    /// keep the router's selection of every call in the call's [`Trace`] without the rest of a
+    /// traced call (the group's route log, [`tp::Group::log_routes`])
+    pub keep_routes: bool,
 }
 
 /// A second stream on the card for a branch of a one-token layer that depends on nothing the main
@@ -3000,6 +3003,7 @@ impl Ctx {
             keyed: true,
             select_long_min: (32_768, usize::MAX),
             step: None,
+            keep_routes: false,
         })
     }
 
@@ -5285,7 +5289,7 @@ impl Ctx {
         self.nv(c"router");
         let (sel, selw) = self.moe_route(lw, x, s)?;
         self.nv_end();
-        if self.trace {
+        if self.trace || self.keep_routes {
             tr.route_sel.extend_from_slice(&bytes_i32(&sel.host(&st)?));
             tr.route_w.extend_from_slice(&bytes_f32(&selw.host(&st)?));
         }

@@ -179,6 +179,24 @@ pub struct Group {
     pub graphs: super::graph::Graphs,
     /// the ranks' streams are recording ([`Group::capture`]): only launches may be issued
     pub(super) capturing: bool,
+    /// with [`Group::log_routes`]: every block's routing and one-row MoE output, in call order
+    pub route_log: Option<RouteLog>,
+}
+
+/// What the router chose and what the MoE returned, call by call in the order the blocks ran
+/// (rank 0's replicated copy): the measurement behind a gate that judges a change of a sum's
+/// order, where the bytes move and the question is which experts and how far.
+#[derive(Default)]
+pub struct RouteLog {
+    /// (layer id, rows) of each block
+    pub calls: Vec<(usize, usize)>,
+    /// i32 `[rows][top-k]` a block, appended: the routed expert ids
+    pub ids: Vec<i32>,
+    /// f32 `[rows][top-k]` a block: their weights
+    pub w: Vec<f32>,
+    /// bf16 `[dim]` of every one-row block's MoE output, appended (a decode step's; a prefill's
+    /// rows are counted by their routing alone)
+    pub moe: Vec<u8>,
 }
 
 /// What the second half of a block reads, a buffer a rank: the residual streams `h` (written in
@@ -647,6 +665,7 @@ impl Group {
             pool,
             graphs: super::graph::Graphs::from_env()?,
             capturing: false,
+            route_log: None,
         };
         gr.probe()?;
         gr.stats = CommStats::default();
@@ -669,6 +688,15 @@ impl Group {
         } else {
             "serial"
         }
+    }
+
+    /// Start the route log ([`RouteLog`]): every block from here reads its routing back to the
+    /// host (a measurement run; it costs a host read a block).
+    pub fn log_routes(&mut self) {
+        for c in &mut self.cx {
+            c.keep_routes = true;
+        }
+        self.route_log = Some(RouteLog::default());
     }
 
     pub fn sync_all(&self) -> Result<(), String> {
@@ -1665,6 +1693,30 @@ impl Group {
             self.moe(lw, &x2, r0, rows, &m, tr)?;
         }
         drop(x2);
+        if let Some(log) = self.route_log.as_mut() {
+            // rank 0's copy of the block's routing, and a one-row block's MoE output
+            let out = if s == 1 {
+                m[0].host(&self.cx[0].ops.st)?
+            } else {
+                Vec::new()
+            };
+            let (ids, w) = if self.trace {
+                (tr[0].route_sel.clone(), tr[0].route_w.clone())
+            } else {
+                for t in tr.iter_mut().skip(1) {
+                    t.route_sel.clear();
+                    t.route_w.clear();
+                }
+                (
+                    std::mem::take(&mut tr[0].route_sel),
+                    std::mem::take(&mut tr[0].route_w),
+                )
+            };
+            log.calls.push((lw[0].id, s));
+            log.ids.extend(ids);
+            log.w.extend(w);
+            log.moe.extend(out);
+        }
         self.each(|r, c| {
             c.side_join()?;
             c.hc_post_in_place(&m[r], &h[r], &f_post[r], &f_comb[r], s)
@@ -2033,7 +2085,7 @@ impl Group {
         if lw.iter().all(|w| w.split) {
             return self.moe_split(lw, x2, r0, rows, m, tr);
         }
-        let trace = self.trace;
+        let trace = self.trace || self.route_log.is_some();
         let plans = {
             let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
             self.each_mut(&mut trs, |r, c, trr| {
@@ -2212,7 +2264,7 @@ impl Group {
         let g = self.cx[0].g.clone();
         let (ne, topk, d, inter) = (g.n_experts, g.topk, g.dim, g.moe_inter);
         let np = rows * topk;
-        let trace = self.trace;
+        let trace = self.trace || self.route_log.is_some();
         // a few rows: one bf16 gather of the hidden columns (a gather's latency, not its bytes)
         let quant = rows > super::SMALL_M;
         let parts = {

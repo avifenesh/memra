@@ -39,6 +39,10 @@
 //!                            through each layer, each sequence alone through each block
 //!   --resident N             keep the first N layers' weights on the card across the greedy
 //!                            decode forwards (the prompts' pass streams every layer)
+//!   --routes                 keep every block's routing (top-k expert ids and weights) and every
+//!                            decode step's MoE output, in call order, written to --out as
+//!                            routes_calls.i32 (layer, rows a block), routes_ids.i32, routes_w.f32
+//!                            and routes_moe.bf16: the measurement of a reduction-order gate
 //!   --preload                load those N layers and the head before the first forward (the
 //!                            prompts' pass then streams only the others), with the memory budget
 //!                            printed and refused when it does not fit
@@ -286,6 +290,10 @@ fn run() -> Result<(), String> {
         0,
         chunk,
     )?;
+    // --routes: keep every block's routing and every decode step's MoE output (written to --out)
+    if flag_set(&a, "--routes") {
+        rn.grp.log_routes();
+    }
     if flag_set(&a, "--preload") {
         // the resident layers and the head on the cards before the first forward, refused when
         // the longest prompt's prefill and the sequences' state would not fit beside them
@@ -524,6 +532,26 @@ fn run() -> Result<(), String> {
         st.run_s,
         t0.elapsed().as_secs_f64()
     );
+    if let (Some(log), Some(dir)) = (rn.grp.route_log.take(), out.as_ref()) {
+        let calls: Vec<i32> = log
+            .calls
+            .iter()
+            .flat_map(|&(l, r)| [l as i32, r as i32])
+            .collect();
+        for (name, bytes) in [
+            ("routes_calls.i32", v::i32_bytes(&calls)),
+            ("routes_ids.i32", v::i32_bytes(&log.ids)),
+            ("routes_w.f32", v::f32_bytes(&log.w)),
+            ("routes_moe.bf16", log.moe),
+        ] {
+            std::fs::write(dir.join(name), bytes).map_err(|e| format!("{name}: {e}"))?;
+        }
+        eprintln!(
+            "dsv41-run: route log: {} blocks, {} routed rows",
+            log.calls.len(),
+            log.ids.len() / g.topk.max(1)
+        );
+    }
     if rn.offloaded() {
         let (cs, slots) = rn.cache_stats();
         eprintln!(
