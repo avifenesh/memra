@@ -26,7 +26,7 @@
 | tables | Qwen3.8-27B-NVFP4-Q5K-mtp | board-2048 | batch | 48 | 21 | research/release-qualification/cells/03234a773114-gb10-battery-perf-serving/battery/argmax-batch-5/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-board-2048.batch.log | 0 / 1 | PASS | none | PASS: UNCALIBRATED (no flip) | largest agreeing gap shift 0.526 at row 2047 (1.209 vs 0.684) |
 | tables | Qwen3.8-27B-NVFP4-Q5K-mtp | board-2048 | batch | 82 | 18 | research/release-qualification/cells/03234a773114-rtx5090-battery-perf-serving/battery/argmax-batch-5/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-board-2048.batch.log | 0 / 1 | PASS | 3.0876 | PASS | largest agreeing gap shift 0.254 at row 2047 (0.938 vs 0.684) |
 | tables | Qwen3.8-27B-NVFP4-Q5K-mtp | board-2048 | eager | 188 | 18 | research/release-qualification/candidate-pro-ubuntu-24-04/cells/argmax-3/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-board-2048.log | 0 / 1 | PASS | 3.9595 | PASS | largest agreeing gap shift 0.128 at row 2038 (0.498 vs 0.626) |
-| tables | Qwen3.8-27B-NVFP4-Q5K-mtp | board-2048 | eager | 48 | 40 | research/release-qualification/cells/03234a773114-gb10-battery-perf-serving/battery/argmax-4/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-board-2048.log | 0 / 1 | PASS | none | PASS: UNCALIBRATED (no flip) | largest agreeing gap shift 0.408 at row 2047 (1.209 vs 0.801) |
+| tables | Qwen3.8-27B-NVFP4-Q5K-mtp | board-2048 | eager | 48 | 40 | research/release-qualification/cells/03234a773114-gb10-battery-perf-serving/battery/argmax-4/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-board-2048.log | 0 / 1 | PASS | 1.5695 | PASS | largest agreeing gap shift 0.408 at row 2047 (1.209 vs 0.801) |
 | tables | Qwen3.8-27B-NVFP4-Q5K-mtp | board-2048 | eager | 82 | 39 | research/release-qualification/cells/03234a773114-rtx5090-battery-perf-serving/battery/argmax-4/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-board-2048.log | 0 / 1 | PASS | 3.7303 | PASS | largest agreeing gap shift 0.205 at row 2044 (2.461 vs 2.666) |
 | tables | Qwen3.8-27B-NVFP4-Q5K-mtp | deep-16386 | eager | 48 | 1 | research/gb10-split-rung-20261110/gates-unit1/ref-main-16386.txt | 1 / 1 | PASS | none | FAIL: UNCALIBRATED-FLIP | UNCALIBRATED-FLIP row 16374: 0.245 + 4.141, gap shift 4.386 |
 | tables | Qwen3.8-27B-NVFP4-Q5K-mtp | deep-16390 | batch | 48 | 1 | research/gb10-split-rung-20261110/gates-unit1/am-27b-16390-b-base.txt | 0 / 1 | PASS | none | PASS: UNCALIBRATED (no flip) | largest agreeing gap shift 4.035 at row 16385 (14.386 vs 10.351) |
@@ -52,5 +52,5 @@
 | old verdict | new verdict | distinct tables |
 |---|---|---|
 | PASS | FAIL | 18 |
-| PASS | PASS | 14 |
-| PASS | PASS UNCALIBRATED | 16 |
+| PASS | PASS | 15 |
+| PASS | PASS UNCALIBRATED | 15 |
