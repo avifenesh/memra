@@ -30,10 +30,15 @@
 //! room. The cache moves bytes, never values: a slot holds the checkpoint's MXFP4 expert as
 //! stored and the grouped GEMMs read it through the same table.
 //!
-//! Batching. Up to `MEMRA_MAX_SESSIONS` requests run at once. Each step is one runner forward
-//! with at most one new prompt's prefill call and one decode call per running request; the runner
-//! runs every call alone through each block, so a request's numbers are the same served alone or
-//! beside others (the serve receipts gate this byte for byte).
+//! Batching. Up to `MEMRA_MAX_SESSIONS` requests run at once. Each step runs at most one new
+//! prompt's prefill call and every running request's next token. The one-token steps of the
+//! running requests go through the trunk together, up to `MEMRA_DSV41_BATCH_ROWS` rows a call
+//! (`decode::Runner::forward_batch`: each row is its request's own one-token call at its own
+//! position, against its own state, through shared launches; more requests than that are
+//! consecutive calls), and their logits come from one pass over the head. A row's bytes are those
+//! of its one-token call run alone (`dsv41-spec batch-rows`), so a request's numbers are the same
+//! served alone or beside others (the serve receipts gate this byte for byte). A prefill and a
+//! drafted block's verification run as calls of their own.
 //!
 //! Drafting (`MEMRA_DSV41_DRAFT=1`; off until the route's served gates and its A/B have run
 //! with it, `docs/FLAGS.md`). The checkpoint's DSpark head (`dsv41_gpu::draft`) drafts a block
@@ -72,7 +77,7 @@ use crate::route_telemetry::{RouteLoad, RouteRun, ServeStats};
 use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsage};
 use memra_engine::decode::StopReason;
 use memra_engine::dsv4_gpu::{Dsv4PenaltyCfg, Dsv4SampleCfg, dsv4_penalize_row, dsv4_sample_row};
-use memra_engine::dsv41_gpu::decode::{Call, Runner, Seq};
+use memra_engine::dsv41_gpu::decode::{Call, Out, Runner, Seq};
 use memra_engine::dsv41_gpu::draft::{DraftGate, DraftSeq, DraftW, RowCost, price_depth};
 use memra_engine::dsv41_gpu::engram::{EngramConsts, token_map_from_file};
 use memra_engine::dsv41_gpu::experts::{HostExperts, Layout};
@@ -136,6 +141,9 @@ pub(crate) struct MemModel {
     pub chunk: usize,
     /// rows of a decode call: 1, or with the draft head its block plus the token before it
     pub decode_rows: usize,
+    /// whether the running requests' one-token steps share a call (their key rows are then live
+    /// together)
+    pub batched: bool,
     /// draft stages (0: no draft head); each keeps a window ring per sequence
     pub draft_stages: usize,
 }
@@ -171,6 +179,7 @@ impl MemModel {
             n_groups,
             chunk,
             decode_rows: if stages > 0 { block + 1 } else { 1 },
+            batched: false,
             draft_stages: stages,
         }
     }
@@ -759,12 +768,17 @@ impl Book {
     }
 
     fn live_need(&self, caps: &[usize], new: Option<(usize, usize)>) -> u64 {
-        let decode = caps
+        let each = caps
             .iter()
             .chain(new.as_ref().map(|(_, c)| c))
-            .map(|&c| self.model.decode_bytes(c))
-            .max()
-            .unwrap_or(0);
+            .map(|&c| self.model.decode_bytes(c));
+        // calls run one after another hold one call's transient at a time; a batched call holds
+        // every row's
+        let decode = if self.model.batched {
+            each.sum()
+        } else {
+            each.max().unwrap_or(0)
+        };
         let (new_state, new_prefill) =
             new.map_or((0, 0), |(p, c)| (self.state(c), self.prefill(p)));
         new_state + decode.max(new_prefill) + MARGIN_BYTES
@@ -890,6 +904,26 @@ struct Up<'a> {
     /// what this residency's decode calls cost by their rows, and a draft, from the route's own
     /// steps
     price: Price,
+    /// the most one-token steps one decode call carries (1: every call alone)
+    batch_rows: usize,
+}
+
+/// The most rows a batched decode call carries: the small-M GEMM bodies' limit
+/// (`dsv41_gpu::SMALL_M`).
+const BATCH_ROWS_MAX: usize = v41::SMALL_M;
+
+/// `MEMRA_DSV41_BATCH_ROWS`: the one-token steps one decode call carries, 1 (every call alone)
+/// to the small-M limit (unset: the limit).
+fn resolve_batch_rows(raw: Option<&str>) -> Result<usize, String> {
+    match raw.map(str::trim) {
+        None | Some("") => Ok(BATCH_ROWS_MAX),
+        Some(x) => match x.parse::<usize>() {
+            Ok(n) if (1..=BATCH_ROWS_MAX).contains(&n) => Ok(n),
+            _ => Err(format!(
+                "MEMRA_DSV41_BATCH_ROWS {x:?} is not a row count from 1 to {BATCH_ROWS_MAX}"
+            )),
+        },
+    }
 }
 
 /// The route's own costs, in milliseconds: a decode call by its rows and one draft.
@@ -1073,8 +1107,11 @@ fn bring_up<'a>(
     let (stages, block) = draft
         .as_ref()
         .map_or((0, 0), |(dw, _)| (dw.cfg.stages, dw.cfg.block));
+    let batch_rows = resolve_batch_rows(std::env::var("MEMRA_DSV41_BATCH_ROWS").ok().as_deref())?;
+    let mut model = MemModel::with_draft(&g, trunk, PREFILL_CHUNK, stages, block);
+    model.batched = batch_rows > 1;
     let book = Book {
-        model: MemModel::with_draft(&g, trunk, PREFILL_CHUNK, stages, block),
+        model,
         ceiling,
         floor_cache,
         resident: on_card.then(|| (g.clone(), n)),
@@ -1137,6 +1174,7 @@ fn bring_up<'a>(
         max_slots,
         draft,
         price,
+        batch_rows,
     })
 }
 
@@ -1447,6 +1485,8 @@ fn serve_loop(
         let new_at = new_call.as_ref().map(|(i, _)| *i);
         let mut calls = Vec::with_capacity(act.len());
         let mut who = Vec::with_capacity(act.len());
+        // (request, token) of the one-token steps that share a call
+        let mut batch: Vec<(usize, u32)> = Vec::with_capacity(act.len());
         if let Some((i, prompt)) = new_call.take() {
             calls.push(Call {
                 seq: i,
@@ -1489,6 +1529,11 @@ fn serve_loop(
                         a.drafted = true;
                     }
                 }
+                if a.drafts.is_empty() && up.batch_rows > 1 {
+                    // a one-token step: it shares a call with the other requests' steps
+                    batch.push((i, t));
+                    continue;
+                }
                 let mut tokens = Vec::with_capacity(1 + a.drafts.len());
                 tokens.push(t);
                 tokens.extend_from_slice(&a.drafts);
@@ -1496,16 +1541,33 @@ fn serve_loop(
                 who.push(i);
             }
             let tf = Instant::now();
-            let outs = up.rn.forward(&mut seqs, &calls)?;
+            let outs = if calls.is_empty() {
+                Vec::new()
+            } else {
+                up.rn.forward(&mut seqs, &calls)?
+            };
             let mut rows = Vec::with_capacity(outs.len());
             for o in &outs {
                 // a prompt's last row; every row of a decode call
                 let (r0, n) = if o.sp == 0 { (o.s - 1, 1) } else { (0, o.s) };
                 rows.push(up.rn.logits(o, r0, n)?);
             }
-            Ok::<_, String>((outs, rows, draft_ms, tf.elapsed().as_secs_f64() * 1e3))
+            // the one-token steps together, their logits from one pass over the head
+            let mut bouts = Vec::new();
+            for chunk in batch.chunks(up.batch_rows) {
+                let o = up.rn.forward_batch(&mut seqs, chunk)?;
+                let lg = up.rn.logits(&o, 0, chunk.len())?;
+                bouts.push((o, lg));
+            }
+            Ok::<_, String>((
+                outs,
+                rows,
+                bouts,
+                draft_ms,
+                tf.elapsed().as_secs_f64() * 1e3,
+            ))
         }));
-        let (outs, rows, draft_ms, forward_ms) = match stepped {
+        let (outs, rows, bouts, draft_ms, forward_ms) = match stepped {
             Ok(Ok(x)) => x,
             Ok(Err(e)) => {
                 fail_all(
@@ -1542,9 +1604,9 @@ fn serve_loop(
             "[dsv41-step] calls={} prefill={} decode_rows={} step_s={step_s:.3} \
              transient_peak={transient} predicted_live_need={predicted} cache_slots={slots:?} \
              hits={} misses={} h2d_bytes={}",
-            calls.len(),
+            calls.len() + bouts.len(),
             new_at.map_or(0, |i| act[i].prompt_len),
-            outs.iter().filter(|o| o.sp > 0).map(|o| o.s).sum::<usize>(),
+            outs.iter().filter(|o| o.sp > 0).map(|o| o.s).sum::<usize>() + batch.len(),
             cs.hits,
             cs.misses,
             cs.h2d_bytes
@@ -1555,6 +1617,7 @@ fn serve_loop(
             up.price.note_draft(ms);
         }
         if let Some(first) = outs.first()
+            && bouts.is_empty()
             && first.sp > 0
             && outs.iter().all(|o| o.sp > 0 && o.s == first.s)
         {
@@ -1565,7 +1628,27 @@ fn serve_loop(
         // choose, emit, commit, finish
         let vocab = up.rn.g.vocab;
         let mut done = Vec::new();
-        for ((row, o), &i) in rows.into_iter().zip(&outs).zip(&who) {
+        // every request's rows with the call that holds them: its own call's from row 0, or its
+        // row of a batched call
+        let mut items: Vec<(usize, Vec<f32>, &Out, usize)> = rows
+            .into_iter()
+            .zip(&outs)
+            .zip(&who)
+            .map(|((row, o), &i)| (i, row, o, 0))
+            .collect();
+        let mut b0 = 0usize;
+        for (o, lg) in &bouts {
+            for r in 0..o.s {
+                items.push((
+                    batch[b0 + r].0,
+                    lg[r * vocab..(r + 1) * vocab].to_vec(),
+                    o,
+                    r,
+                ));
+            }
+            b0 += o.s;
+        }
+        for (i, row, o, row0) in items {
             let a = &mut act[i];
             let fail = |a: &mut Active, what: &str, e: String| {
                 let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
@@ -1634,13 +1717,15 @@ fn serve_loop(
             // the kept rows become the sequence's state; the rejected ones never reach it
             if o.sp > 0 {
                 let mut r = Ok(());
-                if o.s > 1 {
+                // a call of its own with several rows is a verification: its kept rows commit (a
+                // batched call's rows are other requests' steps, written as they ran)
+                if o.batch.is_empty() && o.s > 1 {
                     r = up.rn.commit(&mut seqs[i], kept);
                 }
                 if r.is_ok()
                     && let (Some((dw, _)), Some(ds)) = (up.draft.as_ref(), a.ds.as_mut())
                 {
-                    r = up.rn.draft_commit(dw, ds, o, 0, kept, false).map(|_| ());
+                    r = up.rn.draft_commit(dw, ds, o, row0, kept, false).map(|_| ());
                 }
                 if let Err(e) = r {
                     fail(a, "commit", e);
@@ -1649,6 +1734,7 @@ fn serve_loop(
             }
         }
         drop(outs);
+        drop(bouts);
         // finish from the back so swap_remove keeps the other indices valid
         done.sort_unstable();
         for &i in done.iter().rev() {
@@ -1752,6 +1838,33 @@ fn fail_all(act: &mut Vec<Active>, seqs: &mut Vec<Seq>, health: &Arc<RouteHealth
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_batch_width_defaults_to_the_small_m_limit_and_refuses_what_is_outside_it() {
+        assert_eq!(resolve_batch_rows(None), Ok(BATCH_ROWS_MAX));
+        assert_eq!(resolve_batch_rows(Some("1")), Ok(1));
+        assert_eq!(resolve_batch_rows(Some("8")), Ok(8));
+        assert!(resolve_batch_rows(Some("0")).is_err());
+        assert!(resolve_batch_rows(Some("9")).is_err());
+        // a batched call holds every running request's key rows at once
+        let mut m = flash();
+        let alone = Book {
+            model: m,
+            ceiling: vec![1 << 40],
+            floor_cache: 0,
+            resident: None,
+        }
+        .live_need(&[4096, 4096, 4096], None);
+        m.batched = true;
+        let together = Book {
+            model: m,
+            ceiling: vec![1 << 40],
+            floor_cache: 0,
+            resident: None,
+        }
+        .live_need(&[4096, 4096, 4096], None);
+        assert_eq!(together - alone, 2 * m.decode_bytes(4096));
+    }
 
     #[test]
     fn the_draft_door_is_off_unless_set_and_refuses_other_values() {
