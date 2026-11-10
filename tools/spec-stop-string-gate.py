@@ -82,6 +82,13 @@ TURN_PROMPTS = {
     "\n\nWrite about 300 words on what these notes say about moors.",
 }
 TURN2 = "Now give three concrete next steps for the same survey, in about 150 words."
+# DSpark with the prefix cache on: a cold conversation that ends on a stop string must park
+# rewound to its own prime boundary, and its second turn resume from the pool.
+COLD_TURN = "Reef field notes. " + " ".join(
+    f"Note {i}: the reef survey records one measurement per site, and a later visit extends the "
+    f"same record with a new reading." for i in range(1, 46)) + \
+    "\n\nWrite about 300 words, in several paragraphs, on what these notes say about reefs."
+COLD_STOP = "\n\n"
 STOP_AT = (14, 24, 34, 44, 54)  # word index in the reference answer; the first free word at or after
 SPAN_AT = (18, 38, 58)
 TWO_AT = (20, 40, 60)
@@ -294,7 +301,12 @@ class Server:
             if not o["text"] or not row["completion_tokens"]:
                 row["error"] = "empty answer"
             elif speculative and (row["completion_tokens"] or 0) > 1 and row["acceptance"] is None:
-                row["error"] = "the request did not speculate (no acceptance in its usage): it tested plain decode"
+                if self.args.route == "dspark" and row["cached"]:
+                    # DSpark admits cold sessions only: a request that restored a prefix from the
+                    # prefix cache is served by plain decode. Recorded, judged as plain decode.
+                    row["plain_by_admission"] = True
+                else:
+                    row["error"] = "the request did not speculate (no acceptance in its usage): it tested plain decode"
             elif speculative and row["demoted"]:
                 row["error"] = "the request was demoted to plain decode mid-answer: its stop tested plain decode"
             elif want_cached and not row["cached"]:
@@ -365,6 +377,7 @@ def run_boot(args):
         raise SystemExit(f"{args.out} already holds boot {args.case}")
     srv = Server(args, args.case, env)
     extra = {}
+    prefix_cache = "MEMRA_PREFIX_CACHE_MB=0" not in args.env
 
     def stop_row(kind, rid, regime, msgs, samp, max_tokens, stop):
         """A stop row. On a route whose sampled stream is its own (`self_ref`), the request is
@@ -430,6 +443,12 @@ def run_boot(args):
                 # restore the parked prefix.
                 srv.row("turn2", f"turn2-{regime}", regime, t2, sampler(seed_of(f"turn2-{regime}")), 64,
                         want_cached=not ref and args.route == "mtp")
+            if not ref and args.route == "dspark" and regime == "greedy" and prefix_cache:
+                cmsgs = user(COLD_TURN)
+                _, c1, _ = srv.row("coldturn1", "coldturn1-greedy", regime, cmsgs, sampler(0), MAX_TOKENS,
+                                   stop=[COLD_STOP])
+                c2 = cmsgs + [{"role": "assistant", "content": c1}, {"role": "user", "content": TURN2}]
+                srv.row("coldturn2", "coldturn2-greedy", regime, c2, sampler(0), 64)
             if not ref and args.route == "mtp":
                 # A stop string only a rejected drafted run completes, taken from a warm run of
                 # the free request in this boot and confirmed in each row's own log.
@@ -452,7 +471,7 @@ def run_boot(args):
         (args.out / f"reject-{args.case}.json").write_text(json.dumps(extra, indent=1))
     (args.out / "boots.jsonl").open("a").write(json.dumps({
         "case": args.case, "route": args.route if not ref else "plain", "env": args.env,
-        "self_ref": [r for r in REGIMES if self_ref(r)]}) + "\n")
+        "self_ref": [r for r in REGIMES if self_ref(r)], "prefix_cache": prefix_cache}) + "\n")
     errors = [r for r in load_rows(args.out) if r["case"] == args.case and r["error"]]
     for r in errors:
         print(f"ERROR {r['id']}: {r['error']}")
@@ -496,6 +515,7 @@ def self_judge(out, case, rr, failures, cov):
     by_id = {r["id"]: r for r in rr}
     good = total = 0
     counts = []
+    untestable = []
     for r in rr:
         if r["kind"] not in STOP_KINDS:
             continue
@@ -507,6 +527,12 @@ def self_judge(out, case, rr, failures, cov):
             at, below = by_id.get(f"{r['id']}-at-{n}"), by_id.get(f"{r['id']}-at-{n - 1}")
             if at is None or (n > 1 and below is None):
                 failures.append(f"{case} {r['id']}: no self-reference rows for its {n}-token stop")
+                continue
+            if any(x and x.get("plain_by_admission") for x in (r, at, below)):
+                # Its reference rows restored a prefix and ran on plain decode (DSpark admits
+                # cold sessions only): another sampled stream, nothing to judge it against.
+                untestable.append(r["id"])
+                total -= 1
                 continue
             full = text(at["id"])
             cut = min((full.find(x) for x in stops if x in full), default=-1)
@@ -525,7 +551,9 @@ def self_judge(out, case, rr, failures, cov):
             failures.append(f"{case} {r['id']}: {n} tokens, finish {r['finish']}: not where its stop string completes "
                             "in this route's own stream")
     print(f"  {rr[0]['regime'] if rr else '?'}: own stream (this route's sampled walk is not plain decode's): stop rows "
-          f"that stop on their completing token {good}/{total}; counts {counts}")
+          f"that stop on their completing token {good}/{total}; counts {counts}"
+          + (f"; not judged (their reference rows ran on plain decode after a prefix restore): {untestable}"
+             if untestable else ""))
 
 
 def judge(out):
@@ -536,9 +564,13 @@ def judge(out):
     failures = []
     cover = {}
     for r in rows:
+        if (route.get(r["case"]) == "dspark" and r["cached"] and r["acceptance"] is None
+                and (r["error"] or "").startswith("the request did not speculate")):
+            r["plain_by_admission"], r["error"] = True, None  # rows written before the rule
         if r["error"]:
             failures.append(f"{r['case']} {r['id']}: {r['error']}")
-        elif r["case"] != "ref" and (r["completion_tokens"] or 0) > 1 and r["acceptance"] is None:
+        elif (r["case"] != "ref" and (r["completion_tokens"] or 0) > 1 and r["acceptance"] is None
+              and not r.get("plain_by_admission")):
             failures.append(f"{r['case']} {r['id']}: the request did not speculate: it tested plain decode")
     for case in [b["case"] for b in boots if b["case"] != "ref"]:
         mine = [r for r in rows if r["case"] == case]
@@ -567,6 +599,8 @@ def judge(out):
                 continue
             stop_equal = stop_total = 0
             for r in rr:
+                if r["kind"] in ("coldturn1", "coldturn2"):
+                    continue  # judged below on the park, not against plain decode
                 want = ref.get(f"free-{regime}" if r["kind"] in ("reject", "probe") else r["id"])
                 if want is None:
                     failures.append(f"{case} {r['id']}: no plain row")
@@ -608,6 +642,24 @@ def judge(out):
                   f"{limit:.0f}")
             print(f"    stop-row completion tokens: {[r['completion_tokens'] for r in rr if r['kind'] in STOP_KINDS]} "
                   f"plain {[ref.get(r['id'], {}).get('completion_tokens') for r in rr if r['kind'] in STOP_KINDS]}")
+    for b in boots:
+        if b["route"] != "dspark" or not b.get("prefix_cache"):
+            continue
+        c1 = next((r for r in rows if r["case"] == b["case"] and r["kind"] == "coldturn1"), None)
+        c2 = next((r for r in rows if r["case"] == b["case"] and r["kind"] == "coldturn2"), None)
+        if c1 is None or c2 is None:
+            failures.append(f"{b['case']}: no cold conversation rows (a DSpark boot with the prefix cache on needs them)")
+            continue
+        parked = any("dspark-park REWOUND" in line for line in c1["park"])
+        resumed = any("dspark-reuse:" in line and "resumed" in line for line in c2["park"])
+        print(f"== {b['case']}: cold conversation: turn 1 {c1['completion_tokens']} tokens, finish {c1['finish']}, "
+              f"parked rewound {parked}; turn 2 resumed from the pool {resumed}, cached {c2['cached']}")
+        if c1["finish"] != "stop":
+            failures.append(f"{b['case']} coldturn1: did not end on its stop string (finish {c1['finish']}): nothing tested")
+        elif not parked:
+            failures.append(f"{b['case']} coldturn1: the stop-ended session did not park rewound: {c1['park']}")
+        if not resumed:
+            failures.append(f"{b['case']} coldturn2: the second turn did not resume the parked session: {c2['park']}")
     if not ref:
         failures.append("no plain (ref) boot in this DIR")
     if not cover:
