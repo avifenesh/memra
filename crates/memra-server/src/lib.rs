@@ -2341,8 +2341,8 @@ fn validate_bind_security(
 // with CONCURRENCY-SLOT semantics (this server admission-caps concurrent sessions; it has
 // no request/min or token/min budget to report — inventing one would be dishonest):
 //   Limit     = the lane's configured admission cap — the same values the worker's own
-//               admission gate enforces (interactive: MEMRA_MAX_SESSIONS batched /
-//               MAX_ACTIVE legacy; judge/harvest: LanePolicy max_sessions).
+//               admission gate enforces (interactive: MEMRA_MAX_SESSIONS; judge/harvest:
+//               LanePolicy max_sessions).
 //   Remaining = free slots at submission time (cap minus in-flight, this request
 //               included). Interactive beyond the cap QUEUES (never shed), so Remaining 0
 //               means "you will wait", not "you will be rejected".
@@ -6566,6 +6566,23 @@ impl HostHandoffHandle {
     }
 }
 
+/// `MEMRA_SERVE_BATCH` is retired (memra #1158). `=0` restored the round-robin scheduler, whose
+/// plain decode was the per-session eager step: a numeric class the speculative route is not
+/// exact against on the families whose verify runs the batched class. The batched scheduler is
+/// the only served path now, so the name selects nothing. Set to ANY value it refuses (`1` was
+/// the default and is refused too), so a launcher that still carries it fails loudly instead of
+/// serving a scheduler it did not ask for. Pure: the caller passes what the environment holds.
+fn retired_serve_batch_refusal(value: Option<&std::ffi::OsStr>) -> Option<String> {
+    value.map(|v| {
+        format!(
+            "MEMRA_SERVE_BATCH is retired; it cannot select a scheduler (found {v:?}). The \
+             batched scheduler is the only served path: the round-robin path that \
+             MEMRA_SERVE_BATCH=0 restored served a numeric class the speculative route is not \
+             exact against. Unset it. Ledger: docs/FLAGS.md 'Removed doors, 2026-11-10'."
+        )
+    })
+}
+
 pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::Error>> {
     // Key lifecycle CLI (lane/api-keys): `--gen-key <tenant>` / `--revoke-key <prefix>`
     // manage the keyring and exit — no engine, no GPU, no model load.
@@ -6610,6 +6627,15 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
              tools/check-claim-builds.mjs --live). Rebuild where the workspace source tree \
              is readable."
         );
+    }
+    // memra #1158: the retired scheduler seam refuses by its own name, ahead of the general
+    // audit, so the message says what the name used to select and `MEMRA_ENV_AUDIT=warn` or
+    // `=0` cannot wave it through into a scheduler the launcher did not ask for.
+    if let Some(message) =
+        retired_serve_batch_refusal(std::env::var_os("MEMRA_SERVE_BATCH").as_deref())
+    {
+        eprintln!("[server] FATAL: {message}");
+        std::process::exit(1);
     }
     // memra#483: the MEMRA_* names present in the environment are audited before anything
     // reads them (after the no-engine CLI exits above: `--version` must answer on any box). A retired door or an unknown name inside an owned family is a startup FATAL

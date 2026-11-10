@@ -359,9 +359,10 @@ else:  # replay: same prompts, rebuilt from the RECORDED history
     for i in range(0, len(hist), 2):
         got = ask(render(hist[:i + 1]))
         want = rec["texts"][i // 2]
-        # Burst overshoot: a spec burst may stop up to K tokens past max_tokens and the two
-        # arms' bursts need not align, so the shorter text being a PREFIX of the longer is
-        # the same tolerance serve-st-gate check 4 applies. Anything else is a divergence.
+        # The shorter text being a PREFIX of the longer is tolerated. The tolerance dates
+        # from the spec burst overshoot (a burst could stop up to K tokens past max_tokens);
+        # the public stream stops at the request budget now, and serve-st-gate check 4
+        # compares as an equality since memra #1158. Anything else is a divergence.
         if not (got.startswith(want) or want.startswith(got)):
             bad.append(i // 2)
     print("MISMATCH " + ",".join(map(str, bad)) if bad else "IDENTICAL")

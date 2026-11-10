@@ -32,7 +32,7 @@
 #      `/readyz` 503 `draining` + Retry-After, `/health` 200 `draining`, a new request 503 with
 #      `code: draining`, the stream runs to `[DONE]` with a finish_reason, exit 0, `drain complete`.
 #   g  a step OOM (MEMRA_STEP_OOM_FAULT=1, the synthetic-OOM door) on one non-streamed request's own
-#      non-batching step parks the session back to the queue and it completes; no 5xx (WP-B DAY47
+#      step (not a batched decode chunk) parks the session back to the queue and it completes; no 5xx (WP-B DAY47
 #      1.1, addendum A). Red twin g-red: MEMRA_STEP_OOM_FAULT=4 (one past the default retry budget)
 #      walks it into the bounded-retry honest error, and the green assertion must fire there.
 #      g-batch (DOCUMENTED): three concurrent streams share the batched decode chunk the fault lands
@@ -412,8 +412,8 @@ run_g() { # <label> <fault count> <red:true|false>: one non-streamed request (DA
   local label=$1 n=$2 red=$3
   if boot "$label" MEMRA_STEP_OOM_FAULT="$n"; then
     code=$(chat 48 false "$D/solo" 170)
-    # either injection point of a solo step (the plain dispatch's or the non-batching step's; DAY47 addendum B)
-    fired=$(grep -cE 'MEMRA_STEP_OOM_FAULT fired: this (non-batching )?step reports' "$D/server.log")
+    # the solo step's injection point (the round-robin scheduler's own point went with it, memra #1158)
+    fired=$(grep -c 'MEMRA_STEP_OOM_FAULT fired: this step reports' "$D/server.log")
     parked=$(grep -c '\[admit-oom\] step OOM parked session back to queue' "$D/server.log")
     panics=$(grep -cE 'panicked|\[worker\] PANIC' "$D/server.log")
     sample /health "$D/health-g.csv"; health_after=$LAST_CODE

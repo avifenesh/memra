@@ -2088,14 +2088,17 @@ via capture-retain keepers on `DraftGraphCtx` + retire-on-grow for the fa partia
 the quarantine is lifted and dir checkpoints are spec-eligible by default
 (`MEMRA_SERVE_SPEC=0` is the rollback door). Gate: `tools/serve-st-gate.sh` — item 3 pins
 the CLI ST-dir branch and the server to identical greedy token streams on a 64-token
-window, and item 4 pins the DEFAULT (spec-on) server against the **tokenwise serve
-oracle** (`MEMRA_SERVE_SPEC=0 MEMRA_SERVE_BATCH=0` — same worker, plain decode) at a
-400-token window, prefix-tolerant for burst overshoot. Note what item 4 is *not*: the
-comparator is deliberately the tokenwise **serve** arm, not the run-gen CLI, because both
-the batched-plain path and the CLI carry their own accepted near-tie FP classes at long
-windows (see [first-token cross-config
-drift](#first-token-cross-config-drift-batched-prime--stated-honestly) below). Do not
-restate this gate as "token-identical to the CLI oracle".
+window, and item 4 pins the DEFAULT (spec-on) server against the **plain serve oracle**
+(`MEMRA_SERVE_SPEC=0`: same worker, same batched program, speculation off) at a
+400-token window: text and completion tokens must be equal, on a short prompt and on one
+that fills the window (the public stream stops at the request budget in both arms, so
+there is no overshoot to tolerate). Until memra #1158 the oracle was the round-robin
+scheduler (`MEMRA_SERVE_BATCH=0`, the per-session eager class) under a prefix match; that
+scheduler is removed and the boot refuses the name. Note what item 4
+is *not*: the comparator is deliberately the **serve** arm, not the run-gen CLI, because
+the CLI carries its own accepted near-tie FP class at long windows (see [first-token
+cross-config drift](#first-token-cross-config-drift-batched-prime--stated-honestly)
+below). Do not restate this gate as "token-identical to the CLI oracle".
 
 ## Constrained decoding (`response_format`) — lanes constrained + constrained-full, 2026-08-03
 
@@ -2226,8 +2229,7 @@ prompt. An exact existing entry is promoted/refreshed without cached-token credi
 first exact same-wave owner publishes one full-prompt trunk snapshot and peers skip duplicate
 captures. A request shed to plain at higher load probes and consumes that unchanged entry through
 the normal restore path. DFlash does not add an LCP or message-boundary capture arm, and disabling
-the prefix-cache budget disables its capture too. Legacy round-robin mode
-(`MEMRA_SERVE_BATCH=0`) bypasses the prefix cache.
+the prefix-cache budget disables its capture too.
 **Eviction (plain global LRU, memra#523 item 2, 2026-09-21).** Capacity pressure evicts the
 oldest UNLEASED entry first, whatever its history; a hit refreshes the entry's recency and leases
 it for the restore, and the lease ends at the restore fence, before the request publishes its own
@@ -2442,7 +2444,7 @@ finding). Gates assert on the log lines; metrics deltas are recorded fields.
 (keyring deployments get one row per tenant across its end-user salts, `t:<tenant>`;
 no-keyring deployments key on the raw `cache_salt`, `""` = the default namespace). Rows are
 bounded (256): overflow traffic aggregates under `"(other)"`, so totals stay exact while a
-salt-spraying client cannot grow the map. Spec-tier and non-batched requests never probe the
+salt-spraying client cannot grow the map. Spec-tier requests never probe the
 prefix cache and are absent from the histogram by construction (their cached tokens still
 count in `cached_tokens_in` via the continuation/spec pools).
 

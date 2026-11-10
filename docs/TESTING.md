@@ -763,7 +763,15 @@ Two holes in this stage were closed by that same red (2026-08-06):
     template, and the CLI-vs-server exactness contract (same checkpoint, same prompt, same
     template, greedy → `run-gen`'s ST-dir tokenwise branch and the server's batched-prime +
     serving decode must produce IDENTICAL id streams). Runs `MEMRA_SERVE_SPEC=0` because with
-    spec on a Token event carries one id per flush.
+    spec on a Token event carries one id per flush. Its last check boots the default
+    (spec-on) server and requires its greedy text and completion tokens to equal the
+    `MEMRA_SERVE_SPEC=0` server's on two prompts, one of which fills the 400-token window;
+    both arms serve the batched program, the only served path since memra #1158, and the
+    default arm must report speculative rounds. The default directory is the Qwen3.5-4B
+    BF16 checkpoint; the official directory refuses at bind until memra #1166 is fixed, so
+    pass a copy without the `model.visual.*` tensors as `[st_dir]`
+    (`research/serve-batch-removal-20261110/tools/strip_tower.py` writes one). A checkpoint
+    with no embedded MTP tensors skips this check by name.
   - `tools/apikeys-gate.sh [model] [out_dir]`: auth refusals (401/403), single-key
     back-compat, the two-tenant **cache-isolation proof** via a cache-hit oracle, per-tenant
     rate-limit headers, the batch-class lane law, and hot revoke.

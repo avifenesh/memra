@@ -71,7 +71,7 @@
 //! THE STALL THRESHOLD (`MEMRA_HEALTH_STALL_S`, default 120 s) must cover the longest
 //! LEGITIMATE single iteration, which is a max-context prefill tick, not a decode step:
 //! a naked lone fresh interactive request may prime up to 8192 tokens in one call, while
-//! concurrent sessions remain capped at `PREFILL_TICK_T` (1024) tokens apiece and loop over
+//! concurrent sessions remain capped at the lane's prefill tick (1024) tokens apiece and loop over
 //! every active session inside ONE iteration. At the interactive cap
 //! (`MEMRA_MAX_SESSIONS` = 64) that is 64 x 1024 = 65,536 primed tokens in a single loop pass;
 //! at memra's measured 4k-prefill rate on this rig (1.2k tok/s — research/memra-vs-llama-daily-
