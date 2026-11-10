@@ -103,8 +103,8 @@ memra-engine --bin argmax-margin-probe`, `python3 tools/test_argmax_margin_gate.
 | other prompt bytes, another artifact, device, decode program or window | (its own floor row) | `STORED-ROWS: none` |
 
 <!-- SEEDS-EVIDENCE:START -->
-The seeds are the last 12 rows of the ten battery floor rows' receipts. Each equals the 12-row
-gate table of every cell-evidence record of its exact device: 197 tables from 85 records, each
+The seeds are the last 12 rows of the twelve battery floor rows' receipts. Each equals the 12-row
+gate table of every cell-evidence record of its exact device: 258 tables from 85 records, each
 record at its own commit (39 on the RTX 5090 Laptop GPU, 40 on GB10, 6 on the RTX PRO 6000
 Max-Q). The GB10 records come from both units and the RTX PRO 6000 records from three cards, so
 units of one device name give the same table on these cells, and the key does not need the unit.

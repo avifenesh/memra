@@ -21,11 +21,10 @@ calibration receipt (main 031f146690's probe over the whole of `board-2048`,
 device's artifact is in [`model-sha256.tsv`](model-sha256.tsv).
 
 <!-- SEEDS:START -->
-Eleven seeds, every battery cell that has a floor row at this commit (Ornith-1.5-35B-A3B on
-the RTX 5090 Laptop GPU, the RTX PRO 6000 Max-Q and GB10; Qwen3.8-27B on the first two, and its
-eager cell on GB10; eager and batch each). The GB10 Qwen3.8-27B batch cell gets its seed with
-its floor row. The model files on
-all three devices have the same sha256 (`model-sha256.tsv`), so the key differs only by device.
+Twelve seeds, one per battery cell and maintained device: Ornith-1.5-35B-A3B and Qwen3.8-27B,
+eager and batch, on the RTX 5090 Laptop GPU, the RTX PRO 6000 Max-Q and GB10. The model files on
+all three devices have the same sha256 (`model-sha256.tsv`), so the key differs only by device
+(and by the expert placement, resident for Ornith everywhere, none for the dense 27B).
 `seeds.txt` is the run's output.
 
 Each seed against the 12-row gate tables of the cell-evidence records of its exact device
@@ -44,8 +43,9 @@ Each seed against the 12-row gate tables of the cell-evidence records of its exa
 | Ornith eager, GB10 | 40 | 40 | 2 |
 | Ornith batch, GB10 | 21 | 21 | 2 |
 | Qwen3.8-27B eager, GB10 | 40 | 40 | 2 |
+| Qwen3.8-27B batch, GB10 | 21 | 21 | 2 |
 
-Every record equals its seed: 237 tables from 85 records (39 on the RTX 5090 Laptop GPU, 40 on
+Every record equals its seed: 258 tables from 85 records (39 on the RTX 5090 Laptop GPU, 40 on
 GB10, 6 on the RTX PRO 6000 Max-Q), each record at its own commit, on both GB10 units and on
 three RTX PRO 6000 Max-Q cards. Across the builds these records cover, no roster cell on these
 devices has moved a byte of its window.
