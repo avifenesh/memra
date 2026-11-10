@@ -1903,6 +1903,64 @@ extern "C" int memra_v41_add_argmax(float* row, const float* bias, int n, float*
     V41_ERR();
 }
 
+// The greedy token of each fp32 logits row of `x` ([rows][n], pitch ld): the largest value and
+// the lowest index holding it, one block per row. A row holding a non-finite value reports NaN, so
+// the caller refuses it as it refuses such a row of downloaded logits.
+__global__ void __launch_bounds__(1024) v41_argmax_rows_kernel(const float* __restrict__ x, long ld, int n,
+                                                               float* __restrict__ out_val,
+                                                               int* __restrict__ out_idx) {
+    __shared__ float sv[32];
+    __shared__ int si[32];
+    __shared__ int sb[32];
+    const float* row = x + (long)blockIdx.x * ld;
+    float best = -INFINITY;
+    int bi = 0x7fffffff;
+    int bad = 0;
+    for (int i = threadIdx.x; i < n; i += blockDim.x) {
+        float v = row[i];
+        if ((__float_as_uint(v) & 0x7f800000u) == 0x7f800000u) bad = 1;
+        if (v > best || (v == best && i < bi)) {
+            best = v;
+            bi = i;
+        }
+    }
+#pragma unroll
+    for (int o = 16; o > 0; o >>= 1) {
+        float ov = __shfl_xor_sync(0xffffffffu, best, o);
+        int oi = __shfl_xor_sync(0xffffffffu, bi, o);
+        bad |= __shfl_xor_sync(0xffffffffu, bad, o);
+        if (ov > best || (ov == best && oi < bi)) {
+            best = ov;
+            bi = oi;
+        }
+    }
+    if ((threadIdx.x & 31) == 0) {
+        sv[threadIdx.x >> 5] = best;
+        si[threadIdx.x >> 5] = bi;
+        sb[threadIdx.x >> 5] = bad;
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        for (int w = 1; w < (int)(blockDim.x >> 5); ++w) {
+            bad |= sb[w];
+            if (sv[w] > best || (sv[w] == best && si[w] < bi)) {
+                best = sv[w];
+                bi = si[w];
+            }
+        }
+        out_val[blockIdx.x] = bad ? __uint_as_float(0x7fc00000u) : best;
+        out_idx[blockIdx.x] = bi;
+    }
+}
+
+extern "C" int memra_v41_argmax_rows(const float* x, long ld, int rows, int n, float* out_val, int* out_idx,
+                                     void* stream) {
+    if (rows <= 0) return rows < 0 ? 41030 : 0;
+    if (n <= 0 || ld < n || !x || !out_val || !out_idx) return 41030;
+    v41_argmax_rows_kernel<<<rows, 1024, 0, (cudaStream_t)stream>>>(x, ld, n, out_val, out_idx);
+    V41_ERR();
+}
+
 // ---------------------------------------------------------------------------------------------
 // CSA2 compressor pooling at ratio 2: out[j] = bf16(kv[2j] * p0 + kv[2j+1] * p1) with p the
 // softmax over the pair of gate scores, per channel (fp32 rows in, bf16 rows out).

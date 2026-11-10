@@ -28,7 +28,8 @@
 //!       Writes memra's tensors next to the tape's names for `draft_cmp.py`.
 //!   gen ID PROMPT.i32 N [DEPTH [TAU]]
 //!       Plain greedy generation of N tokens, then drafted greedy generation of the same prompt:
-//!       the tokens and the logits behind every token must be identical. Prints acceptance and
+//!       the tokens and the logits behind every token must be identical, and the device
+//!       reduction of every row (`Runner::argmax_rows`) must name the host argmax's token. Prints acceptance and
 //!       the time of a one-token step, a draft and a verification step. DEPTH caps the drafts
 //!       verified per step (default: the block); TAU verifies only the leading drafts whose
 //!       confidence sigmoid is at least TAU.
@@ -804,6 +805,7 @@ fn generate(
     let mut p_tok = vec![argmax(&lg) as u32];
     let mut p_hash = vec![fnv(&lg)];
     let mut p_ms = Vec::new();
+    let (mut dev_rows, mut dev_equal) = (0usize, 0usize);
     while p_tok.len() < n_new && *p_tok.last().unwrap() != eos {
         let t = Instant::now();
         let outs = rn.forward(
@@ -817,6 +819,9 @@ fn generate(
         p_ms.push(t.elapsed().as_secs_f64() * 1e3);
         p_tok.push(argmax(&lg) as u32);
         p_hash.push(fnv(&lg));
+        // the device reduction of the same row must name the same token
+        dev_rows += 1;
+        dev_equal += usize::from(rn.argmax_rows(&outs[0], 0, 1)? == [argmax(&lg) as u32]);
     }
     drop(seqs);
     let plain_s: f64 = p_ms.iter().sum::<f64>() / 1e3;
@@ -873,6 +878,9 @@ fn generate(
         let targets: Vec<u32> = (0..=k)
             .map(|i| argmax(&lg[i * v_..(i + 1) * v_]) as u32)
             .collect();
+        dev_rows += k + 1;
+        let dev = rn.argmax_rows(o, 0, k + 1)?;
+        dev_equal += dev.iter().zip(&targets).filter(|(a, b)| a == b).count();
         let (mut c_d, mut t_next) = accept_walk(&targets, &dr.ids[..k]);
         // an accepted end-of-sequence ends the run there
         if let Some(e) = dr.ids[..c_d].iter().position(|&x| x == eos) {
@@ -905,7 +913,7 @@ fn generate(
     let spec_s = ts.elapsed().as_secs_f64();
     let same_tok = s_tok == p_tok;
     let same_logits = s_hash == p_hash;
-    let pass = same_tok && same_logits;
+    let pass = same_tok && same_logits && dev_equal == dev_rows;
     let first_diff = s_tok
         .iter()
         .zip(&p_tok)
@@ -968,6 +976,7 @@ fn generate(
             "job": "gen", "id": id, "pass": pass, "prompt": prompt.len(),
             "tokens": p_tok.len(), "spec_tokens": s_tok.len(),
             "tokens_identical": same_tok, "logits_identical": same_logits, "first_diff": first_diff,
+            "device_argmax_rows": dev_rows, "device_argmax_equal": dev_equal,
             "depth": depth, "tau": tau,
             "rounds": rounds.len(), "drafts_verified": ver, "drafts_accepted": acc,
             "accepted_per_round": acc as f64 / nr,

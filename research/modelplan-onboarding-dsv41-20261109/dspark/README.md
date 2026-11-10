@@ -245,8 +245,11 @@ nothing fetched. A 9-layer trunk, the head and the draft head with every weight 
   of the pricing and not a constant. (A block of one token repeated is only 10% cheaper, but its
   rows sit at different positions and need not route alike, so that arm does not isolate the
   experts; the byte count does.)
-- The head: for 5 to 8 rows the fp32 head GEMM is two passes over the 1.3 GB head. A device
-  argmax for greedy rows would remove the logits download and leave one pass; not done.
+- The head: for 5 to 8 rows the fp32 head GEMM is two passes over the 1.3 GB head, and every row's
+  logits are downloaded (517 KB a row). `Runner::argmax_rows` (`memra_v41_argmax_rows`) reduces
+  greedy rows on the device instead; it compiles and `dsv41-spec gen` checks it row by row against
+  the host argmax, but it has not run on a card and no route uses it yet. The second pass stays
+  until the FMA small chain takes 8 rows in one launch.
 
 In the one-card expert-cache residency a block also fetches: in the full-trunk run the cache held
 3,040 of 15,360 experts beside the draft head (a 24 GB reserve for the long prefills), 23% of the
@@ -296,12 +299,37 @@ are the ones it had. It compiles and its unit tests pass; it has not served a re
    eight; then the door becomes the default where it wins and is removed.
 3. The pricing's first values measured; the row-cost table on the layout the lane settles on.
 4. The draft's host round trips (five picks, each a read-back) and the trunk head's second pass:
-   a device-side chain of picks and a device argmax for greedy rows.
+   a device-side chain of picks, the device argmax's first run on a card, an 8-row FMA body.
 5. N ranks: the code paths are the rank group's (the stages go through `block_forward_kind`, the
    head and the Markov head split by vocabulary rows, the picks reduce across ranks on the host),
    but only one rank has run.
 6. Batched verification across requests rides the lane's batched decode design; today each call
    runs alone through each block.
+
+## What the draft path needs from a layout
+
+The loop was built on the rank group, where every rank holds a replica of every stream. A layout
+that places consecutive layers on different cards has to keep these open:
+
+1. **A decode call of several rows.** `Runner::forward` with more than one token past the prefill:
+   each layer's `attn_keys` builds `[ring | the call's rows]` and leaves the rows in
+   `LayerState::pend_kv` / `pend_c`; the stream that crosses a stage boundary is `[rows][hc][dim]`
+   with its `[rows][hc]` pre-mix, the same two buffers a one-token call hands over, only taller.
+2. **Commit and discard per sequence.** `Runner::commit(keep)` and `Runner::discard` reach every
+   layer's state (`Ctx::commit_rows`: ring and open pair) and every kv-source group's row count,
+   wherever the layer lives; nothing of a call may become state before it.
+3. **The taps.** The mean over the stream copies at the INPUT of layers 37, 38 and 39, for every
+   row of a decode call and for the last 128 rows of a prefill (`Runner::set_taps`, `Out::taps`,
+   bf16 `[rows][3 * dim]`), available where the draft stages run.
+4. **A place for the head.** The three stages (7 GB of weights, a ring of 128 KV rows per stage per
+   sequence), `main_proj`, the Markov head (132 MB) and the confidence row want the card that
+   holds the trunk's head and embedding rows: a draft reads the embedding of its token and of the
+   noise id, the trunk head's weights for its five rows, and the taps of the last trunk stage.
+5. **The trunk head by rows.** Logits (or the device argmax) of rows `r0 .. r0 + rows` of a call,
+   not only of its last row (`Runner::logits`, `Runner::argmax_rows`).
+6. **The token history** up to the call's rows for the Engram hash (`Seq::ids`, cut by commit).
+7. **A row-cost table per layout.** The route measures its own decode calls by rows
+   (`draft::RowCost`); a layout only has to let a step report its time and rows.
 
 ## Files
 

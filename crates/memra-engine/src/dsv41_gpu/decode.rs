@@ -804,6 +804,83 @@ impl<'a> Runner<'a> {
         self.grp.head_logits(&out.h, &out.pre, r0, rows, nw, hw)
     }
 
+    /// The greedy tokens of rows `[r0, r0 + rows)` of a call, reduced on the device: the head as
+    /// [`Self::logits`] runs it (the collapse, the final norm, each rank's vocabulary rows of the
+    /// fp32 head), then each row's largest logit and the lowest id holding it on every rank
+    /// (`memra_v41_argmax_rows`), the ranks' slices compared on the host in ascending order, so
+    /// the lowest id wins among equal maxima. The token of [`argmax`] over [`Self::logits`]
+    /// without the logits' download; a row with a non-finite logit is refused like there.
+    pub fn argmax_rows(&mut self, out: &Out, r0: usize, rows: usize) -> Result<Vec<u32>, String> {
+        if r0 + rows > out.s {
+            return Err(format!(
+                "rows {r0}..{} of a {}-token call",
+                r0 + rows,
+                out.s
+            ));
+        }
+        if self.head.is_none() {
+            self.head = Some(self.grp.load_head(self.stm, &self.g)?);
+        }
+        let (nw, hw) = self.head.as_ref().unwrap();
+        let g = self.g.clone();
+        let (hc, d) = (g.hc, g.dim);
+        let (h, pre) = (&out.h, &out.pre);
+        let parts = self.grp.each(|r, c| {
+            let st = c.ops.st.clone();
+            let x = c.ops.tmp(rows * d * 2)?;
+            super::ck("hc_pre", unsafe {
+                super::ffi::memra_v41_hc_pre(
+                    h[r].at(&st, r0 * hc * d * 2).c(),
+                    pre[r].at(&st, r0 * hc * 4).f(),
+                    rows as i32,
+                    hc as i32,
+                    d as i32,
+                    x.p(&st).m(),
+                    d as i64,
+                    c.ops.sv(),
+                )
+            })?;
+            c.ops
+                .rmsnorm(x.p(&st), d, &nw[r], x.p(&st), d, rows, d, g.norm_eps)?;
+            let n = hw[r].n;
+            let lg = c.ops.tmp(rows * n * 4)?;
+            c.ops
+                .linear_bf16(x.p(&st), d, rows, &hw[r], lg.p(&st), n, true)?;
+            let val = c.ops.tmp(rows * 4)?;
+            let idx = c.ops.tmp(rows * 4)?;
+            super::ck("argmax_rows", unsafe {
+                super::ffi::memra_v41_argmax_rows(
+                    lg.p(&st).f(),
+                    n as i64,
+                    rows as i32,
+                    n as i32,
+                    val.p(&st).fm(),
+                    idx.p(&st).im(),
+                    c.ops.sv(),
+                )
+            })?;
+            Ok((
+                super::bytes_f32(&val.host(&st)?),
+                super::bytes_i32(&idx.host(&st)?),
+                n,
+            ))
+        })?;
+        let mut best = vec![(f32::NEG_INFINITY, 0u32); rows];
+        let mut col = 0usize;
+        for (val, idx, n) in parts {
+            for i in 0..rows {
+                if !val[i].is_finite() {
+                    return Err("non-finite logits".into());
+                }
+                if val[i] > best[i].0 {
+                    best[i] = (val[i], (col + idx[i] as usize) as u32);
+                }
+            }
+            col += n;
+        }
+        Ok(best.into_iter().map(|b| b.1).collect())
+    }
+
     /// The greedy next token after a call (its last row's logits, lowest id among equal maxima),
     /// without the log-sum-exp and top-k a scored step also keeps.
     pub fn argmax_last(&mut self, out: &Out) -> Result<u32, String> {

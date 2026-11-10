@@ -372,6 +372,16 @@ pub mod ffi {
             out_idx: *mut i32,
             stream: *mut c_void,
         ) -> i32;
+        /// Each fp32 row's maximum and its lowest index (NaN for a row with a non-finite value).
+        pub fn memra_v41_argmax_rows(
+            x: *const f32,
+            ld: i64,
+            rows: i32,
+            n: i32,
+            out_val: *mut f32,
+            out_idx: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
         /// The MoE dispatch plan on the device (`MoePlanDev`).
         pub fn memra_v41_moe_plan(
             sel: *const i32,
