@@ -4071,7 +4071,7 @@ pub struct HybridModel {
     pub glm5_dflash: Option<crate::glm_spec::Glm5DflashDrafter>,
     /// Measured PER-SESSION draft-graph state high-water, in bytes
     /// (lane/step37-vram-admission-20260830). Since the multi-head chain capture each
-    /// capturing session parks real device state — capture-retain keepers, q slots, the
+    /// capturing session parks real device state — capture-retain keepers and the
     /// instantiated graphs' backing memory — that admission used to charge at ZERO. The
     /// engine records the effective-free delta across a session's capture block here
     /// (high-water, self-measured — generic-model law: no per-family constant), and
@@ -4215,7 +4215,7 @@ impl HybridModel {
     /// Per-session draft-graph state admission charge, in bytes: the measured high-water
     /// (see [`Self::record_draft_state_bytes`]), 0 until a capture has been observed.
     /// Admission adds this to the SESSION cost of every spec-capable admit — it is
-    /// per-session state (each capturing session parks its own keepers/q-slots/graphs),
+    /// per-session state (each capturing session parks its own keepers and graphs),
     /// unlike the shared transient floor.
     pub fn draft_session_admission_bytes(&self) -> usize {
         self.draft_state_bytes

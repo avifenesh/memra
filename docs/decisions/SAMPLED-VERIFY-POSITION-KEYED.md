@@ -120,7 +120,8 @@ Not covered, each named where a reader will look (`docs/SERVING.md`, the `MEMRA_
   host, so its speculative text is one text across K but not plain decode's.
 - `MEMRA_SPEC_SAMPLED_BOUNDARY=0` (a rollback seam) puts an argmax at each burst boundary and
   breaks the position key.
-- The draft side still retains its head logits and reads back its filter statistics every slot
-  for an accept test that no longer exists (up to nine scalar readbacks and three launches a
-  round at K=3). The pooled-draft probe compares those fields, so removing them is its own
-  change.
+
+Follow-up, done: the draft side kept producing the old accept test's inputs (its retained head
+logits and the filter statistics it read back every slot, up to nine scalar readbacks and three
+launches a round at K=3). memra#1169 removed them, with the two pooled-draft probe fields that
+compared them: `research/spec-draft-accept-leftovers-20261110/`.

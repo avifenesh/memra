@@ -79,8 +79,9 @@ fn mtp_chain_graph_on() -> bool {
 /// ON — receipts in the lane RESULTS). ON widens the sampled draft-graph capture from the
 /// pure-temp regime to every truncation-filtered regime (top_k / top_p / min_p): the capture
 /// body runs `filter_stats` + `gumbel_perturb_filtered_ctr` IN-GRAPH, so the draft draws
-/// from the SAME filtered distribution the verify's accept test reconstructs (the
-/// graph-s-key exactness law, now satisfied inside the graph instead of by refusing it).
+/// from the request's filtered distribution, the one the target's own draw comes from.
+/// (Under the rejection accept this was an exactness condition; since memra#1154 the MTP
+/// verify compares token ids and the match only keeps acceptance up.)
 /// Penalties stay eager either way (the history varies per round and cannot be baked).
 /// The pure-temp capture body is UNTOUCHED by this door (byte-identical to the pre-lane
 /// graph). OFF (=0) restores the pure-temp-only capture guard: filtered requests draft
@@ -523,11 +524,10 @@ pub(crate) fn capture_headroom_verdict(
 /// observed capture). Deliberately conservative and shape-derived, never a per-family
 /// constant: per (head, mode) capture the two warmups + capture each walk one head
 /// forward whose dominant transients are a handful of `n_embd` rows and one `d_vocab`
-/// logits row, retained by the keeper; the sampled tail additionally parks
-/// `k` q-slots + perturb/q buffers of `d_vocab` each.
+/// logits row, retained by the keeper. The sampled tail parks nothing more: its perturb
+/// buffer belongs to the draft context and is allocated before a capture is sized.
 pub(crate) fn draft_capture_bootstrap_estimate(
     heads: usize,
-    k: usize,
     d_vocab: usize,
     n_embd: usize,
 ) -> usize {
@@ -536,13 +536,7 @@ pub(crate) fn draft_capture_bootstrap_estimate(
         .saturating_mul(4)
         .max(32 << 20); // instantiate + driver-side graph backing per capture, floor
     let captures = heads.max(1).saturating_mul(2); // interior + last per head
-    let sampled_slots = (k.saturating_add(2))
-        .saturating_mul(d_vocab)
-        .saturating_mul(4);
-    captures
-        .saturating_mul(per_capture)
-        .saturating_add(sampled_slots)
-        .max(64 << 20)
+    captures.saturating_mul(per_capture).max(64 << 20)
 }
 
 /// OOM predicate for capture-failure recovery (engine-side twin of the worker's
@@ -709,11 +703,8 @@ fn debug_t_pred0(sampled: bool, base: usize, last_pred: u32, preds: &[u32]) -> S
 /// `MEMRA_SKEY_PROBE=1` — sampled-draft-graph key probe (lane/graph-s-key-exactness-20260819).
 ///
 /// Reports, per burst and per round, which draft chain the sampled arm chose and under which
-/// filter regime, plus the ONE observable that separates a legal filtered draft from a stale
-/// pure-temp graph replayed under filters: an accept test whose gathered `q` is exactly 0.
-/// A draft token sampled from the FILTERED softmax can never gather q=0 (it was drawn from the
-/// kept set), so `q=0` in the verify means the draft came from a distribution the verify does
-/// not believe in — and `u * 0 < p` then accepts it unconditionally.
+/// filter regime. (It also printed the rejection accept's gathered `q` until memra#1154
+/// replaced that accept with a token-id comparison.)
 ///
 /// Its own env var, deliberately NOT `MEMRA_DEBUG_SPEC`: that flag panicked the GPU worker on
 /// any sampled spec request past round 0 until this lane fixed it (§2 of the bank note).
@@ -2252,9 +2243,9 @@ impl SampledGraphKey {
     }
 
     /// Truncation filters active — the capture body needs the IN-GRAPH filter nodes
-    /// (`filter_stats` + `gumbel_perturb_filtered_ctr`) so the draft draws from the same
-    /// filtered distribution the accept test reconstructs. Meaningful only when
-    /// `graph_capturable`; penalties never reach a capture body.
+    /// (`filter_stats` + `gumbel_perturb_filtered_ctr`) so the draft draws from the
+    /// request's filtered distribution. Meaningful only when `graph_capturable`; penalties
+    /// never reach a capture body.
     pub(crate) fn filtered(&self) -> bool {
         !self.pure_temp()
     }
@@ -2262,9 +2253,8 @@ impl SampledGraphKey {
     /// May the sampled draft graph be CAPTURED (and a parked one LAUNCHED) for this regime?
     /// Pure-temp always; filtered regimes when the filtered-capture door is on
     /// (lane/step37-draft-graph-serving-20260830); penalties never — the per-round history
-    /// cannot be baked into a graph, and composing a raw-softmax (or stale-history) draw
-    /// with a penalized accept test is the unconditional-accept exactness bug. Computed FROM
-    /// THE KEY for the same no-drift reason as `pure_temp`.
+    /// cannot be baked into a graph, and a raw-softmax (or stale-history) draw is not the
+    /// request's sampler. Computed FROM THE KEY for the same no-drift reason as `pure_temp`.
     pub(crate) fn graph_capturable(&self) -> bool {
         !self.pen_on && (self.pure_temp() || spec_graph_filtered_on())
     }
@@ -2296,12 +2286,10 @@ struct DraftChainGraphs {
 /// constants of the in-graph categorical draw. `filt: None` = the PURE-TEMP body (gumbel
 /// over the raw softmax), byte-identical to the pre-lane capture; `Some` adds the in-graph
 /// truncation filter (`filter_stats` + `gumbel_perturb_filtered_ctr`) so the draft draws
-/// from the same filtered distribution the accept test reconstructs
-/// (lane/step37-draft-graph-serving-20260830).
+/// from the request's filtered distribution (lane/step37-draft-graph-serving-20260830).
 struct SampledCapArgs<'a> {
     ctr: &'a mut CudaSlice<u32>,
     perturb: &'a mut CudaSlice<f32>,
-    q_out: &'a mut CudaSlice<f32>,
     seed: u64,
     temp: f32,
     filt: Option<SampledCapFilter<'a>>,
@@ -2328,7 +2316,6 @@ pub(crate) struct DraftGraphCtx {
     g_seed: CudaSlice<f32>,
     g_p: CudaSlice<f32>,
     g_ctr: CudaSlice<u32>,
-    g_q: CudaSlice<f32>,
     g_perturb: CudaSlice<f32>,
     /// IN-GRAPH filter-stat slots (filtered sampled capture): `filter_stats` writes
     /// (th, z, mx) here inside the graph; `gumbel_perturb_filtered_ctr` reads (mx, th) from
@@ -2349,7 +2336,6 @@ pub(crate) struct DraftGraphCtx {
     /// the model the session belongs to (every chain head carries the same one), so the
     /// sampled graph's key needs no field for it.
     g_idmap: Option<CudaSlice<u32>>,
-    q_slots: Vec<CudaSlice<f32>>,
     /// DRAFT-SIDE GRAMMAR MASK (lane/draft-mask): packed allowed-set words over the DRAFT
     /// head's vocab, at a STABLE address so the captured draft graph's mask node reads the
     /// per-position contents the host re-uploads before each replay (the graph-promote
@@ -2371,7 +2357,7 @@ pub(crate) struct DraftGraphCtx {
     /// (audit Q2, the TRT #16072 silent-permanent-coverage-loss class).
     failed: DraftGraphFallback,
     /// Capture identity of `graph_s` — see [`SampledGraphKey`]. `None` iff no sampled graph is
-    /// parked; a request whose key differs drops the parked graph (and its q slots/keeper).
+    /// parked; a request whose key differs drops the parked graph (and its keeper).
     s_key: Option<SampledGraphKey>,
     /// CAPTURE-RETAIN keepers (#68 root cause, 2026-08-04): the warmup-run transients whose
     /// pool addresses the captured graph(s) bake. Without these, the transients return to the
@@ -2463,14 +2449,12 @@ impl DraftGraphCtx {
             g_seed: e.zeros(n_embd)?,
             g_p: e.zeros(1)?,
             g_ctr: e.alloc_u32_zeroed(1)?,
-            g_q: e.zeros(qlen)?,
             g_perturb: e.zeros(qlen)?,
             g_rows0: e.htod_i32(&[0])?,
             g_th: e.zeros(1)?,
             g_z: e.zeros(1)?,
             g_mx: e.zeros(1)?,
             g_idmap: None,
-            q_slots: Vec::new(),
             g_dmask: e.alloc_u32_zeroed(1)?,
             graph_masked: false,
             graph: None,
@@ -3777,8 +3761,6 @@ struct SpecRoundState<'a, 'c> {
     preds_d: CudaSlice<u32>,
     snap: crate::cache::CacheSnapshot,
     kc: usize,
-    draft_logits: Vec<CudaSlice<f32>>,
-    draft_stats: Vec<(f32, f32, f32)>,
     perturb_buf: Option<CudaSlice<f32>>,
     pcol_buf: Option<CudaSlice<f32>>,
     st_drafted: Vec<usize>,
@@ -3835,6 +3817,8 @@ struct SpecDraftRound {
     graph_round_ok: bool,
     round_t0: Option<std::time::Instant>,
     draft: Vec<u32>,
+    /// Trimmed-vocab id of every sampled draw, a p-min-discarded one included. Nothing on
+    /// the serving path reads it since memra#1169; the pooled-draft probe compares it.
     draft_idx: Vec<u32>,
     /// `SpecRoundPrep::sctr0`.
     sctr0: u32,
@@ -5340,11 +5324,11 @@ impl HybridModel {
     ///     the pseudo pass only needs h_nextn (op 10) + the scratch append — the lm_head read
     ///     (~1.06ms q6_K on the 9B), argmax and prob are dead weight there. h_nextn's inputs are
     ///     untouched, so the seed value is identical; round-start resets overwrite tok_d/p_d anyway.
-    ///     `sampled_cap` = Some((ctr_d, perturb_d, q_out_d, seed, temp)) captures the SAMPLED twin
-    ///     (step 3 of the sampled-spec arc): head logits are retained in the persistent `q_out_d`
-    ///     (host D2Ds them to the round's q slot after each replay), the DEVICE event counter is
-    ///     bumped in-graph, and the argmax reads GUMBEL-PERTURBED logits — one categorical draw per
-    ///     replay, bit-identical to the eager arm's gumbel_perturb at the same (seed, sctr, temp).
+    ///     `sampled_cap` = Some((ctr_d, perturb_d, seed, temp, filt)) captures the SAMPLED twin
+    ///     (step 3 of the sampled-spec arc): the DEVICE event counter is bumped in-graph and the
+    ///     argmax reads GUMBEL-PERTURBED logits — one categorical draw per replay, bit-identical
+    ///     to the eager arm's gumbel_perturb at the same (seed, sctr, temp). The head logits are
+    ///     not retained: the verify compares token ids only (memra#1154).
     ///     seed/temp are capture-time constants (fixed per generate call, like p_min).
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
@@ -5537,18 +5521,14 @@ impl HybridModel {
             if let Some(SampledCapArgs {
                 ctr: ctr_d,
                 perturb: perturb_d,
-                q_out: q_out_d,
                 seed,
                 temp,
                 filt,
                 idmap,
             }) = sampled_cap
             {
-                // SAMPLED chain: retain q (raw head logits -> persistent q_out_d; the matmul's
-                // own buffer is pool-recycled after the capture body returns, so it can't be the
-                // retention target), bump the device event counter, gumbel-perturb reading it,
-                // and argmax the PERTURBED logits into tok_d — the in-graph categorical draw.
-                e.copy_into(q_out_d, 0, &logits, d_vocab)?;
+                // SAMPLED chain: bump the device event counter, gumbel-perturb reading it, and
+                // argmax the PERTURBED logits into tok_d — the in-graph categorical draw.
                 e.sctr_inc(ctr_d)?;
                 match filt {
                     // PURE-TEMP: gumbel over the raw softmax — byte-identical to the
@@ -5557,12 +5537,11 @@ impl HybridModel {
                         &logits, perturb_d, d_vocab, seed, ctr_d, temp, idmap,
                     )?,
                     // FILTERED (lane/step37-draft-graph-serving-20260830): the SAME
-                    // filter_stats program the eager arm and the accept path run (the
-                    // wrapper's coop/plain choice is deployment-keyed, never per-call), then
-                    // the device-stat/device-counter perturb twin — the draft draws from the
-                    // exact filtered distribution the verify gathers `q` from. q was
-                    // retained ABOVE, pre-perturb, so the accept path's post-replay stats
-                    // recompute (same kernel, same bits) reconstructs these th/z exactly.
+                    // filter_stats program the eager arm runs (the wrapper's coop/plain
+                    // choice is deployment-keyed, never per-call), then the device-stat/
+                    // device-counter perturb twin — the draft draws from the request's
+                    // filtered distribution. The stat slots stay on device: nothing reads
+                    // them back (memra#1154 took the verify's use of them away).
                     Some(f) => {
                         e.filter_stats(
                             &logits, d_vocab, f.rows0, f.th, f.z, f.mx, d_vocab, 1, temp, f.top_k,
@@ -8504,10 +8483,14 @@ impl HybridModel {
     /// first round draft twice from the same state, once through its serial chain
     /// (`spec_round_draft_serial`, the captured graphs when the session has them) and once
     /// through `spec_round_draft_pooled`, and compares, per member: draft tokens and trimmed
-    /// ids, filter stats, retained q rows, the Philox counter, the draft-KV length (host and
-    /// device), the draft-KV bytes the round wrote, and a follow-up eager head step that
-    /// attends over them. It also pins the rows head forward's logits and carriers against
-    /// per-session eager steps from the round-start state, then times the two drafts.
+    /// ids, the Philox counter, the draft-KV length (host and device), the draft-KV bytes the
+    /// round wrote, and a follow-up eager head step that attends over them. Since memra#1169
+    /// the draft keeps no filter statistics and no head-logit rows, so the probe sees a
+    /// step's head logits and filter statistics only through the draw (the token and the
+    /// trimmed id, a p-min-discarded one included) and through the KV rows the later steps
+    /// and the follow-up attend over. It also pins the rows head forward's first-step logits
+    /// and carriers against per-session eager steps from the round-start state, then times
+    /// the two drafts.
     /// Returns report lines; the sessions are left mid-burst (bench use only).
     pub fn pooled_draft_probe(
         &self,
@@ -8588,39 +8571,18 @@ impl HybridModel {
             |b: &mut SpecBurst<'_, '_, '_>, i: usize| -> Result<(), Box<dyn std::error::Error>> {
                 b.rs.sctr = sctr0[i];
                 b.rs.scratch.set_len(e, len0[i])?;
-                b.rs.draft_logits.clear();
-                b.rs.draft_stats.clear();
                 Ok(())
             };
         // Read one member's drafted round back, run the follow-up step, restore the round start.
         let read = |b: &mut SpecBurst<'_, '_, '_>,
                     d: &SpecDraftRound,
-                    arm: PooledDraftArm,
                     i: usize|
          -> Result<DraftProbeFields, Box<dyn std::error::Error>> {
             let bits = |v: Vec<f32>| v.into_iter().map(f32::to_bits).collect::<Vec<u32>>();
             let mut out: DraftProbeFields = Vec::new();
             out.push(("tokens".into(), d.draft.clone()));
             out.push(("draft ids".into(), d.draft_idx.clone()));
-            let st: Vec<u32> =
-                b.rs.draft_stats
-                    .iter()
-                    .flat_map(|&(a, b2, c)| [a.to_bits(), b2.to_bits(), c.to_bits()])
-                    .collect();
-            out.push(("filter stats".into(), st));
             let steps = b.rs.scratch.kv.len - len0[i];
-            let d_vocab = b.rs.cfg.d_vocab;
-            let mut q: Vec<u32> = Vec::new();
-            if arm == PooledDraftArm::GraphSampled {
-                for slot in b.rs.dctx.q_slots.iter().take(steps) {
-                    q.extend(bits(e.dtoh(slot)?[..d_vocab].to_vec()));
-                }
-            } else {
-                for row in &b.rs.draft_logits {
-                    q.extend(bits(e.dtoh(row)?[..d_vocab].to_vec()));
-                }
-            }
-            out.push(("q rows".into(), q));
             out.push(("philox counter".into(), vec![b.rs.sctr]));
             let kv = &b.rs.scratch.kv;
             out.push((
@@ -8732,7 +8694,7 @@ impl HybridModel {
         for (i, b) in bursts.iter_mut().enumerate() {
             let mut d = dr0[i].clone();
             self.spec_round_draft_serial(e, &mut b.rs, &mut d)?;
-            serial.push(read(b, &d, arms[i], i)?);
+            serial.push(read(b, &d, i)?);
         }
         let mut drs: Vec<SpecDraftRound> = dr0.clone();
         {
@@ -8752,7 +8714,7 @@ impl HybridModel {
         }
         let mut all_ok = true;
         for (i, b) in bursts.iter_mut().enumerate() {
-            let pooled = read(b, &drs[i], arms[i], i)?;
+            let pooled = read(b, &drs[i], i)?;
             let diff: Vec<&str> = serial[i]
                 .iter()
                 .zip(&pooled)
@@ -8760,14 +8722,21 @@ impl HybridModel {
                 .map(|(s, _)| s.0.as_str())
                 .collect();
             all_ok &= diff.is_empty();
-            let steps = serial[i].last().map(|s| s.1[0]).unwrap_or(0);
+            let field = |name: &str| {
+                serial[i]
+                    .iter()
+                    .find(|f| f.0 == name)
+                    .map(|f| f.1[0])
+                    .expect("a field `read` records")
+            };
+            let steps = field("steps");
             lines.push(format!(
                 "  member {i}: arm={:?} k_this={} head steps={steps} drafted={} sctr {}->{}: {}",
                 arms[i],
                 dr0[i].k_this,
                 drs[i].draft.len(),
                 sctr0[i],
-                serial[i][4].1[0],
+                field("philox counter"),
                 if diff.is_empty() {
                     "BITWISE EQUAL".to_string()
                 } else {
@@ -8776,8 +8745,7 @@ impl HybridModel {
             ));
         }
         lines.push(format!(
-            "ROUND-DRAFT n={n} ks={ks:?}: tokens, ids, stats, q rows, counters, draft-KV, \
-             follow-up: {}",
+            "ROUND-DRAFT n={n} ks={ks:?}: tokens, ids, counters, draft-KV, follow-up: {}",
             if all_ok { "BITWISE EQUAL" } else { "MISMATCH" }
         ));
 
@@ -10865,7 +10833,7 @@ impl HybridModel {
     /// captured graph references is event-free; the spec loop is strictly single-stream.
     /// MEMRA_SPEC_NOGRAPH=1 forces the eager draft chain.
     /// SAMPLED mode (MEMRA_SPEC_TEMP>0) has its OWN capture (gumbel-perturbed in-graph argmax,
-    /// device Philox event counter, persistent q retention) — graph-vs-eager sampled streams are
+    /// device Philox event counter) — graph-vs-eager sampled streams are
     /// bit-identical for the same (seed, prompt, K, temp); see the sampled-graph setup in
     /// generate_spec_inner2.
     /// Multi-turn session: trunk cache + MTP draft scratch persist across generate calls, so
@@ -12363,10 +12331,9 @@ impl HybridModel {
                 eprintln!("{line}");
             }
         }
-        // A session that ran greedy bursts first sized g_q/g_perturb at 1; a sampled resume
-        // needs d_vocab. Realloc is legal exactly while graph_s is None (nothing baked them).
-        if sampled && dctx.g_q.len() < d_vocab {
-            dctx.g_q = e.zeros(d_vocab)?;
+        // A session that ran greedy bursts first sized g_perturb at 1; a sampled resume
+        // needs d_vocab. Realloc is legal exactly while graph_s is None (nothing baked it).
+        if sampled && dctx.g_perturb.len() < d_vocab {
             dctx.g_perturb = e.zeros(d_vocab)?;
         }
         // Trimmed head: the sampled draws key their noise by token id (`g_idmap`). Uploaded
@@ -12433,7 +12400,6 @@ impl HybridModel {
             } else {
                 draft_capture_bootstrap_estimate(
                     if chain_mode { self.mtp_head_count() } else { 1 },
-                    k,
                     d_vocab,
                     n_embd,
                 )
@@ -12695,8 +12661,8 @@ impl HybridModel {
         // untouched (and skipped when sampled: its graph would never be launched). Same head
         // forward, but the in-graph argmax reads GUMBEL-PERTURBED logits; the Philox event
         // counter lives in the persistent device g_ctr (bumped in-graph, host-seeded from sctr
-        // once per round); the raw head logits land in the persistent g_q for the host's
-        // per-replay async D2D into the round's q slot (q_slots, K x d_vocab, allocated once).
+        // once per round). The head logits are not retained (memra#1154: the verify compares
+        // token ids, not distributions).
         // seed/temp are capture-time constants — baked into graph_s, so a pool-resumed request
         // with a different (seed, temp, k) drops the parked sampled graph and recaptures.
         // COST OF THE FRESH-SEED SERVE DEFAULT (dogfood F4, 2026-08-04): omitting `seed` on a
@@ -12709,16 +12675,17 @@ impl HybridModel {
         // and every later burst in that request replays. A client that wants the parked graph
         // AND reproducibility supplies an explicit `seed`, honored exactly, which keeps s_key
         // stable across its whole conversation.
-        // COMPOSITION RULE (fspec x gsd merge): the in-graph chain samples from the RAW
-        // softmax — it can hold neither per-row filter stats nor the varying penalty history.
-        // The sampled graph therefore engages only in the PURE-TEMP regime; filters/penalties
-        // force the eager draft (which computes stats/penalties per row).
+        // COMPOSITION RULE (fspec x gsd merge, widened by lane/step37-draft-graph-serving-
+        // 20260830): the in-graph chain cannot hold the varying penalty history, so penalties
+        // force the eager draft (which penalizes per row). Truncation filters run in-graph
+        // when the filtered-capture door is on (`SampledGraphKey::graph_capturable`).
         // KEY THE WHOLE REGIME, not just the baked constants (lane/graph-s-key-exactness-
         // 20260819). `s_key` used to be `(seed, temp, k)`; the filters and penalties were left
         // out, so a filtered request resuming a session that parked a PURE-TEMP graph kept it —
-        // and the launch site never re-asked `pure_temp`. See [`SampledGraphKey`] for what that
-        // costs (an unconditional accept of out-of-head draft tokens, i.e. an exactness bug on
-        // the request shape the vendor-default flip makes the majority).
+        // and the launch site never re-asked `pure_temp`. Under the rejection accept that was
+        // an exactness bug (an unconditional accept of out-of-head draft tokens). Since
+        // memra#1154 the verify compares token ids, so a wrong-regime graph would cost
+        // acceptance only; the key still carries the whole regime.
         let s_key = SampledGraphKey::new(sp_seed, sp_temp, k, sp.top_k, sp.top_p, sp.min_p, pen_on);
         let pure_temp = s_key.pure_temp();
         // The regime the sampled graph may be captured/launched in: pure-temp always;
@@ -12730,7 +12697,6 @@ impl HybridModel {
             dctx.chain_s = None;
             dctx.failed.clear_sampled();
             dctx.s_key = None;
-            dctx.q_slots.clear();
             dctx.keeper_s.clear();
         }
         // PRE-CAPTURE VRAM RESERVE CHECK, sampled arms (vram-admission lane): same contract
@@ -12747,8 +12713,8 @@ impl HybridModel {
         {
             eprintln!("{line}");
         }
-        // FILTERED capture nodes need q slots sized d_vocab AND the stat slots; the pure-temp
-        // body leaves g_th/g_z/g_mx untouched (they exist from ctx creation either way).
+        // FILTERED capture nodes need the stat slots; the pure-temp body leaves
+        // g_th/g_z/g_mx untouched (they exist from ctx creation either way).
         if graph_draft
             && sampled
             && s_capturable
@@ -12766,7 +12732,6 @@ impl HybridModel {
                     g_p,
                     g_ctr,
                     g_perturb,
-                    g_q,
                     g_rows0,
                     g_th,
                     g_z,
@@ -12832,7 +12797,6 @@ impl HybridModel {
                                 Some(SampledCapArgs {
                                     ctr: &mut *g_ctr,
                                     perturb: &mut *g_perturb,
-                                    q_out: &mut *g_q,
                                     seed: sp_seed,
                                     temp: sp_temp,
                                     filt: if filtered {
@@ -12866,47 +12830,14 @@ impl HybridModel {
                 match cap_res {
                     Ok(cg) => {
                         scratch.set_len(e, base)?;
-                        // NO STRANDED PARTIAL STATE (vram-admission lane): the q-slot allocs
-                        // after a successful capture are themselves fallible on a tight card.
-                        // A mid-loop failure used to `?` out as a step error, leaving orphan
-                        // slots parked on the ctx (wrong count, stale contents) for the next
-                        // capture attempt to stack onto. Allocate all-or-nothing: on failure
-                        // drop the fresh graphs AND the partial slots, mark the LOUD fallback.
-                        dctx.q_slots.clear();
-                        let slots = (0..k)
-                            .map(|_| e.zeros(d_vocab))
-                            .collect::<Result<Vec<_>, _>>();
-                        match slots {
-                            Ok(slots) => {
-                                dctx.q_slots = slots;
-                                eprintln!(
-                                    "[mtp-chain-graph] captured mode=sampled heads={heads_n} \
-                                     interior={heads_n} last={heads_n} filtered={} key={s_key:?}",
-                                    s_key.filtered() as u8
-                                );
-                                dctx.chain_s = Some(cg);
-                                dctx.s_key = Some(s_key);
-                                captured_now = true;
-                            }
-                            Err(err) => {
-                                drop(cg);
-                                dctx.q_slots.clear();
-                                let mut reason = format!("q-slot alloc failed: {err}");
-                                if capture_err_is_oom(&reason) {
-                                    capture_oom_entry_eff = capture_oom_entry_eff.max(cap_eff0);
-                                    let trimmed = e.pool_trim_to_zero();
-                                    if trimmed > 0 {
-                                        reason.push_str(&format!(
-                                            "; pool trimmed {}MB back to the driver",
-                                            trimmed / (1 << 20)
-                                        ));
-                                    }
-                                }
-                                if let Some(line) = dctx.failed.mark_sampled(&reason) {
-                                    eprintln!("{line}");
-                                }
-                            }
-                        }
+                        eprintln!(
+                            "[mtp-chain-graph] captured mode=sampled heads={heads_n} \
+                             interior={heads_n} last={heads_n} filtered={} key={s_key:?}",
+                            s_key.filtered() as u8
+                        );
+                        dctx.chain_s = Some(cg);
+                        dctx.s_key = Some(s_key);
+                        captured_now = true;
                     }
                     Err(err) => {
                         scratch.set_len(e, base)?;
@@ -12951,7 +12882,6 @@ impl HybridModel {
                 g_p,
                 g_ctr,
                 g_perturb,
-                g_q,
                 g_rows0,
                 g_th,
                 g_z,
@@ -12985,7 +12915,6 @@ impl HybridModel {
                         Some(SampledCapArgs {
                             ctr: &mut *g_ctr,
                             perturb: &mut *g_perturb,
-                            q_out: &mut *g_q,
                             seed: sp_seed,
                             temp: sp_temp,
                             filt: if filtered {
@@ -13010,40 +12939,10 @@ impl HybridModel {
             match cap_res {
                 Ok((g, keep)) => {
                     scratch.set_len(e, base)?;
-                    // NO STRANDED PARTIAL STATE: all-or-nothing q slots, same contract as
-                    // the chain arm above.
-                    dctx.q_slots.clear();
-                    let slots = (0..k)
-                        .map(|_| e.zeros(d_vocab))
-                        .collect::<Result<Vec<_>, _>>();
-                    match slots {
-                        Ok(slots) => {
-                            dctx.q_slots = slots;
-                            dctx.graph_s = Some(g);
-                            dctx.s_key = Some(s_key);
-                            dctx.keeper_s = keep;
-                            captured_now = true;
-                        }
-                        Err(err) => {
-                            drop(g);
-                            drop(keep);
-                            dctx.q_slots.clear();
-                            let mut reason = format!("q-slot alloc failed: {err}");
-                            if capture_err_is_oom(&reason) {
-                                capture_oom_entry_eff = capture_oom_entry_eff.max(cap_eff0);
-                                let trimmed = e.pool_trim_to_zero();
-                                if trimmed > 0 {
-                                    reason.push_str(&format!(
-                                        "; pool trimmed {}MB back to the driver",
-                                        trimmed / (1 << 20)
-                                    ));
-                                }
-                            }
-                            if let Some(line) = dctx.failed.mark_sampled(&reason) {
-                                eprintln!("{line}");
-                            }
-                        }
-                    }
+                    dctx.graph_s = Some(g);
+                    dctx.s_key = Some(s_key);
+                    dctx.keeper_s = keep;
+                    captured_now = true;
                 }
                 Err(err) => {
                     scratch.set_len(e, base)?;
@@ -13067,7 +12966,7 @@ impl HybridModel {
         }
         // ---- PER-SESSION DRAFT-STATE MEASUREMENT bracket end (vram-admission lane): when a
         // capture landed in THIS call, the effective-free delta across the capture section is
-        // this session's parked draft-graph state (keepers + q slots + instantiated graphs'
+        // this session's parked draft-graph state (keepers + instantiated graphs'
         // backing). Recorded as a model-owned high-water; admission charges it per
         // spec-capable session (see `draft_session_admission_bytes`).
         if captured_now
@@ -13105,17 +13004,18 @@ impl HybridModel {
                 hw / (1 << 20)
             );
         }
-        // ---- EXACTNESS GUARD, the enforceable half (lane/graph-s-key-exactness-20260819,
+        // ---- REGIME GUARD, the enforceable half (lane/graph-s-key-exactness-20260819,
         // widened by lane/step37-draft-graph-serving-20260830) ----
         // With the filters and penalties in `s_key`, a graph that SURVIVED the drop above was
         // captured under THIS request's exact regime, and capture requires `graph_capturable`
         // (pure-temp, or filtered with the in-graph filter nodes; never penalties) — so a
-        // parked graph implies both. That implication is the whole exactness argument for the
-        // graph arm, so it is asserted here rather than assumed: a future change that widens
-        // the capture condition, narrows the key, or copies a `DraftGraphCtx` across regimes
-        // fails LOUDLY at this line instead of silently drafting from a distribution the
-        // verify never reconstructs. Release builds refuse the graph (drop it, draft eager)
-        // rather than launching it; the launch site re-tests the regime independently.
+        // parked graph implies both. That implication is why the graph arm draws from the
+        // request's own sampler, so it is asserted here rather than assumed: a future change
+        // that widens the capture condition, narrows the key, or copies a `DraftGraphCtx`
+        // across regimes fails LOUDLY at this line instead of silently drafting from another
+        // distribution (an exactness bug under the rejection accept; an acceptance loss since
+        // memra#1154). Release builds refuse the graph (drop it, draft eager) rather than
+        // launching it; the launch site re-tests the regime independently.
         if sampled
             && (dctx.graph_s.is_some() || dctx.chain_s.is_some())
             && (!s_capturable || dctx.s_key != Some(s_key))
@@ -13124,19 +13024,19 @@ impl HybridModel {
                 false,
                 "sampled draft graph parked under {:?} survived into a request outside its \
                  capture regime (top_k={} top_p={} min_p={} pen_on={} capturable={}): the \
-                 in-graph draw and the verify's accept test would see different distributions",
+                 in-graph draw would not follow this request's sampler",
                 dctx.s_key, sp.top_k, sp.top_p, sp.min_p, pen_on, s_capturable,
             );
             eprintln!(
                 "[spec] BUG: dropping a parked sampled draft graph that outlived its capture \
                  regime (s_key={:?}, request top_k={} top_p={} min_p={} pen_on={} \
-                 capturable={}); drafting EAGER — the key must carry every field that shapes q",
+                 capturable={}); drafting EAGER — the key must carry every field that shapes \
+                 the draft's draw",
                 dctx.s_key, sp.top_k, sp.top_p, sp.min_p, pen_on, s_capturable,
             );
             dctx.graph_s = None;
             dctx.chain_s = None;
             dctx.s_key = None;
-            dctx.q_slots.clear();
             dctx.keeper_s.clear();
         }
         // SKEY PROBE (MEMRA_SKEY_PROBE=1): the burst-entry facts the reachability question turns
@@ -13903,11 +13803,10 @@ impl HybridModel {
         // `h_seed` = last_token's pre-output_norm hidden. Establish it by feeding last_token once
         // (mirrors plain greedy). DEVICE-ARGMAX lever: the accept walk only ever consumes the
         // argmax of those logits — never the full vector — so a host u32 replaces the Vec<f32>.
-        // Trimmed heads: q lives on the trimmed vocab and a draft is remapped to its target id
-        // before the walk. The sampled walk compares token ids only (memra#1154), so a token
-        // the head cannot propose is simply never accepted: the target's own draw is emitted.
-        let draft_logits: Vec<CudaSlice<f32>> = Vec::new(); // retained head logits (q), per slot
-        let draft_stats: Vec<(f32, f32, f32)> = Vec::new(); // (row_max, th_e, z_e) per slot
+        // Trimmed heads: the draft draws on the trimmed vocab and its token is remapped to the
+        // target id before the walk. The sampled walk compares token ids only (memra#1154), so
+        // a token the head cannot propose is simply never accepted: the target's own draw is
+        // emitted.
         let perturb_buf: Option<CudaSlice<f32>> = None; // gumbel scratch (max(n_vocab,d_vocab))
         let pen_hist_d: Option<CudaSlice<u32>> = None;
         let pcol_buf: Option<CudaSlice<f32>> = None; // the sampled walk's K+1 target rows
@@ -14470,8 +14369,6 @@ impl HybridModel {
             preds_d,
             snap,
             kc,
-            draft_logits,
-            draft_stats,
             perturb_buf,
             pcol_buf,
             st_drafted,
@@ -14927,7 +14824,6 @@ impl HybridModel {
         let SpecRoundCfg {
             k,
             sp,
-            sampled,
             pen_on,
             adapt,
             dmask_on,
@@ -14948,8 +14844,6 @@ impl HybridModel {
             pending,
             snap,
             kc,
-            draft_logits,
-            draft_stats,
             dm_clone_ns,
             dm_rounds,
             ph_rest,
@@ -14998,10 +14892,6 @@ impl HybridModel {
             let win = sp.penalty_last_n.min(PEN_WINDOW_MAX);
             let w0 = pen_hist.len().saturating_sub(win);
             *pen_hist_d = Some(e.htod_u32_v(&pen_hist[w0..])?);
-        }
-        if sampled {
-            draft_logits.clear();
-            draft_stats.clear();
         }
         // DRAFT-SIDE GRAMMAR MASK: clone the committed grammar state ONCE per round; each
         // position's mask is computed on that clone and advanced by the PROPOSED token. The
@@ -15068,8 +14958,6 @@ impl HybridModel {
             pen_hist_d,
             last_token,
             h_seed_buf,
-            draft_logits,
-            draft_stats,
             perturb_buf,
             ..
         } = rs;
@@ -15195,14 +15083,12 @@ impl HybridModel {
             }
             // SAMPLED CHAIN GRAPH: the greedy chain arm's launch order with the
             // sampled last-row graphs — in-graph counter bump + (filtered) gumbel
-            // draw + argmax; q retained per step into q_slots exactly like the
-            // single-head sampled graph arm. Counter continuity: g_ctr host-seeded
+            // draw + argmax. Counter continuity: g_ctr host-seeded
             // to sctr-1 once per ROUND; each step's last-row graph bumps it BEFORE
             // the perturb, so step j consumes counter sctr+j — the eager Philox
             // stream (interior rows never draw, never bump).
             let heads_n = self.mtp_head_count();
             let committed = pos + base0 - 1;
-            let filtered_stats_in_graph = s_key.filtered();
             let mut chain_tokens: Vec<u32> = vec![*last_token];
             let mut chain_seed_bufs: Vec<CudaSlice<f32>> = vec![e.clone_dtod(h_seed_buf)?];
             e.set_u32_one(&mut dctx.g_ctr, sctr.wrapping_sub(1))?;
@@ -15229,21 +15115,6 @@ impl HybridModel {
                 }
                 *sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
                 // counts the p-min-discarded token too)
-                // q retention: ONE async D2D of the persistent head-logits buffer
-                // into this round's slot j (stream-ordered after the replay).
-                e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
-                // FILTERED capture: read the in-graph filter_stats scalars back per
-                // replay instead of a second full-vocab filter_stats per slot post-
-                // chain — bit-exact (the values the in-graph perturb consumed) and
-                // measured worth ~5% of vendor-default serving tok/s at K=3. Before
-                // the p-min break so the discarded slot's stats land too.
-                if filtered_stats_in_graph {
-                    draft_stats.push((
-                        e.dtoh(&dctx.g_mx)?[0],
-                        e.dtoh(&dctx.g_th)?[0],
-                        e.dtoh(&dctx.g_z)?[0],
-                    ));
-                }
                 let idx = e.dtoh_u32_one(&dctx.g_tok)?;
                 // #87 SENTINEL TRAP (see the single-head graph arms).
                 if (idx as usize) >= d_vocab {
@@ -15271,31 +15142,6 @@ impl HybridModel {
                 draft.push(d);
                 chain_tokens.push(d);
                 chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
-            }
-            // PURE-TEMP accept path: stats per used slot recomputed from the RETAINED
-            // q with the SAME filter_stats program the eager arm runs (deployment-
-            // keyed coop/plain choice, same input bits). The FILTERED graph read its
-            // stats back per replay above.
-            if !filtered_stats_in_graph {
-                for j in 0..draft.len().max(draft_idx.len()) {
-                    let rows0 = e.htod_i32(&[0])?;
-                    let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-                    e.filter_stats(
-                        &dctx.q_slots[j],
-                        d_vocab,
-                        &rows0,
-                        &mut th_d,
-                        &mut z_d,
-                        &mut mx_d,
-                        d_vocab,
-                        1,
-                        sp_temp,
-                        sp.top_k,
-                        sp.top_p,
-                        sp.min_p,
-                    )?;
-                    draft_stats.push((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
-                }
             }
         } else if let (false, Some(gr)) = (sampled || pen_on || !graph_round_ok, &dctx.graph) {
             // GRAPH DRAFT: one dispatch per drafted token. The chain feeds itself on-device
@@ -15407,8 +15253,8 @@ impl HybridModel {
                 );
             }
             // SAMPLED GRAPH DRAFT: one replay per drafted token — head forward + gumbel +
-            // argmax in ONE dispatch; the host reads 4B token (+4B p), D2Ds q into slot j,
-            // and decides the break. Event-counter continuity: g_ctr is host-seeded to
+            // argmax in ONE dispatch; the host reads 4B token (+4B p) and decides the
+            // break. Event-counter continuity: g_ctr is host-seeded to
             // sctr-1 ONCE per round (outside the graph); the in-graph bump runs BEFORE the
             // perturb, so replay j consumes counter sctr+j — exactly the eager arm's Philox
             // stream. Host sctr advances in lockstep (computed, no readback needed).
@@ -15416,28 +15262,11 @@ impl HybridModel {
             e.set_u32_one(&mut dctx.g_tok, *last_token)?;
             e.copy_into(&mut dctx.g_seed, 0, h_seed_buf, n_embd)?;
             e.set_u32_one(&mut dctx.g_ctr, sctr.wrapping_sub(1))?;
-            let filtered_stats_in_graph = s_key.filtered();
             for j in 0..k_this {
                 gr.launch()?;
                 scratch.kv.len += 1; // host mirror (len_d advanced in-graph)
                 *sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
                 // counts the p-min-discarded token too)
-                // q retention: ONE async D2D of the persistent head-logits buffer into this
-                // round's slot j (stream-ordered after the replay, before the next one).
-                e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
-                // FILTERED capture: the replay's own filter_stats node already computed
-                // (th, z, mx) — read the three scalars back instead of paying a SECOND
-                // full-vocab filter_stats per slot post-chain (measured ~5% of vendor-
-                // default serving tok/s at K=3). Bit-exact by construction: these are
-                // the very values the in-graph perturb consumed. Read BEFORE the p-min
-                // break so the discarded slot's stats land too (accept-path indexing).
-                if filtered_stats_in_graph {
-                    draft_stats.push((
-                        e.dtoh(&dctx.g_mx)?[0],
-                        e.dtoh(&dctx.g_th)?[0],
-                        e.dtoh(&dctx.g_z)?[0],
-                    ));
-                }
                 let idx = e.dtoh_u32_one(&dctx.g_tok)?;
                 // #87 SENTINEL TRAP (see the greedy graph arm above).
                 if (idx as usize) >= d_vocab {
@@ -15466,30 +15295,6 @@ impl HybridModel {
                 // trimmed head: the NEXT embed must read the TARGET id (see the greedy arm).
                 if d != idx {
                     e.set_u32_one(&mut dctx.g_tok, d)?;
-                }
-            }
-            // PURE-TEMP accept path: fill draft_stats per used slot post-chain (the
-            // stats degenerate to th=0 / full-Z; one filter_stats launch per slot).
-            // The FILTERED graph read its stats back per replay above.
-            if !filtered_stats_in_graph {
-                for j in 0..draft.len().max(draft_idx.len()) {
-                    let rows0 = e.htod_i32(&[0])?;
-                    let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-                    e.filter_stats(
-                        &dctx.q_slots[j],
-                        d_vocab,
-                        &rows0,
-                        &mut th_d,
-                        &mut z_d,
-                        &mut mx_d,
-                        d_vocab,
-                        1,
-                        sp_temp,
-                        sp.top_k,
-                        sp.top_p,
-                        sp.min_p,
-                    )?;
-                    draft_stats.push((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
                 }
             }
         } else {
@@ -15571,12 +15376,14 @@ impl HybridModel {
                     if perturb_buf.is_none() {
                         *perturb_buf = Some(e.zeros(d_vocab.max(n_vocab))?);
                     }
-                    let mut q_row = e.clone_dtod(&dl_d)?; // retained q (penalized when on)
-                    if pen_on {
+                    // The row the draw reads: the head logits, or a penalized copy of them
+                    // (`dl_d` stays raw for the p-min statistic and the trap below).
+                    let pen_row = if pen_on {
+                        let mut row = e.clone_dtod(&dl_d)?;
                         let h = pen_hist_d.as_ref().unwrap();
                         let nh = h.len();
                         e.penalize_logits(
-                            &mut q_row,
+                            &mut row,
                             h,
                             nh,
                             sp.penalty_repeat,
@@ -15584,17 +15391,23 @@ impl HybridModel {
                             sp.penalty_present,
                             d_vocab,
                         )?;
-                    }
+                        Some(row)
+                    } else {
+                        None
+                    };
+                    let q_row = pen_row.as_ref().unwrap_or(&dl_d);
                     let rows0 = e.htod_i32(&[0])?;
                     let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
                     e.filter_stats(
-                        &q_row, d_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, d_vocab, 1,
+                        q_row, d_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, d_vocab, 1,
                         sp_temp, sp.top_k, sp.top_p, sp.min_p,
                     )?;
-                    let (th, z, mx) = (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0]);
+                    // (th, row_max) feed the perturb as host scalars; z was read back only
+                    // for the accept test memra#1154 removed.
+                    let (th, mx) = (e.dtoh(&th_d)?[0], e.dtoh(&mx_d)?[0]);
                     let pb = perturb_buf.as_mut().unwrap();
                     e.gumbel_perturb_filtered_keyed(
-                        &q_row,
+                        q_row,
                         pb,
                         d_vocab,
                         sp_seed,
@@ -15605,8 +15418,6 @@ impl HybridModel {
                         dctx.g_idmap.as_ref(),
                     )?;
                     *sctr += 1;
-                    draft_logits.push(q_row);
-                    draft_stats.push((mx, th, z));
                     e.argmax_token_device(pb, d_vocab)?
                 } else {
                     e.argmax_token_device(&dl_d, d_vocab)?
@@ -16082,8 +15893,8 @@ impl HybridModel {
     /// session. Ragged K: a member leaves after its own `k_this`, at its p-min stop, or on its
     /// own sentinel error. Each member's tail runs the kernels of its serial arm
     /// (`PooledDraftArm`) on its own logits row and its own draft context: the same draft tokens,
-    /// q rows, filter stats, Philox counter, p-min decisions and draft-KV rows as its serial
-    /// draft, bit for bit. Returns one result per member; a failed shared forward fails every
+    /// trimmed ids, Philox counter, p-min decisions and draft-KV rows as its serial draft, bit
+    /// for bit. Returns one result per member; a failed shared forward fails every
     /// member still drafting at that step. At most 16 members.
     fn spec_round_draft_pooled(
         &self,
@@ -16200,52 +16011,7 @@ impl HybridModel {
             }
             prev = Some((carriers, rows));
         }
-        // PURE-TEMP sampled graph: stats per used slot post-chain, the serial arm's program.
-        for (i, m) in members.iter_mut().enumerate() {
-            if res[i].is_ok()
-                && m.arm == PooledDraftArm::GraphSampled
-                && !m.rs.cfg.s_key.filtered()
-                && let Err(err) = Self::pooled_draft_post_stats(e, m)
-            {
-                res[i] = Err(err);
-            }
-        }
         res
-    }
-
-    /// The serial graph-sampled arm's post-chain stats for the pure-temp capture (one
-    /// `filter_stats` per used q slot).
-    fn pooled_draft_post_stats(
-        e: &Engine,
-        m: &mut PooledDraftMember<'_, '_, '_>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let SpecRoundCfg {
-            d_vocab,
-            sp,
-            sp_temp,
-            ..
-        } = m.rs.cfg;
-        for j in 0..m.dr.draft.len().max(m.dr.draft_idx.len()) {
-            let rows0 = e.htod_i32(&[0])?;
-            let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-            e.filter_stats(
-                &m.rs.dctx.q_slots[j],
-                d_vocab,
-                &rows0,
-                &mut th_d,
-                &mut z_d,
-                &mut mx_d,
-                d_vocab,
-                1,
-                sp_temp,
-                sp.top_k,
-                sp.top_p,
-                sp.min_p,
-            )?;
-            m.rs.draft_stats
-                .push((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
-        }
-        Ok(())
     }
 
     /// One member's step-j tail over its row `r` of the pooled head logits: the post-head
@@ -16279,8 +16045,6 @@ impl HybridModel {
             round,
             sctr,
             pen_hist_d,
-            draft_logits,
-            draft_stats,
             perturb_buf,
             ..
         } = &mut *m.rs;
@@ -16323,11 +16087,10 @@ impl HybridModel {
                 draft.push(d);
                 Ok(Some(d))
             }
-            // `mtp_head_forward_cap`'s sampled tail: q retention, device counter bump,
-            // (filtered) gumbel draw, argmax (+ the raw row max).
+            // `mtp_head_forward_cap`'s sampled tail: device counter bump, (filtered) gumbel
+            // draw, argmax (+ the raw row max).
             PooledDraftArm::GraphSampled => {
                 let filtered = s_key.filtered();
-                e.copy_into(&mut dctx.q_slots[j], 0, &row, d_vocab)?;
                 e.sctr_inc(&mut dctx.g_ctr)?;
                 if filtered {
                     e.filter_stats(
@@ -16371,13 +16134,6 @@ impl HybridModel {
                     e.max_prob_device_into(&row, &mut dctx.g_p, d_vocab)?;
                 }
                 *sctr += 1;
-                if filtered {
-                    draft_stats.push((
-                        e.dtoh(&dctx.g_mx)?[0],
-                        e.dtoh(&dctx.g_th)?[0],
-                        e.dtoh(&dctx.g_z)?[0],
-                    ));
-                }
                 let idx = e.dtoh_u32_one(&dctx.g_tok)?;
                 if (idx as usize) >= d_vocab {
                     return Err(sentinel(idx, "graph-sampled"));
@@ -16397,12 +16153,12 @@ impl HybridModel {
                     if perturb_buf.is_none() {
                         *perturb_buf = Some(e.zeros(d_vocab.max(n_vocab))?);
                     }
-                    let mut q_row = e.clone_dtod(&dl_d)?;
-                    if pen_on {
+                    let pen_row = if pen_on {
+                        let mut row = e.clone_dtod(&dl_d)?;
                         let h = pen_hist_d.as_ref().unwrap();
                         let nh = h.len();
                         e.penalize_logits(
-                            &mut q_row,
+                            &mut row,
                             h,
                             nh,
                             sp.penalty_repeat,
@@ -16410,17 +16166,21 @@ impl HybridModel {
                             sp.penalty_present,
                             d_vocab,
                         )?;
-                    }
+                        Some(row)
+                    } else {
+                        None
+                    };
+                    let q_row = pen_row.as_ref().unwrap_or(&dl_d);
                     let rows0 = e.htod_i32(&[0])?;
                     let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
                     e.filter_stats(
-                        &q_row, d_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, d_vocab, 1,
+                        q_row, d_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, d_vocab, 1,
                         sp_temp, sp.top_k, sp.top_p, sp.min_p,
                     )?;
-                    let (th, z, mx) = (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0]);
+                    let (th, mx) = (e.dtoh(&th_d)?[0], e.dtoh(&mx_d)?[0]);
                     let pb = perturb_buf.as_mut().unwrap();
                     e.gumbel_perturb_filtered_keyed(
-                        &q_row,
+                        q_row,
                         pb,
                         d_vocab,
                         sp_seed,
@@ -16431,8 +16191,6 @@ impl HybridModel {
                         dctx.g_idmap.as_ref(),
                     )?;
                     *sctr += 1;
-                    draft_logits.push(q_row);
-                    draft_stats.push((mx, th, z));
                     e.argmax_token_device(pb, d_vocab)?
                 } else {
                     e.argmax_token_device(&dl_d, d_vocab)?
@@ -17688,12 +17446,12 @@ mod capture_headroom_tests {
     #[test]
     fn bootstrap_estimate_scales_with_heads_and_never_underflows() {
         // 3-head chain on a step37-shaped vocab must expect strictly more than one head.
-        let one = draft_capture_bootstrap_estimate(1, 3, 128_896, 4_096);
-        let three = draft_capture_bootstrap_estimate(3, 3, 128_896, 4_096);
+        let one = draft_capture_bootstrap_estimate(1, 128_896, 4_096);
+        let three = draft_capture_bootstrap_estimate(3, 128_896, 4_096);
         assert!(three > one);
         // Degenerate shapes keep a sane minimum (the estimate feeds a refusal gate; a
         // zero-need gate refuses nothing).
-        assert!(draft_capture_bootstrap_estimate(0, 0, 0, 0) >= 64 << 20);
+        assert!(draft_capture_bootstrap_estimate(0, 0, 0) >= 64 << 20);
     }
 
     #[test]
@@ -18176,8 +17934,8 @@ mod sampled_graph_key_tests {
 
     /// The WIDENED capture regime (lane/step37-draft-graph-serving-20260830): truncation-
     /// filtered shapes are capturable — the filter runs IN-GRAPH (`filter_stats` +
-    /// `gumbel_perturb_filtered_ctr`), so the draft draws from the same filtered
-    /// distribution the accept test reconstructs. Penalties never are: the per-round
+    /// `gumbel_perturb_filtered_ctr`), so the draft draws from the request's filtered
+    /// distribution. Penalties never are: the per-round
     /// history cannot be baked. The step37 vendor-default shape (temp 0.5 / top_p 0.9) is
     /// exactly the previously-excluded regime this lane exists to capture.
     #[test]
