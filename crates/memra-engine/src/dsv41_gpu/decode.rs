@@ -757,6 +757,36 @@ impl<'a> Runner<'a> {
         Ok(())
     }
 
+    /// Drop a several-token decode call on `q` whole: none of its rows becomes state and the
+    /// sequence stands where it stood before the call.
+    pub fn discard(&mut self, q: &mut Seq) -> Result<(), String> {
+        let (sp, _) = q
+            .pending
+            .ok_or("discard: the sequence has no several-token call open")?;
+        let g = self.g.clone();
+        for ls in q.ls.iter_mut() {
+            for l in ls.iter_mut() {
+                l.pend_kv = None;
+                l.pend_c = None;
+            }
+        }
+        for (gi, &k) in g.kv_sources.iter().enumerate() {
+            if k >= self.n_layers {
+                continue;
+            }
+            let ratio = g.compress_ratios[k];
+            if ratio == 0 {
+                continue;
+            }
+            for st in q.store[gi].iter_mut() {
+                st.n_c = sp / ratio;
+            }
+        }
+        q.ids.truncate(sp);
+        q.pending = None;
+        Ok(())
+    }
+
     /// Logits `[rows][vocab]` of rows `[r0, r0 + rows)` of a call: the collapse with the carried
     /// pre-mix, the final norm and the fp32 head (each rank's vocab rows, gathered).
     pub fn logits(&mut self, out: &Out, r0: usize, rows: usize) -> Result<Vec<f32>, String> {

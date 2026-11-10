@@ -123,7 +123,8 @@ pub struct Draft {
 }
 
 impl DraftW {
-    /// Load the draft head beside `run`'s trunk and turn the trunk's taps on.
+    /// Load the draft head beside `run`'s trunk and turn the trunk's taps on (when the trunk
+    /// runs the head's target layers).
     pub fn load(run: &mut Runner, mc: &ModelConfig) -> Result<Self, String> {
         let cfg = DraftCfg::from_config(mc)?;
         let stm = run.stm;
@@ -188,7 +189,11 @@ impl DraftW {
         if ei.dtype != "BF16" || ei.shape != [v as u64, mr as u64] {
             return Err(format!("{ename}: {} {:?}", ei.dtype, ei.shape));
         }
-        run.set_taps(&cfg.targets)?;
+        // a shortened trunk does not run every target layer: it keeps no taps and the head then
+        // drafts only from rows given to it (a tape's)
+        if cfg.targets.iter().all(|&l| l < run.n_layers) {
+            run.set_taps(&cfg.targets)?;
+        }
         if run.head.is_none() {
             run.head = Some(run.grp.load_head(stm, &run.g)?);
         }

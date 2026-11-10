@@ -3,12 +3,17 @@
 //!
 //! usage: dsv41-spec CKPT_DIR --plan FILE --out DIR [--token-map FILE] [--devices 0,1]
 //!                   [--streamed] [--cache-slots N] [--cache-reserve-mb N] [--eos ID]
+//!                   [--layers N --resident] [--no-draft]
 //!   MEMRA_FULL_PREC=1        required: the route has one numeric program, the checkpoint's
 //!   MEMRA_DSV41_TOKEN_MAP=F  the Engram compressed token map (raw i32), when --token-map is absent
 //!   --streamed               stream every layer's weights per forward (slow; default is the
 //!                            serving route's one-card residency: the layers' own weights and the
 //!                            draft head on the card, the routed experts in pinned host memory
 //!                            behind the device cache)
+//!   --layers N --resident    a shortened trunk with every weight on the card (the routed experts
+//!                            too): what a row costs where no expert is fetched. It has no draft
+//!                            head (the head's target layers are not all run): pass --no-draft
+//!   --no-draft               do not load the draft head (verify-rows and rows-time jobs only)
 //!
 //! The plan lists jobs, one per line, all run in one process (the weights load once):
 //!   verify-rows ID PROMPT.i32 FORCE.i32
@@ -27,6 +32,14 @@
 //!       the time of a one-token step, a draft and a verification step. DEPTH caps the drafts
 //!       verified per step (default: the block); TAU verifies only the leading drafts whose
 //!       confidence sigmoid is at least TAU.
+//!   rows-time ID PROMPT.i32 FORCE.i32 [REPS]
+//!       What a decode call costs by its rows. After the prefill, REPS one-token calls (the plain
+//!       step), then for 2..6 rows the same block REPS times, dropped whole after each run: the
+//!       first run of a block fetches its experts where they live off the card, the later ones
+//!       find them (the rows' compute alone). Each width runs twice: a block of different tokens
+//!       (its rows route to up to rows x top-k experts a layer) and a block of one token repeated
+//!       (its rows route alike), which separates the experts a block reads from its other
+//!       per-row work.
 //! Every job prints one JSON line and writes its files under --out/ID.
 
 use memra_engine::dsv41_gpu::{
@@ -105,12 +118,21 @@ enum Job {
         depth: Option<usize>,
         tau: Option<f32>,
     },
+    RowsTime {
+        id: String,
+        prompt: Vec<u32>,
+        force: Vec<u32>,
+        reps: usize,
+    },
 }
 
 impl Job {
     fn id(&self) -> &str {
         match self {
-            Job::VerifyRows { id, .. } | Job::DraftTape { id, .. } | Job::Gen { id, .. } => id,
+            Job::VerifyRows { id, .. }
+            | Job::DraftTape { id, .. }
+            | Job::Gen { id, .. }
+            | Job::RowsTime { id, .. } => id,
         }
     }
     /// the positions the job reaches
@@ -128,6 +150,7 @@ impl Job {
                     + 1
             }
             Job::Gen { prompt, n, .. } => prompt.len() + n,
+            Job::RowsTime { prompt, force, .. } => prompt.len() + force.len(),
         })
     }
 }
@@ -178,8 +201,10 @@ fn run() -> Result<(), String> {
                 .ok_or("config.json has no eos_token_id: pass --eos")? as u32
         }
     };
-    let n_layers =
+    let trunk =
         g.compress_ratios.len() - mc.dsv41.as_ref().unwrap().num_nextn_predict_layers as usize;
+    let n_layers = num("--layers")?.unwrap_or(trunk).min(trunk);
+    let no_draft = a.iter().any(|x| x == "--no-draft");
 
     let mut jobs = Vec::new();
     let txt = std::fs::read_to_string(&plan).map_err(|e| format!("{plan}: {e}"))?;
@@ -207,6 +232,16 @@ fn run() -> Result<(), String> {
                 depth: f.get(4).map(|x| x.parse().map_err(|_| bad())).transpose()?,
                 tau: f.get(5).map(|x| x.parse().map_err(|_| bad())).transpose()?,
             },
+            ("rows-time", 4..=5) => Job::RowsTime {
+                id: f[1].into(),
+                prompt: read_i32(Path::new(f[2]))?,
+                force: read_i32(Path::new(f[3]))?,
+                reps: f
+                    .get(4)
+                    .map(|x| x.parse().map_err(|_| bad()))
+                    .transpose()?
+                    .unwrap_or(8),
+            },
             _ => return Err(bad()),
         });
     }
@@ -233,9 +268,24 @@ fn run() -> Result<(), String> {
         0,
         8192,
     )?;
-    let dw;
-    if a.iter().any(|x| x == "--streamed") {
-        dw = DraftW::load(&mut rn, &mc)?;
+    let dw: Option<DraftW>;
+    let load = |rn: &mut Runner| -> Result<Option<DraftW>, String> {
+        if no_draft {
+            Ok(None)
+        } else {
+            DraftW::load(rn, &mc).map(Some)
+        }
+    };
+    if a.iter().any(|x| x == "--resident") {
+        // every weight of the (shortened) trunk on the card
+        let rep = rn.load_resident(n_layers, 8 << 30)?;
+        eprintln!(
+            "dsv41-spec: {} layers resident in {:.1}s",
+            rep.layers, rep.load_s
+        );
+        dw = load(&mut rn)?;
+    } else if a.iter().any(|x| x == "--streamed") {
+        dw = load(&mut rn)?;
     } else {
         let threads = std::thread::available_parallelism().map_or(8, |n| n.get());
         let ctx = rn.grp.cx[0].ops.st.context().clone();
@@ -248,7 +298,7 @@ fn run() -> Result<(), String> {
         );
         let resident = rn.experts_off_card(host)?;
         // the draft head goes on the card before the cache takes what is left
-        dw = DraftW::load(&mut rn, &mc)?;
+        dw = load(&mut rn)?;
         let reserve = num("--cache-reserve-mb")?.unwrap_or(16384) as u64 * (1 << 20);
         let slots = rn.grow_caches(reserve, num("--cache-slots")?.unwrap_or(usize::MAX))?;
         eprintln!(
@@ -256,13 +306,16 @@ fn run() -> Result<(), String> {
         );
     }
     eprintln!(
-        "dsv41-spec: {} job(s), {n_layers} layers + {} draft stages (block {}), {} rank(s) on devices {devices:?}, up in {:.1}s",
+        "dsv41-spec: {} job(s), {n_layers} layers + {} draft stages, {} rank(s) on devices {devices:?}, up in {:.1}s",
         jobs.len(),
-        dw.cfg.stages,
-        dw.cfg.block,
+        dw.as_ref().map_or(0, |d| d.cfg.stages),
         rn.grp.n(),
         t0.elapsed().as_secs_f64()
     );
+    let need_dw = || {
+        dw.as_ref()
+            .ok_or("the job needs the draft head (no --no-draft)".to_string())
+    };
 
     let mut failed = 0;
     for j in &jobs {
@@ -271,14 +324,23 @@ fn run() -> Result<(), String> {
         let t = Instant::now();
         let r = match j {
             Job::VerifyRows { id, prompt, force } => verify_rows(&mut rn, id, prompt, force, &dir),
-            Job::DraftTape { id, dir: tape } => draft_tape(&mut rn, &dw, id, tape, &dir),
+            Job::DraftTape { id, dir: tape } => {
+                need_dw().and_then(|dw| draft_tape(&mut rn, dw, id, tape, &dir))
+            }
             Job::Gen {
                 id,
                 prompt,
                 n,
                 depth,
                 tau,
-            } => generate(&mut rn, &dw, id, prompt, *n, eos, *depth, *tau, &dir),
+            } => need_dw()
+                .and_then(|dw| generate(&mut rn, dw, id, prompt, *n, eos, *depth, *tau, &dir)),
+            Job::RowsTime {
+                id,
+                prompt,
+                force,
+                reps,
+            } => rows_time(&mut rn, id, prompt, force, *reps),
         };
         match r {
             Ok((pass, line)) => {
@@ -311,8 +373,12 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-/// The first tap row of a call as rank 0 holds it (bf16 bytes of `rows` rows from row `r0`).
+/// The first tap row of a call as rank 0 holds it (bf16 bytes of `rows` rows from row `r0`);
+/// empty when the runner keeps no taps.
 fn tap_bytes(rn: &Runner, o: &Out, r0: usize, rows: usize) -> Result<Vec<u8>, String> {
+    if o.taps.is_empty() {
+        return Ok(Vec::new());
+    }
     let st = rn.grp.cx[0].ops.st.clone();
     let all = o.taps[0].host(&st)?;
     let w = all.len() / o.tap_rows;
@@ -435,6 +501,104 @@ fn verify_rows(
             "rows": rows, "logit_rows_equal": equal, "tap_rows_equal": taps_equal,
             "blocks": blocks, "rejected_rows": rejected_rows, "first_bad": first_bad,
             "arm_a_s": a_s, "arm_b_s": b_s,
+        })
+        .to_string(),
+    ))
+}
+
+/// What a decode call costs by its rows (see the module doc).
+fn rows_time(
+    rn: &mut Runner,
+    id: &str,
+    prompt: &[u32],
+    force: &[u32],
+    reps: usize,
+) -> Result<(bool, String), String> {
+    let reps = reps.max(2);
+    if force.len() < reps + 6 {
+        return Err(format!(
+            "rows-time wants at least {} forced tokens",
+            reps + 6
+        ));
+    }
+    let ms = |t: Instant| t.elapsed().as_secs_f64() * 1e3;
+    let med = |x: &[f64]| -> f64 {
+        let mut v = x.to_vec();
+        v.sort_by(|a, b| a.total_cmp(b));
+        v[v.len() / 2]
+    };
+    let mut seqs = vec![rn.seq_with_capacity(prompt.len() + force.len() + 16)];
+    let t = Instant::now();
+    let outs = rn.forward(
+        &mut seqs,
+        &[Call {
+            seq: 0,
+            tokens: prompt.to_vec(),
+        }],
+    )?;
+    rn.logits(&outs[0], outs[0].s - 1, 1)?;
+    let prefill_ms = ms(t);
+    drop(outs);
+    // the plain step: REPS one-token calls
+    let mut one = Vec::with_capacity(reps);
+    for &tok in &force[..reps] {
+        let t = Instant::now();
+        let outs = rn.forward(
+            &mut seqs,
+            &[Call {
+                seq: 0,
+                tokens: vec![tok],
+            }],
+        )?;
+        rn.logits(&outs[0], 0, 1)?;
+        one.push(ms(t));
+    }
+    // blocks of 2..6 rows at the same position, dropped whole after each run: different
+    // tokens, then one token repeated
+    let mut first = Vec::new();
+    let mut warm = Vec::new();
+    let mut same_first = Vec::new();
+    let mut same_warm = Vec::new();
+    for k in 2..=6usize {
+        for same in [false, true] {
+            let toks = if same {
+                vec![force[reps]; k]
+            } else {
+                force[reps..reps + k].to_vec()
+            };
+            let mut runs = Vec::with_capacity(reps);
+            for _ in 0..reps {
+                let t = Instant::now();
+                let outs = rn.forward(
+                    &mut seqs,
+                    &[Call {
+                        seq: 0,
+                        tokens: toks.clone(),
+                    }],
+                )?;
+                rn.logits(&outs[0], 0, k)?;
+                runs.push(ms(t));
+                drop(outs);
+                rn.discard(&mut seqs[0])?;
+            }
+            if same {
+                same_first.push(runs[0]);
+                same_warm.push(med(&runs[1..]));
+            } else {
+                first.push(runs[0]);
+                warm.push(med(&runs[1..]));
+            }
+        }
+    }
+    Ok((
+        true,
+        serde_json::json!({
+            "job": "rows-time", "id": id, "pass": true, "prompt": prompt.len(), "reps": reps,
+            "prefill_ms": prefill_ms,
+            "one_token_ms": one, "one_token_ms_median": med(&one),
+            "rows_2_to_6_first_ms": first, "rows_2_to_6_repeat_ms_median": warm,
+            "same_token_rows_2_to_6_first_ms": same_first,
+            "same_token_rows_2_to_6_repeat_ms_median": same_warm,
         })
         .to_string(),
     ))
@@ -607,6 +771,7 @@ struct Round {
     draft_ms: f64,
     verify_ms: f64,
     commit_ms: f64,
+    conf: Vec<f32>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -734,6 +899,7 @@ fn generate(
             draft_ms,
             verify_ms,
             commit_ms,
+            conf: dr.conf.clone(),
         });
     }
     let spec_s = ts.elapsed().as_secs_f64();
@@ -745,11 +911,18 @@ fn generate(
         .zip(&p_tok)
         .position(|(a, b)| a != b)
         .or((s_tok.len() != p_tok.len()).then_some(s_tok.len().min(p_tok.len())));
-    let mut tsv = String::from("pos\tverified\taccepted\tdraft_ms\tverify_ms\tcommit_ms\n");
+    let mut tsv = String::from("pos\tverified\taccepted\tdraft_ms\tverify_ms\tcommit_ms\tconf\n");
     for r in &rounds {
+        let conf: Vec<String> = r.conf.iter().map(|c| format!("{c:.4}")).collect();
         tsv.push_str(&format!(
-            "{}\t{}\t{}\t{:.3}\t{:.3}\t{:.3}\n",
-            r.pos, r.verified, r.accepted, r.draft_ms, r.verify_ms, r.commit_ms
+            "{}\t{}\t{}\t{:.3}\t{:.3}\t{:.3}\t{}\n",
+            r.pos,
+            r.verified,
+            r.accepted,
+            r.draft_ms,
+            r.verify_ms,
+            r.commit_ms,
+            conf.join(",")
         ));
     }
     write(dir, "rounds.tsv", tsv.as_bytes())?;
