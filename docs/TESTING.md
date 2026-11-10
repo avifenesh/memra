@@ -2043,6 +2043,58 @@ the gate on and its LOW band at the largest cohort (HIGH at twice it), since wit
 DSpark admits one session at a time and no cohort forms. Receipts:
 `research/spec-pooled-close-20261111/`.
 
+### A request that ends on a burst boundary (`tools/spec-burst-boundary-gate.py`)
+
+A speculative burst ends on a pending token: emitted, not yet in the caches. Greedy and, since
+memra#1186, sampled bursts carry it into the next burst's first verify
+(`docs/decisions/SAMPLED-PENDING-CARRY.md`). The seeded-invariance gate proves the texts on
+240-token answers. This gate puts the end of the request on the boundary itself, sampled and
+greedy, and compares every text with plain decode's:
+
+- `ref`, `ref2`: `MEMRA_SPEC_K=0`, every request alone and cold.
+- one speculative boot per `--grid` entry, `default,1:2,3:2,3:3` (`MEMRA_SPEC_K`:`MEMRA_SPEC_BURST`).
+  A burst length of 2 ends a burst at every round that emits two tokens or more, so nearly
+  every request ends on a boundary or right after one.
+- `yield`: one long penalised answer and one at temperature 1 while other requests arrive,
+  `MEMRA_MAX_SESSIONS=8`, `MEMRA_SPEC_GATE=0`: a burst that begins while a request waits for
+  admission runs no round.
+- `load`: the same with the demotion gate at its default: under the arrivals the long answer
+  may be handed to plain decode with a token still pending.
+- `refctx`, `ctx`: plain and speculative at `MEMRA_CTX=640`, three open answers that run into
+  it. A speculative request stops short of a full context by its draft length, so a `ctx` text
+  is judged as a prefix of its plain text, with the same finish reason.
+
+Requests: eleven answers that end on EOS (one shorter than a burst), a JSON-object answer
+(greedy speculates under the grammar; sampled is decoded plainly and must not speculate),
+`max_tokens` 31, 32, 33,
+63, 64 and 65, five stop strings taken from the reference answer, a two-turn conversation
+whose first turn ends on its budget and whose second turn is resumed, and a text completion
+sent right after the request that parked exactly its prompt. Samplers: temperature 1,
+temperature 0.7 with `top_p` 0.95, a frequency penalty of 0.4, greedy.
+
+The speculative boots run with `MEMRA_SPEC_SETUP_TRACE=1` and `MEMRA_SPEC_BOUNDARY_TRACE=1`, and
+the gate reads three things from the server log:
+
+- placement: where each request's bursts ended. A request ends "on the boundary" when its last
+  token is the last of a burst (the pending token has no next burst) and "after the boundary"
+  when it is the first token of the next one (round 0 drew it over the carried token). Each
+  end kind (EOS, stop string, budget) must be met at least once sampled and once greedy, or
+  the gate fails: it tested nothing.
+- carry: no sampled burst may draw a boundary token at its tail (`site=burst-tail-commit`),
+  and sampled bursts must enter on a carried token (`[spec-carry]`). A binary from before
+  memra#1186 fails here and only here; `--carry no` reports it instead, for the base run of a
+  comparison.
+- no-round: the yield boot must hold a continuation burst that ran no round (its round loop
+  took no time).
+
+Every speculative row but the `ctx` rows must equal plain decode's text, finish reason and
+completion tokens; a stop-string row too, since a stop string ends a speculative request on the
+token that completes it (memra#1207). `--compare RUNS.jsonl` also requires every row's text
+sha, finish reason and completion tokens to equal a second run's (another binary) and prints
+the counts. `--penalised host` is the seeded-invariance gate's. It is a serving gate for a change to the burst tail, the burst entry, the pending flush, or the
+worker's handling of a session's pending token; it needs a GPU lease around the whole run
+(ten short boots). Receipts: `research/spec-sampled-pending-carry-20261110/`.
+
 ## Generic spill / tiered KV (memra-tier)
 
 The shared contract is `crates/memra-tier/src/contracts.rs`. The conformance schedules are
