@@ -10,7 +10,6 @@
 //! Run: MEMRA_FAST=1 cargo run --release -p memra-engine --bin run-spec -- <model.gguf> [tok ids...]
 
 use memra_engine::Engine;
-use memra_engine::forward::argmax;
 use memra_engine::hybrid::HybridModel;
 use memra_gguf::GgufFile;
 use sha2::{Digest, Sha256};
@@ -52,69 +51,14 @@ fn primary_device(pp_devices: Option<&str>) -> Result<usize, String> {
         .map_err(|error| format!("invalid final MEMRA_PP_DEVICES entry: {error}"))
 }
 
-/// Greedy oracle for the target numeric class. Step35 and the qwen35 family serve B=1 on the
-/// batched program (concurrency cannot steer bytes), so comparing their speculative verifiers
-/// to the older eager `generate` class is a false red at near ties — MoE learned it 2026-08-14
-/// AM, the dense hybrid the same day on Qwen3.8 (an eager oracle here would fail the aligned
-/// serving-class verify on exactly the near-ties the fix removed). Reuse the production batch
-/// step, including stage-owned PP caches. A sharded PP target must likewise stay on a split
-/// target step: `generate` may select the unsplit device-counter loop, which correctly refuses
-/// remote weights rather than peer-reading them. Other single-device families keep the
-/// longstanding generate oracle.
+/// Greedy oracle for the speculative route: [`HybridModel::generate_spec_oracle`].
 fn plain_oracle(
     model: &HybridModel,
     e: &Engine,
     prompt: &[u32],
     max_new: usize,
 ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
-    let batched_class = model.uses_sliding_gated_moe_program()
-        || memra_engine::plan_backend::gdn_dspark_compatible(&model.plan);
-    let pp_class = memra_engine::pp::pp_cuts(model.layers.len()).is_some();
-    if !batched_class && !pp_class {
-        return model.generate(e, prompt, max_new);
-    }
-    let mut cache = memra_engine::pp::new_cache(e, &model.cfg, prompt.len() + max_new + 8)?;
-    let t_prime = std::time::Instant::now();
-    let mut logits = if prompt.len() >= memra_engine::hybrid_forward::PRIME_MIN_T
-        && std::env::var("MEMRA_PRIME_TOKENWISE").is_err()
-        && !e.frozen_cpu_experts_prefer_tokenwise_prime()
-    {
-        model.prime_cache(e, prompt, &mut cache, 0)?.0
-    } else {
-        let mut row = Vec::new();
-        for &token in prompt {
-            // The live GDN worker primes cold sub-floor prompts eagerly even though
-            // generated tokens use the batched serving class (#918). Keep the oracle
-            // tied to that request program, rather than copying the speculative prime.
-            row = if batched_class
-                && !(memra_engine::plan_backend::gdn_dspark_compatible(&model.plan)
-                    && prompt.len() < memra_engine::hybrid_forward::PRIME_MIN_T)
-            {
-                let mut caches = [&mut cache];
-                model.decode_step_batch(e, &[token], &mut caches)?.remove(0)
-            } else {
-                model.decode_step_h(e, token, &mut cache)?.0
-            };
-        }
-        row
-    };
-    e.stream().synchronize()?;
-    memra_engine::PRIME_NANOS.store(
-        t_prime.elapsed().as_nanos() as u64,
-        std::sync::atomic::Ordering::Relaxed,
-    );
-    let mut out = Vec::with_capacity(max_new);
-    for _ in 0..max_new {
-        let token = argmax(&logits) as u32;
-        out.push(token);
-        logits = if batched_class {
-            let mut caches = [&mut cache];
-            model.decode_step_batch(e, &[token], &mut caches)?.remove(0)
-        } else {
-            model.decode_step_h(e, token, &mut cache)?.0
-        };
-    }
-    Ok(out)
+    model.generate_spec_oracle(e, prompt, max_new)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -424,6 +368,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut all_pass = true;
+    // STEP IDENTITY (memra#1146): served plain steps against the verify forward over the same
+    // tokens, bit for bit, before the token-level sweep. The sweep sees a verify forward in
+    // another numeric class only where the prompt holds a near tie; this sees it on any prompt.
+    // `tools/release-coverage.py` requires the line. Its prompt is session-gate's, fixed, so a
+    // short run prompt cannot leave the recurrent state it compares nearly empty: off the prime
+    // grid, with a tail above the prime floor.
+    let identity_prompt: Vec<u32> = (101..229).chain(350..433).collect();
+    let identity = model.served_step_identity(&e, &identity_prompt, 4, 2)?;
+    match &identity {
+        Some(identity) => println!("{}", identity.line()),
+        None => println!("STEP-IDENTITY: n/a (no MTP head or no generic verify forward)"),
+    }
+    if identity.is_some_and(|identity| !identity.matches()) {
+        if model.step_identity_enforced() {
+            // Before the sweep and its banner: a log that says SELF-CONSISTENCY PASS must not
+            // belong to a run whose verify forward is another program.
+            return Err(
+                "STEP-IDENTITY failed: the verify forward is not the program the server \
+                 decodes this model with (or its prime is not deterministic); the K sweep \
+                 cannot see that, so it did not run"
+                    .into(),
+            );
+        }
+        println!(
+            "step identity is reported, not enforced, on this family: its verify forward is \
+             not declared in the serving class (memra#1157)"
+        );
+    }
     let mut any_accepted = false;
     let mut receipt_reference = Vec::new();
     let mut receipt_candidate = Vec::new();

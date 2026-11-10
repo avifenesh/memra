@@ -12,7 +12,8 @@ A successful build is not GPU qualification. Two gates use native evidence:
   roster and kernel-oracle artifacts, launch configuration, hardware/topology, raw cells
   and verdicts.
 
-Both reuse `release-coverage.py`: every greedy K=1..8 must pass once, both required-cell
+Both reuse `release-coverage.py`: every greedy K=1..8 must pass once after one `STEP-IDENTITY`
+line ending `-> MATCH` (or its named `n/a`; `docs/TESTING.md`, memra#1146), both required-cell
 manifests remain mandatory, and the kernel skip ceiling remains 11. Calibrated argmax
 uses the existing gate; no tolerance, predicate or skip budget is widened. Regressions on
 targets a push does not gate are caught by the [daily regression](#daily-regression) of

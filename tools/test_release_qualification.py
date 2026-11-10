@@ -167,8 +167,9 @@ class Fixture:
         required = q.coverage_module().required_cells([self.repo / p for p in q.MANIFESTS])
         self.cell("kernel", "kernel", "".join(f"{name} CPU-fixture OK\n" for name in sorted(required))
                   + f"ALL GREEN ({len(required)} cells, 0 skipped)\n")
-        spec = "".join(f"[generate_spec K={k}] 32 tok\nself-consistency: PASS (identical to plain target)\n"
-                       for k in range(1, 9)) + "=== SELF-CONSISTENCY PASS ===\n"
+        spec = ("STEP-IDENTITY: 4 batched plain steps against one 4-column verify -> MATCH\n"
+                    + "".join(f"[generate_spec K={k}] 32 tok\nself-consistency: PASS (identical to plain target)\n"
+                       for k in range(1, 9))) + "=== SELF-CONSISTENCY PASS ===\n"
         for name in ("model-a", "model-b"):
             self.cell("argmax", name, "SUMMARY flips=0 bad=0\n  PRIME-SUMMARY prime=MATCH\n"
                       "  PASS: CPU MOCK calibrated verdict\n")
