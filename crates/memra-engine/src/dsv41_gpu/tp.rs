@@ -239,10 +239,9 @@ impl Crew {
             }
             if sh.left.fetch_sub(1, Ordering::SeqCst) == 1
                 && sh.caller_parked.load(Ordering::SeqCst)
+                && let Some(c) = sh.caller.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
             {
-                if let Some(c) = sh.caller.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
-                    c.unpark();
-                }
+                c.unpark();
             }
         }
     }
