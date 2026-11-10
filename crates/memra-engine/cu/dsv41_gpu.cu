@@ -852,12 +852,14 @@ __global__ void __launch_bounds__(256, BM == 64 ? 2 : 1) v41_gemm_f8_pipe_kernel
 // Small-M block-scaled GEMM (at most V41_SM_MAX rows: decode, and a grouped dispatch whose groups
 // hold that few rows). Every output element is the tile kernel's sequence exactly: the same
 // m16n8k32 e4m3 MMA from zero per 32-wide K block on the same fragment lanes and registers (rows
-// 0..3 of the MMA tile, column = lane group), the same (d * sa) * sb, the same ascending fp32 sum
+// 0..7 of the MMA tile, column = lane group), the same (d * sa) * sb, the same ascending fp32 sum
 // over K blocks. Only the schedule differs: a block owns 8 output columns, its 8 warps split the K
 // blocks, each warp writes its blocks' scaled terms to shared memory, and one thread per (row,
 // column) adds them in K order. So a row's bytes do not depend on which of the two kernels ran,
 // and a one-token decode streams the weight with every SM instead of N/128 tiles walking K.
-#define V41_SM_MAX 4
+#define V41_SM_MAX 8
+// the fp32 FMA small-M chain: one thread per (row, column) of a 128-thread block
+#define V41_SMF_MAX 4
 // SU: the K blocks a warp loads ahead of their MMAs (registers). 8 when a warp's share of K is at
 // most 8 blocks; 10 for a longer K, where it saves a memory round trip per warp (20 blocks: two
 // rounds, not three) at the price of registers.
@@ -1244,7 +1246,7 @@ __global__ void __launch_bounds__(256) v41_gemm_bf16_kernel(const v41_bf* __rest
 
 // Small-M bf16 GEMM (at most V41_SM_MAX rows): the tile kernel's chain exactly. Its fp32 sum runs
 // inside each m16n8k16 MMA over the K steps in order, so one warp owns an 8-column group over the
-// whole K, on the same fragment lanes (rows 0..3 of the tile, column = lane group). The columns and
+// whole K, on the same fragment lanes (rows 0..7 of the tile, column = lane group). The columns and
 // the batch give the parallelism. A warp lands its 8 weight rows and the M rows in shared memory in
 // 16-byte chunks through cp.async, `su` k16 steps per stage, and reads the fragments from there.
 // A few-column output (few warps in the whole launch) is bound by the latency of one fetch after
@@ -1438,7 +1440,7 @@ __global__ void __launch_bounds__(256) v41_gemm_ffma_kernel(const v41_bf* __rest
         }
 }
 
-// Small-M fp32 FMA GEMM (at most V41_SM_MAX rows): the tile kernel's chain exactly, one fma per K
+// Small-M fp32 FMA GEMM (at most V41_SMF_MAX rows a launch): the tile kernel's chain exactly, one fma per K
 // element in K order per output. A block stages 32 columns of B through shared memory as fp32,
 // transposed so the 32 threads of a row read 32 neighbouring words, with the next chunk's loads in
 // registers while the current chunk's chains run; thread (row, column) owns one chain.
@@ -1448,7 +1450,7 @@ __global__ void __launch_bounds__(128) v41_gemv_ffma_kernel(const v41_bf* __rest
                                                             const v41_bf* __restrict__ B, long ldb,
                                                             float* __restrict__ C, long ldc, int M, int N, int K) {
     __shared__ float sB[V41_SMF_KC][33];
-    __shared__ float sA[V41_SM_MAX][V41_SMF_KC];
+    __shared__ float sA[V41_SMF_MAX][V41_SMF_KC];
     int tid = threadIdx.x, n0 = blockIdx.x * 32;
     // staging roles: B row j = tid >> 2, quarter q = tid & 3 (64 elements = 8 x 16 B); A: 16 B each
     int j = tid >> 2, q = tid & 3;
@@ -1477,7 +1479,7 @@ __global__ void __launch_bounds__(128) v41_gemv_ffma_kernel(const v41_bf* __rest
         }
         {
             const v41_bf* e = (const v41_bf*)&na;
-            if (ar < V41_SM_MAX)
+            if (ar < V41_SMF_MAX)
 #pragma unroll
                 for (int u = 0; u < 8; ++u) sA[ar][ac + u] = v41_bf2f(e[u]);
         }
@@ -1547,19 +1549,25 @@ extern "C" int memra_v41_gemm_ffma(const void* a, long lda, const void* b, long 
                                    int k, void* stream) {
     if (k % 32 || m < 0 || n <= 0) return 41023;
     if (m == 0) return 0;
-    if (m <= V41_SM_MAX && lda % 8 == 0 && ldb % 8 == 0 && n <= 4096) {
-        int smem = (V41_SMF_NC + m) * (k + 8) * 2;
-        if (smem <= 99 * 1024) {
-            if (smem > 48 * 1024)
-                cudaFuncSetAttribute(v41_gemv_ffma_narrow_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
-            v41_gemv_ffma_narrow_kernel<<<(n + V41_SMF_NC - 1) / V41_SMF_NC, 128, smem, (cudaStream_t)stream>>>(
-                (const v41_bf*)a, lda, (const v41_bf*)b, ldb, c, ldc, m, n, k);
-            V41_ERR();
-        }
-    }
     if (m <= V41_SM_MAX && lda % 8 == 0 && ldb % 8 == 0) {
-        v41_gemv_ffma_kernel<<<(n + 31) / 32, 128, 0, (cudaStream_t)stream>>>((const v41_bf*)a, lda, (const v41_bf*)b,
-                                                                              ldb, c, ldc, m, n, k);
+        // at most V41_SMF_MAX rows a launch: a call of 5..8 rows (a drafted block's verification) is two
+        // launches of the same chains, each row's bytes those of its own launch
+        for (int m0 = 0; m0 < m; m0 += V41_SMF_MAX) {
+            int mm = m - m0 < V41_SMF_MAX ? m - m0 : V41_SMF_MAX;
+            const v41_bf* ap = (const v41_bf*)a + (long)m0 * lda;
+            float* cp = c + (long)m0 * ldc;
+            int smem = (V41_SMF_NC + mm) * (k + 8) * 2;
+            if (n <= 4096 && smem <= 99 * 1024) {
+                if (smem > 48 * 1024)
+                    cudaFuncSetAttribute(v41_gemv_ffma_narrow_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                         smem);
+                v41_gemv_ffma_narrow_kernel<<<(n + V41_SMF_NC - 1) / V41_SMF_NC, 128, smem, (cudaStream_t)stream>>>(
+                    ap, lda, (const v41_bf*)b, ldb, cp, ldc, mm, n, k);
+            } else {
+                v41_gemv_ffma_kernel<<<(n + 31) / 32, 128, 0, (cudaStream_t)stream>>>(ap, lda, (const v41_bf*)b, ldb,
+                                                                                      cp, ldc, mm, n, k);
+            }
+        }
         V41_ERR();
     }
     dim3 grid((n + 63) / 64, (m + 63) / 64);

@@ -1817,7 +1817,7 @@ fn expert_table(ops: &Ops, experts: &[[QW; 3]]) -> Vec<u8> {
 }
 
 /// Rows of a GEMM that the small-M kernels take (`V41_SM_MAX` in `cu/dsv41_gpu.cu`).
-pub const SMALL_M: usize = 4;
+pub const SMALL_M: usize = 8;
 
 /// The MoE dispatch plan of one slice on the device (`memra_v41_moe_plan`): the order of the host
 /// [`tp::MoePlan`] (pairs sorted by expert, tokens ascending inside one; each token's pairs in
