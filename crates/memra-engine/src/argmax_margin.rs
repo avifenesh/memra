@@ -693,6 +693,31 @@ pub struct StoredKey {
     pub device: String,
     /// Rows in the gate's window.
     pub window: usize,
+    /// Where the MoE experts ran (`experts_of`): `resident`, `slru` or `none`. The SLRU cache is
+    /// another dispatch program than the resident experts, so its table is another table.
+    pub experts: String,
+}
+
+/// The MoE expert placement a probe log ran with, from the engine's `[moe] resident-experts
+/// decision` lines: `resident` when every one says RESIDENT, `slru` when any says otherwise
+/// (the SLRU cache), `none` when the log has none (a dense model, or experts forced off the card
+/// with MEMRA_MOE_RESIDENT=0, which prints no decision). Main's rows for an MoE model measured
+/// resident are then no stored table for a run that was not.
+pub fn experts_of(log: &str) -> &'static str {
+    let decisions: Vec<&str> = log
+        .lines()
+        .filter(|l| l.starts_with("[moe] resident-experts decision"))
+        .collect();
+    if decisions.is_empty() {
+        "none"
+    } else if decisions
+        .iter()
+        .all(|l| l.trim_end().ends_with("-> RESIDENT"))
+    {
+        "resident"
+    } else {
+        "slru"
+    }
 }
 
 /// Main's probe table for one cell's window, as printed.
@@ -729,7 +754,7 @@ impl StoredTable {
             "# Main's argmax margin probe rows for one gate cell (memra#1204). The gate compares a\n\
              # candidate's table for this window with these lines, byte for byte.\n\
              model\t{}\nmodel_sha256\t{}\nprompt\t{}\nprompt_sha256\t{}\ndecode\t{}\ndevice\t{}\n\
-             window\t{}\ncommit\t{}\nreceipt\t{}\nrows\n",
+             window\t{}\nexperts\t{}\ncommit\t{}\nreceipt\t{}\nrows\n",
             k.model,
             k.model_sha256,
             k.prompt,
@@ -737,6 +762,7 @@ impl StoredTable {
             k.decode,
             k.device,
             k.window,
+            k.experts,
             self.commit,
             self.receipt
         );
@@ -750,7 +776,7 @@ impl StoredTable {
     /// Parse the file form. A missing or repeated header field, an unknown one, a row count
     /// that is not the window, or rows that are not a probe table is an error.
     pub fn parse(text: &str) -> Result<StoredTable, String> {
-        const FIELDS: [&str; 9] = [
+        const FIELDS: [&str; 10] = [
             "model",
             "model_sha256",
             "prompt",
@@ -758,6 +784,7 @@ impl StoredTable {
             "decode",
             "device",
             "window",
+            "experts",
             "commit",
             "receipt",
         ];
@@ -807,6 +834,10 @@ impl StoredTable {
         if !matches!(decode.as_str(), "eager" | "batch") {
             return Err(format!("stored table: decode {decode:?}"));
         }
+        let experts = field("experts")?;
+        if !matches!(experts.as_str(), "resident" | "slru" | "none") {
+            return Err(format!("stored table: experts {experts:?}"));
+        }
         Ok(StoredTable {
             key: StoredKey {
                 model: field("model")?,
@@ -816,6 +847,7 @@ impl StoredTable {
                 decode,
                 device: field("device")?,
                 window,
+                experts,
             },
             commit: field("commit")?,
             receipt: field("receipt")?,
@@ -1385,6 +1417,7 @@ mod tests {
             decode: "eager".into(),
             device: "device A".into(),
             window: 3,
+            experts: "resident".into(),
         }
     }
 
@@ -1536,6 +1569,17 @@ mod tests {
     }
 
     #[test]
+    fn the_expert_placement_is_read_from_the_logs_decision_lines() {
+        let resident = "[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 24.52GB (expert budget 20.91GB) -> RESIDENT";
+        let slru = "[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 14.00GB (expert budget 10.40GB) -> SLRU cache";
+        assert_eq!(experts_of("table\n"), "none");
+        assert_eq!(experts_of(&format!("{resident}\ntable\n")), "resident");
+        assert_eq!(experts_of(&format!("{slru}\n")), "slru");
+        // Two devices, one of them off the card: not resident.
+        assert_eq!(experts_of(&format!("{resident}\n{slru}\n")), "slru");
+    }
+
+    #[test]
     fn a_stored_table_is_found_only_by_its_whole_key() {
         let tables = vec![stored(&main_rows())];
         let key = stored_key();
@@ -1565,6 +1609,10 @@ mod tests {
             },
             StoredKey {
                 decode: "batch".into(),
+                ..key.clone()
+            },
+            StoredKey {
+                experts: "slru".into(),
                 ..key.clone()
             },
             StoredKey {

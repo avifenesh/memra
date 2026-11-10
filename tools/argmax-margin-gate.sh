@@ -82,7 +82,8 @@
 # the window passes it. The second check compares the candidate's window with main's own
 # table for the same cell, kept in tools/argmax-margin-rows/ (one `.rows` file per cell, keyed
 # by the model's name and sha256, the prompt's name and sha256, the decode program, the exact
-# device name and the window; looked up by that key, never by file name). The comparison is
+# device name, the window and where the MoE experts ran: resident, in the SLRU cache, or none
+# for a dense model; looked up by that key, never by file name). The comparison is
 # of the printed lines, byte for byte, with no tolerance: on a device whose tables repeat
 # exactly between runs of one build, any difference is a change of numbers.
 #
@@ -99,9 +100,10 @@
 #
 # A cell passes only if the floor rule and the stored rows both pass. The model's sha256 is
 # read from a cache, ${XDG_CACHE_HOME:-~/.cache}/memra/model-sha256.tsv, keyed by the
-# resolved path, the size and the modification time (for a checkpoint directory, of every
-# file in it); --rehash-model ignores the cache and hashes the bytes again. A checkpoint
-# directory's digest is the sha256 of the `sha256sum` lines of its files in C-locale path order.
+# resolved path, the size, the modification and change times and the inode (for a checkpoint
+# directory, of every file in it but dot paths); --rehash-model ignores the cache and hashes the
+# bytes again. A checkpoint directory's digest is the sha256 of the `sha256sum` lines of those
+# files in C-locale path order.
 # `--calibrate --rows-out FILE --commit C` writes the stored table of the calibration log's last
 # --window rows (default 12, the gate's window), measured by the binary of commit C.
 #
@@ -340,29 +342,31 @@ fi
 KEY=(--model "$MODEL_NAME" --prompt "$PROMPT_NAME" --prompt-sha256 "$PROMPT_SHA" --decode "$DECODE" --device "$DEVICE")
 
 # The model artifact's sha256, part of a stored table's key. Hashing 15 to 20 GB on every gate
-# run is slow, so the digest is cached per resolved path with the size and modification time
-# it was taken at (for a checkpoint directory, those of every file). A key that does not match
-# is hashed again; --rehash-model always hashes. Prints the digest, then "hashed" or "cached".
+# run is slow, so the digest is cached per resolved path with the size, modification time,
+# change time and inode it was taken at (for a checkpoint directory, those of every file but
+# dot paths such as a download tool's metadata). A rewrite changes the change time even when
+# the modification time is set back. A key that does not match is hashed again; --rehash-model
+# always hashes. Prints the digest, then "hashed" or "cached".
 model_sha256() {
     local path cache key sum how=hashed
     path=$(readlink -f "$1")
     cache="${XDG_CACHE_HOME:-$HOME/.cache}/memra/model-sha256.tsv"
     if [ -d "$path" ]; then
-        key=$(cd "$path" && find -L . -type f | LC_ALL=C sort \
-            | while IFS= read -r f; do echo "$f $(stat -L -c '%s %Y' "$f")"; done \
+        key=$(cd "$path" && find -L . -type f -not -path '*/.*' | LC_ALL=C sort \
+            | while IFS= read -r f; do echo "$f $(stat -L -c '%s %.9Y %.9Z %i' "$f")"; done \
             | sha256sum | cut -d' ' -f1)
     else
-        key=$(stat -L -c '%s %Y' "$path")
+        key=$(stat -L -c '%s %.9Y %.9Z %i' "$path")
     fi
     if [ "$REHASH" = 0 ] && [ -f "$cache" ]; then
         sum=$(awk -F'\t' -v p="$path" -v k="$key" '$1 == p && $2 == k { s = $3 } END { print s }' "$cache")
         if [[ "$sum" =~ ^[0-9a-f]{64}$ ]]; then echo "$sum cached"; return 0; fi
     fi
     if [ -d "$path" ]; then
-        sum=$(cd "$path" && find -L . -type f | LC_ALL=C sort \
-            | while IFS= read -r f; do sha256sum "$f"; done | sha256sum | cut -d' ' -f1)
+        sum=$(cd "$path" && find -L . -type f -not -path '*/.*' | LC_ALL=C sort \
+            | while IFS= read -r f; do sha256sum "$f" || exit 1; done | sha256sum | cut -d' ' -f1) || return 1
     else
-        sum=$(sha256sum "$path" | cut -d' ' -f1)
+        sum=$(sha256sum "$path" | cut -d' ' -f1) || return 1
     fi
     [[ "$sum" =~ ^[0-9a-f]{64}$ ]] || return 1
     if mkdir -p "$(dirname "$cache")" 2>/dev/null; then
@@ -518,7 +522,7 @@ if [ $CANARY = 1 ]; then
     # The stored-rows comparison (memra#1204): a stored table written from this window, and a
     # copy of the window with one margin of its last row moved by 1 logit. The comparison must
     # call the unmoved copy identical and name exactly the moved row in the other.
-    CDIR="$D/canary-stored-rows"
+    CDIR="$D/canary-stored-rows.$(basename "$LOG")"   # its own table: concurrent canaries share a logdir
     mkdir -p "$CDIR"
     CKEY=(--model-sha256 canary-self --window "$WINDOW")
     CANARY_ROWS=MISSING
@@ -534,7 +538,8 @@ if [ $CANARY = 1 ]; then
             { print }' "$LOG" > "$LOG.rows-injected"
         same=$("$PROBE" --judge "$LOG" --max-flips "$WINDOW" "${KEY[@]}" "${CKEY[@]}" --stored-rows "$CDIR" 2>&1)
         moved=$("$PROBE" --judge "$LOG.rows-injected" --max-flips "$WINDOW" "${KEY[@]}" "${CKEY[@]}" --stored-rows "$CDIR" 2>&1)
-        if echo "$same" | grep -q '^STORED-ROWS: identical ' \
+        moved_rc=$?
+        if echo "$same" | grep -q '^STORED-ROWS: identical ' && [ "$moved_rc" -eq 1 ] \
             && [ "$(echo "$moved" | grep -c '^ROW-DIFF pos=')" = 1 ] \
             && echo "$moved" | grep -q "^ROW-DIFF pos=$CPOS\$" \
             && echo "$moved" | grep -q "^STORED-ROWS: DIFFERENT (1 of $WINDOW positions "; then
@@ -632,6 +637,12 @@ if [ "$SERVED" = MISMATCH ]; then
     echo "  raw: $LOG_SHOWN"
     exit 1
 fi
+# A row that differs from main's fails whatever the judge's exit code says.
+if [ "$STORED" = DIFFERENT ]; then
+    echo "  FAIL: the window differs from main's stored rows (the ROW-DIFF lines above name each row)"
+    echo "  raw: $LOG_SHOWN"
+    exit 1
+fi
 if [ $UNCALIBRATED = 1 ] && [ $REQUIRE_FLOOR = 1 ]; then
     # Which device classes are maintained is tools/change-impact.toml's call: the classes of
     # its push-gated build targets. A device of one of them with no floor row for its exact
@@ -648,9 +659,10 @@ if [ $UNCALIBRATED = 1 ] && [ $REQUIRE_FLOOR = 1 ]; then
     echo "  raw: $LOG_SHOWN"
     exit 1
 fi
-if [ "$STORED" = none ] && [ $REQUIRE_FLOOR = 1 ]; then
+if [ "$STORED" = none ] && [ $REQUIRE_FLOOR = 1 ] && [ $jrc -eq 0 ]; then
     # The same reading for main's stored rows: a maintained or unknown device without them is
-    # refused, a device of a class nobody maintains is not judged.
+    # refused, a device of a class nobody maintains is not judged. Only a cell the floor rule
+    # passed gets here: a floor-rule failure is a FAIL whether or not main's rows are stored.
     STATUS=$(python3 tools/change_impact.py --repo . --device-status "$DEVICE" 2>/dev/null) || STATUS=unknown
     case "$STATUS" in
         "unmaintained "*)
@@ -658,7 +670,13 @@ if [ "$STORED" = none ] && [ $REQUIRE_FLOOR = 1 ]; then
             echo "  raw: $LOG_SHOWN"
             exit 0 ;;
     esac
-    echo "argmax-margin-gate: NO-STORED-ROWS (no stored rows in $STORED_ROWS for model=$MODEL_NAME model_sha256=${MODEL_SHA:-none} prompt=$PROMPT_NAME sha256=$PROMPT_SHA decode=$DECODE device=$DEVICE window=$WINDOW, device class: ${STATUS:-unknown}; store main's with --calibrate --rows-out)"
+    if echo "$verdict" | grep -q '^STORED-ROWS: none (not comparable: '; then
+        # Main's rows are for this cell, but the run took another dispatch program: the MoE
+        # experts did not stay on the card (too little free memory, or MEMRA_MOE_RESIDENT=0).
+        echo "argmax-margin-gate: NO-STORED-ROWS ($(echo "$verdict" | grep -m1 -o 'not comparable: [^;]*'); device=$DEVICE, device class: ${STATUS:-unknown}; rerun with the card free enough for the experts to stay resident, see the [moe] line in the raw log)"
+    else
+        echo "argmax-margin-gate: NO-STORED-ROWS (no stored rows in $STORED_ROWS for model=$MODEL_NAME model_sha256=${MODEL_SHA:-none} prompt=$PROMPT_NAME sha256=$PROMPT_SHA decode=$DECODE device=$DEVICE window=$WINDOW, device class: ${STATUS:-unknown}; store main's with --calibrate --rows-out)"
+    fi
     echo "  raw: $LOG_SHOWN"
     exit 1
 fi
@@ -677,6 +695,7 @@ if [ $jrc -eq 0 ]; then
     echo "  raw: $LOG_SHOWN"
     exit 0
 fi
-echo "  FAIL: a wide flip, a wide row, a known row wider than recorded, a flip with no floor to judge it by, too many near ties, or a row that differs from main's stored rows (the lines above name each row)"
+[ "$STORED" = none ] && echo "  (no stored rows for this cell: the window was not compared with main's)"
+echo "  FAIL: a wide flip, a wide row, a known row wider than recorded, a flip with no floor to judge it by, or too many near ties (the lines above name each row)"
 echo "  raw: $LOG_SHOWN"
 exit 1

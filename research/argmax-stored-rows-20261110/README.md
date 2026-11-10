@@ -84,17 +84,42 @@ A tolerance would be a measured run-to-run maximum for the cell. None has been n
 repeat has moved a byte. If a device turns out not to be byte-stable, the rows that move and by
 how much come first, then the source, then the choice between fixing it and a measured bound.
 
-## What is not measured yet (GPU cells)
+## Repeats on GPU and the expert placement
 
-These cells check the premise on every device class, roster model and arm; none of them changes
-the code. 12-row gate runs take 40 to 42 s on the RTX 5090 Laptop GPU (#1202's green arm).
+**RTX 5090 Laptop GPU, this branch's gate** (`repeats/rtx5090-laptop/`, the PR head's probe,
+`--require-floor`, 12-row window): each roster cell twice in two processes in one lease, then
+once more in a later lease after the other three cells had used the card.
 
-| check | cells |
-|---|---|
-| the gate window twice from one build, in two processes, table sha256 compared | 3 device classes x 2 models x 2 arms = 12 cells, 24 runs |
-| once more after another cell used the card | 12 runs |
-| GB10: both units | Qwen3.8-27B eager and batch (Ornith is covered by records from both units) |
-| RTX PRO 6000: two cards | covered by records from three cards for all four cells; repeat with this branch's gate |
+| cell | runs | table sha256 (first 16) | stored rows | gate |
+|---|---|---|---|---|
+| Ornith eager | 3 | `706af873d259891a` all three | identical | PASS |
+| Ornith batch | 3 | `e356081d72028d74` all three | identical | PASS |
+| Qwen3.8-27B eager | 3 | `b25c41e5e8e34315` all three | identical | PASS |
+| Qwen3.8-27B batch | 3 | `4083a49bdc9adb40` all three | identical | PASS |
+
+The four hashes are the cell-evidence records' (research/argmax-gate-rule-20261110/README.md).
+The first run of a model hashed its file and later runs read the cache (`model sha256: ...
+(hashed)`, then `(cached)`).
+
+**The expert placement (the independent review's question).** An MoE model loads its experts
+on the card only when the free memory covers them, the trunk and a 2.0e9-byte reserve; otherwise
+the SLRU cache serves them, another dispatch program. With `MEMRA_MOE_RESIDENT=0`, Ornith on the
+RTX 5090 Laptop GPU passes the floor rule and differs from main's resident rows at all 12
+positions, eager and batch (`repeats/rtx5090-laptop/rep-or-*-slru*/`). A second SLRU eager run gives
+the same table (`76dce3c92cf0ef8f`), so the SLRU path is a second stable program, not noise. No record had measured that
+path: every RTX 5090 Ornith record ran resident. So the placement is part of the key, read from
+the log's `[moe] resident-experts decision` lines, and a run placed otherwise reads as "not
+comparable", not as a difference. The release battery waits for the model's size plus 2,048 MiB
+free, above the reserve.
+
+**GB10** (`repeats/gb10/`, main's sm_121a probe, the build the stored rows come from, judged on
+CPU with this branch's probe): two processes and one later run per cell on the unit that
+calibrated it, and Qwen3.8-27B on the other unit. They run after the GB10 Qwen3.8-27B floor rows,
+under the units' queue rules. Before them, the records already cover both units: Ornith and
+Qwen3.8-27B eager 26 and 14 records per unit, each batch arm 20 and 1.
+
+**RTX PRO 6000 Max-Q**: no repeat with this branch's gate. The records cover three cards for all
+four cells.
 
 ## Files
 
@@ -102,3 +127,4 @@ the code. 12-row gate runs take 40 to 42 s on the RTX 5090 Laptop GPU (#1202's g
 - `tools/against_records.py`: each seed against the 12-row tables of the cell-evidence records of its device.
 - `model-sha256.tsv`: the model digests per device.
 - `seeds.txt`: the seed run's output; `against-records.md`: the comparison.
+- `repeats/`: the GPU repeat cells, one directory per cell and run (`runs.txt` per cell).

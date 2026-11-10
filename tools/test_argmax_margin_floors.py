@@ -8,6 +8,7 @@ fails for a new roster model, a half-calibrated device and a floor row for other
 import hashlib
 import importlib.util
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -22,7 +23,9 @@ SHA = {"board-2048": "a" * 64}
 # A receipt's table: 20 rows in the probe's printed form, the last 12 a battery window.
 RECEIPT_ROWS = [f"{p:<8} {7:<13} {'1.000000000e0':<16} {7:<12} {'1.000000000e0':<16} {'1.0e-1':<16} yes"
                 for p in range(2028, 2048)]
-RECEIPT = "pos header\n" + "\n".join(r + "   " for r in RECEIPT_ROWS) + "\nPRIME-GATE: class=MATCH\n"
+RECEIPT = ("[moe] resident-experts decision (dev0): experts 1.00GB + trunk 1.00GB vs free 9.00GB "
+           "(expert budget 6.00GB) -> RESIDENT\npos header\n"
+           + "\n".join(r + "   " for r in RECEIPT_ROWS) + "\nPRIME-GATE: class=MATCH\n")
 CELLS = [("own/m", "M", "board-2048", "eager"), ("own/m", "M", "board-2048", "batch")]
 
 
@@ -150,11 +153,12 @@ class FloorsCensusTest(unittest.TestCase):
     # memra#1204: main's stored rows per battery floor row.
 
     def stored(self, model="M", decode="eager", device="card A", receipt="research/x/probe.log",
-               rows=None, window=12, sha=SHA["board-2048"], model_sha="c" * 64):
+               rows=None, window=12, sha=SHA["board-2048"], model_sha="c" * 64, experts="resident"):
         rows = RECEIPT_ROWS[-window:] if rows is None else rows
         text = ("# a comment\n" + "".join(f"{k}\t{v}\n" for k, v in (
             ("model", model), ("model_sha256", model_sha), ("prompt", "board-2048"), ("prompt_sha256", sha),
-            ("decode", decode), ("device", device), ("window", window), ("commit", "031f146690"),
+            ("decode", decode), ("device", device), ("window", window), ("experts", experts),
+            ("commit", "031f146690"),
             ("receipt", receipt))) + "rows\n" + "".join(r + "\n" for r in rows))
         return (pathlib.Path(f"{model}-{decode}-{device}.rows"), *census.stored_table(text))
 
@@ -182,6 +186,8 @@ class FloorsCensusTest(unittest.TestCase):
         moved = RECEIPT_ROWS[-12:-1] + [RECEIPT_ROWS[-1].replace("1.000000000e0", "1.100000000e0")]
         self.assertEqual(self.problems([eager, self.stored(decode="batch", rows=moved)]),
                          ["STALE stored rows M-batch-card A.rows: not the last 12 rows of research/x/probe.log"])
+        self.assertEqual(self.problems([eager, self.stored(decode="batch", experts="none")]),
+                         ["STALE stored rows M-batch-card A.rows: experts none but the receipt ran resident"])
         self.assertEqual(self.problems([eager, self.stored(decode="batch"), self.stored(decode="batch")]),
                          ["TWO stored tables for one artifact: device='card A' model=M decode=batch"])
 
@@ -196,13 +202,20 @@ class FloorsCensusTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.stored(rows=RECEIPT_ROWS[-11:])
 
-    def test_the_tree_stored_rows_parse_with_the_engine(self):
-        # The census's reader and memra_engine::argmax_margin::StoredTable read the same files: every
-        # tracked table parses here with a 64-hex model digest and the battery window.
+    def test_the_tree_stored_rows_are_well_formed(self):
+        # Every tracked table parses with the census's reader (a 64-hex model digest, as many rows
+        # as its window). The engine's own reader runs on them in tools/test_argmax_margin_gate.py,
+        # which has the built probe.
         tables = census.stored_tables(REPO / "tools/argmax-margin-rows")
         self.assertTrue(tables)
         for path, header, rows in tables:
             self.assertEqual(int(header["window"]), len(rows), path)
+
+    def test_the_battery_window_is_the_gates_default_window(self):
+        gate = (REPO / "tools/argmax-margin-gate.sh").read_text()
+        default = re.search(r"^WINDOW=(\d+)\s", gate, re.M)
+        self.assertIsNotNone(default)
+        self.assertEqual(int(default.group(1)), census.BATTERY_WINDOW)
 
     def test_the_prompt_digest_is_the_file_the_gate_reads(self):
         prompt = REPO / "research/e2e/prompts/board-2048.txt"

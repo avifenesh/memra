@@ -215,7 +215,10 @@ model_need_mib() {
   # measure must refuse, never wave through.
   sz=$(stat -Lc %s "$1" 2>/dev/null || echo 0)
   [ "${sz:-0}" -gt 0 ] || { echo "release-battery: cannot size $1 — refusing to guess a card need" >&2; echo 999999999; return; }
-  echo $(( sz / 1048576 + ${CARD_HEADROOM_MIB:-1536} ))
+  # The headroom covers the MoE resident planner's reserve (2.0e9 bytes, 1,908 MiB, beyond the
+  # weights): below it an MoE model's experts go to the SLRU cache, another dispatch program
+  # than the one the floors and main's stored rows were measured with (memra#1204).
+  echo $(( sz / 1048576 + ${CARD_HEADROOM_MIB:-2048} ))
 }
 
 FAILED=0; MISSING_OWN=0; OWN_ROWS=0; LINES=""; NOT_JUDGED=0

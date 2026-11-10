@@ -33,14 +33,14 @@ def stored(path):
 
 
 def main():
-    print("| stored table | records of the device with this cell | identical | devices (distinct uuid) | differ (record commits) |")
-    print("|---|---|---|---|---|")
+    print("| stored table | records of the device with this cell | identical | devices (distinct uuid) | other row count (skipped) | differ (record commits) |")
+    print("|---|---|---|---|---|---|")
     for path in sorted((REPO / "tools/argmax-margin-rows").glob("*.rows")):
         h, rows = stored(path)
         cls = CLASS.get(h["device"])
         suffix = ".batch.log" if h["decode"] == "batch" else ".log"
         name = f"gate-{h['model']}-{h['prompt']}{suffix}"
-        same, differ, units = [], [], set()
+        same, differ, units, skipped = [], [], set(), 0
         for rec in sorted((REPO / "research/release-qualification/cells").glob(f"*-{cls}-*")):
             # A record's device must be the stored table's exact device.
             if not (rec / "record.json").is_file():
@@ -53,10 +53,11 @@ def main():
                     continue
                 lines = table_lines(log.read_text(errors="replace"))
                 if len(lines) != len(rows):
+                    skipped += 1
                     continue
                 (same if lines == rows else differ).append(rec.name.split("-")[0])
                 units.add(device.get("uuid_sha256"))
-        print(f"| `{path.name}` | {len(same) + len(differ)} | {len(same)} | {len(units)} | "
+        print(f"| `{path.name}` | {len(same) + len(differ)} | {len(same)} | {len(units)} | {skipped} | "
               f"{', '.join(sorted(set(differ))) or 'none'} |")
     return 0
 

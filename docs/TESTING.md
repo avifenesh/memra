@@ -624,25 +624,38 @@ the roster it is 3.1 to 4.5 logits, so a candidate that moves a token by 1 to 3 
 window passes it. The second check compares the candidate's window with main's own table for the
 same cell: `tools/argmax-margin-rows/` holds one `.rows` file per cell, keyed by the model's name
 and the sha256 of its bytes, the prompt's name and sha256, the decode program, the exact device
-name and the window, and looked up by that key (never by file name). The comparison is of the
-printed table lines, byte for byte, with no tolerance:
+name, the window and where the MoE experts ran (`resident`, `slru` or `none`, read from the
+log's `[moe] resident-experts decision` lines), and looked up by that key (never by file name).
+The comparison is of the printed table lines, byte for byte, with no tolerance:
 
 | line | meaning | result |
 |---|---|---|
 | `STORED-ROWS: identical` | every row of the window equals main's | passes |
 | `ROW-DIFF pos=N` + `STORED-ROWS: DIFFERENT` | a row differs; both sides printed (top-1 ids, margins, spread, the `detail` line) | fails |
-| `STORED-ROWS: none` | no stored table for the key: another artifact, prompt, device or window | not applied outside the battery; with `--require-floor`, `NO-STORED-ROWS` (refused) on a maintained or unknown device and `NOT-JUDGED` on an unmaintained class |
+| `STORED-ROWS: none` | no stored table for the key: another artifact, prompt, device or window | not applied outside the battery; with `--require-floor` and a passing floor rule, `NO-STORED-ROWS` (refused) on a maintained or unknown device and `NOT-JUDGED` on an unmaintained class |
+| `STORED-ROWS: none (not comparable: ...)` | main's rows exist for the cell but the run's MoE experts were placed otherwise (the SLRU cache on a card without room for them, or `MEMRA_MOE_RESIDENT=0`) | as above; the refusal names the placement |
+
+The placement is in the key because it changes the program: on the RTX 5090 Laptop GPU,
+Ornith-1.5-35B-A3B with its experts in the SLRU cache passes the floor rule and differs from
+main's resident rows at all 12 positions, eager and batch
+(`research/argmax-stored-rows-20261110/`). The release battery waits for the model's size plus
+2,048 MiB free (`CARD_HEADROOM_MIB`), above the resident planner's 2.0e9-byte reserve, so a
+battery cell keeps its experts resident.
 
 A cell passes only if the floor rule and the stored rows both pass, and the release battery
-reports `NO-STORED-ROWS` as `REFUSED`. A stored file that does not parse, and two files for one
+reports `NO-STORED-ROWS` as `REFUSED`. A floor-rule failure is a FAIL whether or not main's rows
+are stored, and a `DIFFERENT` verdict fails the cell whatever the judge's exit code. The
+release-qualification and cell-evidence checkers require exactly one `STORED-ROWS: identical`
+line in every passing argmax cell's log. A stored file that does not parse, and two files for one
 key, are errors, never "none". The model's sha256 comes from a cache,
-`${XDG_CACHE_HOME:-~/.cache}/memra/model-sha256.tsv`, keyed by the resolved path, the size and the
-modification time (of every file, for a checkpoint directory, whose digest is the sha256 of its
-files' `sha256sum` lines in C-locale order). A file rewritten with the same size and
-modification time keeps its cached digest: `--rehash-model` hashes the bytes again. The canary
+`${XDG_CACHE_HOME:-~/.cache}/memra/model-sha256.tsv`, keyed by the resolved path, the size, the
+modification and change times and the inode (of every file but dot paths, for a checkpoint
+directory, whose digest is the sha256 of those files' `sha256sum` lines in C-locale order). A
+rewrite changes the change time even when the modification time is set back; `--rehash-model`
+hashes the bytes regardless. The canary
 writes a stored table from the measured window, moves one margin of its last row by 1 logit in
-a copy and requires the comparison to call the unmoved copy identical and name exactly the moved
-row.
+a copy and requires the comparison to call the unmoved copy identical and to name exactly the
+moved row, with the judge exiting 1.
 
 Main's rows for a cell come from the floor row's calibration log: `--calibrate --rows-out FILE
 --commit C` writes the last `--window` rows (default 12) of the measured log, and
@@ -651,7 +664,7 @@ Main's rows for a cell come from the floor row's calibration log: `--calibrate -
 (`research/argmax-stored-rows-20261110/tools/seed_rows.sh` for the roster). The census
 (`tools/check-argmax-floors.py`) demands a stored table for the battery window on every battery
 floor row, from that row's receipt: its `receipt` field must be the floor row's and its rows the
-receipt's last 12, byte for byte.
+receipt's last 12, byte for byte, and its `experts` field the receipt's own placement.
 
 **Changing the stored rows.** A change that moves a row of a roster window is a change of numbers,
 and the stored rows say so before any floor does. A bit-identical change shows no difference. A

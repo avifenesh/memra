@@ -147,6 +147,7 @@ def roster_ids(data):
 
 def judge_battery(runs_tsv, read_log, manifests, roster):
     """Raw battery evidence -> verdict rows, or EvidenceError. Mirrors cell_verdicts()."""
+    import release_qualification as q  # the tag checker's stored-rows rule, shared
     coverage = coverage_module()
     required = set()
     for data in manifests:
@@ -177,6 +178,7 @@ def judge_battery(runs_tsv, read_log, manifests, roster):
             served = [l for l in lines if l.startswith("SERVED-SUMMARY served=")]
             require(sum(l.startswith("PASS:") for l in lines) == 1
                     and any(re.search(r"SUMMARY flips=\d+ bad=0\b", l) for l in lines)
+                    and q.stored_rows_identical(lines)
                     and served in (["SERVED-SUMMARY served=MATCH"], ["SERVED-SUMMARY served=EAGER-ROUTED"])
                     and not any("SKIP" in l or l.startswith("FAIL") for l in lines),
                     f"served-batch argmax cell {model} did not pass its calibrated gate")
@@ -185,6 +187,7 @@ def judge_battery(runs_tsv, read_log, manifests, roster):
         else:
             require(sum(l.startswith("PASS:") for l in lines) == 1
                     and any(re.search(r"SUMMARY flips=\d+ bad=0\b", l) for l in lines)
+                    and q.stored_rows_identical(lines)
                     and not any("SKIP" in l or l.startswith("FAIL") for l in lines),
                     f"argmax cell {model} did not pass its calibrated gate")
             verdict = "calibrated argmax PASS"

@@ -84,7 +84,16 @@ def bad_receipts(receipts, repo):
 
 
 STORED_FIELDS = ("model", "model_sha256", "prompt", "prompt_sha256", "decode", "device", "window",
-                 "commit", "receipt")
+                 "experts", "commit", "receipt")
+
+
+def experts_of(log):
+    """Where a probe log's MoE experts ran, as memra_engine::argmax_margin::experts_of reads it:
+    `resident`, `slru` or `none` (no decision line: dense, or forced off the card)."""
+    decisions = [l for l in log.splitlines() if l.startswith("[moe] resident-experts decision")]
+    if not decisions:
+        return "none"
+    return "resident" if all(l.rstrip().endswith("-> RESIDENT") for l in decisions) else "slru"
 
 # The window the release battery's gate cells judge: the gate's default.
 BATTERY_WINDOW = 12
@@ -155,10 +164,14 @@ def stored_problems(cells, rows, receipts, prompt_sha256, tables, read_receipt):
                 problems.append(f"STALE stored rows {path.name}: receipt {header['receipt']} is not the floor "
                                 f"row's {receipts[key]}")
                 continue
-            last = table_lines(read_receipt(header["receipt"]))[-BATTERY_WINDOW:]
+            receipt = read_receipt(header["receipt"])
+            last = table_lines(receipt)[-BATTERY_WINDOW:]
             if last != stored:
                 problems.append(f"STALE stored rows {path.name}: not the last {BATTERY_WINDOW} rows of "
                                 f"{header['receipt']}")
+            elif header["experts"] != experts_of(receipt):
+                problems.append(f"STALE stored rows {path.name}: experts {header['experts']} but the receipt "
+                                f"ran {experts_of(receipt)}")
     return problems
 
 

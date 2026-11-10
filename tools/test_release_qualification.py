@@ -171,10 +171,10 @@ class Fixture:
                     + "".join(f"[generate_spec K={k}] 32 tok\nself-consistency: PASS (identical to plain target)\n"
                        for k in range(1, 9))) + "=== SELF-CONSISTENCY PASS ===\n"
         for name in ("model-a", "model-b"):
-            self.cell("argmax", name, "SUMMARY flips=0 bad=0\n  PRIME-SUMMARY prime=MATCH\n"
+            self.cell("argmax", name, "SUMMARY flips=0 bad=0\n  STORED-ROWS: identical (12 rows equal main's, measured at 031f146690; research/x/probe.log)\n  PRIME-SUMMARY prime=MATCH\n"
                       "  PASS: CPU MOCK calibrated verdict\n")
             self.cell("spec", name, spec)
-            self.cell("argmax-batch", name, "SUMMARY flips=0 bad=0\n  SERVED-SUMMARY served=MATCH\n"
+            self.cell("argmax-batch", name, "SUMMARY flips=0 bad=0\n  STORED-ROWS: identical (12 rows equal main's, measured at 031f146690; research/x/probe.log)\n  SERVED-SUMMARY served=MATCH\n"
                       "  PASS: CPU MOCK calibrated verdict\n")
         self.refresh()
 
@@ -631,6 +631,18 @@ class QualificationTests(unittest.TestCase):
         self.assertNotIn("run: cargo build --release --locked --bins", release)
         self.assertLess(publish.index("release_qualification.py verify"), publish.index("name: Publish to crates.io"))
         self.assertIn("inputs.publish == true", publish[:publish.index("release_qualification.py verify")])
+
+
+class StoredRowsRuleTests(unittest.TestCase):
+    # memra#1204: a passing argmax cell's log carries exactly one STORED-ROWS verdict, identical.
+    def test_only_one_identical_verdict_passes(self):
+        ok = "STORED-ROWS: identical (12 rows equal main's, measured at c; r)"
+        self.assertTrue(q.stored_rows_identical(["SUMMARY flips=0 bad=0", ok, "PASS: x"]))
+        for lines in ([], ["STORED-ROWS: none (no stored table)"],
+                      ["STORED-ROWS: DIFFERENT (1 of 12 positions differ)"], [ok, ok],
+                      [ok, "STORED-ROWS: DIFFERENT (1 of 12 positions differ)"]):
+            with self.subTest(lines=lines):
+                self.assertFalse(q.stored_rows_identical(lines))
 
 
 class GateBinaryPathTests(unittest.TestCase):
