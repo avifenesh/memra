@@ -1,0 +1,16 @@
+dsv41-tpbench: 1 cells x 1 rounds on 1 rank(s) [0], 8/8 layers resident, chunk 8192, max_pos 1024
+  plan decode-c1: workspace 0.51 GiB + state 0.00 GiB a rank
+  carried state: 641 B a position a rank (+1.0 MiB of window rings a sequence); reserve 0.51 GiB a device-rank
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+[dsv41-resident] device 0 ranks [0]: 8 of 8 layers + head resident, 56.70 GiB (56.70 GiB a rank); free 94.47 -> 37.77 GiB of 95.06 GiB; reserve 0.51 GiB; load 5.1s
+  capacity at 4096 positions: 10295 sequences a rank after one prefill's 2.50 GiB workspace (0.003 GiB state each, 37.77 GiB free a rank)
+  capacity at 32768 positions: 1545 sequences a rank after one prefill's 6.05 GiB workspace (0.021 GiB state each, 37.77 GiB free a rank)
+  capacity at 131072 positions: 275 sequences a rank after one prefill's 16.01 GiB workspace (0.079 GiB state each, 37.77 GiB free a rank)
+  capacity at 262144 positions: 23 sequences a rank after one prefill's 34.00 GiB workspace (0.157 GiB state each, 37.77 GiB free a rank)
+dsv41-tpbench: {"cell":"decode-c1","kind":"decode","round":0,"start_unix":1794267411.3327937,"c":1,"prompt_lens":[16],"steps":24,"ttft_s":0.031107576,"decode_s":0.125366181,"total_s":0.156474618,"step_s":[0.005393971,0.005277716,0.005218517,0.005216904,0.005187731,0.005206659,0.005194291,0.005201412,0.005196204,0.005208051,0.005215993,0.005208422,0.005195292,0.005211246,0.005192678,0.005243644,0.005208923,0.005217896,0.00520014,0.005205548,0.005191086,0.005245788,0.005236584,0.005239709],"step_mean_s":0.005221433541666668,"tpot_p50_s":0.005208923,"tpot_p95_s":0.005277716,"tpot_p99_s":0.005393971,"decode_tok_s":191.43918885109855,"single_stream_tok_s":191.51828554745956,"e2e_output_tok_s":159.77032134374662,"seqs_past_eos":0,"gen_sha256":["86bca0caf3d9d64adc81167c98ecdaf9f0c3aaa9a04561b3dd38634e06f3387c"],"peak_used":[60922505068],"comm":{"collectives":0,"copies":0,"bytes":0,"timed_s":0.0,"timed":false},"forwards":25,"readback_wait_s_per_rank":0.08996495,"layers_streamed":0,"stream_load_s":4.405999999999982e-6,"end_unix":1794267411.4893484}
+dsv41-tpbench: done in 6.1s
+Collecting data...
+Generating '/tmp/nsys-access/nsys-report-4796.qdstrm'
+[1/1] [0%                          ] trace.nsys-rep[1/1] [0%                          ] trace.nsys-rep[1/1] [1%                          ] trace.nsys-rep[1/1] [2%                          ] trace.nsys-rep[1/1] [5%                          ] trace.nsys-rep[1/1] [7%                          ] trace.nsys-rep[1/1] [9%                          ] trace.nsys-rep[1/1] [11%                         ] trace.nsys-rep[1/1] [13%                         ] trace.nsys-rep[1/1] [=15%                        ] trace.nsys-rep[1/1] [=16%                        ] trace.nsys-rep[1/1] [==18%                       ] trace.nsys-rep[1/1] [==19%                       ] trace.nsys-rep[1/1] [==20%                       ] trace.nsys-rep[1/1] [======================92%   ] trace.nsys-rep[1/1] [=======================96%  ] trace.nsys-rep[1/1] [========================98% ] trace.nsys-rep[1/1] [========================100%] trace.nsys-rep[1/1] [========================100%] trace.nsys-rep
+Generated:
+	$LANE/receipts-perf/nrank-m6-n1/trace.nsys-rep

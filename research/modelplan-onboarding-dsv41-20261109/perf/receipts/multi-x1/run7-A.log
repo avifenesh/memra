@@ -1,0 +1,29 @@
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+dsv41-bench: 4096 tokens, layers [2, 20, 21], reps 3, decode 8, chunk 8192, path group1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition
+layer 0: load 0.8 s, block 37.1 ms
+layer 1: load 0.7 s, block 30.8 ms
+layer 2: prefill 4096 tokens: first 34.447 ms, reps [34.947, 34.515, 34.385] ms, median 34.515 ms, 3/3 reruns byte-identical, engram NaN ms, out b99aad4ceed2c852afcaeb45 pre 18eab62a8520470791e5d551
+layer 3: load 0.8 s, block 32.5 ms
+layer 4: load 0.7 s, block 31.9 ms
+layer 5: load 0.7 s, block 31.3 ms
+layer 6: load 0.5 s, block 31.8 ms
+layer 7: load 0.5 s, block 32.9 ms
+layer 8: load 0.5 s, block 32.8 ms
+layer 9: load 0.5 s, block 30.7 ms
+layer 10: load 0.5 s, block 30.3 ms
+layer 11: load 0.7 s, block 31.4 ms
+layer 12: load 0.7 s, block 31.9 ms
+layer 13: load 0.7 s, block 32.5 ms
+layer 14: load 0.7 s, block 33.2 ms
+layer 15: load 0.7 s, block 33.0 ms
+layer 16: load 0.7 s, block 31.1 ms
+layer 17: load 0.7 s, block 32.0 ms
+layer 18: load 0.7 s, block 31.9 ms
+layer 19: load 0.7 s, block 33.6 ms
+layer 20: prefill 4096 tokens: first 32.365 ms, reps [32.404, 32.396, 32.393] ms, median 32.396 ms, 3/3 reruns byte-identical, engram NaN ms, out 4fee875bf63377e428d57c3a pre 3eb5421d9e34cc9f3b4987f9
+layer 21: prefill 4096 tokens: first 32.356 ms, reps [31.293, 31.264, 31.256] ms, median 31.264 ms, 3/3 reruns byte-identical, engram NaN ms, out 56dd8aaaf47ea0cedbe9286f pre 0a6f42c47f706f93652c9f48
+run [2]: whole decode steps at 4104..: [0.587, 0.620, 0.597, 0.620, 0.596, 0.622, 0.595, 0.613] ms, median (steps 2..) 0.613 ms
+layer 2: decode at 4096..4104: steps [0.711, 0.620, 0.596, 0.623, 0.597, 0.622, 0.599, 0.616] ms, median (steps 2..) 0.616 ms
+run [20, 21]: whole decode steps at 4104..: [1.090, 1.093, 1.092, 1.089, 1.093, 1.094, 1.096, 1.089] ms, median (steps 2..) 1.093 ms
+layer 20: decode at 4096..4104: steps [0.594, 0.592, 0.591, 0.592, 0.593, 0.594, 0.596, 0.591] ms, median (steps 2..) 0.592 ms
+layer 21: decode at 4096..4104: steps [0.499, 0.500, 0.497, 0.501, 0.500, 0.501, 0.500, 0.499] ms, median (steps 2..) 0.500 ms

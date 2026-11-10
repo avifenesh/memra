@@ -1,0 +1,2303 @@
+{
+ "L2/prefill": {
+  "instances": 2,
+  "wall_ms": 291.311541,
+  "gpu_busy_ms": 291.140644,
+  "ops_ms": {
+   "experts": 128.684315,
+   "sparse_attn": 34.9666025,
+   "wo_a": 20.2358255,
+   "attn_keys/index_score": 15.009977,
+   "shared_expert": 13.6932115,
+   "q_b": 13.4842515,
+   "wo_b": 12.938684,
+   "attn_keys/compressor": 11.670686,
+   "hc_ffn_pre": 10.3406885,
+   "hc_attn_pre": 8.0123235,
+   "router": 5.7455275,
+   "attn_keys/index_q": 4.4585845,
+   "attn_keys/qr": 3.024588,
+   "attn_keys/topk": 2.424685,
+   "hc_post": 2.2157725,
+   "combine": 1.908557,
+   "attn_keys/kv_window": 1.874781,
+   "attn_keys/index_keys": 0.138224,
+   "attn_keys/kv_append": 0.1298555,
+   "attn_idx_rows": 0.103344,
+   "moe_plan": 0.08016
+  },
+  "kernels": [
+   {
+    "op": "experts",
+    "kernel": "v41_gemm_f8_pipe_tiles_kernel",
+    "ms": 119.2811295,
+    "launches": 12.0
+   },
+   {
+    "op": "sparse_attn",
+    "kernel": "v41_sparse_attn_kernel",
+    "ms": 34.9666025,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/index_score",
+    "kernel": "v41_index_score_kernel",
+    "ms": 15.009977,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_gemm_bf16_kernel",
+    "ms": 14.650522,
+    "launches": 4.0
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 13.0231005,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_b",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 11.6262065,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/compressor",
+    "kernel": "v41_gemm_ffma_kernel",
+    "ms": 11.518206,
+    "launches": 2.0
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 11.438142,
+    "launches": 12.0
+   },
+   {
+    "op": "experts",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 7.66834,
+    "launches": 8.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_mixes_part_kernel",
+    "ms": 6.527798,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_mixes_part_kernel",
+    "ms": 6.3099425,
+    "launches": 1.0
+   },
+   {
+    "op": "router",
+    "kernel": "v41_gemm_ffma_kernel",
+    "ms": 5.6749195,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 5.329144,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/topk",
+    "kernel": "v41_topk_kernel",
+    "ms": 2.424685,
+    "launches": 4.0
+   },
+   {
+    "op": "hc_post",
+    "kernel": "v41_hc_post8_kernel",
+    "ms": 2.2157725,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_post8_kernel",
+    "ms": 2.077181,
+    "launches": 1.0
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 2.0256145,
+    "launches": 12.0
+   },
+   {
+    "op": "combine",
+    "kernel": "v41_moe_combine_kernel",
+    "ms": 1.908557,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 1.865885,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_fp4_qdq_kernel",
+    "ms": 1.820445,
+    "launches": 4.0
+   },
+   {
+    "op": "experts",
+    "kernel": "v41_swiglu_kernel",
+    "ms": 1.7348455,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 1.714829,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_b",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 1.3124775,
+    "launches": 4.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_pre8_kernel",
+    "ms": 1.124302,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_pre8_kernel",
+    "ms": 1.097102,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.8732465,
+    "launches": 2.0
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.834239,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 0.8125905,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_gemm_bf16_kernel",
+    "ms": 0.654383,
+    "launches": 4.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.5791515,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.572799,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.324464,
+    "launches": 1.0
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.2625435,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.2561595,
+    "launches": 4.0
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_swiglu_kernel",
+    "ms": 0.229455,
+    "launches": 4.0
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.1986075,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.1890555,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.152656,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "v41_fp4_qdq_kernel",
+    "ms": 0.1038875,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_idx_rows",
+    "kernel": "v41_attn_idx_kernel",
+    "ms": 0.103344,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.079872,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/compressor",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.076576,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/compressor",
+    "kernel": "v41_comp_pool2_kernel",
+    "ms": 0.075904,
+    "launches": 1.0
+   },
+   {
+    "op": "router",
+    "kernel": "v41_route_kernel",
+    "ms": 0.070608,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.06712,
+    "launches": 1.0
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_scan_kernel",
+    "ms": 0.039472,
+    "launches": 4.0
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_finish_kernel",
+    "ms": 0.03248,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_finish_kernel",
+    "ms": 0.032256,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_fp4_qdq_kernel",
+    "ms": 0.032224,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_gemm_bf16_kernel",
+    "ms": 0.02832,
+    "launches": 1.0
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_place_kernel",
+    "ms": 0.024624,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.021584,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "memcpy[8]",
+    "ms": 0.014704,
+    "launches": 2.0
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "memcpy[8]",
+    "ms": 0.013904,
+    "launches": 2.0
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.012064,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.01056,
+    "launches": 1.0
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "memset",
+    "ms": 0.009328,
+    "launches": 12.0
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_count_kernel",
+    "ms": 0.006736,
+    "launches": 4.0
+   }
+  ],
+  "host_api": [
+   {
+    "call": "cuStreamSynchronize",
+    "ms": 288.5866585,
+    "calls": 1.0
+   },
+   {
+    "call": "cuMemAllocAsync",
+    "ms": 1.826367,
+    "calls": 134.0
+   },
+   {
+    "call": "cudaLaunchKernel_v7000",
+    "ms": 0.436337,
+    "calls": 172.0
+   },
+   {
+    "call": "cuMemFreeAsync",
+    "ms": 0.064938,
+    "calls": 132.0
+   },
+   {
+    "call": "cuMemsetD8Async",
+    "ms": 0.037075,
+    "calls": 12.0
+   },
+   {
+    "call": "cuMemcpyDtoDAsync_v2",
+    "ms": 0.025052,
+    "calls": 4.0
+   },
+   {
+    "call": "cuKernelGetName",
+    "ms": 0.01992,
+    "calls": 172.0
+   }
+  ]
+ },
+ "L20/prefill": {
+  "instances": 2,
+  "wall_ms": 296.9498135,
+  "gpu_busy_ms": 296.7795035,
+  "ops_ms": {
+   "experts": 122.5621,
+   "sparse_attn": 35.1974715,
+   "attn_keys/index_score": 31.4600845,
+   "wo_a": 20.3487235,
+   "shared_expert": 13.813949,
+   "q_b": 13.5970845,
+   "wo_b": 13.0115965,
+   "hc_ffn_pre": 10.4163855,
+   "hc_attn_pre": 8.077845,
+   "router": 5.825848,
+   "attn_keys/index_q": 4.458009,
+   "attn_keys/topk": 4.328874,
+   "attn_keys/qr": 3.026652,
+   "attn_keys/candidates": 2.446092,
+   "hc_post": 2.225933,
+   "combine": 1.913309,
+   "attn_keys/kv_window": 1.886973,
+   "attn_keys/compressor": 1.487486,
+   "attn_keys/index_keys": 0.26456,
+   "attn_keys/kv_append": 0.243328,
+   "attn_idx_rows": 0.104816,
+   "moe_plan": 0.0823835
+  },
+  "kernels": [
+   {
+    "op": "experts",
+    "kernel": "v41_gemm_f8_pipe_tiles_kernel",
+    "ms": 112.974722,
+    "launches": 12.0
+   },
+   {
+    "op": "sparse_attn",
+    "kernel": "v41_sparse_attn_kernel",
+    "ms": 35.1974715,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/index_score",
+    "kernel": "v41_index_score_kernel",
+    "ms": 31.4600845,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_gemm_bf16_kernel",
+    "ms": 14.7318515,
+    "launches": 4.0
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 13.1241245,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_b",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 11.682624,
+    "launches": 4.0
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 11.516544,
+    "launches": 12.0
+   },
+   {
+    "op": "experts",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 7.811829,
+    "launches": 8.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_mixes_part_kernel",
+    "ms": 6.568055,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_mixes_part_kernel",
+    "ms": 6.366935,
+    "launches": 1.0
+   },
+   {
+    "op": "router",
+    "kernel": "v41_gemm_ffma_kernel",
+    "ms": 5.7547765,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 5.3637365,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/topk",
+    "kernel": "v41_topk_kernel",
+    "ms": 4.328874,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/candidates",
+    "kernel": "v41_candidates_kernel",
+    "ms": 2.446092,
+    "launches": 4.0
+   },
+   {
+    "op": "hc_post",
+    "kernel": "v41_hc_post8_kernel",
+    "ms": 2.225933,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_post8_kernel",
+    "ms": 2.094589,
+    "launches": 1.0
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 2.0674375,
+    "launches": 12.0
+   },
+   {
+    "op": "combine",
+    "kernel": "v41_moe_combine_kernel",
+    "ms": 1.913309,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 1.867021,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_fp4_qdq_kernel",
+    "ms": 1.8048125,
+    "launches": 4.0
+   },
+   {
+    "op": "experts",
+    "kernel": "v41_swiglu_kernel",
+    "ms": 1.775549,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 1.7291495,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_b",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 1.3289725,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/compressor",
+    "kernel": "v41_gemm_bf16_kernel",
+    "ms": 1.32323,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_pre8_kernel",
+    "ms": 1.132574,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_pre8_kernel",
+    "ms": 1.102847,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.879055,
+    "launches": 2.0
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.835343,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 0.819598,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_gemm_bf16_kernel",
+    "ms": 0.6552315,
+    "launches": 4.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.5891035,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.575391,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.324288,
+    "launches": 1.0
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.270384,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.2531355,
+    "launches": 4.0
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_swiglu_kernel",
+    "ms": 0.2299675,
+    "launches": 4.0
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.202576,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "v41_fp4_qdq_kernel",
+    "ms": 0.19584,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.1897115,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/compressor",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.164256,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.152432,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.137536,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_idx_rows",
+    "kernel": "v41_attn_idx_kernel",
+    "ms": 0.104816,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.079104,
+    "launches": 4.0
+   },
+   {
+    "op": "router",
+    "kernel": "v41_route_kernel",
+    "ms": 0.0710715,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_fp4_qdq_kernel",
+    "ms": 0.062736,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_gemm_bf16_kernel",
+    "ms": 0.043904,
+    "launches": 1.0
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_scan_kernel",
+    "ms": 0.041296,
+    "launches": 4.0
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_finish_kernel",
+    "ms": 0.032672,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_finish_kernel",
+    "ms": 0.032064,
+    "launches": 1.0
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_place_kernel",
+    "ms": 0.0250395,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "memcpy[8]",
+    "ms": 0.024944,
+    "launches": 2.0
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.022544,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.021344,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.020384,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "memcpy[8]",
+    "ms": 0.014544,
+    "launches": 2.0
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "memset",
+    "ms": 0.009296,
+    "launches": 12.0
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_count_kernel",
+    "ms": 0.006752,
+    "launches": 4.0
+   }
+  ],
+  "host_api": [
+   {
+    "call": "cuStreamSynchronize",
+    "ms": 294.1440645,
+    "calls": 1.0
+   },
+   {
+    "call": "cuMemAllocAsync",
+    "ms": 1.920881,
+    "calls": 133.0
+   },
+   {
+    "call": "cudaLaunchKernel_v7000",
+    "ms": 0.4280995,
+    "calls": 174.0
+   },
+   {
+    "call": "cuMemFreeAsync",
+    "ms": 0.066329,
+    "calls": 131.0
+   },
+   {
+    "call": "cuMemsetD8Async",
+    "ms": 0.0365395,
+    "calls": 12.0
+   },
+   {
+    "call": "cuMemcpyDtoDAsync_v2",
+    "ms": 0.0242855,
+    "calls": 4.0
+   },
+   {
+    "call": "cuKernelGetName",
+    "ms": 0.0194755,
+    "calls": 174.0
+   }
+  ]
+ },
+ "L21/prefill": {
+  "instances": 2,
+  "wall_ms": 249.3181935,
+  "gpu_busy_ms": 249.177478,
+  "ops_ms": {
+   "experts": 120.520777,
+   "sparse_attn": 35.086623,
+   "wo_a": 20.306548,
+   "q_b": 13.700205,
+   "shared_expert": 13.495502,
+   "wo_b": 12.9761255,
+   "hc_ffn_pre": 10.252882,
+   "hc_attn_pre": 8.009573,
+   "router": 5.610664,
+   "attn_keys/qr": 3.0277395,
+   "hc_post": 2.210925,
+   "attn_keys/kv_window": 1.8870535,
+   "combine": 1.8798365,
+   "attn_idx_rows": 0.10408,
+   "moe_plan": 0.078512,
+   "attn_keys/kv_append": 0.030432
+  },
+  "kernels": [
+   {
+    "op": "experts",
+    "kernel": "v41_gemm_f8_pipe_tiles_kernel",
+    "ms": 111.2188215,
+    "launches": 12.0
+   },
+   {
+    "op": "sparse_attn",
+    "kernel": "v41_sparse_attn_kernel",
+    "ms": 35.086623,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_gemm_bf16_kernel",
+    "ms": 14.690236,
+    "launches": 4.0
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 13.2348135,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_b",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 11.651632,
+    "launches": 4.0
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 11.259266,
+    "launches": 12.0
+   },
+   {
+    "op": "experts",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 7.528757,
+    "launches": 8.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_mixes_part_kernel",
+    "ms": 6.448951,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_mixes_part_kernel",
+    "ms": 6.3071915,
+    "launches": 1.0
+   },
+   {
+    "op": "router",
+    "kernel": "v41_gemm_ffma_kernel",
+    "ms": 5.541784,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 5.361368,
+    "launches": 4.0
+   },
+   {
+    "op": "hc_post",
+    "kernel": "v41_hc_post8_kernel",
+    "ms": 2.210925,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_post8_kernel",
+    "ms": 2.0846855,
+    "launches": 1.0
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 2.008812,
+    "launches": 12.0
+   },
+   {
+    "op": "combine",
+    "kernel": "v41_moe_combine_kernel",
+    "ms": 1.8798365,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 1.8679335,
+    "launches": 1.0
+   },
+   {
+    "op": "experts",
+    "kernel": "v41_swiglu_kernel",
+    "ms": 1.7731985,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_b",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 1.3244935,
+    "launches": 4.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_pre8_kernel",
+    "ms": 1.1120785,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_pre8_kernel",
+    "ms": 1.095566,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.878047,
+    "launches": 2.0
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.8347345,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_gemm_f8_pipe_kernel",
+    "ms": 0.819567,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.575231,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.5745595,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.3250715,
+    "launches": 1.0
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.2608795,
+    "launches": 4.0
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.254944,
+    "launches": 4.0
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_swiglu_kernel",
+    "ms": 0.227424,
+    "launches": 4.0
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.204512,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.1533595,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_idx_rows",
+    "kernel": "v41_attn_idx_kernel",
+    "ms": 0.10408,
+    "launches": 4.0
+   },
+   {
+    "op": "router",
+    "kernel": "v41_route_kernel",
+    "ms": 0.06888,
+    "launches": 4.0
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_scan_kernel",
+    "ms": 0.038528,
+    "launches": 4.0
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_finish_kernel",
+    "ms": 0.032256,
+    "launches": 1.0
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_finish_kernel",
+    "ms": 0.031936,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "memcpy[8]",
+    "ms": 0.030432,
+    "launches": 1.0
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_place_kernel",
+    "ms": 0.024304,
+    "launches": 4.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.02136,
+    "launches": 1.0
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "memcpy[8]",
+    "ms": 0.01472,
+    "launches": 2.0
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "memset",
+    "ms": 0.0092,
+    "launches": 12.0
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_count_kernel",
+    "ms": 0.00648,
+    "launches": 4.0
+   }
+  ],
+  "host_api": [
+   {
+    "call": "cuStreamSynchronize",
+    "ms": 247.702054,
+    "calls": 1.0
+   },
+   {
+    "call": "cuMemAllocAsync",
+    "ms": 0.901172,
+    "calls": 118.0
+   },
+   {
+    "call": "cudaLaunchKernel_v7000",
+    "ms": 0.3385415,
+    "calls": 134.0
+   },
+   {
+    "call": "cuMemFreeAsync",
+    "ms": 0.05412,
+    "calls": 116.0
+   },
+   {
+    "call": "cuMemsetD8Async",
+    "ms": 0.0335365,
+    "calls": 12.0
+   },
+   {
+    "call": "cuMemcpyDtoDAsync_v2",
+    "ms": 0.0242215,
+    "calls": 3.0
+   },
+   {
+    "call": "cuKernelGetName",
+    "ms": 0.015484,
+    "calls": 134.0
+   }
+  ]
+ },
+ "L2/decode": {
+  "instances": 6,
+  "wall_ms": 0.6827005,
+  "gpu_busy_ms": 0.619274,
+  "ops_ms": {
+   "experts": 0.160288,
+   "wo_a": 0.04932799999999999,
+   "attn_keys/compressor": 0.0488745,
+   "wo_b": 0.044752,
+   "shared_expert": 0.044112,
+   "sparse_attn": 0.035792,
+   "attn_keys/index_q": 0.03389866666666667,
+   "q_b": 0.03202133333333333,
+   "router": 0.029045333333333333,
+   "attn_keys/topk": 0.028704,
+   "hc_ffn_pre": 0.02081066666666667,
+   "hc_attn_pre": 0.017077,
+   "attn_keys/kv_append": 0.014885333333333332,
+   "attn_keys/kv_window": 0.013946666666666668,
+   "attn_keys/qr": 0.012885166666666666,
+   "moe_plan": 0.012176,
+   "attn_keys/index_score": 0.006176000000000001,
+   "attn_keys/index_keys": 0.005557333333333334,
+   "combine": 0.00448,
+   "hc_post": 0.002730666666666667,
+   "attn_idx_rows": 0.0017333333333333333
+  },
+  "kernels": [
+   {
+    "op": "experts",
+    "kernel": "v41_gemv_f8_tiles_kernel",
+    "ms": 0.154384,
+    "launches": 3.0
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_gemv_bf16_kernel",
+    "ms": 0.04608,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/compressor",
+    "kernel": "v41_gemv_ffma_narrow_kernel",
+    "ms": 0.0442985,
+    "launches": 1.9999999999999998
+   },
+   {
+    "op": "wo_b",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.04361066666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.03719999999999999,
+    "launches": 3.0
+   },
+   {
+    "op": "sparse_attn",
+    "kernel": "v41_sparse_attn_kernel",
+    "ms": 0.035792,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/topk",
+    "kernel": "v41_topk_kernel",
+    "ms": 0.028704,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.02864533333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "router",
+    "kernel": "v41_gemv_ffma_narrow_kernel",
+    "ms": 0.022186666666666664,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_gemv_bf16_kernel",
+    "ms": 0.019968,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "memcpy[8]",
+    "ms": 0.013093333333333334,
+    "launches": 1.5
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.008671833333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "router",
+    "kernel": "v41_route_kernel",
+    "ms": 0.0068586666666666666,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_mixes_part1_kernel",
+    "ms": 0.006682666666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_mixes_part1_kernel",
+    "ms": 0.006335833333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.006298666666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_score",
+    "kernel": "v41_index_score_kernel",
+    "ms": 0.006176000000000001,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.006063999999999999,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_fp4_qdq_kernel",
+    "ms": 0.005557333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_scan_kernel",
+    "ms": 0.005322666666666666,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.005136,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_finish_kernel",
+    "ms": 0.004986666666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.004895833333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_finish_kernel",
+    "ms": 0.004576,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "combine",
+    "kernel": "v41_moe_combine_kernel",
+    "ms": 0.00448,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_place_kernel",
+    "ms": 0.004154666666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.003792,
+    "launches": 3.0
+   },
+   {
+    "op": "experts",
+    "kernel": "v41_swiglu_kernel",
+    "ms": 0.003344,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.003136,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_swiglu_kernel",
+    "ms": 0.00312,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.002784,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_post",
+    "kernel": "v41_hc_post8_kernel",
+    "ms": 0.002730666666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_post8_kernel",
+    "ms": 0.002688,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "experts",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0025599999999999993,
+    "launches": 1.9999999999999998
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.002224,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_fp4_qdq_kernel",
+    "ms": 0.0021973333333333337,
+    "launches": 0.5
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.0021173333333333335,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0020426666666666666,
+    "launches": 1.9999999999999998
+   },
+   {
+    "op": "attn_keys/compressor",
+    "kernel": "v41_comp_pool2_kernel",
+    "ms": 0.001989333333333333,
+    "launches": 0.5
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_gemv_bf16_kernel",
+    "ms": 0.001744,
+    "launches": 0.5
+   },
+   {
+    "op": "attn_idx_rows",
+    "kernel": "v41_attn_idx_kernel",
+    "ms": 0.0017333333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "memcpy[8]",
+    "ms": 0.0017173333333333333,
+    "launches": 1.9999999999999998
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "v41_fp4_qdq_kernel",
+    "ms": 0.0014346666666666668,
+    "launches": 0.5
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_count_kernel",
+    "ms": 0.0013866666666666665,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/compressor",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.0013653333333333332,
+    "launches": 0.5
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_pre8_kernel",
+    "ms": 0.0013173333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "memset",
+    "ms": 0.001312,
+    "launches": 3.0
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.0012746666666666668,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_pre8_kernel",
+    "ms": 0.0012693333333333335,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/compressor",
+    "kernel": "memcpy[8]",
+    "ms": 0.0012213333333333334,
+    "launches": 1.9999999999999998
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.0011733333333333333,
+    "launches": 0.5
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.001152,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "wo_b",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0011413333333333332,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0011306666666666665,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.001104,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0010773333333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0010346666666666668,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.0004426666666666666,
+    "launches": 0.5
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.0003573333333333333,
+    "launches": 0.5
+   }
+  ],
+  "host_api": [
+   {
+    "call": "cuStreamSynchronize",
+    "ms": 0.3742480000000001,
+    "calls": 0.9999999999999999
+   },
+   {
+    "call": "cudaLaunchKernel_v7000",
+    "ms": 0.14714433333333335,
+    "calls": 60.0
+   },
+   {
+    "call": "cuMemAllocAsync",
+    "ms": 0.030453,
+    "calls": 52.5
+   },
+   {
+    "call": "cuMemFreeAsync",
+    "ms": 0.020348666666666664,
+    "calls": 50.50000000000001
+   },
+   {
+    "call": "cuMemcpyDtoDAsync_v2",
+    "ms": 0.0165305,
+    "calls": 5.5
+   },
+   {
+    "call": "cuKernelGetName",
+    "ms": 0.005678333333333334,
+    "calls": 60.0
+   },
+   {
+    "call": "cuMemsetD8Async",
+    "ms": 0.004183,
+    "calls": 3.0
+   },
+   {
+    "call": "cuLibraryGetKernel",
+    "ms": 0.000721,
+    "calls": 0.6666666666666666
+   }
+  ]
+ },
+ "L20/decode": {
+  "instances": 6,
+  "wall_ms": 0.6976328333333334,
+  "gpu_busy_ms": 0.6602763333333334,
+  "ops_ms": {
+   "experts": 0.1609545,
+   "wo_a": 0.050234666666666664,
+   "wo_b": 0.04498666666666666,
+   "shared_expert": 0.04415466666666667,
+   "attn_keys/topk": 0.04004783333333334,
+   "sparse_attn": 0.03611183333333333,
+   "attn_keys/index_q": 0.03358916666666667,
+   "attn_keys/candidates": 0.031829333333333334,
+   "q_b": 0.03181866666666667,
+   "router": 0.030037166666666667,
+   "attn_keys/kv_append": 0.027152,
+   "attn_keys/compressor": 0.023408,
+   "hc_ffn_pre": 0.021168,
+   "hc_attn_pre": 0.016805333333333335,
+   "attn_keys/kv_window": 0.013562666666666666,
+   "attn_keys/qr": 0.012495833333333336,
+   "moe_plan": 0.012042666666666669,
+   "attn_keys/index_keys": 0.010613333333333334,
+   "attn_keys/index_score": 0.010394666666666668,
+   "combine": 0.004432,
+   "hc_post": 0.00272,
+   "attn_idx_rows": 0.0017173333333333335
+  },
+  "kernels": [
+   {
+    "op": "experts",
+    "kernel": "v41_gemv_f8_tiles_kernel",
+    "ms": 0.1550665,
+    "launches": 3.0
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_gemv_bf16_kernel",
+    "ms": 0.046954666666666665,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "wo_b",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.043824,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/topk",
+    "kernel": "v41_topk_kernel",
+    "ms": 0.04004783333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.037290666666666666,
+    "launches": 3.0
+   },
+   {
+    "op": "sparse_attn",
+    "kernel": "v41_sparse_attn_kernel",
+    "ms": 0.03611183333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/candidates",
+    "kernel": "v41_candidates_kernel",
+    "ms": 0.031829333333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.028362666666666668,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "memcpy[8]",
+    "ms": 0.02354133333333333,
+    "launches": 1.9999999999999998
+   },
+   {
+    "op": "router",
+    "kernel": "v41_gemv_ffma_narrow_kernel",
+    "ms": 0.023087833333333332,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/compressor",
+    "kernel": "v41_gemv_bf16_kernel",
+    "ms": 0.020586666666666666,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_gemv_bf16_kernel",
+    "ms": 0.01987183333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_score",
+    "kernel": "v41_index_score_kernel",
+    "ms": 0.010394666666666668,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.008271833333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "router",
+    "kernel": "v41_route_kernel",
+    "ms": 0.006949333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_mixes_part1_kernel",
+    "ms": 0.006725333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_mixes_part1_kernel",
+    "ms": 0.006144,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.006010666666666666,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.005989333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_fp4_qdq_kernel",
+    "ms": 0.005445333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_scan_kernel",
+    "ms": 0.005312,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.005221333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_finish_kernel",
+    "ms": 0.005050666666666666,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.004709333333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_finish_kernel",
+    "ms": 0.004677333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "combine",
+    "kernel": "v41_moe_combine_kernel",
+    "ms": 0.004432,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_fp4_qdq_kernel",
+    "ms": 0.004389333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_place_kernel",
+    "ms": 0.004138666666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0037813333333333336,
+    "launches": 3.0
+   },
+   {
+    "op": "experts",
+    "kernel": "v41_swiglu_kernel",
+    "ms": 0.0033333333333333335,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_gemv_bf16_kernel",
+    "ms": 0.0031946666666666664,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.0031626666666666665,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_swiglu_kernel",
+    "ms": 0.0030826666666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "v41_fp4_qdq_kernel",
+    "ms": 0.0029013333333333335,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/compressor",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.0028213333333333337,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_post8_kernel",
+    "ms": 0.002789333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.0027733333333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_post",
+    "kernel": "v41_hc_post8_kernel",
+    "ms": 0.00272,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "experts",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.002554666666666667,
+    "launches": 1.9999999999999998
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.002384,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.002245333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.0021386666666666663,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0020106666666666667,
+    "launches": 1.9999999999999998
+   },
+   {
+    "op": "attn_idx_rows",
+    "kernel": "v41_attn_idx_kernel",
+    "ms": 0.0017173333333333335,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "memcpy[8]",
+    "ms": 0.0016906666666666667,
+    "launches": 1.9999999999999998
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_pre8_kernel",
+    "ms": 0.0013813333333333336,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_count_kernel",
+    "ms": 0.00136,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_pre8_kernel",
+    "ms": 0.0012746666666666666,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.0012426666666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "memset",
+    "ms": 0.001232,
+    "launches": 3.0
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0012106666666666665,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "wo_b",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0011626666666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0011413333333333332,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.0010986666666666668,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0010613333333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_q",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0010186666666666664,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.0007093333333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/index_keys",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.0006453333333333334,
+    "launches": 0.9999999999999999
+   }
+  ],
+  "host_api": [
+   {
+    "call": "cuStreamSynchronize",
+    "ms": 0.4345451666666667,
+    "calls": 0.9999999999999999
+   },
+   {
+    "call": "cudaLaunchKernel_v7000",
+    "ms": 0.1330696666666667,
+    "calls": 63.0
+   },
+   {
+    "call": "cuMemAllocAsync",
+    "ms": 0.02596666666666667,
+    "calls": 51.99999999999999
+   },
+   {
+    "call": "cuMemFreeAsync",
+    "ms": 0.019776666666666668,
+    "calls": 50.00000000000001
+   },
+   {
+    "call": "cuMemcpyDtoDAsync_v2",
+    "ms": 0.0121085,
+    "calls": 3.9999999999999996
+   },
+   {
+    "call": "cuKernelGetName",
+    "ms": 0.004989166666666666,
+    "calls": 63.0
+   },
+   {
+    "call": "cuMemsetD8Async",
+    "ms": 0.003977833333333333,
+    "calls": 3.0
+   }
+  ]
+ },
+ "L21/decode": {
+  "instances": 6,
+  "wall_ms": 0.5434416666666666,
+  "gpu_busy_ms": 0.5106445,
+  "ops_ms": {
+   "experts": 0.16103983333333335,
+   "wo_a": 0.049925333333333335,
+   "wo_b": 0.0445065,
+   "shared_expert": 0.044256,
+   "sparse_attn": 0.0372585,
+   "q_b": 0.03200533333333334,
+   "router": 0.030463833333333336,
+   "attn_keys/kv_append": 0.023434500000000004,
+   "hc_ffn_pre": 0.021333333333333336,
+   "hc_attn_pre": 0.017472,
+   "attn_keys/kv_window": 0.014106666666666668,
+   "attn_keys/qr": 0.012842666666666665,
+   "moe_plan": 0.012101333333333334,
+   "combine": 0.004464,
+   "hc_post": 0.002762666666666667,
+   "attn_idx_rows": 0.002672
+  },
+  "kernels": [
+   {
+    "op": "experts",
+    "kernel": "v41_gemv_f8_tiles_kernel",
+    "ms": 0.1551091666666667,
+    "launches": 3.0
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_gemv_bf16_kernel",
+    "ms": 0.04664,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "wo_b",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.043317166666666664,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.03746133333333333,
+    "launches": 3.0
+   },
+   {
+    "op": "sparse_attn",
+    "kernel": "v41_sparse_attn_kernel",
+    "ms": 0.0372585,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.028618666666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "router",
+    "kernel": "v41_gemv_ffma_narrow_kernel",
+    "ms": 0.02353066666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_append",
+    "kernel": "memcpy[8]",
+    "ms": 0.023434500000000004,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.008586666666666668,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "router",
+    "kernel": "v41_route_kernel",
+    "ms": 0.006933166666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_mixes_part1_kernel",
+    "ms": 0.006768,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_mixes_part1_kernel",
+    "ms": 0.006405333333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_gemv_f8_kernel",
+    "ms": 0.006096000000000001,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.005413333333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_scan_kernel",
+    "ms": 0.005375999999999999,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_finish_kernel",
+    "ms": 0.005024000000000001,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.00496,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_finish_kernel",
+    "ms": 0.004837333333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "combine",
+    "kernel": "v41_moe_combine_kernel",
+    "ms": 0.004464,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_place_kernel",
+    "ms": 0.004165333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0037013333333333334,
+    "launches": 3.0
+   },
+   {
+    "op": "experts",
+    "kernel": "v41_swiglu_kernel",
+    "ms": 0.0033546666666666664,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.0031626666666666665,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "shared_expert",
+    "kernel": "v41_swiglu_kernel",
+    "ms": 0.003093333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_rmsnorm32_kernel",
+    "ms": 0.002896,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_post8_kernel",
+    "ms": 0.0027786666666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_post",
+    "kernel": "v41_hc_post8_kernel",
+    "ms": 0.002762666666666667,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_idx_rows",
+    "kernel": "v41_attn_idx_kernel",
+    "ms": 0.002672,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "experts",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.002576,
+    "launches": 1.9999999999999998
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.002341333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.00216,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.002048,
+    "launches": 1.9999999999999998
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "memcpy[8]",
+    "ms": 0.0019733333333333334,
+    "launches": 1.9999999999999998
+   },
+   {
+    "op": "hc_ffn_pre",
+    "kernel": "v41_hc_pre8_kernel",
+    "ms": 0.0013493333333333332,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "v41_moe_count_kernel",
+    "ms": 0.0013013333333333334,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "hc_attn_pre",
+    "kernel": "v41_hc_pre8_kernel",
+    "ms": 0.0012693333333333335,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "moe_plan",
+    "kernel": "memset",
+    "ms": 0.0012586666666666666,
+    "launches": 3.0
+   },
+   {
+    "op": "wo_b",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0011893333333333333,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "wo_a",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0011253333333333332,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/qr",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0010933333333333335,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "attn_keys/kv_window",
+    "kernel": "v41_rope_kernel",
+    "ms": 0.0010933333333333335,
+    "launches": 0.9999999999999999
+   },
+   {
+    "op": "q_b",
+    "kernel": "v41_act_quant_kernel",
+    "ms": 0.0010453333333333332,
+    "launches": 0.9999999999999999
+   }
+  ],
+  "host_api": [
+   {
+    "call": "cuStreamSynchronize",
+    "ms": 0.33829933333333334,
+    "calls": 0.9999999999999999
+   },
+   {
+    "call": "cudaLaunchKernel_v7000",
+    "ms": 0.09932583333333334,
+    "calls": 47.0
+   },
+   {
+    "call": "cuMemAllocAsync",
+    "ms": 0.022260333333333333,
+    "calls": 46.0
+   },
+   {
+    "call": "cuMemFreeAsync",
+    "ms": 0.016822666666666663,
+    "calls": 44.0
+   },
+   {
+    "call": "cuMemcpyDtoDAsync_v2",
+    "ms": 0.010202,
+    "calls": 3.0
+   },
+   {
+    "call": "cuMemsetD8Async",
+    "ms": 0.003964333333333334,
+    "calls": 3.0
+   },
+   {
+    "call": "cuKernelGetName",
+    "ms": 0.0036879999999999994,
+    "calls": 47.0
+   }
+  ]
+ }
+}
