@@ -1571,9 +1571,14 @@ mod day45_fill {
         Arc::new(|len| Some(HostBytes::Heap(vec![0u8; len])))
     }
 
+    // One file per call: two tests ask for the same length and run in parallel in one process.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
     fn artifact(len: usize) -> (std::path::PathBuf, Vec<u8>) {
         let bytes: Vec<u8> = (0..len).map(|i| (i * 31 % 251) as u8).collect();
-        let path = std::env::temp_dir().join(format!("c45-fill-{}-{len}.bin", std::process::id()));
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("c45-fill-{}-{len}-{n}.bin", std::process::id()));
         std::fs::File::create(&path)
             .unwrap()
             .write_all(&bytes)
