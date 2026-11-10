@@ -53,6 +53,35 @@ fn cpu_softmax(x: &[f32], t: f32) -> Vec<f64> {
     e.iter().map(|v| v / s).collect()
 }
 
+/// One kernel's token-id noise key cell (memra#1154). `rows` = the full row unkeyed, the full
+/// row keyed without a map, the trimmed row keyed by `map`, the trimmed row on the row-index
+/// key. Returns the number of failures (0 or 1).
+fn token_key_cell(name: &str, rows: &[Vec<f32>; 4], map: &[u32]) -> usize {
+    const CUT: u32 = (-3.4e38f32).to_bits();
+    let bits = |v: &[f32]| -> Vec<u32> { v.iter().map(|f| f.to_bits()).collect() };
+    let (full, nomap, keyed, rowkey) = (
+        bits(&rows[0]),
+        bits(&rows[1]),
+        bits(&rows[2]),
+        bits(&rows[3]),
+    );
+    let m = map.len();
+    let at = |i: usize| full[map[i] as usize];
+    let kept = (0..m).filter(|&i| at(i) != CUT).count();
+    let keyed_bad = (0..m).filter(|&i| keyed[i] != at(i)).count();
+    let rowkey_same = (0..m)
+        .filter(|&i| at(i) != CUT && rowkey[i] == at(i))
+        .count();
+    let ok = nomap == full && keyed_bad == 0 && kept > m / 4 && rowkey_same < kept / 10;
+    println!(
+        "gumbel token-id key [{name}]: no map == unkeyed {}, keyed != full row at the token \
+         {keyed_bad}/{m}, row-index key agrees on {rowkey_same}/{kept} kept: {}",
+        nomap == full,
+        if ok { "OK" } else { "FAIL" }
+    );
+    usize::from(!ok)
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = Engine::new(0)?;
     let mut fails = 0;
@@ -121,6 +150,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "FAIL"
         }
     );
+
+    // --- 2c. TOKEN-ID NOISE KEY (memra#1154): a trimmed row keyed by its id map ---
+    // A trimmed draft head's row i stands for token map[i]. Keyed by the map, the perturbed
+    // value of row i must be bit for bit the full row's value at map[i] (same logit, same
+    // event), which is what couples a trimmed draft's draw with the target's. The row-index
+    // key on the same trimmed row must not have that property (the cell's teeth), and a
+    // keyed call without a map must be the unkeyed kernel.
+    {
+        let (seed, pos, t) = (42u64, 7u32, 0.8f32);
+        let m = 1000usize;
+        let map: Vec<u32> = (0..m).map(|i| ((i * 37 + 5) % n) as u32).collect();
+        let xt: Vec<f32> = map.iter().map(|&id| x[id as usize]).collect();
+        let (xtd, mapd) = (e.htod(&xt)?, e.htod_u32_v(&map)?);
+        let mx = x.iter().cloned().fold(f32::MIN, f32::max);
+        let th = 0.01f32;
+        let (ctrd, mxd, thd) = (e.htod_u32_v(&[pos])?, e.htod(&[mx])?, e.htod(&[th])?);
+        // full row unkeyed, full row keyed without a map, trimmed keyed, trimmed row-keyed
+        let (mut yf, mut yn, mut yk, mut yr) = (e.zeros(n)?, e.zeros(n)?, e.zeros(m)?, e.zeros(m)?);
+        e.gumbel_perturb_filtered(&xd, &mut yf, n, seed, pos, t, mx, th)?;
+        e.gumbel_perturb_filtered_keyed(&xd, &mut yn, n, seed, pos, t, mx, th, None)?;
+        e.gumbel_perturb_filtered_keyed(&xtd, &mut yk, m, seed, pos, t, mx, th, Some(&mapd))?;
+        e.gumbel_perturb_filtered(&xtd, &mut yr, m, seed, pos, t, mx, th)?;
+        let rows = [e.dtoh(&yf)?, e.dtoh(&yn)?, e.dtoh(&yk)?, e.dtoh(&yr)?];
+        fails += token_key_cell("filtered", &rows, &map);
+        e.gumbel_perturb_ctr(&xd, &mut yf, n, seed, &ctrd, t)?;
+        e.gumbel_perturb_ctr_keyed(&xd, &mut yn, n, seed, &ctrd, t, None)?;
+        e.gumbel_perturb_ctr_keyed(&xtd, &mut yk, m, seed, &ctrd, t, Some(&mapd))?;
+        e.gumbel_perturb_ctr(&xtd, &mut yr, m, seed, &ctrd, t)?;
+        let rows = [e.dtoh(&yf)?, e.dtoh(&yn)?, e.dtoh(&yk)?, e.dtoh(&yr)?];
+        fails += token_key_cell("ctr", &rows, &map);
+        e.gumbel_perturb_filtered_ctr(&xd, &mut yf, n, seed, &ctrd, t, &mxd, &thd)?;
+        e.gumbel_perturb_filtered_ctr_keyed(&xd, &mut yn, n, seed, &ctrd, t, &mxd, &thd, None)?;
+        let keyed = Some(&mapd);
+        e.gumbel_perturb_filtered_ctr_keyed(&xtd, &mut yk, m, seed, &ctrd, t, &mxd, &thd, keyed)?;
+        e.gumbel_perturb_filtered_ctr(&xtd, &mut yr, m, seed, &ctrd, t, &mxd, &thd)?;
+        let rows = [e.dtoh(&yf)?, e.dtoh(&yn)?, e.dtoh(&yk)?, e.dtoh(&yr)?];
+        fails += token_key_cell("filtered_ctr", &rows, &map);
+    }
 
     // --- 3. softmax_gather vs CPU ---
     for &t in &[0.7f32, 1.0] {

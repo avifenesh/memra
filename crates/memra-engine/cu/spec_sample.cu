@@ -12,6 +12,14 @@
 //   3. residual_sample_f32  : sample from norm(max(0, softmax(p)-softmax(q))) with one uniform —
 //                             two passes over vocab in one block (sum, then inverse-CDF walk).
 //                             q_logits == nullptr -> plain sample from softmax(p) (bonus token).
+//
+// Noise key (memra#1154): the Gumbel noise of row i at an event is Philox lane (i & 3) of
+// counter (stream_pos, i >> 2), so on a full-vocabulary row the noise belongs to TOKEN i.
+// The three kernels a trimmed MTP draft head draws with (gumbel_perturb_ctr_f32,
+// gumbel_perturb_filtered_f32, gumbel_perturb_filtered_ctr_f32) take a trailing `idmap`:
+// non-null, row i is keyed by idmap[i] (the head's draft-row -> token-id map), so a token
+// gets the noise the full-vocabulary target row gives it at the same event and the two
+// draws stay coupled. nullptr = keyed by i, bit-identical to the kernels before the map.
 #include <cstdint>
 #include <cooperative_groups.h>
 
@@ -559,12 +567,14 @@ extern "C" __global__ void memra_sctr_inc(uint32_t* __restrict__ ctr) {
 }
 extern "C" __global__ void gumbel_perturb_ctr_f32(
         const float* __restrict__ x, float* __restrict__ y, int n,
-        uint32_t seed_lo, uint32_t seed_hi, const uint32_t* __restrict__ ctr, float temp) {
+        uint32_t seed_lo, uint32_t seed_hi, const uint32_t* __restrict__ ctr, float temp,
+        const uint32_t* __restrict__ idmap) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;
     if (temp <= 0.0f) { y[i] = x[i]; return; }
-    uint4 r = philox4(seed_lo, seed_hi, (uint32_t) (i >> 2), ctr[0]);
-    uint32_t v = (i & 3) == 0 ? r.x : (i & 3) == 1 ? r.y : (i & 3) == 2 ? r.z : r.w;
+    const uint32_t k = idmap ? idmap[i] : (uint32_t) i;  // noise key: token id (see header)
+    uint4 r = philox4(seed_lo, seed_hi, k >> 2, ctr[0]);
+    uint32_t v = (k & 3) == 0 ? r.x : (k & 3) == 1 ? r.y : (k & 3) == 2 ? r.z : r.w;
     y[i] = x[i] / temp + (-__logf(-__logf(u01(v))));
 }
 
@@ -574,15 +584,16 @@ extern "C" __global__ void gumbel_perturb_ctr_f32(
 extern "C" __global__ void gumbel_perturb_filtered_f32(
         const float* __restrict__ x, float* __restrict__ y, int n,
         uint32_t seed_lo, uint32_t seed_hi, uint32_t stream_pos, float temp,
-        float row_max, float th) {
+        float row_max, float th, const uint32_t* __restrict__ idmap) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;
     const float invT = temp > 0.0f ? 1.0f / temp : 1.0f;
     const float e0 = __expf((x[i] - row_max) * invT);
     if (e0 < th) { y[i] = -3.4e38f; return; }
     if (temp <= 0.0f) { y[i] = x[i]; return; }
-    uint4 r = philox4(seed_lo, seed_hi, (uint32_t) (i >> 2), stream_pos);
-    uint32_t v = (i & 3) == 0 ? r.x : (i & 3) == 1 ? r.y : (i & 3) == 2 ? r.z : r.w;
+    const uint32_t k = idmap ? idmap[i] : (uint32_t) i;  // noise key: token id (see header)
+    uint4 r = philox4(seed_lo, seed_hi, k >> 2, stream_pos);
+    uint32_t v = (k & 3) == 0 ? r.x : (k & 3) == 1 ? r.y : (k & 3) == 2 ? r.z : r.w;
     y[i] = x[i] / temp + (-__logf(-__logf(u01(v))));
 }
 
@@ -595,7 +606,8 @@ extern "C" __global__ void gumbel_perturb_filtered_f32(
 extern "C" __global__ void gumbel_perturb_filtered_ctr_f32(
         const float* __restrict__ x, float* __restrict__ y, int n,
         uint32_t seed_lo, uint32_t seed_hi, const uint32_t* __restrict__ ctr, float temp,
-        const float* __restrict__ stat_max, const float* __restrict__ stat_th) {
+        const float* __restrict__ stat_max, const float* __restrict__ stat_th,
+        const uint32_t* __restrict__ idmap) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;
     const float row_max = stat_max[0];
@@ -604,8 +616,9 @@ extern "C" __global__ void gumbel_perturb_filtered_ctr_f32(
     const float e0 = __expf((x[i] - row_max) * invT);
     if (e0 < th) { y[i] = -3.4e38f; return; }
     if (temp <= 0.0f) { y[i] = x[i]; return; }
-    uint4 r = philox4(seed_lo, seed_hi, (uint32_t) (i >> 2), ctr[0]);
-    uint32_t v = (i & 3) == 0 ? r.x : (i & 3) == 1 ? r.y : (i & 3) == 2 ? r.z : r.w;
+    const uint32_t k = idmap ? idmap[i] : (uint32_t) i;  // noise key: token id (see header)
+    uint4 r = philox4(seed_lo, seed_hi, k >> 2, ctr[0]);
+    uint32_t v = (k & 3) == 0 ? r.x : (k & 3) == 1 ? r.y : (k & 3) == 2 ? r.z : r.w;
     y[i] = x[i] / temp + (-__logf(-__logf(u01(v))));
 }
 
