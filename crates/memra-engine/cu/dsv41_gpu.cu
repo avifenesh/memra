@@ -997,7 +997,7 @@ __global__ void __launch_bounds__(256) v41_gemv_f8_kernel(const uint8_t* __restr
 // a token's six experts). The dense FP8 GEMMs keep the 8-column body: a single wave of blocks is
 // bound by its load rounds, and 16 rows of fragments leave registers for half as many K blocks a
 // round (wo_b 44 -> 68 us).
-template <int WF, int OUTF, int SU>
+template <int WF, int OUTF, int SU, int ONE>
 __device__ __forceinline__ void v41_gemv_f8_cols16(const uint8_t* __restrict__ A, long lda,
                                                    const uint8_t* __restrict__ As, long ldas,
                                                    const uint8_t* __restrict__ B, long ldb,
@@ -1007,8 +1007,9 @@ __device__ __forceinline__ void v41_gemv_f8_cols16(const uint8_t* __restrict__ A
     int tid = threadIdx.x, warp = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
     int KB = K / 32;
     // the K blocks run in P parts so that a part's terms fit the block's shared memory; the sum
-    // below carries from part to part, so it is the one ascending sum over all of K
-    int KBp = (KB + P - 1) / P;
+    // below carries from part to part, so it is the one ascending sum over all of K (ONE: the
+    // instance for P = 1, a decode step's rows, without the loop over parts)
+    int KBp = ONE ? KB : (KB + P - 1) / P;
     // this lane's two weight rows (fragment rows g and g + 8) and its activation row (fragment column g)
     int c0 = n0 + g, c1 = c0 + 8;
     bool ok0 = c0 < N, ok1 = c1 < N;
@@ -1171,7 +1172,7 @@ __global__ void __launch_bounds__(256, BM == 64 ? 2 : 1) v41_gemm_f8_pipe_tiles_
                                         blockIdx.x * 128, v41_pipe_sm);
 }
 
-template <int WF, int OUTF, int SU>
+template <int WF, int OUTF, int SU, int ONE>
 __global__ void __launch_bounds__(256) v41_gemv_f8t_tiles_kernel(const uint8_t* __restrict__ A, long lda,
                                                                  const uint8_t* __restrict__ As, long ldas,
                                                                  const V41Tile* __restrict__ tiles,
@@ -1186,7 +1187,7 @@ __global__ void __launch_bounds__(256) v41_gemv_f8t_tiles_kernel(const uint8_t* 
     if ((int)blockIdx.y >= *ntiles) return;
     const V41ExpW& w = ew[tl.expert];
     void* c = OUTF ? (void*)((float*)C + (long)tl.row0 * ldc) : (void*)((v41_bf*)C + (long)tl.row0 * ldc);
-    v41_gemv_f8_cols16<WF, OUTF, SU>(A + (long)tl.row0 * lda, lda, As + (long)tl.row0 * ldas, ldas, w.w[proj], ldb,
+    v41_gemv_f8_cols16<WF, OUTF, SU, ONE>(A + (long)tl.row0 * lda, lda, As + (long)tl.row0 * ldas, ldas, w.w[proj], ldb,
                                      w.s[proj], ldbs, w.scale2[proj], c, ldc, tl.rows, N, K, blockIdx.x * 16, P,
                                      v41_sm_t);
 }
@@ -1208,14 +1209,17 @@ extern "C" int memra_v41_gemm_f8_tiles(const void* a, long lda, const void* as, 
         int smem16 = 0, parts = 1;
         v41_gemv_smem16(bm, k, &smem16, &parts);
         dim3 grid((n + 15) / 16, max_tiles);
-#define V41_GEMV_TT(WF, OF)                                                                                    \
-    v41_gemv_f8t_tiles_kernel<WF, OF, 5><<<grid, 256, smem16, st>>>(A, lda, As, ldas, T, ntiles, E, proj, ldb, \
-                                                                     ldbs, c, ldc, n, k, parts)
+#define V41_GEMV_TT_P(WF, OF, ONE)                                                                                  \
+    v41_gemv_f8t_tiles_kernel<WF, OF, 5, ONE><<<grid, 256, smem16, st>>>(A, lda, As, ldas, T, ntiles, E, proj, ldb, \
+                                                                          ldbs, c, ldc, n, k, parts)
+#define V41_GEMV_TT(WF, OF) \
+    do { if (parts == 1) V41_GEMV_TT_P(WF, OF, 1); else V41_GEMV_TT_P(WF, OF, 0); } while (0)
         if (wfmt == 0) { if (out_f32) V41_GEMV_TT(0, 1); else V41_GEMV_TT(0, 0); }
         else if (wfmt == 1) { if (out_f32) V41_GEMV_TT(1, 1); else V41_GEMV_TT(1, 0); }
         else if (wfmt == 2) { if (out_f32) V41_GEMV_TT(2, 1); else V41_GEMV_TT(2, 0); }
         else return 41026;
 #undef V41_GEMV_TT
+#undef V41_GEMV_TT_P
         V41_ERR();
     }
     if (bm != 64 && bm != 128) return 41026;
