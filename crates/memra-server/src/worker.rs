@@ -14456,42 +14456,56 @@ fn prefix_plane_alloc(
 /// Design B1: the snapshot's KV and recurrent copies as ONE launch. Every source keeps its read
 /// event and every destination its write event: the guards are held across the launch, so a
 /// consumer on another stream waits for the batch as it waited for the per-plane copies.
+///
+/// Each KV plane copies `[0, len * tok_bytes)` of its layer in `cache`. `draft` is the spec
+/// boundary publisher's MTP draft plane with its live K and V sources: two more items of the
+/// same launch. The plain snapshot has none.
 fn prefix_snapshot_batch(
     engine: &Engine,
     cache: &Cache,
     kv: &mut [Option<PrefixPlane>],
     conv: &mut [Option<CudaSlice<f32>>],
     ssm: &mut [Option<CudaSlice<f32>>],
+    draft: Option<(&mut PrefixPlane, &CudaSlice<u8>, &CudaSlice<u8>)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use cudarc::driver::{DevicePtr, DevicePtrMut};
     let st = engine.stream();
-    let mut items: Vec<(u64, u64, u64)> = Vec::new();
-    let mut guards = Vec::new();
+    // (destination, source, bytes, layer): `None` names the draft plane.
+    let mut planes = Vec::new();
     for (il, slot) in kv.iter_mut().enumerate() {
         let (Some(dst), Some(src)) = (slot.as_mut(), cache.kv[il].as_ref()) else {
             continue;
         };
-        for (to, from, n) in [
-            (&mut dst.k, &*src.k, dst.len * dst.k_tok_bytes),
-            (&mut dst.v, &*src.v, dst.len * dst.v_tok_bytes),
-        ] {
-            if n == 0 {
-                continue;
-            }
-            if from.len() < n || to.len() < n {
-                return Err(format!(
-                    "prefix snapshot layer {il}: a {n}-byte copy from {} into {} bytes",
-                    from.len(),
-                    to.len()
-                )
-                .into());
-            }
-            let (s, gs) = from.device_ptr(&st);
-            let (d, gd) = to.device_ptr_mut(&st);
-            items.push((s, d, n as u64));
-            guards.push(gs);
-            guards.push(gd);
+        let (kb, vb) = (dst.len * dst.k_tok_bytes, dst.len * dst.v_tok_bytes);
+        planes.push((&mut dst.k, &*src.k, kb, Some(il)));
+        planes.push((&mut dst.v, &*src.v, vb, Some(il)));
+    }
+    if let Some((dst, k_src, v_src)) = draft {
+        let (kb, vb) = (dst.len * dst.k_tok_bytes, dst.len * dst.v_tok_bytes);
+        planes.push((&mut dst.k, k_src, kb, None));
+        planes.push((&mut dst.v, v_src, vb, None));
+    }
+    let mut items: Vec<(u64, u64, u64)> = Vec::new();
+    let mut guards = Vec::new();
+    for (to, from, n, il) in planes.iter_mut() {
+        let n = *n;
+        if n == 0 {
+            continue;
         }
+        if from.len() < n || to.len() < n {
+            let what = il.map_or("draft plane".to_string(), |il| format!("layer {il}"));
+            return Err(format!(
+                "prefix snapshot {what}: a {n}-byte copy from {} into {} bytes",
+                from.len(),
+                to.len()
+            )
+            .into());
+        }
+        let (s, gs) = from.device_ptr(&st);
+        let (d, gd) = to.device_ptr_mut(&st);
+        items.push((s, d, n as u64));
+        guards.push(gs);
+        guards.push(gd);
     }
     for (il, (c, s)) in conv.iter_mut().zip(ssm.iter_mut()).enumerate() {
         let (Some(c), Some(s), Some(r)) = (c.as_mut(), s.as_mut(), cache.recur[il].as_ref()) else {
@@ -14632,7 +14646,7 @@ fn prefix_snapshot(
         }
     }
     // Design B1: every KV and recurrent plane's bytes in one launch, before the TP shards.
-    prefix_snapshot_batch(engine, cache, &mut kv, &mut conv, &mut ssm)?;
+    prefix_snapshot_batch(engine, cache, &mut kv, &mut conv, &mut ssm, None)?;
     // glm5 TP-2: every rank's shards, on their own devices (gated above).
     let tp = if tp_cache {
         let shards = model
@@ -15528,17 +15542,14 @@ fn prefix_insert_from_spec_boundary(
                 }
                 let kb = pos * l.k_tok_bytes;
                 let vb = pos * l.v_tok_bytes;
-                let (Ok(mut k), Ok(mut v)) =
-                    (engine.alloc_u8(kb.max(1)), engine.alloc_u8(vb.max(1)))
-                else {
+                // The one batched copy below writes every byte of both planes, so they skip
+                // the memset, as the plain snapshot's do (Design B1).
+                let (Ok(k), Ok(v)) = (
+                    prefix_plane_alloc(engine, kb),
+                    prefix_plane_alloc(engine, vb),
+                ) else {
                     return; // alloc pressure: publication is an optimization, drop silently
                 };
-                if kb > 0 && engine.copy_u8_into(&mut k, 0, &l.k, kb).is_err() {
-                    return;
-                }
-                if vb > 0 && engine.copy_u8_into(&mut v, 0, &l.v, vb).is_err() {
-                    return;
-                }
                 bytes += kb + vb;
                 kv.push(Some(PrefixPlane {
                     k,
@@ -15562,9 +15573,10 @@ fn prefix_insert_from_spec_boundary(
     // DRAFT PLANE publication (lane/spec-on-cache-hit): slice the MTP scratch rows
     // `[0..pos)` exactly like the trunk KV above — append-only below the prime boundary
     // for the session's lifetime, so the live buffers still hold the prime fill's rows.
-    // A failed copy drops ONLY the plane (the trunk entry stays publishable and serves
-    // plain hits); publication is an optimization, never a correctness dependency.
-    let draft = draft_plane.and_then(|(k_src, v_src, k_tok_bytes, v_tok_bytes)| {
+    // A draft plane that is too short or cannot be allocated drops ONLY the plane (the
+    // trunk entry stays publishable and serves plain hits); publication is an optimization,
+    // never a correctness dependency.
+    let mut draft = draft_plane.and_then(|(k_src, v_src, k_tok_bytes, v_tok_bytes)| {
         let kb = pos * k_tok_bytes;
         let vb = pos * v_tok_bytes;
         if k_src.len() < kb || v_src.len() < vb {
@@ -15574,24 +15586,34 @@ fn prefix_insert_from_spec_boundary(
             );
             return None;
         }
-        let (Ok(mut k), Ok(mut v)) = (engine.alloc_u8(kb.max(1)), engine.alloc_u8(vb.max(1)))
-        else {
+        let (Ok(k), Ok(v)) = (
+            prefix_plane_alloc(engine, kb),
+            prefix_plane_alloc(engine, vb),
+        ) else {
             return None; // alloc pressure: trunk-only entry
         };
-        if kb > 0 && engine.copy_u8_into(&mut k, 0, k_src, kb).is_err() {
-            return None;
-        }
-        if vb > 0 && engine.copy_u8_into(&mut v, 0, v_src, vb).is_err() {
-            return None;
-        }
-        bytes += kb + vb;
-        Some(PrefixPlane {
+        let plane = PrefixPlane {
             k,
             v,
             len: pos,
             k_tok_bytes,
             v_tok_bytes,
-        })
+        };
+        Some((plane, k_src, v_src, kb + vb))
+    });
+    // Every trunk plane and the draft plane in ONE launch (Design B1). The planes above are
+    // allocated without a memset, so a failed launch leaves all of them unwritten: it drops
+    // the whole entry, never the draft plane alone.
+    let draft_item = draft
+        .as_mut()
+        .map(|(plane, k_src, v_src, _)| (plane, *k_src, *v_src));
+    if let Err(err) = prefix_snapshot_batch(engine, cache, &mut kv, &mut [], &mut [], draft_item) {
+        eprintln!("[prefix-cache] spec publish: plane copy failed ({err}); entry dropped");
+        return;
+    }
+    let draft = draft.map(|(plane, _, _, plane_bytes)| {
+        bytes += plane_bytes;
+        plane
     });
     bytes += cap.last_h.len() * 4;
     // The tail is charged to the entry's budget like every other plane: an unaccounted 85 MB
@@ -46717,6 +46739,325 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The spec boundary publisher takes its planes from the plain snapshot's allocator and
+    /// copies them in the snapshot's one batched launch, the draft plane included: no zeroed
+    /// plane and no per-plane copy (GB10, 131k prompt: 34 memsets and 34 copies, one 83 ms gap
+    /// after the first burst). Every plane is allocated before the launch and the launch runs
+    /// before the insert, so a plane that could not be allocated is decided first and an entry
+    /// never publishes an unwritten plane.
+    #[test]
+    fn spec_boundary_publish_is_one_batched_copy_without_a_memset() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let body = |start: &str| {
+            let a = production.find(start).unwrap_or_else(|| panic!("{start}"));
+            &production[a..a + production[a..].find("\n}\n").expect("the function ends")]
+        };
+        let publish = body("fn prefix_insert_from_spec_boundary(");
+        for gone in [
+            "engine.alloc_u8(",
+            "alloc_zeros",
+            "copy_u8_into(",
+            "copy_u8_range_into(",
+            "memcpy_dtod",
+        ] {
+            assert!(!publish.contains(gone), "the spec publisher calls {gone}");
+        }
+        // Trunk K and V, draft K and V.
+        assert_eq!(publish.matches("prefix_plane_alloc(engine, ").count(), 4);
+        assert_eq!(publish.matches("prefix_snapshot_batch(").count(), 1);
+        let launch = publish.find("prefix_snapshot_batch(").unwrap();
+        let last_alloc = publish.rfind("prefix_plane_alloc(engine, ").unwrap();
+        let insert = publish.find("px.insert_demoting(").expect("the insert");
+        assert!(last_alloc < launch && launch < insert);
+        // Failure isolation: a draft plane that is short or unallocated publishes trunk-only,
+        // a trunk plane that is unallocated or a failed launch drops the entry.
+        let draft = &publish[publish
+            .find("let mut draft = draft_plane.and_then(")
+            .unwrap()..launch];
+        assert_eq!(draft.matches("return None;").count(), 2, "{draft}");
+        assert!(!draft.contains("return;"), "{draft}");
+        let trunk = &publish[..publish
+            .find("let mut draft = draft_plane.and_then(")
+            .unwrap()];
+        assert!(
+            trunk.contains(
+                ") else {\n                    return; // alloc pressure: publication is an optimization"
+            ),
+            "a failed trunk allocation abandons the insert"
+        );
+        let after = &publish[launch..insert];
+        assert!(
+            after.contains("entry dropped\");\n        return;\n    }"),
+            "{after}"
+        );
+        // The shared batch is one launch and carries the draft plane as two more items.
+        let batch = body("fn prefix_snapshot_batch(");
+        assert_eq!(batch.matches("engine.copy_batch_items_u8(").count(), 1);
+        assert!(
+            batch.contains("draft: Option<(&mut PrefixPlane, &CudaSlice<u8>, &CudaSlice<u8>)>")
+        );
+        assert!(batch.contains("planes.push((&mut dst.k, k_src, kb, None));"));
+        assert!(batch.contains("planes.push((&mut dst.v, v_src, vb, None));"));
+        // The plain snapshot passes no draft plane.
+        let plain = body("fn prefix_snapshot(");
+        assert!(plain.contains(
+            "prefix_snapshot_batch(engine, cache, &mut kv, &mut conv, &mut ssm, None)?;"
+        ));
+    }
+
+    /// GPU cell: the spec boundary publication is the copy program. A tiny hybrid config always,
+    /// and the checkpoint's own geometry when `MEMRA_B1_MODEL` names a GGUF (metadata only). The
+    /// live cache holds `live >= pos` rows of random bytes (a session past its prime boundary),
+    /// the last attention layer stands for the unexecuted MTP layer, and the draft sources are
+    /// random bytes at the cache's capacity. The published entry's trunk and draft planes are
+    /// exactly `[0, pos * tok_bytes)` of their sources, its recurrent planes and rows are the
+    /// capture's, and its byte count is their sum. A draft source shorter than the boundary and
+    /// a publisher without a draft plane publish trunk-only. The digest line is the round-trip
+    /// digest of each entry on a fixed seed: equal lines from two binaries are equal entries.
+    #[test]
+    #[ignore = "requires a CUDA GPU; MEMRA_B1_MODEL adds a checkpoint's geometry"]
+    fn spec_boundary_publish_is_the_copy_program() {
+        use super::{
+            Cache, HostPrefixCache, PoolKey, PrefixCache, prefix_entry_roundtrip_digest,
+            prefix_insert_from_spec_boundary,
+        };
+        use memra_gguf::config::{HfConfig, ModelConfig};
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let stream = engine.stream();
+        let mut cfgs = vec![(
+            "tiny".to_string(),
+            ModelConfig::from_hf(&HfConfig::parse(
+                r#"{"model_type":"qwen3_5","num_hidden_layers":4,"hidden_size":64,
+                "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+                "intermediate_size":128,"vocab_size":16,"max_position_embeddings":256,
+                "full_attention_interval":2,"linear_conv_kernel_dim":3,
+                "linear_key_head_dim":32,"linear_value_head_dim":32,
+                "linear_num_key_heads":1,"linear_num_value_heads":2}"#,
+            )),
+        )];
+        if let Ok(path) = std::env::var("MEMRA_B1_MODEL") {
+            let g = memra_gguf::GgufFile::open(&path).unwrap();
+            let file = std::path::Path::new(&path).file_name().unwrap();
+            cfgs.push((
+                file.to_string_lossy().into_owned(),
+                ModelConfig::from_gguf(&g),
+            ));
+        }
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let bits = |x: &[f32]| x.iter().map(|f| f.to_bits()).collect::<Vec<u32>>();
+        let cap_rows = 256usize;
+        for (name, cfg) in &cfgs {
+            for (pos, live) in [(1usize, 1usize), (97, 97), (97, 131)] {
+                let mut src = Cache::new(&engine, cfg, cap_rows).unwrap();
+                let n = src.kv.len();
+                let n_kv = src.kv.iter().flatten().count();
+                assert!(n_kv > 1, "{name}: at least two attention layers");
+                let absent = src.kv.iter().rposition(Option::is_some).unwrap();
+                let mut kv_fill: Vec<Option<(Vec<u8>, Vec<u8>)>> = vec![None; n];
+                let mut tok_bytes = (0usize, 0usize);
+                for (il, slot) in src.kv.iter_mut().enumerate() {
+                    let Some(l) = slot.as_mut() else { continue };
+                    if il == absent {
+                        continue;
+                    }
+                    tok_bytes = (l.k_tok_bytes, l.v_tok_bytes);
+                    let k: Vec<u8> = (0..live * l.k_tok_bytes).map(|_| next() as u8).collect();
+                    let v: Vec<u8> = (0..live * l.v_tok_bytes).map(|_| next() as u8).collect();
+                    engine.htod_u8_into(&mut l.k, 0, &k).unwrap();
+                    engine.htod_u8_into(&mut l.v, 0, &v).unwrap();
+                    l.len = live;
+                    kv_fill[il] = Some((k, v));
+                }
+                src.pos = live;
+                // The draft plane's sources: the session's scratch at the cache's capacity.
+                let (dk_tok, dv_tok) = tok_bytes;
+                let dk_host: Vec<u8> = (0..cap_rows * dk_tok).map(|_| next() as u8).collect();
+                let dv_host: Vec<u8> = (0..cap_rows * dv_tok).map(|_| next() as u8).collect();
+                let dk = stream.clone_htod(&dk_host).unwrap();
+                let dv = stream.clone_htod(&dv_host).unwrap();
+                let dk_short = stream.clone_htod(&dk_host[..pos * dk_tok - 1]).unwrap();
+                let recur_fill: Vec<Option<(Vec<f32>, Vec<f32>)>> = src
+                    .recur
+                    .iter()
+                    .map(|slot| {
+                        slot.as_ref().map(|r| {
+                            let c = (0..r.conv_state.len())
+                                .map(|_| f32::from_bits(next() as u32))
+                                .collect();
+                            let s = (0..r.ssm_state.len())
+                                .map(|_| f32::from_bits(next() as u32))
+                                .collect();
+                            (c, s)
+                        })
+                    })
+                    .collect();
+                let recur_bytes: usize = recur_fill
+                    .iter()
+                    .flatten()
+                    .map(|(c, s)| (c.len() + s.len()) * 4)
+                    .sum();
+                let trunk_bytes: usize = kv_fill
+                    .iter()
+                    .flatten()
+                    .map(|(k, v)| (k.len() + v.len()) / live * pos)
+                    .sum();
+                let last_h: Vec<f32> = (0..8).map(|_| f32::from_bits(next() as u32)).collect();
+                let logits = vec![0.5f32, -1.25, 3.0];
+                let committed: Vec<u32> = (0..live as u32).collect();
+                for case in ["draft", "short-draft", "no-draft"] {
+                    let cap = memra_engine::spec::SpecBoundaryCapture {
+                        snap: memra_engine::cache::CacheSnapshot {
+                            kv_len: vec![None; n],
+                            tp_kv_len: vec![None; n],
+                            conv: recur_fill
+                                .iter()
+                                .map(|f| f.as_ref().map(|(c, _)| stream.clone_htod(c).unwrap()))
+                                .collect(),
+                            ssm: recur_fill
+                                .iter()
+                                .map(|f| f.as_ref().map(|(_, s)| stream.clone_htod(s).unwrap()))
+                                .collect(),
+                            pos,
+                        },
+                        pos,
+                        logits: logits.clone(),
+                        last_h: last_h.clone(),
+                        latent_tails: Vec::new(),
+                    };
+                    let draft_plane = match case {
+                        "draft" => Some((&dk, &dv, dk_tok, dv_tok)),
+                        "short-draft" => Some((&dk_short, &dv, dk_tok, dv_tok)),
+                        _ => None,
+                    };
+                    let key: PoolKey = (format!("specpub-{case}"), String::new());
+                    let mut px = PrefixCache::default();
+                    let mut hpx = HostPrefixCache::new(0);
+                    prefix_insert_from_spec_boundary(
+                        &engine,
+                        &mut px,
+                        &mut hpx,
+                        &key,
+                        &committed,
+                        &src,
+                        draft_plane,
+                        None,
+                        cap,
+                        "spec-boundary",
+                    );
+                    let at = px
+                        .key_index(&key, &committed[..pos])
+                        .unwrap_or_else(|| panic!("{name} pos {pos} {case}: no entry"));
+                    let entry = &px.entries[&key][at];
+                    assert_eq!(entry.pos, pos);
+                    for (il, fill) in kv_fill.iter().enumerate() {
+                        match (fill, &entry.kv[il]) {
+                            (Some((k, v)), Some(p)) => {
+                                let (kb, vb) = (pos * p.k_tok_bytes, pos * p.v_tok_bytes);
+                                assert_eq!(p.len, pos, "{name} pos {pos} {case} len {il}");
+                                assert_eq!(
+                                    engine.dtoh_u8(&p.k).unwrap(),
+                                    k[..kb],
+                                    "{name} pos {pos} live {live} {case} K {il}"
+                                );
+                                assert_eq!(
+                                    engine.dtoh_u8(&p.v).unwrap(),
+                                    v[..vb],
+                                    "{name} pos {pos} live {live} {case} V {il}"
+                                );
+                            }
+                            (None, None) => {}
+                            _ => panic!("{name} pos {pos} {case}: layer {il} out of kind"),
+                        }
+                    }
+                    for (il, fill) in recur_fill.iter().enumerate() {
+                        match (fill, &entry.conv[il], &entry.ssm[il]) {
+                            (Some((c, s)), Some(ec), Some(es)) => {
+                                assert_eq!(bits(&engine.dtoh(ec).unwrap()), bits(c), "conv {il}");
+                                assert_eq!(bits(&engine.dtoh(es).unwrap()), bits(s), "ssm {il}");
+                            }
+                            (None, None, None) => {}
+                            _ => panic!("{name} pos {pos} {case}: recur {il} out of kind"),
+                        }
+                    }
+                    assert_eq!(bits(&entry.last_h), bits(&last_h));
+                    assert_eq!(bits(&entry.last_logits), bits(&logits));
+                    let mut want = trunk_bytes + recur_bytes + last_h.len() * 4;
+                    match (case, &entry.draft) {
+                        ("draft", Some(p)) => {
+                            let (kb, vb) = (pos * dk_tok, pos * dv_tok);
+                            assert_eq!(
+                                (p.len, p.k_tok_bytes, p.v_tok_bytes),
+                                (pos, dk_tok, dv_tok)
+                            );
+                            assert_eq!(engine.dtoh_u8(&p.k).unwrap(), dk_host[..kb], "draft K");
+                            assert_eq!(engine.dtoh_u8(&p.v).unwrap(), dv_host[..vb], "draft V");
+                            want += kb + vb;
+                        }
+                        ("short-draft" | "no-draft", None) => {}
+                        _ => panic!("{name} pos {pos} {case}: draft plane out of kind"),
+                    }
+                    assert_eq!(entry.bytes, want, "{name} pos {pos} {case} bytes");
+                    eprintln!(
+                        "[specpub cell] {name} pos={pos} live={live} case={case} bytes={} digest={}",
+                        entry.bytes,
+                        prefix_entry_roundtrip_digest(&engine, entry).unwrap()
+                    );
+                }
+            }
+        }
+    }
+
+    /// GPU cell: a plane allocated without a memset is charged to the insert budget's free
+    /// reading when it is allocated, before any byte of it is written. The spec boundary
+    /// publisher reads that budget right after it enqueues its one copy, so the reading must not
+    /// depend on whether the copy has run (on unified memory the reading is the larger of the
+    /// driver's and `MemAvailable`, plus the pool's cached bytes).
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn an_unwritten_plane_is_charged_to_the_insert_budget_reading() {
+        use super::{effective_free_bytes, prefix_plane_alloc};
+        const BYTES: usize = 2 << 30;
+        const SLACK: usize = 128 << 20;
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let stream = engine.stream();
+        let read = || {
+            stream.synchronize().unwrap();
+            effective_free_bytes(&engine).unwrap().0
+        };
+        let before = read();
+        let mut plane = prefix_plane_alloc(&engine, BYTES).unwrap();
+        let unwritten = read();
+        stream.memset_zeros(&mut plane).unwrap();
+        let written = read();
+        drop(plane);
+        let freed = read();
+        eprintln!(
+            "[specpub budget cell] unified={} free MB: before {} unwritten {} written {} freed {}",
+            super::device_is_unified(&engine),
+            before >> 20,
+            unwritten >> 20,
+            written >> 20,
+            freed >> 20
+        );
+        assert!(
+            before.saturating_sub(unwritten) + SLACK >= BYTES,
+            "an unwritten {BYTES}-byte plane moved the reading by {}",
+            before.saturating_sub(unwritten)
+        );
+        assert!(
+            unwritten.abs_diff(written) <= SLACK,
+            "writing the plane moved the reading by {}",
+            unwritten.abs_diff(written)
+        );
     }
 
     /// GPU-only: one plane of `len` rows on the engine's owner stream with known bytes.
