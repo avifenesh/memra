@@ -1,0 +1,36 @@
+# cargo test --release --locked -p memra-server --test serve_batch_retired, on a main tree
+# (fcd66f8963) plus the new test file. The dependency compile lines above this point are cut.
+# The retired_serve_batch_refusal function is absent from that tree's lib.rs (grep count 0).
+    Finished `release` profile [optimized] target(s) in 7m 09s
+     Running tests/serve_batch_retired.rs (<main-target>/release/deps/serve_batch_retired-2012e6690df6bd88)
+
+running 3 tests
+test serve_batch_set_to_anything_is_refused_at_boot ... FAILED
+test the_audit_switch_cannot_wave_the_retired_name_through ... FAILED
+test a_boot_without_the_retired_name_is_not_refused_for_it ... ok
+
+failures:
+
+---- serve_batch_set_to_anything_is_refused_at_boot stdout ----
+
+thread 'serve_batch_set_to_anything_is_refused_at_boot' (1439982) panicked at crates/memra-server/tests/serve_batch_retired.rs:30:5:
+MEMRA_SERVE_BATCH="0": the retired name is not refused by name: [server] build: memra-0.139.0-c48c996ea4af (id: source-tree, git: unknown)
+[server] FATAL: MEMRA_METRICS_TOKEN must not be empty
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- the_audit_switch_cannot_wave_the_retired_name_through stdout ----
+
+thread 'the_audit_switch_cannot_wave_the_retired_name_through' (1439983) panicked at crates/memra-server/tests/serve_batch_retired.rs:30:5:
+MEMRA_ENV_AUDIT=warn: the retired name is not refused by name: [server] build: memra-0.139.0-c48c996ea4af (id: source-tree, git: unknown)
+[server] FATAL: MEMRA_METRICS_TOKEN must not be empty
+
+
+
+failures:
+    serve_batch_set_to_anything_is_refused_at_boot
+    the_audit_switch_cannot_wave_the_retired_name_through
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+error: test failed, to rerun pass `-p memra-server --test serve_batch_retired`
