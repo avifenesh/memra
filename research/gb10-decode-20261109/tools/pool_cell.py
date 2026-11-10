@@ -3,9 +3,11 @@
 
 usage: pool_cell.py BIN OUTDIR [PORT]
 
-This copy of research/batch-spec-20261101/battery/pool_cell.py adds POOL_MAX_TOKENS (default 200,
-the original's cap): round 5 lever 1 runs it at 700 so streams end on EOS inside a cohort while
-their peers keep going, the exit the lever moves.
+This copy of research/batch-spec-20261101/battery/pool_cell.py adds two knobs:
+- POOL_MAX_TOKENS (default 200, the original's cap): round 5 lever 1 runs it at 700 so streams
+  end on EOS inside a cohort while their peers keep going, the exit the lever moves;
+- POOL_MODELS: the MEMRA_MODELS value to serve as "q9" instead of the RTX 5090 rig's Qwen3.5-9B
+  (lever 2 serves the 27B on a GB10 unit this way, with MEMRA_MTP_DRAFT in the environment).
 
 One fresh memra-server boot (q9 + owntrim draft, MEMRA_CTX=4096, MEMRA_SPEC_GATE=0 so every
 session speculates at every concurrency). Waves of c = 2, 4, 8 concurrent requests, distinct
@@ -49,7 +51,7 @@ def post(c, j, res):
 
 log = os.path.join(OUT, "server.log")
 env = dict(os.environ)
-env.update({"MEMRA_MODELS": f"q9={Q9}+{DRAFT}", "MEMRA_ADDR": f"127.0.0.1:{PORT}",
+env.update({"MEMRA_MODELS": os.environ.get("POOL_MODELS", f"q9={Q9}+{DRAFT}"), "MEMRA_ADDR": f"127.0.0.1:{PORT}",
             "MEMRA_CTX": "4096", "MEMRA_SPEC_GATE": "0",
             # Fixed burst boundaries: a sampled stream draws its boundary token from the session
             # Philox stream at every burst end, so arrival-timed early burst ends (admission

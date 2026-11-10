@@ -1,0 +1,83 @@
+1794267670.380720 [mtp-draft] loading external MTP draft: ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+1794267670.460079 [mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+1794267671.272495 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794267716.942128 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":24828706816,"synchronization_errors":[]}
+1794267778.235120 [spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+1794267781.732004 [spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+1794267784.237667 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17280532480,"still_owned_bytes":18448529344,"pool_reserved_bytes":18522046464,"pool_cached_bytes":73517120,"driver_free_bytes":23077421056,"synchronization_errors":[]}
+1794267784.237716 [spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=13.11ms pooled_overhead=Some((4, 5.596897770833333)) verify_ms[1..16]=[77.9 75.0 75.0 76.0 77.0 77.9 79.4 80.9 83.4 85.8 88.2 90.6 92.6 94.6 96.6 98.6] plain_ms[1..]=[76.1 78.6 82.4 86.3 90.6 94.9 99.2 103.5 108.1 112.6 117.2 121.8 126.3 130.9 135.4 140.0 145.5 151.0 156.5 162.0 167.6 173.1 178.6 184.1 189.6 195.1 200.6 206.1 211.6 217.1 222.7 228.2] (67.0s)
+1794267789.311621 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1509949440,"still_owned_bytes":19178338240,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014592,"driver_free_bytes":22255656960,"synchronization_errors":[]}
+1794267789.377075 [spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+1794267789.392408 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1031 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794267791.365072 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=1972.537 generated=0->34 rounds=10 drafted=30 accepted=23 k=3
+1794267792.781896 [tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=1416.245 generated=34->67 rounds=16 drafted=48 accepted=17 k=3
+1794267793.929143 [tick-spec] seq=1 slot=0 trace=- start_ms=0.010 gap_ms=0.010 wall_ms=1147.330 generated=67->99 rounds=13 drafted=39 accepted=19 k=3
+1794267795.171454 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=1242.540 generated=99->127 rounds=14 drafted=42 accepted=18 k=3
+1794267795.521996 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=131046 cached=0 lcp=11 active=1 wave=1 placement=single-or-non-pp2
+1794267798.053936 [tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=2531.721 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267800.534390 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2480.377 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267803.096012 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2561.623 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267805.736961 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2640.894 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267808.459696 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2722.681 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267811.263465 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2804.052 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267814.150898 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2887.111 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267817.113985 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2963.354 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267820.155434 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3041.508 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267823.271736 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3116.284 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267826.469970 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3198.129 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267829.747663 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=3277.661 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267833.118002 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3370.317 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267836.559559 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3441.525 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267840.081001 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3521.367 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267843.691243 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3610.269 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267847.364031 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=3672.565 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267851.127185 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3763.318 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267854.960390 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3833.182 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267858.880409 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3919.991 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267862.877017 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3996.348 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267866.959045 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4082.239 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267871.115825 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4156.739 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267875.351317 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4235.481 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267879.677043 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4325.409 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267884.073821 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4397.035 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267888.553978 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4480.126 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267893.108192 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4554.187 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267897.744022 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4635.750 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267902.460907 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4716.903 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267907.274477 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4813.494 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.266692 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4992.181 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.290354 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=23.563 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.314398 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=24.022 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.337104 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.693 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.360598 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.478 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.383318 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.710 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.406994 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.526 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.430385 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.516 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.453987 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.590 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.477552 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.556 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.500239 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.668 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.523707 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.456 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.547190 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.470 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.569976 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.726 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.593449 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.507 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.616907 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.445 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.639489 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.654 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.663088 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.502 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.685722 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.700 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.709451 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.635 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.733775 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=24.310 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.758282 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=24.482 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.781988 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.539 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.805385 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.554 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.828062 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.658 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.851626 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.556 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.874322 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.680 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.897917 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.583 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.921453 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.524 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.944201 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.674 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.967665 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.452 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267912.991201 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.524 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794267915.261969 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=2270.845 generated=0->33 rounds=12 drafted=36 accepted=20 k=3
+1794267918.003793 [tick-spec] seq=1 slot=0 trace=- start_ms=0.032 gap_ms=0.032 wall_ms=2662.401 generated=33->66 rounds=14 drafted=42 accepted=19 k=3
+1794267918.003800 [spec-cost] model="q38" realized n=1 K=3: 20.9 tok/s (now priced from serving)
+1794267920.288396 [tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=2284.443 generated=66->95 rounds=12 drafted=36 accepted=20 k=3
