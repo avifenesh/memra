@@ -1,0 +1,23 @@
+[tensor-contract] bound 311 semantic tensors (pack qwen3, HfSafetensors, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded Qwen3 from safetensors (28 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+What is the capital of France? Answer in one short sentence.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "What is the capital of France? Answer in one short sentence."
+prompt tokens: [151644, 872, 198, 3838, 374, 279, 6722, 315, 9625, 30, 21806, 304, 825, 2805, 11652, 13, 151645, 198, 151644, 77091, 198, 151667, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 2048 ml_len 0 -> 16 (retired kept, zero=false)
+[ttft] prompt_tokens=23 prefill_wall_s=0.041 (verify-class batched prefill; time to first generated token from a warm model)
+fp8-mmq dispatches after prefill: 0  (hook entries=0 gate_off=0 no_operand=0 bad_shape=0 bad_scale=0 nan=0)
+verify-prefill argmax=32313  decode argmax=32313  logit maxdiff=3.815e-6  MATCH
+teacher-forced decode: 64 tokens from run3/srv.ids
+generated 64 tokens in 0.309s = 206.79 tok/s (ST teacher-forced decode)
+teacher-forced EXACTNESS: disagreements=1/64 (1.56%) first_at=34  mean_nll=0.115117  total_nll=7.3675
+tokens: [32313, 11, 279, 1196, 374, 10161, 369, 279, 6722, 315, 9625, 13, 6771, 752, 1744, 13, 358, 1414, 429, 9625, 374, 264, 3146, 304, 4505, 13, 576, 6722, 9720, 525, 5990, 279, 7772, 9720, 13, 358, 6099, 429, 12095, 374, 279, 6722, 13, 1988, 3783, 11, 358, 1265, 7683, 13, 6771, 752, 19091, 25, 9625, 594, 6722, 374, 12095, 13, 7414, 11, 429, 594]
+storage DECODE-WINDOW: 0.00 GB physical reads
+OUTPUT TEXT: "Okay, the user is asking for the capital of France. Let me think. I know that France is a country in Europe. The capital cities are usually the largest cities. I remember that Paris is the capital. But wait, I should confirm. Let me recall: France's capital is Paris. Yes, that's"
+--- generated text ---
+Okay, the user is asking for the capital of France. Let me think. I know that France is a country in Europe. The capital cities are usually the largest cities. I remember that Paris is the capital. But wait, I should confirm. Let me recall: France's capital is Paris. Yes, that's
+fp8-mmq dispatches: 0

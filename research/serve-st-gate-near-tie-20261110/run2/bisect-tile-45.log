@@ -1,0 +1,13 @@
+[tensor-contract] bound 311 semantic tensors (pack qwen3, HfSafetensors, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded Qwen3: prompt=23 prefix=44 probe=429 watch=[12095, 106004, 59604, 279, 432, 83957, 7148, 24209]
+[fa-pool] grow #0 dev=0 o_len 0 -> 2048 ml_len 0 -> 16 (retired kept, zero=false)
+production B=1: argmax=12095 top2=(12095:33.128967, 106004:24.058603) maxdiff_vs_b1=0.000e0 l[12095]=33.128967 l[106004]=24.058603 l[59604]=22.363495 l[279]=21.414322 l[432]=19.536602 l[83957]=18.343323 l[7148]=16.860714 l[24209]=17.036156
+verify T=1: argmax=12095 top2=(12095:33.128967, 106004:24.058603) maxdiff_vs_b1=5.722e-6 l[12095]=33.128967 l[106004]=24.058603 l[59604]=22.363499 l[279]=21.414324 l[432]=19.536602 l[83957]=18.343323 l[7148]=16.860716 l[24209]=17.036158
+verify T=2 col0: argmax=12095 top2=(12095:33.128967, 106004:24.058603) maxdiff_vs_b1=5.722e-6 l[12095]=33.128967 l[106004]=24.058603 l[59604]=22.363499 l[279]=21.414324 l[432]=19.536602 l[83957]=18.343323 l[7148]=16.860716 l[24209]=17.036158
+T=2 filler token: 12095
+per-layer residual maxdiff: verify T=1 vs verify T=2 col0
+  layer  0: maxdiff=0.000e0
+  layer  1: maxdiff=0.000e0
+  layer  2: maxdiff=0.000e0
+  layer 27: maxdiff=0.000e0
+shape-bisect: first_nonzero=None worst_layer=0 worst_maxdiff=0.000e0
