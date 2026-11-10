@@ -337,6 +337,8 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
       note "$id  argmax-margin  REFUSED   gate skipped itself: $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: SKIP.*' | cut -d' ' -f2-)"
     elif printf '%s' "$OUT" | grep -q "^argmax-margin-gate: UNCALIBRATED"; then
       note "$id  argmax-margin  REFUSED   no calibrated floor for this cell: $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: UNCALIBRATED.*' | cut -d' ' -f2-)"
+    elif printf '%s' "$OUT" | grep -q "^argmax-margin-gate: NO-STORED-ROWS"; then
+      note "$id  argmax-margin  REFUSED   no stored rows of main for this cell: $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: NO-STORED-ROWS.*' | cut -d' ' -f2-)"
     else
       note "$id  argmax-margin  FAIL  $(printf '%s' "$OUT" | tail -1)"
     fi
@@ -386,6 +388,8 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
       note "$id  argmax-margin-batch  REFUSED   gate skipped itself: $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: SKIP.*' | cut -d' ' -f2-)"
     elif printf '%s' "$OUT" | grep -q "^argmax-margin-gate: UNCALIBRATED"; then
       note "$id  argmax-margin-batch  REFUSED   no calibrated floor for this cell: $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: UNCALIBRATED.*' | cut -d' ' -f2-)"
+    elif printf '%s' "$OUT" | grep -q "^argmax-margin-gate: NO-STORED-ROWS"; then
+      note "$id  argmax-margin-batch  REFUSED   no stored rows of main for this cell: $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: NO-STORED-ROWS.*' | cut -d' ' -f2-)"
     else
       note "$id  argmax-margin-batch  FAIL  $(printf '%s' "$OUT" | tail -1)"
     fi
@@ -424,7 +428,7 @@ if [ "$FAILED" = 0 ]; then
   echo "  roster: $(shown_path "$ROSTER") ($OWN_ROWS own)"
   printf '%s' "$LINES" | sed 's/^/  /'
   # Not a pass and not a refusal: the argmax cells of a device class nobody maintains.
-  [ "$NOT_JUDGED" = 0 ] || echo "  argmax cells NOT JUDGED: $NOT_JUDGED (device class not maintained, no floor row)"
+  [ "$NOT_JUDGED" = 0 ] || echo "  argmax cells NOT JUDGED: $NOT_JUDGED (device class not maintained, no floor row or no stored rows)"
   exit 0
 fi
 [ "$MISSING_OWN" = 1 ] && echo "REFUSED: an OWN model was not tested (absent file, or no own row in $(shown_path "$ROSTER")). Neither is skippable." >&2
