@@ -1,0 +1,1 @@
+python3 tools/spec-stop-string-gate.py boot ref /home/avifenesh/.cache/memra-gb10-r4/cells-work/gb10/tree-121a/target/release/memra-server /home/avifenesh/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf --out /home/avifenesh/.cache/memra-land4/extras-40414f5f82/stop-string

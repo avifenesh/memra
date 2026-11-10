@@ -1,0 +1,1 @@
+CELL_MODEL=/home/avifenesh/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf CELLS=2:0,4:0,4:200 GATE=default python3 research/spec-entry-yield-bound-20261110/tools/stall_cell.py /home/avifenesh/.cache/memra-land4/extras-40414f5f82/stall /home/avifenesh/.cache/memra-gb10-r4/cells-work/gb10/tree-121a/target/release/memra-server landing
