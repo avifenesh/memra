@@ -49,8 +49,8 @@
 #![allow(clippy::needless_range_loop)]
 
 use super::{
-    BW, BatchRow, BatchSel, Buf, Ctx, Dp, Geo, LayerState, LayerW, Part, Shared, Trace, bytes_f32,
-    bytes_i32, ck, ffi, load_bf16_rows, load_vec_bf16,
+    BW, BatchRow, BatchSel, Buf, Ctx, Dp, Geo, LayerState, LayerW, Part, Shared, StepLayer,
+    StepRef, Trace, bytes_f32, bytes_i32, ck, ffi, load_bf16_rows, load_vec_bf16,
 };
 use crate::Engine;
 use crate::tp_transport::{self, TpTransport};
@@ -136,9 +136,12 @@ enum Side<'a, 'b> {
         kind: AttnKind,
     },
     Batch {
-        pos: &'a [Buf],
+        pos: &'a [Dp],
         rows: &'a mut [Vec<BatchRow<'b>>],
         sel: &'a mut [BatchSel],
+        /// each rank's step block and the layer's place in it (a served step); None: the
+        /// copy form of the keys side (a traced call, the gates' reference)
+        step: Option<(&'a [Dp], &'a StepLayer)>,
     },
 }
 
@@ -1330,17 +1333,19 @@ impl Group {
     /// position, [`BatchRow`]), `pos[r]` the rows' positions as a device i32 array, `sel[r]` the
     /// batch's selection carried between layers. `h[r]` / `pre[r]` hold the rows' streams side
     /// by side. Everything but the keys side of attention is [`Self::block_forward_kind`]'s; the
-    /// keys side is [`Ctx::attn_keys_batch`]. A row's bytes are those of its sequence's
-    /// one-token call (`dsv41-spec batch-rows`).
+    /// keys side is [`Ctx::attn_keys_step`] over each rank's step block (`step`: the blocks and
+    /// the layer's place in them), or without one [`Ctx::attn_keys_batch`]. A row's bytes are
+    /// those of its sequence's one-token call (`dsv41-spec batch-rows`).
     #[allow(clippy::too_many_arguments)]
     pub fn block_forward_batch(
         &mut self,
         lw: &[LayerW],
         h: Vec<Buf>,
         pre: &[Buf],
-        pos: &[Buf],
+        pos: &[Dp],
         rows: &mut [Vec<BatchRow<'_>>],
         sel: &mut [BatchSel],
+        step: Option<(&[Dp], &StepLayer)>,
         tr: &mut [Trace],
     ) -> Result<(Vec<Buf>, Vec<Buf>), String> {
         let n = self.n();
@@ -1351,7 +1356,20 @@ impl Group {
         if s == 0 || rows.iter().any(|x| x.len() != s) {
             return Err("tp block_forward_batch: the ranks hold the same rows".into());
         }
-        self.block_forward_side(lw, h, pre, 0, s, tr, Side::Batch { pos, rows, sel })
+        self.block_forward_side(
+            lw,
+            h,
+            pre,
+            0,
+            s,
+            tr,
+            Side::Batch {
+                pos,
+                rows,
+                sel,
+                step,
+            },
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1404,12 +1422,25 @@ impl Group {
         }
         let a = match side {
             Side::Layer { sh, ls, kind } => self.attention(lw, &xs, sp, s, sh, ls, tr, kind)?,
-            Side::Batch { pos, rows, sel } => {
+            Side::Batch {
+                pos,
+                rows,
+                sel,
+                step,
+            } => {
                 let keys = {
                     let mut io: Vec<(&mut Vec<BatchRow<'_>>, &mut BatchSel)> =
                         rows.iter_mut().zip(sel.iter_mut()).collect();
-                    self.each_mut(&mut io, |r, c, (rr, se)| {
-                        c.attn_keys_batch(&lw[r], &xs[r], &pos[r], rr, se)
+                    self.each_mut(&mut io, |r, c, (rr, se)| match step {
+                        Some((blk, sl)) => c.attn_keys_step(
+                            &lw[r],
+                            &xs[r],
+                            pos[r],
+                            StepRef { blk: blk[r], sl },
+                            rr,
+                            se,
+                        ),
+                        None => c.attn_keys_batch(&lw[r], &xs[r], pos[r], rr, se),
                     })?
                 };
                 // the rows' selections are in the keys' own index rows

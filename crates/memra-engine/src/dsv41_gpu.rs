@@ -508,6 +508,17 @@ pub mod ffi {
             out_idx: *mut i32,
             stream: *mut c_void,
         ) -> i32;
+        /// Ratio-2 pooling of `rows` pairs named by device addresses (`kv[j]`, `sc[j]`: two fp32
+        /// rows of `d` each), latent row j into `out`.
+        pub fn memra_v41_comp_pool2_keys(
+            kv: *const c_void,
+            sc: *const c_void,
+            out: *mut c_void,
+            ldo: i64,
+            rows: i32,
+            d: i32,
+            stream: *mut c_void,
+        ) -> i32;
         /// `row + bias` in fp32, its maximum and lowest index as one 64-bit key (low word the
         /// index), reduced over several blocks; `key` holds `0xffffffff00000000` before.
         pub fn memra_v41_add_argmax_key(
@@ -2567,6 +2578,9 @@ pub struct AttnKeys {
     /// window rows and the compressed rows where they live ([`Ops::sparse_attn_keys`]) and
     /// `kv_all` holds no copy of them; None: `kv_all` is `[window rows | compressed rows]`
     pub keys: Option<Buf>,
+    /// the same table when it lives in the rank's step block (a batched step) instead of a
+    /// buffer of its own
+    pub keys_at: Option<Dp>,
 }
 
 /// One row of a decode call over several sequences: a sequence's one-token step at its own
@@ -2590,6 +2604,127 @@ pub struct BatchSel {
     pub tw: usize,
     /// the rows that hold a selection (a sequence with no compressed row yet holds none)
     pub has: Vec<bool>,
+}
+
+/// What a layer is to a decode step, read off the geometry (no weights): its compress ratio and
+/// whether it owns a compressed KV (and its index keys) or a selection.
+#[derive(Clone, Copy, Debug)]
+pub struct LayerKind {
+    pub ratio: usize,
+    pub kv_source: bool,
+    pub index_source: bool,
+}
+
+impl LayerKind {
+    pub fn of(g: &Geo, id: usize) -> Self {
+        Self {
+            ratio: g.compress_ratios[id],
+            kv_source: g.kv_sources.contains(&id),
+            index_source: g.index_sources.contains(&id),
+        }
+    }
+}
+
+/// Bytes of one layer's tables in a step block for `n` rows (the same for every layer kind, so
+/// the block's layout is a function of the row count and the layer count alone). In order, a
+/// row each: the heads' key reference (24 bytes, [`key_refs`]); then 8-byte device addresses:
+/// the ring slot the row's window KV lands on, the open pair's slot for its fp32 kv row and for
+/// its gate row, the pair's two buffers (the pooling reads both slots), the index key and the
+/// compressed row a completed latent is appended at (null: the row completes none this step);
+/// then i32: the position of the latent's group, the row's region base (0) and how many
+/// selection entries it holds.
+pub const fn step_layer_bytes(n: usize) -> usize {
+    (n * 92).next_multiple_of(8)
+}
+
+/// The selection width a batched step runs for rows that hold at most `most` selected entries:
+/// 0 for none, else the next of 64, 128, 256, ... not past `topk` (the model's top-k).
+pub fn select_class(most: usize, topk: usize) -> usize {
+    if most == 0 {
+        0
+    } else {
+        most.next_power_of_two().max(64).min(topk)
+    }
+}
+
+/// One layer of a batched step as the host decided it before any launch: where its tables sit
+/// in the step block, and the selection width and holders the layer's attention reads.
+#[derive(Clone, Debug, Default)]
+pub struct StepLayer {
+    pub off: usize,
+    pub tw: usize,
+    pub has: Vec<bool>,
+}
+
+/// A layer's view of the rank's step block on the device.
+#[derive(Clone, Copy)]
+pub struct StepRef<'a> {
+    pub blk: Dp,
+    pub sl: &'a StepLayer,
+}
+
+/// One batched step's host data on a rank: the rows' positions, pre-mix and embedding rows, the
+/// Engram rows of every Engram layer and every layer's tables ([`step_layer_bytes`]), written
+/// into page-locked memory and sent to the card in one copy before the step's first launch. The
+/// device buffer stays where it is from step to step, so a launch names its inputs by a fixed
+/// address inside it.
+pub struct StepBlock {
+    host: cudarc::driver::PinnedHostSlice<u8>,
+    pub dev: Buf,
+    cap: usize,
+    /// recorded behind the upload; the next step waits for it before it rewrites `host`
+    done: cudarc::driver::CudaEvent,
+}
+
+impl StepBlock {
+    pub fn new(ops: &Ops, cap: usize) -> Result<Self, String> {
+        let ctx = ops.st.context().clone();
+        let cap = cap.next_multiple_of(4096);
+        // SAFETY: plain bytes, every byte a step reads is written by that step's `upload`
+        let host = unsafe { ctx.alloc_pinned::<u8>(cap) }.map_err(|e| format!("pinned: {e:?}"))?;
+        Ok(Self {
+            host,
+            dev: ops.buf(cap)?,
+            cap,
+            done: ctx.new_event(None).map_err(|e| format!("event: {e:?}"))?,
+        })
+    }
+
+    pub fn cap(&self) -> usize {
+        self.cap
+    }
+
+    /// Send `bytes` to the card (the start of the block), stream-ordered before what follows.
+    pub fn upload(&mut self, ops: &Ops, bytes: &[u8]) -> Result<(), String> {
+        if bytes.len() > self.cap {
+            return Err(format!(
+                "step block: {} bytes, capacity {}",
+                bytes.len(),
+                self.cap
+            ));
+        }
+        self.done
+            .synchronize()
+            .map_err(|e| format!("step block: {e:?}"))?;
+        let host = self
+            .host
+            .as_mut_slice()
+            .map_err(|e| format!("pinned: {e:?}"))?;
+        host[..bytes.len()].copy_from_slice(bytes);
+        // SAFETY: the source is pinned memory this block owns, rewritten only after `done`
+        unsafe {
+            cudarc::driver::result::memcpy_htod_async(
+                self.dev.p(&ops.st).addr(),
+                &host[..bytes.len()],
+                ops.sv() as cudarc::driver::sys::CUstream,
+            )
+        }
+        .map_err(|e| format!("step block h2d: {e:?}"))?;
+        self.done
+            .record(&ops.st)
+            .map_err(|e| format!("step block: {e:?}"))?;
+        Ok(())
+    }
 }
 
 /// Runtime pieces shared by every layer on the card.
@@ -2635,6 +2770,8 @@ pub struct Ctx {
     /// its gate has run on a trunk that holds the candidate source and its readers (layers 20
     /// and 24 to 36). `dsv41-spec --select-long-min` sets both for the gates.
     pub select_long_min: (usize, usize),
+    /// this rank's step block ([`StepBlock`]), made at the first batched step
+    pub step: Option<StepBlock>,
 }
 
 /// A second stream on the card for a branch of a one-token layer that depends on nothing the main
@@ -2724,6 +2861,7 @@ impl Ctx {
             side: None,
             keyed: true,
             select_long_min: (32_768, usize::MAX),
+            step: None,
         })
     }
 
@@ -2879,6 +3017,63 @@ impl Ctx {
             tr.engram_out = Some(clone_buf(&self.ops, h)?);
         }
         Ok(())
+    }
+
+    /// [`Self::engram`] for the rows of a batched step, whose hashed table rows and scales the
+    /// host already gathered into the rank's step block (`rows` / `sc`: `[s * cols]` rows of
+    /// `engram_head_dim` bytes and of a 32nd of that): dequant, `wkv`, the normalized gate. No
+    /// staging and no wait: the block was uploaded before the step's first launch.
+    pub fn engram_step(
+        &mut self,
+        lw: &LayerW,
+        h: &Buf,
+        rows: Dp,
+        sc: Dp,
+        s: usize,
+    ) -> Result<(), String> {
+        let ew = lw.engram.as_ref().ok_or("layer has no engram")?;
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let (cols, hd) = (g.engram_cols(), g.engram_head_dim);
+        let nkv = g.dim * (g.hc + 1);
+        let emb = self.ops.tmp(s * cols * hd * 2)?;
+        let kv = self.ops.tmp(s * nkv * 2)?;
+        ck("engram_dequant", unsafe {
+            ffi::memra_v41_engram_dequant(
+                rows.m(),
+                sc.m(),
+                (s * cols) as i64,
+                hd as i32,
+                emb.p(&st).m(),
+                self.ops.sv(),
+            )
+        })?;
+        self.ops.linear_q(
+            emb.p(&st),
+            cols * hd,
+            s,
+            &ew.wkv,
+            kv.p(&st),
+            nkv,
+            false,
+            &mut self.scr,
+        )?;
+        let hp = h.p(&st);
+        ck("engram_gate", unsafe {
+            ffi::memra_v41_engram_gate(
+                hp.m(),
+                kv.p(&st).m(),
+                ew.qw.p(&st).m(),
+                ew.kw.p(&st).m(),
+                s as i32,
+                g.hc as i32,
+                g.dim as i32,
+                g.norm_eps,
+                (g.dim as f32).powf(-0.5),
+                hp.m(),
+                self.ops.sv(),
+            )
+        })
     }
 
     /// Index keys of the latent rows that just completed on a kv source (vendor `Indexer.forward`,
@@ -3536,27 +3731,22 @@ impl Ctx {
             idx: None,
             pos: None,
             keys,
+            keys_at: None,
         })
     }
 
     /// The keys side of attention for a decode call whose rows belong to different sequences
-    /// (`rows[i]` is row i: one token of its sequence at its own position). Every row runs the
-    /// one-token program of [`Self::attn_keys`]; what acts per row runs once for all rows: the
-    /// projections, norms, RoPE at each row's position from `pos`, the quantize-dequantize
-    /// steps, the index query and head weights, and every row's writes into its own sequence's
-    /// buffers (ring slot, a ratio-2 compressor's open pair, the appended compressed row and
-    /// index key: one `memra_v41_put_rows` each through the call's address table). The heads
-    /// read each row's keys where they live (`memra_v41_sparse_attn_keys`: its ring, then its
-    /// group's compressed rows; the index rows of `memra_v41_attn_idx_batch` with every region
-    /// at 0). What still runs per sequence: a ratio-2 pair's pooling when it completes, the
-    /// index score over its keys, its candidate pool and its top-k. With `keyed` off (or a
-    /// trace on) the rows' regions are copies side by side, `[ring | compressed rows]` each,
-    /// written by one copy a sequence: the reference the keyed form is gated against.
+    /// (`rows[i]` is row i: one token of its sequence at its own position), in the form the
+    /// gates read: every row runs the one-token program of [`Self::attn_keys`] and the heads'
+    /// key rows are copies side by side, `[ring | compressed rows]` a sequence, written and
+    /// read by one copy a sequence (`memra_v41_attn_idx_batch` offsets each row to its region).
+    /// A traced call and `dsv41-spec --copy-keys` run this; a served step runs
+    /// [`Self::attn_keys_step`], which is gated against it.
     pub fn attn_keys_batch(
         &mut self,
         lw: &LayerW,
         x: &Buf,
-        pos: &Buf,
+        pos: Dp,
         rows: &mut [BatchRow<'_>],
         sel: &mut BatchSel,
     ) -> Result<AttnKeys, String> {
@@ -3622,7 +3812,7 @@ impl Ctx {
             } else {
                 &self.rope_base
             },
-            pos.p(&st),
+            pos,
             false,
         )?;
         self.ops.fp8_qdq(kvw.p(&st), hd, n, hd)?;
@@ -3631,16 +3821,12 @@ impl Ctx {
             .iter()
             .map(|r| (r.pos + 1).checked_div(ratio).unwrap_or(0))
             .collect();
-        // keyed: every row reads its own sequence's ring and compressed KV in place, so a row's
-        // region starts at 0 and nothing is copied; else the regions are copies side by side
-        let keyed = self.keyed && !self.trace;
+        // the regions are copies side by side
         let mut bases = Vec::with_capacity(n);
         let mut total = 0usize;
         for &c in &ncs {
             bases.push(total);
-            if !keyed {
-                total += win + c;
-            }
+            total += win + c;
         }
         let kv_all = self.ops.tmp(total.max(1) * hd * 2)?;
         if rows.iter().any(|r| r.ls.ring.is_none()) {
@@ -3658,107 +3844,19 @@ impl Ctx {
                 .collect(),
             (true, _) => return Err(format!("compressor ratio {ratio} has no pooling kernel")),
         };
-        let pair = comp && lw.kv_source && ratio == 2;
-        let ik_append = !emit.is_empty()
-            && lw.index_source
-            && lw
-                .idx
-                .as_ref()
-                .is_some_and(|iw| iw.wk.is_some() && iw.k_norm.is_some());
-        // keyed: one table for the call, uploaded once and known before any launch: every row's
-        // key reference (its ring and its group's compressed rows), then the addresses its
-        // writes land on (its ring slot, its open pair's two slots, its appended index key and
-        // compressed row), so each kind of write is one launch for all rows
-        let (o_ring, o_ckv, o_csc) = (n * 24, n * 32, n * 40);
-        let (o_ik, o_ca) = (n * 48, n * 48 + emit.len() * 8);
-        let tab = if keyed {
-            let idim = g.index_dim;
-            if pair {
-                for r in rows.iter_mut() {
-                    if r.ls.c_kv.is_none() {
-                        r.ls.c_kv = Some(self.ops.buf(2 * hd * 4)?);
-                        r.ls.c_sc = Some(self.ops.buf(2 * hd * 4)?);
-                    }
-                }
-            }
-            for &(i, row0) in &emit {
-                let hint = rows[i].cap.min(self.max_pos) / ratio;
-                let sh = &mut *rows[i].sh;
-                if ik_append {
-                    ensure_rows(
-                        &self.ops,
-                        &mut sh.index_k,
-                        &mut sh.index_k_cap,
-                        row0 + 1,
-                        idim * 2,
-                        hint,
-                    )?;
-                }
-                ensure_rows(
-                    &self.ops,
-                    &mut sh.compress_kv,
-                    &mut sh.compress_cap,
-                    row0 + 1,
-                    hd * 2,
-                    hint,
-                )?;
-            }
-            let refs: Vec<(Dp, Dp, usize)> = rows
-                .iter()
-                .zip(&ncs)
-                .map(|(r, &c)| {
-                    let comp_dp = match (c > 0, r.sh.compress_kv.as_ref()) {
-                        (true, Some(b)) => b.p(&st),
-                        _ => Dp::NULL,
-                    };
-                    (r.ls.ring.as_ref().unwrap().p(&st), comp_dp, win)
-                })
-                .collect();
-            let mut t = key_refs(&refs);
-            let mut put = |a: u64| t.extend_from_slice(&a.to_le_bytes());
-            for r in rows.iter() {
-                let ring = r.ls.ring.as_ref().unwrap();
-                put(ring.at(&st, (r.pos % win) * hd * 2).addr());
-            }
-            for which in 0..2 {
-                for r in rows.iter() {
-                    let b = if which == 0 { &r.ls.c_kv } else { &r.ls.c_sc };
-                    put(match (pair, b.as_ref()) {
-                        (true, Some(b)) => b.at(&st, (r.pos % 2) * hd * 4).addr(),
-                        _ => 0,
-                    });
-                }
-            }
-            for &(i, row0) in &emit {
-                put(match (ik_append, rows[i].sh.index_k.as_ref()) {
-                    (true, Some(b)) => b.at(&st, row0 * idim * 2).addr(),
-                    _ => 0,
-                });
-            }
-            for &(i, row0) in &emit {
-                let b = rows[i].sh.compress_kv.as_ref().unwrap();
-                put(b.at(&st, row0 * hd * 2).addr());
-            }
-            Some(Buf::from_bytes(&st, &t)?)
-        } else {
-            None
-        };
-        if let Some(t) = tab.as_ref() {
-            put_rows(&self.ops, kvw.p(&st), hd, t.at(&st, o_ring), n, hd)?;
-        } else {
-            for (i, r) in rows.iter().enumerate() {
-                let ring = r.ls.ring.as_ref().unwrap();
-                copy_d2d(
-                    &self.ops,
-                    &kvw,
-                    i * hd * 2,
-                    ring,
-                    (r.pos % win) * hd * 2,
-                    hd * 2,
-                )?;
-                copy_d2d(&self.ops, ring, 0, &kv_all, bases[i] * hd * 2, win * hd * 2)?;
-            }
+        for (i, r) in rows.iter().enumerate() {
+            let ring = r.ls.ring.as_ref().unwrap();
+            copy_d2d(
+                &self.ops,
+                &kvw,
+                i * hd * 2,
+                ring,
+                (r.pos % win) * hd * 2,
+                hd * 2,
+            )?;
+            copy_d2d(&self.ops, ring, 0, &kv_all, bases[i] * hd * 2, win * hd * 2)?;
         }
+
         drop(kvw);
         if comp {
             let mut lat: Option<Buf> = None;
@@ -3784,24 +3882,17 @@ impl Ctx {
                         true,
                     )?;
                     let l = self.ops.tmp(n * hd * 2)?;
-                    if let Some(t) = tab.as_ref() {
-                        // the f32 rows as 16-bit words: every row into its open pair's slot
-                        put_rows(&self.ops, kvf.p(&st), hd * 2, t.at(&st, o_ckv), n, hd * 2)?;
-                        put_rows(&self.ops, scf.p(&st), hd * 2, t.at(&st, o_csc), n, hd * 2)?;
-                    }
                     let mut done = 0usize;
                     for (i, r) in rows.iter_mut().enumerate() {
-                        if tab.is_none() {
-                            if r.ls.c_kv.is_none() {
-                                r.ls.c_kv = Some(self.ops.buf(2 * hd * 4)?);
-                                r.ls.c_sc = Some(self.ops.buf(2 * hd * 4)?);
-                            }
-                            let (ckv, csc) =
-                                (r.ls.c_kv.as_ref().unwrap(), r.ls.c_sc.as_ref().unwrap());
-                            let slot = r.pos % 2;
-                            copy_d2d(&self.ops, &kvf, i * hd * 4, ckv, slot * hd * 4, hd * 4)?;
-                            copy_d2d(&self.ops, &scf, i * hd * 4, csc, slot * hd * 4, hd * 4)?;
+                        if r.ls.c_kv.is_none() {
+                            r.ls.c_kv = Some(self.ops.buf(2 * hd * 4)?);
+                            r.ls.c_sc = Some(self.ops.buf(2 * hd * 4)?);
                         }
+                        let (ckv, csc) = (r.ls.c_kv.as_ref().unwrap(), r.ls.c_sc.as_ref().unwrap());
+                        let slot = r.pos % 2;
+                        copy_d2d(&self.ops, &kvf, i * hd * 4, ckv, slot * hd * 4, hd * 4)?;
+                        copy_d2d(&self.ops, &scf, i * hd * 4, csc, slot * hd * 4, hd * 4)?;
+
                         let (ckv, csc) = (r.ls.c_kv.as_ref().unwrap(), r.ls.c_sc.as_ref().unwrap());
                         if (r.pos + 1).is_multiple_of(2) {
                             ck("comp_pool2", unsafe {
@@ -3868,29 +3959,25 @@ impl Ctx {
                         false,
                     )?;
                     self.ops.fp4_qdq(kp.p(&st), idim, e, idim, 32)?;
-                    if let Some(t) = tab.as_ref() {
-                        put_rows(&self.ops, kp.p(&st), idim, t.at(&st, o_ik), e, idim)?;
-                    } else {
-                        for (j, &(i, row0)) in emit.iter().enumerate() {
-                            let hint = rows[i].cap.min(self.max_pos) / ratio;
-                            let sh = &mut *rows[i].sh;
-                            ensure_rows(
-                                &self.ops,
-                                &mut sh.index_k,
-                                &mut sh.index_k_cap,
-                                row0 + 1,
-                                idim * 2,
-                                hint,
-                            )?;
-                            copy_d2d(
-                                &self.ops,
-                                &kp,
-                                j * idim * 2,
-                                sh.index_k.as_ref().unwrap(),
-                                row0 * idim * 2,
-                                idim * 2,
-                            )?;
-                        }
+                    for (j, &(i, row0)) in emit.iter().enumerate() {
+                        let hint = rows[i].cap.min(self.max_pos) / ratio;
+                        let sh = &mut *rows[i].sh;
+                        ensure_rows(
+                            &self.ops,
+                            &mut sh.index_k,
+                            &mut sh.index_k_cap,
+                            row0 + 1,
+                            idim * 2,
+                            hint,
+                        )?;
+                        copy_d2d(
+                            &self.ops,
+                            &kp,
+                            j * idim * 2,
+                            sh.index_k.as_ref().unwrap(),
+                            row0 * idim * 2,
+                            idim * 2,
+                        )?;
                     }
                 }
                 // the selection: the query and the head weights of every row at once, then each
@@ -3922,7 +4009,7 @@ impl Ctx {
                         g.index_heads,
                         idim,
                         &self.rope_comp,
-                        pos.p(&st),
+                        pos,
                         false,
                     )?;
                     self.ops.fp4_qdq(q.p(&st), qd, n, qd, 32)?;
@@ -4051,30 +4138,26 @@ impl Ctx {
                 self.ops
                     .rope_pos(l.p(&st), hd, e, 1, hd, &self.rope_comp, ep.p(&st), false)?;
                 self.ops.fp4_qdq(l.p(&st), hd, e, hd, 16)?;
-                if let Some(t) = tab.as_ref() {
-                    put_rows(&self.ops, l.p(&st), hd, t.at(&st, o_ca), e, hd)?;
-                }
                 for (j, &(i, row0)) in emit.iter().enumerate() {
                     let hint = rows[i].cap.min(self.max_pos) / ratio;
                     let sh = &mut *rows[i].sh;
-                    if tab.is_none() {
-                        ensure_rows(
-                            &self.ops,
-                            &mut sh.compress_kv,
-                            &mut sh.compress_cap,
-                            row0 + 1,
-                            hd * 2,
-                            hint,
-                        )?;
-                        copy_d2d(
-                            &self.ops,
-                            l,
-                            j * hd * 2,
-                            sh.compress_kv.as_ref().unwrap(),
-                            row0 * hd * 2,
-                            hd * 2,
-                        )?;
-                    }
+                    ensure_rows(
+                        &self.ops,
+                        &mut sh.compress_kv,
+                        &mut sh.compress_cap,
+                        row0 + 1,
+                        hd * 2,
+                        hint,
+                    )?;
+                    copy_d2d(
+                        &self.ops,
+                        l,
+                        j * hd * 2,
+                        sh.compress_kv.as_ref().unwrap(),
+                        row0 * hd * 2,
+                        hd * 2,
+                    )?;
+
                     sh.n_c = row0 + 1;
                 }
             }
@@ -4094,16 +4177,14 @@ impl Ctx {
                         r.sh.n_c
                     ));
                 }
-                if !keyed {
-                    copy_d2d(
-                        &self.ops,
-                        ckv,
-                        0,
-                        &kv_all,
-                        (bases[i] + win) * hd * 2,
-                        n_c * hd * 2,
-                    )?;
-                }
+                copy_d2d(
+                    &self.ops,
+                    ckv,
+                    0,
+                    &kv_all,
+                    (bases[i] + win) * hd * 2,
+                    n_c * hd * 2,
+                )?;
             }
         }
         let tw = if comp && ncs.iter().any(|&c| c > 0) {
@@ -4128,7 +4209,7 @@ impl Ctx {
             ffi::memra_v41_attn_idx_batch(
                 selp.i(),
                 tw as i32,
-                pos.p(&st).i(),
+                pos.i(),
                 meta.p(&st).i(),
                 meta.at(&st, n * 4).i(),
                 n as i32,
@@ -4148,13 +4229,539 @@ impl Ctx {
             comp,
             dec_rows: false,
             idx: Some(idx),
-            pos: Some(pos.p(&st)),
-            keys: tab,
+            pos: Some(pos),
+            keys: None,
+            keys_at: None,
         })
     }
 
     /// Rows of `kv` (bf16 `[s][hd]`, positions `sp ..`) into the ring, position p at slot
     /// p % win: the last `win` of them, as at most two contiguous runs (split where the slots wrap).
+    /// The host half of [`Self::attn_keys_step`] for one layer, before any launch of the step:
+    /// size what a completing row appends to (a first use allocates, a row past the sequence's
+    /// first sizing grows it), count the rows a completed latent adds, decide the selection the
+    /// layer's attention reads, and write the layer's tables ([`step_layer_bytes`]) into `out`.
+    /// `carried` is the selection width and holders of the last index source, as the layers
+    /// after it read them.
+    pub fn plan_keys_step(
+        &mut self,
+        kind: LayerKind,
+        rows: &mut [BatchRow<'_>],
+        carried: &mut (usize, Vec<bool>),
+        out: &mut [u8],
+    ) -> Result<(usize, Vec<bool>), String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let (hd, win, idim, ratio) = (g.head_dim, g.window, g.index_dim, kind.ratio);
+        let comp = ratio > 0;
+        let n = rows.len();
+        if n == 0 || rows.iter().any(|r| r.pos == 0 || r.pos >= self.max_pos) {
+            return Err("a batched decode row is one token past its sequence's prefill".into());
+        }
+        if rows.iter().any(|r| r.ls.ring.is_none()) {
+            return Err("a batched decode row's sequence has no window ring (no prefill)".into());
+        }
+        if out.len() < n * 92 {
+            return Err("step block: a layer's tables do not fit".into());
+        }
+        let ncs: Vec<usize> = rows
+            .iter()
+            .map(|r| (r.pos + 1).checked_div(ratio).unwrap_or(0))
+            .collect();
+        // the compressed row a row's latent completes on a kv source (None: it completes none)
+        let done: Vec<Option<usize>> = match (comp && kind.kv_source, ratio) {
+            (false, _) => vec![None; n],
+            (true, 1) => rows.iter().map(|r| Some(r.pos)).collect(),
+            (true, 2) => rows
+                .iter()
+                .map(|r| (r.pos + 1).is_multiple_of(2).then_some(r.pos / 2))
+                .collect(),
+            (true, _) => return Err(format!("compressor ratio {ratio} has no pooling kernel")),
+        };
+        let pair = comp && kind.kv_source && ratio == 2;
+        let own_keys = kind.kv_source && kind.index_source;
+        for (r, d) in rows.iter_mut().zip(&done) {
+            if pair && r.ls.c_kv.is_none() {
+                r.ls.c_kv = Some(self.ops.buf(2 * hd * 4)?);
+                r.ls.c_sc = Some(self.ops.buf(2 * hd * 4)?);
+            }
+            if let Some(row0) = *d {
+                let hint = r.cap.min(self.max_pos) / ratio;
+                let sh = &mut *r.sh;
+                if own_keys {
+                    ensure_rows(
+                        &self.ops,
+                        &mut sh.index_k,
+                        &mut sh.index_k_cap,
+                        row0 + 1,
+                        idim * 2,
+                        hint,
+                    )?;
+                }
+                ensure_rows(
+                    &self.ops,
+                    &mut sh.compress_kv,
+                    &mut sh.compress_cap,
+                    row0 + 1,
+                    hd * 2,
+                    hint,
+                )?;
+                sh.n_c = row0 + 1;
+            }
+        }
+        for (r, &c) in rows.iter().zip(&ncs) {
+            if c == 0 {
+                continue;
+            }
+            if r.sh.compress_kv.is_none() {
+                return Err("attention: no compressed KV from the group source".into());
+            }
+            if r.sh.n_c < c {
+                return Err(format!(
+                    "attention: compressed KV holds {} rows, need {c}",
+                    r.sh.n_c
+                ));
+            }
+            if kind.index_source && r.sh.index_k.is_none() {
+                return Err("indexer: no index keys from a kv source".into());
+            }
+        }
+        if comp && kind.index_source {
+            // the selection width in classes (64, 128, 256, ... up to the model's top-k): the
+            // rows are padded with -1, which the heads skip, so the width is byte-neutral and a
+            // step's launch parameters take a handful of values instead of one a position
+            let most = ncs.iter().map(|&c| g.index_topk.min(c)).max().unwrap_or(0);
+            *carried = (
+                select_class(most, g.index_topk),
+                ncs.iter().map(|&c| c > 0).collect(),
+            );
+        }
+        let (tw, has) = if comp && ncs.iter().any(|&c| c > 0) {
+            if carried.1.len() != n {
+                return Err("attention: no selection from the index source".into());
+            }
+            carried.clone()
+        } else {
+            (0, vec![false; n])
+        };
+        let refs: Vec<(Dp, Dp, usize)> = rows
+            .iter()
+            .zip(&ncs)
+            .map(|(r, &c)| {
+                let comp_dp = match (c > 0, r.sh.compress_kv.as_ref()) {
+                    (true, Some(b)) => b.p(&st),
+                    _ => Dp::NULL,
+                };
+                (r.ls.ring.as_ref().unwrap().p(&st), comp_dp, win)
+            })
+            .collect();
+        let mut t = key_refs(&refs);
+        let mut put = |a: u64| t.extend_from_slice(&a.to_le_bytes());
+        for r in rows.iter() {
+            let ring = r.ls.ring.as_ref().unwrap();
+            put(ring.at(&st, (r.pos % win) * hd * 2).addr());
+        }
+        // the open pair: this row's slot of the kv rows and of the gate rows, then both buffers
+        for (slot, which) in [(true, 0), (true, 1), (false, 0), (false, 1)] {
+            for r in rows.iter() {
+                let b = if which == 0 { &r.ls.c_kv } else { &r.ls.c_sc };
+                put(match (pair, b.as_ref()) {
+                    (true, Some(b)) if slot => b.at(&st, (r.pos % 2) * hd * 4).addr(),
+                    (true, Some(b)) => b.p(&st).addr(),
+                    _ => 0,
+                });
+            }
+        }
+        for (r, d) in rows.iter().zip(&done) {
+            put(match (own_keys, *d, r.sh.index_k.as_ref()) {
+                (true, Some(row0), Some(b)) => b.at(&st, row0 * idim * 2).addr(),
+                _ => 0,
+            });
+        }
+        for (r, d) in rows.iter().zip(&done) {
+            put(match (*d, r.sh.compress_kv.as_ref()) {
+                (Some(row0), Some(b)) => b.at(&st, row0 * hd * 2).addr(),
+                _ => 0,
+            });
+        }
+        // the position of each latent's group (its first token); a row that completes none
+        // still runs the launches, on a latent nobody reads
+        for (r, d) in rows.iter().zip(&done) {
+            let p = d.map_or(r.pos, |row0| row0 * ratio);
+            t.extend_from_slice(&(p as i32).to_le_bytes());
+        }
+        t.extend_from_slice(&vec![0u8; n * 4]);
+        for h in &has {
+            let k = if tw > 0 && *h { tw as i32 } else { 0 };
+            t.extend_from_slice(&k.to_le_bytes());
+        }
+        debug_assert_eq!(t.len(), n * 92);
+        out[..t.len()].copy_from_slice(&t);
+        Ok((tw, has))
+    }
+
+    /// The keys side of attention for one layer of a batched step ([`Runner::forward_batch`]):
+    /// row i is one token of its sequence at its own position and runs the one-token program
+    /// of [`Self::attn_keys`]. Everything the host decides sits in the rank's step block
+    /// before the first launch (`step`: [`Self::plan_keys_step`]'s tables; `pos`: the rows'
+    /// positions in it), so the launches of a layer depend on the row count and the layer's
+    /// kind alone: the projections, norms, RoPE and quantize-dequantize steps over all rows,
+    /// one `memra_v41_put_rows` a kind of write (ring slot, open pair slots, appended index key
+    /// and compressed row), and on a ratio-2 kv source the pooling of every row's pair
+    /// (`memra_v41_comp_pool2_keys`): a row whose pair is not complete is pooled too and its
+    /// latent goes nowhere (a null address in the table), so nothing depends on which
+    /// sequences complete a pair this step. The heads read each row's ring and its group's
+    /// compressed rows where they live (`memra_v41_sparse_attn_keys`). What stays one launch a
+    /// sequence is what grows with it: the index score over its keys, its candidate pool and
+    /// its top-k. Gated against [`Self::attn_keys_batch`], row for row.
+    pub fn attn_keys_step(
+        &mut self,
+        lw: &LayerW,
+        x: &Buf,
+        pos: Dp,
+        step: StepRef<'_>,
+        rows: &mut [BatchRow<'_>],
+        sel: &mut BatchSel,
+    ) -> Result<AttnKeys, String> {
+        let g = self.g.clone();
+        let st = self.ops.st.clone();
+        let (hd, win, ratio) = (g.head_dim, g.window, lw.ratio);
+        let comp = ratio > 0;
+        let n = rows.len();
+        let tab = |section: usize| Dp(step.blk.addr() + (step.sl.off + section * n) as u64);
+        // the layer's tables: byte offsets a row (see `step_layer_bytes`)
+        let (t_ring, t_ckv, t_csc, t_pkv, t_psc, t_ik, t_ca, t_epos, t_base, t_nsel) =
+            (24, 32, 40, 48, 56, 64, 72, 80, 84, 88);
+        let qr = self.ops.tmp(n * g.q_lora * 2)?;
+        self.ops.linear_q(
+            x.p(&st),
+            g.dim,
+            n,
+            &lw.wq_a,
+            qr.p(&st),
+            g.q_lora,
+            false,
+            &mut self.scr,
+        )?;
+        self.ops.rmsnorm(
+            qr.p(&st),
+            g.q_lora,
+            &lw.q_norm,
+            qr.p(&st),
+            g.q_lora,
+            n,
+            g.q_lora,
+            g.norm_eps,
+        )?;
+        // every row's window KV into its ring slot
+        let kvw = self.ops.tmp(n * hd * 2)?;
+        self.ops.linear_q(
+            x.p(&st),
+            g.dim,
+            n,
+            &lw.wkv,
+            kvw.p(&st),
+            hd,
+            false,
+            &mut self.scr,
+        )?;
+        self.ops.rmsnorm(
+            kvw.p(&st),
+            hd,
+            &lw.kv_norm,
+            kvw.p(&st),
+            hd,
+            n,
+            hd,
+            g.norm_eps,
+        )?;
+        let table = if comp {
+            &self.rope_comp
+        } else {
+            &self.rope_base
+        };
+        self.ops
+            .rope_pos(kvw.p(&st), hd, n, 1, hd, table, pos, false)?;
+        self.ops.fp8_qdq(kvw.p(&st), hd, n, hd)?;
+        put_rows(&self.ops, kvw.p(&st), hd, tab(t_ring), n, hd)?;
+        drop(kvw);
+        let ncs: Vec<usize> = rows
+            .iter()
+            .map(|r| (r.pos + 1).checked_div(ratio).unwrap_or(0))
+            .collect();
+        let tw = step.sl.tw;
+        if comp {
+            // a kv source: every row's latent (a ratio-2 row whose pair is open gives one too)
+            let mut lat: Option<Buf> = None;
+            if lw.kv_source {
+                let cw = lw.comp.as_ref().unwrap();
+                let l = self.ops.tmp(n * hd * 2)?;
+                if ratio == 1 {
+                    self.ops
+                        .linear_bf16(x.p(&st), g.dim, n, &cw.wkv, l.p(&st), hd, false)?;
+                } else {
+                    let kvf = self.ops.tmp(n * hd * 4)?;
+                    let scf = self.ops.tmp(n * hd * 4)?;
+                    self.ops
+                        .linear_bf16(x.p(&st), g.dim, n, &cw.wkv, kvf.p(&st), hd, true)?;
+                    self.ops.linear_bf16(
+                        x.p(&st),
+                        g.dim,
+                        n,
+                        cw.wgate.as_ref().unwrap(),
+                        scf.p(&st),
+                        hd,
+                        true,
+                    )?;
+                    // the fp32 rows as 16-bit words, each into its open pair's slot; then the
+                    // pairs pooled where they are
+                    put_rows(&self.ops, kvf.p(&st), hd * 2, tab(t_ckv), n, hd * 2)?;
+                    put_rows(&self.ops, scf.p(&st), hd * 2, tab(t_csc), n, hd * 2)?;
+                    ck("comp_pool2_keys", unsafe {
+                        ffi::memra_v41_comp_pool2_keys(
+                            tab(t_pkv).c(),
+                            tab(t_psc).c(),
+                            l.p(&st).m(),
+                            hd as i64,
+                            n as i32,
+                            hd as i32,
+                            self.ops.sv(),
+                        )
+                    })?;
+                }
+                self.ops
+                    .rmsnorm(l.p(&st), hd, &cw.norm, l.p(&st), hd, n, hd, g.norm_eps)?;
+                lat = Some(l);
+            }
+            if lw.index_source {
+                let iw = lw.idx.as_ref().unwrap();
+                let idim = g.index_dim;
+                if let (Some(l), Some(wk), Some(kn)) =
+                    (lat.as_ref(), iw.wk.as_ref(), iw.k_norm.as_ref())
+                {
+                    // the latents' index keys, each completed one into its sequence's keys
+                    let kp = self.ops.tmp(n * idim * 2)?;
+                    self.ops
+                        .linear_bf16(l.p(&st), hd, n, wk, kp.p(&st), idim, false)?;
+                    self.ops
+                        .rmsnorm(kp.p(&st), idim, kn, kp.p(&st), idim, n, idim, g.norm_eps)?;
+                    self.ops.rope_pos(
+                        kp.p(&st),
+                        idim,
+                        n,
+                        1,
+                        idim,
+                        &self.rope_comp,
+                        tab(t_epos),
+                        false,
+                    )?;
+                    self.ops.fp4_qdq(kp.p(&st), idim, n, idim, 32)?;
+                    put_rows(&self.ops, kp.p(&st), idim, tab(t_ik), n, idim)?;
+                }
+                // the selection: the query and the head weights of every row at once, then each
+                // sequence's score over its own keys, its candidate pool and its top-k
+                if tw == 0 {
+                    *sel = BatchSel {
+                        topk: None,
+                        tw: 0,
+                        has: vec![false; n],
+                    };
+                } else {
+                    let qd = g.index_heads * idim;
+                    let q = self.ops.tmp(n * qd * 2)?;
+                    self.ops.linear_q(
+                        qr.p(&st),
+                        g.q_lora,
+                        n,
+                        &iw.wq_b,
+                        q.p(&st),
+                        qd,
+                        false,
+                        &mut self.scr,
+                    )?;
+                    self.ops.rope_pos(
+                        q.p(&st),
+                        qd,
+                        n,
+                        g.index_heads,
+                        idim,
+                        &self.rope_comp,
+                        pos,
+                        false,
+                    )?;
+                    self.ops.fp4_qdq(q.p(&st), qd, n, qd, 32)?;
+                    let w = self.ops.tmp(n * g.index_heads * 2)?;
+                    self.ops.linear_bf16(
+                        x.p(&st),
+                        g.dim,
+                        n,
+                        &iw.wproj,
+                        w.p(&st),
+                        g.index_heads,
+                        false,
+                    )?;
+                    let wscale =
+                        ((idim as f64).powf(-0.5) * (g.index_heads as f64).powf(-0.5)) as f32;
+                    let out = self.ops.tmp(n * tw * 4)?;
+                    let mut has = vec![false; n];
+                    for (i, r) in rows.iter_mut().enumerate() {
+                        let n_c = ncs[i];
+                        if n_c == 0 {
+                            continue;
+                        }
+                        let sh = &mut *r.sh;
+                        let ik = sh
+                            .index_k
+                            .as_ref()
+                            .ok_or("indexer: no index keys from a kv source")?;
+                        let score = self.ops.tmp(n_c * 2)?;
+                        let (cand, ldc) = if lw.uses_cand {
+                            let c = sh.cand.as_ref().ok_or("indexer: candidate pool missing")?;
+                            (c.p(&st).u8c(), sh.cand_ld)
+                        } else {
+                            (std::ptr::null(), 0)
+                        };
+                        ck("index_score", unsafe {
+                            ffi::memra_v41_index_score(
+                                q.at(&st, i * qd * 2).m(),
+                                qd as i64,
+                                ik.p(&st).m(),
+                                n_c as i32,
+                                w.at(&st, i * g.index_heads * 2).m(),
+                                g.index_heads as i64,
+                                wscale,
+                                r.pos as i32,
+                                ratio as i32,
+                                cand,
+                                ldc as i64,
+                                g.cand_block as i32,
+                                score.p(&st).m(),
+                                n_c as i64,
+                                1,
+                                self.ops.sv(),
+                            )
+                        })?;
+                        if lw.cand_source {
+                            let nb = n_c.div_ceil(g.cand_block);
+                            let keep = self.ops.tmp(nb.max(1))?;
+                            if n_c > self.select_long_min.1 {
+                                self.ops.candidates_long(
+                                    score.p(&st),
+                                    n_c,
+                                    g.cand_block,
+                                    g.cand_blocks,
+                                    r.pos,
+                                    ratio,
+                                    keep.p(&st),
+                                )?;
+                            } else {
+                                ck("candidates", unsafe {
+                                    ffi::memra_v41_candidates(
+                                        score.p(&st).m(),
+                                        n_c as i64,
+                                        n_c as i32,
+                                        g.cand_block as i32,
+                                        g.cand_blocks as i32,
+                                        r.pos as i32,
+                                        ratio as i32,
+                                        keep.p(&st).u8m(),
+                                        nb as i64,
+                                        1,
+                                        self.ops.sv(),
+                                    )
+                                })?;
+                            }
+                            sh.cand = Some(keep);
+                            sh.cand_ld = nb;
+                            sh.cand_row0 = 0;
+                        }
+                        if n_c > self.select_long_min.0 {
+                            self.ops.topk_long(
+                                score.p(&st),
+                                n_c,
+                                g.index_topk.min(n_c),
+                                tw,
+                                win,
+                                out.at(&st, i * tw * 4),
+                            )?;
+                        } else {
+                            ck("topk", unsafe {
+                                ffi::memra_v41_topk(
+                                    score.p(&st).m(),
+                                    n_c as i64,
+                                    n_c as i32,
+                                    g.index_topk.min(n_c) as i32,
+                                    tw as i32,
+                                    win as i32,
+                                    out.at(&st, i * tw * 4).im(),
+                                    tw as i64,
+                                    1,
+                                    self.ops.sv(),
+                                )
+                            })?;
+                        }
+                        has[i] = true;
+                    }
+                    debug_assert_eq!(&has, step.sl.has.as_slice());
+                    *sel = BatchSel {
+                        topk: Some(out),
+                        tw,
+                        has,
+                    };
+                }
+            }
+            // the completed latents into each sequence's compressed KV
+            if let Some(l) = lat.as_ref() {
+                self.ops
+                    .rope_pos(l.p(&st), hd, n, 1, hd, &self.rope_comp, tab(t_epos), false)?;
+                self.ops.fp4_qdq(l.p(&st), hd, n, hd, 16)?;
+                put_rows(&self.ops, l.p(&st), hd, tab(t_ca), n, hd)?;
+            }
+        }
+        let tw = if comp && ncs.iter().any(|&c| c > 0) {
+            if sel.topk.is_none() || sel.has.len() != n || sel.tw != tw {
+                return Err("attention: no selection from the index source".into());
+            }
+            tw
+        } else {
+            0
+        };
+        let tot = win + tw;
+        let idx = self.ops.tmp(n * tot * 4)?;
+        let selp = match (tw, sel.topk.as_ref()) {
+            (0, _) | (_, None) => Dp::NULL,
+            (_, Some(t)) => t.p(&st),
+        };
+        ck("attn_idx_batch", unsafe {
+            ffi::memra_v41_attn_idx_batch(
+                selp.i(),
+                tw as i32,
+                pos.i(),
+                tab(t_base).i(),
+                tab(t_nsel).i(),
+                n as i32,
+                win as i32,
+                tot as i32,
+                idx.p(&st).im(),
+                self.ops.sv(),
+            )
+        })?;
+        Ok(AttnKeys {
+            qr,
+            kv_all: self.ops.tmp(1)?,
+            ww: win,
+            tw,
+            tot,
+            win,
+            comp,
+            dec_rows: false,
+            idx: Some(idx),
+            pos: Some(pos),
+            keys: None,
+            keys_at: Some(tab(0)),
+        })
+    }
+
     fn ring_write(
         ops: &Ops,
         kv: &Buf,
@@ -4324,13 +4931,13 @@ impl Ctx {
         };
         self.nv_end();
         self.nv(c"sparse_attn");
-        match k.keys.as_ref() {
+        match k.keys_at.or(k.keys.as_ref().map(|t| t.p(&st))) {
             // the rows' keys where they live: each row's table entry names its window rows and
             // its compressed rows
             Some(t) => self.ops.sparse_attn_keys(
                 q.p(&st),
                 qdim,
-                t.at(&st, r0 * 24),
+                Dp(t.addr() + (r0 * 24) as u64),
                 idx,
                 tot,
                 tot,
@@ -5288,6 +5895,23 @@ mod tests {
         let mut p = vec![0i32; 6];
         Ctx::window_row(5, 8, &mut p);
         assert_eq!(p, vec![0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn the_selection_width_of_a_step_is_one_of_a_few_classes() {
+        assert_eq!(select_class(0, 512), 0);
+        assert_eq!(select_class(1, 512), 64);
+        assert_eq!(select_class(64, 512), 64);
+        assert_eq!(select_class(65, 512), 128);
+        assert_eq!(select_class(200, 512), 256);
+        assert_eq!(select_class(257, 512), 512);
+        assert_eq!(select_class(512, 512), 512);
+        // a class never passes the model's top-k, and never falls under what the rows hold
+        assert_eq!(select_class(300, 384), 384);
+        for most in 1..=512usize {
+            let c = select_class(most, 512);
+            assert!(c >= most && c <= 512);
+        }
     }
 
     #[test]

@@ -37,7 +37,7 @@
 //! position, against its own state, through shared launches; more requests than that are
 //! consecutive calls), and their logits come from one pass over the head (when every step of
 //! the call is a plain greedy pick the card returns each row's argmax instead and no logits are
-//! downloaded; a single such step runs as a call of its own). A row's bytes are those
+//! downloaded; a lone step is a call of one row through the same path). A row's bytes are those
 //! of its one-token call run alone (`dsv41-spec batch-rows`), so a request's numbers are the same
 //! served alone or beside others (the serve receipts gate this byte for byte). A prefill and a
 //! drafted block's verification run as calls of their own.
@@ -1588,15 +1588,8 @@ fn serve_loop(
                 calls.push(Call { seq: i, tokens });
                 who.push(i);
             }
-            // one such step alone is a call of its own, as before batching
-            if batch.len() == 1 {
-                let (i, t) = batch.remove(0);
-                calls.push(Call {
-                    seq: i,
-                    tokens: vec![t],
-                });
-                who.push(i);
-            }
+            // a lone step is a batch of one: the same call, whose bytes are the one-token
+            // call's (`dsv41-spec batch-rows` runs calls of width 1 in every case)
             // whether every batched step is a plain greedy pick: its token is then the device's
             // argmax of its row and no logits leave the card
             let greedy = batch

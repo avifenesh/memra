@@ -2542,6 +2542,38 @@ extern "C" int memra_v41_comp_pool2(const float* kv, const float* sc, long ld, v
     V41_ERR();
 }
 
+// The same pooling for the rows of a decode call over several sequences, each row's pair where
+// its sequence keeps it: kv[j] / sc[j] are device addresses of row j's two fp32 rows (even
+// position first, pitch d), out row j its latent. Every row is pooled, whether or not its pair
+// is complete this step (the caller drops the rows that are not): the launch does not depend on
+// which sequences complete a pair.
+__global__ void v41_comp_pool2_keys_kernel(const unsigned long long* __restrict__ kv,
+                                           const unsigned long long* __restrict__ sc, v41_bf* __restrict__ out,
+                                           long ldo, int d) {
+    int j = blockIdx.x;
+    const float* k0 = (const float*)kv[j];
+    const float* k1 = k0 + d;
+    const float* s0 = (const float*)sc[j];
+    const float* s1 = s0 + d;
+    for (int c = threadIdx.x; c < d; c += blockDim.x) {
+        float a = s0[c], b = s1[c];
+        float mx = fmaxf(a, b);
+        float e0 = expf(a - mx), e1 = expf(b - mx);
+        float sum = __fadd_rn(e0, e1);
+        float p0 = e0 / sum, p1 = e1 / sum;
+        out[(long)j * ldo + c] = v41_f2bf(__fadd_rn(__fmul_rn(k0[c], p0), __fmul_rn(k1[c], p1)));
+    }
+}
+
+extern "C" int memra_v41_comp_pool2_keys(const void* kv, const void* sc, void* out, long ldo, int rows, int d,
+                                         void* stream) {
+    if (rows <= 0) return rows < 0 ? 41034 : 0;
+    if (!kv || !sc || !out || d <= 0 || ldo < d) return 41034;
+    v41_comp_pool2_keys_kernel<<<rows, 128, 0, (cudaStream_t)stream>>>(
+        (const unsigned long long*)kv, (const unsigned long long*)sc, (v41_bf*)out, ldo, d);
+    V41_ERR();
+}
+
 // ---------------------------------------------------------------------------------------------
 // Indexer score: score[i][t] = bf16( sum_h bf16( relu(bf16(q[i,h,:] . k[t,:])) * w[i,h] ) ), masked
 // to -inf where t >= (start_pos + i + 1) / ratio or where the candidate block t/cb is not kept.

@@ -52,7 +52,7 @@
 use super::engram::EngramConsts;
 use super::experts::{CacheStats, ExpertCache, HostExperts};
 use super::tp::Group;
-use super::{BW, BatchRow, BatchSel, Buf, Geo, LayerState, LayerW, Part, Shared, Trace};
+use super::{BW, BatchRow, BatchSel, Buf, Dp, Geo, LayerState, LayerW, Part, Shared, Trace};
 use memra_gguf::safetensors::StModel;
 use std::sync::Arc;
 use std::time::Instant;
@@ -798,28 +798,190 @@ impl<'a> Runner<'a> {
         let (eb, pm) = self.embed(&tokens)?;
         let (hc, d) = (g.hc, g.dim);
         let pos_i32: Vec<i32> = positions.iter().map(|&p| p as i32).collect();
-        let up = self.grp.each(|_, cx| {
-            let e = Buf::from_bytes(&cx.ops.st, &eb)?;
-            let hh = cx.ops.buf(nr * hc * d * 2)?;
-            for k in 0..hc {
-                super::copy_2d(&cx.ops, &e, 0, d * 2, &hh, k * d * 2, hc * d * 2, d * 2, nr)?;
-            }
-            Ok((
-                hh,
-                Buf::from_f32(&cx.ops.st, &pm)?,
-                Buf::from_i32(&cx.ops.st, &pos_i32)?,
-            ))
-        })?;
-        let (mut h, mut pre, mut pos) = (Vec::new(), Vec::new(), Vec::new());
-        for (a, b, c) in up {
-            h.push(a);
-            pre.push(b);
-            pos.push(c);
-        }
         // `[row][rank]`: each row's CSA2 state for this call (its group's store swapped in per layer)
         let mut fwd: Vec<Vec<Shared>> = (0..nr)
             .map(|_| (0..n).map(|_| Shared::default()).collect())
             .collect();
+        // A step whose every layer is on the cards and that keeps no trace takes its host data
+        // from one block a rank (`StepBlock`), written here before the first launch: positions,
+        // pre-mix, embedding rows, every Engram layer's rows, every layer's tables.
+        let stepped = self.grp.cx.iter().all(|c| c.keyed && !c.trace)
+            && self.resident[..self.n_layers].iter().all(|w| w.is_some());
+        let layer_tab = super::step_layer_bytes(nr);
+        let (o_pos, o_pm) = (0usize, (nr * 4).next_multiple_of(8));
+        // the embedding rows start on a row boundary of their own pitch (`copy_2d` takes a row)
+        let o_emb = (o_pm + nr * hc * 4).next_multiple_of(d * 2);
+        let mut o_next = o_emb + (nr * d * 2).next_multiple_of(8);
+        // (layer, rows offset, scales offset) of each Engram layer's rows in the block
+        let mut eng_at: Vec<(usize, usize, usize)> = Vec::new();
+        let (ecols, ehd) = (g.engram_cols(), g.engram_head_dim);
+        if stepped && self.ec.is_some() && engram {
+            for &l in g.engram_layers.iter().filter(|&&l| l < self.n_layers) {
+                let rows_at = o_next;
+                let sc_at = rows_at + (nr * ecols * ehd).next_multiple_of(8);
+                o_next = sc_at + (nr * ecols * ehd / 32).next_multiple_of(8);
+                eng_at.push((l, rows_at, sc_at));
+            }
+        }
+        let o_layers = o_next;
+        let mut steps: Vec<super::StepLayer> = Vec::new();
+        let mut blk: Vec<Dp> = Vec::new();
+        if stepped {
+            let len = o_layers + self.n_layers * layer_tab;
+            let mut head = vec![0u8; o_layers];
+            head[o_pos..o_pos + nr * 4].copy_from_slice(&super::i32_bytes(&pos_i32));
+            head[o_pm..o_pm + nr * hc * 4].copy_from_slice(&super::f32_bytes(&pm));
+            head[o_emb..o_emb + eb.len()].copy_from_slice(&eb);
+            if let Some(ec) = &self.ec {
+                let (nl, cols) = (ec.layer_ids.len(), ec.cols());
+                for &(l, rows_at, sc_at) in &eng_at {
+                    let sl = ec
+                        .layer_ids
+                        .iter()
+                        .position(|&x| x == l)
+                        .ok_or("engram layer not in the constants")?;
+                    let mut mine: Vec<i64> = Vec::with_capacity(nr * cols);
+                    for hs in &hashes {
+                        debug_assert_eq!(hs.len(), nl * cols);
+                        mine.extend_from_slice(&hs[sl * cols..(sl + 1) * cols]);
+                    }
+                    let ew = self.resident[l].as_ref().unwrap()[0]
+                        .engram
+                        .as_ref()
+                        .ok_or("layer has no engram")?;
+                    let (er, es) =
+                        super::engram::gather_host(self.stm, &ew.table, ew.rows, ehd, &mine)?;
+                    head[rows_at..rows_at + er.len()].copy_from_slice(&er);
+                    head[sc_at..sc_at + es.len()].copy_from_slice(&es);
+                }
+            }
+            let mut bytes: Vec<Vec<u8>> = (0..n)
+                .map(|_| {
+                    let mut b = head.clone();
+                    b.resize(len, 0);
+                    b
+                })
+                .collect();
+            // every layer's tables, in layer order (a kv source sizes and counts what its rows
+            // append before the layers of its group read the count)
+            let mut carried: Vec<(usize, Vec<bool>)> = (0..n).map(|_| (0, Vec::new())).collect();
+            for li in 0..self.n_layers {
+                let kind = super::LayerKind::of(&g, li);
+                let gi = Self::group_of(&g, li);
+                let at = o_layers + li * layer_tab;
+                let mut this = super::StepLayer {
+                    off: at,
+                    ..Default::default()
+                };
+                let mut next = 0usize;
+                let mut by_rank: Vec<Vec<BatchRow<'_>>> =
+                    (0..n).map(|_| Vec::with_capacity(nr)).collect();
+                let mut fwd_it = fwd.iter_mut();
+                for (si, q) in seqs.iter_mut().enumerate() {
+                    if next >= nr || rows[next].0 != si {
+                        continue;
+                    }
+                    let f = fwd_it.next().expect("one state per row");
+                    if let Some(gi) = gi {
+                        for (fr, st) in f.iter_mut().zip(q.store[gi].iter_mut()) {
+                            fr.swap_group(st);
+                        }
+                    }
+                    let cap = q.cap;
+                    for (r, (l, fr)) in q.ls[li].iter_mut().zip(f.iter_mut()).enumerate() {
+                        by_rank[r].push(BatchRow {
+                            pos: positions[next],
+                            cap,
+                            ls: l,
+                            sh: fr,
+                        });
+                    }
+                    next += 1;
+                }
+                let mut res = Ok(());
+                for (r, rr) in by_rank.iter_mut().enumerate() {
+                    match self.grp.cx[r].plan_keys_step(
+                        kind,
+                        rr,
+                        &mut carried[r],
+                        &mut bytes[r][at..at + layer_tab],
+                    ) {
+                        Ok((tw, has)) => {
+                            this.tw = tw;
+                            this.has = has;
+                        }
+                        Err(e) => {
+                            res = Err(e);
+                            break;
+                        }
+                    }
+                }
+                drop(by_rank);
+                if let Some(gi) = gi {
+                    for (f, &(si, _)) in fwd.iter_mut().zip(rows) {
+                        for (fr, st) in f.iter_mut().zip(seqs[si].store[gi].iter_mut()) {
+                            fr.swap_group(st);
+                        }
+                    }
+                }
+                res?;
+                steps.push(this);
+            }
+            let br = &bytes;
+            // room for the widest small-M batch, so the block stays where it is while the
+            // batch changes width (every section is linear in the rows, up to its padding)
+            let cap = len.max(len.div_ceil(nr) * super::SMALL_M + 64 * (self.n_layers + 8) + d * 2);
+            blk = self.grp.each(|r, cx| {
+                if cx.step.as_ref().is_none_or(|b| b.cap() < len) {
+                    cx.step = Some(super::StepBlock::new(&cx.ops, cap)?);
+                }
+                let b = cx.step.as_mut().unwrap();
+                b.upload(&cx.ops, &br[r])?;
+                Ok(b.dev.p(&cx.ops.st))
+            })?;
+        }
+        let up = if stepped {
+            let bl = &blk;
+            self.grp.each(|r, cx| {
+                let b = cx.step.as_ref().unwrap();
+                let hh = cx.ops.tmp(nr * hc * d * 2)?;
+                for k in 0..hc {
+                    super::copy_2d(
+                        &cx.ops,
+                        &b.dev,
+                        o_emb / (d * 2),
+                        d * 2,
+                        &hh,
+                        k * d * 2,
+                        hc * d * 2,
+                        d * 2,
+                        nr,
+                    )?;
+                }
+                let pre = cx.ops.tmp(nr * hc * 4)?;
+                super::copy_d2d(&cx.ops, &b.dev, o_pm, &pre, 0, nr * hc * 4)?;
+                Ok((hh, pre, None, Dp(bl[r].addr() + o_pos as u64)))
+            })?
+        } else {
+            self.grp.each(|_, cx| {
+                let e = Buf::from_bytes(&cx.ops.st, &eb)?;
+                let hh = cx.ops.buf(nr * hc * d * 2)?;
+                for k in 0..hc {
+                    super::copy_2d(&cx.ops, &e, 0, d * 2, &hh, k * d * 2, hc * d * 2, d * 2, nr)?;
+                }
+                let pb = Buf::from_i32(&cx.ops.st, &pos_i32)?;
+                let pp = pb.p(&cx.ops.st);
+                Ok((hh, Buf::from_f32(&cx.ops.st, &pm)?, Some(pb), pp))
+            })?
+        };
+        let (mut h, mut pre, mut pos, mut pos_keep) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for (a, b, keep, c) in up {
+            h.push(a);
+            pre.push(b);
+            pos_keep.push(keep);
+            pos.push(c);
+        }
         let mut sel: Vec<BatchSel> = (0..n).map(|_| BatchSel::default()).collect();
         let mut tr: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
         let nt = self.taps.len();
@@ -860,10 +1022,23 @@ impl<'a> Runner<'a> {
                 debug_assert!(hashes.iter().all(|x| x.len() == nl * cols));
                 let stm = self.stm;
                 let hr = &h;
-                let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
-                self.grp.each_mut(&mut trs, |r, cx, t| {
-                    cx.engram(stm, &lw[r], &hr[r], &mine, nr, t)
-                })?;
+                if let Some(&(_, rows_at, sc_at)) = eng_at.iter().find(|x| x.0 == li) {
+                    let bl = &blk;
+                    self.grp.each(|r, cx| {
+                        cx.engram_step(
+                            &lw[r],
+                            &hr[r],
+                            Dp(bl[r].addr() + rows_at as u64),
+                            Dp(bl[r].addr() + sc_at as u64),
+                            nr,
+                        )
+                    })?;
+                } else {
+                    let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
+                    self.grp.each_mut(&mut trs, |r, cx, t| {
+                        cx.engram(stm, &lw[r], &hr[r], &mine, nr, t)
+                    })?;
+                }
             }
             if let Some(ti) = self.taps.iter().position(|&l| l == li) {
                 let (hs, tb, mix) = (&h, &taps, &self.tap_mix);
@@ -917,6 +1092,7 @@ impl<'a> Runner<'a> {
                 &pos,
                 &mut by_rank,
                 &mut sel,
+                steps.get(li).map(|sl| (blk.as_slice(), sl)),
                 &mut tr,
             );
             drop(by_rank);
@@ -939,6 +1115,7 @@ impl<'a> Runner<'a> {
             }
         }
         super::tally::layer(usize::MAX);
+        drop(pos_keep);
         self.stats.forwards += 1;
         self.stats.calls += nr;
         if self.grp.cx[0].trace {

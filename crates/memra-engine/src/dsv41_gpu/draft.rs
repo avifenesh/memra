@@ -315,6 +315,7 @@ impl Ctx {
             idx: Some(Buf::from_i32(&st, &idx)?),
             pos: None,
             keys: None,
+            keys_at: None,
         })
     }
 }
