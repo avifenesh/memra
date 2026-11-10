@@ -520,6 +520,41 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
             m,
             h,
         )?;
+        // the keyed entry on two separate buffers (the first half of the key rows as the window,
+        // the rest as the compressed rows) against the one-buffer entry: byte for byte
+        {
+            let kvh = kv.host(&st)?;
+            let nwin = kvh.len() / 1024 / 2;
+            let win = Buf::from_bytes(&st, &kvh[..nwin * 1024])?;
+            let comp = Buf::from_bytes(&st, &kvh[nwin * 1024..])?;
+            let tab =
+                Buf::from_bytes(&st, &v::key_refs(&vec![(win.p(&st), comp.p(&st), nwin); m]))?;
+            let o2 = ops.buf(m * h * 512 * 2)?;
+            ops.sparse_attn_keys(
+                q.p(&st),
+                h * 512,
+                tab.p(&st),
+                idx.p(&st),
+                k,
+                k,
+                sink.p(&st),
+                f.meta_f("scale") as f32,
+                o2.p(&st),
+                h * 512,
+                m,
+                h,
+            )?;
+            let name = dir.file_name().unwrap().to_string_lossy().to_string();
+            let (got, want) = (o2.host(&st)?, o.host(&st)?);
+            let diff = got.iter().zip(&want).filter(|(a, b)| a != b).count()
+                + got.len().abs_diff(want.len());
+            rep.raw(
+                &format!("sparse_attn/{name}/keyed_equals_one_buffer"),
+                diff == 0,
+                "byte-identical to the one-buffer entry",
+                format!("{} bytes, {diff} differ", want.len()),
+            );
+        }
         // Against the tilelang schedule (key blocks of 64, online max, bf16 P) the only difference
         // is fp32 order: tight. Against the torch stand-in, which rounds P to bf16 against one global
         // max, every probability can sit one bf16 rounding (2^-9 relative) apart: the stand-in is

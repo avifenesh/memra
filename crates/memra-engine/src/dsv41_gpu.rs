@@ -133,6 +133,22 @@ pub mod ffi {
             hd: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_v41_sparse_attn_keys(
+            q: *const c_void,
+            ldq: i64,
+            keys: *const c_void,
+            idx: *const i32,
+            ldi: i64,
+            topk: i32,
+            sink: *const f32,
+            scale: f32,
+            o: *mut c_void,
+            ldo: i64,
+            m: i32,
+            heads: i32,
+            hd: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_v41_comp_pool2(
             kv: *const f32,
             sc: *const f32,
@@ -1111,6 +1127,55 @@ impl Ops {
             self.sv()
         ))
     }
+    /// [`Self::sparse_attn`] with each query row's keys named by a [`key_refs`] table instead of
+    /// one buffer: the window rows and the compressed rows are read where they live.
+    #[allow(clippy::too_many_arguments)]
+    pub fn sparse_attn_keys(
+        &self,
+        q: Dp,
+        ldq: usize,
+        keys: Dp,
+        idx: Dp,
+        ldi: usize,
+        topk: usize,
+        sink: Dp,
+        scale: f32,
+        o: Dp,
+        ldo: usize,
+        m: usize,
+        heads: usize,
+    ) -> Result<(), String> {
+        launch!(memra_v41_sparse_attn_keys(
+            q.c(),
+            ldq as i64,
+            keys.c(),
+            idx.i(),
+            ldi as i64,
+            topk as i32,
+            sink.f(),
+            scale,
+            o.m(),
+            ldo as i64,
+            m as i32,
+            heads as i32,
+            512,
+            self.sv()
+        ))
+    }
+}
+
+/// The key table of [`Ops::sparse_attn_keys`], one entry a query row: `(window rows, compressed
+/// rows, window row count)`. An index below the count is a window row, any other index that many
+/// rows into the compressed rows (which may be null when no index reaches them).
+pub fn key_refs(rows: &[(Dp, Dp, usize)]) -> Vec<u8> {
+    let mut t = Vec::with_capacity(rows.len() * 24);
+    for &(win, comp, nwin) in rows {
+        t.extend_from_slice(&win.addr().to_le_bytes());
+        t.extend_from_slice(&comp.addr().to_le_bytes());
+        t.extend_from_slice(&(nwin as i32).to_le_bytes());
+        t.extend_from_slice(&0i32.to_le_bytes());
+    }
+    t
 }
 
 /// Weight formats of the block-quantized linears.
