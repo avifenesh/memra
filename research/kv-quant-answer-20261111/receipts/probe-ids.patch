@@ -1,0 +1,75 @@
+diff --git a/crates/memra-engine/src/bin/kvq_rows_probe.rs b/crates/memra-engine/src/bin/kvq_rows_probe.rs
+index 5217e71e08..9e2526f71c 100644
+--- a/crates/memra-engine/src/bin/kvq_rows_probe.rs
++++ b/crates/memra-engine/src/bin/kvq_rows_probe.rs
+@@ -31,7 +31,12 @@
+ //! `b` (`PRIME-LAST`).
+ //!
+ //! usage: kvq-rows-probe <model.gguf> <prompt-file> --rows R --out FILE
+-//!        [--decode none|eager|batch] [--decode-from prime|tokenwise] [--check-row K]
++//!        [--decode none|eager|batch] [--decode-from prime|tokenwise] [--check-row K] [--ids]
++//!
++//! `--ids` (memra#1177 answer-position cells): the prompt file is a JSON array of token ids,
++//! used as is, not text to encode. The answer cells pass the served chat prompt's ids
++//! (`/v1/tokenize` with the request's messages) followed by the served answer's ids, so the
++//! window rows are the answer positions and the rows before them.
+ 
+ use memra_engine::Engine;
+ use memra_engine::decode_batch::DevSamp;
+@@ -66,14 +71,15 @@ struct Args {
+     decode: Decode,
+     from: Start,
+     check_row: Option<usize>,
++    ids: bool,
+ }
+ 
+ fn parse_args(args: &[String]) -> Result<Args, String> {
+     let usage = "usage: kvq-rows-probe <model.gguf> <prompt-file> --rows R --out FILE \
+-                 [--decode none|eager|batch] [--decode-from prime|tokenwise] [--check-row K]";
++                 [--decode none|eager|batch] [--decode-from prime|tokenwise] [--check-row K] [--ids]";
+     let mut pos = Vec::new();
+-    let (mut rows, mut out, mut decode, mut from, mut check_row) =
+-        (None, None, Decode::None, Start::Prime, None);
++    let (mut rows, mut out, mut decode, mut from, mut check_row, mut ids) =
++        (None, None, Decode::None, Start::Prime, None, false);
+     let mut it = args.iter();
+     while let Some(a) = it.next() {
+         let mut val = || {
+@@ -84,6 +90,7 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
+         match a.as_str() {
+             "--rows" => rows = Some(val()?.parse::<usize>().map_err(|e| e.to_string())?),
+             "--out" => out = Some(val()?),
++            "--ids" => ids = true,
+             "--check-row" => check_row = Some(val()?.parse::<usize>().map_err(|e| e.to_string())?),
+             "--decode" => {
+                 decode = match val()?.as_str() {
+@@ -119,6 +126,7 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
+         decode,
+         from,
+         check_row,
++        ids,
+     })
+ }
+ 
+@@ -225,7 +233,20 @@ fn main() -> Res<()> {
+     let model = HybridModel::load_without_mtp(&e, &g)?;
+     let tok = Tokenizer::from_gguf(&g).map_err(|err| format!("tokenizer: {err}"))?;
+     let text = std::fs::read_to_string(&a.prompt)?;
+-    let prompt = tok.encode(&text, true);
++    let prompt: Vec<u32> = if a.ids {
++        text.trim()
++            .trim_start_matches('[')
++            .trim_end_matches(']')
++            .split(',')
++            .map(|v| {
++                v.trim()
++                    .parse::<u32>()
++                    .map_err(|err| format!("--ids: {v:?}: {err}"))
++            })
++            .collect::<Result<_, _>>()?
++    } else {
++        tok.encode(&text, true)
++    };
+     let t = prompt.len();
+     if a.rows + 16 >= t {
+         return Err("prompt shorter than the window plus the prime floor".into());
