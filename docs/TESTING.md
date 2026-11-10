@@ -544,6 +544,17 @@ whole prompt. The clauses:
 | `WIDE-ROW` | an agreeing row whose gap shift is above the floor | fails |
 | `TOO-MANY-NEAR-TIES` | more near ties than the budget | fails |
 | `UNCALIBRATED-FLIP` | a flip in a cell with no floor row | fails |
+| `KNOWN-ROW` | a row the floor row lists as known, no wider than recorded | printed and named; does not fail the cell by itself; not counted against the budget |
+| `KNOWN-ROW-WIDER` | a known row whose gap shift exceeds the recorded one | fails |
+
+**Known rows.** A calibration can hold flips above its own floor: rows where main's two programs
+already disagree by more than they do at any agreeing row of the prompt (on `board-2048`,
+Ornith-1.5-35B-A3B at rows 41 and 1,809; memra#1203 asks which program is right there). The
+floor row lists each with its two top-1 ids and margins. A known row inside a judged window is
+printed and named, and does not fail the cell by itself. A candidate whose gap shift at a known
+row exceeds main's recorded shift at that row fails. A known row covers its own position only.
+The gate's default window, the last 12 rows, holds none of them today. The tighter guard, the
+candidate's rows against main's stored rows at the same positions, is memra#1204.
 
 One function gives the verdict, `memra_engine::argmax_margin::judge`. The wrapper calls it through
 `argmax-margin-probe --judge <log>` on the measured log and on the canary's injected copy. For
@@ -555,8 +566,11 @@ at the contending ids exceeded the smaller margin; the spread at a flip is at le
 the two margins, so that never failed and the count was the only working check.
 
 **Floors** live in `tools/argmax-margin-floors.tsv`, one row per (model, prompt, prompt sha256,
-decode program, device as `nvidia-smi` names it), each with its row count, the row that set it
-and its receipt. Every key field must match exactly; there is no fallback floor and no floor from
+decode program, device as `nvidia-smi` names it), each with its row count, the row that set it,
+the p50, p99 and p99.9 of the agreeing rows' gap shift (nearest rank), its known rows and its
+receipt. The floor is the maximum, so it can sit far above the bulk: on `board-2048` the first
+six roster floors are 3.6 to 4.2 logits where the p99.9 is 1.1 to 3.3, each set by one row, and the
+row says so. Every key field must match exactly; there is no fallback floor and no floor from
 another prompt, model or device. A cell with no row is **UNCALIBRATED**: a flip fails, a table with
 no flip passes and says `PASS: UNCALIBRATED`, and its agreeing rows are not judged.
 `--require-floor` refuses such a cell (`argmax-margin-gate: UNCALIBRATED ...`, exit 1); the
@@ -566,8 +580,9 @@ release battery passes it for both cells of every roster model and reports the r
 **Calibrating a cell.** `tools/argmax-margin-gate.sh <model> [--prompt f] [--decode batch]
 --calibrate --logdir research/<lane>/<cell>` runs the probe over every row of the prompt (window
 `all`, T - 3 rows) and prints `CALIBRATION:` and the `FLOOR-ROW:` line; it judges nothing. Add
-the row to the floors table with the banked log as its receipt. The floor is the maximum, not a
-quantile, so its row names the count and the row that set it. Measured on the receipts of
+the row to the floors table with the banked log as its receipt, and keep the log whole: it is
+the cell's full per-row table. The floor is the maximum, not a quantile, so its row names the
+count, the row that set it and the percentiles under it. Measured on the receipts of
 `research/argmax-gate-rule-20261110/`: a floor taken from 12 rows is exceeded by an agreeing row
 in 54% of other 12-row windows of the same text, from 256 rows in 5.6%, from 1,024 rows in 0.8%,
 which is why the window is the whole prompt.
@@ -632,8 +647,9 @@ model remains an explicit SKIP. Machine-consumed margins preserve f32 round-trip
 the judge reads back the values the probe measured and a row that set a floor sits exactly on it.
 CPU controls (no GPU execution): `cargo test -p memra-engine --lib argmax_margin` (the verdict on
 synthetic logit rows: a wide-margin flip fails, a near tie inside the floor passes, near ties above
-the budget fail, a wide row fails, a flip with no floor fails, and the old predicate is pinned as
-true for every flip of 20,000 random row pairs), `cargo test -p memra-engine --bin
+the budget fail, a wide row fails, a flip with no floor fails, a known row no wider than recorded
+passes and is named, the same row wider fails, and the old predicate is pinned as true for every
+flip of 20,000 random row pairs), `cargo test -p memra-engine --bin
 argmax-margin-probe` (the `--judge` path) and `python3 tools/test_argmax_margin_gate.py` (the
 wrapper, with a stub measurement and the built probe as the judge; it fails, not skips, when the
 probe is not built).

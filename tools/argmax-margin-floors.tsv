@@ -4,12 +4,22 @@
 # agreeing row, measured by `tools/argmax-margin-gate.sh <model> [--decode batch] --calibrate`
 # over every row of the prompt (memra#1199, docs/decisions/ARGMAX-GATE-GAP-SHIFT-FLOOR.md).
 # `rows` is the number of agreeing rows the floor is the maximum of and `set_by_row` the row
-# that set it. `prompt_sha256` binds the row to the prompt's bytes. `device` is the name
-# nvidia-smi reports. `receipt` is the banked calibration log.
+# that set it. `p50`, `p99` and `p999` are the median, 99th and 99.9th percentile of those
+# rows' gap shift (nearest rank): a floor far above them was set by one or two rows.
+# `prompt_sha256` binds the row to the prompt's bytes. `device` is the name nvidia-smi reports.
+# `receipt` is the banked calibration log, the full per-row table.
+#
+# `known_rows` lists the calibration table's own flips whose gap shift is above the floor, as
+# `row:prefill_top1:margin_p:decode_top1:margin_d` joined by `;` (`-` for none). These are rows
+# where main's two programs already disagree by more than at any agreeing row of the prompt
+# (memra#1203 asks which program is right there). A known row inside a judged window is
+# printed and named, and does not fail the cell by itself. A candidate whose gap shift at a
+# known row exceeds main's recorded shift at that row fails. A tighter guard, the candidate's
+# rows against main's stored rows at the same positions, is memra#1204.
 #
 # Every field of the key must match exactly. There is no fallback row: a cell without one is
 # UNCALIBRATED (a flip fails, agreeing rows are not judged, the release battery refuses).
 # A row changes only by recalibration, in the PR whose decision record accepts the change of
 # numeric class, with the old and the new row shown (docs/TESTING.md).
 #
-# model	prompt	prompt_sha256	decode	device	floor	rows	set_by_row	receipt
+# model	prompt	prompt_sha256	decode	device	floor	rows	set_by_row	p50	p99	p999	known_rows	receipt
