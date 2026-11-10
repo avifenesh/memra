@@ -1232,10 +1232,12 @@ mod fa_split_ladder_tests {
     #[test]
     fn the_rung_is_keyed_on_gb10_only() {
         assert_eq!(fa_deep_part(true, 48, true), FaDeepPart::Gb10);
-        // every discrete 120a part (a 48-SM card, the 82-SM RTX 5090 Laptop, the RTX 5080, the
-        // RTX PRO 6000) and every other family at any SM count (L4 58, A100 108, H100 PCIe 114,
-        // H100 SXM 132) keeps today's ladder
+        // a unified 120a part with another SM count, every discrete 120a part (a 48-SM card, the
+        // 82-SM RTX 5090 Laptop, the RTX 5080, the RTX PRO 6000) and every other family at any SM
+        // count (L4 58, A100 108, H100 PCIe 114, H100 SXM 132) keeps today's ladder
         for (arch_120a, sm, unified) in [
+            (true, 20, true),
+            (true, 64, true),
             (true, 48, false),
             (true, 82, false),
             (true, 84, false),
@@ -1948,17 +1950,17 @@ pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
 /// The parts the deep rung of the split ladder applies to ([`fa_split_deep_rung`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FaDeepPart {
-    /// A unified-memory part of the 120a family: GB10 (48 SMs).
+    /// The unified-memory 48-SM part of the 120a family: GB10.
     Gb10,
     /// Any other part: no deep rung until its gates run there.
     Unmeasured,
 }
 
-/// The part class from the build's policy family, the SM count and unified memory. Pure.
+/// The part class from the build's policy family, the SM count and unified memory: the deep rung
+/// keys the part it was measured and gated on, a unified-memory 120a part with 48 SMs. Pure.
 pub(crate) fn fa_deep_part(arch_120a: bool, sm_count: i32, unified: bool) -> FaDeepPart {
-    let _ = sm_count;
-    match (arch_120a, unified) {
-        (true, true) => FaDeepPart::Gb10,
+    match (arch_120a, unified, sm_count) {
+        (true, true, 48) => FaDeepPart::Gb10,
         _ => FaDeepPart::Unmeasured,
     }
 }
@@ -1977,8 +1979,9 @@ pub(crate) fn fa_deep_part(arch_120a: bool, sm_count: i32, unified: bool) -> FaD
 /// Every other part keeps today's ladder. The RTX 5090 Laptop and the RTX PRO 6000 Max-Q were
 /// measured too (a 256-key split past 65k and a 512-key one past 65k look faster there), but the
 /// calibrated argmax gate cannot run at a 65k floor on a 24 GB card and the PRO 6000 rows are two
-/// runs; their rung is a follow-up with its own gates (the PRO 6000's also changes the literal
-/// ladder of `fa_decode_dcw_rows` and the host mirrors of the big-rig ladder).
+/// runs; their rung is a follow-up with its own gates, memra#1178 (first a chunked prefill
+/// reference in the margin probe; the PRO 6000's rung also changes the literal ladder of
+/// `fa_decode_dcw_rows` and the host mirrors of the big-rig ladder).
 pub(crate) fn fa_split_deep_rung(n_head_kv: usize, part: FaDeepPart) -> Option<(usize, usize)> {
     match (part, n_head_kv) {
         (FaDeepPart::Gb10, 3..=4) => Some((16_384, 512)),
