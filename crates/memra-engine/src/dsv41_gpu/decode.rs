@@ -76,6 +76,16 @@ pub struct Out {
     pub taps: Vec<Buf>,
     pub tap_row0: usize,
     pub tap_rows: usize,
+    /// a batched call ([`Runner::forward_batch`]): each row's own position (its sequence's);
+    /// empty for a call of one sequence, whose rows are consecutive from `sp`
+    pub batch: Vec<usize>,
+}
+
+impl Out {
+    /// The position of the call's row `row`.
+    pub fn pos_of(&self, row: usize) -> usize {
+        self.batch.get(row).copied().unwrap_or(self.sp + row)
+    }
 }
 
 /// One sequence's state on every rank.
@@ -137,6 +147,9 @@ pub struct Runner<'a> {
     taps: Vec<usize>,
     /// f32 `[window][hc]` of 1 / hc on every rank (the mean as a collapse)
     tap_mix: Vec<Buf>,
+    /// with the ranks' trace on: the router's selection of the last batched call, i32
+    /// `[layers][rows][top-k]` (a measurement: how many experts a batch reads)
+    pub last_routes: Vec<i32>,
     pub stats: Stats,
 }
 
@@ -180,6 +193,7 @@ impl<'a> Runner<'a> {
             host: None,
             taps: Vec::new(),
             tap_mix: Vec::new(),
+            last_routes: Vec::new(),
             stats: Stats::default(),
         })
     }
@@ -725,6 +739,7 @@ impl<'a> Runner<'a> {
                     taps,
                     tap_row0,
                     tap_rows,
+                    batch: Vec::new(),
                 }
             })
             .collect())
@@ -924,6 +939,9 @@ impl<'a> Runner<'a> {
         }
         self.stats.forwards += 1;
         self.stats.calls += nr;
+        if self.grp.cx[0].trace {
+            self.last_routes = std::mem::take(&mut tr[0].route_sel);
+        }
         let tap_rows = if taps.is_empty() { 0 } else { nr };
         Ok(Out {
             h,
@@ -933,6 +951,7 @@ impl<'a> Runner<'a> {
             taps,
             tap_row0: 0,
             tap_rows,
+            batch: positions,
         })
     }
 

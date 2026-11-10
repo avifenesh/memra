@@ -349,7 +349,10 @@ impl<'a> Runner<'a> {
         let g = self.g.clone();
         let (d, hd, win) = (g.dim, g.head_dim, g.window);
         let nt = dw.cfg.targets.len();
-        let pos0 = out.sp + row0;
+        if !out.batch.is_empty() && rows != 1 {
+            return Err("draft commit: a batched call's rows belong to different sequences".into());
+        }
+        let pos0 = out.pos_of(row0);
         let t0 = row0 - out.tap_row0;
         let taps = &out.taps;
         let stages = &dw.stages;

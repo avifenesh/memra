@@ -732,6 +732,70 @@ fn batch_time(
             out.insert(key, serde_json::json!(med(&ms[2..])));
         }
     }
+    // how many experts a layer the widest batch reads: the router's selection of four more steps
+    let w = [8usize, 4, 2, 1]
+        .into_iter()
+        .find(|&w| w <= input.len())
+        .unwrap_or(1);
+    {
+        let mut seqs: Vec<Seq> = input[..w]
+            .iter()
+            .map(|(p, f)| rn.seq_with_capacity(p.len() + f.len() + 16))
+            .collect();
+        let calls: Vec<Call> = input[..w]
+            .iter()
+            .enumerate()
+            .map(|(i, (p, _))| Call {
+                seq: i,
+                tokens: p.clone(),
+            })
+            .collect();
+        drop(rn.forward(&mut seqs, &calls)?);
+        rn.grp.trace = true;
+        for c in rn.grp.cx.iter_mut() {
+            c.trace = true;
+        }
+        let topk = rn.g.topk;
+        let mut counts: Vec<usize> = Vec::new();
+        let mut res = Ok(());
+        for k in 0..4 {
+            let rows: Vec<(usize, u32)> = input[..w]
+                .iter()
+                .enumerate()
+                .map(|(i, (_, f))| (i, f[k]))
+                .collect();
+            match rn.forward_batch(&mut seqs, &rows) {
+                Ok(_) => {
+                    for layer in rn.last_routes.chunks(w * topk) {
+                        let mut ids = layer.to_vec();
+                        ids.sort_unstable();
+                        ids.dedup();
+                        counts.push(ids.len());
+                    }
+                }
+                Err(e) => {
+                    res = Err(e);
+                    break;
+                }
+            }
+        }
+        rn.grp.trace = false;
+        for c in rn.grp.cx.iter_mut() {
+            c.trace = false;
+        }
+        res?;
+        let nlay = counts.len().max(1) as f64;
+        out.insert("routes_sequences".into(), w.into());
+        out.insert("routes_pairs_per_layer".into(), (w * topk).into());
+        out.insert(
+            "distinct_experts_per_layer_mean".into(),
+            serde_json::json!(counts.iter().sum::<usize>() as f64 / nlay),
+        );
+        out.insert(
+            "distinct_experts_per_layer_min_max".into(),
+            serde_json::json!([counts.iter().min(), counts.iter().max()]),
+        );
+    }
     out.insert("job".into(), "batch-time".into());
     out.insert("id".into(), id.into());
     out.insert("pass".into(), true.into());
@@ -852,6 +916,7 @@ fn taped_out(rn: &mut Runner, bytes: &[u8], sp: usize, rows: usize) -> Result<Ou
         taps,
         tap_row0: 0,
         tap_rows: rows,
+        batch: Vec::new(),
     })
 }
 
