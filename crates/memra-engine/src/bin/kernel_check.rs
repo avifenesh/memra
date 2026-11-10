@@ -8505,6 +8505,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         report(&format!("len0={len0} T={t}"), run(&rows)?);
                     }
                 }
+                // Each side of every split-ladder rung edge this device's ladder has for this KV
+                // head count, up to the cache's depth: rows that end on the edge (the near
+                // rung) and rows that start just past it (the far rung). A launch whose rows
+                // straddle an edge is never formed (`case` refuses it, as the verify does).
+                let split = |t: usize| memra_engine::fa_split_keys_pub(t, nhkv_r);
+                let edges: Vec<usize> = (1..=deep_max)
+                    .filter(|&t| split(t) != split(t + 1))
+                    .collect();
+                let (mut edge_cases, mut edge_refused) = (0usize, 0usize);
+                for &edge in &edges {
+                    for (len0, t) in [
+                        (edge.saturating_sub(9), 9usize),
+                        (edge.saturating_sub(4), 4),
+                        (edge.saturating_sub(2), 2),
+                        (edge, 2),
+                        (edge, 4),
+                        (edge, 9),
+                        (edge + 27, 4),
+                    ] {
+                        if len0 + t > deep_max + 16 {
+                            continue;
+                        }
+                        let rows: Vec<(usize, usize)> = (0..t).map(|r| (0, len0 + r + 1)).collect();
+                        let r = run(&rows)?;
+                        edge_cases += r.is_some() as usize;
+                        edge_refused += r.is_none() as usize;
+                        report(&format!("rung edge {edge} len0={len0} T={t}"), r);
+                    }
+                }
                 // two sessions in one launch (the pooled verify): each session's rows are its
                 // own groups, sessions never share a block
                 for (la, ta, lb, tb) in [
@@ -8532,6 +8561,84 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "FAIL"
                     }
                 );
+                println!(
+                    "FA-VERIFY-ROWS rung edges gqa={} ({nh_r}/{nhkv_r}): split ladder edges {edges:?} up to \
+                     {deep_max} keys, {edge_cases} cases on their two sides (counted above), {edge_refused} refused {}",
+                    nh_r / nhkv_r,
+                    if edge_refused == 0 && (edges.is_empty() || edge_cases > 0) {
+                        "OK"
+                    } else {
+                        fails += 1;
+                        "FAIL"
+                    }
+                );
+
+                // The device-counter launch (`fa_decode_dc`: the captured decode graph's
+                // attention, and the draft's) against `fa_decode` for one query row, bit for
+                // bit, on each side of every rung edge, sized at the row's own depth and at
+                // its rung's last depth (a decode graph segment's bucket). The draft sizes
+                // its launch at its scratch capacity, which can sit past an edge its rows are
+                // under: that launch walks the far rung's partition on every path the draft
+                // takes, and has no eager twin.
+                {
+                    let (mut dc_cases, mut dc_bad) = (0usize, 0usize);
+                    let kfull = e.view_u8(&kc_a, kc_a.len());
+                    let vfull = e.view_u8(&vc_a, vc_a.len());
+                    let mut q1 = e.zeros(hd * nh_r)?;
+                    e.copy_into(&mut q1, 0, &qd_all, hd * nh_r)?;
+                    for &edge in &edges {
+                        for t_kv in [edge - 1, edge, edge + 1, edge + 9] {
+                            if t_kv > deep_max + 16 {
+                                continue;
+                            }
+                            let mut seg_end = t_kv;
+                            while seg_end < deep_max + 16 && split(seg_end + 1) == split(t_kv) {
+                                seg_end += 1;
+                            }
+                            let kview = e.view_u8(&kc_a, t_kv * ktb);
+                            let vview = e.view_u8(&vc_a, t_kv * vtb);
+                            let mut o_e = e.zeros(hd * nh_r)?;
+                            e.fa_decode(
+                                &q1, &kview, &vview, &mut o_e, hd, nh_r, nhkv_r, t_kv, scale, ktb,
+                                vtb,
+                            )?;
+                            let a = e.dtoh(&o_e)?;
+                            let t_dev = e.htod_i32(&[t_kv as i32])?;
+                            for bucket in [t_kv, seg_end] {
+                                let mut o_d = e.zeros(hd * nh_r)?;
+                                e.fa_decode_dc(
+                                    &q1, &kfull, &vfull, &mut o_d, hd, nh_r, nhkv_r, &t_dev,
+                                    bucket, scale, ktb, vtb, false,
+                                )?;
+                                let b = e.dtoh(&o_d)?;
+                                let bad = a
+                                    .iter()
+                                    .zip(&b)
+                                    .filter(|(x, y)| x.to_bits() != y.to_bits())
+                                    .count();
+                                dc_cases += 1;
+                                dc_bad += bad;
+                                if bad != 0 {
+                                    println!(
+                                        "  FA-DC-EAGER t_kv={t_kv} bucket={bucket}: bitdiff={bad} FAIL"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    println!(
+                        "FA-DC-EAGER gqa={} ({nh_r}/{nhkv_r}): fa_decode_dc vs fa_decode for one row at the split \
+                         ladder edges {edges:?}, {dc_cases} cases (each side; dc sized at the row and at its rung's \
+                         end): bitdiff={dc_bad} {}",
+                        nh_r / nhkv_r,
+                        if dc_bad == 0 && (edges.is_empty() || dc_cases > 0) {
+                            "OK"
+                        } else {
+                            fails += 1;
+                            "FAIL"
+                        }
+                    );
+                }
 
                 // The served entry on each side of its depth floor: below it every row is a
                 // group of one and the seqs launch runs; at it the rows walk launches. Both
