@@ -542,16 +542,98 @@ The host: a rank's issue thread makes 52 launches a layer at 2.4 us and spends 7
 204 us of issue a layer against 276 of card time. Below about 200 us a layer the issue thread is
 the bound, so past the next cuts a rank's step has to become one CUDA graph replay.
 
-### Prefill on four cards: the strided peer copy
+### One row after the first pass: what paid and what did not
+
+Second and third pass of the same block (`receipts/four2`, `receipts/four3`; every arm gated at
+four ranks on device-push and on peer-pull before it was timed; no slowdown flag in 46 runs).
+
+| change on top of D | step, ms | against D |
+|---|---|---|
+| D (`5d74b1db2a`) | 12.349, 12.360 (two passes) | 1.000 |
+| the mHC collapse and its RMSNorm in one launch | 13.327 | 1.079 |
+| that plus device copies of at most 1 MiB as kernels | 13.384 | 1.084 |
+| the mHC mixes of a few rows on the second stream, under their sublayer | 11.624 | 0.940 |
+
+The fused collapse + RMSNorm kernel was a regression of 25 us a layer at every row count (blocks
+of 1, 2, 4, 8 rows: +1.0 ms each): one thread did 80 single-element strided loads where the two
+kernels load 16-byte chunks; its launch took 18 us against 5.5 for the two. The copy kernels moved
+3.9 us a layer from copy calls into kernels and bought nothing. Both are removed. The mixes under
+the sublayer are worth 18 us a layer: nothing between a sublayer's mixes and their first reader
+(the post-mix after the sublayer) needs them, so the two launches a sublayer run on the second
+stream beside the attention and the MoE. The best exact one-row step on four cards is 11.62 ms
+(290.6 us a layer all in), from 17.55.
+
+### Prefill on four cards: transfers between the cards
 
 A prefill on four separate cards was slower than on one: 4,096 tokens in 9.19 s (A) and 7.58 s (B),
 32,768 in 73.8 s and 59.9 s, where one card takes 32.5 ms a layer. The trace of B
 (`receipts/four/pre-trace`) has it in one row: per rank per layer the peer copies take 114 to 172 ms
 for 0.214 GB, 1.2 to 1.9 GB/s, and every kernel together 12.9 ms (expert tiles 5.08, dense 1.89,
-mHC mixes 1.55, `act_quant` 1.37, sparse attention 1.06). A peer copy of a strided region (a block
-of columns: thousands of rows of a few KB) between two cards is issued a row at a time; a
-contiguous block between the same cards moves at 49 GB/s, and two ranks sharing a card never showed
-it because their copies stay on the card.
+mHC mixes 1.55, `act_quant` 1.37, sparse attention 1.06). The unsplit route's own capture
+(`receipts/prefill-n4`) shows the same: 138 ms of peer copies a layer for 0.267 GB.
+
+What it is not: the stride. Packing a region of columns into a contiguous block on the producer
+and copying that changed nothing (7.25 s against 7.59; `receipts/four2`). What the copy records say
+(`copy_rate.py`, `copy_pairs.py` over the traces): the same copy has a best time at the link's rate
+and a median 25 times slower. 10 MB: 0.19 ms best (54 GB/s), 4.6 ms median. 84 MB: 1.49 ms best,
+42.6 median. 264 MB: 4.7 ms best (56 GB/s), 139.6 median. A copy that runs alone gets 50 to 56 GB/s
+on almost every pair of cards; with four in flight the median is 1.2 to 1.9 GB/s, in any pattern:
+pulling from the peers in ring order (each card the source of one copy and the destination of one
+at a time) left the rate of a copy where it was.
+
+| 4,096 / 32,768 tokens, time to first token, s | |
+|---|---|
+| experts by owner, peer copies (A) | 9.19 / 73.8 |
+| split by rows, peer copies (B) | 7.58 / 59.9 |
+| + contiguous blocks | 7.25 / 57.5 |
+| + padding skipped in the tile body | 7.21 / 57.5 |
+| + the mHC sums split across ranks (one more gather a sublayer) | 7.47 / 58.4 |
+| + hidden columns gathered as codes, ring order (peer copies) | 4.25 / 33.1 |
+| the same build, large gathers as kernel stores into the peers (device-push) | 2.55 / 20.0 |
+
+The last two rows are one build on its two transports. Gathering the split MoE's hidden columns
+as e4m3 codes and scales (each rank quantizes its own columns; the 32-wide blocks lie inside a
+rank's columns) took the gathered bytes from 0.214 to 0.164 GB a rank a layer, which is the copy
+path's gain. Under device-push a gather over 256 KiB makes no copy call: the producer's kernel
+stores its region into its slot of every peer's inbox and publishes an event, the consumers unpack.
+That is 2.85 times the copy path as it was and still 63.7 ms a layer where the kernels are 13: the
+stores land at a few GB/s a card with twelve flows at once, the same order as the copies. One
+transfer at a time at the single-flow rate would move a layer's 0.66 GB (all four ranks) in 12 ms.
+The mechanism of the collapse is not known yet; the four cards sit on four root buses.
+
+### Two cards after the block: what a transfer costs
+
+`dsv41-bench p2p` on two of the cards (`receipts/p2p-01`; GB/s a flow, best equals median to 0.1):
+
+| | 8 MiB | 64 MiB | 256 MiB |
+|---|---|---|---|
+| copy engine, one flow | 54.2 | 55.9 | 56.1 |
+| copy engine, both directions at once | 47.6 | 49.4 | 49.6 |
+| kernel storing into the peer, one flow | 7.6 | 7.7 | 7.7 |
+| kernel storing into the peer, both directions at once | 7.5 | 7.5 | 7.5 |
+
+Between blocks that live across the copies, two flows do not collapse; the kernel store is the
+same 7.6 GB/s a source whatever else runs. The same two cards on a prefill (two ranks, 20 layers,
+`receipts/two`, time to first token at 4,096 / 32,768 tokens):
+
+| | |
+|---|---|
+| plain strided peer copies (`5d74b1db2a`) | 27.5 s / stopped |
+| packed peer copies, both ranks at once | 0.72 / 22.6 s |
+| packed peer copies, one transfer at a time | 0.75 / 5.29 s |
+| kernel stores, both at once | 0.96 / 7.02 s |
+| kernel stores, one at a time | 1.23 / 9.34 s |
+
+So the collapse needs both: blocks allocated for the gather (the large ones of a 32,768-token
+prefill, 264 MB) and transfers at once. One-token decode on the pair, 20 layers: 9.304 ms a step
+unsplit, 7.621 at `5d74b1db2a`, 7.339 with the mHC mixes under their sublayer.
+
+Byte gates of this branch's head on one card (`receipts/gates-pu2` for `5d74b1db2a`): kernels 138
+checks, layer 161 with the 111 saved tensors equal to the reference set, tp at 2 and 4 ranks on
+peer-pull, the default transport and device-push (the small-gather stress on a shared card: 0
+words differ, its control caught), decode on three captures: 0 failed. The control of the launcher
+fix (`receipts/red1`): the previous head fails `stress/sparse_attn_two_threads_two_widths` with a
+CUDA error, as it has to.
 
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
@@ -668,10 +750,14 @@ weight traffic: 1.1 ms.
   size with their rate, and the idle time before copies and kernels. `prefill_ab_summary.py`: an
   interleaved `dsv41-tpbench` prefill A/B on the time to the first token (the bench's `forward_s` is
   the host's issue time).
+- `copy_rate.py`, `copy_pairs.py`: the copies of a trace by size (best and median duration and
+  rate) and by card pair, with how many are in flight at once.
 - `receipts/`: one directory per comparison (`multi-*`: timed arms with their kernel gates;
   `profab-*`: per-op profiles; `gemm-*`: GEMM shapes; `look-*`, `ncul-*`, `ncu-*`: ncu reports;
   `base`, `check-*`, `ab-*`, `prof-*`: the first half of the lane; `nrank-*`: N-rank decode traces;
-  `nrankab-*`: N-rank decode A/Bs; `gates-*`: every byte gate on one build; `four`: the four-card
-  phase, one lease: gates, decode A/B, traces, rows, prefill). nsys and ncu report files are
+  `nrankab-*`: N-rank decode A/Bs; `gates-*`: every byte gate on one build; `four`, `four2`,
+  `four3`: the four-card phases, one lease each: gates, decode A/B, traces, rows, prefill; `two`:
+  the same on a pair; `p2p-*`: the transfer probe; `prefill-n4`: the unsplit route's prefill trace
+  on four cards; `red1`: the control of the launcher fix). nsys and ncu report files are
   not kept; their exports and summaries are. The 250 ms telemetry files are gzipped; the box's
   working directory in the logs reads `$LANE`.

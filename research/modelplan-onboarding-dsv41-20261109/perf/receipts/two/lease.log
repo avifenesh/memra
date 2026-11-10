@@ -1,0 +1,56 @@
+gate-B-device-push start 09:09:28
+gate-B-device-push rc 0 end 09:10:30
+gate-B-device-push: 360 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1]: 839983 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+gate-B-peer-pull start 09:10:30
+gate-B-peer-pull rc 0 end 09:10:44
+gate-B-peer-pull: 358 checks, 0 failed 0 FAIL lines
+gate-C-device-push start 09:10:44
+gate-C-device-push rc 0 end 09:10:59
+gate-C-device-push: 360 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1]: 863661 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+gate-C-peer-pull start 09:10:59
+gate-C-peer-pull rc 0 end 09:11:13
+gate-C-peer-pull: 358 checks, 0 failed 0 FAIL lines
+gate-F-peer-pull-serial start 09:11:13
+gate-F-peer-pull-serial rc 0 end 09:11:27
+gate-F-peer-pull-serial: 358 checks, 0 failed 0 FAIL lines
+gate-G-device-push-serial start 09:11:27
+gate-G-device-push-serial rc 0 end 09:11:42
+gate-G-device-push-serial: 360 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1]: 881014 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+dec-run1-A start 09:11:42
+dec-run1-A rc 0 end 09:12:52
+dec-run2-B start 09:12:52
+dec-run2-B rc 0 end 09:13:03
+dec-run3-C start 09:13:03
+dec-run3-C rc 0 end 09:13:15
+dec-run4-C start 09:13:15
+dec-run4-C rc 0 end 09:13:26
+dec-run5-B start 09:13:26
+dec-run5-B rc 0 end 09:13:37
+dec-run6-A start 09:13:37
+dec-run6-A rc 0 end 09:13:49
+dec-run7-A start 09:13:49
+dec-run7-A rc 0 end 09:14:00
+dec-run8-B start 09:14:00
+dec-run8-B rc 0 end 09:14:11
+dec-run9-C start 09:14:11
+dec-run9-C rc 0 end 09:14:22
+pre-run1-D start 09:14:22
+pre-run1-D rc 143 end 09:16:39
+pre-run2-E start 09:16:39
+pre-run2-E rc 0 end 09:17:13
+pre-run3-F start 09:17:13
+pre-run3-F rc 0 end 09:17:30
+pre-run4-G start 09:17:30
+pre-run4-G rc 0 end 09:17:52
+pre-run5-H start 09:17:52
+pre-run5-H rc 0 end 09:18:11
+pre-trace start 09:18:11
+pre-trace rc 0 end 09:18:34
+pre-trace arm H
+FOUR-INNER-DONE
