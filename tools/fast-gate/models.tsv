@@ -245,3 +245,13 @@ sstress	cmd	tools/serve-stress-gate.sh	-	-	-
 # drafter on the same models the same day. Smoke tier here (q27-p1, ~1 min); the 6-cell matrix
 # is `--full`. Teeth: `tools/accept-gate.sh --teeth` (MEMRA_MMQ_F8F4=1 must FAIL it).
 accept	cmd	tools/accept-gate.sh	-	-	-
+# dsparkq38: the DSpark one-shot exactness gate on a drafter shape no other probe loads
+# (memra#1159): Qwen3.8-27B with the q38 DSpark agentic export, a drafter with no sliding layer
+# (its KV window is usize::MAX), an accept-rate head, the ladder verify window (the deferred
+# device-chain verify) and verify graphs, the served route's default for that window. Before the
+# fix its KV ring was sized 5 rows and the first prime ingest panicked; the DFlash2 drafter (a
+# finite window) never reaches that shape. Gate = dspark_q38_gate exits 0 only on ALL EXACT (spec
+# stream byte-equal to plain greedy on its three fixed id prompts). On a rig without the model or
+# the drafter the probe line says SKIP and the command never runs (the runner checks a cmd row's
+# absolute-path arguments first); the run still exits non-zero, like any missing model.
+dsparkq38	cmd	target/release/dspark_q38_gate	/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /data/ai-ml/models/q38-dspark-agentic	-	MEMRA_DSPARK_VT=ladder MEMRA_DSPARK_VERIFY_GRAPH=1

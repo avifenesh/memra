@@ -605,6 +605,15 @@ default build (flags doctrine: winners are defaults). Its teeth: `tools/accept-g
 the verdict must invert (proven both directions, `research/accept-gate-20260806/`); `--control`
 re-measures in a second independent server boot, which is what licenses the single-shot read.
 
+`dsparkq38` (memra#1159) runs `dspark_q38_gate` on Qwen3.8-27B with the q38 DSpark agentic
+drafter, `MEMRA_DSPARK_VT=ladder` and `MEMRA_DSPARK_VERIFY_GRAPH=1`, and passes only on `ALL
+EXACT`. It is the only probe that loads a drafter with no sliding layer (its window is
+`usize::MAX`), an accept-rate head and the deferred ladder verify. `map.tsv` plans it for any
+change to `crates/memra-engine/src/dflash.rs` or the gate source. The runner treats a `cmd` row's
+absolute-path arguments as artifacts: when one is missing, after the build, the probe line reads
+`SKIP (no artifact at ...)`, the command never runs, and the run still exits non-zero, like every
+missing model. Relative paths, env-column paths and `--x=/path` arguments are not checked.
+
 The `k27` argmax probe pins `MEMRA_FA_SPLIT=8` in its
 env column so its golden is rig-portable across the 82-vs-188-SM `fa_split_keys` rung
 (lane/k27-divergence, a near-tie flip class, not a defect; `k27div-probe` is the

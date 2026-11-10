@@ -185,6 +185,15 @@ run_probe() {
         local cmdline=($model); [ "$prompt" != "-" ] && cmdline+=($prompt)
         # A command under target/ (models.tsv's samp row) is a cargo product: run what the build wrote.
         [ "${cmdline[0]#target/}" != "${cmdline[0]}" ] && cmdline[0]="${CARGO_TARGET_DIR:-target}/${cmdline[0]#target/}"
+        # An absolute-path argument is an artifact (a model, a drafter). One this rig lacks SKIPs
+        # by name before the command runs, like a model probe's missing model; a SKIP still
+        # fails the run (dsparkq38, memra#1159).
+        local arg
+        for arg in "${cmdline[@]:1}"; do
+            case "$arg" in
+                /*) [ -e "$arg" ] || { echo "  $id: SKIP (no artifact at $arg)"; PROBE_VERDICT="SKIP"; return 1; } ;;
+            esac
+        done
         local t0 t1; t0=$(date +%s)
         lockrun env "${envs[@]}" timeout 900 "${cmdline[@]}" > "$log" 2>&1
         local rc=$?; t1=$(date +%s)
