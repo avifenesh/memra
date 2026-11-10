@@ -592,9 +592,23 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
                                                       const uint8_t* __restrict__ B, long ldb,
                                                       const uint8_t* __restrict__ Bs, long ldbs, float bscale2,
                                                       void* __restrict__ C, long ldc, int M, int N, int K, int m0,
-                                                      int n0, uint8_t* sm) {
+                                                      int n0, uint8_t* sm, const int* __restrict__ rix = nullptr) {
     using P = V41Pipe<WF, BM>;
+    // rix: row i of the tile's M is row rix[i] of A and As (the expert tiles over activations quantized
+    // once a token); null: row i
+    auto arow = [&](int i) -> long { return rix ? (long)rix[i] : (long)i; };
     constexpr int BN = P::BN;
+    // a thread copies the same A rows in every stage (its chunks c, c + 256, ...) and reads one row's scale
+    // codes: their rows in A are read once here, not once a stage (a load in front of every stage's copies
+    // would sit in the pipeline's path)
+    constexpr int NCH = (BM * 2 * P::PK + 255) / 256;
+    long ar[NCH];
+#pragma unroll
+    for (int j = 0; j < NCH; ++j) {
+        int r = ((int)threadIdx.x + j * 256) / (2 * P::PK);
+        ar[j] = (r < BM && m0 + r < M) ? arow(m0 + r) : 0;
+    }
+    long asrow = ((int)threadIdx.x < BM && m0 + (int)threadIdx.x < M) ? arow(m0 + (int)threadIdx.x) : 0;
     constexpr int MI = BM / 32;  // 16-row MMA tiles per warp (warp rows BM / 2)
     int tid = threadIdx.x, warp = tid >> 5, lane = tid & 31;
     int g = lane >> 2, t = lane & 3;
@@ -610,11 +624,11 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
         int kb0 = i * P::PK;
         // A: BM rows x CR chunks of 16 B (two per K block)
         constexpr int CR = 2 * P::PK;
-        for (int c = tid; c < BM * CR; c += 256) {
+        for (int c = tid, j = 0; c < BM * CR; c += 256, ++j) {
             int r = c / CR, q = c % CR;
             int kb = kb0 + (q >> 1);
             bool ok = (m0 + r < M) && (kb < KB);
-            const uint8_t* src = ok ? A + (long)(m0 + r) * lda + kb0 * 32 + q * 16 : A;
+            const uint8_t* src = ok ? A + ar[j] * lda + kb0 * 32 + q * 16 : A;
             v41_cp16(sA + r * P::PRS + q * 16, src, ok);
         }
         if (WF == 0) {
@@ -641,9 +655,11 @@ __device__ __forceinline__ void v41_gemm_f8_pipe_tile(const uint8_t* __restrict_
         uint32_t code = 0;
         if (i >= NS) return code;
         if (tid < BM) {
-            if (m0 + tid < M)
+            if (m0 + tid < M) {
+                const uint8_t* asr = As + asrow * ldas;
                 for (int u = 0; u < P::PK; ++u)
-                    if (kb0 + u < KB) code |= (uint32_t)As[(long)(m0 + tid) * ldas + kb0 + u] << (8 * u);
+                    if (kb0 + u < KB) code |= (uint32_t)asr[kb0 + u] << (8 * u);
+            }
         } else if (tid >= 128) {
             int c = tid - 128;
             if (WF == 0) {
@@ -1032,16 +1048,14 @@ __global__ void __launch_bounds__(256) v41_gemv_f8_kernel(const uint8_t* __restr
 // a token's six experts). The dense FP8 GEMMs keep the 8-column body: a single wave of blocks is
 // bound by its load rounds, and 16 rows of fragments leave registers for half as many K blocks a
 // round (wo_b 44 -> 68 us).
-// X2: the body runs on each 256-thread half of a 512-thread block (the fused w1 + w3 kernel below): `sT` is
-// the half's terms, and each sum is handed back in `*accp` instead of being stored.
-template <int WF, int OUTF, int SU, int ONE, int X2 = 0>
+template <int WF, int OUTF, int SU, int ONE>
 __device__ __forceinline__ void v41_gemv_f8_cols16(const uint8_t* __restrict__ A, long lda,
                                                    const uint8_t* __restrict__ As, long ldas,
                                                    const uint8_t* __restrict__ B, long ldb,
                                                    const uint8_t* __restrict__ Bs, long ldbs, float bscale2,
                                                    void* __restrict__ C, long ldc, int M, int N, int K, int n0,
-                                                   int P, float* sT, float* accp = nullptr) {
-    int tid = X2 ? (int)(threadIdx.x & 255) : (int)threadIdx.x;
+                                                   int P, float* sT) {
+    int tid = threadIdx.x;
     int warp = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
     int KB = K / 32;
     // the K blocks run in P parts so that a part's terms fit the block's shared memory; the sum
@@ -1160,10 +1174,6 @@ __device__ __forceinline__ void v41_gemv_f8_cols16(const uint8_t* __restrict__ A
     // the next part's terms overwrite these
     if (pb < KB) __syncthreads();
     }
-    if (X2) {
-        *accp = acc;
-        return;
-    }
     if (tid < M * 16) {
         int r = tid >> 4, cc = tid & 15;
         int cn = n0 + cc;
@@ -1201,7 +1211,8 @@ __global__ void __launch_bounds__(256, BM == 64 ? 2 : 1) v41_gemm_f8_pipe_tiles_
                                                                      const int* __restrict__ ntiles,
                                                                      const V41ExpW* __restrict__ ew, int proj,
                                                                      long ldb, long ldbs, void* __restrict__ C,
-                                                                     long ldc, int N, int K) {
+                                                                     long ldc, int N, int K,
+                                                                     const int* __restrict__ ridx) {
     extern __shared__ __align__(16) uint8_t v41_pipe_sm[];
     // the tile is loaded with the count, not after it: one memory round trip, not two (an entry past
     // the count is inside the list's allocation and is not used)
@@ -1209,9 +1220,11 @@ __global__ void __launch_bounds__(256, BM == 64 ? 2 : 1) v41_gemm_f8_pipe_tiles_
     if ((int)blockIdx.y >= *ntiles) return;
     const V41ExpW& w = ew[tl.expert];
     void* c = OUTF ? (void*)((float*)C + (long)tl.row0 * ldc) : (void*)((v41_bf*)C + (long)tl.row0 * ldc);
-    v41_gemm_f8_pipe_tile<WF, OUTF, BM>(A + (long)tl.row0 * lda, lda, As + (long)tl.row0 * ldas, ldas, w.w[proj], ldb,
-                                        w.s[proj], ldbs, w.scale2[proj], c, ldc, tl.rows, N, K, tl.m0,
-                                        blockIdx.x * 128, v41_pipe_sm);
+    // ridx: the list's row r (a pair, C's row) reads row ridx[r] of A and As (a token's codes, quantized once)
+    long a0 = ridx ? 0 : (long)tl.row0;
+    v41_gemm_f8_pipe_tile<WF, OUTF, BM>(A + a0 * lda, lda, As + a0 * ldas, ldas, w.w[proj], ldb, w.s[proj], ldbs,
+                                        w.scale2[proj], c, ldc, tl.rows, N, K, tl.m0, blockIdx.x * 128, v41_pipe_sm,
+                                        ridx ? ridx + tl.row0 : nullptr);
 }
 
 template <int WF, int OUTF, int SU, int ONE>
@@ -1376,11 +1389,14 @@ static long v41_f4s_bytes(int kn, int bm, int sw) {
 
 // bm: the plan's tile rows (64 or 128: the pipelined body; <= V41_SM_MAX: every tile has at most that
 // many rows and the small-M body runs); max_tiles bounds *ntiles.
-extern "C" int memra_v41_gemm_f8_tiles(const void* a, long lda, const void* as, long ldas, const void* tiles,
-                                       const int* ntiles, int max_tiles, const void* ew, int proj, long ldb, long ldbs,
-                                       int wfmt, void* c, long ldc, int out_f32, int n, int k, int bm, void* stream) {
+// ridx (the pipelined body only): the list's row r reads row ridx[r] of a and as.
+static int v41_gemm_f8_tiles_impl(const void* a, long lda, const void* as, long ldas, const void* tiles,
+                                  const int* ntiles, int max_tiles, const void* ew, int proj, long ldb, long ldbs,
+                                  int wfmt, void* c, long ldc, int out_f32, int n, int k, int bm, const int* ridx,
+                                  void* stream) {
     if (k % 32 || n <= 0 || lda % 16 || max_tiles < 0 || max_tiles > 65535 || proj < 0 || proj > 2) return 41026;
     if (ldb % 16) return 41026;
+    if (ridx && bm != 64 && bm != 128) return 41026;
     if (max_tiles == 0) return 0;
     cudaStream_t st = (cudaStream_t)stream;
     const uint8_t *A = (const uint8_t*)a, *As = (const uint8_t*)as;
@@ -1437,7 +1453,7 @@ extern "C" int memra_v41_gemm_f8_tiles(const void* a, long lda, const void* as, 
         V41_CARVE_MAX((v41_gemm_f8_pipe_tiles_kernel<WF, OF, BMX>));                                           \
         dim3 gp((n + 127) / 128, max_tiles);                                                                   \
         v41_gemm_f8_pipe_tiles_kernel<WF, OF, BMX><<<gp, 256, sm_, st>>>(A, lda, As, ldas, T, ntiles, E, proj, ldb, \
-                                                                          ldbs, c, ldc, n, k);                 \
+                                                                          ldbs, c, ldc, n, k, ridx);           \
     } while (0)
 #define V41_PIPE_TL_BM(WF, OF) \
     do { if (bm == 128) V41_PIPE_TL(WF, OF, 128); else V41_PIPE_TL(WF, OF, 64); } while (0)
@@ -1448,6 +1464,25 @@ extern "C" int memra_v41_gemm_f8_tiles(const void* a, long lda, const void* as, 
 #undef V41_PIPE_TL_BM
 #undef V41_PIPE_TL
     V41_ERR();
+}
+
+extern "C" int memra_v41_gemm_f8_tiles(const void* a, long lda, const void* as, long ldas, const void* tiles,
+                                       const int* ntiles, int max_tiles, const void* ew, int proj, long ldb, long ldbs,
+                                       int wfmt, void* c, long ldc, int out_f32, int n, int k, int bm, void* stream) {
+    return v41_gemm_f8_tiles_impl(a, lda, as, ldas, tiles, ntiles, max_tiles, ew, proj, ldb, ldbs, wfmt, c, ldc,
+                                  out_f32, n, k, bm, nullptr, stream);
+}
+
+// The tile list over activations quantized once a token: the list's row r (a pair, and c's row) reads row
+// ridx[r] of a and as (the pair's token). Tiles of 64 or 128 rows; the bytes are those of the list run over
+// the pairs' gathered copies, which hold the same codes.
+extern "C" int memra_v41_gemm_f8_tiles_rows(const void* a, long lda, const void* as, long ldas, const int* ridx,
+                                            const void* tiles, const int* ntiles, int max_tiles, const void* ew,
+                                            int proj, long ldb, long ldbs, int wfmt, void* c, long ldc, int out_f32,
+                                            int n, int k, int bm, void* stream) {
+    if (!ridx) return 41026;
+    return v41_gemm_f8_tiles_impl(a, lda, as, ldas, tiles, ntiles, max_tiles, ew, proj, ldb, ldbs, wfmt, c, ldc,
+                                  out_f32, n, k, bm, ridx, stream);
 }
 
 extern "C" int memra_v41_gemm_f8(const void* a, long lda, const void* as, long ldas, const void* b, long ldb,
@@ -3403,41 +3438,148 @@ __global__ void v41_swiglu_kernel(const v41_bf* __restrict__ gate, const v41_bf*
     }
 }
 
-// w1, w3 and the SwiGLU of a small-M tile list in one launch. A block is 512 threads: its first half runs the
-// 16-column body on the tile's w1 rows and its second half on the w3 rows at the same time, so the two
-// projections cost one kernel's latency instead of two launches back to back; then each gate thread rounds
-// its sum and the up thread's to bf16 and stores v41_swiglu_kernel's value (times the pair's routing weight)
-// straight into the hidden rows. Per element this is the three launches' program: both sums are the tile
-// body's, both are rounded to bf16 before the SwiGLU as the stored tensors were, and the SwiGLU is the same
-// function. tf: fp32 terms of one half ([K blocks of a part][rows][16]).
-template <int WF, int ONE>
-__global__ void __launch_bounds__(512) v41_swiglu_tiles_kernel(
+// w1, w3 and the SwiGLU of a small-M tile list in one launch. A block is 512 threads: its first half is the
+// tile's w1 rows and its second half the w3 rows, at the same time, so the two projections cost one kernel's
+// latency instead of two launches back to back; then each gate thread rounds its sum and the up thread's to
+// bf16 and stores v41_swiglu_kernel's value (times the pair's routing weight) straight into the hidden rows.
+// The body is the staged one (v41_gemv_f4s_tiles_kernel's): a part of K lands in shared memory by cp.async at
+// once, here the 16 weight rows' nibbles and scale bytes of BOTH projections and the tile's activation rows
+// and scale bytes once for the two; then each half's warps run their K blocks of the part from shared memory
+// into that half's terms, each half's (row, column) threads add the part's terms in K order, and the next
+// part lands. One round trip a part instead of four a block, and nothing in flight in registers (the first
+// form of this kernel ran the 16-column register body in each half: 13.98 against 12.94 ms for an 8-row call
+// on two cards). Per element this is the three launches' program: both sums are the staged tile kernel's
+// (the from-zero MMA over the same 32 products, (d * sa) * sb, the ascending sum over K), both are rounded
+// to bf16 before the SwiGLU as the stored tensors were, and the SwiGLU is the same function.
+// BM: the rows the shared memory is sized for (the plan's tile rows).
+template <int WF>
+__global__ void __launch_bounds__(512, 2) v41_swiglu_f4s_tiles_kernel(
     const uint8_t* __restrict__ A, long lda, const uint8_t* __restrict__ As, long ldas,
     const V41Tile* __restrict__ tiles, const int* __restrict__ ntiles, const V41ExpW* __restrict__ ew, long ldb,
-    long ldbs, const float* __restrict__ wrow, float limit, v41_bf* __restrict__ H, long ldh, int N, int K, int P,
-    int tf) {
-    extern __shared__ float v41_sm_x[];
+    long ldbs, const float* __restrict__ wrow, float limit, v41_bf* __restrict__ H, long ldh, int N, int K, int Kn,
+    int BM) {
+    extern __shared__ __align__(16) uint8_t v41_swf_sm[];
     const V41Tile tl = tiles[blockIdx.y];
     if ((int)blockIdx.y >= *ntiles) return;
     const V41ExpW& w = ew[tl.expert];
-    int half = threadIdx.x >> 8, proj = half ? 2 : 0, tid = threadIdx.x & 255;
-    float acc = 0.f;
-    v41_gemv_f8_cols16<WF, 0, 5, ONE, 1>(A + (long)tl.row0 * lda, lda, As + (long)tl.row0 * ldas, ldas, w.w[proj],
-                                         ldb, w.s[proj], ldbs, w.scale2[proj], nullptr, 0, tl.rows, N, K,
-                                         blockIdx.x * 16, P, v41_sm_x + (long)half * tf, &acc);
+    int half = threadIdx.x >> 8, proj = half ? 2 : 0;
+    float bscale2 = w.scale2[proj];
+    const uint8_t* Ar = A + (long)tl.row0 * lda;
+    const uint8_t* Asr = As + (long)tl.row0 * ldas;
+    int M = tl.rows, n0 = blockIdx.x * 16;
+    int all = threadIdx.x, tid = all & 255, warp = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
+    int KB = K / 32;
+    const int SW = WF == 2 ? 2 : 1;  // scale bytes a K block
+    int pw = Kn * 16, ps = (Kn * SW + 7) & ~7, pa = Kn * 32, pas = (Kn + 7) & ~7;
+    uint8_t* sW = v41_swf_sm;          // [2][16][Kn x 16]: weight nibbles, w1's rows then w3's
+    uint8_t* sWs = sW + 32 * pw;       // [2][16][Kn x SW]: weight scale bytes
+    uint8_t* sA = sWs + 32 * ps;       // [BM][Kn x 32]: activation codes
+    uint8_t* sAs = sA + BM * pa;       // [BM][Kn]: activation scale bytes
+    float* sX = (float*)(sAs + BM * pas);     // [2][Kn][BM][16]: each half's terms of the part
+    float* sT = sX + (long)half * Kn * BM * 16;
+    int r0 = 2 * t, r1 = r0 + 1;
+    bool out0 = r0 < M, out1 = r1 < M;
+    float acc = 0.f;  // the (row, column) sum of a half's threads below M * 16
+    for (int p0 = 0; p0 < KB; p0 += Kn) {
+        int nk = min(Kn, KB - p0);
+        for (int q = all; q < 32 * nk; q += 512) {
+            int r = q / nk, cc = q % nk;  // r: 0..15 w1's rows, 16..31 w3's
+            bool ok = n0 + (r & 15) < N;
+            const uint8_t* B = w.w[r < 16 ? 0 : 2];
+            v41_cp16(sW + r * pw + cc * 16, B + (long)(ok ? n0 + (r & 15) : 0) * ldb + (long)(p0 + cc) * 16, ok);
+        }
+        int ns8 = (nk * SW + 7) / 8;
+        for (int q = all; q < 32 * ns8; q += 512) {
+            int r = q / ns8, cc = q % ns8;
+            bool ok = n0 + (r & 15) < N;
+            const uint8_t* Bs = w.s[r < 16 ? 0 : 2];
+            v41_cp8(sWs + r * ps + cc * 8, Bs + (long)(ok ? n0 + (r & 15) : 0) * ldbs + (long)p0 * SW + cc * 8, ok);
+        }
+        for (int q = all; q < M * nk * 2; q += 512) {
+            int r = q / (nk * 2), cc = q % (nk * 2);
+            v41_cp16(sA + r * pa + cc * 16, Ar + (long)r * lda + (long)p0 * 32 + cc * 16, true);
+        }
+        int na8 = (nk + 7) / 8;
+        for (int q = all; q < M * na8; q += 512) {
+            int r = q / na8, cc = q % na8;
+            v41_cp8(sAs + r * pas + cc * 8, Asr + (long)r * ldas + p0 + cc * 8, true);
+        }
+        v41_cp_commit();
+        v41_cp_wait<0>();
+        __syncthreads();
+        int per = (nk + 7) / 8;
+        int kb0 = warp * per, kb1 = min(nk, kb0 + per);
+        const uint8_t* w0 = sW + (half * 16 + g) * pw + 2 * t;
+        const uint8_t* w1 = sW + (half * 16 + g + 8) * pw + 2 * t;
+        const uint8_t* q0s = sWs + (half * 16 + g) * ps;
+        const uint8_t* q1s = sWs + (half * 16 + g + 8) * ps;
+        const uint8_t* ab = sA + (g < M ? g : 0) * pa + 4 * t;
+        for (int kb = kb0; kb < kb1; ++kb) {
+            uint32_t af[4] = {*(const uint16_t*)(w0 + kb * 16), *(const uint16_t*)(w1 + kb * 16),
+                              *(const uint16_t*)(w0 + kb * 16 + 8), *(const uint16_t*)(w1 + kb * 16 + 8)};
+#pragma unroll
+            for (int i = 0; i < 4; ++i) af[i] = v41_fp4_to_e4m3x4(af[i]);
+            uint32_t b0 = 0, b1 = 0;
+            if (g < M) {
+                b0 = *(const uint32_t*)(ab + kb * 32);
+                b1 = *(const uint32_t*)(ab + kb * 32 + 16);
+            }
+            float d[4];
+            v41_mma_e4m3(d, af, b0, b1);
+            if (out0) {
+                float s0 = v41_e8m0(sAs[r0 * pas + kb]), s1 = out1 ? v41_e8m0(sAs[r1 * pas + kb]) : 0.f;
+                float q0, q1;
+                if (WF == 1) {
+                    q0 = v41_e8m0(q0s[kb]);
+                    q1 = v41_e8m0(q1s[kb]);
+                } else {
+                    q0 = __fmul_rn(v41_e4m3f(q0s[2 * kb]), bscale2);
+                    q1 = __fmul_rn(v41_e4m3f(q1s[2 * kb]), bscale2);
+                }
+                // d[0], d[1]: weight row n0 + g against activation rows r0, r1; d[2], d[3]: row n0 + g + 8
+                float* tp = sT + ((long)kb * M + r0) * 16 + g;
+                tp[0] = __fmul_rn(__fmul_rn(d[0], s0), q0);
+                tp[8] = __fmul_rn(__fmul_rn(d[2], s0), q1);
+                if (out1) {
+                    tp[16] = __fmul_rn(__fmul_rn(d[1], s1), q0);
+                    tp[24] = __fmul_rn(__fmul_rn(d[3], s1), q1);
+                }
+            }
+        }
+        __syncthreads();
+        if (tid < M * 16) {
+            int r = tid >> 4, cc = tid & 15;
+            int kb = 0;
+            for (; kb + 8 <= nk; kb += 8) {
+                float v[8];
+#pragma unroll
+                for (int u = 0; u < 8; ++u) v[u] = sT[((long)(kb + u) * M + r) * 16 + cc];
+#pragma unroll
+                for (int u = 0; u < 8; ++u) acc = __fadd_rn(acc, v[u]);
+            }
+            for (; kb < nk; ++kb) acc = __fadd_rn(acc, sT[((long)kb * M + r) * 16 + cc]);
+        }
+        // the next part, and the epilogue, overwrite everything the chains and the sums read
+        __syncthreads();
+    }
     // the up sums cross to the gate threads through the block's memory (the terms are spent)
-    bool live = tid < tl.rows * 16;
-    __syncthreads();
-    if (half && live) v41_sm_x[tid] = acc;
+    bool live = tid < M * 16;
+    if (half && live) sX[tid] = acc;
     __syncthreads();
     if (!half && live) {
-        int r = tl.row0 + (tid >> 4), cn = blockIdx.x * 16 + (tid & 15);
+        int r = tl.row0 + (tid >> 4), cn = n0 + (tid & 15);
         if (cn < N) {
-            float h = v41_swiglu1(v41_bf2f(v41_f2bf(acc)), v41_bf2f(v41_f2bf(v41_sm_x[tid])), limit);
+            float h = v41_swiglu1(v41_bf2f(v41_f2bf(acc)), v41_bf2f(v41_f2bf(sX[tid])), limit);
             if (wrow) h = __fmul_rn(wrow[r], h);
             H[(long)r * ldh + cn] = v41_f2bf(h);
         }
     }
+}
+
+// the staged fused kernel's shared memory for Kn K blocks a part and bm rows
+static long v41_swf_bytes(int kn, int bm, int sw) {
+    return 32L * kn * 16 + 32L * ((kn * sw + 7) & ~7) + (long)bm * kn * 32 + (long)bm * ((kn + 7) & ~7) +
+           2L * kn * bm * 64;
 }
 
 // The routed experts' hidden rows of a small-M tile list: h[pair][n] = SwiGLU(w1 a, w3 a) * wrow[pair], bf16,
@@ -3450,20 +3592,37 @@ extern "C" int memra_v41_swiglu_tiles(const void* a, long lda, const void* as, l
         bm > V41_SM_MAX || (wfmt != 1 && wfmt != 2))
         return 41043;
     if (max_tiles == 0) return 0;
-    // both halves' terms within the default 48 KB of a block
-    int kb = k / 32, parts = 1;
-    while ((long)((kb + parts - 1) / parts) * bm * 16 * 4 * 2 > 48 * 1024) ++parts;
-    int tf = ((kb + parts - 1) / parts) * bm * 16;
+    int kb = k / 32;
     dim3 grid((n + 15) / 16, max_tiles);
     cudaStream_t st = (cudaStream_t)stream;
-#define V41_SWT(WF, ONE)                                                                                          \
-    v41_swiglu_tiles_kernel<WF, ONE><<<grid, 512, 2 * tf * 4, st>>>(                                              \
-        (const uint8_t*)a, lda, (const uint8_t*)as, ldas, (const V41Tile*)tiles, ntiles, (const V41ExpW*)ew, ldb, \
-        ldbs, wrow, limit, (v41_bf*)h, ldh, n, k, parts, tf)
-    if (wfmt == 1) { if (parts == 1) V41_SWT(1, 1); else V41_SWT(1, 0); }
-    else { if (parts == 1) V41_SWT(2, 1); else V41_SWT(2, 0); }
-#undef V41_SWT
-    V41_ERR();
+    if (kb % 8 == 0) {
+        // K in as few equal parts as put two blocks (four halves) on an SM
+        int sw = wfmt == 2 ? 2 : 1, kn = 0;
+        for (int parts = 1; parts <= kb / 8; ++parts) {
+            int c = (((kb + parts - 1) / parts) + 7) & ~7;
+            if (v41_swf_bytes(c, bm, sw) <= 51200) {
+                kn = c;
+                break;
+            }
+        }
+        if (kn > 0) {
+            int smem = (int)v41_swf_bytes(kn, bm, sw);
+#define V41_SWF(WF)                                                                                              \
+    do {                                                                                                         \
+        V41_CARVE_MAX((v41_swiglu_f4s_tiles_kernel<WF>));                                                        \
+        if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_swiglu_f4s_tiles_kernel<WF>), 51200);                          \
+        v41_swiglu_f4s_tiles_kernel<WF><<<grid, 512, smem, st>>>(                                                \
+            (const uint8_t*)a, lda, (const uint8_t*)as, ldas, (const V41Tile*)tiles, ntiles, (const V41ExpW*)ew, \
+            ldb, ldbs, wrow, limit, (v41_bf*)h, ldh, n, k, kn, bm);                                              \
+    } while (0)
+            if (wfmt == 1) V41_SWF(1);
+            else V41_SWF(2);
+#undef V41_SWF
+            V41_ERR();
+        }
+    }
+    // no part of K fits two blocks on an SM with these rows
+    return 41043;
 }
 
 extern "C" int memra_v41_swiglu(const void* gate, const void* up, long ld, const float* wrow, float limit, void* out,
@@ -4371,7 +4530,7 @@ extern "C" int memra_v41_peak(int kind, int blocks, int threads, int iters, floa
 // is done (the caller's law: every rank pushes and pulls in every gather and the slots alternate).
 
 #define V41_PUSH_PEERS 7
-#define V41_PUSH_MAX (256 << 10)
+#define V41_PUSH_MAX (1 << 20)  // an inbox slot's payload; the caller pushes less (its measured limit)
 #define V41_PULL_SPIN (1L << 31)  // polls before a peer is given up for dead (about a minute)
 
 struct V41Push {
@@ -4410,36 +4569,48 @@ __device__ __forceinline__ void v41_blk_move(uint8_t* reg, long pitch, int width
     }
 }
 
+// The gather's sequence number is the rank's own count of gathers (`*ctr`, in its device memory) plus one:
+// every rank runs the same gathers in the same order, so the counts agree, and no launch carries a number
+// the host computed (a captured launch replays unchanged). `alt` is the byte distance from a producer's
+// slot of an even gather to its slot of an odd one; the push only reads the count, the pull stores it.
 __global__ void v41_push_kernel(const uint8_t* src, long pitch, int width, int rows, V41Push dst, int npeer,
-                                uint32_t seq, int word_first) {
+                                const uint32_t* ctr, long alt, int word_first) {
+    uint32_t seq = *ctr + 1;
+    long o = (seq & 1) ? alt : 0;
     if (word_first && threadIdx.x == 0) {
-        for (int p = 0; p < npeer; ++p) *(volatile uint32_t*)dst.w[p] = seq;
+        for (int p = 0; p < npeer; ++p) *(volatile uint32_t*)((uint8_t*)dst.w[p] + o) = seq;
         __threadfence_system();
     }
-    for (int p = 0; p < npeer; ++p) v41_blk_move<1>((uint8_t*)src, pitch, width, rows, dst.d[p]);
+    for (int p = 0; p < npeer; ++p) v41_blk_move<1>((uint8_t*)src, pitch, width, rows, dst.d[p] + o);
     __threadfence_system();
     __syncthreads();
     if (!word_first && threadIdx.x == 0) {
-        for (int p = 0; p < npeer; ++p) *(volatile uint32_t*)dst.w[p] = seq;
+        for (int p = 0; p < npeer; ++p) *(volatile uint32_t*)((uint8_t*)dst.w[p] + o) = seq;
         __threadfence_system();
     }
 }
 
-__global__ void v41_pull_kernel(V41Pull in, int npeer, uint32_t seq, uint8_t* dst, int* bad) {
+__global__ void v41_pull_kernel(V41Pull in, int npeer, uint32_t* ctr, long alt, uint8_t* dst, int* bad) {
     __shared__ int go;
+    // every thread reads the count before the barrier; thread 0 stores the new one after the unpack
+    uint32_t seq = *ctr + 1;
+    long o = (seq & 1) ? alt : 0;
     if (threadIdx.x == 0) {
         int ok = 0;
         for (long it = 0; it < V41_PULL_SPIN && !ok; ++it) {
             ok = 1;
-            for (int p = 0; p < npeer; ++p) ok &= (*(volatile const uint32_t*)in.w[p] == seq) ? 1 : 0;
+            for (int p = 0; p < npeer; ++p)
+                ok &= (*(volatile const uint32_t*)((const uint8_t*)in.w[p] + o) == seq) ? 1 : 0;
         }
         go = ok;
         if (!ok) *bad = *bad | 0x10000;  // sticky, read with the step's logits
     }
     __syncthreads();
-    if (!go) return;
-    for (int p = 0; p < npeer; ++p)
-        v41_blk_move<0>(dst + in.off[p], in.pitch[p], in.width[p], in.rows[p], (uint8_t*)in.d[p]);
+    if (go)
+        for (int p = 0; p < npeer; ++p)
+            v41_blk_move<0>(dst + in.off[p], in.pitch[p], in.width[p], in.rows[p], (uint8_t*)in.d[p] + o);
+    __syncthreads();
+    if (threadIdx.x == 0) *ctr = seq;
 }
 
 static int v41_push_threads(long bytes) {
@@ -4448,22 +4619,26 @@ static int v41_push_threads(long bytes) {
 }
 
 // The producer's half of a small gather: `rows` rows of `width` bytes at `src` (`pitch` apart) into the
-// `npeer` slots of `dst` (a host V41Push), then `seq` into their words.
+// `npeer` slots of `dst` (a host V41Push: the even gathers' slots; an odd gather's are `alt` bytes on), then
+// the gather's number (`*ctr + 1`) into their words.
 extern "C" int memra_v41_push(const void* src, long pitch, int width, int rows, const void* dst, int npeer,
-                              unsigned seq, int word_first, void* stream) {
+                              const unsigned* ctr, long alt, int word_first, void* stream) {
     if (npeer < 0 || npeer > V41_PUSH_PEERS || width < 0 || rows < 0 || (long)rows * width > V41_PUSH_MAX)
         return 41040;
     if (rows > 1 && pitch < width) return 41040;
+    if (!ctr || alt < 0) return 41040;
     V41Push d = *(const V41Push*)dst;
     v41_push_kernel<<<1, v41_push_threads((long)rows * width), 0, (cudaStream_t)stream>>>(
-        (const uint8_t*)src, pitch, width, rows, d, npeer, seq, word_first);
+        (const uint8_t*)src, pitch, width, rows, d, npeer, (const uint32_t*)ctr, alt, word_first);
     V41_ERR();
 }
 
-// The consumer's half: wait for `seq` in the `npeer` slots of `in` (a host V41Pull), then unpack each into its
-// region of `dst`. A peer that never arrives sets bit 16 of *bad and nothing is unpacked.
-extern "C" int memra_v41_pull(const void* in, int npeer, unsigned seq, void* dst, int* bad, void* stream) {
-    if (npeer < 0 || npeer > V41_PUSH_PEERS) return 41041;
+// The consumer's half: wait for the gather's number in the `npeer` slots of `in` (a host V41Pull, the even
+// gathers' slots), unpack each into its region of `dst`, then count the gather in `*ctr`. A peer that never
+// arrives sets bit 16 of *bad and nothing is unpacked.
+extern "C" int memra_v41_pull(const void* in, int npeer, unsigned* ctr, long alt, void* dst, int* bad,
+                              void* stream) {
+    if (npeer < 0 || npeer > V41_PUSH_PEERS || !ctr || alt < 0) return 41041;
     V41Pull s = *(const V41Pull*)in;
     long most = 0;
     for (int p = 0; p < npeer; ++p) {
@@ -4472,7 +4647,8 @@ extern "C" int memra_v41_pull(const void* in, int npeer, unsigned seq, void* dst
             return 41041;
         most = b > most ? b : most;
     }
-    v41_pull_kernel<<<1, v41_push_threads(most), 0, (cudaStream_t)stream>>>(s, npeer, seq, (uint8_t*)dst, bad);
+    v41_pull_kernel<<<1, v41_push_threads(most), 0, (cudaStream_t)stream>>>(s, npeer, (uint32_t*)ctr, alt,
+                                                                           (uint8_t*)dst, bad);
     V41_ERR();
 }
 

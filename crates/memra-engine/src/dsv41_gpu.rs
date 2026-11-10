@@ -28,14 +28,16 @@ pub mod decode;
 pub mod draft;
 pub mod engram;
 pub mod experts;
+pub mod graph;
 pub mod tp;
 
 pub mod ffi {
     use std::os::raw::c_void;
     /// Peers of one rank in a small gather inside kernels (`V41_PUSH_PEERS`).
     pub const PUSH_PEERS: usize = 7;
-    /// The largest region a rank pushes (`V41_PUSH_MAX`).
-    pub const PUSH_MAX: usize = 256 << 10;
+    /// The largest region a push kernel takes (`V41_PUSH_MAX`): the size of an inbox slot. What
+    /// a gather actually pushes is bounded by `tp`'s measured limit, at most this.
+    pub const PUSH_MAX: usize = 1 << 20;
     /// Device addresses of each peer's inbox slot for a producer: payload and word.
     #[repr(C)]
     #[derive(Default, Clone, Copy)]
@@ -581,6 +583,30 @@ pub mod ffi {
             bm: i32,
             stream: *mut c_void,
         ) -> i32;
+        /// [`memra_v41_gemm_f8_tiles`] over activations quantized once a token: the list's row
+        /// r reads row `ridx[r]` of `a` and `a_s` (tiles of 64 or 128 rows).
+        pub fn memra_v41_gemm_f8_tiles_rows(
+            a: *const c_void,
+            lda: i64,
+            a_s: *const c_void,
+            ldas: i64,
+            ridx: *const i32,
+            tiles: *const c_void,
+            ntiles: *const i32,
+            max_tiles: i32,
+            ew: *const c_void,
+            proj: i32,
+            ldb: i64,
+            ldbs: i64,
+            wfmt: i32,
+            c: *mut c_void,
+            ldc: i64,
+            out_f32: i32,
+            n: i32,
+            k: i32,
+            bm: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_v41_moe_combine(
             slots: *const c_void,
             lds: i64,
@@ -634,7 +660,9 @@ pub mod ffi {
             rows: i32,
             stream: *mut c_void,
         ) -> i32;
-        /// The producer's half of a small gather inside a kernel (`dst`: a [`V41Push`]).
+        /// The producer's half of a small gather inside a kernel (`dst`: a [`V41Push`] of the
+        /// even gathers' slots, an odd gather's `alt` bytes on; `ctr`: the rank's count of
+        /// gathers on its card, which numbers this one).
         pub fn memra_v41_push(
             src: *const c_void,
             pitch: i64,
@@ -642,15 +670,18 @@ pub mod ffi {
             rows: i32,
             dst: *const V41Push,
             npeer: i32,
-            seq: u32,
+            ctr: *const u32,
+            alt: i64,
             word_first: i32,
             stream: *mut c_void,
         ) -> i32;
-        /// The consumer's half (`src`: a [`V41Pull`]); a peer that never arrives sets bit 16 of `bad`.
+        /// The consumer's half (`src`: a [`V41Pull`]); it counts the gather in `ctr`. A peer that
+        /// never arrives sets bit 16 of `bad`.
         pub fn memra_v41_pull(
             src: *const V41Pull,
             npeer: i32,
-            seq: u32,
+            ctr: *mut u32,
+            alt: i64,
             dst: *mut c_void,
             bad: *mut i32,
             stream: *mut c_void,
@@ -810,16 +841,29 @@ impl Dp {
 pub struct Buf {
     pub(crate) s: ManuallyDrop<CudaSlice<u8>>,
     pub len: usize,
-    /// the stream's free list this buffer returns to when it drops (None: it is freed)
-    home: Option<Arc<TmpPool>>,
+    home: Home,
+}
+
+/// Where a buffer's memory goes when the buffer drops.
+enum Home {
+    /// back to the device pool
+    Free,
+    /// to its stream's free list
+    Pool(Arc<TmpPool>),
+    /// nowhere: the memory is another buffer's ([`Buf::alias`])
+    Alias,
 }
 
 impl Drop for Buf {
     fn drop(&mut self) {
         // SAFETY: `s` is taken once, here, and never touched again
         let s = unsafe { ManuallyDrop::take(&mut self.s) };
-        if let Some(h) = &self.home {
-            h.put(s);
+        match &self.home {
+            Home::Free => drop(s),
+            Home::Pool(h) => h.put(s),
+            Home::Alias => {
+                let _ = s.leak();
+            }
         }
     }
 }
@@ -844,6 +888,11 @@ const TMP_POOL_MAX_BYTES: usize = 64 << 20;
 #[derive(Default)]
 pub struct TmpPool {
     free: Mutex<TmpFree>,
+    /// the free list of a stream capture ([`graph`]): every buffer the captured launches use
+    /// comes from it and stays in it, whatever its size, because the graph holds the addresses;
+    /// what it lacks is allocated outside the stream's order (a stream-ordered allocation inside
+    /// a capture would become a node of the graph)
+    capture: bool,
 }
 
 /// The free buffers by size, and their bytes.
@@ -855,7 +904,7 @@ struct TmpFree {
 
 impl TmpPool {
     fn take(&self, n: usize) -> Option<CudaSlice<u8>> {
-        if n > TMP_POOL_MAX_BUF {
+        if n > TMP_POOL_MAX_BUF && !self.capture {
             return None;
         }
         let mut f = self.free.lock().unwrap_or_else(|e| e.into_inner());
@@ -865,11 +914,11 @@ impl TmpPool {
     }
     fn put(&self, s: CudaSlice<u8>) {
         let n = s.len();
-        if n > TMP_POOL_MAX_BUF {
+        if n > TMP_POOL_MAX_BUF && !self.capture {
             return;
         }
         let mut f = self.free.lock().unwrap_or_else(|e| e.into_inner());
-        if f.bytes + n > TMP_POOL_MAX_BYTES {
+        if f.bytes + n > TMP_POOL_MAX_BYTES && !self.capture {
             return;
         }
         f.bytes += n;
@@ -878,7 +927,7 @@ impl TmpPool {
 }
 
 impl Buf {
-    fn own(s: CudaSlice<u8>, len: usize, home: Option<Arc<TmpPool>>) -> Self {
+    fn own(s: CudaSlice<u8>, len: usize, home: Home) -> Self {
         Self {
             s: ManuallyDrop::new(s),
             len,
@@ -889,7 +938,7 @@ impl Buf {
         let s = st
             .alloc_zeros::<u8>(len.max(1))
             .map_err(|e| format!("alloc {len}: {e:?}"))?;
-        Ok(Self::own(s, len, None))
+        Ok(Self::own(s, len, Home::Free))
     }
     /// Device memory without the zero fill, for a buffer its kernels write in full before
     /// anything reads it (stream-ordered like every allocation here).
@@ -897,7 +946,7 @@ impl Buf {
         // SAFETY: the bytes are device memory the caller writes before reading; the host never
         // reads them uninitialized (every host copy follows the kernel that wrote them)
         let s = unsafe { st.alloc::<u8>(len.max(1)) }.map_err(|e| format!("alloc {len}: {e:?}"))?;
-        Ok(Self::own(s, len, None))
+        Ok(Self::own(s, len, Home::Free))
     }
     /// [`Self::zeros`] or [`Self::uninit`] through `pool`: a freed buffer of this size when the
     /// pool has one (zero-filled on the stream when `zero`), and back to the pool on drop.
@@ -916,13 +965,34 @@ impl Buf {
                 }
                 s
             }
+            None if pool.capture => {
+                st.context()
+                    .bind_to_thread()
+                    .map_err(|e| format!("bind: {e:?}"))?;
+                // SAFETY: `n` bytes of device memory owned by the slice made from them, which
+                // frees them when it drops; written before read as in `uninit`, or zeroed here
+                let mut s = unsafe {
+                    let p = cudarc::driver::result::malloc_sync(n)
+                        .map_err(|e| format!("alloc {len}: {e:?}"))?;
+                    st.upgrade_device_ptr::<u8>(p, n)
+                };
+                if zero {
+                    st.memset_zeros(&mut s)
+                        .map_err(|e| format!("memset {len}: {e:?}"))?;
+                }
+                s
+            }
             None if zero => st
                 .alloc_zeros::<u8>(n)
                 .map_err(|e| format!("alloc {len}: {e:?}"))?,
             // SAFETY: as in `uninit`
             None => unsafe { st.alloc::<u8>(n) }.map_err(|e| format!("alloc {len}: {e:?}"))?,
         };
-        let home = (n <= TMP_POOL_MAX_BUF).then(|| pool.clone());
+        let home = if n <= TMP_POOL_MAX_BUF || pool.capture {
+            Home::Pool(pool.clone())
+        } else {
+            Home::Free
+        };
         Ok(Self::own(s, len, home))
     }
     pub fn from_bytes(st: &Arc<CudaStream>, b: &[u8]) -> Result<Self, String> {
@@ -932,7 +1002,7 @@ impl Buf {
         let s = st
             .clone_htod(b)
             .map_err(|e| format!("htod {}: {e:?}", b.len()))?;
-        Ok(Self::own(s, b.len(), None))
+        Ok(Self::own(s, b.len(), Home::Free))
     }
     pub fn from_f32(st: &Arc<CudaStream>, v: &[f32]) -> Result<Self, String> {
         Self::from_bytes(st, &f32_bytes(v))
@@ -943,6 +1013,16 @@ impl Buf {
     pub fn p(&self, st: &Arc<CudaStream>) -> Dp {
         let (p, _g) = (*self.s).device_ptr(st);
         Dp(p)
+    }
+    /// A second handle on this buffer's memory that frees nothing when it drops.
+    ///
+    /// # Safety
+    /// The caller keeps the buffer alive, and its bytes meaningful, for as long as the alias is
+    /// read: the alias does not hold it.
+    pub unsafe fn alias(&self, st: &Arc<CudaStream>) -> Self {
+        // SAFETY: the address and length of a live allocation; `Home::Alias` never frees it
+        let s = unsafe { st.upgrade_device_ptr::<u8>(self.p(st).addr(), self.s.len()) };
+        Self::own(s, self.len, Home::Alias)
     }
     /// Device address `off` bytes in.
     pub fn at(&self, st: &Arc<CudaStream>, off: usize) -> Dp {
@@ -5167,7 +5247,9 @@ impl Ctx {
     /// Tile rows of the grouped expert GEMMs for a slice of `rows` tokens: the small-M kernel
     /// when no expert can hold more than `SMALL_M` rows (a token picks an expert once, so a tile
     /// has at most `rows` rows and the kernel's shared memory is sized for that many), else the
-    /// pipelined tile, 128 rows once the mean expert holds that many.
+    /// pipelined tile, 128 rows once the mean expert holds that many. Measured both ways on one
+    /// card with the padding skipped: 128-row tiles at 4,096 rows (mean 64) are 0.8% slower than
+    /// 64-row ones, 64-row tiles at 32,768 rows 3.5% slower than 128-row ones.
     pub fn moe_bm(&self, rows: usize) -> usize {
         if rows <= SMALL_M {
             rows.max(1)
@@ -5320,17 +5402,30 @@ impl Ctx {
         };
         let exp_tab = cached.unwrap_or(&lw.exp_tab);
         let kdiv = if wfmt == 1 { 32 } else { 16 };
-        let aq = self.ops.tmp(np * d)?;
-        let as_ = self.ops.tmp(np * d / 32)?;
-        self.ops.act_quant(
-            x,
-            d,
-            plan.ptok.at(&st, p0 * 4),
-            n,
-            d,
-            aq.at(&st, p0 * d),
-            as_.at(&st, p0 * d / 32),
-        )?;
+        // many rows, all pairs: the input is quantized once a token and each tile reads its
+        // pairs' tokens through the plan's pair-to-token list (a sixth of the quantization of
+        // the pairs' gathered copies, and the same codes); else the pairs' rows are gathered
+        let by_token = plan.bm > SMALL_M && p0 == 0 && p1 == np;
+        let rows = np / g.topk;
+        let (aq, as_) = if by_token {
+            (self.ops.tmp(rows * d)?, self.ops.tmp(rows * d / 32)?)
+        } else {
+            (self.ops.tmp(np * d)?, self.ops.tmp(np * d / 32)?)
+        };
+        if by_token {
+            self.ops
+                .act_quant(x, d, Dp::NULL, rows, d, aq.p(&st), as_.p(&st))?;
+        } else {
+            self.ops.act_quant(
+                x,
+                d,
+                plan.ptok.at(&st, p0 * 4),
+                n,
+                d,
+                aq.at(&st, p0 * d),
+                as_.at(&st, p0 * d / 32),
+            )?;
+        }
         let gb = self.ops.tmp(np * inter * 2)?;
         let ub = self.ops.tmp(np * inter * 2)?;
         let hb = self.ops.tmp(np * inter * 2)?;
@@ -5359,8 +5454,39 @@ impl Ctx {
                 )
             })
         };
-        tiles(&self.ops, &aq, &as_, d, 0, gb.p(&st), inter)?;
-        tiles(&self.ops, &aq, &as_, d, 2, ub.p(&st), inter)?;
+        let tiles_rows = |ops: &Ops, proj: i32, c: Dp| {
+            ck("gemm_f8_tiles_rows", unsafe {
+                ffi::memra_v41_gemm_f8_tiles_rows(
+                    aq.p(&st).c(),
+                    d as i64,
+                    as_.p(&st).c(),
+                    (d / 32) as i64,
+                    plan.ptok.p(&st).i(),
+                    plan.tiles.p(&st).c(),
+                    plan.ntiles.p(&st).i(),
+                    plan.max_tiles as i32,
+                    exp_tab.p(&st).c(),
+                    proj,
+                    (d / 2) as i64,
+                    (d / kdiv) as i64,
+                    wfmt,
+                    c.m(),
+                    inter as i64,
+                    0,
+                    inter as i32,
+                    d as i32,
+                    plan.bm as i32,
+                    ops.sv(),
+                )
+            })
+        };
+        if by_token {
+            tiles_rows(&self.ops, 0, gb.p(&st))?;
+            tiles_rows(&self.ops, 2, ub.p(&st))?;
+        } else {
+            tiles(&self.ops, &aq, &as_, d, 0, gb.p(&st), inter)?;
+            tiles(&self.ops, &aq, &as_, d, 2, ub.p(&st), inter)?;
+        }
         ck("swiglu", unsafe {
             ffi::memra_v41_swiglu(
                 gb.at(&st, p0 * inter * 2).m(),

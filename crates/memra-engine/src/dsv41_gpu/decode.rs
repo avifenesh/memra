@@ -725,6 +725,14 @@ impl<'a> Runner<'a> {
                 seqs[c.seq].pending = Some((sp, s));
             }
         }
+        if self.grp.graphs.on {
+            // a replayed layer's pre-mix is its capture's buffer, rewritten by the layer's next
+            // replay: a call's result gets its own
+            for p in pre.iter_mut() {
+                let own = self.grp.each(|r, c| super::clone_buf(&c.ops, &p[r]))?;
+                *p = own;
+            }
+        }
         Ok(h.into_iter()
             .zip(pre)
             .zip(pos)
@@ -1118,6 +1126,11 @@ impl<'a> Runner<'a> {
         drop(pos_keep);
         self.stats.forwards += 1;
         self.stats.calls += nr;
+        if self.grp.graphs.on {
+            // a replayed layer's pre-mix is its capture's buffer, rewritten by the layer's next
+            // replay: the call's result gets its own
+            pre = self.grp.each(|r, c| super::clone_buf(&c.ops, &pre[r]))?;
+        }
         if self.grp.cx[0].trace {
             self.last_routes = std::mem::take(&mut tr[0].route_sel);
         }

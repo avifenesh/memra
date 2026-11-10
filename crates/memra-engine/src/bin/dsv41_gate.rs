@@ -3107,8 +3107,13 @@ fn tp_compare(
         }
     }
     if !tr.route_sel.is_empty() {
-        // every rank routes its own replicated copy
+        // every rank routes its own replicated copy (a rank run with nothing traced, as the
+        // graph door's repeats are, recorded no routing: its outputs and state are compared)
         for (r, t) in trs.iter().enumerate() {
+            if t.route_sel.is_empty() && (!grp.trace || grp.n() == 1) {
+                // (one rank runs the single-card MoE, which records under the rank's own flag)
+                continue;
+            }
             let same = t.route_sel == tr.route_sel && t.route_w == tr.route_w;
             rep.raw(
                 &format!("{tag}/rank{r}/route"),
@@ -3161,7 +3166,7 @@ fn tp_gate(
     let max_pos = (s + 64).max(1024);
     let mut grp = v::tp::Group::new(devices, &g, max_pos)?;
     grp.trace = true;
-    if grp.transport == memra_engine::tp_transport::TpTransport::DevicePush {
+    if grp.transport == memra_engine::tp_transport::TpTransport::DevicePush && grp.n() > 1 {
         // the small gathers inside kernels: 20,000 back to back, every consumer checking every
         // producer's region; then the control, the word stored before the data, which must show
         let (diff, flagged) = grp.gather_stress(20_000, false)?;
@@ -3194,6 +3199,10 @@ fn tp_gate(
     }
     let n = grp.n();
     let mut summary = Vec::new();
+    // decode steps repeated through the graph door's captured spans (the door records only
+    // the in-kernel gathers: under another transport it changes nothing and nothing is repeated)
+    let mut graph_steps = 0u64;
+    let graph_can = n == 1 || grp.transport == memra_engine::tp_transport::TpTransport::DevicePush;
     for &l in layers {
         let pfx = format!("s0/L{l}");
         if !f.has(&format!("{pfx}/out/x")) {
@@ -3325,6 +3334,30 @@ fn tp_gate(
                     (&h2, &p2, &tr, &sh, &ls),
                     (&h2s, &p2s, &trs, &shs, &lss),
                 )?;
+                if grp.graphs.on && graph_can {
+                    // the graph door: the same step again with nothing traced (a traced step
+                    // reads on the host and is never recorded). The step writes its state at
+                    // its position, so a repeat rewrites the same bytes: the first repeat runs
+                    // launch by launch, the second records the layer's second half and replays
+                    // it self-checked, the third and fourth replay it; each is compared whole.
+                    drop((h2s, p2s));
+                    grp.trace = false;
+                    for k in 0..GRAPH_REPEATS {
+                        let mut tg: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
+                        let (hg, pg) = grp
+                            .block_forward(&lws, &hs, &pres, pos, 1, &mut shs, &mut lss, &mut tg)?;
+                        tp_compare(
+                            rep,
+                            &format!("layer{l}/decode{step}/graph{k}"),
+                            &cx,
+                            &grp,
+                            (&h2, &p2, &tr, &sh, &ls),
+                            (&hg, &pg, &tg, &shs, &lss),
+                        )?;
+                    }
+                    grp.trace = true;
+                    graph_steps += 1;
+                }
                 dec.push(pos.to_string());
             }
         }
@@ -3335,12 +3368,29 @@ fn tp_gate(
             dec.join(", ")
         ));
     }
+    if grp.graphs.on && graph_can {
+        // not vacuous: every gated decode step replayed its layer's captured half at least
+        // twice (a step whose inputs moved runs launch by launch and is counted in `moved`)
+        let gs = grp.graphs.stats;
+        rep.raw(
+            "graph/replayed",
+            graph_steps > 0 && gs.replays >= 2 * graph_steps && gs.checks > 0,
+            "MEMRA_DSV41_DECODE_GRAPH=1: the decode steps ran through the captured spans",
+            format!(
+                "{graph_steps} steps x {GRAPH_REPEATS} repeats: {} captures, {} replays ({} self-checked), {} moved, {} refused",
+                gs.captures, gs.replays, gs.checks, gs.moved, gs.refused
+            ),
+        );
+    }
     Ok(format!(
         "\"tokens\": {s}, \"ranks\": {n}, \"devices\": {devices:?}, \"transport\": {:?}, \"layers\": [{}]",
         grp.transport.name(),
         summary.join(", ")
     ))
 }
+
+/// Repeats of a gated decode step under the graph door (see the loop in [`tp_gate`]).
+const GRAPH_REPEATS: usize = 4;
 
 /// `dsv41-gate idx`: the indexer choice at N ranks on a captured prefill layer. Arms: the model's
 /// replicated indexer on one rank (the reference), the same indexer with the query rows split

@@ -157,8 +157,10 @@ pub struct Group {
     rel_ev: Vec<CudaEvent>,
     /// device-push: each rank's inbox, two slots a producer ([`Group::gather_push`])
     inbox: Vec<Buf>,
-    /// device-push: the last small gather's sequence number
-    push_seq: u32,
+    /// device-push: each rank's count of small gathers, in its device memory. A gather's number
+    /// is the count plus one, read by the kernels themselves: every rank runs the same gathers
+    /// in the same order, so the counts agree and no launch carries a number from the host
+    push_ctr: Vec<Buf>,
     /// each rank's inbox of the large gathers and its packed block, kept across gathers and
     /// grown to the largest one seen ([`Group::gather_packed`])
     big_in: Vec<Option<Buf>>,
@@ -173,6 +175,21 @@ pub struct Group {
     /// one host thread per rank issues that rank's work between collectives (None: this thread
     /// issues the ranks in turn, `MEMRA_DSV41_TP_ISSUE=serial`)
     pool: Option<Crew>,
+    /// spans of a decode step captured as CUDA graphs ([`super::graph`])
+    pub graphs: super::graph::Graphs,
+    /// the ranks' streams are recording ([`Group::capture`]): only launches may be issued
+    pub(super) capturing: bool,
+}
+
+/// What the second half of a block reads, a buffer a rank: the residual streams `h` (written in
+/// place), the attention output, and the attention site's pre-mix, post-mix and combine weights.
+#[derive(Clone, Copy)]
+struct FfnIn<'a> {
+    h: &'a [Buf],
+    a: &'a [Buf],
+    a_pre: &'a [Buf],
+    a_post: &'a [Buf],
+    a_comb: &'a [Buf],
 }
 
 /// The largest `[pairs][dim]` bf16 block the N-rank MoE gathers whole from every rank instead of
@@ -186,6 +203,16 @@ const STAGED_MOE_ROWS_BYTES: usize = 256 << 10;
 const PUSH_HDR: usize = 256;
 /// One producer's slot in a rank's inbox.
 const PUSH_SLOT: usize = PUSH_HDR + ffi::PUSH_MAX;
+/// The most bytes a rank stores into its peers in one gather inside kernels
+/// ([`Group::gather_push`]: its region times its peers); a gather that would store more goes
+/// through the kept blocks and the copy engine ([`Group::gather_packed`]). A push is one block
+/// of a kernel storing the region into every peer, so its time grows with the bytes (4.4 us at
+/// 1 KiB, 16.7 at 128 KiB, 27.4 at 256 KiB on two cards); a copy-engine gather pays launches,
+/// events and copy calls first and then moves bytes at the link's rate (14.5, 23.2, 25.5 us).
+/// The two cross at 227 KiB on two cards (`dsv41-bench p2p`'s `gather` lines, three runs within
+/// 0.5 us). With more peers the kernel stores the region once a peer, so the bound is on the
+/// stores, not on the region.
+const PUSH_LIMIT: usize = 224 << 10;
 
 /// How long an issue thread spins for its next section before it parks. A one-token forward is
 /// some twenty sections a layer, microseconds apart (measured: all but one gap a layer under
@@ -524,7 +551,17 @@ impl Group {
     pub fn new(devices: &[usize], g: &Geo, max_pos: usize) -> Result<Self, String> {
         let n = devices.len();
         Part::check(g, n)?;
-        let (transport, flag) = tp_transport::transport_env()?;
+        // no transport named: the measured winner on two cards at every width of a decode call
+        // and in prefill, the gathers inside kernels up to the push limit and through kept
+        // blocks above it (one rank moves nothing; more ranks than an inbox holds keep the
+        // build's default)
+        let named = !tp_transport::set_transport_names().is_empty();
+        let unset = if n > 1 && n <= ffi::PUSH_PEERS + 1 {
+            TpTransport::DevicePush
+        } else {
+            tp_transport::default_transport()
+        };
+        let (mut transport, flag) = tp_transport::transport_env_or(unset)?;
         if transport == TpTransport::DevicePush && n > ffi::PUSH_PEERS + 1 {
             return Err(format!(
                 "{flag}=device-push: at most {} ranks",
@@ -545,11 +582,24 @@ impl Group {
         }
         let distinct = |a: usize, b: usize| devices[a] != devices[b];
         if transport != TpTransport::HostCanonical {
-            for a in 0..n {
+            'grant: for a in 0..n {
                 for b in 0..n {
                     if a != b && distinct(a, b) {
-                        crate::tp::grant_peer_access(&engines[a], &engines[b], "dsv41 tp")
-                            .map_err(|e| e.to_string())?;
+                        match crate::tp::grant_peer_access(&engines[a], &engines[b], "dsv41 tp") {
+                            Ok(()) => {}
+                            // a named transport that cannot run refuses the load; the default
+                            // falls back to the one that needs no access between the cards
+                            Err(e) if named => return Err(e.to_string()),
+                            Err(e) => {
+                                eprintln!(
+                                    "[dsv41-tp] no peer access between devices {} and {} ({e}): \
+                                     the gathers go through the host",
+                                    devices[a], devices[b]
+                                );
+                                transport = TpTransport::HostCanonical;
+                                break 'grant;
+                            }
+                        }
                     }
                 }
             }
@@ -558,6 +608,7 @@ impl Group {
         let mut pub_ev = Vec::with_capacity(n);
         let mut rel_ev = Vec::with_capacity(n);
         let mut inbox = Vec::new();
+        let mut push_ctr = Vec::new();
         for e in &engines {
             let st = e.stream();
             pub_ev.push(st.context().new_event(None).map_err(de)?);
@@ -566,6 +617,7 @@ impl Group {
             if transport == TpTransport::DevicePush {
                 // zeroed: no word holds a sequence number before the first gather
                 inbox.push(c.ops.buf(2 * n * PUSH_SLOT)?);
+                push_ctr.push(c.ops.buf(4)?);
             }
             cx.push(c);
         }
@@ -583,7 +635,7 @@ impl Group {
             pub_ev,
             rel_ev,
             inbox,
-            push_seq: 0,
+            push_ctr,
             big_in: (0..n).map(|_| None).collect(),
             pk_keep: (0..n).map(|_| None).collect(),
             push_word_first: false,
@@ -591,6 +643,8 @@ impl Group {
             timed: false,
             trace: false,
             pool,
+            graphs: super::graph::Graphs::from_env()?,
+            capturing: false,
         };
         gr.probe()?;
         gr.stats = CommStats::default();
@@ -755,7 +809,11 @@ impl Group {
             None
         };
         let push = self.transport == TpTransport::DevicePush
-            && blks.iter().all(|b| b.bytes() <= ffi::PUSH_MAX);
+            && blks.iter().all(|b| b.bytes() * (n - 1) <= PUSH_LIMIT);
+        if self.capturing && !push {
+            // the other gathers wait on events and issue copy calls from the host
+            return Err("allgather: only a gather inside kernels can be recorded".into());
+        }
         // a strided region goes through a contiguous block on both sides (a small one under
         // device-push is pushed instead)
         let packed = self.transport != TpTransport::HostCanonical
@@ -958,24 +1016,30 @@ impl Group {
         Ok(())
     }
 
-    /// A gather of regions of at most [`ffi::PUSH_MAX`] bytes inside kernels (device-push): each
+    /// A gather whose ranks each store at most [`PUSH_LIMIT`] bytes, inside kernels (device-push): each
     /// rank's push kernel packs its region into its slot of every peer's inbox and then stores
     /// this gather's sequence number in the slot's word; each rank's pull kernel, queued right
     /// behind it, spins on the words of its own inbox and unpacks the slots into its buffer. Two
-    /// launches a rank and nothing else: no event, no copy call, no host wait. Slots alternate
-    /// with the sequence number: a rank cannot push gather g + 2 before its pull of g + 1 saw
+    /// launches a rank and nothing else: no event, no copy call, no host wait. The number is the
+    /// rank's own count of gathers plus one, kept on its card and stored by its pull, so a
+    /// launch holds nothing the host counted and a captured gather replays as it is. Slots
+    /// alternate with the number: a rank cannot push gather g + 2 before its pull of g + 1 saw
     /// every peer's word, and a peer pushes g + 1 after its own pull of g, so a slot is never
     /// rewritten under its reader. Larger regions keep the copy-engine gather (peer-pull).
     fn gather_push(&mut self, bufs: &[&Buf], blks: &[Blk]) -> Result<(), String> {
         let n = self.n();
-        self.push_seq = self.push_seq.wrapping_add(1);
-        let (seq, word_first) = (self.push_seq, self.push_word_first as i32);
-        let slot = move |producer: usize| ((seq as usize & 1) * n + producer) * PUSH_SLOT;
+        let word_first = self.push_word_first as i32;
+        // a producer's slot of an even gather; an odd gather's is `alt` bytes on
+        let slot = |producer: usize| producer * PUSH_SLOT;
+        let alt = (n * PUSH_SLOT) as i64;
         let addr: Vec<u64> = (0..n)
             .map(|r| bufs[r].p(&self.cx[r].ops.st).addr())
             .collect();
         let inbox: Vec<u64> = (0..n)
             .map(|r| self.inbox[r].p(&self.cx[r].ops.st).addr())
+            .collect();
+        let ctr: Vec<u64> = (0..n)
+            .map(|r| self.push_ctr[r].p(&self.cx[r].ops.st).addr())
             .collect();
         let Self { pool, cx, .. } = self;
         each_in(pool.as_mut(), cx, |r, c| {
@@ -1002,7 +1066,8 @@ impl Group {
                     b.rows as i32,
                     &out,
                     k as i32,
-                    seq,
+                    ctr[r] as *const u32,
+                    alt,
                     word_first,
                     c.ops.sv(),
                 )
@@ -1011,7 +1076,8 @@ impl Group {
                 ffi::memra_v41_pull(
                     &inn,
                     k as i32,
-                    seq,
+                    ctr[r] as *mut u32,
+                    alt,
                     addr[r] as *mut std::ffi::c_void,
                     c.route_bad.p(&st).im(),
                     c.ops.sv(),
@@ -1041,7 +1107,7 @@ impl Group {
             (288, 7),
             (640, 1),
             (2048, 3),
-            (ffi::PUSH_MAX / 4, 1),
+            (PUSH_LIMIT / (n - 1).max(1) / 4, 1),
         ];
         let was = std::mem::replace(&mut self.push_word_first, word_first);
         let cnt = self.each(|_, c| c.ops.buf(4))?;
@@ -1195,6 +1261,65 @@ impl Group {
                     ));
                 }
             }
+        }
+        Ok(out)
+    }
+
+    /// What one gather costs by the size of a rank's region, inside kernels against through the
+    /// kept blocks and the copy engine (device-push only): `gathers` gathers back to back with
+    /// one wait at the end, microseconds a gather, the median of `reps`. One row of the given
+    /// bytes a rank, and the same bytes as 8 strided rows. This is what sets [`PUSH_LIMIT`].
+    pub fn gather_probe(&mut self, gathers: usize, reps: usize) -> Result<Vec<String>, String> {
+        let n = self.n();
+        if n < 2 || self.transport != TpTransport::DevicePush {
+            return Err("gather probe: two ranks or more on device-push".into());
+        }
+        let mut out = Vec::new();
+        let mut kib = 1usize;
+        while kib << 10 <= ffi::PUSH_MAX {
+            for rows in [1usize, 8] {
+                let width = (kib << 10) / rows;
+                // a rank's region: its columns of `rows` rows, the row a word longer than the
+                // ranks' columns so the region is strided
+                let pitch = n * width + 16;
+                let bufs = self.each(|_, c| c.ops.buf(pitch * rows))?;
+                let refs: Vec<&Buf> = bufs.iter().collect();
+                let blks: Vec<Blk> = (0..n)
+                    .map(|r| Blk {
+                        off: r * width,
+                        width,
+                        pitch,
+                        rows,
+                    })
+                    .collect();
+                let mut us = [Vec::new(), Vec::new()];
+                for _ in 0..reps.max(1) {
+                    for (m, v) in us.iter_mut().enumerate() {
+                        self.sync_all()?;
+                        let t0 = Instant::now();
+                        for _ in 0..gathers.max(1) {
+                            if m == 0 {
+                                self.gather_push(&refs, &blks)?;
+                            } else {
+                                self.gather_packed(&refs, &blks)?;
+                            }
+                        }
+                        self.sync_all()?;
+                        v.push(t0.elapsed().as_secs_f64() * 1e6 / gathers.max(1) as f64);
+                    }
+                }
+                let med = |v: &mut Vec<f64>| {
+                    v.sort_by(|a, b| a.total_cmp(b));
+                    v[v.len() / 2]
+                };
+                let [a, b] = &mut us;
+                out.push(format!(
+                    "gather {kib:5} KiB a rank in {rows} rows, {n} ranks: in kernels {:.1} us, kept blocks {:.1} us",
+                    med(a),
+                    med(b)
+                ));
+            }
+            kib *= 2;
         }
         Ok(out)
     }
@@ -1392,7 +1517,6 @@ impl Group {
                 return Err(format!("tp block_forward: rank {r} holds {:?}", w.part));
             }
         }
-        let d = self.cx[0].g.dim;
         // many rows on N ranks: each rank computes its share of the mHC mixes' partial sums
         let split_mix = n > 1 && 8 % n == 0 && s > super::SMALL_M;
         let parts = if split_mix {
@@ -1456,13 +1580,63 @@ impl Group {
         } else {
             None
         };
+        let ins = FfnIn {
+            h: &h,
+            a: &a,
+            a_pre: &a_pre,
+            a_post: &a_post,
+            a_comb: &a_comb,
+        };
+        let few = s <= super::SMALL_M && parts.is_none();
+        let (f_pre, m) = if self.graphs.on && few && self.can_capture() {
+            (self.ffn_half_graph(lw, &ins, s, tr)?, None)
+        } else {
+            let (p, m) = self.ffn_half(lw, &ins, s, parts, true, tr)?;
+            (p, Some(m))
+        };
+        drop((a_pre, a_post, a_comb));
+        if self.trace {
+            for (r, (aa, mm)) in a.into_iter().zip(m.into_iter().flatten()).enumerate() {
+                tr[r].attn_out = Some(aa);
+                tr[r].moe_out = Some(mm);
+            }
+        }
+        Ok((h, f_pre))
+    }
+
+    /// The second half of a block on every rank, from the attention output `a` to the block's
+    /// output in `h` (both mHC posts write `h` in place): the post-mix of `a`, the FFN's mixes
+    /// (`parts`: their gathered partial sums on many rows; else under the MoE on the second
+    /// stream), the collapse and norm, the MoE, its post-mix. Nothing in it depends on a
+    /// position. `join`: the attention's mixes are still on the second stream and are joined
+    /// here (a recorded span joins them before it starts instead). Returns each rank's new
+    /// pre-mix and MoE output.
+    fn ffn_half(
+        &mut self,
+        lw: &[LayerW],
+        i: &FfnIn<'_>,
+        s: usize,
+        parts: Option<Vec<Buf>>,
+        join: bool,
+        tr: &mut [Trace],
+    ) -> Result<(Vec<Buf>, Vec<Buf>), String> {
+        let d = self.cx[0].g.dim;
+        let FfnIn {
+            h,
+            a,
+            a_pre,
+            a_post,
+            a_comb,
+        } = *i;
         let ffn = self.each(|r, c| {
             let w = &lw[r];
             let (_m, p, po, co) = match &parts {
                 Some(ps) => c.hc_mix_finish(&ps[r], &w.hc_ffn_scale, &w.hc_ffn_base, s)?,
                 None => {
                     // the attention's mixes ran under it; h[r] becomes the stream after attention
-                    c.side_join()?;
+                    if join {
+                        c.side_join()?;
+                    }
                     c.hc_post_in_place(&a[r], &h[r], &a_post[r], &a_comb[r], s)?;
                     // and the FFN's mixes run under the MoE
                     c.hc_mix_under(&w.hc_ffn_fn, &w.hc_ffn_scale, &w.hc_ffn_base, &h[r], s)?
@@ -1472,8 +1646,7 @@ impl Group {
             let m = c.ops.tmp(s * d * 2)?;
             Ok((p, po, co, x2, m))
         })?;
-        drop((a_pre, a_post, a_comb));
-        let a = if self.trace { Some(a) } else { None };
+        drop(parts);
         let (mut f_pre, mut f_post, mut f_comb, mut x2, mut m) =
             (vec![], vec![], vec![], vec![], vec![]);
         for (p, po, co, x, mm) in ffn {
@@ -1500,13 +1673,156 @@ impl Group {
             c.side_join()?;
             c.hc_post_in_place(&m[r], &h[r], &f_post[r], &f_comb[r], s)
         })?;
-        if let Some(a) = a {
-            for (r, (aa, mm)) in a.into_iter().zip(m).enumerate() {
-                tr[r].attn_out = Some(aa);
-                tr[r].moe_out = Some(mm);
+        Ok((f_pre, m))
+    }
+
+    /// [`Self::ffn_half`] of a few rows through the layer's captured graph
+    /// ([`super::graph`]): the first call of a (layer, rows) runs launch by launch, the second
+    /// records it, and from then on a call is one graph launch a rank, with the graph pointed at
+    /// the call's input buffers first when they sit elsewhere than at the launch before. The
+    /// first replays are compared with the launch-by-launch run, byte for byte, in the stream
+    /// and in the new pre-mix. The returned pre-mix is the capture's buffer when the span was
+    /// replayed: it holds until the layer's next call.
+    fn ffn_half_graph(
+        &mut self,
+        lw: &[LayerW],
+        i: &FfnIn<'_>,
+        s: usize,
+        tr: &mut [Trace],
+    ) -> Result<Vec<Buf>, String> {
+        use super::graph::{Piece, SELF_CHECKS, Slot};
+        // the attention's mixes: joined on the host, so the span starts with nothing of the
+        // second stream outside it
+        self.each(|_, c| c.side_join())?;
+        let n = self.n();
+        let key = (lw[0].id, s);
+        // 0: new, 1: seen once, 2: refused, 3: recorded
+        let found = match self.graphs.slots.get(&key) {
+            None => 0,
+            Some(Slot::Seen) => 1,
+            Some(Slot::Refused) => 2,
+            Some(Slot::Ready(_)) => 3,
+        };
+        match found {
+            0 => {
+                self.graphs.slots.insert(key, Slot::Seen);
+                return Ok(self.ffn_half(lw, i, s, None, false, tr)?.0);
+            }
+            2 => return Ok(self.ffn_half(lw, i, s, None, false, tr)?.0),
+            1 => {
+                let spans = self.ffn_spans(i);
+                let cap = self.capture(&spans, |g| Ok(g.ffn_half(lw, i, s, None, false, tr)?.0))?;
+                let Some(cap) = cap else {
+                    self.graphs.stats.refused += 1;
+                    self.graphs.slots.insert(key, Slot::Refused);
+                    return Ok(self.ffn_half(lw, i, s, None, false, tr)?.0);
+                };
+                self.graphs.stats.captures += 1;
+                let piece = Piece { cap, checked: 0 };
+                self.graphs.slots.insert(key, Slot::Ready(Box::new(piece)));
+            }
+            _ => {}
+        }
+        let Some(Slot::Ready(mut p)) = self.graphs.slots.remove(&key) else {
+            unreachable!("the span was just found or recorded");
+        };
+        let res = if p.checked < SELF_CHECKS {
+            self.ffn_half_check(lw, i, s, &p, tr).map(|()| true)
+        } else {
+            let at: Vec<Vec<u64>> = self
+                .ffn_spans(i)
+                .into_iter()
+                .map(|v| v.into_iter().map(|x| x.0).collect())
+                .collect();
+            self.replay(&p.cap, &at)
+        };
+        // SAFETY: the piece stays in `graphs` for the group's life, and its pre-mix is
+        // rewritten only by this layer's next replay (see the function's contract)
+        let out = (0..n)
+            .map(|r| unsafe { p.cap.out[r].alias(&self.cx[r].ops.st) })
+            .collect();
+        if let Ok(moved) = res {
+            if p.checked < SELF_CHECKS {
+                p.checked += 1;
+                self.graphs.stats.checks += 1;
+            }
+            self.graphs.stats.replays += 1;
+            self.graphs.stats.moved += moved as u64;
+        }
+        self.graphs.slots.insert(key, Slot::Ready(p));
+        res.map(|_| out)
+    }
+
+    /// Each rank's inputs of the second half, (address, bytes), in [`FfnIn`]'s order.
+    fn ffn_spans(&self, i: &FfnIn<'_>) -> Vec<Vec<(u64, usize)>> {
+        (0..self.n())
+            .map(|r| {
+                let st = &self.cx[r].ops.st;
+                [i.h, i.a, i.a_pre, i.a_post, i.a_comb]
+                    .iter()
+                    .map(|b| (b[r].p(st).addr(), b[r].len))
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// One self-checked replay: the span launch by launch on the call's inputs, and the graph
+    /// on copies of all five taken before (so the graph is pointed at addresses it was not
+    /// captured on), and the two results (stream and new pre-mix) compared on the host.
+    fn ffn_half_check(
+        &mut self,
+        lw: &[LayerW],
+        i: &FfnIn<'_>,
+        s: usize,
+        p: &super::graph::Piece,
+        tr: &mut [Trace],
+    ) -> Result<(), String> {
+        let copy = |g: &mut Self, b: &[Buf]| g.each(|r, c| super::clone_buf(&c.ops, &b[r]));
+        let (h2, a2) = (copy(self, i.h)?, copy(self, i.a)?);
+        let (pre2, post2, comb2) = (
+            copy(self, i.a_pre)?,
+            copy(self, i.a_post)?,
+            copy(self, i.a_comb)?,
+        );
+        let twin = FfnIn {
+            h: &h2,
+            a: &a2,
+            a_pre: &pre2,
+            a_post: &post2,
+            a_comb: &comb2,
+        };
+        let (pre_e, _m) = self.ffn_half(lw, i, s, None, false, tr)?;
+        let at: Vec<Vec<u64>> = self
+            .ffn_spans(&twin)
+            .into_iter()
+            .map(|v| v.into_iter().map(|x| x.0).collect())
+            .collect();
+        self.replay(&p.cap, &at)?;
+        self.sync_all()?;
+        for r in 0..self.n() {
+            let st = self.cx[r].ops.st.clone();
+            for (what, e, g) in [
+                ("stream", &i.h[r], &h2[r]),
+                ("pre-mix", &pre_e[r], &p.cap.out[r]),
+            ] {
+                let (e, g) = (e.host(&st)?, g.host(&st)?);
+                if e.len() != g.len() {
+                    return Err(format!(
+                        "dsv41 graph: layer {} rank {r}: {what} sizes",
+                        lw[r].id
+                    ));
+                }
+                if let Some(at) = e.iter().zip(&g).position(|(x, y)| x != y) {
+                    return Err(format!(
+                        "dsv41 graph: layer {} rank {r}: the replay's {what} differs from the \
+                         launch-by-launch run at byte {at} of {}",
+                        lw[r].id,
+                        e.len()
+                    ));
+                }
             }
         }
-        Ok((h, f_pre))
+        Ok(())
     }
 
     /// The mHC mixes' partial sums of `s` rows of the streams `h` with every rank computing its
@@ -2456,52 +2772,85 @@ impl Ctx {
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let (d, inter, np, hn, h0) = (g.dim, g.moe_inter, plan.np, lw.hid_l, lw.hid0);
-        let aq = self.ops.tmp(np * d)?;
-        let as_ = self.ops.tmp(np * d / 32)?;
-        self.ops
-            .act_quant(x, d, plan.ptok.p(&st), np, d, aq.p(&st), as_.p(&st))?;
-        if plan.bm <= super::SMALL_M {
-            // a few rows: w1, w3 and the SwiGLU in one launch
+        if plan.bm > super::SMALL_M {
+            // many rows: the input quantized once a token, each tile reading its pairs' tokens
+            // through the plan's pair-to-token list (a sixth of the quantization of the pairs'
+            // gathered copies, and the same codes)
+            let rows = np / g.topk;
+            let aq = self.ops.tmp(rows * d)?;
+            let as_ = self.ops.tmp(rows * d / 32)?;
+            self.ops
+                .act_quant(x, d, Dp::NULL, rows, d, aq.p(&st), as_.p(&st))?;
+            let gb = self.ops.tmp(np * hn * 2)?;
+            let ub = self.ops.tmp(np * hn * 2)?;
             let (wfmt, kdiv) = split_fmt(lw)?;
-            return ck("swiglu_tiles", unsafe {
-                ffi::memra_v41_swiglu_tiles(
-                    aq.p(&st).c(),
-                    d as i64,
-                    as_.p(&st).c(),
-                    (d / 32) as i64,
-                    plan.tiles.p(&st).c(),
-                    plan.ntiles.p(&st).i(),
-                    plan.max_tiles as i32,
-                    lw.exp_tab.p(&st).c(),
-                    (d / 2) as i64,
-                    (d / kdiv) as i64,
-                    wfmt,
+            for (proj, out) in [(0, &gb), (2, &ub)] {
+                ck("gemm_f8_tiles_rows", unsafe {
+                    ffi::memra_v41_gemm_f8_tiles_rows(
+                        aq.p(&st).c(),
+                        d as i64,
+                        as_.p(&st).c(),
+                        (d / 32) as i64,
+                        plan.ptok.p(&st).i(),
+                        plan.tiles.p(&st).c(),
+                        plan.ntiles.p(&st).i(),
+                        plan.max_tiles as i32,
+                        lw.exp_tab.p(&st).c(),
+                        proj,
+                        (d / 2) as i64,
+                        (d / kdiv) as i64,
+                        wfmt,
+                        out.p(&st).m(),
+                        hn as i64,
+                        0,
+                        hn as i32,
+                        d as i32,
+                        plan.bm as i32,
+                        self.ops.sv(),
+                    )
+                })?;
+            }
+            return ck("swiglu", unsafe {
+                ffi::memra_v41_swiglu(
+                    gb.p(&st).m(),
+                    ub.p(&st).m(),
+                    hn as i64,
                     plan.pw.p(&st).f(),
                     g.swiglu_limit,
                     hb.at(&st, h0 * 2).m(),
                     inter as i64,
+                    np as i32,
                     hn as i32,
-                    d as i32,
-                    plan.bm as i32,
                     self.ops.sv(),
                 )
             });
         }
-        let gb = self.ops.tmp(np * hn * 2)?;
-        let ub = self.ops.tmp(np * hn * 2)?;
-        self.split_tiles(lw, plan, &aq, &as_, d, 0, gb.p(&st), hn)?;
-        self.split_tiles(lw, plan, &aq, &as_, d, 2, ub.p(&st), hn)?;
-        ck("swiglu", unsafe {
-            ffi::memra_v41_swiglu(
-                gb.p(&st).m(),
-                ub.p(&st).m(),
-                hn as i64,
+        // a few rows: w1, w3 and the SwiGLU in one launch over the pairs' gathered rows
+        let aq = self.ops.tmp(np * d)?;
+        let as_ = self.ops.tmp(np * d / 32)?;
+        self.ops
+            .act_quant(x, d, plan.ptok.p(&st), np, d, aq.p(&st), as_.p(&st))?;
+        let (wfmt, kdiv) = split_fmt(lw)?;
+        ck("swiglu_tiles", unsafe {
+            ffi::memra_v41_swiglu_tiles(
+                aq.p(&st).c(),
+                d as i64,
+                as_.p(&st).c(),
+                (d / 32) as i64,
+                plan.tiles.p(&st).c(),
+                plan.ntiles.p(&st).i(),
+                plan.max_tiles as i32,
+                lw.exp_tab.p(&st).c(),
+                (d / 2) as i64,
+                (d / kdiv) as i64,
+                wfmt,
                 plan.pw.p(&st).f(),
                 g.swiglu_limit,
                 hb.at(&st, h0 * 2).m(),
                 inter as i64,
-                np as i32,
                 hn as i32,
+                d as i32,
+                plan.bm as i32,
                 self.ops.sv(),
             )
         })
