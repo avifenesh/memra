@@ -982,6 +982,7 @@ fn draft_tape(
     let (mut full, mut full_bias) = (Vec::new(), Vec::new());
     let mut same_ids = 0usize;
     let mut same_blocks = 0usize;
+    let mut untraced_equal = 0usize;
     let t0 = Instant::now();
     for (k, (&tok, &p)) in toks.iter().zip(&pos).enumerate() {
         let p = p as usize;
@@ -991,6 +992,10 @@ fn draft_tape(
             .ok_or("main_x not returned")?;
         main_x.extend(mx);
         let dr = rn.draft(dw, &mut ds, tok, p + 1, true)?;
+        // the same draft untraced: on one rank its picks chain on the device, and must name the
+        // traced draft's tokens and confidences
+        let plain = rn.draft(dw, &mut ds, tok, p + 1, false)?;
+        untraced_equal += usize::from(plain.ids == dr.ids && plain.conf == dr.conf);
         let t = dr.trace.as_ref().ok_or("no trace")?;
         for si in 0..st_n {
             hs[si].extend(&t.h[si]);
@@ -1049,12 +1054,14 @@ fn draft_tape(
         }
     }
     debug_assert_eq!(TOPK, 32);
+    let pass = untraced_equal == n;
     Ok((
-        true,
+        pass,
         serde_json::json!({
-            "job": "draft-tape", "id": id, "pass": true, "prompt": s, "steps": n,
+            "job": "draft-tape", "id": id, "pass": pass, "prompt": s, "steps": n,
             "draft_tokens": n * b, "draft_tokens_equal_vendor": same_ids,
-            "blocks_equal_vendor": same_blocks, "secs": secs,
+            "blocks_equal_vendor": same_blocks, "untraced_drafts_equal": untraced_equal,
+            "secs": secs,
         })
         .to_string(),
     ))

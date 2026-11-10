@@ -35,7 +35,9 @@
 //! running requests go through the trunk together, up to `MEMRA_DSV41_BATCH_ROWS` rows a call
 //! (`decode::Runner::forward_batch`: each row is its request's own one-token call at its own
 //! position, against its own state, through shared launches; more requests than that are
-//! consecutive calls), and their logits come from one pass over the head. A row's bytes are those
+//! consecutive calls), and their logits come from one pass over the head (when every step of
+//! the call is a plain greedy pick the card returns each row's argmax instead and no logits are
+//! downloaded; a single such step runs as a call of its own). A row's bytes are those
 //! of its one-token call run alone (`dsv41-spec batch-rows`), so a request's numbers are the same
 //! served alone or beside others (the serve receipts gate this byte for byte). A prefill and a
 //! drafted block's verification run as calls of their own.
@@ -908,6 +910,14 @@ struct Up<'a> {
     batch_rows: usize,
 }
 
+/// What a batched call's rows hand the route: their logits (a sampler or penalties choose from
+/// them), or, when every row is a plain greedy pick, the device's argmax of each row
+/// (`Runner::argmax_rows`: the host argmax's token, lowest id among equal maxima).
+enum Picked {
+    Logits(Vec<f32>),
+    Ids(Vec<u32>),
+}
+
 /// The most rows a batched decode call carries: the small-M GEMM bodies' limit
 /// (`dsv41_gpu::SMALL_M`).
 const BATCH_ROWS_MAX: usize = v41::SMALL_M;
@@ -1540,6 +1550,20 @@ fn serve_loop(
                 calls.push(Call { seq: i, tokens });
                 who.push(i);
             }
+            // one such step alone is a call of its own, as before batching
+            if batch.len() == 1 {
+                let (i, t) = batch.remove(0);
+                calls.push(Call {
+                    seq: i,
+                    tokens: vec![t],
+                });
+                who.push(i);
+            }
+            // whether every batched step is a plain greedy pick: its token is then the device's
+            // argmax of its row and no logits leave the card
+            let greedy = batch
+                .iter()
+                .all(|&(i, _)| act[i].sample.is_none() && act[i].pen.is_none());
             let tf = Instant::now();
             let outs = if calls.is_empty() {
                 Vec::new()
@@ -1556,8 +1580,12 @@ fn serve_loop(
             let mut bouts = Vec::new();
             for chunk in batch.chunks(up.batch_rows) {
                 let o = up.rn.forward_batch(&mut seqs, chunk)?;
-                let lg = up.rn.logits(&o, 0, chunk.len())?;
-                bouts.push((o, lg));
+                let picked = if greedy {
+                    Picked::Ids(up.rn.argmax_rows(&o, 0, chunk.len())?)
+                } else {
+                    Picked::Logits(up.rn.logits(&o, 0, chunk.len())?)
+                };
+                bouts.push((o, picked));
             }
             Ok::<_, String>((
                 outs,
@@ -1630,25 +1658,24 @@ fn serve_loop(
         let mut done = Vec::new();
         // every request's rows with the call that holds them: its own call's from row 0, or its
         // row of a batched call
-        let mut items: Vec<(usize, Vec<f32>, &Out, usize)> = rows
+        let mut items: Vec<(usize, Vec<f32>, &Out, usize, Option<u32>)> = rows
             .into_iter()
             .zip(&outs)
             .zip(&who)
-            .map(|((row, o), &i)| (i, row, o, 0))
+            .map(|((row, o), &i)| (i, row, o, 0, None))
             .collect();
         let mut b0 = 0usize;
-        for (o, lg) in &bouts {
+        for (o, picked) in &bouts {
             for r in 0..o.s {
-                items.push((
-                    batch[b0 + r].0,
-                    lg[r * vocab..(r + 1) * vocab].to_vec(),
-                    o,
-                    r,
-                ));
+                let i = batch[b0 + r].0;
+                items.push(match picked {
+                    Picked::Logits(lg) => (i, lg[r * vocab..(r + 1) * vocab].to_vec(), o, r, None),
+                    Picked::Ids(ids) => (i, Vec::new(), o, r, Some(ids[r])),
+                });
             }
             b0 += o.s;
         }
-        for (i, row, o, row0) in items {
+        for (i, row, o, row0, picked) in items {
             let a = &mut act[i];
             let fail = |a: &mut Active, what: &str, e: String| {
                 let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
@@ -1669,15 +1696,29 @@ fn serve_loop(
             // chosen as a plain step's (the penalties window and the position-keyed draw see the
             // tokens emitted so far); a draft stands while it equals that choice, and the first
             // row whose choice differs from the draft after it ends the block.
-            let n_rows = row.len() / vocab;
+            let n_rows = if picked.is_some() {
+                1
+            } else {
+                row.len() / vocab
+            };
             let drafted = n_rows - 1;
             let mut kept = 0usize;
             let mut live = true;
             a.steps += 1;
             for r in 0..n_rows {
                 let pos = a.prompt_len + a.stream.ids.len();
-                let lg = row[r * vocab..(r + 1) * vocab].to_vec();
-                let t = match choose(lg, pos, a.sample.as_ref(), a.pen.as_ref(), &a.window) {
+                let chosen = match picked {
+                    // the device's argmax of the row: a plain greedy step of a batched call
+                    Some(t) => Ok(t),
+                    None => choose(
+                        row[r * vocab..(r + 1) * vocab].to_vec(),
+                        pos,
+                        a.sample.as_ref(),
+                        a.pen.as_ref(),
+                        &a.window,
+                    ),
+                };
+                let t = match chosen {
                     Ok(t) => t,
                     Err(e) => {
                         fail(a, "sampler", e);
