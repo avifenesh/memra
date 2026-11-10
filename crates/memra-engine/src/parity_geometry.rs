@@ -252,14 +252,15 @@ pub fn join_bool(v: &[bool]) -> String {
 mod tests {
     use super::*;
 
+    // One name per call: the tests run in parallel in one process, and a clock reading can
+    // repeat between two of them, so a pid + time name let one test delete another's file.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
     fn write(body: &str) -> String {
         let p = std::env::temp_dir().join(format!(
-            "memra_parity_geometry_{}_{:?}.txt",
+            "memra_parity_geometry_{}_{}.txt",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         std::fs::write(&p, body).unwrap();
         p.to_string_lossy().into_owned()
