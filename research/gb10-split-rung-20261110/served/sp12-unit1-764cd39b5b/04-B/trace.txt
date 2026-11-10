@@ -1,0 +1,26 @@
+1794306692.152960 [mtp-draft] loading external MTP draft: ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+1794306692.230741 [mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+1794306692.906250 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794306738.650336 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":27137306624,"synchronization_errors":[]}
+1794306799.766981 [spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+1794306802.918482 [spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+1794306805.313954 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":25343082496,"synchronization_errors":[]}
+1794306805.313995 [spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=9.92ms draft_step=0.00ms pooled_overhead=Some((4, 3.2233509895833343)) pooled_draft_step=None verify_ms[1..16]=[76.7 74.7 74.7 75.6 76.3 77.0 79.1 81.3 83.5 85.7 87.9 90.1 92.3 94.4 96.5 98.6] plain_ms[1..]=[76.2 78.4 82.2 85.9 90.2 94.5 98.8 103.1 107.6 112.2 116.7 121.2 125.7 130.2 134.7 139.3 144.7 150.2 155.7 161.2 166.6 172.1 177.6 183.0 188.5 194.0 199.5 204.9 210.4 215.9 221.4 226.8] (66.4s)
+1794306810.567221 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1577058304,"still_owned_bytes":19178338256,"pool_reserved_bytes":19293798400,"pool_cached_bytes":115460144,"driver_free_bytes":24587632640,"synchronization_errors":[]}
+1794306815.029378 [spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+1794306815.044003 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1031 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794306816.991421 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=1946.901 generated=0->34 rounds=10 drafted=30 accepted=23 k=3
+1794306818.359716 [tick-spec] seq=1 slot=0 trace=- start_ms=0.010 gap_ms=0.010 wall_ms=1368.284 generated=34->67 rounds=16 drafted=48 accepted=17 k=3
+1794306819.467335 [tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=1107.292 generated=67->99 rounds=13 drafted=39 accepted=19 k=3
+1794306820.407058 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=939.501 generated=99->127 rounds=11 drafted=33 accepted=17 k=3
+1794306820.500064 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=12268 cached=0 lcp=6 active=1 wave=1 placement=single-or-non-pp2
+1794306822.942669 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=2442.484 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794306825.426274 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2483.485 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794306828.080644 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2654.286 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794306828.104007 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=23.353 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794306828.127706 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.719 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794306829.066747 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=938.663 generated=0->34 rounds=10 drafted=30 accepted=23 k=3
+1794306830.091004 [tick-spec] seq=1 slot=0 trace=- start_ms=0.009 gap_ms=0.009 wall_ms=1023.845 generated=34->66 rounds=11 drafted=33 accepted=21 k=3
+1794306830.091043 [spec-cost] model="q38" realized n=1 K=3: 27.3 tok/s (now priced from serving)
+1794306831.006874 [tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=915.816 generated=66->100 rounds=10 drafted=30 accepted=24 k=3
+1794306831.655952 [tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=648.995 generated=100->113 rounds=7 drafted=21 accepted=8 k=3

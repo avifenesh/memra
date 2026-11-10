@@ -1,0 +1,41 @@
+# cmd (main engine: tools/am_p4.sh base; the prompt is the first 16,390 tokens of research/e2e/prompts/p4-16k.txt, tools/cut_text.py)
+bash box/am_p4.sh base
+# rc 0
+# gate
+argmax-margin-gate: model=Qwen3.8-27B-NVFP4-Q5K-mtp.gguf prompt=p4-16390.txt window=12 decode=eager canary=0
+  flip budget: 1 (row: default)
+  explained pos=16385 margin=0.0298 < delta=0.1964
+  SUMMARY flips=1 bad=0
+  PRIME-SUMMARY prime=MATCH
+    PRIME-GATE: class=MATCH bp_argmax=1653 tw_argmax=1653 tw_margin=9.238658905e0 bp_margin=9.125307083e0 maxdiff=4.238476753e-1
+  PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+  raw: ~/.cache/memra-split-rung/cells/am-27b-p4-16390-e-base/gate/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-p4-16390.log
+# probe (pool growth lines left out)
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+argmax-margin-probe: T=16390 window=12 sm_count=48 model=~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
+
+pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree
+16378    72444         6.049985886e0    72444        7.088937759e0    1.064901352e0    yes
+16379    26            1.032705021e1    26           9.468521118e0    4.372568130e-1   yes
+16380    271           5.050239563e-1   271          5.978240967e-1   1.709518433e-1   yes
+16381    285           1.098435402e1    285          1.078689766e1    3.595314026e-1   yes
+16382    434           1.071607590e0    434          1.093030930e0    2.195014954e-1   yes
+16383    11246         9.060401917e-1   11246        5.890941620e-1   4.417400360e-1   yes
+16384    279           1.482227325e0    279          1.206869125e0    2.309322357e-1   yes
+16385    3074          2.655982971e-1   3545         2.980041504e-2   1.964302063e-1   NO <-- FLIP
+16386    3817          2.296522141e0    3817         2.285591125e0    4.892921448e-2   yes
+16387    5920          4.202133179e0    5920         4.427484512e0    1.687870026e-1   yes
+16388    8             4.137615204e0    8            4.168714523e0    7.369041443e-2   yes
+16389    1653          9.049442291e0    1653         9.238658905e0    1.307201385e-1   yes
+
+margin distribution (decode config, 12 positions): min 0.0298  p10 0.5891  p50 4.1687  p90 9.4685  max 10.7869
+margin distribution (prefill config): min 0.2656  p50 4.1376  max 10.9844
+DECISION POSITION (the gate's): prefill_top1=1653 decode_top1=1653 margin_p=9.0494 margin_d=9.2387 config_delta_at_ids=0.1307
+  -> the decision margin is BELOW 9/12 sampled positions' margins (rank 10 of 12)
+  -> flip is ARITHMETICALLY POSSIBLE iff config_delta > margin: 0.1307 > 9.0494 = false
+agreement across sampled positions: 11/12 (1 flip(s))
+flip@16385: margin 0.0298 vs config spread 0.1964 -> margin-EXPLAINED (near-tie coin)
+flip budget: 1 flip(s) vs budget 1 (calibration row: default (1/12-window))
+VERDICT-INPUT: NEAR-TIE class — every flip sits at a margin the config spread covers, within the model's calibrated budget (documented cross-config drift, not a numeric defect)
+PRIME-GATE: class=MATCH bp_argmax=1653 tw_argmax=1653 tw_margin=9.238658905e0 bp_margin=9.125307083e0 maxdiff=4.238476753e-1

@@ -1,0 +1,13 @@
+# cmd
+cd box && CELL_PORT=18193 PAIR_MODEL=$HOME/models/memra-gate/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf timeout 28m python3 pair_cells_deep.py $HOME/.cache/memra-split-rung/cells/pairs-or-deep1194-c73c73eefd/out "pairs-or-deep1194-c73c73eefd=$HOME/.cache/memra-split-rung/bins/head-c73c73eefd/memra-server|chat-deep1194|64,64,64|MEMRA_CTX=40960 MEMRA_PREFIX_STABLE_BOUNDARY=1  _EXPECT=grid"
+# rc 0
+# verdict (pair_cells_deep.py)
+{"case": "pairs-or-deep1194-c73c73eefd", "binary": "~/.cache/memra-split-rung/bins/head-c73c73eefd/memra-server", "shape": "chat-deep1194", "max_tokens": [64, 64, 64], "env": "MEMRA_CTX=40960 MEMRA_PREFIX_STABLE_BOUNDARY=1  _EXPECT=grid", "turns": {"2": {"equal": true, "warm_len": 293, "cold_len": 293}, "3": {"equal": true, "warm_len": 159, "cold_len": 159}, "1": {"warm_sha": "8cf1062fa8", "warm_len": 258}}, "bytes": true, "expect": "grid", "offgrid_resumes": 0, "path_ok": true, "warm": {"spec_parked_end": [], "spec_affinity": [], "spec_grid_rewind": [], "spec_grid_decline": [], "spec_affinity_grid_decline": [], "spec_park_skip": [], "prefix_hit": [[32576, 32693], [32672, 32777]], "spec_restore": [[32576, 32693], [32672, 32777]]}, "usage": {"warm-t2": {"prompt": 32693, "cached": 32576, "elapsed_s": 1.199096058}, "cold-t2": {"prompt": 32693, "cached": 0, "elapsed_s": 11.551114286}, "warm-t3": {"prompt": 32777, "cached": 32672, "elapsed_s": 1.216695627}, "cold-t3": {"prompt": 32777, "cached": 0, "elapsed_s": 11.575338776}}}
+# turns (prompt / completion / cached tokens, spec rounds)
+warm-t1: 32614 / 64 / 0, rounds 29
+warm-t2: 32693 / 64 / 32576, rounds 28
+warm-t3: 32777 / 64 / 32672, rounds 27
+cold-t2: 32693 / 64 / 0, rounds 27
+cold-t3: 32777 / 64 / 0, rounds 27
+# binary sha256
+09e52c997b4efbcb

@@ -1,0 +1,4 @@
+# env MEMRA_PROMPT_FILE=deep-65516.txt spec-serve-gate <27B gguf> --steps 8 --ts 1,2,4, head a91d190631
+gpulock: 5090 leased at 06:59:01 for 30m
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+Error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")

@@ -1,0 +1,46 @@
+# cmd
+MEMRA_SPEC_TEMP=0 MEMRA_NGEN=64 MEMRA_PROMPT_FILE=$PWD/prompts/deep-32748.txt bins/head-c73c73eefd/run-spec $HOME/models/memra-gate/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+# rc 0
+# log (prompt token list and capture-time lookups left out)
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 123.60GB (expert budget 120.00GB) -> RESIDENT
+loaded qwen35moe (41 layers, nextn=1)
+text prompt (133920 chars) -> 32748 tokens
+[moe-sk-form] dev=0 qt=7 sms=48 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=173 max_m=2014
+[fa-pool] grow #0 dev=0 o_len 0 -> 1048576 ml_len 0 -> 4096 (retired kept, zero=false)
+
+[generate]   63 tok in 0.949s = 66.40 tok/s (gen-only; this run's prime 10.281s)
+  tokens: [76990, 24674, 435, 22561, 728, 5662, 76990, 220, 18, 20, 13, 198, 6269, 220, 16, 17, 15, 15, 25, 8029, 70676, 30070, 36055, 8029, 70676, 30070, 36055, 8029, 70676, 30070, 36055, 8029, 70676, 220, 18, 21, 13, 198, 6269, 220, 16, 17, 15, 16, 25, 54517, 94892, 14367, 25659, 54517, 94892, 14367, 25659, 54517, 94892, 14367, 25659, 54517, 94892, 220, 18, 22, 13, 198]
+STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 211 primed tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ -> MATCH
+[spec] draft-session state high-water: 35MB (max of parked delta 35MB and capture-time pool peak 3MB; charged per spec admission and gating future captures)
+[spec-vg] MTP verify-graph pool ENGAGED (vt_cap=2)
+[fa-pool] grow #1 dev=0 o_len 1048576 -> 2097152 ml_len 4096 -> 8192 (retired kept, zero=false)
+
+[generate_spec K=1] 64 tok in 1.031s = 61.08 tok/s (0.92x vs generate; this run's prime 10.304s)
+  acceptance: 26/38 = 68.4%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #2 dev=0 o_len 2097152 -> 4194304 ml_len 8192 -> 16384 (retired kept, zero=false)
+
+[generate_spec K=2] 64 tok in 1.095s = 57.56 tok/s (0.87x vs generate; this run's prime 10.439s)
+  acceptance: 28/70 = 40.0%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=3] 64 tok in 1.319s = 47.76 tok/s (0.72x vs generate; this run's prime 10.378s)
+  acceptance: 28/105 = 26.7%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #3 dev=0 o_len 4194304 -> 8388608 ml_len 16384 -> 32768 (retired kept, zero=false)
+
+[generate_spec K=4] 64 tok in 1.582s = 39.82 tok/s (0.60x vs generate; this run's prime 10.350s)
+  acceptance: 28/140 = 20.0%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=5] 64 tok in 1.814s = 34.73 tok/s (0.52x vs generate; this run's prime 10.336s)
+  acceptance: 28/175 = 16.0%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=6] 64 tok in 2.046s = 30.79 tok/s (0.46x vs generate; this run's prime 10.366s)
+  acceptance: 28/210 = 13.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=7] 64 tok in 2.263s = 27.84 tok/s (0.42x vs generate; this run's prime 10.359s)
+  acceptance: 28/245 = 11.4%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #4 dev=0 o_len 8388608 -> 16777216 ml_len 32768 -> 65536 (retired kept, zero=false)
+
+[generate_spec K=8] 64 tok in 2.537s = 24.84 tok/s (0.37x vs generate; this run's prime 10.357s)
+  acceptance: 28/280 = 10.0%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

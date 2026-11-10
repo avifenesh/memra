@@ -1,0 +1,45 @@
+# cmd
+set -u
+cd ~/.cache/memra-split-rung
+unset MEMRA_KC_FAST MEMRA_KC_ONLY; kt-head-1a4f769861/release/kernel-check $HOME/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf --require-manifest src-1a4f769861/tools/kernel-check-27b.cells --require-manifest src-1a4f769861/tools/kernel-check-step35.cells
+# rc 0
+# log
+SKIP sigrouter-served-replay (MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture)
+NORM-SKIP-UNWRITTEN: dst=None seeds (add 0, norm 0) refused (single true, bypass true, no pair true) seeded dp4a outputs 0 mismatching OK
+SKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf; 6 candidates tried; set MEMRA_KC_MODELS_DIR)
+MMQ-F8F4-V2-RESID blk.0.ssm_out.weight: SKIP (absent, not NVFP4, or in_f % 256 != 0)
+MMQ-F8F4-V2-RESID blk.0.ssm_out.weight: SKIP (absent, not NVFP4, or in_f % 256 != 0)
+SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP nvfp4-27b-shape (missing model Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+fa_prefill_w bf16-stage T=64: SKIPPED (hp door numeric class)
+fa_prefill_w bf16-stage T=100: SKIPPED (hp door numeric class)
+FA-VERIFY-ROWS gqa=6 (24/4): fa_verify_rows_v4_deep vs seqs, 1125 cases, 973 launched the rows walk (60 off one split rung, 0 deep depths past the 262144-token cache), 2071056816 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=6 (24/4): split ladder edges [512, 16384] up to 262144 keys, 14 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=6 (24/4): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384], 16 cases (each side; dc sized at the row and at its rung's end): bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=6 (24/4): floor 2048 keys; T=4 below it (len0=2043) Some((false, 0, false)), at it Some((2047, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=8 (16/2): fa_verify_rows_v4_deep vs seqs, 1132 cases, 980 launched the rows walk (60 off one split rung, 0 deep depths past the 262144-token cache), 1462682496 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=8 (16/2): split ladder edges [512, 16384, 32768] up to 262144 keys, 21 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=8 (16/2): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384, 32768], 24 cases (each side; dc sized at the row and at its rung's end): bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=8 (16/2): floor 16384 keys; T=4 below it (len0=16379) Some((false, 0, false)), at it Some((16384, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=4 (16/4): fa_verify_rows_v4_deep vs seqs, 1125 cases, 973 launched the rows walk (60 off one split rung, 0 deep depths past the 262144-token cache), 1380704544 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=4 (16/4): split ladder edges [512, 16384] up to 262144 keys, 14 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=4 (16/4): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384], 16 cases (each side; dc sized at the row and at its rung's end): bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=4 (16/4): floor 1024 keys; T=4 below it (len0=1019) Some((false, 0, false)), at it Some((1023, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=1 (4/4): fa_verify_rows_v4_deep vs seqs, 1093 cases, 941 launched the rows walk (60 off one split rung, 8 deep depths past the 32768-token cache), 302017896 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=1 (4/4): split ladder edges [512, 16384] up to 32768 keys, 14 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=1 (4/4): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384], 16 cases (each side; dc sized at the row and at its rung's end): bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=1 (4/4): floor 1024 keys; T=4 below it (len0=1019) Some((false, 0, false)), at it Some((1023, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=2 (8/4): fa_verify_rows_v4_deep vs seqs, 1093 cases, 941 launched the rows walk (60 off one split rung, 8 deep depths past the 32768-token cache), 604035792 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=2 (8/4): split ladder edges [512, 16384] up to 32768 keys, 14 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=2 (8/4): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384], 16 cases (each side; dc sized at the row and at its rung's end): bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=2 (8/4): floor 1024 keys; T=4 below it (len0=1019) Some((false, 0, false)), at it Some((1023, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=5 (20/4): fa_verify_rows_v4_deep vs seqs, 1093 cases, 941 launched the rows walk (60 off one split rung, 8 deep depths past the 32768-token cache), 1510089480 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=5 (20/4): split ladder edges [512, 16384] up to 32768 keys, 14 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=5 (20/4): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384], 16 cases (each side; dc sized at the row and at its rung's end): bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=5 (20/4): floor 2048 keys; T=4 below it (len0=2043) Some((false, 0, false)), at it Some((2047, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=7 (28/4): fa_verify_rows_v4_deep vs seqs, 1093 cases, 941 launched the rows walk (60 off one split rung, 8 deep depths past the 32768-token cache), 2114125272 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=7 (28/4): split ladder edges [512, 16384] up to 32768 keys, 14 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=7 (28/4): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384], 16 cases (each side; dc sized at the row and at its rung's end): bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=7 (28/4): floor 16384 keys; T=4 below it (len0=16379) Some((false, 0, false)), at it Some((16384, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+ALL GREEN (129 cells, 5 skipped)

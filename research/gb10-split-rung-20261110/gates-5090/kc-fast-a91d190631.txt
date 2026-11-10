@@ -1,0 +1,31 @@
+# MEMRA_KC_FAST=1 MEMRA_KC_ROWS_DEPTH=262144 kernel-check, head a91d190631 (SM-range keying; on this card the same ladder as the final head)
+gpulock: 5090 leased at 06:15:39 for 25m
+FA-VERIFY-ROWS gqa=6 (24/4): fa_verify_rows_v4_deep vs seqs, 1130 cases, 978 launched the rows walk (62 off one split rung, 0 deep depths past the 262144-token cache), 2484403776 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=6 (24/4): split ladder edges [512, 16384, 65536] up to 262144 keys, 21 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=6 (24/4): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384, 65536], 24 cases (each side; dc sized at the row and at its rung's end): bitdiff=0; teeth (the edge row sized on the far rung, words that differ) [(512, 5226), (16384, 5564), (65536, 5784)] OK
+FA-VERIFY-ROWS route gqa=6 (24/4): floor 2048 keys; T=4 below it (len0=2043) Some((false, 0, false)), at it Some((2047, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=8 (16/2): fa_verify_rows_v4_deep vs seqs, 1132 cases, 980 launched the rows walk (60 off one split rung, 0 deep depths past the 262144-token cache), 1639951200 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=8 (16/2): split ladder edges [512, 16384, 32768] up to 262144 keys, 21 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=8 (16/2): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384, 32768], 24 cases (each side; dc sized at the row and at its rung's end): bitdiff=0; teeth (the edge row sized on the far rung, words that differ) [(512, 3402), (16384, 3872), (32768, 3687)] OK
+FA-VERIFY-ROWS route gqa=8 (16/2): floor 16384 keys; T=4 below it (len0=16379) Some((false, 0, false)), at it Some((16384, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=4 (16/4): fa_verify_rows_v4_deep vs seqs, 1130 cases, 978 launched the rows walk (62 off one split rung, 0 deep depths past the 262144-token cache), 1656269184 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=4 (16/4): split ladder edges [512, 16384, 65536] up to 262144 keys, 21 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=4 (16/4): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384, 65536], 24 cases (each side; dc sized at the row and at its rung's end): bitdiff=0; teeth (the edge row sized on the far rung, words that differ) [(512, 3428), (16384, 3768), (65536, 3870)] OK
+FA-VERIFY-ROWS route gqa=4 (16/4): floor 1024 keys; T=4 below it (len0=1019) Some((false, 0, false)), at it Some((1023, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=1 (4/4): fa_verify_rows_v4_deep vs seqs, 1093 cases, 941 launched the rows walk (60 off one split rung, 8 deep depths past the 32768-token cache), 317274984 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=1 (4/4): split ladder edges [512, 16384] up to 32768 keys, 14 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=1 (4/4): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384], 16 cases (each side; dc sized at the row and at its rung's end): bitdiff=0; teeth (the edge row sized on the far rung, words that differ) [(512, 847), (16384, 919)] OK
+FA-VERIFY-ROWS route gqa=1 (4/4): floor 1024 keys; T=4 below it (len0=1019) Some((false, 0, false)), at it Some((1023, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=2 (8/4): fa_verify_rows_v4_deep vs seqs, 1093 cases, 941 launched the rows walk (60 off one split rung, 8 deep depths past the 32768-token cache), 634549968 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=2 (8/4): split ladder edges [512, 16384] up to 32768 keys, 14 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=2 (8/4): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384], 16 cases (each side; dc sized at the row and at its rung's end): bitdiff=0; teeth (the edge row sized on the far rung, words that differ) [(512, 1633), (16384, 1857)] OK
+FA-VERIFY-ROWS route gqa=2 (8/4): floor 1024 keys; T=4 below it (len0=1019) Some((false, 0, false)), at it Some((1023, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=5 (20/4): fa_verify_rows_v4_deep vs seqs, 1093 cases, 941 launched the rows walk (60 off one split rung, 8 deep depths past the 32768-token cache), 1586374920 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=5 (20/4): split ladder edges [512, 16384] up to 32768 keys, 14 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=5 (20/4): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384], 16 cases (each side; dc sized at the row and at its rung's end): bitdiff=0; teeth (the edge row sized on the far rung, words that differ) [(512, 4387), (16384, 4608)] OK
+FA-VERIFY-ROWS route gqa=5 (20/4): floor 2048 keys; T=4 below it (len0=2043) Some((false, 0, false)), at it Some((2047, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=7 (28/4): fa_verify_rows_v4_deep vs seqs, 1093 cases, 941 launched the rows walk (60 off one split rung, 8 deep depths past the 32768-token cache), 2220924888 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS rung edges gqa=7 (28/4): split ladder edges [512, 16384] up to 32768 keys, 14 cases on their two sides (counted above) OK
+FA-DC-EAGER gqa=7 (28/4): fa_decode_dc vs fa_decode for one row at the split ladder edges [512, 16384], 16 cases (each side; dc sized at the row and at its rung's end): bitdiff=0; teeth (the edge row sized on the far rung, words that differ) [(512, 6038), (16384, 6506)] OK
+FA-VERIFY-ROWS route gqa=7 (28/4): floor 16384 keys; T=4 below it (len0=16379) Some((false, 0, false)), at it Some((16384, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+ALL GREEN (105 cells, 23 skipped)

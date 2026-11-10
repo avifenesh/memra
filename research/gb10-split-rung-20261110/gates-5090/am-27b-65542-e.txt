@@ -1,0 +1,11 @@
+# CARGO_TARGET_DIR=<head 5f88f4d026 bins> tools/argmax-margin-gate.sh <27B gguf> --prompt deep-65542.txt (eager arm); the 75 min lease ran 08:28 to 09:01
+gpulock: 5090 leased at 08:28:23 for 75m
+argmax-margin-gate: model=Qwen3.8-27B-NVFP4-Q5K-mtp.gguf prompt=deep-65542.txt window=12 decode=eager canary=0
+  flip budget: 1 (row: default)
+argmax-margin-gate: SKIP (GPU out of memory — not an exactness signal)
+  quoted: Error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+# probe
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+argmax-margin-probe: T=65542 window=12 sm_count=82 model=~/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
+Error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
