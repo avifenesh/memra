@@ -59,6 +59,14 @@ fn sha256_hex(b: &[u8]) -> String {
     d.iter().map(|x| format!("{x:02x}")).collect()
 }
 
+/// The process's minor and major page faults so far.
+fn page_faults() -> (i64, i64) {
+    // SAFETY: getrusage fills the struct it is given
+    let mut u: libc::rusage = unsafe { std::mem::zeroed() };
+    unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut u) };
+    (u.ru_minflt, u.ru_majflt)
+}
+
 fn now_unix() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -382,6 +390,7 @@ fn run() -> Result<(), String> {
                 e.pool_high_water_reset();
             }
             let (c0, s0) = (rn.grp.stats, rn.stats.clone());
+            let f0 = page_faults();
             let w0 = v::tp::READBACK_WAIT_NS.load(std::sync::atomic::Ordering::Relaxed);
             let row = match &cell {
                 Cell::Prefill { name, ids, .. } => prefill_cell(&mut rn, name, ids, round)?,
@@ -406,6 +415,11 @@ fn run() -> Result<(), String> {
                 "bytes": c1.bytes - c0.bytes, "timed_s": c1.secs - c0.secs, "timed": rn.grp.timed,
             });
             row["forwards"] = serde_json::json!(rn.stats.forwards - s0.forwards);
+            // the process's page faults over the cell: the Engram tables are mapped from the
+            // checkpoint, and a row whose page is not mapped costs microseconds, so pages lost
+            // to memory pressure show here as a count
+            let f1 = page_faults();
+            row["page_faults"] = serde_json::json!({"minor": f1.0 - f0.0, "major": f1.1 - f0.1});
             // host time blocked on read-backs, per rank (the rest of a step is issue or other host work)
             let w1 = v::tp::READBACK_WAIT_NS.load(std::sync::atomic::Ordering::Relaxed);
             row["readback_wait_s_per_rank"] =

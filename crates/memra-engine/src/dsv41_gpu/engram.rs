@@ -230,6 +230,66 @@ pub fn gather_host(
     Ok((rows, scales))
 }
 
+/// Map an Engram table's pages into the process up front (`madvise(MADV_POPULATE_READ)` on the
+/// checkpoint mapping), once a process a table. The table is 98 GB of 256-byte rows and a call
+/// reads rows scattered over it, so without this nearly every row is a first touch of its page:
+/// measured 6.8 us a row cold against 0.03 to 0.1 us once the page is mapped (a 4,096-token
+/// prefill's 98,000 rows 666 ms against 3.5 to 10 ms; a decode step's 24 rows a table 0.16 ms
+/// against microseconds). Populating runs at 38 GB/s, 2.6 s a table, and takes no memory of its
+/// own: the pages are the page cache's. Best effort: where the kernel has no such advice the
+/// rows fault in as before.
+pub fn populate(stm: &StModel, table: &str) {
+    static DONE: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    let mut done = DONE.lock().unwrap_or_else(|e| e.into_inner());
+    if done.iter().any(|t| t == table) {
+        return;
+    }
+    done.push(table.to_string());
+    // SAFETY: sysconf has no preconditions
+    let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) }.max(4096) as usize;
+    for part in ["weight", "scale"] {
+        if let Some((_, b)) = stm.raw(&format!("{table}.{part}")) {
+            let a = b.as_ptr() as usize & !(page - 1);
+            let len = b.as_ptr() as usize + b.len() - a;
+            // SAFETY: [a, a + len) lies inside the checkpoint's read-only mapping that `b`
+            // borrows from; the advice only maps its pages
+            unsafe { libc::madvise(a as *mut libc::c_void, len, libc::MADV_POPULATE_READ) };
+        }
+    }
+}
+
+/// The fewest rows a gather thread takes: under it one thread does the whole gather (a decode
+/// step's rows are a few dozen).
+const GATHER_ROWS_A_THREAD: usize = 4096;
+
+/// `dst[i] = table[hashes[i]]`, rows of `w` bytes. The table is a memory-mapped file of 98 GB a
+/// layer and the rows are scattered over it, so nearly every row is a page the process has not
+/// touched: a 4,096-token prefill's 98,000 rows took 267 ms on one thread, about the time of
+/// eight layers of kernels (measured: every sample of the host inside a prefill's forward was
+/// here). The rows are independent, so they are split over the cores the process may use.
+fn gather_rows(dst: &mut [u8], table: &[u8], hashes: &[i64], w: usize) {
+    let copy = |d: &mut [u8], hs: &[i64]| {
+        for (o, &h) in d.chunks_exact_mut(w).zip(hs) {
+            let r = h as usize;
+            o.copy_from_slice(&table[r * w..(r + 1) * w]);
+        }
+    };
+    let threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(hashes.len() / GATHER_ROWS_A_THREAD)
+        .max(1);
+    if threads == 1 {
+        return copy(dst, hashes);
+    }
+    let per = hashes.len().div_ceil(threads);
+    std::thread::scope(|sc| {
+        for (d, hs) in dst.chunks_mut(per * w).zip(hashes.chunks(per)) {
+            sc.spawn(move || copy(d, hs));
+        }
+    });
+}
+
 /// Pinned staging for one Engram layer's step: the gathered rows land in page-locked host memory
 /// and go to the device in one async copy each.
 pub struct Stage {
@@ -303,13 +363,10 @@ impl Stage {
                 .rows
                 .as_mut_slice()
                 .map_err(|e| format!("pinned: {e:?}"))?;
-            for (i, &h) in hashes.iter().enumerate() {
-                if h < 0 || h as usize >= n_rows {
-                    return Err(format!("{table}: hash id {h} outside {n_rows} rows"));
-                }
-                let r = h as usize;
-                pr[i * hd..(i + 1) * hd].copy_from_slice(&w[r * hd..(r + 1) * hd]);
+            if let Some(&h) = hashes.iter().find(|&&h| h < 0 || h as usize >= n_rows) {
+                return Err(format!("{table}: hash id {h} outside {n_rows} rows"));
             }
+            gather_rows(&mut pr[..hashes.len() * hd], w, hashes, hd);
             // SAFETY: the source is pinned memory this stage owns; `done` (recorded below) is
             // waited on before the next write to it, and the destination holds `cap` rows
             unsafe {
@@ -326,10 +383,7 @@ impl Stage {
                 .sc
                 .as_mut_slice()
                 .map_err(|e| format!("pinned: {e:?}"))?;
-            for (i, &h) in hashes.iter().enumerate() {
-                let r = h as usize;
-                ps[i * sb..(i + 1) * sb].copy_from_slice(&s[r * sb..(r + 1) * sb]);
-            }
+            gather_rows(&mut ps[..hashes.len() * sb], s, hashes, sb);
             // SAFETY: as above
             unsafe {
                 cudarc::driver::result::memcpy_htod_async(

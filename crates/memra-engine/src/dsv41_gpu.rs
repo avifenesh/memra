@@ -2231,6 +2231,7 @@ impl LayerW {
                     g.engram_rows[ei]
                 ));
             }
+            engram::populate(stm, &table);
             Some(EngramW {
                 wkv: load_fp8(
                     ops,
