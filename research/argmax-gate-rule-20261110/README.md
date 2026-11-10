@@ -93,7 +93,12 @@ banked log into its floors-table row through the gate's own `--judge --calibrate
 - **Main moved while the cells ran** (to 2628ece940, the GB10 deep split rung). The floors are
   measured on 031f146690's engine. `board-2048` holds 2,048 keys and the rung starts past
   16,384. The four roster 12-row tables in the cell-evidence records are byte-identical between
-  c7708aec49 and 12c3f554c4, on GB10 and on the RTX 5090 Laptop GPU (eight hashes equal).
+  c7708aec49 and 12c3f554c4, on GB10 and on the RTX 5090 Laptop GPU (eight hashes equal). Main
+  then moved to 3de59bbf80 (v0.141.0: a DSv4 server fix and a speculative-burst fix, nothing on
+  the prefill or decode programs). Its probe is another binary (sm_120a sha256 `a98dfa943a6e...`
+  against `723a3f7ff8dd...`, the version bump among the reasons) and its 12-row Ornith eager table
+  on the RTX 5090 Laptop GPU equals the calibration's last 12 rows byte for byte
+  (`main-v0.141.0/ornith-eager-12/`).
 - **Cost.** RTX 5090 Laptop GPU at a 95 W limit, 27B eager: 128 rows in 342 s, 512 rows in
   1,051 s (the second from file times; `timing/`). The window's rows are the
   longest prefixes, so the whole prompt costs between 2,313 s (cost follows tokens) and 3,883 s
@@ -157,6 +162,7 @@ banked log into its floors-table row through the gate's own `--judge --calibrate
 | RTX 5090, 27B eager and batch: the last 12 rows of the whole-prompt table against the card's cell-evidence record at 12c3f554c4 (another build) | byte-identical (`b25c41e5e8e34315`, `4083a49bdc9adb40`) |
 | GB10, Ornith eager and batch: the last 12 rows of the whole-prompt table against the unit's cell-evidence record at 12c3f554c4 | byte-identical (`0d9b64dd0373157a`, `3484571a10e0190c`) |
 | RTX 5090, gemma-4-26B eager: the last 12 rows against the 12-row table banked in `research/gemma-one-program-20261104/` (another build, six days earlier) | byte-identical (`3768249ed8dbaaf2`) |
+| RTX 5090, Ornith eager: v0.141.0's probe (3de59bbf80), 12 rows, against the last 12 rows of the whole-prompt calibration table | byte-identical (`706af873d259891a`); PRIME-GATE MATCH |
 | RTX 5090, gemma-4-31B eager: the last 12 rows against both 12-row tables banked in `research/gemma-one-program-20261104/` (`argmax-g31-off`, `argmax-g31-on`; another build, six days earlier) | byte-identical (`1ad3ce860bb2bcdb`) |
 | RTX 5090, Ornith eager, the whole prompt twice: main's probe (031f146690) and this branch's probe (`--calibrate`, on 2628ece940's engine), 80 minutes apart with other cells on the card between | all 2,045 rows byte-identical; the two floor rows equal in every data field |
 
