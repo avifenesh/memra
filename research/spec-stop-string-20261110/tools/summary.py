@@ -31,10 +31,16 @@ for arg in sys.argv[1:]:
                 by = {r["id"]: r for r in rr}
                 txt = lambda rid: (d / "texts" / f"{b['case']}-{rid}.txt").read_text()  # noqa: E731
                 eq = 0
-                for r in stops:
+                plain = lambda x: bool(x) and (x.get("plain_by_admission") or (  # noqa: E731
+                    x.get("cached") and x.get("acceptance") is None
+                    and (x.get("error") or "").startswith("the request did not speculate")))
+                for r in list(stops):
                     n = r["completion_tokens"]
                     if r["finish"] == "stop":
                         at, lo = by.get(f"{r['id']}-at-{n}"), by.get(f"{r['id']}-at-{n - 1}")
+                        if plain(r) or plain(at) or plain(lo):
+                            stops.remove(r)  # its reference rows ran on plain decode: not judged
+                            continue
                         if at and (lo or n == 1):
                             full = txt(at["id"])
                             ok = any(x in full for x in r["stop"]) and not (lo and any(x in txt(lo["id"]) for x in r["stop"]))
