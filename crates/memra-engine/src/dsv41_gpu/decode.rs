@@ -829,6 +829,7 @@ impl<'a> Runner<'a> {
             self.grp.each(|_, cx| cx.ops.tmp(nr * nt * d * 2))?
         };
         for li in 0..self.n_layers {
+            super::tally::layer(li);
             let tl = Instant::now();
             let mut streamed: Option<Vec<LayerW>> = None;
             let lw: &Vec<LayerW> = match self.resident[li].as_ref() {
@@ -937,6 +938,7 @@ impl<'a> Runner<'a> {
                 self.resident[li] = Some(w);
             }
         }
+        super::tally::layer(usize::MAX);
         self.stats.forwards += 1;
         self.stats.calls += nr;
         if self.grp.cx[0].trace {

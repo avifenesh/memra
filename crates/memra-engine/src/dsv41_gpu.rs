@@ -395,6 +395,16 @@ pub mod ffi {
             out: *mut i32,
             stream: *mut c_void,
         ) -> i32;
+        /// `*dst[r] = src[r]` (rows of `words` 16-bit words; `dst` a device array of row
+        /// addresses, a null one skipped).
+        pub fn memra_v41_put_rows(
+            src: *const c_void,
+            lds: i64,
+            dst: *const c_void,
+            rows: i32,
+            words: i32,
+            stream: *mut c_void,
+        ) -> i32;
         /// `row += bias` in fp32 (bias may be null), then the maximum and its lowest index.
         pub fn memra_v41_add_argmax(
             row: *mut f32,
@@ -523,10 +533,69 @@ pub mod ffi {
 
 /// `rc` from a `memra_v41_*` launcher as a `Result`.
 pub fn ck(name: &str, rc: i32) -> Result<(), String> {
+    tally::hit(name);
     match rc {
         0 => Ok(()),
         r if r >= 10000 => Err(format!("{name}: CUDA error {}", r - 10000)),
         r => Err(format!("{name}: contract refused ({r})")),
+    }
+}
+
+/// A count of the launches a call issues, by layer and kernel, for a gate binary (off unless
+/// started; one relaxed load a launch when off). Every kernel launch reports through [`ck`] and
+/// every device copy through [`copy_d2d`]. Timed, each report first waits for the card, so a
+/// kernel's entry also holds the time from the report before it to its own end (the launches
+/// run one at a time: what each costs, not what the call takes).
+pub mod tally {
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::time::Instant;
+    static ON: AtomicBool = AtomicBool::new(false);
+    static TIMED: AtomicBool = AtomicBool::new(false);
+    static LAYER: AtomicUsize = AtomicUsize::new(usize::MAX);
+    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
+    /// `(layer, kernel) -> (launches, nanoseconds)`
+    pub type Table = BTreeMap<(usize, String), (u64, u64)>;
+    static T: Mutex<Table> = Mutex::new(BTreeMap::new());
+    /// Start counting from zero; `timed` also waits for the card at every report.
+    pub fn start(timed: bool) {
+        T.lock().unwrap().clear();
+        LAYER.store(usize::MAX, Ordering::Relaxed);
+        *LAST.lock().unwrap() = None;
+        TIMED.store(timed, Ordering::Relaxed);
+        ON.store(true, Ordering::Relaxed);
+    }
+    /// The layer the next launches belong to (`usize::MAX`: outside the layers).
+    pub fn layer(li: usize) {
+        if ON.load(Ordering::Relaxed) {
+            hit("(host between layers)");
+            LAYER.store(li, Ordering::Relaxed);
+        }
+    }
+    #[inline]
+    pub fn hit(name: &str) {
+        if ON.load(Ordering::Relaxed) {
+            let ns = if TIMED.load(Ordering::Relaxed) {
+                // the issuing thread holds the card's context
+                unsafe { cudarc::driver::sys::cuCtxSynchronize() };
+                let now = Instant::now();
+                let d = LAST.lock().unwrap().replace(now).map(|t| now - t);
+                d.map_or(0, |d| d.as_nanos() as u64)
+            } else {
+                0
+            };
+            let k = (LAYER.load(Ordering::Relaxed), name.to_string());
+            let mut t = T.lock().unwrap();
+            let e = t.entry(k).or_insert((0, 0));
+            e.0 += 1;
+            e.1 += ns;
+        }
+    }
+    /// Stop counting and return the table.
+    pub fn take() -> Table {
+        ON.store(false, Ordering::Relaxed);
+        std::mem::take(&mut *T.lock().unwrap())
     }
 }
 
@@ -2194,6 +2263,10 @@ pub struct AttnKeys {
     /// each row's position as a device i32 array (a batch of sequences); None: consecutive
     /// positions from the call's first
     pub pos: Option<Dp>,
+    /// the [`key_refs`] table of a decode call, one entry a row: the heads then read the
+    /// window rows and the compressed rows where they live ([`Ops::sparse_attn_keys`]) and
+    /// `kv_all` holds no copy of them; None: `kv_all` is `[window rows | compressed rows]`
+    pub keys: Option<Buf>,
 }
 
 /// One row of a decode call over several sequences: a sequence's one-token step at its own
@@ -2250,6 +2323,10 @@ pub struct Ctx {
     pub route_bad: Buf,
     /// the card's second stream, made at the first one-token MoE ([`Side`])
     side: Option<Side>,
+    /// a decode call's heads read the ring and the compressed KV where they live (a key table
+    /// per row) instead of a copy of both made for the call; off: the copies (the reference arm
+    /// of `dsv41-spec --copy-keys`; a traced call copies too, the gates read the copy)
+    pub keyed: bool,
 }
 
 /// A second stream on the card for a branch of a one-token layer that depends on nothing the main
@@ -2334,6 +2411,7 @@ impl Ctx {
             experts: None,
             route_bad,
             side: None,
+            keyed: true,
         })
     }
 
@@ -2960,6 +3038,9 @@ impl Ctx {
             ls.ring = Some(self.ops.buf(win * hd * 2)?);
         }
         let ring = ls.ring.as_ref().unwrap();
+        let ring_dp = ring.p(&st);
+        // a decode call's heads read the ring and the compressed KV in place (a key table)
+        let keyed = self.keyed && !self.trace && sp > 0;
         if !dec_rows {
             // the ring holds position p at slot p % win; a prefill seeds it with its last win
             // rows, as at most two contiguous runs (split where the slots wrap)
@@ -2973,10 +3054,17 @@ impl Ctx {
             (win, win)
         };
         let n_c = (sp + s).checked_div(ratio).unwrap_or(0);
-        let kv_all = self.ops.tmp((win_rows + n_c).max(1) * hd * 2)?;
+        // keyed: only a several-token call needs window rows of its own, the ring as it stood
+        // and then the call's rows; the compressed rows are never copied
+        let kv_rows = match (keyed, dec_rows) {
+            (true, true) => win + s,
+            (true, false) => 1,
+            (false, _) => (win_rows + n_c).max(1),
+        };
+        let kv_all = self.ops.tmp(kv_rows * hd * 2)?;
         if sp == 0 {
             copy_d2d(&self.ops, &kvw, 0, &kv_all, 0, s * hd * 2)?;
-        } else {
+        } else if !keyed || dec_rows {
             copy_d2d(&self.ops, ring, 0, &kv_all, 0, win * hd * 2)?;
             if dec_rows {
                 copy_d2d(&self.ops, &kvw, 0, &kv_all, win * hd * 2, s * hd * 2)?;
@@ -3075,10 +3163,32 @@ impl Ctx {
                         sh.n_c
                     ));
                 }
-                copy_d2d(&self.ops, ckv, 0, &kv_all, win_rows * hd * 2, n_c * hd * 2)?;
+                if !keyed {
+                    copy_d2d(&self.ops, ckv, 0, &kv_all, win_rows * hd * 2, n_c * hd * 2)?;
+                }
             }
             self.nv_end();
         }
+        // the key table, after the ring write and the compressed append: every row of the call
+        // reads the same window rows (the ring, or the call's `[ring | rows]`) and the group's
+        // compressed rows
+        let keys = if keyed {
+            let comp_dp = match (n_c > 0, sh.compress_kv.as_ref()) {
+                (true, Some(c)) => c.p(&st),
+                _ => Dp::NULL,
+            };
+            let window = if dec_rows {
+                (kv_all.p(&st), win + s)
+            } else {
+                (ring_dp, win)
+            };
+            Some(Buf::from_bytes(
+                &st,
+                &key_refs(&vec![(window.0, comp_dp, window.1); s]),
+            )?)
+        } else {
+            None
+        };
         let tw = if ratio > 0 && n_c > 0 { sh.topk_w } else { 0 };
         let tot = ww + tw;
         if tw > 0 && sh.topk.is_none() {
@@ -3095,19 +3205,23 @@ impl Ctx {
             dec_rows,
             idx: None,
             pos: None,
+            keys,
         })
     }
 
     /// The keys side of attention for a decode call whose rows belong to different sequences
     /// (`rows[i]` is row i: one token of its sequence at its own position). Every row runs the
-    /// one-token program of [`Self::attn_keys`]; what acts per row runs once for all rows (the
+    /// one-token program of [`Self::attn_keys`]; what acts per row runs once for all rows: the
     /// projections, norms, RoPE at each row's position from `pos`, the quantize-dequantize
-    /// steps, the index query and head weights), and what reads one sequence's own buffers runs
-    /// per sequence: its ring row and ring copy, a ratio-2 compressor's open pair and pooling,
-    /// the index score over its keys, its candidate pool and its top-k, and the copies of its
-    /// compressed rows. The KV rows the heads read are the sequences' regions side by side,
-    /// `[ring | compressed rows]` each, and the index rows address each row's region
-    /// (`memra_v41_attn_idx_batch`), so a row reads the keys of its one-token call in its order.
+    /// steps, the index query and head weights, and every row's writes into its own sequence's
+    /// buffers (ring slot, a ratio-2 compressor's open pair, the appended compressed row and
+    /// index key: one `memra_v41_put_rows` each through the call's address table). The heads
+    /// read each row's keys where they live (`memra_v41_sparse_attn_keys`: its ring, then its
+    /// group's compressed rows; the index rows of `memra_v41_attn_idx_batch` with every region
+    /// at 0). What still runs per sequence: a ratio-2 pair's pooling when it completes, the
+    /// index score over its keys, its candidate pool and its top-k. With `keyed` off (or a
+    /// trace on) the rows' regions are copies side by side, `[ring | compressed rows]` each,
+    /// written by one copy a sequence: the reference the keyed form is gated against.
     pub fn attn_keys_batch(
         &mut self,
         lw: &LayerW,
@@ -3187,32 +3301,136 @@ impl Ctx {
             .iter()
             .map(|r| (r.pos + 1).checked_div(ratio).unwrap_or(0))
             .collect();
+        // keyed: every row reads its own sequence's ring and compressed KV in place, so a row's
+        // region starts at 0 and nothing is copied; else the regions are copies side by side
+        let keyed = self.keyed && !self.trace;
         let mut bases = Vec::with_capacity(n);
         let mut total = 0usize;
         for &c in &ncs {
             bases.push(total);
-            total += win + c;
+            if !keyed {
+                total += win + c;
+            }
         }
-        let kv_all = self.ops.tmp(total * hd * 2)?;
-        for (i, r) in rows.iter().enumerate() {
-            let ring =
-                r.ls.ring
-                    .as_ref()
-                    .ok_or("a batched decode row's sequence has no window ring (no prefill)")?;
-            copy_d2d(
-                &self.ops,
-                &kvw,
-                i * hd * 2,
-                ring,
-                (r.pos % win) * hd * 2,
-                hd * 2,
-            )?;
-            copy_d2d(&self.ops, ring, 0, &kv_all, bases[i] * hd * 2, win * hd * 2)?;
+        let kv_all = self.ops.tmp(total.max(1) * hd * 2)?;
+        if rows.iter().any(|r| r.ls.ring.is_none()) {
+            return Err("a batched decode row's sequence has no window ring (no prefill)".into());
+        }
+        // the latents that complete on a kv source: (row, its compressed row)
+        let emit: Vec<(usize, usize)> = match (comp && lw.kv_source, ratio) {
+            (false, _) => Vec::new(),
+            (true, 1) => rows.iter().enumerate().map(|(i, r)| (i, r.pos)).collect(),
+            (true, 2) => rows
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| (r.pos + 1).is_multiple_of(2))
+                .map(|(i, r)| (i, r.pos / 2))
+                .collect(),
+            (true, _) => return Err(format!("compressor ratio {ratio} has no pooling kernel")),
+        };
+        let pair = comp && lw.kv_source && ratio == 2;
+        let ik_append = !emit.is_empty()
+            && lw.index_source
+            && lw
+                .idx
+                .as_ref()
+                .is_some_and(|iw| iw.wk.is_some() && iw.k_norm.is_some());
+        // keyed: one table for the call, uploaded once and known before any launch: every row's
+        // key reference (its ring and its group's compressed rows), then the addresses its
+        // writes land on (its ring slot, its open pair's two slots, its appended index key and
+        // compressed row), so each kind of write is one launch for all rows
+        let (o_ring, o_ckv, o_csc) = (n * 24, n * 32, n * 40);
+        let (o_ik, o_ca) = (n * 48, n * 48 + emit.len() * 8);
+        let tab = if keyed {
+            let idim = g.index_dim;
+            if pair {
+                for r in rows.iter_mut() {
+                    if r.ls.c_kv.is_none() {
+                        r.ls.c_kv = Some(self.ops.buf(2 * hd * 4)?);
+                        r.ls.c_sc = Some(self.ops.buf(2 * hd * 4)?);
+                    }
+                }
+            }
+            for &(i, row0) in &emit {
+                let hint = rows[i].cap.min(self.max_pos) / ratio;
+                let sh = &mut *rows[i].sh;
+                if ik_append {
+                    ensure_rows(
+                        &self.ops,
+                        &mut sh.index_k,
+                        &mut sh.index_k_cap,
+                        row0 + 1,
+                        idim * 2,
+                        hint,
+                    )?;
+                }
+                ensure_rows(
+                    &self.ops,
+                    &mut sh.compress_kv,
+                    &mut sh.compress_cap,
+                    row0 + 1,
+                    hd * 2,
+                    hint,
+                )?;
+            }
+            let refs: Vec<(Dp, Dp, usize)> = rows
+                .iter()
+                .zip(&ncs)
+                .map(|(r, &c)| {
+                    let comp_dp = match (c > 0, r.sh.compress_kv.as_ref()) {
+                        (true, Some(b)) => b.p(&st),
+                        _ => Dp::NULL,
+                    };
+                    (r.ls.ring.as_ref().unwrap().p(&st), comp_dp, win)
+                })
+                .collect();
+            let mut t = key_refs(&refs);
+            let mut put = |a: u64| t.extend_from_slice(&a.to_le_bytes());
+            for r in rows.iter() {
+                let ring = r.ls.ring.as_ref().unwrap();
+                put(ring.at(&st, (r.pos % win) * hd * 2).addr());
+            }
+            for which in 0..2 {
+                for r in rows.iter() {
+                    let b = if which == 0 { &r.ls.c_kv } else { &r.ls.c_sc };
+                    put(match (pair, b.as_ref()) {
+                        (true, Some(b)) => b.at(&st, (r.pos % 2) * hd * 4).addr(),
+                        _ => 0,
+                    });
+                }
+            }
+            for &(i, row0) in &emit {
+                put(match (ik_append, rows[i].sh.index_k.as_ref()) {
+                    (true, Some(b)) => b.at(&st, row0 * idim * 2).addr(),
+                    _ => 0,
+                });
+            }
+            for &(i, row0) in &emit {
+                let b = rows[i].sh.compress_kv.as_ref().unwrap();
+                put(b.at(&st, row0 * hd * 2).addr());
+            }
+            Some(Buf::from_bytes(&st, &t)?)
+        } else {
+            None
+        };
+        if let Some(t) = tab.as_ref() {
+            put_rows(&self.ops, kvw.p(&st), hd, t.at(&st, o_ring), n, hd)?;
+        } else {
+            for (i, r) in rows.iter().enumerate() {
+                let ring = r.ls.ring.as_ref().unwrap();
+                copy_d2d(
+                    &self.ops,
+                    &kvw,
+                    i * hd * 2,
+                    ring,
+                    (r.pos % win) * hd * 2,
+                    hd * 2,
+                )?;
+                copy_d2d(&self.ops, ring, 0, &kv_all, bases[i] * hd * 2, win * hd * 2)?;
+            }
         }
         drop(kvw);
         if comp {
-            // the latents that complete on a kv source: (row, its compressed row)
-            let mut emit: Vec<(usize, usize)> = Vec::new();
             let mut lat: Option<Buf> = None;
             if lw.kv_source {
                 let cw = lw.comp.as_ref().unwrap();
@@ -3220,9 +3438,8 @@ impl Ctx {
                     let l = self.ops.tmp(n * hd * 2)?;
                     self.ops
                         .linear_bf16(x.p(&st), g.dim, n, &cw.wkv, l.p(&st), hd, false)?;
-                    emit = rows.iter().enumerate().map(|(i, r)| (i, r.pos)).collect();
                     lat = Some(l);
-                } else if ratio == 2 {
+                } else {
                     let kvf = self.ops.tmp(n * hd * 4)?;
                     let scf = self.ops.tmp(n * hd * 4)?;
                     self.ops
@@ -3237,34 +3454,42 @@ impl Ctx {
                         true,
                     )?;
                     let l = self.ops.tmp(n * hd * 2)?;
+                    if let Some(t) = tab.as_ref() {
+                        // the f32 rows as 16-bit words: every row into its open pair's slot
+                        put_rows(&self.ops, kvf.p(&st), hd * 2, t.at(&st, o_ckv), n, hd * 2)?;
+                        put_rows(&self.ops, scf.p(&st), hd * 2, t.at(&st, o_csc), n, hd * 2)?;
+                    }
+                    let mut done = 0usize;
                     for (i, r) in rows.iter_mut().enumerate() {
-                        if r.ls.c_kv.is_none() {
-                            r.ls.c_kv = Some(self.ops.buf(2 * hd * 4)?);
-                            r.ls.c_sc = Some(self.ops.buf(2 * hd * 4)?);
+                        if tab.is_none() {
+                            if r.ls.c_kv.is_none() {
+                                r.ls.c_kv = Some(self.ops.buf(2 * hd * 4)?);
+                                r.ls.c_sc = Some(self.ops.buf(2 * hd * 4)?);
+                            }
+                            let (ckv, csc) =
+                                (r.ls.c_kv.as_ref().unwrap(), r.ls.c_sc.as_ref().unwrap());
+                            let slot = r.pos % 2;
+                            copy_d2d(&self.ops, &kvf, i * hd * 4, ckv, slot * hd * 4, hd * 4)?;
+                            copy_d2d(&self.ops, &scf, i * hd * 4, csc, slot * hd * 4, hd * 4)?;
                         }
                         let (ckv, csc) = (r.ls.c_kv.as_ref().unwrap(), r.ls.c_sc.as_ref().unwrap());
-                        let slot = r.pos % 2;
-                        copy_d2d(&self.ops, &kvf, i * hd * 4, ckv, slot * hd * 4, hd * 4)?;
-                        copy_d2d(&self.ops, &scf, i * hd * 4, csc, slot * hd * 4, hd * 4)?;
                         if (r.pos + 1).is_multiple_of(2) {
                             ck("comp_pool2", unsafe {
                                 ffi::memra_v41_comp_pool2(
                                     ckv.p(&st).f(),
                                     csc.p(&st).f(),
                                     hd as i64,
-                                    l.at(&st, emit.len() * hd * 2).m(),
+                                    l.at(&st, done * hd * 2).m(),
                                     hd as i64,
                                     1,
                                     hd as i32,
                                     self.ops.sv(),
                                 )
                             })?;
-                            emit.push((i, r.pos / 2));
+                            done += 1;
                         }
                     }
                     lat = Some(l);
-                } else {
-                    return Err(format!("compressor ratio {ratio} has no pooling kernel"));
                 }
                 if let (Some(l), false) = (lat.as_ref(), emit.is_empty()) {
                     self.ops.rmsnorm(
@@ -3313,25 +3538,29 @@ impl Ctx {
                         false,
                     )?;
                     self.ops.fp4_qdq(kp.p(&st), idim, e, idim, 32)?;
-                    for (j, &(i, row0)) in emit.iter().enumerate() {
-                        let hint = rows[i].cap.min(self.max_pos) / ratio;
-                        let sh = &mut *rows[i].sh;
-                        ensure_rows(
-                            &self.ops,
-                            &mut sh.index_k,
-                            &mut sh.index_k_cap,
-                            row0 + 1,
-                            idim * 2,
-                            hint,
-                        )?;
-                        copy_d2d(
-                            &self.ops,
-                            &kp,
-                            j * idim * 2,
-                            sh.index_k.as_ref().unwrap(),
-                            row0 * idim * 2,
-                            idim * 2,
-                        )?;
+                    if let Some(t) = tab.as_ref() {
+                        put_rows(&self.ops, kp.p(&st), idim, t.at(&st, o_ik), e, idim)?;
+                    } else {
+                        for (j, &(i, row0)) in emit.iter().enumerate() {
+                            let hint = rows[i].cap.min(self.max_pos) / ratio;
+                            let sh = &mut *rows[i].sh;
+                            ensure_rows(
+                                &self.ops,
+                                &mut sh.index_k,
+                                &mut sh.index_k_cap,
+                                row0 + 1,
+                                idim * 2,
+                                hint,
+                            )?;
+                            copy_d2d(
+                                &self.ops,
+                                &kp,
+                                j * idim * 2,
+                                sh.index_k.as_ref().unwrap(),
+                                row0 * idim * 2,
+                                idim * 2,
+                            )?;
+                        }
                     }
                 }
                 // the selection: the query and the head weights of every row at once, then each
@@ -3469,25 +3698,30 @@ impl Ctx {
                 self.ops
                     .rope_pos(l.p(&st), hd, e, 1, hd, &self.rope_comp, ep.p(&st), false)?;
                 self.ops.fp4_qdq(l.p(&st), hd, e, hd, 16)?;
+                if let Some(t) = tab.as_ref() {
+                    put_rows(&self.ops, l.p(&st), hd, t.at(&st, o_ca), e, hd)?;
+                }
                 for (j, &(i, row0)) in emit.iter().enumerate() {
                     let hint = rows[i].cap.min(self.max_pos) / ratio;
                     let sh = &mut *rows[i].sh;
-                    ensure_rows(
-                        &self.ops,
-                        &mut sh.compress_kv,
-                        &mut sh.compress_cap,
-                        row0 + 1,
-                        hd * 2,
-                        hint,
-                    )?;
-                    copy_d2d(
-                        &self.ops,
-                        l,
-                        j * hd * 2,
-                        sh.compress_kv.as_ref().unwrap(),
-                        row0 * hd * 2,
-                        hd * 2,
-                    )?;
+                    if tab.is_none() {
+                        ensure_rows(
+                            &self.ops,
+                            &mut sh.compress_kv,
+                            &mut sh.compress_cap,
+                            row0 + 1,
+                            hd * 2,
+                            hint,
+                        )?;
+                        copy_d2d(
+                            &self.ops,
+                            l,
+                            j * hd * 2,
+                            sh.compress_kv.as_ref().unwrap(),
+                            row0 * hd * 2,
+                            hd * 2,
+                        )?;
+                    }
                     sh.n_c = row0 + 1;
                 }
             }
@@ -3507,14 +3741,16 @@ impl Ctx {
                         r.sh.n_c
                     ));
                 }
-                copy_d2d(
-                    &self.ops,
-                    ckv,
-                    0,
-                    &kv_all,
-                    (bases[i] + win) * hd * 2,
-                    n_c * hd * 2,
-                )?;
+                if !keyed {
+                    copy_d2d(
+                        &self.ops,
+                        ckv,
+                        0,
+                        &kv_all,
+                        (bases[i] + win) * hd * 2,
+                        n_c * hd * 2,
+                    )?;
+                }
             }
         }
         let tw = if comp && ncs.iter().any(|&c| c > 0) {
@@ -3560,6 +3796,7 @@ impl Ctx {
             dec_rows: false,
             idx: Some(idx),
             pos: Some(pos.p(&st)),
+            keys: tab,
         })
     }
 
@@ -3734,20 +3971,38 @@ impl Ctx {
         };
         self.nv_end();
         self.nv(c"sparse_attn");
-        self.ops.sparse_attn(
-            q.p(&st),
-            qdim,
-            k.kv_all.p(&st),
-            idx,
-            tot,
-            tot,
-            lw.sink.p(&st),
-            scale,
-            o.p(&st),
-            qdim,
-            rows,
-            heads,
-        )?;
+        match k.keys.as_ref() {
+            // the rows' keys where they live: each row's table entry names its window rows and
+            // its compressed rows
+            Some(t) => self.ops.sparse_attn_keys(
+                q.p(&st),
+                qdim,
+                t.at(&st, r0 * 24),
+                idx,
+                tot,
+                tot,
+                lw.sink.p(&st),
+                scale,
+                o.p(&st),
+                qdim,
+                rows,
+                heads,
+            )?,
+            None => self.ops.sparse_attn(
+                q.p(&st),
+                qdim,
+                k.kv_all.p(&st),
+                idx,
+                tot,
+                tot,
+                lw.sink.p(&st),
+                scale,
+                o.p(&st),
+                qdim,
+                rows,
+                heads,
+            )?,
+        }
         self.nv_end();
         if self.trace && single {
             tr.qr = Some(clone_buf(&self.ops, &k.qr)?);
@@ -4365,6 +4620,29 @@ fn clone_buf(ops: &Ops, b: &Buf) -> Result<Buf, String> {
     Ok(o)
 }
 
+/// `*tab[r] = src[r]` for `rows` rows of `words` 16-bit words (`src` row pitch `lds` words; `tab`
+/// a device array of row addresses, a null one skipped): one launch for the writes of every
+/// row of a batched decode call (`memra_v41_put_rows`).
+pub fn put_rows(
+    ops: &Ops,
+    src: Dp,
+    lds: usize,
+    tab: Dp,
+    rows: usize,
+    words: usize,
+) -> Result<(), String> {
+    ck("put_rows", unsafe {
+        ffi::memra_v41_put_rows(
+            src.c(),
+            lds as i64,
+            tab.c(),
+            rows as i32,
+            words as i32,
+            ops.sv(),
+        )
+    })
+}
+
 /// `dst[doff..doff+n] = src[soff..soff+n]` on the stream.
 pub fn copy_d2d(
     ops: &Ops,
@@ -4380,6 +4658,7 @@ pub fn copy_d2d(
     if n == 0 {
         return Ok(());
     }
+    tally::hit("copy_d2d");
     let r = unsafe {
         cudarc::driver::sys::cuMemcpyDtoDAsync_v2(
             dst.p(&ops.st).addr() + doff as u64,

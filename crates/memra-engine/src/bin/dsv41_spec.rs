@@ -14,6 +14,9 @@
 //!                            too): what a row costs where no expert is fetched. It has no draft
 //!                            head (the head's target layers are not all run): pass --no-draft
 //!   --no-draft               do not load the draft head (verify-rows and rows-time jobs only)
+//!   --copy-keys              decode calls copy the ring and the compressed rows into the call's
+//!                            own key rows (the reference arm of the keyed attention entry);
+//!                            verify-rows and batch-rows write `hashes.txt`, equal between the arms
 //!
 //! The plan lists jobs, one per line, all run in one process (the weights load once):
 //!   verify-rows ID PROMPT.i32 FORCE.i32
@@ -310,6 +313,11 @@ fn run() -> Result<(), String> {
         0,
         8192,
     )?;
+    if a.iter().any(|x| x == "--copy-keys") {
+        for c in rn.grp.cx.iter_mut() {
+            c.keyed = false;
+        }
+    }
     let dw: Option<DraftW>;
     let load = |rn: &mut Runner| -> Result<Option<DraftW>, String> {
         if no_draft {
@@ -383,7 +391,7 @@ fn run() -> Result<(), String> {
                 force,
                 reps,
             } => rows_time(&mut rn, id, prompt, force, *reps),
-            Job::BatchRows { id, seqs } => batch_rows(&mut rn, id, seqs),
+            Job::BatchRows { id, seqs } => batch_rows(&mut rn, id, seqs, &dir),
             Job::BatchTime { id, reps, seqs } => batch_time(&mut rn, id, *reps, seqs),
         };
         match r {
@@ -537,6 +545,13 @@ fn verify_rows(
     }
     let b_s = t1.elapsed().as_secs_f64();
     write(dir, "blocks.tsv", log.as_bytes())?;
+    // every one-token step's logits and taps, for a comparison across binaries or arms
+    let hashes: String = a_hash
+        .iter()
+        .zip(&a_tap)
+        .map(|(h, t)| format!("{h:016x} {t:016x}\n"))
+        .collect();
+    write(dir, "hashes.txt", hashes.as_bytes())?;
     let pass = equal == rows && taps_equal == rows;
     Ok((
         pass,
@@ -558,6 +573,7 @@ fn batch_rows(
     rn: &mut Runner,
     id: &str,
     input: &[(Vec<u32>, Vec<u32>)],
+    dir: &Path,
 ) -> Result<(bool, String), String> {
     let v_ = rn.g.vocab;
     let ns = input.len();
@@ -591,6 +607,13 @@ fn batch_rows(
         a_tap.push(ts);
     }
     let a_s = ta.elapsed().as_secs_f64();
+    let mut hashes = String::new();
+    for (hs, ts) in a_hash.iter().zip(&a_tap) {
+        for (h, t) in hs.iter().zip(ts) {
+            hashes.push_str(&format!("{h:016x} {t:016x}\n"));
+        }
+    }
+    write(dir, "hashes.txt", hashes.as_bytes())?;
     // arm B: the prompts (each call alone), then the sequences together
     let tb = Instant::now();
     let mut seqs: Vec<Seq> = input
@@ -687,7 +710,11 @@ fn batch_time(
         if w > input.len() {
             break;
         }
-        for batched in [true, false] {
+        // batched: one call and the logits of every row; alone: each sequence its own call;
+        // argmax: one call and the device argmax of every row (a served greedy step); fwd: one
+        // call and a wait for the card, no head
+        for mode in ["batched", "alone", "argmax", "fwd"] {
+            let batched = mode != "alone";
             let mut seqs: Vec<Seq> = input[..w]
                 .iter()
                 .map(|(p, f)| rn.seq_with_capacity(p.len() + f.len() + 16))
@@ -711,7 +738,11 @@ fn batch_time(
                         .map(|(i, (_, f))| (i, f[k]))
                         .collect();
                     let o = rn.forward_batch(&mut seqs, &rows)?;
-                    rn.logits(&o, 0, w)?;
+                    match mode {
+                        "argmax" => drop(rn.argmax_rows(&o, 0, w)?),
+                        "fwd" => rn.grp.each(|_, cx| cx.ops.sync()).map(|_| ())?,
+                        _ => drop(rn.logits(&o, 0, w)?),
+                    }
                 } else {
                     let calls: Vec<Call> = input[..w]
                         .iter()
@@ -728,7 +759,7 @@ fn batch_time(
                 ms.push(t.elapsed().as_secs_f64() * 1e3);
             }
             // the first two steps warm the shapes
-            let key = format!("{}_{w}_ms", if batched { "batched" } else { "alone" });
+            let key = format!("{mode}_{w}_ms");
             out.insert(key, serde_json::json!(med(&ms[2..])));
         }
     }
@@ -737,6 +768,82 @@ fn batch_time(
         .into_iter()
         .find(|&w| w <= input.len())
         .unwrap_or(1);
+    // the launches of two consecutive batched steps (both parities of a ratio-2 pair), by layer
+    // and kernel, for one sequence and for the widest batch: what grows with the sequences.
+    // Then the same two steps with a wait for the card after every launch: each kernel's own cost
+    for ws in [1usize, w] {
+        let mut seqs: Vec<Seq> = input[..ws]
+            .iter()
+            .map(|(p, f)| rn.seq_with_capacity(p.len() + f.len() + 16))
+            .collect();
+        let calls: Vec<Call> = input[..ws]
+            .iter()
+            .enumerate()
+            .map(|(i, (p, _))| Call {
+                seq: i,
+                tokens: p.clone(),
+            })
+            .collect();
+        drop(rn.forward(&mut seqs, &calls)?);
+        let step = |rn: &mut Runner, seqs: &mut [Seq], k: usize| -> Result<(), String> {
+            let rows: Vec<(usize, u32)> = input[..ws]
+                .iter()
+                .enumerate()
+                .map(|(i, (_, f))| (i, f[k]))
+                .collect();
+            let o = rn.forward_batch(seqs, &rows)?;
+            rn.argmax_rows(&o, 0, ws).map(|_| ())
+        };
+        step(rn, &mut seqs, 0)?;
+        step(rn, &mut seqs, 1)?;
+        for (timed, k0) in [(false, 2usize), (true, 4)] {
+            if input[..ws].iter().any(|(_, f)| f.len() < k0 + 2) {
+                break;
+            }
+            memra_engine::dsv41_gpu::tally::start(timed);
+            let r = step(rn, &mut seqs, k0).and_then(|_| step(rn, &mut seqs, k0 + 1));
+            let t = memra_engine::dsv41_gpu::tally::take();
+            r?;
+            let mut by = serde_json::Map::new();
+            let mut layers: std::collections::BTreeMap<usize, (u64, u64)> = Default::default();
+            let mut kernels: std::collections::BTreeMap<&str, (u64, u64)> = Default::default();
+            for ((li, name), (c, ns)) in &t {
+                let l = if *li == usize::MAX {
+                    "out".to_string()
+                } else {
+                    format!("L{li}")
+                };
+                let us = (*ns as f64 / 1e3).round();
+                by.insert(format!("{l}:{name}"), serde_json::json!([c, us]));
+                let e = layers.entry(*li).or_insert((0, 0));
+                (e.0, e.1) = (e.0 + c, e.1 + ns);
+                let e = kernels.entry(name.as_str()).or_insert((0, 0));
+                (e.0, e.1) = (e.0 + c, e.1 + ns);
+            }
+            let ms = |ns: u64| (ns as f64 / 1e4).round() / 1e2;
+            let per_layer: Vec<(u64, f64)> = layers.values().map(|&(c, ns)| (c, ms(ns))).collect();
+            let per_kernel: serde_json::Map<String, serde_json::Value> = kernels
+                .iter()
+                .map(|(k, &(c, ns))| (k.to_string(), serde_json::json!([c, ms(ns)])))
+                .collect();
+            out.insert(
+                format!(
+                    "{}_{ws}_two_steps",
+                    if timed { "launch_ms" } else { "launches" }
+                ),
+                serde_json::json!({
+                    "total": t.values().map(|v| v.0).sum::<u64>(),
+                    "total_ms": ms(t.values().map(|v| v.1).sum::<u64>()),
+                    "per_layer": per_layer,
+                    "per_kernel": per_kernel,
+                    "by": by,
+                }),
+            );
+        }
+        if ws == w {
+            break;
+        }
+    }
     {
         let mut seqs: Vec<Seq> = input[..w]
             .iter()

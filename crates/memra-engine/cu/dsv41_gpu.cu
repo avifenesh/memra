@@ -2134,6 +2134,27 @@ extern "C" int memra_v41_attn_idx_batch(const int* sel, int tw, const int* pos, 
     V41_ERR();
 }
 
+// *dst[r] = src[r] (rows of `words` 16-bit words; src row r at pitch lds words; dst[r] a device
+// address, null skips the row): every row of a decode call over several sequences into its own
+// sequence's buffer in one launch (its window ring slot, an open pair's slot, an appended
+// compressed row or index key). The targets are distinct.
+__global__ void v41_put_rows_kernel(const uint16_t* __restrict__ src, long lds,
+                                    const unsigned long long* __restrict__ dst, int words) {
+    int r = blockIdx.x;
+    uint16_t* o = (uint16_t*)dst[r];
+    if (!o) return;
+    const uint16_t* s = src + (long)r * lds;
+    for (int i = threadIdx.x; i < words; i += blockDim.x) o[i] = s[i];
+}
+
+extern "C" int memra_v41_put_rows(const void* src, long lds, const void* dst, int rows, int words, void* stream) {
+    if (rows <= 0) return rows < 0 ? 41032 : 0;
+    if (!src || !dst || words <= 0 || lds < words) return 41032;
+    v41_put_rows_kernel<<<rows, 256, 0, (cudaStream_t)stream>>>((const uint16_t*)src, lds,
+                                                                (const unsigned long long*)dst, words);
+    V41_ERR();
+}
+
 // ---------------------------------------------------------------------------------------------
 // The draft head's pick: row[i] += bias[i] in fp32 (the Markov head's bias added to the block
 // row's logits, vendor `logits[:, i].add_(logits_bias)`), then the largest value and the lowest
