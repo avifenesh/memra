@@ -136,6 +136,7 @@ banked log into its floors-table row through the gate's own `--judge --calibrate
 | RTX 5090, Ornith eager and batch: the last 12 rows of the whole-prompt table against the 12-row table of that card's cell-evidence record at 12c3f554c4 (another build) | byte-identical (`706af873d259891a`, `e356081d72028d74`) |
 | RTX PRO 6000 Max-Q, all four cells: the last 12 rows against the card's cell-evidence record at e6613b4eee22 (another build) | byte-identical (four hashes) |
 | GB10, 27B eager: the last 12 rows of the 128-row timing table against the unit's cell-evidence record | byte-identical (`f5ad5475e41d3eec`) |
+| RTX 5090, Ornith eager, the whole prompt twice: main's probe (031f146690) and this branch's probe (`--calibrate`, on 2628ece940's engine), 80 minutes apart with other cells on the card between | all 2,045 rows byte-identical; the two floor rows equal in every data field |
 
 Two RTX 5090 cells were stopped mid-run for a release ticket and rerun from scratch; a stopped
 cell wrote no table (the probe prints at the end), so there is no partial table to compare.
@@ -150,6 +151,24 @@ script tries when it is given none (neither file is on the calibration card; the
 candidate whose file is absent and takes the next), and Qwen3.8-27B on `p4-16k` on GB10 (its
 window sits past the GB10 split rung, so its floor has to come from a probe built at
 2628ece940 or later).
+
+## Green arm on a GPU
+
+This branch's gate script with this branch's probe (built at 83052e765d on a CPU box, sha256
+`7b26703b2ca2...`), RTX 5090 Laptop GPU, Ornith-1.5-35B-A3B, one lease per cell (`green-arm/`).
+
+| cell | result |
+|---|---|
+| the gate, eager, 12 rows | PASS, 0 flips, floor 3.5582 printed with its percentiles and known rows, prime MATCH; 42 s |
+| the gate, `--decode batch`, 12 rows | PASS, 0 flips, served MATCH; 40 s |
+| `--canary`, eager | CANARY PASS: `WIDE-FLIP pos=9999` at the injected row, the injected prime line read as MISMATCH-STRUCTURED |
+| `--canary`, batch | CANARY PASS: `WIDE-FLIP pos=9999`, the injected served line read as MISMATCH |
+| `--calibrate`, eager (window `all`, 2,045 rows, 731 s) | the `FLOOR-ROW` it prints equals the table's row from main's probe in all 12 data fields (floor 3.558178902e0, 1,846 rows, row 306, the percentiles, known rows 41 and 1809 with the same ids and margins) |
+
+The 12-row tables of the two gate cells are byte-identical to the card's cell-evidence record.
+`green-arm/ornith-eager-calibrate/known-rows-judged.txt` is the whole-prompt table judged
+against the floors table: the two known rows named with their `detail` lines (each program's
+top-2 ids, text and logits), 197 near ties, nothing failing.
 
 ## History under the floors
 
@@ -184,6 +203,7 @@ wide row, each program's token and margin, the spread, the gap shift and the flo
   `tools/floor_rows.sh`. The RTX PRO 6000 cells ran on another box through
   `calibration/rtxpro6000-maxq/pro6000_cal.sh`; their `result.txt` restates `meta.txt` and
   `runs.log`, and box paths, card ids and the user name are replaced in the logs.
+- `green-arm/`: this branch's gate, canary and `--calibrate` on a GPU.
 - `landing-cells/`: the split-rung landing's real-text served-batch cells, both arms.
 - `timing/`: the cells that sized the calibration.
 - `tools/cell.sh`: the cell runner.
