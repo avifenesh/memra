@@ -1,0 +1,24 @@
+# Main's argmax margin probe rows for one gate cell (memra#1204). The gate compares a
+# candidate's table for this window with these lines, byte for byte.
+model	Qwen3.8-27B-NVFP4-Q5K-mtp
+model_sha256	1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a
+prompt	board-2048
+prompt_sha256	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc
+decode	eager
+device	NVIDIA GeForce RTX 5090 Laptop GPU
+window	12
+commit	031f146690
+receipt	research/argmax-gate-rule-20261110/calibration/rtx5090-laptop/q38-eager/probe.log
+rows
+2036     24822         1.090445423e1    24822        1.098722172e1    4.230308533e-2   yes
+2037     63            2.095954895e0    63           2.088251114e0    7.808303833e-2   yes
+2038     318           4.975013733e-1   318          5.118141174e-1   1.639175415e-2   yes
+2039     77            6.622791290e-1   77           6.897697449e-1   4.432296753e-2   yes
+2040     40049         5.847123146e0    40049        5.968379974e0    1.455059052e-1   yes
+2041     681           5.187492371e-1   681          4.914894104e-1   4.864501953e-2   yes
+2042     681           7.433319092e-1   681          6.958026886e-1   4.650497437e-2   yes
+2043     11069         4.842796326e-1   11069        4.303550720e-1   7.430076599e-2   yes
+2044     264           2.461299896e0    264          2.666097641e0    1.187820435e-1   yes
+2045     2972          1.387479782e0    2972         1.508760452e0    1.081314087e-1   yes
+2046     42714         2.579936981e0    42714        2.634370804e0    9.880065918e-2   yes
+2047     485           9.376869202e-1   485          8.013572693e-1   1.095542908e-1   yes
