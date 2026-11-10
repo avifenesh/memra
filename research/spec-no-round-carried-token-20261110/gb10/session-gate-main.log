@@ -1,0 +1,20 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+trunk: recurrent; turn resume: the served one (rewind to an on-grid turn checkpoint, else cold; grid 32); the parked-end resume is refused
+[fa-pool] grow #0 dev=0 o_len 0 -> 165888 ml_len 0 -> 648 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 165888 -> 331776 ml_len 648 -> 1296 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 331776 -> 663552 ml_len 1296 -> 2592 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 663552 -> 1327104 ml_len 2592 -> 5184 (retired kept, zero=false)
+STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 211 primed tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ -> MATCH
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 35MB (max of parked delta 35MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+turn 1: cold, 24 tok generated, committed=151 -> MATCH
+turn 2: rewound to 96, 24 tok generated, committed=240 -> MATCH
+turn 3: rewound to 192, 27 tok generated, committed=301 -> MATCH
+turn 4: continuation burst, 24 tok generated, committed=325 -> MATCH
+no-round burst: carried token before true, after true, 0 tok emitted by it, committed=326 cache rows=325; next burst 24 tok, committed=350 cache rows=349; committed is the history false/false -> MISMATCH
+SESSION GATE: FAIL
