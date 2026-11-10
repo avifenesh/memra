@@ -114,11 +114,21 @@ the log's `[moe] resident-experts decision` lines, and a run placed otherwise re
 comparable", not as a difference. The release battery waits for the model's size plus 2,048 MiB
 free, above the reserve.
 
-**GB10** (`repeats/gb10/`, main's sm_121a probe, the build the stored rows come from, judged on
-CPU with this branch's probe): two processes and one later run per cell on the unit that
-calibrated it, and Qwen3.8-27B on the other unit. They run after the GB10 Qwen3.8-27B floor rows,
-under the units' queue rules. Before them, the records already cover both units: Ornith and
-Qwen3.8-27B eager 26 and 14 records per unit, each batch arm 20 and 1.
+**GB10** (`repeats/gb10/`, main's sm_121a probe, the build the stored rows come from, each table
+judged on CPU with this branch's probe against the floors table and the stored rows; `judge.txt`
+per run):
+
+| cell | unit | runs | table sha256 (first 16) | stored rows |
+|---|---|---|---|---|
+| Qwen3.8-27B eager | the one that calibrated it | 2 in two processes, then 1 after another lane's cell used the unit | `f5ad5475e41d3eec` all three | identical |
+| Qwen3.8-27B batch | the other one | 1 | `44329ae1d8eb0160` | identical |
+| Qwen3.8-27B batch | the one that calibrated it | 2 in two processes | `44329ae1d8eb0160` both | identical |
+| Ornith eager | the one that calibrated it | 2 in two processes | `0d9b64dd0373157a` both | identical |
+| Ornith batch | the one that calibrated it | 2 in two processes | `3484571a10e0190c` both | identical |
+
+The remaining GB10 repeats (the after-other-cell run of the last three rows, and Qwen3.8-27B eager
+on the other unit) were not run: the release landing took the unit. The records already cover
+both units: Ornith and Qwen3.8-27B eager 26 and 14 records per unit, each batch arm 20 and 1.
 
 **RTX PRO 6000 Max-Q**: no repeat with this branch's gate. The records cover three cards for all
 four cells.

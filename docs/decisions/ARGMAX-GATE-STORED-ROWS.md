@@ -125,8 +125,9 @@ hash to the same values as the cell-evidence records'.
 The premise is byte stability per device and placement. The records show it across builds,
 processes and days on every seeded cell, and across units on GB10 (both units for Ornith and
 for Qwen3.8-27B, eager 26 and 14 records per unit; each batch arm rests on 20 records from one
-unit and 1 from the other) and on three RTX PRO 6000 Max-Q cards; the repeats show it within one build on the RTX 5090 Laptop GPU. The GB10
-repeats (two processes, then after other cells) are in `research/argmax-stored-rows-20261110/`
-when run; the RTX PRO 6000 has no repeat with this branch's gate. A stored table for another
+unit and 1 from the other) and on three RTX PRO 6000 Max-Q cards; the repeats show it within one build on the RTX 5090 Laptop GPU. On GB10
+ten repeat runs of five cells (two processes per cell; after another lane's cell for the 27B
+eager; the 27B batch on both units) are identical to the stored rows; the RTX PRO 6000 has no
+repeat with this branch's gate. A stored table for another
 placement than resident, and for a gemma model, is not seeded: a cell that would need one reads
 as no stored table.
