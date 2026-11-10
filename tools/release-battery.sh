@@ -266,8 +266,10 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   # CALIBRATED, not raw run-gen. run-gen carries a hard prefill-vs-decode argmax assert
   # whose wording ("cache threading bug") is a documented landmine: batched prefill and the
   # tokenwise decode loop are two legitimate arithmetics, so a NEAR-TIE position legitimately
-  # flips between them. tools/argmax-margin-gate.sh judges each flip against the prompt's own
-  # distribution and passes when the config spread covers the margin.
+  # flips between them. tools/argmax-margin-gate.sh judges each row against the cell's
+  # calibrated floor (the largest gap shift the two programs show where they agree): a flip
+  # inside it is a near tie, a flip or an agreeing row above it fails. --require-floor refuses
+  # a cell with no floor row instead of passing it as UNCALIBRATED.
   # 2026-08-28: the first roster run called raw run-gen and reported ornith-1.5-35b-a3b FAIL
   # on a position whose prefill top-2 margin was 0.0256 against a config spread of 0.5540 —
   # i.e. it was about to file a defect against our own model that the repo already documents
@@ -292,7 +294,7 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   # tokenwise loop the table already gates (frozen CPU experts) may pass.
   rc=0
   OUT=$(unset MEMRA_PRIME_GATE MEMRA_PRIME_TOKENWISE
-      MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" "${argmax_evidence[@]}" 2>&1) || rc=$?
+      MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" --require-floor "${argmax_evidence[@]}" 2>&1) || rc=$?
   save_evidence argmax "$id" "$rc"
   PRIME=$(printf '%s\n' "$OUT" | grep -m1 -o 'PRIME-SUMMARY prime=[A-Za-z:-]*' | cut -d= -f2)
   case "$PRIME" in MATCH|FLIP-NEARTIE|SKIP:tokenwise-served) PRIME_OK=1 ;; *) PRIME_OK=0 ;; esac
@@ -304,6 +306,8 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   else
     if printf '%s' "$OUT" | grep -q "^argmax-margin-gate: SKIP"; then
       note "$id  argmax-margin  REFUSED   gate skipped itself: $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: SKIP.*' | cut -d' ' -f2-)"
+    elif printf '%s' "$OUT" | grep -q "^argmax-margin-gate: UNCALIBRATED"; then
+      note "$id  argmax-margin  REFUSED   no calibrated floor for this cell: $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: UNCALIBRATED.*' | cut -d' ' -f2-)"
     else
       note "$id  argmax-margin  FAIL  $(printf '%s' "$OUT" | tail -1)"
     fi
@@ -336,7 +340,7 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   fi
   rc=0
   OUT=$(unset MEMRA_SERVE_B1FAST
-      MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" --decode batch "${argmax_batch_evidence[@]}" 2>&1) || rc=$?
+      MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" --decode batch --require-floor "${argmax_batch_evidence[@]}" 2>&1) || rc=$?
   save_evidence argmax-batch "$id" "$rc"
   SERVED=$(printf '%s\n' "$OUT" | grep -m1 -o 'SERVED-SUMMARY served=[A-Za-z:-]*' | cut -d= -f2)
   if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:" \
@@ -348,6 +352,8 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   else
     if printf '%s' "$OUT" | grep -q "^argmax-margin-gate: SKIP"; then
       note "$id  argmax-margin-batch  REFUSED   gate skipped itself: $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: SKIP.*' | cut -d' ' -f2-)"
+    elif printf '%s' "$OUT" | grep -q "^argmax-margin-gate: UNCALIBRATED"; then
+      note "$id  argmax-margin-batch  REFUSED   no calibrated floor for this cell: $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: UNCALIBRATED.*' | cut -d' ' -f2-)"
     else
       note "$id  argmax-margin-batch  FAIL  $(printf '%s' "$OUT" | tail -1)"
     fi

@@ -171,8 +171,13 @@ only in `tools/local-ci.sh` and in scoped-battery cells.
 
 Each roster model has two calibrated argmax cells. Both run `tools/argmax-margin-gate.sh` with
 the same prompt, window, prefill reference (`forward_last` at each window position), per-model
-flip budget and margin rule: every prefill/decode argmax flip must sit at a top-2 margin the
-config spread covers. They differ in the program on the decode side.
+flip budget and rule (memra#1199, [the decision record](decisions/ARGMAX-GATE-GAP-SHIFT-FLOOR.md)):
+a flip whose gap shift (the sum of the two programs' top-2 margins) is inside the cell's
+calibrated floor is a near tie counted against the budget; a flip or an agreeing row above the
+floor fails. Each cell has its own floor row in `tools/argmax-margin-floors.tsv`, keyed by model,
+prompt, decode program and device. The battery runs the gate with `--require-floor`, so a cell
+with no floor row on the device it runs on is `REFUSED`, never passed as uncalibrated. They
+differ in the program on the decode side.
 
 | Cell (`runs.tsv` kind / receipt) | Decode side | Extra requirement |
 |---|---|---|

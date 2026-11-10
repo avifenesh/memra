@@ -82,7 +82,9 @@ Note what the battery does NOT run: raw `run-gen`. Its prefill-vs-decode argmax 
 documented landmine (`tools/argmax-margin-gate.sh:12-47`, and
 `research/q8-argmax-20260806/VERDICT.md`) — batched prefill and the tokenwise decode loop are two
 legitimate arithmetics, so a near-tie position flips between them legitimately.
-`tools/argmax-margin-gate.sh` judges each flip against the prompt's own distribution instead,
+`tools/argmax-margin-gate.sh` judges each flip against the cell's calibrated floor instead
+(a near tie is a flip whose gap shift is inside the largest one the two programs show where they
+agree; the battery refuses a cell with no floor row, `docs/TESTING.md`),
 and also judges the batched serving prime (`prime_cache`) against the tokenwise reference with
 run-gen's calibrated `prime_gate_verdict`: run-spec primes reference and candidate through the
 same `prime_cache`, so without that arm a prime-only regression passed the whole battery. The
@@ -95,7 +97,7 @@ That cell's decode side is the eager program (`decode_step_h`), which is not wha
 server's batched scheduler decodes every non-speculative row of a batch-served model through the
 batched body at every width, B=1 included (speculative rows stay gated by `run-spec`). So each
 model also gets an `argmax-margin-batch` cell, the same gate with `--decode batch`. It drives the
-served batched program at B=1 against the same prefill reference and margin rules, runs with
+served batched program at B=1 against the same prefill reference and clauses (its own floor row), runs with
 `MEMRA_SERVE_B1FAST` unset, and accepts only `served=MATCH` (every window step's device-sampled
 token equals the host argmax of its row), or `served=EAGER-ROUTED` for a model the scheduler
 decodes eagerly, where the probe steps `decode_step`, the program that serves it. Cell table and

@@ -1,26 +1,30 @@
-//! argmax-margin-probe (lane/q8-argmax, 2026-08-06): calibrates the run-gen prefill-vs-decode
-//! argmax gate against the ONE number that decides whether a flip is a near-tie coin or a real
-//! numeric defect — the top-2 MARGIN at the decision position, measured against the margin
-//! distribution over that same prompt's other positions.
+//! argmax-margin-probe (lane/q8-argmax, 2026-08-06; verdict rewritten for memra#1199): measures
+//! the run-gen prefill-vs-decode argmax gate at a window of prompt positions, and judges a
+//! measured table.
 //!
 //! Why this exists: the gate (`run_gen.rs:880`) prints `logit maxdiff`, and a reader naturally
 //! treats a big maxdiff as "big error". That is wrong, and it cost this lane's predecessors real
-//! time. maxdiff is the max over a 248k-wide vocab of |prefill - decode| — dominated by
+//! time. maxdiff is the max over a 248k-wide vocab of |prefill - decode|, dominated by
 //! whatever logit is noisiest anywhere in the vocab, mostly deep in the tail, and it is
-//! routinely 0.3-2.4 on runs the same gate calls MATCH. The gate flips iff the top-2 margin at
-//! the last position is SMALLER than the config spread there. So the discriminator is
-//!     margin(top1, top2)  vs  |prefill[i] - decode[i]| at the two contending ids
-//! and the honest way to state "this is a near-tie" is to show that margin sits in the extreme
-//! low tail of the margins this same prompt produces at every other position.
+//! routinely 0.3-2.4 on runs the same gate calls MATCH. What decides a flip is the two
+//! programs' top-2 margins: a flip needs the programs to disagree about the two contenders by
+//! at least the sum of the two margins (`memra_engine::argmax_margin`, the gap shift). A near
+//! tie is a flip whose gap shift is no larger than the largest one the same two programs show
+//! at rows where they agree, measured over the whole prompt (the floor).
 //!
-//! It reports, for the batched-prefill config and the tokenwise-decode config:
-//!   * per-position top-2 margin over the last WINDOW positions of the prompt (teacher-forced
-//!     on the prompt itself — bit-identical inputs, no stream separation),
-//!   * the decision position's margin and its PERCENTILE within that distribution,
-//!   * the per-id config delta at the two contending ids (the quantity that must exceed the
-//!     margin for a flip to be possible at all),
-//!   * agreement rate across all sampled positions (a near-tie class predicts ~1 flip in many;
-//!     a broken kernel predicts systematic disagreement).
+//! It reports, for the batched-prefill config and a decode config:
+//!   * per-position top-1 ids, top-2 margins and the spread at the contending ids over the last
+//!     WINDOW positions of the prompt (teacher-forced on the prompt itself: bit-identical
+//!     inputs, no stream separation),
+//!   * one `detail` line per position: both programs' top-2 ids with their text and logits,
+//!     each program's logit at the other's top-1, the spread and the gap shift,
+//!   * the largest gap shift at an agreeing row (what a whole-prompt window calibrates) and
+//!     the gap shift of every flip.
+//!
+//! It prints no verdict of its own on a measurement. `--judge <log>` is the verdict: it reads
+//! the table of a log, looks up the floor row and calls `argmax_margin::judge`.
+//! `tools/argmax-margin-gate.sh` runs it on the measured log and, for its canary, on a copy
+//! with an injected row, so one function judges both.
 //!
 //! It also runs the BATCHED SERVING PRIME (`prime_cache`, the program that seeds generation in
 //! `generate` and serving) once over the whole prompt and judges its last-position logits
@@ -50,10 +54,15 @@
 //!     has no served batched program: the arm then steps the program that does serve it,
 //!     `decode_step`, and prints `SERVED-ARGMAX: n/a reason=eager-routed`.
 //!
-//! usage: argmax-margin-probe <model.gguf|hf_dir> <prompt-file> [window=24] [--decode eager|batch]
+//! usage: argmax-margin-probe <model.gguf|hf_dir> <prompt-file> [window=24|all] [--decode eager|batch]
+//!        argmax-margin-probe --judge <log> --max-flips N [--floors <tsv> --model M --prompt P
+//!            --prompt-sha256 S --decode eager|batch --device D] [--calibrate --receipt PATH]
+//! `window=all` measures every row the prefill reference can give (T - 3): the calibration
+//! window. `--judge` runs no engine: exit 0 passes, 1 fails, 2 is a malformed table or call.
 //! env: engine knobs (MEMRA_FA_SPLIT, MEMRA_Q80_G2, MEMRA_FAST, ...) steer the arm under test.
 
 use memra_engine::Engine;
+use memra_engine::argmax_margin::{self, FloorKey, Row};
 use memra_engine::decode_batch::DevSamp;
 use memra_engine::forward::argmax;
 use memra_engine::hybrid::HybridModel;
@@ -61,7 +70,8 @@ use memra_engine::pp::new_cache as new_model_cache;
 use memra_gguf::GgufFile;
 use memra_tokenizer::Tokenizer;
 
-const USAGE: &str = "usage: argmax-margin-probe <model.gguf|hf_dir> <prompt-file> [window=24] [--decode eager|batch]";
+const USAGE: &str = "usage: argmax-margin-probe <model.gguf|hf_dir> <prompt-file> [window=24|all] [--decode eager|batch]";
+const JUDGE_USAGE: &str = "usage: argmax-margin-probe --judge <log> --max-flips N [--floors <tsv> --model M --prompt P --prompt-sha256 S --decode eager|batch --device D] [--calibrate --receipt PATH]";
 
 /// The program on the decode side of the table (see the module doc).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,11 +80,29 @@ enum DecodeArm {
     Batch,
 }
 
+/// How many of the prompt's last positions to measure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Window {
+    Last(usize),
+    /// Every row the prefill reference can give: the calibration window.
+    All,
+}
+
+impl Window {
+    /// The row count on a prompt of `t` tokens. The probe needs `window < t - 2`.
+    fn rows(self, t: usize) -> usize {
+        match self {
+            Window::Last(n) => n,
+            Window::All => t.saturating_sub(3),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct ProbeArgs {
     model: String,
     prompt: String,
-    window: usize,
+    window: Window,
     decode: DecodeArm,
 }
 
@@ -100,18 +128,21 @@ fn parse_args(args: &[String]) -> Result<ProbeArgs, String> {
         }
     }
     let (model, prompt, window) = match positional.as_slice() {
-        [model, prompt] => (model, prompt, 24),
+        [model, prompt] => (model, prompt, Window::Last(24)),
+        [model, prompt, window] if window.as_str() == "all" => (model, prompt, Window::All),
         [model, prompt, window] => (
             model,
             prompt,
-            window
-                .parse::<usize>()
-                .map_err(|err| format!("window {window:?}: {err}"))?,
+            Window::Last(
+                window
+                    .parse::<usize>()
+                    .map_err(|err| format!("window {window:?}: {err}"))?,
+            ),
         ),
         _ => return Err(USAGE.into()),
     };
-    if window == 0 {
-        return Err("window must be a positive integer".into());
+    if window == Window::Last(0) {
+        return Err("window must be a positive integer or all".into());
     }
     Ok(ProbeArgs {
         model: model.to_string(),
@@ -232,22 +263,6 @@ fn eager_decode(
     Ok(EagerRun { rows, cache })
 }
 
-fn top2(l: &[f32]) -> (usize, f32, usize, f32) {
-    let (mut i1, mut v1, mut i2, mut v2) = (0usize, f32::NEG_INFINITY, 0usize, f32::NEG_INFINITY);
-    for (i, &v) in l.iter().enumerate() {
-        if v > v1 {
-            i2 = i1;
-            v2 = v1;
-            i1 = i;
-            v1 = v;
-        } else if v > v2 {
-            i2 = i;
-            v2 = v;
-        }
-    }
-    (i1, v1, i2, v2)
-}
-
 /// Why the batched-prime arm does not run, if it does not: the same conditions run-gen's gap #46
 /// cell uses. `tokenwise-served` is the only skip under which the served first token still
 /// comes from a program this probe gates (the tokenwise loop of the table above).
@@ -297,21 +312,165 @@ fn validate_placement(
     Ok(())
 }
 
-fn measurement_row(pos: usize, prefill: (usize, f32), decode: (usize, f32), delta: f32) -> String {
-    let (p1, mp) = prefill;
-    let (d1, md) = decode;
-    // The shell gate compares these values, so display rounding must not erase a
-    // small explained margin. Ten significant digits preserve every finite f32.
-    format!(
-        "{pos:<8} {p1:<13} {mp:<16.9e} {d1:<12} {md:<16.9e} {delta:<16.9e} {}",
-        if p1 == d1 { "yes" } else { "NO <-- FLIP" }
-    )
+/// The arguments of `--judge`.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct JudgeArgs {
+    log: String,
+    max_flips: usize,
+    floors: Option<String>,
+    model: String,
+    prompt: String,
+    prompt_sha256: String,
+    decode: String,
+    device: String,
+    calibrate: bool,
+    receipt: String,
+}
+
+fn parse_judge_args(args: &[String]) -> Result<JudgeArgs, String> {
+    let mut out = JudgeArgs::default();
+    let mut max_flips = None;
+    let mut it = args.iter();
+    out.log = it
+        .next()
+        .filter(|a| !a.starts_with("--"))
+        .ok_or(JUDGE_USAGE)?
+        .clone();
+    while let Some(arg) = it.next() {
+        if arg == "--calibrate" {
+            out.calibrate = true;
+            continue;
+        }
+        let value = it
+            .next()
+            .ok_or_else(|| format!("{arg} takes a value; {JUDGE_USAGE}"))?
+            .clone();
+        match arg.as_str() {
+            "--max-flips" => {
+                max_flips = Some(
+                    value
+                        .parse::<usize>()
+                        .map_err(|err| format!("--max-flips {value:?}: {err}"))?,
+                )
+            }
+            "--floors" => out.floors = Some(value),
+            "--model" => out.model = value,
+            "--prompt" => out.prompt = value,
+            "--prompt-sha256" => out.prompt_sha256 = value,
+            "--decode" => out.decode = value,
+            "--device" => out.device = value,
+            "--receipt" => out.receipt = value,
+            other => return Err(format!("unknown option {other}; {JUDGE_USAGE}")),
+        }
+    }
+    let keyed = [
+        &out.model,
+        &out.prompt,
+        &out.prompt_sha256,
+        &out.decode,
+        &out.device,
+    ];
+    if (out.floors.is_some() || out.calibrate) && keyed.iter().any(|v| v.is_empty()) {
+        return Err(format!(
+            "--floors and --calibrate need --model, --prompt, --prompt-sha256, --decode and --device; {JUDGE_USAGE}"
+        ));
+    }
+    if out.calibrate {
+        if out.receipt.is_empty() {
+            return Err(format!("--calibrate needs --receipt; {JUDGE_USAGE}"));
+        }
+    } else {
+        out.max_flips =
+            max_flips.ok_or_else(|| format!("--max-flips is required; {JUDGE_USAGE}"))?;
+    }
+    Ok(out)
+}
+
+/// `--judge`: the verdict on the table of a log, as text and an exit code (0 pass, 1 fail).
+/// `floors` is the text of the floors table when one was named. A malformed table or floors
+/// table is an `Err` (exit 2).
+fn judge_log(args: &JudgeArgs, log: &str, floors: Option<&str>) -> Result<(String, i32), String> {
+    let rows = argmax_margin::parse_table(log)?;
+    let key = FloorKey {
+        model: &args.model,
+        prompt: &args.prompt,
+        prompt_sha256: &args.prompt_sha256,
+        decode: &args.decode,
+        device: &args.device,
+    };
+    if args.calibrate {
+        let cal = argmax_margin::calibrate(&rows).ok_or("no agreeing row to calibrate from")?;
+        return Ok((
+            format!(
+                "CALIBRATION: rows={} agreeing={} flips={} floor={:.9e} set_by_row={} \
+                 max_flips_in_12={}\nFLOOR-ROW: {}\n",
+                rows.len(),
+                cal.agreeing,
+                cal.flips,
+                cal.floor,
+                cal.set_by_row,
+                argmax_margin::max_flips_in_window(&rows, 12),
+                argmax_margin::floor_line(&key, &cal, &args.receipt),
+            ),
+            0,
+        ));
+    }
+    let table = match floors {
+        Some(text) => argmax_margin::parse_floors(text)?,
+        None => Vec::new(),
+    };
+    let row = argmax_margin::find_floor(&table, &key);
+    let mut out = match row {
+        Some(r) => format!(
+            "FLOOR: {:.4} (largest gap shift over {} agreeing rows, set by row {}; {})\n",
+            r.floor, r.rows, r.set_by_row, r.receipt
+        ),
+        None => format!(
+            "FLOOR: none (UNCALIBRATED: no floor row for model={} prompt={} sha256={} decode={} \
+             device={:?}; a flip fails, agreeing rows are not judged)\n",
+            args.model, args.prompt, args.prompt_sha256, args.decode, args.device
+        ),
+    };
+    let verdict = argmax_margin::judge(&rows, row.map(|r| r.floor), args.max_flips);
+    let detail = |pos: usize| {
+        let head = format!("detail pos={pos} ");
+        log.lines()
+            .find(|l| l.starts_with(&head))
+            .map(str::to_string)
+    };
+    out.push_str(&verdict.report(&detail));
+    Ok((out, if verdict.passes() { 0 } else { 1 }))
+}
+
+fn judge_main(args: &[String]) -> i32 {
+    let run = || -> Result<(String, i32), String> {
+        let args = parse_judge_args(args)?;
+        let log = std::fs::read_to_string(&args.log).map_err(|e| format!("{}: {e}", args.log))?;
+        let floors = match &args.floors {
+            Some(path) => Some(std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?),
+            None => None,
+        };
+        judge_log(&args, &log, floors.as_deref())
+    };
+    match run() {
+        Ok((text, code)) => {
+            print!("{text}");
+            code
+        }
+        Err(err) => {
+            println!("MALFORMED: {err}");
+            2
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("--judge") {
+        std::process::exit(judge_main(&args[1..]));
+    }
     let probe = parse_args(&args)?;
-    let (model_path, prompt_file, window) = (&probe.model, &probe.prompt, probe.window);
+    let (model_path, prompt_file) = (&probe.model, &probe.prompt);
 
     let e = Engine::new(0)?;
     let path = std::path::Path::new(model_path);
@@ -338,8 +497,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let text = std::fs::read_to_string(prompt_file)?;
     let prompt = tok.encode(&text, true);
     let t = prompt.len();
+    let window = probe.window.rows(t);
     assert!(
-        window < t.saturating_sub(2),
+        window >= 1 && window < t.saturating_sub(2),
         "prompt shorter than the window"
     );
 
@@ -436,46 +596,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "\npos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree"
     );
-    let mut margins_d: Vec<f32> = Vec::with_capacity(window);
-    let mut margins_p: Vec<f32> = Vec::with_capacity(window);
-    let mut n_agree = 0usize;
-    let mut flip_rows: Vec<(usize, f32, f32, bool)> = Vec::new();
-    let mut last_row: Option<(usize, usize, f32, f32, f32, f32)> = None;
-    for k in 0..window {
-        let pos = t - window + k;
-        let (p1, pv1, p2, pv2) = top2(&pre_at[k]);
-        let (d1, dv1, d2, dv2) = top2(&dec_at[k]);
-        let mp = pv1 - pv2;
-        let md = dv1 - dv2;
-        margins_p.push(mp);
-        margins_d.push(md);
-        // the config delta at the contending ids — what must exceed the margin to flip
-        let ids = [p1, p2, d1, d2];
-        let delta = ids
-            .iter()
-            .map(|&i| (pre_at[k][i] - dec_at[k][i]).abs())
-            .fold(0.0f32, f32::max);
-        let agree = p1 == d1;
-        if agree {
-            n_agree += 1;
-        } else {
-            // per-flip classification (gemma-31B calibration, 2026-08-17): a flip is
-            // margin-EXPLAINED iff the config spread at the contending ids can reach
-            // across the smaller of the two margins at ITS OWN position.
-            flip_rows.push((pos, mp.min(md), delta, delta > mp.min(md)));
-        }
-        println!("{}", measurement_row(pos, (p1, mp), (d1, md), delta));
-        if k == window - 1 {
-            last_row = Some((p1, d1, mp, md, delta, (pre_at[k][p1] - dec_at[k][p1]).abs()));
-        }
+    let rows: Vec<Row> = (0..window)
+        .map(|k| Row::from_logits(t - window + k, &pre_at[k], &dec_at[k]))
+        .collect();
+    for row in &rows {
+        println!("{}", row.table_line());
     }
 
-    // --- the calibration verdict: where does the decision position's margin sit? ---
-    let mut sorted = margins_d.clone();
+    // --- one examination line per position: enough to read any row from the log alone ---
+    println!(
+        "\nrows in detail (top-2 ids, text, logits; each program's logit at the other's top-1):"
+    );
+    let text = |id: usize| tok.decode(&[id as u32]);
+    for (k, row) in rows.iter().enumerate() {
+        println!(
+            "{}",
+            argmax_margin::detail_line(row.pos, &pre_at[k], &dec_at[k], &text)
+        );
+    }
+
+    let mut sorted: Vec<f32> = rows.iter().map(|r| r.margin_d).collect();
     sorted.sort_by(|a, b| a.total_cmp(b));
     let pct = |q: f64| sorted[((sorted.len() - 1) as f64 * q).round() as usize];
-    let (fp1, fd1, fmp, fmd, fdelta, _) = last_row.expect("window >= 1");
-    let below = margins_d.iter().filter(|&&m| m < fmd).count();
     println!(
         "\nmargin distribution (decode config, {} positions): min {:.4}  p10 {:.4}  p50 {:.4}  p90 {:.4}  max {:.4}",
         sorted.len(),
@@ -485,7 +627,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         pct(0.90),
         sorted[sorted.len() - 1]
     );
-    let mut sp = margins_p.clone();
+    let mut sp: Vec<f32> = rows.iter().map(|r| r.margin_p).collect();
     sp.sort_by(|a, b| a.total_cmp(b));
     println!(
         "margin distribution (prefill config): min {:.4}  p50 {:.4}  max {:.4}",
@@ -493,101 +635,59 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sp[sp.len() / 2],
         sp[sp.len() - 1]
     );
+    let last = rows.last().expect("window >= 1");
     println!(
-        "DECISION POSITION (the gate's): prefill_top1={fp1} decode_top1={fd1} margin_p={fmp:.4} \
-         margin_d={fmd:.4} config_delta_at_ids={fdelta:.4}"
+        "DECISION POSITION (the gate's): prefill_top1={} decode_top1={} margin_p={:.4} \
+         margin_d={:.4} config_delta_at_ids={:.4} gap_shift={:.4}",
+        last.prefill_top1,
+        last.decode_top1,
+        last.margin_p,
+        last.margin_d,
+        last.spread,
+        last.gap_shift()
     );
-    println!(
-        "  -> the decision margin is BELOW {}/{} sampled positions' margins (rank {} of {})",
-        below,
-        margins_d.len(),
-        below + 1,
-        margins_d.len()
-    );
-    println!(
-        "  -> flip is ARITHMETICALLY POSSIBLE iff config_delta > margin: {:.4} > {:.4} = {}",
-        fdelta,
-        fmd.min(fmp),
-        fdelta > fmd.min(fmp)
-    );
+    let flips = rows.iter().filter(|r| r.is_flip()).count();
     println!(
         "agreement across sampled positions: {}/{} ({} flip(s))",
-        n_agree,
+        window - flips,
         window,
-        window - n_agree
+        flips
     );
-    // Classification. The two independent axes are (a) how many positions flipped, and
-    // (b) whether the config spread at the contending ids is even large enough to reach
-    // across the decision margin. Only (flip AND spread < margin) is a defect.
-    let flips = window - n_agree;
-    let exposed = fdelta > fmd.min(fmp);
-    // PER-MODEL FLIP BUDGET (calibration rows). The old verdict hard-coded flips>=2 =>
-    // SYSTEMATIC regardless of margins — a stale calibration for models with a wide
-    // near-tie population. gemma4-31B row (2026-08-17, calibrated from the banked
-    // board-2048 margin measurement, gemma-ship-20260817/zoofusion/gate-*.log: decode
-    // margins p10 0.293 / p50 2.28 with config spreads at contending ids up to 3.75 —
-    // ~5 of 12 tail positions sit with margin inside the spread, a near-tie coin
-    // population whose expectation is ~2.5 flips per 12-window; budget = 3 EXPLAINED
-    // flips per 12 sampled positions, scaled by window). Every flip must STILL be
-    // individually margin-explained — one unexplained flip is a defect at any count;
-    // the budget only governs how many explained near-tie coins may land differently.
-    let flip_budget = {
-        let per12: usize = if model.cfg.gemma4.is_some() && model.cfg.n_embd == 5376 {
-            3 // gemma4-31B calibration row (measured near-tie population, NOT loosened-to-green)
-        } else {
-            1 // pre-existing default budget for the thin-near-tie models (qwen q8 class)
-        };
-        (per12 * window).div_ceil(12)
-    };
-    let unexplained: Vec<_> = flip_rows.iter().filter(|r| !r.3).collect();
-    for (pos, margin, delta, expl) in &flip_rows {
+    // What the measurement holds for the verdict. The verdict itself is `--judge`, which reads
+    // this log's table against the floor row of this model, prompt, decode program and device.
+    for r in rows.iter().filter(|r| r.is_flip()) {
         println!(
-            "flip@{pos}: margin {margin:.4} vs config spread {delta:.4} -> {}",
-            if *expl {
-                "margin-EXPLAINED (near-tie coin)"
-            } else {
-                "UNEXPLAINED"
-            }
+            "flip@{}: margins {:.4} + {:.4} = gap shift {:.4} (spread {:.4})",
+            r.pos,
+            r.margin_p,
+            r.margin_d,
+            r.gap_shift(),
+            r.spread
         );
     }
-    println!(
-        "flip budget: {flips} flip(s) vs budget {flip_budget} (calibration row: {})",
-        if model.cfg.gemma4.is_some() && model.cfg.n_embd == 5376 {
-            "gemma4-31B (3/12-window)"
-        } else {
-            "default (1/12-window)"
-        }
-    );
-    println!(
-        "VERDICT-INPUT: {}",
-        if !unexplained.is_empty() {
-            "UNEXPLAINED — flip(s) at margins the config spread does NOT cover; a real defect, investigate"
-        } else if flips > flip_budget {
-            "SYSTEMATIC — explained flips exceed the model's calibrated near-tie budget; investigate"
-        } else if flips > 0 {
-            "NEAR-TIE class — every flip sits at a margin the config spread covers, within the \
-             model's calibrated budget (documented cross-config drift, not a numeric defect)"
-        } else if exposed {
-            "NEAR-TIE-EXPOSED — no flip fired, but the margin is inside the config spread: \
-             this position is a coin that happened to land the same way in both configs"
-        } else {
-            "STABLE — no flip, and the config spread cannot reach across the decision \
-             margin (structurally safe at this position)"
-        }
-    );
+    match argmax_margin::calibrate(&rows) {
+        Some(cal) => println!(
+            "largest gap shift at an agreeing row: {:.9e} at row {} ({} agreeing rows; this is \
+             the floor when the window is the whole prompt)",
+            cal.floor, cal.set_by_row, cal.agreeing
+        ),
+        None => println!("largest gap shift at an agreeing row: none (no row agrees)"),
+    }
     println!("{report_line}");
-    // REPORTER ONLY: the gate (tools/argmax-margin-gate.sh) parses the table above and
-    // the PRIME-GATE or SERVED-ARGMAX line, and owns the exit code: a probe-side exit would
-    // double-fail ahead of the comparator and break the canary's inject-then-parse flow.
+    // REPORTER ONLY: the gate (tools/argmax-margin-gate.sh) runs `--judge` on this log and
+    // reads the PRIME-GATE or SERVED-ARGMAX line, and owns the exit code: a measurement-side
+    // exit would double-fail ahead of the judge and break the canary's inject-then-judge flow.
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        DecodeArm, ProbeArgs, SERVED_EAGER_ROUTED, measurement_row, parse_args, prime_gate_row,
-        prime_gate_skip_reason, served_argmax_row, validate_placement,
+        DecodeArm, JudgeArgs, ProbeArgs, SERVED_EAGER_ROUTED, Window, judge_log, parse_args,
+        parse_judge_args, prime_gate_row, prime_gate_skip_reason, served_argmax_row,
+        validate_placement,
     };
+    use memra_engine::argmax_margin::Row;
     use memra_engine::forward::{PrimeGateClass, PrimeGateVerdict};
 
     fn args(list: &[&str]) -> Vec<String> {
@@ -604,24 +704,31 @@ mod tests {
         };
         assert_eq!(
             parse_args(&args(&["m.gguf", "p.txt"])),
-            Ok(expect(24, DecodeArm::Eager))
+            Ok(expect(Window::Last(24), DecodeArm::Eager))
         );
         assert_eq!(
             parse_args(&args(&["m.gguf", "p.txt", "12"])),
-            Ok(expect(12, DecodeArm::Eager))
+            Ok(expect(Window::Last(12), DecodeArm::Eager))
         );
         assert_eq!(
             parse_args(&args(&["m.gguf", "p.txt", "12", "--decode", "batch"])),
-            Ok(expect(12, DecodeArm::Batch))
+            Ok(expect(Window::Last(12), DecodeArm::Batch))
         );
         assert_eq!(
             parse_args(&args(&["--decode", "batch", "m.gguf", "p.txt"])),
-            Ok(expect(24, DecodeArm::Batch))
+            Ok(expect(Window::Last(24), DecodeArm::Batch))
         );
         assert_eq!(
             parse_args(&args(&["m.gguf", "p.txt", "--decode", "eager"])),
-            Ok(expect(24, DecodeArm::Eager))
+            Ok(expect(Window::Last(24), DecodeArm::Eager))
         );
+        // The calibration window: every row the prefill reference can give.
+        assert_eq!(
+            parse_args(&args(&["m.gguf", "p.txt", "all", "--decode", "batch"])),
+            Ok(expect(Window::All, DecodeArm::Batch))
+        );
+        assert_eq!(Window::All.rows(2048), 2045);
+        assert_eq!(Window::Last(12).rows(2048), 12);
     }
 
     #[test]
@@ -706,32 +813,177 @@ mod tests {
         assert!(validate_placement(false, true).is_ok());
     }
 
-    #[test]
-    fn table_round_trips_f32_margins() {
-        for (margin, delta) in [
-            (0.00002_f32, 0.00003_f32),
-            (1.0e-30, 2.0e-30),
-            (1.2345678, 2.3456788),
-        ] {
-            let row = measurement_row(10, (1, margin), (2, margin), delta);
-            let fields: Vec<_> = row.split_whitespace().collect();
-            assert_eq!(
-                fields[2].parse::<f32>().unwrap().to_bits(),
-                margin.to_bits()
-            );
-            assert_eq!(
-                fields[4].parse::<f32>().unwrap().to_bits(),
-                margin.to_bits()
-            );
-            assert_eq!(fields[5].parse::<f32>().unwrap().to_bits(), delta.to_bits());
-            assert_eq!(fields[6], "NO");
-            assert!(fields[5].parse::<f64>().unwrap() > fields[2].parse::<f64>().unwrap());
+    fn table(rows: &[Row]) -> String {
+        rows.iter().map(|r| r.table_line() + "\n").collect()
+    }
+
+    fn row(pos: usize, p1: usize, mp: f32, d1: usize, md: f32) -> Row {
+        Row {
+            pos,
+            prefill_top1: p1,
+            margin_p: mp,
+            decode_top1: d1,
+            margin_d: md,
+            spread: mp.max(md),
         }
+    }
+
+    const FLOORS: &str = "# model\tprompt\tsha\tdecode\tdevice\tfloor\trows\tset_by_row\treceipt\n\
+        m\tboard-2048\tabc\teager\tdevice A\t4.0e-1\t2040\t2047\tresearch/x/gate.log\n";
+
+    fn judge_args(extra: &[&str]) -> JudgeArgs {
+        let mut list = vec![
+            "gate.log",
+            "--max-flips",
+            "1",
+            "--floors",
+            "floors.tsv",
+            "--model",
+            "m",
+            "--prompt",
+            "board-2048",
+            "--prompt-sha256",
+            "abc",
+            "--decode",
+            "eager",
+            "--device",
+            "device A",
+        ];
+        list.extend_from_slice(extra);
+        parse_judge_args(&args(&list)).unwrap()
+    }
+
+    #[test]
+    fn judge_arguments_are_checked() {
+        let a = judge_args(&[]);
         assert_eq!(
-            measurement_row(10, (1, 1.0), (1, 1.0), 0.0)
-                .split_whitespace()
-                .nth(6),
-            Some("yes")
+            (a.log.as_str(), a.max_flips, a.calibrate),
+            ("gate.log", 1, false)
         );
+        assert_eq!(a.floors.as_deref(), Some("floors.tsv"));
+        // No floors table: the judge still runs and every table is uncalibrated.
+        assert!(parse_judge_args(&args(&["gate.log", "--max-flips", "1"])).is_ok());
+        for bad in [
+            &[][..],
+            &["--max-flips", "1"],
+            &["gate.log"],
+            &["gate.log", "--max-flips", "x"],
+            &["gate.log", "--max-flips"],
+            &["gate.log", "--max-flips", "1", "--floors", "f.tsv"],
+            &["gate.log", "--max-flips", "1", "--margin-floor", "0.5"],
+            &["gate.log", "--calibrate"],
+        ] {
+            assert!(parse_judge_args(&args(bad)).is_err(), "{bad:?}");
+        }
+        assert!(judge_args(&["--calibrate", "--receipt", "research/x/gate.log"]).calibrate);
+    }
+
+    #[test]
+    fn the_judge_fails_a_wide_flip_and_passes_a_near_tie() {
+        // The red arm on the gate's own parse path: one table, three injected rows.
+        let clean = [row(10, 1, 2.0, 1, 2.1), row(11, 2, 5.0, 2, 5.3)];
+        let (text, code) = judge_log(&judge_args(&[]), &table(&clean), Some(FLOORS)).unwrap();
+        assert_eq!(code, 0, "{text}");
+        assert!(text.starts_with("FLOOR: 0.4000 (largest gap shift over 2040 agreeing rows, set by row 2047; research/x/gate.log)\n"), "{text}");
+        assert!(text.contains("SUMMARY flips=0 bad=0 "), "{text}");
+
+        let mut wide = clean.to_vec();
+        wide.push(row(12, 3, 14.4, 4, 2.5));
+        let log = format!("{}detail pos=12 the examination line\n", table(&wide));
+        let (text, code) = judge_log(&judge_args(&[]), &log, Some(FLOORS)).unwrap();
+        assert_eq!(code, 1, "{text}");
+        assert!(
+            text.contains(
+                "WIDE-FLIP pos=12 prefill_top1=3 margin_p=14.4000 decode_top1=4 margin_d=2.5000 "
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "gap_shift=16.9000 > floor=0.4000\n  detail pos=12 the examination line\n"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("SUMMARY flips=1 bad=1 near_ties=0 wide_flips=1 "),
+            "{text}"
+        );
+
+        let mut tie = clean.to_vec();
+        tie.push(row(12, 3, 0.02, 4, 0.03));
+        let (text, code) = judge_log(&judge_args(&[]), &table(&tie), Some(FLOORS)).unwrap();
+        assert_eq!(code, 0, "{text}");
+        assert!(text.contains("near-tie pos=12 "), "{text}");
+        assert!(
+            text.contains("SUMMARY flips=1 bad=0 near_ties=1 "),
+            "{text}"
+        );
+
+        // A second near tie is over the budget of 1.
+        tie.push(row(13, 5, 0.01, 6, 0.01));
+        let (text, code) = judge_log(&judge_args(&[]), &table(&tie), Some(FLOORS)).unwrap();
+        assert_eq!(code, 1, "{text}");
+        assert!(text.contains("TOO-MANY-NEAR-TIES 2 > budget 1"), "{text}");
+
+        // An agreeing row whose margins differ by more than the floor.
+        let wide_row = [row(10, 1, 14.4, 1, 7.2)];
+        let (text, code) = judge_log(&judge_args(&[]), &table(&wide_row), Some(FLOORS)).unwrap();
+        assert_eq!(code, 1, "{text}");
+        assert!(text.contains("WIDE-ROW pos=10 "), "{text}");
+    }
+
+    #[test]
+    fn without_a_floor_row_a_flip_fails_and_a_clean_table_says_uncalibrated() {
+        let other_device = judge_args(&["--device", "device B"]);
+        let clean = [row(10, 1, 14.4, 1, 7.2)];
+        let (text, code) = judge_log(&other_device, &table(&clean), Some(FLOORS)).unwrap();
+        assert_eq!(code, 0, "{text}");
+        assert!(
+            text.starts_with("FLOOR: none (UNCALIBRATED: no floor row for model=m "),
+            "{text}"
+        );
+        assert!(text.contains("SUMMARY flips=0 bad=0 "), "{text}");
+        assert!(text.contains(" floor=none "), "{text}");
+
+        let tie = [row(12, 3, 0.02, 4, 0.03)];
+        let (text, code) = judge_log(&other_device, &table(&tie), Some(FLOORS)).unwrap();
+        assert_eq!(code, 1, "{text}");
+        assert!(text.contains("UNCALIBRATED-FLIP pos=12 "), "{text}");
+        // The same without any floors table.
+        let bare = parse_judge_args(&args(&["gate.log", "--max-flips", "1"])).unwrap();
+        assert_eq!(judge_log(&bare, &table(&tie), None).unwrap().1, 1);
+    }
+
+    #[test]
+    fn calibration_prints_the_floors_row_of_its_table() {
+        let rows = [
+            row(10, 1, 2.0, 1, 2.25),
+            row(11, 2, 5.0, 2, 5.75),
+            row(12, 3, 0.02, 4, 0.03),
+        ];
+        let a = judge_args(&["--calibrate", "--receipt", "research/x/gate.log"]);
+        let (text, code) = judge_log(&a, &table(&rows), None).unwrap();
+        assert_eq!(code, 0);
+        assert_eq!(
+            text,
+            "CALIBRATION: rows=3 agreeing=2 flips=1 floor=7.500000000e-1 set_by_row=11 max_flips_in_12=1\n\
+             FLOOR-ROW: m\tboard-2048\tabc\teager\tdevice A\t7.500000000e-1\t2\t11\tresearch/x/gate.log\n"
+        );
+        // The printed row parses, and judges its own table green.
+        let line = text
+            .lines()
+            .nth(1)
+            .unwrap()
+            .strip_prefix("FLOOR-ROW: ")
+            .unwrap();
+        let (_, code) = judge_log(&judge_args(&[]), &table(&rows), Some(line)).unwrap();
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn a_malformed_table_or_floors_table_is_an_error() {
+        assert!(judge_log(&judge_args(&[]), "no table", Some(FLOORS)).is_err());
+        let clean = [row(10, 1, 2.0, 1, 2.1)];
+        assert!(judge_log(&judge_args(&[]), &table(&clean), Some("one\ttwo\n")).is_err());
     }
 }

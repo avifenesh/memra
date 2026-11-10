@@ -501,8 +501,8 @@ if [ -f "$G31" ]; then
     # decode arithmetic; prompt-55's final position sits on a near-tie (decode top-2
     # margin 0.053 vs config spread 0.321) and the raw assert flips by position luck —
     # the exact coverage bug tools/argmax-margin-gate.sh was built for. The calibrated
-    # gate keeps teeth: every flip must be margin-explained, one wide-margin flip fails
-    # at any count (gemma-31B calibration row, banked invocations in the gate log).
+    # gate keeps teeth: a flip above the cell's floor fails at any count, and a cell with
+    # no floor row fails on any flip (memra#1199; gemma-31B budget row in the gate).
     tools/argmax-margin-gate.sh "$G31" || { echo "argmax-margin-gate FAIL (31B)"; exit 1; }
     echo "argmax-margin-gate: PASS (31B, calibrated)"
     # shellcheck disable=SC2046

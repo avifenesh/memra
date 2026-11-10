@@ -105,7 +105,9 @@ case " $* " in
     exit "${FIXTURE_ARGMAX_BATCH_RC:-0}" ;;
 esac
 env > "$FIXTURE_ROOT/argmax.env"
+printf '%s\\n' "$@" > "$FIXTURE_ROOT/argmax.args"
 cat "$FIXTURE_ROOT/argmax.log"
+exit "${FIXTURE_ARGMAX_RC:-0}"
 """)
         # A fake nvidia-smi must answer THREE distinct query shapes now (memra#264 follow-up,
         # PR #898): the physical-GPU resolver's `index,uuid,memory.free` device list, the
@@ -270,7 +272,23 @@ esac
                          if "=" in line)
         self.assertNotIn("MEMRA_SERVE_B1FAST", batch_env)
         args = (self.root / "argmax-batch.args").read_text().splitlines()
-        self.assertEqual(args[:3], [str(self.model), "--decode", "batch"])
+        self.assertEqual(args[:4], [str(self.model), "--decode", "batch", "--require-floor"])
+
+    def test_cell_without_a_calibrated_floor_is_refused(self):
+        # A release never passes an argmax cell as UNCALIBRATED: both cells call the gate with
+        # --require-floor, and its refusal is reported as one, not as a gate failure.
+        self.run_battery()
+        args = (self.root / "argmax.args").read_text().splitlines()
+        self.assertEqual(args[:2], [str(self.model), "--require-floor"])
+        refusal = "argmax-margin-gate: UNCALIBRATED (no floor row in tools/argmax-margin-floors.tsv for model=m)\n"
+        passed = self.argmax_log.read_text()
+        self.argmax_log.write_text(refusal)
+        self.run_battery(expected=1, diagnostic="argmax-margin  REFUSED   no calibrated floor for this cell",
+                         FIXTURE_ARGMAX_RC="1")
+        self.argmax_log.write_text(passed)
+        self.argmax_batch_log.write_text(refusal)
+        self.run_battery(expected=1, diagnostic="argmax-margin-batch  REFUSED   no calibrated floor for this cell",
+                         FIXTURE_ARGMAX_BATCH_RC="1")
 
     def test_nonzero_exit_cannot_pass(self):
         self.run_battery(expected=1, FIXTURE_SPEC_RC="1")
