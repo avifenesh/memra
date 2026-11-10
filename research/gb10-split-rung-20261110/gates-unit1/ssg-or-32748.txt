@@ -1,0 +1,17 @@
+# cmd
+MEMRA_PROMPT_FILE=$PWD/prompts/deep-32748.txt kt-head-1a4f769861/release/spec-serve-gate $HOME/models/memra-gate/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf --steps 8 --ts 1,2,4 --spec-k 3
+# rc 0
+# log (prompt token list and capture-time lookups left out)
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 123.64GB (expert budget 120.04GB) -> RESIDENT
+[moe-sk-form] dev=0 qt=7 sms=48 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=177 max_m=2011
+[fa-pool] grow #0 dev=0 o_len 0 -> 1048576 ml_len 0 -> 4096 (retired kept, zero=false)
+T=1 rounds=8 differing_logits=0 max_abs=0.000000000e0 argmax_diffs=0 device_argmax_diffs=0
+[fa-pool] grow #1 dev=0 o_len 1048576 -> 2097152 ml_len 4096 -> 8192 (retired kept, zero=false)
+T=2 rounds=8 differing_logits=0 max_abs=0.000000000e0 argmax_diffs=0 device_argmax_diffs=0
+[fa-pool] grow #2 dev=0 o_len 2097152 -> 4194304 ml_len 8192 -> 16384 (retired kept, zero=false)
+T=4 rounds=8 differing_logits=0 max_abs=0.000000000e0 argmax_diffs=0 device_argmax_diffs=0
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 3MB; charged per spec admission and gating future captures)
+[spec-vg] MTP verify-graph pool ENGAGED (vt_cap=4)
+spec-session K=3 ngen=8 returned=10 drafted=9 accepted=6 public_vs_live=None first_diff=None
+spec-serve-gate: ALL GREEN

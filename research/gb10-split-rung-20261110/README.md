@@ -1,0 +1,190 @@
+# A deep split rung: 512 keys a split past a floor on GB10 (GB10 decode round 6, lever 1)
+
+Verdict: on GB10 the FA-decode split ladder takes 512 keys a split past 16,384 keys with 3 or 4 KV heads and past 32,768 with 1 or 2; every other part keeps today's ladder. Past the floors one attention call at 512 takes 0.64 to 0.94 of its time at 128 on the roster's two shapes, every run under every 128 run. Every gate that has run is green on both sides of each floor; each receipt names the commit it ran on, and the gates still running at the code head are listed below. Served B/T: pending (the cells are running).
+
+Devices: DGX Spark (GB10, sm_121a, 48 SMs), two units; RTX 5090 Laptop GPU (sm_120a, 82 SMs); one RTX PRO 6000 Blackwell Max-Q. Models: the roster's Qwen3.8-27B (NVFP4 trunk, Q5_K output head, 24 query heads over 4 KV heads) and Ornith-1.5-35B-A3B (16 over 2), both NVFP4+Q5_K MTP GGUFs. Date: 2026-11-10. Which binary each cell ran on is in its receipt and below.
+
+**Which binary each cell ran on.** The branch was rebased three times while the cells ran (onto main 8a3e4904c6, 42bd4b07e4 and 031f146690), and its history was then folded: a 5090 rung and its removal are gone, and the rung's later keying, its edge-scan fix and its SM-count key are folded into the rung commit. Each rebase moved the crates by main's own diff only (the lever's diff against its base kept one stable patch-id), and the fold kept the tree: 1af6cdec92 has tree 515e718f2f95, the tree of the pre-fold head 4afad22e11. The cells name the commit they ran on:
+
+| commit | this PR, on 031f146690 | on 42bd4b07e4 | on 6cffb35360 |
+|---|---|---|---|
+| the timing rows and one-row arm | cdb243004f | 536249852b | 72368d39c4 |
+| the GB10 rung | 7827a7f248 | 26239a1654, with 80b4dae628 (the keying), 739046df33 (the edge scan) and 9592c2dceb (the SM count) folded in | 1a4f769861 |
+| kernel-check's dc teeth | 66a220d46e | b71b1730a3 | bae6e7f9b0 |
+| the FLAGS row | f5dde5e7b3 | c19066e35c | 5f88f4d026 |
+| FA-REF | 1af6cdec92 (tree 515e718f2f95) | aba8b4f367 | 20efe01c2b |
+| the FLAGS row and two comments reworded | 52b197e520 | | |
+| the split checks read the launch's KV head count | 53c353a49f | | |
+| kernel-check checks the deep rung against the device's name | 764cd39b5b (the code head) | | |
+
+Dropped by the fold: a 5090 rung (2b2ea02f0d on 42bd4b07e4, a91d190631 before it) and its removal (afd0a172a8); the 5090 cells taken with it are labelled in the discrete cards' section.
+
+On GB10 every commit from the rung on gives the same ladder: 512 keys past 16,384 (3 or 4 KV heads) and past 32,768 (1 or 2), 8 up to 512 and 64 up to 16,384 below. The first GB10 commit (1a4f769861) keyed it on parts under 64 SMs (`(..64, 3..=4) => Some((16_384, 512))`, `(..64, ..=2) => Some((32_768, 512))`), the later ones on `fa_deep_part` (the unified-memory 120a part with 48 SMs, `(Gb10, 3..=4)` and `(Gb10, ..=2)` with the same values); GB10 has 48 SMs, so it takes the same arm at both. No commit of the branch changes a `.cu` file.
+
+- **At 9592c2dceb** (the head on 42bd4b07e4; sm_121a, built on unit 1): the full kernel-check (unit 1); on unit 2 (the binaries copied from unit 1, sha256 checked on both units) run-spec K=1..8 at both straddle prompts, the six warm == cold pair cases, the five argmax margin arms and spec-serve-gate at both straddle prompts (the last two bit-identical to their first runs at 1a4f769861 on unit 1); the served B/T at 131k and 260k against main 42bd4b07e4 (unit 1).
+- **From 9592c2dceb to the code head 764cd39b5b** the engine changes in three places, besides main's own 42bd4b07e4..031f146690 diff (next bullet): kernel-check's FA-DEEP-RUNG line and the edge sides it prints (`kernel_check.rs`, plus `fa_deep_part_name` and `fa_deep_rung_verdict` with their test in `lib.rs`), the reworded comments, and the split checks of the pooled verify, the DSpark rows verify and the batched step, which now read the layer geometry's KV head count where they read the config's. For the models gated here the two counts are equal: the 27B's GGUF has `head_count_kv` 4 and all 17 full-attention layers' K projections give 4 KV heads, Ornith's 2 and all 11 give 2 (`tools/gguf_kv_heads.py`), so those reads return the same split and the cells at 9592c2dceb stand for the head. At 764cd39b5b (sm_121a, built on unit 2, copied to unit 1 with sha256 checked), the six pair cases again, all equal with the same turn-1 texts as at 9592c2dceb (`gates-unit2/pairs-*-764cd39b5b.txt`); run-spec K=1..8 at both straddle prompts, the same verdict and acceptance lines as at 9592c2dceb, STEP-IDENTITY MATCH (`gates-unit2/rs-*-764cd39b5b.txt`); running at this push: the Qwen3.5-9B margin arms (unit 2), the B/T at 32k and 12k against main 031f146690 (unit 1, and unit 2 if it frees first), the full kernel-check (unit 1); the RTX 5090's kernel-check and run-spec at the head follow.
+- **Main 031f146690** (memra#1182) deleted `MEMRA_SERVE_BATCH` and the round-robin scheduler and turned on GB10's device penalty arm for the Qwen3.5 classes, all in the server crate (`worker.rs`, `lib.rs`, `route_contract.rs`, `kv_vmm.rs`, `health.rs`), so the server's cells run again at the code head. Its engine-side changes do not reach the other gates: `memra-engine/src/env_audit.rs` adds `MEMRA_SERVE_BATCH` to the refusal reads, `memra-gguf/src/config.rs` parses a tower geometry under an HF `vision_config.model_type` of `qwen3_5` (these models write `qwen3_5_vision`, parsed before, and the engine binaries load GGUFs), and the Qwen3.5 pack and `memra-sampling` change only a doc comment and tests. The kernel-check binary built at 4afad22e11 on unit 2 is byte-identical to the one built at 9592c2dceb on unit 1 (sha256 83463b94...).
+- **At earlier heads:** the GB10 timing rows (72368d39c4's kernel-check), the first GB10 gate cells at 1a4f769861 (on main 6cffb35360), the kernel-check dc teeth at bae6e7f9b0 and FA-REF at 20efe01c2b. The reruns at 9592c2dceb are compared row by row with the 1a4f769861 receipts in Exactness.
+- **Main's arms of the margin probe** ran main 6cffb35360's engine (with 72368d39c4's gate script; that commit adds only kernel-check timing rows). Main's commits from 6cffb35360 to 42bd4b07e4 do not reach what the probe runs. They change seven files under `crates/`: `memra-engine/src/{spec.rs, dflash.rs, lib.rs}`, `memra-engine/cu/spec_sample.cu`, `memra-engine/src/bin/sample_check.rs`, `memra-sampling/src/lib.rs` and `memra-server/src/worker.rs`. Inside them, by the items whose bodies hold a changed line: in `lib.rs` only `gumbel_perturb_{ctr, filtered, filtered_ctr}` and their new `_keyed` twins; in `spec_sample.cu` only the kernels `gumbel_perturb_ctr_f32`, `gumbel_perturb_filtered_f32` and `gumbel_perturb_filtered_ctr_f32`; in `memra-sampling` a doc comment; in `spec.rs` the spec session, draft capture and round items (`generate_spec_session`, `mtp_head_forward_cap`, `prepare_spec_draft`, `spec_round_*`, `spec_burst_*`, `DraftGraphCtx`, `SampledCapArgs` and the round structs); in `dflash.rs` the DFlash drafter's KV ring and window (`DflashKv`, `DflashCfg`, `ring_plan`, `window_rows` and tests). `worker.rs` is the server crate and `sample_check` another binary. The probe calls `forward_last` and `prime_cache` (`hybrid_forward.rs`), `decode_step` (`decode.rs`) and `decode_step_batch_sampled_lean_masked` (`decode_batch.rs`) with `DevSamp::new(0.0, ...)`; none of those four files changed. From them the changed code is reached only through `gumbel_perturb_col` and `gumbel_perturb_filtered_col`, both in the `temp > 0` branches (`decode_batch.rs`: `if s.temp <= 0.0 { argmax_token_device_col }` first), which a greedy probe never takes, and the probe's margins are read from the logits before any sampling. The `spec.rs` helpers the target path does call (`graph_launch_headroom_ok`, `spec_hpost`, `GRAPH_LAUNCH_MIN_FREE`, `graph_replay_suspended_note`) have the same text at both commits, and `dflash::load_drafter` runs only under `MEMRA_GLM5_DFLASH` on a GLM-5 model.
+
+The design is `research/gb10-decode-20261110/README.md`, "Design 1: a deeper split rung", and its served probe through `MEMRA_FA_SPLIT` (`scout/split-unit2/`).
+
+## The change
+
+`fa_split_keys` picks the keys per FA-decode split from the cache depth. Past 16,384 keys every part took 128. On GB10 the ladder now takes 512 past a floor that depends on the KV head count (`fa_split_deep_rung`):
+
+| KV heads | 512 keys a split from | the roster model |
+|---:|---:|---|
+| 3 or 4 | 16,385 keys (the 128 rung's start) | Qwen3.8-27B |
+| 1 or 2 | 32,769 keys | Ornith-1.5-35B-A3B |
+
+The rung is keyed on GB10 only (`fa_deep_part`: the unified-memory 120a part with 48 SMs). Every other part keeps today's ladder; the RTX 5090 Laptop and the RTX PRO 6000 were measured (below) and get their rung in a follow-up, memra#1178. The ladder is now a pure function (`fa_split_ladder`) behind the env doors; `MEMRA_FA_SPLIT` still forces one size at every depth.
+
+Every path of the target takes its split from the ladder at its row's depth: the plain walk, the seqs launch, the verify's rows walk and their combines; captured graphs size their partials from it at capture and the straddle checks compare rungs. So the partition at a given depth is the same on every path (the one-partition law) and no kernel changes. Prime attention does not read the ladder. Both floors of a part are powers of two, so the captured verify's power-of-two rung never straddles an edge.
+
+The MTP draft is the exception the design note named: its `_dc` launch sizes the split at its scratch capacity, the session's capacity (the prompt plus `max_tokens` plus 8 when the request sets `max_tokens`, else the server's context), not at the live depth. On a session whose capacity passes the floor the draft takes the deep split at every depth, so two requests that differ only in `max_tokens` can draft with different splits. Every path of the draft does the same, so the draft is still one program, but its proposals below the floor can move, which shows as acceptance (rounds), never as text. The served cells below measure it.
+
+## How S and D were chosen: the timing rows
+
+kernel-check's FA-VERIFY-ROWS timing rows (`MEMRA_KC_FAST=1 MEMRA_KC_ROWS_DEPTH=262144 MEMRA_KC_ROWS_TIME=1`) run under `MEMRA_FA_SPLIT=S`, one process per split. Each line is one attention call with its combine, a median of 24 interleaved and synchronized calls: the verify's rows walk at four rows (one KV read), the seqs launch at four rows (each row walks the cache), and one query row through the seqs launch (plain decode at B=1) and through `fa_decode` (the eager step). This change added the 49k, 65k, 98k and 196k depths and the one-row line. A cell below is the median of a split's run medians over 128's; `<` means every run of that split was under every 128 run, `>` every run over, `~` neither.
+
+### GB10 (unit 1): 512 against 128
+
+128 ran five times, 512 four (two sweeps: 128 256 512 1024 128, then 512 128 512 128 512 128; the GPU at 43 to 56 C). Each cell is rows walk / seqs T=4 / one row (seqs) / one row (`fa_decode`), 512's time over 128's.
+
+| depth (keys) | 24/4 (Qwen3.8-27B) | 16/4 | 16/2 (Ornith-1.5-35B-A3B) |
+|---:|---|---|---|
+| 17,000 | 0.81 < / 0.79 < / 0.86 < / 0.87 < | 0.86 < / 0.80 < / 0.88 < / 0.90 < | 1.09 > / 0.89 < / 1.15 > / 1.18 > |
+| 24,576 | 0.94 < / 0.82 < / 0.91 < / 0.93 < | 0.90 < / 0.85 < / 0.93 < / 0.98 ~ | 1.12 > / 0.82 < / 1.11 > / 1.10 > |
+| 32,768 | 0.83 < / 0.82 < / 0.81 < / 0.82 < | 0.79 < / 0.85 < / 0.80 < / 0.83 < | 0.84 < / 0.75 < / 0.81 < / 0.85 < |
+| 49,152 | 0.84 < / 0.79 < / 0.80 < / 0.80 < | 0.77 < / 0.83 < / 0.79 < / 0.83 < | 0.91 < / 0.76 < / 0.81 < / 0.87 < |
+| 65,536 | 0.79 < / 0.78 < / 0.77 < / 0.79 < | 0.72 < / 0.83 < / 0.78 < / 0.82 < | 0.83 < / 0.74 < / 0.72 < / 0.77 < |
+| 131,072 | 0.81 < / 0.77 < / 0.73 < / 0.77 < | 0.70 < / 0.83 < / 0.76 < / 0.80 < | 0.79 < / 0.72 < / 0.65 < / 0.70 < |
+| 262,132 | 0.82 < / 0.77 < / 0.71 < / 0.75 < | 0.69 < / 0.83 < / 0.75 < / 0.78 < | 0.79 < / 0.72 < / 0.64 < / 0.69 < |
+
+- **4 KV heads: from the 128 rung's start.** With 4 KV heads every launch is faster at 512 at every measured depth past 16,384, with every 512 run under every 128 run (one exception: `fa_decode` at 24,576 on 16/4, 0.98 with the runs overlapping). The first measured depth on the rung is 17,000, so D = 16,384: the rung starts where 128 did.
+- **2 KV heads: from 32,768.** Below 32k a 512-key split leaves one row about 66 blocks on 48 SMs, and the rows walk and both one-row launches are 9 to 18% slower than at 128, every run. From 32,768 every launch is faster, every run.
+- **Plain decode does not regress past either floor.** The one-row launches (the seqs launch at B=1, `fa_decode`) are 0.64 to 0.98 of 128 past the floors.
+
+### GB10: which split
+
+One run each of 256 and 1,024, against the same 128 runs (`kernel-check/gb10-unit1/split-tab.md`):
+
+| depth | 24/4: 256 / 512 / 1,024 (rows walk; one row) | 16/2: 256 / 512 / 1,024 (rows walk; one row) |
+|---:|---|---|
+| 17,000 | 0.86, 0.86 / 0.81, 0.86 / 1.04, 1.18 | 0.89, 0.95 / 1.09, 1.15 / 1.07, 1.50 |
+| 32,768 | 0.82, 0.83 / 0.83, 0.81 / 1.12, 0.81 | 0.90, 0.87 / 0.84, 0.81 / 1.16, 1.06 |
+| 65,536 | 0.87, 0.84 / 0.79, 0.77 / 0.83, 0.78 | 0.85, 0.80 / 0.83, 0.72 / 0.79, 0.70 |
+| 131,072 | 0.87, 0.80 / 0.81, 0.73 / 0.78, 0.71 | 0.86, 0.78 / 0.79, 0.65 / 0.81, 0.64 |
+| 262,132 | 0.87, 0.78 / 0.82, 0.71 / 0.80, 0.69 | 0.85, 0.76 / 0.79, 0.64 / 0.76, 0.59 |
+
+- **512.** From 65,536 on, 512 gains more than 256 on every launch of both shapes: 24 to 55% more on 24/4 and 12 to 62% more on 16/2 (256's gain is 0.62 to 0.89 of 512's; `tools/why512.py` over `split-tab.md`). At 32,768 the two are level on 24/4 (within 2.3 points of 128's time) and 512 leads by 4 to 10 points on 16/2. 1,024 against 512: at 131k 1 to 4% faster on 24/4 and from 2% faster to 3% slower on 16/2 (the rows walk 1.03); at 262k 2 to 3% faster on 24/4 and 4 to 8% on 16/2; slower at 32k to 49k (the rows walk 1.07 to 1.38 of 512 on both shapes); and for one row it is slower than 128 itself at 16k to 17k (1.18 to 1.30 on 24/4, 1.50 to 1.61 on 16/2) and on 16/2 up to 32k (1.06 to 1.48). The design's served probe measured 1,024 at 1.3% and 1.5% a round under 512 at 131k and 260k: not enough for a second rung.
+- **A mid band for 2 KV heads.** At 17,000, 256 beats 128 on all four 16/2 launches (0.89 to 0.96) where 512 loses three of them. It is one run, 4 to 11% of a call that is a small part of a round on a model with few full-attention layers; not a second rung.
+
+
+## Exactness
+
+Each gate below reaches the new rung: its prompt or its cases sit on both sides of a floor, or past it. The default gates run at short depth and never would.
+
+- **kernel-check, all green on GB10 unit 1** (the full battery form: the 27B GGUF, the required 27B and Step manifests, the FA-VERIFY-ROWS cell to 262,144 keys): 129 cells, 5 skipped (`gates-unit1/kc-full-27b.txt`, `kc-full-27b-bae6e7f9b0.txt`) at two builds of the pre-rebase head, and 130 cells, 5 skipped at 9592c2dceb, the head on 42bd4b07e4 (FA-REF is the new cell; the same edges, cases and verdicts, `gates-unit1/kc-full-27b-9592c2dceb.txt`).
+  - **Rows walk against the seqs launch on both sides of every split edge.** New cases: for every edge of the device's ladder up to the cache's depth, rows that end on the edge and rows that start just past it (T = 2, 4, 9). On GB10 the edges are 512 and 16,384 for 4 KV heads and 512, 16,384 and 32,768 for 2; 14 and 21 edge cases per shape, bitdiff 0 on partials and combined rows. The cell's other 1,100 cases per deep shape run on the new ladder too: bitdiff 0, 973 and 980 of them launching the walk.
+  - **The device-counter launch against eager (FA-DC-EAGER, new).** `fa_decode_dc` (the captured decode graph's attention and the draft's) against `fa_decode` for one row at edge - 1, edge, edge + 1 and edge + 9, sized at the row and at its rung's last depth (a decode graph segment's bucket): bitdiff 0 on all seven shapes. Its teeth: the edge row sized one key past the edge (the far rung's partition) must differ from eager, and it does, in 847 to 5,571 words.
+  - **The split paths against an unsplit reference (FA-REF, new).** The cells above pin twins against each other and cannot see a value both get wrong. FA-REF runs `fa_decode` and the one-row seqs launch against `sdpa_naive_quantized_view` (unsplit f32 attention over the same quantized cache) at each deep edge's rows (edge - 1 to edge + 9) and two control rows 257 keys to either side, and fails an edge row past 4x the larger control. GB10 unit 1, rows to 65,536 (`gates-unit1/kc-fast-20efe01c2b.txt`): every edge row of every shape is 5.3e-6 to 8.5e-6 from the reference, level with its controls (24/4: 8.09e-6 to 8.12e-6 at 16,383 to 16,393 against 8.22e-6 and 8.11e-6). The full kernel-check at 9592c2dceb runs it again with rows to 262,144 (`gates-unit1/kc-full-27b-9592c2dceb.txt`): 5.3e-6 to 8.7e-6 over every shape's edge and control rows, 0 edge rows past 4x a control. The split paths quantize Q for the dp4a score, so the distance is not zero by design.
+  - The route check (rows walk below and at each GQA floor) stays green at the new splits.
+  - **The rung is live where it should be (FA-DEEP-RUNG, at the code head).** On 4 KV heads the edge list is [512, 16384] with or without the rung, so a GB10 whose detection failed would print every line above OK on today's ladder. The edge line now prints each edge's two splits (`16384 (64->512)`), and FA-DEEP-RUNG fails a device named GB10 whose split does not change to 512 one key past its floor, and any other device with a split past 16,384 above 128; the expectation comes from the device's name, not from the ladder's keying. Its red arm is a unit test (`kernel_checks_deep_rung_verdict_sees_a_lost_detection`: today's ladder on a part named GB10 fails, the rung passes, at 1 to 4 KV heads). The line's first GPU runs are the code head's kernel-checks (running at this push).
+- **run-spec K=1..8, greedy, on prompts that straddle each floor** (GB10 unit 1): Qwen3.8-27B on a 16,364-token prompt, 64 tokens (the cache crosses 16,384 at the 21st), and Ornith-1.5-35B-A3B on a 32,748-token prompt, 64 tokens (it crosses 32,768 at the 21st). Every K identical to plain: SELF-CONSISTENCY PASS on both, at 1a4f769861 on unit 1 (`gates-unit1/rs-*.txt`) and at 9592c2dceb on unit 2 (`gates-unit2/rs-*-9592c2dceb.txt`, the same acceptance at every K).
+- **STEP-IDENTITY** (`HybridModel::served_step_identity`): MATCH on both models at both heads, 0 of 1,986,560 logits differ. Its prompt is the fixed 211-token one, below every floor, so the deep side is gated by the next line.
+- **spec-serve-gate on the deep prompts** (the STEP-IDENTITY comparison at any depth: T consecutive served B=1 steps against one T-column verify, every logit): T = 1, 2 and 4, 8 rounds each, from the 16,364-token prompt (27B) and the 32,748-token prompt (Ornith), each chat-templated: 0 differing logits, 0 argmax differences. The T = 2 and T = 4 rows cross the floor; T = 1's eight rounds stay just under it. The spec session it also runs (K = 3) returns the live stream (`gates-unit1/ssg-*.txt`). Again at 9592c2dceb on unit 2 (`gates-unit2/ssg-*-9592c2dceb.txt`): the same verdict lines.
+- **The calibrated argmax margin gate** (`tools/argmax-margin-gate.sh`, eager and served-batch cells, the default budget of 1 flip per 12-row window), on prompts whose window straddles each floor, GB10 unit 1 (`gates-unit1/am-*.txt`):
+
+  | model, prompt (window rows) | eager | batch | prime |
+  |---|---|---|---|
+  | Qwen3.8-27B, 16,390 tokens (16,378-16,389, the floor at 16,384) | PASS: 1 flip, margin-explained | PASS: 0 flips, served MATCH (device mismatch 0) | MATCH |
+  | Ornith-1.5-35B-A3B, 32,774 tokens (32,762-32,773, the floor at 32,768) | PASS: 1 flip at row 32,773, margin 0.55 against spread 0.87 (a near tie); every spread in the window 0.11 to 1.00 | PASS: 1 flip at row 32,773, margin 0.37 against spread 0.61; served MATCH (device mismatch 0); the spread is highest at rows 32,768 and 32,769, the first two on the rung (1.62, 1.41; the other rows 0.21 to 0.84), as on main (1.40, 1.22; below) | MATCH |
+
+  **The same cells at 9592c2dceb** (GB10 unit 2, `gates-unit2/am-*-9592c2dceb.txt`), each against its 1a4f769861 receipt from unit 1 by `tools/same_rows.py` (every window row's tokens, margins and spread, and every verdict line): all five identical (27B 16,390 eager and batch, 27B real text eager, Ornith 32,774 eager and batch).
+
+  **Ornith's floor rows are main's too.** The batch arm on main's binary, same prompt and unit (`gates-unit1/am-or-32774-b-base.txt`), spread at the window's rows, main / candidate:
+
+  | row | 32,762 | 32,763 | 32,764 | 32,765 | 32,766 | 32,767 | 32,768 | 32,769 | 32,770 | 32,771 | 32,772 | 32,773 |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | main | 0.845 | 0.279 | 0.349 | 0.315 | 0.209 | 0.729 | 1.400 | 1.222 | 0.441 | 0.826 | 0.296 | 0.774 |
+  | candidate | 0.845 | 0.279 | 0.349 | 0.315 | 0.209 | 0.729 | 1.620 | 1.415 | 0.439 | 0.841 | 0.320 | 0.612 |
+
+  Rows 32,762 to 32,767 (attending at most 32,768 keys, below the floor) are bit-identical in every printed field (top token, margin, spread, to all ten digits); the prefill columns are identical at every row (`forward_last` does not read the ladder). The probe prints no per-id logits, so the step past the floor is read from its margins: at row 32,768, the first on the rung, the decode margin is 7.352 on main and 7.381 on the candidate (0.029 apart), at 32,769 8.191 and 8.148 (0.042); the spread rises 0.22 and 0.19 over main's. Later rows: 32,770's margin 1.860 against 1.242 (same top token), 32,771 to 32,773 0.10, 0.06 and 0.25 apart. Main's two floor rows already sit at 1.2 to 1.4 against 0.2 to 0.85 before them: a property of that position in the prompt, which the rung's first step raises by about 0.2. Both arms flip at row 32,773 only, margin-explained (main 0.55 against spread 0.77, candidate 0.37 against 0.61; the gate takes the smaller of the two margins), both PASS, SERVED-ARGMAX device mismatch 0.
+
+  The 27B's one flip is at row 16,385, the second row on the rung, and it is not the rung's alone. On that synthetic prompt rows 16,385 and 16,386 are a position where prefill and decode already disagree on main. The same probe on main's binary (`gates-unit1/am-27b-16390-e-base.txt`; its rows below the floor are bit-identical to the candidate's):
+
+  | row | true next token | prefill (f32 K/V) | main eager | main batch | candidate eager | candidate batch |
+  |---:|---|---|---|---|---|---|
+  | 16,384 | ' ' | ' ' 12.84 | ' ' 13.23 (spread 0.23) | ' ' 13.05 (0.32) | ' ' 13.24 (0.24) | ' ' 13.07 (0.25) |
+  | 16,385 | '6' | ' ' 14.39 | ' ' 7.16 (7.16) | ' ' 10.35 (5.58) | **'6' 2.48 (16.7)** | ' ' 8.39 (6.41) |
+  | 16,386 | '0' | '0' 11.54 | '0' 12.21 (4.79) | '0' 10.51 (3.65) | '0' 12.23 (6.76) | '0' 11.29 (1.96) |
+  | 16,387 | '6' | '6' 10.17 | '6' 10.60 (0.71) | '6' 10.41 (0.92) | '6' 10.70 (0.53) | '6' 10.64 (0.96) |
+
+  Each cell is the top token, its margin over the runner-up, and the spread (how far the two configs' logits for the contending tokens are apart); every other row of the window has a spread of 0.13 to 0.72. The prefill reference is one monolithic forward over f32 K/V; both decode arms step token by token from position 0 and read the quantized cache (q8_0 K, q5_1 V), so no prefill call boundary is involved. Our reading of the mechanism: the rung moves the first row past the floor by rounding (13.234 to 13.238 at row 16,384); from that row on decode writes the cache in q8_0 / q5_1, so a rounding move in the hidden state can cross a quantization step, and at a position main already places 7 logits away from prefill that is enough to move the decision. The flip lands inside the gate's budget, and the candidate's eager arm is the one that picks the true token there. The attention itself is at rounding error there: FA-REF (above) puts `fa_decode` and the one-row seqs launch within 8.1e-6 of an unsplit f32 reference at t_kv 16,383 to 16,393, the same distance as 257 keys to either side. The pre-existing spread is main's behaviour at that prompt (memra#1175, closed as KV-cache quantization error on a repetitive synthetic document). Two more cells settle it:
+
+  - **Which program is off at row 16,385** (`gates-unit1/ref-main-16386.txt`: main on the first 16,386 tokens of the same document, so the row is the probe's last position and its PRIME-GATE line gives `prime_cache` there). Prefill over f32 K/V picks ' ' at 14.39, prime over the quantized cache ' ' at 9.89, main's eager decode ' ' at 7.16 (prime against eager decode differs by at most 5.17 over the vocabulary), main's batch decode ' ' at 10.35. Quantizing the KV alone moves the prefill program by 4.5; no program is an outlier. The same window shows rows 16,374 to 16,377, inside a record's words, 13.7, 11.9, 3.7 and 9.0 apart on main: large gaps run through this document, not only at the floor.
+  - **Real text across the same depth** (`gates-unit1/am-27b-p4-16390-e*.txt`: the first 16,390 tokens of `research/e2e/prompts/p4-16k.txt`, window rows 16,378 to 16,389). Main: largest spread 1.06 (row 16,378), the rest 0.05 to 0.44, prime against decode at most 0.42, one flip at a 0.03 margin (a tie), PASS. Candidate: the same 1.06 at row 16,378 (below the floor, identical to main), the rest 0.06 to 0.44, at most 0.43, no flip, PASS. Whether the quantized cache moves the argmax on real repetitive context is memra#1177.
+- **Warm == cold across each floor** (`tools/pair_cells_deep.py` through `tools/pairs_gb10.sh`; GB10 unit 2 at 9592c2dceb, `gates-unit2/pairs-*.txt`). The served route (the 27B with its masked MTP draft, Ornith with its own MTP head), greedy, 64 tokens a turn, `MEMRA_CTX=40960`: a warm three-turn session against a cold boot of turns 2 and 3 each, the grid path expected. Six cases, each turn's text byte-equal to its cold twin, 0 off-grid resumes:
+
+  | case | turn 1 / 2 / 3 prompt tokens | where the floor falls | turns 2 and 3 |
+  |---|---|---|---|
+  | 27B deep480 | 12,984 / 13,067 / 13,155 | below 16,384 | equal, equal |
+  | 27B deep600 | 16,244 / 16,327 / 16,415 | turn 2's decode crosses it (16,327 + 64), turn 3's suffix starts below it (16,288 cached) and ends past | equal, equal |
+  | 27B deep664 | 17,991 / 18,074 / 18,162 | past it | equal, equal |
+  | Ornith deep1101 | 29,989 / 30,068 / 30,152 | below 32,768 | equal, equal |
+  | Ornith deep1194 | 32,614 / 32,693 / 32,777 | turn 3's suffix crosses it (32,672 cached, 32,777 prompt) | equal, equal |
+  | Ornith deep1260 | 34,484 / 34,563 / 34,647 | past it | equal, equal |
+
+  The spec rounds of a warm turn and its cold twin differ by up to 4 (for example 20 against 22), the texts do not.
+- **CPU, at the code head:** every commit of the branch builds on its own (`cargo check` of the engine's lib, bins and tests and of memra-server, per commit). The ladder's unit tests (`fa_split_ladder_tests`: the keying, the rung on both sides of each floor, today's ladder on other parts and wide KV, the verify graph's power-of-two rung over every depth to 262,144, and FA-DEEP-RUNG's verdict with its red arm; 5 tests, with `fa_ladder_engine_tests`' refusal test) pass, and the GB10 test fails with the rung switched off. Workspace clippy with `-D warnings` on all targets is clean and the memra-server suite passes (1,172 tests, 11 ignored).
+
+
+## Served
+
+Pending: the B/T is running, B T T B B T, one context per GB10 unit: 131k and 260k with B = main 42bd4b07e4 and T = 9592c2dceb on unit 1 (`tools/bt_unit.sh`), 32k and 12k with B = main 031f146690 and T = 764cd39b5b, the code head (`tools/bt_queue.sh`). Each context is compared with its own B only. The tables, text identity per request and acceptance land here with the exports.
+
+## The discrete cards: measured, not changed (input for memra#1178)
+
+The branch carried a 5090 rung (256 keys past 65,536 with 4 KV heads, past 32,768 with 2) up to aba8b4f367; it came out because the calibrated argmax gate cannot run at the 5090's floor (below). The 5090 measurements here were taken with that rung active at aba8b4f367 or earlier, or with `MEMRA_FA_SPLIT` forcing each split; the PRO 6000's with the split forced. They are the follow-up's input, not evidence for a shipped default. What the follow-up needs: a chunked prefill reference in the margin probe (or a card with more memory), the 5090's 256-against-512 choice settled by three clean runs per split, the PRO 6000's third run, the `fa_decode_dcw_rows` literal and the big-rig host mirrors, and each card's gates at its own floor.
+
+### RTX 5090 Laptop
+
+
+Timing rows on the RTX 5090 Laptop, the same command, each run from a card at 62 C with 1 Hz thermal samples (`kernel-check/rtx5090/*-gpu-1hz.csv`, no thermal-slowdown sample in any run): one split per lease (128, 256, 512, 1,024, 128), then two leases of three runs (512, 128, 256 and 256, 128, 512), so 128 four times, 256 and 512 three times each, 1,024 once. The rig carried its usual background load (about 5) during the first three-run lease. 256 over 128, rows walk / seqs T=4 / one row (seqs) / one row (`fa_decode`):
+
+| depth (keys) | 24/4 (27B) | 16/4 | 16/2 |
+|---:|---|---|---|
+| 17,000 | 1.00 ~ / 1.00 ~ / 1.06 ~ / 1.10 ~ | 1.01 ~ / 0.99 ~ / 1.09 ~ / 1.13 > | 0.83 < / 0.90 < / 0.75 ~ / 0.78 ~ |
+| 32,768 | 0.90 < / 0.90 < / 0.97 < / 1.00 ~ | 0.93 < / 0.90 < / 0.98 ~ / 1.02 ~ | 0.98 ~ / 0.94 < / 0.81 < / 0.86 < |
+| 49,152 | 0.90 < / 0.93 < / 0.91 < / 0.95 < | 0.91 < / 0.94 < / 0.93 < / 0.99 ~ | 0.83 < / 0.81 < / 0.77 < / 0.81 < |
+| 65,536 | 0.89 < / 0.93 < / 0.88 < / 0.94 < | 0.92 < / 0.96 < / 0.92 < / 0.97 < | 0.87 < / 0.86 < / 0.83 < / 0.88 < |
+| 131,072 | 0.87 < / 0.93 < / 0.85 < / 0.91 < | 0.88 < / 0.95 ~ / 0.87 < / 0.93 < | 0.85 < / 0.90 < / 0.71 < / 0.76 < |
+| 262,132 | 0.96 < / 1.00 ~ / 0.84 < / 0.90 < | 0.99 ~ / 1.02 ~ / 0.87 < / 0.92 < | 0.84 < / 0.89 < / 0.84 < / 0.92 ~ |
+
+- **Where the rows put a floor.** With 4 KV heads one row through `fa_decode` holds at 1.00 to 1.02 at 32k and 49k (1.09 to 1.13 at 17k on 16/4); from 65,536 every launch is faster. With 2 KV heads every launch is faster from 32,768 (the rows walk at 24,576 is 1.01).
+- **256, not 512, by these rows.** 512 is level with 256 per call within the runs' spread, loses `fa_decode` at 65,536 on 16/4 (1.03) and the four-row launches at 262k on 16/4, and scatters more between runs: on the 27B's shape the spread between runs (max minus min over the median) is 3 to 10% for 512 at 49k to 262k against 1 to 4% for 256 and 1 to 6% for 128 (`kernel-check/rtx5090/split-tab.md`).
+- **What the card can serve there.** Qwen3.8-27B with one session admits contexts up to 93,473 tokens (a 131,072-token context boots and refuses a 127k request as `context_length_exceeded`); a 69,651-token prompt served at TTFT 76.5 s at a 73,728-token context, peak 22.6 GB (`cap5090/`). Ornith-1.5-35B-A3B does not fit a deep cache on this card.
+- **Gates with the rung active** (`gates-5090/`): kernel-check synthetic sections all green, 105 cells, at a91d190631 and 5f88f4d026 (edges 512, 16,384, 65,536 for 4 KV heads and 512, 16,384, 32,768 for 2; rows walk and dc-vs-eager bitdiff 0 on both sides of each; 0 edge cases refused). `run-spec` K=1..8 PASS on the 27B at 65,516 + 64 tokens (the cache crosses 65,536 at the 21st), STEP-IDENTITY MATCH. spec-serve-gate at 65k needs two 65k caches beside the model and runs out of memory on this card (captured `CUDA_ERROR_OUT_OF_MEMORY`). The argmax margin gate's eager arm on a 65,542-token prompt ran its 65k tokenwise decode and then ran out of memory in the prefill reference, one monolithic forward over f32 K/V (`gates-5090/am-27b-65542-e.txt`; the gate reports it as SKIP, not an exactness signal); the batch arm needs the same reference and was stopped. That is why the rung is not in this change. FA-REF with the rung active (aba8b4f367, `gates-5090/kc-fast-aba8b4f367.txt`): `fa_decode` and the one-row seqs launch within 8.2e-6 to 8.3e-6 of the unsplit reference at t_kv 65,535 to 65,545, level with the controls. At 9592c2dceb (today's ladder on the card): kernel-check synthetic sections ALL GREEN, 106 cells, the edges 512 and 16,384 on every shape, 0 edge cases refused (`gates-5090/kc-fast-9592c2dceb.txt`); run-spec K=1..8 PASS on the 27B, STEP-IDENTITY MATCH (`gates-5090/rs-27b-9592c2dceb.txt`).
+
+### RTX PRO 6000 Max-Q
+
+The RTX PRO 6000 class keeps today's ladder: its branch and the literal ladder of `fa_decode_dcw_rows` (flash_attn.cu) are untouched, and a unit test pins both. One probe of the timing rows ran on an RTX PRO 6000 Blackwell Max-Q (250 W limit, one card of a four-card box, 43 to 72 C, no thermal throttle, the power-cap flag in 19 of 292 samples; the neighbour cards came under another job's load during the later runs, the box load rising from 1.8 to 4.3), with the pre-rebase head's kernel-check (`kernel-check/pro6000-maxq/`): 128 three runs, 256 and 512 two, 1,024 and 64 one each, and one run at the card's own ladder (all ten ALL GREEN, 106 cells; the default run's edges 2,048 and 16,384, bitdiff 0, 0 refused). On both 4-KV-head shapes 512 is under every 128 run on all four launches from 65,536 to 262k (24/4: 0.80 / 0.77 / 0.76 / 0.85 at 65k, 0.82 / 0.86 / 0.71 / 0.83 at 131k), and not at 32k to 49k (rows walk 1.01, `fa_decode` 1.02). With 2 KV heads the run medians are under from 65,536, the rows walk by a small margin (0.97). 256 is under 128 from 65k but weaker than 512; 1,024 wins only past 131k; 64 loses everywhere. Measured, not settled: two runs of 512 against the rule's three. The direction is 512 keys from 65,536. A rung there is a follow-up change: a part key for that card, the same values in the `fa_decode_dcw_rows` literal and in the host mirrors of the big-rig ladder (`hybrid_forward.rs`), a KERNELS.md row, and its own gates on the card.
+
+## Not covered
+
+- **Every part but GB10** (the RTX 5090 Laptop and the RTX PRO 6000 above, and L4, H100, A100, the RTX 5080, the smaller Blackwell cards): the rung is keyed on GB10 and nothing else changes.
+- **Models other than the gated ones.** The rung keys on the KV head count, so every model with 4 or fewer KV heads in its full-attention layers changes partition past its floor on GB10 (Qwen3.5-9B, 16 over 4, among them). Model-level gates here: Qwen3.8-27B and Ornith-1.5-35B-A3B (and Qwen3.5-9B's margin arms at the code head, running at this push). The rest are covered at the shape level only: kernel-check's bit identity of every split path on both sides of every edge, the dc-vs-eager cells and FA-REF on seven shapes (4/4, 8/4, 16/4, 20/4, 24/4, 28/4, 16/2), which do not depend on the model.
+- **Acceptance below the floor.** The draft takes the deep split at every depth on a long-context session (above), so its proposals can move there; the served cells below the floor are the measurement.
+
+## Receipts
+
+- `kernel-check/gb10-unit1/`, `kernel-check/rtx5090/`: the timing-row runs under `MEMRA_FA_SPLIT` (each run's FA lines and verdict; the 5090's 1 Hz thermal samples per run), the drivers' logs, and `split-tab.md` (`tools/split_tab.py`, every launch, depth and split).
+- `gates-unit1/`: GB10 gate cells, one file each (command, exit code, the gate's own output): `kc-full-*` (full kernel-check), `kc-fast-20efe01c2b` (FA-REF), `rs-*` (run-spec), `ssg-*` (spec-serve-gate), `am-*` (argmax margin, eager and batch; `-base` is main's binary), all at 1a4f769861 or main 6cffb35360 except `kc-full-27b-9592c2dceb`.
+- `gates-unit2/`: GB10 unit 2 at 9592c2dceb (cells at the code head carry its id as a suffix), the same form: `rs-*` (run-spec), `am-*-9592c2dceb` and `ssg-*-9592c2dceb` (the reruns of unit 1's margin and spec-serve-gate cells), `pairs-*` (the warm == cold cases: the verdict line, each turn's token counts, the binary's sha256).
+- `gates-5090/`: the RTX 5090 cells. `cap5090/`: how deep the card serves the 27B.
+- `served/` (lands with the served data commit): B/T campaigns (per cell `ab.jsonl`, `guard.log`, `trace.txt`; `campaign.log`; `rounds-by-request.txt`). `sp131-unit2-note/` is two cells on unit 2 before the campaign moved to unit 1, a note only, not in the medians.
+- `prompts/deep-16390.txt`: the prompt of the margin cell and of memra#1175. The other deep prompts are `tools/cut_prompts.py` (the synthetic record document) and `tools/cut_text.py` (a prefix of `research/e2e/prompts/p4-16k.txt`) at their token counts, cut with the Qwen3.8-27B tokenizer; each gate log prints its own count.
+- `tools/`: timing drivers (`kc_split_unit.sh`, `kc_split_5090.sh`, `kc_split_5090_batch.sh`, `cool5090.sh`), the tables (`split_tab.py`, `why512.py`), gate drivers (`unit_cell.sh`, `gates_gb10.sh`, `gates_5090.sh`, `final_5090.sh`, `pairs_gb10.sh`, `pair_cells_deep.py`, `ref_main_16386.sh`, `am_p4.sh`, `am_or_base.sh`, `landing_quiet.sh`), the chains (at 9592c2dceb `unit1_rest.sh` on unit 1 and `unit2_passfail.sh`, `unit2_final_gates.sh` on unit 2; at the code head `bins_ready.sh`, `unit1_final.sh`, `unit2_final.sh`), receipts and checks (`fetch_cell.sh`, `pair_receipts.py`, `same_rows.py`, `gguf_kv_heads.py`), served B/T (`bt_unit.sh`, `bt_queue.sh`, `split_cell.sh`, `split_driver.sh`, `split5090_cell.sh`, `split5090_driver.sh`, `split_ab.py`, `rounds_by_req.py`, `export_cells.py`), `cap5090.sh`.
+- Full logs, GPU telemetry and memory samples stay on the machines.

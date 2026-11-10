@@ -1,0 +1,130 @@
+54, 2184 MHz
+sdpa_naive_w_lo[longctx Tkv=16392 win=2048]: legacy_launch=FAILS(expected) clipped_maxdiff=4.19e-9 OK
+sdpa_naive_gmem[longctx Tkv=16392]: legacy_launch=FAILS(expected) gmem_maxdiff=4.19e-9 OK
+FA-VERIFY-ROWS gqa=6 (24/4): fa_verify_rows_v4_deep vs seqs, 1171 cases, 613 launched the rows walk (0 off one split rung, 0 deep depths past the 262144-token cache), 533861856 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=6 (24/4): floor 2048 keys; T=4 below it (len0=2043) Some((false, 0, false)), at it Some((2047, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS time gqa=6 len0=1024 T=4 sp=512: seqs 0.0632 ms (0.0630-0.0643), rows 0.0652 ms (0.0650-0.0673), rows in pairs 0.0653 ms (0.0644-0.0663), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=2048 T=4 sp=512: seqs 0.0898 ms (0.0896-0.0919), rows 0.0756 ms (0.0754-0.0775), rows in pairs 0.0757 ms (0.0754-0.0775), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=4096 T=4 sp=512: seqs 0.1390 ms (0.1369-0.1562), rows 0.1241 ms (0.1216-0.1256), rows in pairs 0.1350 ms (0.1318-0.1728), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=8192 T=4 sp=512: seqs 0.2721 ms (0.2698-0.3964), rows 0.2106 ms (0.2087-0.2716), rows in pairs 0.2106 ms (0.2085-0.2455), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=12288 T=4 sp=512: seqs 0.4159 ms (0.4118-0.5803), rows 0.3813 ms (0.3789-0.5645), rows in pairs 0.3487 ms (0.3469-0.4128), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=16000 T=4 sp=512: seqs 0.5975 ms (0.5710-0.8489), rows 0.4068 ms (0.4038-0.6133), rows in pairs 0.4371 ms (0.4337-0.4429), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=17000 T=4 sp=512: seqs 0.6376 ms (0.6282-0.7177), rows 0.4103 ms (0.4051-0.4751), rows in pairs 0.4468 ms (0.4445-0.6338), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=24576 T=4 sp=512: seqs 0.9769 ms (0.9575-1.1871), rows 0.6693 ms (0.6662-0.9584), rows in pairs 0.6736 ms (0.6665-0.7369), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=32768 T=4 sp=512: seqs 1.2839 ms (1.2759-1.3471), rows 0.8088 ms (0.8052-1.0870), rows in pairs 0.8194 ms (0.8143-1.0115), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=49152 T=4 sp=512: seqs 1.8780 ms (1.8703-1.9500), rows 1.2020 ms (1.1986-1.4013), rows in pairs 1.2317 ms (1.2274-1.5601), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=65536 T=4 sp=512: seqs 2.4779 ms (2.4663-2.8223), rows 1.5041 ms (1.4985-1.8053), rows in pairs 1.5988 ms (1.5903-1.6519), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=98304 T=4 sp=512: seqs 3.6910 ms (3.6848-3.7088), rows 2.2915 ms (2.2839-2.3363), rows in pairs 2.4127 ms (2.3964-2.9284), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=131072 T=4 sp=512: seqs 4.8742 ms (4.8594-5.1685), rows 2.9948 ms (2.9882-3.3503), rows in pairs 3.1098 ms (3.1019-3.1145), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=196608 T=4 sp=512: seqs 7.2735 ms (7.2614-7.9932), rows 4.4466 ms (4.4398-4.9684), rows in pairs 4.6332 ms (4.6208-5.0360), N=24 each
+FA-VERIFY-ROWS time gqa=6 len0=262132 T=4 sp=512: seqs 9.6939 ms (9.6839-9.7096), rows 5.8975 ms (5.8875-5.9125), rows in pairs 6.2008 ms (6.1841-6.2203), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=1025 T=1 sp=512: seqs 0.0632 ms (0.0622-0.0857), fa_decode 0.0703 ms (0.0700-0.0805), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=2049 T=1 sp=512: seqs 0.0733 ms (0.0720-0.0973), fa_decode 0.0823 ms (0.0813-0.0826), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=4097 T=1 sp=512: seqs 0.0820 ms (0.0816-0.1104), fa_decode 0.0905 ms (0.0900-0.0924), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=8193 T=1 sp=512: seqs 0.1074 ms (0.1070-0.1318), fa_decode 0.1172 ms (0.1136-0.1183), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=12289 T=1 sp=512: seqs 0.1563 ms (0.1543-0.1687), fa_decode 0.1596 ms (0.1553-0.1616), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=16001 T=1 sp=512: seqs 0.1859 ms (0.1792-0.2827), fa_decode 0.1912 ms (0.1880-0.2335), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=17001 T=1 sp=512: seqs 0.1931 ms (0.1889-0.2694), fa_decode 0.1972 ms (0.1923-0.3668), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=24577 T=1 sp=512: seqs 0.3113 ms (0.3017-0.5089), fa_decode 0.3253 ms (0.3224-0.5137), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=32769 T=1 sp=512: seqs 0.3696 ms (0.3600-0.3790), fa_decode 0.3794 ms (0.3726-0.3826), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=49153 T=1 sp=512: seqs 0.5349 ms (0.5250-0.5971), fa_decode 0.5490 ms (0.5405-0.5768), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=65537 T=1 sp=512: seqs 0.6935 ms (0.6834-0.7463), fa_decode 0.7092 ms (0.7020-1.0153), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=98305 T=1 sp=512: seqs 1.0262 ms (1.0202-1.0323), fa_decode 1.0434 ms (1.0392-1.0532), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=131073 T=1 sp=512: seqs 1.3381 ms (1.3276-1.3506), fa_decode 1.3584 ms (1.3495-1.3674), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=196609 T=1 sp=512: seqs 1.9652 ms (1.9539-2.1820), fa_decode 1.9806 ms (1.9693-2.4004), N=24 each
+FA-VERIFY-ROWS time1 gqa=6 t_kv=262133 T=1 sp=512: seqs 2.6006 ms (2.5931-2.6072), fa_decode 2.6336 ms (2.6239-2.6434), N=24 each
+FA-VERIFY-ROWS time gqa=6 pooled 2 sessions x 4 rows depth~300 sp=512: seqs 0.0622 ms (0.0621-0.0817), rows 0.0622 ms (0.0621-0.0631), N=24 each
+FA-VERIFY-ROWS time gqa=6 pooled 4 sessions x 4 rows depth~300 sp=512: seqs 0.0878 ms (0.0877-0.0898), rows 0.0880 ms (0.0875-0.0899), N=24 each
+FA-VERIFY-ROWS time gqa=6 pooled 4 sessions x 4 rows depth~1000 sp=512: seqs 0.1707 ms (0.1622-0.1731), rows 0.1482 ms (0.1471-0.1545), N=24 each
+FA-VERIFY-ROWS time gqa=6 pooled 4 sessions x 4 rows depth~2000 sp=512: seqs 0.2588 ms (0.2567-0.2609), rows 0.2363 ms (0.2353-0.2398), N=24 each
+FA-VERIFY-ROWS time gqa=6 pooled 4 sessions x 4 rows depth~4000 sp=512: seqs 0.4822 ms (0.4799-0.4856), rows 0.4447 ms (0.4431-0.4470), N=24 each
+FA-VERIFY-ROWS time gqa=6 pooled 4 sessions x 4 rows depth~8000 sp=512: seqs 0.9801 ms (0.9733-1.3154), rows 0.8201 ms (0.8181-1.1155), N=24 each
+FA-VERIFY-ROWS time gqa=6 pooled 4 sessions x 4 rows depth~20000 sp=512: seqs 2.9789 ms (2.9711-2.9932), rows 2.0312 ms (2.0273-2.0351), N=24 each
+FA-VERIFY-ROWS gqa=8 (16/2): fa_verify_rows_v4_deep vs seqs, 1171 cases, 613 launched the rows walk (0 off one split rung, 0 deep depths past the 262144-token cache), 355907904 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=8 (16/2): floor 16384 keys; T=4 below it (len0=16379) Some((false, 0, false)), at it Some((16383, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS time gqa=8 len0=1024 T=4 sp=512: seqs 0.0571 ms (0.0567-0.0584), rows 0.0732 ms (0.0715-0.0768), rows in pairs 0.0734 ms (0.0716-0.0744), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=2048 T=4 sp=512: seqs 0.0673 ms (0.0661-0.0705), rows 0.0838 ms (0.0835-0.0857), rows in pairs 0.0839 ms (0.0835-0.0857), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=4096 T=4 sp=512: seqs 0.1090 ms (0.1073-0.1103), rows 0.1466 ms (0.1450-0.1487), rows in pairs 0.0954 ms (0.0944-0.0984), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=8192 T=4 sp=512: seqs 0.1605 ms (0.1584-0.2060), rows 0.1686 ms (0.1668-0.1974), rows in pairs 0.1677 ms (0.1669-0.2122), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=12288 T=4 sp=512: seqs 0.2560 ms (0.2536-0.2922), rows 0.3029 ms (0.2982-0.3521), rows in pairs 0.2498 ms (0.2463-0.3269), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=16000 T=4 sp=512: seqs 0.3140 ms (0.3112-0.3391), rows 0.3103 ms (0.3084-0.3520), rows in pairs 0.2560 ms (0.2524-0.3360), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=17000 T=4 sp=512: seqs 0.3173 ms (0.3141-0.4078), rows 0.3122 ms (0.3094-0.3869), rows in pairs 0.2570 ms (0.2543-0.3766), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=24576 T=4 sp=512: seqs 0.4649 ms (0.4629-0.4671), rows 0.4582 ms (0.4562-0.4607), rows in pairs 0.4199 ms (0.4177-0.4245), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=32768 T=4 sp=512: seqs 0.6167 ms (0.6122-0.9711), rows 0.4799 ms (0.4777-0.5168), rows in pairs 0.5166 ms (0.5135-0.6703), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=49152 T=4 sp=512: seqs 0.9955 ms (0.9789-1.0021), rows 0.7842 ms (0.7801-0.7914), rows in pairs 0.7668 ms (0.7611-0.7760), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=65536 T=4 sp=512: seqs 1.2863 ms (1.2789-1.4775), rows 0.9597 ms (0.9558-0.9638), rows in pairs 0.9530 ms (0.9477-1.2511), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=98304 T=4 sp=512: seqs 1.8938 ms (1.8841-2.2501), rows 1.4059 ms (1.4013-1.5280), rows in pairs 1.4231 ms (1.4176-1.4911), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=131072 T=4 sp=512: seqs 2.4911 ms (2.4823-2.8779), rows 1.7858 ms (1.7808-2.0147), rows in pairs 1.8696 ms (1.8624-1.8802), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=196608 T=4 sp=512: seqs 3.6994 ms (3.6871-3.7239), rows 2.7002 ms (2.6957-2.7174), rows in pairs 2.7723 ms (2.7624-2.8431), N=24 each
+FA-VERIFY-ROWS time gqa=8 len0=262132 T=4 sp=512: seqs 4.9958 ms (4.9640-5.0325), rows 3.5494 ms (3.5437-3.8832), rows in pairs 3.6494 ms (3.6420-3.8605), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=1025 T=1 sp=512: seqs 0.0562 ms (0.0560-0.0692), fa_decode 0.0631 ms (0.0610-0.0704), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=2049 T=1 sp=512: seqs 0.0653 ms (0.0648-0.0792), fa_decode 0.0712 ms (0.0710-0.0776), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=4097 T=1 sp=512: seqs 0.0734 ms (0.0722-0.0904), fa_decode 0.0800 ms (0.0794-0.0801), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=8193 T=1 sp=512: seqs 0.0786 ms (0.0785-0.0953), fa_decode 0.0847 ms (0.0845-0.0848), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=12289 T=1 sp=512: seqs 0.1165 ms (0.1154-0.1258), fa_decode 0.1207 ms (0.1184-0.1239), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=16001 T=1 sp=512: seqs 0.1238 ms (0.1226-0.2219), fa_decode 0.1279 ms (0.1247-0.2389), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=17001 T=1 sp=512: seqs 0.1246 ms (0.1245-0.1310), fa_decode 0.1298 ms (0.1280-0.1328), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=24577 T=1 sp=512: seqs 0.1715 ms (0.1696-0.1780), fa_decode 0.1717 ms (0.1696-0.1744), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=32769 T=1 sp=512: seqs 0.1911 ms (0.1869-0.1939), fa_decode 0.1943 ms (0.1930-0.2062), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=49153 T=1 sp=512: seqs 0.3110 ms (0.2919-0.5285), fa_decode 0.3160 ms (0.3118-0.4906), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=65537 T=1 sp=512: seqs 0.3774 ms (0.3722-0.4608), fa_decode 0.3738 ms (0.3707-0.4120), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=98305 T=1 sp=512: seqs 0.5443 ms (0.5388-0.6178), fa_decode 0.5479 ms (0.5273-0.8515), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=131073 T=1 sp=512: seqs 0.7148 ms (0.7094-1.0236), fa_decode 0.7016 ms (0.6980-0.7556), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=196609 T=1 sp=512: seqs 1.0686 ms (1.0544-1.1642), fa_decode 1.0403 ms (1.0229-1.0506), N=24 each
+FA-VERIFY-ROWS time1 gqa=8 t_kv=262133 T=1 sp=512: seqs 1.4426 ms (1.4313-1.4504), fa_decode 1.4039 ms (1.3894-1.4138), N=24 each
+FA-VERIFY-ROWS time gqa=8 pooled 2 sessions x 4 rows depth~300 sp=512: seqs 0.0560 ms (0.0560-0.0671), rows 0.0560 ms (0.0559-0.0567), N=24 each
+FA-VERIFY-ROWS time gqa=8 pooled 4 sessions x 4 rows depth~300 sp=512: seqs 0.0662 ms (0.0651-0.0673), rows 0.0655 ms (0.0651-0.0673), N=24 each
+FA-VERIFY-ROWS time gqa=8 pooled 4 sessions x 4 rows depth~1000 sp=512: seqs 0.0981 ms (0.0970-0.1001), rows 0.1041 ms (0.1030-0.1085), N=24 each
+FA-VERIFY-ROWS time gqa=8 pooled 4 sessions x 4 rows depth~2000 sp=512: seqs 0.1533 ms (0.1521-0.1544), rows 0.1912 ms (0.1903-0.1927), N=24 each
+FA-VERIFY-ROWS time gqa=8 pooled 4 sessions x 4 rows depth~4000 sp=512: seqs 0.2977 ms (0.2958-0.2979), rows 0.3018 ms (0.3001-0.3043), N=24 each
+FA-VERIFY-ROWS time gqa=8 pooled 4 sessions x 4 rows depth~8000 sp=512: seqs 0.5415 ms (0.5407-0.5435), rows 0.4976 ms (0.4971-0.4995), N=24 each
+FA-VERIFY-ROWS time gqa=8 pooled 4 sessions x 4 rows depth~20000 sp=512: seqs 1.3501 ms (1.3462-1.5990), rows 1.2009 ms (1.1978-1.4829), N=24 each
+FA-VERIFY-ROWS gqa=4 (16/4): fa_verify_rows_v4_deep vs seqs, 1171 cases, 613 launched the rows walk (0 off one split rung, 0 deep depths past the 262144-token cache), 355907904 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=4 (16/4): floor 1024 keys; T=4 below it (len0=1019) Some((false, 0, false)), at it Some((1023, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS time gqa=4 len0=1024 T=4 sp=512: seqs 0.0632 ms (0.0611-0.1018), rows 0.0591 ms (0.0570-0.1125), rows in pairs 0.0591 ms (0.0570-0.0783), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=2048 T=4 sp=512: seqs 0.0858 ms (0.0855-0.1332), rows 0.0675 ms (0.0672-0.0892), rows in pairs 0.0675 ms (0.0671-0.0787), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=4096 T=4 sp=512: seqs 0.1173 ms (0.1155-0.1185), rows 0.0961 ms (0.0928-0.0982), rows in pairs 0.1097 ms (0.1069-0.1117), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=8192 T=4 sp=512: seqs 0.2331 ms (0.2299-0.2943), rows 0.1750 ms (0.1736-0.2603), rows in pairs 0.1748 ms (0.1731-0.2001), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=12288 T=4 sp=512: seqs 0.3884 ms (0.3740-0.6939), rows 0.2557 ms (0.2528-0.2893), rows in pairs 0.2962 ms (0.2901-0.4591), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=16000 T=4 sp=512: seqs 0.5743 ms (0.5659-0.6390), rows 0.2731 ms (0.2695-0.3365), rows in pairs 0.3730 ms (0.3580-0.6421), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=17000 T=4 sp=512: seqs 0.6431 ms (0.6367-0.8206), rows 0.2762 ms (0.2727-0.3162), rows in pairs 0.3883 ms (0.3750-0.4660), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=24576 T=4 sp=512: seqs 0.9872 ms (0.9806-1.2020), rows 0.4286 ms (0.4259-0.6407), rows in pairs 0.5962 ms (0.5888-0.6676), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=32768 T=4 sp=512: seqs 1.3142 ms (1.3055-1.4046), rows 0.5203 ms (0.5155-0.7885), rows in pairs 0.7316 ms (0.7250-0.7962), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=49152 T=4 sp=512: seqs 1.8954 ms (1.8866-2.3224), rows 0.7583 ms (0.7533-0.9257), rows in pairs 1.0854 ms (1.0813-1.2027), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=65536 T=4 sp=512: seqs 2.5088 ms (2.4983-2.5182), rows 0.9487 ms (0.9438-0.9545), rows in pairs 1.4113 ms (1.4006-1.4190), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=98304 T=4 sp=512: seqs 3.7360 ms (3.7245-3.7870), rows 1.4274 ms (1.4207-1.7404), rows in pairs 2.1308 ms (2.1111-2.3947), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=131072 T=4 sp=512: seqs 4.9329 ms (4.9236-5.6795), rows 1.8690 ms (1.8620-2.2169), rows in pairs 2.7457 ms (2.7379-2.8099), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=196608 T=4 sp=512: seqs 7.3557 ms (7.3419-8.1349), rows 2.7605 ms (2.7535-2.9910), rows in pairs 4.0852 ms (4.0751-4.8112), N=24 each
+FA-VERIFY-ROWS time gqa=4 len0=262132 T=4 sp=512: seqs 10.0833 ms (9.7792-10.5554), rows 3.6512 ms (3.6420-4.0514), rows in pairs 5.4876 ms (5.4629-6.2462), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=1025 T=1 sp=512: seqs 0.0623 ms (0.0611-0.0916), fa_decode 0.0723 ms (0.0716-0.0813), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=2049 T=1 sp=512: seqs 0.0717 ms (0.0707-0.1036), fa_decode 0.0842 ms (0.0834-0.0846), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=4097 T=1 sp=512: seqs 0.0815 ms (0.0794-0.1436), fa_decode 0.0955 ms (0.0918-0.1520), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=8193 T=1 sp=512: seqs 0.1011 ms (0.0992-0.1360), fa_decode 0.1134 ms (0.1113-0.1164), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=12289 T=1 sp=512: seqs 0.1409 ms (0.1391-0.1521), fa_decode 0.1549 ms (0.1507-0.1612), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=16001 T=1 sp=512: seqs 0.1792 ms (0.1672-0.3783), fa_decode 0.1898 ms (0.1868-0.3576), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=17001 T=1 sp=512: seqs 0.1963 ms (0.1896-0.1993), fa_decode 0.2054 ms (0.2024-0.2096), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=24577 T=1 sp=512: seqs 0.3184 ms (0.3142-0.5954), fa_decode 0.3386 ms (0.3327-0.5123), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=32769 T=1 sp=512: seqs 0.3677 ms (0.3640-0.3727), fa_decode 0.3842 ms (0.3795-0.3892), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=49153 T=1 sp=512: seqs 0.5390 ms (0.5329-0.5423), fa_decode 0.5568 ms (0.5512-0.5641), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=65537 T=1 sp=512: seqs 0.7080 ms (0.7009-0.7565), fa_decode 0.7305 ms (0.7244-1.0894), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=98305 T=1 sp=512: seqs 1.0471 ms (1.0391-1.3147), fa_decode 1.0795 ms (1.0708-1.2790), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=131073 T=1 sp=512: seqs 1.3705 ms (1.3645-1.3790), fa_decode 1.4028 ms (1.3943-1.4110), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=196609 T=1 sp=512: seqs 1.9871 ms (1.9808-1.9970), fa_decode 2.0129 ms (2.0054-2.1495), N=24 each
+FA-VERIFY-ROWS time1 gqa=4 t_kv=262133 T=1 sp=512: seqs 2.6399 ms (2.6326-2.6746), fa_decode 2.6947 ms (2.6889-2.7137), N=24 each
+FA-VERIFY-ROWS time gqa=4 pooled 2 sessions x 4 rows depth~300 sp=512: seqs 0.0622 ms (0.0603-0.0870), rows 0.0622 ms (0.0620-0.0629), N=24 each
+FA-VERIFY-ROWS time gqa=4 pooled 4 sessions x 4 rows depth~300 sp=512: seqs 0.0837 ms (0.0828-0.0855), rows 0.0837 ms (0.0835-0.0858), N=24 each
+FA-VERIFY-ROWS time gqa=4 pooled 4 sessions x 4 rows depth~1000 sp=512: seqs 0.1492 ms (0.1473-0.1511), rows 0.1086 ms (0.1082-0.1137), N=24 each
+FA-VERIFY-ROWS time gqa=4 pooled 4 sessions x 4 rows depth~2000 sp=512: seqs 0.2236 ms (0.2218-0.2316), rows 0.1830 ms (0.1811-0.1856), N=24 each
+FA-VERIFY-ROWS time gqa=4 pooled 4 sessions x 4 rows depth~4000 sp=512: seqs 0.4217 ms (0.4207-0.4339), rows 0.2998 ms (0.2976-0.3031), N=24 each
+FA-VERIFY-ROWS time gqa=4 pooled 4 sessions x 4 rows depth~8000 sp=512: seqs 0.9096 ms (0.8999-1.2412), rows 0.5106 ms (0.5092-0.6585), N=24 each
+FA-VERIFY-ROWS time gqa=4 pooled 4 sessions x 4 rows depth~20000 sp=512: seqs 2.9959 ms (2.9815-3.3874), rows 1.2646 ms (1.2569-1.6194), N=24 each
+FA-VERIFY-ROWS gqa=1 (4/4): fa_verify_rows_v4_deep vs seqs, 1139 cases, 581 launched the rows walk (0 off one split rung, 8 deep depths past the 32768-token cache), 45818736 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=1 (4/4): floor 1024 keys; T=4 below it (len0=1019) Some((false, 0, false)), at it Some((1023, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=2 (8/4): fa_verify_rows_v4_deep vs seqs, 1139 cases, 581 launched the rows walk (0 off one split rung, 8 deep depths past the 32768-token cache), 91637472 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=2 (8/4): floor 1024 keys; T=4 below it (len0=1019) Some((false, 0, false)), at it Some((1023, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=5 (20/4): fa_verify_rows_v4_deep vs seqs, 1139 cases, 581 launched the rows walk (0 off one split rung, 8 deep depths past the 32768-token cache), 229093680 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=5 (20/4): floor 2048 keys; T=4 below it (len0=2043) Some((false, 0, false)), at it Some((2047, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+FA-VERIFY-ROWS gqa=7 (28/4): fa_verify_rows_v4_deep vs seqs, 1139 cases, 581 launched the rows walk (0 off one split rung, 8 deep depths past the 32768-token cache), 320731152 partial words x 2 fills + the combined rows: bitdiff=0 OK
+FA-VERIFY-ROWS route gqa=7 (28/4): floor 16384 keys; T=4 below it (len0=16379) Some((false, 0, false)), at it Some((16383, (true, 0, true))) as (rows walk launched, bitdiff vs seqs, groups expected): OK
+ALL GREEN (104 cells, 23 skipped)
+57, 2184 MHz

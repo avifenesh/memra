@@ -1,0 +1,13 @@
+# cmd
+cd box && CELL_PORT=18193 PAIR_MODEL=$HOME/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf timeout 28m python3 pair_cells_deep.py $HOME/.cache/memra-split-rung/cells/pairs-27b-deep664/out "pairs-27b-deep664=$HOME/.cache/memra-split-rung/bins/head-9592c2dceb/memra-server|chat-deep664|64,64,64|MEMRA_CTX=40960 MEMRA_PREFIX_STABLE_BOUNDARY=1 MEMRA_MTP_DRAFT=$HOME/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf _EXPECT=grid"
+# rc 0
+# verdict (pair_cells_deep.py)
+{"case": "pairs-27b-deep664", "binary": "~/.cache/memra-split-rung/bins/head-9592c2dceb/memra-server", "shape": "chat-deep664", "max_tokens": [64, 64, 64], "env": "MEMRA_CTX=40960 MEMRA_PREFIX_STABLE_BOUNDARY=1 MEMRA_MTP_DRAFT=~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf _EXPECT=grid", "turns": {"2": {"equal": true, "warm_len": 228, "cold_len": 228}, "3": {"equal": true, "warm_len": 251, "cold_len": 251}, "1": {"warm_sha": "dca9192aba", "warm_len": 242}}, "bytes": true, "expect": "grid", "offgrid_resumes": 0, "path_ok": true, "warm": {"spec_parked_end": [], "spec_affinity": [], "spec_grid_rewind": [], "spec_grid_decline": [], "spec_affinity_grid_decline": [], "spec_park_skip": [], "prefix_hit": [[17952, 18074], [18048, 18162]], "spec_restore": [[17952, 18074], [18048, 18162]]}, "usage": {"warm-t2": {"prompt": 18074, "cached": 17952, "elapsed_s": 2.704179365}, "cold-t2": {"prompt": 18074, "cached": 0, "elapsed_s": 14.212399636}, "warm-t3": {"prompt": 18162, "cached": 18048, "elapsed_s": 2.504484295}, "cold-t3": {"prompt": 18162, "cached": 0, "elapsed_s": 14.082079483}}}
+# turns (prompt / completion / cached tokens, spec rounds)
+warm-t1: 17991 / 64 / 0, rounds 22
+warm-t2: 18074 / 64 / 17952, rounds 22
+warm-t3: 18162 / 64 / 18048, rounds 20
+cold-t2: 18074 / 64 / 0, rounds 24
+cold-t3: 18162 / 64 / 0, rounds 22
+# binary sha256
+adc9e8528e82d2f8

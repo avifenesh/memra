@@ -1,0 +1,8 @@
+# request
+{"send_unix": 1794281983.697, "ttft_s": 0.092, "total_s": 0.092, "prompt_tokens": null, "completion_tokens": null, "finish": null, "error": "<HTTPError 400: 'Bad Request'>", "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "text": ""}
+
+# server lines (capacity, deadline, abort)
+[prefix-cache] on: budget 8098MB (8098414592 B, derived: 2 x 4049207296 B max entry for model "q38" at served ctx 131072 (from MEMRA_CTX; MEMRA_CTX set), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 55802200064 B (13 resid
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admit-oom] capacity reject: model="q38" ctx=127115 does not fit an IDLE box (available 7551MB, largest admissible context 93473) — HTTP 400 context_length_exceeded
+[admission] error before admission: code=context_length_exceeded message="request context 127115 does not fit this model's available KV capacity on an idle server; the largest admissible context is 93473 tokens. Retrying will not help: send a shorter prompt or a smaller max_tokens"
