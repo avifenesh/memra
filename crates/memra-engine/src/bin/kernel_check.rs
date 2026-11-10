@@ -8510,10 +8510,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // rung) and rows that start just past it (the far rung). A launch whose rows
                 // straddle an edge is never formed (`case` refuses it, as the verify does).
                 let split = |t: usize| memra_engine::fa_split_keys_pub(t, nhkv_r);
-                let edges: Vec<usize> = (1..deep_max)
+                let edges: Vec<usize> = (1..=deep_max)
                     .filter(|&t| split(t) != split(t + 1))
                     .collect();
-                let mut edge_cases = 0usize;
+                let (mut edge_cases, mut edge_refused) = (0usize, 0usize);
                 for &edge in &edges {
                     for (len0, t) in [
                         (edge.saturating_sub(9), 9usize),
@@ -8530,6 +8530,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let rows: Vec<(usize, usize)> = (0..t).map(|r| (0, len0 + r + 1)).collect();
                         let r = run(&rows)?;
                         edge_cases += r.is_some() as usize;
+                        edge_refused += r.is_none() as usize;
                         report(&format!("rung edge {edge} len0={len0} T={t}"), r);
                     }
                 }
@@ -8562,9 +8563,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
                 println!(
                     "FA-VERIFY-ROWS rung edges gqa={} ({nh_r}/{nhkv_r}): split ladder edges {edges:?} up to \
-                     {deep_max} keys, {edge_cases} cases on their two sides (counted above) {}",
+                     {deep_max} keys, {edge_cases} cases on their two sides (counted above), {edge_refused} refused {}",
                     nh_r / nhkv_r,
-                    if edges.is_empty() || edge_cases > 0 {
+                    if edge_refused == 0 && (edges.is_empty() || edge_cases > 0) {
                         "OK"
                     } else {
                         fails += 1;
@@ -8588,11 +8589,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     e.copy_into(&mut q1, 0, &qd_all, hd * nh_r)?;
                     for &edge in &edges {
                         for t_kv in [edge - 1, edge, edge + 1, edge + 9] {
-                            if t_kv > deep_max {
+                            if t_kv > deep_max + 16 {
                                 continue;
                             }
                             let mut seg_end = t_kv;
-                            while seg_end < deep_max && split(seg_end + 1) == split(t_kv) {
+                            while seg_end < deep_max + 16 && split(seg_end + 1) == split(t_kv) {
                                 seg_end += 1;
                             }
                             let kview = e.view_u8(&kc_a, t_kv * ktb);
@@ -8607,7 +8608,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // Teeth: the row on the edge, sized past it (the far rung's
                             // partition, as the draft's scratch bucket can be), must differ
                             // from eager, or this cell could not see a partition change.
-                            if t_kv == edge && edge < deep_max {
+                            if t_kv == edge && edge < deep_max + 16 {
                                 let mut o_x = e.zeros(hd * nh_r)?;
                                 e.fa_decode_dc(
                                     &q1,
