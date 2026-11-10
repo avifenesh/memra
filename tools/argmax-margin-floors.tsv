@@ -25,9 +25,10 @@
 #
 # The rows below were measured with main 031f146690's unmodified argmax-margin-probe (sm_120a
 # build sha256 723a3f7ff8dd..., sm_121a build sha256 6e6650071f22...) over every row of
-# board-2048 (2,045 of T = 2,048). Main was at 2628ece940 when they landed; board-2048 does not
-# reach the depth that commit changes on GB10, and the roster's 12-row tables are byte-identical
-# across it (research/argmax-gate-rule-20261110/README.md).
+# board-2048 (2,045 of T = 2,048). Main moved to 2628ece940 and then 3de59bbf80 (v0.141.0) while
+# they ran: board-2048 does not reach the depth 2628ece940 changes on GB10, the roster's 12-row
+# tables are byte-identical across it, and v0.141.0's own probe gives the RTX 5090 Laptop GPU's
+# Ornith eager window byte for byte (research/argmax-gate-rule-20261110/README.md).
 #
 # model	prompt	prompt_sha256	decode	device	floor	rows	set_by_row	p50	p99	p999	known_rows	receipt
 Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp	board-2048	3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc	batch	NVIDIA GB10	4.450169563e0	1856	306	2.364187241e-1	1.707065582e0	4.012757301e0	-	research/argmax-gate-rule-20261110/calibration/gb10/ornith-batch/probe.log

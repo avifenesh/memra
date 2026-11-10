@@ -153,8 +153,10 @@ the same depth.
 probe over every row of `board-2048` (2,045 of T = 2,048) on one device. Main moved to
 2628ece940 (the GB10 deep split rung) while the cells ran: `board-2048` holds 2,048 keys and
 the rung starts past 16,384, and the roster's 12-row tables in the cell-evidence records are
-byte-identical between c7708aec49 and 12c3f554c4 on GB10 and on the RTX 5090 Laptop GPU. The
-last 12 rows of each whole-prompt table equal the 12-row table of its card's record.
+byte-identical between c7708aec49 and 12c3f554c4 on GB10 and on the RTX 5090 Laptop GPU. On
+3de59bbf80 (v0.141.0) the probe's Ornith eager window on the RTX 5090 Laptop GPU is unchanged,
+byte for byte. The last 12 rows of each whole-prompt table equal the 12-row table of its card's
+record.
 
 <!-- FLOORS-TABLE:START -->
 | device | model | decode | flips / rows | most flips in 12 rows | p50 | p99 | p99.9 | floor (row) | known rows |
