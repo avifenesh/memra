@@ -163,12 +163,12 @@ impl KvVmmConfig {
 }
 
 /// Rows one tick can write for a session past its position: a spec burst (the burst target,
-/// the draft depth, the surplus row and the verify row) or a plain step (the async chain width).
-pub(crate) fn tick_rows(spec: bool, burst_t: usize, k: usize, async_chain_k: usize) -> usize {
+/// the draft depth, the surplus row and the verify row) or a plain step (one row).
+pub(crate) fn tick_rows(spec: bool, burst_t: usize, k: usize) -> usize {
     if spec {
         burst_t.saturating_add(k).saturating_add(2)
     } else {
-        async_chain_k.max(1)
+        1
     }
 }
 
@@ -311,11 +311,10 @@ mod tests {
     #[test]
     fn the_bound_covers_one_tick_past_the_prompt_and_the_position() {
         // Spec: burst 32, k 4 -> 38 rows a tick.
-        let spec = tick_rows(true, 32, 4, 1);
+        let spec = tick_rows(true, 32, 4);
         assert_eq!(spec, 38);
-        assert_eq!(tick_rows(false, 32, 4, 1), 1);
-        assert_eq!(tick_rows(false, 32, 4, 0), 1);
-        assert_eq!(tick_rows(false, 32, 4, 8), 8);
+        // A plain step writes one row.
+        assert_eq!(tick_rows(false, 32, 4), 1);
         // Priming: the floor (prompt) dominates the position.
         assert_eq!(bound_rows(65_536, 10, 5_000, spec), 5_000 + 38 + SLACK);
         // Decoding: the position dominates.

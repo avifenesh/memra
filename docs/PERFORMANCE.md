@@ -550,7 +550,7 @@ class.
 Mechanism map from the worker (suspects, named for the diagnostic; none of this is a
 measured attribution yet):
 
-1. Interactive prime is time-sliced at `PREFILL_TICK_T` = 1024 tokens per session per
+1. Interactive prime is time-sliced at the lane's `MEMRA_PREFILL_TICK` = 1024 tokens per session per
    scheduler tick. With K sessions priming, a 60k-token rebuild pays ~59 round-robin
    visits, each behind K-1 sibling chunks plus the batched decode phase (tick order:
    spec bursts, prefill chunks, batched decode).

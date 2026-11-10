@@ -10,15 +10,16 @@
 //!
 //! SCHEDULER LOOP: the worker holds a `Vec<Session>` of active generations. Each tick it primes
 //! every still-prefilling session in chunks under a per-tick token budget (`prefill_tick`:
-//! `PREFILL_TICK_T`, 1024 tokens, or `SOLO_PREFILL_TICK_T`, 8192, for a lone fresh interactive
-//! request; a model with no chunked prime takes its whole prompt in one call), steps the
+//! the lane's `MEMRA_PREFILL_TICK`, default 1024 tokens, or `SOLO_PREFILL_TICK_T`, 8192, for a
+//! lone fresh interactive request; a model with no chunked prime takes its whole prompt in one
+//! call), steps the
 //! decoding sessions together in batched decode chunks, samples, checks stop, streams the token
 //! text back on each session's channel, and retires finished sessions. Queued admits fill the
 //! interactive lane up to `MEMRA_MAX_SESSIONS` (default 64; `route_contract::interactive_cap`).
 //! This is the interleave: a long generation and a freshly-admitted one make forward progress in
 //! the same loop, so the second produces tokens before the first finishes (not serialized
-//! end-to-end). `MEMRA_SERVE_BATCH=0` keeps the legacy round-robin loop, one `decode_step` per
-//! session per iteration, capped at `MAX_ACTIVE`.
+//! end-to-end). This batched scheduler is the only served path: the round-robin loop that
+//! `MEMRA_SERVE_BATCH=0` restored is gone (memra #1158) and the boot refuses that name.
 
 mod device_memory;
 mod host_glm;
@@ -44,24 +45,16 @@ use memra_gguf::source::TensorSource;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
 
-/// Max concurrently-active sessions in legacy round-robin mode (MEMRA_SERVE_BATCH=0).
-/// Batched scheduling caps at MEMRA_MAX_SESSIONS (default 64). Admits beyond the cap queue (FIFO).
-pub const MAX_ACTIVE: usize = 4;
-
 /// `GenParams.max_new` sentinel: the request OMITTED `max_tokens` (gap-scan F2), so the
 /// generation budget is CONTEXT-BOUNDED — session ctx minus prompt tokens, model-capped —
 /// the OpenAI default-when-omitted semantics, never a silent 128-token truncation.
 /// (`budget = max_new.min(room)` makes the sentinel safe everywhere downstream.)
 pub const MAX_NEW_CTX_BOUNDED: usize = usize::MAX;
 
-/// Per-tick prefill chunk cap: tokens primed per scheduler tick per session. Priming runs at
-/// prefill throughput instead of tokenwise decode, while the per-tick cap keeps round-robin
-/// latency for concurrent sessions bounded.
-const PREFILL_TICK_T: usize = 1024;
-
 /// A lone fresh interactive request can use the engine's full eight-microbatch PP geometry in
-/// one outer `prime_cache` call. Multi-session ticks retain `PREFILL_TICK_T` fairness, and an
-/// explicit `MEMRA_PREFILL_TICK` remains authoritative.
+/// one outer `prime_cache` call. Multi-session ticks retain the lane's per-tick prefill budget
+/// (`MEMRA_PREFILL_TICK`, default 1024), and an explicit `MEMRA_PREFILL_TICK` remains
+/// authoritative.
 const SOLO_PREFILL_TICK_T: usize = 8192;
 
 /// Is this interactive session a genuinely COLD prefill, i.e. is nothing primed yet?
@@ -77,7 +70,7 @@ const SOLO_PREFILL_TICK_T: usize = 8192;
 /// make a wider budget unsafe. Worse, arming it is a COLD-only signal: a resumed session
 /// never re-arms one, so the term excluded precisely the sessions the widening exists for.
 /// Measured on a 1480-token cold request (`[primeseg]` receipt, 2026-08-28): budget stayed at
-/// `PREFILL_TICK_T`=1024, so the prompt primed as 1024 + 416 + 40 instead of 1440 + 40, and
+/// the tick's 1024, so the prompt primed as 1024 + 416 + 40 instead of 1440 + 40, and
 /// only the FIRST of those calls got `hybrid_forward`'s batched GEMM prime, which is gated on
 /// `cache.pos == 0`. The 456-token remainder went through the slow chunked continuation prime
 /// at roughly 4.8 ms/token: 2.2 s of a 4.3 s cold TTFT.
@@ -229,8 +222,9 @@ fn interactive_prefill_budget(
 /// `take = if q <= budget { q } else { take }`: reaching that guard implies `take < q`, which in
 /// the non-eager branch implies `budget < q`, so `q <= budget` is always false and `take` was
 /// assigned to itself; the eager branch (`take == q`) never entered it at all. Both sibling
-/// sites — step_session's prefill phase and [`interactive_prefill_budget`] — already had the
-/// working `take = q` form.
+/// sites (the round-robin scheduler's prefill phase in `step_session`, removed with that
+/// scheduler in memra #1158, and [`interactive_prefill_budget`]) already had the working
+/// `take = q` form.
 ///
 /// The invariant that matters: **never leave a remainder of 1..PRIME_MIN_T-1 tokens.** Such a
 /// remainder falls through `prefill_tick`'s `else` arm and feeds PROMPT tokens through
@@ -5138,8 +5132,7 @@ fn plain_ckpt_nominatable(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -> b
 // through the plain path's exact program), in BOTH sampling regimes. Hits that cannot re-arm
 // (no draft plane, constrained, sampled-with-active-penalties, partial) serve on the plain path and
 // the downgrade line names which. The spec tier additionally keeps its own continuation
-// pool for extend/affinity shapes. Legacy round-robin mode (MEMRA_SERVE_BATCH=0) bypasses
-// the prefix cache entirely.
+// pool for extend/affinity shapes.
 //
 // ISOLATION (PC-ISO, lane/pc-iso 2026-08-02): pools key on (model, cache namespace) — see
 // PoolKey. Same-namespace traffic shares entries exactly as before; requests carrying
@@ -5552,7 +5545,7 @@ struct DiscretePrefixTerms {
     /// `MEMRA_ADMIT_DRIVER_HEADROOM_MB` in bytes: the floor admission keeps free.
     driver_headroom_bytes: usize,
     /// Resident sessions the scheduler admits at once: the interactive cap (`MEMRA_MAX_SESSIONS`,
-    /// 64 when batching) plus the judge and harvest lane caps.
+    /// default 64) plus the judge and harvest lane caps.
     sessions: usize,
     /// One served-context session of the largest loaded model: the spec-path context planes at
     /// the served context (`AdmissionCostModel::context_bytes`) plus the recurrent state; `0`
@@ -6346,8 +6339,8 @@ struct KvFlex {
 }
 
 impl KvFlex {
-    fn from_env(floor: usize, batching: bool) -> KvFlex {
-        let armed = kv_flex_on() && floor > 0 && batching;
+    fn from_env(floor: usize) -> KvFlex {
+        let armed = kv_flex_on() && floor > 0;
         if armed {
             eprintln!(
                 "[kv-flex] on: device prefix cache may borrow idle headroom above its \
@@ -6536,7 +6529,7 @@ fn prefix_latent_planes_on() -> bool {
 /// continuation) on a hyper-connections trunk ride the PRIME program instead of tokenwise
 /// `decode_step` (lane/glm5-prefix-latent2, 2026-09-01; docs/FLAGS.md row).
 ///
-/// WHY: the `eager_mono && carried` veto in the two prefill sites exists for gemma4, whose
+/// WHY: the `eager_mono && carried` veto in `prefill_tick` exists for gemma4, whose
 /// engine REFUSES a pos>0 prime. glm5_next's engine does not — `prime_cache_hyper` is
 /// positional by construction (pos from `cache.pos`, KDA state via `cache.recur`, MLA/DSA
 /// via the latent planes; every chunk after the first inside one cold prime already runs
@@ -6578,17 +6571,6 @@ fn carried_suffix_primes(hyper_trunk: bool, flag_on: bool) -> bool {
 fn prefix_split_trace_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("MEMRA_PREFIX_SPLIT_TRACE").as_deref() == Ok("1"))
-}
-
-/// Batched scheduling on? (read once — mirrors the run-loop static; the prefix cache only
-/// engages in batched mode, the default.)
-fn serve_batching() -> bool {
-    static B: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *B.get_or_init(|| {
-        std::env::var("MEMRA_SERVE_BATCH")
-            .map(|v| v != "0")
-            .unwrap_or(true)
-    })
 }
 
 /// A drafter path with the route off (memra #478): `MEMRA_DSPARK_DRAFT` set while
@@ -6666,50 +6648,6 @@ fn dspark_spec_boot_conflict(
         }
     }
     None
-}
-
-/// Boot verdict for the drafter routes (gemma spec, dspark, glm5 spec) under
-/// `MEMRA_SERVE_BATCH=0`. Those routes run only from the batched scheduler's spec dispatch.
-/// The unbatched loop steps every session through `step_session`, which has no route arm and
-/// no cache for a route session (admission leaves it None for the route's first tick), so every
-/// routed request faulted. The pair was never co-gated, so it refuses at boot by name.
-fn drafter_route_batching_conflict(batching: bool, armed: &[&str]) -> Option<String> {
-    if batching || armed.is_empty() {
-        return None;
-    }
-    Some(format!(
-        "MEMRA_SERVE_BATCH=0 with the {} route armed: drafter routes run only under batched \
-         scheduling; unset MEMRA_SERVE_BATCH or disarm the route",
-        armed.join(" and ")
-    ))
-}
-
-/// The drafter routes an operator armed EXPLICITLY, read from the environment alone, so
-/// `run` can refuse them beside `MEMRA_SERVE_BATCH=0` before any weight loads (the post-load
-/// check pays the full trunk and drafter loads first). Each test is the one its route's own
-/// read applies: `MEMRA_DSPARK_SPEC=1`, an explicit `MEMRA_GEMMA4_SPEC` depth K >= 1, and
-/// `MEMRA_GLM5_SPEC=1`. Arms that depend on what loads (the gemma default-on under
-/// `MEMRA_DRAFT` alone, which only a dense gemma4 model takes, and glm5 capability) stay with
-/// the post-load check.
-fn explicit_drafter_route_arms(
-    dspark_spec: Option<&str>,
-    gemma4_spec: Option<&str>,
-    glm5_spec: Option<&str>,
-) -> Vec<&'static str> {
-    let mut armed = Vec::new();
-    if dspark_spec == Some("1") {
-        armed.push("dspark (MEMRA_DSPARK_SPEC=1)");
-    }
-    if gemma4_spec
-        .and_then(|v| v.parse::<usize>().ok())
-        .is_some_and(|k| k > 0)
-    {
-        armed.push("gemma spec (MEMRA_GEMMA4_SPEC)");
-    }
-    if glm5_spec == Some("1") {
-        armed.push("glm5 spec (MEMRA_GLM5_SPEC=1)");
-    }
-    armed
 }
 
 /// Boot verdict for the glm5 TP-2 walk on a serving worker (MEMRA_GLM5_TP,
@@ -8539,8 +8477,8 @@ fn vmm_scope(
         return None;
     }
     // One tick of either route: the larger of a spec burst and a plain step.
-    let tick = crate::kv_vmm::tick_rows(true, vmm_spec_burst_t(), spec_k, serve_async_chain_k())
-        .max(crate::kv_vmm::tick_rows(false, 0, 0, serve_async_chain_k()));
+    let tick = crate::kv_vmm::tick_rows(true, vmm_spec_burst_t(), spec_k)
+        .max(crate::kv_vmm::tick_rows(false, 0, 0));
     Some(crate::kv_vmm::initial_rows(cap, prompt_rows, tick))
 }
 
@@ -8599,8 +8537,7 @@ fn vmm_ensure_session(s: &mut Session) -> Result<VmmGrows, Box<dyn std::error::E
     if let Some(sp) = s.spec.as_mut()
         && sp.kv_on_demand_planes() > 0
     {
-        let tick =
-            crate::kv_vmm::tick_rows(true, vmm_spec_burst_t(), s.spec_k, serve_async_chain_k());
+        let tick = crate::kv_vmm::tick_rows(true, vmm_spec_burst_t(), s.spec_k);
         let rows = crate::kv_vmm::bound_rows(sp.cache_max_ctx(), sp.kv_position(), floor, tick);
         for (label, ev) in sp.ensure_kv_rows(rows)? {
             out.push((label, rows, ev));
@@ -8609,7 +8546,7 @@ fn vmm_ensure_session(s: &mut Session) -> Result<VmmGrows, Box<dyn std::error::E
     if let Some(c) = s.cache.as_mut()
         && c.on_demand_planes() > 0
     {
-        let tick = crate::kv_vmm::tick_rows(false, 0, 0, serve_async_chain_k());
+        let tick = crate::kv_vmm::tick_rows(false, 0, 0);
         let rows = crate::kv_vmm::bound_rows(c.max_ctx, c.pos, floor, tick);
         for (label, ev) in c.ensure_kv_rows(rows)? {
             out.push((label, rows, ev));
@@ -9719,7 +9656,7 @@ fn maybe_inject_fault(cache_ns: &str, request_id: &str) {
 const STEP_OOM_FAULT_MSG: &str =
     "CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)";
 
-/// Where the door may fire (WP-B day 49 addendum D). `Any`: the next step at any of the three
+/// Where the door may fire (WP-B day 49 addendum D). `Any`: the next step at either of the two
 /// injection points (a plain `<n>`, today's door). `BatchMulti`: only the plain dispatch's
 /// batched decode chunk, and only a chunk carrying at least two sessions (`batch:<n>`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -9804,7 +9741,7 @@ fn step_oom_fault_consume(remaining: &std::sync::atomic::AtomicU32) -> bool {
 }
 
 /// Whether an injection point may spend the budget: `batch_sessions` is `Some(k)` at the
-/// batched decode chunk (k sessions) and `None` at the spec and non-batching steps.
+/// batched decode chunk (k sessions) and `None` at the spec step.
 fn step_oom_fault_site_admits(site: StepOomFaultSite, batch_sessions: Option<usize>) -> bool {
     match site {
         StepOomFaultSite::Any => true,
@@ -12692,7 +12629,7 @@ const PAUSE_TAIL_TOKENS: usize = 24;
 /// `research/kv-fastband-20260830/battery-20260831/pause-gates/RESULTS.md`, FINDING 1):
 /// qwen3.8's natural `finish_reason:"tool_calls"` turns end `...</tool_call><eos>`: the
 /// stop id is pushed into `Session::generated` BEFORE the stop check fires
-/// (`advance_sample_emit` / `advance_token_emit`), so the decoded tail ended with the
+/// (`advance_sample_emit`), so the decoded tail ended with the
 /// rendered stop token and `tail_ends_with_tool_call` refused 6 of 6 real tool pauses,
 /// making `MEMRA_KV_PAUSE_DEMOTE=1` a no-op on exactly the workload it was built for. The
 /// same requests with `stop:["</tool_call>"]` (stop-string truncation, no stop id in the
@@ -17586,20 +17523,6 @@ pub fn run(
         let _ = ready_tx.send(Err(msg));
         return;
     }
-    // DRAFTER ROUTES UNDER MEMRA_SERVE_BATCH=0, the env-only half: an explicitly armed route
-    // refuses here in milliseconds instead of after the trunk and drafter loads. The post-load
-    // check beside the drafter attach still covers the arms that depend on what loaded.
-    if let Some(msg) = drafter_route_batching_conflict(
-        serve_batching(),
-        &explicit_drafter_route_arms(
-            std::env::var("MEMRA_DSPARK_SPEC").ok().as_deref(),
-            std::env::var("MEMRA_GEMMA4_SPEC").ok().as_deref(),
-            std::env::var("MEMRA_GLM5_SPEC").ok().as_deref(),
-        ),
-    ) {
-        let _ = ready_tx.send(Err(msg));
-        return;
-    }
     // ROUTE POLICY CONTRACT, the env-only half (memra#504): which route each model will take is
     // known from its path before any weight loads, so a policy the operator armed that a planned
     // route refuses (MEMRA_REWRITE_BUNDLE beside a dsv4 checkpoint, memra#449) refuses HERE, not
@@ -17950,8 +17873,7 @@ pub fn run(
         .map(|(n, lm)| {
             let t = lm.tok.chat_template();
             let caps = ModelCaps {
-                max_choices: if serve_batching()
-                    && !is_multi_device_deployment(&loaded)
+                max_choices: if !is_multi_device_deployment(&loaded)
                     && lm.model.hyper.is_none()
                     && lm.model.plan.speech.is_none()
                     && !lm.model.plan.layers.is_empty()
@@ -18390,19 +18312,6 @@ pub fn run(
             panic!("MEMRA_DSPARK_SPEC=1 but no qwen-hybrid (non-gemma) model is loaded");
         }
     }
-    let mut armed_routes: Vec<&str> = Vec::new();
-    if !gemma_drafts.is_empty() {
-        armed_routes.push("gemma spec (MEMRA_GEMMA4_SPEC)");
-    }
-    if !dspark_drafts.is_empty() {
-        armed_routes.push("dspark (MEMRA_DSPARK_SPEC=1)");
-    }
-    if loaded.values().any(glm5_spec_capable) {
-        armed_routes.push("glm5 spec (MEMRA_GLM5_SPEC=1)");
-    }
-    if let Some(msg) = drafter_route_batching_conflict(serve_batching(), &armed_routes) {
-        panic!("{msg}");
-    }
     // MEMRA_MTP_SKIP serving policy (mtp-skip lane 2026-08-30; refuse-loud contract 2026-08-31,
     // hermes finding baf261e2bfdae118). The loader already refused the contradictory
     // combinations (skip+MEMRA_MTP_DRAFT; skip+trim on a per-block-head artifact); what only
@@ -18686,7 +18595,7 @@ pub fn run(
     // these exact loaded instances, even if names and device ordinals repeat.
     hpx.model_generations = loaded.keys().map(|k| (k.clone(), Arc::new(()))).collect();
     if hpx.budget > 0 {
-        if prefix_cache_budget_bytes() > 0 && serve_batching() {
+        if prefix_cache_budget_bytes() > 0 {
             eprintln!(
                 "[prefix-host] on: budget {:.0}MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, \
                  startup budget policy), plain byte-LRU, demote on device \
@@ -18725,7 +18634,7 @@ pub fn run(
     if let Some(path) = kv_host_handoff_path()
         && std::path::Path::new(path).exists()
     {
-        if hpx.armed() && prefix_cache_budget_bytes() > 0 && serve_batching() {
+        if hpx.armed() && prefix_cache_budget_bytes() > 0 {
             match open_host_handoff_import(path, &handoff_stamps) {
                 Ok((imp, start)) => {
                     eprintln!(
@@ -18756,14 +18665,14 @@ pub fn run(
     // OFF): the device prefix cache may borrow idle headroom above its configured floor and
     // sheds it back the instant capture-surface traffic arrives. Scheduler-owned, the
     // single budget-policy authority beside PrefixCache's one byte accountant.
-    let mut kv_flex = KvFlex::from_env(prefix_cache_budget_bytes(), serve_batching());
+    let mut kv_flex = KvFlex::from_env(prefix_cache_budget_bytes());
     if memra_engine::pp::pp_host_bounce_active() {
         eprintln!(
             "[pp] MEMRA_PP_HOST_BOUNCE=1 safety doors: speculative PP, cross-device prefix \
              snapshots, and plain-affinity checkpoints disabled (they retain peer reads/copies)"
         );
     }
-    if prefix_cache_budget_bytes() > 0 && serve_batching() {
+    if prefix_cache_budget_bytes() > 0 {
         let (budget_bytes, budget_provenance) = match prefix_budget {
             PrefixCacheBudget::Configured { bytes } => (
                 *bytes,
@@ -18820,9 +18729,7 @@ pub fn run(
             budget_bytes as f64 / 1e6,
             PREFIX_CACHE_MIN_TOKENS,
         );
-    } else if serve_batching()
-        && matches!(prefix_budget, PrefixCacheBudget::Derived { bytes: 0, .. })
-    {
+    } else if matches!(prefix_budget, PrefixCacheBudget::Derived { bytes: 0, .. }) {
         eprintln!(
             "[prefix-cache] WARNING: derived budget is 0 B after the boot free-VRAM \
                    reserve clamp; prefix caching disabled"
@@ -18960,7 +18867,6 @@ pub fn run(
     let mut lane_shed = [0u64; 3];
     let mut lane_completed = [0u64; 3];
     let mut lane_tokens = [0u64; 3];
-    let mut last_batch = 0usize;
     // Per-model spec acceptance telemetry (lane/accept-telemetry): worker-owned like every
     // counter above; published on the same 32nd-tick snapshot AND whenever a spec session
     // retires (so a one-shot request's counts are visible without waiting 32 ticks).
@@ -19405,11 +19311,6 @@ pub fn run(
         //    Interactive cap stays the legacy MEMRA_MAX_SESSIONS knob (naked-path
         //    preserving; policy.max_sessions[0] is the sidecar's knob, unused here);
         //    judge/harvest caps come from the lane policy.
-        let max_active = if confidence_trace_enabled() {
-            1
-        } else {
-            MAX_ACTIVE
-        };
         let mut requeue: std::collections::VecDeque<Box<Request>> = Default::default();
         // Per-tick count of requests the VRAM gate deferred (logged once per tick).
         let mut vram_defers = 0usize;
@@ -19487,21 +19388,11 @@ pub fn run(
                 continue;
             }
             let lane = req.lane;
-            let batching_on = std::env::var("MEMRA_SERVE_BATCH")
-                .map(|v| v != "0")
-                .unwrap_or(true);
             // ONE derivation of the interactive cap (route_contract::interactive_cap): the
             // registry publishes and lib.rs sheds on the same number this gate enforces
-            // (memra#504; #502 was a second copy disagreeing). `max_active` carries the
-            // confidence-trace override.
+            // (memra#504; #502 was a second copy disagreeing).
             let cap = if lane == crate::lanes::Lane::Interactive {
-                crate::route_contract::interactive_cap(
-                    batching_on,
-                    std::env::var("MEMRA_MAX_SESSIONS")
-                        .ok()
-                        .and_then(|v| v.parse().ok()),
-                    max_active,
-                )
+                crate::route_contract::hybrid_interactive_cap()
             } else {
                 policy.max_sessions[lane.idx()]
             };
@@ -20903,7 +20794,6 @@ pub fn run(
                             && device_requirements.is_none()
                             && !is_multi_device_deployment(&loaded)
                             && !confidence_trace_enabled()
-                            && serve_batching()
                             && prefix_cache_budget_bytes() > 0
                             && std::env::var("MEMRA_KV_REUSE").as_deref() != Ok("0")
                             && req.oom_retries == 0
@@ -21723,12 +21613,11 @@ pub fn run(
         }
         queue = requeue;
 
-        // 3. The tick. Three phases (MEMRA_SERVE_BATCH=0 restores legacy round-robin):
+        // 3. The tick. Three phases:
         //    (a) spec sessions burst solo (spec x batch composition is a later step);
-        //    (b) prefilling sessions prime at the full tick chunk (PREFILL_TICK_T);
+        //    (b) prefilling sessions prime at the full tick chunk (the lane's prefill budget);
         //    (c) decoding sessions advance through BATCHED steps: sample+emit host-side, then
         //        decode_step_batch over survivors in chunks of <= 8.
-        let batching = serve_batching();
         let mut finished: Vec<usize> = Vec::new();
         // REALIZED-RATE SAMPLE (lane/batch-spec cost gate): the previous tick and this one
         // starting in the same steady regime give one aggregate tok/s sample for it (the
@@ -21884,66 +21773,10 @@ pub fn run(
                 }
             }
         }
-        if !batching {
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
-            for i in 0..active.len() {
-                if finished.contains(&i) {
-                    continue;
-                }
-                let generated_before = active[i].generated.len();
-                let lane = active[i].lane;
-                let step_started = Instant::now();
-                let (fault_id, fault_route) =
-                    (active[i].request_id.clone(), fault_route(&active[i]));
-                let step_result =
-                    guard_request(&engine, &fault_id, &fault_route, "decode step", || {
-                        // MEMRA_STEP_OOM_FAULT's non-batching injection point (WP-B day 38
-                        // addenda A and D): the forged quoted OOM stands in for this step, before
-                        // any device work; the error arm below is production logic. It fires only
-                        // on a session past its prime (a step that decodes), so the forged failure
-                        // lands where an errored session could otherwise park.
-                        if active[i].prefill_done && step_oom_fault_fire() {
-                            eprintln!(
-                                "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this non-batching step \
-                                 reports a synthetic CUDA OOM (model {}, generated {})",
-                                active[i].model,
-                                active[i].generated.len(),
-                            );
-                            return Err(STEP_OOM_FAULT_MSG.into());
-                        }
-                        match step_session_async_chain(&engine, &loaded, &mut active[i]) {
-                            Ok(Some(keep)) => Ok(keep),
-                            Ok(None) => {
-                                step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
-                            }
-                            Err(err) => Err(err),
-                        }
-                    });
-                record_output_progress(
-                    generated_before,
-                    active[i].generated.len(),
-                    lane,
-                    step_started.elapsed().as_secs_f32() * 1000.0,
-                    &mut n_tokens_out,
-                    &mut lane_tokens,
-                    &mut step_stats,
-                    &mut last_interactive_decode,
-                );
-                match step_result {
-                    Ok(true) => {}
-                    Ok(false) => finished.push(i),
-                    Err(err) => {
-                        quarantine_request_fault(&mut active[i], err.as_ref());
-                        active[i].errored = true;
-                        let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
-                            "step error: {err}"
-                        ))));
-                        finished.push(i);
-                    }
-                }
-            }
-        } else {
+        // The three phases share one scope: their locals end before the retire sweep. The
+        // decode phase sets `last_batch` for this tick's metrics snapshot.
+        let last_batch: usize;
+        {
             // (a-) SPEC DEMOTION (lane/spec-gate, task #89, 2026-08-07). The admit gate above
             // keeps NEW arrivals off the serial spec queue, but sessions admitted while the box
             // was quiet keep bursting after load arrives — and each one holds a whole burst of
@@ -22627,8 +22460,8 @@ pub fn run(
                 // named. The step itself is SKIPPED (no device work on a card the gate is
                 // pretending is full); the match below (park-vs-honest-error, the
                 // teardown fence, park_requeue, the retry budget) is production logic,
-                // un-doctored. One of the door's three injection points: this spec-phase step, the
-                // batched decode chunk and the non-batching step (WP-B day 38 addendum A).
+                // un-doctored. One of the door's two injection points: this spec-phase step and
+                // the batched decode chunk (WP-B day 38 addendum A).
                 let (fault_id, fault_route) =
                     (active[i].request_id.clone(), fault_route(&active[i]));
                 let pooled_step = pooled_steps.remove(&i);
@@ -23301,7 +23134,7 @@ pub fn run(
                 // MEMRA_PREFILL_WIDEN_PROBE=1 (diagnostic, default off): name WHICH input
                 // blocks the solo widening. It exists because the multi-term guard hides
                 // which term is false, and one false term was silently costing 76% of cold
-                // TTFT: a lone fresh 1480-token request primed only PREFILL_TICK_T=1024 and
+                // TTFT: a lone fresh 1480-token request primed only the tick's 1024 and
                 // took the remaining 456 PROMPT tokens through the slow chunked continuation
                 // prime (the batched GEMM prime is gated on cache.pos == 0, so tick 1 shut
                 // that door), and the only reason was an armed plain-affinity ckpt_at -- a
@@ -23406,8 +23239,8 @@ pub fn run(
             // fill with protected-class rows before dark rows).
             let t_decode = Instant::now();
             // (c-) EAGER-ONLY per-session decode (lane/gemma4-serve-gaps, 2026-08-07):
-            // models with no batched decode arm advance through step_session — the legacy
-            // round-robin body, whose decode_step routes to the supported eager arm
+            // models with no batched decode arm advance through step_session's decode
+            // phase, whose decode_step routes to the supported eager arm
             // (gemma4_decode_step_h) — INSIDE the batched scheduler, one token per tick per
             // session. Before this route, these sessions entered the batched chunks below
             // and decode_step_batch's gemma4 assert KILLED THE WORKER on the first request
@@ -25050,14 +24883,12 @@ fn handle_cmd(
             // its channel is the FIFO admission queue (bs=1 engine; queueing is the
             // honest concurrency behavior and the c-cells measure it as such).
             if req.choice.is_some()
-                && (!serve_batching()
-                    || is_multi_device_deployment(loaded)
-                    || dsv4_routes.contains_key(&req.model))
+                && (is_multi_device_deployment(loaded) || dsv4_routes.contains_key(&req.model))
             {
                 fail_request(
                     req,
                     EngineError::invalid_param(
-                        "n-choice generation requires the shared-prefill hybrid route with batching enabled",
+                        "n-choice generation requires the shared-prefill hybrid route",
                         "n",
                     ),
                 );
@@ -26340,7 +26171,7 @@ fn ring_prefix_excluded(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
 }
 
 fn request_prefix_on(reuse_on: bool, plan: &memra_gguf::model_plan::ModelPlan) -> bool {
-    reuse_on && serve_batching() && prefix_cache_budget_bytes() > 0 && !ring_prefix_excluded(plan)
+    reuse_on && prefix_cache_budget_bytes() > 0 && !ring_prefix_excluded(plan)
 }
 
 /// The continuation pool's match: the newest parked plain session whose fed tokens prefix the
@@ -27068,7 +26899,7 @@ fn admit(
     // the gate is armed below once the request's FINAL eos set exists (after the eog
     // union), and the session NEVER rides spec (see the spec_eligible conjunction).
     let postthink = constraint.is_some() && !lm.postthink_close.is_empty();
-    let prefix_requested = reuse_on && serve_batching() && prefix_cache_budget_bytes() > 0;
+    let prefix_requested = reuse_on && prefix_cache_budget_bytes() > 0;
     let ring_prefix_excluded = ring_prefix_excluded(&lm.model.plan);
     if prefix_requested && ring_prefix_excluded {
         eprintln!(
@@ -30701,9 +30532,10 @@ fn dedup_interactive_prefixes(
 /// One prefill tick for a session under a token budget. Returns tokens consumed. It primes
 /// budget-sized chunks through `prime_cache` (a model with no chunked prime takes the whole
 /// queued prompt in one call) and reaches tokenwise `decode_step` only on its fallback branch.
-/// Same chunking laws as step_session's prefill phase (PRIME_MIN_T floor, tail handling). The
-/// tail-handling half of that claim was FALSE until 2026-08-13 — this site's merge was a no-op
-/// while both sibling sites' worked; see the tail-merge comment inside.
+/// It is the only prefill site for a plain session (PRIME_MIN_T floor, tail handling); the
+/// round-robin scheduler's twin in `step_session` was removed with that scheduler (memra #1158).
+/// The tail merge here was a no-op until 2026-08-13 while both sibling sites' worked; see the
+/// tail-merge comment inside.
 #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 fn prefill_tick(
     engine: &Engine,
@@ -31158,8 +30990,7 @@ fn stage_grammar_mask(engine: &Engine, s: &mut Session) -> Result<(), String> {
 ///
 /// `Ok(None)` keeps the host sampler, for a request whose later tokens are host-sampled too:
 /// greedy, constrained with a truncation filter, penalised where the device penalty arm is
-/// off, the legacy scheduler,
-/// an eager-served model, or a model whose batched decode is not qualified and falls back to
+/// off, an eager-served model, or a model whose batched decode is not qualified and falls back to
 /// eager rows (`decode_step_batch` then returns no device draw). One sampler per request: a
 /// failed device draw fails the request instead of handing its first token to the host RNG
 /// while the later ones stay on the device.
@@ -31172,8 +31003,7 @@ fn plain_first_token_device_draw(
     if !s.generated.is_empty() || row.is_empty() {
         return Ok(None);
     }
-    if !serve_batching()
-        || model.served_decode_is_eager()
+    if model.served_decode_is_eager()
         || !model.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeBatch)
     {
         return Ok(None);
@@ -31310,64 +31140,6 @@ fn advance_sample_emit(
         return (false, None);
     }
     (true, Some(next))
-}
-
-/// Token-driven twin of `advance_sample_emit` for the device-chained step
-/// (`step_session_async_chain`): the token came off the DEVICE (an argmax, or the chain's
-/// seeded device draw), so the host does not sample it again — accept, emit, stop battery.
-/// Returns (continue?, ()).
-fn advance_token_emit(
-    loaded: &HashMap<String, LoadedModel>,
-    s: &mut Session,
-    tok: u32,
-) -> (bool, ()) {
-    let lm = &loaded[&s.model];
-    if s.generated.len() >= s.budget {
-        finish(s, StopReason::MaxNew);
-        return (false, ());
-    }
-    if let Some(reason) = stop_token_reason(tok, &s.stop_token_ids) {
-        finish(s, reason);
-        return (false, ());
-    }
-    s.sampler.accept(tok);
-    push_generated(&mut s.generated, &s.model, s.t0, tok);
-    if let Some(trace) = s.ttft.as_ref() {
-        trace.mark_first_decode();
-    }
-    if s.params.eos.contains(&tok) {
-        if !send_token_event(s, tok, String::new()) {
-            abort_log(s);
-            return (false, ());
-        }
-        finish(s, StopReason::Eos);
-        return (false, ());
-    }
-    // CONSTRAINED graph sessions: the token came from the in-graph masked argmax — advance
-    // the grammar (post-EOS-check, same ordering as advance_sample_emit). An error here is
-    // a real bug: loud stop, never emit schema-violating text as if it conformed.
-    if let Some(c) = s.constraint.as_mut()
-        && let Err(err) = c.consume(tok)
-    {
-        s.errored = true;
-        let _ = s.tx.send(Event::Error(EngineError::engine(format!(
-            "constraint advance: {err}"
-        ))));
-        return (false, ());
-    }
-    s.decoded_bytes
-        .extend_from_slice(&lm.tok.decode_bytes_special(&[tok], true));
-    let delta = utf8_delta(&s.decoded_bytes, &mut s.emitted_bytes);
-    // DISCONNECT ABORT (gap-scan F8): failed send = client gone, stop this tick.
-    if !send_token_event(s, tok, delta) {
-        abort_log(s);
-        return (false, ());
-    }
-    if contains_stop_string(&s.decoded_bytes, &s.stop_strings) {
-        finish(s, StopReason::Callback);
-        return (false, ());
-    }
-    (true, ())
 }
 
 /// Penalty-aware extension of device sampling, qualification-keyed.
@@ -31785,37 +31557,6 @@ fn devsample_meta(s: &Session) -> Option<DevSamp> {
     Some(meta)
 }
 
-/// Opt-in eager device chain for the legacy, non-persistent scheduler. The engine caps the
-/// width at 16; parsing here keeps the server arm on the same numeric contract as run-gen.
-fn serve_async_chain_k() -> usize {
-    static K: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *K.get_or_init(|| {
-        std::env::var("MEMRA_ASYNC_CHAIN")
-            .ok()
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(0)
-            .min(16)
-    })
-}
-
-fn legacy_async_chain_width(
-    configured: usize,
-    room_after_first: usize,
-    cache_rows: usize,
-) -> Option<usize> {
-    let width = configured
-        .min(room_after_first.saturating_add(1))
-        .min(cache_rows);
-    (configured >= 2 && room_after_first > 0 && width >= 2).then_some(width)
-}
-
-/// Recheck device-sampling eligibility after the boundary token is accepted. Accepting that
-/// token can populate an initially empty penalty window; dropping the penalty metadata here
-/// would make `decode_step_chain` interpret the request as greedy instead of declining it.
-fn async_chain_devsample(meta: Option<DevSamp>) -> Option<DevSamp> {
-    meta.filter(|sample| sample.penalty.is_none())
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct DecodeChunkPolicy {
     /// Maximum exact width of either engine wave.
@@ -32162,133 +31903,6 @@ fn group_chunks(
         .into_iter()
         .map(|(rows, policy)| schedule_decode_chunk(rows, policy))
         .collect()
-}
-
-/// Run one legacy-scheduler chunk through the engine's eager device chain. This is deliberately
-/// narrower than the ordinary serving tick: no reusable prefix-cache tier
-/// (`MEMRA_SERVE_BATCH=0`), no grammar, and no penalties. Every eligible legacy session keeps
-/// this path as round-robin width changes, so a sampled stream never switches from its
-/// generated-length-indexed device draws back to a host RNG whose counter did not advance. If the
-/// model declines the chain after the first token was emitted, finish that token with the ordinary
-/// decode step so fallback is observationally identical instead of sampling it twice.
-fn step_session_async_chain(
-    engine: &Engine,
-    loaded: &HashMap<String, LoadedModel>,
-    s: &mut Session,
-) -> Result<Option<bool>, Box<dyn std::error::Error>> {
-    if choice_waiting(s) {
-        return Ok(Some(true));
-    }
-    let configured = serve_async_chain_k();
-    if configured < 2
-        || !s.prefill_done
-        || s.spec.is_some()
-        || s.gspec_k > 0
-        || s.dspark_on
-        || s.constraint.is_some()
-        || s.cache.is_none()
-        || confidence_trace_enabled()
-    {
-        return Ok(None);
-    }
-    let Some(pre_sample) = devsample_meta(s) else {
-        return Ok(None);
-    };
-    if pre_sample.penalty.is_some() {
-        return Ok(None);
-    }
-
-    let (keep, next) = advance_sample_emit(engine, loaded, s);
-    let Some(next) = next else {
-        return Ok(Some(keep));
-    };
-    let room = s.budget.saturating_sub(s.generated.len());
-    if room == 0 {
-        finish(s, StopReason::MaxNew);
-        return Ok(Some(false));
-    }
-    let cache = s.cache.as_ref().expect("eligibility checked cache");
-    let cache_rows = cache.max_ctx.saturating_sub(cache.pos);
-    if cache_rows == 0 {
-        finish(s, StopReason::ContextFull);
-        return Ok(Some(false));
-    }
-    let lm = &loaded[&s.model];
-    let Some(width) = legacy_async_chain_width(configured, room, cache_rows) else {
-        s.last_logits = lm.model.decode_step(
-            engine,
-            next,
-            s.cache.as_mut().expect("eligibility checked cache"),
-        )?;
-        s.fed.push(next);
-        return Ok(Some(true));
-    };
-    let Some(sample) = async_chain_devsample(devsample_meta(s)) else {
-        s.last_logits = lm.model.decode_step(
-            engine,
-            next,
-            s.cache.as_mut().expect("eligibility checked cache"),
-        )?;
-        s.fed.push(next);
-        return Ok(Some(true));
-    };
-    let chained = lm.model.decode_step_chain(
-        engine,
-        next,
-        width,
-        s.cache.as_mut().expect("eligibility checked cache"),
-        Some(&sample),
-    );
-    let chained = match chained {
-        Ok(chained) => chained,
-        Err(err) => {
-            s.cache
-                .as_mut()
-                .expect("eligibility checked cache")
-                .mark_tainted();
-            return Err(err);
-        }
-    };
-    let Some((ids, last_logits)) = chained else {
-        s.last_logits = lm.model.decode_step(
-            engine,
-            next,
-            s.cache.as_mut().expect("eligibility checked cache"),
-        )?;
-        s.fed.push(next);
-        return Ok(Some(true));
-    };
-    static ANNOUNCED: std::sync::Once = std::sync::Once::new();
-    ANNOUNCED.call_once(|| {
-        eprintln!(
-            "[serve-async-chain] engaged: configured={configured} effective={width} \
-             scheduler=legacy model={}",
-            s.model
-        );
-    });
-
-    s.fed.push(next);
-    s.last_logits = last_logits;
-    for &token in &ids[..ids.len() - 1] {
-        let (keep, ()) = advance_token_emit(loaded, s, token);
-        if !keep {
-            // Later launches in this already-submitted chunk may have appended rows beyond the
-            // public stop/disconnect boundary. The response is complete, but its cache must not
-            // enter the whole-session affinity pool with that hidden suffix.
-            s.cache
-                .as_mut()
-                .expect("eligibility checked cache")
-                .mark_tainted();
-            return Ok(Some(false));
-        }
-        s.fed.push(token);
-    }
-    if s.generated.len() >= s.budget {
-        finish(s, StopReason::MaxNew);
-        return Ok(Some(false));
-    }
-    s.device_next = ids.last().copied();
-    Ok(Some(true))
 }
 
 /// The MTP spec burst's preamble result: either the step already decided (`Return`, the
@@ -33004,11 +32618,12 @@ fn step_spec_pooled(
     results
 }
 
-/// One scheduler step for one session. Returns Ok(true) if still running, Ok(false) if retired.
-///   - prefill phase: prime the queued prompt in chunked `prime_cache` calls of up to
-///     `PREFILL_TICK_T` tokens; a tail below `PRIME_MIN_T` takes tokenwise `decode_step`.
+/// One per-session step: a spec burst, or one eager decode token for a model with no batched
+/// decode arm. Returns Ok(true) if still running, Ok(false) if retired.
+///   - spec burst: a session holding a `SpecSession` runs one burst (its first burst primes
+///     the prompt).
 ///   - decode phase: sample from last_logits, accept, stream the token, check EOS/stop/ctx, then
-///     produce the next logits.
+///     produce the next logits. The prompt was primed by `prefill_tick`.
 fn step_session(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
@@ -33119,152 +32734,16 @@ fn step_session(
         return spec_burst_post(s, spec_metrics, plan, emit, burst, d, a);
     }
 
-    // ---- prefill phase: BATCHED chunk prime (2026-07-05). prime_cache now supports
-    // continuation (cache.pos > 0 attends to the quantized past), so the worker primes up to
-    // PREFILL_TICK_T prompt tokens per tick at prefill throughput (~2000-5900 tok/s) instead of
-    // one decode_step (~38-100 tok/s) — a 32k prompt drops from ~15min of ticks to ~a minute,
-    // while the per-tick cap keeps round-robin latency for concurrent sessions bounded.
-    // Tails below PRIME_MIN_T keep the tokenwise decode_step path (prime_cache floor).
+    // A session still prefilling never reaches this step: the scheduler primes every plain
+    // session in `prefill_tick` and a spec session inside its burst above. The round-robin
+    // scheduler primed here until it was removed (memra #1158). A second prime program beside
+    // `prefill_tick` is the two-programs door, so an arrival is a dispatch bug and refuses.
     if !s.prefill_done {
-        if s.vision.is_some() {
-            return Err("vision requests require the batched scheduler (MEMRA_SERVE_BATCH)".into());
-        }
-        if let Some(trace) = s.ttft.as_ref() {
-            trace.mark_prime_start();
-        }
-        let q = s.prefill_queue.len();
-        // MONOLITHIC-PRIME shape: same law as prefill_tick — models without the chunked-prime
-        // receipt prime fresh prompts WHOLE and carried suffixes tokenwise; dense gemma left
-        // this class in memra#535 P1a (`monolithic_prime_model`). Hyper trunks carve out of
-        // the carried veto under MEMRA_HYPER_SUFFIX_PRIME exactly as in prefill_tick
-        // (lane/glm5-prefix-latent2 — one law, both sites).
-        let eager_mono = monolithic_prime_model(lm);
-        let carried = s.cache.as_ref().is_some_and(|c| c.pos > 0);
-        let hyper_trunk = memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan);
-        let suffix_prime = carried_suffix_primes(hyper_trunk, hyper_suffix_prime_on());
-        if eager_mono
-            && carried
-            && !suffix_prime
-            && q > 0
-            && hyper_trunk
-            && s.n_cached > 0
-            && s.fed.len() == s.n_cached
-        {
-            // The prefill_tick DECLINED receipt's twin (PR #93 review finding 5): the
-            // per-session path's OFF-arm hyper suffix was silent. Same once-per-request
-            // predicate (`fed == n_cached` holds only before the first suffix token).
-            eprintln!(
-                "[suffix-prime] DECLINED (MEMRA_HYPER_SUFFIX_PRIME off): carried suffix \
-                 {q} tokens rides tokenwise decode_step (model {})",
-                s.model
-            );
-        }
-        if !confidence_trace_enabled()
-            && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
-            && !(eager_mono && carried && !suffix_prime)
-        {
-            if eager_mono && carried && suffix_prime {
-                // The prefill_tick receipt's twin — same grep target, per-session path.
-                eprintln!(
-                    "[suffix-prime] ENGAGED: carried suffix {q} tokens primes at base={} \
-                     (MEMRA_HYPER_SUFFIX_PRIME, model {})",
-                    s.cache.as_ref().map_or(0, |c| c.pos),
-                    s.model
-                );
-            }
-            // leave a tail chunk >= PRIME_MIN_T if this tick doesn't finish the queue
-            let mut take = if eager_mono { q } else { q.min(PREFILL_TICK_T) };
-            if q - take > 0 && q - take < memra_engine::hybrid_forward::PRIME_MIN_T {
-                take = q;
-            }
-            let chunk: Vec<u32> = s.prefill_queue.drain(..take).collect();
-            // REQUEST-LEVEL seq_end: the rest of prefill_queue is the same request's remainder
-            // (see prefill_tick — the tick-budget segmentation must not steer arithmetic).
-            let (l, _h, x) = lm.model.prime_cache(
-                engine,
-                &chunk,
-                s.cache.as_mut().unwrap(),
-                s.prefill_queue.len(),
-            )?;
-            s.last_logits = l;
-            // PROMPT CAPTURE (lane/embed-serve): this chunk finished the prompt — read the
-            // final position off THIS call's hidden stack (later chunks would not exist)
-            // and publish before the budget-0 finish on the next tick.
-            if s.prefill_queue.is_empty()
-                && let Some(cap) = s.capture.take()
-            {
-                let hidden = if cap.hidden {
-                    Some(lm.model.hidden_postnorm_row(engine, &x, take - 1)?)
-                } else {
-                    None
-                };
-                let logits = capture_piece_logits(&cap, &lm.tok, &s.last_logits);
-                let _ = s.tx.send(Event::PromptCapture { hidden, logits });
-            }
-            for &tok in &chunk {
-                s.fed.push(tok);
-                s.sampler.accept(tok);
-            }
-        } else if let Some(tok) = s.prefill_queue.pop_front() {
-            // PROVENANCE BIT + TOKENWISE receipt (PR #93 review finding 3a/5) — the
-            // prefill_tick twin: mark hyper-under-flag sessions whose prompt tokens walk
-            // decode_step so the capture sites refuse them (R16 as a checked invariant).
-            if hyper_trunk && suffix_prime && !s.prompt_tok_decode_step {
-                s.prompt_tok_decode_step = true;
-                eprintln!(
-                    "[suffix-prime] TOKENWISE (flag on): prompt tokens ride decode_step \
-                     (carried={}, q={q}); captures for this session refuse (model {})",
-                    carried as u8, s.model
-                );
-            }
-            // CAPTURE (lane/embed-serve): the FINAL prompt token walks decode_step_h so
-            // sub-prime-floor prompts can still pool their last position (same numeric
-            // program; prime_cache hard-asserts T >= PRIME_MIN_T).
-            if s.capture.is_some() && s.prefill_queue.is_empty() {
-                let (l, h) = lm
-                    .model
-                    .decode_step_h(engine, tok, s.cache.as_mut().unwrap())?;
-                s.last_logits = l;
-                if let Some(cap) = s.capture.take() {
-                    let hidden = if cap.hidden {
-                        Some(lm.model.hidden_postnorm_row(engine, &h, 0)?)
-                    } else {
-                        None
-                    };
-                    let logits = capture_piece_logits(&cap, &lm.tok, &s.last_logits);
-                    let _ = s.tx.send(Event::PromptCapture { hidden, logits });
-                }
-            } else {
-                s.last_logits = lm
-                    .model
-                    .decode_step(engine, tok, s.cache.as_mut().unwrap())?;
-            }
-            if let Some(&target) = s.prefill_queue.front() {
-                write_confidence_trace(s, tok, target, &s.last_logits)?;
-            }
-            s.fed.push(tok);
-            s.sampler.accept(tok);
-        }
-        if s.prefill_queue.is_empty() {
-            s.prefill_done = true;
-            if let Some(trace) = s.ttft.as_ref() {
-                trace.mark_prime_end();
-            }
-            // Capture fallback: the prompt ended on the tokenwise path (eager-only model,
-            // or a carried tail), where no hidden stack exists. Logits are still truthful
-            // (`last_logits` is the final position either way); `hidden: None` tells the
-            // route the pooling read was unavailable and it answers with a clean error.
-            if let Some(cap) = s.capture.take() {
-                let logits = capture_piece_logits(&cap, &lm.tok, &s.last_logits);
-                let _ = s.tx.send(Event::PromptCapture {
-                    hidden: None,
-                    logits,
-                });
-            }
-        }
-        // If after this the prompt is fully primed AND budget==0, we still fall through to decode
-        // (which will immediately hit MaxNew). Keep prefill and decode as distinct ticks otherwise.
-        return Ok(true);
+        return Err(
+            "plain step_session received a session that is still prefilling: the scheduler \
+             primes in prefill_tick, never here"
+                .into(),
+        );
     }
 
     // ---- decode phase ----
@@ -36293,11 +35772,10 @@ mod tests {
     };
     use super::{DraftVerdict, draft_verdict, draft_verdict_message};
     use super::{
-        Event, async_chain_devsample, cached_hit_needs_first_token, carried_prime_batch_eligible,
-        emit_spec_token_events, interactive_prefill_budget, interactive_prime_batch_take,
-        legacy_async_chain_width, prefill_tick_take, record_output_progress, record_output_tokens,
-        solo_widen_fresh, spec_round_continues, spec_visible_prefix, stop_token_reason,
-        summarize_confidence, utf8_delta,
+        Event, cached_hit_needs_first_token, carried_prime_batch_eligible, emit_spec_token_events,
+        interactive_prefill_budget, interactive_prime_batch_take, prefill_tick_take,
+        record_output_progress, record_output_tokens, solo_widen_fresh, spec_round_continues,
+        spec_visible_prefix, stop_token_reason, summarize_confidence, utf8_delta,
     };
     use super::{EventSender, SpecBurstEmit};
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
@@ -36369,32 +35847,6 @@ mod tests {
             healthy_rx.recv().await,
             Some(Event::Token { id: 7, .. })
         ));
-    }
-
-    #[test]
-    fn legacy_async_chain_width_reserves_one_boundary_token() {
-        assert_eq!(legacy_async_chain_width(0, 8, 8), None);
-        assert_eq!(legacy_async_chain_width(1, 8, 8), None);
-        assert_eq!(legacy_async_chain_width(8, 0, 8), None);
-        assert_eq!(legacy_async_chain_width(8, 8, 1), None);
-        assert_eq!(legacy_async_chain_width(8, 1, 8), Some(2));
-        assert_eq!(legacy_async_chain_width(8, 7, 8), Some(8));
-        assert_eq!(legacy_async_chain_width(16, 31, 6), Some(6));
-    }
-
-    #[test]
-    fn async_chain_declines_post_accept_penalties_instead_of_running_greedy() {
-        use memra_engine::decode_batch::{DevPenalty, DevSamp};
-
-        let sampled = DevSamp::new(0.8, 7, 0, 0, 1.0, 0.0);
-        assert!(async_chain_devsample(Some(sampled.clone())).is_some());
-
-        let penalty = DevPenalty::try_new(1.1, 0.0, 0.0, vec![(42, 1)]).unwrap();
-        assert!(
-            async_chain_devsample(Some(sampled.with_penalty(penalty))).is_none(),
-            "penalty metadata must decline the chain, never become greedy None"
-        );
-        assert!(async_chain_devsample(None).is_none());
     }
 
     #[test]
@@ -36822,9 +36274,9 @@ mod tests {
     #[test]
     fn resident_session_cap_is_the_interactive_cap_plus_the_dark_lanes() {
         let defaults = [32, 4, 8];
-        let batching = crate::route_contract::interactive_cap(true, None, super::MAX_ACTIVE);
+        let batching = crate::route_contract::interactive_cap(None);
         assert_eq!(super::resident_session_cap_from(batching, defaults), 76);
-        let twelve = crate::route_contract::interactive_cap(true, Some(12), super::MAX_ACTIVE);
+        let twelve = crate::route_contract::interactive_cap(Some(12));
         assert_eq!(super::resident_session_cap_from(twelve, defaults), 24);
         // the interactive lane's own max_sessions is not the gate's cap
         assert_eq!(super::resident_session_cap_from(12, [1, 4, 8]), 24);
@@ -38927,7 +38379,7 @@ mod tests {
     }
 
     /// The SOLO widening: a lone fresh prefill takes one bounded outer call instead of slicing
-    /// itself into `PREFILL_TICK_T` pieces across as many tick loops.
+    /// itself into tick-budget pieces across as many tick loops.
     ///
     /// RED ARM: the three OFF cases (explicit tick, not sole, not fresh) live in
     /// `solo_prefill_widening_preserves_operator_and_fairness_caps`, which asserts the plain
@@ -45990,7 +45442,7 @@ mod tests {
         assert!(
             prod.matches("push_generated(&mut s.generated, &s.model, s.t0,")
                 .count()
-                >= 7,
+                >= 6,
             "every decode path must commit tokens through push_generated"
         );
         assert_eq!(
@@ -46129,8 +45581,9 @@ mod tests {
 
     /// WIRING GATE (anchored on invocations in comment-stripped source, never prose —
     /// the wiring-assertions-match-prose law): the MEMRA_HYPER_SUFFIX_PRIME carve-out is
-    /// LIVE at all four seams it claims (both prefill sites' veto terms + receipts, the
-    /// H11 reseed narrowing, the hit-LCP deepening disjunction).
+    /// LIVE at every seam it claims (the prefill site's veto term + receipts, the H11 reseed
+    /// narrowing, the hit-LCP deepening disjunction). `prefill_tick` is the one prefill site:
+    /// the round-robin scheduler's twin in `step_session` went with that scheduler (memra #1158).
     #[test]
     fn suffix_prime_carveout_wiring_is_live_in_comment_stripped_source() {
         let src = include_str!("worker.rs");
@@ -46142,54 +45595,54 @@ mod tests {
         // Assertions run over the PRE-TEST slice: this test's own string literals would
         // otherwise count themselves (comment-stripping does not strip strings).
         let live = &code[..code.find("mod tests").expect("the test module exists")];
-        // 1. Both prefill sites compute the carve-out through the PURE predicate over the
-        //    plan's hyper-trunk truth and the flag, and their veto terms consume it.
+        // 1. The prefill site computes the carve-out through the PURE predicate over the
+        //    plan's hyper-trunk truth and the flag, and its veto term consumes it.
         assert_eq!(
             live.matches("carried_suffix_primes(").count(),
-            5, // fn def + 2 prefill sites + reseed narrowing + hit-LCP deepening (update
+            4, // fn def + the prefill site + reseed narrowing + hit-LCP deepening (update
             // this count AND this comment together when a new consumer lands)
             "the carve-out predicate must be consumed at exactly the claimed seams"
         );
         assert_eq!(
             live.matches("!(eager_mono && carried && !suffix_prime)")
                 .count(),
-            2,
-            "both prefill sites (prefill_tick + step_session) must carry the lifted veto"
+            1,
+            "the prefill site (prefill_tick) must carry the lifted veto"
         );
-        // Any THIRD variant of the veto expression (an unlifted reintroduction under
+        // Any SECOND variant of the veto expression (an unlifted reintroduction under
         // different formatting — PR #93 review finding 6a: the old newline-anchored
         // negative assertion passed on same-line braces) fails this exact count.
         assert_eq!(
             live.matches("(eager_mono && carried").count(),
-            2,
-            "exactly the two lifted veto forms may mention (eager_mono && carried"
+            1,
+            "exactly the one lifted veto form may mention (eager_mono && carried"
         );
-        // 2. The engagement receipt is an INVOCATION in both sites (the deploy gate greps
-        //    the server log for it); the OFF arm announces DECLINED in both sites; the
-        //    flag-ON tokenwise fallbacks (budget starvation, sub-floor suffix) announce
-        //    TOKENWISE in both sites and set the provenance bit the capture sites refuse
-        //    on (PR #93 review findings 3a + 5 — R16 as a checked invariant).
+        // 2. The engagement receipt is an INVOCATION in the prefill site (the deploy gate
+        //    greps the server log for it); the OFF arm announces DECLINED; the flag-ON
+        //    tokenwise fallback (budget starvation, sub-floor suffix) announces TOKENWISE and
+        //    sets the provenance bit the capture sites refuse on (PR #93 review findings
+        //    3a + 5: R16 as a checked invariant).
         assert_eq!(
             live.matches("\"[suffix-prime] ENGAGED:").count(),
-            2,
-            "both prefill sites must emit the ENGAGED receipt"
+            1,
+            "the prefill site must emit the ENGAGED receipt"
         );
         assert_eq!(
             live.matches("\"[suffix-prime] DECLINED (MEMRA_HYPER_SUFFIX_PRIME off):")
                 .count(),
-            2,
-            "both prefill sites must announce the OFF-arm tokenwise suffix on hyper trunks"
+            1,
+            "the prefill site must announce the OFF-arm tokenwise suffix on hyper trunks"
         );
         assert_eq!(
             live.matches("\"[suffix-prime] TOKENWISE (flag on):")
                 .count(),
-            2,
-            "both tokenwise branches must announce the flag-ON fallback on hyper trunks"
+            1,
+            "the tokenwise branch must announce the flag-ON fallback on hyper trunks"
         );
         assert_eq!(
             live.matches("s.prompt_tok_decode_step = true;").count(),
-            2,
-            "both tokenwise branches must set the provenance bit"
+            1,
+            "the tokenwise branch must set the provenance bit"
         );
         assert_eq!(
             live.matches("if s.prompt_tok_decode_step {").count(),
@@ -48604,7 +48057,11 @@ mod tests {
         let ensure = live
             .find("if crate::kv_vmm::armed() { let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse);")
             .expect("the tick-top ensure");
-        let first_phase = sweep + live[sweep..].find("if !batching {").expect("the phases");
+        // The phases' scope opens right after this declaration (code, not a comment).
+        let first_phase = sweep
+            + live[sweep..]
+                .find("let last_batch: usize; {")
+                .expect("the phases");
         assert!(sweep < ensure && ensure < first_phase);
         assert_eq!(live.matches("vmm_ensure_session(s)").count(), 2);
         assert_eq!(
@@ -49269,14 +48726,15 @@ mod tests {
         }
         let worker = strip(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
-        // One definition and exactly three call sites (the spec phase's step dispatch, and since
-        // WP-B day 38 addendum A the batched decode chunk and the non-batching step): the door
-        // cannot grow a fourth seam silently. Needles are assembled so this test never self-matches.
+        // One definition and exactly two injection points (the spec phase's step dispatch, and
+        // since WP-B day 38 addendum A the batched decode chunk): the door cannot grow a third
+        // seam silently. The round-robin scheduler's step was a third until that scheduler was
+        // removed (memra #1158). Needles are assembled so this test never self-matches.
         let call = format!("step_oom_fault_fire{}", "()");
         assert_eq!(
             live.matches(call.as_str()).count(),
-            3,
-            "expected the fault door's definition and its spec and non-batching call sites"
+            2,
+            "expected the fault door's definition and its spec call site"
         );
         // DAY49 addendum D: the batched chunk's site passes its session count (the `batch:` site).
         let batch_call = format!("step_oom_fault_fire_batch{}", "(idxs.len())");
@@ -49286,20 +48744,16 @@ mod tests {
                 .count(),
             1
         );
-        // Addendum D: the non-batching site fires only on a session past its prime.
-        let gated = format!("if active[i].prefill_done && {call}");
         let mut sites: Vec<usize> = live
             .match_indices(format!("if {call}").as_str())
             .map(|(at, _)| at)
             .collect();
         assert_eq!(sites.len(), 1, "the spec site fires on any step it reaches");
-        assert_eq!(live.matches(gated.as_str()).count(), 1);
-        sites.extend(live.match_indices(gated.as_str()).map(|(at, _)| at));
         sites.extend(
             live.match_indices(format!("if {batch_call}").as_str())
                 .map(|(at, _)| at),
         );
-        assert_eq!(sites.len(), 3);
+        assert_eq!(sites.len(), 2);
         for &at in &sites {
             let body = window(live, at, 4000);
             assert!(
@@ -49314,12 +48768,6 @@ mod tests {
             .find(|b| b.contains("step_dspark_spec("))
             .expect("the spec-phase site gates the spec dispatch");
         assert!(spec.contains("step_session(") && spec.contains("match step_result"));
-        let nonbatch = sites
-            .iter()
-            .map(|&at| window(live, at, 4000))
-            .find(|b| b.contains("step_session_async_chain("))
-            .expect("the non-batching site gates the non-batching step");
-        assert!(nonbatch.contains("match step_result"));
         let batch = sites
             .iter()
             .map(|&at| window(live, at, 6500))
@@ -51104,76 +50552,7 @@ mod resume_sampler_door_tests {
 
 #[cfg(test)]
 mod dspark_boot_conflict_tests {
-    use super::{
-        drafter_route_batching_conflict, dspark_spec_boot_conflict, explicit_drafter_route_arms,
-    };
-
-    /// `MEMRA_SERVE_BATCH=0` beside an armed drafter route used to boot, then fault every
-    /// routed request in `step_session` (no route arm, no cache). It refuses by name now.
-    #[test]
-    fn unbatched_serving_refuses_an_armed_drafter_route() {
-        assert!(drafter_route_batching_conflict(true, &["dspark (MEMRA_DSPARK_SPEC=1)"]).is_none());
-        assert!(drafter_route_batching_conflict(false, &[]).is_none());
-        let msg = drafter_route_batching_conflict(
-            false,
-            &[
-                "gemma spec (MEMRA_GEMMA4_SPEC)",
-                "glm5 spec (MEMRA_GLM5_SPEC=1)",
-            ],
-        )
-        .expect("an armed route under MEMRA_SERVE_BATCH=0 must refuse");
-        assert!(msg.contains("MEMRA_SERVE_BATCH=0"), "{msg}");
-        assert!(
-            msg.contains("MEMRA_GEMMA4_SPEC") && msg.contains("MEMRA_GLM5_SPEC"),
-            "{msg}"
-        );
-    }
-
-    /// The env-only half: an explicit drafter-route arm is known before any weight loads, so
-    /// `run` refuses it beside `MEMRA_SERVE_BATCH=0` ahead of the load loop. Arms that depend
-    /// on what loads (gemma default-on under MEMRA_DRAFT alone) are not read here.
-    #[test]
-    fn explicit_drafter_route_arms_refuse_before_the_weights_load() {
-        assert!(explicit_drafter_route_arms(None, None, None).is_empty());
-        for (dspark, gemma, glm5) in [
-            (Some("0"), Some("0"), Some("0")),
-            (Some(""), Some("auto"), Some("true")),
-        ] {
-            assert!(
-                explicit_drafter_route_arms(dspark, gemma, glm5).is_empty(),
-                "{dspark:?} {gemma:?} {glm5:?} arms no route"
-            );
-        }
-        assert_eq!(
-            explicit_drafter_route_arms(Some("1"), Some("5"), Some("1")),
-            [
-                "dspark (MEMRA_DSPARK_SPEC=1)",
-                "gemma spec (MEMRA_GEMMA4_SPEC)",
-                "glm5 spec (MEMRA_GLM5_SPEC=1)",
-            ]
-        );
-        let msg = drafter_route_batching_conflict(
-            false,
-            &explicit_drafter_route_arms(None, Some("3"), None),
-        )
-        .expect("an explicit gemma depth under MEMRA_SERVE_BATCH=0 must refuse");
-        assert!(msg.contains("MEMRA_GEMMA4_SPEC"), "{msg}");
-        // The refusal sits before the first model load in `run`.
-        let src = include_str!("worker.rs");
-        let run = src.find("pub fn run(").expect("run exists");
-        let early = run
-            + src[run..]
-                .find("&explicit_drafter_route_arms(")
-                .expect("run reads the explicit arms");
-        let first_load = run
-            + src[run..]
-                .find("for (name, path, draft) in &models {")
-                .expect("run's load loop");
-        assert!(
-            early < first_load,
-            "the env-only refusal must precede the load loop"
-        );
-    }
+    use super::dspark_spec_boot_conflict;
 
     #[test]
     fn refuse_list_covers_step_tp_and_ep() {

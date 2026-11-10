@@ -340,33 +340,22 @@ impl RouteContract {
 }
 
 /// The interactive session cap of the central worker, as ONE pure derivation: `max_sessions`
-/// (`MEMRA_MAX_SESSIONS`, default 64) when `batching_on`, else `legacy_max_active`. The worker's
-/// admission gate, `lib.rs::lane_cap` and the registry all call this, so the number the gate
-/// enforces, the number the HTTP layer sheds on and the number the registry publishes are the
-/// same number by construction (memra#502 was two copies of this arithmetic disagreeing). No
-/// floor: `MEMRA_MAX_SESSIONS=0` is 0 everywhere, as the gate has always read it.
-pub fn interactive_cap(
-    batching_on: bool,
-    max_sessions: Option<usize>,
-    legacy_max_active: usize,
-) -> usize {
-    if batching_on {
-        max_sessions.unwrap_or(64)
-    } else {
-        legacy_max_active
-    }
+/// (`MEMRA_MAX_SESSIONS`), default 64. The worker's admission gate, `lib.rs::lane_cap` and the
+/// registry all read it through `hybrid_interactive_cap`, so the number the gate enforces, the
+/// number the HTTP layer sheds on and the number the registry publishes are the same number by
+/// construction (memra#502 was two copies of this arithmetic disagreeing). No floor:
+/// `MEMRA_MAX_SESSIONS=0` is 0 everywhere, as the gate has always read it. The round-robin
+/// scheduler's own cap of 4 went with that scheduler (memra #1158).
+pub fn interactive_cap(max_sessions: Option<usize>) -> usize {
+    max_sessions.unwrap_or(64)
 }
 
-/// `interactive_cap` from the process environment with the legacy `MAX_ACTIVE`. The worker's gate
-/// passes its own `max_active` (which the confidence-trace door lowers to 1) instead.
+/// `interactive_cap` from the process environment.
 pub fn hybrid_interactive_cap() -> usize {
-    let batching_on = std::env::var("MEMRA_SERVE_BATCH")
-        .map(|v| v != "0")
-        .unwrap_or(true);
     let max_sessions = std::env::var("MEMRA_MAX_SESSIONS")
         .ok()
         .and_then(|v| v.parse::<usize>().ok());
-    interactive_cap(batching_on, max_sessions, crate::worker::MAX_ACTIVE)
+    interactive_cap(max_sessions)
 }
 
 /// The enumerable route set of one process.
@@ -590,23 +579,13 @@ mod tests {
     }
 
     #[test]
-    fn the_interactive_cap_is_one_derivation_with_both_branches() {
-        assert_eq!(interactive_cap(true, None, 4), 64);
-        assert_eq!(interactive_cap(true, Some(8), 4), 8);
+    fn the_interactive_cap_is_one_derivation() {
+        assert_eq!(interactive_cap(None), 64);
+        assert_eq!(interactive_cap(Some(8)), 8);
         assert_eq!(
-            interactive_cap(true, Some(0), 4),
+            interactive_cap(Some(0)),
             0,
             "no floor: the gate reads 0 as 0"
-        );
-        assert_eq!(
-            interactive_cap(false, Some(8), 4),
-            4,
-            "batching off is the legacy cap"
-        );
-        assert_eq!(
-            interactive_cap(false, None, 1),
-            1,
-            "the confidence-trace door lowers max_active to 1"
         );
     }
 

@@ -433,6 +433,8 @@ mod tests {
         // the incident's own name, and the review's three escapees (multi-door bullets, a
         // continuation line, a `###` ledger): all retired by name. MEMRA_SPEC_GDN_PACKED: a
         // winner's rollback seam whose live row moved to the ledger (2026-11-09).
+        // MEMRA_SERVE_BATCH: the scheduler seam (memra #1158), which the server boot still
+        // reads in order to refuse it.
         for name in [
             "MEMRA_DSV4_MOE_PROGRAM",
             "MEMRA_DSV4_NORM_FUSE2",
@@ -440,6 +442,7 @@ mod tests {
             "MEMRA_PREFIX_CACHE_PROTECTED_PCT",
             "MEMRA_PRIME_QW8",
             "MEMRA_SPEC_GDN_PACKED",
+            "MEMRA_SERVE_BATCH",
         ] {
             let a = audit(&[(name, "1")]);
             assert_eq!(a.refusals.len(), 1, "{name}: {a:?}");
@@ -451,12 +454,12 @@ mod tests {
         }
     }
 
-    /// The tree must not READ a retired name, except the deliberate refusal reads in the worker
-    /// and in `Dsv4Placement::take_gate_arg` (they exist to refuse the name with its successors
-    /// spelled out). Source-derived at test time over every `crates/*/src` like
-    /// `dsv4_doors::door_names_in_source` and the census, so the allowlist cannot rot silently and
-    /// a future ledger edit cannot retire a live door of memra-kv, memra-gguf, memra-lanes or
-    /// memra-tokenizer unnoticed.
+    /// The tree must not READ a retired name, except the deliberate refusal reads in the worker,
+    /// in the server boot (`MEMRA_SERVE_BATCH`) and in `Dsv4Placement::take_gate_arg` (they exist
+    /// to refuse the name with what replaced it spelled out). Source-derived at test time over
+    /// every `crates/*/src` like `dsv4_doors::door_names_in_source` and the census, so the
+    /// allowlist cannot rot silently and a future ledger edit cannot retire a live door of
+    /// memra-kv, memra-gguf, memra-lanes or memra-tokenizer unnoticed.
     #[test]
     #[cfg(memra_env_registry_present)]
     fn retired_names_are_not_read_at_runtime() {
@@ -464,6 +467,7 @@ mod tests {
             "MEMRA_DSV4_ATTENTION_TP_GATE",
             "MEMRA_NVFP4_BANK_V2",
             "MEMRA_SEL_DOWN8",
+            "MEMRA_SERVE_BATCH",
         ];
         // every crates/*/src, the census's own discovery rule (a hand-written list of dirs is
         // how MEMRA_ALLOW_UNKNOWN_PRETOKENIZER in memra-tokenizer once went invisible)
