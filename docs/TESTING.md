@@ -569,7 +569,7 @@ the two margins, so that never failed and the count was the only working check.
 decode program, device as `nvidia-smi` names it), each with its row count, the row that set it,
 the p50, p99 and p99.9 of the agreeing rows' gap shift (nearest rank), its known rows and its
 receipt. The floor is the maximum, so it can sit far above the bulk: on `board-2048` the
-roster floors measured so far are 3.6 to 4.5 logits where the p99.9 is 1.0 to 4.0, each set by one
+roster floors measured so far are 3.1 to 4.5 logits where the p99.9 is 0.7 to 4.0, each set by one
 row, and the row says so. Every key field must match exactly; there is no fallback floor and no floor from
 another prompt, model or device. A cell with no row is **UNCALIBRATED**: a flip fails, a table with
 no flip passes and says `PASS: UNCALIBRATED`, and its agreeing rows are not judged.
