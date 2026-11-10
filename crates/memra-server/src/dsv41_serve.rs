@@ -538,6 +538,9 @@ struct Stream {
     /// last one's): the stream's text is their lossy UTF-8 reading, `Tokenizer::decode` of every
     /// id so far without decoding them again at every token
     bytes: Vec<u8>,
+    /// bytes of `bytes` already turned into `text` ([`text_delta`]): a token that ends inside
+    /// a character leaves its tail here until the next token completes it
+    emitted: usize,
     text: String,
     stop: Option<StopReason>,
     client_gone: bool,
@@ -557,25 +560,26 @@ impl Stream {
         self.ids.push(id);
         self.bytes
             .extend_from_slice(&self.tok.decode_bytes_special(&[id], true));
-        let full = String::from_utf8_lossy(&self.bytes).into_owned();
-        let cut = stop_end(&self.text, &full, &self.stops);
-        let start = snap(&full, self.text.len());
-        if let Some(abs) = cut {
-            let delta = full[start..snap(&full, abs)].to_string();
-            self.text.push_str(&delta);
+        let last = self.ids.len() >= self.budget;
+        let (delta, stopped) = text_step(
+            &mut self.text,
+            &self.bytes,
+            &mut self.emitted,
+            last,
+            &self.stops,
+        );
+        if stopped {
             if self.tx.send(Event::Token { id, text: delta }).is_err() {
                 self.client_gone = true;
             }
             self.stop = Some(StopReason::Callback);
             return false;
         }
-        let delta = full[start..].to_string();
-        self.text = full;
         if self.tx.send(Event::Token { id, text: delta }).is_err() {
             self.client_gone = true;
             return false;
         }
-        if self.ids.len() >= self.budget {
+        if last {
             self.stop = Some(StopReason::MaxNew);
             return false;
         }
@@ -596,6 +600,46 @@ impl Stream {
             spec,
         });
     }
+}
+
+/// The text a token adds to a stream whose bytes so far are `bytes`, of which `emitted` are
+/// already text: every completed character (the worker's `utf8_delta` rule: a tokenizer's byte
+/// pieces may split a character across tokens, so an incomplete tail waits for the token that
+/// completes it, and a byte that can start or continue nothing becomes one U+FFFD). `last`: the
+/// answer ends with this token, so a tail still incomplete is read as the detokenized ids read
+/// it (lossy), and the stream's whole text equals `Tokenizer::decode` of its ids.
+fn text_delta(bytes: &[u8], emitted: &mut usize, last: bool) -> String {
+    let mut delta = crate::worker::utf8_delta(bytes, emitted);
+    if last && *emitted < bytes.len() {
+        delta.push_str(&String::from_utf8_lossy(&bytes[*emitted..]));
+        *emitted = bytes.len();
+    }
+    delta
+}
+
+/// One token's step of a stream's text: `text` is what was sent, `bytes` the answer's bytes with
+/// the new token's, `emitted` how many of them are text. Returns what to send and whether a stop
+/// string ended the stream there. The text grows only by completed characters ([`text_delta`]);
+/// the law before this (decode every byte, send what lies past the text already sent) turned a
+/// character split across two tokens into replacement characters and lost it. An answer that
+/// ends on an end-of-sequence or stop id inside a character drops the open bytes (no event
+/// carries text without a token), where the detokenized ids read one U+FFFD.
+fn text_step(
+    text: &mut String,
+    bytes: &[u8],
+    emitted: &mut usize,
+    last: bool,
+    stops: &[String],
+) -> (String, bool) {
+    let old = text.len();
+    let delta = text_delta(bytes, emitted, last);
+    text.push_str(&delta);
+    if let Some(abs) = stop_end(&text[..old], text, stops) {
+        let end = snap(text, abs).max(old);
+        text.truncate(end);
+        return (text[old..].to_string(), true);
+    }
+    (delta, false)
 }
 
 /// Where the stream ends when a stop string completes in `full`, whose first `text.len()` bytes
@@ -1477,6 +1521,7 @@ fn serve_loop(
                         budget: pr.budget,
                         ids: Vec::new(),
                         bytes: Vec::new(),
+                        emitted: 0,
                         text: String::new(),
                         stop: None,
                         client_gone: false,
@@ -1911,6 +1956,71 @@ fn fail_all(act: &mut Vec<Active>, seqs: &mut Vec<Seq>, health: &Arc<RouteHealth
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Feed a stream's text step the tokens' byte pieces; returns the deltas and the final text.
+    fn run_stream(pieces: &[&[u8]], stops: &[String]) -> (Vec<String>, String, bool) {
+        let (mut bytes, mut emitted, mut text) = (Vec::new(), 0usize, String::new());
+        let mut deltas = Vec::new();
+        for (i, p) in pieces.iter().enumerate() {
+            bytes.extend_from_slice(p);
+            let (d, stopped) = text_step(
+                &mut text,
+                &bytes,
+                &mut emitted,
+                i + 1 == pieces.len(),
+                stops,
+            );
+            deltas.push(d);
+            if stopped {
+                return (deltas, text, true);
+            }
+        }
+        (deltas, text, false)
+    }
+
+    #[test]
+    fn a_character_split_across_tokens_is_sent_whole_once_it_completes() {
+        // the pattern a truncated trunk produced in the served gate: a token that ends with a
+        // byte that starts nothing and the first byte of a three-byte character, then the token
+        // that completes the character. Decoding everything and sending what lies past the text
+        // already sent gave two replacement characters and lost the character.
+        let pieces: [&[u8]; 4] = [b"ab", &[0xff, 0xe7], &[0x97, 0x9e], b"cd"];
+        let (deltas, text, stopped) = run_stream(&pieces, &[]);
+        assert!(!stopped);
+        assert_eq!(deltas, ["ab", "\u{fffd}", "\u{75de}", "cd"]);
+        assert_eq!(text, String::from_utf8_lossy(&pieces.concat()));
+        assert_eq!(deltas.concat(), text);
+        // an emoji over two tokens, nothing invalid before it
+        let emoji: [&[u8]; 3] = [b"ok ", &[0xf0, 0x9f], &[0x99, 0x82]];
+        let (deltas, text, _) = run_stream(&emoji, &[]);
+        assert_eq!(deltas, ["ok ", "", "\u{1f642}"]);
+        assert_eq!(text, "ok \u{1f642}");
+        // an answer its budget cuts inside a character reads as its detokenized ids do
+        let cut: [&[u8]; 2] = [b"x", &[0xe7, 0x97]];
+        let (deltas, text, _) = run_stream(&cut, &[]);
+        assert_eq!(text, String::from_utf8_lossy(&cut.concat()));
+        assert_eq!(deltas.concat(), text);
+    }
+
+    #[test]
+    fn a_stop_string_right_after_a_split_character_ends_the_stream_with_the_character_whole() {
+        // The character completes in the token that also brings a client's stop string. The
+        // stream ends after that whole token (the HTTP layer cuts at the stop text), and what
+        // it sent up to there is the answer's text, the character included.
+        let pieces: [&[u8]; 4] = [b"ab", &[0xff, 0xe7], b"\x97\x9estop and more", b"never"];
+        let (deltas, text, stopped) = run_stream(&pieces, &["stop".to_string()]);
+        assert!(stopped);
+        assert_eq!(deltas.len(), 3);
+        assert_eq!(text, String::from_utf8_lossy(&pieces[..3].concat()));
+        assert_eq!(text, "ab\u{fffd}\u{75de}stop and more");
+        assert_eq!(deltas.concat(), text);
+        // a stop that straddles the token after the split character
+        let pieces: [&[u8]; 4] = [b"ab", &[0xe7, 0x97], b"\x9est", b"op tail"];
+        let (deltas, text, stopped) = run_stream(&pieces, &["stop".to_string()]);
+        assert!(stopped);
+        assert_eq!(text, "ab\u{75de}stop tail");
+        assert_eq!(deltas.concat(), text);
+    }
 
     #[test]
     fn a_greedy_chunk_whose_device_argmax_refuses_chooses_from_its_logits_row_by_row() {

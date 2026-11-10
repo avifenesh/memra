@@ -28994,7 +28994,7 @@ fn capture_piece_logits(
 /// boundaries; retain an incomplete suffix until a later token completes it instead of emitting a
 /// permanent replacement character. Truly invalid bytes are consumed as U+FFFD so they cannot
 /// stall every later delta.
-fn utf8_delta(decoded: &[u8], emitted_bytes: &mut usize) -> String {
+pub(crate) fn utf8_delta(decoded: &[u8], emitted_bytes: &mut usize) -> String {
     if *emitted_bytes > decoded.len() {
         return String::new();
     }
