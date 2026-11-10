@@ -1647,8 +1647,8 @@ per-session step per tick, at most four sessions, no prefix cache, no drafter ro
 decode was the per-session eager step. On the families whose speculative verify runs the batched
 numeric class (the qwen35 family and Step35, memra #1146) that is a class the speculative route
 is not exact against, so a server booted with it lost "spec on equals spec off". The batched
-scheduler has been the default since it landed and is the only path the serving gates qualify.
-The name had no row of its own and no decide-by date.
+scheduler is the default and the only path the serving gates qualify. The name had no row of
+its own and no decide-by date.
 
 The measurement came first. `tools/serve-st-gate.sh` check 4 was the one gate that booted the
 round-robin scheduler, as its oracle, under a prefix match. Its oracle is now the spec-off
@@ -1700,8 +1700,8 @@ Deleted: `serve_batching()` and its 13 call sites, the round-robin loop in the t
 phase of `step_session` (only that loop reached it; `prefill_tick` is the one prime site and
 `step_session` refuses a session that is still prefilling), `step_session_async_chain`,
 `advance_token_emit`, `serve_async_chain_k`, `legacy_async_chain_width`, `async_chain_devsample`,
-`drafter_route_batching_conflict`, `explicit_drafter_route_arms`, `MAX_ACTIVE`, and the tests of
-each. No kernel.
+`drafter_route_batching_conflict`, `explicit_drafter_route_arms`, `MAX_ACTIVE`, `PREFILL_TICK_T`
+(the lane policy owns the per-tick prefill budget), and the tests of each. No kernel.
 
 The boot refuses the name set to anything, `1` included: `[server] FATAL: MEMRA_SERVE_BATCH is
 retired; it cannot select a scheduler`, ahead of the environment audit, so the audit switch does
