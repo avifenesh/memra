@@ -130,7 +130,7 @@ Not measured: an RTX PRO 6000 (188 SMs, its own short split rung). It takes the 
 
 ## Served
 
-B = main 53eb765421, T = the lever, one fresh server per cell, B T T B B T, one cell per lease. The signal is the cost of one speculative round inside full bursts (`tools/rounds_by_req.py`); TTFT and the whole request are the no-regression checks. Medians per arm, spread = max - min, N = 3 per arm unless a row says otherwise.
+B = main 53eb765421, T = the lever, one fresh server per cell, B T T B B T, one cell per lease. The signal is the cost of one speculative round inside full bursts (`tools/rounds_by_req.py`); TTFT and the whole request are the no-regression checks. Medians of 3 per arm, spread = max - min.
 
 | campaign (the T commit) | request | B ms per round | T ms per round | change | spread B / T | TTFT B / T (s) | total B / T (s) |
 |---|---|---:|---:|---:|---:|---|---|
@@ -138,8 +138,8 @@ B = main 53eb765421, T = the lever, one fresh server per cell, B T T B B T, one 
 | | g1k | 88.67 | 88.78 | +0.11 | 0.24 / 0.06 | 1.130 / 1.133 | 5.827 / 5.832 |
 | GB10 unit 1, `rows131-unit1/` (31939989cb) | g131k | 190.54 | 155.04 | -35.50 (-18.6%) | 0.86 / 0.79 | 117.77 / 117.82 | 125.05 / 123.76 |
 | | g1k | 88.72 | 88.58 | -0.14 | 0.26 / 0.21 | 1.135 / 1.123 | 5.831 / 5.819 |
-| GB10 unit 1, `rows131b-unit1/` (99048c1afa), N = 2 | g131k | 190.28 | 153.68 | -36.60 (-19.2%) | 0.22 / 0.68 | 117.78 / 117.79 | 125.05 / 123.68 |
-| | g1k | 88.65 | 88.49 | -0.15 | 0.50 / 0.07 | 1.127 / 1.127 | 5.822 / 5.817 |
+| GB10 unit 1, `rows131b-unit1/` (99048c1afa) | g131k | 190.39 | 153.61 | -36.78 (-19.3%) | 1.78 / 0.68 | 117.83 / 117.80 | 125.11 / 123.68 |
+| | g1k | 88.67 | 88.53 | -0.14 | 0.50 / 0.40 | 1.129 / 1.129 | 5.832 / 5.818 |
 | GB10 unit 2, `rows260-unit2/` (31939989cb) | g260k | 294.90 | 221.02 | -73.88 (-25.1%) | 0.25 / 1.06 | 312.86 / 312.76 | 329.80 / 325.51 |
 | | g1k | 88.69 | 88.69 | 0.00 | 0.17 / 0.16 | 1.131 / 1.130 | 5.827 / 5.830 |
 | RTX 5090, `rows28-5090/` (55a92268f6) | g28k | 43.29 | 40.21 | -3.08 (-7.1%) | 1.00 / 0.62 | 25.68 / 25.52 | 28.07 / 27.69 |
@@ -148,7 +148,7 @@ B = main 53eb765421, T = the lever, one fresh server per cell, B T T B B T, one 
 - **Texts:** every request served the same text in every cell of both arms, in every campaign.
 - **Separation:** on every deep request every T cell is under every B cell.
 - **TTFT does not move:** the lever touches decode only.
-- **The commits.** The kernel's walk is the same in all of them. fcdaa08f82 and 55a92268f6 are the first build; 31939989cb added a launch bound that cost about 5% of the call (removed again, see below), which is the difference between the two unit 1 campaigns; 99048c1afa is the final kernel with the route. The first three campaigns ran the rows walk at every depth, so their g1k rows are the walk at 1k (flat); the route now sends that depth to the seqs launch. `rows131b-unit1/` gave up its last two cells to a landing record, hence N = 2.
+- **The commits.** The kernel's walk is the same in all of them. fcdaa08f82 and 55a92268f6 are the first build; 31939989cb added a launch bound that cost about 5% of the call (removed again, see below), which is the difference between the two unit 1 campaigns; 99048c1afa is the final kernel with the route. The first three campaigns ran the rows walk at every depth, so their g1k rows are the walk at 1k (flat); the route now sends that depth to the seqs launch. `rows131b-unit1/` paused for a landing record between its fourth and fifth cells.
 
 ### Pooled cohorts
 
