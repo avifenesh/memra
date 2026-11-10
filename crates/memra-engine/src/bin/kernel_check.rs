@@ -8631,10 +8631,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             })
                             .collect())
                     };
-                    for len0 in [
+                    // the depths of the split ladder's deep rungs: both sides of 16k, 32k, 64k and
+                    // 128k, and the context's end
+                    let time_depths = [
                         1024usize, 2048, 4096, 8192, 12_288, 16_000, 17_000, 24_576, 32_768,
-                        131_072, 262_132,
-                    ] {
+                        49_152, 65_536, 98_304, 131_072, 196_608, 262_132,
+                    ];
+                    for len0 in time_depths {
                         if len0 + 4 > deep_max + 16 {
                             continue;
                         }
@@ -8656,6 +8659,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             m[2].0,
                             m[2].1,
                             m[2].2
+                        );
+                    }
+                    // One row (plain decode at B=1 and the eager step): the seqs launch and
+                    // `fa_decode` for a single query row, interleaved, both with the combine.
+                    for len0 in time_depths {
+                        if len0 + 1 > deep_max + 16 {
+                            continue;
+                        }
+                        let t_kv = len0 + 1;
+                        let Some(c) = case(&[(0, t_kv)])? else {
+                            continue;
+                        };
+                        let kview = e.view_u8(&kc_a, t_kv * ktb);
+                        let vview = e.view_u8(&vc_a, t_kv * vtb);
+                        let mut o = e.zeros(hd * nh_r)?;
+                        let mut ms: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
+                        for _ in 0..12 {
+                            for arm in [0usize, 1, 1, 0] {
+                                e.stream().synchronize()?;
+                                let t0 = std::time::Instant::now();
+                                if arm == 0 {
+                                    seqs(&c, &mut o)?;
+                                } else {
+                                    e.fa_decode(
+                                        &c.q, &kview, &vview, &mut o, hd, nh_r, nhkv_r, t_kv,
+                                        scale, ktb, vtb,
+                                    )?;
+                                }
+                                e.stream().synchronize()?;
+                                ms[arm].push(t0.elapsed().as_secs_f64() * 1e3);
+                            }
+                        }
+                        let med = |v: &mut Vec<f64>| {
+                            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                            (v[v.len() / 2], v[0], v[v.len() - 1])
+                        };
+                        let (s1, f1) = (med(&mut ms[0]), med(&mut ms[1]));
+                        println!(
+                            "FA-VERIFY-ROWS time1 gqa={} t_kv={t_kv} T=1 sp={}: seqs {:.4} ms ({:.4}-{:.4}), \
+                             fa_decode {:.4} ms ({:.4}-{:.4}), N=24 each",
+                            nh_r / nhkv_r,
+                            c.sp,
+                            s1.0,
+                            s1.1,
+                            s1.2,
+                            f1.0,
+                            f1.1,
+                            f1.2
                         );
                     }
                     for (sessions, depth) in [
