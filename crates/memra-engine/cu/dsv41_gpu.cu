@@ -2660,6 +2660,30 @@ extern "C" int memra_v41_moe_combine(const void* slots, long lds, const int* ord
     V41_ERR();
 }
 
+// N-rank routed-expert rows without a host read of the plan. Every rank writes its experts' rows into region
+// `rank` of a buffer of nr regions of np rows, the regions are gathered whole, and each pair's row is then read
+// from the region of the rank that owns its expert. Pairs are ordered by expert and rank q owns the experts
+// [q * per, (q + 1) * per), so q is the number of boundaries off[r * per], r = 1..nr-1, at or below the pair.
+// out[i] = order[i] + q * np (-1 stays -1). *bad is set when the plan placed other than np pairs, the check
+// the host made on the offsets it read.
+__global__ void v41_moe_owner_kernel(const int* __restrict__ order, int n, const int* __restrict__ off, int per,
+                                     int nr, int np, int* __restrict__ out, int* __restrict__ bad) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i == 0 && off[(long)per * nr] != np) *bad = 1;
+    if (i >= n) return;
+    int p = order[i], q = 0;
+    for (int r = 1; r < nr; ++r) q += p >= off[(long)r * per];
+    out[i] = p < 0 ? p : p + q * np;
+}
+
+extern "C" int memra_v41_moe_owner(const int* order, int n, const int* off, int per, int nr, int np, int* out,
+                                   int* bad, void* stream) {
+    if (n <= 0) return n < 0 ? 41017 : 0;
+    if (per <= 0 || nr <= 0 || np <= 0) return 41017;
+    v41_moe_owner_kernel<<<(n + 255) / 256, 256, 0, (cudaStream_t)stream>>>(order, n, off, per, nr, np, out, bad);
+    V41_ERR();
+}
+
 // ---------------------------------------------------------------------------------------------
 // Single-pass mHC. The stream is bf16 [s][hc][d].
 // mixes[s][(2+hc)*hc] = (flat . fn^T) * rsqrt(mean(flat^2) + eps), flat = the hc*d stream in fp32.

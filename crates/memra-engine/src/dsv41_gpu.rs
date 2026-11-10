@@ -406,6 +406,17 @@ pub mod ffi {
             d: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_v41_moe_owner(
+            order: *const i32,
+            n: i32,
+            off: *const i32,
+            per: i32,
+            nr: i32,
+            np: i32,
+            out: *mut i32,
+            bad: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_v41_index_score_part(
             q: *const c_void,
             ldq: i64,
@@ -2028,6 +2039,9 @@ pub struct Ctx {
     pub nvtx: bool,
     /// this rank's routed experts when the layers hold none ([`LayerW::load_part_with`])
     pub experts: Option<experts::ExpertCache>,
+    /// i32, sticky: an N-rank one-token MoE whose plan placed other than `rows * topk` pairs
+    /// (`memra_v41_moe_owner`); read with the step's logits
+    pub route_bad: Buf,
 }
 
 impl Ctx {
@@ -2051,6 +2065,7 @@ impl Ctx {
             g.yarn_beta_fast,
             g.yarn_beta_slow,
         )?;
+        let route_bad = ops.buf(4)?;
         Ok(Self {
             ops,
             g,
@@ -2065,6 +2080,7 @@ impl Ctx {
             index_rows: None,
             nvtx: false,
             experts: None,
+            route_bad,
         })
     }
 
@@ -2973,7 +2989,7 @@ impl Ctx {
         self.nv_end();
         self.nv(c"experts");
         let slots = self.ops.tmp(plan.np * d * 2)?;
-        self.experts_tiles(lw, x, &plan, 0, plan.np, &slots, None)?;
+        self.experts_tiles(lw, x, &plan, 0, plan.np, slots.p(&st), None)?;
         self.nv_end();
         self.nv(c"shared_expert");
         let shared = self.shared_expert(lw, x, s)?;
@@ -3139,6 +3155,9 @@ impl Ctx {
     /// exactly this rank's experts (all pairs at N = 1): the pairs' rows of `x` quantized, `w1` and
     /// `w3` as one tile-list launch each, the weighted clamped SwiGLU, `w2` into `slots` (bf16
     /// `[np][dim]`, each pair's row at its plan index). Per row, the per-expert loop's arithmetic.
+    /// A caller that does not know its pair range passes all of `[0, np)`: the tile lists still
+    /// name only this rank's pairs, so the other pairs' rows of the temporaries hold whatever the
+    /// buffers held and their `slots` rows are not written.
     #[allow(clippy::too_many_arguments)]
     pub fn experts_tiles(
         &mut self,
@@ -3147,7 +3166,7 @@ impl Ctx {
         plan: &MoePlanDev,
         p0: usize,
         p1: usize,
-        slots: &Buf,
+        slots: Dp,
         cached: Option<&Buf>,
     ) -> Result<(), String> {
         let g = self.g.clone();
@@ -3239,7 +3258,7 @@ impl Ctx {
             aq2.at(&st, p0 * inter),
             as2.at(&st, p0 * inter / 32),
         )?;
-        tiles(&self.ops, &aq2, &as2, inter, 1, slots.p(&st), d)
+        tiles(&self.ops, &aq2, &as2, inter, 1, slots, d)
     }
 
     /// Single-pass mHC mixes of the stream `x` `[s][hc][dim]`: `(mixes, pre, post, comb)`.

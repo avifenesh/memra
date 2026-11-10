@@ -137,11 +137,18 @@ pub struct Group {
     pool: Option<Crew>,
 }
 
+/// The largest `[pairs][dim]` bf16 block the N-rank MoE gathers whole from every rank instead of
+/// reading the plan's offsets on the host for each rank's exact rows ([`Group::moe`]): 4 tokens'
+/// pairs. Below it a peer copy takes its fixed latency (at the 49 GB/s measured between two
+/// cards, 256 KiB is 5 us); a prefill chunk's rows are megabytes and keep the exact gather.
+const STAGED_MOE_ROWS_BYTES: usize = 256 << 10;
+
 /// How long an issue thread spins for its next section before it parks. A one-token forward is
-/// some twenty sections a layer, tens of microseconds apart (the longest gap is the wait for the
-/// routing readback, about 0.2 ms), and a sampler between two steps takes under a millisecond; a
-/// parked thread costs a wake of 10 to 100 us a section, which was a third of a decode step.
-const CREW_SPIN: Duration = Duration::from_millis(2);
+/// some twenty sections a layer, microseconds apart (measured: all but one gap a layer under
+/// 10 us, the one being the routing read a one-token MoE no longer makes), so 200 us keeps the
+/// threads hot through a step; a parked thread costs a wake of 10 to 100 us, paid once a step
+/// while the logits are read. A longer spin only burns the cores other work wants.
+const CREW_SPIN: Duration = Duration::from_micros(200);
 
 type Section<'a> = dyn Fn(usize) + Sync + 'a;
 
@@ -1094,6 +1101,70 @@ impl Group {
                 c.moe_plan(&sel, &selw, rows, ex)
             })?
         };
+        let np = rows * topk;
+        if np * d * 2 <= STAGED_MOE_ROWS_BYTES && lw.iter().all(|w| !w.experts.is_empty()) {
+            // A one-token forward: no host read of the plan. The read drained rank 0's stream
+            // in the middle of every layer, and nothing of the second half of the layer could
+            // be queued behind the first. Every rank runs its tile lists over all the pairs
+            // into its own region of a staged buffer, the regions are gathered whole (61 KiB
+            // a rank at one token, where a copy costs its latency, not its bytes), and the
+            // combine reads each pair's row from the region of the rank that owns its expert.
+            let reg = np * d * 2;
+            let parts = self.each(|r, c| {
+                let st = c.ops.st.clone();
+                let x = x2[r].at(&st, r0 * d * 2);
+                let all = c.ops.tmp(n * reg)?;
+                c.experts_tiles(&lw[r], x, &plans[r], 0, np, all.at(&st, r * reg), None)?;
+                let so = c.shared_expert(&lw[r], x, rows)?;
+                Ok((all, so))
+            })?;
+            let (all, shared_out): (Vec<Buf>, Vec<Buf>) = parts.into_iter().unzip();
+            let refs: Vec<&Buf> = all.iter().collect();
+            let blks: Vec<Blk> = (0..n).map(|r| Blk::flat(r * reg, reg)).collect();
+            self.allgather(&refs, &blks)?;
+            self.each(|r, c| {
+                let st = c.ops.st.clone();
+                let ord = c.ops.tmp(np * 4)?;
+                ck("moe_owner", unsafe {
+                    ffi::memra_v41_moe_owner(
+                        plans[r].order.p(&st).i(),
+                        np as i32,
+                        plans[r].off.p(&st).i(),
+                        (ne / n) as i32,
+                        n as i32,
+                        np as i32,
+                        ord.p(&st).im(),
+                        c.route_bad.p(&st).im(),
+                        c.ops.sv(),
+                    )
+                })?;
+                ck("moe_combine", unsafe {
+                    ffi::memra_v41_moe_combine(
+                        all[r].p(&st).c(),
+                        d as i64,
+                        ord.p(&st).i(),
+                        topk as i32,
+                        shared_out[r].p(&st).c(),
+                        d as i64,
+                        m[r].at(&st, r0 * d * 2).m(),
+                        d as i64,
+                        rows as i32,
+                        d as i32,
+                        c.ops.sv(),
+                    )
+                })
+            })?;
+            if trace {
+                for r in 0..n {
+                    let st = self.cx[r].ops.st.clone();
+                    let err = bytes_i32(&plans[r].err.host(&st)?)[0];
+                    if err != 0 {
+                        return Err(format!("rank {r} route: {err} expert ids out of range"));
+                    }
+                }
+            }
+            return Ok(());
+        }
         let off: Vec<usize> = bytes_i32(&host_timed(&plans[0].off, &self.cx[0].ops.st)?)
             .into_iter()
             .map(|x| x as usize)
@@ -1105,7 +1176,6 @@ impl Group {
                 rows * topk
             ));
         }
-        let np = rows * topk;
         let parts = self.each(|r, c| {
             let er = Part { rank: r, n }.range(ne);
             let (p0, p1) = (off[er.start], off[er.end]);
@@ -1123,10 +1193,10 @@ impl Group {
                 let bases = cache.resolve(&c.ops, lw[r].id, &need)?;
                 let tab = c.cached_expert_table(er.clone(), &need, &bases)?;
                 let so = c.shared_expert(&lw[r], x, rows)?;
-                c.experts_tiles(&lw[r], x, &plans[r], p0, p1, &sl, Some(&tab))?;
+                c.experts_tiles(&lw[r], x, &plans[r], p0, p1, sl.p(&st), Some(&tab))?;
                 so
             } else {
-                c.experts_tiles(&lw[r], x, &plans[r], p0, p1, &sl, None)?;
+                c.experts_tiles(&lw[r], x, &plans[r], p0, p1, sl.p(&st), None)?;
                 c.shared_expert(&lw[r], x, rows)?
             };
             Ok((sl, so, Blk::flat(p0 * d * 2, (p1 - p0) * d * 2)))
@@ -1206,7 +1276,14 @@ impl Group {
             let lg = c.ops.buf(rows * hw[r].n * 4)?;
             c.ops
                 .linear_bf16(x.p(&st), d, rows, &hw[r], lg.p(&st), hw[r].n, true)?;
-            Ok(bytes_f32(&host_timed(&lg, &st)?))
+            let lg = bytes_f32(&host_timed(&lg, &st)?);
+            // the stream is drained: the one-token MoEs' pair counts of this forward
+            if bytes_i32(&c.route_bad.host(&st)?)[0] != 0 {
+                return Err(format!(
+                    "rank {r} route: a layer placed other than rows x topk pairs"
+                ));
+            }
+            Ok(lg)
         })?;
         let mut out = vec![0f32; rows * g.vocab];
         let mut col = 0;
