@@ -1,0 +1,1647 @@
+[server] build: memra-0.140.0-d1b6c9994da6 (id: source-tree, git: unknown)
+[server] starting; models config = [("q", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=8 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 52413MB (52413456384 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 52413456384 B; boot driver free 108585009152 B, post-reserve clamp 104826912768 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
+[prime-walk] model="q" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 10MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 1597440 -> 3194880 ml_len 6240 -> 12480 (retired kept, zero=false)
+[spec-setup] init=0.34ms cap=0.01ms fill=0.00ms rounds=2861.15ms tail=76.17ms total=2937.67ms out=64 cont=false
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1476395008,"still_owned_bytes":17212248912,"pool_reserved_bytes":17347641344,"pool_cached_bytes":135392432,"driver_free_bytes":23982800896,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1408MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=mtp transient floor 1536MB (static was 1536MB; measured 1239MB; probe kv charge 127MB, draft-state 41MB, drafted 84 accepted 35; [dev0 peak-mapped 17952MB rest-mapped 16544MB charged 168MB -> 1239MB]; 5.6s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[deadline] unified memory (48 SMs, served ctx 8192): streaming TTFT default/max 90000 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 2138000 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18201
+[meter] admit id=chatcmpl-24e18be73ae89687866bcc464ddeda00 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=3106 path=spec = 31552 B/token x ctx + 19MB prefill-workspace + 0MB fixed = 117MB
+[spec-k] model="q" tenant="" K=3 source=cold-short prompt=42 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 319MB (observed 415MB at ctx 3050 path=spec)
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=1126.67ms tail=0.15ms total=1127.13ms out=34 cont=false
+[spec-acc] ctx=42 burst=22/33 cum=22/33=0.667
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1305.87ms tail=0.15ms total=1306.05ms out=35 cont=true
+[spec-acc] ctx=76 burst=22/39 cum=44/72=0.611
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1367.07ms tail=0.15ms total=1367.26ms out=34 cont=true
+[spec-acc] ctx=111 burst=20/42 cum=64/114=0.561
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1167.80ms tail=0.15ms total=1167.99ms out=33 cont=true
+[spec-acc] ctx=145 burst=21/36 cum=85/150=0.567
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1271.78ms tail=0.19ms total=1272.00ms out=33 cont=true
+[spec-acc] ctx=178 burst=20/39 cum=105/189=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1372.58ms tail=0.19ms total=1372.80ms out=32 cont=true
+[spec-acc] ctx=211 burst=18/42 cum=123/231=0.532
+[meter] admit id=chatcmpl-0be12cc96cd66225f4a0e96caef23641 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-466cb96625ea16a352e81bd380dcd8e8 tenant=default lane=interactive model="q"
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=197.40ms tail=0.19ms total=197.62ms out=2 cont=true
+[spec-acc] ctx=243 burst=0/6 cum=123/237=0.519
+[admission] request cost: model="q" ctx=91 path=plain = 29696 B/token x ctx + 12MB prefill-workspace + 319MB fixed = 333MB
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1489.84ms tail=0.15ms total=1490.02ms out=35 cont=true
+[spec-acc] ctx=245 burst=20/45 cum=143/282=0.507
+[prime-batch] B=2 tokens=52 carried=0 partial=0 in 139.8ms
+[spec-pool] pooled MTP cohort engaged: 1 sessions (model q)
+[spec-pool] unified step engaged: 1 spec + 2 plain sessions (model q)
+[meter] admit id=chatcmpl-60c030d5beca0b4af062d46251c721e2 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5f1f74aad6caa58b0336673d6f3e425a tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=102.17ms tail=0.17ms total=102.36ms out=1 cont=true
+[spec-acc] ctx=280 burst=0/3 cum=143/285=0.502
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1284.39ms tail=0.19ms total=1284.60ms out=33 cont=true
+[spec-acc] ctx=281 burst=20/39 cum=163/324=0.503
+[prime-batch] B=2 tokens=52 carried=0 partial=0 in 138.9ms
+[meter] admit id=chatcmpl-7252048ce745ced648419771246052fd tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-4cba28ea9b229760b76b370d737a2fef tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=102.37ms tail=0.17ms total=102.57ms out=1 cont=true
+[spec-acc] ctx=314 burst=0/3 cum=163/327=0.498
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1389.03ms tail=0.19ms total=1389.24ms out=33 cont=true
+[spec-acc] ctx=315 burst=19/42 cum=182/369=0.493
+[prime-batch] B=2 tokens=52 carried=0 partial=0 in 138.9ms
+[meter] admit id=chatcmpl-463a9eff15d78e1954b2491db4ccf458 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d43da707b9fbd9942cccca9cd5c9255d tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=101.54ms tail=0.17ms total=101.74ms out=2 cont=true
+[spec-acc] ctx=348 burst=1/3 cum=183/372=0.492
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1096.90ms tail=0.13ms total=1097.06ms out=32 cont=true
+[spec-acc] ctx=350 burst=21/33 cum=204/405=0.504
+[prime-batch] B=2 tokens=52 carried=0 partial=0 in 138.8ms
+[meter] admit id=chatcmpl-ee976f9b76297ed30c7ea8a37ede44f4 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d3da693a116d5c68bae7ed3e571fe13a tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=100.26ms tail=0.16ms total=100.44ms out=4 cont=true
+[spec-acc] ctx=382 burst=3/3 cum=207/408=0.507
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1592.08ms tail=0.14ms total=1592.25ms out=35 cont=true
+[spec-acc] ctx=386 burst=19/48 cum=226/456=0.496
+[prime-batch] B=2 tokens=52 carried=0 partial=0 in 139.9ms
+[meter] admit id=chatcmpl-6222ebd52b552c7b7f5d71f33264441e tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-6edbdc9e1cea609504d0b4efc582cc8b tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=99.46ms tail=0.14ms total=99.63ms out=4 cont=true
+[spec-acc] ctx=421 burst=3/3 cum=229/459=0.499
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1377.57ms tail=0.20ms total=1377.79ms out=32 cont=true
+[spec-acc] ctx=425 burst=18/42 cum=247/501=0.493
+[prime-batch] B=2 tokens=52 carried=0 partial=0 in 138.2ms
+[meter] admit id=chatcmpl-3a07918e22388198cab002808541a3ad tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-01adca414ee12d8bb251acef3983264d tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=100.46ms tail=0.16ms total=100.65ms out=4 cont=true
+[spec-acc] ctx=457 burst=3/3 cum=250/504=0.496
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1476.12ms tail=0.19ms total=1476.34ms out=33 cont=true
+[spec-acc] ctx=461 burst=18/45 cum=268/549=0.488
+[prime-batch] B=2 tokens=52 carried=0 partial=0 in 139.5ms
+[meter] admit id=chatcmpl-f0cd2e8aa7f748fdaceefa4ce5327a26 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d28cd67d20266a409ea752e80bd3a593 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=102.10ms tail=0.37ms total=102.50ms out=2 cont=true
+[spec-acc] ctx=494 burst=1/3 cum=269/552=0.487
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1186.24ms tail=0.19ms total=1186.46ms out=33 cont=true
+[spec-acc] ctx=496 burst=21/36 cum=290/588=0.493
+[prime-batch] B=2 tokens=52 carried=0 partial=0 in 139.3ms
+[meter] admit id=chatcmpl-968e9832658d5c0f3277706336f93f68 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-48ed874f620badc4aacc6fb1b175e3e5 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=101.13ms tail=0.17ms total=101.33ms out=3 cont=true
+[spec-acc] ctx=529 burst=2/3 cum=292/591=0.494
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1474.42ms tail=0.16ms total=1474.60ms out=34 cont=true
+[spec-acc] ctx=532 burst=19/45 cum=311/636=0.489
+[prime-batch] B=2 tokens=52 carried=0 partial=0 in 138.7ms
+[meter] admit id=chatcmpl-1a2c58d3d46ac805b677bb93101adbe2 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d74fe064a0a966b54c1ad0e059764c2c tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=100.47ms tail=0.14ms total=100.64ms out=4 cont=true
+[spec-acc] ctx=566 burst=3/3 cum=314/639=0.491
+[admission] request cost: model="q" ctx=92 path=plain = 29696 B/token x ctx + 12MB prefill-workspace + 319MB fixed = 334MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1277.49ms tail=0.19ms total=1277.71ms out=34 cont=true
+[spec-acc] ctx=570 burst=21/39 cum=335/678=0.494
+[prime-batch] B=2 tokens=54 carried=0 partial=0 in 140.1ms
+[meter] admit id=chatcmpl-589e5d89589dbec6789a02c17a679448 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-334f52a6eb06f5dfe6ec4d962cc45f3a tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=102.41ms tail=0.17ms total=102.62ms out=3 cont=true
+[spec-acc] ctx=604 burst=2/3 cum=337/681=0.495
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1282.92ms tail=0.15ms total=1283.10ms out=34 cont=true
+[spec-acc] ctx=607 burst=21/39 cum=358/720=0.497
+[prime-batch] B=2 tokens=54 carried=0 partial=0 in 140.0ms
+[meter] admit id=chatcmpl-18936805a2599c05f9227fb4a37edca3 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7f4105c23342938785906c65d31dcb4f tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=102.16ms tail=0.18ms total=102.36ms out=2 cont=true
+[spec-acc] ctx=641 burst=1/3 cum=359/723=0.497
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1282.50ms tail=0.15ms total=1282.67ms out=32 cont=true
+[spec-acc] ctx=643 burst=19/39 cum=378/762=0.496
+[prime-batch] B=2 tokens=54 carried=0 partial=0 in 139.3ms
+[meter] admit id=chatcmpl-f5adbfbe12839f115e7b9d933f9ae553 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-54ad1932609413e01c7f92d35b6723dc tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=100.96ms tail=0.17ms total=101.16ms out=4 cont=true
+[spec-acc] ctx=675 burst=3/3 cum=381/765=0.498
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1078.60ms tail=0.15ms total=1078.78ms out=32 cont=true
+[spec-acc] ctx=679 burst=21/33 cum=402/798=0.504
+[prime-batch] B=2 tokens=54 carried=0 partial=0 in 138.6ms
+[meter] admit id=chatcmpl-d728e427c0282c1f75510be36f73b9fd tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-1eefc65848b3c59b899f9453375602f9 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=101.53ms tail=0.18ms total=101.74ms out=1 cont=true
+[spec-acc] ctx=711 burst=0/3 cum=402/801=0.502
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1292.57ms tail=0.13ms total=1292.73ms out=33 cont=true
+[spec-acc] ctx=712 burst=20/39 cum=422/840=0.502
+[prime-batch] B=2 tokens=54 carried=0 partial=0 in 142.3ms
+[meter] admit id=chatcmpl-d462ef14f29843e6e70f0ec8512419cf tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-0bc776ce1d0cb8e8faa43768fe517d21 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=102.43ms tail=0.14ms total=102.60ms out=2 cont=true
+[spec-acc] ctx=745 burst=1/3 cum=423/843=0.502
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1488.37ms tail=0.15ms total=1488.55ms out=33 cont=true
+[spec-acc] ctx=747 burst=18/45 cum=441/888=0.497
+[prime-batch] B=2 tokens=54 carried=0 partial=0 in 140.1ms
+[meter] admit id=chatcmpl-3769f547992590346868760f7d289a27 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-8f14ef21a3715243802942915de1bc9a tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=101.21ms tail=0.13ms total=101.37ms out=4 cont=true
+[spec-acc] ctx=780 burst=3/3 cum=444/891=0.498
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1181.05ms tail=0.19ms total=1181.27ms out=32 cont=true
+[spec-acc] ctx=784 burst=20/36 cum=464/927=0.501
+[prime-batch] B=2 tokens=54 carried=0 partial=0 in 140.9ms
+[meter] admit id=chatcmpl-676f8183ddc3e1b48e84a3afaf6c0f04 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d03aa3d8d40df144d2442ef82c2311cf tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=101.75ms tail=0.18ms total=101.96ms out=3 cont=true
+[spec-acc] ctx=816 burst=2/3 cum=466/930=0.501
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1180.97ms tail=0.16ms total=1181.16ms out=32 cont=true
+[spec-acc] ctx=819 burst=20/36 cum=486/966=0.503
+[prime-batch] B=2 tokens=54 carried=0 partial=0 in 139.6ms
+[meter] admit id=chatcmpl-35e0cb45566408b4554a31f61833e739 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-81506ed156d61192f5254ba7f29ce981 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=100.23ms tail=0.13ms total=100.38ms out=4 cont=true
+[spec-acc] ctx=851 burst=3/3 cum=489/969=0.505
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1485.52ms tail=0.16ms total=1485.70ms out=34 cont=true
+[spec-acc] ctx=855 burst=19/45 cum=508/1014=0.501
+[prime-batch] B=2 tokens=54 carried=0 partial=0 in 139.5ms
+[meter] admit id=chatcmpl-951ded8b47875db1556a058d387dcc0c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c9c3dded347d6904f20938cd8d7df718 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=101.63ms tail=0.18ms total=101.84ms out=1 cont=true
+[spec-acc] ctx=889 burst=0/3 cum=508/1017=0.500
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1285.33ms tail=0.20ms total=1285.56ms out=32 cont=true
+[spec-acc] ctx=890 burst=19/39 cum=527/1056=0.499
+[prime-batch] B=2 tokens=54 carried=0 partial=0 in 139.4ms
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1386.54ms tail=0.16ms total=1386.72ms out=33 cont=true
+[spec-acc] ctx=922 burst=19/42 cum=546/1098=0.497
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1478.35ms tail=0.15ms total=1478.52ms out=35 cont=true
+[spec-acc] ctx=955 burst=20/45 cum=566/1143=0.495
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1378.57ms tail=0.19ms total=1378.79ms out=33 cont=true
+[spec-acc] ctx=990 burst=19/42 cum=585/1185=0.494
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1871.29ms tail=0.14ms total=1871.47ms out=35 cont=true
+[spec-acc] ctx=1023 burst=16/57 cum=601/1242=0.484
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=878.80ms tail=0.15ms total=878.99ms out=33 cont=true
+[spec-acc] ctx=1058 burst=24/27 cum=625/1269=0.493
+[spec-setup] init=0.01ms cap=0.05ms fill=0.00ms rounds=1084.43ms tail=0.19ms total=1084.68ms out=33 cont=true
+[spec-acc] ctx=1091 burst=22/33 cum=647/1302=0.497
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1189.90ms tail=0.16ms total=1190.09ms out=33 cont=true
+[spec-acc] ctx=1124 burst=21/36 cum=668/1338=0.499
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1191.80ms tail=0.16ms total=1191.99ms out=32 cont=true
+[spec-acc] ctx=1157 burst=20/36 cum=688/1374=0.501
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1377.54ms tail=0.20ms total=1377.77ms out=33 cont=true
+[spec-acc] ctx=1189 burst=19/42 cum=707/1416=0.499
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=297.68ms tail=0.20ms total=297.91ms out=9 cont=true
+[spec-acc] ctx=1222 burst=6/9 cum=713/1425=0.500
+[abort] client disconnected: model "q", prompt 42 (0 cached, 1231 fed), 1189 generated — billed to abort point, 51.43s
+[meter] admit id=chatcmpl-2d7fe24d3eb6044b6166d0a4d8a3163f tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=3106 path=spec = 31552 B/token x ctx + 19MB prefill-workspace + 319MB fixed = 436MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 42 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cold-short prompt=42 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=1117.38ms tail=0.15ms total=1117.84ms out=34 cont=false
+[spec-acc] ctx=42 burst=22/33 cum=22/33=0.667
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1320.09ms tail=0.15ms total=1320.27ms out=35 cont=true
+[spec-acc] ctx=76 burst=22/39 cum=44/72=0.611
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1377.36ms tail=0.16ms total=1377.56ms out=34 cont=true
+[spec-acc] ctx=111 burst=20/42 cum=64/114=0.561
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1182.89ms tail=0.16ms total=1183.08ms out=33 cont=true
+[spec-acc] ctx=145 burst=21/36 cum=85/150=0.567
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1280.24ms tail=0.19ms total=1280.46ms out=33 cont=true
+[spec-acc] ctx=178 burst=20/39 cum=105/189=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1386.07ms tail=0.18ms total=1386.28ms out=32 cont=true
+[spec-acc] ctx=211 burst=18/42 cum=123/231=0.532
+[meter] admit id=chatcmpl-dac5acc5f484d338035586bab7c00b15 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-69b5c07e48f985b9fc159ec8340ffa50 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=200.85ms tail=0.18ms total=201.06ms out=2 cont=true
+[spec-acc] ctx=243 burst=0/6 cum=123/237=0.519
+[admission] request cost: model="q" ctx=93 path=plain = 29696 B/token x ctx + 13MB prefill-workspace + 319MB fixed = 334MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1481.96ms tail=0.13ms total=1482.11ms out=35 cont=true
+[spec-acc] ctx=245 burst=20/45 cum=143/282=0.507
+[prime-batch] B=2 tokens=56 carried=0 partial=0 in 139.9ms
+[meter] admit id=chatcmpl-95754048332b7cbd934d99ef476a4cda tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5de8edba08ad338030220a152b813184 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=301.67ms tail=0.18ms total=301.89ms out=4 cont=true
+[spec-acc] ctx=280 burst=1/9 cum=144/291=0.495
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1284.98ms tail=0.21ms total=1285.21ms out=33 cont=true
+[spec-acc] ctx=284 burst=20/39 cum=164/330=0.497
+[prime-batch] B=2 tokens=56 carried=0 partial=0 in 140.5ms
+[meter] admit id=chatcmpl-98eda953b55762c8c020e14a6a40703d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-eaef19c11d03b8e5da3e05f8997f2877 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=300.74ms tail=0.19ms total=300.96ms out=8 cont=true
+[spec-acc] ctx=317 burst=5/9 cum=169/339=0.499
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1379.01ms tail=0.21ms total=1379.25ms out=33 cont=true
+[spec-acc] ctx=325 burst=19/42 cum=188/381=0.493
+[prime-batch] B=2 tokens=56 carried=0 partial=0 in 140.7ms
+[meter] admit id=chatcmpl-dfafb8d1e9553912d6d86f274650fdf4 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-47620becd4b46210a6bd079f93731967 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=302.06ms tail=0.18ms total=302.27ms out=9 cont=true
+[spec-acc] ctx=358 burst=6/9 cum=194/390=0.497
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1187.52ms tail=0.19ms total=1187.74ms out=32 cont=true
+[spec-acc] ctx=367 burst=20/36 cum=214/426=0.502
+[prime-batch] B=2 tokens=56 carried=0 partial=0 in 139.5ms
+[meter] admit id=chatcmpl-1a5b99d14a73c3c51cafd8dac3676f1d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-72c6cfca7a978fadcfe1c0b207300404 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=302.77ms tail=0.19ms total=302.99ms out=6 cont=true
+[spec-acc] ctx=399 burst=3/9 cum=217/435=0.499
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1288.65ms tail=0.19ms total=1288.87ms out=32 cont=true
+[spec-acc] ctx=405 burst=19/39 cum=236/474=0.498
+[prime-batch] B=2 tokens=56 carried=0 partial=0 in 140.6ms
+[meter] admit id=chatcmpl-9e6fb65d737a06edd5cf044ee2782294 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-47fa9a64b47d3e3499239874b7403645 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=302.36ms tail=0.19ms total=302.58ms out=5 cont=true
+[spec-acc] ctx=437 burst=2/9 cum=238/483=0.493
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1483.23ms tail=0.19ms total=1483.45ms out=32 cont=true
+[spec-acc] ctx=442 burst=17/45 cum=255/528=0.483
+[prime-batch] B=2 tokens=56 carried=0 partial=0 in 141.4ms
+[meter] admit id=chatcmpl-0f3bfc7a701d4531a1928ba71dacec49 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-dac20abacf3669dca2503438725d3468 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=300.30ms tail=0.13ms total=300.47ms out=12 cont=true
+[spec-acc] ctx=474 burst=9/9 cum=264/537=0.492
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1399.55ms tail=0.19ms total=1399.77ms out=32 cont=true
+[spec-acc] ctx=486 burst=18/42 cum=282/579=0.487
+[prime-batch] B=2 tokens=56 carried=0 partial=0 in 139.9ms
+[meter] admit id=chatcmpl-75a5811d7dfd5f26268b004781ec02c1 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-9a53b0fa7ceced48269f522a8b7ebb7c tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=294.46ms tail=0.18ms total=294.67ms out=11 cont=true
+[spec-acc] ctx=518 burst=8/9 cum=290/588=0.493
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1470.23ms tail=0.13ms total=1470.39ms out=33 cont=true
+[spec-acc] ctx=529 burst=18/45 cum=308/633=0.487
+[prime-batch] B=2 tokens=56 carried=0 partial=0 in 140.7ms
+[meter] admit id=chatcmpl-9d51d5ed473f9f1faedc98712a001109 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-8ee561a1ace2f50ff3c3c96068d35973 tenant=default lane=interactive model="q"
+[spec-setup] init=0.03ms cap=1.33ms fill=0.00ms rounds=299.15ms tail=0.15ms total=300.67ms out=10 cont=true
+[spec-acc] ctx=562 burst=7/9 cum=315/642=0.491
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1175.27ms tail=0.19ms total=1175.49ms out=32 cont=true
+[spec-acc] ctx=572 burst=20/36 cum=335/678=0.494
+[prime-batch] B=2 tokens=56 carried=0 partial=0 in 140.5ms
+[meter] admit id=chatcmpl-abe5a8d0bcc54c3609d9b458a86eda18 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-776ad808ad8332497c17935115f5991e tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=299.33ms tail=0.15ms total=299.51ms out=9 cont=true
+[spec-acc] ctx=604 burst=6/9 cum=341/687=0.496
+[admission] request cost: model="q" ctx=94 path=plain = 29696 B/token x ctx + 13MB prefill-workspace + 319MB fixed = 335MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1281.54ms tail=0.19ms total=1281.76ms out=33 cont=true
+[spec-acc] ctx=613 burst=20/39 cum=361/726=0.497
+[prime-batch] B=2 tokens=58 carried=0 partial=0 in 141.8ms
+[meter] admit id=chatcmpl-fcc08d8b8bf92ecbb0c5694b569a822a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f8701235c02fab5b13f310d3f908777f tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=300.25ms tail=0.17ms total=300.44ms out=9 cont=true
+[spec-acc] ctx=646 burst=6/9 cum=367/735=0.499
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1186.36ms tail=0.15ms total=1186.54ms out=32 cont=true
+[spec-acc] ctx=655 burst=20/36 cum=387/771=0.502
+[prime-batch] B=2 tokens=58 carried=0 partial=0 in 140.5ms
+[meter] admit id=chatcmpl-5ead777c8350b9301fa0d68f9631e109 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-9bfc8709f8d3bb935279133d04af4f80 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=298.47ms tail=0.20ms total=298.69ms out=8 cont=true
+[spec-acc] ctx=687 burst=5/9 cum=392/780=0.503
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1188.12ms tail=0.16ms total=1188.31ms out=32 cont=true
+[spec-acc] ctx=695 burst=20/36 cum=412/816=0.505
+[prime-batch] B=2 tokens=58 carried=0 partial=0 in 140.5ms
+[meter] admit id=chatcmpl-1b5c8bc3600848da9f2ea91d03ce4504 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-9cf89b922b36ec930d806192747a97af tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=301.61ms tail=0.18ms total=301.82ms out=7 cont=true
+[spec-acc] ctx=727 burst=4/9 cum=416/825=0.504
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1592.02ms tail=0.16ms total=1592.20ms out=34 cont=true
+[spec-acc] ctx=734 burst=18/48 cum=434/873=0.497
+[prime-batch] B=2 tokens=58 carried=0 partial=0 in 139.7ms
+[meter] admit id=chatcmpl-5ef56b02c9a467a8813c8eb297f48d6a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b3f3071bf41adaa388efc1349bd84e77 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=299.65ms tail=0.19ms total=299.86ms out=6 cont=true
+[spec-acc] ctx=768 burst=3/9 cum=437/882=0.495
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1181.54ms tail=0.16ms total=1181.72ms out=32 cont=true
+[spec-acc] ctx=774 burst=20/36 cum=457/918=0.498
+[prime-batch] B=2 tokens=58 carried=0 partial=0 in 140.4ms
+[meter] admit id=chatcmpl-e1f4ddc14901ce88988bd8f995f4fc5f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d7e08f010268368694596deb3881c267 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=299.01ms tail=0.19ms total=299.22ms out=10 cont=true
+[spec-acc] ctx=806 burst=7/9 cum=464/927=0.501
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1292.03ms tail=0.15ms total=1292.22ms out=35 cont=true
+[spec-acc] ctx=816 burst=22/39 cum=486/966=0.503
+[prime-batch] B=2 tokens=58 carried=0 partial=0 in 141.5ms
+[meter] admit id=chatcmpl-02adc277723210e92fbb4d79cfe9a535 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-644ed37e96c3343cdbbcae14b5c3ce0d tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=300.09ms tail=0.18ms total=300.30ms out=10 cont=true
+[spec-acc] ctx=851 burst=7/9 cum=493/975=0.506
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1587.20ms tail=0.19ms total=1587.42ms out=33 cont=true
+[spec-acc] ctx=861 burst=17/48 cum=510/1023=0.499
+[prime-batch] B=2 tokens=58 carried=0 partial=0 in 140.5ms
+[meter] admit id=chatcmpl-a24e748c66996e12387b033133769343 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-52e2e9d140e4b7b0c514da20e477f2f4 tenant=default lane=interactive model="q"
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=298.96ms tail=0.15ms total=299.13ms out=11 cont=true
+[spec-acc] ctx=894 burst=8/9 cum=518/1032=0.502
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=29 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1683.89ms tail=0.15ms total=1684.06ms out=35 cont=true
+[spec-acc] ctx=905 burst=18/51 cum=536/1083=0.495
+[prime-batch] B=2 tokens=58 carried=0 partial=0 in 140.0ms
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1292.22ms tail=0.11ms total=1292.36ms out=33 cont=true
+[spec-acc] ctx=940 burst=20/39 cum=556/1122=0.496
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1396.21ms tail=0.19ms total=1396.42ms out=32 cont=true
+[spec-acc] ctx=973 burst=18/42 cum=574/1164=0.493
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1596.30ms tail=0.18ms total=1596.52ms out=33 cont=true
+[spec-acc] ctx=1005 burst=17/48 cum=591/1212=0.488
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1282.79ms tail=0.16ms total=1282.99ms out=32 cont=true
+[spec-acc] ctx=1038 burst=19/39 cum=610/1251=0.488
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=893.74ms tail=0.16ms total=893.93ms out=32 cont=true
+[spec-acc] ctx=1070 burst=23/27 cum=633/1278=0.495
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1189.22ms tail=0.16ms total=1189.42ms out=34 cont=true
+[spec-acc] ctx=1102 burst=22/36 cum=655/1314=0.498
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1289.69ms tail=0.12ms total=1289.84ms out=32 cont=true
+[spec-acc] ctx=1136 burst=19/39 cum=674/1353=0.498
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=1101.21ms tail=0.16ms total=1101.42ms out=33 cont=true
+[spec-acc] ctx=1168 burst=22/33 cum=696/1386=0.502
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1393.33ms tail=0.20ms total=1393.57ms out=32 cont=true
+[spec-acc] ctx=1201 burst=18/42 cum=714/1428=0.500
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=691.53ms tail=0.16ms total=691.73ms out=21 cont=true
+[spec-acc] ctx=1233 burst=14/21 cum=728/1449=0.502
+[abort] client disconnected: model "q", prompt 42 (0 cached, 1254 fed), 1212 generated — billed to abort point, 51.97s
+[meter] admit id=chatcmpl-35719ddf50f28f970d9228952ab15cab tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +44MB (measured capture high-water)
+[admission] request cost: model="q" ctx=3106 path=spec = 31552 B/token x ctx + 19MB prefill-workspace + 319MB fixed = 436MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 42 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cold-short prompt=42 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=1113.31ms tail=0.15ms total=1113.77ms out=34 cont=false
+[spec-acc] ctx=42 burst=22/33 cum=22/33=0.667
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1309.55ms tail=0.13ms total=1309.71ms out=35 cont=true
+[spec-acc] ctx=76 burst=22/39 cum=44/72=0.611
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=1368.46ms tail=0.16ms total=1368.66ms out=34 cont=true
+[spec-acc] ctx=111 burst=20/42 cum=64/114=0.561
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1172.69ms tail=0.15ms total=1172.88ms out=33 cont=true
+[spec-acc] ctx=145 burst=21/36 cum=85/150=0.567
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1272.16ms tail=0.19ms total=1272.39ms out=33 cont=true
+[spec-acc] ctx=178 burst=20/39 cum=105/189=0.556
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=1376.70ms tail=0.19ms total=1376.92ms out=32 cont=true
+[spec-acc] ctx=211 burst=18/42 cum=123/231=0.532
+[meter] admit id=chatcmpl-7e4e84956b1f87fa0df7c85d894db511 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b7f326088d94998d54837a456c1762e5 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7871876040923d091f47caf5eec4f1a0 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-e690711870c97d57fc00cb15e52e9ec5 tenant=default lane=interactive model="q"
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=201.00ms tail=0.18ms total=201.22ms out=2 cont=true
+[spec-acc] ctx=243 burst=0/6 cum=123/237=0.519
+[admission] request cost: model="q" ctx=91 path=plain = 29696 B/token x ctx + 12MB prefill-workspace + 319MB fixed = 333MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[spec-gate] demoted session to batched decode: 5 active >= HIGH=4 (model q, committed 245, generated 203, greedy)
+[prime-batch] B=4 tokens=104 carried=0 partial=0 in 186.4ms
+[meter] admit id=chatcmpl-bca49c75c78229ef0932a9fa0637af2c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-2319a911da0a465ebd99462764d58fc9 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-6ddae8422e5f3b9e11b59a3392e531d6 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c9c1fdbf453c4bc9ea45e0bce2bbe645 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=104 carried=0 partial=0 in 192.3ms
+[meter] admit id=chatcmpl-4897a3dac69ad26f95c924e03bc5a557 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-78a8d3520c03c116dc48593100752eda tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-593e8165e6895383574181303a8ab4af tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-175248656f0e9567d3fab5b1dd1a0c8a tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=104 carried=0 partial=0 in 192.1ms
+[meter] admit id=chatcmpl-3f2b7e71c8bcce66ef9be25f37311cac tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-89cd6229df552bc671c2dd51f1437603 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-fb9e154b2a6811a4116400970db8b2de tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-6d3cf78a207739bbf1f24bb3458c550e tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=104 carried=0 partial=0 in 193.6ms
+[meter] admit id=chatcmpl-8a52c56129dd5b4fb2f53dbbd98cb10c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-372bdf495ad23d220edb252e1a267190 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5d96101fcaa4da46e32ad03f3c914256 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-10966ac43f1c77a457d70d6618310584 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=104 carried=0 partial=0 in 194.5ms
+[meter] admit id=chatcmpl-110b297f605ac4360005dbe8109ef745 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f040c9da5ff252acf10831263b451d62 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f6c4c6e555bee37cda8431e2e761bdfe tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-75d6214ef8804923ba03dfff8bb3378f tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=104 carried=0 partial=0 in 193.0ms
+[meter] admit id=chatcmpl-ad881a013ada636225c34d146a3e4068 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7cbe0711069719996dd413d72d8407f5 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-38376ef434b345555efbe9ddf697a9f6 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-dc46fdbe24789a08d01b984a7dc0d503 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=104 carried=0 partial=0 in 192.9ms
+[meter] admit id=chatcmpl-91f27e821f644c4b36b54a4db2ec5346 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c9c8e021e68a5d1f0b7d79ad2711c47e tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-2e2a915c1756a875eebc6f833faa857f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-31fe983cef24e903c6ef1c4e0d4ac273 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=104 carried=0 partial=0 in 191.6ms
+[meter] admit id=chatcmpl-f2a617eb8a78eb6afbe6d7ebc81a5f8c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-42a02b9aeac58205810b057e47888592 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-da561de2faf71193ff5faf9f8d2338e5 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a787304f737566ce59bbe8a0d8a53929 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 26 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=104 carried=0 partial=0 in 193.7ms
+[meter] admit id=chatcmpl-e22e59b6a5982b700eb918c5bc0e0f0d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7e70180ee453f44460079ab2e56f8faa tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-e5a319b2641f4881c2b7fb44b29595ea tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-306afafbfe595fa796b4c15f9cdc22a2 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=92 path=plain = 29696 B/token x ctx + 12MB prefill-workspace + 319MB fixed = 334MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.4ms
+[meter] admit id=chatcmpl-0085b4cd11ca582e0bd394f8be531782 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-902c31137b46e409cc804030330c0b62 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-0da722c58272a3ddb333426348f8dec1 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-2a5137a1d6930642f0e7ab9d46cac1d6 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.7ms
+[meter] admit id=chatcmpl-d774b9569092fa67b7f825486e7b3095 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-055c083996cb2d398685152a25fb1034 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-cc3b5038a32b2c64540289151e0987d2 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b2c65474ac02ceadaa7ea96ee7cfa9a4 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.2ms
+[meter] admit id=chatcmpl-388f6e84870432ab3fbc2f08ec8627b4 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d428caac4f993e442606d21a1f81f60a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-368c85caa67f975664f0e864743043d2 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c507178532d30918e02154f67d405ade tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.4ms
+[meter] admit id=chatcmpl-cd8c6c4ebe30c6421461763562b66100 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-92e0c8b24605b046a0a888a6fa1f24b8 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-4da68218a6316c9442e5c1b8af823e47 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7a2c72bd57de8fbc220dee20c94f26f5 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.0ms
+[meter] admit id=chatcmpl-06bfc8dece341f9eec2314739ddf3fff tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-055b5e5ba00979ecb692bddf21d373b7 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-72319f5cf0b91b5d236e34a02e2fee2f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-0341f40337e68eb7e2913fdd9bd4a6db tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.5ms
+[meter] admit id=chatcmpl-3dfe8c3bac60d50184c4cb8f07648f6b tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-3b49fc9cc893ddd28c07aad8828f32dd tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-72a684a5a551466cefbaf7c057bba9cb tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d21bc9e4aecd56d8628c1ccc802cb533 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.2ms
+[meter] admit id=chatcmpl-634a9b6bd8f95c552cc5be9cedb26d93 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-af0bc432bf847a0425346d218e3425cd tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f3546514ced478b8c34930c5b24b572c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-109cc3fd317ba5eabfe727b4c76fa1cb tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.1ms
+[meter] admit id=chatcmpl-34cf950233d4889c5f01f78cd30fe53f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7a7ed9f9c35a94bbc5672197a27669ae tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c9e8eeff75542a617c8c7e9a49943f6d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a06b7f2b129b9bd7b68ecd53038513da tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.3ms
+[meter] admit id=chatcmpl-cb4ae96f9dc580661a3c6bf0e594998c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5723eaba86da4cf81613f763a59567da tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5d5478c21e64eeb61b34fa4c48ed5616 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-df5a45f10fa813eee5ca1cb9d48e9527 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.0ms
+[meter] admit id=chatcmpl-8d3488c383fbfb9e5ff999e2108d0617 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-113a859ec79c97360d220cf7539ef15c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c6812fdaedcff7ab05bbfbee339aad82 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7691417c16db6568493dcf820dbf5380 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 196.4ms
+[meter] admit id=chatcmpl-6fbca9aeff0af8b8b1d5e712e4cf6755 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b7318087495fe5f9d0db22228410839c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d76aee338cfd7eeb7551a1e02d6269ab tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-caa6fbd4d038febfbb72f5bdb28373d4 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 192.9ms
+[meter] admit id=chatcmpl-23e6e480517147559067112f480f1b67 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-bb3208edf1336f5ec3b12f63872ddbe3 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-ef0ab6a5d17bf66d4559665f0769d543 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-e8a94ddab1e65f5e66efbf92b25dccfe tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.6ms
+[meter] admit id=chatcmpl-a007ddc4551d28def6c67cbe1391fb9d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7b7eef2fc5bd87418b6b541e85d13bbf tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-4296241658abdd2c37ff3854a92ba2f6 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d4225c20640f35d7df04fcdd50220818 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.7ms
+[meter] admit id=chatcmpl-d12134e1d018500983b54156938d3d59 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-9bd5225d9be732190de3d84a8a6d6522 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-adb1b087b2137ce5df6ea7115c9a1473 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f538df0b171e56fdb34059048810f5de tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.6ms
+[meter] admit id=chatcmpl-5f9bc2b62a6fd69cb0dc118723cdbcd7 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-bab18237f3bac61b009f0939642b0a94 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-373d65bc70aa1ec807cf2a7f16f481eb tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-6cfda3f1c601792f49c81f7015246996 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 192.8ms
+[meter] admit id=chatcmpl-16bcd5b3a849f0cf6d4be07e629ca215 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f3967fdc07860a9ab5a5a05b664eeb83 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-cd4d2435d1418a92d1540618d365d876 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-1fe7078b18a0dc4bbd97462c7e5bf481 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.8ms
+[meter] admit id=chatcmpl-5e390ad68a05e139c6b70e34a13af389 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-4f12108f42c2c7a39e05e2f99f935621 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c659ee7abea6f6fa5f538c8543ade530 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-2cf04a1341f42d0bcad5a5dc0b24aefd tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 196.0ms
+[meter] admit id=chatcmpl-5cf66e1843818d536c2caa2e62eaecae tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-13692881c7e727c7386245a248163d60 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d726429d66e3dcf99d6f6b48c35690b3 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-98bb56915c24e1c3484b7017c52e9d88 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.2ms
+[meter] admit id=chatcmpl-dd6105bbcfd94b8549259f2f2cbabfe4 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-621bea081ab013e5cff92e18215ab5bb tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-49ccb5702a540186e0127c4016ca7b02 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-93fb0edffba6841dba44bb81210b6d25 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.2ms
+[meter] admit id=chatcmpl-cd4d18bfdfd865f3c6e00ce08b291974 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-cf25b891808863c5fcb88c9bbd372c1f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5601f4598bda63796ca5c9ffd168285f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-8d0f4f5037a17d3082ca11af034e56ac tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.5ms
+[meter] admit id=chatcmpl-a14644b532c60ba5ded8a83b12db37dc tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-62a39079c4fb21e1ce5e97db4a45ac51 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-40454f90447d745221f70c000949b66f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c94667171113b92682ae1559610f84d1 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.1ms
+[meter] admit id=chatcmpl-486e90b11df442c1c1231c29becbd772 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-827d67686005297728e879b01fd7b750 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-0d8eeeba26d4219215787412243894b0 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-85580b25fc060026cda953e0a7bff9f3 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.9ms
+[meter] admit id=chatcmpl-863cc078b3732d3ae20b1a9384b08644 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-6c8c204706bfa0d20cb80e5c7c12a2b4 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-caebbd417451149e754b717e95ba79b8 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-512e1be3a29e9f678ea689b0d5784cc2 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.9ms
+[meter] admit id=chatcmpl-00da4632668fc6aa5046185e973d5b22 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-98cdcd0ac49c336fb01bf3e5d6f77916 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-43ea7afacc7d4d66869335fa6b7d0b73 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-80e59e97b0510eee227cc76fcbab2d2e tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 192.7ms
+[meter] admit id=chatcmpl-ef1ae0577a17376e34dd68506989c198 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-633b1f4a69839723050e74d5fa831fa7 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7d1b1f194a1ea57fa249fc6e3a384b35 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-58d8bdac2f5607344174c02b01616770 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.0ms
+[meter] admit id=chatcmpl-cb079523f5cf90ff13a2eea3d02563cd tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f5f677275589312536d9bfa255b00710 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-edf695274297752b6218b0ec52618be2 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-60f6d6ba5d0f9a8e764cbf74d7f9722f tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.9ms
+[meter] admit id=chatcmpl-7a3bba8fb13daf7809cc11f5cb5bad6f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-57a471eb7dfba23007743cdf1b761848 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-363c4766c8af584873e7d7b42f5b39ae tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a73df6400aca8dc00cb1c2465721a39b tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.1ms
+[meter] admit id=chatcmpl-8de1a256988545b78b2d20bd0a0e50d1 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d15057f670677bd766258fc26063d8a8 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-e60708690d25a0251acfe857b23762d9 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-11eee46f9156f7ef83f1e20d0570cb8f tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.6ms
+[meter] admit id=chatcmpl-f85ac2a1cefa8e27a39d2eea3697af72 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-dfdedbc412322ccbc96dd565aec3c52d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-be84d707dc953a43262df85b8d5ab5d7 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-53105f71694dfc4f8bfbb3b8cecbbe98 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.5ms
+[meter] admit id=chatcmpl-a48d90ee08f7d1e157b3cec023317f1b tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-6fb63a2931a1108d0f3346b78e89d3d7 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-918e7287b480025d7d353dd1e428ad55 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b0262b7254e38e82482dcc7d6e5ae5b4 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 192.6ms
+[meter] admit id=chatcmpl-73266e653a09c60aea8292a2249bb504 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-670da19af2a084925f364eac366524ed tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-fcb85055202ff876a729ab69f6cf823e tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-efa76ff4ead3cd2036e0ce1088f55760 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.4ms
+[meter] admit id=chatcmpl-9810c80b263e8b376882a5126b833e9c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5cb919a15d54792b80ab5016fe192d1f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-264ffbc00865e1b04bf78dea69ba170d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-69329f417e85a830cd108b0977e61678 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.3ms
+[meter] admit id=chatcmpl-b55b9ec51cdfc5657b3102cf67808ce2 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f396606ddce99b6ef7ad722814c8bd96 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-2d3b0b40af3f1033fa69f4215f706d53 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-70ea262604d328530fcb35e1f69dac3d tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 190.7ms
+[meter] admit id=chatcmpl-45b83826254d400545a57f09c27b6eb5 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-e6100d92a0812929afc89a489e56da2b tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-eb56af07ae71b50777e4dcb160a46016 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f9739569765e7834f894f7cca815f934 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.5ms
+[meter] admit id=chatcmpl-6dadc8de69a1b16c7891680a98252b22 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a82455f8fc5263d890e9d95adb5a250a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-af1825743f6631ba974e77119958bf1d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-44494b648759d7483bd6a5cb6e46912c tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.9ms
+[meter] admit id=chatcmpl-c07c7c68c9c0fc93cf4948e3de556940 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7413d075eeb2a8754a279ef3e969456e tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-580e2f4918d032bf69f00116dca9e636 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f0407cf64700bb76daf659b2de0b0b52 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.2ms
+[meter] admit id=chatcmpl-1e0d39032677d1e2f33335ba36546356 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-698cb327f06dcc6ee5d4383c91aa82e3 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c3748ba748258635ed7dcdaab13f5f6a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5e384f8637517aa94f6b9470b59745f8 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.9ms
+[meter] admit id=chatcmpl-c1dff994463f4279b5c55bf6b0e772a8 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-4def25e3cefedeb1dcd2abf867dfafb6 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-692619e54d8d96ca80d1896b0875f2ab tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-9336e0c5679b63412a89f7961db3328a tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.6ms
+[meter] admit id=chatcmpl-54808675ec44c15622ad8d2a7641efce tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f29eba4581cccaf0b2f310d833fb5ed9 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d86eb06b46ee04cb25e372e0f937dd3d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a4f5cd239194069ea3fea29dc693bf00 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.1ms
+[meter] admit id=chatcmpl-16028b538b73773c58638da6852aa5dc tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-aab8bcbcf4b0e69df4cd0de330b5cb3a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-de0e6c904d308677866b47a189611ff6 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-9eedfd6302e6e4f1a242163071381413 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.7ms
+[meter] admit id=chatcmpl-16b1e6880c5fa3156aa86dfc44f8d892 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-72ecdadc822a5968164abaa44abc7ca4 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d6da24241ce886b7b6177351480c0ebe tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-9e941c30294fe635abd32084584eae0e tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.9ms
+[meter] admit id=chatcmpl-1794aae0c7967cbffc911434438f3665 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f47faa124f481affab75b908339f4c65 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-59dcf159dcd9ae629a3194b4d109e8a3 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-3d0313c3ce6a3eb280b1e94f2194da58 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.4ms
+[meter] admit id=chatcmpl-e9b28e955491add14298ef813796ab19 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-1b8e8ef57df2a714590cae94840674f6 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-fae59c2423224fe965362ef5d852fb63 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-13b539a7869dae414f6cbaca5ce89315 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.7ms
+[meter] admit id=chatcmpl-40e6f764badefbdb06b19024b31e7ed5 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-403fded30fe530bf2076e5ebb7b505a8 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-ecc97e42cafba3cb923bf17e276fa7a5 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-506d8d473801fe4d56cd63418e9c4217 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.6ms
+[meter] admit id=chatcmpl-ca5b0a8c1fa9336a5edbb3d5a4c221e4 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-439a424eff35ca7a34e771275e658626 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c61968099205e917aec6cd28e52ecddd tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-8a81e7b525123dd4eb0c9a9f7febdfed tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.9ms
+[meter] admit id=chatcmpl-44cc5b04b40bcd1182e5f4d1df99793f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b9bd2348a1d540fe1d335e8acdd2113a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c6f18895efeac995f4198c934d39e9de tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-17e25274e524f196537187ab36bbf0ba tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.2ms
+[meter] admit id=chatcmpl-2a4da157159f3ee61161abf9efba937a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-812ed83dddd4a2aa4b07b03270f7d15c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-1813baa77b0d28b6a5a6214c049315c6 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-0eddb139b8842d65aa4d6fd5756800ba tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.4ms
+[meter] admit id=chatcmpl-8ef056b1966f498f3493492739749263 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b66cc7f360c0910729c95a8c85f92e2a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-409415d9709a8b9d7fac7ce02f9bd4a2 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-e16a5d6e7c47f12987787e43035d5976 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.1ms
+[meter] admit id=chatcmpl-0e4cf7df80502b08aa2c8f0d261cd094 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-0aa33d774f64fc41b9d8f81902532a07 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-324721957f86c2d87e24d48ccef68830 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-8c3cfebb9346c5b6a34864ceff15391d tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.1ms
+[meter] admit id=chatcmpl-65e6194cc43bde64a621b9ec83debcc1 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-69aef798a4565517f2487c8abb3d6c01 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-2aabf7fc32e7453214c0a04bdd39bda7 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-1e6630f20cac036232c98011c94e0051 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.8ms
+[meter] admit id=chatcmpl-a183cc24c2801373fe136fb00423a45d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-ddc5b8ad4202d6538235e8aeca492bc6 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-65e34e56aec71d19601af6caebbc1e19 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-587ad4973bb2cf94676728982f959f43 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 192.9ms
+[meter] admit id=chatcmpl-b180fe8aa140c0396925d48db17ec0d4 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d3e6977400cae7a303670640f26377ad tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-3d775b71fc271719d978f64fd0e314a4 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-ef85abb318b1269ec8e497c174dd8b3c tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.3ms
+[meter] admit id=chatcmpl-f4d4f0aca40b6cea96a98e401ed2fe7d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-86239cea840967291261075cd6eac5b6 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-4ab48615415afe28bcd3be71c5f4c3fe tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-3886e8750a20130b83478f4fac572e37 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.5ms
+[meter] admit id=chatcmpl-ff5f3e6c463ebfe61778d025344f1487 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a8a6857554b2e06d5caae7202e5d02ce tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f25dabadb7104d7b9c1e6ddf1db3b166 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b6972ec7f75cd41f124d33f335661a64 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 198.0ms
+[meter] admit id=chatcmpl-897e6e520261eab9aa7a4177f4f89ddc tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b114ae0dbd5cb54e3c95f86827bad238 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-1e6b3c1bf705331f438987c841a4169b tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-13a5065df7a130b28fe7675d95370369 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.5ms
+[meter] admit id=chatcmpl-6f02c819eb30ad95c6cfcb9e10805df3 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d7ed0700de7c651d5c75f48cb7092788 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c26f79f05778e9043e3e284355c8aa5c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-ce302c57562dc295ac34ac69991f9b8f tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 192.9ms
+[meter] admit id=chatcmpl-61d2cde2bc9bc6ee8f70ea3d62ed981e tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-9a0cc6d75dc4e1ead35825c81b503280 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5ca1839511be3de0c2a0aa8a2ce9ff4b tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-583601c8a503567974fec4ce4c007d7a tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.5ms
+[meter] admit id=chatcmpl-9a1199779a14df70e035b514be3ed250 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-76c63d185ff967c0104412632b199c7d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-05b470fbf8c0baa657c9caa72dd53149 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-fcc89af8d22dfab79b6b4be583699fad tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.5ms
+[meter] admit id=chatcmpl-32a6a4329b55414d4134141fddf8ac38 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-92a5f0e771056deec39fdd2419cbe8a0 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-aa2758dfa81bada7ca69731c44f6b449 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-1e806b35146a556f36ae899720875762 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 199.4ms
+[meter] admit id=chatcmpl-ee014f21ee4dbb1f52031d70c4d67f99 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-615361c86aaaa96ee7877084dca316b5 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-4997183049b9f2def41af7004f3cd6b7 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-6508fd09e57221f98372805bf5ed5d26 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.5ms
+[meter] admit id=chatcmpl-d37d089d5bc25c6dae9b20f699a591c0 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7e5199be7f28af82e2a04cbb9397961a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-4dccbd175219c205efec72e9c5e0bb07 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-df7c806f5e8cc0e0e2867c0c101eb40e tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 192.5ms
+[meter] admit id=chatcmpl-bd0f47e30c892497a63f4ad887aa090f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-61d67e0d78894410e4eb2fbd32c198c9 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-15fb7de83315746a78c861ac62ac124b tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-79daa1045661bfa31d322eb3e26c5466 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.6ms
+[meter] admit id=chatcmpl-2634662f81ccd89aa6f8ccc0b8d2beb3 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-3297b8c82476affea6368ffa45b16dbb tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7f5b1d9e1a668bdea195ac134e71c8fb tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-741db87f69f2834334527c79b58109db tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.2ms
+[meter] admit id=chatcmpl-c229b6482a48583d05d687152ceb8d82 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5ce4ba247fec9b1970153482e63dc5f8 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7235e4628dc81ce51a178bc2bc6c713f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-6694079d4427c616c1d88a22793c8cad tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.2ms
+[meter] admit id=chatcmpl-b2a069342362218b15dd16d755debe0f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b179abf2d0bc667ef1a9c0165195b39e tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-0b49b479f69e36d42d7ff7f83ec00adf tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5b18c00163435dda1bed9c6c9a9fa7bc tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.4ms
+[meter] admit id=chatcmpl-7688290d175e8d0567a3a654fc533f1d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-512635bb102943602192d5b9eaa6c2e2 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-aa35d3b52192e3a383f6a924caf756d9 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-ef818b3686f217d6c64ccd2764ef7544 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.8ms
+[meter] admit id=chatcmpl-46178b62439d1e0d12eb98dc442afc2f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-1c4b8162bf7e3f440d594bb8d4cb3024 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-e2ec43f3e3dedec1193468c211f0633e tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-041d33c0d5d92811cac81feef78fdbdb tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.1ms
+[meter] admit id=chatcmpl-d5be279e47a21ca4acbf8e0cdf278c2b tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-8efc7eecac979c2055d539c6919b151b tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-726e055e937f65184422851b3a5ee21a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7e1633d30b8a88ce0485d9f7a56e38eb tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.9ms
+[meter] admit id=chatcmpl-0c6b20067ba2f615e905f3f8921f0f76 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-e863176c0d6b1eb59d620d3b4ba61340 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-627bd72bef0d1ec30f47083991a38b74 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-4055983e70a7f52a955520d32083a259 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 192.8ms
+[meter] admit id=chatcmpl-917e2720715f2948b5d4226274ebaab8 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5e8f88ae5cad2ab2f88b9956205ff3af tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7434b61196c219a031720f97daf90865 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f9fb62a30f4de74924a160042b1b3e08 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.4ms
+[meter] admit id=chatcmpl-581d241877a848f0a28f36d3885c505c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5caf873d7a426505bdee0e3131e5de09 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-62fb76d411211c70b85f051cf584faed tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-fe7edad86e8e3662cb1e224b8bb46756 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.6ms
+[meter] admit id=chatcmpl-4ef3a2a4d1cd7cb11141df4097d99a19 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-cb378723a175a8b76491415d40d95dbf tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-90017c2edb0db42d61f96a128fce625f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-6c2380e6b9d0deea447b66ab86286b2e tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.2ms
+[meter] admit id=chatcmpl-601920e80c0a98ec607d2ee77a9c682c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a5f52c827eba2dbe9f6a41ea5ead2488 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-57998ef675a8311698879cade6115129 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-1820e65eacf3a1c237c28c6ae4f2b834 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 193.8ms
+[meter] admit id=chatcmpl-88c87c515d269651470d7d7cf8db10bf tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a69cfd970063405ad7e07621675514d5 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-70da13464417abe538cc374aa5edaafd tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a70ada0a151de296007a42972d358733 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 194.4ms
+[meter] admit id=chatcmpl-8eeb16815bc1b3eb30ded995fdc5dae1 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-28c0f2f04913627acd1316ee25056e85 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-8932c43d55970b7b6d616568732d7267 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-79acd7932f28fdae299c4ff5b6ca7ca8 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=3 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=4 wave=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=concurrency prompt=27 cached=0 lcp=0 active=5 wave=5 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=108 carried=0 partial=0 in 195.5ms
+[abort] client disconnected: model "q", prompt 42 (0 cached, 580 fed), 538 generated — billed to abort point, 50.48s
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

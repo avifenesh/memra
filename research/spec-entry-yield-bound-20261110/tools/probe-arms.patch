@@ -1,0 +1,357 @@
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index dbf204413d..becd434a42 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -7411,6 +7411,7 @@ fn spec_cost_gate_on() -> bool {
+ /// The cost model owns the decision unless an explicit band (PP-2 default, LOW/HIGH env) does.
+ fn spec_cost_gate_owns(thresholds: SpecGateThresholds) -> bool {
+     spec_cost_gate_on()
++        && !probe_knobs().band
+         && !thresholds.pp2_default
+         && !thresholds.low_overridden
+         && !thresholds.high_overridden
+@@ -7619,7 +7620,7 @@ fn spec_cost_verdict(model: &str, n: usize, rung: usize) -> Option<usize> {
+ 
+ /// Fold one realized aggregate-rate sample for `model` at (n sessions, K; 0 = plain).
+ fn spec_cost_observe(model: &str, n: usize, k: usize, tok_per_s: f64) {
+-    if !tok_per_s.is_finite() || tok_per_s <= 0.0 {
++    if !tok_per_s.is_finite() || tok_per_s < 0.0 {
+         return;
+     }
+     let mut reg = spec_cost_registry().lock().unwrap();
+@@ -7721,6 +7722,14 @@ fn spec_demote_reason(n_live: usize) -> String {
+     }
+ }
+ 
++/// PROBE (b): the cost model owns this model's gate (a calibrated table) and the session's
++/// last `MEMRA_PROBE_STARVED_DEMOTE` bursts each yielded at their entry without running.
++fn spec_starved_due(model: &str, entry_yields: u32) -> bool {
++    spec_starved_yields().is_some_and(|m| entry_yields >= m)
++        && spec_cost_gate_owns(*spec_gate_thresholds())
++        && spec_cost_registry().lock().unwrap().contains_key(model)
++}
++
+ fn spec_demote_due(model: &str, k: usize, n_live: usize) -> bool {
+     if spec_cost_gate_owns(*spec_gate_thresholds())
+         && let Some(best) = spec_cost_verdict(model, n_live, k.max(1))
+@@ -16728,6 +16737,9 @@ struct Session {
+     /// Successfully published `Event::Token` count. `finish` requires this to equal
+     /// `generated.len()` before publishing the terminal usage/token snapshot receipt.
+     tokens_emitted: usize,
++    /// Consecutive speculative bursts of this session that yielded at their entry with
++    /// nothing emitted (`SPEC_ENTRY_YIELD_MAX`, memra#1201).
++    spec_entry_yields: u32,
+     emission_clock: crate::hybrid_telemetry::EmissionClock,
+     /// A disconnected client is billed to the observed abort point but its generated KV is
+     /// not a reusable conversation state. Abort retirement drops all session caches instead
+@@ -21879,6 +21891,7 @@ pub fn run(
+ 
+             if automatic_demote || demote_at.is_some() {
+                 let n_live = active.len() - finished.len();
++                PROBE_N_LIVE.store(n_live, std::sync::atomic::Ordering::Relaxed);
+                 let forced = demote_at.is_some_and(|n| {
+                     active.iter().enumerate().any(|(i, s)| {
+                         !finished.contains(&i)
+@@ -22061,11 +22074,12 @@ pub fn run(
+                         }
+                         // forced mode (test door): only the session past the pinned token count,
+                         // and only it — a peer still short of N keeps bursting.
++                        let starved = spec_starved_due(&s.model, s.spec_entry_yields);
+                         if let Some(n) = demote_at {
+                             if s.generated.len() < n {
+                                 continue;
+                             }
+-                        } else if !spec_demote_due(&s.model, s.spec_k, n_live) {
++                        } else if !starved && !spec_demote_due(&s.model, s.spec_k, n_live) {
+                             continue;
+                         }
+                         // a session that has not bursted yet has no cache state to hand over
+@@ -22140,6 +22154,11 @@ pub fn run(
+                         n_demoted += 1;
+                         let why = match demote_at {
+                             Some(n) => format!("FORCED at DEMOTE_AT={n} (test door)"),
++                            None if starved => format!(
++                                "{n_live} active, cost model: its last {} bursts yielded at \
++                                 their entry without running (realized 0 tok/s on spec)",
++                                s.spec_entry_yields
++                            ),
+                             None => spec_demote_reason(n_live),
+                         };
+                         eprintln!(
+@@ -29756,6 +29775,7 @@ fn admit(
+         prefill_done: prefill_done_at_admit,
+         generated: Vec::new(),
+         tokens_emitted: 0,
++        spec_entry_yields: 0,
+         emission_clock: Default::default(),
+         aborted: false,
+         oom_teardown: false,
+@@ -32030,6 +32050,18 @@ fn spec_burst_pre(
+         return Ok(SpecBurstPre::Return(false));
+     }
+     let sampling = spec_sampling_for(&s.sampler);
++    // PROBE (flush arm): a continuation that holds a carried token and will yield at its entry
++    // (a request waits) flushes the token first, so the entry emits the next one.
++    if spec_yield_flush_arm()
++        && suffix.is_empty()
++        && s.constraint.is_none()
++        && spec.has_pending()
++        && std::env::var("MEMRA_ADMIT_YIELD").as_deref() != Ok("0")
++        && PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) > 0
++    {
++        lm.model.spec_flush_pending(engine, spec, sampling)?;
++        eprintln!("[spec-yield] flush arm: flushed the carried token before an entry yield");
++    }
+     // Cold speculative sessions must enter decode with the same prompt state as the plain
+     // policy they replace. Plain affinity stops at the stable live-turn boundary and primes
+     // a sub-floor tail tokenwise; a monolithic spec prime can select different Step35 bytes.
+@@ -32128,10 +32160,97 @@ fn spec_burst_pre(
+     })))
+ }
+ 
++/// ENTRY-YIELD BOUND (memra#1201). A burst's first commit hook runs before its first round.
++/// When a request waits for admission the hook says stop there, and the burst runs no round.
++/// A burst that entered on a carried pending token has emitted nothing at that point, so a
++/// session that holds one made no progress at all in that burst, and under arrivals that
++/// keep coming it made none for as long as they came: a greedy request emitted 1 to 3 tokens
++/// in a 20 to 30 s window where the same request without a carried token advances one token
++/// per burst (`research/spec-entry-yield-bound-20261110/`). The bound: a session may yield at
++/// its burst entry with nothing emitted at most this many times in a row; its next burst runs
++/// one round before it yields. Running a round where the burst would have yielded moves no
++/// token: where a burst ends is content-neutral (the burst-boundary and seeded-invariance
++/// gates).
++/// PROBE (measurement build only). The arms' knobs, read from the file named by
++/// `PROBE1201_KNOBS` (re-read at most every 200 ms, so one boot can run every arm), lines
++/// `N=<u32>` (the entry-yield bound; absent = unbounded), `STARVED=<m>` (arm b: when the cost
++/// model owns the gate, a session whose last m bursts each yielded at their entry with nothing
++/// emitted is priced at its realized rate over them, zero, and demotes; absent = off) and
++/// `FLUSH=1` (the flush arm: a continuation that would yield at its entry while it holds a
++/// carried token first flushes the token, so the entry emits the next one) and `SLOT=1` (the
++/// slot arm of b: a session's second and later silent entry yield in a row puts a zero-rate
++/// sample into the cost model's realized slot at (this tick's live sessions, its K)) and
++/// `BAND=1` (the LOW/HIGH band owns the gate, as `MEMRA_SPEC_GATE_MODEL=0` at boot).
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++struct ProbeKnobs {
++    n: u32,
++    starved: Option<u32>,
++    flush: bool,
++    slot: bool,
++    band: bool,
++}
++
++/// PROBE: the live session count of this tick's demotion sweep (the slot arm's n).
++static PROBE_N_LIVE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
++
++fn probe_knobs() -> ProbeKnobs {
++    type Slot = Option<(Instant, ProbeKnobs)>;
++    static K: std::sync::Mutex<Slot> = std::sync::Mutex::new(None);
++    let off = ProbeKnobs {
++        n: u32::MAX,
++        starved: None,
++        flush: false,
++        slot: false,
++        band: false,
++    };
++    let Ok(path) = std::env::var("PROBE1201_KNOBS") else {
++        return off;
++    };
++    let mut slot = K.lock().unwrap();
++    if let Some((at, k)) = *slot
++        && at.elapsed() < std::time::Duration::from_millis(200)
++    {
++        return k;
++    }
++    let mut k = off;
++    for line in std::fs::read_to_string(&path).unwrap_or_default().lines() {
++        match line.trim().split_once('=') {
++            Some(("N", v)) => k.n = v.trim().parse().unwrap_or(u32::MAX),
++            Some(("STARVED", v)) => k.starved = v.trim().parse().ok().filter(|&m: &u32| m >= 1),
++            Some(("FLUSH", v)) => k.flush = v.trim() == "1",
++            Some(("SLOT", v)) => k.slot = v.trim() == "1",
++            Some(("BAND", v)) => k.band = v.trim() == "1",
++            _ => {}
++        }
++    }
++    if slot.is_none_or(|(_, old)| old != k) {
++        eprintln!("[spec-yield] PROBE knobs now {k:?}");
++    }
++    *slot = Some((Instant::now(), k));
++    k
++}
++
++fn spec_entry_yield_max() -> u32 {
++    probe_knobs().n
++}
++
++fn spec_starved_yields() -> Option<u32> {
++    probe_knobs().starved
++}
++
++fn spec_yield_flush_arm() -> bool {
++    probe_knobs().flush
++}
++
+ /// The MTP spec burst's SSE emission state: one per burst, fed by the engine's round-cadence
+ /// `on_commit` hook (`flush`) and settled by `spec_burst_post`.
+ struct SpecBurstEmit<'t> {
+     admit_yield: bool,
++    /// True until this burst's first commit hook has run (the entry call, before round 0).
++    entry: bool,
++    /// The session's consecutive silent entry yields, carried in and written back by
++    /// `spec_burst_post`.
++    entry_yields: u32,
+     tok: &'t memra_tokenizer::Tokenizer,
+     decoded_visible: Vec<u8>,
+     cursor: usize,
+@@ -32168,6 +32287,8 @@ impl<'t> SpecBurstEmit<'t> {
+         let stop_ids = s.stop_token_ids.clone();
+         SpecBurstEmit {
+             admit_yield,
++            entry: true,
++            entry_yields: s.spec_entry_yields,
+             tok,
+             decoded_visible,
+             cursor,
+@@ -32192,10 +32313,11 @@ impl<'t> SpecBurstEmit<'t> {
+         emission_clock: &mut crate::hybrid_telemetry::EmissionClock,
+         tokens_emitted: &mut usize,
+     ) -> bool {
+-        let (tok, flush_tx) = (self.tok, &self.flush_tx);
+         // Admission verdict polled at EVERY round boundary (even empty flushes).
+         let keep =
+             !self.admit_yield || PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) == 0;
++        let keep = self.bound_entry_yield(keep, slice.is_empty());
++        let (tok, flush_tx) = (self.tok, &self.flush_tx);
+         if self.eos_seen || self.emit_remaining == 0 || slice.is_empty() {
+             // Nothing to publish: the public stream already ended (its later tokens are never
+             // visible; accounting happens post-burst) or nothing new committed this round.
+@@ -32228,6 +32350,40 @@ impl<'t> SpecBurstEmit<'t> {
+     }
+ }
+ 
++impl SpecBurstEmit<'_> {
++    /// The entry-yield bound (`SPEC_ENTRY_YIELD_MAX`). `admit_keep` is the admission verdict
++    /// of this hook call and `silent` says the call carries no token. Only a burst's entry
++    /// call can be a silent yield: every later call follows a round, and a round always
++    /// commits a token. A session that already yielded silently the allowed number of times
++    /// keeps going instead, for one round: the round's own hook call then yields.
++    fn bound_entry_yield(&mut self, admit_keep: bool, silent: bool) -> bool {
++        let entry = std::mem::replace(&mut self.entry, false);
++        if !silent {
++            self.entry_yields = 0;
++            return admit_keep;
++        }
++        if !entry || admit_keep {
++            return admit_keep;
++        }
++        if self.entry_yields >= spec_entry_yield_max() {
++            eprintln!(
++                "[spec-yield] bound: a round after {} silent entry yields",
++                self.entry_yields
++            );
++            self.entry_yields = 0;
++            return true;
++        }
++        self.entry_yields = self.entry_yields.saturating_add(1);
++        if self.entry_yields >= 2 {
++            eprintln!(
++                "[spec-yield] starved: {} silent entry yields in a row",
++                self.entry_yields
++            );
++        }
++        false
++    }
++}
++
+ /// A spec burst's continue-verdict at a round boundary. `false` ends the burst at this round,
+ /// through the exit a reached burst count takes.
+ /// - `admit_keep` is false while a request waits for admission (ADMISSION YIELD above).
+@@ -32271,8 +32427,20 @@ fn spec_burst_post(
+         token_events,
+         eos_ids,
+         stop_ids,
++        entry_yields,
+         ..
+     } = emit;
++    if probe_knobs().slot && entry_yields >= 2 && entry_yields > s.spec_entry_yields {
++        let n = PROBE_N_LIVE
++            .load(std::sync::atomic::Ordering::Relaxed)
++            .max(1);
++        spec_cost_observe(&s.model, n, s.spec_k, 0.0);
++        eprintln!(
++            "[spec-yield] slot arm: zero-rate sample at n={n} K={}",
++            s.spec_k
++        );
++    }
++    s.spec_entry_yields = entry_yields;
+     let spec = s.spec.as_mut().expect("spec_burst_post on a spec session");
+     if let Some(trace) = s.ttft.as_ref() {
+         trace.mark_prime_end();
+@@ -38095,6 +38263,58 @@ mod tests {
+         assert_eq!(remaining, requested_max - burst.len());
+     }
+ 
++    /// The entry-yield bound (memra#1201): a session yields at a burst's entry with nothing
++    /// emitted at most `SPEC_ENTRY_YIELD_MAX` times in a row, then runs a round.
++    #[test]
++    fn spec_entry_yield_is_bounded() {
++        let tok = chatml_fixture_tokenizer("spec-entry-yield");
++        let (tx, _rx) = event_channel();
++        let burst = |entry_yields: u32| SpecBurstEmit {
++            admit_yield: true,
++            entry: true,
++            entry_yields,
++            tok: &tok,
++            decoded_visible: Vec::new(),
++            cursor: 0,
++            emit_remaining: 64,
++            eos_seen: false,
++            send_ok: true,
++            token_events: 0,
++            flush_tx: tx.clone(),
++            eos_ids: Vec::new(),
++            stop_ids: Vec::new(),
++        };
++        // A request waits (admit_keep false) at every hook call of every burst.
++        let mut yields = 0u32;
++        let mut silent_in_a_row = 0u32;
++        let mut worst = 0u32;
++        for _ in 0..12 {
++            let mut e = burst(yields);
++            if e.bound_entry_yield(false, true) {
++                // The burst runs its round; the round's own hook call carries tokens and yields.
++                assert!(!e.bound_entry_yield(false, false));
++                silent_in_a_row = 0;
++            } else {
++                silent_in_a_row += 1;
++            }
++            worst = worst.max(silent_in_a_row);
++            // The burst's closing hook call is silent and not an entry: it changes nothing.
++            let before = e.entry_yields;
++            assert!(!e.bound_entry_yield(false, true));
++            assert_eq!(e.entry_yields, before);
++            yields = e.entry_yields;
++        }
++        assert_eq!(worst, SPEC_ENTRY_YIELD_MAX, "silent entry yields in a row");
++        // Nobody waits: the entry call keeps going and counts nothing.
++        let mut e = burst(SPEC_ENTRY_YIELD_MAX);
++        assert!(e.bound_entry_yield(true, true));
++        assert_eq!(e.entry_yields, SPEC_ENTRY_YIELD_MAX);
++        // A burst that emitted at its entry (no carried token) may yield there: it advanced.
++        let mut e = burst(SPEC_ENTRY_YIELD_MAX);
++        assert!(!e.bound_entry_yield(false, false));
++        assert_eq!(e.entry_yields, 0);
++    }
++
+     /// A burst ends at the round its public stream ends, through the real round hook: the flush
+     /// that commits EOS (or a stop id) answers false, and so does every later flush, so the
+     /// engine runs no rounds after it. A gone client ends it too. Before this verdict the hook
+@@ -38106,6 +38326,8 @@ mod tests {
+         // `admit_yield: false`: PENDING_ADMITS is process-global and other tests move it.
+         let emit = |tx: EventSender| SpecBurstEmit {
+             admit_yield: false,
++            entry: true,
++            entry_yields: 0,
+             tok: &tok,
+             decoded_visible: Vec::new(),
+             cursor: 0,
