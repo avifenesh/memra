@@ -284,7 +284,7 @@ esac
         stdout = self.run_battery()
         self.assertIn("fixture  argmax-margin  NOT-JUDGED  (not judged: device class h100 not maintained", stdout)
         self.assertIn("fixture  argmax-margin-batch  NOT-JUDGED  (not judged: device class h100", stdout)
-        self.assertIn("argmax cells NOT JUDGED: 2 (device class not maintained, no floor row)", stdout)
+        self.assertIn("argmax cells NOT JUDGED: 2 (device class not maintained, no floor row or no stored rows)", stdout)
         self.assertNotIn("argmax-margin  PASS", stdout)
         self.assertNotIn("argmax-margin-batch  PASS", stdout)
         # The line with a failing exit code is a failure, not a quiet skip.
@@ -324,6 +324,19 @@ esac
         self.argmax_log.write_text(passed)
         self.argmax_batch_log.write_text(refusal)
         self.run_battery(expected=1, diagnostic="argmax-margin-batch  REFUSED   no calibrated floor for this cell",
+                         FIXTURE_ARGMAX_BATCH_RC="1")
+
+    def test_cell_without_main_stored_rows_is_refused(self):
+        # memra#1204: a cell with a floor row but no stored rows of main is refused, not failed.
+        refusal = ("argmax-margin-gate: NO-STORED-ROWS (no stored rows in tools/argmax-margin-rows for "
+                   "model=m model_sha256=aa prompt=board-2048)\n")
+        passed = self.argmax_log.read_text()
+        self.argmax_log.write_text(refusal)
+        self.run_battery(expected=1, diagnostic="argmax-margin  REFUSED   no stored rows of main for this cell: "
+                         "NO-STORED-ROWS (no stored rows in tools/argmax-margin-rows", FIXTURE_ARGMAX_RC="1")
+        self.argmax_log.write_text(passed)
+        self.argmax_batch_log.write_text(refusal)
+        self.run_battery(expected=1, diagnostic="argmax-margin-batch  REFUSED   no stored rows of main for this cell",
                          FIXTURE_ARGMAX_BATCH_RC="1")
 
     def test_nonzero_exit_cannot_pass(self):

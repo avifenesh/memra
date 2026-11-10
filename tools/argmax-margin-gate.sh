@@ -4,9 +4,11 @@
 #
 #   tools/argmax-margin-gate.sh [<model.gguf|hf_dir>] [--prompt <file>] [--window N]
 #                              [--max-flips N] [--decode eager|batch] [--floors FILE]
-#                              [--device NAME] [--require-floor] [--canary] [--logdir DIR]
+#                              [--stored-rows DIR] [--rehash-model] [--device NAME]
+#                              [--require-floor] [--canary] [--logdir DIR]
 #   tools/argmax-margin-gate.sh <model> [--prompt <file>] [--decode eager|batch] --calibrate
-#                              [--receipt PATH] [--logdir DIR]
+#                              [--receipt PATH] [--rows-out FILE --commit C [--window N]]
+#                              [--logdir DIR]
 #
 # Raw logs land in $MEMRA_GATE_LOGDIR (default $TMPDIR/memra-argmax-margin-gate), NOT in the
 # tracked research dir — this runs every battery. Use --logdir research/<lane>/ to keep one.
@@ -75,6 +77,34 @@
 #               class matches, are refused. The prime and served checks need no floor: a
 #               structured prime or a served-token mismatch fails the cell on every device.
 #
+# THE STORED ROWS (memra#1204). The floor judges prefill against decode inside one build, and
+# on the roster it is about 4 logits, so a candidate that moves a token by 1 to 3 logits inside
+# the window passes it. The second check compares the candidate's window with main's own
+# table for the same cell, kept in tools/argmax-margin-rows/ (one `.rows` file per cell, keyed
+# by the model's name and sha256, the prompt's name and sha256, the decode program, the exact
+# device name and the window; looked up by that key, never by file name). The comparison is
+# of the printed lines, byte for byte, with no tolerance: on a device whose tables repeat
+# exactly between runs of one build, any difference is a change of numbers.
+#
+#   STORED-ROWS: identical   every row of the window equals main's. Passes.
+#   ROW-DIFF / DIFFERENT     a row differs: both sides are printed per row (top-1 ids, margins,
+#               spread, and the probe's detail line). FAILS. A change of numeric class that a
+#               decision record accepts recalibrates the stored table in the same PR, the old
+#               and the new rows shown (docs/TESTING.md).
+#   STORED-ROWS: none        no stored table for this key (another prompt's bytes, another
+#               artifact, device or window read as none, never as a difference). Outside the
+#               battery the check is then not applied. With --require-floor the cell is
+#               refused (NO-STORED-ROWS) on a maintained or unknown device, and NOT-JUDGED on a
+#               device of a class nobody maintains.
+#
+# A cell passes only if the floor rule and the stored rows both pass. The model's sha256 is
+# read from a cache, ${XDG_CACHE_HOME:-~/.cache}/memra/model-sha256.tsv, keyed by the
+# resolved path, the size and the modification time (for a checkpoint directory, of every
+# file in it); --rehash-model ignores the cache and hashes the bytes again. A checkpoint
+# directory's digest is the sha256 of the `sha256sum` lines of its files in C-locale path order.
+# `--calibrate --rows-out FILE --commit C` writes the stored table of the calibration log's last
+# --window rows (default 12, the gate's window), measured by the binary of commit C.
+#
 # For every flip and every wide row the gate prints the clause, both top-1 ids and margins,
 # the spread, the gap shift and the floor, and under it the probe's `detail` line: both
 # programs' top-2 ids with their text and logits and each program's logit at the other's
@@ -135,7 +165,11 @@
 # (gap shift 2000, above any floor a calibration can set) and requires the judge to name that
 # row WIDE-FLIP, or UNCALIBRATED-FLIP when the cell has no floor row. This is a mutation test
 # of the judge on its own parse path, so it fires whether or not the model under test
-# produces a natural flip. The synthetic near tie, the budget overrun, the wide row and the
+# produces a natural flip. It also writes a stored table from the measured window itself,
+# moves one margin of the window's last row by 1 logit in another copy, and requires the
+# stored-rows comparison to report exactly that row (ROW-DIFF) while the unmoved copy reads
+# identical: the byte comparison runs on its own parse path whether or not main's table for
+# the cell exists. The synthetic near tie, the budget overrun, the wide row and the
 # old rule's tautology are pinned on CPU: `cargo test -p memra-engine --lib argmax_margin` and
 # `cargo test -p memra-engine --bin argmax-margin-probe`.
 #   Rejected canary designs, and why:
@@ -158,16 +192,20 @@ PROMPT=research/e2e/prompts/board-2048.txt
 WINDOW=12
 MAX_FLIPS=""    # unset = model-calibrated default (resolved after MODEL below)
 FLOORS=tools/argmax-margin-floors.tsv   # the calibrated floor rows
+STORED_ROWS=tools/argmax-margin-rows    # main's stored rows per cell (memra#1204)
+STORED_ROWS_GIVEN=0  # 1 = --stored-rows named a directory, which must then exist
+REHASH=0             # 1 = hash the model's bytes even when the digest cache has its key
 DEVICE=""            # floor key; unset = the name nvidia-smi reports for the probe's device
-REQUIRE_FLOOR=0      # 1 = a cell with no floor row is refused (the release battery)
+REQUIRE_FLOOR=0      # 1 = a cell with no floor row or no stored rows is refused (the release battery)
 CALIBRATE=0          # 1 = measure the whole prompt and print its floors row; no verdict
 RECEIPT=""           # --calibrate: the receipt path written into the row (default: the log)
+ROWS_OUT=""; COMMIT="" # --calibrate: write the stored table of the last --window rows, measured at COMMIT
 DECODE=eager         # decode side of the table: eager (decode_step) or batch (the served program)
 CANARY=0
 PRIME=""; SERVED=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --prompt|--window|--max-flips|--decode|--logdir|--floors|--device|--receipt)
+        --prompt|--window|--max-flips|--decode|--logdir|--floors|--device|--receipt|--stored-rows|--rows-out|--commit)
             [ $# -ge 2 ] && [[ "$2" != --* ]] || { echo "FAIL: $1 requires a value"; exit 2; } ;;
     esac
     case "$1" in
@@ -176,10 +214,14 @@ while [ $# -gt 0 ]; do
         --max-flips)    MAX_FLIPS="$2"; shift 2 ;;
         --decode)       DECODE="$2"; shift 2 ;;
         --floors)       FLOORS="$2"; shift 2 ;;
+        --stored-rows)  STORED_ROWS="$2"; STORED_ROWS_GIVEN=1; shift 2 ;;
         --device)       DEVICE="$2"; shift 2 ;;
         --receipt)      RECEIPT="$2"; shift 2 ;;
+        --rows-out)     ROWS_OUT="$2"; shift 2 ;;
+        --commit)       COMMIT="$2"; shift 2 ;;
         --logdir)       MEMRA_GATE_LOGDIR="$2"; shift 2 ;;
         --require-floor) REQUIRE_FLOOR=1; shift ;;
+        --rehash-model) REHASH=1; shift ;;
         --calibrate)    CALIBRATE=1; shift ;;
         --canary)       CANARY=1; shift ;;
         *)              echo "unknown arg: $1" >&2; exit 2 ;;
@@ -187,6 +229,11 @@ while [ $# -gt 0 ]; do
 done
 [[ "$WINDOW" =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: window must be a positive integer"; exit 2; }
 case "$DECODE" in eager|batch) ;; *) echo "FAIL: --decode takes eager or batch"; exit 2 ;; esac
+if [ -n "$ROWS_OUT" ] || [ -n "$COMMIT" ]; then
+    [ $CALIBRATE = 1 ] && [ -n "$ROWS_OUT" ] && [ -n "$COMMIT" ] \
+        || { echo "FAIL: --rows-out and --commit go together, with --calibrate"; exit 2; }
+fi
+STORE_WINDOW=$WINDOW # the gate window a stored table covers; --calibrate measures all rows
 if [ $CALIBRATE = 1 ]; then
     [ $CANARY = 0 ] || { echo "FAIL: --calibrate measures a floor; it takes no --canary"; exit 2; }
     WINDOW=all
@@ -252,6 +299,9 @@ fi
 [[ "$MAX_FLIPS" =~ ^[0-9]+$ ]] || { echo "FAIL: max-flips must be a nonnegative integer"; exit 2; }
 [ -f "$PROMPT" ] || { echo "FAIL: prompt $PROMPT missing"; exit 1; }
 [ -f "$FLOORS" ] || { echo "FAIL: floors table $FLOORS missing"; exit 1; }
+if [ "$STORED_ROWS_GIVEN" = 1 ] && [ ! -d "$STORED_ROWS" ]; then
+    echo "FAIL: stored-rows directory $STORED_ROWS missing"; exit 1
+fi
 if [ ! -x "$PROBE" ]; then
     if [ "$EXPLICIT_MODEL" = 1 ]; then
         echo "FAIL: build argmax-margin-probe (cargo build --release -p memra-engine --bin argmax-margin-probe) before running the requested gate"; exit 1
@@ -289,8 +339,50 @@ fi
 [ -n "$DEVICE" ] || DEVICE=unknown
 KEY=(--model "$MODEL_NAME" --prompt "$PROMPT_NAME" --prompt-sha256 "$PROMPT_SHA" --decode "$DECODE" --device "$DEVICE")
 
+# The model artifact's sha256, part of a stored table's key. Hashing 15 to 20 GB on every gate
+# run is slow, so the digest is cached per resolved path with the size and modification time
+# it was taken at (for a checkpoint directory, those of every file). A key that does not match
+# is hashed again; --rehash-model always hashes. Prints the digest, then "hashed" or "cached".
+model_sha256() {
+    local path cache key sum how=hashed
+    path=$(readlink -f "$1")
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/memra/model-sha256.tsv"
+    if [ -d "$path" ]; then
+        key=$(cd "$path" && find -L . -type f | LC_ALL=C sort \
+            | while IFS= read -r f; do echo "$f $(stat -L -c '%s %Y' "$f")"; done \
+            | sha256sum | cut -d' ' -f1)
+    else
+        key=$(stat -L -c '%s %Y' "$path")
+    fi
+    if [ "$REHASH" = 0 ] && [ -f "$cache" ]; then
+        sum=$(awk -F'\t' -v p="$path" -v k="$key" '$1 == p && $2 == k { s = $3 } END { print s }' "$cache")
+        if [[ "$sum" =~ ^[0-9a-f]{64}$ ]]; then echo "$sum cached"; return 0; fi
+    fi
+    if [ -d "$path" ]; then
+        sum=$(cd "$path" && find -L . -type f | LC_ALL=C sort \
+            | while IFS= read -r f; do sha256sum "$f"; done | sha256sum | cut -d' ' -f1)
+    else
+        sum=$(sha256sum "$path" | cut -d' ' -f1)
+    fi
+    [[ "$sum" =~ ^[0-9a-f]{64}$ ]] || return 1
+    if mkdir -p "$(dirname "$cache")" 2>/dev/null; then
+        { [ -f "$cache" ] && awk -F'\t' -v p="$path" '$1 != p' "$cache"
+          printf '%s\t%s\t%s\n' "$path" "$key" "$sum"; } > "$cache.$$" 2>/dev/null \
+            && mv -f "$cache.$$" "$cache" 2>/dev/null
+    fi
+    echo "$sum $how"
+}
+# The stored-rows comparison runs when the directory exists (the tracked one, or --stored-rows).
+# The canary builds its own stored table and needs no digest.
+MODEL_SHA=""
+if { [ $CALIBRATE = 0 ] && [ $CANARY = 0 ] && [ -d "$STORED_ROWS" ]; } || [ -n "$ROWS_OUT" ]; then
+    read -r MODEL_SHA MODEL_SHA_HOW < <(model_sha256 "$MODEL") || true
+    [[ "$MODEL_SHA" =~ ^[0-9a-f]{64}$ ]] || { echo "FAIL: could not take the sha256 of $MODEL"; exit 1; }
+fi
+
 echo "argmax-margin-gate: model=$(basename "$MODEL") prompt=$(basename "$PROMPT") window=$WINDOW decode=$DECODE canary=$CANARY"
 echo "  device: $DEVICE"
+[ -z "$MODEL_SHA" ] || echo "  model sha256: $MODEL_SHA ($MODEL_SHA_HOW)"
 [ $CALIBRATE = 1 ] || echo "  flip budget: $MAX_FLIPS (row: $BUDGET_ROW)"
 PROBE_ARGS=("$MODEL" "$PROMPT" "$WINDOW")
 [ "$DECODE" = eager ] || PROBE_ARGS+=(--decode "$DECODE")
@@ -383,7 +475,9 @@ fi
 
 # --calibrate ends here: the floors row of this table, and no verdict.
 if [ $CALIBRATE = 1 ]; then
-    "$PROBE" --judge "$LOG" --calibrate --receipt "${RECEIPT:-$LOG_SHOWN}" "${KEY[@]}" | sed 's/^/  /'
+    ROWS_ARGS=()
+    [ -z "$ROWS_OUT" ] || ROWS_ARGS=(--rows-out "$ROWS_OUT" --commit "$COMMIT" --model-sha256 "$MODEL_SHA" --window "$STORE_WINDOW")
+    "$PROBE" --judge "$LOG" --calibrate --receipt "${RECEIPT:-$LOG_SHOWN}" "${KEY[@]}" ${ROWS_ARGS[@]+"${ROWS_ARGS[@]}"} | sed 's/^/  /'
     rc=${PIPESTATUS[0]}
     [ "$DECODE" = batch ] && echo "  SERVED-SUMMARY served=$SERVED" || echo "  PRIME-SUMMARY prime=$PRIME"
     echo "  raw: $LOG_SHOWN"
@@ -393,6 +487,7 @@ if [ $CALIBRATE = 1 ]; then
         exit 1
     fi
     echo "  CALIBRATED: add the FLOOR-ROW line to $FLOORS with its banked log as the receipt"
+    [ -z "$ROWS_OUT" ] || echo "  STORED: commit $ROWS_OUT under $STORED_ROWS/ (main's rows of the last $STORE_WINDOW positions)"
     exit 0
 fi
 
@@ -419,13 +514,59 @@ if [ $CANARY = 1 ]; then
         CANARY_PRIME=$(prime_judge "$LOG.prime-injected")
         echo "  [canary] injected a MISMATCH-STRUCTURED batched-prime line; the reader saw: $CANARY_PRIME"
     fi
+    # The stored-rows comparison (memra#1204): a stored table written from this window, and a
+    # copy of the window with one margin of its last row moved by 1 logit. The comparison must
+    # call the unmoved copy identical and name exactly the moved row in the other.
+    CDIR="$D/canary-stored-rows"
+    mkdir -p "$CDIR"
+    CKEY=(--model-sha256 canary-self --window "$WINDOW")
+    CANARY_ROWS=MISSING
+    if "$PROBE" --judge "$LOG" --calibrate --receipt canary "${KEY[@]}" "${CKEY[@]}" \
+            --rows-out "$CDIR/canary.rows" --commit canary > "$CDIR/write.txt" 2>&1; then
+        CPOS=$(awk '/^[0-9]+[ \t]+[0-9]+/ { p = $1 } END { print p }' "$LOG")
+        awk -v pos="$CPOS" '
+            /^[0-9]+[ \t]+[0-9]+/ && $1 == pos {
+                rest = $7; for (i = 8; i <= NF; i++) rest = rest " " $i
+                printf "%-8s %-13s %-16s %-12s %-16.9e %-16s %s\n", $1, $2, $3, $4, $5 + 1.0, $6, rest
+                next
+            }
+            { print }' "$LOG" > "$LOG.rows-injected"
+        same=$("$PROBE" --judge "$LOG" --max-flips "$WINDOW" "${KEY[@]}" "${CKEY[@]}" --stored-rows "$CDIR" 2>&1)
+        moved=$("$PROBE" --judge "$LOG.rows-injected" --max-flips "$WINDOW" "${KEY[@]}" "${CKEY[@]}" --stored-rows "$CDIR" 2>&1)
+        if echo "$same" | grep -q '^STORED-ROWS: identical ' \
+            && [ "$(echo "$moved" | grep -c '^ROW-DIFF pos=')" = 1 ] \
+            && echo "$moved" | grep -q "^ROW-DIFF pos=$CPOS\$" \
+            && echo "$moved" | grep -q "^STORED-ROWS: DIFFERENT (1 of $WINDOW positions "; then
+            CANARY_ROWS=ROW-DIFF
+        else
+            CANARY_ROWS=NO-ROW-DIFF
+        fi
+    fi
+    echo "  [canary] moved margin_d at pos ${CPOS:-?} by 1 logit against a stored table of this window;"
+    echo "           the stored-rows comparison saw: $CANARY_ROWS"
 fi
 
-# The verdict: memra_engine::argmax_margin::judge on the table, through the probe's --judge.
-# Exit 0 passes, 1 fails, anything else is a table or floors file it could not read.
-verdict=$("$PROBE" --judge "$PARSE" --max-flips "$MAX_FLIPS" --floors "$FLOORS" "${KEY[@]}" 2>&1)
+# The verdict: memra_engine::argmax_margin::judge on the table, through the probe's --judge,
+# and main's stored rows for the cell when the stored-rows directory exists (not on the
+# canary's copy: the canary checks the comparison on its own stored table above).
+# Exit 0 passes, 1 fails, anything else is a table, floors or stored file it could not read.
+STORED_ARGS=()
+STORED=""
+if [ $CANARY = 0 ] && [ -d "$STORED_ROWS" ]; then
+    STORED_ARGS=(--stored-rows "$STORED_ROWS" --model-sha256 "$MODEL_SHA" --window "$WINDOW")
+fi
+verdict=$("$PROBE" --judge "$PARSE" --max-flips "$MAX_FLIPS" --floors "$FLOORS" "${KEY[@]}" \
+    ${STORED_ARGS[@]+"${STORED_ARGS[@]}"} 2>&1)
 jrc=$?
 echo "$verdict" | sed 's/^/  /'
+if [ $CANARY = 0 ]; then
+    if [ -d "$STORED_ROWS" ]; then
+        STORED=$(echo "$verdict" | grep -m1 -oE '^STORED-ROWS: (identical|DIFFERENT|none) ' | cut -d' ' -f2)
+    else
+        STORED=none
+        echo "  STORED-ROWS: none (no stored-rows directory $STORED_ROWS; the table is not compared with main's)"
+    fi
+fi
 if [ $jrc -ne 0 ] && [ $jrc -ne 1 ]; then
     echo "  FAIL: the judge could not read the table or the floors table (exit $jrc)"
     echo "  raw: $LOG_SHOWN"
@@ -456,14 +597,26 @@ if [ $CANARY = 1 ] && [ "$DECODE" = batch ] && [ "${CANARY_SERVED:-}" != MISMATC
     echo "               the served-batch reader has no teeth."
     exit 1
 fi
+if [ $CANARY = 1 ] && [ "$CANARY_ROWS" != ROW-DIFF ]; then
+    echo "  CANARY FAIL: the stored-rows comparison did not name exactly the moved row (it saw"
+    echo "               $CANARY_ROWS): the comparison with main's rows has no teeth."
+    echo "  raw: $LOG_SHOWN"
+    exit 1
+fi
 if [ $CANARY = 1 ]; then
     if [ $jrc -eq 1 ] && echo "$verdict" | grep -qE '^(WIDE-FLIP|UNCALIBRATED-FLIP) pos=9999 '; then
-        echo "  CANARY PASS: the judge rejected the injected wide flip as required (teeth)"
+        echo "  CANARY PASS: the judge rejected the injected wide flip and the stored-rows comparison"
+        echo "               named the moved row, as required (teeth)"
         echo "  raw: $LOG_SHOWN"
         exit 0
     fi
     echo "  CANARY FAIL: the injected wide flip did NOT fail the verdict: the judge is not"
     echo "               reading its own margins; this gate has no teeth."
+    exit 1
+fi
+if [ -z "$STORED" ]; then
+    echo "  FAIL: the judge printed no STORED-ROWS line (a judge that does not compare main's rows)"
+    echo "  raw: $LOG_SHOWN"
     exit 1
 fi
 # The prime and served checks need no floor, so they fail a cell on every device, before the
@@ -494,6 +647,20 @@ if [ $UNCALIBRATED = 1 ] && [ $REQUIRE_FLOOR = 1 ]; then
     echo "  raw: $LOG_SHOWN"
     exit 1
 fi
+if [ "$STORED" = none ] && [ $REQUIRE_FLOOR = 1 ]; then
+    # The same reading for main's stored rows: a maintained or unknown device without them is
+    # refused, a device of a class nobody maintains is not judged.
+    STATUS=$(python3 tools/change_impact.py --repo . --device-status "$DEVICE" 2>/dev/null) || STATUS=unknown
+    case "$STATUS" in
+        "unmaintained "*)
+            echo "argmax-margin-gate: NOT-JUDGED (not judged: device class ${STATUS#unmaintained } not maintained, no stored rows; device=$DEVICE)"
+            echo "  raw: $LOG_SHOWN"
+            exit 0 ;;
+    esac
+    echo "argmax-margin-gate: NO-STORED-ROWS (no stored rows in $STORED_ROWS for model=$MODEL_NAME model_sha256=${MODEL_SHA:-none} prompt=$PROMPT_NAME sha256=$PROMPT_SHA decode=$DECODE device=$DEVICE window=$WINDOW, device class: ${STATUS:-unknown}; store main's with --calibrate --rows-out)"
+    echo "  raw: $LOG_SHOWN"
+    exit 1
+fi
 if [ $jrc -eq 0 ]; then
     if [ $UNCALIBRATED = 1 ]; then
         echo "  PASS: UNCALIBRATED, no flip. No floor row for this model, prompt, decode program and"
@@ -501,9 +668,14 @@ if [ $jrc -eq 0 ]; then
     else
         echo "  PASS: no wide flip, no wide row, no known row wider than recorded, near ties within the budget"
     fi
+    if [ "$STORED" = identical ]; then
+        echo "        and every row of the window equals main's stored rows"
+    else
+        echo "        (no stored rows for this cell: the window was not compared with main's)"
+    fi
     echo "  raw: $LOG_SHOWN"
     exit 0
 fi
-echo "  FAIL: a wide flip, a wide row, a known row wider than recorded, a flip with no floor to judge it by, or too many near ties (the lines above name each row)"
+echo "  FAIL: a wide flip, a wide row, a known row wider than recorded, a flip with no floor to judge it by, too many near ties, or a row that differs from main's stored rows (the lines above name each row)"
 echo "  raw: $LOG_SHOWN"
 exit 1

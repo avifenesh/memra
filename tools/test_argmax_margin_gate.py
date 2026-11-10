@@ -70,22 +70,41 @@ class GateTest(unittest.TestCase):
                                  "1.000000000e-1", "2.000000000e-1", "3.000000000e-1", known,
                                  "research/fixture/gate.log")) + "\n")
 
-    def stub_probe(self, output):
-        """The stub: `--judge` goes to the real probe, a measurement prints `output`."""
+    def stub_probe(self, output, blind_judge=False):
+        """The stub: `--judge` goes to the real probe, a measurement prints `output`. A blind
+        judge drops `--stored-rows DIR` first: a judge that never compares main's rows."""
+        judge = "exec '" + str(REAL_PROBE) + "' \"$@\""
+        if blind_judge:
+            judge = ("for a in \"$@\"; do shift; if [ \"$skip\" = 1 ]; then skip=0; continue; fi; "
+                     "if [ \"$a\" = --stored-rows ]; then skip=1; continue; fi; set -- \"$@\" \"$a\"; done; " + judge)
         self.probe.write_text(
-            "#!/bin/sh\nif [ \"$1\" = --judge ]; then exec '" + str(REAL_PROBE) + "' \"$@\"; fi\n"
+            "#!/bin/sh\nif [ \"$1\" = --judge ]; then " + judge + "; fi\n"
             "printf '%s\\n' \"$@\" > '" + str(self.root / "probe.args")
             + "'\nprintf '%s\\n' '" + output + "'\n")
         self.probe.chmod(0o700)
 
-    def run_gate(self, output, model=None, extra=(), env=None, prime=PRIME_MATCH, device=DEVICE):
+    def run_gate(self, output, model=None, extra=(), env=None, prime=PRIME_MATCH, device=DEVICE,
+                 blind_judge=False):
         if prime is not None:
             output = output + "\n" + prime if output else prime
-        self.stub_probe(output)
+        self.stub_probe(output, blind_judge)
+        # The model digest cache lives under the fixture, not the caller's home.
         return subprocess.run(["bash", str(self.gate), str(model or self.gguf),
             "--prompt", str(self.prompt), "--window", "2", "--logdir", str(self.root / "logs"),
             "--device", device, *extra], capture_output=True, text=True, timeout=20,
-            env={**FIXTURE_ENV, **(env or {})})
+            env={**FIXTURE_ENV, "XDG_CACHE_HOME": str(self.root / "cache"), **(env or {})})
+
+    def store_rows(self, rows, model=None, extra=(), prime=PRIME_MATCH, device=DEVICE, name=None):
+        """Main's stored table for a fixture cell (memra#1204), written by the gate's own
+        `--calibrate --rows-out` from `rows`: the last 2 rows, the fixture's window."""
+        out = self.root / "tools/argmax-margin-rows"
+        out.mkdir(exist_ok=True)
+        path = out / (name or f"{(model or self.gguf).stem}-{len(list(out.iterdir()))}.rows")
+        r = self.run_gate(rows, model, (*extra, "--calibrate", "--receipt", "research/fixture/cal.log",
+                          "--rows-out", str(path), "--commit", "fixture"), prime=prime, device=device)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(f"STORED-ROWS-FILE: {path} (2 rows", r.stdout)
+        return path
 
     def test_raw_log_path_is_relative_to_the_evidence_root(self):
         rows = "10 1 1.0000 1 1.0000 0.1000 yes\n11 2 1.0000 2 1.0000 0.1000 yes"
@@ -277,6 +296,7 @@ class GateTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("argmax-margin-gate: UNCALIBRATED (no floor row", r.stdout)
         self.assertNotIn("  PASS:", r.stdout)
+        self.store_rows(ROWS)
         self.assertEqual(self.run_gate(ROWS, extra=("--require-floor",)).returncode, 0)
         # The canary still has teeth there: the injected flip fails closed.
         r = self.run_gate(ROWS, device=other, extra=("--canary",))
@@ -348,7 +368,8 @@ class GateTest(unittest.TestCase):
         r = self.run_gate(ROWS, device="NVIDIA H100 80GB HBM3")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("  PASS: UNCALIBRATED, no flip.", r.stdout)
-        # A calibrated device is judged whatever its class says.
+        # A calibrated device with main's stored rows is judged whatever its class says.
+        self.store_rows(ROWS)
         r = self.run_gate(ROWS, extra=need)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("  PASS: no wide flip", r.stdout)
@@ -378,6 +399,173 @@ class GateTest(unittest.TestCase):
         r = self.run_gate(ROWS, device="NVIDIA H100 80GB HBM3", extra=("--require-floor",))
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("device class: unknown;", r.stdout)
+
+    # memra#1204: the candidate's window against main's stored rows.
+
+    def test_stored_rows_identical_pass_and_a_move_under_the_floor_fails_with_both_sides(self):
+        self.store_rows(ROWS)
+        r = self.run_gate(ROWS)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("  STORED-ROWS: identical (2 rows equal main's, measured at fixture; "
+                      "research/fixture/cal.log)", r.stdout)
+        self.assertIn("and every row of the window equals main's stored rows", r.stdout)
+        # One margin moved by 0.2, a gap shift inside the floor of 0.4: the floor rule passes it,
+        # the stored rows do not, and both sides of the row are printed.
+        moved = "10 1 1.0000 1 1.0000 0.1000 yes\n11 2 1.0000 2 1.2000 0.1000 yes"
+        r = self.run_gate(moved + "\ndetail pos=11 the examination line")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("  SUMMARY flips=0 bad=0 ", r.stdout)
+        self.assertIn("  ROW-DIFF pos=11\n"
+                      "    stored (main): prefill_top1=2 margin_p=1.000000000e0 decode_top1=2 "
+                      "margin_d=1.000000000e0 spread=1.000000015e-1\n"
+                      "    candidate:     prefill_top1=2 margin_p=1.000000000e0 decode_top1=2 "
+                      "margin_d=1.200000048e0 spread=1.000000015e-1\n"
+                      "    detail pos=11 the examination line", r.stdout)
+        self.assertNotIn("ROW-DIFF pos=10", r.stdout)
+        self.assertIn("  STORED-ROWS: DIFFERENT (1 of 2 positions differ from main's rows", r.stdout)
+        self.assertIn("or a row that differs from main's stored rows", r.stdout)
+        # A token change at a margin under the floor: a near tie to the floor rule, a difference here.
+        tie = "10 1 1.0000 1 1.0000 0.1000 yes\n11 3 1.0e-2 2 1.0e-2 2.0e-2 NO"
+        r = self.run_gate(tie)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("  near-tie pos=11 ", r.stdout)
+        self.assertIn("  SUMMARY flips=1 bad=0 ", r.stdout)
+        self.assertIn("    candidate:     prefill_top1=3 margin_p=9.999999776e-3 decode_top1=2 "
+                      "margin_d=9.999999776e-3 spread=1.999999955e-2 FLIP", r.stdout)
+        self.assertIn("  STORED-ROWS: DIFFERENT (1 of 2 positions", r.stdout)
+
+    def test_another_prompt_artifact_or_device_reads_as_no_stored_table(self):
+        self.store_rows(ROWS)
+        self.gguf.write_bytes(b"other model bytes")
+        r = self.run_gate(ROWS)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        sha = hashlib.sha256(b"other model bytes").hexdigest()
+        self.assertIn(f"  STORED-ROWS: none (no stored table for model=model model_sha256={sha} ", r.stdout)
+        self.assertIn("(no stored rows for this cell: the window was not compared with main's)", r.stdout)
+        self.assertNotIn("ROW-DIFF", r.stdout)
+        self.gguf.write_bytes(b"")
+        self.add_floor("model", self.prompt, "eager", device="another device")
+        r = self.run_gate(ROWS, device="another device")
+        self.assertIn('  STORED-ROWS: none (no stored table for model=model ', r.stdout)
+        self.assertIn('device="another device" window=2;', r.stdout)
+        self.prompt.write_text("Other prompt bytes.\n")
+        r = self.run_gate(ROWS)
+        self.assertIn("  STORED-ROWS: none (no stored table", r.stdout)
+        # A named directory that does not exist is an error, not "none".
+        r = self.run_gate(ROWS, extra=("--stored-rows", str(self.root / "absent")))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("stored-rows directory", r.stdout)
+        # A stored file that does not parse is an error, never "none".
+        (self.root / "tools/argmax-margin-rows/broken.rows").write_text("model\tm\n")
+        r = self.run_gate(ROWS)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("MALFORMED: ", r.stdout)
+
+    def test_require_floor_refuses_a_cell_without_stored_rows_or_does_not_judge_it(self):
+        self.install_device_rules()
+        (self.root / "tools/argmax-margin-rows").mkdir()
+        need = ("--require-floor",)
+        for device, status in (("NVIDIA GeForce RTX 5090", "maintained rtx5090"),
+                               ("Some Other GPU", "unknown")):
+            with self.subTest(device=device):
+                self.add_floor("model", self.prompt, "eager", device=device)
+                r = self.run_gate(ROWS, device=device, extra=need)
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn("argmax-margin-gate: NO-STORED-ROWS (no stored rows in tools/argmax-margin-rows "
+                              "for model=model model_sha256=", r.stdout)
+                self.assertIn(f"device={device} window=2, device class: {status};", r.stdout)
+                self.assertNotIn("  PASS:", r.stdout)
+        self.add_floor("model", self.prompt, "eager", device="NVIDIA H100 80GB HBM3")
+        r = self.run_gate(ROWS, device="NVIDIA H100 80GB HBM3", extra=need)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("argmax-margin-gate: NOT-JUDGED (not judged: device class h100 not maintained, "
+                      "no stored rows; device=NVIDIA H100 80GB HBM3)", r.stdout)
+        self.assertNotIn("  PASS:", r.stdout)
+        # With main's rows stored the cell is judged and passes.
+        self.store_rows(ROWS, device="NVIDIA GeForce RTX 5090")
+        r = self.run_gate(ROWS, device="NVIDIA GeForce RTX 5090", extra=need)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("  STORED-ROWS: identical ", r.stdout)
+
+    def test_model_digest_is_cached_by_path_size_and_mtime_and_rehash_ignores_the_cache(self):
+        (self.root / "tools/argmax-margin-rows").mkdir()
+        self.gguf.write_bytes(b"abc")
+        old = hashlib.sha256(b"abc").hexdigest()
+        r = self.run_gate(ROWS)
+        self.assertIn(f"  model sha256: {old} (hashed)", r.stdout)
+        r = self.run_gate(ROWS)
+        self.assertIn(f"  model sha256: {old} (cached)", r.stdout)
+        cache = (self.root / "cache/memra/model-sha256.tsv").read_text().splitlines()
+        self.assertEqual(len(cache), 1)
+        self.assertTrue(cache[0].startswith(f"{self.gguf.resolve()}\t3 "), cache)
+        # Same size and modification time, other bytes: the cache cannot see it ...
+        stat = self.gguf.stat()
+        self.gguf.write_bytes(b"abd")
+        os.utime(self.gguf, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        r = self.run_gate(ROWS)
+        self.assertIn(f"  model sha256: {old} (cached)", r.stdout)
+        # ... and --rehash-model reads the bytes.
+        new = hashlib.sha256(b"abd").hexdigest()
+        r = self.run_gate(ROWS, extra=("--rehash-model",))
+        self.assertIn(f"  model sha256: {new} (hashed)", r.stdout)
+        # Another size is another key. A symlink is keyed by the file it resolves to.
+        self.gguf.write_bytes(b"abcd")
+        link = self.root / "link.gguf"
+        link.symlink_to(self.gguf)
+        r = self.run_gate(ROWS, model=link)
+        self.assertIn(f"  model sha256: {hashlib.sha256(b'abcd').hexdigest()} (hashed)", r.stdout)
+        # A checkpoint directory: the sha256 of its files' sha256sum lines in C-locale path order.
+        (self.hf / "b.json").write_bytes(b"{}")
+        (self.hf / "a.safetensors").write_bytes(b"weights")
+        lines = "".join(f"{hashlib.sha256(data).hexdigest()}  ./{name}\n"
+                        for name, data in (("a.safetensors", b"weights"), ("b.json", b"{}")))
+        r = self.run_gate(ROWS, model=self.hf)
+        self.assertIn(f"  model sha256: {hashlib.sha256(lines.encode()).hexdigest()} (hashed)", r.stdout)
+        r = self.run_gate(ROWS, model=self.hf)
+        self.assertIn("(cached)", r.stdout)
+        (self.hf / "b.json").write_bytes(b"{ }")
+        r = self.run_gate(ROWS, model=self.hf)
+        self.assertIn("(hashed)", r.stdout)
+
+    def test_canary_moves_one_margin_and_requires_exactly_that_row_diff(self):
+        for model, extra, prime in ((self.gguf, (), PRIME_MATCH), (self.hf, BATCH, SERVED_MATCH)):
+            with self.subTest(decode=extra):
+                r = self.run_gate(ROWS, model, (*extra, "--canary"), prime=prime)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn("  [canary] moved margin_d at pos 11 by 1 logit against a stored table of this "
+                              "window;\n           the stored-rows comparison saw: ROW-DIFF", r.stdout)
+                self.assertIn("  CANARY PASS:", r.stdout)
+        moved = (self.root / "logs/gate-model-prompt.canary.log.rows-injected").read_text()
+        self.assertIn("11       2             1.0000           2            2.000000000e+00  0.1000           yes",
+                      moved)
+        # A judge that never compares main's rows: the canary fails, and so does a measured run
+        # with a stored-rows directory, which would otherwise pass unchecked.
+        r = self.run_gate(ROWS, extra=("--canary",), blind_judge=True)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("the stored-rows comparison saw: NO-ROW-DIFF", r.stdout)
+        self.assertIn("CANARY FAIL: the stored-rows comparison did not name exactly the moved row", r.stdout)
+        self.store_rows(ROWS)
+        r = self.run_gate(ROWS, blind_judge=True)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("FAIL: the judge printed no STORED-ROWS line", r.stdout)
+
+    def test_calibrate_writes_the_stored_rows_of_the_gate_window(self):
+        rows = "10 1 2.0 1 2.25 0.3 yes\n11 2 5.0 2 5.75 0.8 yes\n12 3 2.0e-2 4 3.0e-2 4.0e-2 NO"
+        path = self.store_rows(rows, name="cell.rows")
+        text = path.read_text()
+        sha = hashlib.sha256(self.prompt.read_bytes()).hexdigest()
+        self.assertIn(f"model\tmodel\nmodel_sha256\t{hashlib.sha256(b'').hexdigest()}\nprompt\tprompt\n"
+                      f"prompt_sha256\t{sha}\ndecode\teager\ndevice\t{DEVICE}\nwindow\t2\ncommit\tfixture\n"
+                      "receipt\tresearch/fixture/cal.log\nrows\n"
+                      "11 2 5.0 2 5.75 0.8 yes\n12 3 2.0e-2 4 3.0e-2 4.0e-2 NO\n", text)
+        r = self.run_gate("11 2 5.0 2 5.75 0.8 yes\n12 3 2.0e-2 4 3.0e-2 4.0e-2 NO")
+        self.assertIn("  STORED-ROWS: identical (2 rows equal main's", r.stdout)
+        for bad in (("--calibrate", "--rows-out", str(path)), ("--rows-out", str(path), "--commit", "c"),
+                    ("--calibrate", "--commit", "c")):
+            with self.subTest(bad=bad):
+                r = self.run_gate(rows, extra=bad)
+                self.assertEqual(r.returncode, 2, r.stdout)
+                self.assertIn("--rows-out and --commit go together, with --calibrate", r.stdout)
 
     def test_floors_table_must_exist_and_parse(self):
         self.floors.write_text("model\tprompt\n")
