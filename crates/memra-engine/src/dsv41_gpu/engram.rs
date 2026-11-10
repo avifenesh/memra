@@ -9,7 +9,7 @@
 //! normalizers at load). The gates compare the resulting hash ids with the vendor's own.
 
 use super::{Buf, Geo, Ops};
-use cudarc::driver::PinnedHostSlice;
+use cudarc::driver::{CudaEvent, PinnedHostSlice};
 use memra_gguf::safetensors::StModel;
 
 /// The hashing constants for every Engram layer.
@@ -239,6 +239,10 @@ pub struct Stage {
     pub d_sc: Buf,
     pub cap: usize,
     hd: usize,
+    /// recorded behind a load's copies; the next load waits for it before it writes the pinned
+    /// buffers (the copies take a call's rows, not the whole buffers, so they go around the
+    /// pinned slices' own events)
+    done: CudaEvent,
 }
 
 impl Stage {
@@ -256,6 +260,7 @@ impl Stage {
             d_sc: ops.buf(cap * hd / 32)?,
             cap,
             hd,
+            done: ctx.new_event(None).map_err(|e| format!("event: {e:?}"))?,
         })
     }
 
@@ -277,6 +282,13 @@ impl Stage {
         }
         let hd = self.hd;
         let sb = hd / 32;
+        // The copies below take only this call's rows. The buffers are sized for the largest
+        // prefill chunk so far (50 MB after one of 8,192 tokens), and copying all of them on every
+        // call cost a decode step 0.9 ms per Engram layer.
+        self.done
+            .synchronize()
+            .map_err(|e| format!("engram stage: {e:?}"))?;
+        let cu = ops.sv() as cudarc::driver::sys::CUstream;
         let (iw, w) = stm
             .raw(&format!("{table}.weight"))
             .ok_or_else(|| format!("missing {table}.weight"))?;
@@ -298,6 +310,16 @@ impl Stage {
                 let r = h as usize;
                 pr[i * hd..(i + 1) * hd].copy_from_slice(&w[r * hd..(r + 1) * hd]);
             }
+            // SAFETY: the source is pinned memory this stage owns; `done` (recorded below) is
+            // waited on before the next write to it, and the destination holds `cap` rows
+            unsafe {
+                cudarc::driver::result::memcpy_htod_async(
+                    self.d_rows.p(&ops.st).addr(),
+                    &pr[..hashes.len() * hd],
+                    cu,
+                )
+            }
+            .map_err(|e| format!("engram h2d: {e:?}"))?;
         }
         {
             let ps = self
@@ -308,13 +330,19 @@ impl Stage {
                 let r = h as usize;
                 ps[i * sb..(i + 1) * sb].copy_from_slice(&s[r * sb..(r + 1) * sb]);
             }
+            // SAFETY: as above
+            unsafe {
+                cudarc::driver::result::memcpy_htod_async(
+                    self.d_sc.p(&ops.st).addr(),
+                    &ps[..hashes.len() * sb],
+                    cu,
+                )
+            }
+            .map_err(|e| format!("engram h2d: {e:?}"))?;
         }
-        ops.st
-            .memcpy_htod(&self.rows, &mut *self.d_rows.s)
-            .map_err(|e| format!("engram h2d: {e:?}"))?;
-        ops.st
-            .memcpy_htod(&self.sc, &mut *self.d_sc.s)
-            .map_err(|e| format!("engram h2d: {e:?}"))?;
+        self.done
+            .record(&ops.st)
+            .map_err(|e| format!("engram stage: {e:?}"))?;
         Ok(())
     }
 }
