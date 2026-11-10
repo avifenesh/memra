@@ -85,6 +85,9 @@ pub struct DraftW {
     norm: Vec<Buf>,
     /// each rank's vocabulary rows of the Markov head `[vocab / n][markov_rank]`
     m_head: Vec<BW>,
+    /// the Markov head's embedding `[vocab][markov_rank]` on the card of a one-rank group: the
+    /// picks then chain on the device (each pick's row gathered by the pick before it)
+    m_embed: Option<BW>,
     /// the confidence projection `[dim + markov_rank]`
     conf_w: Vec<f32>,
 }
@@ -194,6 +197,11 @@ impl DraftW {
         if cfg.targets.iter().all(|&l| l < run.n_layers) {
             run.set_taps(&cfg.targets)?;
         }
+        let m_embed = if n == 1 {
+            Some(super::load_bf16(&run.grp.cx[0].ops, stm, &ename, v, mr)?)
+        } else {
+            None
+        };
         if run.head.is_none() {
             run.head = Some(run.grp.load_head(stm, &run.g)?);
         }
@@ -206,6 +214,7 @@ impl DraftW {
             main_norm,
             norm,
             m_head,
+            m_embed,
             conf_w: bf16_to_f32(cb),
         })
     }
@@ -569,7 +578,64 @@ impl<'a> Runner<'a> {
         let mut out_ids = Vec::with_capacity(b);
         let mut embeds: Vec<f32> = Vec::with_capacity(b * mr);
         let mut bias_all: Vec<f32> = Vec::new();
-        for i in 0..b {
+        // One rank: the picks chain on the device with no read-back in between. Each pick's
+        // Markov embedding row is gathered by the id the pick before it wrote, its bias is the
+        // same fp32 GEMM, and the same kernel adds it and takes the argmax; the ids and maxima
+        // come back once. The host loop below is the same arithmetic row by row (N ranks reduce
+        // their vocabulary slices on the host; a traced draft keeps each bias).
+        let chained = match (dw.m_embed.as_ref(), trace) {
+            (Some(tab), false) if tok < v as u32 => {
+                let cx = &mut self.grp.cx[0];
+                let st = cx.ops.st.clone();
+                let w = &dw.m_head[0];
+                let mut seed = vec![0i32; b + 1];
+                seed[0] = tok as i32;
+                let ids = Buf::from_i32(&st, &seed)?;
+                let vals = cx.ops.tmp(b * 4)?;
+                let e = cx.ops.tmp(mr * 2)?;
+                let bias = cx.ops.tmp(w.n * 4)?;
+                for i in 0..b {
+                    ck("gather_rows", unsafe {
+                        ffi::memra_v41_gather_rows(
+                            tab.w.p(&st).c(),
+                            mr as i64,
+                            ids.at(&st, i * 4).i(),
+                            e.p(&st).m(),
+                            mr as i64,
+                            1,
+                            mr as i32,
+                            cx.ops.sv(),
+                        )
+                    })?;
+                    cx.ops
+                        .linear_bf16(e.p(&st), mr, 1, w, bias.p(&st), w.n, true)?;
+                    ck("add_argmax", unsafe {
+                        ffi::memra_v41_add_argmax(
+                            lgs[0].at(&st, i * w.n * 4).fm(),
+                            bias.p(&st).f(),
+                            w.n as i32,
+                            vals.at(&st, i * 4).fm(),
+                            ids.at(&st, (i + 1) * 4).im(),
+                            cx.ops.sv(),
+                        )
+                    })?;
+                }
+                let got = bytes_i32(&ids.host(&st)?);
+                if bytes_f32(&vals.host(&st)?).iter().any(|x| !x.is_finite()) {
+                    return Err("draft: non-finite logits".into());
+                }
+                Some(got)
+            }
+            _ => None,
+        };
+        if let Some(got) = chained {
+            for i in 0..b {
+                let p = got[i] as usize;
+                embeds.extend(bf16_to_f32(&etab[p * mr * 2..(p + 1) * mr * 2]));
+                out_ids.push(got[i + 1] as u32);
+            }
+        }
+        for i in 0..if out_ids.is_empty() { b } else { 0 } {
             if prev >= v {
                 return Err(format!("draft: token {prev} outside the vocabulary"));
             }
