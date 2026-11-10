@@ -9,6 +9,10 @@
 # REFUSAL, because a gate you satisfy by not having the file is not a gate.
 #
 #   tools/release-battery.sh [--roster FILE] [--allow-missing-vendor]
+#   tools/release-battery.sh [--roster FILE] --list-argmax-cells
+#       prints the argmax margin gate cells this battery runs, one per line:
+#       id <TAB> model name <TAB> prompt name <TAB> decode program. No GPU, no binaries.
+#       tools/check-argmax-floors.py reads it against tools/argmax-margin-floors.tsv.
 #
 # Exit 0 only when every required arm PASSED. Prints a receipt block for the tag message.
 set -u
@@ -32,15 +36,35 @@ ROSTER=$HERE/release-roster.tsv
 EVIDENCE_DIR=""
 EVIDENCE_SEQ=0
 ALLOW_MISSING_VENDOR=0
+LIST_ARGMAX_CELLS=0
+# The argmax margin gate's cells: every roster model, on this prompt, with each of these
+# decode programs. The loop below passes ARGMAX_PROMPT to both of its gate calls;
+# tools/test_release_battery_coverage.py pins ARGMAX_DECODES to the calls the loop makes.
+ARGMAX_PROMPT=$ROOT/research/e2e/prompts/board-2048.txt
+ARGMAX_DECODES="eager batch"
 while [ $# -gt 0 ]; do
   case "$1" in
     --roster) ROSTER=${2:?}; shift 2 ;;
+    --list-argmax-cells) LIST_ARGMAX_CELLS=1; shift ;;
     --evidence-dir) EVIDENCE_DIR=${2:?}; EVIDENCE_DIR=${EVIDENCE_DIR%/}; shift 2 ;;
     --allow-missing-vendor) ALLOW_MISSING_VENDOR=1; shift ;;
     -h|--help) sed -n '1,14p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 64 ;;
   esac
 done
+
+if [ "$LIST_ARGMAX_CELLS" = 1 ]; then
+  [ -r "$ROSTER" ] || { echo "release-battery: roster not readable: $ROSTER" >&2; exit 1; }
+  while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
+    case "$class" in ''|\#*) continue ;; esac
+    case "$class" in own|vendor) ;; *) echo "release-battery: unknown roster class for $id" >&2; exit 1 ;; esac
+    model=$(basename "${path%.gguf}")
+    for decode in $ARGMAX_DECODES; do
+      printf '%s\t%s\t%s\t%s\n' "$id" "$model" "$(basename "${ARGMAX_PROMPT%.txt}")" "$decode"
+    done
+  done < "$ROSTER"
+  exit 0
+fi
 
 # Raw outputs are captured before parsing. A failed evidence write refuses the run.
 # The optional mode changes evidence storage only; it does not change any acceptance predicate.
@@ -294,7 +318,7 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   # tokenwise loop the table already gates (frozen CPU experts) may pass.
   rc=0
   OUT=$(unset MEMRA_PRIME_GATE MEMRA_PRIME_TOKENWISE
-      MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" --require-floor "${argmax_evidence[@]}" 2>&1) || rc=$?
+      MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" --require-floor --prompt "$ARGMAX_PROMPT" "${argmax_evidence[@]}" 2>&1) || rc=$?
   save_evidence argmax "$id" "$rc"
   PRIME=$(printf '%s\n' "$OUT" | grep -m1 -o 'PRIME-SUMMARY prime=[A-Za-z:-]*' | cut -d= -f2)
   case "$PRIME" in MATCH|FLIP-NEARTIE|SKIP:tokenwise-served) PRIME_OK=1 ;; *) PRIME_OK=0 ;; esac
@@ -340,7 +364,7 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   fi
   rc=0
   OUT=$(unset MEMRA_SERVE_B1FAST
-      MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" --decode batch --require-floor "${argmax_batch_evidence[@]}" 2>&1) || rc=$?
+      MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" --decode batch --require-floor --prompt "$ARGMAX_PROMPT" "${argmax_batch_evidence[@]}" 2>&1) || rc=$?
   save_evidence argmax-batch "$id" "$rc"
   SERVED=$(printf '%s\n' "$OUT" | grep -m1 -o 'SERVED-SUMMARY served=[A-Za-z:-]*' | cut -d= -f2)
   if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:" \
