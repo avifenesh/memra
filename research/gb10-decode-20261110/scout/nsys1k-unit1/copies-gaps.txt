@@ -1,0 +1,12 @@
+copies by kind and size: count, ms, MB
+  DtoD  <16M      1793     50.4 ms    5605.2 MB
+  DtoD  <1M       2369      5.3 ms     245.8 MB
+  DtoH  <4K        136      0.4 ms       0.0 MB
+  HtoD  <4K       3032      1.1 ms       0.2 MB
+memsets: 2407, 3.5 ms, 461.6 MB
+gaps >= 100 us by (kernel before -> kernel after): count, total ms
+     33     61.6 ms  append_quantize_kv_q8_0_q5_1_rows -> embed_gather_u32
+      1      3.4 ms  argmax_final_f32 -> embed_gather_u32
+      1      2.5 ms  argmax_final_f32 -> copy_batch_uniform_f32
+      1      1.3 ms  inc_i32 -> fa_decode_vec_q_v4_deep_dc
+      1      0.1 ms  rope_neox_f32 -> append_quantize_kv_q8_0_q5_1_seqs

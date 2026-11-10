@@ -1,0 +1,10 @@
+copy        199.6 MB  x   17      31.9 ms     3393.3 MB
+               17  append_quantize_kv_q8_0_q5_1_rows -> embed_gather_u32
+copy        282.8 MB  x   17      44.1 ms     4807.2 MB
+               17  append_quantize_kv_q8_0_q5_1_rows -> embed_gather_u32
+memset       50.0 MB  x   90      18.6 ms     4501.1 MB
+               90  inc_i32 -> fa_decode_vec_q_v4_deep_dc
+memset      199.6 MB  x   17      18.8 ms     3393.3 MB
+               17  append_quantize_kv_q8_0_q5_1_rows -> embed_gather_u32
+memset      282.8 MB  x   17      25.9 ms     4807.2 MB
+               17  append_quantize_kv_q8_0_q5_1_rows -> embed_gather_u32

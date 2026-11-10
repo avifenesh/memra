@@ -1,0 +1,1249 @@
+round 6: 150.41 ms, 1425 ops (34 rounds in the window)
+  +      0.0 us     1 x K embed_gather_u32                                           6.5 us
+  +      6.6 us     1 x M memset                                                     1.0 us      0.02 MB
+  +      7.7 us     1 x K rms_norm_f32_v2                                            3.7 us
+  +     11.5 us     1 x M memset                                                     0.9 us      0.02 MB
+  +     12.6 us     1 x K rms_norm_f32_v2                                            3.7 us
+  +     16.4 us     1 x M memset                                                     0.9 us      0.04 MB
+  +     17.4 us     2 x C DtoD                                                       1.6 us      0.04 MB
+  +     19.3 us     1 x K quantize_q8_1                                              1.6 us
+  +     21.0 us     1 x K qmatvec_q4_K_mmvq                                        194.0 us
+  +    215.1 us     1 x M memset                                                     1.0 us      0.02 MB
+  +    216.2 us     1 x K rms_norm_f32_v2                                            3.6 us
+  +    220.0 us     1 x K quantize_q8_1                                              1.6 us
+  +    221.7 us     2 x K qmatvec_q4_K_mmvq                                        197.8 us
+  +    419.2 us     1 x K qmatvec_q6_K_mmvq                                         24.0 us
+  +    443.3 us     2 x M memset                                                     1.8 us      0.05 MB
+  +    445.3 us     1 x K q_gate_split_f32                                           1.6 us
+  +    447.1 us     1 x M memset                                                     0.9 us      0.02 MB
+  +    448.1 us     1 x K rms_norm_f32_v2                                            2.0 us
+  +    451.1 us     1 x M memset                                                     0.7 us      0.00 MB
+  +    454.8 us     1 x K rms_norm_f32_v2                                            1.8 us
+  +    456.7 us     2 x K rope_neox_f32                                              4.8 us
+  +    462.1 us     1 x K append_quantize_kv_q8_0_q5_1_dc                            1.7 us
+  +    463.9 us     1 x K inc_i32                                                    1.2 us
+  +    465.2 us     4 x M memset                                                    83.2 us     25.49 MB
+  +    548.4 us     1 x K fa_decode_vec_q_v4_deep_dc                              1385.8 us
+  +   1934.1 us     1 x K fa_decode_combine_f32                                    192.2 us
+  +   2126.2 us     1 x M memset                                                     1.3 us      0.02 MB
+  +   2127.3 us     1 x K sigmoid_f32                                                1.5 us
+  +   2128.9 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   2130.0 us     1 x K mul_f32                                                    1.1 us
+  +   2131.1 us     1 x K quantize_q8_1                                              1.6 us
+  +   2132.8 us     1 x K qmatvec_q4_K_mmvq                                         98.8 us
+  +   2231.8 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   2232.9 us     1 x K add_f32                                                    1.5 us
+  +   2234.6 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   2235.6 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +   2239.5 us     1 x K quantize_q8_1                                              1.6 us
+  +   2241.2 us     2 x K qmatvec_q4_K_mmvq                                        510.3 us
+  +   2751.2 us     1 x M memset                                                     1.2 us      0.07 MB
+  +   2752.3 us     1 x K silu_mul_f32                                               2.0 us
+  +   2754.5 us     1 x K quantize_q8_1                                              1.6 us
+  +   2756.2 us     1 x K qmatvec_q6_K_mmvq                                        416.9 us
+  +   3172.9 us     1 x M memset                                                     1.2 us      0.02 MB
+  +   3174.0 us     1 x K add_f32                                                    1.5 us
+  +   3175.6 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   3176.7 us     1 x K rms_norm_f32_v2                                            3.7 us
+  +   3180.6 us     1 x K quantize_q8_1                                              1.6 us
+  +   3182.3 us     1 x K qmatvec_nvfp4_mmvq_mr2_rp                                425.3 us
+  +   3607.5 us     1 x K argmax_partial_f32                                         2.2 us
+  +   3609.6 us     1 x K argmax_final_f32                                           1.3 us
+  +   3611.0 us     1 x C DtoD                                                       1.2 us      0.02 MB
+  +   3612.3 us     1 x K inc_i32                                                    1.5 us
+  +   3616.5 us     1 x C DtoH                                                       1.9 us      0.00 MB
+  +   3635.2 us     1 x C HtoD                                                       0.2 us      0.00 MB
+  +   3653.2 us     1 x K embed_gather_u32                                           2.0 us
+  +   3655.3 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   3656.4 us     1 x K rms_norm_f32_v2                                            3.7 us
+  +   3660.3 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   3661.3 us     1 x K rms_norm_f32_v2                                            3.7 us
+  +   3665.1 us     1 x M memset                                                     0.9 us      0.04 MB
+  +   3666.1 us     2 x C DtoD                                                       1.6 us      0.04 MB
+  +   3668.0 us     1 x K quantize_q8_1                                              1.7 us
+  +   3669.8 us     1 x K qmatvec_q4_K_mmvq                                        150.7 us
+  +   3820.5 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   3821.7 us     1 x K rms_norm_f32_v2                                            3.7 us
+  +   3825.5 us     1 x K quantize_q8_1                                              1.6 us
+  +   3827.2 us     2 x K qmatvec_q4_K_mmvq                                        191.6 us
+  +   4018.5 us     1 x K qmatvec_q6_K_mmvq                                         24.3 us
+  +   4042.9 us     2 x M memset                                                     1.8 us      0.05 MB
+  +   4045.0 us     1 x K q_gate_split_f32                                           1.6 us
+  +   4046.7 us     1 x M memset                                                     0.9 us      0.02 MB
+  +   4047.8 us     1 x K rms_norm_f32_v2                                            1.9 us
+  +   4052.3 us     1 x M memset                                                     0.9 us      0.00 MB
+  +   4056.2 us     1 x K rms_norm_f32_v2                                            1.8 us
+  +   4058.1 us     2 x K rope_neox_f32                                              4.9 us
+  +   4063.6 us     1 x K append_quantize_kv_q8_0_q5_1_dc                            1.7 us
+  +   4065.4 us     1 x K inc_i32                                                    1.2 us
+  +   4066.7 us     4 x M memset                                                    77.2 us     25.49 MB
+  +   4143.8 us     1 x K fa_decode_vec_q_v4_deep_dc                              1442.3 us
+  +   5586.0 us     1 x K fa_decode_combine_f32                                    192.3 us
+  +   5778.2 us     1 x M memset                                                     1.2 us      0.02 MB
+  +   5779.2 us     1 x K sigmoid_f32                                                1.5 us
+  +   5780.9 us     1 x M memset                                                     0.9 us      0.02 MB
+  +   5782.0 us     1 x K mul_f32                                                    1.1 us
+  +   5783.1 us     1 x K quantize_q8_1                                              1.6 us
+  +   5784.9 us     1 x K qmatvec_q4_K_mmvq                                         90.5 us
+  +   5875.5 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   5876.6 us     1 x K add_f32                                                    1.5 us
+  +   5878.2 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   5879.4 us     1 x K rms_norm_f32_v2                                            3.7 us
+  +   5883.2 us     1 x K quantize_q8_1                                              1.6 us
+  +   5884.9 us     2 x K qmatvec_q4_K_mmvq                                        497.6 us
+  +   6382.1 us     1 x M memset                                                     1.2 us      0.07 MB
+  +   6383.2 us     1 x K silu_mul_f32                                               2.0 us
+  +   6385.4 us     1 x K quantize_q8_1                                              1.6 us
+  +   6387.1 us     1 x K qmatvec_q6_K_mmvq                                        408.3 us
+  +   6795.2 us     1 x M memset                                                     1.2 us      0.02 MB
+  +   6796.3 us     1 x K add_f32                                                    1.5 us
+  +   6797.9 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   6799.0 us     1 x K rms_norm_f32_v2                                            3.6 us
+  +   6802.8 us     1 x K quantize_q8_1                                              1.6 us
+  +   6804.5 us     1 x K qmatvec_nvfp4_mmvq_mr2_rp                                407.0 us
+  +   7211.4 us     1 x K argmax_partial_f32                                         2.1 us
+  +   7213.4 us     1 x K argmax_final_f32                                           1.3 us
+  +   7214.8 us     1 x C DtoD                                                       1.3 us      0.02 MB
+  +   7216.3 us     1 x K inc_i32                                                    1.5 us
+  +   7221.0 us     1 x C DtoH                                                       2.0 us      0.00 MB
+  +   7229.8 us     1 x C HtoD                                                       0.2 us      0.00 MB
+  +   7244.4 us     1 x K embed_gather_u32                                           2.0 us
+  +   7246.5 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   7247.6 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +   7251.6 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   7252.6 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +   7256.5 us     1 x M memset                                                     0.9 us      0.04 MB
+  +   7257.6 us     2 x C DtoD                                                       1.6 us      0.04 MB
+  +   7259.4 us     1 x K quantize_q8_1                                              1.6 us
+  +   7261.1 us     1 x K qmatvec_q4_K_mmvq                                        151.4 us
+  +   7412.7 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   7413.8 us     1 x K rms_norm_f32_v2                                            3.7 us
+  +   7417.6 us     1 x K quantize_q8_1                                              1.6 us
+  +   7419.3 us     2 x K qmatvec_q4_K_mmvq                                        190.9 us
+  +   7609.9 us     1 x K qmatvec_q6_K_mmvq                                         23.9 us
+  +   7633.9 us     2 x M memset                                                     2.0 us      0.05 MB
+  +   7636.1 us     1 x K q_gate_split_f32                                           1.6 us
+  +   7637.8 us     1 x M memset                                                     0.9 us      0.02 MB
+  +   7638.9 us     1 x K rms_norm_f32_v2                                            1.9 us
+  +   7643.5 us     1 x M memset                                                     0.8 us      0.00 MB
+  +   7647.3 us     1 x K rms_norm_f32_v2                                            1.8 us
+  +   7649.2 us     2 x K rope_neox_f32                                              4.8 us
+  +   7654.6 us     1 x K append_quantize_kv_q8_0_q5_1_dc                            1.7 us
+  +   7656.4 us     1 x K inc_i32                                                    1.2 us
+  +   7657.7 us     4 x M memset                                                    77.4 us     25.49 MB
+  +   7734.8 us     1 x K fa_decode_vec_q_v4_deep_dc                              1410.5 us
+  +   9145.2 us     1 x K fa_decode_combine_f32                                    192.4 us
+  +   9337.4 us     1 x M memset                                                     1.2 us      0.02 MB
+  +   9338.5 us     1 x K sigmoid_f32                                                1.5 us
+  +   9340.1 us     1 x M memset                                                     0.9 us      0.02 MB
+  +   9341.2 us     1 x K mul_f32                                                    1.1 us
+  +   9342.4 us     1 x K quantize_q8_1                                              1.6 us
+  +   9344.1 us     1 x K qmatvec_q4_K_mmvq                                         90.6 us
+  +   9434.8 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   9435.9 us     1 x K add_f32                                                    1.5 us
+  +   9437.5 us     1 x M memset                                                     1.0 us      0.02 MB
+  +   9438.7 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +   9442.6 us     1 x K quantize_q8_1                                              1.6 us
+  +   9444.3 us     2 x K qmatvec_q4_K_mmvq                                        506.5 us
+  +   9950.5 us     1 x M memset                                                     1.2 us      0.07 MB
+  +   9951.6 us     1 x K silu_mul_f32                                               2.0 us
+  +   9953.7 us     1 x K quantize_q8_1                                              1.6 us
+  +   9955.4 us     1 x K qmatvec_q6_K_mmvq                                        412.7 us
+  +  10368.0 us     1 x M memset                                                     1.2 us      0.02 MB
+  +  10369.1 us     1 x K add_f32                                                    1.5 us
+  +  10370.7 us     1 x M memset                                                     1.0 us      0.02 MB
+  +  10371.8 us     1 x K rms_norm_f32_v2                                            3.7 us
+  +  10375.7 us     1 x K quantize_q8_1                                              1.6 us
+  +  10377.4 us     1 x K qmatvec_nvfp4_mmvq_mr2_rp                                406.0 us
+  +  10783.2 us     1 x K argmax_partial_f32                                         2.1 us
+  +  10785.2 us     1 x K argmax_final_f32                                           1.3 us
+  +  10786.6 us     1 x C DtoD                                                       1.1 us      0.02 MB
+  +  10787.9 us     1 x K inc_i32                                                    1.5 us
+  +  10790.9 us     1 x C DtoH                                                       1.8 us      0.00 MB
+  +  10799.3 us     3 x C HtoD                                                       0.7 us      0.00 MB
+  +  10811.2 us     1 x K embed_gather_u32_t                                         2.3 us
+  +  10817.5 us     1 x C HtoD                                                       0.2 us      0.00 MB
+  +  10820.5 us     1 x K rms_norm_f32_v2                                            3.9 us
+  +  10824.5 us     1 x K quantize_q8_1                                              1.5 us
+  +  10833.6 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          216.3 us
+  +  11051.4 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  +  11052.9 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.9 us
+  +  11059.8 us     1 x K gdn_prep_decode_b_f32                                      1.6 us
+  +  11063.9 us     1 x K gdn_scan_s128_tsnap                                       43.5 us
+  +  11110.4 us     1 x K gated_rmsnorm_q8_1                                         2.5 us
+  +  11114.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 114.2 us
+  +  11228.3 us     1 x K add_rms_norm_f32_v2                                        6.4 us
+  +  11234.6 us     1 x K quantize_q8_1                                              1.4 us
+  +  11237.5 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          460.4 us
+  +  11700.0 us     1 x K silu_mul_scaled_q8_1                                       4.0 us
+  +  11706.1 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 243.4 us
+  +  11952.1 us     1 x K add_f32                                                    2.0 us
+  +  11953.9 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  11957.8 us     1 x K quantize_q8_1                                              1.6 us
+  +  11962.2 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          224.2 us
+  +  12189.1 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  12190.4 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.0 us
+  +  12195.7 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  12199.7 us     1 x K gdn_scan_s128_tsnap                                       42.4 us
+  +  12243.9 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  +  12247.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 117.3 us
+  +  12365.1 us     1 x K add_rms_norm_f32_v2                                        6.7 us
+  +  12371.5 us     1 x K quantize_q8_1                                              1.6 us
+  +  12375.0 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          464.8 us
+  +  12841.8 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  +  12847.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 241.2 us
+  +  13090.7 us     1 x K add_f32                                                    2.0 us
+  +  13092.5 us     1 x K rms_norm_f32_v2                                            4.0 us
+  +  13096.5 us     1 x K quantize_q8_1                                              1.6 us
+  +  13101.0 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          219.4 us
+  +  13321.7 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  13322.9 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          3.9 us
+  +  13328.2 us     1 x K gdn_prep_decode_b_f32                                      1.6 us
+  +  13332.2 us     1 x K gdn_scan_s128_tsnap                                       40.7 us
+  +  13374.5 us     1 x K gated_rmsnorm_q8_1                                         2.2 us
+  +  13378.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 114.7 us
+  +  13493.1 us     1 x K add_rms_norm_f32_v2                                        6.0 us
+  +  13499.2 us     1 x K quantize_q8_1                                              1.5 us
+  +  13502.5 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          462.3 us
+  +  13967.1 us     1 x K silu_mul_scaled_q8_1                                       3.8 us
+  +  13973.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 239.5 us
+  +  14215.2 us     1 x K add_f32                                                    2.2 us
+  +  14217.2 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  14221.1 us     1 x K quantize_q8_1                                              1.4 us
+  +  14225.3 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          195.0 us
+  +  14421.9 us     1 x K q_gate_split_f32                                           1.7 us
+  +  14423.6 us     2 x K rms_norm_f32_v2                                            5.9 us
+  +  14432.1 us     2 x K rope_neox_f32                                              5.0 us
+  +  14439.9 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  14441.2 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.7 us
+  +  14446.4 us     1 x K fa_verify_rows_v4_deep                                  3106.5 us
+  +  17555.3 us     1 x K fa_decode_combine_seqs                                   556.7 us
+  +  18114.4 us     1 x K sigmoid_f32                                                2.1 us
+  +  18118.4 us     1 x K mul_f32                                                    1.1 us
+  +  18119.6 us     1 x K quantize_q8_1                                              1.5 us
+  +  18122.6 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  86.5 us
+  +  18209.2 us     1 x K add_rms_norm_f32_v2                                        6.2 us
+  +  18215.4 us     1 x K quantize_q8_1                                              1.5 us
+  +  18218.8 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          457.2 us
+  +  18678.7 us     1 x K silu_mul_scaled_q8_1                                       3.8 us
+  +  18684.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 241.0 us
+  +  18927.5 us     1 x K add_f32                                                    1.7 us
+  +  18929.3 us     1 x K rms_norm_f32_v2                                            3.9 us
+  +  18933.3 us     1 x K quantize_q8_1                                              1.6 us
+  +  18937.8 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          215.7 us
+  +  19155.5 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  19156.8 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          5.7 us
+  +  19164.0 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  19168.2 us     1 x K gdn_scan_s128_tsnap                                       43.9 us
+  +  19215.3 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  19219.4 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 120.1 us
+  +  19339.3 us     1 x K add_rms_norm_f32_v2                                        6.6 us
+  +  19345.5 us     1 x K quantize_q8_1                                              1.8 us
+  +  19350.5 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          460.0 us
+  +  19813.2 us     1 x K silu_mul_scaled_q8_1                                       3.4 us
+  +  19819.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 237.9 us
+  +  20060.1 us     1 x K add_f32                                                    2.5 us
+  +  20062.2 us     1 x K rms_norm_f32_v2                                            4.0 us
+  +  20066.2 us     1 x K quantize_q8_1                                              1.5 us
+  +  20070.3 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          215.7 us
+  +  20287.0 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  20288.3 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.7 us
+  +  20295.5 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  20299.6 us     1 x K gdn_scan_s128_tsnap                                       39.6 us
+  +  20341.8 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  20345.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 121.0 us
+  +  20466.5 us     1 x K add_rms_norm_f32_v2                                        6.5 us
+  +  20472.8 us     1 x K quantize_q8_1                                              1.7 us
+  +  20476.2 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          464.1 us
+  +  20941.7 us     1 x K silu_mul_scaled_q8_1                                       4.0 us
+  +  20947.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 232.4 us
+  +  21182.4 us     1 x K add_f32                                                    1.7 us
+  +  21184.2 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  21188.1 us     1 x K quantize_q8_1                                              1.7 us
+  +  21192.6 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          218.9 us
+  +  21414.3 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  21415.7 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.1 us
+  +  21422.9 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  21427.0 us     1 x K gdn_scan_s128_tsnap                                       45.1 us
+  +  21475.3 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  +  21479.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 119.5 us
+  +  21598.8 us     1 x K add_rms_norm_f32_v2                                        6.3 us
+  +  21605.0 us     1 x K quantize_q8_1                                              1.6 us
+  +  21609.4 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          470.8 us
+  +  22082.4 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  +  22088.5 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 235.5 us
+  +  22327.1 us     1 x K add_f32                                                    1.9 us
+  +  22328.9 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  22332.8 us     1 x K quantize_q8_1                                              1.5 us
+  +  22337.4 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          195.9 us
+  +  22535.0 us     1 x K q_gate_split_f32                                           1.9 us
+  +  22536.7 us     2 x K rms_norm_f32_v2                                            5.1 us
+  +  22543.4 us     2 x K rope_neox_f32                                              5.0 us
+  +  22553.2 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  22554.4 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.7 us
+  +  22559.7 us     1 x K fa_verify_rows_v4_deep                                  3636.1 us
+  +  26197.8 us     1 x K fa_decode_combine_seqs                                   618.0 us
+  +  26818.4 us     1 x K sigmoid_f32                                                2.0 us
+  +  26822.5 us     1 x K mul_f32                                                    1.3 us
+  +  26823.6 us     1 x K quantize_q8_1                                              1.5 us
+  +  26826.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  86.9 us
+  +  26913.7 us     1 x K add_rms_norm_f32_v2                                        6.4 us
+  +  26920.1 us     1 x K quantize_q8_1                                              1.5 us
+  +  26923.1 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          448.8 us
+  +  27373.4 us     1 x K silu_mul_scaled_q8_1                                       3.5 us
+  +  27379.5 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 241.4 us
+  +  27623.3 us     1 x K add_f32                                                    2.3 us
+  +  27625.4 us     1 x K rms_norm_f32_v2                                            3.9 us
+  +  27629.4 us     1 x K quantize_q8_1                                              1.4 us
+  +  27633.6 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          216.3 us
+  +  27852.3 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  27853.6 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.0 us
+  +  27858.9 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  27862.8 us     1 x K gdn_scan_s128_tsnap                                       41.8 us
+  +  27906.1 us     1 x K gated_rmsnorm_q8_1                                         2.5 us
+  +  27910.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 113.9 us
+  +  28024.0 us     1 x K add_rms_norm_f32_v2                                        6.4 us
+  +  28030.1 us     1 x K quantize_q8_1                                              1.6 us
+  +  28034.0 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          463.6 us
+  +  28499.1 us     1 x K silu_mul_scaled_q8_1                                       4.1 us
+  +  28504.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 244.7 us
+  +  28751.8 us     1 x K add_f32                                                    2.3 us
+  +  28753.9 us     1 x K rms_norm_f32_v2                                            4.0 us
+  +  28757.9 us     1 x K quantize_q8_1                                              1.6 us
+  +  28762.1 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          211.8 us
+  +  28975.7 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  28976.9 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.1 us
+  +  28984.2 us     1 x K gdn_prep_decode_b_f32                                      1.8 us
+  +  28988.3 us     1 x K gdn_scan_s128_tsnap                                       41.1 us
+  +  29032.4 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  29036.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 118.6 us
+  +  29155.0 us     1 x K add_rms_norm_f32_v2                                        6.0 us
+  +  29161.1 us     1 x K quantize_q8_1                                              1.5 us
+  +  29165.6 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          457.5 us
+  +  29625.2 us     1 x K silu_mul_scaled_q8_1                                       3.6 us
+  +  29631.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 241.2 us
+  +  29875.2 us     1 x K add_f32                                                    2.2 us
+  +  29877.2 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  29881.2 us     1 x K quantize_q8_1                                              1.6 us
+  +  29885.6 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          219.1 us
+  +  30106.1 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  +  30107.4 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.0 us
+  +  30114.6 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  30118.8 us     1 x K gdn_scan_s128_tsnap                                       40.1 us
+  +  30160.9 us     1 x K gated_rmsnorm_q8_1                                         2.5 us
+  +  30164.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 113.9 us
+  +  30278.5 us     1 x K add_rms_norm_f32_v2                                        6.1 us
+  +  30284.7 us     1 x K quantize_q8_1                                              1.4 us
+  +  30288.9 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          462.0 us
+  +  30752.7 us     1 x K silu_mul_scaled_q8_1                                       3.7 us
+  +  30758.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 239.4 us
+  +  30999.6 us     1 x K add_f32                                                    2.0 us
+  +  31001.5 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  31005.4 us     1 x K quantize_q8_1                                              1.5 us
+  +  31009.8 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          194.2 us
+  +  31205.8 us     1 x K q_gate_split_f32                                           1.6 us
+  +  31207.5 us     2 x K rms_norm_f32_v2                                            6.1 us
+  +  31215.6 us     2 x K rope_neox_f32                                              5.0 us
+  +  31225.3 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  31226.7 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          4.2 us
+  +  31234.0 us     1 x K fa_verify_rows_v4_deep                                  3077.3 us
+  +  34314.0 us     1 x K fa_decode_combine_seqs                                   559.5 us
+  +  34875.2 us     1 x K sigmoid_f32                                                2.0 us
+  +  34879.3 us     1 x K mul_f32                                                    1.3 us
+  +  34880.5 us     1 x K quantize_q8_1                                              1.5 us
+  +  34883.5 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  83.1 us
+  +  34966.5 us     1 x K add_rms_norm_f32_v2                                        6.4 us
+  +  34973.0 us     1 x K quantize_q8_1                                              1.4 us
+  +  34977.8 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          448.3 us
+  +  35428.2 us     1 x K silu_mul_scaled_q8_1                                       4.0 us
+  +  35434.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 239.6 us
+  +  35677.2 us     1 x K add_f32                                                    2.1 us
+  +  35679.3 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  35683.2 us     1 x K quantize_q8_1                                              1.4 us
+  +  35687.5 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          212.9 us
+  +  35902.0 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  +  35903.2 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.8 us
+  +  35910.6 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  35914.6 us     1 x K gdn_scan_s128_tsnap                                       41.7 us
+  +  35957.8 us     1 x K gated_rmsnorm_q8_1                                         2.6 us
+  +  35961.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 121.7 us
+  +  36083.4 us     1 x K add_rms_norm_f32_v2                                        6.3 us
+  +  36089.6 us     1 x K quantize_q8_1                                              1.9 us
+  +  36093.1 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          458.0 us
+  +  36552.7 us     1 x K silu_mul_scaled_q8_1                                       4.0 us
+  +  36558.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 239.9 us
+  +  36801.5 us     1 x K add_f32                                                    2.0 us
+  +  36803.6 us     1 x K rms_norm_f32_v2                                            3.9 us
+  +  36807.6 us     1 x K quantize_q8_1                                              1.5 us
+  +  36811.8 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          211.4 us
+  +  37025.3 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  37026.6 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.0 us
+  +  37033.8 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  37038.1 us     1 x K gdn_scan_s128_tsnap                                       41.0 us
+  +  37082.1 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  +  37086.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 125.5 us
+  +  37211.4 us     1 x K add_rms_norm_f32_v2                                        6.1 us
+  +  37217.6 us     1 x K quantize_q8_1                                              1.4 us
+  +  37222.3 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          464.6 us
+  +  37689.2 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  +  37695.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 237.2 us
+  +  37934.1 us     1 x K add_f32                                                    2.2 us
+  +  37936.2 us     1 x K rms_norm_f32_v2                                            3.9 us
+  +  37940.2 us     1 x K quantize_q8_1                                              1.5 us
+  +  37944.3 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          213.0 us
+  +  38158.9 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  +  38160.2 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.3 us
+  +  38167.4 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  38171.5 us     1 x K gdn_scan_s128_tsnap                                       41.6 us
+  +  38215.7 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  38219.6 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 123.6 us
+  +  38343.1 us     1 x K add_rms_norm_f32_v2                                        6.6 us
+  +  38349.5 us     1 x K quantize_q8_1                                              1.9 us
+  +  38353.9 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          452.4 us
+  +  38808.5 us     1 x K silu_mul_scaled_q8_1                                       4.0 us
+  +  38814.5 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 235.7 us
+  +  39052.3 us     1 x K add_f32                                                    2.3 us
+  +  39054.5 us     1 x K rms_norm_f32_v2                                            4.0 us
+  +  39058.5 us     1 x K quantize_q8_1                                              1.5 us
+  +  39062.5 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          189.9 us
+  +  39255.0 us     1 x K q_gate_split_f32                                           1.7 us
+  +  39256.8 us     2 x K rms_norm_f32_v2                                            5.0 us
+  +  39263.4 us     2 x K rope_neox_f32                                              5.4 us
+  +  39273.0 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  +  39274.2 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.7 us
+  +  39279.6 us     1 x K fa_verify_rows_v4_deep                                  3091.8 us
+  +  42374.0 us     1 x K fa_decode_combine_seqs                                   555.5 us
+  +  42931.0 us     1 x K sigmoid_f32                                                2.0 us
+  +  42935.1 us     1 x K mul_f32                                                    1.3 us
+  +  42936.4 us     1 x K quantize_q8_1                                              1.6 us
+  +  42939.4 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  86.4 us
+  +  43026.0 us     1 x K add_rms_norm_f32_v2                                        6.2 us
+  +  43032.3 us     1 x K quantize_q8_1                                              1.5 us
+  +  43035.6 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          510.8 us
+  +  43548.5 us     1 x K silu_mul_scaled_q8_1                                       8.0 us
+  +  43558.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 239.3 us
+  +  43800.6 us     1 x K add_f32                                                    1.8 us
+  +  43802.4 us     1 x K rms_norm_f32_v2                                            4.0 us
+  +  43806.5 us     1 x K quantize_q8_1                                              1.9 us
+  +  43810.8 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          217.5 us
+  +  44030.6 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  44032.1 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.5 us
+  +  44039.0 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  44043.2 us     1 x K gdn_scan_s128_tsnap                                       43.5 us
+  +  44089.4 us     1 x K gated_rmsnorm_q8_1                                         2.9 us
+  +  44095.4 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 127.0 us
+  +  44222.0 us     1 x K add_rms_norm_f32_v2                                        6.5 us
+  +  44228.3 us     1 x K quantize_q8_1                                              1.8 us
+  +  44233.1 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          554.0 us
+  +  44792.4 us     1 x K silu_mul_scaled_q8_1                                      17.5 us
+  +  44811.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 315.2 us
+  +  45128.8 us     1 x K add_f32                                                    1.9 us
+  +  45130.6 us     1 x K rms_norm_f32_v2                                            4.0 us
+  +  45134.7 us     1 x K quantize_q8_1                                              1.6 us
+  +  45139.0 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          250.3 us
+  +  45409.8 us     1 x C HtoD                                                       0.5 us      0.00 MB
+  +  45411.2 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          5.7 us
+  +  45418.3 us     1 x K gdn_prep_decode_b_f32                                     26.2 us
+  +  45459.0 us     1 x K gdn_scan_s128_tsnap                                       56.4 us
+  +  45519.7 us     1 x K gated_rmsnorm_q8_1                                         3.7 us
+  +  45530.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 172.3 us
+  +  45701.8 us     1 x K add_rms_norm_f32_v2                                        6.5 us
+  +  45708.2 us     1 x K quantize_q8_1                                              1.5 us
+  +  45711.4 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          466.5 us
+  +  46179.3 us     1 x K silu_mul_scaled_q8_1                                       4.4 us
+  +  46185.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 240.2 us
+  +  46428.2 us     1 x K add_f32                                                    2.1 us
+  +  46430.1 us     1 x K rms_norm_f32_v2                                           11.0 us
+  +  46437.4 us     1 x K quantize_q8_1                                              4.8 us
+  +  46445.6 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          219.7 us
+  +  46666.3 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  46667.6 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.7 us
+  +  46674.8 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  46678.8 us     1 x K gdn_scan_s128_tsnap                                       45.3 us
+  +  46727.2 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  +  46731.1 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 115.9 us
+  +  46846.8 us     1 x K add_rms_norm_f32_v2                                        6.6 us
+  +  46853.2 us     1 x K quantize_q8_1                                              1.6 us
+  +  46857.2 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          459.6 us
+  +  47319.9 us     1 x K silu_mul_scaled_q8_1                                       4.0 us
+  +  47326.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 241.2 us
+  +  47569.1 us     1 x K add_f32                                                    1.9 us
+  +  47570.9 us     1 x K rms_norm_f32_v2                                            4.1 us
+  +  47574.8 us     1 x K quantize_q8_1                                              1.4 us
+  +  47579.2 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          193.4 us
+  +  47774.9 us     1 x K q_gate_split_f32                                           1.9 us
+  +  47776.6 us     2 x K rms_norm_f32_v2                                            6.1 us
+  +  47784.9 us     2 x K rope_neox_f32                                              5.0 us
+  +  47794.6 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  47795.9 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.6 us
+  +  47801.3 us     1 x K fa_verify_rows_v4_deep                                  3331.7 us
+  +  51135.4 us     1 x K fa_decode_combine_seqs                                   555.9 us
+  +  51694.4 us     1 x K sigmoid_f32                                                2.1 us
+  +  51698.5 us     1 x K mul_f32                                                    1.4 us
+  +  51699.7 us     1 x K quantize_q8_1                                              1.6 us
+  +  51702.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  83.0 us
+  +  51785.9 us     1 x K add_rms_norm_f32_v2                                        6.2 us
+  +  51792.2 us     1 x K quantize_q8_1                                              1.5 us
+  +  51796.0 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          450.1 us
+  +  52247.6 us     1 x K silu_mul_scaled_q8_1                                       3.7 us
+  +  52253.5 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 236.4 us
+  +  52493.3 us     1 x K add_f32                                                    1.8 us
+  +  52495.1 us     1 x K rms_norm_f32_v2                                            3.9 us
+  +  52499.2 us     1 x K quantize_q8_1                                              1.7 us
+  +  52503.7 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          217.3 us
+  +  52723.3 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  52724.6 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          3.9 us
+  +  52731.8 us     1 x K gdn_prep_decode_b_f32                                      1.8 us
+  +  52735.9 us     1 x K gdn_scan_s128_tsnap                                       43.4 us
+  +  52781.1 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  52784.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 114.3 us
+  +  52899.3 us     1 x K add_rms_norm_f32_v2                                        6.1 us
+  +  52905.3 us     1 x K quantize_q8_1                                              1.6 us
+  +  52909.1 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          477.5 us
+  +  53388.1 us     1 x K silu_mul_scaled_q8_1                                       3.7 us
+  +  53394.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 242.1 us
+  +  53639.1 us     1 x K add_f32                                                    1.8 us
+  +  53640.9 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  53644.8 us     1 x K quantize_q8_1                                              1.4 us
+  +  53649.3 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          219.4 us
+  +  53870.0 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  53871.3 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.7 us
+  +  53878.6 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  53882.7 us     1 x K gdn_scan_s128_tsnap                                       39.1 us
+  +  53925.1 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  +  53928.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 122.3 us
+  +  54050.9 us     1 x K add_rms_norm_f32_v2                                        6.5 us
+  +  54057.1 us     1 x K quantize_q8_1                                              1.6 us
+  +  54062.0 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          458.9 us
+  +  54522.7 us     1 x K silu_mul_scaled_q8_1                                       3.8 us
+  +  54528.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 236.1 us
+  +  54766.6 us     1 x K add_f32                                                    2.3 us
+  +  54768.7 us     1 x K rms_norm_f32_v2                                            3.9 us
+  +  54772.6 us     1 x K quantize_q8_1                                              1.4 us
+  +  54776.8 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          213.7 us
+  +  54991.4 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  54993.0 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.2 us
+  +  54999.9 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  55004.1 us     1 x K gdn_scan_s128_tsnap                                       43.1 us
+  +  55049.2 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  55053.1 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 123.1 us
+  +  55175.9 us     1 x K add_rms_norm_f32_v2                                        6.1 us
+  +  55182.1 us     1 x K quantize_q8_1                                              1.6 us
+  +  55186.4 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          456.0 us
+  +  55645.0 us     1 x K silu_mul_scaled_q8_1                                       3.7 us
+  +  55651.1 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 238.2 us
+  +  55890.9 us     1 x K add_f32                                                    2.0 us
+  +  55893.0 us     1 x K rms_norm_f32_v2                                            4.1 us
+  +  55897.2 us     1 x K quantize_q8_1                                              1.8 us
+  +  55901.2 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          187.5 us
+  +  56091.6 us     1 x K q_gate_split_f32                                           2.4 us
+  +  56094.0 us     2 x K rms_norm_f32_v2                                            5.1 us
+  +  56101.9 us     2 x K rope_neox_f32                                              5.0 us
+  +  56111.6 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  56112.8 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.9 us
+  +  56118.1 us     1 x K fa_verify_rows_v4_deep                                  3074.2 us
+  +  59194.2 us     1 x K fa_decode_combine_seqs                                   554.0 us
+  +  59751.2 us     1 x K sigmoid_f32                                                2.1 us
+  +  59755.3 us     1 x K mul_f32                                                    1.3 us
+  +  59756.5 us     1 x K quantize_q8_1                                              1.6 us
+  +  59759.6 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  88.3 us
+  +  59848.0 us     1 x K add_rms_norm_f32_v2                                        6.2 us
+  +  59854.2 us     1 x K quantize_q8_1                                              1.4 us
+  +  59858.9 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          447.0 us
+  +  60308.3 us     1 x K silu_mul_scaled_q8_1                                       3.5 us
+  +  60314.6 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 237.4 us
+  +  60554.2 us     1 x K add_f32                                                    1.7 us
+  +  60556.1 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  60560.0 us     1 x K quantize_q8_1                                              1.6 us
+  +  60564.5 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          217.1 us
+  +  60783.0 us     1 x C HtoD                                                       0.5 us      0.00 MB
+  +  60784.4 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          3.9 us
+  +  60789.7 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  60793.8 us     1 x K gdn_scan_s128_tsnap                                       41.3 us
+  +  60836.8 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  +  60840.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 118.8 us
+  +  60959.4 us     1 x K add_rms_norm_f32_v2                                        6.3 us
+  +  60965.6 us     1 x K quantize_q8_1                                              1.5 us
+  +  60968.9 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          454.0 us
+  +  61424.5 us     1 x K silu_mul_scaled_q8_1                                       3.6 us
+  +  61430.6 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 235.9 us
+  +  61669.4 us     1 x K add_f32                                                    2.0 us
+  +  61671.2 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  61675.0 us     1 x K quantize_q8_1                                              1.6 us
+  +  61679.6 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          216.2 us
+  +  61898.3 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  61899.6 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.4 us
+  +  61906.8 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  61910.9 us     1 x K gdn_scan_s128_tsnap                                       41.1 us
+  +  61955.1 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  +  61959.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 119.3 us
+  +  62078.1 us     1 x K add_rms_norm_f32_v2                                        6.4 us
+  +  62084.6 us     1 x K quantize_q8_1                                              1.5 us
+  +  62088.2 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          459.6 us
+  +  62550.8 us     1 x K silu_mul_scaled_q8_1                                       3.8 us
+  +  62557.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 238.4 us
+  +  62797.9 us     1 x K add_f32                                                    2.4 us
+  +  62799.9 us     1 x K rms_norm_f32_v2                                            4.2 us
+  +  62804.1 us     1 x K quantize_q8_1                                              1.4 us
+  +  62807.1 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          214.3 us
+  +  63023.6 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  +  63024.9 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.0 us
+  +  63032.1 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  63036.2 us     1 x K gdn_scan_s128_tsnap                                       43.7 us
+  +  63082.5 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  63086.4 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 113.8 us
+  +  63200.0 us     1 x K add_rms_norm_f32_v2                                        6.3 us
+  +  63206.2 us     1 x K quantize_q8_1                                              1.6 us
+  +  63210.5 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          460.1 us
+  +  63673.2 us     1 x K silu_mul_scaled_q8_1                                       4.0 us
+  +  63679.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 233.2 us
+  +  63914.0 us     1 x K add_f32                                                    2.0 us
+  +  63916.1 us     1 x K rms_norm_f32_v2                                            3.9 us
+  +  63920.0 us     1 x K quantize_q8_1                                              1.4 us
+  +  63924.2 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          192.4 us
+  +  64118.8 us     1 x K q_gate_split_f32                                           2.0 us
+  +  64120.9 us     2 x K rms_norm_f32_v2                                            6.1 us
+  +  64129.0 us     2 x K rope_neox_f32                                              5.2 us
+  +  64138.7 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  64140.1 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.6 us
+  +  64145.2 us     1 x K fa_verify_rows_v4_deep                                  3092.3 us
+  +  67239.8 us     1 x K fa_decode_combine_seqs                                   551.5 us
+  +  67793.8 us     1 x K sigmoid_f32                                                2.0 us
+  +  67797.8 us     1 x K mul_f32                                                    1.3 us
+  +  67799.0 us     1 x K quantize_q8_1                                              1.5 us
+  +  67802.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  83.3 us
+  +  67885.4 us     1 x K add_rms_norm_f32_v2                                        6.4 us
+  +  67891.9 us     1 x K quantize_q8_1                                              1.5 us
+  +  67896.3 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          447.9 us
+  +  68346.0 us     1 x K silu_mul_scaled_q8_1                                       3.8 us
+  +  68351.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 239.3 us
+  +  68592.7 us     1 x K add_f32                                                    2.0 us
+  +  68594.8 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  68598.7 us     1 x K quantize_q8_1                                              1.4 us
+  +  68602.9 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          216.9 us
+  +  68821.6 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  68822.8 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.0 us
+  +  68830.0 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  68834.2 us     1 x K gdn_scan_s128_tsnap                                       44.5 us
+  +  68880.4 us     1 x K gated_rmsnorm_q8_1                                         2.1 us
+  +  68884.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 112.8 us
+  +  68997.0 us     1 x K add_rms_norm_f32_v2                                        6.2 us
+  +  69003.0 us     1 x K quantize_q8_1                                              1.8 us
+  +  69006.4 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          465.5 us
+  +  69474.1 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  +  69480.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 239.3 us
+  +  69722.1 us     1 x K add_f32                                                    2.4 us
+  +  69724.3 us     1 x K rms_norm_f32_v2                                            4.1 us
+  +  69728.2 us     1 x K quantize_q8_1                                              1.4 us
+  +  69732.4 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          215.6 us
+  +  69950.0 us     1 x C HtoD                                                       0.5 us      0.00 MB
+  +  69951.4 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.6 us
+  +  69958.5 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  69962.6 us     1 x K gdn_scan_s128_tsnap                                       41.2 us
+  +  70006.8 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  70010.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 120.9 us
+  +  70131.5 us     1 x K add_rms_norm_f32_v2                                        6.3 us
+  +  70137.8 us     1 x K quantize_q8_1                                              1.4 us
+  +  70142.0 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          462.2 us
+  +  70605.8 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  +  70611.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 238.6 us
+  +  70853.6 us     1 x K add_f32                                                    2.0 us
+  +  70855.4 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  70859.3 us     1 x K quantize_q8_1                                              1.6 us
+  +  70863.9 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          216.5 us
+  +  71082.5 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  +  71083.8 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          3.9 us
+  +  71089.1 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  71093.1 us     1 x K gdn_scan_s128_tsnap                                       41.1 us
+  +  71136.3 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  +  71140.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 122.1 us
+  +  71262.1 us     1 x K add_rms_norm_f32_v2                                        6.3 us
+  +  71268.4 us     1 x K quantize_q8_1                                              1.5 us
+  +  71271.5 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          459.8 us
+  +  71733.2 us     1 x K silu_mul_scaled_q8_1                                       4.0 us
+  +  71739.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 237.3 us
+  +  71979.0 us     1 x K add_f32                                                    2.0 us
+  +  71980.9 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  71984.9 us     1 x K quantize_q8_1                                              1.4 us
+  +  71989.2 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          189.9 us
+  +  72182.0 us     1 x K q_gate_split_f32                                           2.2 us
+  +  72184.0 us     2 x K rms_norm_f32_v2                                            5.2 us
+  +  72190.9 us     2 x K rope_neox_f32                                              5.0 us
+  +  72200.6 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  72201.9 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.6 us
+  +  72207.3 us     1 x K fa_verify_rows_v4_deep                                  3097.3 us
+  +  75307.0 us     1 x K fa_decode_combine_seqs                                   556.9 us
+  +  75866.1 us     1 x K sigmoid_f32                                                2.3 us
+  +  75870.0 us     1 x K mul_f32                                                    1.6 us
+  +  75871.2 us     1 x K quantize_q8_1                                              1.5 us
+  +  75874.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  88.4 us
+  +  75962.7 us     1 x K add_rms_norm_f32_v2                                        6.3 us
+  +  75969.0 us     1 x K quantize_q8_1                                              1.4 us
+  +  75972.6 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          445.6 us
+  +  76419.9 us     1 x K silu_mul_scaled_q8_1                                       3.6 us
+  +  76426.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 233.8 us
+  +  76661.8 us     1 x K add_f32                                                    2.2 us
+  +  76663.9 us     1 x K rms_norm_f32_v2                                            5.2 us
+  +  76668.9 us     1 x K quantize_q8_1                                              1.5 us
+  +  76672.0 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          216.2 us
+  +  76890.6 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  +  76891.9 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          5.7 us
+  +  76899.1 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  76903.2 us     1 x K gdn_scan_s128_tsnap                                       43.5 us
+  +  76948.4 us     1 x K gated_rmsnorm_q8_1                                         2.5 us
+  +  76952.5 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 122.2 us
+  +  77074.6 us     1 x K add_rms_norm_f32_v2                                        6.5 us
+  +  77081.0 us     1 x K quantize_q8_1                                              1.6 us
+  +  77084.7 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          445.3 us
+  +  77532.0 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  +  77538.1 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 236.1 us
+  +  77777.1 us     1 x K add_f32                                                    2.0 us
+  +  77778.9 us     1 x K rms_norm_f32_v2                                            4.0 us
+  +  77782.9 us     1 x K quantize_q8_1                                              1.4 us
+  +  77787.2 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          214.0 us
+  +  78002.8 us     1 x C HtoD                                                       0.5 us      0.00 MB
+  +  78004.2 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          5.8 us
+  +  78011.4 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  78015.4 us     1 x K gdn_scan_s128_tsnap                                       41.7 us
+  +  78059.5 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  78063.4 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 125.4 us
+  +  78188.7 us     1 x K add_rms_norm_f32_v2                                        6.5 us
+  +  78195.1 us     1 x K quantize_q8_1                                              1.7 us
+  +  78199.8 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          445.7 us
+  +  78648.2 us     1 x K silu_mul_scaled_q8_1                                       4.0 us
+  +  78654.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 244.1 us
+  +  78901.2 us     1 x K add_f32                                                    2.0 us
+  +  78903.3 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  78907.1 us     1 x K quantize_q8_1                                              1.4 us
+  +  78911.5 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          217.9 us
+  +  79131.1 us     1 x C HtoD                                                       0.5 us      0.00 MB
+  +  79132.4 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.1 us
+  +  79139.7 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  79143.7 us     1 x K gdn_scan_s128_tsnap                                       42.0 us
+  +  79189.0 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  79192.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 122.9 us
+  +  79315.7 us     1 x K add_rms_norm_f32_v2                                        6.4 us
+  +  79322.0 us     1 x K quantize_q8_1                                              1.7 us
+  +  79326.2 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          447.6 us
+  +  79775.6 us     1 x K silu_mul_scaled_q8_1                                       3.8 us
+  +  79781.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 235.3 us
+  +  80019.7 us     1 x K add_f32                                                    1.9 us
+  +  80021.5 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  80025.4 us     1 x K quantize_q8_1                                              1.5 us
+  +  80029.7 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          190.8 us
+  +  80223.2 us     1 x K q_gate_split_f32                                           1.6 us
+  +  80224.9 us     2 x K rms_norm_f32_v2                                            6.3 us
+  +  80233.5 us     2 x K rope_neox_f32                                              5.0 us
+  +  80243.1 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  80244.7 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.8 us
+  +  80249.9 us     1 x K fa_verify_rows_v4_deep                                  3098.9 us
+  +  83351.4 us     1 x K fa_decode_combine_seqs                                   556.4 us
+  +  83910.5 us     1 x K sigmoid_f32                                                2.0 us
+  +  83914.6 us     1 x K mul_f32                                                    1.3 us
+  +  83915.8 us     1 x K quantize_q8_1                                              1.5 us
+  +  83918.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  81.7 us
+  +  84000.5 us     1 x K add_rms_norm_f32_v2                                        6.2 us
+  +  84006.7 us     1 x K quantize_q8_1                                              1.5 us
+  +  84010.0 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          444.7 us
+  +  84456.3 us     1 x K silu_mul_scaled_q8_1                                       4.2 us
+  +  84462.4 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 241.2 us
+  +  84706.5 us     1 x K add_f32                                                    2.0 us
+  +  84708.4 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  84712.2 us     1 x K quantize_q8_1                                              1.4 us
+  +  84716.6 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          213.9 us
+  +  84932.1 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  84933.4 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          5.6 us
+  +  84940.7 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  84944.7 us     1 x K gdn_scan_s128_tsnap                                       45.5 us
+  +  84992.0 us     1 x K gated_rmsnorm_q8_1                                         2.5 us
+  +  84996.1 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 119.9 us
+  +  85115.8 us     1 x K add_rms_norm_f32_v2                                        6.7 us
+  +  85122.1 us     1 x K quantize_q8_1                                              1.5 us
+  +  85125.2 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          453.1 us
+  +  85580.7 us     1 x K silu_mul_scaled_q8_1                                       3.6 us
+  +  85586.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 232.3 us
+  +  85822.4 us     1 x K add_f32                                                    2.0 us
+  +  85824.5 us     1 x K rms_norm_f32_v2                                            4.0 us
+  +  85828.6 us     1 x K quantize_q8_1                                              1.5 us
+  +  85832.7 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          210.0 us
+  +  86045.1 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  86046.8 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.5 us
+  +  86053.7 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  86057.9 us     1 x K gdn_scan_s128_tsnap                                       41.2 us
+  +  86101.0 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  86105.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 122.7 us
+  +  86227.6 us     1 x K add_rms_norm_f32_v2                                        6.5 us
+  +  86233.9 us     1 x K quantize_q8_1                                              1.4 us
+  +  86238.1 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          452.3 us
+  +  86691.8 us     1 x K silu_mul_scaled_q8_1                                       3.7 us
+  +  86697.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 231.9 us
+  +  86932.4 us     1 x K add_f32                                                    2.2 us
+  +  86934.5 us     1 x K rms_norm_f32_v2                                            3.9 us
+  +  86938.5 us     1 x K quantize_q8_1                                              1.4 us
+  +  86942.7 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          217.2 us
+  +  87162.4 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  87163.7 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.5 us
+  +  87170.9 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  87175.2 us     1 x K gdn_scan_s128_tsnap                                       43.5 us
+  +  87221.2 us     1 x K gated_rmsnorm_q8_1                                         2.5 us
+  +  87225.1 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 121.3 us
+  +  87346.5 us     1 x K add_rms_norm_f32_v2                                        6.5 us
+  +  87352.8 us     1 x K quantize_q8_1                                              1.7 us
+  +  87356.4 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          452.2 us
+  +  87810.0 us     1 x K silu_mul_scaled_q8_1                                       3.8 us
+  +  87816.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 240.4 us
+  +  88059.9 us     1 x K add_f32                                                    2.0 us
+  +  88061.8 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  88065.7 us     1 x K quantize_q8_1                                              1.5 us
+  +  88070.1 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          189.1 us
+  +  88261.6 us     1 x K q_gate_split_f32                                           1.9 us
+  +  88263.3 us     2 x K rms_norm_f32_v2                                            5.1 us
+  +  88270.0 us     2 x K rope_neox_f32                                              5.2 us
+  +  88279.5 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  88280.7 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.6 us
+  +  88286.0 us     1 x K fa_verify_rows_v4_deep                                  3083.4 us
+  +  91371.3 us     1 x K fa_decode_combine_seqs                                   561.9 us
+  +  91934.6 us     1 x K sigmoid_f32                                                2.1 us
+  +  91938.6 us     1 x K mul_f32                                                    1.3 us
+  +  91939.8 us     1 x K quantize_q8_1                                              1.5 us
+  +  91942.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  87.8 us
+  +  92030.8 us     1 x K add_rms_norm_f32_v2                                        6.5 us
+  +  92037.1 us     1 x K quantize_q8_1                                              1.4 us
+  +  92040.1 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          444.6 us
+  +  92487.5 us     1 x K silu_mul_scaled_q8_1                                       3.7 us
+  +  92493.6 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 234.1 us
+  +  92729.2 us     1 x K add_f32                                                    1.8 us
+  +  92731.1 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  92735.0 us     1 x K quantize_q8_1                                              1.7 us
+  +  92739.5 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          212.4 us
+  +  92954.2 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  92955.5 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.4 us
+  +  92962.6 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  92966.8 us     1 x K gdn_scan_s128_tsnap                                       45.2 us
+  +  93015.0 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  93018.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 118.9 us
+  +  93137.7 us     1 x K add_rms_norm_f32_v2                                        6.4 us
+  +  93143.9 us     1 x K quantize_q8_1                                              2.1 us
+  +  93148.1 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          458.2 us
+  +  93607.7 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  +  93613.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 242.0 us
+  +  93858.7 us     1 x K add_f32                                                    2.0 us
+  +  93860.8 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  93864.7 us     1 x K quantize_q8_1                                              1.4 us
+  +  93869.0 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          224.6 us
+  +  94095.8 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  94097.1 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.5 us
+  +  94104.4 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  94108.5 us     1 x K gdn_scan_s128_tsnap                                       41.5 us
+  +  94151.6 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  94155.6 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 122.2 us
+  +  94277.9 us     1 x K add_rms_norm_f32_v2                                        6.1 us
+  +  94284.1 us     1 x K quantize_q8_1                                              1.4 us
+  +  94288.8 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          455.9 us
+  +  94747.5 us     1 x K silu_mul_scaled_q8_1                                       4.0 us
+  +  94753.6 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 247.8 us
+  +  95003.6 us     1 x K add_f32                                                    2.2 us
+  +  95005.7 us     1 x K rms_norm_f32_v2                                            3.8 us
+  +  95009.6 us     1 x K quantize_q8_1                                              1.6 us
+  +  95014.1 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          214.8 us
+  +  95230.5 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  95231.8 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.5 us
+  +  95239.0 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  +  95243.2 us     1 x K gdn_scan_s128_tsnap                                       43.2 us
+  +  95289.5 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  +  95293.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 117.1 us
+  +  95410.1 us     1 x K add_rms_norm_f32_v2                                        6.5 us
+  +  95416.5 us     1 x K quantize_q8_1                                              1.7 us
+  +  95420.4 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          460.6 us
+  +  95883.1 us     1 x K silu_mul_scaled_q8_1                                       4.2 us
+  +  95889.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 240.2 us
+  +  96131.9 us     1 x K add_f32                                                    2.2 us
+  +  96134.0 us     1 x K rms_norm_f32_v2                                            4.1 us
+  +  96138.2 us     1 x K quantize_q8_1                                              1.5 us
+  +  96142.3 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          189.1 us
+  +  96332.8 us     1 x K q_gate_split_f32                                           2.1 us
+  +  96335.0 us     2 x K rms_norm_f32_v2                                            6.1 us
+  +  96343.0 us     2 x K rope_neox_f32                                              5.0 us
+  +  96352.7 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  +  96354.0 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.8 us
+  +  96359.3 us     1 x K fa_verify_rows_v4_deep                                  3091.2 us
+  +  99452.7 us     1 x K fa_decode_combine_seqs                                   554.0 us
+  + 100009.8 us     1 x K sigmoid_f32                                                2.0 us
+  + 100013.9 us     1 x K mul_f32                                                    1.4 us
+  + 100015.1 us     1 x K quantize_q8_1                                              1.5 us
+  + 100018.1 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  83.5 us
+  + 100101.7 us     1 x K add_rms_norm_f32_v2                                        6.1 us
+  + 100108.0 us     1 x K quantize_q8_1                                              1.5 us
+  + 100111.3 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          448.2 us
+  + 100560.8 us     1 x K silu_mul_scaled_q8_1                                       3.5 us
+  + 100566.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 237.6 us
+  + 100807.6 us     1 x K add_f32                                                    1.8 us
+  + 100809.4 us     1 x K rms_norm_f32_v2                                            3.9 us
+  + 100813.4 us     1 x K quantize_q8_1                                              1.6 us
+  + 100817.9 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          215.3 us
+  + 101035.6 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  + 101036.8 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          6.1 us
+  + 101046.1 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  + 101050.2 us     1 x K gdn_scan_s128_tsnap                                       47.2 us
+  + 101099.5 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  + 101103.4 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 116.8 us
+  + 101220.3 us     1 x K add_rms_norm_f32_v2                                        6.7 us
+  + 101226.8 us     1 x K quantize_q8_1                                              1.7 us
+  + 101230.7 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          454.0 us
+  + 101687.1 us     1 x K silu_mul_scaled_q8_1                                       4.0 us
+  + 101693.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 241.0 us
+  + 101937.2 us     1 x K add_f32                                                    2.0 us
+  + 101939.0 us     1 x K rms_norm_f32_v2                                            3.8 us
+  + 101942.8 us     1 x K quantize_q8_1                                              1.6 us
+  + 101947.4 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          215.8 us
+  + 102166.1 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  + 102167.4 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          6.1 us
+  + 102176.6 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  + 102180.7 us     1 x K gdn_scan_s128_tsnap                                       42.1 us
+  + 102225.9 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  + 102229.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 115.1 us
+  + 102344.9 us     1 x K add_rms_norm_f32_v2                                        6.2 us
+  + 102351.1 us     1 x K quantize_q8_1                                              1.6 us
+  + 102355.9 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          455.3 us
+  + 102813.6 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  + 102819.6 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 248.1 us
+  + 103070.7 us     1 x K add_f32                                                    1.9 us
+  + 103072.5 us     1 x K rms_norm_f32_v2                                            3.9 us
+  + 103076.4 us     1 x K quantize_q8_1                                              1.8 us
+  + 103081.0 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          232.7 us
+  + 103315.1 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  + 103316.4 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          9.1 us
+  + 103327.6 us     1 x K gdn_prep_decode_b_f32                                      9.7 us
+  + 103340.1 us     1 x K gdn_scan_s128_tsnap                                       72.7 us
+  + 103415.2 us     1 x K gated_rmsnorm_q8_1                                         2.8 us
+  + 103420.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 121.7 us
+  + 103542.5 us     1 x K add_rms_norm_f32_v2                                        6.3 us
+  + 103548.6 us     1 x K quantize_q8_1                                              1.8 us
+  + 103552.3 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          459.5 us
+  + 104013.6 us     1 x K silu_mul_scaled_q8_1                                       4.2 us
+  + 104019.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 247.2 us
+  + 104268.8 us     1 x K add_f32                                                    2.3 us
+  + 104270.9 us     1 x K rms_norm_f32_v2                                            3.9 us
+  + 104274.8 us     1 x K quantize_q8_1                                              1.8 us
+  + 104279.0 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          195.8 us
+  + 104478.0 us     1 x K q_gate_split_f32                                           5.1 us
+  + 104479.7 us     2 x K rms_norm_f32_v2                                           38.3 us
+  + 104508.4 us     2 x K rope_neox_f32                                              5.9 us
+  + 104521.4 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  + 104522.6 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                         15.0 us
+  + 104540.0 us     1 x K fa_verify_rows_v4_deep                                  3631.0 us
+  + 108174.1 us     1 x K fa_decode_combine_seqs                                   557.4 us
+  + 108733.2 us     1 x K sigmoid_f32                                                2.2 us
+  + 108737.3 us     1 x K mul_f32                                                    1.3 us
+  + 108738.6 us     1 x K quantize_q8_1                                              1.5 us
+  + 108741.6 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  85.6 us
+  + 108827.3 us     1 x K add_rms_norm_f32_v2                                        6.1 us
+  + 108833.5 us     1 x K quantize_q8_1                                              1.4 us
+  + 108837.9 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          446.3 us
+  + 109286.2 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  + 109292.4 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 239.2 us
+  + 109534.4 us     1 x K add_f32                                                    2.0 us
+  + 109536.2 us     1 x K rms_norm_f32_v2                                            4.0 us
+  + 109540.3 us     1 x K quantize_q8_1                                              1.4 us
+  + 109544.5 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          217.3 us
+  + 109764.1 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  + 109765.4 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.0 us
+  + 109770.8 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  + 109774.7 us     1 x K gdn_scan_s128_tsnap                                       42.8 us
+  + 109819.3 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  + 109824.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 116.4 us
+  + 109941.2 us     1 x K add_rms_norm_f32_v2                                        6.4 us
+  + 109947.5 us     1 x K quantize_q8_1                                              1.8 us
+  + 109951.0 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          459.2 us
+  + 110412.6 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  + 110418.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 235.3 us
+  + 110655.7 us     1 x K add_f32                                                    2.2 us
+  + 110657.7 us     1 x K rms_norm_f32_v2                                            4.0 us
+  + 110661.7 us     1 x K quantize_q8_1                                              1.4 us
+  + 110665.7 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          218.8 us
+  + 110887.6 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  + 110888.9 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          5.7 us
+  + 110896.0 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  + 110900.2 us     1 x K gdn_scan_s128_tsnap                                       41.8 us
+  + 110944.2 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  + 110948.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 121.7 us
+  + 111069.8 us     1 x K add_rms_norm_f32_v2                                        6.4 us
+  + 111076.1 us     1 x K quantize_q8_1                                              1.6 us
+  + 111080.4 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          453.6 us
+  + 111535.9 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  + 111542.1 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 238.9 us
+  + 111784.0 us     1 x K add_f32                                                    2.2 us
+  + 111786.1 us     1 x K rms_norm_f32_v2                                            3.9 us
+  + 111790.0 us     1 x K quantize_q8_1                                              1.5 us
+  + 111794.2 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          220.5 us
+  + 112015.9 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  + 112017.2 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.0 us
+  + 112022.5 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  + 112026.5 us     1 x K gdn_scan_s128_tsnap                                       41.6 us
+  + 112070.7 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  + 112074.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 117.4 us
+  + 112192.2 us     1 x K add_rms_norm_f32_v2                                        6.9 us
+  + 112198.7 us     1 x K quantize_q8_1                                              1.8 us
+  + 112203.7 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          456.1 us
+  + 112661.3 us     1 x K silu_mul_scaled_q8_1                                       3.8 us
+  + 112667.5 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 246.4 us
+  + 112916.7 us     1 x K add_f32                                                    2.0 us
+  + 112918.7 us     1 x K rms_norm_f32_v2                                            3.8 us
+  + 112922.7 us     1 x K quantize_q8_1                                              1.4 us
+  + 112926.8 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          188.2 us
+  + 113118.2 us     1 x K q_gate_split_f32                                           2.0 us
+  + 113120.1 us     2 x K rms_norm_f32_v2                                            6.3 us
+  + 113128.4 us     2 x K rope_neox_f32                                              5.0 us
+  + 113138.1 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  + 113139.4 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.6 us
+  + 113144.8 us     1 x K fa_verify_rows_v4_deep                                  3101.7 us
+  + 116248.6 us     1 x K fa_decode_combine_seqs                                   559.2 us
+  + 116809.6 us     1 x K sigmoid_f32                                                2.0 us
+  + 116813.6 us     1 x K mul_f32                                                    1.4 us
+  + 116814.8 us     1 x K quantize_q8_1                                              1.6 us
+  + 116817.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  82.8 us
+  + 116900.8 us     1 x K add_rms_norm_f32_v2                                        6.3 us
+  + 116907.1 us     1 x K quantize_q8_1                                              1.4 us
+  + 116911.1 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          450.1 us
+  + 117363.6 us     1 x K silu_mul_scaled_q8_1                                       3.3 us
+  + 117369.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 230.6 us
+  + 117602.3 us     1 x K add_f32                                                    2.0 us
+  + 117604.4 us     1 x K rms_norm_f32_v2                                            3.8 us
+  + 117608.4 us     1 x K quantize_q8_1                                              1.5 us
+  + 117612.8 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          216.0 us
+  + 117831.2 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  + 117832.5 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.8 us
+  + 117839.7 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  + 117843.8 us     1 x K gdn_scan_s128_tsnap                                       42.6 us
+  + 117888.0 us     1 x K gated_rmsnorm_q8_1                                         2.6 us
+  + 117891.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 115.7 us
+  + 118007.5 us     1 x K add_rms_norm_f32_v2                                        6.2 us
+  + 118013.7 us     1 x K quantize_q8_1                                              1.4 us
+  + 118018.0 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          455.2 us
+  + 118475.6 us     1 x K silu_mul_scaled_q8_1                                       3.8 us
+  + 118481.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 235.3 us
+  + 118718.5 us     1 x K add_f32                                                    2.3 us
+  + 118720.6 us     1 x K rms_norm_f32_v2                                            3.8 us
+  + 118724.5 us     1 x K quantize_q8_1                                              1.4 us
+  + 118728.7 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          219.6 us
+  + 118950.4 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  + 118951.7 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.0 us
+  + 118958.9 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  + 118963.0 us     1 x K gdn_scan_s128_tsnap                                       42.3 us
+  + 119007.2 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  + 119011.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 115.4 us
+  + 119126.5 us     1 x K add_rms_norm_f32_v2                                        6.3 us
+  + 119132.6 us     1 x K quantize_q8_1                                              1.4 us
+  + 119137.3 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          454.8 us
+  + 119594.8 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  + 119601.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 235.2 us
+  + 119838.8 us     1 x K add_f32                                                    2.0 us
+  + 119840.9 us     1 x K rms_norm_f32_v2                                            3.8 us
+  + 119844.8 us     1 x K quantize_q8_1                                              1.5 us
+  + 119849.2 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          213.1 us
+  + 120064.5 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  + 120065.8 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.9 us
+  + 120073.1 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  + 120077.1 us     1 x K gdn_scan_s128_tsnap                                       42.1 us
+  + 120121.3 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  + 120125.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 117.0 us
+  + 120242.3 us     1 x K add_rms_norm_f32_v2                                        6.6 us
+  + 120248.6 us     1 x K quantize_q8_1                                              2.0 us
+  + 120252.4 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          461.9 us
+  + 120717.1 us     1 x K silu_mul_scaled_q8_1                                       3.6 us
+  + 120723.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 243.5 us
+  + 120968.3 us     1 x K add_f32                                                    2.3 us
+  + 120970.2 us     1 x K rms_norm_f32_v2                                            4.0 us
+  + 120974.3 us     1 x K quantize_q8_1                                              1.4 us
+  + 120978.4 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          185.5 us
+  + 121166.9 us     1 x K q_gate_split_f32                                           1.7 us
+  + 121168.6 us     2 x K rms_norm_f32_v2                                            6.2 us
+  + 121177.1 us     2 x K rope_neox_f32                                              5.0 us
+  + 121186.8 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  + 121188.1 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.8 us
+  + 121193.3 us     1 x K fa_verify_rows_v4_deep                                  3087.4 us
+  + 124283.7 us     1 x K fa_decode_combine_seqs                                   558.0 us
+  + 124844.9 us     1 x K sigmoid_f32                                                2.4 us
+  + 124849.0 us     1 x K mul_f32                                                    1.3 us
+  + 124850.2 us     1 x K quantize_q8_1                                              1.5 us
+  + 124853.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  87.3 us
+  + 124940.5 us     1 x K add_rms_norm_f32_v2                                        6.2 us
+  + 124946.8 us     1 x K quantize_q8_1                                              1.4 us
+  + 124950.5 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          448.9 us
+  + 125402.0 us     1 x K silu_mul_scaled_q8_1                                       3.7 us
+  + 125408.1 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 240.5 us
+  + 125650.9 us     1 x K add_f32                                                    2.0 us
+  + 125653.1 us     1 x K rms_norm_f32_v2                                            3.9 us
+  + 125657.1 us     1 x K quantize_q8_1                                              1.4 us
+  + 125661.2 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          219.6 us
+  + 125882.0 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  + 125883.2 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          8.2 us
+  + 125894.5 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  + 125898.6 us     1 x K gdn_scan_s128_tsnap                                       44.6 us
+  + 125945.9 us     1 x K gated_rmsnorm_q8_1                                         2.5 us
+  + 125949.9 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 119.6 us
+  + 126069.3 us     1 x K add_rms_norm_f32_v2                                        6.4 us
+  + 126075.6 us     1 x K quantize_q8_1                                              1.6 us
+  + 126079.0 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          455.5 us
+  + 126536.5 us     1 x K silu_mul_scaled_q8_1                                       3.7 us
+  + 126542.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 236.3 us
+  + 126780.5 us     1 x K add_f32                                                    2.3 us
+  + 126782.6 us     1 x K rms_norm_f32_v2                                            3.7 us
+  + 126786.4 us     1 x K quantize_q8_1                                              1.5 us
+  + 126790.7 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          220.8 us
+  + 127012.5 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  + 127013.8 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          6.0 us
+  + 127022.9 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  + 127027.1 us     1 x K gdn_scan_s128_tsnap                                       41.3 us
+  + 127070.2 us     1 x K gated_rmsnorm_q8_1                                         2.2 us
+  + 127074.1 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 114.5 us
+  + 127188.4 us     1 x K add_rms_norm_f32_v2                                        6.5 us
+  + 127194.7 us     1 x K quantize_q8_1                                              1.6 us
+  + 127199.2 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          458.9 us
+  + 127660.9 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  + 127667.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 252.1 us
+  + 127921.2 us     1 x K add_f32                                                    2.2 us
+  + 127923.3 us     1 x K rms_norm_f32_v2                                            3.8 us
+  + 127927.2 us     1 x K quantize_q8_1                                              1.5 us
+  + 127931.4 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          219.3 us
+  + 128152.1 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  + 128153.4 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          6.2 us
+  + 128162.6 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  + 128166.7 us     1 x K gdn_scan_s128_tsnap                                       41.5 us
+  + 128209.9 us     1 x K gated_rmsnorm_q8_1                                         2.4 us
+  + 128213.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 119.0 us
+  + 128332.7 us     1 x K add_rms_norm_f32_v2                                        6.1 us
+  + 128338.9 us     1 x K quantize_q8_1                                              1.5 us
+  + 128343.1 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          462.9 us
+  + 128807.7 us     1 x K silu_mul_scaled_q8_1                                       4.1 us
+  + 128814.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 238.8 us
+  + 129054.8 us     1 x K add_f32                                                    1.8 us
+  + 129056.6 us     1 x K rms_norm_f32_v2                                            3.8 us
+  + 129060.5 us     1 x K quantize_q8_1                                              1.5 us
+  + 129065.0 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          189.7 us
+  + 129257.5 us     1 x K q_gate_split_f32                                           2.2 us
+  + 129259.7 us     2 x K rms_norm_f32_v2                                            5.3 us
+  + 129267.7 us     2 x K rope_neox_f32                                              5.0 us
+  + 129277.4 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  + 129278.7 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.7 us
+  + 129283.9 us     1 x K fa_verify_rows_v4_deep                                  3087.6 us
+  + 132373.3 us     1 x K fa_decode_combine_seqs                                   554.7 us
+  + 132929.4 us     1 x K sigmoid_f32                                                2.1 us
+  + 132933.4 us     1 x K mul_f32                                                    1.3 us
+  + 132934.6 us     1 x K quantize_q8_1                                              1.5 us
+  + 132937.6 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  83.2 us
+  + 133020.7 us     1 x K add_rms_norm_f32_v2                                        6.3 us
+  + 133026.8 us     1 x K quantize_q8_1                                              1.4 us
+  + 133029.9 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          445.8 us
+  + 133478.2 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  + 133484.4 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 243.9 us
+  + 133730.3 us     1 x K add_f32                                                    2.0 us
+  + 133732.3 us     1 x K rms_norm_f32_v2                                            3.9 us
+  + 133736.3 us     1 x K quantize_q8_1                                              1.4 us
+  + 133740.5 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          217.2 us
+  + 133959.2 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  + 133960.4 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.0 us
+  + 133965.7 us     1 x K gdn_prep_decode_b_f32                                      1.7 us
+  + 133969.8 us     1 x K gdn_scan_s128_tsnap                                       47.1 us
+  + 134019.1 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  + 134023.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 116.5 us
+  + 134139.4 us     1 x K add_rms_norm_f32_v2                                        6.2 us
+  + 134145.4 us     1 x K quantize_q8_1                                              1.6 us
+  + 134150.1 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          448.9 us
+  + 134601.6 us     1 x K silu_mul_scaled_q8_1                                       3.8 us
+  + 134607.7 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 237.9 us
+  + 134847.5 us     1 x K add_f32                                                    1.8 us
+  + 134849.3 us     1 x K rms_norm_f32_v2                                            3.8 us
+  + 134853.2 us     1 x K quantize_q8_1                                              1.6 us
+  + 134857.7 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          213.2 us
+  + 135072.3 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  + 135073.8 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          3.9 us
+  + 135080.9 us     1 x K gdn_prep_decode_b_f32                                      1.6 us
+  + 135085.0 us     1 x K gdn_scan_s128_tsnap                                       43.7 us
+  + 135130.2 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  + 135134.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 115.8 us
+  + 135249.7 us     1 x K add_rms_norm_f32_v2                                        6.2 us
+  + 135255.9 us     1 x K quantize_q8_1                                              1.4 us
+  + 135259.2 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          456.4 us
+  + 135717.7 us     1 x K silu_mul_scaled_q8_1                                       3.8 us
+  + 135723.8 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 241.0 us
+  + 135967.7 us     1 x K add_f32                                                    2.0 us
+  + 135969.8 us     1 x K rms_norm_f32_v2                                            3.8 us
+  + 135973.6 us     1 x K quantize_q8_1                                              1.5 us
+  + 135978.0 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          215.1 us
+  + 136194.6 us     1 x C HtoD                                                       0.3 us      0.00 MB
+  + 136195.8 us     1 x K ssm_conv1d_fused_decode_tloop_f32                          4.0 us
+  + 136201.3 us     1 x K gdn_prep_decode_b_f32                                      1.8 us
+  + 136205.2 us     1 x K gdn_scan_s128_tsnap                                       42.4 us
+  + 136250.4 us     1 x K gated_rmsnorm_q8_1                                         2.3 us
+  + 136254.3 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 116.5 us
+  + 136370.7 us     1 x K add_rms_norm_f32_v2                                        6.0 us
+  + 136376.8 us     1 x K quantize_q8_1                                              1.7 us
+  + 136381.4 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          459.1 us
+  + 136842.0 us     1 x K silu_mul_scaled_q8_1                                       3.9 us
+  + 136848.2 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 238.0 us
+  + 137088.0 us     1 x K add_f32                                                    1.8 us
+  + 137089.9 us     1 x K rms_norm_f32_v2                                            3.8 us
+  + 137093.7 us     1 x K quantize_q8_1                                              1.6 us
+  + 137098.3 us     1 x K qmatvec_nvfp4_mmvq_group4_b4_rp                          191.6 us
+  + 137292.8 us     1 x K q_gate_split_f32                                           1.8 us
+  + 137294.6 us     2 x K rms_norm_f32_v2                                            6.5 us
+  + 137303.0 us     2 x K rope_neox_f32                                              5.0 us
+  + 137312.7 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  + 137314.1 us     1 x K append_quantize_kv_q8_0_q5_1_seqs                          3.7 us
+  + 137319.2 us     1 x K fa_verify_rows_v4_deep                                  3092.0 us
+  + 140412.7 us     1 x K fa_decode_combine_seqs                                   556.3 us
+  + 140970.9 us     1 x K sigmoid_f32                                                2.1 us
+  + 140974.9 us     1 x K mul_f32                                                    1.3 us
+  + 140976.1 us     1 x K quantize_q8_1                                              1.5 us
+  + 140979.4 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                  85.6 us
+  + 141065.1 us     1 x K add_rms_norm_f32_v2                                        6.2 us
+  + 141071.3 us     1 x K quantize_q8_1                                              1.5 us
+  + 141075.4 us     1 x K qmatvec_nvfp4_mmvq_dual_b4_rpr2                          448.1 us
+  + 141525.8 us     1 x K silu_mul_scaled_q8_1                                       3.5 us
+  + 141532.0 us     1 x K qmatvec_nvfp4_mmvq_b4_rp                                 236.1 us
+  + 141770.8 us     1 x K add_f32                                                    2.0 us
+  + 141772.9 us     1 x K rms_norm_f32_v2                                            6.3 us
+  + 141779.3 us     1 x K quantize_q8_1                                              1.4 us
+  + 141782.9 us     1 x K qmatvec_q5_K_mmvq_b4_r2                                 5046.3 us
+  + 146832.2 us     1 x K argmax_partial_f32                                         6.9 us
+  + 146840.5 us     1 x K argmax_final_f32                                           3.6 us
+  + 146846.5 us     1 x K argmax_partial_f32                                         6.0 us
+  + 146854.7 us     1 x K argmax_final_f32                                           1.4 us
+  + 146858.8 us     1 x K argmax_partial_f32                                         6.1 us
+  + 146867.0 us     1 x K argmax_final_f32                                           1.4 us
+  + 146871.1 us     1 x K argmax_partial_f32                                         6.5 us
+  + 146879.0 us     1 x K argmax_final_f32                                           1.4 us
+  + 146886.3 us     1 x C DtoH                                                       2.3 us      0.00 MB
+  + 146911.0 us     2 x C HtoD                                                       0.5 us      0.00 MB
+  + 146918.8 us     2 x K copy_batch_uniform_f32                                  1389.0 us
+  + 148311.8 us    16 x C HtoD                                                       5.9 us      0.00 MB
+  + 148337.9 us     1 x M memset                                                     1.3 us      0.02 MB
+  + 148343.6 us     1 x C DtoD                                                       1.6 us      0.02 MB
+  + 148347.1 us     1 x C HtoD                                                       0.5 us      0.00 MB
+  + 148351.8 us     1 x M memset                                                     1.4 us      0.06 MB
+  + 148354.7 us     2 x C DtoD                                                       3.0 us      0.06 MB
+  + 148360.8 us     2 x C HtoD                                                       0.6 us      0.00 MB
+  + 148368.9 us     1 x K embed_gather_u32_t                                         6.4 us
+  + 148378.4 us     1 x M memset                                                     1.3 us      0.06 MB
+  + 148379.4 us     1 x K rms_norm_f32_v2                                            6.2 us
+  + 148388.4 us     1 x M memset                                                     3.1 us      0.06 MB
+  + 148391.2 us     1 x K rms_norm_f32_v2                                            4.1 us
+  + 148396.6 us     1 x M memset                                                     1.2 us      0.12 MB
+  + 148400.6 us     2 x C DtoD                                                       2.3 us      0.12 MB
+  + 148404.0 us     1 x K quantize_q8_1                                              1.8 us
+  + 148406.9 us     1 x K qmatvec_q4_K_mmvq_b4_r2                                  218.1 us
+  + 148627.3 us     1 x M memset                                                     1.3 us      0.06 MB
+  + 148628.5 us     1 x K rms_norm_f32_v2                                            3.6 us
+  + 148632.3 us     1 x K quantize_q8_1                                              1.4 us
+  + 148635.2 us     1 x K qmatvec_q4_K_mmvq_b4                                      21.2 us
+  + 148656.4 us     1 x K quantize_q8_1                                              1.4 us
+  + 148660.0 us     1 x K qmatvec_q6_K_mmvq_b4                                      29.5 us
+  + 148691.1 us     1 x M memset                                                     1.0 us      0.01 MB
+  + 148692.2 us     1 x K rms_norm_f32_v2                                            4.1 us
+  + 148698.9 us     1 x K rope_neox_f32                                              5.1 us
+  + 148707.0 us     1 x K append_quantize_kv_q8_0_q5_1_rows                          3.5 us
+  + 148712.9 us     1 x C HtoD                                                       0.4 us      0.00 MB
+  + 148714.4 us    98 x C DtoD                                                    1482.0 us    156.93 MB
+  + 150402.6 us     3 x C HtoD                                                       1.3 us      0.00 MB
+  + 150406.0 us     1 x C DtoD                                                       1.4 us      0.02 MB

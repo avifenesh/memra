@@ -1,0 +1,18 @@
+[mtp-draft] loading external MTP draft: ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":28230885376,"synchronization_errors":[]}
+[prefix-cache] on: budget 50246MB (50245804032 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50245804032 B; boot driver free 104249704448 B, post-reserve clamp 100491608064 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":25985261568,"synchronization_errors":[]}
+[spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=10.43ms draft_step=0.00ms pooled_overhead=Some((4, 3.4966231458333326)) pooled_draft_step=None verify_ms[1..16]=[76.9 74.8 75.3 76.2 77.0 77.7 78.9 80.0 82.5 85.0 87.5 90.0 92.1 94.2 96.3 98.4] plain_ms[1..]=[75.7 78.4 82.5 86.6 90.6 94.6 98.6 102.6 107.5 112.4 117.3 122.2 127.1 132.0 136.9 141.8 147.2 152.7 158.2 163.6 169.1 174.6 180.0 185.5 190.9 196.4 201.9 207.3 212.8 218.3 223.7 229.2] (66.4s)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1409286144,"still_owned_bytes":19178338248,"pool_reserved_bytes":19360907264,"pool_cached_bytes":182569016,"driver_free_bytes":25112141824,"synchronization_errors":[]}
+[spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[prefix-cache] stable-boundary capture armed at 992 of 1036 prompt tokens (model q38)
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1036 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=1956.179 generated=0->34 rounds=10 drafted=30 accepted=23 k=3
+[prefix-cache] insert (spec-boundary): 992 tokens, 188.2MB (resident 188.2MB / 50246MB, model q38)
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=1291.502 generated=34->66 rounds=15 drafted=45 accepted=17 k=3
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=1035.736 generated=66->98 rounds=12 drafted=36 accepted=20 k=3
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=259.720 generated=98->107 rounds=3 drafted=9 accepted=8 k=3

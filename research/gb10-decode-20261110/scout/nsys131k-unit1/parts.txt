@@ -1,0 +1,12 @@
+prompt 131051: decode window 4886.0 ms, 32 rounds; kernels 4669.7 ms, idle 216.3 ms; prefix-cache publication: one gap of 83.1 ms (34 plane copies, 4134 MB, copies 37.8 ms, zeroing 22.1 ms); 150.09 ms per round without it
+  trunk matvecs, verify at T=4 (NVFP4)                                        65.35  floor  60.62
+  output head, verify (Q5_K)                                                   5.11  floor   3.87
+  draft: 3 steps of the MTP block and its 32k head                             5.68  floor   4.73
+  verify attention, 16 layers: the walk                                       50.44  floor  17.22
+  verify attention: the combine                                                9.03  floor   0.00
+  draft attention, the MTP layer, 3 steps                                      4.89  floor   3.23
+  GDN scan and conv                                                            2.42  floor   1.33
+  rollback copies                                                              2.67  floor   0.00
+  norms, quantize, glue, argmax                                                2.08  floor   0.00
+  launch gaps and host                                                         2.50  floor   0.00
+  round (sum of the rows)                                                    150.14  floor  91.00
