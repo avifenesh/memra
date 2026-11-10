@@ -998,6 +998,10 @@ burst after it must emit the oracle's tokens. Before memra#1196 the no-round bur
 carried token into `committed` with no cache row behind it, and the check fails there. It
 also fails, as untested, where no burst ends on a pending token (`MEMRA_SPEC_REPLAY=1`, or a
 sampled run with `MEMRA_SPEC_TEMP` above 0, which the gate's greedy oracle does not serve anyway).
+Then a continuation burst whose commit hook says stop after its second slice (memra#1207: the
+server ends a burst at the round that completes a stop string and parks the session): the burst
+must end there, short of its target, with `committed` equal to the cache rows and to the true
+history less the pending token, and the burst after it must emit the oracle's tokens.
 
 ## Gate integrity: the shapes that report green while verifying nothing
 
@@ -1801,6 +1805,41 @@ A row that tested nothing fails: a speculative case whose request did not specul
 answer, a resumed turn that restored nothing, a handoff that left the position key.
 On main before memra#1154 it fails: every K writes another text, and a pair differs from its
 solo runs. Receipts: `research/position-keyed-sampling-20261110/`.
+
+### A stop string ends a speculative request where plain decode ends it (`tools/spec-stop-string-gate.py`)
+
+Plain decode checks the request's stop strings after every token and counts through the token
+that completes one. Every speculative route emits through `emit_spec_token_events`, which runs
+the same check after each token it sends (memra#1207): the completing token is the last one sent
+and counted, and the round hook's continue-verdict ends the burst at that round (MTP, DSpark and
+GLM5; gemma emits at burst cadence and runs its burst out, its count clamped). Before memra#1207
+the check ran after the burst returned, so usage counted through the burst's end and the
+response stayed open while the burst ran out.
+
+The gate streams every request (SSE with usage) and boots once per lease:
+
+- `ref`: `MEMRA_SPEC_K=0`. It takes the stop strings from its own answers, writes `plan.json`
+  and runs every row: the reference counts and texts.
+- a speculative boot per arm: the defaults, `--env MEMRA_SPEC_BURST=2` (a burst ends at nearly
+  every round), and `--route dspark` with the DSpark recipe's env.
+
+Rows, greedy and at temperature 1 (seeded): a free answer and an EOS answer (the non-stop rows),
+one-word stop strings at five positions, three-word stop strings at three (several tokens, so
+they often begin in one round or burst and complete in a later one), two stop strings in one
+request with the later one listed first, a stop string that completes on the last token of
+`max_tokens`, a two-turn conversation whose first turn ends on a stop string, and on MTP boots
+stop strings that only a drafted run the verify rejected would complete (taken from the
+per-round drafts `MEMRA_DEBUG_SPEC=1` prints for a warm run of the free request, and confirmed in
+each row's own log). `judge DIR` fails a speculative row whose text, finish reason or completion
+tokens differ from plain decode's (a rejected-draft row is compared with the free row: its stop
+string never completes), a stop-ended row without exactly one `[spec-stop]` receipt naming its
+count, and a stop-ended row that closes later than max(3x, 100 ms more than) the median time
+from last visible chunk to end of response of its boot's non-stop rows. It fails as untested
+when, per sampler, no stop string began in an earlier commit slice than it completed in
+(`spans_slices=1`), no request held two stop strings in one burst, or no rejected-draft row was
+confirmed (the last two on MTP boots). The second turn after a stop-ended first turn must
+restore a prefix on MTP boots (the DSpark recipe runs with the prefix cache off). A GPU lease is
+the caller's business, one per boot. Receipts: `research/spec-stop-string-20261110/`.
 
 ## Generic spill / tiered KV (memra-tier)
 

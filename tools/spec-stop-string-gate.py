@@ -380,8 +380,10 @@ def run_boot(args):
             if p.get("turn"):
                 _, t1, _ = srv.row("turn1", f"turn1-{regime}", regime, tmsgs, tsamp, MAX_TOKENS, stop=[p["turn"]])
                 t2 = tmsgs + [{"role": "assistant", "content": t1}, {"role": "user", "content": TURN2}]
+                # The DSpark recipes run with the prefix cache off: only the MTP boots must
+                # restore the parked prefix.
                 srv.row("turn2", f"turn2-{regime}", regime, t2, sampler(seed_of(f"turn2-{regime}")), 64,
-                        want_cached=True)
+                        want_cached=not ref and args.route == "mtp")
             if not ref and args.route == "mtp":
                 # A stop string only a rejected drafted run completes, taken from a warm run of
                 # the free request in this boot and confirmed in each row's own log.
