@@ -1397,8 +1397,14 @@ fn gemma_slru_pin_floor(
 }
 
 /// The gemma pairs arm's routed-expert program: the grouped f16 lane (env-explicit for gemma,
-/// `moe_f16g_gemma_on`), else the int8 MMA when `n_embd % 256 == 0` (`MEMRA_GEMMA_MOE_MMA=0`
-/// rollback), else the decode-once dp4a matvecs. Never a function of the placement.
+/// `moe_f16g_gemma_on`), else the int8 MMA when `n_embd % 256 == 0` and all three banks have an
+/// MMA tile loader (`MEMRA_GEMMA_MOE_MMA=0` rollback), else the pair matvecs
+/// (`gemma_pairs_matvec`). Never a function of the placement.
+///
+/// memra#1234: the MMA kernel stages Q4_0 and IQ4_XS and decodes every other qtype as IQ3_S, so
+/// it may only take the `q8_expert_dec_supported` set; a k-quant bank (Q3_K, Q4_K, Q6_K, which
+/// `expert_dp4a_supported` admits) used to reach it and was read with the wrong tile loader.
+/// The same predicate the qwen pairs arm applies (`moe_pairs_arm`).
 fn gemma_pairs_arm(m: &MoeWeights, n_embd: usize, n_ff_exp: usize) -> PairsArm {
     if crate::moe_f16g_gemma_on()
         && f16g_proj_ok(m.gate_exps.qtype, n_embd)
@@ -1407,6 +1413,9 @@ fn gemma_pairs_arm(m: &MoeWeights, n_embd: usize, n_ff_exp: usize) -> PairsArm {
     {
         PairsArm::F16g
     } else if n_embd.is_multiple_of(256)
+        && q8_expert_dec_supported(m.gate_exps.qtype)
+        && q8_expert_dec_supported(m.up_exps.qtype)
+        && q8_expert_dec_supported(m.down_exps.qtype)
         && std::env::var("MEMRA_GEMMA_MOE_MMA").as_deref() != Ok("0")
     {
         PairsArm::Mma
@@ -23281,7 +23290,13 @@ impl HybridModel {
         // bodies are the t=1 kernels VERBATIM (bit-identical to the per-token loop).
         // gate_up rides the CSR owner-scan dedup when t <= 10 (each duplicated expert's
         // weight stream decoded once; the qwen CSR class). MEMRA_GEMMA_CSR=0 -> rows.
-        let csr = t <= 10 && std::env::var("MEMRA_GEMMA_CSR").as_deref() != Ok("0");
+        // memra#1234: the CSR twin's cached decode (`exp_decode_g_cached`) covers Q4_0, IQ4_XS
+        // and IQ3_S and reads every other qtype as IQ3_S, so a k-quant gate or up bank keeps
+        // the rows twin, whose `expert_dot_g_v` carries the k-quant bodies.
+        let csr = t <= 10
+            && q8_expert_dec_supported(m.gate_exps.qtype)
+            && q8_expert_dec_supported(m.up_exps.qtype)
+            && std::env::var("MEMRA_GEMMA_CSR").as_deref() != Ok("0");
         let act = if csr {
             e.moe_gate_up_gelu8_dev_q8_csr(
                 table,
@@ -23651,6 +23666,43 @@ impl HybridModel {
         Ok(moe_out)
     }
 
+    /// One projection of the gemma pairs arm's dp4a program (memra#1234): the decode-once `_dec`
+    /// kernel for the qtypes it decodes (Q4_0, IQ3_S, IQ4_XS: the program this arm always ran for
+    /// them), else the `_em` kernel, whose `expert_dot_g` carries the k-quant bodies. The qwen
+    /// pairs arm's per-qtype dispatch (`moe_pairs_y_down`). Both kernels walk one expert segment
+    /// per block row over the full K, so a CSR run's rows equal the single launch's.
+    #[allow(clippy::too_many_arguments)]
+    fn gemma_pairs_matvec(
+        e: &Engine,
+        table: &CudaSlice<u64>,
+        proj: i32,
+        ex_ids: &CudaSlice<i32>,
+        ex_off: &CudaSlice<i32>,
+        ex_pairs: &CudaSlice<i32>,
+        pair_tok: &CudaSlice<i32>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        n_expert: usize,
+        n_active: usize,
+        n_pairs: usize,
+        qtype: i32,
+        row_bytes: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if q8_expert_dec_supported(qtype) {
+            e.moe_pairs_matvec_q8_dec(
+                table, proj, ex_ids, ex_off, ex_pairs, pair_tok, aq, ad, in_f, out_f, n_expert,
+                n_active, n_pairs, qtype, row_bytes,
+            )
+        } else {
+            e.moe_pairs_matvec_q8_em(
+                table, proj, ex_ids, ex_off, ex_pairs, pair_tok, aq, ad, in_f, out_f, n_expert,
+                n_active, n_pairs, qtype, row_bytes,
+            )
+        }
+    }
+
     /// The gemma pairs arm's routed-expert output in ONE launch per projection, `[n_pairs,
     /// n_embd]` in PAIR-ID order, read through `table` (the resident slab's row, the cache's
     /// full-layer row or a pinned table; only the CSR's active experts are dereferenced). This is
@@ -23747,7 +23799,8 @@ impl HybridModel {
             }
             PairsArm::Q8 => {
                 let (zq, zd) = e.quantize_q8_1(moe_in, t, n_embd)?;
-                let gate = e.moe_pairs_matvec_q8_dec(
+                let gate = Self::gemma_pairs_matvec(
+                    e,
                     table,
                     0,
                     exi,
@@ -23764,7 +23817,8 @@ impl HybridModel {
                     m.gate_exps.qtype,
                     m.gate_exps.row_bytes,
                 )?;
-                let up = e.moe_pairs_matvec_q8_dec(
+                let up = Self::gemma_pairs_matvec(
+                    e,
                     table,
                     1,
                     exi,
@@ -23861,7 +23915,8 @@ impl HybridModel {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let act = e.moe_pairs_gelu_mul(gate, up, n_pairs * csr.n_ff_exp)?;
         let (aq2, ad2) = e.quantize_q8_1(&act, n_pairs, csr.n_ff_exp)?;
-        e.moe_pairs_matvec_q8_dec(
+        Self::gemma_pairs_matvec(
+            e,
             table,
             2,
             exi,
@@ -23959,12 +24014,13 @@ impl HybridModel {
     /// WHY THE BYTES EQUAL THE SINGLE LAUNCH'S. Every kernel of these arms launches one block
     /// row per expert segment (grid.y = segment) and walks only that segment's rows, in the
     /// segment's own order, over the full K; the tile form depends on the device and out_f
-    /// alone (`mmq_iq_experts`), or the segment's 32-row groups start at the segment's first
-    /// row (`moe_pairs_matvec_q8_dec`). The activations are quantized per row (q8_1, D4
+    /// alone (`mmq_iq_experts`), or the segment's row groups (32 rows in
+    /// `moe_pairs_matvec_q8_dec`, 16 in `moe_pairs_matvec_q8_em`, memra#1234) start at the
+    /// segment's first row. The activations are quantized per row (q8_1, D4
     /// q8_1_mmq, the f16 lane's row scale) and GELU is elementwise. So a segment's outputs do not
     /// depend on which other segments share the launch. The grouped f16 lane takes runs only
     /// where memra#1217 argued it (`moe_f16g_runs_exact`). `tests/moe_slru_gemma_placement_gpu.rs`
-    /// holds this to bit equality.
+    /// holds this to bit equality, and `tests/gemma4_moe_kquant_pairs_gpu.rs` for k-quant banks.
     #[allow(clippy::too_many_arguments)]
     fn gemma_pairs_run(
         e: &Engine,
@@ -24008,9 +24064,9 @@ impl HybridModel {
             }
             (PairsArm::Q8, GemmaRunActs::Q8(zq, zd)) => {
                 let proj = |p: i32, qtype, rb| {
-                    e.moe_pairs_matvec_q8_dec(
-                        table, p, &exi, &exo, &ident, &tok_d, zq, zd, n_embd, n_ff_exp, n_expert,
-                        n_active, n_pairs, qtype, rb,
+                    Self::gemma_pairs_matvec(
+                        e, table, p, &exi, &exo, &ident, &tok_d, zq, zd, n_embd, n_ff_exp,
+                        n_expert, n_active, n_pairs, qtype, rb,
                     )
                 };
                 let gate = proj(0, m.gate_exps.qtype, m.gate_exps.row_bytes)?;
