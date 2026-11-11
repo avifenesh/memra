@@ -50682,8 +50682,11 @@ mod tests {
             "the qwen flush hook must advance tokens_emitted at the send"
         );
         assert!(live_sq.contains("emit.flush( slice, s.ttft.as_ref(), &s.model, s.lane, &mut s.emission_clock, &mut s.tokens_emitted, )"));
+        // The pooled cohort's round hook reaches the emission through its RefCell, shared with
+        // the member's end hook (memra#1209).
         assert!(live_sq.contains(
-            "emit.flush( slice, ttft.as_ref(), model, lane, emission_clock, tokens_emitted, )"
+            "emit.borrow_mut().flush( slice, ttft.as_ref(), model, lane, emission_clock, \
+             tokens_emitted, )"
         ));
         assert!(
             !live.contains("s.tokens_emitted += token_events;"),
