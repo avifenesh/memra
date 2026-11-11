@@ -269,7 +269,8 @@ class GateToolDocsInputs(unittest.TestCase):
 
     PUSH_TIME = ("tools/hooks/pre-push", "tools/qualify-release.py", "tools/check_hardware_gate.py")
     # Literals that name a docs file without reading it.
-    NOT_READS = {"tools/cell_evidence.py: .gitattributes": "the DRIFT_NEVER entry"}
+    NOT_READS = {"tools/cell_evidence.py: .gitattributes": "the DRIFT_NEVER entry",
+                 "tools/check-argmax-floors.py: docs/TESTING.md": "the census's hint names the doc"}
 
     def test_the_scan_sees_the_read_forms(self):
         docs = {"docs/FLAGS.md", "docs/decisions/PINNED.md", "README.md", "LICENSE", ".gitattributes"}
