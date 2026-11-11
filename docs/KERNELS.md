@@ -72,9 +72,10 @@ replaces three of them on some targets.
 
 ### Optional CUTLASS archives
 
-Two separate archives, each behind its own build variable and each refused unless the target is
-exactly `120a` (an assert in `build.rs`). Both need a CUTLASS tree; `MEMRA_DSV4_CUTLASS` requires
-`MEMRA_CUTLASS_ROOT`.
+Two separate archives, each behind its own build variable and each refused on any family other
+than `120a` (an assert in `build.rs`). Both compile against the vendored CUTLASS v4.8.1
+(`crates/memra-engine/third_party/cutlass`, its README names the tag and the copied subtrees) for the
+build's own target, `120a` or `121a`.
 
 | Build variable | TU | Archive | Notes |
 | --- | --- | --- | --- |
@@ -463,8 +464,8 @@ probe binaries under `src/bin/`.
 
 | Symbol | Computes | Types | Arch | Selected by | Caller | Gate |
 | --- | --- | --- | --- | --- | --- | --- |
-| `memra_cutlass_fp4_gemm`, `memra_cutlass_fp4_workspace`, `memra_cutlass_sfa_size`, `memra_cutlass_sfb_size`, `memra_cutlass_repack_sfa`, `memra_cutlass_repack_sfb`, `memra_nvfp4_dequant_ref`, `memra_nvfp4_quant_ref`, `memra_gguf_nvfp4_deinterleave` (`cu/cutlass_fp4_sm120.cu`); kernels `memra_gguf_nvfp4_deinterleave_kernel`, `memra_nvfp4_dequant_kernel`, `memra_nvfp4_quant_kernel`, `memra_sf_scatter_kernel<...>` | CUTLASS 4.x NVFP4 W4A4 GEMM wrapper, scale-factor repacks, reference quantizers | NVFP4 | `120a` only | `MEMRA_CUTLASS` (build) | `src/cutlass_ffi.rs` | none in CI |
-| `memra_dsv4_dense_cutlass_fp8`, `memra_dsv4_dense_cutlass_armed_for_gate`, `memra_dsv4_dense_cutlass_counts_for_gate`, `memra_dsv4_dense_cutlass_set_for_gate` (`cu/dsv4_dense_cutlass.cu`); kernels `e4m3_to_bf16_kernel`, `scaled_reduce_kernel` | split-K CUTLASS GEMM over a lossless bf16 mirror of e4m3 weights with a per-128 scaled f32 reduction (`scaled_reduce_kernel`); a new class, never bit-equal to the 128-leaf tree | e4m3, bf16, f32 | `120a` only | `MEMRA_DSV4_CUTLASS` (build), then gate-armed only | `memra_dsv4_gemv_fp8_m` | DSV4 dense gates |
+| `memra_cutlass_fp4_gemm`, `memra_cutlass_fp4_workspace`, `memra_cutlass_sfa_size`, `memra_cutlass_sfb_size`, `memra_cutlass_repack_sfa`, `memra_cutlass_repack_sfb`, `memra_nvfp4_dequant_ref`, `memra_nvfp4_quant_ref`, `memra_gguf_nvfp4_deinterleave` (`cu/cutlass_fp4_sm120.cu`); kernels `memra_gguf_nvfp4_deinterleave_kernel`, `memra_nvfp4_dequant_kernel`, `memra_nvfp4_quant_kernel`, `memra_sf_scatter_kernel<...>` | CUTLASS 4.x NVFP4 W4A4 GEMM wrapper, scale-factor repacks, reference quantizers | NVFP4 | `120a` family (`120a`, `121a`) | `MEMRA_CUTLASS` (build) | `src/cutlass_ffi.rs` | none in CI |
+| `memra_dsv4_dense_cutlass_fp8`, `memra_dsv4_dense_cutlass_armed_for_gate`, `memra_dsv4_dense_cutlass_counts_for_gate`, `memra_dsv4_dense_cutlass_set_for_gate` (`cu/dsv4_dense_cutlass.cu`); kernels `e4m3_to_bf16_kernel`, `scaled_reduce_kernel` | split-K CUTLASS GEMM over a lossless bf16 mirror of e4m3 weights with a per-128 scaled f32 reduction (`scaled_reduce_kernel`); a new class, never bit-equal to the 128-leaf tree | e4m3, bf16, f32 | `120a` family (`120a`, `121a`) | `MEMRA_DSV4_CUTLASS` (build), then gate-armed only | `memra_dsv4_gemv_fp8_m` | DSV4 dense gates |
 
 ### Stub TUs
 

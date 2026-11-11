@@ -4004,6 +4004,21 @@ The `MEMRA_FETCH_URLS_ALLOWED_HOSTS` row before the 2026-11-12 rewrite (FLAGS.md
 
 | `MEMRA_FETCH_URLS_ALLOWED_HOSTS` | **Unset (default), read only when `MEMRA_FETCH_URLS=1`.** Comma-separated exact hostnames or literal IPs (case-insensitive) exempted from the address-range refusal above: memra#533's "unless allowlisted." Bypasses the ADDRESS check only: scheme and redirect-hop limits still apply, and an entry for one host or IP does not cover any other. Rollback: unset. |
 
+## Removed doors, 2026-11-11 (the CUTLASS header-tree location, `MEMRA_CUTLASS_ROOT`)
+
+`MEMRA_CUTLASS_ROOT` pointed the two opt-in CUTLASS archives at an unpinned header tree (default: a
+Python venv's flashinfer copy), and their gencode was fixed at sm_120a. CUTLASS v4.8.1 is now vendored
+at `crates/memra-engine/third_party/cutlass` (its README names the tag commit and the copied subtrees;
+`crates/memra-engine/THIRD-PARTY.md` has the notice). `build.rs` compiles every CUTLASS unit against
+that tree and no other, for the build's own 120a-family target. No receipt was needed: the variable
+was a location, not an arm.
+
+The row before its removal:
+
+| Flag | Default | What it does | Record |
+|---|---|---|---|
+| `MEMRA_CUTLASS_ROOT` | unset: `MEMRA_CUTLASS` uses a flashinfer-venv CUTLASS tree hardcoded in build.rs; `MEMRA_DSV4_CUTLASS` requires it | Root of the CUTLASS header tree (`<root>/include`, `<root>/tools/util/include`) both CUTLASS archives compile against. `MEMRA_DSV4_CUTLASS` panics when it is unset. A change reruns build.rs, so both archives rebuild on the new headers. | [KERNELS.md](KERNELS.md#optional-cutlass-archives) |
+
 ## Removed doors, 2026-11-10 (`MEMRA_SERVE_BATCH`: the batched scheduler is the only served path; the server arm of the async chain went with the round-robin scheduler)
 
 The ledger entry before the 2026-11-12 rewrite:

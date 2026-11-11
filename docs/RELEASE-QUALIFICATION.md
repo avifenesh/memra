@@ -40,7 +40,8 @@ compute capability or a card name), `gate` (the battery, its manifests and roste
 the impact rules) and `perf`. Path rules in `tools/change-impact.toml` decide each file; the first
 match wins. They carry the structure paths alone cannot show: the `*_stub.cu` units compile only
 for the `90a` and `89` families, the block-scale MMA units only for `120a` and `100a`, the CUTLASS
-units only for the `120a` target, `wgmma_common.cuh` only for `90a`. Rules that need no device:
+units and the vendored CUTLASS tree only for the `120a` family (`120a`, `121a`), `wgmma_common.cuh`
+only for `90a`. Rules that need no device:
 
 - docs, tests, research receipts, the qualification metadata namespace;
 - CPU-only crates (CLI, SSRF guard) and CPU tooling. Host crates linked into the served binaries

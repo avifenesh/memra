@@ -331,9 +331,16 @@ fn main() {
     // Declared unconditionally: printed only inside its block, setting it after a build
     // without it did not rerun this script, and the archive was silently left out.
     println!("cargo:rerun-if-env-changed=MEMRA_DSV4_CUTLASS");
-    // Both CUTLASS archives compile against this header tree. Unwatched, pointing it at
-    // another tree after a build kept both archives on the old headers.
-    println!("cargo:rerun-if-env-changed=MEMRA_CUTLASS_ROOT");
+    // Every CUTLASS unit compiles against the vendored, pinned tree and no other
+    // (third_party/cutlass/README.md names the tag, the commit and the copied subtrees).
+    let cutlass_root =
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("third_party/cutlass");
+    println!("cargo:rerun-if-changed=third_party/cutlass");
+    let cutlass_inc = cutlass_root.join("include").display().to_string();
+    let cutlass_util = cutlass_root
+        .join("tools/util/include")
+        .display()
+        .to_string();
     println!("cargo:rustc-check-cfg=cfg(memra_portable_cuda)");
     println!("cargo:rustc-check-cfg=cfg(memra_hopper_mma)");
     println!("cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)");
@@ -357,15 +364,16 @@ fn main() {
     // launchers remain fail-closed stubs on this arch.
     let portable = matches!(cuda_arch.as_str(), "89" | "90a");
     let hopper_mma = cuda_arch == "90a";
-    // The two CUTLASS archives below compile with a fixed sm_120a gencode, so they key on the
-    // exact TARGET: linked into any other build they would carry SASS the device cannot load.
+    // The two opt-in CUTLASS archives below use CUTLASS's sm_120 kernels, which CUTLASS builds
+    // for the whole 120 family (sm_121a shares the SM120 code since CUTLASS 4.2.0). They compile
+    // for the build's own target, so they key on the FAMILY.
     assert!(
-        !(target != "120a" && std::env::var_os("MEMRA_CUTLASS").is_some()),
-        "MEMRA_CUTLASS is sm_120a-only and cannot be enabled for this CUDA architecture"
+        !(cuda_arch != "120a" && std::env::var_os("MEMRA_CUTLASS").is_some()),
+        "MEMRA_CUTLASS needs a 120-family target (120a, 121a)"
     );
     assert!(
-        !(target != "120a" && std::env::var_os("MEMRA_DSV4_CUTLASS").is_some()),
-        "MEMRA_DSV4_CUTLASS is sm_120a-only and cannot be enabled for this CUDA architecture"
+        !(cuda_arch != "120a" && std::env::var_os("MEMRA_DSV4_CUTLASS").is_some()),
+        "MEMRA_DSV4_CUTLASS needs a 120-family target (120a, 121a)"
     );
     let gencode = format!("arch=compute_{target},code=sm_{target}");
     if portable {
@@ -865,22 +873,20 @@ fn main() {
     if std::env::var("MEMRA_DSV4_CUTLASS").is_ok() {
         let dense_src = "cu/dsv4_dense_cutlass.cu";
         println!("cargo:rerun-if-changed={dense_src}");
-        let root = std::env::var("MEMRA_CUTLASS_ROOT")
-            .expect("MEMRA_DSV4_CUTLASS requires MEMRA_CUTLASS_ROOT");
         let obj = out.join("dsv4_dense_cutlass.o");
         let lib = out.join("libmemra_dsv4_cutlass.a");
         let status = Command::new(&nvcc)
             .args([
                 "-gencode",
-                "arch=compute_120a,code=sm_120a",
+                &gencode,
                 "-O3",
                 "-std=c++17",
                 "-fmad=false",
                 "--expt-relaxed-constexpr",
                 "-I",
-                &format!("{root}/include"),
+                &cutlass_inc,
                 "-I",
-                &format!("{root}/tools/util/include"),
+                &cutlass_util,
                 "-c",
                 dense_src,
                 "-o",
@@ -930,7 +936,7 @@ fn main() {
         println!("cargo:rustc-env=MEMRA_MMQ_ARCHIVE_HASH={:016x}", h.finish());
     }
 
-    // ---- CUTLASS sm_120a NVFP4 GEMM: a STATIC LIB (7th artifact, different kind), NOT a fatbin ----
+    // ---- CUTLASS sm_120 NVFP4 GEMM: a STATIC LIB (7th artifact, different kind), NOT a fatbin ----
     // CUTLASS needs its host-side GemmUniversalAdapter::run() (host C++), so it cannot go through the
     // fatbin/load_module path above. It is compiled to an object, archived, and whole-archived at link.
     // Additive: the 6-fatbin loop above is byte-for-byte unchanged (the parallel flash_attn.cu FA build
@@ -938,20 +944,12 @@ fn main() {
     if std::env::var("MEMRA_CUTLASS").is_ok() {
         let cutlass_src = "cu/cutlass_fp4_sm120.cu";
         println!("cargo:rerun-if-changed={cutlass_src}");
-        // CUTLASS 4.x header tree (on-box, probe-verified). TODO Phase 1: vendor a pinned tree into the
-        // repo for reproducibility rather than pointing at the venv install.
-        let cutlass_root = std::env::var("MEMRA_CUTLASS_ROOT").unwrap_or_else(|_| {
-            "/home/avifenesh/.venvs/torch/lib/python3.12/site-packages/flashinfer/data/cutlass"
-                .into()
-        });
-        let cutlass_inc = format!("{cutlass_root}/include");
-        let cutlass_util = format!("{cutlass_root}/tools/util/include");
         let obj = out.join("cutlass_fp4_sm120.o");
         let lib = out.join("libmemra_cutlass.a");
         let status = Command::new(&nvcc)
             .args([
                 "-gencode",
-                "arch=compute_120a,code=sm_120a",
+                &gencode,
                 "-O3",
                 "-std=c++17",
                 "--expt-relaxed-constexpr",

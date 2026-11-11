@@ -112,3 +112,6 @@ research/prime-tail-cap-20261113/variant2/*.patch -text whitespace=-blank-at-eol
 
 # Raw GPU test transcripts (libtest and compute-sanitizer output whitespace) of the no-finite-logit fix.
 research/argmax-no-finite-20261113/*/** -text whitespace=-blank-at-eol,-blank-at-eof
+# Vendored NVIDIA CUTLASS headers (crates/memra-engine/third_party/cutlass/README.md): stored byte
+# for byte as released, never normalized or whitespace-checked.
+crates/memra-engine/third_party/cutlass/** -text -whitespace linguist-vendored

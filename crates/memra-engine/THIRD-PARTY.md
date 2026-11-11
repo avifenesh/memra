@@ -35,6 +35,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## NVIDIA CUTLASS
+
+`third_party/cutlass/` is NVIDIA CUTLASS v4.8.1 (https://github.com/NVIDIA/cutlass, tag commit
+`2c85f497547eb441f0fe80bfb0fb2e6f9add1719`): its `include/` and `tools/util/include/` subtrees and
+`LICENSE.txt`, copied byte for byte (`third_party/cutlass/README.md`). The CUTLASS units under `cu/`
+(the opt-in `cutlass_fp4_sm120.cu` and `dsv4_dense_cutlass.cu`) compile against it. CUTLASS is distributed under the BSD-3-Clause license; its full text is
+`third_party/cutlass/LICENSE.txt`:
+
+```
+Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: BSD-3-Clause
+```
+
 Except for the separately licensed third-party material identified above, memra is distributed
 under FSL-1.1-ALv2 (repository-root LICENSE, Copyright 2026 Avi Fenesh). The third-party-derived
 files retain their MIT notices and remain available under the applicable third-party terms.

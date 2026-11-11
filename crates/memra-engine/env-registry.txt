@@ -111,7 +111,6 @@ legal	MEMRA_CPU_PROC_AFFINITY
 legal	MEMRA_CTX
 legal	MEMRA_CUDA_ARCH
 legal	MEMRA_CUTLASS
-legal	MEMRA_CUTLASS_ROOT
 legal	MEMRA_DBB_SAMP
 legal	MEMRA_DC_GATE
 legal	MEMRA_DEBUG
@@ -991,6 +990,7 @@ retired	MEMRA_BATCH_OOM_RECOVER	Removed doors, 2026-11-04 (`MEMRA_BATCH_OOM_RECO
 retired	MEMRA_CONV_FUSE	Removed doors, 2026-09-05 door sweep (memra #212; owner order "every door that is not in use, not needed, removed")
 retired	MEMRA_CPU_EXPERT_PREFETCH_ANNEX_GB	Removed doors, 2026-11-04 (`MEMRA_MOE_PREFETCH`, the CPU-expert companion's prediction-guided prefetch: negative, decide-by passed)
 retired	MEMRA_CPU_EXPERT_PREFETCH_MAX_INFLIGHT	Removed doors, 2026-11-04 (`MEMRA_MOE_PREFETCH`, the CPU-expert companion's prediction-guided prefetch: negative, decide-by passed)
+retired	MEMRA_CUTLASS_ROOT	Removed doors, 2026-11-11 (the CUTLASS header-tree location, `MEMRA_CUTLASS_ROOT`)
 retired	MEMRA_DEV_EMBED	Removed doors, 2026-09-05 door sweep (memra #212; owner order "every door that is not in use, not needed, removed")
 retired	MEMRA_DFLASH2_SDPA_CLIP	Removed doors, 2026-09-05 door sweep (memra #212; owner order "every door that is not in use, not needed, removed")
 retired	MEMRA_DFLASH_FA	Removed doors, 2026-11-03 (the DFlash drafter `fa_prefill` block attention)
