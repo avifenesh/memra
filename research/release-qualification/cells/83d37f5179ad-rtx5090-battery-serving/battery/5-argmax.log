@@ -1,0 +1,12 @@
+argmax-margin-gate: model=Qwen3.8-27B-NVFP4-Q5K-mtp.gguf prompt=board-2048.txt window=12 decode=eager canary=0
+  device: NVIDIA GeForce RTX 5090 Laptop GPU
+  model sha256: 1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a (hashed)
+  flip budget: 1 (row: default)
+  FLOOR: 3.7303 (largest gap shift over 2003 agreeing rows, set by row 1198; p50 0.0468, p99 0.3399, p99.9 0.9602; no calibration flip above it; research/argmax-gate-rule-20261110/calibration/rtx5090-laptop/q38-eager/probe.log)
+  SUMMARY flips=0 bad=0 near_ties=0 wide_flips=0 wide_rows=0 uncalibrated_flips=0 known_rows=0 known_rows_wider=0 floor=3.7303 budget=1
+  STORED-ROWS: identical (12 rows equal main's, measured at 031f146690; research/argmax-gate-rule-20261110/calibration/rtx5090-laptop/q38-eager/probe.log)
+  PRIME-SUMMARY prime=MATCH
+    PRIME-GATE: class=MATCH bp_argmax=485 tw_argmax=485 tw_margin=8.013572693e-1 bp_margin=7.977886200e-1 maxdiff=4.605014920e-1
+  PASS: no wide flip, no wide row, no known row wider than recorded, near ties within the budget
+        and every row of the window equals main's stored rows
+  raw: argmax-4/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-board-2048.log
