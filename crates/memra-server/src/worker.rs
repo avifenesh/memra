@@ -39597,11 +39597,7 @@ mod tests {
         let slot_before = e.realized[&(3, 3)];
         let verdict_before = super::spec_cost_best_k(&e, 3, 3).map(|v| v.0);
         assert!(verdict_before.is_some_and(|k| k > 0));
-        assert!(e.mark_stall(3, now), "a new mark");
-        assert!(e.stalled_at(3, now));
-        assert!(!e.mark_stall(3, now), "a refresh is not a new mark");
-        assert!(!e.stalled_at(3, now + super::SPEC_COST_REALIZED_TTL));
-        let mut e = stall_entry();
+        // A mark set 65 s ago: expired, the slot untouched, the verdict back at its price.
         e.mark_stall(3, past);
         assert!(!e.stalled_at(3, now), "expired");
         let r = e.realized[&(3, 3)];
@@ -39619,6 +39615,12 @@ mod tests {
             verdict_before,
             "the verdict returns to its price"
         );
+        // A live mark lasts SPEC_COST_REALIZED_TTL; a refresh is not a new mark.
+        let mut e = stall_entry();
+        assert!(e.mark_stall(3, now), "a new mark");
+        assert!(e.stalled_at(3, now));
+        assert!(!e.mark_stall(3, now), "a refresh is not a new mark");
+        assert!(!e.stalled_at(3, now + super::SPEC_COST_REALIZED_TTL));
     }
 
     /// memra#1211: a burst's entry call records whether a request waited, whatever the bound
