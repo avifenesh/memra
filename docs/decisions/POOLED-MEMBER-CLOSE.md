@@ -23,7 +23,21 @@ moving anything else?
 run 192 tokens. Close is the time from the member's last visible chunk to the end of its
 response; the solo level is the same request alone. Qwen3.8-27B NVFP4 + Q5_K.
 
-MEASURED-MAIN-TABLE
+| device | route | solo non-stop, p50 | cohort of 2: p50 / max | cohort of 4: p50 / max |
+|---|---|---|---|---|
+| RTX 5090 Laptop | MTP | 35 ms | 293 / 899 ms | 863 / 2,011 ms |
+| RTX 5090 Laptop | DSpark | 0 ms | 126 / 597 ms | 271 / 1,276 ms |
+| GB10 | MTP | 38 ms | 619 / 1,715 ms | 1,382 / 2,498 ms |
+| GB10 | DSpark | 0 ms | 90 / 853 ms | 88 / 1,683 ms |
+
+Members that ended on a stop string (16 rows per MTP cell: five one-word and three three-word
+stop strings, greedy and temperature 1; 9 to 11 on DSpark, whose sampled stream is its own and
+does not always reach the plain stop words). Members that ended on EOS or `max_tokens` waited
+too: on GB10 MTP, 598 and 699 ms on EOS, 232 and 400 ms at `max_tokens`. On DSpark the solo close
+is 0 ms because its round hook sends the last token and the stream ends in the same round.
+
+With `MEMRA_SPEC_GATE=0` DSpark admits one session at a time (`dspark_load_admits`), so no DSpark
+cohort forms; the DSpark cohort boots run with the gate on, its LOW band at the cohort size.
 
 ## The change chosen
 
