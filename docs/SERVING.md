@@ -323,11 +323,12 @@ before unrelated synchronous cold prefill. When an interactive completion opens 
 concurrency slot while cold prefill remains, the scheduler also uses the short
 `MEMRA_PRIME_BATCH_HOLD_MS` window as a refill grace. That lets a not-yet-admitted replacement
 cross the HTTP/channel boundary before the worker can enter the next cold prime call. The fence
-ends after the hit's first token, and cold-only traffic retains dense continuation batching. Both
-4 ms windows (this grace and the batch-formation hold) are waited out inside the tick: an
-arrival in the window defers cold prefill to the next tick, no arrival primes in this tick. They
-used to skip cold prefill for the whole tick, so every lone plain arrival lost one decode tick, and
-one more after a retirement (memra#1223, `research/prime-hold-tick-skip-20261111/`).
+ends after the hit's first token, and cold-only traffic retains dense continuation batching. The
+batch-formation hold for a lone fresh prime is waited out inside the tick when its window is
+shorter than the previous tick: an arrival in the window defers the prime to the next tick, no
+arrival primes in this tick. It used to skip cold prefill for the whole tick, so every lone plain
+arrival lost its admission tick (memra#1223, `research/prime-hold-tick-skip-20261111/`). The refill
+grace above still skips the whole tick; changing it needs this paragraph's mixed hit/cold cell.
 Frozen box1 N=5 validates that boundary: Q27 mixed-c4 hit TTFT is p50 18.497 / p95 19.820 ms
 against the sold 18.573/21.565 ms envelope, and the clean-throughput knee remains c=16. The
 strict cross-run reducer still flags c4 output 144.245 versus 144.462 tok/s (`-0.150%`); both
