@@ -1,0 +1,55 @@
+
+running 1 test
+test slru_prefill_is_bit_identical_to_resident_prefill ... [tensor-contract] bound 38 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[loader-law] WARNING: output.weight loads as 2D Float ne=[256, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_qkv.weight loads as 2D Float ne=[256, 512] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_gate.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ssm_out.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.85GB (expert budget 22.85GB) -> RESIDENT
+[loader-law] WARNING: blk.*.ffn_gate_shexp.weight loads as 2D Float ne=[256, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up_shexp.weight loads as 2D Float ne=[256, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down_shexp.weight loads as 2D Float ne=[64, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q.weight loads as 2D Float ne=[256, 512] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_k.weight loads as 2D Float ne=[256, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_v.weight loads as 2D Float ne=[256, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_output.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[q8rp] split-plane decode mirrors built: 2 tensors
+[moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=256 out_f=64 n_active=20 max_m=5
+[fa-pool] grow #0 dev=0 o_len 0 -> 256 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 256 -> 3328 ml_len 2 -> 26 (retired kept, zero=false)
+[placement] pairs program: grouped f16 lane
+[tensor-contract] bound 38 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 2 tensors
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[moe-slru-pairs] engaged mode=LayerRow arm=F16g il=0 t=17 n_active=20 runs=1 (prefill on the SLRU placement runs the resident pairs program; memra#1217)
+[fa-pool] grow #2 dev=0 o_len 0 -> 256 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 256 -> 3328 ml_len 2 -> 26 (retired kept, zero=false)
+[placement] SlruRoomy: slots=2155365 hits=228 misses=0 staged=1769472B pairs calls row=14 pinned=0 chunked=0
+[placement] SlruRoomy: 0/19 rows differ from the resident arm
+[tensor-contract] bound 38 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[glm5-vrows-t1-deny] dev=0 il=1 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=2 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[moe-slru-pairs] engaged mode=Pinned arm=F16g il=0 t=17 n_active=20 runs=1 (prefill on the SLRU placement runs the resident pairs program; memra#1217)
+[glm5-vrows-t1-deny] dev=0 il=0 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=2 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[fa-pool] grow #4 dev=0 o_len 0 -> 256 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 256 -> 3328 ml_len 2 -> 26 (retired kept, zero=false)
+[placement] SlruMid: slots=120 hits=663 misses=672 staged=7077888B pairs calls row=0 pinned=14 chunked=0
+[placement] SlruMid: 0/19 rows differ from the resident arm
+[tensor-contract] bound 38 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[moe-slru-pairs] engaged mode=Chunked arm=F16g il=0 t=65 n_active=30 runs=2 (prefill on the SLRU placement runs the resident pairs program; memra#1217)
+[fa-pool] grow #6 dev=0 o_len 0 -> 256 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #7 dev=0 o_len 256 -> 3328 ml_len 2 -> 26 (retired kept, zero=false)
+[placement] SlruTight: slots=72 hits=165 misses=1170 staged=10782720B pairs calls row=0 pinned=6 chunked=8
+[placement] SlruTight: 0/19 rows differ from the resident arm
+[tensor-contract] bound 38 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[fa-pool] grow #8 dev=0 o_len 0 -> 256 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #9 dev=0 o_len 256 -> 3328 ml_len 2 -> 26 (retired kept, zero=false)
+[placement] SlruFloor: slots=8 hits=27 misses=1308 staged=12054528B pairs calls row=0 pinned=0 chunked=14
+[placement] SlruFloor: 0/19 rows differ from the resident arm
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 5.98s
+
+RC=0

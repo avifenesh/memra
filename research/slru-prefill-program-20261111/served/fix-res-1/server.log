@@ -1,0 +1,62 @@
+[server] build: memra-0.141.1-21a9060e43c7 (id: source-tree, git: unknown)
+[server] starting; models config = [("ornith", "/data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "ornith" <- /data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 24.52GB (expert budget 20.91GB) -> RESIDENT
+[worker]   loaded "ornith": 41 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] ornith: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="ornith" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] ornith: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 3408MB (3408003072 B, derived: 2 x 2498560000 B max entry for model "ornith" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 208379052032 B (76 resident sessions x 2741829632 B served-context session), requested 4997120000 B; boot driver free 5018615808 B, post-reserve clamp 3408003072 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "ornith": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=251 max_m=620
+[fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+[spec] pre-capture pool trim: released 1696MB cached back to the driver (driver free 2256MB < required 3200MB; instantiate allocates from the driver)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 3MB; charged per spec admission and gating future captures)
+[spec-vg] MTP verify-graph pool ENGAGED (vt_cap=4)
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":134217728,"still_owned_bytes":20802102060,"pool_reserved_bytes":21005074432,"pool_cached_bytes":202972372,"driver_free_bytes":3833724928,"synchronization_errors":[]}
+[spec-cost] model="ornith" depth=2048 pooled=false plain_cap=8 round_overhead=3.47ms draft_step=0.00ms pooled_overhead=None pooled_draft_step=None verify_ms[1..16]=[8.6 10.4 12.2 13.9 15.6 17.3 19.0 20.8 22.4 24.0 25.6 27.3 28.8 30.3 31.8 33.3] plain_ms[1..]=[8.1 10.7 12.8 15.0 17.1 19.2 21.3 23.4] (8.8s)
+[prime-walk] model="ornith" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[spec] pre-capture pool trim: released 864MB cached back to the driver (driver free 2472MB < required 3140MB; instantiate allocates from the driver)
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":201326592,"still_owned_bytes":21112700044,"pool_reserved_bytes":21407727616,"pool_cached_bytes":295027572,"driver_free_bytes":3420585984,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 192MB cached back to the driver
+[admit-cal] boot calibration done: model="ornith" route=mtp transient floor 1536MB (static was 1536MB; measured 116MB; probe kv charge 41MB, draft-state 34MB, drafted 96 accepted 32; [dev0 peak-mapped 20608MB rest-mapped 20416MB charged 75MB -> 116MB]; 1.8s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["ornith"]
+[server] listening on http://127.0.0.1:18217
+[meter] admit id=cmpl-039da02a69c289b927223e485d05a96e tenant=default lane=interactive model="ornith"
+[spec-cost] model="ornith" n=1 rung=2 -> K=2 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="ornith" +36MB (measured capture high-water)
+[admission] request cost: model="ornith" ctx=2240 path=spec = 10208 B/token x ctx + 520MB prefill-workspace + 0MB fixed = 543MB
+[admission] prefill workspace held: model="ornith" prompt=2048 call=2048 stack=2048 concat=0 slab_resident=336MB held=520MB cold=688MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[spec-k] model="ornith" tenant="" K=2 source=cost-model prompt=2048 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="ornith" 131MB (observed 153MB at ctx 2184 path=spec)
+[spec] pre-capture pool trim: released 352MB cached back to the driver (driver free 2814MB < required 3140MB; instantiate allocates from the driver)
+[spec-acc] ctx=2048 burst=11/42 cum=11/42=0.262
+[prefix-cache] insert (spec-boundary): 2048 tokens, 86.8MB (resident 86.8MB / 3408MB, model ornith)
+[spec-acc] ctx=2081 burst=13/40 cum=24/82=0.293
+[spec-acc] ctx=2114 burst=18/30 cum=42/112=0.375
+[spec-acc] ctx=2147 burst=12/36 cum=54/148=0.365
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

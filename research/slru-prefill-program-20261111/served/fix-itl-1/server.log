@@ -1,0 +1,79 @@
+[server] build: memra-0.141.1-21a9060e43c7 (id: source-tree, git: unknown)
+[server] starting; models config = [("ornith", "/data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "ornith" <- /data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "ornith": 41 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] ornith: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="ornith" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] ornith: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 4997MB (4997120000 B, derived: 2 x 2498560000 B max entry for model "ornith" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 208379052032 B (76 resident sessions x 2741829632 B served-context session), requested 4997120000 B; boot driver free 23574216704 B, post-reserve clamp 21963603968 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "ornith": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=251 max_m=620
+[moe-slru-pairs] engaged mode=Pinned arm=F16g il=0 t=2048 n_active=251 runs=1 (prefill on the SLRU placement runs the resident pairs program; memra#1217)
+[glm5-vrows-t1-deny] dev=0 il=0 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=1 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=2 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+[glm5-vrows-t1-deny] dev=0 il=3 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=4 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=5 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=6 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=7 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+[spec] draft graph unavailable: non-resident MoE MTP head; eager draft chain engaged
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":1946157056,"still_owned_bytes":4186591104,"pool_reserved_bytes":4328521728,"pool_cached_bytes":141930624,"driver_free_bytes":20552220672,"synchronization_errors":[]}
+[spec-cost] model="ornith" depth=2048 pooled=false plain_cap=8 round_overhead=41.87ms draft_step=0.00ms pooled_overhead=None pooled_draft_step=None verify_ms[1..16]=[10.5 13.9 17.7 21.3 24.9 28.6 32.2 35.9 61.9 88.0 114.1 140.2 148.0 155.8 163.6 171.4] plain_ms[1..]=[10.1 14.2 18.3 22.4 41.2 59.9 78.7 97.4] (17.7s)
+[prime-walk] model="ornith" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1040187392,"still_owned_bytes":4358557568,"pool_reserved_bytes":4563402752,"pool_cached_bytes":204845184,"driver_free_bytes":20317339648,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 992MB cached back to the driver
+[admit-cal] boot calibration done: model="ornith" route=mtp transient floor 1536MB (static was 1536MB; measured 950MB; probe kv charge 41MB, draft-state 0MB, drafted 96 accepted 32; [dev0 peak-mapped 5344MB rest-mapped 4352MB charged 41MB -> 950MB]; 3.9s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["ornith"]
+[server] listening on http://127.0.0.1:18217
+[meter] admit id=cmpl-5aa51523effcacf6d722795c5e01bf11 tenant=default lane=interactive model="ornith"
+[spec-cost] model="ornith" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] request cost: model="ornith" ctx=458 path=spec = 10208 B/token x ctx + 3MB prefill-workspace + 0MB fixed = 7MB
+[admission] prefill workspace held: model="ornith" prompt=10 call=10 stack=10 concat=0 slab_resident=336MB held=3MB cold=3MB
+[spec-k] model="ornith" tenant="" K=3 source=cost-model prompt=10 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="ornith" 129MB (observed 133MB at ctx 402 path=spec)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[spec-acc] ctx=10 burst=16/51 cum=16/51=0.314
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[meter] admit id=cmpl-3f0ac74474cacb7ee5ee7e7fe89c9774 tenant=default lane=interactive model="ornith"
+[spec-acc] ctx=44 burst=8/27 cum=24/78=0.308
+[spec-cost] model="ornith" n=2 rung=2 -> K=2 (exploring: no acceptance history yet)
+[admission] request cost: model="ornith" ctx=2128 path=spec = 10208 B/token x ctx + 520MB prefill-workspace + 129MB fixed = 671MB
+[admission] prefill workspace held: model="ornith" prompt=2048 call=2048 stack=2048 concat=0 slab_resident=336MB held=520MB cold=688MB
+[spec-k] model="ornith" tenant="" K=2 source=cost-model prompt=2048 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="ornith" 131MB (observed 152MB at ctx 2072 path=spec)
+[spec-cost] model="ornith" n=2 rung=3 -> K=3 (exploring: no acceptance history yet)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[spec-acc] ctx=2048 burst=5/20 cum=5/20=0.250
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[spec-acc] ctx=61 burst=12/60 cum=36/138=0.261
+[prefix-cache] insert (spec-boundary): 2048 tokens, 86.8MB (resident 86.8MB / 4997MB, model ornith)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[spec-acc] ctx=93 burst=17/51 cum=53/189=0.280
+[spec-cost] model="ornith" n=1 rung=3 -> K=0 (predicted 29.5 vs plain 99.4 tok/s; pooled=false; priced from K0=table K1=table K2=table K3=table)
+[spec-gate] demoted session to batched decode: 1 active, cost model prefers plain (or HIGH=4 without a model) (model ornith, committed 127, generated 117, greedy)
+[spec-cost] model="ornith" realized n=1 K=0: 54.9 tok/s (now priced from serving)
+[kv-reuse] park-compact: 394 of 402 rows retained in 1.1ms (model ornith)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

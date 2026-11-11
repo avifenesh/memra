@@ -1,0 +1,24 @@
+{
+ "mode": "itl",
+ "env": {
+  "MEMRA_MOE_RESIDENT": "0",
+  "MEMRA_MOE_SLOTS": "4000"
+ },
+ "server": "<lane>/bin/memra-server-main",
+ "boot_s": 108.0,
+ "mem_ready_s": 108.05,
+ "a_events": 384,
+ "b_s": 7.948,
+ "itl_during_b": {
+  "n": 3,
+  "p50_ms": 2.74,
+  "p99_ms": 65.76,
+  "max_ms": 65.76
+ },
+ "itl_before_b": {
+  "n": 47,
+  "p50_ms": 55.23,
+  "p99_ms": 79.02
+ },
+ "peak_mem_mib": 6332
+}

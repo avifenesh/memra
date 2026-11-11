@@ -1,0 +1,102 @@
+
+running 1 test
+test slru_prefill_is_bit_identical_to_resident_prefill ... [tensor-contract] bound 38 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[loader-law] WARNING: output.weight loads as 2D Float ne=[256, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_qkv.weight loads as 2D Float ne=[256, 512] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_gate.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ssm_out.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.85GB (expert budget 22.85GB) -> RESIDENT
+[loader-law] WARNING: blk.*.ffn_gate_shexp.weight loads as 2D Float ne=[256, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up_shexp.weight loads as 2D Float ne=[256, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down_shexp.weight loads as 2D Float ne=[64, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q.weight loads as 2D Float ne=[256, 512] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_k.weight loads as 2D Float ne=[256, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_v.weight loads as 2D Float ne=[256, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_output.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[q8rp] split-plane decode mirrors built: 2 tensors
+[moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=256 out_f=64 n_active=20 max_m=5
+[fa-pool] grow #0 dev=0 o_len 0 -> 256 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 256 -> 3328 ml_len 2 -> 26 (retired kept, zero=false)
+[tensor-contract] bound 38 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 2 tensors
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[fa-pool] grow #2 dev=0 o_len 0 -> 256 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 256 -> 3328 ml_len 2 -> 26 (retired kept, zero=false)
+[placement] SlruRoomy: slots=2155365 hits=4656 misses=0 staged=1769472B pairs calls row=0 pinned=0 chunked=0
+  prefill T=17: element 0 1.1586063e0 (0x3f944d36) vs 1.153049e0 (0x3f93971c)
+  prefill T=20: element 0 2.5295768e0 (0x4021e496) vs 2.5284848e0 (0x4021d2b2)
+  prefill T=65: element 0 7.4603814e-1 (0x3f3efc5b) vs 7.4769557e-1 (0x3f3f68fa)
+  prefill T=130: element 0 2.8643203e0 (0x40375106) vs 2.8599584e0 (0x4037098f)
+  A prime last row: element 0 2.626699e0 (0x40281bd6) vs 2.6256814e0 (0x40280b2a)
+  A decode 0: element 0 1.4451563e-1 (0x3e13fbe8) vs 1.4235973e-1 (0x3e11c6c0)
+  A decode 1: element 0 4.7070355e0 (0x4096a009) vs 4.7073984e0 (0x4096a302)
+  B prime last row (between A's decode steps): element 0 1.5437459e0 (0x3fc59977) vs 1.5343502e0 (0x3fc46596)
+  A decode 2: element 0 -9.954656e-1 (0xbf7ed6d5) vs -9.9242914e-1 (0xbf7e0fd6)
+  B decode 0: element 0 -2.2709491e0 (0xc011573b) vs -2.2740576e0 (0xc0118a29)
+  A decode 3: element 0 4.38214e0 (0x408c3a7e) vs 4.3852386e0 (0x408c53e0)
+  B decode 1: element 0 4.862577e0 (0x409b9a3b) vs 4.860238e0 (0x409b8712)
+  A decode 4: element 0 -2.0237885e0 (0xc00185c0) vs -2.0258317e0 (0xc001a73a)
+  B decode 2: element 0 -1.573081e0 (0xbfc95ab8) vs -1.5702711e0 (0xbfc8fea5)
+  A decode 5: element 0 -1.3679825e0 (0xbfaf1a0d) vs -1.3689528e0 (0xbfaf39d8)
+  B decode 3: element 0 6.029514e-1 (0x3f1a5b06) vs 6.076841e-1 (0x3f1b912f)
+[placement] SlruRoomy: 16/18 rows differ from the resident arm
+[tensor-contract] bound 38 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[glm5-vrows-t1-deny] dev=0 il=0 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=2 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=1 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=2 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[fa-pool] grow #4 dev=0 o_len 0 -> 256 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 256 -> 3328 ml_len 2 -> 26 (retired kept, zero=false)
+[placement] SlruTight: slots=72 hits=2802 misses=1854 staged=17086464B pairs calls row=0 pinned=0 chunked=0
+  prefill T=17: element 0 1.1586063e0 (0x3f944d36) vs 1.153049e0 (0x3f93971c)
+  prefill T=20: element 0 2.5295768e0 (0x4021e496) vs 2.5284848e0 (0x4021d2b2)
+  prefill T=65: element 0 7.4603814e-1 (0x3f3efc5b) vs 7.4769557e-1 (0x3f3f68fa)
+  prefill T=130: element 0 2.8643203e0 (0x40375106) vs 2.8599584e0 (0x4037098f)
+  A prime last row: element 0 2.626699e0 (0x40281bd6) vs 2.6256814e0 (0x40280b2a)
+  A decode 0: element 0 1.4451563e-1 (0x3e13fbe8) vs 1.4235973e-1 (0x3e11c6c0)
+  A decode 1: element 0 4.7070355e0 (0x4096a009) vs 4.7073984e0 (0x4096a302)
+  B prime last row (between A's decode steps): element 0 1.5437459e0 (0x3fc59977) vs 1.5343502e0 (0x3fc46596)
+  A decode 2: element 0 -9.954656e-1 (0xbf7ed6d5) vs -9.9242914e-1 (0xbf7e0fd6)
+  B decode 0: element 0 -2.2709491e0 (0xc011573b) vs -2.2740576e0 (0xc0118a29)
+  A decode 3: element 0 4.38214e0 (0x408c3a7e) vs 4.3852386e0 (0x408c53e0)
+  B decode 1: element 0 4.862577e0 (0x409b9a3b) vs 4.860238e0 (0x409b8712)
+  A decode 4: element 0 -2.0237885e0 (0xc00185c0) vs -2.0258317e0 (0xc001a73a)
+  B decode 2: element 0 -1.573081e0 (0xbfc95ab8) vs -1.5702711e0 (0xbfc8fea5)
+  A decode 5: element 0 -1.3679825e0 (0xbfaf1a0d) vs -1.3689528e0 (0xbfaf39d8)
+  B decode 3: element 0 6.029514e-1 (0x3f1a5b06) vs 6.076841e-1 (0x3f1b912f)
+[placement] SlruTight: 16/18 rows differ from the resident arm
+[tensor-contract] bound 38 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[fa-pool] grow #6 dev=0 o_len 0 -> 256 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #7 dev=0 o_len 256 -> 3328 ml_len 2 -> 26 (retired kept, zero=false)
+[placement] SlruFloor: slots=8 hits=426 misses=4230 staged=38983680B pairs calls row=0 pinned=0 chunked=0
+  prefill T=17: element 0 1.1586063e0 (0x3f944d36) vs 1.153049e0 (0x3f93971c)
+  prefill T=20: element 0 2.5295768e0 (0x4021e496) vs 2.5284848e0 (0x4021d2b2)
+  prefill T=65: element 0 7.4603814e-1 (0x3f3efc5b) vs 7.4769557e-1 (0x3f3f68fa)
+  prefill T=130: element 0 2.8643203e0 (0x40375106) vs 2.8599584e0 (0x4037098f)
+  A prime last row: element 0 2.626699e0 (0x40281bd6) vs 2.6256814e0 (0x40280b2a)
+  A decode 0: element 0 1.4451563e-1 (0x3e13fbe8) vs 1.4235973e-1 (0x3e11c6c0)
+  A decode 1: element 0 4.7070355e0 (0x4096a009) vs 4.7073984e0 (0x4096a302)
+  B prime last row (between A's decode steps): element 0 1.5437459e0 (0x3fc59977) vs 1.5343502e0 (0x3fc46596)
+  A decode 2: element 0 -9.954656e-1 (0xbf7ed6d5) vs -9.9242914e-1 (0xbf7e0fd6)
+  B decode 0: element 0 -2.2709491e0 (0xc011573b) vs -2.2740576e0 (0xc0118a29)
+  A decode 3: element 0 4.38214e0 (0x408c3a7e) vs 4.3852386e0 (0x408c53e0)
+  B decode 1: element 0 4.862577e0 (0x409b9a3b) vs 4.860238e0 (0x409b8712)
+  A decode 4: element 0 -2.0237885e0 (0xc00185c0) vs -2.0258317e0 (0xc001a73a)
+  B decode 2: element 0 -1.573081e0 (0xbfc95ab8) vs -1.5702711e0 (0xbfc8fea5)
+  A decode 5: element 0 -1.3679825e0 (0xbfaf1a0d) vs -1.3689528e0 (0xbfaf39d8)
+  B decode 3: element 0 6.029514e-1 (0x3f1a5b06) vs 6.076841e-1 (0x3f1b912f)
+[placement] SlruFloor: 16/18 rows differ from the resident arm
+
+thread 'slru_prefill_is_bit_identical_to_resident_prefill' (3621606) panicked at crates/memra-engine/tests/moe_slru_pairs_placement_gpu.rs:426:5:
+SLRU placements are not bit-identical to the resident placement: ["SlruRoomy: SLRU pairs modes row=0 pinned=0 chunked=0 with 2155365 slots are not the ones this arm exists for (Roomy: row; Tight: pinned and chunked; Floor: chunked only)", "SlruRoomy: 16 rows differ from the resident arm: [\"prefill T=17\", \"prefill T=20\", \"prefill T=65\", \"prefill T=130\", \"A prime last row\", \"A decode 0\", \"A decode 1\", \"B prime last row (between A's decode steps)\", \"A decode 2\", \"B decode 0\", \"A decode 3\", \"B decode 1\", \"A decode 4\", \"B decode 2\", \"A decode 5\", \"B decode 3\"]", "SlruTight: SLRU pairs modes row=0 pinned=0 chunked=0 with 72 slots are not the ones this arm exists for (Roomy: row; Tight: pinned and chunked; Floor: chunked only)", "SlruTight: 16 rows differ from the resident arm: [\"prefill T=17\", \"prefill T=20\", \"prefill T=65\", \"prefill T=130\", \"A prime last row\", \"A decode 0\", \"A decode 1\", \"B prime last row (between A's decode steps)\", \"A decode 2\", \"B decode 0\", \"A decode 3\", \"B decode 1\", \"A decode 4\", \"B decode 2\", \"A decode 5\", \"B decode 3\"]", "SlruFloor: SLRU pairs modes row=0 pinned=0 chunked=0 with 8 slots are not the ones this arm exists for (Roomy: row; Tight: pinned and chunked; Floor: chunked only)", "SlruFloor: 16 rows differ from the resident arm: [\"prefill T=17\", \"prefill T=20\", \"prefill T=65\", \"prefill T=130\", \"A prime last row\", \"A decode 0\", \"A decode 1\", \"B prime last row (between A's decode steps)\", \"A decode 2\", \"B decode 0\", \"A decode 3\", \"B decode 1\", \"A decode 4\", \"B decode 2\", \"A decode 5\", \"B decode 3\"]"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    slru_prefill_is_bit_identical_to_resident_prefill
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 5.94s
+
+RC=101

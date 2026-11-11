@@ -1,0 +1,70 @@
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+argmax-margin-probe: T=2048 window=12 sm_count=82 model=/data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 49152 ml_len 16 -> 192 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+[diag1217] il=0 t=2037 arm=dev-cache-row
+[diag1217] il=1 t=2037 arm=dev-cache-row
+[diag1217] il=0 t=2038 arm=dev-cache-row
+[diag1217] il=1 t=2038 arm=dev-cache-row
+[diag1217] il=0 t=2039 arm=dev-cache-row
+[diag1217] il=1 t=2039 arm=dev-cache-row
+[diag1217] il=0 t=2040 arm=dev-cache-row
+[diag1217] il=1 t=2040 arm=dev-cache-row
+[diag1217] il=0 t=2041 arm=dev-cache-row
+[diag1217] il=1 t=2041 arm=dev-cache-row
+[diag1217] il=0 t=2042 arm=dev-cache-row
+[diag1217] il=1 t=2042 arm=dev-cache-row
+[diag1217] il=0 t=2043 arm=dev-cache-row
+[diag1217] il=1 t=2043 arm=dev-cache-row
+[diag1217] il=0 t=2044 arm=dev-cache-row
+[diag1217] il=1 t=2044 arm=dev-cache-row
+[diag1217] il=0 t=2045 arm=dev-cache-row
+[diag1217] il=1 t=2045 arm=dev-cache-row
+[diag1217] il=0 t=2046 arm=dev-cache-row
+[diag1217] il=1 t=2046 arm=dev-cache-row
+[diag1217] il=0 t=2047 arm=dev-cache-row
+[diag1217] il=1 t=2047 arm=dev-cache-row
+[diag1217] il=0 t=2048 arm=dev-cache-row
+[diag1217] il=1 t=2048 arm=dev-cache-row
+[diag1217] il=0 t=2048 arm=dev-cache-row
+[diag1217] il=1 t=2048 arm=dev-cache-row
+
+pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree
+2036     24822         8.746060371e0    24822        8.518913269e0    1.563868523e-1   yes
+2037     63            9.608421326e-1   63           1.210300446e0    2.070541382e-1   yes
+2038     318           7.590541840e-1   318          7.237071991e-1   7.264137268e-2   yes
+2039     42714         3.846015930e-1   42714        6.170597076e-1   5.660095215e-1   yes
+2040     40049         7.840295792e0    40049        8.568016052e0    3.913993835e-1   yes
+2041     681           2.542037964e-1   681          3.759765625e-2   3.517704010e-1   yes
+2042     681           3.083591461e-1   681          1.086120605e-1   1.053867340e-1   yes
+2043     735           6.434516907e-1   735          5.080127716e-1   2.998199463e-1   yes
+2044     264           2.506561279e0    264          2.556728363e0    1.911334991e-1   yes
+2045     2972          2.427259445e0    2972         2.166429520e0    2.504863739e-1   yes
+2046     42714         3.323940277e0    42714        4.003623962e0    4.040641785e-1   yes
+2047     2131          1.423104286e0    2131         1.157195091e0    3.585557938e-1   yes
+
+rows in detail (top-2 ids, text, logits; each program's logit at the other's top-1):
+detail pos=2036 prefill: top1=24822 ".rs" 16.2901 top2=2318 ".sh" 7.5440 margin=8.7461 at-decode-top1=16.2901 | decode: top1=24822 ".rs" 16.2193 top2=2318 ".sh" 7.7004 margin=8.5189 at-prefill-top1=16.2193 | spread=0.1564 gap_shift=0.2271
+detail pos=2037 prefill: top1=63 "`" 17.7662 top2=7561 "`," 16.8053 margin=0.9608 at-decode-top1=17.7662 | decode: top1=63 "`" 17.9732 top2=7561 "`," 16.7629 margin=1.2103 at-prefill-top1=17.9732 | spread=0.2071 gap_shift=0.2495
+detail pos=2038 prefill: top1=318 " (" 19.5779 top2=11069 " →" 18.8188 margin=0.7591 at-decode-top1=19.5779 | decode: top1=318 " (" 19.5052 top2=11069 " →" 18.7815 margin=0.7237 at-prefill-top1=19.5052 | spread=0.0726 gap_shift=0.0353
+detail pos=2039 prefill: top1=42714 "fat" 18.2009 top2=50 "S" 17.8163 margin=0.3846 at-decode-top1=18.2009 | decode: top1=42714 "fat" 18.7670 top2=50 "S" 18.1499 margin=0.6171 at-prefill-top1=18.7670 | spread=0.5660 gap_shift=0.2325
+detail pos=2040 prefill: top1=40049 "inja" 21.8359 top2=620 "cc" 13.9957 margin=7.8403 at-decode-top1=21.8359 | decode: top1=40049 "inja" 22.2273 top2=620 "cc" 13.6593 margin=8.5680 at-prefill-top1=22.2273 | spread=0.3914 gap_shift=0.7277
+detail pos=2041 prefill: top1=681 ")," 17.3485 top2=8 ")" 17.0943 margin=0.2542 at-decode-top1=17.3485 | decode: top1=681 ")," 16.9967 top2=8 ")" 16.9591 margin=0.0376 at-prefill-top1=16.9967 | spread=0.3518 gap_shift=0.2166
+detail pos=2042 prefill: top1=681 ")," 18.7646 top2=8 ")" 18.4562 margin=0.3084 at-decode-top1=18.7646 | decode: top1=681 ")," 18.6592 top2=8 ")" 18.5506 margin=0.1086 at-prefill-top1=18.6592 | spread=0.1054 gap_shift=0.1997
+detail pos=2043 prefill: top1=735 " |" 20.3223 top2=1892 " —" 19.6789 margin=0.6435 at-decode-top1=20.3223 | decode: top1=735 " |" 20.0225 top2=1892 " —" 19.5145 margin=0.5080 at-prefill-top1=20.0225 | spread=0.2998 gap_shift=0.1354
+detail pos=2044 prefill: top1=264 " a" 19.0380 top2=2972 " **" 16.5315 margin=2.5066 at-decode-top1=19.0380 | decode: top1=264 " a" 18.8971 top2=2972 " **" 16.3403 margin=2.5567 at-prefill-top1=18.8971 | spread=0.1911 gap_shift=0.0502
+detail pos=2045 prefill: top1=2972 " **" 18.4872 top2=8400 " fat" 16.0599 margin=2.4273 at-decode-top1=18.4872 | decode: top1=2972 " **" 18.4769 top2=8400 " fat" 16.3104 margin=2.1664 at-prefill-top1=18.4769 | spread=0.2505 gap_shift=0.2608
+detail pos=2046 prefill: top1=42714 "fat" 19.7732 top2=27653 "`." 16.4492 margin=3.3239 at-decode-top1=19.7732 | decode: top1=42714 "fat" 20.0488 top2=27653 "`." 16.0452 margin=4.0036 at-prefill-top1=20.0488 | spread=0.4041 gap_shift=0.6797
+detail pos=2047 prefill: top1=2131 "ux" 11.8538 top2=17 "2" 10.4307 margin=1.4231 at-decode-top1=11.8538 | decode: top1=2131 "ux" 11.4952 top2=17 "2" 10.3380 margin=1.1572 at-prefill-top1=11.4952 | spread=0.3586 gap_shift=0.2659
+
+margin distribution (decode config, 12 positions): min 0.0376  p10 0.1086  p50 1.2103  p90 8.5189  max 8.5680
+margin distribution (prefill config): min 0.2542  p50 1.4231  max 8.7461
+DECISION POSITION (the gate's): prefill_top1=2131 decode_top1=2131 margin_p=1.4231 margin_d=1.1572 config_delta_at_ids=0.3586 gap_shift=0.2659
+agreement across sampled positions: 12/12 (0 flip(s))
+largest gap shift at an agreeing row: 7.277202606e-1 at row 2040 (12 agreeing rows; this is the floor when the window is the whole prompt)
+PRIME-GATE: class=MATCH bp_argmax=2131 tw_argmax=2131 tw_margin=1.157195091e0 bp_margin=7.839183807e-1 maxdiff=1.634703875e0

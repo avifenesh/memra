@@ -1,0 +1,75 @@
+## D-slru vs A-resident: rows=12 prefill-cols-differ=12 decode-cols-differ=0
+  il0-t2037: arms dev-cache-row / pairs-f16g  input bytes equal=True  output bytes equal=False  differing=4171757/4171776  maxabs=5.626e-04  first@0: 0.010715651325881481 vs 0.010674751363694668
+  il0-t2038: arms dev-cache-row / pairs-f16g  input bytes equal=True  output bytes equal=False  differing=4173805/4173824  maxabs=5.626e-04  first@0: 0.010715651325881481 vs 0.010674751363694668
+  il0-t2039: arms dev-cache-row / pairs-f16g  input bytes equal=True  output bytes equal=False  differing=4175853/4175872  maxabs=5.626e-04  first@0: 0.010715651325881481 vs 0.010674751363694668
+  il0-t2040: arms dev-cache-row / pairs-f16g  input bytes equal=True  output bytes equal=False  differing=4177901/4177920  maxabs=5.626e-04  first@0: 0.010715651325881481 vs 0.010674751363694668
+  il0-t2041: arms dev-cache-row / pairs-f16g  input bytes equal=True  output bytes equal=False  differing=4179949/4179968  maxabs=5.626e-04  first@0: 0.010715651325881481 vs 0.010674751363694668
+  il0-t2042: arms dev-cache-row / pairs-f16g  input bytes equal=True  output bytes equal=False  differing=4181997/4182016  maxabs=5.626e-04  first@0: 0.010715651325881481 vs 0.010674751363694668
+  il0-t2043: arms dev-cache-row / pairs-f16g  input bytes equal=True  output bytes equal=False  differing=4184045/4184064  maxabs=5.626e-04  first@0: 0.010715651325881481 vs 0.010674751363694668
+  il0-t2044: arms dev-cache-row / pairs-f16g  input bytes equal=True  output bytes equal=False  differing=4186093/4186112  maxabs=5.626e-04  first@0: 0.010715651325881481 vs 0.010674751363694668
+  il0-t2045: arms dev-cache-row / pairs-f16g  input bytes equal=True  output bytes equal=False  differing=4188141/4188160  maxabs=5.626e-04  first@0: 0.010715651325881481 vs 0.010674751363694668
+  il0-t2046: arms dev-cache-row / pairs-f16g  input bytes equal=True  output bytes equal=False  differing=4190189/4190208  maxabs=5.626e-04  first@0: 0.010715651325881481 vs 0.010674751363694668
+  il0-t2047: arms dev-cache-row / pairs-f16g  input bytes equal=True  output bytes equal=False  differing=4192237/4192256  maxabs=5.626e-04  first@0: 0.010715651325881481 vs 0.010674751363694668
+  il0-t2048: arms dev-cache-row / pairs-f16g  input bytes equal=True  output bytes equal=False  differing=4194285/4194304  maxabs=5.629e-04  first@0: 0.010715651325881481 vs 0.010674751363694668
+  il1-t2037: arms dev-cache-row / pairs-f16g  input bytes equal=False  output bytes equal=False  differing=4171762/4171776  maxabs=9.728e-03  first@0: 0.004008438903838396 vs 0.004060023929923773
+  il1-t2038: arms dev-cache-row / pairs-f16g  input bytes equal=False  output bytes equal=False  differing=4173810/4173824  maxabs=9.728e-03  first@0: 0.004008438903838396 vs 0.004060023929923773
+  il1-t2039: arms dev-cache-row / pairs-f16g  input bytes equal=False  output bytes equal=False  differing=4175858/4175872  maxabs=9.728e-03  first@0: 0.004008438903838396 vs 0.004060023929923773
+  il1-t2040: arms dev-cache-row / pairs-f16g  input bytes equal=False  output bytes equal=False  differing=4177906/4177920  maxabs=9.728e-03  first@0: 0.004008438903838396 vs 0.004060023929923773
+  il1-t2041: arms dev-cache-row / pairs-f16g  input bytes equal=False  output bytes equal=False  differing=4179954/4179968  maxabs=9.728e-03  first@0: 0.004008438903838396 vs 0.004060023929923773
+  il1-t2042: arms dev-cache-row / pairs-f16g  input bytes equal=False  output bytes equal=False  differing=4182002/4182016  maxabs=9.728e-03  first@0: 0.004008438903838396 vs 0.004060023929923773
+  il1-t2043: arms dev-cache-row / pairs-f16g  input bytes equal=False  output bytes equal=False  differing=4184050/4184064  maxabs=9.728e-03  first@0: 0.004008438903838396 vs 0.004060023929923773
+  il1-t2044: arms dev-cache-row / pairs-f16g  input bytes equal=False  output bytes equal=False  differing=4186098/4186112  maxabs=9.728e-03  first@0: 0.004008438903838396 vs 0.004060023929923773
+  il1-t2045: arms dev-cache-row / pairs-f16g  input bytes equal=False  output bytes equal=False  differing=4188146/4188160  maxabs=9.728e-03  first@0: 0.004008438903838396 vs 0.004060023929923773
+  il1-t2046: arms dev-cache-row / pairs-f16g  input bytes equal=False  output bytes equal=False  differing=4190194/4190208  maxabs=9.728e-03  first@0: 0.004008438903838396 vs 0.004060023929923773
+  il1-t2047: arms dev-cache-row / pairs-f16g  input bytes equal=False  output bytes equal=False  differing=4192242/4192256  maxabs=9.728e-03  first@0: 0.004008438903838396 vs 0.004060023929923773
+  il1-t2048: arms dev-cache-row / pairs-f16g  input bytes equal=False  output bytes equal=False  differing=4194289/4194304  maxabs=7.727e-03  first@0: 0.004008438903838396 vs 0.004060023929923773
+## D-slru vs B-resident-f16g0: rows=12 prefill-cols-differ=0 decode-cols-differ=0
+  il0-t2037: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4171776  maxabs=0.000e+00
+  il0-t2038: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4173824  maxabs=0.000e+00
+  il0-t2039: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4175872  maxabs=0.000e+00
+  il0-t2040: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4177920  maxabs=0.000e+00
+  il0-t2041: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4179968  maxabs=0.000e+00
+  il0-t2042: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4182016  maxabs=0.000e+00
+  il0-t2043: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4184064  maxabs=0.000e+00
+  il0-t2044: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4186112  maxabs=0.000e+00
+  il0-t2045: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4188160  maxabs=0.000e+00
+  il0-t2046: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4190208  maxabs=0.000e+00
+  il0-t2047: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4192256  maxabs=0.000e+00
+  il0-t2048: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4194304  maxabs=0.000e+00
+  il1-t2037: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4171776  maxabs=0.000e+00
+  il1-t2038: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4173824  maxabs=0.000e+00
+  il1-t2039: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4175872  maxabs=0.000e+00
+  il1-t2040: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4177920  maxabs=0.000e+00
+  il1-t2041: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4179968  maxabs=0.000e+00
+  il1-t2042: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4182016  maxabs=0.000e+00
+  il1-t2043: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4184064  maxabs=0.000e+00
+  il1-t2044: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4186112  maxabs=0.000e+00
+  il1-t2045: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4188160  maxabs=0.000e+00
+  il1-t2046: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4190208  maxabs=0.000e+00
+  il1-t2047: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4192256  maxabs=0.000e+00
+  il1-t2048: arms dev-cache-row / pairs-q8  input bytes equal=True  output bytes equal=True  differing=0/4194304  maxabs=0.000e+00
+## D-slru vs C-resident-pairs0: rows=12 prefill-cols-differ=0 decode-cols-differ=0
+  il0-t2037: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4171776  maxabs=0.000e+00
+  il0-t2038: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4173824  maxabs=0.000e+00
+  il0-t2039: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4175872  maxabs=0.000e+00
+  il0-t2040: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4177920  maxabs=0.000e+00
+  il0-t2041: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4179968  maxabs=0.000e+00
+  il0-t2042: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4182016  maxabs=0.000e+00
+  il0-t2043: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4184064  maxabs=0.000e+00
+  il0-t2044: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4186112  maxabs=0.000e+00
+  il0-t2045: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4188160  maxabs=0.000e+00
+  il0-t2046: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4190208  maxabs=0.000e+00
+  il0-t2047: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4192256  maxabs=0.000e+00
+  il0-t2048: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4194304  maxabs=0.000e+00
+  il1-t2037: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4171776  maxabs=0.000e+00
+  il1-t2038: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4173824  maxabs=0.000e+00
+  il1-t2039: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4175872  maxabs=0.000e+00
+  il1-t2040: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4177920  maxabs=0.000e+00
+  il1-t2041: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4179968  maxabs=0.000e+00
+  il1-t2042: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4182016  maxabs=0.000e+00
+  il1-t2043: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4184064  maxabs=0.000e+00
+  il1-t2044: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4186112  maxabs=0.000e+00
+  il1-t2045: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4188160  maxabs=0.000e+00
+  il1-t2046: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4190208  maxabs=0.000e+00
+  il1-t2047: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4192256  maxabs=0.000e+00
+  il1-t2048: arms dev-cache-row / dev-cache-row  input bytes equal=True  output bytes equal=True  differing=0/4194304  maxabs=0.000e+00
