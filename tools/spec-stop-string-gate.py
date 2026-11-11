@@ -817,23 +817,22 @@ def cohort_judge(out, rows, boots, only=None):
                                         f"{r['completion_tokens']}-token stop (want one naming it)")
                 held = 0.0
                 if r["kind"] in ("c-stop", "c-span") and r["finish"] == "stop":
+                    # Text that may begin a stop string is held back until the string completes
+                    # or cannot: twice plain decode's own hold-back for the row (a route judged on
+                    # its own stream has none: a flat 100 ms for a three-word string), and at
+                    # least twice the hold-back the same request shows alone on this route (its
+                    # solo row of the boot: a held string can cross a burst boundary), scaled by
+                    # the cohort's cadence over the solo row's. In a cohort the held tokens
+                    # arrive a cohort round apart: at least two of this request's rounds per plain
+                    # decode step held back.
                     held = 2 * (ref.get(f"solo-{tag}-{regime}", {}).get("close_ms") or 0) if not own else \
                         (100 if r["kind"] == "c-span" else 0)
+                    alone = solo.get(f"solo-{tag}-{regime}")
+                    if r.get("gap_ms") and alone and alone.get("close_ms") is not None and alone.get("gap_ms"):
+                        held = max(held, 2 * alone["close_ms"] * max(1.0, r["gap_ms"] / alone["gap_ms"]))
                     if held / 2 > 5 and r.get("gap_ms"):
-                        # Text that may begin a stop string is held back until the string
-                        # completes or cannot. Plain decode alone holds it for a decode step or a
-                        # few; in a cohort the same tokens arrive a cohort round apart, so the
-                        # hold-back is counted in this request's own cadence (two of its rounds per
-                        # plain step of hold-back, at least two), and at least twice the hold-back
-                        # the same request shows alone on this route (its solo row of the boot:
-                        # a held string can cross a burst boundary), scaled by the cohort's
-                        # cadence over the solo row's.
                         steps = max(1, round((held / 2) / solo_step)) if solo_step > 0 else 1
                         held = max(held, 2 * steps * r["gap_ms"])
-                        alone = solo.get(f"solo-{tag}-{regime}")
-                        if alone and alone.get("close_ms") is not None and alone.get("gap_ms"):
-                            scale = max(1.0, r["gap_ms"] / alone["gap_ms"])
-                            held = max(held, 2 * alone["close_ms"] * scale)
                 elif r["kind"] == "c-eos" and r.get("gap_ms"):
                     # The EOS token carries no text: it may commit a round after the last visible
                     # chunk, one of this request's rounds.
