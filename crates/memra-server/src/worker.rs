@@ -16955,6 +16955,10 @@ struct Session {
     /// Successfully published `Event::Token` count. `finish` requires this to equal
     /// `generated.len()` before publishing the terminal usage/token snapshot receipt.
     tokens_emitted: usize,
+    /// The terminal receipt a pooled cohort member's end hook already sent (memra#1209): the
+    /// member's stream ended at its round while the cohort ran on. `finish` then sends nothing
+    /// and checks that what it would send equals this; a later step error is not sent either.
+    early_done: Option<DoneReceipt>,
     /// Consecutive speculative bursts of this session that yielded at their entry with
     /// nothing emitted (the entry-yield bound, `SPEC_ENTRY_YIELD_MAX`, memra#1201).
     spec_entry_yields: u32,
@@ -22849,9 +22853,7 @@ pub fn run(
                                 // cannot rebuild the request (no prompt to replay) — the
                                 // pre-fix honest error, quoted.
                                 s.errored = true;
-                                let _ = s.tx.send(Event::Error(EngineError::engine(format!(
-                                    "step error: {err}"
-                                ))));
+                                send_step_error(s, format!("step error: {err}"));
                                 finished.push(i);
                             }
                         }
@@ -22874,9 +22876,7 @@ pub fn run(
                         }
                         quarantine_request_fault(&mut active[i], err.as_ref());
                         active[i].errored = true;
-                        let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
-                            "step error: {err}"
-                        ))));
+                        send_step_error(&active[i], format!("step error: {err}"));
                         finished.push(i);
                     }
                 }
@@ -30000,6 +30000,7 @@ fn admit(
         prefill_done: prefill_done_at_admit,
         generated: Vec::new(),
         tokens_emitted: 0,
+        early_done: None,
         spec_entry_yields: 0,
         emission_clock: Default::default(),
         aborted: false,
@@ -32671,6 +32672,83 @@ fn spec_round_continues(admit_keep: bool, stream_open: bool) -> bool {
     admit_keep && stream_open
 }
 
+/// How much of a speculative burst a request keeps, and why it ends there, from the burst and
+/// what its emission saw: the request's room and its EOS and stop ids (`spec_visible_prefix`),
+/// a stop string completed on the `stop_string_at`-th public token (memra#1207), the first EOS
+/// (inclusive), then the request budget. The context-full end (it reads the session's committed
+/// length) and the disconnect abort are the post step's. `spec_burst_post`,
+/// `dspark_burst_post` and the pooled end hook (memra#1209) all decide through this one
+/// function, so a member's early Done and its post step cannot disagree.
+fn spec_burst_verdict(
+    burst: &[u32],
+    request_room: usize,
+    eos_ids: &[u32],
+    stop_ids: &[u32],
+    stop_string_at: Option<usize>,
+    generated_before: usize,
+    budget: usize,
+) -> (usize, Option<StopReason>) {
+    let (public_len, stop) = spec_visible_prefix(burst, request_room, eos_ids, stop_ids);
+    let (public_len, mut stop) = spec_stop_string_clamp(public_len, stop, stop_string_at);
+    let mut kept = public_len;
+    if let Some(i) = burst[..public_len].iter().position(|t| eos_ids.contains(t)) {
+        kept = i + 1;
+        stop = Some(StopReason::Eos);
+    }
+    if stop.is_none() && generated_before + kept >= budget {
+        stop = Some(StopReason::MaxNew);
+    }
+    (kept, stop)
+}
+
+/// The terminal receipt a pooled cohort member's end hook sends at the round its stream ended
+/// (memra#1209), or None when the post step decides alone: the stream continues, the client is
+/// gone, or the end can only be the context-full one. Built from the values the post step
+/// writes back into the session after the cohort returns: generated + the kept tokens, and
+/// the spec counters + this burst's rounds, drafted and accepted.
+#[allow(clippy::too_many_arguments)]
+// allow: the verdict's inputs, then the session counters the receipt carries
+fn pooled_early_done(
+    burst: &[u32],
+    request_room: usize,
+    eos_ids: &[u32],
+    stop_ids: &[u32],
+    stop_string_at: Option<usize>,
+    send_ok: bool,
+    generated: &[u32],
+    budget: usize,
+    spec_counts: (u64, usize, usize),
+) -> Option<DoneReceipt> {
+    if !send_ok {
+        return None;
+    }
+    let (kept, stop) = spec_burst_verdict(
+        burst,
+        request_room,
+        eos_ids,
+        stop_ids,
+        stop_string_at,
+        generated.len(),
+        budget,
+    );
+    let reason = stop?;
+    let mut tokens = generated.to_vec();
+    tokens.extend_from_slice(&burst[..kept]);
+    let (rounds, drafted, accepted) = spec_counts;
+    Some(DoneReceipt::new(tokens, reason, rounds, drafted, accepted))
+}
+
+/// The always-on receipt of a pooled member closed at its round (memra#1209), one line per
+/// request at most: its completion tokens and how many members the cohort still ran.
+fn pooled_close_receipt(route: &str, request_id: &str, r: &DoneReceipt, members_running: usize) {
+    eprintln!(
+        "[spec-pool] member finished inside the cohort: route={route} completion_tokens={} \
+         members_running={members_running} reason={} request={request_id}",
+        r.tokens.len(),
+        r.stop_reason
+    );
+}
+
 /// Everything `step_session`'s spec arm does after the engine burst call: telemetry, the
 /// fed/sampler/generated mirrors, public emission settle, stop battery. Returns the bool
 /// `step_session` returns.
@@ -32731,26 +32809,25 @@ fn spec_burst_post(
         s.fed.push(tok);
         s.sampler.accept(tok);
     }
-    let (public_len, stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
     // A stop string that completed at the round hook ends the public burst on its token
     // (memra#1207). The rest of that round is committed engine state, like the tokens after
     // an EOS: in `SpecSession::committed` and the cache, never in the worker's public vectors.
-    let (public_len, mut stop) = spec_stop_string_clamp(public_len, stop, stop_string_at);
-    let public_burst = &burst[..public_len];
+    let (kept, mut stop) = spec_burst_verdict(
+        &burst,
+        request_room,
+        &eos_ids,
+        &stop_ids,
+        stop_string_at,
+        s.generated.len(),
+        s.budget,
+    );
     if send_ok {
-        debug_assert_eq!(
-            token_events, public_len,
-            "one token event per public spec token"
-        );
+        debug_assert_eq!(token_events, kept, "one token event per public spec token");
     }
-    for &tok in public_burst {
+    for &tok in &burst[..kept] {
         s.sampler.accept(tok);
         push_generated(&mut s.generated, &s.model, s.t0, tok);
         s.fed.push(tok);
-        if s.params.eos.contains(&tok) {
-            stop = Some(StopReason::Eos);
-            break;
-        }
     }
     // EOS text is never streamed (serve-compat, 2026-08-03), but its empty-text token event
     // keeps the id/event/generated receipt 1:1. Engine-committed budget surplus remains only
@@ -32771,9 +32848,6 @@ fn spec_burst_post(
         stop.is_some() || !contains_stop_string(&s.decoded_bytes, &s.stop_strings),
         "a stop string completed in the burst and the round hook did not latch it"
     );
-    if stop.is_none() && s.generated.len() >= s.budget {
-        stop = Some(StopReason::MaxNew);
-    }
     // +3 (was +2): committed excludes a carried pending token (pending-carry, 2026-08-01).
     if stop.is_none() && spec.committed.len() + k + 3 >= spec.cache_max_ctx() {
         stop = Some(StopReason::ContextFull);
@@ -33039,18 +33113,20 @@ fn step_spec_pooled(
             }
         }
     }
-    let mut emits: Vec<Option<SpecBurstEmit<'_>>> = members
+    // Each member's emission state, shared by its two hooks: the round hook writes it, the end
+    // hook reads what the emission saw (memra#1209).
+    let mut emits: Vec<Option<std::cell::RefCell<SpecBurstEmit<'_>>>> = members
         .iter_mut()
         .zip(&plans)
         .map(|((_, s), plan)| {
             plan.as_ref()
-                .map(|p| SpecBurstEmit::new(lm, s, p.request_room))
+                .map(|p| std::cell::RefCell::new(SpecBurstEmit::new(lm, s, p.request_room)))
         })
         .collect();
     let outcomes = {
         let mut reqs: Vec<memra_engine::spec::PooledBurstReq<'_>> = Vec::new();
-        for (((_, s), emit), plan) in members.iter_mut().zip(emits.iter_mut()).zip(&plans) {
-            let (Some(emit), Some(plan)) = (emit.as_mut(), plan.as_ref()) else {
+        for (((_, s), emit), plan) in members.iter_mut().zip(emits.iter()).zip(&plans) {
+            let (Some(emit), Some(plan)) = (emit.as_ref(), plan.as_ref()) else {
                 continue;
             };
             let Session {
@@ -33060,12 +33136,23 @@ fn step_spec_pooled(
                 lane,
                 emission_clock,
                 tokens_emitted,
+                generated,
+                budget,
+                spec_rounds,
+                spec_drafted,
+                spec_accepted,
+                tx,
+                n_prompt,
+                n_cached,
+                t0,
+                request_id,
+                early_done,
                 ..
             } = &mut **s;
             let lane = *lane;
             let on_commit: Option<memra_engine::spec::PooledCommitHook<'_>> =
                 Some(Box::new(move |slice: &[u32]| {
-                    emit.flush(
+                    emit.borrow_mut().flush(
                         slice,
                         ttft.as_ref(),
                         model,
@@ -33074,12 +33161,50 @@ fn step_spec_pooled(
                         tokens_emitted,
                     )
                 }));
+            // POOLED MEMBER CLOSE (memra#1209): a member whose stream ended (EOS, a stop id, a
+            // stop string, its budget) gets its terminal events at the round its burst ended,
+            // while the cohort runs on for the others. Before, its usage and [DONE] waited for
+            // the whole cohort call. The post step, park and retire still run after the cohort
+            // returns, from the same values; `finish` then sends nothing and checks them.
+            let (generated, budget, tx, request_id) = (&*generated, *budget, &*tx, &*request_id);
+            let (n_prompt, n_cached, t0) = (*n_prompt, *n_cached, *t0);
+            let counts = (*spec_rounds, *spec_drafted, *spec_accepted);
+            let (request_room, telem_before) = (plan.request_room, plan.telem_before);
+            let on_end: Option<memra_engine::spec::PooledEndHook<'_>> = Some(Box::new(
+                move |end: &memra_engine::spec::PooledMemberEnd<'_>| {
+                    let Some(telem) = end.telemetry else {
+                        return;
+                    };
+                    let e = emit.borrow();
+                    let receipt = pooled_early_done(
+                        end.burst,
+                        request_room,
+                        &e.eos_ids,
+                        &e.stop_ids,
+                        e.stop_string_at,
+                        e.send_ok,
+                        generated,
+                        budget,
+                        (
+                            counts.0 + telem.delta_since(&telem_before).rounds,
+                            counts.1 + end.drafted,
+                            counts.2 + end.accepted,
+                        ),
+                    );
+                    if let Some(receipt) = receipt {
+                        receipt.send(tx, n_prompt, n_cached, t0.elapsed().as_secs_f64());
+                        pooled_close_receipt("mtp", request_id, &receipt, end.members_running);
+                        *early_done = Some(receipt);
+                    }
+                },
+            ));
             reqs.push(memra_engine::spec::PooledBurstReq {
                 sess: spec.as_mut().expect("pool candidates hold a spec session"),
                 max_new: plan.burst_target,
                 k: plan.k,
                 sampling: plan.sampling,
                 on_commit,
+                on_end,
             });
         }
         lm.model.generate_spec_sessions_unified(
@@ -33095,7 +33220,10 @@ fn step_spec_pooled(
         let Some(plan) = plan else {
             continue;
         };
-        let emit = emit.take().expect("emission state built with the plan");
+        let emit = emit
+            .take()
+            .expect("emission state built with the plan")
+            .into_inner();
         let r = match outcomes.next().expect("one outcome per pooled request") {
             Ok((burst, d, a)) => spec_burst_post(s, spec_metrics, plan, emit, burst, d, a),
             Err(err) => Err(err),
@@ -34030,7 +34158,8 @@ fn dspark_burst_post(
     {
         trace.mark_first_decode();
     }
-    let (public_len, stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
+    // The id rule sizes the burst-cadence emission below.
+    let (public_len, _) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
     let emitted = if eager_first_token {
         // Every public id already went out at round cadence; the shared stopping rule
         // (budget, first EOS inclusive, a completed stop string) makes the flushed count
@@ -34069,20 +34198,20 @@ fn dspark_burst_post(
     // A stop string ends the public burst on the token that completed it (memra#1207). On
     // the round-cadence arm the hook's verdict also ended the engine burst at that round; on
     // the burst-cadence arm (`MEMRA_SPEC_FIRST_TOKEN_EAGER=0`) the burst ran to its target.
-    let (public_len, mut stop) = spec_stop_string_clamp(
-        public_len,
-        stop,
+    // The request's verdict: the id rule, the stop string, the EOS cut and the budget.
+    let (public_len, mut stop) = spec_burst_verdict(
+        &burst,
+        request_room,
+        &eos_ids,
+        &stop_ids,
         emitted.stop_string.then_some(emitted.sent),
+        s.generated.len(),
+        s.budget,
     );
-    let public_burst = &burst[..public_len];
-    for &tok in public_burst {
+    for &tok in &burst[..public_len] {
         s.sampler.accept(tok);
         push_generated(&mut s.generated, &s.model, s.t0, tok);
         s.fed.push(tok);
-        if s.params.eos.contains(&tok) {
-            stop = Some(StopReason::Eos);
-            break;
-        }
     }
     if !eager_first_token {
         // The eager arm already advanced it inside the flush hook (the streamed marker).
@@ -34102,9 +34231,6 @@ fn dspark_burst_post(
         stop.is_some() || !contains_stop_string(&s.decoded_bytes, &s.stop_strings),
         "a stop string completed in the burst and the emission did not latch it"
     );
-    if stop.is_none() && s.generated.len() >= s.budget {
-        stop = Some(StopReason::MaxNew);
-    }
     // The engine marks the session done on EOS or when the next round would overflow the
     // (windowless-drafter-clamped) ctx; EOS/budget above take precedence for the reason.
     if stop.is_none() && s.dspark.as_ref().unwrap().finished() {
@@ -34173,7 +34299,8 @@ fn step_dspark_pooled(
         .filter(|(i, _)| cohort.contains(i))
         .collect();
     let mut plans: Vec<(usize, usize, usize)> = Vec::with_capacity(members.len());
-    let mut emits: Vec<DsparkBurstEmit<'_>> = Vec::with_capacity(members.len());
+    // Each member's emission state, shared by its round hook and its end hook (memra#1209).
+    let mut emits: Vec<std::cell::RefCell<DsparkBurstEmit<'_>>> = Vec::with_capacity(members.len());
     for (_, s) in members.iter_mut() {
         let (burst_target, request_room) = dspark_burst_plan(s, s.budget - s.generated.len());
         let rounds_before = s
@@ -34182,12 +34309,16 @@ fn step_dspark_pooled(
             .expect("pool candidates hold a session")
             .rounds;
         plans.push((burst_target, request_room, rounds_before));
-        emits.push(DsparkBurstEmit::new(lm, s, request_room));
+        emits.push(std::cell::RefCell::new(DsparkBurstEmit::new(
+            lm,
+            s,
+            request_room,
+        )));
     }
     let outcomes = {
         let mut reqs: Vec<memra_engine::dflash::DsparkPooledReq<'_>> = Vec::new();
-        for (((_, s), emit), &(burst_target, request_room, _)) in
-            members.iter_mut().zip(emits.iter_mut()).zip(&plans)
+        for (((_, s), emit), &(burst_target, request_room, rounds_before)) in
+            members.iter_mut().zip(emits.iter()).zip(&plans)
         {
             let Session {
                 dspark,
@@ -34196,23 +34327,81 @@ fn step_dspark_pooled(
                 lane,
                 emission_clock,
                 tokens_emitted,
+                generated,
+                budget,
+                spec_rounds,
+                spec_drafted,
+                spec_accepted,
+                tx,
+                n_prompt,
+                n_cached,
+                t0,
+                request_id,
+                early_done,
                 ..
             } = &mut **s;
             let lane = *lane;
-            let on_commit: Option<memra_engine::dflash::DsparkPooledHook<'_>> =
-                if emit.eager_first_token {
-                    Some(Box::new(move |slice: &[u32]| {
-                        emit.flush(slice, model, lane, emission_clock, tokens_emitted)
-                    }))
-                } else {
-                    None
-                };
+            // The burst-cadence arm (`MEMRA_SPEC_FIRST_TOKEN_EAGER=0`) emits in the post step:
+            // it has no round hook and no early close.
+            let eager = emit.borrow().eager_first_token;
+            let on_commit: Option<memra_engine::dflash::DsparkPooledHook<'_>> = if eager {
+                Some(Box::new(move |slice: &[u32]| {
+                    emit.borrow_mut()
+                        .flush(slice, model, lane, emission_clock, tokens_emitted)
+                }))
+            } else {
+                None
+            };
+            // POOLED MEMBER CLOSE (memra#1209), as on the MTP cohort (`step_spec_pooled`).
+            let (generated, budget, tx, request_id) = (&*generated, *budget, &*tx, &*request_id);
+            let (n_prompt, n_cached, t0) = (*n_prompt, *n_cached, *t0);
+            let counts = (*spec_rounds, *spec_drafted, *spec_accepted);
+            let on_end: Option<memra_engine::spec::PooledEndHook<'_>> = if eager {
+                Some(Box::new(
+                    move |end: &memra_engine::spec::PooledMemberEnd<'_>| {
+                        let Some(rounds) = end.rounds else {
+                            return;
+                        };
+                        let e = emit.borrow();
+                        // The post step's stop-string clamp on this arm: the flushed count.
+                        let stop_string_at = e.stop_string_at.is_some().then_some(e.token_events);
+                        let receipt = pooled_early_done(
+                            end.burst,
+                            request_room,
+                            &e.eos_ids,
+                            &e.stop_ids,
+                            stop_string_at,
+                            e.send_ok,
+                            generated,
+                            budget,
+                            (
+                                counts.0 + (rounds - rounds_before) as u64,
+                                counts.1 + end.drafted,
+                                counts.2 + end.accepted,
+                            ),
+                        );
+                        if let Some(receipt) = receipt {
+                            receipt.send(tx, n_prompt, n_cached, t0.elapsed().as_secs_f64());
+                            pooled_close_receipt(
+                                "dspark",
+                                request_id,
+                                &receipt,
+                                end.members_running,
+                            );
+                            *early_done = Some(receipt);
+                        }
+                    },
+                ))
+            } else {
+                None
+            };
             reqs.push(memra_engine::dflash::DsparkPooledReq {
                 sess: dspark.as_mut().expect("pool candidates hold a session"),
                 burst_target,
                 request_room,
                 eos: &params.eos,
                 on_commit,
+                on_end,
             });
         }
         lm.model.dspark_spec_sessions_pooled(engine, d, reqs)
@@ -34221,9 +34410,15 @@ fn step_dspark_pooled(
         members.iter_mut().zip(emits).zip(plans).zip(outcomes)
     {
         let r = match outcome {
-            Ok((burst, dr, ac)) => {
-                dspark_burst_post(s, emit, request_room, rounds_before, burst, dr, ac)
-            }
+            Ok((burst, dr, ac)) => dspark_burst_post(
+                s,
+                emit.into_inner(),
+                request_room,
+                rounds_before,
+                burst,
+                dr,
+                ac,
+            ),
             Err(err) => Err(err),
         };
         results.push((*i, r));
@@ -35397,23 +35592,95 @@ fn finish(s: &Session, reason: StopReason) {
             })
         );
     }
-    let reason = format!("{reason:?}");
-    // Per-request spec acceptance summary (lane/accept-telemetry): only when this request
-    // actually ran spec rounds — plain sessions carry None and the usage block is unchanged.
-    let spec = (s.spec_rounds > 0).then_some(SpecUsage {
-        rounds: s.spec_rounds,
-        drafted: s.spec_drafted as u64,
-        accepted: s.spec_accepted as u64,
-    });
-    let _ = s.tx.send(Event::TokenSnapshot(s.generated.clone()));
-    let _ = s.tx.send(Event::Done {
-        stop_reason: reason,
-        n_tokens: s.generated.len(),
-        n_prompt: s.n_prompt,
-        n_cached: s.n_cached,
-        elapsed_s: elapsed,
-        spec,
-    });
+    let receipt = DoneReceipt::new(
+        s.generated.clone(),
+        reason,
+        s.spec_rounds,
+        s.spec_drafted,
+        s.spec_accepted,
+    );
+    match &s.early_done {
+        // A pooled cohort member whose end hook already closed the stream (memra#1209): the
+        // client has its terminal events. What this step computed must be what it got.
+        Some(sent) => {
+            if *sent != receipt {
+                eprintln!(
+                    "[spec-pool] EARLY DONE MISMATCH request={}: sent {sent:?}, the post step \
+                     computed {receipt:?}",
+                    s.request_id
+                );
+                debug_assert_eq!(*sent, receipt, "early Done differs from the post step's");
+            }
+        }
+        None => receipt.send(&s.tx, s.n_prompt, s.n_cached, elapsed),
+    }
+}
+
+/// A request's terminal receipt: the token snapshot and `Event::Done`'s reason and counts
+/// (everything but the elapsed time). `finish` builds it from the session; a pooled cohort
+/// member's end hook builds it from the same values before the post step writes them back
+/// into the session (memra#1209), and `finish` compares the two.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DoneReceipt {
+    tokens: Vec<u32>,
+    stop_reason: String,
+    /// Per-request spec acceptance summary (lane/accept-telemetry): only when this request
+    /// actually ran spec rounds; plain sessions carry None and the usage block is unchanged.
+    spec: Option<(u64, u64, u64)>,
+}
+
+impl DoneReceipt {
+    fn new(
+        tokens: Vec<u32>,
+        reason: StopReason,
+        spec_rounds: u64,
+        spec_drafted: usize,
+        spec_accepted: usize,
+    ) -> Self {
+        DoneReceipt {
+            tokens,
+            stop_reason: format!("{reason:?}"),
+            spec: (spec_rounds > 0).then_some((
+                spec_rounds,
+                spec_drafted as u64,
+                spec_accepted as u64,
+            )),
+        }
+    }
+
+    fn send(&self, tx: &EventSender, n_prompt: usize, n_cached: usize, elapsed_s: f64) {
+        let _ = tx.send(Event::TokenSnapshot(self.tokens.clone()));
+        let _ = tx.send(Event::Done {
+            stop_reason: self.stop_reason.clone(),
+            n_tokens: self.tokens.len(),
+            n_prompt,
+            n_cached,
+            elapsed_s,
+            spec: self.spec.map(|(rounds, drafted, accepted)| SpecUsage {
+                rounds,
+                drafted,
+                accepted,
+            }),
+        });
+    }
+}
+
+/// The step error a session's stream gets, unless a pooled cohort member's end hook already
+/// closed it with Done (memra#1209): then the client has a complete answer and nothing is
+/// sent after it; the session is still retired as errored, never parked.
+fn send_step_error(s: &Session, msg: String) {
+    step_error_to(&s.tx, s.early_done.is_some(), &s.request_id, msg);
+}
+
+fn step_error_to(tx: &EventSender, closed_early: bool, request_id: &str, msg: String) {
+    if closed_early {
+        eprintln!(
+            "[spec-pool] request={request_id} closed at its round before this error; not sent: \
+             {msg}"
+        );
+        return;
+    }
+    let _ = tx.send(Event::Error(EngineError::engine(msg)));
 }
 
 /// FAULT INJECTION (`MEMRA_PANIC_AFTER=<n>`, off unless set): panic the GPU worker thread
@@ -36459,6 +36726,7 @@ mod tests {
         UNIFIED_PREFIX_CACHE_SHARE_DIV, UnifiedPrefixTerms, derived_prefix_cache_budget,
         prefix_budget_ctx, prefix_entry_geometry_bytes,
     };
+    use super::{DoneReceipt, pooled_early_done, spec_burst_verdict, step_error_to};
     use super::{DraftVerdict, draft_verdict, draft_verdict_message};
     use super::{DsparkBurstEmit, EventSender, SPEC_ENTRY_YIELD_MAX, SpecBurstEmit};
     use super::{
@@ -39189,6 +39457,224 @@ mod tests {
         assert!(flush(&mut e, &[a, nl, nl, a, a], &mut sent));
         assert_eq!(sent, 7);
         assert_eq!(e.stop_string_at, None);
+    }
+
+    /// The post step's verdict as `spec_burst_post` and `dspark_burst_post` computed it inline
+    /// before memra#1209 (id rule, stop-string clamp, EOS cut, budget), kept here as the
+    /// reference for `spec_burst_verdict`.
+    fn verdict_before_1209(
+        burst: &[u32],
+        room: usize,
+        eos: &[u32],
+        stop_ids: &[u32],
+        stop_string_at: Option<usize>,
+        generated_before: usize,
+        budget: usize,
+    ) -> (usize, Option<StopReason>) {
+        let (public_len, stop) = spec_visible_prefix(burst, room, eos, stop_ids);
+        let (public_len, mut stop) = spec_stop_string_clamp(public_len, stop, stop_string_at);
+        let mut pushed = 0;
+        for &tok in &burst[..public_len] {
+            pushed += 1;
+            if eos.contains(&tok) {
+                stop = Some(StopReason::Eos);
+                break;
+            }
+        }
+        if stop.is_none() && generated_before + pushed >= budget {
+            stop = Some(StopReason::MaxNew);
+        }
+        (pushed, stop)
+    }
+
+    /// memra#1209: the post step and the pooled end hook decide through `spec_burst_verdict`,
+    /// which must be the post step's old inline verdict on every burst shape: an EOS, a stop
+    /// id, a stop string at each public position, the request's room and its budget.
+    #[test]
+    fn spec_burst_verdict_is_the_post_steps_verdict() {
+        let (eos, stop_id) = (9u32, 8u32);
+        let mut cases = 0;
+        for burst in [
+            vec![1u32, 2, 3, 4, 5, 6],
+            vec![1, 2, 9, 4, 5],
+            vec![1, 8, 3, 4],
+            vec![9],
+            vec![8],
+            vec![1, 2, 3, 9, 8],
+            vec![],
+        ] {
+            for room in 0..=burst.len() + 1 {
+                let (public, _) = spec_visible_prefix(&burst, room, &[eos], &[stop_id]);
+                for at in std::iter::once(None).chain((1..=public).map(Some)) {
+                    for (generated_before, budget) in [(0, 64), (10, 12), (10, 16), (5, 5)] {
+                        let args = (&burst[..], room, generated_before, budget);
+                        assert_eq!(
+                            spec_burst_verdict(
+                                args.0,
+                                args.1,
+                                &[eos],
+                                &[stop_id],
+                                at,
+                                generated_before,
+                                budget
+                            ),
+                            verdict_before_1209(
+                                args.0,
+                                args.1,
+                                &[eos],
+                                &[stop_id],
+                                at,
+                                generated_before,
+                                budget
+                            ),
+                            "burst {burst:?} room {room} stop string at {at:?} generated \
+                             {generated_before} budget {budget}"
+                        );
+                        cases += 1;
+                    }
+                }
+            }
+        }
+        assert!(cases > 200, "{cases} cases");
+    }
+
+    /// memra#1209: a pooled cohort member whose stream ended gets its terminal events from its
+    /// end hook, at the round its burst ended, while the cohort runs on: the token snapshot and
+    /// `Event::Done` that `finish` sends, with the counts the post step later writes back. A
+    /// member that continues, whose client is gone, or that can end only on a full context
+    /// gets nothing early. Before the fix the hook did not exist and every member waited for
+    /// the whole cohort call; the red arm (`pooled_early_done` answering None) fails here.
+    #[test]
+    fn pooled_member_closes_at_its_round_with_the_post_steps_receipt() {
+        let tok = chatml_fixture_tokenizer("pooled-member-close");
+        let (a, nl) = (0u32, 1u32); // "a" and "\n"
+        let eos = tok.eos_id();
+        let emit = |tx: EventSender, stops: &[&str], room: usize| SpecBurstEmit {
+            admit_yield: false,
+            entry: true,
+            entry_yields: 0,
+            tok: &tok,
+            decoded_visible: Vec::new(),
+            cursor: 0,
+            emit_remaining: room,
+            eos_seen: false,
+            send_ok: true,
+            token_events: 0,
+            flush_tx: tx,
+            eos_ids: vec![eos],
+            stop_ids: Vec::new(),
+            stop_strings: stops.iter().map(|s| s.to_string()).collect(),
+            stop_string_at: None,
+            generated_before: 0,
+            slices: 0,
+        };
+        let mut clock = crate::hybrid_telemetry::EmissionClock::default();
+        let generated = vec![a, a]; // two tokens before this burst
+        let early = |e: &SpecBurstEmit, burst: &[u32], room: usize, budget: usize| {
+            pooled_early_done(
+                burst,
+                room,
+                &e.eos_ids,
+                &e.stop_ids,
+                e.stop_string_at,
+                e.send_ok,
+                &generated,
+                budget,
+                (3 + 4, 10 + 6, 7 + 5),
+            )
+        };
+        // The terminal events a receipt sends, read off the member's channel.
+        let events = |r: &DoneReceipt| {
+            let (tx, mut rx) = event_channel();
+            r.send(&tx, 40, 8, 0.5);
+            let mut out = Vec::new();
+            while let Ok(ev) = rx.try_recv() {
+                out.push(match ev {
+                    Event::TokenSnapshot(t) => format!("snapshot {t:?}"),
+                    Event::Done {
+                        stop_reason,
+                        n_tokens,
+                        n_prompt,
+                        n_cached,
+                        spec,
+                        ..
+                    } => format!(
+                        "done {stop_reason} {n_tokens} {n_prompt} {n_cached} {:?}",
+                        spec.map(|s| (s.rounds, s.drafted, s.accepted))
+                    ),
+                    _ => "another event".to_string(),
+                });
+            }
+            out
+        };
+
+        // A stop string completes inside the burst's second round: the burst the engine
+        // returns holds that round's later tokens too; the member keeps through the stop.
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx, &["\n\n"], 64);
+        let mut sent = 0;
+        let burst = [a, nl, a, nl, nl, a, a];
+        assert!(e.flush(
+            &burst[..2],
+            None,
+            "m",
+            crate::lanes::Lane::Interactive,
+            &mut clock,
+            &mut sent
+        ));
+        assert!(!e.flush(
+            &burst[2..],
+            None,
+            "m",
+            crate::lanes::Lane::Interactive,
+            &mut clock,
+            &mut sent
+        ));
+        let r = early(&e, &burst, 64, 64).expect("a stop-ended member closes at its round");
+        assert_eq!(
+            r,
+            DoneReceipt::new(
+                [&generated[..], &burst[..5]].concat(),
+                StopReason::Callback,
+                7,
+                16,
+                12
+            )
+        );
+        assert_eq!(
+            events(&r),
+            [
+                format!("snapshot {:?}", [a, a, a, nl, a, nl, nl]),
+                "done Callback 7 40 8 Some((7, 16, 12))".to_string(),
+            ]
+        );
+
+        // An EOS ends it, counted; a budget spent inside the burst ends it on MaxNew.
+        let (tx, _rx) = event_channel();
+        let e = emit(tx, &[], 64);
+        let r = early(&e, &[a, eos, a], 64, 64).expect("EOS closes the member");
+        assert_eq!((r.tokens.len(), r.stop_reason.as_str()), (4, "Eos"));
+        let r = early(&e, &[a, a, a], 2, 4).expect("the budget closes the member");
+        assert_eq!((r.tokens.len(), r.stop_reason.as_str()), (4, "MaxNew"));
+
+        // A member that runs on, or whose client is gone, gets nothing early: the post step
+        // decides (and a context-full end, which reads the session, stays its own).
+        assert_eq!(early(&e, &[a, a, a], 64, 64), None);
+        let (tx, _rx) = event_channel();
+        let mut gone = emit(tx, &[], 64);
+        gone.send_ok = false;
+        assert_eq!(early(&gone, &[a, eos], 64, 64), None);
+    }
+
+    /// memra#1209: a step error after a member's early Done is not sent (the client has a
+    /// complete answer); without an early Done it is.
+    #[test]
+    fn a_step_error_after_an_early_done_is_not_sent() {
+        let (tx, mut rx) = event_channel();
+        step_error_to(&tx, true, "r", "step error: boom".into());
+        assert!(rx.try_recv().is_err(), "nothing after the early Done");
+        step_error_to(&tx, false, "r", "step error: boom".into());
+        assert!(matches!(rx.try_recv(), Ok(Event::Error(_))));
     }
 
     /// memra#1207 on the dspark route's round hook (serial and pooled bursts share it): the
