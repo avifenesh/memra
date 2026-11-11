@@ -58,8 +58,10 @@ the DIR: what a request writes may not depend on its cohort), and a member 0 tha
 than the solo rule above (the non-stop median of the boot's solo rows, max(3x, +100 ms), plus
 twice plain decode's own hold-back). Each member 0 that ended on a stop string must carry its
 `[spec-stop]` receipt. A boot passed `--settle` (a binary that closes a member at its round)
-must also log, for each member 0 that ended, that it finished inside its cohort, and per sampler
-at least one of them while another member was still running; else the gate tested nothing.
+must also log, per sampler, at least one member 0 that finished inside its cohort while another
+member was still running (`[spec-pool] member finished inside the cohort`); else the gate tested
+nothing. A member 0 that stops in its first, serial burst, before the cohort forms, has no such
+line and is judged on its close like the rest.
 
 usage: spec-stop-string-gate.py boot CASE SERVER_BINARY MODEL.gguf --out DIR [--route mtp|dspark]
            [--port N] [--env NAME=VALUE ...] [--cohort 2,4 [--settle] [--tput-only]]
@@ -781,7 +783,7 @@ def cohort_judge(out, rows, boots):
             # Plain decode's step alone: what one held-back token costs in the reference.
             steps_ref = [x["gap_ms"] for x in ref.values() if x["regime"] == regime and x.get("gap_ms")]
             solo_step = statistics.median(steps_ref) if steps_ref else 0.0
-            worst, settled_live = {}, 0
+            worst, settled_live, settled_outside = {}, 0, 0
             for r in rr:
                 if r.get("member") != 0 or not r["kind"].startswith("c-"):
                     continue
@@ -819,9 +821,12 @@ def cohort_judge(out, rows, boots):
                                         f"limit {limit + held:.0f} ms (solo non-stop median {med:.0f} ms, plain "
                                         f"decode's hold-back {held / 2:.0f} ms)")
                 if b.get("settle"):
+                    # A member 0 that stops in its first burst (the serial prime burst, before
+                    # the cohort forms) or after the others ended has no cohort to leave: its
+                    # serial burst closes at its round. Counted, judged on its close like the rest.
                     mine_settle = [s for s in r.get("settle", []) if s["completion_tokens"] == r["completion_tokens"]]
                     if not mine_settle:
-                        failures.append(f"{case} {r['id']}: no line says member 0 finished inside its cohort")
+                        settled_outside += 1
                     elif mine_settle[0]["members_running"] > 0:
                         settled_live += 1
             closes = {n: sorted(r["close_ms"] for r in rr if r.get("member") == 0 and r["kind"].startswith("c-")
@@ -830,7 +835,8 @@ def cohort_judge(out, rows, boots):
                   f"close ms by cohort size: " + "; ".join(
                       f"{n}: median {statistics.median(v):.0f} max {max(v):.0f} (n={len(v)})" for n, v in closes.items() if v))
             if b.get("settle"):
-                print(f"  {regime}: member 0 finished while another member ran: {settled_live}")
+                print(f"  {regime}: member 0 finished inside its cohort while another member ran: {settled_live}; "
+                      f"outside a cohort (its serial burst): {settled_outside}")
                 if settled_live == 0:
                     failures.append(f"{case} {regime}: no member 0 finished while another member was still running: "
                                     "the cohort close was not tested")
