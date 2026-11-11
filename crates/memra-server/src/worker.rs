@@ -7350,7 +7350,9 @@ struct SpecCostEntry {
     /// While a session a stall mark demoted is live and that mark lives: when the mark expires
     /// (`spec_cost_hold_waves`, refreshed before every admission). Every admission of the model
     /// marks the wave its verdict reads until then, never longer: the stalled session's waves
-    /// are the stalled set plus arrivals, and they serve plain while its mark does.
+    /// are the stalled set plus arrivals, and they serve plain while its mark does. A session
+    /// that a held wave's mark demotes holds and refreshes that wave in its own right
+    /// (`spec_demote_due_session`).
     wave_hold: Option<Instant>,
 }
 
@@ -8064,23 +8066,38 @@ fn spec_cost_stalled(model: &str, n: usize) -> bool {
 /// this the mark expired 64 s after the stall even while arrivals continued (GB10, 120 s
 /// cells: the gain held for 60 s, then the cell fell back to main's level). Only a live mark
 /// is refreshed; nothing is created, so traffic with no prior stall is untouched, and a mark
-/// expires 64 s after the pressure stops. Returns whether it refreshed.
-fn spec_cost_refresh_stall(model: &str, n: usize) -> bool {
-    spec_cost_registry()
+/// expires 64 s after the last such step. `key` is the session's stall count
+/// (`Session::spec_stall_n`): a count whose mark is gone is dropped here, as before an admission
+/// (`spec_cost_hold_waves`), so a later mark at the same n never finds a stale count to
+/// refresh. The waiting request is any reservation on `PENDING_ADMITS`, the gauge the admission
+/// yield reads: every lane and model. Returns whether it refreshed.
+fn spec_cost_refresh_stall(model: &str, key: &mut Option<usize>) -> bool {
+    let Some(n) = *key else {
+        return false;
+    };
+    let live = spec_cost_registry()
         .lock()
         .unwrap()
         .get_mut(model)
-        .is_some_and(|e| e.refresh_stall(n, Instant::now()))
+        .is_some_and(|e| e.refresh_stall(n, Instant::now()));
+    if !live {
+        *key = None;
+    }
+    live
 }
 
 /// Tick demotion of one session (`spec_demote_due`). When the verdict that demotes it is a live
 /// stall mark at `n_live`, the session keeps that count (`Session::spec_stall_n`): while that
-/// mark lives, the waves it is live in are marked at admission (`spec_cost_hold_waves`).
+/// mark lives, the waves it is live in are marked at admission (`spec_cost_hold_waves`) and its
+/// plain decode refreshes the mark (`spec_cost_refresh_stall`). The mark may itself be a held
+/// wave's: the session it demotes holds and refreshes it the same way.
+///
+/// Only a session that still speculates is checked here, every tick, and each check rewrites the
+/// count. So a check whose demotion did not complete (nothing committed yet, a boundary not
+/// reached) leaves no count behind once the verdict changes.
 fn spec_demote_due_session(s: &mut Session, n_live: usize) -> bool {
     let due = spec_demote_due(&s.model, s.spec_k, n_live);
-    if due && spec_cost_stalled(&s.model, n_live) {
-        s.spec_stall_n = Some(n_live);
-    }
+    s.spec_stall_n = (due && spec_cost_stalled(&s.model, n_live)).then_some(n_live);
     due
 }
 
@@ -24076,14 +24093,14 @@ pub fn run(
             }
             last_batch = ready.len() + rider_before.len();
             // STALL MARK (memra#1211): a session a live mark demoted, stepping its plain decode
-            // while a request waits for admission, refreshes that mark (never creates one).
+            // while a request waits for admission, refreshes that mark (never creates one). Its
+            // step is in the batch or, beside a pooled cohort, a rider's.
             let mut stall_refreshes = 0usize;
             if PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) > 0 {
-                for &(i, _) in &ready {
-                    let s = &active[i];
-                    if let Some(n) = s.spec_stall_n
-                        && spec_cost_refresh_stall(&s.model, n)
-                    {
+                let riders = rider_before.iter().map(|r| r.0);
+                for i in ready.iter().map(|r| r.0).chain(riders) {
+                    let s = &mut active[i];
+                    if spec_cost_refresh_stall(&s.model, &mut s.spec_stall_n) {
                         stall_refreshes += 1;
                     }
                 }
@@ -30100,10 +30117,11 @@ fn admit(
     // shadow feeds the re-decision AND the K receipt log below, so the logged wave is the
     // one the decision actually consumed.
     let projected_wave = projected_admission_wave(n_active, n_pending);
-    if let Some(mark) = stall_wave {
-        spec_cost_mark_wave(&req.model, projected_wave, mark);
-    }
     if spec.is_some() && req_spec_k_replay.is_none() {
+        // The request's stall mark follows it to the wave this second verdict reads.
+        if let Some(mark) = stall_wave {
+            spec_cost_mark_wave(&req.model, projected_wave, mark);
+        }
         spec_k_decision = choose_spec_k(
             &req.model,
             spec_k_pin(),
@@ -39910,6 +39928,23 @@ mod tests {
             !e.stalled_at(3, until),
             "the held wave expires with the mark"
         );
+        // Two sessions demoted by two live marks: the hold is the later expiry.
+        let mut two = stall_entry();
+        two.mark_stall(2, marked_at);
+        two.mark_stall(4, now);
+        let mut keys = [Some(2), Some(4)];
+        assert_eq!(
+            two.wave_hold_for(keys.iter_mut(), now),
+            Some(now + super::SPEC_COST_REALIZED_TTL),
+            "the latest expiry among the live marks"
+        );
+        assert_eq!(keys, [Some(2), Some(4)]);
+        // A held mark never shortens a live mark at the same wave, and is not a new mark there.
+        assert!(!two.mark_stall_until(4, until, now));
+        assert!(
+            two.stalled_at(4, until),
+            "the wave keeps its own later expiry"
+        );
         // Through the registry: the hold marks every admission's wave while it lives.
         e.wave_hold = Some(until);
         super::spec_cost_registry()
@@ -39983,9 +40018,21 @@ mod tests {
             .lock()
             .unwrap()
             .insert("stall-refresh".into(), e);
-        assert!(super::spec_cost_refresh_stall("stall-refresh", 2));
-        assert!(!super::spec_cost_refresh_stall("stall-refresh", 3));
-        assert!(!super::spec_cost_refresh_stall("no-such-model", 2));
+        let mut key = Some(2);
+        assert!(super::spec_cost_refresh_stall("stall-refresh", &mut key));
+        assert_eq!(key, Some(2), "a live mark keeps the session's count");
+        // A count whose mark is gone is dropped at the refresh, so a later mark at the same n
+        // finds nothing to refresh: it demoted nobody.
+        let mut stale = Some(3);
+        assert!(!super::spec_cost_refresh_stall("stall-refresh", &mut stale));
+        assert_eq!(stale, None, "a count with no live mark drops");
+        super::spec_cost_mark_stall("stall-refresh", 3, 0);
+        assert!(!super::spec_cost_refresh_stall("stall-refresh", &mut stale));
+        let mut none = None;
+        assert!(!super::spec_cost_refresh_stall("stall-refresh", &mut none));
+        let mut other = Some(2);
+        assert!(!super::spec_cost_refresh_stall("no-such-model", &mut other));
+        assert_eq!(other, None);
     }
 
     /// memra#1211: a burst's entry call records how many requests waited, whatever the bound
@@ -40100,10 +40147,12 @@ mod tests {
                  stall_wave = spec_cost_admit_wave(&req.model, projected_wave); let mut \
                  spec_k_decision ="
             ) && admit.contains(
-                "let projected_wave = projected_admission_wave(n_active, n_pending); if let \
-                 Some(mark) = stall_wave { spec_cost_mark_wave(&req.model, projected_wave, mark); }"
+                "if spec.is_some() && req_spec_k_replay.is_none() { if let Some(mark) = stall_wave { \
+                 spec_cost_mark_wave(&req.model, projected_wave, mark); } spec_k_decision = \
+                 choose_spec_k("
             ),
-            "each admission marks its own wave before both of its verdicts"
+            "each admission marks its own wave before both of its verdicts, and only a wave a \
+             verdict reads"
         );
         assert!(
             live.contains(
@@ -40117,12 +40166,20 @@ mod tests {
             3,
             "every tick demotion site records the stall that demoted the session"
         );
+        let due = between("fn spec_demote_due_session(", "fn spec_cost_hold_waves(");
+        assert!(
+            due.contains(
+                "s.spec_stall_n = (due && spec_cost_stalled(&s.model, n_live)).then_some(n_live);"
+            ),
+            "each check rewrites the count, so an uncompleted demotion leaves none behind"
+        );
         assert!(!live.contains("!spec_demote_due(&s.model, s.spec_k, n_live)"));
         assert!(
             live.contains(
-                "if PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) > 0 { for &(i, _) in \
-                 &ready { let s = &active[i]; if let Some(n) = s.spec_stall_n && \
-                 spec_cost_refresh_stall(&s.model, n) { stall_refreshes += 1; } } }"
+                "if PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) > 0 { let riders = \
+                 rider_before.iter().map(|r| r.0); for i in ready.iter().map(|r| r.0).chain(riders) \
+                 { let s = &mut active[i]; if spec_cost_refresh_stall(&s.model, &mut \
+                 s.spec_stall_n) { stall_refreshes += 1; } } }"
             ),
             "a demoted session's plain decode under pressure refreshes its live mark"
         );
