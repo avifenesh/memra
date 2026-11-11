@@ -174,7 +174,8 @@ response.
 |---|---|---:|---:|---|---|
 | RTX 5090 | close | 40 | 0 | 33.9 to 36.7 -> 0.06 to 0.14 (one row 89.6 -> 53.5) | unchanged |
 | RTX 5090 | demote | 16 | 0 | park1 33.8 to 34.7 -> 0.07 to 0.15; the rest end in plain decode, 32 in both | unchanged |
-| GB10 | close, demote | GB10 pending | | | |
+| GB10 | close | 40 | 0 | 74.6 to 78.6 -> 0.09 to 0.28 (one row 180.7 -> 104.7, one 75.3 -> 8.9) | unchanged |
+| GB10 | demote | 16 | 0 | park1 75.5 to 76.5 -> 0.09 to 0.16; the rest end in plain decode, 72.7 to 74.3 in both | unchanged |
 
 A sampled request used to end one solo pass after its last chunk; with the carry its last token
 stays pending, and the session is flushed only when it is parked, after the response has
@@ -204,7 +205,8 @@ mid-way (memra#1207), and the sampled carry check: one seeded, frequency-penalis
 one burst, burst after burst, and with a no-round burst after every burst; every burst must end
 on a carried token, `committed` must stay the cache rows, and the three must emit the same
 tokens. RTX 5090: ALL TURNS MATCH ("sampled carry: 72 tok in one burst, 76 burst after burst,
-76 with no-round bursts, first 72 equal true"). GB10: pending.
+76 with no-round bursts, first 72 equal true"). GB10: ALL TURNS MATCH ("74 tok in one burst, 77
+burst after burst, 77 with no-round bursts, first 74 equal true").
 
 ## The timed cell on GB10
 
