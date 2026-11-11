@@ -8033,26 +8033,52 @@ impl Engine {
             self.func("append_quantize_kv_q8_0_q5_1_rows")
         };
         let nblk = (kv_dim_k.max(kv_dim_v) / 32) as u32;
-        let cfg = LaunchConfig {
-            grid_dim: (nblk, t as u32, 1),
-            block_dim: (32, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (t0i, kdk, kdv) = (t0 as i32, kv_dim_k as i32, kv_dim_v as i32);
+        let (kdk, kdv) = (kv_dim_k as i32, kv_dim_v as i32);
         let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
         let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        let table = live.map_or(0, |a| a.0);
-        let unused = 0u64;
-        b.arg(k_rows).arg(v_rows);
-        if live.is_some() {
-            b.arg(&table).arg(&unused);
-        } else {
-            b.arg(kc).arg(vc);
+        if let Some((table, _)) = live {
+            // The prime-graph form reads its cache base and counter from the table, so it has
+            // no sub-view split; it serves chunked primes, which never pass the grid-y cap.
+            if t > crate::hybrid_forward::CUDA_GRID_YZ_MAX {
+                return Err(format!(
+                    "append_quantize_kv_q8_0_q5_1_rows_prime_table: {t} rows exceed the CUDA \
+                     grid-y cap of {} (memra#1200)",
+                    crate::hybrid_forward::CUDA_GRID_YZ_MAX
+                )
+                .into());
+            }
+            let cfg = LaunchConfig {
+                grid_dim: (nblk, t as u32, 1),
+                block_dim: (32, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let (t0i, unused) = (t0 as i32, 0u64);
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(k_rows).arg(v_rows).arg(&table).arg(&unused);
+            b.arg(&t0i).arg(&kdk).arg(&kdv).arg(&ktb).arg(&vtb);
+            unsafe {
+                b.launch(cfg)?;
+            }
+            return Ok(());
         }
-        b.arg(&t0i).arg(&kdk).arg(&kdv).arg(&ktb).arg(&vtb);
-        unsafe {
-            b.launch(cfg)?;
+        // A block reads token `blockIdx.y`'s k/v rows and writes cache slot `t0 + blockIdx.y`
+        // only, so tokens past the grid-y cap go out in row blocks over sub-views with the
+        // block's own `t0` (memra#1200); `t <= 65,535` is the one launch it always was.
+        for (row0, rows) in crate::hybrid_forward::grid_yz_row_blocks(t) {
+            let cfg = LaunchConfig {
+                grid_dim: (nblk, rows as u32, 1),
+                block_dim: (32, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let t0i = (t0 + row0) as i32;
+            let k_v = k_rows.slice(row0 * kv_dim_k..(row0 + rows) * kv_dim_k);
+            let v_v = v_rows.slice(row0 * kv_dim_v..(row0 + rows) * kv_dim_v);
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(&k_v).arg(&v_v).arg(&mut *kc).arg(&mut *vc);
+            b.arg(&t0i).arg(&kdk).arg(&kdv).arg(&ktb).arg(&vtb);
+            unsafe {
+                b.launch(cfg)?;
+            }
         }
         Ok(())
     }
@@ -8429,25 +8455,32 @@ impl Engine {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let f = self.func("qmatvec_f32");
         let mut y = self.alloc_uninit::<f32>(m * out_f)?; // full-overwrite output: skip memset
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, m as u32, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, mi, qt, rb) =
-            (in_f as i32, out_f as i32, m as i32, qtype, row_bytes as i64);
+        let (inf, outf, qt, rb) = (in_f as i32, out_f as i32, qtype, row_bytes as i64);
         let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(w)
-            .arg(x)
-            .arg(&mut y)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&mi)
-            .arg(&qt)
-            .arg(&rb);
-        unsafe {
-            b.launch(cfg)?;
+        // A block reads x row `blockIdx.y` and writes y row `blockIdx.y` only, so tokens past
+        // the grid-y cap go out in row blocks over sub-views (memra#1200); `m <= 65,535` is the
+        // one launch it always was.
+        for (row0, rows) in crate::hybrid_forward::grid_yz_row_blocks(m) {
+            let cfg = LaunchConfig {
+                grid_dim: (out_f as u32, rows as u32, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let mi = rows as i32;
+            let x_v = x.slice(row0 * in_f..(row0 + rows) * in_f);
+            let mut y_v = y.slice_mut(row0 * out_f..(row0 + rows) * out_f);
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(w)
+                .arg(&x_v)
+                .arg(&mut y_v)
+                .arg(&inf)
+                .arg(&outf)
+                .arg(&mi)
+                .arg(&qt)
+                .arg(&rb);
+            unsafe {
+                b.launch(cfg)?;
+            }
         }
         Ok(y)
     }
@@ -10201,22 +10234,30 @@ impl Engine {
         n_embd: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let f = self.func("moe_pairs_scatter");
-        let cfg = LaunchConfig {
-            grid_dim: (((n_embd + 255) / 256) as u32, t as u32, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
         let ne = n_embd as i32;
         let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(y_down)
-            .arg(pair_w)
-            .arg(tok_pair_off)
-            .arg(tok_pair_ids)
-            .arg(moe_out)
-            .arg(&ne);
-        unsafe {
-            b.launch(cfg)?;
+        // A block sums token `blockIdx.y`'s pairs (`tok_pair_off[tok..=tok + 1]`, absolute pair
+        // ids) into its own output row, so tokens past the grid-y cap go out in row blocks over
+        // sub-views of the offsets and the output (memra#1200); `t <= 65,535` is the one launch
+        // it always was.
+        for (row0, rows) in crate::hybrid_forward::grid_yz_row_blocks(t) {
+            let cfg = LaunchConfig {
+                grid_dim: (((n_embd + 255) / 256) as u32, rows as u32, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let off_v = tok_pair_off.slice(row0..row0 + rows + 1);
+            let mut out_v = moe_out.slice_mut(row0 * n_embd..(row0 + rows) * n_embd);
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(y_down)
+                .arg(pair_w)
+                .arg(&off_v)
+                .arg(tok_pair_ids)
+                .arg(&mut out_v)
+                .arg(&ne);
+            unsafe {
+                b.launch(cfg)?;
+            }
         }
         Ok(())
     }
@@ -10850,23 +10891,30 @@ impl Engine {
         src_off: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let f = self.func("copy_rows_strided_f32");
-        let cfg = LaunchConfig {
-            grid_dim: (((row_elems as u32 + 255) / 256).max(1), n_rows as u32, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (re, nr) = (row_elems as i32, n_rows as i32);
+        let re = row_elems as i32;
         let (st, off) = (src_stride as i64, src_off as i64);
         let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(src)
-            .arg(&mut *dst)
-            .arg(&re)
-            .arg(&nr)
-            .arg(&st)
-            .arg(&off);
-        unsafe {
-            b.launch(cfg)?;
+        // A block copies row `blockIdx.y` only, so rows past the grid-y cap go out in row
+        // blocks over sub-views (memra#1200); `n_rows <= 65,535` is the one launch it always was.
+        for (row0, rows) in crate::hybrid_forward::grid_yz_row_blocks(n_rows) {
+            let cfg = LaunchConfig {
+                grid_dim: (((row_elems as u32 + 255) / 256).max(1), rows as u32, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let nr = rows as i32;
+            let src_v = src.slice(row0 * src_stride..);
+            let mut dst_v = dst.slice_mut(row0 * row_elems..(row0 + rows) * row_elems);
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(&src_v)
+                .arg(&mut dst_v)
+                .arg(&re)
+                .arg(&nr)
+                .arg(&st)
+                .arg(&off);
+            unsafe {
+                b.launch(cfg)?;
+            }
         }
         Ok(())
     }
@@ -12341,6 +12389,55 @@ impl Engine {
         self.fp4_gemm_launch(bytes, &aq4, &ad4, m, in_f, out_f, row_bytes)
     }
 
+    /// The one launcher of the per-(output row, token) dp4a matvecs (`qmatvec_*_dp4a`,
+    /// grid `(out_f, m)`, block 128): a block reads token `blockIdx.y`'s q8_1 row
+    /// (`aq + t * in_f`, `ad + t * in_f / 32`) and writes `y[t * out_f + o]`, nothing else of
+    /// the other tokens. CUDA caps grid y at `CUDA_GRID_YZ_MAX` (65,535) blocks, so the tokens
+    /// go out in blocks of at most that many, one launch per block over sub-views at the
+    /// block's first token (memra#1200). For `m <= CUDA_GRID_YZ_MAX` this is the one launch,
+    /// with the same grid and arguments, that every caller issued before.
+    #[allow(clippy::too_many_arguments)]
+    fn dp4a_rows_launch(
+        &self,
+        f: &CudaFunction,
+        w: &cudarc::driver::CudaView<'_, u8>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        row_bytes: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let nblk = in_f / 32;
+        let (inf, outf, rb) = (in_f as i32, out_f as i32, row_bytes as i64);
+        let __s_b = self.gpu.stream();
+        for (row0, rows) in crate::hybrid_forward::grid_yz_row_blocks(m) {
+            let cfg = LaunchConfig {
+                grid_dim: (out_f as u32, rows as u32, 1),
+                block_dim: (128, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let mi = rows as i32;
+            let aq_v = aq.slice(row0 * in_f..(row0 + rows) * in_f);
+            let ad_v = ad.slice(row0 * nblk..(row0 + rows) * nblk);
+            let mut y_v = y.slice_mut(row0 * out_f..(row0 + rows) * out_f);
+            let mut b = __s_b.launch_builder(f);
+            b.arg(w)
+                .arg(&aq_v)
+                .arg(&ad_v)
+                .arg(&mut y_v)
+                .arg(&inf)
+                .arg(&outf)
+                .arg(&mi)
+                .arg(&rb);
+            unsafe {
+                b.launch(cfg)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Stage-B: Q8_0 weight x q8_1 activation int8 dp4a matmul. y[m,out]=x@W^T.
     pub fn qmatvec_q8_0_fast(
         &self,
@@ -12354,25 +12451,17 @@ impl Engine {
         let (aq, ad) = self.quantize_q8_1(x, m, in_f)?;
         let f = self.func("qmatvec_q8_0_dp4a");
         let mut y = self.alloc_uninit::<f32>(m * out_f)?; // full-overwrite output: skip memset
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, m as u32, 1),
-            block_dim: (128, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(w)
-            .arg(&aq)
-            .arg(&ad)
-            .arg(&mut y)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&mi)
-            .arg(&rb);
-        unsafe {
-            b.launch(cfg)?;
-        }
+        self.dp4a_rows_launch(
+            &f,
+            &w.as_view(),
+            &aq,
+            &ad,
+            &mut y,
+            m,
+            in_f,
+            out_f,
+            row_bytes,
+        )?;
         Ok(y)
     }
 
@@ -12390,25 +12479,17 @@ impl Engine {
         let (aq, ad) = self.quantize_q8_1(x, m, in_f)?;
         let f = self.func("qmatvec_q4_K_dp4a");
         let mut y = self.alloc_uninit::<f32>(m * out_f)?; // full-overwrite output: skip memset
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, m as u32, 1),
-            block_dim: (128, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(w)
-            .arg(&aq)
-            .arg(&ad)
-            .arg(&mut y)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&mi)
-            .arg(&rb);
-        unsafe {
-            b.launch(cfg)?;
-        }
+        self.dp4a_rows_launch(
+            &f,
+            &w.as_view(),
+            &aq,
+            &ad,
+            &mut y,
+            m,
+            in_f,
+            out_f,
+            row_bytes,
+        )?;
         Ok(y)
     }
 
@@ -12426,25 +12507,17 @@ impl Engine {
         let (aq, ad) = self.quantize_q8_1(x, m, in_f)?;
         let f = self.func("qmatvec_q6_K_dp4a");
         let mut y = self.alloc_uninit::<f32>(m * out_f)?; // full-overwrite output: skip memset
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, m as u32, 1),
-            block_dim: (128, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(w)
-            .arg(&aq)
-            .arg(&ad)
-            .arg(&mut y)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&mi)
-            .arg(&rb);
-        unsafe {
-            b.launch(cfg)?;
-        }
+        self.dp4a_rows_launch(
+            &f,
+            &w.as_view(),
+            &aq,
+            &ad,
+            &mut y,
+            m,
+            in_f,
+            out_f,
+            row_bytes,
+        )?;
         Ok(y)
     }
 
@@ -12615,25 +12688,20 @@ impl Engine {
         let mut y = self.alloc_uninit::<f32>(m * out_f)?; // full-overwrite output: skip memset
         // Token-tiled twin at prefill row counts (bit-identical per (token, row)).
         let tiled = name == "qmatvec_nvfp4_dp4a_rp" && self.dp4a_rp_tiled(m, in_f, out_f);
-        let (f, cfg) = if tiled {
-            (
-                self.func("qmatvec_nvfp4_dp4a_rp_t4"),
-                LaunchConfig {
-                    grid_dim: (m.div_ceil(4) as u32, 1, 1),
-                    block_dim: (128, 1, 1),
-                    shared_mem_bytes: 0,
-                },
-            )
-        } else {
-            (
-                self.func(name),
-                LaunchConfig {
-                    grid_dim: (out_f as u32, m as u32, 1),
-                    block_dim: (128, 1, 1),
-                    shared_mem_bytes: 0,
-                },
-            )
-        };
+        if !tiled {
+            let f = self.func(name);
+            self.dp4a_rows_launch(&f, w, aq, ad, &mut y, m, in_f, out_f, row_bytes)?;
+            drop(group);
+            return Ok(y);
+        }
+        let (f, cfg) = (
+            self.func("qmatvec_nvfp4_dp4a_rp_t4"),
+            LaunchConfig {
+                grid_dim: (m.div_ceil(4) as u32, 1, 1),
+                block_dim: (128, 1, 1),
+                shared_mem_bytes: 0,
+            },
+        );
         let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
         {
             let __s_b = self.gpu.stream();
@@ -14765,7 +14833,6 @@ impl Engine {
     /// T-token device embed gather (spec verify/replay): tokens uploaded as a tiny [T] u32 htod,
     /// rows dequanted on-device -> x[T, n_embd]. Replaces host per-row dequant + T*n_embd*4B htod
     /// (nsys: 84% of spec API time was HtoD). Bit-identical rows (same per-dtype deq).
-    #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     pub fn embed_gather_device_t(
         &self,
         embd: &CudaSlice<u8>,
@@ -14776,26 +14843,16 @@ impl Engine {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let t = tokens.len();
         let tok_d = self.gpu.stream().clone_htod(tokens)?;
-        let f = self.func("embed_gather_u32_t");
         let mut x = self.alloc_uninit::<f32>(t * n_embd)?;
-        let cfg = LaunchConfig {
-            grid_dim: (((n_embd as u32 + 255) / 256).max(1), t as u32, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (ne, qt, rb, ti) = (n_embd as i32, qtype, row_bytes as i64, t as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(embd)
-            .arg(&tok_d)
-            .arg(&mut x)
-            .arg(&ne)
-            .arg(&qt)
-            .arg(&rb)
-            .arg(&ti);
-        unsafe {
-            b.launch(cfg)?;
-        }
+        self.embed_gather_rows(
+            embd,
+            &tok_d.as_view(),
+            &mut x.as_view_mut(),
+            t,
+            n_embd,
+            qtype,
+            row_bytes,
+        )?;
         Ok(x)
     }
 
@@ -14803,7 +14860,6 @@ impl Engine {
     /// are assembled on-device from the draft-chain pack slots; no host round trip). Same kernel
     /// as embed_gather_device_t — bit-identical rows.
     /// embed_gather over a token VIEW (spec round: tokens live in the round's batch buffer).
-    #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     pub fn embed_gather_device_tv(
         &self,
         embd: &CudaSlice<u8>,
@@ -14813,30 +14869,19 @@ impl Engine {
         qtype: i32,
         row_bytes: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let f = self.func("embed_gather_u32_t");
         let mut x = self.alloc_uninit::<f32>(t * n_embd)?;
-        let cfg = LaunchConfig {
-            grid_dim: (((n_embd as u32 + 255) / 256).max(1), t as u32, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (ne, qt, rb, ti) = (n_embd as i32, qtype, row_bytes as i64, t as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(embd)
-            .arg(tok_v)
-            .arg(&mut x)
-            .arg(&ne)
-            .arg(&qt)
-            .arg(&rb)
-            .arg(&ti);
-        unsafe {
-            b.launch(cfg)?;
-        }
+        self.embed_gather_rows(
+            embd,
+            tok_v,
+            &mut x.as_view_mut(),
+            t,
+            n_embd,
+            qtype,
+            row_bytes,
+        )?;
         Ok(x)
     }
 
-    #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     pub fn embed_gather_device_td(
         &self,
         embd: &CudaSlice<u8>,
@@ -14846,27 +14891,72 @@ impl Engine {
         qtype: i32,
         row_bytes: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let f = self.func("embed_gather_u32_t");
         let mut x = self.alloc_uninit::<f32>(t * n_embd)?;
-        let cfg = LaunchConfig {
-            grid_dim: (((n_embd as u32 + 255) / 256).max(1), t as u32, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (ne, qt, rb, ti) = (n_embd as i32, qtype, row_bytes as i64, t as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(embd)
-            .arg(tok_d)
-            .arg(&mut x)
-            .arg(&ne)
-            .arg(&qt)
-            .arg(&rb)
-            .arg(&ti);
-        unsafe {
-            b.launch(cfg)?;
-        }
+        self.embed_gather_rows(
+            embd,
+            &tok_d.as_view(),
+            &mut x.as_view_mut(),
+            t,
+            n_embd,
+            qtype,
+            row_bytes,
+        )?;
         Ok(x)
+    }
+
+    /// The one launcher of `embed_gather_u32_t`: rows `0..t` of `tokens` gathered into
+    /// `x_out[t, n_embd]`. The kernel takes its row from `blockIdx.y`, and CUDA caps grid y at
+    /// `CUDA_GRID_YZ_MAX` (65,535) blocks, so the rows go out in blocks of at most that many,
+    /// one launch per block, each over sub-views at the block's first row (memra#1200). A row's
+    /// bytes depend only on its token id and the table (`deq` of one row), never on its index
+    /// or on the other rows, so the split cannot change a row. For `t <= CUDA_GRID_YZ_MAX` this
+    /// is the one launch, with the same grid and arguments, that every caller issued before.
+    #[allow(clippy::too_many_arguments)]
+    pub fn embed_gather_rows(
+        &self,
+        embd: &CudaSlice<u8>,
+        tokens: &cudarc::driver::CudaView<u32>,
+        x_out: &mut cudarc::driver::CudaViewMut<f32>,
+        t: usize,
+        n_embd: usize,
+        qtype: i32,
+        row_bytes: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if tokens.len() < t || x_out.len() < t * n_embd {
+            return Err(format!(
+                "embed_gather_rows: {t} rows of {n_embd} need {t} token ids and {} outputs, \
+                 got {} and {}",
+                t * n_embd,
+                tokens.len(),
+                x_out.len()
+            )
+            .into());
+        }
+        let f = self.func("embed_gather_u32_t");
+        let (ne, qt, rb) = (n_embd as i32, qtype, row_bytes as i64);
+        let __s_b = self.gpu.stream();
+        for (row0, rows) in crate::hybrid_forward::grid_yz_row_blocks(t) {
+            let cfg = LaunchConfig {
+                grid_dim: ((n_embd as u32).div_ceil(256).max(1), rows as u32, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let ti = rows as i32;
+            let tok_v = tokens.slice(row0..row0 + rows);
+            let mut x_v = x_out.slice_mut(row0 * n_embd..(row0 + rows) * n_embd);
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(embd)
+                .arg(&tok_v)
+                .arg(&mut x_v)
+                .arg(&ne)
+                .arg(&qt)
+                .arg(&rb)
+                .arg(&ti);
+            unsafe {
+                b.launch(cfg)?;
+            }
+        }
+        Ok(())
     }
 
     /// Uninitialized device buffer — SKIPS the memset that `alloc_zeros` always issues. Decode
@@ -18614,25 +18704,17 @@ impl Engine {
         };
         let f = self.func(name);
         let mut y = self.alloc_uninit::<f32>(m * out_f)?; // full-overwrite GEMM output: skip memset
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, m as u32, 1),
-            block_dim: (128, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bytes)
-            .arg(aq)
-            .arg(ad)
-            .arg(&mut y)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&mi)
-            .arg(&rb);
-        unsafe {
-            b.launch(cfg)?;
-        }
+        self.dp4a_rows_launch(
+            &f,
+            &bytes.as_view(),
+            aq,
+            ad,
+            &mut y,
+            m,
+            in_f,
+            out_f,
+            row_bytes,
+        )?;
         if scale != 1.0 {
             self.scale_inplace(&mut y, scale, m * out_f)?;
         }
@@ -22146,25 +22228,17 @@ impl Engine {
         };
         let f = self.func(name);
         let mut y = self.alloc_uninit::<f32>(m * out_f)?;
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, m as u32, 1),
-            block_dim: (128, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bytes)
-            .arg(aq)
-            .arg(ad)
-            .arg(&mut y)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&mi)
-            .arg(&rb);
-        unsafe {
-            b.launch(cfg)?;
-        }
+        self.dp4a_rows_launch(
+            &f,
+            &bytes.as_view(),
+            aq,
+            ad,
+            &mut y,
+            m,
+            in_f,
+            out_f,
+            row_bytes,
+        )?;
         Ok(Some((y, scale)))
     }
 
@@ -22295,6 +22369,17 @@ impl Engine {
         y: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         debug_assert!(y.len() >= m * out_f);
+        // Tokens ride grid y, capped at 65,535 blocks. This decode-shaped program serves large
+        // m only as a fallback after every GEMM/MMQ tier declined, so past the cap it refuses
+        // by name instead of failing at launch (memra#1200).
+        if m > crate::hybrid_forward::CUDA_GRID_YZ_MAX {
+            return Err(format!(
+                "qmatvec_mmvq: {m} rows exceed the CUDA grid-y cap of {} (qtype {qtype}, \
+                 {in_f}->{out_f}; no GEMM tier took this shape)",
+                crate::hybrid_forward::CUDA_GRID_YZ_MAX
+            )
+            .into());
+        }
         const ROWS_PER_BLOCK: u32 = 4; // matches MEMRA_MMVQ_ROWS in qmatvec.cu
         // SMALL-SHAPE GRID FILL (H100 lane, 2026-07-26 microbench: attn qkv out_f=2048 =
         // 0.97 waves at the 4-warp block -> 66% of peak). The g2 twin (2 warps/block)
@@ -27652,7 +27737,21 @@ impl Engine {
         scale: f32,
         window: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // One f32 score per KV row lives in dynamic shared memory, launched without the opt-in
+        // attribute, so the function's dynamic limit (the 48 KiB launch default less its static
+        // shared memory) binds near 12,288 KV rows, below the 65,535 query rows grid y allows.
+        // Past it the island prime refuses by name instead of failing at launch (memra#1200).
         let f = self.func("sdpa_naive_island_f32");
+        let limit = f.get_attribute(CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES)? as usize;
+        if t_kv * 4 > limit {
+            return Err(format!(
+                "sdpa_naive_island_f32: {t_kv} KV rows need {} bytes of dynamic shared memory, \
+                 above its {limit}-byte limit (at most {} rows)",
+                t_kv * 4,
+                limit / 4
+            )
+            .into());
+        }
         let cfg = LaunchConfig {
             grid_dim: (n_head as u32, t as u32, 1),
             block_dim: (128, 1, 1),
@@ -27703,7 +27802,19 @@ impl Engine {
         causal: bool,
         window: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // One f32 score per KV row in dynamic shared memory, no opt-in attribute: past the
+        // function's limit (about 12,288 rows) refuse by name, not at launch (memra#1200).
         let f = self.func("sdpa_naive_w_f32");
+        let limit = f.get_attribute(CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES)? as usize;
+        if t_kv * 4 > limit {
+            return Err(format!(
+                "sdpa_naive_w_f32: {t_kv} KV rows need {} bytes of dynamic shared memory, above \
+                 its {limit}-byte limit (at most {} rows)",
+                t_kv * 4,
+                limit / 4
+            )
+            .into());
+        }
         let cfg = LaunchConfig {
             grid_dim: (n_head as u32, t as u32, 1),
             block_dim: (128, 1, 1),
@@ -33258,8 +33369,8 @@ impl Engine {
         Ok(())
     }
 
-    /// FUSED prefill conv + GDN repack: token-major qkv -> q_g/k_g/v_g in ONE launch (no conv_out
-    /// materialization, no separate repack pass). Historical: it was BIT-IDENTICAL to the unfused
+    /// FUSED prefill conv + GDN repack: token-major qkv -> q_g/k_g/v_g in one pass (no conv_out
+    /// materialization, no separate repack pass; one launch per 65,535-row block, below). Historical: it was BIT-IDENTICAL to the unfused
     /// conv + qkv_to_gdn_repack pair, scatter included (the modulo head-repeat mapping), when it
     /// landed; qkv_to_gdn_repack was deleted with the MEMRA_SPEC_STREAM verify walk (2026-11-03).
     #[allow(clippy::too_many_arguments)]
@@ -33279,30 +33390,84 @@ impl Engine {
         num_k: usize,
         key_dim: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("ssm_conv1d_gdn_f32");
-        let cfg = LaunchConfig {
-            grid_dim: (((conv_dim + 255) / 256) as u32, t as u32, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (cd, ti, dc) = (conv_dim as i32, t as i32, d_conv as i32);
+        let (cd, dc) = (conv_dim as i32, d_conv as i32);
         let (ds, nv, nk, kd) = (d_state as i32, num_v as i32, num_k as i32, key_dim as i32);
         let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(qkv_tm)
-            .arg(w)
-            .arg(q_g)
-            .arg(k_g)
-            .arg(v_g)
-            .arg(&cd)
-            .arg(&ti)
-            .arg(&dc)
-            .arg(&ds)
-            .arg(&nv)
-            .arg(&nk)
-            .arg(&kd);
-        unsafe {
-            b.launch(cfg)?;
+        // The kernel takes its token from grid y, capped at CUDA_GRID_YZ_MAX (65,535) blocks
+        // (memra#1200), so tokens past it go out in row blocks. Block 0 is this kernel's launch
+        // over rows 0..n (for t <= 65,535 the one launch it always was). A later block starting
+        // at row r runs the carried-ring twin `ssm_conv1d_gdn_state_f32` (hk = num_v: this
+        // layout) over sub-views at r, with a ring holding rows r - pad .. r - 1 written by
+        // `ssm_conv_ring_update_f32` (T = r): its window reads exactly the rows this kernel reads
+        // unsplit, in the same 8-tap ascending order, through the same SiLU and scatter, so
+        // every row's bits are the unsplit launch's (kernel-check GDN-CONV-ROWS).
+        let pad = d_conv - 1;
+        let plane = num_v * d_state;
+        let mut ring: Option<CudaSlice<f32>> = None;
+        for (row0, rows) in crate::hybrid_forward::grid_yz_row_blocks(t) {
+            let cfg = LaunchConfig {
+                grid_dim: (((conv_dim + 255) / 256) as u32, rows as u32, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let ti = rows as i32;
+            let x_v = qkv_tm.slice(row0 * conv_dim..(row0 + rows) * conv_dim);
+            let mut q_v = q_g.slice_mut(row0 * plane..(row0 + rows) * plane);
+            let mut k_v = k_g.slice_mut(row0 * plane..(row0 + rows) * plane);
+            let mut v_v = v_g.slice_mut(row0 * plane..(row0 + rows) * plane);
+            if row0 == 0 || pad == 0 {
+                let f = self.func("ssm_conv1d_gdn_f32");
+                let mut b = __s_b.launch_builder(&f);
+                b.arg(&x_v)
+                    .arg(w)
+                    .arg(&mut q_v)
+                    .arg(&mut k_v)
+                    .arg(&mut v_v)
+                    .arg(&cd)
+                    .arg(&ti)
+                    .arg(&dc)
+                    .arg(&ds)
+                    .arg(&nv)
+                    .arg(&nk)
+                    .arg(&kd);
+                unsafe {
+                    b.launch(cfg)?;
+                }
+                continue;
+            }
+            if ring.is_none() {
+                ring = Some(self.alloc_uninit::<f32>(conv_dim * pad)?);
+            }
+            let ring = ring.as_mut().unwrap();
+            {
+                let f = self.func("ssm_conv_ring_update_f32");
+                let rcfg = LaunchConfig::for_num_elems((conv_dim * pad) as u32);
+                let r0 = row0 as i32;
+                let mut b = __s_b.launch_builder(&f);
+                b.arg(qkv_tm).arg(&mut *ring).arg(&cd).arg(&r0).arg(&dc);
+                unsafe {
+                    b.launch(rcfg)?;
+                }
+            }
+            let f = self.func("ssm_conv1d_gdn_state_f32");
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(&x_v)
+                .arg(&*ring)
+                .arg(w)
+                .arg(&mut q_v)
+                .arg(&mut k_v)
+                .arg(&mut v_v)
+                .arg(&cd)
+                .arg(&ti)
+                .arg(&dc)
+                .arg(&ds)
+                .arg(&nv)
+                .arg(&nk)
+                .arg(&kd)
+                .arg(&nv);
+            unsafe {
+                b.launch(cfg)?;
+            }
         }
         Ok(())
     }
