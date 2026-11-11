@@ -7468,6 +7468,16 @@ impl SpecCostEntry {
         hold
     }
 
+    /// Refresh a live mark at `n` to `SPEC_COST_REALIZED_TTL` after `now`. Never creates one: an
+    /// expired or absent mark stays so. Returns whether it refreshed.
+    fn refresh_stall(&mut self, n: usize, now: Instant) -> bool {
+        if !self.stalled_at(n, now) {
+            return false;
+        }
+        self.stalled.insert(n, now + SPEC_COST_REALIZED_TTL);
+        true
+    }
+
     /// Mark concurrency `n` stalled until `SPEC_COST_REALIZED_TTL` after `now`. Returns
     /// whether the mark is new (no live mark at n before).
     fn mark_stall(&mut self, n: usize, now: Instant) -> bool {
@@ -8046,6 +8056,21 @@ fn spec_cost_stalled(model: &str, n: usize) -> bool {
         .unwrap()
         .get(model)
         .is_some_and(|e| e.stalled_at(n, Instant::now()))
+}
+
+/// A session a live mark at `n` demoted stepped its plain decode while a request waited for
+/// admission (memra#1211): the pressure that marked `n` is still there, so the mark lives on
+/// `SPEC_COST_REALIZED_TTL` from now. A demoted session never enters a burst again, so without
+/// this the mark expired 64 s after the stall even while arrivals continued (GB10, 120 s
+/// cells: the gain held for 60 s, then the cell fell back to main's level). Only a live mark
+/// is refreshed; nothing is created, so traffic with no prior stall is untouched, and a mark
+/// expires 64 s after the pressure stops. Returns whether it refreshed.
+fn spec_cost_refresh_stall(model: &str, n: usize) -> bool {
+    spec_cost_registry()
+        .lock()
+        .unwrap()
+        .get_mut(model)
+        .is_some_and(|e| e.refresh_stall(n, Instant::now()))
 }
 
 /// Tick demotion of one session (`spec_demote_due`). When the verdict that demotes it is a live
@@ -24050,6 +24075,19 @@ pub fn run(
                 last_interactive_decode = Instant::now();
             }
             last_batch = ready.len() + rider_before.len();
+            // STALL MARK (memra#1211): a session a live mark demoted, stepping its plain decode
+            // while a request waits for admission, refreshes that mark (never creates one).
+            let mut stall_refreshes = 0usize;
+            if PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) > 0 {
+                for &(i, _) in &ready {
+                    let s = &active[i];
+                    if let Some(n) = s.spec_stall_n
+                        && spec_cost_refresh_stall(&s.model, n)
+                    {
+                        stall_refreshes += 1;
+                    }
+                }
+            }
             // MEMRA_TICK_TRACE=1: per-tick phase timing to stderr (diagnosis only).
             if tick_trace {
                 let n_int = active
@@ -24066,7 +24104,8 @@ pub fn run(
                            spec_calls={} spec_ms={:.1} \
                            prefill_single_calls={} prefill_single_tokens={} \
                            prefill_batch_calls={} prefill_batch_tokens={} \
-                           prefill_ms={:.1} decode_ms={:.1} form_waits={} form_wait_ms={:.2}",
+                           prefill_ms={:.1} decode_ms={:.1} form_waits={} form_wait_ms={:.2} \
+                           stall_refresh={}",
                     active.len(),
                     n_int,
                     n_pref,
@@ -24082,7 +24121,8 @@ pub fn run(
                     prefill_ms,
                     t_decode.elapsed().as_secs_f32() * 1000.0,
                     form_waits,
-                    form_wait.as_secs_f64() * 1000.0
+                    form_wait.as_secs_f64() * 1000.0,
+                    stall_refreshes
                 );
             }
             // (d) dark-lane prefill, ADAPTIVE: the tick period IS the client TPOT, so dark
@@ -39907,6 +39947,47 @@ mod tests {
         );
     }
 
+    /// memra#1211: a demoted session's pressure refreshes a live mark and only a live one. A
+    /// refresh moves the expiry to a full time-to-live from now; an absent or expired mark is
+    /// never created, so traffic with no prior stall cannot set one this way.
+    #[test]
+    fn spec_cost_stall_refresh_keeps_only_a_live_mark() {
+        let now = std::time::Instant::now();
+        let mut e = stall_entry();
+        assert!(!e.refresh_stall(2, now), "no mark: nothing to refresh");
+        assert!(!e.stalled_at(2, now), "a refresh never creates a mark");
+        let marked_at = now
+            .checked_sub(std::time::Duration::from_secs(60))
+            .expect("the clock reaches back 60 s");
+        assert!(e.mark_stall(2, marked_at));
+        assert!(
+            !e.stalled_at(2, now + std::time::Duration::from_secs(10)),
+            "unrefreshed, the mark ends 64 s after the stall"
+        );
+        assert!(e.refresh_stall(2, now), "a live mark is refreshed");
+        assert!(
+            e.stalled_at(2, now + std::time::Duration::from_secs(60)),
+            "refreshed: it lives a full time-to-live from now"
+        );
+        let expired_at = now
+            .checked_sub(super::SPEC_COST_REALIZED_TTL + std::time::Duration::from_secs(1))
+            .expect("the clock reaches back 65 s");
+        let mut e = stall_entry();
+        e.mark_stall(3, expired_at);
+        assert!(!e.refresh_stall(3, now), "an expired mark stays expired");
+        assert!(!e.stalled_at(3, now));
+        // The registry path: the model's entry, the same rule.
+        let mut e = stall_entry();
+        e.mark_stall(2, marked_at);
+        super::spec_cost_registry()
+            .lock()
+            .unwrap()
+            .insert("stall-refresh".into(), e);
+        assert!(super::spec_cost_refresh_stall("stall-refresh", 2));
+        assert!(!super::spec_cost_refresh_stall("stall-refresh", 3));
+        assert!(!super::spec_cost_refresh_stall("no-such-model", 2));
+    }
+
     /// memra#1211: a burst's entry call records how many requests waited, whatever the bound
     /// does with the yield and whether the call carries a token; later calls change nothing.
     /// Four pressed entries in a row complete a run, one unpressed entry resets it.
@@ -40037,6 +40118,14 @@ mod tests {
             "every tick demotion site records the stall that demoted the session"
         );
         assert!(!live.contains("!spec_demote_due(&s.model, s.spec_k, n_live)"));
+        assert!(
+            live.contains(
+                "if PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) > 0 { for &(i, _) in \
+                 &ready { let s = &active[i]; if let Some(n) = s.spec_stall_n && \
+                 spec_cost_refresh_stall(&s.model, n) { stall_refreshes += 1; } } }"
+            ),
+            "a demoted session's plain decode under pressure refreshes its live mark"
+        );
         let flush = between(
             "fn flush(",
             "let (tok, flush_tx) = (self.tok, &self.flush_tx);",
