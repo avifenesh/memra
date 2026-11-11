@@ -1069,7 +1069,13 @@ impl HybridModel {
             // (no snapshot/rollback needed, unlike the E4B token door).
             // Adaptive K rides brk[0] via spec_adapt_k: drafts always run k_cap deep (the
             // drafter is cheap) but the accept walk depth follows the host policy exactly.
-            let round_graph_on = std::env::var("MEMRA_GEMMA_ROUND_GRAPH").as_deref() == Ok("1");
+            // A captured round bakes the trunk MoE's expert pointer table into the graph, which
+            // the SLRU placement moves with every admission (memra#1225): that placement keeps
+            // the eager round.
+            let round_graph_on = std::env::var("MEMRA_GEMMA_ROUND_GRAPH").as_deref() == Ok("1")
+                && self
+                    .gemma_graph_refuse_non_resident("MEMRA_GEMMA_ROUND_GRAPH")
+                    .is_ok();
             if round_graph_on
                 && dc_bucket.is_some()
                 && pmin == 0.0
@@ -2261,6 +2267,7 @@ impl HybridModel {
         eos: &[u32],
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
         let _numeric = self.enter_numeric();
+        self.gemma_graph_refuse_non_resident("gemma4_generate_plain_graph")?;
         const RING: usize = 64;
         const DRAIN: usize = 32; // replays per host sync
         let win_main = self

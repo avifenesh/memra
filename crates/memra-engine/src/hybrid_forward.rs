@@ -1353,6 +1353,118 @@ fn slru_pairs_announce(mode: SlruPairsMode, il: u16, csr: &PairsCsr, runs: usize
     }
 }
 
+/// memra#1225: where one gemma4 MoE layer call reads its routed experts (`gemma_experts`).
+enum GemmaExperts<'m> {
+    /// The resident slab's `[3 * n_expert]` pointer row.
+    Resident(&'m CudaSlice<u64>),
+    /// The SLRU cache, through the same kernels and the same pointer-table contract.
+    Slru { il: u16, max_block: usize },
+    /// The host-staged per-(token, expert) loop: this boot has no device source that can run
+    /// the resident program.
+    Staged,
+}
+
+/// Room after an expert's last row for the gemma pairs arm's int8-MMA down GEMM: its k-walk pads
+/// a ragged k to whole 256-value Q4_0 superblocks (144 B each), so it reads past the row by the
+/// padded remainder, 36 B at gemma-4-26B-A4B's k = 704 and at most 126 B for any ragged k. The
+/// slab carries a zeroed 144 B tail for its last expert (`htod_bytes_padded`); a gemma SLRU slot
+/// is built with it (`gemma_experts` sizes the cache's blocks `max_block + this`). The slot's tail
+/// is zero (`alloc_u8` zeroes a slot) and stays zero: the SLRU arm requires the down block to be
+/// the layer's largest, and every layer's down block has the same size (a ragged k is what
+/// forces this arm's Q4_0 down, and the layers share one shape), so no block ever writes past a
+/// down block's length. Each overread scale is finite and meets a zero activation.
+const GEMMA_MMA_RAGGED_TAIL: usize = 144;
+
+/// The most experts one gemma4 MoE call can need pinned at once on the SLRU placement: a call
+/// below the prefill width (decode, verify) selects up to `(PRIME_MIN_T - 1) * n_used` and its
+/// kernels cannot be split; a prefill call splits into runs of what fits, except on the grouped
+/// f16 lane where runs are not argued exact, which needs the whole layer. A cache below this
+/// keeps the staged program for the whole boot.
+fn gemma_slru_pin_floor(
+    m: &MoeWeights,
+    n_expert: usize,
+    n_used: usize,
+    n_embd: usize,
+    n_ff_exp: usize,
+) -> usize {
+    let f16g_whole = matches!(gemma_pairs_arm(m, n_embd, n_ff_exp), PairsArm::F16g)
+        && !moe_f16g_runs_exact(n_embd, n_ff_exp);
+    if f16g_whole {
+        n_expert
+    } else {
+        n_expert.min((PRIME_MIN_T - 1) * n_used)
+    }
+}
+
+/// The gemma pairs arm's routed-expert program: the grouped f16 lane (env-explicit for gemma,
+/// `moe_f16g_gemma_on`), else the int8 MMA when `n_embd % 256 == 0` (`MEMRA_GEMMA_MOE_MMA=0`
+/// rollback), else the decode-once dp4a matvecs. Never a function of the placement.
+fn gemma_pairs_arm(m: &MoeWeights, n_embd: usize, n_ff_exp: usize) -> PairsArm {
+    if crate::moe_f16g_gemma_on()
+        && f16g_proj_ok(m.gate_exps.qtype, n_embd)
+        && f16g_proj_ok(m.up_exps.qtype, n_embd)
+        && f16g_proj_ok(m.down_exps.qtype, n_ff_exp)
+    {
+        PairsArm::F16g
+    } else if n_embd.is_multiple_of(256)
+        && std::env::var("MEMRA_GEMMA_MOE_MMA").as_deref() != Ok("0")
+    {
+        PairsArm::Mma
+    } else {
+        PairsArm::Q8
+    }
+}
+
+/// The gemma pairs arm's expert-major CSR for one layer call (host and device copies).
+struct GemmaCsr {
+    arm: PairsArm,
+    t: usize,
+    n_used: usize,
+    n_expert: usize,
+    n_embd: usize,
+    n_ff_exp: usize,
+    n_pairs: usize,
+    n_active: usize,
+    exi: CudaSlice<i32>,
+    exo: CudaSlice<i32>,
+    exp_d: CudaSlice<i32>,
+    pt: CudaSlice<i32>,
+    ex_ids: Vec<i32>,
+    ex_off: Vec<i32>,
+    ex_pairs: Vec<i32>,
+}
+
+/// The token activations every run of a chunked gemma pairs call shares, quantized once.
+enum GemmaRunActs {
+    Mma(CudaSlice<u8>),
+    Q8(CudaSlice<i8>, CudaSlice<f32>),
+    F16g,
+}
+
+/// Count one gemma SLRU layer call by mode (`moe_slru_pairs_calls`) and name each mode once.
+fn gemma_slru_count(mode: SlruPairsMode, il: u16, t: usize, experts: usize, runs: usize) {
+    crate::MOE_SLRU_PAIRS_CALLS[mode as usize].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    static SEEN: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+    let bit = 1u8 << (mode as u8);
+    if SEEN.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
+        eprintln!(
+            "[moe-slru-gemma] engaged mode={mode:?} il={il} t={t} experts={experts} runs={runs} \
+             (the SLRU placement runs the resident gemma4 MoE program; memra#1225)"
+        );
+    }
+}
+
+/// Say once per process why a non-resident gemma4 MoE boot keeps the host-staged program.
+fn gemma_staged_announce(why: &str) {
+    static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        eprintln!(
+            "[moe-slru-gemma] experts not resident and no SLRU arm: {why}; every MoE call runs \
+             the host-staged program"
+        );
+    }
+}
+
 fn moe_q8_enabled_for_model(cfg: &ModelConfig, m: &MoeWeights) -> bool {
     m.has_uniform_expert_layout()
         && moe_q8_enabled()
@@ -22901,38 +23013,183 @@ impl HybridModel {
         self.gemma4_attn_prime(e, fa, il, h, pos_d, t, None, None, false)
     }
 
-    /// gemma4 MoE with the expert input PRE-QUANTIZED (the q8z tail fusion). Caller guarantees
-    /// the fast-arm conditions (resident dev slabs + dp4a qtypes) — decode t=1 and verify rows
-    /// arms only, per-token kernel chains identical to the f32-input path (same quantize bytes:
-    /// the q8z epilogue is quantize_q8_1 verbatim).
-    fn gemma4_moe_q8(
+    /// memra#1225: where this boot's gemma4 MoE layer reads its routed experts. The resident
+    /// slab when the experts fit at load; otherwise the SLRU cache, read through the same
+    /// `[3 * n_expert]` pointer table by the same kernels; otherwise (the cache is off or frozen,
+    /// the layer is outside the resident kernels' contract, or the cache cannot pin one small-t
+    /// call's experts at once) the host-staged loop for EVERY call. The choice depends only on
+    /// the load and on the cache's slot count, which is fixed when the cache is built, so one
+    /// request never crosses programs. Before memra#1225 every non-resident call took the staged
+    /// loop, another numeric program: gemma-4-26B-A4B's prefill and decode logits and its served
+    /// greedy text depended on free memory at load.
+    fn gemma_experts<'m>(
         &self,
         e: &Engine,
-        m: &crate::hybrid::MoeWeights,
-        bits: &crate::hybrid::Gemma4MoeBits,
-        mq: &(CudaSlice<i8>, CudaSlice<f32>),
-        router_in: &CudaSlice<f32>,
+        layer: &crate::hybrid::HybridLayer,
+        m: &'m MoeWeights,
+    ) -> Result<GemmaExperts<'m>, Box<dyn std::error::Error>> {
+        if let Some(dev) = m.dev_exps.as_ref() {
+            return Ok(GemmaExperts::Resident(&dev.ptr_row));
+        }
+        let moe = self.cfg.moe.as_ref().unwrap();
+        let (n_expert, n_used) = (moe.expert_count as usize, moe.expert_used_count as usize);
+        let (n_embd, n_ff_exp) = (self.cfg.n_embd as usize, moe.expert_ff_length as usize);
+        let block = moe_layer_max_block(m);
+        // The resident kernels' contract: one qtype and row stride per projection, dp4a
+        // qtypes. (`ffn_down_exps.scale` loads as the down bank's macro plane, but gemma4 folds
+        // it into the routing weight, `Gemma4MoeBits`, on both placements; the kernels never
+        // read `HostExps::macros`.) The down bank must be the layer's largest block so the slot
+        // bytes after it are never written (`GEMMA_MMA_RAGGED_TAIL`).
+        let contract = m.has_uniform_expert_layout()
+            && expert_dp4a_supported(m.gate_exps.qtype)
+            && expert_dp4a_supported(m.up_exps.qtype)
+            && expert_dp4a_supported(m.down_exps.qtype)
+            && m.down_exps.max_expert_bytes() == block;
+        let Some(il) = self.layers.iter().position(|l| std::ptr::eq(l, layer)) else {
+            return Err("gemma4 MoE layer is not one of the model's trunk layers".into());
+        };
+        if !contract || !Engine::moe_cache_enabled() {
+            gemma_staged_announce(&format!(
+                "{} (memra#1225)",
+                if contract {
+                    "the expert cache is off (MEMRA_MOE_CACHE=0)"
+                } else {
+                    "the layer is outside the resident kernels' contract"
+                }
+            ));
+            return Ok(GemmaExperts::Staged);
+        }
+        let max_block = self.max_moe_block() + GEMMA_MMA_RAGGED_TAIL;
+        let device = e.ctx().ordinal();
+        let known = self.gemma_slru_admits.lock().unwrap().get(&device).copied();
+        let admits = match known {
+            Some(admits) => admits,
+            None => {
+                let need = 3 * gemma_slru_pin_floor(m, n_expert, n_used, n_embd, n_ff_exp);
+                let (fits, slots, frozen) = e.with_moe_cache(max_block, |c, _| {
+                    Ok((
+                        c.slots_fitting(block + GEMMA_MMA_RAGGED_TAIL),
+                        c.slots_fitting(0),
+                        c.is_frozen(),
+                    ))
+                })?;
+                let admits = fits >= need;
+                if !admits {
+                    gemma_staged_announce(&if frozen {
+                        "the expert cache is frozen (memra#1225)".to_string()
+                    } else if slots == 0 {
+                        "the expert cache admits through the banked door (memra#1225)".to_string()
+                    } else if fits < slots {
+                        format!(
+                            "the expert cache's slots are shorter than a {block}-byte block plus \
+                             its {GEMMA_MMA_RAGGED_TAIL}-byte tail (the cache was built before \
+                             this model's first MoE call; memra#1225)"
+                        )
+                    } else {
+                        format!(
+                            "the expert cache has {fits} slots and one call below the prefill \
+                             width can need {need} at once (memra#1225)"
+                        )
+                    });
+                }
+                self.gemma_slru_admits
+                    .lock()
+                    .unwrap()
+                    .insert(device, admits);
+                admits
+            }
+        };
+        if !admits {
+            return Ok(GemmaExperts::Staged);
+        }
+        Ok(GemmaExperts::Slru {
+            il: il as u16,
+            max_block,
+        })
+    }
+
+    /// Run `launch` with the expert pointer table of `experts`. Resident: the slab's row. SLRU,
+    /// under ONE hold of the cache lock that also covers the launches (memra#1217's argument:
+    /// no other admission can interleave, and any later eviction's H2D is ordered after these
+    /// kernels on the compute stream): the cache's full-layer row once the layer is fully
+    /// resident (the one-shot prewarm admits a whole layer while free slots cover it), else a
+    /// pinned admission of `ids()` (sorted distinct expert ids) and one table upload.
+    #[allow(clippy::too_many_arguments)]
+    fn gemma_with_table<R>(
+        e: &Engine,
+        m: &MoeWeights,
+        experts: &GemmaExperts,
+        n_expert: usize,
         t: usize,
+        ids: impl FnOnce(&Engine) -> Result<Vec<i32>, Box<dyn std::error::Error>>,
+        launch: impl FnOnce(&Engine, &CudaSlice<u64>) -> Result<R, Box<dyn std::error::Error>>,
+    ) -> Result<R, Box<dyn std::error::Error>> {
+        let (il, max_block) = match experts {
+            GemmaExperts::Resident(table) => return launch(e, table),
+            GemmaExperts::Slru { il, max_block } => (*il, *max_block),
+            GemmaExperts::Staged => {
+                return Err("gemma_with_table: the staged program has no pointer table".into());
+            }
+        };
+        let block = moe_layer_max_block(m);
+        e.with_moe_cache(max_block, |c, eng| {
+            let held = std::time::Instant::now();
+            let (hits0, misses0) = (c.hits, c.misses);
+            if moe_prewarm_enabled() {
+                c.prewarm_layer(il, m, eng)?;
+            }
+            let (mode, n_ids, out) = if let Some(row) = c.layer_dev_row(il, n_expert, eng)? {
+                (SlruPairsMode::LayerRow, n_expert, launch(eng, row)?)
+            } else {
+                let ids = ids(eng)?;
+                let fit = c.pin_capacity(block) / 3;
+                if fit < ids.len() {
+                    return Err(format!(
+                        "gemma4 SLRU arm: layer {il} needs {} experts pinned at once and the \
+                         cache can pin {fit} (the per-boot floor admitted it): memra#1225",
+                        ids.len()
+                    )
+                    .into());
+                }
+                let table = Self::moe_pinned_table(c, eng, m, il, n_expert, &ids)?;
+                (SlruPairsMode::Pinned, ids.len(), launch(eng, &table)?)
+            };
+            gemma_slru_count(mode, il, t, n_ids, 1);
+            if moe_slru_pairs_trace() {
+                eprintln!(
+                    "[moe-slru-gemma] il={il} t={t} experts={n_ids} mode={mode:?} runs=1 hits={} \
+                     misses={} hold_us={}",
+                    c.hits - hits0,
+                    c.misses - misses0,
+                    held.elapsed().as_micros()
+                );
+            }
+            Ok(out)
+        })
+    }
+
+    /// The decode (t = 1) and verify-rows (t = 2..15) kernels, unchanged, reading the experts
+    /// through `table`; `zq`/`zd` is the expert input quantized q8_1.
+    #[allow(clippy::too_many_arguments)]
+    fn gemma_small_t(
+        e: &Engine,
+        m: &MoeWeights,
+        table: &CudaSlice<u64>,
+        sel_d: &CudaSlice<i32>,
+        w_d: &CudaSlice<f32>,
+        zq: &CudaSlice<i8>,
+        zd: &CudaSlice<f32>,
+        t: usize,
+        n_embd: usize,
+        n_ff_exp: usize,
+        n_used: usize,
+        n_expert: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let cfg = &self.cfg;
-        let moe = cfg.moe.as_ref().unwrap();
-        let n_embd = cfg.n_embd as usize;
-        let n_expert = moe.expert_count as usize;
-        let n_used = moe.expert_used_count as usize;
-        let n_ff_exp = moe.expert_ff_length as usize;
-        // router stays the two-launch pair: THREE fuse variants measured worse (serial-dot
-        // -50%, 1024-thread warp-parallel -12% on topk sync overhead — jsonl 2026-07-11);
-        // the pair's 12us is kernel time, not launch gaps.
-        let logits = e.router_gemv(m.gate_inp.float_data(), router_in, n_embd, n_expert, t)?;
-        let dev = m.dev_exps.as_ref().unwrap();
-        let (sel_d, w_d) =
-            e.moe_router_topk_scaled(&logits, t, n_expert, n_used, &bits.per_expert_scale_d)?;
-        let (zq, zd) = mq;
         if t == 1 {
             let selv = sel_d.slice(0..n_used);
             let wv = w_d.slice(0..n_used);
             let act = e.moe_gate_up_gelu8_dev_q8(
-                &dev.ptr_row,
+                table,
                 &selv,
                 zq,
                 zd,
@@ -22948,7 +23205,7 @@ impl HybridModel {
             let (aq2, ad2) = e.quantize_q8_1(&act, n_used, n_ff_exp)?;
             let mut moe_out = e.uninit(n_embd)?;
             e.moe_down8_fma_dev_q8(
-                &dev.ptr_row,
+                table,
                 &selv,
                 &wv,
                 &aq2,
@@ -22963,11 +23220,15 @@ impl HybridModel {
             )?;
             return Ok(moe_out);
         }
+        // VERIFY ROWS TWINS (t=2..15): ONE launch pair for all tokens; per (token,row,slot)
+        // bodies are the t=1 kernels VERBATIM (bit-identical to the per-token loop).
+        // gate_up rides the CSR owner-scan dedup when t <= 10 (each duplicated expert's
+        // weight stream decoded once; the qwen CSR class). MEMRA_GEMMA_CSR=0 -> rows.
         let csr = t <= 10 && std::env::var("MEMRA_GEMMA_CSR").as_deref() != Ok("0");
         let act = if csr {
             e.moe_gate_up_gelu8_dev_q8_csr(
-                &dev.ptr_row,
-                &sel_d,
+                table,
+                sel_d,
                 zq,
                 zd,
                 t * n_used,
@@ -22982,8 +23243,8 @@ impl HybridModel {
             )?
         } else {
             e.moe_gate_up_gelu8_dev_q8_rows(
-                &dev.ptr_row,
-                &sel_d,
+                table,
+                sel_d,
                 zq,
                 zd,
                 t,
@@ -23002,9 +23263,9 @@ impl HybridModel {
         // down stays rows_g: the CSR dedup twin measured NEGATIVE at nsb=22 too (189.4 vs
         // 207.0 depth spec, bitwise-exact — jsonl 2026-07-10; qwen nsb=16 same verdict).
         e.moe_down8_fma_dev_q8_rows_g(
-            &dev.ptr_row,
-            &sel_d,
-            &w_d,
+            table,
+            sel_d,
+            w_d,
             &aq2,
             &ad2,
             &mut moe_out,
@@ -23019,13 +23280,70 @@ impl HybridModel {
         Ok(moe_out)
     }
 
+    /// The sorted distinct experts a device top-k selected (one readback, one sync): what a
+    /// small-t call on a not fully resident SLRU layer pins.
+    fn gemma_selected_ids(
+        e: &Engine,
+        sel_d: &CudaSlice<i32>,
+    ) -> Result<Vec<i32>, Box<dyn std::error::Error>> {
+        let mut ids = e.dtoh_i32(sel_d)?;
+        ids.sort_unstable();
+        ids.dedup();
+        Ok(ids)
+    }
+
+    /// gemma4 MoE with the expert input PRE-QUANTIZED (the q8z tail fusion). Caller guarantees
+    /// the fast-arm conditions (the experts are resident or served by the SLRU arm, dp4a
+    /// qtypes): decode t=1 and verify rows arms only, per-token kernel chains identical to the
+    /// f32-input path (same quantize bytes: the q8z epilogue is quantize_q8_1 verbatim).
+    #[allow(clippy::too_many_arguments)]
+    fn gemma4_moe_q8(
+        &self,
+        e: &Engine,
+        m: &crate::hybrid::MoeWeights,
+        experts: &GemmaExperts,
+        bits: &crate::hybrid::Gemma4MoeBits,
+        mq: &(CudaSlice<i8>, CudaSlice<f32>),
+        router_in: &CudaSlice<f32>,
+        t: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let cfg = &self.cfg;
+        let moe = cfg.moe.as_ref().unwrap();
+        let n_embd = cfg.n_embd as usize;
+        let n_expert = moe.expert_count as usize;
+        let n_used = moe.expert_used_count as usize;
+        let n_ff_exp = moe.expert_ff_length as usize;
+        // router stays the two-launch pair: THREE fuse variants measured worse (serial-dot
+        // -50%, 1024-thread warp-parallel -12% on topk sync overhead — jsonl 2026-07-11);
+        // the pair's 12us is kernel time, not launch gaps.
+        let logits = e.router_gemv(m.gate_inp.float_data(), router_in, n_embd, n_expert, t)?;
+        let (sel_d, w_d) =
+            e.moe_router_topk_scaled(&logits, t, n_expert, n_used, &bits.per_expert_scale_d)?;
+        let (zq, zd) = mq;
+        Self::gemma_with_table(
+            e,
+            m,
+            experts,
+            n_expert,
+            t,
+            |eng| Self::gemma_selected_ids(eng, &sel_d),
+            |eng, table| {
+                Self::gemma_small_t(
+                    eng, m, table, &sel_d, &w_d, zq, zd, t, n_embd, n_ff_exp, n_used, n_expert,
+                )
+            },
+        )
+    }
+
     /// gemma4 MoE (R2 router prologue input supplied by caller, R3 per-expert output scale).
     /// Sequential host-staged v0 — softmax gating + renorm (moe_route, the qwen recipe), GELU
     /// experts, scale folded into the accumulate weight (post-matmul linear scale, exact fold).
+    #[allow(clippy::too_many_arguments)]
     fn gemma4_moe(
         &self,
         e: &Engine,
         m: &crate::hybrid::MoeWeights,
+        experts: &GemmaExperts,
         bits: &crate::hybrid::Gemma4MoeBits,
         moe_in: &CudaSlice<f32>,
         router_in: &CudaSlice<f32>,
@@ -23038,6 +23356,7 @@ impl HybridModel {
         let n_expert = moe.expert_count as usize;
         let n_used = moe.expert_used_count as usize;
         let n_ff_exp = moe.expert_ff_length as usize;
+        let device_experts = !matches!(experts, GemmaExperts::Staged);
 
         // Router: the in-house GEMV at EVERY t (memra#535 P1a). Decode and verify always rode
         // it (the cuBLASLt n-dependence flipped top-k at verify t on the 27B, d994271); prefill
@@ -23053,112 +23372,34 @@ impl HybridModel {
         let logits = e.router_gemv(m.gate_inp.float_data(), router_in, n_embd, n_expert, t)?;
 
         // FAST SMALL-T ARM (decode t=1 AND spec verify t=2..15): device softmax-topk router,
-        // then PER TOKEN the same fused gate_up GELU + down8 FMA launch pair over the resident
-        // dev slabs — verify rides the EXACT decode kernel chain per token (dispatch-parity
-        // law; the qwen "verify must be kernel-dispatch-identical to decode" lesson).
+        // then PER TOKEN the same fused gate_up GELU + down8 FMA launch pair over the expert
+        // pointer table (the resident slab or the SLRU arm, memra#1225). Verify rides the
+        // EXACT decode kernel chain per token (dispatch-parity law; the qwen "verify must be
+        // kernel-dispatch-identical to decode" lesson).
         if t < PRIME_MIN_T
-            && m.dev_exps.as_ref().is_some()
+            && device_experts
             && expert_dp4a_supported(m.gate_exps.qtype)
             && expert_dp4a_supported(m.up_exps.qtype)
             && expert_dp4a_supported(m.down_exps.qtype)
             && std::env::var("MEMRA_GEMMA_MOE_FAST").as_deref() != Ok("0")
         {
-            let dev = m.dev_exps.as_ref().unwrap();
             let (sel_d, w_d) =
                 e.moe_router_topk_scaled(&logits, t, n_expert, n_used, &bits.per_expert_scale_d)?;
-            if t == 1 {
-                let (zq, zd) = e.quantize_q8_1(moe_in, 1, n_embd)?;
-                let selv = sel_d.slice(0..n_used);
-                let wv = w_d.slice(0..n_used);
-                let act = e.moe_gate_up_gelu8_dev_q8(
-                    &dev.ptr_row,
-                    &selv,
-                    &zq,
-                    &zd,
-                    n_embd,
-                    n_ff_exp,
-                    n_used,
-                    n_expert,
-                    m.gate_exps.qtype,
-                    m.up_exps.qtype,
-                    m.gate_exps.row_bytes,
-                    m.up_exps.row_bytes,
-                )?;
-                let (aq2, ad2) = e.quantize_q8_1(&act, n_used, n_ff_exp)?;
-                let mut moe_out = e.uninit(n_embd)?;
-                e.moe_down8_fma_dev_q8(
-                    &dev.ptr_row,
-                    &selv,
-                    &wv,
-                    &aq2,
-                    &ad2,
-                    &mut moe_out.slice_mut(0..n_embd),
-                    n_ff_exp,
-                    n_embd,
-                    n_used,
-                    n_expert,
-                    m.down_exps.qtype,
-                    m.down_exps.row_bytes,
-                )?;
-                return Ok(moe_out);
-            }
-            // VERIFY ROWS TWINS (t=2..15): ONE launch pair for all tokens; per (token,row,slot)
-            // bodies are the t=1 kernels VERBATIM (bit-identical to the per-token loop).
-            // gate_up rides the CSR owner-scan dedup when t <= 10 (each duplicated expert's
-            // weight stream decoded once; the qwen CSR class). MEMRA_GEMMA_CSR=0 -> rows.
             let (zq, zd) = e.quantize_q8_1(moe_in, t, n_embd)?;
-            let csr = t <= 10 && std::env::var("MEMRA_GEMMA_CSR").as_deref() != Ok("0");
-            let act = if csr {
-                e.moe_gate_up_gelu8_dev_q8_csr(
-                    &dev.ptr_row,
-                    &sel_d,
-                    &zq,
-                    &zd,
-                    t * n_used,
-                    n_embd,
-                    n_ff_exp,
-                    n_used,
-                    n_expert,
-                    m.gate_exps.qtype,
-                    m.up_exps.qtype,
-                    m.gate_exps.row_bytes,
-                    m.up_exps.row_bytes,
-                )?
-            } else {
-                e.moe_gate_up_gelu8_dev_q8_rows(
-                    &dev.ptr_row,
-                    &sel_d,
-                    &zq,
-                    &zd,
-                    t,
-                    n_embd,
-                    n_ff_exp,
-                    n_used,
-                    n_expert,
-                    m.gate_exps.qtype,
-                    m.up_exps.qtype,
-                    m.gate_exps.row_bytes,
-                    m.up_exps.row_bytes,
-                )?
-            };
-            let (aq2, ad2) = e.quantize_q8_1(&act, t * n_used, n_ff_exp)?;
-            let mut moe_out = e.uninit(t * n_embd)?;
-            e.moe_down8_fma_dev_q8_rows_g(
-                &dev.ptr_row,
-                &sel_d,
-                &w_d,
-                &aq2,
-                &ad2,
-                &mut moe_out,
-                t,
-                n_ff_exp,
-                n_embd,
-                n_used,
+            return Self::gemma_with_table(
+                e,
+                m,
+                experts,
                 n_expert,
-                m.down_exps.qtype,
-                m.down_exps.row_bytes,
-            )?;
-            return Ok(moe_out);
+                t,
+                |eng| Self::gemma_selected_ids(eng, &sel_d),
+                |eng, table| {
+                    Self::gemma_small_t(
+                        eng, m, table, &sel_d, &w_d, &zq, &zd, t, n_embd, n_ff_exp, n_used,
+                        n_expert,
+                    )
+                },
+            );
         }
 
         let (sel_all, mut w_all) = Self::moe_route(e, &logits, t, n_expert, n_used)?;
@@ -23166,23 +23407,22 @@ impl HybridModel {
             w_all[i] *= bits.per_expert_scale[sx as usize];
         }
 
-        // PREFILL PAIRS ARM (t >= 16): expert-major CSR over the resident slabs — ONE launch per
-        // projection covers ALL (token,expert) pairs (the qwen pairs recipe, _em dot = expert_dot_g
-        // which has the Q4_0 body; GELU pairs epilogue; R3 scale folded into pair_w).
+        // PREFILL PAIRS ARM (t >= 16): expert-major CSR over the expert pointer table. ONE
+        // launch per projection covers ALL (token,expert) pairs (the qwen pairs recipe, _em dot
+        // = expert_dot_g which has the Q4_0 body; GELU pairs epilogue; R3 scale folded into
+        // pair_w). The resident slab and the SLRU arm (memra#1225) run the same kernels.
         if t >= PRIME_MIN_T
-            && m.dev_exps.as_ref().is_some()
+            && device_experts
             && expert_dp4a_supported(m.gate_exps.qtype)
             && expert_dp4a_supported(m.up_exps.qtype)
             && expert_dp4a_supported(m.down_exps.qtype)
             && std::env::var("MEMRA_GEMMA_MOE_PAIRS").as_deref() != Ok("0")
         {
-            let dev = m.dev_exps.as_ref().unwrap();
             let n_pairs = t * n_used;
             let pair_ex: Vec<i32> = sel_all.iter().map(|&x| x as i32).collect();
             let pair_tok: Vec<i32> = (0..n_pairs).map(|p| (p / n_used) as i32).collect();
             let tok_off: Vec<i32> = (0..=t).map(|tok| (tok * n_used) as i32).collect();
             let tok_ids: Vec<i32> = (0..n_pairs as i32).collect();
-            let pt = e.htod_i32(&pair_tok)?;
             let pw = e.htod(&w_all)?;
             let toff = e.htod_i32(&tok_off)?;
             let tids = e.htod_i32(&tok_ids)?;
@@ -23201,231 +23441,38 @@ impl HybridModel {
                 ex_pairs.extend_from_slice(list);
                 ex_off.push(ex_pairs.len() as i32);
             }
-            let n_active = ex_ids.len();
-            let exi = e.htod_i32(&ex_ids)?;
-            let exo = e.htod_i32(&ex_off)?;
-            let exp_d = e.htod_i32(&ex_pairs)?;
-            // GROUPED f16 LANE (MEMRA_MOE_F16G=1, round 46 arc 2): dequant active experts to
-            // f16 once per projection + one grouped f16 GEMM over the CSR groups; CSR order
-            // end-to-end (gelu is elementwise), one row permute before the scatter. The
-            // ragged down k (704) needs no padding here — cublas takes any k.
-            // f16-mirror numeric class, argmax/spec gated. PER-MODEL default OFF (round 50):
-            // the gelu class regressed g26 board-2048 prefill -8.3% under the round-49
-            // Hopper default — see moe_f16g_gemma_on.
-            if crate::moe_f16g_gemma_on()
-                && f16g_proj_ok(m.gate_exps.qtype, n_embd)
-                && f16g_proj_ok(m.up_exps.qtype, n_embd)
-                && f16g_proj_ok(m.down_exps.qtype, n_ff_exp)
-            {
-                let csr_tok: Vec<i32> = ex_pairs.iter().map(|&p| p / n_used as i32).collect();
-                let csr_tok_d = e.htod_i32(&csr_tok)?;
-                let (z_f16, z_s) = e.moe_f16g_act(moe_in, Some(&csr_tok_d), n_embd, n_pairs)?;
-                let g_csr = e.moe_f16_grouped(
-                    &dev.ptr_row,
-                    0,
-                    n_expert,
-                    &exi,
-                    &ex_off,
-                    &exo,
-                    &z_f16,
-                    &z_s,
-                    n_embd,
-                    n_ff_exp,
-                    n_active,
-                    n_pairs,
-                    m.gate_exps.qtype,
-                    m.gate_exps.row_bytes,
-                )?;
-                let u_csr = e.moe_f16_grouped(
-                    &dev.ptr_row,
-                    1,
-                    n_expert,
-                    &exi,
-                    &ex_off,
-                    &exo,
-                    &z_f16,
-                    &z_s,
-                    n_embd,
-                    n_ff_exp,
-                    n_active,
-                    n_pairs,
-                    m.up_exps.qtype,
-                    m.up_exps.row_bytes,
-                )?;
-                let act_csr = e.moe_pairs_gelu_mul(&g_csr, &u_csr, n_pairs * n_ff_exp)?;
-                let (a_f16, a_s) = e.moe_f16g_act(&act_csr, None, n_ff_exp, n_pairs)?;
-                let d_csr = e.moe_f16_grouped(
-                    &dev.ptr_row,
-                    2,
-                    n_expert,
-                    &exi,
-                    &ex_off,
-                    &exo,
-                    &a_f16,
-                    &a_s,
-                    n_ff_exp,
-                    n_embd,
-                    n_active,
-                    n_pairs,
-                    m.down_exps.qtype,
-                    m.down_exps.row_bytes,
-                )?;
-                let y_down = e.rows_permute(&d_csr, &exp_d, n_pairs, n_embd)?;
-                let mut moe_out = e.uninit(t * n_embd)?;
-                e.moe_pairs_scatter(&y_down, &pw, &toff, &tids, &mut moe_out, t, n_embd)?;
-                if std::env::var("MEMRA_F16G_DEBUG").is_ok() {
-                    let scan = |v: &[f32]| v.iter().filter(|x| !x.is_finite()).count();
-                    let (yd, mo) = (e.dtoh(&y_down)?, e.dtoh(&moe_out)?);
-                    eprintln!(
-                        "[f16g-debug] post-permute bad={} post-scatter bad={}",
-                        scan(&yd),
-                        scan(&mo)
-                    );
-                }
-                return Ok(moe_out);
-            }
-            // gate/up: int8-MMA expert GEMM (in_f = n_embd 2816 = 11x256 tiles ok); down keeps
-            // the decode-once dp4a (in_f 704 fails the 256-superblock tiling).
-            let mma = n_embd.is_multiple_of(256)
-                && std::env::var("MEMRA_GEMMA_MOE_MMA").as_deref() != Ok("0");
-            let (gate, up) = if mma {
-                let z_scr = e.mmq_iq_quantize_act(moe_in, n_embd, t)?;
-                (
-                    e.mmq_iq_experts(
-                        &dev.ptr_row,
-                        0,
-                        n_expert,
-                        &exi,
-                        &exo,
-                        &exp_d,
-                        &pt,
-                        &z_scr,
-                        n_embd,
-                        n_ff_exp,
-                        n_active,
-                        n_pairs,
-                        t,
-                        m.gate_exps.qtype,
-                        m.gate_exps.row_bytes,
-                    )?,
-                    e.mmq_iq_experts(
-                        &dev.ptr_row,
-                        1,
-                        n_expert,
-                        &exi,
-                        &exo,
-                        &exp_d,
-                        &pt,
-                        &z_scr,
-                        n_embd,
-                        n_ff_exp,
-                        n_active,
-                        n_pairs,
-                        t,
-                        m.up_exps.qtype,
-                        m.up_exps.row_bytes,
-                    )?,
-                )
-            } else {
-                let (zq, zd) = e.quantize_q8_1(moe_in, t, n_embd)?;
-                (
-                    e.moe_pairs_matvec_q8_dec(
-                        &dev.ptr_row,
-                        0,
-                        &exi,
-                        &exo,
-                        &exp_d,
-                        &pt,
-                        &zq,
-                        &zd,
-                        n_embd,
-                        n_ff_exp,
-                        n_expert,
-                        n_active,
-                        n_pairs,
-                        m.gate_exps.qtype,
-                        m.gate_exps.row_bytes,
-                    )?,
-                    e.moe_pairs_matvec_q8_dec(
-                        &dev.ptr_row,
-                        1,
-                        &exi,
-                        &exo,
-                        &exp_d,
-                        &pt,
-                        &zq,
-                        &zd,
-                        n_embd,
-                        n_ff_exp,
-                        n_expert,
-                        n_active,
-                        n_pairs,
-                        m.up_exps.qtype,
-                        m.up_exps.row_bytes,
-                    )?,
-                )
+            let csr = GemmaCsr {
+                arm: gemma_pairs_arm(m, n_embd, n_ff_exp),
+                t,
+                n_used,
+                n_expert,
+                n_embd,
+                n_ff_exp,
+                n_pairs,
+                n_active: ex_ids.len(),
+                exi: e.htod_i32(&ex_ids)?,
+                exo: e.htod_i32(&ex_off)?,
+                exp_d: e.htod_i32(&ex_pairs)?,
+                pt: e.htod_i32(&pair_tok)?,
+                ex_ids,
+                ex_off,
+                ex_pairs,
             };
-            let pair_self: Vec<i32> = (0..n_pairs as i32).collect();
-            let pself = e.htod_i32(&pair_self)?;
-            // DOWN through the int8-MMA expert GEMM (2026-07-31, g26 prefill lever): the
-            // ragged k (n_ff_exp=704 on the 26B) rides a PADDED k-walk — in_f rounds up
-            // to the 256-val superblock (768) while the act quantizer's zero padding
-            // makes every padded-k product exactly zero (weight overread bytes multiply
-            // zero int8 act values; the dev slab carries 144B tail slack for the OOB).
-            // The old dp4a matvec was 11.3ms/call at m=T (the 0.07x prefill wall).
-            // MEMRA_GEMMA_MOE_MMA=0 reverts down together with gate/up.
-            // FUSED ACT-EPILOGUE (default on): gelu_tanh(gate)*up + D4 quantize in one
-            // launch — no f32 act buffer (the fused kernel zero-pads the ragged tail
-            // exactly like the two-pass quantizer). MEMRA_MOE_FUSE_ACTQ=0 rollback.
-            // Scratch bytes are BYTE-IDENTICAL (kernel-check gated).
-            let y_down = if mma {
-                let in_pad = n_ff_exp.div_ceil(256) * 256;
-                let a_scr = if crate::moe_fuse_actq_on() {
-                    e.mmq_iq_fused_act_quant(&gate, &up, n_ff_exp, n_pairs, 1)?
-                } else {
-                    let act = e.moe_pairs_gelu_mul(&gate, &up, n_pairs * n_ff_exp)?;
-                    e.mmq_iq_quantize_act(&act, n_ff_exp, n_pairs)?
-                };
-                e.mmq_iq_experts(
-                    &dev.ptr_row,
-                    2,
-                    n_expert,
-                    &exi,
-                    &exo,
-                    &exp_d,
-                    &pself,
-                    &a_scr,
-                    in_pad,
-                    n_embd,
-                    n_active,
-                    n_pairs,
-                    n_pairs,
-                    m.down_exps.qtype,
-                    m.down_exps.row_bytes,
-                )?
-            } else {
-                let act = e.moe_pairs_gelu_mul(&gate, &up, n_pairs * n_ff_exp)?;
-                let (aq2, ad2) = e.quantize_q8_1(&act, n_pairs, n_ff_exp)?;
-                e.moe_pairs_matvec_q8_dec(
-                    &dev.ptr_row,
-                    2,
-                    &exi,
-                    &exo,
-                    &exp_d,
-                    &pself,
-                    &aq2,
-                    &ad2,
-                    n_ff_exp,
-                    n_embd,
-                    n_expert,
-                    n_active,
-                    n_pairs,
-                    m.down_exps.qtype,
-                    m.down_exps.row_bytes,
-                )?
+            let y_down = match experts {
+                GemmaExperts::Resident(table) => Self::gemma_pairs_y(e, m, table, &csr, moe_in)?,
+                _ => Self::gemma_pairs_y_slru(e, m, experts, &csr, moe_in)?,
             };
             let mut moe_out = e.uninit(t * n_embd)?;
             e.moe_pairs_scatter(&y_down, &pw, &toff, &tids, &mut moe_out, t, n_embd)?;
+            if std::env::var("MEMRA_F16G_DEBUG").is_ok() && matches!(csr.arm, PairsArm::F16g) {
+                let scan = |v: &[f32]| v.iter().filter(|x| !x.is_finite()).count();
+                let (yd, mo) = (e.dtoh(&y_down)?, e.dtoh(&moe_out)?);
+                eprintln!(
+                    "[f16g-debug] post-permute bad={} post-scatter bad={}",
+                    scan(&yd),
+                    scan(&mo)
+                );
+            }
             return Ok(moe_out);
         }
 
@@ -23434,7 +23481,8 @@ impl HybridModel {
         let d_len = m.down_exps.expert_stride;
         // Resident dev slabs (fits-VRAM regime): read each expert straight from the device slab
         // at ex*stride — zero H2D, SAME qmatvec_view kernel/bytes as the staged path. Staging is
-        // the spill fallback.
+        // the spill fallback, taken by a boot whose experts neither fit nor have an SLRU arm
+        // (`gemma_experts`), or under the MEMRA_GEMMA_MOE_FAST / _PAIRS rollbacks.
         let dev = m.dev_exps.as_ref();
         let (mut sg, mut su, mut sd) = if dev.is_some() {
             (None, None, None)
@@ -23544,6 +23592,475 @@ impl HybridModel {
             }
         }
         Ok(moe_out)
+    }
+
+    /// The gemma pairs arm's routed-expert output in ONE launch per projection, `[n_pairs,
+    /// n_embd]` in PAIR-ID order, read through `table` (the resident slab's row, the cache's
+    /// full-layer row or a pinned table; only the CSR's active experts are dereferenced). This is
+    /// the resident program verbatim.
+    fn gemma_pairs_y(
+        e: &Engine,
+        m: &MoeWeights,
+        table: &CudaSlice<u64>,
+        csr: &GemmaCsr,
+        moe_in: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let (t, n_expert, n_embd, n_ff_exp, n_pairs, n_active) = (
+            csr.t,
+            csr.n_expert,
+            csr.n_embd,
+            csr.n_ff_exp,
+            csr.n_pairs,
+            csr.n_active,
+        );
+        let (exi, exo, exp_d, pt) = (&csr.exi, &csr.exo, &csr.exp_d, &csr.pt);
+        match csr.arm {
+            PairsArm::F16g => {
+                // GROUPED f16 LANE (MEMRA_MOE_F16G=1, round 46 arc 2): dequant active experts to
+                // f16 once per projection + one grouped f16 GEMM over the CSR groups; CSR order
+                // end-to-end (gelu is elementwise), one row permute before the scatter. The
+                // ragged down k (704) needs no padding here — cublas takes any k.
+                // f16-mirror numeric class, argmax/spec gated. PER-MODEL default OFF (round 50):
+                // the gelu class regressed g26 board-2048 prefill -8.3% under the round-49
+                // Hopper default — see moe_f16g_gemma_on.
+                let csr_tok: Vec<i32> = csr
+                    .ex_pairs
+                    .iter()
+                    .map(|&p| p / csr.n_used as i32)
+                    .collect();
+                let d_csr = Self::gemma_f16g_csr(
+                    e,
+                    m,
+                    table,
+                    n_expert,
+                    exi,
+                    &csr.ex_off,
+                    exo,
+                    &e.htod_i32(&csr_tok)?,
+                    n_active,
+                    n_pairs,
+                    moe_in,
+                    n_embd,
+                    n_ff_exp,
+                )?;
+                e.rows_permute(&d_csr, exp_d, n_pairs, n_embd)
+            }
+            PairsArm::Mma => {
+                // gate/up: int8-MMA expert GEMM (in_f = n_embd 2816 = 11x256 tiles ok); the
+                // activation is token-major over t tokens, pair_tok gathers the routed row.
+                let z_scr = e.mmq_iq_quantize_act(moe_in, n_embd, t)?;
+                let gate = e.mmq_iq_experts(
+                    table,
+                    0,
+                    n_expert,
+                    exi,
+                    exo,
+                    exp_d,
+                    pt,
+                    &z_scr,
+                    n_embd,
+                    n_ff_exp,
+                    n_active,
+                    n_pairs,
+                    t,
+                    m.gate_exps.qtype,
+                    m.gate_exps.row_bytes,
+                )?;
+                let up = e.mmq_iq_experts(
+                    table,
+                    1,
+                    n_expert,
+                    exi,
+                    exo,
+                    exp_d,
+                    pt,
+                    &z_scr,
+                    n_embd,
+                    n_ff_exp,
+                    n_active,
+                    n_pairs,
+                    t,
+                    m.up_exps.qtype,
+                    m.up_exps.row_bytes,
+                )?;
+                let pself = e.htod_i32(&(0..n_pairs as i32).collect::<Vec<i32>>())?;
+                Self::gemma_mma_down(
+                    e, m, table, exi, exo, exp_d, &pself, &gate, &up, csr, n_active, n_pairs,
+                )
+            }
+            PairsArm::Q8 => {
+                let (zq, zd) = e.quantize_q8_1(moe_in, t, n_embd)?;
+                let gate = e.moe_pairs_matvec_q8_dec(
+                    table,
+                    0,
+                    exi,
+                    exo,
+                    exp_d,
+                    pt,
+                    &zq,
+                    &zd,
+                    n_embd,
+                    n_ff_exp,
+                    n_expert,
+                    n_active,
+                    n_pairs,
+                    m.gate_exps.qtype,
+                    m.gate_exps.row_bytes,
+                )?;
+                let up = e.moe_pairs_matvec_q8_dec(
+                    table,
+                    1,
+                    exi,
+                    exo,
+                    exp_d,
+                    pt,
+                    &zq,
+                    &zd,
+                    n_embd,
+                    n_ff_exp,
+                    n_expert,
+                    n_active,
+                    n_pairs,
+                    m.up_exps.qtype,
+                    m.up_exps.row_bytes,
+                )?;
+                let pself = e.htod_i32(&(0..n_pairs as i32).collect::<Vec<i32>>())?;
+                Self::gemma_q8_down(
+                    e, m, table, exi, exo, exp_d, &pself, &gate, &up, csr, n_active, n_pairs,
+                )
+            }
+        }
+    }
+
+    /// DOWN through the int8-MMA expert GEMM (2026-07-31, g26 prefill lever): the ragged k
+    /// (n_ff_exp=704 on the 26B) rides a PADDED k-walk — in_f rounds up to the 256-val
+    /// superblock (768) while the act quantizer's zero padding makes every padded-k product
+    /// exactly zero. The walk reads past an expert's last row (at most one 144 B Q4_0
+    /// superblock): the slab carries a 144 B zero tail for the last expert, and an SLRU slot
+    /// carries `GEMMA_MMA_RAGGED_TAIL` (memra#1225). The old dp4a matvec was 11.3ms/call at m=T
+    /// (the 0.07x prefill wall). MEMRA_GEMMA_MOE_MMA=0 reverts down together with gate/up.
+    /// FUSED ACT-EPILOGUE (default on): gelu_tanh(gate)*up + D4 quantize in one launch — no
+    /// f32 act buffer (the fused kernel zero-pads the ragged tail exactly like the two-pass
+    /// quantizer). MEMRA_MOE_FUSE_ACTQ=0 rollback. Scratch bytes are BYTE-IDENTICAL
+    /// (kernel-check gated). `gate`/`up` and the output have `n_pairs` rows; `pself` maps each
+    /// row to itself.
+    #[allow(clippy::too_many_arguments)]
+    fn gemma_mma_down(
+        e: &Engine,
+        m: &MoeWeights,
+        table: &CudaSlice<u64>,
+        exi: &CudaSlice<i32>,
+        exo: &CudaSlice<i32>,
+        exp_d: &CudaSlice<i32>,
+        pself: &CudaSlice<i32>,
+        gate: &CudaSlice<f32>,
+        up: &CudaSlice<f32>,
+        csr: &GemmaCsr,
+        n_active: usize,
+        n_pairs: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let in_pad = csr.n_ff_exp.div_ceil(256) * 256;
+        let a_scr = if crate::moe_fuse_actq_on() {
+            e.mmq_iq_fused_act_quant(gate, up, csr.n_ff_exp, n_pairs, 1)?
+        } else {
+            let act = e.moe_pairs_gelu_mul(gate, up, n_pairs * csr.n_ff_exp)?;
+            e.mmq_iq_quantize_act(&act, csr.n_ff_exp, n_pairs)?
+        };
+        e.mmq_iq_experts(
+            table,
+            2,
+            csr.n_expert,
+            exi,
+            exo,
+            exp_d,
+            pself,
+            &a_scr,
+            in_pad,
+            csr.n_embd,
+            n_active,
+            n_pairs,
+            n_pairs,
+            m.down_exps.qtype,
+            m.down_exps.row_bytes,
+        )
+    }
+
+    /// DOWN on the decode-once dp4a arm (`MEMRA_GEMMA_MOE_MMA=0`, or n_embd not a multiple
+    /// of 256): gelu, act quantize, pair matvec. Same row contract as `gemma_mma_down`.
+    #[allow(clippy::too_many_arguments)]
+    fn gemma_q8_down(
+        e: &Engine,
+        m: &MoeWeights,
+        table: &CudaSlice<u64>,
+        exi: &CudaSlice<i32>,
+        exo: &CudaSlice<i32>,
+        exp_d: &CudaSlice<i32>,
+        pself: &CudaSlice<i32>,
+        gate: &CudaSlice<f32>,
+        up: &CudaSlice<f32>,
+        csr: &GemmaCsr,
+        n_active: usize,
+        n_pairs: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let act = e.moe_pairs_gelu_mul(gate, up, n_pairs * csr.n_ff_exp)?;
+        let (aq2, ad2) = e.quantize_q8_1(&act, n_pairs, csr.n_ff_exp)?;
+        e.moe_pairs_matvec_q8_dec(
+            table,
+            2,
+            exi,
+            exo,
+            exp_d,
+            pself,
+            &aq2,
+            &ad2,
+            csr.n_ff_exp,
+            csr.n_embd,
+            csr.n_expert,
+            n_active,
+            n_pairs,
+            m.down_exps.qtype,
+            m.down_exps.row_bytes,
+        )
+    }
+
+    /// The grouped f16 lane over a CSR (or one contiguous run of it): `[n_pairs, n_embd]` in
+    /// CSR order. `csr_tok` is the token of each CSR row.
+    #[allow(clippy::too_many_arguments)]
+    fn gemma_f16g_csr(
+        e: &Engine,
+        m: &MoeWeights,
+        table: &CudaSlice<u64>,
+        n_expert: usize,
+        ex_ids: &CudaSlice<i32>,
+        ex_off_host: &[i32],
+        ex_off_dev: &CudaSlice<i32>,
+        csr_tok: &CudaSlice<i32>,
+        n_active: usize,
+        n_pairs: usize,
+        moe_in: &CudaSlice<f32>,
+        n_embd: usize,
+        n_ff_exp: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let (z_f16, z_s) = e.moe_f16g_act(moe_in, Some(csr_tok), n_embd, n_pairs)?;
+        let g_csr = e.moe_f16_grouped(
+            table,
+            0,
+            n_expert,
+            ex_ids,
+            ex_off_host,
+            ex_off_dev,
+            &z_f16,
+            &z_s,
+            n_embd,
+            n_ff_exp,
+            n_active,
+            n_pairs,
+            m.gate_exps.qtype,
+            m.gate_exps.row_bytes,
+        )?;
+        let u_csr = e.moe_f16_grouped(
+            table,
+            1,
+            n_expert,
+            ex_ids,
+            ex_off_host,
+            ex_off_dev,
+            &z_f16,
+            &z_s,
+            n_embd,
+            n_ff_exp,
+            n_active,
+            n_pairs,
+            m.up_exps.qtype,
+            m.up_exps.row_bytes,
+        )?;
+        let act_csr = e.moe_pairs_gelu_mul(&g_csr, &u_csr, n_pairs * n_ff_exp)?;
+        let (a_f16, a_s) = e.moe_f16g_act(&act_csr, None, n_ff_exp, n_pairs)?;
+        e.moe_f16_grouped(
+            table,
+            2,
+            n_expert,
+            ex_ids,
+            ex_off_host,
+            ex_off_dev,
+            &a_f16,
+            &a_s,
+            n_ff_exp,
+            n_embd,
+            n_active,
+            n_pairs,
+            m.down_exps.qtype,
+            m.down_exps.row_bytes,
+        )
+    }
+
+    /// One contiguous run `[a, b)` of the CSR's active experts through `table`, as its own
+    /// CSR: the run's experts, offsets rebased to 0, and its rows numbered 0.. in CSR order
+    /// (so `ex_pairs` is the identity and `pair_tok` the token of each row). Returns the run's
+    /// down output `[rows, n_embd]` in CSR order.
+    ///
+    /// WHY THE BYTES EQUAL THE SINGLE LAUNCH'S. Every kernel of these arms launches one block
+    /// row per expert segment (grid.y = segment) and walks only that segment's rows, in the
+    /// segment's own order, over the full K; the tile form depends on the device and out_f
+    /// alone (`mmq_iq_experts`), or the segment's 32-row groups start at the segment's first
+    /// row (`moe_pairs_matvec_q8_dec`). The activations are quantized per row (q8_1, D4
+    /// q8_1_mmq, the f16 lane's row scale) and GELU is elementwise. So a segment's outputs do not
+    /// depend on which other segments share the launch. The grouped f16 lane takes runs only
+    /// where memra#1217 argued it (`moe_f16g_runs_exact`). `tests/moe_slru_gemma_placement_gpu.rs`
+    /// holds this to bit equality.
+    #[allow(clippy::too_many_arguments)]
+    fn gemma_pairs_run(
+        e: &Engine,
+        m: &MoeWeights,
+        table: &CudaSlice<u64>,
+        csr: &GemmaCsr,
+        acts: &GemmaRunActs,
+        a: usize,
+        b: usize,
+        moe_in: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let (r0, r1) = (csr.ex_off[a] as usize, csr.ex_off[b] as usize);
+        let (n_active, n_pairs) = (b - a, r1 - r0);
+        let off: Vec<i32> = csr.ex_off[a..=b].iter().map(|&o| o - r0 as i32).collect();
+        let tok: Vec<i32> = csr.ex_pairs[r0..r1]
+            .iter()
+            .map(|&p| p / csr.n_used as i32)
+            .collect();
+        let exi = e.htod_i32(&csr.ex_ids[a..b])?;
+        let exo = e.htod_i32(&off)?;
+        let tok_d = e.htod_i32(&tok)?;
+        let ident = e.htod_i32(&(0..n_pairs as i32).collect::<Vec<i32>>())?;
+        let (n_expert, n_embd, n_ff_exp, t) = (csr.n_expert, csr.n_embd, csr.n_ff_exp, csr.t);
+        match (csr.arm, acts) {
+            (PairsArm::F16g, _) => Self::gemma_f16g_csr(
+                e, m, table, n_expert, &exi, &off, &exo, &tok_d, n_active, n_pairs, moe_in, n_embd,
+                n_ff_exp,
+            ),
+            (PairsArm::Mma, GemmaRunActs::Mma(z_scr)) => {
+                let proj = |p: i32, qtype, rb| {
+                    e.mmq_iq_experts(
+                        table, p, n_expert, &exi, &exo, &ident, &tok_d, z_scr, n_embd, n_ff_exp,
+                        n_active, n_pairs, t, qtype, rb,
+                    )
+                };
+                let gate = proj(0, m.gate_exps.qtype, m.gate_exps.row_bytes)?;
+                let up = proj(1, m.up_exps.qtype, m.up_exps.row_bytes)?;
+                Self::gemma_mma_down(
+                    e, m, table, &exi, &exo, &ident, &ident, &gate, &up, csr, n_active, n_pairs,
+                )
+            }
+            (PairsArm::Q8, GemmaRunActs::Q8(zq, zd)) => {
+                let proj = |p: i32, qtype, rb| {
+                    e.moe_pairs_matvec_q8_dec(
+                        table, p, &exi, &exo, &ident, &tok_d, zq, zd, n_embd, n_ff_exp, n_expert,
+                        n_active, n_pairs, qtype, rb,
+                    )
+                };
+                let gate = proj(0, m.gate_exps.qtype, m.gate_exps.row_bytes)?;
+                let up = proj(1, m.up_exps.qtype, m.up_exps.row_bytes)?;
+                Self::gemma_q8_down(
+                    e, m, table, &exi, &exo, &ident, &ident, &gate, &up, csr, n_active, n_pairs,
+                )
+            }
+            _ => Err("gemma_pairs_run: the run activations do not match the arm".into()),
+        }
+    }
+
+    /// memra#1225: the gemma pairs arm on the SLRU placement, under ONE hold of the cache lock
+    /// that also covers the launches: the cache's full-layer row (after the one-shot prewarm),
+    /// or the call's active set pinned at once, or contiguous CSR runs of experts that each fit
+    /// (`gemma_pairs_run`), concatenated in CSR order and permuted to pair order like the
+    /// grouped f16 lane's output. Returns `[n_pairs, n_embd]` in PAIR-ID order.
+    fn gemma_pairs_y_slru(
+        e: &Engine,
+        m: &MoeWeights,
+        experts: &GemmaExperts,
+        csr: &GemmaCsr,
+        moe_in: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let GemmaExperts::Slru { il, max_block } = *experts else {
+            return Err("gemma_pairs_y_slru needs the SLRU placement".into());
+        };
+        let block = moe_layer_max_block(m);
+        e.with_moe_cache(max_block, |c, eng| {
+            let held = std::time::Instant::now();
+            let (hits0, misses0) = (c.hits, c.misses);
+            if moe_prewarm_enabled() {
+                c.prewarm_layer(il, m, eng)?;
+            }
+            let (mode, runs, y) = if let Some(row) = c.layer_dev_row(il, csr.n_expert, eng)? {
+                (
+                    SlruPairsMode::LayerRow,
+                    1,
+                    Self::gemma_pairs_y(eng, m, row, csr, moe_in)?,
+                )
+            } else {
+                let fit = c.pin_capacity(block) / 3;
+                let runs_exact = match csr.arm {
+                    PairsArm::F16g => moe_f16g_runs_exact(csr.n_embd, csr.n_ff_exp),
+                    PairsArm::Mma | PairsArm::Q8 => true,
+                };
+                if fit >= csr.n_active {
+                    let table = Self::moe_pinned_table(c, eng, m, il, csr.n_expert, &csr.ex_ids)?;
+                    (
+                        SlruPairsMode::Pinned,
+                        1,
+                        Self::gemma_pairs_y(eng, m, &table, csr, moe_in)?,
+                    )
+                } else if runs_exact && fit >= 1 {
+                    // Activations shared by every run, quantized once per token row.
+                    let acts = match csr.arm {
+                        PairsArm::Mma => {
+                            GemmaRunActs::Mma(eng.mmq_iq_quantize_act(moe_in, csr.n_embd, csr.t)?)
+                        }
+                        PairsArm::Q8 => {
+                            let (zq, zd) = eng.quantize_q8_1(moe_in, csr.t, csr.n_embd)?;
+                            GemmaRunActs::Q8(zq, zd)
+                        }
+                        PairsArm::F16g => GemmaRunActs::F16g,
+                    };
+                    let mut d_csr = eng.uninit(csr.n_pairs * csr.n_embd)?;
+                    let mut runs = 0;
+                    for a in (0..csr.n_active).step_by(fit) {
+                        let b = (a + fit).min(csr.n_active);
+                        let table =
+                            Self::moe_pinned_table(c, eng, m, il, csr.n_expert, &csr.ex_ids[a..b])?;
+                        let d_run =
+                            Self::gemma_pairs_run(eng, m, &table, csr, &acts, a, b, moe_in)?;
+                        let (r0, r1) = (csr.ex_off[a] as usize, csr.ex_off[b] as usize);
+                        eng.stream().memcpy_dtod(
+                            &d_run,
+                            &mut d_csr.slice_mut(r0 * csr.n_embd..r1 * csr.n_embd),
+                        )?;
+                        runs += 1;
+                    }
+                    let y = eng.rows_permute(&d_csr, &csr.exp_d, csr.n_pairs, csr.n_embd)?;
+                    (SlruPairsMode::Chunked, runs, y)
+                } else {
+                    return Err(format!(
+                        "gemma4 SLRU pairs arm: layer {il} has {} active experts, the cache can \
+                         pin {fit} and the {:?} arm cannot be split into runs (the per-boot \
+                         floor admitted it): memra#1225",
+                        csr.n_active, csr.arm
+                    )
+                    .into());
+                }
+            };
+            gemma_slru_count(mode, il, csr.t, csr.n_active, runs);
+            if moe_slru_pairs_trace() {
+                eprintln!(
+                    "[moe-slru-gemma] il={il} t={} experts={} arm={:?} mode={mode:?} runs={runs} \
+                     hits={} misses={} hold_us={}",
+                    csr.t,
+                    csr.n_active,
+                    csr.arm,
+                    c.hits - hits0,
+                    c.misses - misses0,
+                    held.elapsed().as_micros()
+                );
+            }
+            Ok(y)
+        })
     }
 
     /// One gemma4 trunk layer (R8): x -> x_next.
@@ -23804,9 +24321,15 @@ impl HybridModel {
         // quantized matmuls — two quantize launches + two f32 round-trips fold away).
         let mut attn_out = e.uninit(t * n_embd)?;
         let mut router_in = e.uninit(t * n_embd)?;
+        // memra#1225: the experts' source is decided per boot (`gemma_experts`), and the q8z
+        // fusion follows it, so the SLRU placement's tail is the resident placement's tail.
+        let experts = match &layer.ffn {
+            crate::hybrid::Ffn::Moe(m) => self.gemma_experts(e, layer, m)?,
+            _ => GemmaExperts::Staged,
+        };
         let fast_moe = match &layer.ffn {
             crate::hybrid::Ffn::Moe(m) => {
-                m.dev_exps.as_ref().is_some()
+                !matches!(experts, GemmaExperts::Staged)
                     && expert_dp4a_supported(m.gate_exps.qtype)
                     && expert_dp4a_supported(m.up_exps.qtype)
                     && expert_dp4a_supported(m.down_exps.qtype)
@@ -23895,8 +24418,10 @@ impl HybridModel {
             panic!("gemma4 layer not MoE")
         };
         let moe0 = match (&moe_q8, &zsh_f32) {
-            (Some(mq), _) => self.gemma4_moe_q8(e, m, mbits, mq, &router_in, t)?,
-            (None, Some((_, moe_in))) => self.gemma4_moe(e, m, mbits, moe_in, &router_in, t)?,
+            (Some(mq), _) => self.gemma4_moe_q8(e, m, &experts, mbits, mq, &router_in, t)?,
+            (None, Some((_, moe_in))) => {
+                self.gemma4_moe(e, m, &experts, mbits, moe_in, &router_in, t)?
+            }
             _ => unreachable!(),
         };
         // post_ffw_norm_1(mlp0) + post_ffw_norm_2(moe0): one fused launch, per-row verbatim.
@@ -25520,6 +26045,31 @@ impl HybridModel {
         }
     }
 
+    /// memra#1225: a captured gemma4 decode bakes the expert pointer table into the graph. The
+    /// SLRU placement's table moves with admission and eviction, and its pinned mode reads the
+    /// selection back on the host, which a capture cannot do, so the graph programs serve only a
+    /// model whose MoE experts are resident. The served decode path is eager and runs either
+    /// placement with the same kernels.
+    pub(crate) fn gemma_graph_refuse_non_resident(
+        &self,
+        what: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let spilled = self
+            .layers
+            .iter()
+            .filter(|l| matches!(&l.ffn, crate::hybrid::Ffn::Moe(m) if m.dev_exps.is_none()))
+            .count();
+        if spilled > 0 {
+            return Err(format!(
+                "{what}: {spilled} MoE layers have no resident expert slab; the graph decode \
+                 programs need resident experts (run eager decode, or load with room for the \
+                 experts): memra#1225"
+            )
+            .into());
+        }
+        Ok(())
+    }
+
     /// gemma4 GRAPH-REPLAY greedy loop: per (swa-key, global-key) fa bucket, capture ONE full
     /// dc step (self-feeding: argmax writes token_d in-graph) and replay it — one graph launch
     /// per token, one 4B dtoh. V1 scope: whole generation under the sliding window (no window
@@ -25545,6 +26095,7 @@ impl HybridModel {
                     .into(),
             );
         }
+        self.gemma_graph_refuse_non_resident("gemma4_generate_graph")?;
         use crate::decode::StopReason;
         let n_vocab = self.output.out_features();
         let n_embd = self.cfg.n_embd as usize;

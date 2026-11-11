@@ -7624,9 +7624,12 @@ impl Engine {
         Ok(self.gpu.stream().clone_htod(v)?)
     }
 
-    /// `htod_bytes` with a mapped (uninit) tail pad: the wide-load expert dots read up to 6B
-    /// past the final q4_0 block through their aligned window — the bytes never reach a
-    /// result (funnelshift discards them) but must be mapped memory.
+    /// `htod_bytes` with a zeroed tail pad: the wide-load expert dots read up to 6B past the
+    /// final q4_0 block through their aligned window (funnelshift discards the bytes), and the
+    /// gemma int8-MMA down GEMM walks a ragged k to whole 256-value superblocks, reading up to
+    /// 36 B past the last expert's last row of a k=704 slab and decoding a block scale from it.
+    /// That scale meets a zero activation, so it must be finite: the pad is zeroed, not left as
+    /// stale pool bytes (memra#1225).
     pub fn htod_bytes_padded(
         &self,
         v: &[u8],
@@ -7636,6 +7639,10 @@ impl Engine {
         {
             let mut view = d.slice_mut(0..v.len());
             self.gpu.stream().memcpy_htod(v, &mut view)?;
+        }
+        if pad > 0 {
+            let mut tail = d.slice_mut(v.len()..v.len() + pad);
+            self.gpu.stream().memset_zeros(&mut tail)?;
         }
         Ok(d)
     }

@@ -1168,6 +1168,20 @@ impl MoeSlotCache {
             .sum()
     }
 
+    /// memra#1225: how many slots of this cache can hold a block of `block_bytes`, occupied or not.
+    /// Unlike `pin_capacity` it does not move with pending prefetches or quarantine: it is fixed
+    /// when the cache is built, so a decision keyed on it is the same for every call of a boot.
+    /// Zero for the banked door and a frozen cache, whose admission is not this cache's own SLRU.
+    pub(crate) fn slots_fitting(&self, block_bytes: usize) -> usize {
+        if self.banked.is_some() || self.frozen {
+            return 0;
+        }
+        self.slot_class
+            .iter()
+            .filter(|&&class| self.classes[class].capacity >= block_bytes)
+            .count()
+    }
+
     /// memra#1217: make every block of `ids` resident AT THE SAME TIME and return their slots in
     /// order. Each block goes through `dispatch_source`, so a hit copies nothing and a miss stages
     /// the same bytes the per-token path stages; while the call runs, eviction skips the set's
