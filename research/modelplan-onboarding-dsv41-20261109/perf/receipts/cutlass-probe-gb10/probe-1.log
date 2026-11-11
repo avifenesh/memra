@@ -1,0 +1,5 @@
+device NVIDIA GB10 sm_121, CUTLASS 4.8.1
+w13 mxfp4 G 96 R 64 N 2304 K 5120: CUTLASS 3.0782 ms (47.1 TFLOPS), memra 4.7895 ms (30.3 TFLOPS), CUTLASS/memra 0.643 | bf16 outputs differing from the reference tile: memra 0, CUTLASS 0 of 14155776 (CUTLASS max rel 0.000e+00)
+w13 mxfp4 G 96 R 512 N 2304 K 5120: CUTLASS 6.8182 ms (170.1 TFLOPS), memra 20.2836 ms (57.2 TFLOPS), CUTLASS/memra 0.336 | bf16 outputs differing from the reference tile: memra 0, CUTLASS 1 of 113246208 (CUTLASS max rel 4.444e-03)
+wq_a fp8 G 1 R 4096 N 1280 K 5120: CUTLASS 0.5091 ms (105.5 TFLOPS), memra 0.6165 ms (87.1 TFLOPS), CUTLASS/memra 0.826 | bf16 outputs differing from the reference tile: memra 0, CUTLASS 0 of 5242880 (CUTLASS max rel 0.000e+00)
+PROBE-DONE

@@ -1,0 +1,18 @@
+NVIDIA GB10, 305 MHz, 43
+kernels rc 1 274 checks, 11 failed 11 FAIL lines
+FAIL schedule/cutlass_moe_range/rows1: inside false, outside untouched true [experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched]
+FAIL schedule/cutlass_moe_range/rows1: inside false, outside untouched true [experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched]
+FAIL schedule/cutlass_moe_range/rows3: inside false, outside untouched true [experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched]
+FAIL schedule/cutlass_moe_range/rows6: inside false, outside untouched true [experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched]
+FAIL schedule/cutlass_moe_range/rows12: inside false, outside untouched true [experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched]
+FAIL schedule/cutlass_moe_range/rows40: inside false, outside untouched true [experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched]
+FAIL schedule/cutlass_moe_range/rows700: inside false, outside untouched true [experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched]
+FAIL schedule/cutlass_moe_range/rows900: inside false, outside untouched true [experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched]
+FAIL schedule/cutlass_moe_range/rows6_n576: inside false, outside untouched true [experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched]
+FAIL schedule/cutlass_moe_range/rows700_n576: inside false, outside untouched true [experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched]
+FAIL schedule/cutlass_moe_range/rows900_n576: inside false, outside untouched true [experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched]
+layer rc 0 161 checks, 0 failed 0 FAIL lines
+layer saved tensors against save-k3: 111 compared, 101 differ
+layer saved tensors against save-bs1: 111 compared, 0 differ
+fa825eeaa1bc5b0f98f0c957120022ce863718fc81b72d2495b899ce23ebf161  /home/avifenesh/.cache/dsv41-cutlass/out/gates-c1/save-c.sha256
+GATES-A-DONE 16:31:54

@@ -2469,10 +2469,21 @@ impl Group {
         for r in 0..n {
             let c = &self.cx[r];
             let iw = lw[r].idx.as_ref().ok_or("not an index source")?;
-            let kb = iw.wq_b.k / 32;
+            // the scale layout keeps 128-row blocks whole: a slice starting on one is a slice
+            if !(r * qd).is_multiple_of(128) {
+                return Err(format!(
+                    "index heads: rank {r}'s rows start off a 128-row block"
+                ));
+            }
+            let k = iw.wq_b.k;
             wqs.push(super::QW {
-                w: sub_buf(&c.ops, &iw.wq_b.w, r * qd * iw.wq_b.k, qd * iw.wq_b.k)?,
-                s: sub_buf(&c.ops, &iw.wq_b.s, r * qd / 32 * kb, qd / 32 * kb)?,
+                w: sub_buf(&c.ops, &iw.wq_b.w, r * qd * k, qd * k)?,
+                s: sub_buf(
+                    &c.ops,
+                    &iw.wq_b.s,
+                    super::sf_bytes(r * qd, k),
+                    super::sf_bytes(qd, k),
+                )?,
                 n: qd,
                 k: iw.wq_b.k,
                 fmt: iw.wq_b.fmt,
@@ -2804,85 +2815,50 @@ impl Ctx {
         let g = self.g.clone();
         let st = self.ops.st.clone();
         let (d, inter, np, hn, h0) = (g.dim, g.moe_inter, plan.np, lw.hid_l, lw.hid0);
-        if plan.bm > super::SMALL_M {
-            // many rows: the input quantized once a token, each tile reading its pairs' tokens
-            // through the plan's pair-to-token list (a sixth of the quantization of the pairs'
-            // gathered copies, and the same codes)
-            let rows = np / g.topk;
-            let aq = self.ops.tmp(rows * d)?;
-            let as_ = self.ops.tmp(rows * d / 32)?;
-            self.ops
-                .act_quant(x, d, Dp::NULL, rows, d, aq.p(&st), as_.p(&st))?;
-            let gb = self.ops.tmp(np * hn * 2)?;
-            let ub = self.ops.tmp(np * hn * 2)?;
-            let (wfmt, kdiv) = split_fmt(lw)?;
-            for (proj, out) in [(0, &gb), (2, &ub)] {
-                ck("gemm_f8_tiles_rows", unsafe {
-                    ffi::memra_v41_gemm_f8_tiles_rows(
-                        aq.p(&st).c(),
-                        d as i64,
-                        as_.p(&st).c(),
-                        (d / 32) as i64,
-                        plan.ptok.p(&st).i(),
-                        plan.tiles.p(&st).c(),
-                        plan.ntiles.p(&st).i(),
-                        plan.max_tiles as i32,
-                        lw.exp_tab.p(&st).c(),
-                        proj,
-                        (d / 2) as i64,
-                        (d / kdiv) as i64,
-                        wfmt,
-                        out.p(&st).m(),
-                        hn as i64,
-                        0,
-                        hn as i32,
-                        d as i32,
-                        plan.bm as i32,
-                        self.ops.sv(),
-                    )
-                })?;
-            }
-            return ck("swiglu", unsafe {
-                ffi::memra_v41_swiglu(
-                    gb.p(&st).m(),
-                    ub.p(&st).m(),
-                    hn as i64,
-                    plan.pw.p(&st).f(),
-                    g.swiglu_limit,
-                    hb.at(&st, h0 * 2).m(),
-                    inter as i64,
-                    np as i32,
-                    hn as i32,
-                    self.ops.sv(),
-                )
-            });
-        }
-        // a few rows: w1, w3 and the SwiGLU in one launch over the pairs' gathered rows
+        split_fmt(lw)?;
+        // the pairs' rows gathered and quantized, w1 and w3 of every expert's slice in one grouped
+        // launch, the SwiGLU into the rank's columns of `hb`
+        let sfrow = self.ops.tmp(np * 4)?;
+        super::moe_sfrow(&self.ops, plan, &sfrow)?;
         let aq = self.ops.tmp(np * d)?;
-        let as_ = self.ops.tmp(np * d / 32)?;
-        self.ops
-            .act_quant(x, d, plan.ptok.p(&st), np, d, aq.p(&st), as_.p(&st))?;
-        let (wfmt, kdiv) = split_fmt(lw)?;
-        ck("swiglu_tiles", unsafe {
-            ffi::memra_v41_swiglu_tiles(
-                aq.p(&st).c(),
-                d as i64,
-                as_.p(&st).c(),
-                (d / 32) as i64,
-                plan.tiles.p(&st).c(),
-                plan.ntiles.p(&st).i(),
-                plan.max_tiles as i32,
-                lw.exp_tab.p(&st).c(),
-                (d / 2) as i64,
-                (d / kdiv) as i64,
-                wfmt,
+        let asf = self
+            .ops
+            .tmp(super::sf_bytes(super::moe_pad_rows(plan), d))?;
+        self.ops.act_quant_sf(
+            x,
+            d,
+            plan.ptok.p(&st),
+            np,
+            d,
+            aq.p(&st),
+            asf.p(&st),
+            sfrow.p(&st),
+        )?;
+        let gb = self.ops.tmp(np * hn * 2)?;
+        let ub = self.ops.tmp(np * hn * 2)?;
+        super::moe_gemm(
+            &self.ops,
+            plan,
+            &lw.exp_tab,
+            (0, 2),
+            &aq,
+            &asf,
+            (gb.p(&st), ub.p(&st)),
+            hn,
+            hn,
+            d,
+        )?;
+        ck("swiglu", unsafe {
+            ffi::memra_v41_swiglu(
+                gb.p(&st).m(),
+                ub.p(&st).m(),
+                hn as i64,
                 plan.pw.p(&st).f(),
                 g.swiglu_limit,
                 hb.at(&st, h0 * 2).m(),
                 inter as i64,
+                np as i32,
                 hn as i32,
-                d as i32,
-                plan.bm as i32,
                 self.ops.sv(),
             )
         })
@@ -2903,8 +2879,23 @@ impl Ctx {
         let (inter, n) = (self.g.moe_inter, plan.np + rows);
         let q = self.ops.tmp(n * inter)?;
         let sc = self.ops.tmp(n * inter / 32)?;
-        self.ops
-            .act_quant(hb.p(&st), inter, Dp::NULL, n, inter, q.p(&st), sc.p(&st))?;
+        // row-major scales, as the many-row path gathers them ([`Self::split_out_q`] places them)
+        ck("act_quant", unsafe {
+            ffi::memra_v41_act_quant(
+                hb.p(&st).c(),
+                inter as i64,
+                std::ptr::null(),
+                q.p(&st).m(),
+                inter as i64,
+                sc.p(&st).m(),
+                (inter / 32) as i64,
+                std::ptr::null_mut(),
+                0,
+                n as i32,
+                inter as i32,
+                self.ops.sv(),
+            )
+        })?;
         self.split_out_q(lw, plan, &q, &sc, rows, out)
     }
 
@@ -2955,10 +2946,46 @@ impl Ctx {
         let st = self.ops.st.clone();
         let (d, inter, np, dn) = (g.dim, g.moe_inter, plan.np, lw.shared[1].n);
         let o = self.ops.tmp((np + rows) * dn * 2)?;
-        self.split_tiles(lw, plan, q, sc, inter, 1, o.p(&st), dn)?;
+        // the row-major scales into the GEMMs' layout: the pairs' at their rows of the experts'
+        // padded layout, the shared expert's rows as a call of their own
+        let sfrow = self.ops.tmp(np * 4)?;
+        super::moe_sfrow(&self.ops, plan, &sfrow)?;
+        let asf = self
+            .ops
+            .tmp(super::sf_bytes(super::moe_pad_rows(plan), inter))?;
+        let ssf = self.ops.tmp(super::sf_bytes(rows, inter))?;
+        for (src, srow, dst, n) in [
+            (sc.p(&st), sfrow.p(&st), asf.p(&st), np),
+            (sc.at(&st, np * inter / 32), Dp::NULL, ssf.p(&st), rows),
+        ] {
+            ck("sf_place", unsafe {
+                ffi::memra_v41_sf_place(
+                    src.c(),
+                    (inter / 32) as i64,
+                    srow.i(),
+                    dst.m(),
+                    n as i32,
+                    inter as i32,
+                    self.ops.sv(),
+                )
+            })?;
+        }
+        split_fmt(lw)?;
+        super::moe_gemm(
+            &self.ops,
+            plan,
+            &lw.exp_tab,
+            (1, 1),
+            q,
+            &asf,
+            (o.p(&st), Dp::NULL),
+            dn,
+            dn,
+            inter,
+        )?;
         self.ops.gemm_q(
             q.at(&st, np * inter),
-            sc.at(&st, np * inter / 32),
+            ssf.p(&st),
             rows,
             &lw.shared[1],
             o.at(&st, np * dn * 2),
@@ -2977,47 +3004,6 @@ impl Ctx {
                 d as i64,
                 rows as i32,
                 dn as i32,
-                self.ops.sv(),
-            )
-        })
-    }
-
-    /// One projection of the split experts over the plan's tile list: `nout` rows of every routed
-    /// expert's weight (this rank's slice) against the quantized rows `a`, into `c` `[np][nout]`.
-    #[allow(clippy::too_many_arguments)]
-    fn split_tiles(
-        &self,
-        lw: &LayerW,
-        plan: &super::MoePlanDev,
-        a: &Buf,
-        a_s: &Buf,
-        k: usize,
-        proj: i32,
-        c: Dp,
-        nout: usize,
-    ) -> Result<(), String> {
-        let st = self.ops.st.clone();
-        let (wfmt, kdiv) = split_fmt(lw)?;
-        ck("gemm_f8_tiles", unsafe {
-            ffi::memra_v41_gemm_f8_tiles(
-                a.p(&st).c(),
-                k as i64,
-                a_s.p(&st).c(),
-                (k / 32) as i64,
-                plan.tiles.p(&st).c(),
-                plan.ntiles.p(&st).i(),
-                plan.max_tiles as i32,
-                lw.exp_tab.p(&st).c(),
-                proj,
-                (k / 2) as i64,
-                (k / kdiv) as i64,
-                wfmt,
-                c.m(),
-                nout as i64,
-                0,
-                nout as i32,
-                k as i32,
-                plan.bm as i32,
                 self.ops.sv(),
             )
         })
@@ -3103,11 +3089,10 @@ pub fn shared_expert_on(
     Ok(out)
 }
 
-/// The tile kernels' weight format code and scale divisor of a rank's FP4 experts.
-fn split_fmt(lw: &LayerW) -> Result<(i32, usize), String> {
+/// A rank's split experts are FP4 (MXFP4, or minted NVFP4, which the GEMMs read as its MXFP4 codes).
+fn split_fmt(lw: &LayerW) -> Result<(), String> {
     match lw.experts.first().map(|w| w[0].fmt) {
-        Some(super::QFmt::Mxfp4) => Ok((1, 32)),
-        Some(super::QFmt::Nvfp4Minted { .. }) => Ok((2, 16)),
+        Some(super::QFmt::Mxfp4) | Some(super::QFmt::Nvfp4Minted { .. }) => Ok(()),
         _ => Err("split experts: no FP4 experts on the rank".into()),
     }
 }

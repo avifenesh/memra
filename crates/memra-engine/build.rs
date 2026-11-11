@@ -638,6 +638,10 @@ fn main() {
             // DeepSeek-V4.1 sibling route: its own TU, -fmad=false below (reference products and
             // sums stay separate), no symbol shared with dsv4_gpu.cu.
             "cu/dsv41_gpu.cu",
+            // The V4.1 FP8/FP4 GEMMs on CUTLASS's sm_120 block-scaled kernels, against the vendored
+            // tree (third_party/cutlass). Built on the 120a family (120a, 121a); every other family
+            // gets cu/dsv41_cutlass_stub.cu, whose launchers refuse.
+            "cu/dsv41_cutlass.cu",
             // Pinned MiMo source QKV shard outputs gathered on-device.
             "cu/mimo_qkv_gather.cu",
             // Bounded f32 MiMo attention reference component with learned sink.
@@ -690,6 +694,8 @@ fn main() {
                     // ENUMERATION, so every future non-120a arch inherited the breakage silently,
                     // while `!= 120a` is a property. Prefer the property.
                     "cu/mmq_nvfp4_w4a8_stub.cu"
+                } else if cuda_arch != "120a" && mmq_src == "cu/dsv41_cutlass.cu" {
+                    "cu/dsv41_cutlass_stub.cu"
                 } else if !matches!(cuda_arch.as_str(), "120a" | "100a")
                     && mmq_src == "cu/mmq_fp8_blk.cu"
                 {
@@ -800,6 +806,15 @@ fn main() {
             if mmq_src.ends_with("dsv41_gpu.cu") {
                 // The V4.1 kernels mirror the reference's separate fp32 products and sums.
                 args.push("-fmad=false".into());
+            }
+            if compile_src == "cu/dsv41_cutlass.cu" {
+                args.extend([
+                    "-DNDEBUG".into(),
+                    "-I".into(),
+                    cutlass_inc.clone(),
+                    "-I".into(),
+                    cutlass_util.clone(),
+                ]);
             }
             if mmq_src.ends_with("mimo_audio_codec_rvq.cu") {
                 // Keep the source's separate F32 products and sums.

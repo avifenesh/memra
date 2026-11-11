@@ -1455,6 +1455,68 @@ bound. One layer-2 rep at 4k under nsys,
 by kernel time: the block-scaled GEMMs 55%, the bf16 GEMMs 21%, attention 8%, mHC 7%, act_quant 3%, fp32 FMA
 3%, MoE plan, combine and SwiGLU 2% (`receipts/verify-bs1f/layer2-4k-itemized.txt`).
 
+### The FP8 / FP4 GEMMs on CUTLASS's block-scaled kernels
+
+The block-scaled linears (dense FP8 32 x 32, the MXFP4 routed experts, the minted NVFP4 form) moved from the
+hand-written chain kernels (the pipelined tile, the small-row bodies, the reference tile) to CUTLASS 4.8.1's sm_120
+block-scaled TMA warp-specialized cooperative kernels, vendored at `crates/memra-engine/third_party/cutlass`
+(`cu/dsv41_cutlass.cu`; the 120a family builds it, every other family gets a stub that refuses). The program is
+the same instruction (`kind::mxf8f6f4.block_scale.scale_vec::1X`, ue8m0), one fp32 accumulator chained over the K
+tiles in ascending order, bf16 out; CUTLASS places the 32 products of a K block in other lanes than our chain
+did, so its fp32 accumulators differ from ours by one ulp in ~5e-5 of the elements (`receipts/cutlass-probe-gb10`).
+
+Three forms of that program: rows on A in 128 x 128 x 128 tiles (prefill, wide batches), and the operands
+swapped (weights on A, the call's rows on B, tileN 8 or 16, D written column-major, which is the row-major
+output) for decode, verify and small batches. The forms give the same bytes: on GB10 the swapped forms equal the
+normal one at 1-64 rows an expert and for the dense shapes (probe revs 4-6), the kernel gate holds every form to
+the normal one byte for byte on 22 dense shapes and on grouped calls over uneven, partly empty groups, and the
+choice between them is speed only (`GEMM_FORM`, by the call's rows: at most 8 rows tileN 8, at most 16 tileN 16,
+else normal).
+
+Dense calls use the plain kernel (its TMA descriptors are kernel parameters, so a graph captures them as our
+kernels were). The experts use the ptr-array grouped kernel over a plan's local experts (two groups an expert
+for w1 and w3 in one launch): one setup kernel writes the problem shapes, pointer arrays, strides and scale
+layouts on the card from the device plan's expert offsets, so nothing is read back and a captured graph replays
+with whatever routing the plan holds; host problem shapes are not passed (one CTA an SM walks the device shapes;
+a group without rows has no tiles). A group's A rows are its pairs' gathered codes (the by-token row list goes).
+
+Scales live in CUTLASS's interleaved layout (`Sm1xxBlockScaledConfig<32>`): row r, K block kb at
+`(r / 128) * ceil(KB / 4) * 512 + (kb / 4) * 512 + (r % 32) * 16 + ((r % 128) / 32) * 4 + kb % 4`. It is the
+same function for A and B and for every form (`receipts/cutlass-args-probe-gb10/sf_check.txt`: 630 shapes, every
+code), so one copy of a weight's scales serves both forms: weights are repacked once at load (an expert's in
+place, the dense 32 x 32 codes expanded to their rows), act_quant writes the activations' codes there, a grouped
+call's groups start their scale rows at multiples of 128 (each pair's row from `memra_v41_cutlass_sfrow`), and
+the split MoE places its gathered row-major scale columns after the gather.
+
+First risks, on GB10 before any engine code (`receipts/cutlass-args-probe-gb10`): device-built arguments equal
+host-built ones byte for byte over three routings with 22-27 of 96 groups empty; a CUDA graph of [setup kernel,
+scale placement, grouped launch] replayed over new routings equals the eager run; plain dense equals grouped with
+one group; the plain kernel needs no workspace.
+
+Gates on GB10 (121a; `receipts/gates-cutlass-gb10`): kernels 274/0 (`c2`: the dense forms against the normal one on 22
+shapes, the grouped forms against the normal dense call run per expert on 11 routings including a rank's share of
+576 columns and a rank's range of experts, the scale rows, w1 + w3 in one launch against two, and the fixtures'
+CPU reference bands); layer 161/0, and the 111 saved tensors are byte-identical to bs1's set (`save-c.sha256` =
+bs1's `fa825eee...`; 101 of them moved against k3, as bs1's did). tp at 2 ranks: host-canonical 478/0, default
+480/0; 4 ranks host-canonical 914/0; decode 240/240/60; the decode graph door 555/0 (one rank) and 1105/0 (two
+ranks, device-push): the CUTLASS launches record, rebind and replay. compute-sanitizer: initcheck on the kernel
+gate 0 errors (TMA reads are likely outside what it tracks); racecheck on the kernel gate and initcheck on four
+ranks did not finish in their caps under CUTLASS's kernels (owed, longer caps).
+
+Order gate: the chat (517 steps) and long (194 steps) tapes of this program are byte-identical to bs1's (82 and
+28 files, `receipts/ordergate-cutlass`), so its order gate is bs1's: chat d +9.0e-4, long d +3.77e-3, both inside
+their intervals (the by-tape intervals in the section above), top-1 96.7% / 94.3%. CUTLASS's one-ulp fp32
+differences against bs1's chain did not reach a bf16 output on these 711 steps or on the layer gate's tensors.
+
+Timing: owed (GB10 proxy against k3 and bs1 queued behind a landing lease; real timing in the four-card window).
+
+OPEN, blocking: on peer-pull the tp gate fails sporadically at 12- and 16-row calls (ranks agree with each other,
+not with the single card: a few hundred to a few thousand bytes of out_stream, rel_l2 2e-7 to 6e-5). Two ranks,
+layers 2 and 24, interleaved (`receipts/gates-cutlass-gb10/c1/dbg-pp2`): k3 0/4, bs1 0/4 (0/6 with the two runs
+before), this build 3 of 8 runs; host-canonical and default transports passed every run. It comes with this change
+and is not explained yet; the debug arms (host calls serialized, a stream sync after each CUTLASS launch, zeroed
+scale buffers: `dbg_pp3.sh`) are the next step. NOT FOR LANDING until it is.
+
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
 The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor

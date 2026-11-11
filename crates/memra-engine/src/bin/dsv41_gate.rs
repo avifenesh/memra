@@ -380,7 +380,8 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
         let (m, k) = (sh[0], sh[1]);
         let x = f.dev(&ops, "x")?;
         let q = ops.buf(m * k)?;
-        let s = ops.buf(m * k / 32)?;
+        // zero-filled: the layout's padding stays zero
+        let s = ops.buf(v::sf_bytes(m, k))?;
         ops.act_quant(x.p(&st), k, Dp::NULL, m, k, q.p(&st), s.p(&st))?;
         let y = ops.buf(m * k * 2)?;
         v::copy_d2d(&ops, &x, 0, &y, 0, m * k * 2)?;
@@ -388,7 +389,11 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
         let qh = q.host(&st)?;
         let sh_ = s.host(&st)?;
         let wq = f.bytes("q")?;
-        let ws = f.bytes("s")?;
+        // the reference's row-major scales in the GEMMs' layout
+        let ws = {
+            let raw = f.bytes("s")?;
+            v::sf_pack(m, k, |r, b| raw[r * (k / 32) + b])
+        };
         let qe = qh.iter().zip(&wq).filter(|(a, b)| a == b).count();
         let se = sh_.iter().zip(&ws).filter(|(a, b)| a == b).count();
         rep.raw(
@@ -400,7 +405,7 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
         rep.raw(
             "act_quant/scales",
             se == ws.len(),
-            "bit-exact ue8m0 scales",
+            "bit-exact ue8m0 scales, in the GEMMs' layout",
             format!("{se}/{}", ws.len()),
         );
         rep.exact("act_quant/qdq", &bf(&ops, &y)?, &f.f32s("qdq")?, true);
@@ -412,13 +417,7 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
         let ws = f.shape("w");
         let (m, k, n) = (xs[0], xs[1], ws[0]);
         let x = f.dev(&ops, "x")?;
-        let w = QW {
-            w: f.dev(&ops, "w")?,
-            s: f.dev(&ops, "ws")?,
-            n,
-            k,
-            fmt: QFmt::Fp8Block32,
-        };
+        let w = qw_fx(&f, &ops, "w", "ws", n, k, QFmt::Fp8Block32)?;
         let y = ops.buf(m * n * 2)?;
         let mut scr = v::Scratch::default();
         ops.linear_q(x.p(&st), k, m, &w, y.p(&st), n, false, &mut scr)?;
@@ -853,13 +852,15 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
                     .flat_map(|&x| v::f32_to_bf16_bits(x).to_le_bytes())
                     .collect();
                 let qr = Buf::from_bytes(&st, &qr_rows)?;
-                let w = QW {
-                    w: f.dev(&ops, &format!("L{lid}/wq_b"))?,
-                    s: f.dev(&ops, &format!("L{lid}/wq_b_s"))?,
-                    n: 4096,
-                    k: 1280,
-                    fmt: QFmt::Fp8Block32,
-                };
+                let w = qw_fx(
+                    &f,
+                    &ops,
+                    &format!("L{lid}/wq_b"),
+                    &format!("L{lid}/wq_b_s"),
+                    4096,
+                    1280,
+                    QFmt::Fp8Block32,
+                )?;
                 let q = ops.buf(ln * 4096 * 2)?;
                 let mut scr = v::Scratch::default();
                 ops.linear_q(qr.p(&st), 1280, ln, &w, q.p(&st), 4096, false, &mut scr)?;
@@ -1138,14 +1139,20 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
             1e-5,
         );
         let ex = |tag: &str, i: usize, n: usize, k: usize| -> Result<QW, String> {
-            let w = f.dev(&ops, &format!("{tag}/w{i}"))?;
-            let s = f.dev(&ops, &format!("{tag}/w{i}_s"))?;
             let fmt = if f.dtype(&format!("{tag}/w{i}")) == "f8e4m3" {
                 QFmt::Fp8Block32
             } else {
                 QFmt::Mxfp4
             };
-            Ok(QW { w, s, n, k, fmt })
+            qw_fx(
+                &f,
+                &ops,
+                &format!("{tag}/w{i}"),
+                &format!("{tag}/w{i}_s"),
+                n,
+                k,
+                fmt,
+            )
         };
         let run_expert =
             |w: &[QW; 3], xin: &Buf, rows: usize, wrow: Option<&Buf>| -> Result<Vec<f32>, String> {
@@ -1206,9 +1213,11 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
             2e-4,
             0.03,
         );
-        // the minted NVFP4 form of the same expert must give the same bits
+        // the minted NVFP4 form of the same expert must give the same bits (the mint is checked and
+        // the device holds the ue8m0 codes it came from)
         let mint = |w: &QW| -> Result<QW, String> {
-            let (sc, s2) = v::mint_mxfp4_scales(&w.s.host(&st)?)?;
+            let sc = w.s.host(&st)?;
+            let (_, s2) = v::mint_mxfp4_scales(&sc)?;
             Ok(QW {
                 w: Buf::from_bytes(&st, &w.w.host(&st)?)?,
                 s: Buf::from_bytes(&st, &sc)?,
@@ -1279,13 +1288,7 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
             )
         })?;
         rep.exact("engram/dequant", &bf(&ops, &emb)?, &f.f32s("emb")?, true);
-        let wkv = QW {
-            w: f.dev(&ops, "wkv")?,
-            s: f.dev(&ops, "wkv_s")?,
-            n: 25600,
-            k: 6144,
-            fmt: QFmt::Fp8Block32,
-        };
+        let wkv = qw_fx(&f, &ops, "wkv", "wkv_s", 25600, 6144, QFmt::Fp8Block32)?;
         let kv = ops.buf(s * 25600 * 2)?;
         let mut scr = v::Scratch::default();
         ops.linear_q(emb.p(&st), 6144, s, &wkv, kv.p(&st), 25600, false, &mut scr)?;
@@ -1359,6 +1362,36 @@ impl Lcg {
 /// tile-list dispatch over a device plan, the device plan against the host `MoePlan`, and the
 /// small-M bf16 and fp32-FMA kernels against their tile kernels on the same rows. Each check is a
 /// byte comparison: these kernels change the schedule, never the program.
+/// A fixture's block-quantized weight: codes `wn` and the checkpoint-form scales `sn` (FP8: one
+/// per 32 x 32 block; MXFP4: one per row and 32 inputs) repacked into the GEMMs' scale layout, as
+/// the loader holds them.
+fn qw_fx(
+    f: &Fx,
+    ops: &Ops,
+    wn: &str,
+    sn: &str,
+    n: usize,
+    k: usize,
+    fmt: QFmt,
+) -> Result<QW, String> {
+    let raw = f.bytes(sn)?;
+    let kb = k / 32;
+    let s = match fmt {
+        QFmt::Fp8Block32 => v::sf_pack(n, k, |r, b| raw[r / 32 * kb + b]),
+        _ => v::sf_pack(n, k, |r, b| raw[r * kb + b]),
+    };
+    Ok(QW {
+        w: f.dev(ops, wn)?,
+        s: Buf::from_bytes(&ops.st, &s)?,
+        n,
+        k,
+        fmt,
+    })
+}
+
+/// A grouped call's two outputs and each pair's scale row, read back.
+type Grouped = (Vec<u8>, Vec<u8>, Vec<i32>);
+
 fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
     use memra_engine::dsv41_gpu::tp::MoePlan;
     let st = ops.st.clone();
@@ -1374,23 +1407,60 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             format!("{} bytes, {diff} differ", a.len()),
         );
     };
+    // the scale layout of `rows` rows from row-major codes `[rows][k / 32]`
+    let sfp = |rows: usize, k: usize, raw: &[u8]| v::sf_pack(rows, k, |r, b| raw[r * (k / 32) + b]);
+    // One dense CUTLASS call in a given form (1 normal, 2 swapped tileN 8, 3 swapped tileN 16).
+    #[allow(clippy::too_many_arguments)]
+    let dense = |a: Dp,
+                 asf: Dp,
+                 w: Dp,
+                 ldw: usize,
+                 wsf: Dp,
+                 wf: i32,
+                 c: Dp,
+                 ldc: usize,
+                 m: usize,
+                 n: usize,
+                 k: usize,
+                 form: i32| {
+        ck("cutlass_gemm", unsafe {
+            ffi::memra_v41_cutlass_gemm(
+                a.c(),
+                k as i64,
+                asf.c(),
+                w.c(),
+                ldw as i64,
+                wsf.c(),
+                wf,
+                c.m(),
+                ldc as i64,
+                m as i32,
+                n as i32,
+                k as i32,
+                form,
+                sv,
+            )
+        })
+    };
+    // Every form of the dense GEMM against the normal one (rows on A, 128 x 128), byte for byte:
     // (m, n, k, weight format, activation scale code range)
     type GemmCase = (usize, usize, usize, i32, (u8, u8));
-    let cases: [GemmCase; 20] = [
+    let cases: [GemmCase; 22] = [
         // a last 128-column tile half full (a rank's share of an expert's hidden columns at 4 ranks: 576)
         (200, 576, 5120, 1, (118, 130)),
         (300, 576, 5120, 0, (118, 130)),
         (130, 1344, 2304, 1, (118, 130)),
         (6, 576, 5120, 1, (118, 130)),
         (1, 1280, 5120, 0, (118, 130)),
+        (2, 1280, 5120, 0, (118, 130)),
         (3, 4096, 1280, 0, (118, 130)),
         (4, 2304, 5120, 1, (118, 130)),
         (5, 512, 5120, 0, (118, 130)),
-        // the small-row body with two and four sets of 8 activation rows
+        (8, 512, 8192, 0, (118, 130)),
         (12, 1280, 5120, 0, (118, 130)),
         (16, 2304, 5120, 1, (118, 130)),
         (24, 5120, 2304, 1, (118, 130)),
-        (30, 512, 8192, 0, (118, 130)),
+        (32, 512, 8192, 0, (118, 130)),
         (64, 2304, 5120, 1, (118, 130)),
         (77, 1280, 5120, 0, (118, 130)),
         (200, 5120, 2304, 1, (118, 130)),
@@ -1403,74 +1473,69 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
     ];
     for (ci, &(m, n, k, wf, (slo, shi))) in cases.iter().enumerate() {
         let a = Buf::from_bytes(&st, &rng.e4m3(m * k))?;
-        let a_s = Buf::from_bytes(&st, &rng.range(m * (k / 32), slo, shi))?;
-        let (w, ws, ldb, ldbs, s2) = match wf {
-            0 => (
-                rng.e4m3(n * k),
-                rng.range(n.div_ceil(32) * (k / 32), 100, 127),
-                k,
-                k / 32,
-                1.0f32,
-            ),
-            1 => (
-                rng.bytes(n * k / 2),
-                rng.range(n * (k / 32), 112, 124),
-                k / 2,
-                k / 32,
-                1.0,
-            ),
-            _ => {
-                // minted NVFP4: equal e4m3 scale pairs, a power-of-two global scale
-                let mut sc = rng.range(n * (k / 32), 0x30, 0x50);
-                sc = sc.iter().flat_map(|&b| [b, b]).collect();
-                (rng.bytes(n * k / 2), sc, k / 2, k / 16, 2f32.powi(-9))
+        let asf = Buf::from_bytes(&st, &sfp(m, k, &rng.range(m * (k / 32), slo, shi)))?;
+        let kb = k / 32;
+        let (w, ws, ldw) = match wf {
+            0 => {
+                let blk = rng.range(n.div_ceil(32) * kb, 100, 127);
+                (
+                    rng.e4m3(n * k),
+                    v::sf_pack(n, k, |r, b| blk[r / 32 * kb + b]),
+                    k,
+                )
             }
+            // MXFP4, and minted NVFP4 (its ue8m0 codes on the device, as the loader holds them)
+            _ => (
+                rng.bytes(n * k / 2),
+                sfp(n, k, &rng.range(n * kb, 112, 124)),
+                k / 2,
+            ),
         };
         let w = Buf::from_bytes(&st, &w)?;
         let ws = Buf::from_bytes(&st, &ws)?;
-        for out_f32 in [0, 1] {
-            let eb = if out_f32 == 1 { 4 } else { 2 };
-            let got = ops.buf(m * n * eb)?;
-            let want = ops.buf(m * n * eb)?;
-            for (c, refk) in [(&got, false), (&want, true)] {
-                let f = if refk {
-                    ffi::memra_v41_gemm_f8_ref
-                } else {
-                    ffi::memra_v41_gemm_f8
-                };
-                ck("gemm_f8 schedule", unsafe {
-                    f(
-                        a.p(&st).c(),
-                        k as i64,
-                        a_s.p(&st).c(),
-                        (k / 32) as i64,
-                        w.p(&st).c(),
-                        ldb as i64,
-                        ws.p(&st).c(),
-                        ldbs as i64,
-                        s2,
-                        wf,
-                        c.p(&st).m(),
-                        n as i64,
-                        out_f32,
-                        m as i32,
-                        n as i32,
-                        k as i32,
-                        sv,
-                    )
-                })?;
-            }
+        let want = ops.buf(m * n * 2)?;
+        dense(
+            a.p(&st),
+            asf.p(&st),
+            w.p(&st),
+            ldw,
+            ws.p(&st),
+            wf,
+            want.p(&st),
+            n,
+            m,
+            n,
+            k,
+            1,
+        )?;
+        let want = want.host(&st)?;
+        for form in [0, 2, 3] {
+            let got = ops.buf(m * n * 2)?;
+            dense(
+                a.p(&st),
+                asf.p(&st),
+                w.p(&st),
+                ldw,
+                ws.p(&st),
+                wf,
+                got.p(&st),
+                n,
+                m,
+                n,
+                k,
+                form,
+            )?;
             same(
                 rep,
-                &format!("schedule/gemm_f8/{ci}_m{m}_n{n}_k{k}_wf{wf}_f32{out_f32}"),
+                &format!("schedule/cutlass_gemm/{ci}_m{m}_n{n}_k{k}_wf{wf}_form{form}"),
                 &got.host(&st)?,
-                &want.host(&st)?,
+                &want,
             );
         }
     }
 
-    // the device plan against the host plan, then the tile-list dispatch against the reference
-    // GEMM run per expert, on a 16-expert slice
+    // the device plan against the host plan, then the grouped GEMM in every form against the dense
+    // normal form run per expert, on a 16-expert slice
     // (rows, experts, top-k, tile rows, output columns): 576 is a rank's share of the hidden columns at 4
     // ranks, whose last 128-column tile is half full
     for &(rows, ne, topk, bm, n) in &[
@@ -1478,6 +1543,8 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         (1, 16, 6, 4, 2304),
         (3, 16, 6, 4, 2304),
         (6, 16, 6, 8, 2304),
+        (12, 16, 6, 8, 2304),
+        (40, 16, 6, 64, 2304),
         (700, 16, 6, 64, 2304),
         (900, 16, 6, 128, 2304),
         (6, 16, 6, 8, 576),
@@ -1608,15 +1675,18 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 format!("err {e2}, flag {f2}, token 1 skips {skipped}, {placed} of {np} placed"),
             );
         }
-        // w1-shaped MXFP4 experts (k 5120) through the tile list vs the reference per expert
+        // w1-shaped MXFP4 experts (k 5120): the pairs' codes, row-major scale codes placed through
+        // each pair's scale row
         let k = 5120usize;
+        let kb = k / 32;
         let a = Buf::from_bytes(&st, &rng.e4m3(np * k))?;
-        let a_s = Buf::from_bytes(&st, &rng.range(np * (k / 32), 118, 130))?;
+        let a_rows = rng.range(np * kb, 118, 130);
+        let a_rm = Buf::from_bytes(&st, &a_rows)?;
         let mut wts = Vec::with_capacity(ne);
         let mut tab = Vec::with_capacity(ne * 64);
         for _ in 0..ne {
             let w = Buf::from_bytes(&st, &rng.bytes(n * k / 2))?;
-            let s = Buf::from_bytes(&st, &rng.range(n * (k / 32), 112, 124))?;
+            let s = Buf::from_bytes(&st, &sfp(n, k, &rng.range(n * kb, 112, 124)))?;
             for _ in 0..3 {
                 tab.extend_from_slice(&w.p(&st).addr().to_le_bytes());
             }
@@ -1630,67 +1700,134 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             wts.push((w, s));
         }
         let tabd = Buf::from_bytes(&st, &tab)?;
-        let got = ops.buf(np * n * 2)?;
-        ck("gemm_f8_tiles", unsafe {
-            ffi::memra_v41_gemm_f8_tiles(
-                a.p(&st).c(),
-                k as i64,
-                a_s.p(&st).c(),
-                (k / 32) as i64,
-                tiles.p(&st).c(),
-                ntiles.p(&st).i(),
-                max_tiles as i32,
-                tabd.p(&st).c(),
-                0,
-                (k / 2) as i64,
-                (k / 32) as i64,
-                1,
-                got.p(&st).m(),
-                n as i64,
-                0,
-                n as i32,
-                k as i32,
-                bm as i32,
-                sv,
-            )
-        })?;
+        // the reference: each expert's rows as one dense call in the normal form
         let want = ops.buf(np * n * 2)?;
         for (e, wt) in wts.iter().enumerate().take(ne) {
             let (p0, p1) = (host.off[e], host.off[e + 1]);
             if p1 == p0 {
                 continue;
             }
-            ck("gemm_f8_ref", unsafe {
-                ffi::memra_v41_gemm_f8_ref(
-                    a.at(&st, p0 * k).c(),
-                    k as i64,
-                    a_s.at(&st, p0 * (k / 32)).c(),
-                    (k / 32) as i64,
-                    wt.0.p(&st).c(),
-                    (k / 2) as i64,
-                    wt.1.p(&st).c(),
-                    (k / 32) as i64,
-                    1.0,
-                    1,
-                    want.at(&st, p0 * n * 2).m(),
-                    n as i64,
-                    0,
-                    (p1 - p0) as i32,
-                    n as i32,
+            let esf = Buf::from_bytes(&st, &sfp(p1 - p0, k, &a_rows[p0 * kb..p1 * kb]))?;
+            dense(
+                a.at(&st, p0 * k),
+                esf.p(&st),
+                wt.0.p(&st),
+                k / 2,
+                wt.1.p(&st),
+                1,
+                want.at(&st, p0 * n * 2),
+                n,
+                p1 - p0,
+                n,
+                k,
+                1,
+            )?;
+        }
+        let want = want.host(&st)?;
+        // one grouped call over local experts [e0, e0 + ng) of the plan, in `form`, into a fresh
+        // buffer of 0xA5 bytes (rows of other experts must stay untouched)
+        let grouped = |e0: usize,
+                       ng: usize,
+                       form: i32,
+                       tab: &Buf,
+                       projs: (i32, i32)|
+         -> Result<Grouped, String> {
+            let sfrow = ops.buf(np * 4)?;
+            ck("cutlass_sfrow", unsafe {
+                ffi::memra_v41_cutlass_sfrow(
+                    off.p(&st).i(),
+                    e0 as i32,
+                    ng as i32,
+                    np as i32,
+                    sfrow.p(&st).im(),
+                    sv,
+                )
+            })?;
+            let asf = ops.buf(v::sf_bytes(np + 127 * ng.min(np), k))?;
+            ck("sf_place", unsafe {
+                ffi::memra_v41_sf_place(
+                    a_rm.p(&st).c(),
+                    kb as i64,
+                    sfrow.p(&st).i(),
+                    asf.p(&st).m(),
+                    np as i32,
                     k as i32,
                     sv,
                 )
             })?;
+            let fill = vec![0xA5u8; np * n * 2];
+            let (d0, d1) = (Buf::from_bytes(&st, &fill)?, Buf::from_bytes(&st, &fill)?);
+            let nproj = if projs.0 == projs.1 { 1 } else { 2 };
+            let bytes = unsafe { ffi::memra_v41_cutlass_moe_bytes((ng * nproj) as i32) };
+            let blk = ops.buf(bytes.max(1) as usize)?;
+            ck("cutlass_moe", unsafe {
+                ffi::memra_v41_cutlass_moe(
+                    off.p(&st).i(),
+                    e0 as i32,
+                    ng as i32,
+                    nproj as i32,
+                    projs.0,
+                    projs.1,
+                    // a rank's table: record g is local expert g (expert e0 + g)
+                    tab.at(&st, e0 * 64).c(),
+                    a.p(&st).c(),
+                    asf.p(&st).c(),
+                    d0.p(&st).m(),
+                    d1.p(&st).m(),
+                    n as i64,
+                    n as i32,
+                    k as i32,
+                    (k / 2) as i64,
+                    rows as i32,
+                    form,
+                    blk.p(&st).m(),
+                    bytes,
+                    sv,
+                )
+            })?;
+            Ok((d0.host(&st)?, d1.host(&st)?, bytes_i32(&sfrow.host(&st)?)))
+        };
+        // each pair's scale row: the padded prefix of the experts' rows
+        let (mut prow, mut want_sfrow) = (0usize, vec![-1i32; np]);
+        for e in 0..ne {
+            for (i, p) in (host.off[e]..host.off[e + 1]).enumerate() {
+                want_sfrow[p] = (prow + i) as i32;
+            }
+            prow += (host.off[e + 1] - host.off[e]).next_multiple_of(128);
         }
-        same(
-            rep,
-            &format!("schedule/gemm_f8_tiles/rows{rows}_bm{bm}{nt}"),
-            &got.host(&st)?,
-            &want.host(&st)?,
-        );
-        if bm <= 8 {
-            // w1, w3 and the SwiGLU in one launch vs the three launches. The table's third
-            // projection is the next expert's weight, so gate and up differ.
+        for form in [1, 2, 3, 0] {
+            let (got, _, sfrow) = grouped(0, ne, form, &tabd, (0, 0))?;
+            if form == 1 {
+                rep.raw(
+                    &format!("schedule/cutlass_sfrow/rows{rows}{nt}"),
+                    sfrow == want_sfrow,
+                    "each pair's scale row == the host's padded prefix",
+                    format!("{np} pairs"),
+                );
+            }
+            same(
+                rep,
+                &format!("schedule/cutlass_moe/rows{rows}_form{form}{nt}"),
+                &got,
+                &want,
+            );
+        }
+        // a rank's range of experts [4, 12): its pairs' rows as above, every other row untouched
+        {
+            let (got, _, _) = grouped(4, 8, 0, &tabd, (0, 0))?;
+            let (p0, p1) = (host.off[4] * n * 2, host.off[12] * n * 2);
+            let outside = got[..p0].iter().chain(&got[p1..]).all(|&b| b == 0xA5);
+            let inside = got[p0..p1] == want[p0..p1];
+            rep.raw(
+                &format!("schedule/cutlass_moe_range/rows{rows}{nt}"),
+                inside && outside,
+                "experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched",
+                format!("inside {inside}, outside untouched {outside}"),
+            );
+        }
+        // w1 and w3 in one launch (2 x 16 groups) == two launches; the table's third projection is
+        // the next expert's weight, so the two outputs differ
+        {
             let mut tab2 = Vec::with_capacity(ne * 64);
             for e in 0..ne {
                 let (w1, w3) = (&wts[e], &wts[(e + 1) % ne]);
@@ -1703,77 +1840,20 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 tab2.extend_from_slice(&0i32.to_le_bytes());
             }
             let tab2 = Buf::from_bytes(&st, &tab2)?;
-            let (gb, ub) = (ops.buf(np * n * 2)?, ops.buf(np * n * 2)?);
-            for (proj, c) in [(0, &gb), (2, &ub)] {
-                ck("gemm_f8_tiles", unsafe {
-                    ffi::memra_v41_gemm_f8_tiles(
-                        a.p(&st).c(),
-                        k as i64,
-                        a_s.p(&st).c(),
-                        (k / 32) as i64,
-                        tiles.p(&st).c(),
-                        ntiles.p(&st).i(),
-                        max_tiles as i32,
-                        tab2.p(&st).c(),
-                        proj,
-                        (k / 2) as i64,
-                        (k / 32) as i64,
-                        1,
-                        c.p(&st).m(),
-                        n as i64,
-                        0,
-                        n as i32,
-                        k as i32,
-                        bm as i32,
-                        sv,
-                    )
-                })?;
-            }
-            // hidden rows 2,400 wide at a column offset, as the split MoE writes them
-            let (ldh, h0) = (n + 96, 64usize);
-            let (want_h, got_h) = (ops.buf(np * ldh * 2)?, ops.buf(np * ldh * 2)?);
-            ck("swiglu", unsafe {
-                ffi::memra_v41_swiglu(
-                    gb.p(&st).m(),
-                    ub.p(&st).m(),
-                    n as i64,
-                    pw.p(&st).f(),
-                    10.0,
-                    want_h.at(&st, h0 * 2).m(),
-                    ldh as i64,
-                    np as i32,
-                    n as i32,
-                    sv,
-                )
-            })?;
-            ck("swiglu_tiles", unsafe {
-                ffi::memra_v41_swiglu_tiles(
-                    a.p(&st).c(),
-                    k as i64,
-                    a_s.p(&st).c(),
-                    (k / 32) as i64,
-                    tiles.p(&st).c(),
-                    ntiles.p(&st).i(),
-                    max_tiles as i32,
-                    tab2.p(&st).c(),
-                    (k / 2) as i64,
-                    (k / 32) as i64,
-                    1,
-                    pw.p(&st).f(),
-                    10.0,
-                    got_h.at(&st, h0 * 2).m(),
-                    ldh as i64,
-                    n as i32,
-                    k as i32,
-                    bm as i32,
-                    sv,
-                )
-            })?;
+            let (g2, u2, _) = grouped(0, ne, 0, &tab2, (0, 2))?;
+            let (g1, _, _) = grouped(0, ne, 0, &tab2, (0, 0))?;
+            let (u1, _, _) = grouped(0, ne, 0, &tab2, (2, 2))?;
             same(
                 rep,
-                &format!("schedule/swiglu_tiles/rows{rows}_bm{bm}{nt}"),
-                &got_h.host(&st)?,
-                &want_h.host(&st)?,
+                &format!("schedule/cutlass_moe_pair/rows{rows}_w1{nt}"),
+                &g2,
+                &g1,
+            );
+            same(
+                rep,
+                &format!("schedule/cutlass_moe_pair/rows{rows}_w3{nt}"),
+                &u2,
+                &u1,
             );
         }
     }

@@ -1,0 +1,87 @@
+probe rc 0 16:09:29
+device NVIDIA GB10 sm_121, 48 SMs, CUTLASS 4.8.1
+grouped normal G 96: workspace 36864 bytes
+PROBE-PASS T1 experts normal routing 0 (1450 rows, 26 of 96 groups empty): device-built vs host-built: 0 of 3340800 differ
+PROBE-PASS T1 experts normal routing 1 (2041 rows, 22 of 96 groups empty): device-built vs host-built: 0 of 4702464 differ
+PROBE-PASS T1 experts normal routing 2 (1978 rows, 27 of 96 groups empty): device-built vs host-built: 0 of 4557312 differ
+PROBE-PASS T2 experts normal replay 0 (1605 rows): graph replay vs eager: 0 of 3697920 differ
+PROBE-PASS T2 experts normal replay 1 (1605 rows): graph replay vs eager: 0 of 3697920 differ
+PROBE-PASS T2 experts normal replay 2 (1605 rows): graph replay vs eager: 0 of 3697920 differ
+T4 experts normal G 96 rows 1605: setup kernel 18.8 us, grouped GEMM 2114.7 us, graph [setup+place+GEMM] 2138.9 us
+grouped swapped G 96: workspace 36864 bytes
+PROBE-PASS T1 experts swapped8 routing 0 (1450 rows, 26 of 96 groups empty): device-built vs host-built: 0 of 3340800 differ
+PROBE-PASS T1 experts swapped8 routing 1 (2041 rows, 22 of 96 groups empty): device-built vs host-built: 0 of 4702464 differ
+PROBE-PASS T1 experts swapped8 routing 2 (1978 rows, 27 of 96 groups empty): device-built vs host-built: 0 of 4557312 differ
+PROBE-PASS T2 experts swapped8 replay 0 (1605 rows): graph replay vs eager: 0 of 3697920 differ
+PROBE-PASS T2 experts swapped8 replay 1 (1605 rows): graph replay vs eager: 0 of 3697920 differ
+PROBE-PASS T2 experts swapped8 replay 2 (1605 rows): graph replay vs eager: 0 of 3697920 differ
+T4 experts swapped8 G 96 rows 1605: setup kernel 18.7 us, grouped GEMM 2451.5 us, graph [setup+place+GEMM] 2482.2 us
+grouped swapped G 96: workspace 36864 bytes
+PROBE-PASS T1 experts swapped16 routing 0 (1450 rows, 26 of 96 groups empty): device-built vs host-built: 0 of 3340800 differ
+PROBE-PASS T1 experts swapped16 routing 1 (2041 rows, 22 of 96 groups empty): device-built vs host-built: 0 of 4702464 differ
+PROBE-PASS T1 experts swapped16 routing 2 (1978 rows, 27 of 96 groups empty): device-built vs host-built: 0 of 4557312 differ
+PROBE-PASS T2 experts swapped16 replay 0 (1605 rows): graph replay vs eager: 0 of 3697920 differ
+PROBE-PASS T2 experts swapped16 replay 1 (1605 rows): graph replay vs eager: 0 of 3697920 differ
+PROBE-PASS T2 experts swapped16 replay 2 (1605 rows): graph replay vs eager: 0 of 3697920 differ
+T4 experts swapped16 G 96 rows 1605: setup kernel 18.7 us, grouped GEMM 2207.8 us, graph [setup+place+GEMM] 2240.8 us
+PROBE-PASS T1 forms: swapped tileN 8 vs normal (uneven groups, bf16): 0 of 3340800 differ
+PROBE-PASS T1 forms: swapped tileN 16 vs normal (uneven groups, bf16): 0 of 3340800 differ
+  plain normal M 1: workspace 0
+  plain swapped M 1: workspace 0
+  plain swapped M 1: workspace 0
+PROBE-PASS T3 dense M 1: plain swapped tileN 8 vs plain normal: 0 of 1280 differ
+PROBE-PASS T3 dense M 1: plain swapped tileN 16 vs plain normal: 0 of 1280 differ
+PROBE-PASS T3 dense M 1: grouped normal (G 1) vs plain normal: 0 of 1280 differ
+PROBE-PASS T3 dense M 1: plain normal graph replay vs eager: 0 of 1280 differ
+PROBE-PASS T3 dense M 1: plain swapped8 graph replay vs eager: 0 of 1280 differ
+  plain normal M 2: workspace 0
+  plain swapped M 2: workspace 0
+  plain swapped M 2: workspace 0
+PROBE-PASS T3 dense M 2: plain swapped tileN 8 vs plain normal: 0 of 2560 differ
+PROBE-PASS T3 dense M 2: plain swapped tileN 16 vs plain normal: 0 of 2560 differ
+PROBE-PASS T3 dense M 2: grouped normal (G 1) vs plain normal: 0 of 2560 differ
+PROBE-PASS T3 dense M 2: plain normal graph replay vs eager: 0 of 2560 differ
+PROBE-PASS T3 dense M 2: plain swapped8 graph replay vs eager: 0 of 2560 differ
+  plain normal M 8: workspace 0
+  plain swapped M 8: workspace 0
+  plain swapped M 8: workspace 0
+PROBE-PASS T3 dense M 8: plain swapped tileN 8 vs plain normal: 0 of 10240 differ
+PROBE-PASS T3 dense M 8: plain swapped tileN 16 vs plain normal: 0 of 10240 differ
+PROBE-PASS T3 dense M 8: grouped normal (G 1) vs plain normal: 0 of 10240 differ
+PROBE-PASS T3 dense M 8: plain normal graph replay vs eager: 0 of 10240 differ
+PROBE-PASS T3 dense M 8: plain swapped8 graph replay vs eager: 0 of 10240 differ
+  plain normal M 16: workspace 0
+  plain swapped M 16: workspace 0
+  plain swapped M 16: workspace 0
+PROBE-PASS T3 dense M 16: plain swapped tileN 8 vs plain normal: 0 of 20480 differ
+PROBE-PASS T3 dense M 16: plain swapped tileN 16 vs plain normal: 0 of 20480 differ
+PROBE-PASS T3 dense M 16: grouped normal (G 1) vs plain normal: 0 of 20480 differ
+PROBE-PASS T3 dense M 16: plain normal graph replay vs eager: 0 of 20480 differ
+PROBE-PASS T3 dense M 16: plain swapped8 graph replay vs eager: 0 of 20480 differ
+  plain normal M 33: workspace 0
+  plain swapped M 33: workspace 0
+  plain swapped M 33: workspace 0
+PROBE-PASS T3 dense M 33: plain swapped tileN 8 vs plain normal: 0 of 42240 differ
+PROBE-PASS T3 dense M 33: plain swapped tileN 16 vs plain normal: 0 of 42240 differ
+PROBE-PASS T3 dense M 33: grouped normal (G 1) vs plain normal: 0 of 42240 differ
+PROBE-PASS T3 dense M 33: plain normal graph replay vs eager: 0 of 42240 differ
+PROBE-PASS T3 dense M 33: plain swapped8 graph replay vs eager: 0 of 42240 differ
+  plain normal M 64: workspace 0
+  plain swapped M 64: workspace 0
+  plain swapped M 64: workspace 0
+PROBE-PASS T3 dense M 64: plain swapped tileN 8 vs plain normal: 0 of 81920 differ
+PROBE-PASS T3 dense M 64: plain swapped tileN 16 vs plain normal: 0 of 81920 differ
+PROBE-PASS T3 dense M 64: grouped normal (G 1) vs plain normal: 0 of 81920 differ
+PROBE-PASS T3 dense M 64: plain normal graph replay vs eager: 0 of 81920 differ
+PROBE-PASS T3 dense M 64: plain swapped8 graph replay vs eager: 0 of 81920 differ
+  plain normal M 4096: workspace 0
+  plain swapped M 4096: workspace 0
+  plain swapped M 4096: workspace 0
+PROBE-PASS T3 dense M 4096: plain swapped tileN 8 vs plain normal: 0 of 5242880 differ
+PROBE-PASS T3 dense M 4096: plain swapped tileN 16 vs plain normal: 0 of 5242880 differ
+PROBE-PASS T3 dense M 4096: grouped normal (G 1) vs plain normal: 0 of 5242880 differ
+PROBE-PASS T3 dense M 4096: plain normal graph replay vs eager: 0 of 5242880 differ
+PROBE-PASS T3 dense M 4096: plain swapped8 graph replay vs eager: 0 of 5242880 differ
+PROBE-RESULT PASS
+PROBE-DONE
+GPRUN-DONE 16:09:29

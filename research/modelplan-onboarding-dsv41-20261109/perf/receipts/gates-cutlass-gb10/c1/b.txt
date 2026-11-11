@@ -1,0 +1,32 @@
+tp 0,0 peer-pull rc 1 478 checks, 2 failed 2 FAIL lines
+FAIL layer24/rows16/pipelined/rank0/out_stream: 4876 of 655360 bytes differ (rel_l2 3.664e-7, max_abs 3.125e-2) [byte-identical to the single-card block_forward]
+FAIL layer24/rows16/pipelined/rank1/out_stream: 4876 of 655360 bytes differ (rel_l2 3.664e-7, max_abs 3.125e-2) [byte-identical to the single-card block_forward]
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank1/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank1/moe_out f3cf05d6209a3893
+tp 0,0,0,0 peer-pull rc 1 914 checks, 8 failed 8 FAIL lines
+FAIL layer2/rows16/pipelined/rank0/out_stream: 778 of 655360 bytes differ (rel_l2 5.757e-5, max_abs 6.250e-2) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/pipelined/rank1/out_stream: 778 of 655360 bytes differ (rel_l2 5.757e-5, max_abs 6.250e-2) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/pipelined/rank2/out_stream: 778 of 655360 bytes differ (rel_l2 5.757e-5, max_abs 6.250e-2) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/pipelined/rank3/out_stream: 778 of 655360 bytes differ (rel_l2 5.757e-5, max_abs 6.250e-2) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rank0/out_stream: 1811 of 655360 bytes differ (rel_l2 2.109e-5, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+tp 0,0 host-canonical rc 0 478 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank1/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank1/moe_out f3cf05d6209a3893
+tp 0,0,0,0 host-canonical rc 0 914 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+tp 0,0 default rc 0 480 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank1/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank1/moe_out f3cf05d6209a3893

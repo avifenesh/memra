@@ -1,0 +1,57 @@
+/home/avifenesh/.cache/uv/archive-v0/4fCGXJdYCKm5I7bI/lib/python3.12/site-packages/torch/_subclasses/functional_tensor.py:377: UserWarning: Failed to initialize NumPy: No module named 'numpy' (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:82.)
+  cpu = _conversion_method_template(device=torch.device("cpu"))
+| group | steps | KL cur | KL new | KL floor | d = new - cur: mean [95% interval] | floor's half-width | top-1 cur / new / floor | steps with byte-equal top-32 | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| chat | 517 | 1.509e-02 | 1.599e-02 | 1.432e-02 | +9.00e-04 [-2.90e-03, +4.71e-03] = -19.2% to +31.2% of KL cur | 4.25e-03 | 96.9% / 96.7% / 97.5% | 0 | PASS |
+| all | 517 | 1.509e-02 | 1.599e-02 | 1.432e-02 | +9.00e-04 [-2.90e-03, +4.71e-03] = -19.2% to +31.2% of KL cur | 4.25e-03 | 96.9% / 96.7% / 97.5% | 0 | PASS |
+
+router, the new order against the current route: 918920 routed rows (20160 of them decode steps) x top-6
+| | rows | of all |
+|---|---|---|
+| the same six experts | 379342 | 41.2813% |
+| another sixth expert (its least-weight choice swapped) | 138487 | 15.0706% |
+| any other difference | 401091 | 43.6481% |
+largest weight difference on a shared expert: 1.495e+00 (median 1.795e-02)
+the MoE output of a decode step, relative difference against the current route, median / max: another sixth expert 2.06e-01 / 8.86e-01 (2996 steps); other differences 2.64e-01 / 1.21e+01 (2915); the same experts 1.01e-01 / 7.64e-01 (14249)
+| layer | rows | another sixth | other |
+|---|---|---|---|
+| 0 | 22973 | 66 | 42 |
+| 1 | 22973 | 1517 | 1057 |
+| 2 | 22973 | 2632 | 2466 |
+| 3 | 22973 | 3160 | 3840 |
+| 4 | 22973 | 3657 | 4265 |
+| 5 | 22973 | 3645 | 5383 |
+| 6 | 22973 | 3692 | 8041 |
+| 7 | 22973 | 4240 | 7593 |
+| 8 | 22973 | 4139 | 5584 |
+| 9 | 22973 | 4325 | 6238 |
+| 10 | 22973 | 4332 | 6208 |
+| 11 | 22973 | 4559 | 6761 |
+| 12 | 22973 | 3966 | 9237 |
+| 13 | 22973 | 3824 | 8631 |
+| 14 | 22973 | 4114 | 8385 |
+| 15 | 22973 | 4484 | 5067 |
+| 16 | 22973 | 4214 | 9492 |
+| 17 | 22973 | 4026 | 10897 |
+| 18 | 22973 | 4050 | 9633 |
+| 19 | 22973 | 3487 | 8146 |
+| 20 | 22973 | 4196 | 8966 |
+| 21 | 22973 | 3926 | 12201 |
+| 22 | 22973 | 3428 | 14254 |
+| 23 | 22973 | 3500 | 14355 |
+| 24 | 22973 | 3274 | 15171 |
+| 25 | 22973 | 2622 | 16378 |
+| 26 | 22973 | 2538 | 16405 |
+| 27 | 22973 | 2525 | 17050 |
+| 28 | 22973 | 2850 | 16014 |
+| 29 | 22973 | 2798 | 15921 |
+| 30 | 22973 | 3547 | 13888 |
+| 31 | 22973 | 3310 | 14155 |
+| 32 | 22973 | 3029 | 15039 |
+| 33 | 22973 | 2794 | 15157 |
+| 34 | 22973 | 3375 | 14349 |
+| 35 | 22973 | 3401 | 13001 |
+| 36 | 22973 | 2832 | 13263 |
+| 37 | 22973 | 3773 | 9830 |
+| 38 | 22973 | 4183 | 9734 |
+| 39 | 22973 | 4457 | 8994 |

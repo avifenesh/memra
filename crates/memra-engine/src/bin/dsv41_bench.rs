@@ -669,6 +669,9 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
     let dev = e.ctx().name().unwrap_or_default();
     let ops = Ops::new(st.clone());
     let mut out = Vec::new();
+    // --form F: the CUTLASS form of every GEMM below (0 by rows, 1 normal, 2/3 swapped tileN 8/16)
+    let form: i32 = flag(a, "--form").and_then(|x| x.parse().ok()).unwrap_or(0);
+    v::GEMM_FORM.store(form, std::sync::atomic::Ordering::Relaxed);
     // the trunk's dense FP8 linears: (name, n, k)
     let dense = [
         ("wq_a", 1280usize, 5120usize),
@@ -683,7 +686,7 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
         let mut rng = Lcg(0x5eed_d541 ^ ((n * 1_000_003 + k) as u64));
         let w = QW {
             w: Buf::from_bytes(&st, &rng.e4m3(n * k))?,
-            s: Buf::from_bytes(&st, &rng.e8m0(n.div_ceil(32) * (k / 32), 110, 122))?,
+            s: Buf::from_bytes(&st, &rng.e8m0(v::sf_bytes(n, k), 110, 122))?,
             n,
             k,
             fmt: QFmt::Fp8Block32,
@@ -691,7 +694,7 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
         for m in [1usize, 64, 4096, 8192] {
             let mut rng = Lcg(rng.0 ^ (m as u64) << 20);
             let aq = Buf::from_bytes(&st, &rng.e4m3(m * k))?;
-            let as_ = Buf::from_bytes(&st, &rng.e8m0(m * (k / 32), 118, 130))?;
+            let as_ = Buf::from_bytes(&st, &rng.e8m0(v::sf_bytes(m, k), 118, 130))?;
             let c = ops.buf(m * n * 2)?;
             let ms = time_ms(&ops, reps, || {
                 ops.gemm_q(aq.p(&st), as_.p(&st), m, &w, c.p(&st), n, false)
@@ -836,34 +839,35 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
             ));
         }
     }
-    // grouped MXFP4 experts through the tile-list dispatch: w1/w3 (n 2304, k 5120) and w2 (n 5120,
-    // k 2304), `ng` experts of `rows` rows, tiles as `Ctx::moe_bm` picks them for that slice
-    for &(ng, rows) in &[
-        (6usize, 1usize),
-        (12, 1),
-        (29, 1),
-        (48, 1),
-        (15, 2),
-        (64, 64),
-        (384, 64),
-        (384, 512),
+    // grouped MXFP4 experts on the CUTLASS grouped GEMM: w1/w3 (n 2304, k 5120) and w2 (n 5120,
+    // k 2304), `ng` groups of which the first `act` hold `rows` rows each (a decode step's call
+    // covers a rank's every expert, most of them without rows)
+    for &(ng, act, rows) in &[
+        (6usize, 6usize, 1usize),
+        (12, 12, 1),
+        (29, 29, 1),
+        (48, 48, 1),
+        (15, 15, 2),
+        (384, 6, 1),
+        (96, 2, 1),
+        (384, 48, 1),
+        (64, 64, 64),
+        (384, 384, 64),
+        (384, 384, 512),
     ] {
-        let bm = if rows <= v::SMALL_M {
-            v::SMALL_M
-        } else if rows >= 128 {
-            128
-        } else {
-            64
-        };
         for &(name, n, k) in &[("exp_w13", 2304usize, 5120usize), ("exp_w2", 5120, 2304)] {
             // every shape draws its own inputs, so adding a shape never changes another's bytes
             let mut rng = Lcg(0x5eed_d541 ^ ((ng * 1_000_003 + rows * 7919 + n) as u64));
-            let mut wts = Vec::with_capacity(ng);
+            let mut wts = Vec::with_capacity(act);
             let mut ew = Vec::with_capacity(ng * 64);
-            let mut tiles = Vec::new();
             for z in 0..ng {
+                if z >= act {
+                    // a group without rows: its record is never read
+                    ew.extend_from_slice(&[0u8; 64]);
+                    continue;
+                }
                 let w = Buf::from_bytes(&st, &rng.bytes(n * k / 2))?;
-                let s = Buf::from_bytes(&st, &rng.e8m0(n * (k / 32), 112, 124))?;
+                let s = Buf::from_bytes(&st, &rng.e8m0(v::sf_bytes(n, k), 112, 124))?;
                 for _ in 0..3 {
                     ew.extend_from_slice(&w.p(&st).addr().to_le_bytes());
                 }
@@ -874,58 +878,59 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
                     ew.extend_from_slice(&1.0f32.to_le_bytes());
                 }
                 ew.extend_from_slice(&0i32.to_le_bytes());
-                for m0 in (0..rows).step_by(bm) {
-                    for x in [(z * rows) as i32, rows as i32, m0 as i32, z as i32] {
-                        tiles.extend_from_slice(&x.to_le_bytes());
-                    }
-                }
                 wts.push((w, s));
             }
-            let ntiles = tiles.len() / 16;
-            let m = ng * rows;
+            let m = act * rows;
+            let off: Vec<i32> = (0..=ng).map(|z| (z.min(act) * rows) as i32).collect();
+            let offd = Buf::from_i32(&st, &off)?;
             let ewd = Buf::from_bytes(&st, &ew)?;
-            let tld = Buf::from_bytes(&st, &tiles)?;
-            let ntd = Buf::from_i32(&st, &[ntiles as i32])?;
             let aq = Buf::from_bytes(&st, &rng.e4m3(m * k))?;
-            let as_ = Buf::from_bytes(&st, &rng.e8m0(m * (k / 32), 118, 130))?;
+            let asf = Buf::from_bytes(
+                &st,
+                &rng.e8m0(v::sf_bytes(act * rows.next_multiple_of(128), k), 118, 130),
+            )?;
             let c = ops.buf(m * n * 2)?;
+            // SAFETY: a size query
+            let bytes = unsafe { ffi::memra_v41_cutlass_moe_bytes(ng as i32) };
+            let blk = ops.buf(bytes.max(1) as usize)?;
             let ms = time_ms(&ops, reps, || {
-                ck("gemm_f8_tiles", unsafe {
-                    ffi::memra_v41_gemm_f8_tiles(
-                        aq.p(&st).c(),
-                        k as i64,
-                        as_.p(&st).c(),
-                        (k / 32) as i64,
-                        tld.p(&st).c(),
-                        ntd.p(&st).i(),
-                        ntiles as i32,
-                        ewd.p(&st).c(),
+                ck("cutlass_moe", unsafe {
+                    ffi::memra_v41_cutlass_moe(
+                        offd.p(&st).i(),
                         0,
-                        (k / 2) as i64,
-                        (k / 32) as i64,
+                        ng as i32,
                         1,
-                        c.p(&st).m(),
-                        n as i64,
                         0,
+                        0,
+                        ewd.p(&st).c(),
+                        aq.p(&st).c(),
+                        asf.p(&st).c(),
+                        c.p(&st).m(),
+                        std::ptr::null_mut(),
+                        n as i64,
                         n as i32,
                         k as i32,
-                        bm as i32,
+                        (k / 2) as i64,
+                        rows as i32,
+                        form,
+                        blk.p(&st).m(),
+                        bytes,
                         ops.sv(),
                     )
                 })
             })?;
             let hsh = sha(&c.host(&st)?);
             let med = median(&ms);
-            let bytes = (ng * n * k / 2 + m * k + m * n * 2) as f64;
+            let bytes = (act * n * k / 2 + m * k + m * n * 2) as f64;
             let flops = 2.0 * (m * n * k) as f64;
             eprintln!(
-                "gemm mxfp4 tiles {name} experts {ng} rows {rows} bm {bm}: median {:.4} ms ({:.0} GB/s, {:.1} TFLOPS) sha {hsh}",
+                "gemm mxfp4 grouped {name} groups {ng} with rows {act} rows {rows} form {form}: median {:.4} ms ({:.0} GB/s, {:.1} TFLOPS) sha {hsh}",
                 med,
                 bytes / med / 1e6,
                 flops / med / 1e9
             );
             out.push(format!(
-                "{{\"op\": \"mxfp4_tiles\", \"name\": \"{name}\", \"experts\": {ng}, \"rows\": {rows}, \"bm\": {bm}, \"n\": {n}, \"k\": {k}, \"median_ms\": {med:.5}, \"ms\": {}, \"sha\": \"{hsh}\"}}",
+                "{{\"op\": \"mxfp4_grouped\", \"name\": \"{name}\", \"groups\": {ng}, \"experts\": {act}, \"rows\": {rows}, \"form\": {form}, \"n\": {n}, \"k\": {k}, \"median_ms\": {med:.5}, \"ms\": {}, \"sha\": \"{hsh}\"}}",
                 fmt_list(&ms)
             ));
         }

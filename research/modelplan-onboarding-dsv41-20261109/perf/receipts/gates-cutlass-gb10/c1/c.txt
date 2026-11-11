@@ -1,0 +1,18 @@
+decode straddle126 rc 0 240 checks, 0 failed 0 FAIL lines
+decode gsm rc 0 240 checks, 0 failed 0 FAIL lines
+decode capital rc 0 60 checks, 0 failed 0 FAIL lines
+tp graph 0 rc 0 555 checks, 0 failed 0 FAIL lines
+HASH layer1/decode1/graph0/single/out_stream 6f75eeea6b9c96a4
+HASH layer1/decode1/graph0/single/moe_out 137b0e3934605c2b
+HASH layer1/decode1/graph0/rank0/out_stream 6f75eeea6b9c96a4
+PASS layer1/decode1/graph0/rank0/out_stream: 40960 bytes identical [byte-identical to the single-card block_forward]
+PASS layer1/decode1/graph0/rank0/out_pre_mix: 16 bytes identical [byte-identical to the single-card block_forward]
+PASS layer1/decode1/graph0/rank0/state/window_ring: 131072 bytes identical [byte-identical to the single-card block_forward]
+tp graph 0,0 rc 0 1105 checks, 0 failed 0 FAIL lines
+HASH layer1/decode1/graph0/single/out_stream 6f75eeea6b9c96a4
+HASH layer1/decode1/graph0/single/moe_out 137b0e3934605c2b
+HASH layer1/decode1/graph0/rank0/out_stream 6f75eeea6b9c96a4
+PASS layer1/decode1/graph0/rank0/out_stream: 40960 bytes identical [byte-identical to the single-card block_forward]
+PASS layer1/decode1/graph0/rank0/out_pre_mix: 16 bytes identical [byte-identical to the single-card block_forward]
+PASS layer1/decode1/graph0/rank0/state/window_ring: 131072 bytes identical [byte-identical to the single-card block_forward]
+GATES-C-DONE 17:28:00

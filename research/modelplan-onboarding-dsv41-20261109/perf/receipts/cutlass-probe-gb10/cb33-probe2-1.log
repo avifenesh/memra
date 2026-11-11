@@ -1,0 +1,31 @@
+device NVIDIA GB10 sm_121, CUTLASS 4.8.1
+w13 mxfp4 G 96 R 64 N 2304 K 5120: CUTLASS 3.2368 ms (44.8 TFLOPS), memra 4.7583 ms (30.5 TFLOPS), CUTLASS/memra 0.680 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 14155776 (CUTLASS max rel 0.000e+00)
+  differs: group 73 row 40 col 2194: reference c1e10000 (-28.125) CUTLASS c1e20000 (-28.25)
+w13 mxfp4 G 96 R 512 N 2304 K 5120: CUTLASS 6.8177 ms (170.1 TFLOPS), memra 20.3283 ms (57.0 TFLOPS), CUTLASS/memra 0.335 | outputs differing from the reference tile: memra 0, CUTLASS 1 of 113246208 (CUTLASS max rel 4.444e-03)
+  differs: group 0 row 3 col 850: reference 440e0126 (568.017944) CUTLASS 440e0127 (568.018005)
+  differs: group 0 row 7 col 129: reference 449c5809 (1250.7511) CUTLASS 449c580a (1250.75122)
+  differs: group 0 row 47 col 702: reference 437e8456 (254.516937) CUTLASS 437e8458 (254.516968)
+  differs: group 0 row 54 col 1947: reference 44ca893f (1620.28894) CUTLASS 44ca893e (1620.28882)
+  differs: group 0 row 61 col 436: reference c5334473 (-2868.27808) CUTLASS c5334474 (-2868.27832)
+  differs: group 1 row 4 col 384: reference 44efa412 (1917.1272) CUTLASS 44efa410 (1917.12695)
+  differs: group 1 row 12 col 712: reference c3f51f5d (-490.245026) CUTLASS c3f51f5b (-490.244965)
+  differs: group 1 row 28 col 1313: reference c48946d0 (-1098.21289) CUTLASS c48946d2 (-1098.21313)
+w13 mxfp4 (fp32 out) G 96 R 64 N 2304 K 5120: CUTLASS 3.3148 ms (43.7 TFLOPS), memra 4.9123 ms (29.5 TFLOPS), CUTLASS/memra 0.675 | outputs differing from the reference tile: memra 0, CUTLASS 767 of 14155776 (CUTLASS max rel 6.217e-05)
+  differs: group 0 row 7 col 203: reference 43bbe9fe (375.828064) CUTLASS 43bbe9ff (375.828094)
+  differs: group 0 row 12 col 1212: reference c3f3d84e (-487.68988) CUTLASS c3f3d84c (-487.689819)
+  differs: group 0 row 17 col 844: reference c42a7e41 (-681.972717) CUTLASS c42a7e42 (-681.972778)
+  differs: group 0 row 20 col 802: reference 42a35d1d (81.6818619) CUTLASS 42a35d1c (81.6818542)
+  differs: group 0 row 22 col 2066: reference c3aaa786 (-341.308777) CUTLASS c3aaa787 (-341.308807)
+  differs: group 0 row 33 col 2092: reference 43925601 (292.671906) CUTLASS 43925600 (292.671875)
+  differs: group 0 row 49 col 1205: reference 435b6cac (219.4245) CUTLASS 435b6cad (219.424515)
+  differs: group 0 row 50 col 1078: reference c47000b1 (-960.010803) CUTLASS c47000b2 (-960.010864)
+w13 mxfp4 (fp32 out) G 96 R 512 N 2304 K 5120: CUTLASS 8.0797 ms (143.5 TFLOPS), memra 20.0236 ms (57.9 TFLOPS), CUTLASS/memra 0.404 | outputs differing from the reference tile: memra 0, CUTLASS 6536 of 113246208 (CUTLASS max rel 3.431e-04)
+wq_a fp8 G 1 R 4096 N 1280 K 5120: CUTLASS 0.5073 ms (105.8 TFLOPS), memra 0.6156 ms (87.2 TFLOPS), CUTLASS/memra 0.824 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 5242880 (CUTLASS max rel 0.000e+00)
+decode w13 tileN 8 G 6 R 1 N 2304 K 5120: CUTLASS 0.1421 ms (249 GB/s weights), memra 0.1652 ms (214 GB/s), CUTLASS/memra 0.860 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 13824
+decode w13 tileN 16 G 6 R 1 N 2304 K 5120: CUTLASS 0.1415 ms (250 GB/s weights), memra 0.1602 ms (221 GB/s), CUTLASS/memra 0.884 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 13824
+decode w13 tileN 8 G 6 R 2 N 2304 K 5120: CUTLASS 0.1468 ms (241 GB/s weights), memra 0.1608 ms (220 GB/s), CUTLASS/memra 0.913 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 27648
+decode w13 tileN 16 G 6 R 2 N 2304 K 5120: CUTLASS 0.1466 ms (241 GB/s weights), memra 0.1609 ms (220 GB/s), CUTLASS/memra 0.911 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 27648
+decode w13 tileN 8 G 6 R 8 N 2304 K 5120: CUTLASS 0.1437 ms (246 GB/s weights), memra 0.1669 ms (212 GB/s), CUTLASS/memra 0.861 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 110592
+decode w13 tileN 16 G 6 R 8 N 2304 K 5120: CUTLASS 0.1458 ms (243 GB/s weights), memra 0.1704 ms (208 GB/s), CUTLASS/memra 0.855 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 110592
+decode w13 tileN 8 G 48 R 1 N 2304 K 5120: CUTLASS 1.3580 ms (208 GB/s weights), memra 1.6211 ms (175 GB/s), CUTLASS/memra 0.838 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 110592
+PROBE-DONE

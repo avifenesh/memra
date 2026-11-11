@@ -1,0 +1,38 @@
+device NVIDIA GB10 sm_121, CUTLASS 4.8.1
+dense normal fp32 (fp32 out) G 1 R 1 N 1280 K 5120: CUTLASS 0.0503 ms (0.3 TFLOPS), memra 0.0186 ms (0.7 TFLOPS), CUTLASS/memra 2.703 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 1280 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 1280 differ
+dense swapped tileN 8 fp32 G 1 R 1 N 1280 K 5120: CUTLASS 0.0215 ms (304 GB/s weights), memra 0.0194 ms (339 GB/s), CUTLASS/memra 1.112 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 1280 (fp32)
+dense normal fp32 (fp32 out) G 1 R 1 N 1280 K 5120: CUTLASS 0.0510 ms (0.3 TFLOPS), memra 0.0196 ms (0.7 TFLOPS), CUTLASS/memra 2.605 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 1280 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 1280 differ
+dense swapped tileN 16 fp32 G 1 R 1 N 1280 K 5120: CUTLASS 0.0232 ms (282 GB/s weights), memra 0.0195 ms (336 GB/s), CUTLASS/memra 1.189 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 1280 (fp32)
+dense normal fp32 (fp32 out) G 1 R 2 N 1280 K 5120: CUTLASS 0.0514 ms (0.5 TFLOPS), memra 0.0210 ms (1.2 TFLOPS), CUTLASS/memra 2.447 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 2560 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 2560 differ
+dense swapped tileN 8 fp32 G 1 R 2 N 1280 K 5120: CUTLASS 0.0223 ms (294 GB/s weights), memra 0.0207 ms (317 GB/s), CUTLASS/memra 1.077 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 2560 (fp32)
+dense normal fp32 (fp32 out) G 1 R 2 N 1280 K 5120: CUTLASS 0.0510 ms (0.5 TFLOPS), memra 0.0212 ms (1.2 TFLOPS), CUTLASS/memra 2.406 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 2560 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 2560 differ
+dense swapped tileN 16 fp32 G 1 R 2 N 1280 K 5120: CUTLASS 0.0230 ms (285 GB/s weights), memra 0.0214 ms (306 GB/s), CUTLASS/memra 1.073 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 2560 (fp32)
+dense normal fp32 (fp32 out) G 1 R 8 N 1280 K 5120: CUTLASS 0.0511 ms (2.1 TFLOPS), memra 0.0290 ms (3.6 TFLOPS), CUTLASS/memra 1.761 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 10240 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 10240 differ
+dense swapped tileN 8 fp32 G 1 R 8 N 1280 K 5120: CUTLASS 0.0229 ms (286 GB/s weights), memra 0.0287 ms (228 GB/s), CUTLASS/memra 0.797 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 10240 (fp32)
+dense normal fp32 (fp32 out) G 1 R 8 N 1280 K 5120: CUTLASS 0.0506 ms (2.1 TFLOPS), memra 0.0289 ms (3.6 TFLOPS), CUTLASS/memra 1.753 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 10240 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 10240 differ
+dense swapped tileN 16 fp32 G 1 R 8 N 1280 K 5120: CUTLASS 0.0225 ms (291 GB/s weights), memra 0.0289 ms (227 GB/s), CUTLASS/memra 0.778 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 10240 (fp32)
+dense normal fp32 (fp32 out) G 1 R 16 N 1280 K 5120: CUTLASS 0.0513 ms (4.1 TFLOPS), memra 0.0420 ms (5.0 TFLOPS), CUTLASS/memra 1.219 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 20480 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 20480 differ
+dense swapped tileN 8 fp32 G 1 R 16 N 1280 K 5120: CUTLASS 0.0227 ms (289 GB/s weights), memra 0.0420 ms (156 GB/s), CUTLASS/memra 0.539 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 20480 (fp32)
+dense normal fp32 (fp32 out) G 1 R 16 N 1280 K 5120: CUTLASS 0.0508 ms (4.1 TFLOPS), memra 0.0419 ms (5.0 TFLOPS), CUTLASS/memra 1.213 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 20480 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 20480 differ
+dense swapped tileN 16 fp32 G 1 R 16 N 1280 K 5120: CUTLASS 0.0228 ms (288 GB/s weights), memra 0.0420 ms (156 GB/s), CUTLASS/memra 0.542 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 20480 (fp32)
+dense normal fp32 (fp32 out) G 1 R 32 N 1280 K 5120: CUTLASS 0.0513 ms (8.2 TFLOPS), memra 0.0472 ms (8.9 TFLOPS), CUTLASS/memra 1.088 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 40960 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 40960 differ
+dense swapped tileN 8 fp32 G 1 R 32 N 1280 K 5120: CUTLASS 0.0288 ms (228 GB/s weights), memra 0.0460 ms (142 GB/s), CUTLASS/memra 0.626 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 40960 (fp32)
+dense normal fp32 (fp32 out) G 1 R 32 N 1280 K 5120: CUTLASS 0.0508 ms (8.3 TFLOPS), memra 0.0466 ms (9.0 TFLOPS), CUTLASS/memra 1.091 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 40960 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 40960 differ
+dense swapped tileN 16 fp32 G 1 R 32 N 1280 K 5120: CUTLASS 0.0242 ms (271 GB/s weights), memra 0.0471 ms (139 GB/s), CUTLASS/memra 0.514 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 40960 (fp32)
+dense normal fp32 (fp32 out) G 1 R 64 N 1280 K 5120: CUTLASS 0.0508 ms (16.5 TFLOPS), memra 0.0616 ms (13.6 TFLOPS), CUTLASS/memra 0.825 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 81920 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 81920 differ
+dense swapped tileN 8 fp32 G 1 R 64 N 1280 K 5120: CUTLASS 0.0491 ms (134 GB/s weights), memra 0.0619 ms (106 GB/s), CUTLASS/memra 0.793 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 81920 (fp32)
+dense normal fp32 (fp32 out) G 1 R 64 N 1280 K 5120: CUTLASS 0.0504 ms (16.6 TFLOPS), memra 0.0617 ms (13.6 TFLOPS), CUTLASS/memra 0.817 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 81920 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 81920 differ
+dense swapped tileN 16 fp32 G 1 R 64 N 1280 K 5120: CUTLASS 0.0289 ms (227 GB/s weights), memra 0.0620 ms (106 GB/s), CUTLASS/memra 0.466 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 81920 (fp32)
+PROBE-DONE

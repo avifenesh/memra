@@ -1,0 +1,57 @@
+/home/avifenesh/.cache/uv/archive-v0/4fCGXJdYCKm5I7bI/lib/python3.12/site-packages/torch/_subclasses/functional_tensor.py:377: UserWarning: Failed to initialize NumPy: No module named 'numpy' (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:82.)
+  cpu = _conversion_method_template(device=torch.device("cpu"))
+| group | steps | KL cur | KL new | KL floor | d = new - cur: mean [95% interval] | floor's half-width | top-1 cur / new / floor | steps with byte-equal top-32 | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| long | 194 | 2.402e-02 | 2.778e-02 | 3.051e-02 | +3.77e-03 [-1.01e-02, +1.66e-02] = -41.9% to +69.3% of KL cur | 1.72e-02 | 95.9% / 94.3% / 96.4% | 0 | PASS |
+| all | 194 | 2.402e-02 | 2.778e-02 | 3.051e-02 | +3.77e-03 [-1.01e-02, +1.66e-02] = -41.9% to +69.3% of KL cur | 1.72e-02 | 95.9% / 94.3% / 96.4% | 0 | PASS |
+
+router, the new order against the current route: 12319840 routed rows (7600 of them decode steps) x top-6
+| | rows | of all |
+|---|---|---|
+| the same six experts | 5964984 | 48.4177% |
+| another sixth expert (its least-weight choice swapped) | 1862523 | 15.1181% |
+| any other difference | 4492333 | 36.4642% |
+largest weight difference on a shared expert: 1.496e+00 (median 1.415e-02)
+the MoE output of a decode step, relative difference against the current route, median / max: another sixth expert 2.24e-01 / 8.45e-01 (1164 steps); other differences 2.91e-01 / 3.53e+00 (1355); the same experts 1.20e-01 / 1.42e+00 (5081)
+| layer | rows | another sixth | other |
+|---|---|---|---|
+| 0 | 307996 | 1134 | 750 |
+| 1 | 307996 | 18859 | 13273 |
+| 2 | 307996 | 36908 | 38315 |
+| 3 | 307996 | 43232 | 45965 |
+| 4 | 307996 | 47056 | 64910 |
+| 5 | 307996 | 46302 | 74190 |
+| 6 | 307996 | 47418 | 93570 |
+| 7 | 307996 | 52721 | 86958 |
+| 8 | 307996 | 52634 | 75018 |
+| 9 | 307996 | 54217 | 88709 |
+| 10 | 307996 | 55801 | 91919 |
+| 11 | 307996 | 54825 | 96980 |
+| 12 | 307996 | 50073 | 119801 |
+| 13 | 307996 | 47036 | 95699 |
+| 14 | 307996 | 54763 | 101576 |
+| 15 | 307996 | 52511 | 55888 |
+| 16 | 307996 | 54293 | 116291 |
+| 17 | 307996 | 53475 | 137446 |
+| 18 | 307996 | 52152 | 133727 |
+| 19 | 307996 | 46702 | 96245 |
+| 20 | 307996 | 50991 | 109466 |
+| 21 | 307996 | 48220 | 138714 |
+| 22 | 307996 | 42504 | 161153 |
+| 23 | 307996 | 46632 | 148625 |
+| 24 | 307996 | 45491 | 157407 |
+| 25 | 307996 | 37433 | 169300 |
+| 26 | 307996 | 39576 | 167938 |
+| 27 | 307996 | 40028 | 169951 |
+| 28 | 307996 | 42967 | 167501 |
+| 29 | 307996 | 44675 | 159195 |
+| 30 | 307996 | 48288 | 146857 |
+| 31 | 307996 | 40127 | 144306 |
+| 32 | 307996 | 46992 | 152876 |
+| 33 | 307996 | 43667 | 148923 |
+| 34 | 307996 | 49636 | 137155 |
+| 35 | 307996 | 53482 | 126028 |
+| 36 | 307996 | 46649 | 139641 |
+| 37 | 307996 | 50598 | 112134 |
+| 38 | 307996 | 57367 | 112103 |
+| 39 | 307996 | 65088 | 95830 |

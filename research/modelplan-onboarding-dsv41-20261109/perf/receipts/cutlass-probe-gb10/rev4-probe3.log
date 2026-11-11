@@ -1,0 +1,39 @@
+device NVIDIA GB10 sm_121, CUTLASS 4.8.1
+normal fp32 (fp32 out) G 6 R 1 N 2304 K 5120: CUTLASS 0.1871 ms (0.8 TFLOPS), memra 0.2615 ms (0.5 TFLOPS), CUTLASS/memra 0.716 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 13824 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 13824 differ
+swapped tileN 8 fp32 G 6 R 1 N 2304 K 5120: CUTLASS 0.1457 ms (243 GB/s weights), memra 0.1653 ms (214 GB/s), CUTLASS/memra 0.881 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 13824 (fp32)
+normal fp32 (fp32 out) G 6 R 1 N 2304 K 5120: CUTLASS 0.1825 ms (0.8 TFLOPS), memra 0.2031 ms (0.7 TFLOPS), CUTLASS/memra 0.899 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 13824 (CUTLASS max rel 0.000e+00)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 13824 differ
+swapped tileN 16 fp32 G 6 R 1 N 2304 K 5120: CUTLASS 0.1447 ms (245 GB/s weights), memra 0.1612 ms (220 GB/s), CUTLASS/memra 0.898 | outputs differing from the reference tile: memra 0, CUTLASS 0 of 13824 (fp32)
+  differs: group 5 row 1 col 1571: reference c4c89c0e (-1604.87671) CUTLASS c4c89c0f (-1604.87683)
+normal fp32 (fp32 out) G 6 R 2 N 2304 K 5120: CUTLASS 0.1824 ms (1.6 TFLOPS), memra 0.2389 ms (1.2 TFLOPS), CUTLASS/memra 0.763 | outputs differing from the reference tile: memra 0, CUTLASS 1 of 27648 (CUTLASS max rel 7.606e-08)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 27648 differ
+swapped tileN 8 fp32 G 6 R 2 N 2304 K 5120: CUTLASS 0.1496 ms (237 GB/s weights), memra 0.1622 ms (218 GB/s), CUTLASS/memra 0.922 | outputs differing from the reference tile: memra 0, CUTLASS 1 of 27648 (fp32)
+  differs: group 5 row 1 col 1571: reference c4c89c0e (-1604.87671) CUTLASS c4c89c0f (-1604.87683)
+normal fp32 (fp32 out) G 6 R 2 N 2304 K 5120: CUTLASS 0.1842 ms (1.5 TFLOPS), memra 0.2398 ms (1.2 TFLOPS), CUTLASS/memra 0.768 | outputs differing from the reference tile: memra 0, CUTLASS 1 of 27648 (CUTLASS max rel 7.606e-08)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 27648 differ
+swapped tileN 16 fp32 G 6 R 2 N 2304 K 5120: CUTLASS 0.1506 ms (235 GB/s weights), memra 0.1643 ms (215 GB/s), CUTLASS/memra 0.917 | outputs differing from the reference tile: memra 0, CUTLASS 1 of 27648 (fp32)
+  differs: group 1 row 7 col 498: reference c478f75b (-995.864929) CUTLASS c478f75f (-995.865173)
+  differs: group 2 row 1 col 4: reference 426c25ac (59.0367889) CUTLASS 426c25ad (59.0367928)
+  differs: group 2 row 1 col 1228: reference 41434e1f (12.2065725) CUTLASS 41434e20 (12.2065735)
+  differs: group 5 row 5 col 1891: reference c3081c45 (-136.110428) CUTLASS c3081c46 (-136.110443)
+normal fp32 (fp32 out) G 6 R 8 N 2304 K 5120: CUTLASS 0.1782 ms (6.4 TFLOPS), memra 0.2431 ms (4.7 TFLOPS), CUTLASS/memra 0.733 | outputs differing from the reference tile: memra 0, CUTLASS 4 of 110592 (CUTLASS max rel 2.452e-07)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 110592 differ
+swapped tileN 8 fp32 G 6 R 8 N 2304 K 5120: CUTLASS 0.1485 ms (238 GB/s weights), memra 0.1692 ms (209 GB/s), CUTLASS/memra 0.878 | outputs differing from the reference tile: memra 0, CUTLASS 4 of 110592 (fp32)
+  differs: group 1 row 7 col 498: reference c478f75b (-995.864929) CUTLASS c478f75f (-995.865173)
+  differs: group 2 row 1 col 4: reference 426c25ac (59.0367889) CUTLASS 426c25ad (59.0367928)
+  differs: group 2 row 1 col 1228: reference 41434e1f (12.2065725) CUTLASS 41434e20 (12.2065735)
+  differs: group 5 row 5 col 1891: reference c3081c45 (-136.110428) CUTLASS c3081c46 (-136.110443)
+normal fp32 (fp32 out) G 6 R 8 N 2304 K 5120: CUTLASS 0.1796 ms (6.3 TFLOPS), memra 0.2424 ms (4.7 TFLOPS), CUTLASS/memra 0.741 | outputs differing from the reference tile: memra 0, CUTLASS 4 of 110592 (CUTLASS max rel 2.452e-07)
+  CUTLASS swapped (this) vs CUTLASS normal (the run before), fp32 accumulators: 0 of 110592 differ
+swapped tileN 16 fp32 G 6 R 8 N 2304 K 5120: CUTLASS 0.1495 ms (237 GB/s weights), memra 0.1723 ms (205 GB/s), CUTLASS/memra 0.868 | outputs differing from the reference tile: memra 0, CUTLASS 4 of 110592 (fp32)
+  differs: group 0 row 7 col 119: reference 44cd76e5 (1643.71545) CUTLASS 44cd76e6 (1643.71558)
+  differs: group 0 row 10 col 2263: reference c4347a70 (-721.913086) CUTLASS c4347a72 (-721.913208)
+  differs: group 0 row 14 col 1015: reference c30a6668 (-138.400024) CUTLASS c30a6660 (-138.399902)
+  differs: group 1 row 14 col 394: reference c392a13d (-293.259674) CUTLASS c392a13c (-293.259644)
+  differs: group 2 row 5 col 741: reference 44204385 (641.054993) CUTLASS 44204384 (641.054932)
+  differs: group 2 row 10 col 1740: reference c1aff8b7 (-21.9964428) CUTLASS c1aff8b5 (-21.996439)
+  differs: group 2 row 11 col 19: reference 44ad9fcb (1388.99353) CUTLASS 44ad9fcc (1388.99365)
+  differs: group 2 row 11 col 498: reference 4290c356 (72.3815155) CUTLASS 4290c35a (72.381546)
+normal fp32 (fp32 out) G 6 R 16 N 2304 K 5120: CUTLASS 0.1836 ms (12.3 TFLOPS), memra 0.2468 ms (9.2 TFLOPS), CUTLASS/memra 0.744 | outputs differing from the reference tile: memra 0, CUTLASS 12 of 221184 (CUTLASS max rel 8.820e-07)
+ours rc 41026

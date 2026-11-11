@@ -105,25 +105,6 @@ pub mod ffi {
             inverse: i32,
             stream: *mut c_void,
         ) -> i32;
-        pub fn memra_v41_gemm_f8(
-            a: *const c_void,
-            lda: i64,
-            a_s: *const c_void,
-            ldas: i64,
-            b: *const c_void,
-            ldb: i64,
-            b_s: *const c_void,
-            ldbs: i64,
-            bscale2: f32,
-            wfmt: i32,
-            c: *mut c_void,
-            ldc: i64,
-            out_f32: i32,
-            m: i32,
-            n: i32,
-            k: i32,
-            stream: *mut c_void,
-        ) -> i32;
         pub fn memra_v41_gemm_bf16(
             a: *const c_void,
             lda: i64,
@@ -270,28 +251,6 @@ pub mod ffi {
             ldo: i64,
             rows: i32,
             inter: i32,
-            stream: *mut c_void,
-        ) -> i32;
-        /// h = SwiGLU(w1 a, w3 a) * wrow of a small-M tile list in one launch (FP4 experts).
-        pub fn memra_v41_swiglu_tiles(
-            a: *const c_void,
-            lda: i64,
-            a_s: *const c_void,
-            ldas: i64,
-            tiles: *const c_void,
-            ntiles: *const i32,
-            max_tiles: i32,
-            ew: *const c_void,
-            ldb: i64,
-            ldbs: i64,
-            wfmt: i32,
-            wrow: *const f32,
-            limit: f32,
-            h: *mut c_void,
-            ldh: i64,
-            n: i32,
-            k: i32,
-            bm: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_v41_scatter_add(
@@ -447,27 +406,6 @@ pub mod ffi {
             to_f32: i32,
             stream: *mut c_void,
         ) -> i32;
-        /// `grp`: device array of `ng` groups `{i64 row0, i32 rows, f32 scale2, u64 w, u64 s}`.
-        /// The reference schedule of the block-scaled GEMM (gates only).
-        pub fn memra_v41_gemm_f8_ref(
-            a: *const c_void,
-            lda: i64,
-            a_s: *const c_void,
-            ldas: i64,
-            b: *const c_void,
-            ldb: i64,
-            bs: *const c_void,
-            ldbs: i64,
-            bscale2: f32,
-            wfmt: i32,
-            c: *mut c_void,
-            ldc: i64,
-            out_f32: i32,
-            m: i32,
-            n: i32,
-            k: i32,
-            stream: *mut c_void,
-        ) -> i32;
         /// The sparse attention's index rows (window part, then selection rows).
         pub fn memra_v41_attn_idx(
             sel: *const i32,
@@ -592,50 +530,85 @@ pub mod ffi {
             flag: *mut i32,
             stream: *mut c_void,
         ) -> i32;
-        /// The grouped expert GEMMs over a device tile list and the rank's expert weight table.
-        pub fn memra_v41_gemm_f8_tiles(
-            a: *const c_void,
-            lda: i64,
-            a_s: *const c_void,
-            ldas: i64,
-            tiles: *const c_void,
-            ntiles: *const i32,
-            max_tiles: i32,
-            ew: *const c_void,
-            proj: i32,
-            ldb: i64,
-            ldbs: i64,
-            wfmt: i32,
-            c: *mut c_void,
-            ldc: i64,
-            out_f32: i32,
-            n: i32,
+        /// act_quant into the CUTLASS GEMMs' operands: codes `[rows][ldq]` (rows gathered through
+        /// `rowidx` when not null), scales in the layout at scale row `sfrow[r]` (r when null).
+        pub fn memra_v41_act_quant_sf(
+            x: *const c_void,
+            ldx: i64,
+            rowidx: *const i32,
+            q: *mut c_void,
+            ldq: i64,
+            sf: *mut c_void,
+            sfrow: *const i32,
+            rows: i32,
             k: i32,
-            bm: i32,
             stream: *mut c_void,
         ) -> i32;
-        /// [`memra_v41_gemm_f8_tiles`] over activations quantized once a token: the list's row
-        /// r reads row `ridx[r]` of `a` and `a_s` (tiles of 64 or 128 rows).
-        pub fn memra_v41_gemm_f8_tiles_rows(
+        /// Row-major scale codes into the layout at scale row `sfrow[r]` (r when null).
+        pub fn memra_v41_sf_place(
+            s: *const c_void,
+            lds: i64,
+            sfrow: *const i32,
+            sf: *mut c_void,
+            rows: i32,
+            k: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// The scale-layout offset of row `r`, K block `kb` of `kbn` blocks (cu/dsv41_cutlass.cu).
+        pub fn memra_v41_sf_off(r: i64, kb: i64, kbn: i64) -> i64;
+        /// Bytes of the scale layout of `rows` rows of `k` inputs.
+        pub fn memra_v41_sf_bytes(rows: i64, k: i64) -> i64;
+        /// c `[m][n]` = a . w^T on CUTLASS's block-scaled kernel; `form` 0 by rows, 1 normal,
+        /// 2 swapped tileN 8, 3 swapped tileN 16.
+        pub fn memra_v41_cutlass_gemm(
             a: *const c_void,
             lda: i64,
-            a_s: *const c_void,
-            ldas: i64,
-            ridx: *const i32,
-            tiles: *const c_void,
-            ntiles: *const i32,
-            max_tiles: i32,
-            ew: *const c_void,
-            proj: i32,
-            ldb: i64,
-            ldbs: i64,
+            asf: *const c_void,
+            w: *const c_void,
+            ldw: i64,
+            wsf: *const c_void,
             wfmt: i32,
             c: *mut c_void,
             ldc: i64,
-            out_f32: i32,
+            m: i32,
             n: i32,
             k: i32,
-            bm: i32,
+            form: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// Each pair's scale row for the grouped calls over local experts `[e0, e0 + ng)`.
+        pub fn memra_v41_cutlass_sfrow(
+            off: *const i32,
+            e0: i32,
+            ng: i32,
+            np: i32,
+            sfrow: *mut i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// Bytes of a grouped call's argument block for `groups` groups.
+        pub fn memra_v41_cutlass_moe_bytes(groups: i32) -> i64;
+        /// One grouped call over a plan's local experts: projection `proj0` into `d0` and, with
+        /// `nproj` 2, `proj1` into `d1`, in one launch.
+        pub fn memra_v41_cutlass_moe(
+            off: *const i32,
+            e0: i32,
+            ng: i32,
+            nproj: i32,
+            proj0: i32,
+            proj1: i32,
+            ex: *const c_void,
+            a: *const c_void,
+            asf: *const c_void,
+            d0: *mut c_void,
+            d1: *mut c_void,
+            ldc: i64,
+            n: i32,
+            k: i32,
+            ldw: i64,
+            rows: i32,
+            form: i32,
+            blk: *mut c_void,
+            blk_bytes: i64,
             stream: *mut c_void,
         ) -> i32;
         /// A bench's choice of the most rows of a call that keep a family's small-row body in
@@ -1267,7 +1240,8 @@ impl Ops {
     }
 
     /// act_quant(x, 32, "ue8m0") of `rows` bf16 rows of `k` (gathered through `rowidx` when it
-    /// is not null) into e4m3 codes `[rows][k]` and ue8m0 scales `[rows][k/32]`.
+    /// is not null) into e4m3 codes `[rows][k]` and ue8m0 scales in the CUTLASS GEMMs' layout of
+    /// `rows` rows ([`sf_bytes`]`(rows, k)` bytes).
     #[allow(clippy::too_many_arguments)]
     pub fn act_quant(
         &self,
@@ -1279,16 +1253,30 @@ impl Ops {
         q: Dp,
         s: Dp,
     ) -> Result<(), String> {
-        launch!(memra_v41_act_quant(
+        self.act_quant_sf(x, ldx, rowidx, rows, k, q, s, Dp::NULL)
+    }
+    /// [`Self::act_quant`] with row r's scales at scale row `sfrow[r]` of the layout (a grouped
+    /// call's padded rows, [`ffi::memra_v41_cutlass_sfrow`]; r when `sfrow` is null).
+    #[allow(clippy::too_many_arguments)]
+    pub fn act_quant_sf(
+        &self,
+        x: Dp,
+        ldx: usize,
+        rowidx: Dp,
+        rows: usize,
+        k: usize,
+        q: Dp,
+        sf: Dp,
+        sfrow: Dp,
+    ) -> Result<(), String> {
+        launch!(memra_v41_act_quant_sf(
             x.c(),
             ldx as i64,
             rowidx.i(),
             q.m(),
             k as i64,
-            s.m(),
-            (k / 32) as i64,
-            std::ptr::null_mut(),
-            0,
+            sf.m(),
+            sfrow.i(),
             rows as i32,
             k as i32,
             self.sv()
@@ -1412,7 +1400,8 @@ impl Ops {
             self.sv()
         ))
     }
-    /// `out[rows][w.n]` = linear(x, w) for an act-quantized input (`aq`, `as_`).
+    /// `out[rows][w.n]` = linear(x, w) for an act-quantized input (`aq`, `as_`: the codes and the
+    /// scale layout [`Self::act_quant`] writes), on CUTLASS's block-scaled kernel. bf16 out only.
     #[allow(clippy::too_many_arguments)]
     pub fn gemm_q(
         &self,
@@ -1424,28 +1413,45 @@ impl Ops {
         ldc: usize,
         out_f32: bool,
     ) -> Result<(), String> {
-        let (ldb, ldbs, fmt, s2) = match w.fmt {
-            QFmt::Fp8Block32 => (w.k, w.k / 32, 0, 1.0),
-            QFmt::Mxfp4 => (w.k / 2, w.k / 32, 1, 1.0),
-            QFmt::Nvfp4Minted { scale2 } => (w.k / 2, w.k / 16, 2, scale2),
+        let form = GEMM_FORM.load(std::sync::atomic::Ordering::Relaxed);
+        self.gemm_q_form(aq, as_, rows, w, out, ldc, out_f32, form)
+    }
+    /// [`Self::gemm_q`] in a given form (0 by rows, 1 normal, 2 swapped tileN 8, 3 swapped
+    /// tileN 16): the gates' and benches' seam; the bytes do not depend on the form.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gemm_q_form(
+        &self,
+        aq: Dp,
+        as_: Dp,
+        rows: usize,
+        w: &QW,
+        out: Dp,
+        ldc: usize,
+        out_f32: bool,
+        form: i32,
+    ) -> Result<(), String> {
+        if out_f32 {
+            return Err("gemm_q: the CUTLASS route writes bf16".into());
+        }
+        let (ldw, fmt) = match w.fmt {
+            QFmt::Fp8Block32 => (w.k, 0),
+            QFmt::Mxfp4 => (w.k / 2, 1),
+            QFmt::Nvfp4Minted { .. } => (w.k / 2, 2),
         };
-        launch!(memra_v41_gemm_f8(
+        launch!(memra_v41_cutlass_gemm(
             aq.c(),
             w.k as i64,
             as_.c(),
-            (w.k / 32) as i64,
             w.w.p(&self.st).c(),
-            ldb as i64,
+            ldw as i64,
             w.s.p(&self.st).c(),
-            ldbs as i64,
-            s2,
             fmt,
             out.m(),
             ldc as i64,
-            out_f32 as i32,
             rows as i32,
             w.n as i32,
             w.k as i32,
+            form,
             self.sv()
         ))
     }
@@ -1723,15 +1729,17 @@ pub fn key_refs(rows: &[(Dp, Dp, usize)]) -> Vec<u8> {
     t
 }
 
-/// Weight formats of the block-quantized linears.
+/// Weight formats of the block-quantized linears. On the device every format's scales are one
+/// ue8m0 code per row and 32 inputs in the CUTLASS GEMMs' layout ([`sf_pack`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum QFmt {
-    /// e4m3 `[n][k]`, one ue8m0 scale per 32x32 block `[ceil(n/32)][k/32]`.
+    /// e4m3 `[n][k]`; the checkpoint's one ue8m0 scale per 32x32 block, expanded to each row.
     Fp8Block32,
     /// e2m1 pairs `[n][k/2]` (low nibble first), one ue8m0 scale per row and 32 inputs.
     Mxfp4,
-    /// The MXFP4 values re-expressed as NVFP4: e4m3 scales per 16 inputs `[n][k/16]`, each 32-block's
-    /// pair equal, times `scale2`. Value-identical to the MXFP4 source by construction.
+    /// The MXFP4 values re-expressed as NVFP4 (e4m3 scales per 16 inputs, each 32-block's pair
+    /// equal, times a power-of-two `scale2`): value-identical to the MXFP4 source by construction,
+    /// so the device holds the source's ue8m0 codes and the GEMMs read them as for `Mxfp4`.
     Nvfp4Minted { scale2: f32 },
 }
 
@@ -1761,7 +1769,7 @@ pub struct Scratch {
 impl Scratch {
     pub fn actq(&mut self, ops: &Ops, rows: usize, k: usize) -> Result<(Dp, Dp), String> {
         let nq = rows * k;
-        let ns = rows * k / 32;
+        let ns = sf_bytes(rows, k);
         if self.q.as_ref().is_none_or(|b| b.len < nq) {
             self.q = Some(ops.tmp(nq)?);
         }
@@ -1868,7 +1876,36 @@ fn want(
     Ok(())
 }
 
-/// FP8 32x32 dense weight `{p}.weight` / `{p}.scale`.
+/// Bytes of the CUTLASS GEMMs' scale layout of `rows` rows of `k` inputs (one ue8m0 code per row and
+/// 32 inputs, rows padded to a multiple of 128 and K blocks to a multiple of 4; cu/dsv41_cutlass.cu).
+pub fn sf_bytes(rows: usize, k: usize) -> usize {
+    rows.div_ceil(128) * 128 * (k / 32).div_ceil(4) * 4
+}
+
+/// The offset of row `r`, K block `kb` in that layout, for `kbn` K blocks a row.
+pub fn sf_off(r: usize, kb: usize, kbn: usize) -> usize {
+    (r / 128) * (kbn.div_ceil(4) * 512)
+        + (kb / 4) * 512
+        + (r % 32) * 16
+        + ((r % 128) / 32) * 4
+        + kb % 4
+}
+
+/// The scale layout of `rows` rows of `k` inputs, code (r, kb) from `code(r, kb)`; the padding is
+/// zero. Weights are repacked into it once, at load.
+pub fn sf_pack(rows: usize, k: usize, code: impl Fn(usize, usize) -> u8) -> Vec<u8> {
+    let kbn = k / 32;
+    let mut out = vec![0u8; sf_bytes(rows, k)];
+    for r in 0..rows {
+        for kb in 0..kbn {
+            out[sf_off(r, kb, kbn)] = code(r, kb);
+        }
+    }
+    out
+}
+
+/// FP8 32x32 dense weight `{p}.weight` / `{p}.scale`: the block codes expanded to one per row and
+/// 32 inputs in the scale layout ([`sf_pack`]).
 pub fn load_fp8(ops: &Ops, stm: &StModel, p: &str, n: usize, k: usize) -> Result<QW, String> {
     let (iw, bw) = raw(stm, &format!("{p}.weight"))?;
     want(iw, p, "F8_E4M3", &[n as u64, k as u64])?;
@@ -1879,9 +1916,10 @@ pub fn load_fp8(ops: &Ops, stm: &StModel, p: &str, n: usize, k: usize) -> Result
         "F8_E8M0",
         &[n.div_ceil(32) as u64, k.div_ceil(32) as u64],
     )?;
+    let kb = k.div_ceil(32);
     Ok(QW {
         w: Buf::from_bytes(&ops.st, bw)?,
-        s: Buf::from_bytes(&ops.st, bs)?,
+        s: Buf::from_bytes(&ops.st, &sf_pack(n, k, |r, b| bs[r / 32 * kb + b]))?,
         n,
         k,
         fmt: QFmt::Fp8Block32,
@@ -1912,11 +1950,12 @@ pub fn load_fp8_rows(
     let (is, bs) = raw(stm, &format!("{p}.scale"))?;
     let kb = k.div_ceil(32);
     want(is, p, "F8_E8M0", &[n.div_ceil(32) as u64, kb as u64])?;
+    let r0 = rows.start;
     Ok(QW {
         w: Buf::from_bytes(&ops.st, &bw[rows.start * k..rows.end * k])?,
         s: Buf::from_bytes(
             &ops.st,
-            &bs[rows.start / 32 * kb..rows.end.div_ceil(32) * kb],
+            &sf_pack(rows.len(), k, |r, b| bs[(r0 + r) / 32 * kb + b]),
         )?,
         n: rows.len(),
         k,
@@ -1944,23 +1983,30 @@ pub fn load_fp4_rows(
     let (is, bs) = raw(stm, &format!("{p}.scale"))?;
     want(is, p, "F8_E8M0", &[n as u64, (k / 32) as u64])?;
     let w = Buf::from_bytes(&ops.st, &bw[rows.start * (k / 2)..rows.end * (k / 2)])?;
-    if !mint {
-        return Ok(QW {
-            w,
-            s: Buf::from_bytes(&ops.st, &bs[rows.start * (k / 32)..rows.end * (k / 32)])?,
-            n: rows.len(),
-            k,
-            fmt: QFmt::Mxfp4,
-        });
-    }
-    let (sc, scale2) = mint_mxfp4_scales(bs).map_err(|e| format!("{p}: {e}"))?;
+    let (r0, kb) = (rows.start, k / 32);
+    let s = Buf::from_bytes(
+        &ops.st,
+        &sf_pack(rows.len(), k, |r, b| bs[(r0 + r) * kb + b]),
+    )?;
     Ok(QW {
         w,
-        s: Buf::from_bytes(&ops.st, &sc[rows.start * (k / 16)..rows.end * (k / 16)])?,
+        s,
         n: rows.len(),
         k,
-        fmt: QFmt::Nvfp4Minted { scale2 },
+        fmt: fp4_fmt(bs, mint).map_err(|e| format!("{p}: {e}"))?,
     })
+}
+
+/// The format tag of an FP4 expert weight. A minted weight (`dsv4_mint`: each ue8m0 code becomes
+/// two equal e4m3 per-16 scales over a power-of-two `scale2`) is exact and invertible, so the GEMMs
+/// read its ue8m0 codes as stored: the mint is checked (it refuses the tensors the cast cannot
+/// hold) and recorded, and the scale bytes are the checkpoint's.
+fn fp4_fmt(bs: &[u8], mint: bool) -> Result<QFmt, String> {
+    if !mint {
+        return Ok(QFmt::Mxfp4);
+    }
+    let (_, scale2) = mint_mxfp4_scales(bs)?;
+    Ok(QFmt::Nvfp4Minted { scale2 })
 }
 
 /// FP4 expert weight `{p}.weight` (I8 pairs) / `{p}.scale` (ue8m0 per 32), optionally minted.
@@ -1976,22 +2022,13 @@ pub fn load_fp4(
     want(iw, p, "I8", &[n as u64, (k / 2) as u64])?;
     let (is, bs) = raw(stm, &format!("{p}.scale"))?;
     want(is, p, "F8_E8M0", &[n as u64, (k / 32) as u64])?;
-    if !mint {
-        return Ok(QW {
-            w: Buf::from_bytes(&ops.st, bw)?,
-            s: Buf::from_bytes(&ops.st, bs)?,
-            n,
-            k,
-            fmt: QFmt::Mxfp4,
-        });
-    }
-    let (sc, scale2) = mint_mxfp4_scales(bs).map_err(|e| format!("{p}: {e}"))?;
+    let kb = k / 32;
     Ok(QW {
         w: Buf::from_bytes(&ops.st, bw)?,
-        s: Buf::from_bytes(&ops.st, &sc)?,
+        s: Buf::from_bytes(&ops.st, &sf_pack(n, k, |r, b| bs[r * kb + b]))?,
         n,
         k,
-        fmt: QFmt::Nvfp4Minted { scale2 },
+        fmt: fp4_fmt(bs, mint).map_err(|e| format!("{p}: {e}"))?,
     })
 }
 
@@ -2752,6 +2789,87 @@ pub struct MoePlanDev {
     pub ntiles: Buf,
     /// i32: expert ids outside the router's range (counted and skipped)
     pub err: Buf,
+    /// the experts the tile list and the grouped GEMMs cover: `[e0, e0 + ng)`
+    pub e0: usize,
+    pub ng: usize,
+}
+
+/// The form of the CUTLASS GEMMs: 0 by the call's rows (the naked default), 1 normal (rows on A),
+/// 2 swapped tileN 8, 3 swapped tileN 16. The bytes do not depend on it; gates and benches set it
+/// to run every form.
+pub static GEMM_FORM: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+/// The most rows of the padded scale layout of a plan's local experts: each group's rows rounded
+/// up to 128.
+pub fn moe_pad_rows(plan: &MoePlanDev) -> usize {
+    plan.np + 127 * plan.ng.min(plan.np)
+}
+
+/// Each pair's scale row in the padded layout of `plan`'s local experts (i32 `[np]`, -1 for the
+/// pairs of other experts).
+pub fn moe_sfrow(ops: &Ops, plan: &MoePlanDev, sfrow: &Buf) -> Result<(), String> {
+    let st = &ops.st;
+    ck("cutlass_sfrow", unsafe {
+        ffi::memra_v41_cutlass_sfrow(
+            plan.off.p(st).i(),
+            plan.e0 as i32,
+            plan.ng as i32,
+            plan.np as i32,
+            sfrow.p(st).im(),
+            ops.sv(),
+        )
+    })
+}
+
+/// One grouped CUTLASS GEMM over `plan`'s local experts: projections `proj.0` into `d.0` and, when
+/// `proj.1` differs, `proj.1` into `d.1` in the same launch (0 w1, 1 w2, 2 w3 of the table `tab`).
+/// `a` holds the pairs' codes `[np][k]` and `asf` their scales placed through [`moe_sfrow`]; each
+/// output row is a pair (pitch `ldc`, `n` columns).
+#[allow(clippy::too_many_arguments)]
+pub fn moe_gemm(
+    ops: &Ops,
+    plan: &MoePlanDev,
+    tab: &Buf,
+    proj: (i32, i32),
+    a: &Buf,
+    asf: &Buf,
+    d: (Dp, Dp),
+    ldc: usize,
+    n: usize,
+    k: usize,
+) -> Result<(), String> {
+    let st = &ops.st;
+    let nproj = if proj.0 == proj.1 { 1 } else { 2 };
+    // SAFETY: a size query, no device work
+    let bytes = unsafe { ffi::memra_v41_cutlass_moe_bytes((plan.ng * nproj) as i32) };
+    if bytes <= 0 {
+        return Err("cutlass_moe: this build has no CUTLASS GEMMs".into());
+    }
+    let blk = ops.tmp(bytes as usize)?;
+    ck("cutlass_moe", unsafe {
+        ffi::memra_v41_cutlass_moe(
+            plan.off.p(st).i(),
+            plan.e0 as i32,
+            plan.ng as i32,
+            nproj as i32,
+            proj.0,
+            proj.1,
+            tab.p(st).c(),
+            a.p(st).c(),
+            asf.p(st).c(),
+            d.0.m(),
+            d.1.m(),
+            ldc as i64,
+            n as i32,
+            k as i32,
+            (k / 2) as i64,
+            plan.rows as i32,
+            GEMM_FORM.load(std::sync::atomic::Ordering::Relaxed),
+            blk.p(st).m(),
+            bytes,
+            ops.sv(),
+        )
+    })
 }
 
 /// The CSA2 state one layer hands down the stack (vendor `SharedAttentionRuntime`): the group's
@@ -5694,6 +5812,8 @@ impl Ctx {
             ntiles: self.ops.tmp(4)?,
             // counted with atomics: starts at zero
             err: zeroed(&self.ops, 4)?,
+            e0: ex.start,
+            ng: ex.len(),
         };
         ck("moe_plan", unsafe {
             ffi::memra_v41_moe_plan(
@@ -5780,107 +5900,52 @@ impl Ctx {
         if n == 0 {
             return Ok(());
         }
-        let wfmt = match (cached, lw.experts.first()) {
-            // the cache holds the checkpoint's MXFP4 bytes as stored
-            (Some(_), _) => 1,
-            (None, Some(ws)) => match ws[0].fmt {
-                QFmt::Mxfp4 => 1,
-                QFmt::Nvfp4Minted { .. } => 2,
-                QFmt::Fp8Block32 => return Err("routed experts are FP4".into()),
-            },
+        // the experts are FP4 (MXFP4, or minted NVFP4, which the GEMMs read as its MXFP4 codes);
+        // the cache holds the checkpoint's MXFP4 bytes with the scales repacked
+        match (cached, lw.experts.first()) {
+            (Some(_), _) => {}
+            (None, Some(ws)) if ws[0].fmt != QFmt::Fp8Block32 => {}
+            (None, Some(_)) => return Err("routed experts are FP4".into()),
             (None, None) => {
                 return Err(
                     "the layer holds no routed experts and no cached table was given".into(),
                 );
             }
-        };
-        let exp_tab = cached.unwrap_or(&lw.exp_tab);
-        let kdiv = if wfmt == 1 { 32 } else { 16 };
-        // many rows, all pairs: the input is quantized once a token and each tile reads its
-        // pairs' tokens through the plan's pair-to-token list (a sixth of the quantization of
-        // the pairs' gathered copies, and the same codes); else the pairs' rows are gathered
-        let by_token = plan.bm > SMALL_M && p0 == 0 && p1 == np;
-        let rows = np / g.topk;
-        let (aq, as_) = if by_token {
-            (self.ops.tmp(rows * d)?, self.ops.tmp(rows * d / 32)?)
-        } else {
-            (self.ops.tmp(np * d)?, self.ops.tmp(np * d / 32)?)
-        };
-        if by_token {
-            self.ops
-                .act_quant(x, d, Dp::NULL, rows, d, aq.p(&st), as_.p(&st))?;
-        } else {
-            self.ops.act_quant(
-                x,
-                d,
-                plan.ptok.at(&st, p0 * 4),
-                n,
-                d,
-                aq.at(&st, p0 * d),
-                as_.at(&st, p0 * d / 32),
-            )?;
         }
+        let exp_tab = cached.unwrap_or(&lw.exp_tab);
+        // the pairs' rows of `x` gathered and quantized, each pair's scales at its row of the
+        // local experts' padded layout
+        let sfrow = self.ops.tmp(np * 4)?;
+        moe_sfrow(&self.ops, plan, &sfrow)?;
+        let pad = moe_pad_rows(plan);
+        let aq = self.ops.tmp(np * d)?;
+        let asf = self.ops.tmp(sf_bytes(pad, d))?;
+        self.ops.act_quant_sf(
+            x,
+            d,
+            plan.ptok.at(&st, p0 * 4),
+            n,
+            d,
+            aq.at(&st, p0 * d),
+            asf.p(&st),
+            sfrow.at(&st, p0 * 4),
+        )?;
         let gb = self.ops.tmp(np * inter * 2)?;
         let ub = self.ops.tmp(np * inter * 2)?;
         let hb = self.ops.tmp(np * inter * 2)?;
-        let tiles = |ops: &Ops, a: &Buf, a_s: &Buf, k: usize, proj: i32, c: Dp, nout: usize| {
-            ck("gemm_f8_tiles", unsafe {
-                ffi::memra_v41_gemm_f8_tiles(
-                    a.p(&st).c(),
-                    k as i64,
-                    a_s.p(&st).c(),
-                    (k / 32) as i64,
-                    plan.tiles.p(&st).c(),
-                    plan.ntiles.p(&st).i(),
-                    plan.max_tiles as i32,
-                    exp_tab.p(&st).c(),
-                    proj,
-                    (k / 2) as i64,
-                    (k / kdiv) as i64,
-                    wfmt,
-                    c.m(),
-                    nout as i64,
-                    0,
-                    nout as i32,
-                    k as i32,
-                    plan.bm as i32,
-                    ops.sv(),
-                )
-            })
-        };
-        let tiles_rows = |ops: &Ops, proj: i32, c: Dp| {
-            ck("gemm_f8_tiles_rows", unsafe {
-                ffi::memra_v41_gemm_f8_tiles_rows(
-                    aq.p(&st).c(),
-                    d as i64,
-                    as_.p(&st).c(),
-                    (d / 32) as i64,
-                    plan.ptok.p(&st).i(),
-                    plan.tiles.p(&st).c(),
-                    plan.ntiles.p(&st).i(),
-                    plan.max_tiles as i32,
-                    exp_tab.p(&st).c(),
-                    proj,
-                    (d / 2) as i64,
-                    (d / kdiv) as i64,
-                    wfmt,
-                    c.m(),
-                    inter as i64,
-                    0,
-                    inter as i32,
-                    d as i32,
-                    plan.bm as i32,
-                    ops.sv(),
-                )
-            })
-        };
-        if by_token {
-            tiles_rows(&self.ops, 0, gb.p(&st))?;
-            tiles_rows(&self.ops, 2, ub.p(&st))?;
-        } else {
-            tiles(&self.ops, &aq, &as_, d, 0, gb.p(&st), inter)?;
-            tiles(&self.ops, &aq, &as_, d, 2, ub.p(&st), inter)?;
-        }
+        // w1 and w3 of every local expert in one launch
+        moe_gemm(
+            &self.ops,
+            plan,
+            exp_tab,
+            (0, 2),
+            &aq,
+            &asf,
+            (gb.p(&st), ub.p(&st)),
+            inter,
+            inter,
+            d,
+        )?;
         ck("swiglu", unsafe {
             ffi::memra_v41_swiglu(
                 gb.at(&st, p0 * inter * 2).m(),
@@ -5896,17 +5961,29 @@ impl Ctx {
             )
         })?;
         let aq2 = self.ops.tmp(np * inter)?;
-        let as2 = self.ops.tmp(np * inter / 32)?;
-        self.ops.act_quant(
+        let asf2 = self.ops.tmp(sf_bytes(pad, inter))?;
+        self.ops.act_quant_sf(
             hb.at(&st, p0 * inter * 2),
             inter,
             Dp::NULL,
             n,
             inter,
             aq2.at(&st, p0 * inter),
-            as2.at(&st, p0 * inter / 32),
+            asf2.p(&st),
+            sfrow.at(&st, p0 * 4),
         )?;
-        tiles(&self.ops, &aq2, &as2, inter, 1, slots, d)
+        moe_gemm(
+            &self.ops,
+            plan,
+            exp_tab,
+            (1, 1),
+            &aq2,
+            &asf2,
+            (slots, Dp::NULL),
+            d,
+            d,
+            inter,
+        )
     }
 
     /// Single-pass mHC mixes of the stream `x` `[s][hc][dim]`: `(mixes, pre, post, comb)`.

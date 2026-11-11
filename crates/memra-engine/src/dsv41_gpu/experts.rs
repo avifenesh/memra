@@ -2,9 +2,10 @@
 //! device LRU cache of expert slots per rank, and asynchronous H2D copies of the experts the
 //! router picks.
 //!
-//! A slot holds one expert exactly as the checkpoint stores it (the MXFP4 `w1`, `w3`, `w2` codes
-//! and their ue8m0 scales, packed back to back), and the grouped GEMMs read a slot through the same
-//! pointer table they read a streamed layer's experts through. The residency moves where the bytes
+//! A slot holds one expert as the GEMMs read it (the checkpoint's MXFP4 `w1`, `w3`, `w2` codes and
+//! their ue8m0 scales repacked into the CUTLASS GEMMs' layout, [`super::sf_pack`], packed back to
+//! back), and the grouped GEMMs read a slot through the same pointer table they read a streamed
+//! layer's experts through. The residency moves where the bytes
 //! live, never which bytes a kernel reads, so the cached route writes the streamed route's numbers.
 //!
 //! The host store is anonymous memory filled from the checkpoint mmap and then page-locked: a
@@ -63,6 +64,12 @@ impl Layout {
         }
     }
 
+    /// The rows and inputs of scale piece `k` (1, 3, 5): its codes are one per row and 32 inputs.
+    fn scale_dims(g: &Geo, k: usize) -> (usize, usize) {
+        let (d, i) = (g.dim, g.moe_inter);
+        if k < 4 { (i, d) } else { (d, i) }
+    }
+
     /// The checkpoint tensors of piece `k` of expert `e` in layer `l`, with their dtype and shape.
     fn piece(&self, g: &Geo, l: usize, e: usize, k: usize) -> (String, &'static str, [u64; 2]) {
         let (d, i) = (g.dim as u64, g.moe_inter as u64);
@@ -115,6 +122,16 @@ impl HostExperts {
         threads: usize,
     ) -> Result<Self, String> {
         let layout = Layout::of(g);
+        // the scale pieces are repacked in place: the layout must not grow them (rows a multiple
+        // of 128 and K blocks of 4, true of every V4.1 expert shape)
+        for k in [1, 3, 5] {
+            let (n, kk) = Layout::scale_dims(g, k);
+            if super::sf_bytes(n, kk) != layout.len[k] {
+                return Err(format!(
+                    "expert scale piece {k} ({n} x {kk}) does not fit the GEMM scale layout in place"
+                ));
+            }
+        }
         let ne = g.n_experts;
         let per_layer = ne * layout.bytes;
         let bytes = per_layer * n_layers;
@@ -171,8 +188,18 @@ impl HostExperts {
                                     if src.len() != layout.len[k] {
                                         return Err(format!("{name}: {} bytes", src.len()));
                                     }
-                                    slot[layout.off[k]..layout.off[k] + src.len()]
-                                        .copy_from_slice(src);
+                                    let dst = &mut slot[layout.off[k]..layout.off[k] + src.len()];
+                                    if k % 2 == 1 {
+                                        let (n, kk) = Layout::scale_dims(g, k);
+                                        let kbn = kk / 32;
+                                        for r in 0..n {
+                                            for b in 0..kbn {
+                                                dst[super::sf_off(r, b, kbn)] = src[r * kbn + b];
+                                            }
+                                        }
+                                    } else {
+                                        dst.copy_from_slice(src);
+                                    }
                                 }
                             }
                             let rc = unsafe {
