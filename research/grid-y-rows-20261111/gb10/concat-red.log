@@ -1,0 +1,6 @@
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers)
+repro: T_a=33119 b=2 slot=0 co_T=[32896] steps=16 chat=false
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+Error: DriverError(CUDA_ERROR_INVALID_VALUE, "invalid argument")
