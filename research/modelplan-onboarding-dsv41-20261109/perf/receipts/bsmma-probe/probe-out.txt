@@ -1,0 +1,26 @@
+NVIDIA GB10, 208 MHz
+device NVIDIA GB10 sm_121
+selector byte-a 0 thread-a 0 byte-b 0 thread-b 0: max rel err 8.081e-06 OK
+selector byte-a 1 thread-a 0 byte-b 0 thread-b 0: max rel err 8.081e-06 OK
+selector byte-a 2 thread-a 0 byte-b 0 thread-b 0: max rel err 8.081e-06 OK
+selector byte-a 3 thread-a 0 byte-b 0 thread-b 0: max rel err 8.081e-06 OK
+selector byte-a 0 thread-a 1 byte-b 0 thread-b 0: max rel err 8.081e-06 OK
+selector byte-a 1 thread-a 1 byte-b 0 thread-b 0: max rel err 8.081e-06 OK
+selector byte-a 2 thread-a 1 byte-b 0 thread-b 0: max rel err 8.081e-06 OK
+selector byte-a 3 thread-a 1 byte-b 0 thread-b 0: max rel err 8.081e-06 OK
+selector byte-a 0 thread-a 0 byte-b 1 thread-b 0: max rel err 8.081e-06 OK
+selector byte-a 0 thread-a 0 byte-b 2 thread-b 0: max rel err 8.081e-06 OK
+selector byte-a 0 thread-a 0 byte-b 3 thread-b 0: max rel err 8.081e-06 OK
+selector byte-a 0 thread-a 0 byte-b 0 thread-b 1: max rel err 8.081e-06 OK
+selector byte-a 0 thread-a 0 byte-b 0 thread-b 2: max rel err 8.081e-06 OK
+selector byte-a 0 thread-a 0 byte-b 0 thread-b 3: max rel err 8.081e-06 OK
+selector byte-a 3 thread-a 1 byte-b 3 thread-b 3: max rel err 8.081e-06 OK
+selector byte-a 2 thread-a 1 byte-b 1 thread-b 2: max rel err 8.081e-06 OK
+unit scales from zero vs plain e4m3 MMA: 0 of 8192 outputs differ (identical)
+chain K=5120: plain vs exchanged 0/2048 differ OK
+chain K=5120: e4m3 weights vs e2m1 containers (plain roles) 0/2048 differ (identical)
+chain K=5120: e4m3 vs e2m1 (exchanged roles) 0/2048 differ (identical)
+chain K=5120: plain e4m3 vs exchanged e2m1 0/2048 differ
+chain vs exact (double) sum, realistic scales: max rel err 2.592e-02 (INFO: cancellation-sensitive)
+error / sum|terms| over 1792 outputs, K=5120: chain mean 2.153e-07 max 1.321e-06 | old program (block from zero, fp32 promotion) mean 1.605e-08 max 1.727e-07 (INFO)
+PROBE PASS

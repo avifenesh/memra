@@ -1381,6 +1381,80 @@ The ranges are apart at every length and the token after the prompt is the same 
 4,096 tokens); the host's issue time, which waits on the copies, falls from 3.20 to 0.52 s there.
 The 53-tape order gate puts this build in k3's byte family (d = 0, the section below).
 
+### The FP8 / FP4 GEMMs on the hardware block-scaled MMA
+
+Every block-scaled linear (the dense FP8 32 x 32 weights, the MXFP4 routed experts, the minted NVFP4 form) ran
+each 32-wide K block as an e4m3 MMA from zero and promoted it on CUDA cores, `acc + (d * sa) * sb`: the vendor's
+program, and 10-12% of the card's FP8 rate at prefill widths. sm_120a has the bar's instruction in `mma.sync`:
+`m16n8k32.kind::mxf8f6f4.block_scale.scale_vec::1X` with ue8m0 scales (QMMA.SF), one scale per row of A and per
+column of B for each 32 of K, applied inside the tensor core. The checkpoint's scales are exactly that: an
+expert's code per output row and 32 inputs, a dense weight's per 32 x 32 block (a column takes its block's
+code), act_quant's per row and 32 inputs. Every output is now one chain of these MMAs over its K blocks in
+ascending K, `acc = (A_kb * sa) . (B_kb * sb) + acc`, the scaling and the fp32 accumulation inside the tensor
+core.
+
+The layout was checked on the card first (`receipts/bsmma-probe`): the scale selectors behave as the PTX ISA
+describes them (lane t = 0 of quad g gives row g's code, t = 1 row g + 8's, t = 0 column g's; the byte selector
+picks the K block, so a stage's four codes sit in one register); unit scales from zero equal the plain MMA bit
+for bit; a K = 5,120 chain with the operands exchanged (weights on the 16-wide side) is byte-identical to the
+plain roles; e2m1 in its 8-bit container equals the same values expanded to e4m3. The precision moves: against
+the sum of the |terms|, the chain's error over K = 5,120 is 2.2e-7 on average (max 1.3e-6), the old program's
+1.6e-8 (1.7e-7): the tensor core's accumulation is about 13 times coarser than an fp32 add per block, four
+orders under a bf16 output's step.
+
+A chain cannot be split over K, so the small-row bodies (decode, verify rows, calls up to 32 rows, the expert
+tiles of at most 8 rows, the fused w1 + w3 + SwiGLU launch) changed shape: they split over output columns. The
+MMA's operands are exchanged, a warp owns 16, 8 or 4 weight rows (fewer leave the MMA's other rows zero, so a
+narrow output still gives four warps an SM) and walks all of K through its own cp.async ring (six stages of
+four K blocks; the ring holds as many activation rows as the call has; no block barrier). The pipelined tile
+and the reference tile keep their roles; their CUDA-core epilogue is gone (the scale codes go to the MMA as one
+word a row and a column a stage). The kernel gate holds every schedule to the reference tile byte for byte (172
+checks: new small-row widths, and output widths whose last 128-column tile is half full, as a rank's share of
+the hidden columns is at four ranks).
+
+Gates on GB10 (`receipts/gates-bs1-gb10`, `receipts/verify-bs1f`): kernels 172/0; layer 161/0 with 101 of the
+111 saved tensors moved against k3's set (the new set: `save-bs1.sha256`; the ring change after it writes the
+same 111 tensors); tp at 2 ranks 478/478/480 (peer-pull, host-canonical, default); 4 ranks host-canonical
+914/0, default 916/0; decode 240/240/60. Four ranks on peer-pull failed once (the first run: layer 1's prefill
+MoE output, 1.1% of its bytes, max 7.8e-3, the same on every rank) and passed in the next four runs of the same
+configuration; k3 passed it in four (`receipts/bsmma-peerpull`). In the failing run the single-card reference
+stood where it stands in every run (5.724e-3 against the vendor capture) and the ranks' stream moved
+(5.725e-3): the four ranks computed it, the gather delivered it faithfully. The tp gate now logs the
+reference's and every rank's MoE output hash: stable run to run (k3 7fd54b80665ca57e, this build
+c88cf1ab53b721ad). compute-sanitizer (`receipts/san-bs1f`): racecheck 0 hazards on the kernel gate, initcheck 0
+errors on the kernel gate and on four ranks of layer 1 on peer-pull; with every GEMM kernel's shared memory
+poisoned (0xFF at entry, a debug build) the kernel gate stays 172/0 and the four-rank peer-pull configuration
+914/0 twice with the unpoisoned hashes: no output reads shared memory its kernel did not write. The one failure
+is not reproduced in 7 runs and not explained.
+
+Order gate (`receipts/ordergate-bs1`, the decode lane's tapes teacher-forced, top-32 KL against the vendor,
+d = KL(vendor || new) - KL(vendor || k3), the by-tape bootstrap 95% interval):
+
+| group | steps | KL k3 | KL new | KL of the vendor's second program | d [95%] | top-1 k3 / new | verdict |
+|---|---|---|---|---|---|---|---|
+| chat | 517 | 1.509e-02 | 1.599e-02 | 1.432e-02 | +9.00e-04 [-1.05e-03, +3.71e-03] | 96.9% / 96.7% | pass |
+| long | 194 | 2.402e-02 | 2.778e-02 | 3.051e-02 | +3.77e-03 [-1.94e-03, +9.88e-03] | 95.9% / 94.3% | pass (4 tapes: a fragile by-tape interval) |
+| chat + long | 711 | 1.753e-02 | 1.921e-02 | 1.874e-02 | +1.68e-03 [-8.72e-04, +5.09e-03] | 96.6% / 96.1% | pass |
+| needle 257k | owed | | | | | | |
+
+The route log shows the same six experts on 41.3% (chat) and 48.4% (long) of the routed rows (k3 against the
+route before it: 42% and 49%). k3's chat tapes on GB10 equal its tapes on the 120a box byte for byte, so GB10
+tapes of the new program are scored against the 120a tapes of k3. Both groups lean the same way (chat +6%, long
++16% of k3's KL), and 711 steps cannot tell a shift of that size from none: the change lands only with a larger
+tape set (35 more chat-length cases) keeping the interval at zero, the prefill gain measured on the
+four cards, and decode on four cards at 1, 4 and 8 rows level with k3 or better. CheckpointParity on the pack's
+probe passes in its band (max abs 2.94 against k3's 2.91, band 6.4; the vendor's argmax; `receipts/ckpt-bs1`).
+
+Timing, GB10, a proxy (`receipts/time-bs1-gb10`, `receipts/verify-bs1f`; A B B A against k3, steady medians):
+layer 2's prefill of 4,096 tokens 143.8 / 144.8 -> 141.2 / 140.1 ms. GEMM shapes against k3: dense FP8 at 4k to
+8k rows 0.84-0.87 (wq_a, wkv, shared expert, index wq_b), level for wq_b and wo_b; routed experts at 64 rows an
+expert level, at 512 rows 0.79-0.88. Decode widths: the expert tiles at 1 and 2 rows (the bench's 8-row plan)
+1.18-1.25 of k3, wkv at one row 1.40, wq_a level, wo_b 0.83, the shared expert 0.68-0.81. No prefill shape sits
+at either GB10 bound (12-37% of the tensor rate, at most half of the 273 GB/s): the pipelined tile itself is the
+bound. One layer-2 rep at 4k under nsys,
+by kernel time: the block-scaled GEMMs 55%, the bf16 GEMMs 21%, attention 8%, mHC 7%, act_quant 3%, fp32 FMA
+3%, MoE plan, combine and SwiGLU 2% (`receipts/verify-bs1f/layer2-4k-itemized.txt`).
+
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
 The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor
@@ -1680,7 +1754,8 @@ weight traffic: 1.1 ms.
   the small-row bodies; `ordertapes-*`, `ordergate-base`: the order gate's tables (the tapes'
   tensors and route logs stay on the box); `eq-*`: two builds' saved layer tensors compared byte
   for byte; `steptrace-*`: kernels by name of a traced step; `ckpt-*`: CheckpointParity and the
-  greedy decode gate of a build; `bytecheck-*`: a GB10 build's saved layer tensors against the 120a
+  greedy decode gate of a build; `bsmma-probe`: the block-scaled MMA's layout probe on the card; `bsmma-peerpull`:
+  the reruns of the four-rank peer-pull configuration; `san-*`: compute-sanitizer runs; `bytecheck-*`: a GB10 build's saved layer tensors against the 120a
   set, and its one-card gates; `k3four`: an arm on the four cards after a night pass; `prefill-host`: the host side of the night pass's prefill trace; `emb-gates-gb10`: the gates of the prefill's host work moved to the load). nsys and ncu report files are
   not kept; their exports and summaries are. The 250 ms telemetry files are gzipped; the box's
   working directory in the logs reads `$LANE`.

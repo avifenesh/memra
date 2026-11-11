@@ -1,0 +1,10 @@
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+dsv41-bench: 4096 tokens, layers [2], reps 1, decode 0, chunk 8192, path group1, NVIDIA GB10
+layer 0: load 27.9 s, block 159.3 ms
+layer 1: load 75.3 s, block 199.6 ms
+layer 2: prefill 4096 tokens: first 153.324 ms, reps [252.147] ms, median 252.147 ms, 1/1 reruns byte-identical, engram NaN ms, out ff9ea5ddda52d13fa805730c pre 70e6a71fc861c0ce32c4da67
+Collecting data...
+Generating '/tmp/nsys-report-9c2f.qdstrm'
+[1/1] [0%                          ] layer2-4k.nsys-rep[1/1] [0%                          ] layer2-4k.nsys-rep[1/1] [5%                          ] layer2-4k.nsys-rep[1/1] [6%                          ] layer2-4k.nsys-rep[1/1] [7%                          ] layer2-4k.nsys-rep[1/1] [=========43%                ] layer2-4k.nsys-rep[1/1] [=========44%                ] layer2-4k.nsys-rep[1/1] [=========45%                ] layer2-4k.nsys-rep[1/1] [=========46%                ] layer2-4k.nsys-rep[1/1] [==========47%               ] layer2-4k.nsys-rep[1/1] [==========48%               ] layer2-4k.nsys-rep[1/1] [==========49%               ] layer2-4k.nsys-rep[1/1] [===========50%              ] layer2-4k.nsys-rep[1/1] [===========51%              ] layer2-4k.nsys-rep[1/1] [===========52%              ] layer2-4k.nsys-rep[1/1] [===========53%              ] layer2-4k.nsys-rep[1/1] [============54%             ] layer2-4k.nsys-rep[1/1] [============55%             ] layer2-4k.nsys-rep[1/1] [============56%             ] layer2-4k.nsys-rep[1/1] [============57%             ] layer2-4k.nsys-rep[1/1] [=============58%            ] layer2-4k.nsys-rep[1/1] [======================90%   ] layer2-4k.nsys-rep[1/1] [========================100%] layer2-4k.nsys-rep[1/1] [========================100%] layer2-4k.nsys-rep
+Generated:
+	/home/avifenesh/.cache/dsv41-bsmma/out/verify-bs1f/layer2-4k.nsys-rep

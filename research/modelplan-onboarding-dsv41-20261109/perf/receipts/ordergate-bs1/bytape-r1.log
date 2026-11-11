@@ -1,0 +1,7 @@
+/home/avifenesh/.cache/uv/archive-v0/4fCGXJdYCKm5I7bI/lib/python3.12/site-packages/torch/_subclasses/functional_tensor.py:377: UserWarning: Failed to initialize NumPy: No module named 'numpy' (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:82.)
+  cpu = _conversion_method_template(device=torch.device("cpu"))
+| group | tapes | steps | KL cur | KL new | KL floor | d = new - cur: mean | d by-tape 95% (the pass line) | d per-step 95% | floor's half-width | top-1 cur / new / floor | steps with byte-equal top-32 | verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| chat | 13 | 517 | 1.509e-02 | 1.902e-02 | 1.432e-02 | +3.93e-03 | [+8.44e-04, +7.09e-03] = +5.6% to +47.0% of KL cur | [-2.88e-04, +8.56e-03] | 4.25e-03 | 96.9% / 95.9% / 97.5% | 0 | FAIL: d above zero, top-1 |
+| long | 4 | 194 | 2.402e-02 | 3.280e-02 | 3.051e-02 | +8.78e-03 | [-1.52e-05, +1.01e-02] = -0.1% to +42.1% of KL cur | [-1.06e-02, +2.86e-02] | 1.72e-02 | 95.9% / 94.8% / 96.4% | 0 | PASS |
+| all | 17 | 711 | 1.753e-02 | 2.278e-02 | 1.874e-02 | +5.25e-03 | [+2.18e-03, +7.87e-03] = +12.4% to +44.9% of KL cur | [-9.12e-04, +1.17e-02] | 5.56e-03 | 96.6% / 95.6% / 97.2% | 0 | FAIL: d above zero, top-1 |

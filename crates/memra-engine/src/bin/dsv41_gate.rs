@@ -1355,10 +1355,10 @@ impl Lcg {
 }
 
 /// The dispatched schedules against the reference schedule, byte for byte: the block-scaled GEMM
-/// (small-M and pipelined, every weight format, scale codes inside and outside the fused
-/// epilogue's range), the tile-list dispatch over a device plan, the device plan against the host
-/// `MoePlan`, and the small-M bf16 and fp32-FMA kernels against their tile kernels on the same
-/// rows. Each check is a byte comparison: these kernels change the schedule, never the program.
+/// (small-row and pipelined, every weight format, scale codes across the e8m0 range), the
+/// tile-list dispatch over a device plan, the device plan against the host `MoePlan`, and the
+/// small-M bf16 and fp32-FMA kernels against their tile kernels on the same rows. Each check is a
+/// byte comparison: these kernels change the schedule, never the program.
 fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
     use memra_engine::dsv41_gpu::tp::MoePlan;
     let st = ops.st.clone();
@@ -1376,18 +1376,28 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
     };
     // (m, n, k, weight format, activation scale code range)
     type GemmCase = (usize, usize, usize, i32, (u8, u8));
-    let cases: [GemmCase; 12] = [
+    let cases: [GemmCase; 20] = [
+        // a last 128-column tile half full (a rank's share of an expert's hidden columns at 4 ranks: 576)
+        (200, 576, 5120, 1, (118, 130)),
+        (300, 576, 5120, 0, (118, 130)),
+        (130, 1344, 2304, 1, (118, 130)),
+        (6, 576, 5120, 1, (118, 130)),
         (1, 1280, 5120, 0, (118, 130)),
         (3, 4096, 1280, 0, (118, 130)),
         (4, 2304, 5120, 1, (118, 130)),
         (5, 512, 5120, 0, (118, 130)),
+        // the small-row body with two and four sets of 8 activation rows
+        (12, 1280, 5120, 0, (118, 130)),
+        (16, 2304, 5120, 1, (118, 130)),
+        (24, 5120, 2304, 1, (118, 130)),
+        (30, 512, 8192, 0, (118, 130)),
         (64, 2304, 5120, 1, (118, 130)),
         (77, 1280, 5120, 0, (118, 130)),
         (200, 5120, 2304, 1, (118, 130)),
         (300, 1280, 5120, 0, (118, 130)),
         (130, 2304, 5120, 2, (118, 130)),
         (2, 2304, 5120, 2, (118, 130)),
-        // scale codes across the whole e8m0 range, the fused epilogue's guard included
+        // scale codes across the whole e8m0 range
         (96, 1280, 5120, 0, (0, 254)),
         (160, 2304, 5120, 1, (0, 254)),
     ];
@@ -1461,14 +1471,24 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
 
     // the device plan against the host plan, then the tile-list dispatch against the reference
     // GEMM run per expert, on a 16-expert slice
-    for &(rows, ne, topk, bm) in &[
-        (1usize, 16usize, 6usize, 1usize),
-        (1, 16, 6, 4),
-        (3, 16, 6, 4),
-        (6, 16, 6, 8),
-        (700, 16, 6, 64),
-        (900, 16, 6, 128),
+    // (rows, experts, top-k, tile rows, output columns): 576 is a rank's share of the hidden columns at 4
+    // ranks, whose last 128-column tile is half full
+    for &(rows, ne, topk, bm, n) in &[
+        (1usize, 16usize, 6usize, 1usize, 2304usize),
+        (1, 16, 6, 4, 2304),
+        (3, 16, 6, 4, 2304),
+        (6, 16, 6, 8, 2304),
+        (700, 16, 6, 64, 2304),
+        (900, 16, 6, 128, 2304),
+        (6, 16, 6, 8, 576),
+        (700, 16, 6, 64, 576),
+        (900, 16, 6, 128, 576),
     ] {
+        let nt = if n == 2304 {
+            String::new()
+        } else {
+            format!("_n{n}")
+        };
         let mut sel = Vec::with_capacity(rows * topk);
         let mut selw = Vec::with_capacity(rows * topk);
         for _ in 0..rows {
@@ -1528,7 +1548,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             && bytes_i32(&err.host(&st)?)[0] == 0
             && bytes_i32(&flag.host(&st)?)[0] == 0;
         rep.raw(
-            &format!("schedule/moe_plan/rows{rows}_bm{bm}"),
+            &format!("schedule/moe_plan/rows{rows}_bm{bm}{nt}"),
             ok,
             "device plan == host MoePlan (offsets, pair tokens, weights, per-token order)",
             format!("{np} pairs, {} tiles", bytes_i32(&ntiles.host(&st)?)[0]),
@@ -1588,8 +1608,8 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 format!("err {e2}, flag {f2}, token 1 skips {skipped}, {placed} of {np} placed"),
             );
         }
-        // w1-shaped MXFP4 experts (n 2304, k 5120) through the tile list vs the reference per expert
-        let (n, k) = (2304usize, 5120usize);
+        // w1-shaped MXFP4 experts (k 5120) through the tile list vs the reference per expert
+        let k = 5120usize;
         let a = Buf::from_bytes(&st, &rng.e4m3(np * k))?;
         let a_s = Buf::from_bytes(&st, &rng.range(np * (k / 32), 118, 130))?;
         let mut wts = Vec::with_capacity(ne);
@@ -1664,7 +1684,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         }
         same(
             rep,
-            &format!("schedule/gemm_f8_tiles/rows{rows}_bm{bm}"),
+            &format!("schedule/gemm_f8_tiles/rows{rows}_bm{bm}{nt}"),
             &got.host(&st)?,
             &want.host(&st)?,
         );
@@ -1751,7 +1771,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             })?;
             same(
                 rep,
-                &format!("schedule/swiglu_tiles/rows{rows}_bm{bm}"),
+                &format!("schedule/swiglu_tiles/rows{rows}_bm{bm}{nt}"),
                 &got_h.host(&st)?,
                 &want_h.host(&st)?,
             );
@@ -3449,9 +3469,26 @@ fn tp_compare(
     let wring = opt_host(o, ls.ring.as_ref())?;
     let wckv = opt_host(o, ls.c_kv.as_ref())?;
     let wcsc = opt_host(o, ls.c_sc.as_ref())?;
+    // the hashes of both sides (logged, not checks): a mismatch then shows at once whether the
+    // single-card reference or the ranks moved between runs
+    let hash = |b: &[u8]| -> String {
+        use sha2::Digest;
+        sha2::Sha256::digest(b)[..8]
+            .iter()
+            .map(|x| format!("{x:02x}"))
+            .collect()
+    };
+    println!("HASH {tag}/single/out_stream {}", hash(&wh));
+    if let Some(w) = wm.as_ref() {
+        println!("HASH {tag}/single/moe_out {}", hash(w));
+    }
     for r in 0..grp.n() {
         let ro = &grp.cx[r].ops;
         let pre = format!("{tag}/rank{r}");
+        println!("HASH {pre}/out_stream {}", hash(&h2s[r].host(&ro.st)?));
+        if let Some(b) = trs[r].moe_out.as_ref() {
+            println!("HASH {pre}/moe_out {}", hash(&b.host(&ro.st)?));
+        }
         same_bytes(
             rep,
             &format!("{pre}/out_stream"),

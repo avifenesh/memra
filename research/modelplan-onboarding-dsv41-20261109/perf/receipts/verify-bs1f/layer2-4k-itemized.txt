@@ -1,0 +1,36 @@
+layer 2, 4096-token prefill, one rep under nsys (bs1f, GB10): window 252.1 ms, kernels 250.4 ms first-to-last, kernel time 250.3 ms in 63 launches
+| group | ms | share |
+|---|---|---|
+| FP8/FP4 GEMM (block-scaled) | 137.21 | 54.8% |
+| bf16 GEMM | 52.00 | 20.8% |
+| attention | 19.41 | 7.8% |
+| mHC | 17.78 | 7.1% |
+| act_quant / qdq | 8.27 | 3.3% |
+| fp32 FMA GEMM (router, compressor) | 7.30 | 2.9% |
+| MoE plan/combine/swiglu | 5.11 | 2.0% |
+| norms / rope | 2.06 | 0.8% |
+| indexer | 0.99 | 0.4% |
+| compressor pool | 0.06 | 0.0% |
+| other | 0.05 | 0.0% |
+
+top kernels:
+| kernel | launches | ms |
+|---|---|---|
+| v41_gemm_f8_pipe_tiles_kernel | 3 | 109.61 |
+| v41_gemm_bf16_kernel | 3 | 52.00 |
+| v41_gemm_f8_pipe_kernel | 8 | 27.60 |
+| v41_sparse_attn_kernel | 1 | 19.32 |
+| v41_hc_mixes_part_kernel | 2 | 11.47 |
+| v41_gemm_ffma_kernel | 3 | 7.30 |
+| v41_act_quant_kernel | 11 | 7.25 |
+| v41_hc_post8_kernel | 2 | 4.26 |
+| v41_moe_combine_kernel | 1 | 2.95 |
+| v41_swiglu_kernel | 2 | 2.13 |
+| v41_hc_pre8_kernel | 2 | 1.99 |
+| v41_rmsnorm32_kernel | 6 | 1.08 |
+| v41_fp4_qdq_kernel | 3 | 1.03 |
+| v41_rope_kernel | 6 | 0.98 |
+| v41_index_score_kernel | 1 | 0.79 |
+| v41_topk_kernel | 1 | 0.20 |
+| v41_attn_idx_kernel | 1 | 0.09 |
+| v41_hc_finish_kernel | 2 | 0.07 |
