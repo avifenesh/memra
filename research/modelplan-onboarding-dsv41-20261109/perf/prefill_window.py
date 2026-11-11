@@ -36,8 +36,18 @@ def main():
     t0 = mine[0][0]
     later = [k[0] for k in marks if k[0] > mine[-1][0] and k not in mine]
     t1 = later[0] if later else max(k[1] for k in kern)
+    # a trace with tpbench's --nvtx: the window ends with the prompt's own cell (its head and readback), not at the
+    # next prompt's first mHC pass (which drags the next prompt's start-up, its upload and allocations, into this one)
+    edge = "the next prompt's first mHC pass (no NVTX cell ranges: the next prompt's start-up is inside)"
+    if cur.execute("select count(*) from sqlite_master where name = 'NVTX_EVENTS'").fetchone()[0]:
+        cols = [r[1] for r in cur.execute("pragma table_info(NVTX_EVENTS)")]
+        tid = "textId" if "textId" in cols else "NULL"
+        for st, en, text, ti in cur.execute(f"select start, end, text, {tid} from NVTX_EVENTS where end is not null"):
+            if (text if text is not None else S.get(ti, "")) == "v41 prefill cell" and st <= t0 <= en:
+                t1, edge = min(t1, en), "the end of the prompt's own cell (NVTX)"
     wall = (t1 - t0) / 1e6
-    print(f"prefill of {rows} tokens: {wall:.1f} ms wall, {wall / layers:.2f} ms a layer over {layers} layers")
+    print(f"prefill of {rows} tokens: {wall:.1f} ms wall, {wall / layers:.2f} ms a layer over {layers} layers "
+          f"(from its first mHC pass to {edge})")
     issued = dict(cur.execute("select correlationId, end from CUPTI_ACTIVITY_KIND_RUNTIME"))
     ev = defaultdict(list)
     for st, en, nm, stream, dev, corr, _ in kern:

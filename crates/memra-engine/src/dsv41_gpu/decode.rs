@@ -739,11 +739,15 @@ impl<'a> Runner<'a> {
             let q = &mut seqs[c.seq];
             // the call's tokens are checked (Engram hashes, embedding rows) before the sequence
             // takes them
+            self.grp.cx[0].nv(c"v41 hash");
             hashes.push(match (&self.ec, engram) {
                 (Some(ec), true) => Some(ec.hash_after(&q.ids, &c.tokens)?),
                 _ => None,
             });
+            self.grp.cx[0].nv_end();
+            self.grp.cx[0].nv(c"v41 embed");
             let (hr, pr) = self.embed_dev(&c.tokens)?;
+            self.grp.cx[0].nv_end();
             q.ids.extend_from_slice(&c.tokens);
             h.push(hr);
             pre.push(pr);
