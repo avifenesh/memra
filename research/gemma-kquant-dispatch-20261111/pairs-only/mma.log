@@ -1,0 +1,55 @@
+gpulock: 5090 leased for 30m
+
+running 1 test
+test kquant_expert_banks_prefill_what_they_decode ... [kquant] pairs program: int8 MMA default
+[tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[loader-law] WARNING: token_embd.weight loads as 2D Float ne=[256, 512] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[moe] resident-experts decision (dev0): experts 0.08GB + trunk 0.00GB vs free 24.85GB (expert budget 22.85GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 8 tensors
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 23636 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[fa-pool] grow #0 dev=0 o_len 0 -> 512 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 512 -> 1024 ml_len 2 -> 4 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 1024 -> 2048 ml_len 4 -> 8 (retired kept, zero=false)
+[tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 0.08GB + trunk 0.00GB vs free 24.78GB (expert budget 22.78GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 8 tensors
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 23636 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[fa-pool] grow #3 dev=0 o_len 0 -> 512 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 512 -> 1024 ml_len 2 -> 4 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 1024 -> 2048 ml_len 4 -> 8 (retired kept, zero=false)
+[kquant] control Variant { gate_up: Q4_0, down: Q4_0, ff: 704 }: vs reference [0.0017184018, 0.0022508432, 0.0032734089, 0.025134638, 0.08165185], prime-vs-decode 3.7644757e-3
+[kquant] variant Variant { gate_up: Q4_K, down: Q4_0, ff: 704 }: vs reference [0.0031258715, 0.18487918, 0.06642042, 0.06523996, 0.09615118], prime-vs-decode 2.8304902e-3
+[tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 0.06GB + trunk 0.00GB vs free 24.78GB (expert budget 22.78GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 8 tensors
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 23636 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[fa-pool] grow #6 dev=0 o_len 0 -> 512 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #7 dev=0 o_len 512 -> 1024 ml_len 2 -> 4 (retired kept, zero=false)
+[fa-pool] grow #8 dev=0 o_len 1024 -> 2048 ml_len 4 -> 8 (retired kept, zero=false)
+[tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 0.08GB + trunk 0.00GB vs free 24.78GB (expert budget 22.78GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 8 tensors
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 23636 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[fa-pool] grow #9 dev=0 o_len 0 -> 512 ml_len 0 -> 2 (retired kept, zero=false)
+[fa-pool] grow #10 dev=0 o_len 512 -> 1024 ml_len 2 -> 4 (retired kept, zero=false)
+[fa-pool] grow #11 dev=0 o_len 1024 -> 2048 ml_len 4 -> 8 (retired kept, zero=false)
+[kquant] control Variant { gate_up: Q4_0, down: Q4_0, ff: 512 }: vs reference [0.03479047, 0.002402319, 0.010760472, 0.008486591, 0.11604695], prime-vs-decode 3.8877625e-3
+[kquant] variant Variant { gate_up: Q6_K, down: Q6_K, ff: 512 }: vs reference [0.001507077, 0.11204498, 0.010776842, 0.013254281, 0.08772939], prime-vs-decode 2.8937852e-3
+
+thread 'kquant_expert_banks_prefill_what_they_decode' (3234967) panicked at crates/memra-engine/tests/gemma4_moe_kquant_pairs_gpu.rs:569:5:
+k-quant expert banks do not compute the model: ["Variant { gate_up: Q4_K, down: Q4_0, ff: 704 } T=8: 1.8487918e-1 against the reference, bound 6.7525296e-3 (control 2.2508432e-3)", "Variant { gate_up: Q4_K, down: Q4_0, ff: 704 } T=16: 6.642042e-2 against the reference, bound 9.820227e-3 (control 3.2734089e-3)", "Variant { gate_up: Q6_K, down: Q6_K, ff: 512 } T=8: 1.1204498e-1 against the reference, bound 7.2069573e-3 (control 2.402319e-3)"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    kquant_expert_banks_prefill_what_they_decode
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 10.10s
+
+rc=101

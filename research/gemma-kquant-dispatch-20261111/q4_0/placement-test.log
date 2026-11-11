@@ -1,0 +1,79 @@
+gpulock: 5090 leased for 40m
+
+running 1 test
+test gemma_slru_placement_is_bit_identical_to_resident ... [tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[loader-law] WARNING: token_embd.weight loads as 2D Float ne=[256, 512] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[moe] resident-experts decision (dev0): experts 0.08GB + trunk 0.00GB vs free 24.85GB (expert budget 22.85GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 8 tensors
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 23636 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[fa-pool] grow #0 dev=0 o_len 0 -> 3072 ml_len 0 -> 12 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 3072 -> 6144 ml_len 12 -> 24 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 6144 -> 13312 ml_len 24 -> 48 (retired kept, zero=false)
+[gemma-placement] pairs program: int8 MMA
+[tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 8 tensors
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 23538 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[moe-slru-gemma] engaged mode=LayerRow il=0 t=1 experts=128 runs=1 (the SLRU placement runs the resident gemma4 MoE program; memra#1225)
+[fa-pool] grow #3 dev=0 o_len 0 -> 3072 ml_len 0 -> 12 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 3072 -> 6144 ml_len 12 -> 24 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 6144 -> 13312 ml_len 24 -> 48 (retired kept, zero=false)
+[gemma-placement] SlruRoomy: cache Some((0, 0, 77856768, 194478)) (hits, misses, staged B, slots) SLRU calls row=40 pinned=0 chunked=0
+[gemma-placement] SlruRoomy: 0/20 rows differ from the resident arm
+[tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 4722 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[moe-slru-gemma] engaged mode=Pinned il=1 t=1 experts=8 runs=1 (the SLRU placement runs the resident gemma4 MoE program; memra#1225)
+[fa-pool] grow #6 dev=0 o_len 0 -> 3072 ml_len 0 -> 12 (retired kept, zero=false)
+[fa-pool] grow #7 dev=0 o_len 3072 -> 6144 ml_len 12 -> 24 (retired kept, zero=false)
+[fa-pool] grow #8 dev=0 o_len 6144 -> 13312 ml_len 24 -> 48 (retired kept, zero=false)
+[gemma-placement] SlruMid: cache Some((2078, 3193, 362621952, 400)) (hits, misses, staged B, slots) SLRU calls row=1 pinned=39 chunked=0
+[gemma-placement] SlruMid: 0/20 rows differ from the resident arm
+[tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 4722 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[moe-slru-gemma] engaged mode=Chunked il=1 t=600 experts=121 runs=2 (the SLRU placement runs the resident gemma4 MoE program; memra#1225)
+[fa-pool] grow #9 dev=0 o_len 0 -> 3072 ml_len 0 -> 12 (retired kept, zero=false)
+[fa-pool] grow #10 dev=0 o_len 3072 -> 6144 ml_len 12 -> 24 (retired kept, zero=false)
+[fa-pool] grow #11 dev=0 o_len 6144 -> 13312 ml_len 24 -> 48 (retired kept, zero=false)
+[gemma-placement] SlruTight: cache Some((1386, 3909, 396278784, 360)) (hits, misses, staged B, slots) SLRU calls row=0 pinned=38 chunked=2
+[gemma-placement] SlruTight: 0/20 rows differ from the resident arm
+[tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 4722 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[moe-cache] in-token prefetch: on (card rtx5090-laptop-receipt)
+[moe-slru-gemma] experts not resident and no SLRU arm: the expert cache has 300 slots and one call below the prefill width can need 360 at once (memra#1225); every MoE call runs the host-staged program
+[fa-pool] grow #12 dev=0 o_len 0 -> 3072 ml_len 0 -> 12 (retired kept, zero=false)
+[fa-pool] grow #13 dev=0 o_len 3072 -> 6144 ml_len 12 -> 24 (retired kept, zero=false)
+[fa-pool] grow #14 dev=0 o_len 6144 -> 13312 ml_len 24 -> 48 (retired kept, zero=false)
+[gemma-placement] SlruBelow: cache Some((0, 0, 0, 300)) (hits, misses, staged B, slots) SLRU calls row=0 pinned=0 chunked=0
+  forward T=1: element 0 -5.8547792e0 (0xc0bb5a5a) vs -5.8354735e0 (0xc0babc33)
+  forward T=8: element 0 -3.2917266e0 (0xc052aba6) vs -3.2764993e0 (0xc051b22a)
+  forward T=15: element 0 -8.1697445e0 (0xc102b746) vs -8.159964e0 (0xc1028f36)
+  forward T=16: element 0 -7.944741e0 (0xc0fe3b51) vs -7.95262e0 (0xc0fe7bdd)
+  forward T=40: element 0 -3.9837077e0 (0xc07ef511) vs -3.9731894e0 (0xc07e48bc)
+  forward T=130: element 0 6.7528753e0 (0x40d8178e) vs 6.7580976e0 (0x40d84256)
+  forward T=600: element 0 8.025969e-1 (0x3f4d76fe) vs 8.153495e-1 (0x3f50babf)
+  forward T=1000: element 0 7.0882696e-1 (0x3f3575af) vs 7.1416014e-1 (0x3f36d333)
+  A prime last row: element 0 5.680436e0 (0x40b5c622) vs 5.6647387e0 (0x40b5458a)
+  A decode 0: element 0 -9.305748e0 (0xc114e458) vs -9.277045e0 (0xc1146ec7)
+  A decode 1: element 0 -3.9200006e0 (0xc07ae14a) vs -3.9218402e0 (0xc07aff6e)
+  B prime last row (between A's decode steps): element 0 -3.5920298e0 (0xc065e3d1) vs -3.1686835e0 (0xc04acbb6)
+  A decode 2: element 0 3.6951942e0 (0x406c7e10) vs 3.7179034e0 (0x406df221)
+  B decode 0: element 0 1.0605193e1 (0x4129aedf) vs 1.0601061e1 (0x41299df2)
+  A decode 3: element 0 -6.9664717e0 (0xc0deed56) vs -6.9850483e0 (0xc0df8584)
+  B decode 1: element 0 7.5271244e0 (0x40f0de34) vs 7.532864e0 (0x40f10d39)
+  A decode 4: element 0 1.6375448e1 (0x418300eb) vs 1.6381376e1 (0x41830d0f)
+  B decode 2: element 0 -9.865468e0 (0xc11dd8f5) vs -9.855412e0 (0xc11dafc4)
+  A decode 5: element 0 -6.6363e-1 (0xbf29e3a8) vs -7.0253056e-1 (0xbf33d90b)
+  B decode 3: element 0 -8.707489e0 (0xc10b51e0) vs -8.710759e0 (0xc10b5f45)
+[gemma-placement] SlruBelow: 20/20 rows differ from the resident arm
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 9.34s
+
+rc=0
