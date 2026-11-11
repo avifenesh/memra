@@ -26,9 +26,15 @@ T=spec_boundary_publish_allocates_no_zeroed_plane
   grep -E '^test result|FAILED|panicked' "$L/server-test.log" | head -40
   echo "server $SHA rc=$rc"
   echo "# the memra-engine suite"
-  nice -n 10 cargo test --release --locked -p memra-engine > "$L/engine-test.log" 2>&1; rc=$?
+  nice -n 10 cargo test --release --locked -p memra-engine --lib > "$L/engine-test.log" 2>&1; rc=$?
   grep -E '^test result|FAILED|panicked' "$L/engine-test.log" | head -40
-  echo "engine $SHA rc=$rc"
+  echo "engine lib $SHA rc=$rc"
+  echo "# every memra-engine target, --no-fail-fast (this host has no GPU driver: GPU integration targets cannot load it)"
+  nice -n 10 cargo test --release --locked -p memra-engine --no-fail-fast > "$L/engine-test-nff.log" 2>&1; rc=$?
+  grep -E '^test result' "$L/engine-test-nff.log" | awk '{p+=$4; f+=$6; i+=$8} END {print "engine all targets: passed", p, "failed", f, "ignored", i}'
+  sed -n '/^error: [0-9]* targets failed:/,$p' "$L/engine-test-nff.log"
+  echo "failed tests whose panic is the missing GPU driver library: $(grep -c 'Unable to dynamically load the "cuda" shared library' "$L/engine-test-nff.log")"
+  echo "engine all $SHA rc=$rc"
   echo "# the census at the head"
   grep -E "^test .*$T" "$L/server-test.log"
   echo "# the census on the fail-before tree (the base's production code, the head's tests)"

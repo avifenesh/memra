@@ -1,0 +1,28 @@
+01-B: g131k prompt 131046, entry 131008 tokens 4290.5 MB; stall 78.5 pub 64.9 gap 65.2 interval 2016.8 ms; burst 2 139.40 ms per round over 14, later 138.44 over 11, round 139.40; TTFT 117.894 s, total 122.948 s, 95 tok stop, text e3b0c1e81f9a
+02-W: g131k prompt 131046, entry 131008 tokens 4290.5 MB; stall 60.9 pub 52.1 gap 52.0 interval 1985.3 ms; burst 2 138.09 ms per round over 14, later 137.45 over 11, round 138.09; TTFT 117.822 s, total 122.829 s, 95 tok stop, text e3b0c1e81f9a
+
+| | B median (spread) | W median (spread) |
+|---|---:|---:|
+| first burst boundary over its rounds, ms | 78.5 (0.0) | 60.9 (0.0) |
+| publisher on the scheduler thread, ms | 64.9 (0.0) | 52.1 (0.0) |
+| between burst 1 and burst 2, ms | 65.2 (0.0) | 52.0 (0.0) |
+| burst 1 line to burst 2 line, ms | 2016.8 (0.0) | 1985.3 (0.0) |
+| burst 2, ms per round | 139.40 (0.00) | 138.09 (0.00) |
+| later bursts, ms per round | 138.44 (0.00) | 137.45 (0.00) |
+| ms per round, every burst but the first and last | 139.40 (0.00) | 138.09 (0.00) |
+| TTFT, s | 117.894 (0.000) | 117.822 (0.000) |
+| total, s | 122.948 (0.000) | 122.829 (0.000) |
+
+| W against B | W - B | every W cell under every B cell |
+|---|---:|---|
+| first burst boundary over its rounds, ms | -17.6 (-22.4%) | yes |
+| publisher on the scheduler thread, ms | -12.8 (-19.7%) | yes |
+| between burst 1 and burst 2, ms | -13.1 (-20.2%) | yes |
+| burst 1 line to burst 2 line, ms | -31.5 (-1.6%) | yes |
+| burst 2, ms per round | -1.31 (-0.9%) | yes |
+| later bursts, ms per round | -0.99 (-0.7%) | yes |
+| ms per round, every burst but the first and last | -1.31 (-0.9%) | yes |
+| TTFT, s | -0.072 (-0.1%) | yes |
+| total, s | -0.119 (-0.1%) | yes |
+
+cells: 1 B, 1 W; texts: 1 distinct sha256 (e3b0c1e81f9a); burst structure (generated, rounds, drafted, accepted): 1 distinct; published entry (tokens, MB): [(131008, 4290.5)]

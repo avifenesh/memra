@@ -1,71 +1,28 @@
-# CPU checks at d117bf8607 (sm_120a build, cargo --release --locked)
+# CPU checks at c232c9132a (sm_120a build, cargo --release --locked)
 # cargo fmt --all -- --check
-fmt d117bf8607 rc=0
+fmt c232c9132a rc=0
 # workspace clippy --all-targets -D warnings
-clippy d117bf8607 rc=0
+clippy c232c9132a rc=0
       1 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
-    Finished `release` profile [optimized] target(s) in 4m 49s
+    Finished `release` profile [optimized] target(s) in 4m 23s
 # the memra-server suite
 test job_store::tests::failed_or_panicked_settlement_does_not_expose_output ... ok
-test result: ok. 1190 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out; finished in 13.73s
+test result: ok. 1191 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out; finished in 13.70s
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-server d117bf8607 rc=0
+server c232c9132a rc=0
 # the memra-engine suite
-test result: ok. 714 passed; 0 failed; 65 ignored; 0 measured; 0 filtered out; finished in 4.76s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-engine d117bf8607 rc=101
-# the census at the head
-test worker::tests::spec_boundary_publish_allocates_no_zeroed_plane ... ok
-# the census on the fail-before tree (the base's production code, the head's tests)
-test worker::tests::spec_boundary_publish_allocates_no_zeroed_plane ... FAILED
-the spec publisher calls engine.alloc_u8(
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1202 filtered out; finished in 0.00s
-red rc=101
-# the memra-engine suite again with --no-fail-fast (every target; the CPU host has no GPU driver)
-engine all targets: passed 914 failed 17 ignored 284
-error: 9 targets failed:
+test argmax_margin::tests::the_tree_floors_table_parses_and_every_row_is_its_receipts_calibration ... FAILED
+thread 'argmax_margin::tests::the_tree_floors_table_parses_and_every_row_is_its_receipts_calibration' (2362339) panicked at crates/memra-engine/src/argmax_margin.rs:1395:37:
+test result: FAILED. 738 passed; 1 failed; 65 ignored; 0 measured; 0 filtered out; finished in 4.89s
+engine lib c232c9132a rc=101
+# every memra-engine target, --no-fail-fast (this host has no GPU driver: GPU integration targets cannot load it)
+engine all targets: passed 951 failed 18 ignored 284
+error: 10 targets failed:
+    `-p memra-engine --lib`
     `-p memra-engine --test f32_gemv_rows_gpu`
     `-p memra-engine --test hc_mixes_gemv_gpu`
     `-p memra-engine --test hc_pre_v4_gpu`
@@ -75,6 +32,20 @@ error: 9 targets failed:
     `-p memra-engine --test mla_absorb_bf16_gpu`
     `-p memra-engine --test moe_rows_lanemajor_gpu`
     `-p memra-engine --test tp_ar_gpu`
-failed tests whose panic is the GPU driver library missing: 17 of 17
-the memra-engine lib suite (the CI unit suite, cargo test -p memra-engine --lib): test result: ok. 714 passed; 0 failed; 65 ignored; 0 measured; 0 filtered out; finished in 4.76s
+failed tests whose panic is the missing GPU driver library: 17
+engine all c232c9132a rc=101
+# the census at the head
+test worker::tests::spec_boundary_publish_allocates_no_zeroed_plane ... ok
+# the census on the fail-before tree (the base's production code, the head's tests)
+test worker::tests::spec_boundary_publish_allocates_no_zeroed_plane ... FAILED
+the spec publisher calls engine.alloc_u8(
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1203 filtered out; finished in 0.00s
+red rc=101
+# note: the source tree for these checks is the commit copied with git archive without most of research/;
+# the lib test argmax_margin::tests::the_tree_floors_table_parses_and_every_row_is_its_receipts_calibration
+# reads the floors table's receipt logs from research/, so it failed above on the missing files and passes
+# below with them added (the 18th failure in the all-targets run is the same test).
+# the memra-engine lib suite at c232c9132a, with the floors table's receipts in the tree
+test result: ok. 739 passed; 0 failed; 65 ignored; 0 measured; 0 filtered out; finished in 4.79s
+engine lib c232c9132a rc=0
 CPU-CHECKS-DONE
