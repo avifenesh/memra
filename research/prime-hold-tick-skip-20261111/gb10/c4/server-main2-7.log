@@ -1,0 +1,1290 @@
+[server] build: memra-0.141.1-0c5eb68559cb (id: source-tree, git: unknown)
+[server] starting; models config = [("q", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=8 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 52389MB (52389308416 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 52389308416 B; boot driver free 108536713216 B, post-reserve clamp 104778616832 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[fa-pool] grow #0 dev=0 o_len 0 -> 202752 ml_len 0 -> 792 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 202752 -> 405504 ml_len 792 -> 1584 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 405504 -> 811008 ml_len 1584 -> 3168 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 811008 -> 1622016 ml_len 3168 -> 6336 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 35MB (max of parked delta 35MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1393.480
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.002 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=401.55ms tail=0.20ms total=402.06ms out=8 cont=false
+[spec-setup] init=0.00ms cap=0.03ms fill=0.00ms rounds=3288.23ms tail=0.16ms total=3288.43ms out=97 cont=true
+[prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1394.278
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=499.30ms tail=0.21ms total=499.81ms out=8 cont=false
+[prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1388.982
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=505.20ms tail=0.21ms total=505.72ms out=10 cont=false
+[prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1387.809
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=502.63ms tail=0.21ms total=503.15ms out=9 cont=false
+[prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1390.865
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=501.94ms tail=0.21ms total=502.45ms out=9 cont=false
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[fa-pool] grow #5 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=3447.57ms tail=0.17ms total=3447.77ms out=96 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=3441.79ms tail=3.00ms total=3444.82ms out=96 cont=true
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=4216.14ms tail=1.66ms total=4217.82ms out=99 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=5216.78ms tail=0.21ms total=5217.01ms out=96 cont=true
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":8623489024,"still_owned_bytes":16509783880,"pool_reserved_bytes":16710107136,"pool_cached_bytes":200323256,"driver_free_bytes":27460624384,"synchronization_errors":[]}
+[spec-cost] model="q" depth=2048 pooled=true plain_cap=16 round_overhead=24.09ms draft_step=0.00ms pooled_overhead=Some((4, 7.37857191463414)) pooled_draft_step=None verify_ms[1..16]=[77.0 74.8 74.6 75.6 76.3 77.0 78.4 79.8 82.1 84.5 86.8 89.2 91.3 93.5 95.6 97.8] plain_ms[1..]=[76.1 78.4 82.2 85.9 90.2 94.4 98.7 102.9 107.7 112.5 117.2 122.0 126.8 131.5 136.3 141.1] (44.9s)
+[prime-walk] model="q" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2564.987
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.35ms cap=0.00ms fill=0.00ms rounds=2883.98ms tail=75.96ms total=2960.30ms out=64 cont=false
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1543503872,"still_owned_bytes":17239592784,"pool_reserved_bytes":17414750208,"pool_cached_bytes":175157424,"driver_free_bytes":26747645952,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1472MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=mtp transient floor 1536MB (static was 1536MB; measured 1309MB; probe kv charge 127MB, draft-state 35MB, drafted 84 accepted 35; [dev0 peak-mapped 18080MB rest-mapped 16608MB charged 162MB -> 1309MB]; 5.6s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[deadline] unified memory (48 SMs, served ctx 8192): streaming TTFT default/max 90000 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 2138000 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18211
+[meter] admit id=chatcmpl-99c70b4a9a7a658f18634d18dcc825eb tenant=default lane=interactive model="q"
+[spec-cost] model="q" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[meter] admit id=chatcmpl-d27bdbfbf6c600f1b5047c8caa88a556 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-6e5166b650318404dea4ad3a89deb7f3 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 0MB fixed = 36MB
+[spec-cost] model="q" n=3 rung=3 -> K=3 (exploring: no acceptance history yet)
+[meter] admit id=chatcmpl-fec56fbcc5829c98039129269ed28487 tenant=default lane=interactive model="q"
+[spec-cost] model="q" n=4 rung=3 -> K=3 (exploring: no acceptance history yet)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 312MB (observed 319MB at ctx 227 path=spec)
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=231.273
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.003 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=6.41ms tail=0.18ms total=6.90ms out=1 cont=false
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=238.427 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=238.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=285 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 312MB fixed = 349MB
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=61 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=61 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 313MB (observed 320MB at ctx 229 path=spec)
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 313MB (observed 320MB at ctx 227 path=spec)
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 157.9MB / 52389MB, model q)
+[prime-chunk] phase=mtp-trunk rows=61 wall_ms=229.430
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.31ms cap=0.01ms fill=0.00ms rounds=6.45ms tail=0.22ms total=6.98ms out=1 cont=false
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.009 gap_ms=0.009 wall_ms=236.637 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=61 wall_ms=227.246
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=7.82ms tail=0.05ms total=8.18ms out=1 cont=false
+[tick-spec] seq=2 slot=2 trace=- start_ms=236.661 gap_ms=0.015 wall_ms=235.635 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=228.322
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=6.49ms tail=0.04ms total=6.84ms out=1 cont=false
+[tick-spec] seq=3 slot=3 trace=- start_ms=472.309 gap_ms=0.013 wall_ms=235.396 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[spec-setup] init=76.44ms cap=0.07ms fill=0.00ms rounds=1138.11ms tail=0.20ms total=1214.82ms out=33 cont=true
+[spec-acc] ctx=60 burst=21/33 cum=21/33=0.636
+[tick-spec] seq=4 slot=0 trace=- start_ms=707.719 gap_ms=0.014 wall_ms=1214.970 generated=1->34 rounds=11 drafted=33 accepted=21 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1922.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 315.8MB / 52389MB, model q)
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 473.8MB / 52389MB, model q)
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 631.7MB / 52389MB, model q)
+[spec-pool] pooled MTP cohort engaged: 4 sessions (model q)
+[spec-setup] init=76.34ms cap=0.03ms fill=0.00ms rounds=1723.00ms tail=4.47ms total=1803.84ms out=32 cont=true
+[spec-pool] pooled rows draft engaged: 3 members (arms [GraphGreedy, GraphGreedy, GraphGreedy])
+[spec-setup] init=76.16ms cap=0.03ms fill=0.00ms rounds=2015.31ms tail=1.68ms total=2093.19ms out=32 cont=true
+[spec-setup] init=75.94ms cap=0.03ms fill=0.00ms rounds=1938.51ms tail=0.01ms total=2014.49ms out=33 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2190.75ms tail=0.15ms total=2190.93ms out=32 cont=true
+[spec-acc] ctx=93 burst=19/39 cum=40/72=0.556
+[spec-acc] ctx=62 burst=19/36 cum=19/36=0.528
+[spec-acc] ctx=62 burst=20/36 cum=20/36=0.556
+[spec-acc] ctx=60 burst=20/33 cum=20/33=0.606
+[tick-spec] seq=1 slot=0 trace=- start_ms=2191.099 gap_ms=2191.099 wall_ms=0.001 generated=34->66 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2191.113 gap_ms=0.013 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2191.125 gap_ms=0.011 wall_ms=0.000 generated=1->34 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2191.136 gap_ms=0.011 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2191.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1712.43ms tail=4.50ms total=1716.95ms out=35 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1840.29ms tail=3.16ms total=1843.48ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1953.17ms tail=0.16ms total=1953.37ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1951.32ms tail=0.01ms total=1951.36ms out=33 cont=true
+[spec-acc] ctx=125 burst=18/42 cum=58/114=0.509
+[spec-acc] ctx=94 burst=19/42 cum=38/78=0.487
+[spec-acc] ctx=95 burst=19/39 cum=39/75=0.520
+[spec-acc] ctx=92 burst=23/36 cum=43/69=0.623
+[tick-spec] seq=1 slot=0 trace=- start_ms=1953.555 gap_ms=1953.555 wall_ms=0.001 generated=66->98 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1953.569 gap_ms=0.013 wall_ms=0.000 generated=33->66 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1953.580 gap_ms=0.011 wall_ms=0.000 generated=34->66 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1953.591 gap_ms=0.011 wall_ms=0.000 generated=33->68 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1953.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1698.98ms tail=1.56ms total=1700.57ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1696.63ms tail=1.45ms total=1698.10ms out=34 cont=true
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=1810.06ms tail=0.15ms total=1810.26ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1806.18ms tail=0.01ms total=1806.22ms out=34 cont=true
+[spec-acc] ctx=157 burst=19/39 cum=77/153=0.503
+[spec-acc] ctx=127 burst=20/36 cum=58/114=0.509
+[spec-acc] ctx=127 burst=21/39 cum=60/114=0.526
+[spec-acc] ctx=127 burst=22/36 cum=65/105=0.619
+[tick-spec] seq=1 slot=0 trace=- start_ms=1810.489 gap_ms=1810.489 wall_ms=0.000 generated=98->130 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1810.502 gap_ms=0.012 wall_ms=0.000 generated=66->98 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1810.513 gap_ms=0.011 wall_ms=0.000 generated=66->100 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1810.524 gap_ms=0.011 wall_ms=0.000 generated=68->102 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1810.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-cost] model="q" realized n=4 K=3: 64.9 tok/s (now priced from serving)
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1703.68ms tail=3.45ms total=1707.16ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1705.07ms tail=0.01ms total=1705.11ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1819.28ms tail=0.18ms total=1819.50ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1817.53ms tail=0.01ms total=1817.57ms out=32 cont=true
+[spec-acc] ctx=189 burst=19/39 cum=96/192=0.500
+[spec-acc] ctx=159 burst=19/39 cum=77/153=0.503
+[spec-acc] ctx=161 burst=20/36 cum=80/150=0.533
+[spec-acc] ctx=161 burst=20/36 cum=85/141=0.603
+[tick-spec] seq=1 slot=0 trace=- start_ms=1819.703 gap_ms=1819.703 wall_ms=0.001 generated=130->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1819.716 gap_ms=0.012 wall_ms=0.000 generated=98->130 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1819.727 gap_ms=0.011 wall_ms=0.000 generated=100->132 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1819.738 gap_ms=0.011 wall_ms=0.000 generated=102->134 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1819.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-bf48f3a02bf9ab807389b3e110e119d0 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 1 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=7 active=4 wave=4 placement=single-or-non-pp2
+[spec-pool] pooled MTP cohort engaged: 3 sessions (model q)
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1398.62ms tail=0.21ms total=1398.85ms out=30 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1505.18ms tail=1.65ms total=1506.86ms out=28 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1606.77ms tail=0.20ms total=1606.99ms out=28 cont=true
+[spec-acc] ctx=191 burst=19/33 cum=96/186=0.516
+[spec-acc] ctx=193 burst=15/39 cum=95/189=0.503
+[spec-acc] ctx=193 burst=16/36 cum=101/177=0.571
+[meter] admit id=chatcmpl-ad8e3d4ff286afb7ceff2028946c7cfd tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b24f00eddac95c020cb4eba4268d784f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-080da7e391e9b7db57c4397add55f320 tenant=default lane=interactive model="q"
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=222.840
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.47ms tail=1.73ms total=2.50ms out=1 cont=false
+[tick-spec] seq=1 slot=3 trace=- start_ms=1610.920 gap_ms=1610.920 wall_ms=225.475 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=0 trace=- start_ms=1836.408 gap_ms=0.013 wall_ms=0.001 generated=130->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=1 trace=- start_ms=1836.435 gap_ms=0.026 wall_ms=0.000 generated=132->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=2 trace=- start_ms=1836.447 gap_ms=0.011 wall_ms=0.000 generated=134->160 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1836.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=284 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=60 cached=0 lcp=7 active=2 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=7 active=3 wave=4 placement=single-or-non-pp2
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=7 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 789.6MB / 52389MB, model q)
+[prime-chunk] phase=mtp-trunk rows=60 wall_ms=227.929
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.49ms tail=1.76ms total=2.55ms out=1 cont=false
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=230.611 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=221.842
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.48ms tail=1.65ms total=2.44ms out=1 cont=false
+[tick-spec] seq=2 slot=2 trace=- start_ms=230.632 gap_ms=0.013 wall_ms=224.397 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=222.919
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.49ms tail=1.79ms total=2.58ms out=1 cont=false
+[tick-spec] seq=3 slot=3 trace=- start_ms=455.040 gap_ms=0.012 wall_ms=225.621 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[spec-setup] init=76.15ms cap=0.04ms fill=0.00ms rounds=1350.02ms tail=0.21ms total=1426.42ms out=33 cont=true
+[spec-acc] ctx=60 burst=19/39 cum=19/39=0.487
+[tick-spec] seq=4 slot=0 trace=- start_ms=680.674 gap_ms=0.013 wall_ms=1426.516 generated=1->34 rounds=13 drafted=39 accepted=19 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2107.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 947.5MB / 52389MB, model q)
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 1105.5MB / 52389MB, model q)
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 1263.4MB / 52389MB, model q)
+[spec-setup] init=76.14ms cap=0.03ms fill=0.00ms rounds=1873.42ms tail=1.68ms total=1951.27ms out=34 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2226.12ms tail=0.21ms total=2226.36ms out=35 cont=true
+[spec-setup] init=75.39ms cap=0.03ms fill=0.00ms rounds=2189.75ms tail=0.16ms total=2265.33ms out=34 cont=true
+[spec-setup] init=75.37ms cap=0.03ms fill=0.00ms rounds=2112.51ms tail=0.01ms total=2187.92ms out=35 cont=true
+[spec-acc] ctx=93 burst=22/39 cum=41/78=0.526
+[spec-acc] ctx=61 burst=22/33 cum=22/33=0.667
+[spec-acc] ctx=60 burst=19/42 cum=19/42=0.452
+[spec-acc] ctx=60 burst=20/42 cum=20/42=0.476
+[tick-spec] seq=1 slot=0 trace=- start_ms=2345.827 gap_ms=2345.827 wall_ms=0.001 generated=34->69 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2345.840 gap_ms=0.012 wall_ms=0.000 generated=1->35 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2345.852 gap_ms=0.011 wall_ms=0.000 generated=1->35 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2345.863 gap_ms=0.011 wall_ms=0.000 generated=1->36 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2345.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=1573.37ms tail=0.16ms total=1573.58ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1823.59ms tail=0.16ms total=1823.78ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1820.06ms tail=1.27ms total=1821.36ms out=34 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1919.82ms tail=0.13ms total=1919.97ms out=35 cont=true
+[spec-acc] ctx=128 burst=21/33 cum=62/111=0.559
+[spec-acc] ctx=95 burst=19/39 cum=41/72=0.569
+[spec-acc] ctx=94 burst=21/42 cum=40/84=0.476
+[spec-acc] ctx=95 burst=21/39 cum=41/81=0.506
+[tick-spec] seq=1 slot=0 trace=- start_ms=1924.451 gap_ms=1924.451 wall_ms=0.001 generated=69->101 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1924.464 gap_ms=0.013 wall_ms=0.000 generated=35->67 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1924.476 gap_ms=0.011 wall_ms=0.000 generated=35->70 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1924.487 gap_ms=0.011 wall_ms=0.000 generated=36->70 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1924.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1554.69ms tail=1.57ms total=1556.30ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1554.21ms tail=0.01ms total=1554.25ms out=33 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1552.19ms tail=0.01ms total=1552.23ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.05ms fill=0.00ms rounds=1754.97ms tail=0.21ms total=1755.24ms out=32 cont=true
+[spec-acc] ctx=160 burst=19/39 cum=81/150=0.540
+[spec-acc] ctx=127 burst=21/33 cum=62/105=0.590
+[spec-acc] ctx=129 burst=22/33 cum=62/117=0.530
+[spec-acc] ctx=129 burst=21/33 cum=62/114=0.544
+[tick-spec] seq=1 slot=0 trace=- start_ms=1755.381 gap_ms=1755.381 wall_ms=0.001 generated=101->133 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1755.395 gap_ms=0.013 wall_ms=0.000 generated=67->99 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1755.407 gap_ms=0.012 wall_ms=0.000 generated=70->103 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1755.418 gap_ms=0.011 wall_ms=0.000 generated=70->102 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1755.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1419.25ms tail=1.78ms total=1421.06ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1546.26ms tail=0.20ms total=1546.50ms out=28 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1652.70ms tail=0.21ms total=1652.93ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1847.03ms tail=0.17ms total=1847.23ms out=35 cont=true
+[spec-acc] ctx=192 burst=17/33 cum=98/183=0.536
+[spec-acc] ctx=159 burst=22/30 cum=84/135=0.622
+[spec-acc] ctx=162 burst=20/36 cum=82/153=0.536
+[spec-acc] ctx=161 burst=21/42 cum=83/156=0.532
+[tick-spec] seq=1 slot=0 trace=- start_ms=1853.710 gap_ms=1853.710 wall_ms=0.000 generated=133->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1853.724 gap_ms=0.013 wall_ms=0.000 generated=99->131 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1853.735 gap_ms=0.011 wall_ms=0.000 generated=103->135 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1853.746 gap_ms=0.011 wall_ms=0.000 generated=102->137 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1853.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-66e7c0e9eac01e87550a083cf28bc897 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=282 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 348MB
+[worker] spec-affinity: declined (history diverged at 6 of checkpoint 32; 2 parked, 58 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=58 cached=0 lcp=6 active=4 wave=4 placement=single-or-non-pp2
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1008.89ms tail=3.66ms total=1012.57ms out=25 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1234.00ms tail=1.66ms total=1235.68ms out=25 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1434.62ms tail=0.22ms total=1434.87ms out=30 cont=true
+[spec-acc] ctx=191 burst=18/36 cum=102/171=0.596
+[spec-acc] ctx=194 burst=15/30 cum=97/183=0.530
+[spec-acc] ctx=196 burst=17/24 cum=100/180=0.556
+[meter] admit id=chatcmpl-3301566707ea5226fbcd5a6c4a01d676 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-1ec7dff74a4e7b92ba427aa1f4fd1cc0 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-3ce8421be1ac7a04bf8d9db1286139d2 tenant=default lane=interactive model="q"
+[prime-chunk] phase=mtp-trunk rows=58 wall_ms=221.629
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.50ms tail=1.86ms total=2.67ms out=1 cont=false
+[tick-spec] seq=1 slot=3 trace=- start_ms=1436.658 gap_ms=1436.658 wall_ms=224.442 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=0 trace=- start_ms=1661.113 gap_ms=0.013 wall_ms=0.001 generated=131->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=1 trace=- start_ms=1661.125 gap_ms=0.012 wall_ms=0.000 generated=135->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=2 trace=- start_ms=1661.137 gap_ms=0.011 wall_ms=0.000 generated=137->160 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1661.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=7 active=2 wave=4 placement=single-or-non-pp2
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=7 active=3 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=284 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=60 cached=0 lcp=7 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 1421.3MB / 52389MB, model q)
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=228.758
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.49ms tail=2.01ms total=2.81ms out=1 cont=false
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=231.702 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=224.283
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.51ms tail=1.61ms total=2.43ms out=1 cont=false
+[tick-spec] seq=2 slot=2 trace=- start_ms=231.720 gap_ms=0.013 wall_ms=226.836 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=60 wall_ms=221.167
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.54ms tail=1.59ms total=2.43ms out=1 cont=false
+[tick-spec] seq=3 slot=3 trace=- start_ms=458.569 gap_ms=0.012 wall_ms=223.714 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[spec-setup] init=75.51ms cap=0.04ms fill=0.00ms rounds=1134.19ms tail=0.20ms total=1209.93ms out=32 cont=true
+[spec-acc] ctx=59 burst=20/33 cum=20/33=0.606
+[tick-spec] seq=4 slot=0 trace=- start_ms=682.296 gap_ms=0.013 wall_ms=1210.031 generated=1->33 rounds=11 drafted=33 accepted=20 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1892.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 1579.2MB / 52389MB, model q)
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 1737.2MB / 52389MB, model q)
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 1895.1MB / 52389MB, model q)
+[spec-setup] init=75.96ms cap=0.04ms fill=0.00ms rounds=2037.29ms tail=1.52ms total=2114.82ms out=34 cont=true
+[spec-setup] init=75.51ms cap=0.03ms fill=0.00ms rounds=2098.58ms tail=1.59ms total=2175.72ms out=32 cont=true
+[spec-setup] init=76.28ms cap=0.03ms fill=0.00ms rounds=2021.89ms tail=0.01ms total=2098.22ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2453.14ms tail=0.23ms total=2453.39ms out=33 cont=true
+[spec-acc] ctx=91 burst=18/45 cum=38/78=0.487
+[spec-acc] ctx=60 burst=21/36 cum=21/36=0.583
+[spec-acc] ctx=60 burst=18/39 cum=18/39=0.462
+[spec-acc] ctx=61 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=1 slot=0 trace=- start_ms=2453.525 gap_ms=2453.525 wall_ms=0.001 generated=33->66 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2453.539 gap_ms=0.012 wall_ms=0.000 generated=1->35 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2453.550 gap_ms=0.011 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2453.562 gap_ms=0.011 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2453.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1583.46ms tail=0.17ms total=1583.67ms out=33 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1707.67ms tail=0.20ms total=1707.90ms out=34 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1705.80ms tail=0.01ms total=1705.83ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1803.66ms tail=0.20ms total=1803.88ms out=32 cont=true
+[spec-acc] ctx=124 burst=22/33 cum=60/111=0.541
+[spec-acc] ctx=94 burst=22/36 cum=43/72=0.597
+[spec-acc] ctx=92 burst=20/36 cum=38/75=0.507
+[spec-acc] ctx=93 burst=19/39 cum=37/78=0.474
+[tick-spec] seq=1 slot=0 trace=- start_ms=1810.307 gap_ms=1810.307 wall_ms=0.001 generated=66->99 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1810.321 gap_ms=0.012 wall_ms=0.000 generated=35->69 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1810.332 gap_ms=0.011 wall_ms=0.000 generated=33->65 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1810.344 gap_ms=0.011 wall_ms=0.000 generated=33->65 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1810.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1561.73ms tail=1.59ms total=1563.34ms out=35 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1689.18ms tail=0.21ms total=1689.43ms out=33 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1683.36ms tail=1.43ms total=1684.82ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=2083.89ms tail=0.21ms total=2084.12ms out=32 cont=true
+[spec-acc] ctx=157 burst=21/36 cum=81/147=0.551
+[spec-acc] ctx=128 burst=24/33 cum=67/105=0.638
+[spec-acc] ctx=124 burst=16/48 cum=54/123=0.439
+[spec-acc] ctx=125 burst=20/36 cum=57/114=0.500
+[tick-spec] seq=1 slot=0 trace=- start_ms=2088.484 gap_ms=2088.484 wall_ms=0.001 generated=99->132 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2088.497 gap_ms=0.013 wall_ms=0.000 generated=69->104 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2088.509 gap_ms=0.011 wall_ms=0.000 generated=65->97 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2088.520 gap_ms=0.011 wall_ms=0.000 generated=65->97 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2088.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1421.07ms tail=4.67ms total=1425.76ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1550.36ms tail=3.07ms total=1553.46ms out=35 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1776.30ms tail=0.15ms total=1776.49ms out=31 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1973.87ms tail=0.16ms total=1974.06ms out=32 cont=true
+[spec-acc] ctx=190 burst=18/39 cum=99/186=0.532
+[spec-acc] ctx=163 burst=17/45 cum=84/150=0.560
+[spec-acc] ctx=156 burst=24/33 cum=78/156=0.500
+[spec-acc] ctx=157 burst=22/30 cum=79/144=0.549
+[tick-spec] seq=1 slot=0 trace=- start_ms=1976.310 gap_ms=1976.310 wall_ms=0.001 generated=132->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1976.324 gap_ms=0.013 wall_ms=0.000 generated=104->136 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1976.335 gap_ms=0.011 wall_ms=0.000 generated=97->132 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1976.347 gap_ms=0.011 wall_ms=0.000 generated=97->129 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1976.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1141.75ms tail=0.20ms total=1141.98ms out=25 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1139.87ms tail=0.02ms total=1139.92ms out=29 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1732.05ms tail=0.19ms total=1732.27ms out=33 cont=true
+[spec-acc] ctx=195 burst=16/27 cum=100/177=0.565
+[spec-acc] ctx=191 burst=20/27 cum=98/183=0.536
+[spec-acc] ctx=189 burst=18/45 cum=97/189=0.513
+[tick-spec] seq=1 slot=0 trace=- start_ms=1736.848 gap_ms=1736.848 wall_ms=0.001 generated=136->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1736.876 gap_ms=0.026 wall_ms=0.000 generated=132->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1736.887 gap_ms=0.011 wall_ms=0.000 generated=129->160 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=3 int=3 priming=0 ready=0 spec=3 demoted=0 spec_calls=3 spec_ms=1736.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-920e19f3b483e4f773d6ae5cb149d83d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-adc5f98073c583c31f609cbba084f077 tenant=default lane=interactive model="q"
+[spec-cost] model="q" n=2 rung=3 -> K=3 (predicted 35.6 vs plain 25.5 tok/s; pooled=true; priced from K0=table K1=(4,3) K2=(4,3) K3=(4,3))
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=1 wave=2 placement=single-or-non-pp2
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[meter] admit id=chatcmpl-69f1ab46633e73960ba8a5a6b89c71b1 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=2 wave=3 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-f7eae569c53a3330bd38d8cc558d7f3e tenant=default lane=interactive model="q"
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=228.118
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.54ms tail=1.63ms total=2.48ms out=1 cont=false
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=230.740 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=224.186
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.54ms tail=1.58ms total=2.44ms out=1 cont=false
+[tick-spec] seq=2 slot=1 trace=- start_ms=230.758 gap_ms=0.013 wall_ms=226.750 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=2 int=2 priming=0 ready=0 spec=2 demoted=0 spec_calls=2 spec_ms=457.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=3 wave=4 placement=single-or-non-pp2
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=7 active=4 wave=4 placement=single-or-non-pp2
+[spec-pool] pooled MTP cohort engaged: 2 sessions (model q)
+[spec-setup] init=76.39ms cap=0.04ms fill=0.00ms rounds=1747.48ms tail=0.17ms total=1824.08ms out=34 cont=true
+[spec-setup] init=75.66ms cap=0.03ms fill=0.00ms rounds=1669.86ms tail=0.02ms total=1745.57ms out=35 cont=true
+[spec-acc] ctx=60 burst=19/42 cum=19/42=0.452
+[spec-acc] ctx=60 burst=20/42 cum=20/42=0.476
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=223.757
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.57ms tail=1.56ms total=2.44ms out=1 cont=false
+[tick-spec] seq=1 slot=2 trace=- start_ms=1827.393 gap_ms=1827.393 wall_ms=226.348 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=222.643
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.54ms tail=1.57ms total=2.41ms out=1 cont=false
+[tick-spec] seq=2 slot=3 trace=- start_ms=2053.763 gap_ms=0.022 wall_ms=225.204 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=0 trace=- start_ms=2278.980 gap_ms=0.012 wall_ms=0.001 generated=1->35 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=1 trace=- start_ms=2278.992 gap_ms=0.012 wall_ms=0.001 generated=1->36 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2279.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 2053.0MB / 52389MB, model q)
+[spec-setup] init=75.87ms cap=0.03ms fill=0.00ms rounds=1742.82ms tail=3.81ms total=1822.54ms out=33 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2085.72ms tail=1.68ms total=2087.43ms out=34 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2202.57ms tail=0.21ms total=2202.81ms out=35 cont=true
+[spec-setup] init=75.54ms cap=0.03ms fill=0.00ms rounds=2149.04ms tail=0.19ms total=2224.81ms out=32 cont=true
+[spec-acc] ctx=94 burst=21/42 cum=40/84=0.476
+[spec-acc] ctx=95 burst=21/39 cum=41/81=0.506
+[spec-acc] ctx=60 burst=21/33 cum=21/33=0.636
+[spec-acc] ctx=60 burst=16/45 cum=16/45=0.356
+[tick-spec] seq=1 slot=0 trace=- start_ms=2308.027 gap_ms=2308.027 wall_ms=0.001 generated=35->70 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2308.041 gap_ms=0.013 wall_ms=0.000 generated=36->70 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2308.052 gap_ms=0.011 wall_ms=0.000 generated=1->34 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2308.063 gap_ms=0.011 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2308.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1587.54ms tail=0.20ms total=1587.78ms out=33 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1585.61ms tail=0.02ms total=1585.66ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1802.22ms tail=0.18ms total=1802.42ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1995.92ms tail=0.11ms total=1996.06ms out=35 cont=true
+[spec-acc] ctx=129 burst=22/33 cum=62/117=0.530
+[spec-acc] ctx=129 burst=21/33 cum=62/114=0.544
+[spec-acc] ctx=93 burst=19/39 cum=40/72=0.556
+[spec-acc] ctx=92 burst=20/45 cum=36/90=0.400
+[tick-spec] seq=1 slot=0 trace=- start_ms=2002.814 gap_ms=2002.814 wall_ms=0.001 generated=70->103 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2002.828 gap_ms=0.013 wall_ms=0.000 generated=70->102 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2002.839 gap_ms=0.011 wall_ms=0.000 generated=34->66 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2002.851 gap_ms=0.011 wall_ms=0.000 generated=33->68 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2002.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.05ms fill=0.00ms rounds=1716.53ms tail=0.17ms total=1716.75ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1710.99ms tail=2.62ms total=1713.64ms out=33 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1935.49ms tail=0.14ms total=1935.66ms out=35 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1933.47ms tail=0.01ms total=1933.52ms out=32 cont=true
+[spec-acc] ctx=162 burst=20/36 cum=82/153=0.536
+[spec-acc] ctx=161 burst=21/42 cum=83/156=0.532
+[spec-acc] ctx=125 burst=18/42 cum=58/114=0.509
+[spec-acc] ctx=127 burst=21/36 cum=57/126=0.452
+[tick-spec] seq=1 slot=0 trace=- start_ms=1938.204 gap_ms=1938.204 wall_ms=0.001 generated=103->135 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1938.231 gap_ms=0.026 wall_ms=0.000 generated=102->137 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1938.243 gap_ms=0.012 wall_ms=0.000 generated=66->98 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1938.254 gap_ms=0.011 wall_ms=0.000 generated=68->101 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1938.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1143.29ms tail=1.66ms total=1144.98ms out=25 cont=true
+[spec-setup] init=0.01ms cap=0.06ms fill=0.00ms rounds=1397.09ms tail=0.21ms total=1397.36ms out=25 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1499.51ms tail=1.70ms total=1501.24ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1698.81ms tail=0.21ms total=1699.05ms out=32 cont=true
+[spec-acc] ctx=194 burst=15/30 cum=97/183=0.530
+[spec-acc] ctx=196 burst=17/24 cum=100/180=0.556
+[spec-acc] ctx=157 burst=19/39 cum=77/153=0.503
+[spec-acc] ctx=160 burst=21/33 cum=78/159=0.491
+[tick-spec] seq=1 slot=0 trace=- start_ms=1703.595 gap_ms=1703.595 wall_ms=0.001 generated=135->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1703.608 gap_ms=0.013 wall_ms=0.000 generated=137->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1703.620 gap_ms=0.011 wall_ms=0.000 generated=98->130 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1703.631 gap_ms=0.011 wall_ms=0.000 generated=101->133 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1703.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-c0da2a0e4ece4de717ad2f8b8de35662 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-dd28cf6edbb03ce13c84019ab7f94a78 tenant=default lane=interactive model="q"
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=3 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=284 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=60 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1107.38ms tail=1.66ms total=1109.06ms out=28 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1408.72ms tail=0.15ms total=1408.89ms out=32 cont=true
+[spec-acc] ctx=189 burst=19/39 cum=96/192=0.500
+[spec-acc] ctx=192 burst=18/30 cum=96/189=0.508
+[meter] admit id=chatcmpl-6093dca6e03ce92e1eac4672dc0f0c09 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-df397a936117406e5f64db220d6cf213 tenant=default lane=interactive model="q"
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=225.006
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.67ms tail=1.83ms total=2.81ms out=1 cont=false
+[tick-spec] seq=1 slot=2 trace=- start_ms=1412.360 gap_ms=1412.360 wall_ms=227.964 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=60 wall_ms=223.008
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.57ms tail=1.66ms total=2.53ms out=1 cont=false
+[tick-spec] seq=2 slot=3 trace=- start_ms=1640.339 gap_ms=0.014 wall_ms=225.688 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=0 trace=- start_ms=1866.041 gap_ms=0.014 wall_ms=0.001 generated=130->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=1 trace=- start_ms=1866.053 gap_ms=0.012 wall_ms=0.000 generated=133->160 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1866.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=3 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=284 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=60 cached=0 lcp=7 active=4 wave=4 placement=single-or-non-pp2
+[spec-setup] init=76.33ms cap=0.04ms fill=0.00ms rounds=1620.77ms tail=0.20ms total=1697.34ms out=32 cont=true
+[spec-setup] init=75.66ms cap=0.04ms fill=0.00ms rounds=1543.18ms tail=0.02ms total=1618.90ms out=32 cont=true
+[spec-acc] ctx=60 burst=18/39 cum=18/39=0.462
+[spec-acc] ctx=61 burst=18/39 cum=18/39=0.462
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=223.618
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.54ms tail=1.66ms total=2.50ms out=1 cont=false
+[tick-spec] seq=1 slot=2 trace=- start_ms=1700.725 gap_ms=1700.725 wall_ms=226.267 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=60 wall_ms=223.794
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.31ms cap=0.00ms fill=0.00ms rounds=0.62ms tail=1.56ms total=2.50ms out=1 cont=false
+[tick-spec] seq=2 slot=3 trace=- start_ms=1927.005 gap_ms=0.013 wall_ms=226.426 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=0 trace=- start_ms=2153.445 gap_ms=0.014 wall_ms=0.001 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=1 trace=- start_ms=2153.458 gap_ms=0.012 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2153.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 2210.9MB / 52389MB, model q)
+[spec-setup] init=76.39ms cap=0.03ms fill=0.00ms rounds=1680.99ms tail=4.81ms total=1762.23ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1974.85ms tail=0.21ms total=1975.09ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2089.70ms tail=0.19ms total=2089.92ms out=32 cont=true
+[spec-setup] init=76.61ms cap=0.04ms fill=0.00ms rounds=2010.69ms tail=0.01ms total=2087.36ms out=33 cont=true
+[spec-acc] ctx=92 burst=20/36 cum=38/75=0.507
+[spec-acc] ctx=93 burst=19/39 cum=37/78=0.474
+[spec-acc] ctx=60 burst=19/39 cum=19/39=0.487
+[spec-acc] ctx=61 burst=20/33 cum=20/33=0.606
+[tick-spec] seq=1 slot=0 trace=- start_ms=2092.512 gap_ms=2092.512 wall_ms=0.001 generated=33->65 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2092.526 gap_ms=0.013 wall_ms=0.000 generated=33->65 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2092.537 gap_ms=0.011 wall_ms=0.000 generated=1->34 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2092.563 gap_ms=0.026 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2092.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1738.63ms tail=1.69ms total=1740.36ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1862.97ms tail=1.70ms total=1864.70ms out=35 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2084.60ms tail=2.10ms total=2086.73ms out=34 cont=true
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=2191.41ms tail=0.20ms total=2191.66ms out=32 cont=true
+[spec-acc] ctx=124 burst=16/48 cum=54/123=0.439
+[spec-acc] ctx=125 burst=20/36 cum=57/114=0.500
+[spec-acc] ctx=93 burst=22/39 cum=41/78=0.526
+[spec-acc] ctx=93 burst=19/45 cum=39/78=0.500
+[tick-spec] seq=1 slot=0 trace=- start_ms=2191.806 gap_ms=2191.806 wall_ms=0.001 generated=65->97 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2191.820 gap_ms=0.013 wall_ms=0.000 generated=65->97 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2191.831 gap_ms=0.011 wall_ms=0.000 generated=34->69 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2191.843 gap_ms=0.011 wall_ms=0.000 generated=33->67 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2191.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1417.82ms tail=1.76ms total=1419.61ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1547.34ms tail=0.21ms total=1547.59ms out=35 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1543.27ms tail=0.02ms total=1543.31ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1541.14ms tail=0.01ms total=1541.18ms out=32 cont=true
+[spec-acc] ctx=156 burst=24/33 cum=78/156=0.500
+[spec-acc] ctx=157 burst=22/30 cum=79/144=0.549
+[spec-acc] ctx=128 burst=21/33 cum=62/111=0.559
+[spec-acc] ctx=127 burst=21/33 cum=60/111=0.541
+[tick-spec] seq=1 slot=0 trace=- start_ms=1547.867 gap_ms=1547.867 wall_ms=0.001 generated=97->132 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1547.881 gap_ms=0.013 wall_ms=0.000 generated=97->129 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1547.892 gap_ms=0.011 wall_ms=0.000 generated=69->101 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1547.903 gap_ms=0.011 wall_ms=0.000 generated=67->99 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1547.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1284.01ms tail=0.20ms total=1284.25ms out=29 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1791.70ms tail=1.75ms total=1793.47ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1898.93ms tail=1.65ms total=1900.60ms out=35 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=2002.34ms tail=0.22ms total=2002.59ms out=33 cont=true
+[spec-acc] ctx=191 burst=20/27 cum=98/183=0.536
+[spec-acc] ctx=189 burst=18/45 cum=97/189=0.513
+[spec-acc] ctx=160 burst=19/39 cum=81/150=0.540
+[spec-acc] ctx=159 burst=21/42 cum=81/153=0.529
+[tick-spec] seq=1 slot=0 trace=- start_ms=2004.928 gap_ms=2004.928 wall_ms=0.001 generated=132->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2004.941 gap_ms=0.012 wall_ms=0.000 generated=129->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2004.953 gap_ms=0.011 wall_ms=0.000 generated=101->133 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2004.979 gap_ms=0.026 wall_ms=0.000 generated=99->134 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2005.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-2ae38ac6d9b1baf0143abcbdb9a226c2 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-07518ebe8622abb6916694d6b16933c8 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=7 active=3 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=285 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 350MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=61 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=992.12ms tail=1.75ms total=993.89ms out=26 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1191.40ms tail=0.16ms total=1191.59ms out=28 cont=true
+[spec-acc] ctx=192 burst=17/33 cum=98/183=0.536
+[spec-acc] ctx=194 burst=17/27 cum=98/180=0.544
+[meter] admit id=chatcmpl-a3e5773ba2db015b5b0eae7d4afec29a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-bb844a6da353a413ede114bcab72c106 tenant=default lane=interactive model="q"
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=222.124
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.54ms tail=1.61ms total=2.45ms out=1 cont=false
+[tick-spec] seq=1 slot=2 trace=- start_ms=1195.075 gap_ms=1195.075 wall_ms=224.722 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=61 wall_ms=224.677
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.54ms tail=1.59ms total=2.45ms out=1 cont=false
+[tick-spec] seq=2 slot=3 trace=- start_ms=1419.810 gap_ms=0.013 wall_ms=227.239 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=0 trace=- start_ms=1647.062 gap_ms=0.013 wall_ms=0.001 generated=133->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=1 trace=- start_ms=1647.075 gap_ms=0.012 wall_ms=0.000 generated=134->160 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1647.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=282 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 348MB
+[worker] spec-affinity: declined (history diverged at 6 of checkpoint 32; 2 parked, 58 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=58 cached=0 lcp=32 active=3 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=285 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 350MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=61 cached=0 lcp=7 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 2368.8MB / 52389MB, model q)
+[spec-setup] init=76.36ms cap=0.03ms fill=0.00ms rounds=1419.95ms tail=1.77ms total=1498.11ms out=33 cont=true
+[spec-setup] init=76.30ms cap=0.04ms fill=0.00ms rounds=1706.74ms tail=0.16ms total=1783.23ms out=34 cont=true
+[spec-acc] ctx=60 burst=19/42 cum=19/42=0.452
+[spec-acc] ctx=62 burst=20/36 cum=20/36=0.556
+[prime-chunk] phase=mtp-trunk rows=58 wall_ms=220.998
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.53ms tail=1.65ms total=2.48ms out=1 cont=false
+[tick-spec] seq=1 slot=2 trace=- start_ms=1786.622 gap_ms=1786.622 wall_ms=223.612 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=61 wall_ms=224.013
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.50ms tail=2.06ms total=2.87ms out=1 cont=false
+[tick-spec] seq=2 slot=3 trace=- start_ms=2010.247 gap_ms=0.013 wall_ms=227.003 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=0 trace=- start_ms=2237.263 gap_ms=0.013 wall_ms=0.001 generated=1->35 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=1 trace=- start_ms=2237.275 gap_ms=0.012 wall_ms=0.000 generated=1->34 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2237.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert (spec-boundary): 32 tokens, 157.9MB (resident 2526.8MB / 52389MB, model q)
+[spec-setup] init=76.52ms cap=0.04ms fill=0.00ms rounds=1751.54ms tail=3.27ms total=1831.38ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1964.31ms tail=0.17ms total=1964.50ms out=33 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2079.16ms tail=0.18ms total=2079.37ms out=32 cont=true
+[spec-setup] init=75.64ms cap=0.03ms fill=0.00ms rounds=2028.44ms tail=0.20ms total=2104.31ms out=32 cont=true
+[spec-acc] ctx=94 burst=21/36 cum=40/78=0.513
+[spec-acc] ctx=95 burst=19/39 cum=39/75=0.520
+[spec-acc] ctx=59 burst=20/33 cum=20/33=0.606
+[spec-acc] ctx=62 burst=17/42 cum=17/42=0.405
+[tick-spec] seq=1 slot=0 trace=- start_ms=2187.668 gap_ms=2187.668 wall_ms=0.001 generated=35->68 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2187.682 gap_ms=0.013 wall_ms=0.000 generated=34->66 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2187.693 gap_ms=0.011 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2187.704 gap_ms=0.011 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2187.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1581.66ms tail=0.21ms total=1581.91ms out=34 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1832.31ms tail=0.17ms total=1832.50ms out=34 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1828.37ms tail=1.49ms total=1829.88ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2028.91ms tail=0.20ms total=2029.14ms out=33 cont=true
+[spec-acc] ctx=127 burst=23/33 cum=63/111=0.568
+[spec-acc] ctx=127 burst=21/39 cum=60/114=0.526
+[spec-acc] ctx=91 burst=18/45 cum=38/78=0.487
+[spec-acc] ctx=94 burst=19/39 cum=36/81=0.444
+[tick-spec] seq=1 slot=0 trace=- start_ms=2033.726 gap_ms=2033.726 wall_ms=0.001 generated=68->102 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2033.739 gap_ms=0.012 wall_ms=0.000 generated=66->100 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2033.751 gap_ms=0.011 wall_ms=0.000 generated=33->66 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2033.778 gap_ms=0.027 wall_ms=0.000 generated=33->65 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2033.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1565.46ms tail=3.32ms total=1568.81ms out=33 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1693.49ms tail=1.67ms total=1695.18ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1915.04ms tail=0.20ms total=1915.28ms out=33 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1908.76ms tail=0.02ms total=1908.80ms out=32 cont=true
+[spec-acc] ctx=161 burst=19/42 cum=82/153=0.536
+[spec-acc] ctx=161 burst=20/36 cum=80/150=0.533
+[spec-acc] ctx=124 burst=22/33 cum=60/111=0.541
+[spec-acc] ctx=126 burst=18/42 cum=54/123=0.439
+[tick-spec] seq=1 slot=0 trace=- start_ms=1915.528 gap_ms=1915.528 wall_ms=0.001 generated=102->135 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1915.550 gap_ms=0.021 wall_ms=0.000 generated=100->132 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1915.570 gap_ms=0.020 wall_ms=0.000 generated=66->99 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1915.590 gap_ms=0.019 wall_ms=0.000 generated=65->97 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1915.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=1428.91ms tail=0.17ms total=1429.14ms out=26 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1680.33ms tail=1.65ms total=1682.01ms out=33 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1791.89ms tail=0.17ms total=1792.09ms out=28 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1787.65ms tail=0.01ms total=1787.69ms out=34 cont=true
+[spec-acc] ctx=194 burst=16/30 cum=98/183=0.536
+[spec-acc] ctx=193 burst=15/39 cum=95/189=0.503
+[spec-acc] ctx=157 burst=21/36 cum=81/147=0.551
+[spec-acc] ctx=158 burst=21/39 cum=75/162=0.463
+[tick-spec] seq=1 slot=0 trace=- start_ms=1794.532 gap_ms=1794.532 wall_ms=0.000 generated=135->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1794.553 gap_ms=0.020 wall_ms=0.000 generated=132->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1794.573 gap_ms=0.019 wall_ms=0.000 generated=99->132 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1794.592 gap_ms=0.019 wall_ms=0.000 generated=97->131 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1794.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1329.15ms tail=1.72ms total=1330.89ms out=30 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1430.02ms tail=0.17ms total=1430.22ms out=31 cont=true
+[spec-acc] ctx=190 burst=18/39 cum=99/186=0.532
+[spec-acc] ctx=192 burst=18/36 cum=93/198=0.470
+[tick-spec] seq=1 slot=0 trace=- start_ms=1430.403 gap_ms=1430.403 wall_ms=0.001 generated=132->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1430.425 gap_ms=0.021 wall_ms=0.000 generated=131->160 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=2 int=2 priming=0 ready=0 spec=2 demoted=0 spec_calls=2 spec_ms=1430.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-8134cc602a06afa1447c715e2eb2b996 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=284 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 349MB
+[meter] admit id=chatcmpl-a313d0611b55e8c8c6dbcc1bf594bece tenant=default lane=interactive model="q"
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[meter] admit id=chatcmpl-594d6a324207521354bff82a7a38221b tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-3b050c6d0093c09f9d39854578548cb5 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=60 cached=0 lcp=32 active=1 wave=4 placement=single-or-non-pp2
+[prime-chunk] phase=mtp-trunk rows=60 wall_ms=224.716
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.59ms tail=1.65ms total=2.54ms out=1 cont=false
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=227.401 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=227.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=60 cached=0 lcp=32 active=2 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=3 wave=4 placement=single-or-non-pp2
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[prime-chunk] phase=mtp-trunk rows=60 wall_ms=228.761
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.54ms tail=1.67ms total=2.51ms out=1 cont=false
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=231.407 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=224.450
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.62ms tail=1.54ms total=2.46ms out=1 cont=false
+[tick-spec] seq=2 slot=2 trace=- start_ms=231.426 gap_ms=0.013 wall_ms=227.043 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=224.499
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.54ms tail=1.62ms total=2.47ms out=1 cont=false
+[tick-spec] seq=3 slot=3 trace=- start_ms=458.483 gap_ms=0.013 wall_ms=227.085 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[spec-setup] init=75.57ms cap=0.03ms fill=0.00ms rounds=1134.24ms tail=0.19ms total=1210.04ms out=32 cont=true
+[spec-acc] ctx=61 burst=20/33 cum=20/33=0.606
+[tick-spec] seq=4 slot=0 trace=- start_ms=685.580 gap_ms=0.013 wall_ms=1210.138 generated=1->33 rounds=11 drafted=33 accepted=20 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1895.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=75.59ms cap=0.03ms fill=0.00ms rounds=1882.70ms tail=1.71ms total=1960.04ms out=34 cont=true
+[spec-setup] init=76.98ms cap=0.03ms fill=0.00ms rounds=2081.53ms tail=1.72ms total=2160.26ms out=33 cont=true
+[spec-setup] init=75.53ms cap=0.03ms fill=0.00ms rounds=2121.00ms tail=1.73ms total=2198.29ms out=34 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2455.30ms tail=0.21ms total=2455.54ms out=34 cont=true
+[spec-acc] ctx=93 burst=19/45 cum=39/78=0.500
+[spec-acc] ctx=61 burst=22/33 cum=22/33=0.667
+[spec-acc] ctx=60 burst=19/39 cum=19/39=0.487
+[spec-acc] ctx=60 burst=19/42 cum=19/42=0.452
+[tick-spec] seq=1 slot=0 trace=- start_ms=2455.721 gap_ms=2455.721 wall_ms=0.001 generated=33->67 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2455.736 gap_ms=0.013 wall_ms=0.000 generated=1->35 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2455.748 gap_ms=0.011 wall_ms=0.000 generated=1->34 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2455.759 gap_ms=0.011 wall_ms=0.000 generated=1->35 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2455.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1589.96ms tail=0.15ms total=1590.15ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1838.31ms tail=0.20ms total=1838.54ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1836.36ms tail=0.01ms total=1836.40ms out=35 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1931.67ms tail=0.16ms total=1931.86ms out=35 cont=true
+[spec-acc] ctx=127 burst=21/33 cum=60/111=0.541
+[spec-acc] ctx=95 burst=19/39 cum=41/72=0.569
+[spec-acc] ctx=93 burst=22/39 cum=41/78=0.526
+[spec-acc] ctx=94 burst=21/42 cum=40/84=0.476
+[tick-spec] seq=1 slot=0 trace=- start_ms=1938.557 gap_ms=1938.557 wall_ms=0.001 generated=67->99 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1938.572 gap_ms=0.013 wall_ms=0.000 generated=35->67 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1938.584 gap_ms=0.011 wall_ms=0.000 generated=34->69 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1938.596 gap_ms=0.011 wall_ms=0.000 generated=35->70 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1938.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1564.23ms tail=1.74ms total=1566.00ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1563.81ms tail=0.01ms total=1563.85ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1561.69ms tail=0.01ms total=1561.73ms out=33 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1863.82ms tail=0.17ms total=1864.02ms out=35 cont=true
+[spec-acc] ctx=159 burst=21/42 cum=81/153=0.529
+[spec-acc] ctx=127 burst=21/33 cum=62/105=0.590
+[spec-acc] ctx=128 burst=21/33 cum=62/111=0.559
+[spec-acc] ctx=129 burst=22/33 cum=62/117=0.530
+[tick-spec] seq=1 slot=0 trace=- start_ms=1864.177 gap_ms=1864.177 wall_ms=0.001 generated=99->134 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1864.191 gap_ms=0.013 wall_ms=0.000 generated=67->99 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1864.203 gap_ms=0.012 wall_ms=0.000 generated=69->101 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1864.214 gap_ms=0.011 wall_ms=0.000 generated=70->103 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1864.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1286.22ms tail=0.16ms total=1286.43ms out=26 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1411.05ms tail=0.20ms total=1411.27ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1627.77ms tail=1.73ms total=1629.53ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1730.44ms tail=0.20ms total=1730.67ms out=32 cont=true
+[spec-acc] ctx=194 burst=17/27 cum=98/180=0.544
+[spec-acc] ctx=159 burst=22/30 cum=84/135=0.622
+[spec-acc] ctx=160 burst=19/39 cum=81/150=0.540
+[spec-acc] ctx=162 burst=20/36 cum=82/153=0.536
+[tick-spec] seq=1 slot=0 trace=- start_ms=1735.345 gap_ms=1735.345 wall_ms=0.001 generated=134->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1735.358 gap_ms=0.012 wall_ms=0.000 generated=99->131 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1735.370 gap_ms=0.011 wall_ms=0.000 generated=101->133 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1735.381 gap_ms=0.011 wall_ms=0.000 generated=103->135 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1735.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-ba66ca5270af14a3fd1860642e0db112 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=285 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 350MB
+[worker] spec-affinity: declined (history diverged at 6 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=61 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1271.57ms tail=3.30ms total=1274.89ms out=25 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1384.90ms tail=1.68ms total=1386.61ms out=28 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1486.40ms tail=0.19ms total=1486.62ms out=30 cont=true
+[spec-acc] ctx=191 burst=18/36 cum=102/171=0.596
+[spec-acc] ctx=192 burst=17/33 cum=98/183=0.536
+[spec-acc] ctx=194 burst=15/30 cum=97/183=0.530
+[meter] admit id=chatcmpl-6c49e86daa74260b294aa3cf693c7623 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-5d79f1c4a8f86f9c4ee9c1b52ac63071 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-4c3c924296bb9a993b741fc15c8d701b tenant=default lane=interactive model="q"
+[prime-chunk] phase=mtp-trunk rows=61 wall_ms=223.978
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.54ms tail=2.09ms total=2.93ms out=1 cont=false
+[tick-spec] seq=1 slot=3 trace=- start_ms=1488.596 gap_ms=1488.596 wall_ms=227.058 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=0 trace=- start_ms=1715.667 gap_ms=0.013 wall_ms=0.001 generated=131->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=1 trace=- start_ms=1715.680 gap_ms=0.012 wall_ms=0.000 generated=133->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=2 trace=- start_ms=1715.692 gap_ms=0.011 wall_ms=0.000 generated=135->160 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1715.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=282 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 348MB
+[worker] spec-affinity: declined (history diverged at 6 of checkpoint 32; 2 parked, 58 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=58 cached=0 lcp=32 active=2 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=3 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=284 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=60 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[prime-chunk] phase=mtp-trunk rows=58 wall_ms=226.632
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.51ms tail=1.65ms total=2.47ms out=1 cont=false
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=229.237 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=222.675
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.51ms tail=2.01ms total=2.82ms out=1 cont=false
+[tick-spec] seq=2 slot=2 trace=- start_ms=229.258 gap_ms=0.013 wall_ms=225.623 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=60 wall_ms=221.462
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.62ms tail=1.55ms total=2.48ms out=1 cont=false
+[tick-spec] seq=3 slot=3 trace=- start_ms=454.894 gap_ms=0.013 wall_ms=224.073 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[spec-setup] init=77.13ms cap=0.04ms fill=0.00ms rounds=1447.08ms tail=0.20ms total=1524.45ms out=32 cont=true
+[spec-acc] ctx=62 burst=17/42 cum=17/42=0.405
+[tick-spec] seq=4 slot=0 trace=- start_ms=678.979 gap_ms=0.012 wall_ms=1524.551 generated=1->33 rounds=14 drafted=42 accepted=17 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2203.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=75.49ms cap=0.03ms fill=0.00ms rounds=1874.81ms tail=1.69ms total=1952.02ms out=32 cont=true
+[spec-setup] init=76.34ms cap=0.03ms fill=0.00ms rounds=1936.25ms tail=1.70ms total=2014.32ms out=34 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2207.17ms tail=0.20ms total=2207.40ms out=32 cont=true
+[spec-setup] init=76.32ms cap=0.03ms fill=0.00ms rounds=1972.79ms tail=0.02ms total=2049.16ms out=32 cont=true
+[spec-acc] ctx=94 burst=19/39 cum=36/81=0.444
+[spec-acc] ctx=59 burst=20/33 cum=20/33=0.606
+[spec-acc] ctx=60 burst=21/36 cum=21/36=0.583
+[spec-acc] ctx=61 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=1 slot=0 trace=- start_ms=2207.640 gap_ms=2207.640 wall_ms=0.001 generated=33->65 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2207.654 gap_ms=0.013 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2207.665 gap_ms=0.011 wall_ms=0.000 generated=1->35 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2207.677 gap_ms=0.011 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2207.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1731.17ms tail=3.31ms total=1734.51ms out=34 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1857.20ms tail=3.22ms total=1860.44ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1975.55ms tail=0.21ms total=1975.79ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=2072.40ms tail=0.21ms total=2072.64ms out=33 cont=true
+[spec-acc] ctx=126 burst=18/42 cum=54/123=0.439
+[spec-acc] ctx=91 burst=18/45 cum=38/78=0.487
+[spec-acc] ctx=94 burst=22/36 cum=43/72=0.597
+[spec-acc] ctx=93 burst=19/39 cum=37/78=0.474
+[tick-spec] seq=1 slot=0 trace=- start_ms=2075.012 gap_ms=2075.012 wall_ms=0.001 generated=65->97 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2075.025 gap_ms=0.012 wall_ms=0.000 generated=33->66 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2075.036 gap_ms=0.011 wall_ms=0.000 generated=35->69 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2075.047 gap_ms=0.011 wall_ms=0.000 generated=33->65 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2075.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1565.11ms tail=1.66ms total=1566.80ms out=33 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1564.75ms tail=0.02ms total=1564.79ms out=35 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1673.21ms tail=1.69ms total=1674.93ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1777.38ms tail=0.17ms total=1777.59ms out=34 cont=true
+[spec-acc] ctx=158 burst=21/39 cum=75/162=0.463
+[spec-acc] ctx=124 burst=22/33 cum=60/111=0.541
+[spec-acc] ctx=128 burst=24/33 cum=67/105=0.638
+[spec-acc] ctx=125 burst=20/36 cum=57/114=0.500
+[tick-spec] seq=1 slot=0 trace=- start_ms=1777.728 gap_ms=1777.728 wall_ms=0.001 generated=97->131 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1777.742 gap_ms=0.012 wall_ms=0.000 generated=66->99 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1777.753 gap_ms=0.011 wall_ms=0.000 generated=69->104 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1777.765 gap_ms=0.011 wall_ms=0.000 generated=65->97 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1777.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1426.91ms tail=4.24ms total=1431.17ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1687.99ms tail=0.22ms total=1688.25ms out=30 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1686.11ms tail=0.02ms total=1686.16ms out=33 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1981.15ms tail=0.19ms total=1981.36ms out=32 cont=true
+[spec-acc] ctx=192 burst=18/36 cum=93/198=0.470
+[spec-acc] ctx=157 burst=21/36 cum=81/147=0.551
+[spec-acc] ctx=163 burst=17/45 cum=84/150=0.560
+[spec-acc] ctx=157 burst=22/30 cum=79/144=0.549
+[tick-spec] seq=1 slot=0 trace=- start_ms=1985.998 gap_ms=1985.998 wall_ms=0.001 generated=131->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1986.011 gap_ms=0.012 wall_ms=0.000 generated=99->132 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1986.023 gap_ms=0.011 wall_ms=0.000 generated=104->136 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1986.034 gap_ms=0.011 wall_ms=0.000 generated=97->129 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1986.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-f094ab0e6502a04301212b9a7880cae7 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1149.24ms tail=1.70ms total=1150.97ms out=25 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1592.01ms tail=0.16ms total=1592.21ms out=31 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1787.02ms tail=0.22ms total=1787.26ms out=33 cont=true
+[spec-acc] ctx=190 burst=18/39 cum=99/186=0.532
+[spec-acc] ctx=195 burst=16/27 cum=100/177=0.565
+[spec-acc] ctx=189 burst=18/45 cum=97/189=0.513
+[meter] admit id=chatcmpl-428ee7ad7c7f3922719b342a8059e5db tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d35eccbef50322f2a0e4631b87afa12b tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7f4bb8eca387a59458cee5e808fdb056 tenant=default lane=interactive model="q"
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=224.135
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.57ms tail=1.59ms total=2.47ms out=1 cont=false
+[tick-spec] seq=1 slot=3 trace=- start_ms=1794.638 gap_ms=1794.638 wall_ms=226.750 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=0 trace=- start_ms=2021.401 gap_ms=0.013 wall_ms=0.001 generated=132->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=1 trace=- start_ms=2021.414 gap_ms=0.012 wall_ms=0.000 generated=136->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=2 trace=- start_ms=2021.426 gap_ms=0.011 wall_ms=0.000 generated=129->160 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2021.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=285 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 350MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=61 cached=0 lcp=32 active=2 wave=4 placement=single-or-non-pp2
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=61 cached=0 lcp=32 active=3 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[prime-chunk] phase=mtp-trunk rows=61 wall_ms=229.816
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.59ms tail=1.88ms total=2.78ms out=1 cont=false
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.009 gap_ms=0.009 wall_ms=232.732 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=61 wall_ms=223.345
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.58ms tail=1.60ms total=2.48ms out=1 cont=false
+[tick-spec] seq=2 slot=2 trace=- start_ms=232.753 gap_ms=0.013 wall_ms=225.975 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=224.038
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.57ms tail=1.63ms total=2.50ms out=1 cont=false
+[tick-spec] seq=3 slot=3 trace=- start_ms=458.751 gap_ms=0.022 wall_ms=226.674 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[spec-setup] init=76.36ms cap=0.04ms fill=0.00ms rounds=1132.78ms tail=0.20ms total=1209.38ms out=33 cont=true
+[spec-acc] ctx=60 burst=21/33 cum=21/33=0.636
+[tick-spec] seq=4 slot=0 trace=- start_ms=685.446 gap_ms=0.021 wall_ms=1209.491 generated=1->34 rounds=11 drafted=33 accepted=21 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1895.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=75.61ms cap=0.03ms fill=0.00ms rounds=1719.00ms tail=5.49ms total=1800.13ms out=32 cont=true
+[spec-setup] init=75.61ms cap=0.03ms fill=0.00ms rounds=2011.18ms tail=1.76ms total=2088.57ms out=33 cont=true
+[spec-setup] init=76.50ms cap=0.03ms fill=0.00ms rounds=1934.25ms tail=0.02ms total=2010.81ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2186.69ms tail=0.16ms total=2186.87ms out=32 cont=true
+[spec-acc] ctx=93 burst=19/39 cum=40/72=0.556
+[spec-acc] ctx=62 burst=20/36 cum=20/36=0.556
+[spec-acc] ctx=62 burst=19/36 cum=19/36=0.528
+[spec-acc] ctx=60 burst=20/33 cum=20/33=0.606
+[tick-spec] seq=1 slot=0 trace=- start_ms=2187.053 gap_ms=2187.053 wall_ms=0.001 generated=34->66 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2187.067 gap_ms=0.013 wall_ms=0.000 generated=1->34 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2187.078 gap_ms=0.011 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2187.090 gap_ms=0.011 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2187.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1729.16ms tail=4.71ms total=1733.89ms out=35 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1859.92ms tail=1.75ms total=1861.70ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=1971.44ms tail=0.16ms total=1971.65ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1967.22ms tail=0.02ms total=1967.27ms out=33 cont=true
+[spec-acc] ctx=125 burst=18/42 cum=58/114=0.509
+[spec-acc] ctx=95 burst=19/39 cum=39/75=0.520
+[spec-acc] ctx=94 burst=19/42 cum=38/78=0.487
+[spec-acc] ctx=92 burst=23/36 cum=43/69=0.623
+[tick-spec] seq=1 slot=0 trace=- start_ms=1971.902 gap_ms=1971.902 wall_ms=0.001 generated=66->98 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1971.915 gap_ms=0.013 wall_ms=0.000 generated=34->66 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1971.926 gap_ms=0.011 wall_ms=0.000 generated=33->66 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1971.938 gap_ms=0.011 wall_ms=0.000 generated=33->68 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1971.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1712.11ms tail=3.19ms total=1715.32ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1713.22ms tail=0.02ms total=1713.26ms out=34 cont=true
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=1825.56ms tail=0.17ms total=1825.78ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1823.72ms tail=0.03ms total=1823.78ms out=34 cont=true
+[spec-acc] ctx=157 burst=19/39 cum=77/153=0.503
+[spec-acc] ctx=127 burst=21/39 cum=60/114=0.526
+[spec-acc] ctx=127 burst=20/36 cum=58/114=0.509
+[spec-acc] ctx=127 burst=22/36 cum=65/105=0.619
+[tick-spec] seq=1 slot=0 trace=- start_ms=1826.038 gap_ms=1826.038 wall_ms=0.001 generated=98->130 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1826.052 gap_ms=0.013 wall_ms=0.000 generated=66->100 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1826.063 gap_ms=0.011 wall_ms=0.000 generated=66->98 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1826.074 gap_ms=0.011 wall_ms=0.000 generated=68->102 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1826.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1718.23ms tail=1.69ms total=1719.95ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1715.78ms tail=1.56ms total=1717.37ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=1830.25ms tail=0.20ms total=1830.49ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1826.20ms tail=0.02ms total=1826.25ms out=32 cont=true
+[spec-acc] ctx=189 burst=19/39 cum=96/192=0.500
+[spec-acc] ctx=161 burst=20/36 cum=80/150=0.533
+[spec-acc] ctx=159 burst=19/39 cum=77/153=0.503
+[spec-acc] ctx=161 burst=20/36 cum=85/141=0.603
+[tick-spec] seq=1 slot=0 trace=- start_ms=1830.729 gap_ms=1830.729 wall_ms=0.001 generated=130->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1830.743 gap_ms=0.012 wall_ms=0.000 generated=100->132 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1830.754 gap_ms=0.011 wall_ms=0.000 generated=98->130 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1830.766 gap_ms=0.011 wall_ms=0.000 generated=102->134 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1830.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1404.53ms tail=1.63ms total=1406.20ms out=30 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1513.43ms tail=1.69ms total=1515.14ms out=28 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1617.87ms tail=0.20ms total=1618.10ms out=28 cont=true
+[spec-acc] ctx=193 burst=15/39 cum=95/189=0.503
+[spec-acc] ctx=191 burst=19/33 cum=96/186=0.516
+[spec-acc] ctx=193 burst=16/36 cum=101/177=0.571
+[tick-spec] seq=1 slot=0 trace=- start_ms=1618.303 gap_ms=1618.303 wall_ms=0.001 generated=132->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1618.316 gap_ms=0.012 wall_ms=0.000 generated=130->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1618.328 gap_ms=0.011 wall_ms=0.000 generated=134->160 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=3 int=3 priming=0 ready=0 spec=3 demoted=0 spec_calls=3 spec_ms=1618.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-3623931e5d17ed23fb88b57ed83482f9 tenant=default lane=interactive model="q"
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[meter] admit id=chatcmpl-3a47d5c9048df3e7f07077c376d8cca7 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b0f9905e7f0945c40e6ee6457a5a7825 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b871ac2c113daf88da0284d8aa5133e1 tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=1 wave=4 placement=single-or-non-pp2
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=226.020
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.61ms tail=1.61ms total=2.53ms out=1 cont=false
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=228.707 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=228.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=2 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=284 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=60 cached=0 lcp=32 active=3 wave=4 placement=single-or-non-pp2
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=60 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=228.369
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.50ms tail=2.07ms total=2.88ms out=1 cont=false
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=231.382 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=60 wall_ms=223.831
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.57ms tail=1.60ms total=2.48ms out=1 cont=false
+[tick-spec] seq=2 slot=2 trace=- start_ms=231.401 gap_ms=0.012 wall_ms=233.868 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=60 wall_ms=222.301
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.56ms tail=1.94ms total=2.81ms out=1 cont=false
+[tick-spec] seq=3 slot=3 trace=- start_ms=465.283 gap_ms=0.013 wall_ms=225.256 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[spec-setup] init=76.35ms cap=0.04ms fill=0.00ms rounds=1241.20ms tail=0.20ms total=1317.78ms out=34 cont=true
+[spec-acc] ctx=60 burst=21/36 cum=21/36=0.583
+[tick-spec] seq=4 slot=0 trace=- start_ms=690.551 gap_ms=0.013 wall_ms=1317.888 generated=1->35 rounds=12 drafted=36 accepted=21 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2008.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=76.26ms cap=0.03ms fill=0.00ms rounds=1721.02ms tail=4.78ms total=1802.09ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=2091.87ms tail=0.21ms total=2092.10ms out=34 cont=true
+[spec-setup] init=75.51ms cap=0.03ms fill=0.00ms rounds=2136.44ms tail=0.20ms total=2212.19ms out=32 cont=true
+[spec-setup] init=76.36ms cap=0.03ms fill=0.00ms rounds=2058.18ms tail=0.01ms total=2134.58ms out=32 cont=true
+[spec-acc] ctx=94 burst=22/36 cum=43/72=0.597
+[spec-acc] ctx=60 burst=18/39 cum=18/39=0.462
+[spec-acc] ctx=61 burst=18/39 cum=18/39=0.462
+[spec-acc] ctx=61 burst=20/33 cum=20/33=0.606
+[tick-spec] seq=1 slot=0 trace=- start_ms=2214.527 gap_ms=2214.527 wall_ms=0.001 generated=35->69 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2214.542 gap_ms=0.013 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2214.553 gap_ms=0.012 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2214.565 gap_ms=0.011 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2214.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1596.33ms tail=0.20ms total=1596.58ms out=35 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1723.11ms tail=0.20ms total=1723.34ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1832.39ms tail=0.21ms total=1832.62ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=2027.53ms tail=0.20ms total=2027.76ms out=34 cont=true
+[spec-acc] ctx=128 burst=24/33 cum=67/105=0.638
+[spec-acc] ctx=92 burst=20/36 cum=38/75=0.507
+[spec-acc] ctx=93 burst=19/39 cum=37/78=0.474
+[spec-acc] ctx=93 burst=19/45 cum=39/78=0.500
+[tick-spec] seq=1 slot=0 trace=- start_ms=2034.337 gap_ms=2034.337 wall_ms=0.001 generated=69->104 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2034.350 gap_ms=0.013 wall_ms=0.000 generated=33->65 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2034.362 gap_ms=0.011 wall_ms=0.000 generated=33->65 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2034.373 gap_ms=0.011 wall_ms=0.000 generated=33->67 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2034.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1568.53ms tail=4.73ms total=1573.29ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1697.77ms tail=3.16ms total=1700.96ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=2036.67ms tail=0.21ms total=2036.91ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=2134.41ms tail=0.20ms total=2134.64ms out=32 cont=true
+[spec-acc] ctx=163 burst=17/45 cum=84/150=0.560
+[spec-acc] ctx=124 burst=16/48 cum=54/123=0.439
+[spec-acc] ctx=125 burst=20/36 cum=57/114=0.500
+[spec-acc] ctx=127 burst=21/33 cum=60/111=0.541
+[tick-spec] seq=1 slot=0 trace=- start_ms=2137.052 gap_ms=2137.052 wall_ms=0.001 generated=104->136 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2137.065 gap_ms=0.013 wall_ms=0.000 generated=65->97 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2137.077 gap_ms=0.012 wall_ms=0.000 generated=65->97 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2137.089 gap_ms=0.011 wall_ms=0.000 generated=67->99 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2137.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1285.95ms tail=0.21ms total=1286.19ms out=25 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1407.79ms tail=1.74ms total=1409.56ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1519.28ms tail=0.21ms total=1519.51ms out=35 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1813.83ms tail=0.16ms total=1814.02ms out=35 cont=true
+[spec-acc] ctx=195 burst=16/27 cum=100/177=0.565
+[spec-acc] ctx=156 burst=24/33 cum=78/156=0.500
+[spec-acc] ctx=157 burst=22/30 cum=79/144=0.549
+[spec-acc] ctx=159 burst=21/42 cum=81/153=0.529
+[tick-spec] seq=1 slot=0 trace=- start_ms=1820.737 gap_ms=1820.737 wall_ms=0.001 generated=136->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1820.751 gap_ms=0.013 wall_ms=0.000 generated=97->132 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1820.763 gap_ms=0.011 wall_ms=0.000 generated=97->129 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1820.774 gap_ms=0.011 wall_ms=0.000 generated=99->134 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1820.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-d4603c3e7f2617f87888480d29c6a357 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1149.36ms tail=0.16ms total=1149.55ms out=29 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1145.27ms tail=1.52ms total=1146.82ms out=26 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1735.17ms tail=0.21ms total=1735.41ms out=33 cont=true
+[spec-acc] ctx=191 burst=20/27 cum=98/183=0.536
+[spec-acc] ctx=189 burst=18/45 cum=97/189=0.513
+[spec-acc] ctx=194 burst=17/27 cum=98/180=0.544
+[meter] admit id=chatcmpl-e60d24dec2a213b2225b14e71991f62c tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a6daa06409c5a756382e6f86894ce47e tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-f4985390e55c89f261050e74872aa995 tenant=default lane=interactive model="q"
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=222.975
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.56ms tail=1.63ms total=2.50ms out=1 cont=false
+[tick-spec] seq=1 slot=3 trace=- start_ms=1739.660 gap_ms=1739.660 wall_ms=225.620 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=0 trace=- start_ms=1965.294 gap_ms=0.013 wall_ms=0.001 generated=132->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=1 trace=- start_ms=1965.307 gap_ms=0.012 wall_ms=0.000 generated=129->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=2 trace=- start_ms=1965.319 gap_ms=0.011 wall_ms=0.000 generated=134->160 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1965.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=285 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 350MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=61 cached=0 lcp=32 active=2 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=3 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=285 path=spec = 31552 B/token x ctx + 28MB prefill-workspace + 313MB fixed = 350MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=61 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[prime-chunk] phase=mtp-trunk rows=61 wall_ms=228.120
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.54ms tail=1.64ms total=2.49ms out=1 cont=false
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.009 gap_ms=0.009 wall_ms=230.756 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=223.754
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.56ms tail=1.72ms total=2.59ms out=1 cont=false
+[tick-spec] seq=2 slot=2 trace=- start_ms=230.779 gap_ms=0.013 wall_ms=226.471 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=61 wall_ms=222.397
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.54ms tail=2.02ms total=2.86ms out=1 cont=false
+[tick-spec] seq=3 slot=3 trace=- start_ms=457.263 gap_ms=0.013 wall_ms=225.401 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[spec-setup] init=75.56ms cap=0.04ms fill=0.00ms rounds=1144.78ms tail=0.17ms total=1220.54ms out=32 cont=true
+[spec-acc] ctx=60 burst=20/33 cum=20/33=0.606
+[tick-spec] seq=4 slot=0 trace=- start_ms=682.676 gap_ms=0.012 wall_ms=1220.646 generated=1->33 rounds=11 drafted=33 accepted=20 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1903.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=2116.91ms tail=0.16ms total=2117.10ms out=35 cont=true
+[spec-setup] init=76.37ms cap=0.03ms fill=0.00ms rounds=2038.55ms tail=0.02ms total=2114.97ms out=33 cont=true
+[spec-setup] init=75.77ms cap=0.04ms fill=0.00ms rounds=2201.98ms tail=0.21ms total=2278.00ms out=34 cont=true
+[spec-setup] init=75.73ms cap=0.04ms fill=0.00ms rounds=2124.37ms tail=0.02ms total=2200.15ms out=32 cont=true
+[spec-acc] ctx=92 burst=23/36 cum=43/69=0.623
+[spec-acc] ctx=62 burst=20/36 cum=20/36=0.556
+[spec-acc] ctx=60 burst=19/42 cum=19/42=0.452
+[spec-acc] ctx=62 burst=17/42 cum=17/42=0.405
+[tick-spec] seq=1 slot=0 trace=- start_ms=2359.119 gap_ms=2359.119 wall_ms=0.001 generated=33->68 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2359.133 gap_ms=0.013 wall_ms=0.000 generated=1->34 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2359.144 gap_ms=0.011 wall_ms=0.000 generated=1->35 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2359.156 gap_ms=0.011 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2359.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=1722.59ms tail=0.21ms total=1722.84ms out=34 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1718.58ms tail=1.54ms total=1720.15ms out=33 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1830.57ms tail=0.15ms total=1830.75ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1826.34ms tail=0.01ms total=1826.38ms out=32 cont=true
+[spec-acc] ctx=127 burst=22/36 cum=65/105=0.619
+[spec-acc] ctx=95 burst=19/39 cum=39/75=0.520
+[spec-acc] ctx=94 burst=21/36 cum=40/78=0.513
+[spec-acc] ctx=94 burst=19/39 cum=36/81=0.444
+[tick-spec] seq=1 slot=0 trace=- start_ms=1833.276 gap_ms=1833.276 wall_ms=0.001 generated=68->102 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1833.289 gap_ms=0.013 wall_ms=0.000 generated=34->66 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1833.301 gap_ms=0.011 wall_ms=0.000 generated=35->68 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1833.313 gap_ms=0.011 wall_ms=0.000 generated=33->65 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1833.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1567.73ms tail=3.23ms total=1570.99ms out=34 cont=true
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=1698.53ms tail=0.17ms total=1698.75ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1807.09ms tail=0.20ms total=1807.32ms out=34 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1901.83ms tail=0.21ms total=1902.07ms out=32 cont=true
+[spec-acc] ctx=161 burst=20/36 cum=85/141=0.603
+[spec-acc] ctx=127 burst=21/39 cum=60/114=0.526
+[spec-acc] ctx=127 burst=23/33 cum=63/111=0.568
+[spec-acc] ctx=126 burst=18/42 cum=54/123=0.439
+[tick-spec] seq=1 slot=0 trace=- start_ms=1908.889 gap_ms=1908.889 wall_ms=0.001 generated=102->134 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1908.902 gap_ms=0.012 wall_ms=0.000 generated=66->100 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1908.913 gap_ms=0.011 wall_ms=0.000 generated=68->102 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1908.924 gap_ms=0.011 wall_ms=0.000 generated=65->97 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1908.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1721.52ms tail=0.20ms total=1721.76ms out=28 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1719.58ms tail=0.02ms total=1719.63ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1824.85ms tail=1.73ms total=1826.60ms out=34 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1925.52ms tail=0.16ms total=1925.70ms out=33 cont=true
+[spec-acc] ctx=193 burst=16/36 cum=101/177=0.571
+[spec-acc] ctx=161 burst=20/36 cum=80/150=0.533
+[spec-acc] ctx=161 burst=19/42 cum=82/153=0.536
+[spec-acc] ctx=158 burst=21/39 cum=75/162=0.463
+[tick-spec] seq=1 slot=0 trace=- start_ms=1930.341 gap_ms=1930.341 wall_ms=0.000 generated=134->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1930.363 gap_ms=0.021 wall_ms=0.000 generated=100->132 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1930.383 gap_ms=0.020 wall_ms=0.000 generated=102->135 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1930.403 gap_ms=0.019 wall_ms=0.000 generated=97->131 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1930.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-3b2609609418e62f4c2a7c904162f40f tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +37MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 31552 B/token x ctx + 27MB prefill-workspace + 313MB fixed = 349MB
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1280.30ms tail=1.67ms total=1282.00ms out=26 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1501.58ms tail=1.62ms total=1503.23ms out=30 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1605.82ms tail=0.18ms total=1606.03ms out=28 cont=true
+[spec-acc] ctx=193 burst=15/39 cum=95/189=0.503
+[spec-acc] ctx=194 burst=16/30 cum=98/183=0.536
+[spec-acc] ctx=192 burst=18/36 cum=93/198=0.470
+[meter] admit id=chatcmpl-cfef4a8d2c6bf214855457b05ec92b9d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-0b79ece1ff1fc48e3c034e59580e4c15 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-7b68e3e0c7fbe58f2e2e1a182e201150 tenant=default lane=interactive model="q"
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=222.617
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.01ms fill=0.00ms rounds=0.57ms tail=1.79ms total=2.66ms out=1 cont=false
+[tick-spec] seq=1 slot=3 trace=- start_ms=1607.923 gap_ms=1607.923 wall_ms=225.432 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=0 trace=- start_ms=1833.379 gap_ms=0.024 wall_ms=0.001 generated=132->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=1 trace=- start_ms=1833.401 gap_ms=0.020 wall_ms=0.001 generated=135->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=2 trace=- start_ms=1833.422 gap_ms=0.020 wall_ms=0.000 generated=131->160 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1833.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=2 wave=4 placement=single-or-non-pp2
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=3 wave=4 placement=single-or-non-pp2
+[worker] spec-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=226.478
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.002 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.51ms tail=1.96ms total=2.78ms out=1 cont=false
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.010 gap_ms=0.010 wall_ms=229.395 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=223.779
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.55ms tail=1.64ms total=2.50ms out=1 cont=false
+[tick-spec] seq=2 slot=2 trace=- start_ms=229.417 gap_ms=0.013 wall_ms=226.409 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[prime-chunk] phase=mtp-trunk rows=59 wall_ms=223.162
+[prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+[spec-setup] init=0.30ms cap=0.00ms fill=0.00ms rounds=0.56ms tail=1.62ms total=2.48ms out=1 cont=false
+[tick-spec] seq=3 slot=3 trace=- start_ms=455.840 gap_ms=0.013 wall_ms=225.763 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[spec-setup] init=76.25ms cap=0.04ms fill=0.00ms rounds=1444.99ms tail=0.21ms total=1521.48ms out=34 cont=true
+[spec-acc] ctx=60 burst=19/42 cum=19/42=0.452
+[tick-spec] seq=4 slot=0 trace=- start_ms=681.615 gap_ms=0.012 wall_ms=1521.586 generated=1->35 rounds=14 drafted=42 accepted=19 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2203.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=76.41ms cap=0.03ms fill=0.00ms rounds=1716.26ms tail=4.69ms total=1797.39ms out=33 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=2360.94ms tail=0.16ms total=2361.14ms out=35 cont=true
+[spec-setup] init=76.34ms cap=0.03ms fill=0.00ms rounds=2205.14ms tail=1.52ms total=2283.04ms out=35 cont=true
+[spec-setup] init=75.59ms cap=0.03ms fill=0.00ms rounds=2398.49ms tail=0.16ms total=2474.28ms out=32 cont=true
+[spec-acc] ctx=94 burst=21/42 cum=40/84=0.476
+[spec-acc] ctx=60 burst=16/45 cum=16/45=0.356
+[spec-acc] ctx=60 burst=20/42 cum=20/42=0.476
+[spec-acc] ctx=60 burst=21/33 cum=21/33=0.636
+[tick-spec] seq=1 slot=0 trace=- start_ms=2476.586 gap_ms=2476.586 wall_ms=0.001 generated=35->70 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2476.600 gap_ms=0.012 wall_ms=0.000 generated=1->33 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2476.611 gap_ms=0.011 wall_ms=0.000 generated=1->36 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2476.623 gap_ms=0.011 wall_ms=0.000 generated=1->34 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2476.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.06ms fill=0.00ms rounds=1594.76ms tail=0.15ms total=1594.98ms out=33 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1842.03ms tail=1.40ms total=1843.45ms out=34 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1841.30ms tail=0.02ms total=1841.34ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=2040.51ms tail=0.12ms total=2040.66ms out=35 cont=true
+[spec-acc] ctx=129 burst=22/33 cum=62/117=0.530
+[spec-acc] ctx=92 burst=20/45 cum=36/90=0.400
+[spec-acc] ctx=95 burst=21/39 cum=41/81=0.506
+[spec-acc] ctx=93 burst=19/39 cum=40/72=0.556
+[tick-spec] seq=1 slot=0 trace=- start_ms=2043.109 gap_ms=2043.109 wall_ms=0.001 generated=70->103 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=2043.123 gap_ms=0.012 wall_ms=0.000 generated=33->68 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=2043.135 gap_ms=0.011 wall_ms=0.000 generated=36->70 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=2043.146 gap_ms=0.011 wall_ms=0.000 generated=34->66 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2043.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1566.58ms tail=3.25ms total=1569.86ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.05ms fill=0.00ms rounds=1699.07ms tail=0.20ms total=1699.33ms out=32 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1697.08ms tail=0.02ms total=1697.13ms out=33 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1888.44ms tail=0.21ms total=1888.68ms out=32 cont=true
+[spec-acc] ctx=162 burst=20/36 cum=82/153=0.536
+[spec-acc] ctx=127 burst=21/36 cum=57/126=0.452
+[spec-acc] ctx=129 burst=21/33 cum=62/114=0.544
+[spec-acc] ctx=125 burst=18/42 cum=58/114=0.509
+[tick-spec] seq=1 slot=0 trace=- start_ms=1895.656 gap_ms=1895.656 wall_ms=0.001 generated=103->135 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1895.669 gap_ms=0.012 wall_ms=0.000 generated=68->101 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1895.681 gap_ms=0.012 wall_ms=0.000 generated=70->102 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1895.692 gap_ms=0.012 wall_ms=0.000 generated=66->98 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1895.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1430.28ms tail=0.19ms total=1430.50ms out=25 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1553.77ms tail=0.16ms total=1553.96ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1771.42ms tail=1.76ms total=1773.21ms out=32 cont=true
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1872.10ms tail=0.16ms total=1872.28ms out=35 cont=true
+[spec-acc] ctx=194 burst=15/30 cum=97/183=0.530
+[spec-acc] ctx=160 burst=21/33 cum=78/159=0.491
+[spec-acc] ctx=161 burst=21/42 cum=83/156=0.532
+[spec-acc] ctx=157 burst=19/39 cum=77/153=0.503
+[tick-spec] seq=1 slot=0 trace=- start_ms=1876.938 gap_ms=1876.938 wall_ms=0.001 generated=135->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1876.951 gap_ms=0.013 wall_ms=0.000 generated=101->133 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1876.963 gap_ms=0.011 wall_ms=0.000 generated=102->137 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=4 slot=3 trace=- start_ms=1876.974 gap_ms=0.011 wall_ms=0.000 generated=98->130 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=4 int=4 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=1877.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-setup] init=0.00ms cap=0.02ms fill=0.00ms rounds=1013.93ms tail=1.80ms total=1015.76ms out=25 cont=true
+[spec-setup] init=0.01ms cap=0.03ms fill=0.00ms rounds=1238.41ms tail=0.16ms total=1238.61ms out=28 cont=true
+[spec-setup] init=0.01ms cap=0.02ms fill=0.00ms rounds=1531.10ms tail=0.20ms total=1531.32ms out=32 cont=true
+[spec-acc] ctx=192 burst=18/30 cum=96/189=0.508
+[spec-acc] ctx=196 burst=17/24 cum=100/180=0.556
+[spec-acc] ctx=189 burst=19/39 cum=96/192=0.500
+[tick-spec] seq=1 slot=0 trace=- start_ms=1536.207 gap_ms=1536.207 wall_ms=0.001 generated=133->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=2 slot=1 trace=- start_ms=1536.221 gap_ms=0.012 wall_ms=0.000 generated=137->160 rounds=0 drafted=0 accepted=0 k=3
+[tick-spec] seq=3 slot=2 trace=- start_ms=1536.232 gap_ms=0.011 wall_ms=0.000 generated=130->160 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=3 int=3 priming=0 ready=0 spec=3 demoted=0 spec_calls=3 spec_ms=1536.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
