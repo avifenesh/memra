@@ -388,6 +388,48 @@ fn sub_floor_capture_boundary(b: usize, fed: usize, queued: usize) -> bool {
     b > fed && b - fed < memra_engine::hybrid_forward::PRIME_MIN_T && b < fed + queued
 }
 
+/// What the two `MEMRA_PRIME_BATCH_HOLD_MS` windows (the batch-formation hold and the
+/// post-retirement refill grace) do with the `left` part of their window at phase (b): wait it out
+/// in this tick and report whether a request reached the worker's channel meanwhile. `true`: the
+/// caller keeps cold prefill off this tick, and the arrival is admitted at the next tick's top,
+/// where it batches with the held prime or takes its cache hit's first token first. `false`: the
+/// window passed with no arrival, and the caller primes in this tick. Both windows used to skip
+/// cold prefill for the whole tick whenever they were still open at phase (b), so a 4 ms window
+/// cost a full decode tick: on GB10 (Qwen3.8-27B, a plain long stream beside closed-loop one-token
+/// clients at 200 ms think) each plain request lost two ~75 ms ticks before its prime, short p50
+/// 0.47 s where its prime and first token take one tick.
+fn hold_sees_arrival(left: Duration) -> bool {
+    hold_sees_arrival_with(
+        left,
+        Instant::now,
+        || PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) > 0,
+        std::thread::sleep,
+    )
+}
+
+/// `hold_sees_arrival` with the clock, the channel gauge and the sleep injected (unit tests).
+fn hold_sees_arrival_with(
+    left: Duration,
+    now: impl Fn() -> Instant,
+    arrived: impl Fn() -> bool,
+    sleep: impl Fn(Duration),
+) -> bool {
+    if left.is_zero() {
+        return false;
+    }
+    let until = now() + left;
+    loop {
+        if arrived() {
+            return true;
+        }
+        let t = now();
+        if t >= until {
+            return false;
+        }
+        sleep((until - t).min(Duration::from_micros(250)));
+    }
+}
+
 fn interactive_prime_batch_take(queued: usize, budget: usize, max_t: usize) -> Option<usize> {
     let take = queued.min(budget).min(max_t);
     (take >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)).then_some(take)
@@ -22829,7 +22871,21 @@ pub fn run(
             let mut prefill_batch_calls = 0usize;
             let mut prefill_batch_tokens = 0usize;
             let budgets = policy.prefill_budget;
-            let refill_grace = interactive_refill_until.is_some_and(|until| Instant::now() < until);
+            // The 4 ms windows' in-tick waits this tick (`hold_sees_arrival`): count and time, for the
+            // tick trace.
+            let mut hold_waits = 0usize;
+            let mut hold_wait = Duration::ZERO;
+            let refill_grace = match interactive_refill_until {
+                Some(until) => {
+                    let w0 = Instant::now();
+                    let left = until.saturating_duration_since(w0);
+                    hold_waits += usize::from(!left.is_zero());
+                    let arrived = hold_sees_arrival(left);
+                    hold_wait += w0.elapsed();
+                    arrived
+                }
+                None => false,
+            };
             if !refill_grace {
                 interactive_refill_until = None;
             }
@@ -23106,9 +23162,11 @@ pub fn run(
                 // left to coalesce with, so it does not wait out the formation window.
                 if cand.len() == 1 && pb_hold_ms > 0 && prefill_block.is_none() {
                     let s = &active[cand[0].0];
-                    if s.t0.elapsed().as_millis() < pb_hold_ms as u128 {
-                        held = true;
-                    }
+                    let w0 = Instant::now();
+                    let left = Duration::from_millis(pb_hold_ms).saturating_sub(s.t0.elapsed());
+                    hold_waits += usize::from(!left.is_zero());
+                    held = hold_sees_arrival(left);
+                    hold_wait += w0.elapsed();
                 }
                 let mut fired = false;
                 if cand.len() >= 2 {
@@ -23719,7 +23777,7 @@ pub fn run(
                            spec_calls={} spec_ms={:.1} \
                            prefill_single_calls={} prefill_single_tokens={} \
                            prefill_batch_calls={} prefill_batch_tokens={} \
-                           prefill_ms={:.1} decode_ms={:.1}",
+                           prefill_ms={:.1} decode_ms={:.1} hold_waits={} hold_wait_ms={:.2}",
                     active.len(),
                     n_int,
                     n_pref,
@@ -23733,7 +23791,9 @@ pub fn run(
                     prefill_batch_calls,
                     prefill_batch_tokens,
                     prefill_ms,
-                    t_decode.elapsed().as_secs_f32() * 1000.0
+                    t_decode.elapsed().as_secs_f32() * 1000.0,
+                    hold_waits,
+                    hold_wait.as_secs_f64() * 1000.0
                 );
             }
             // (d) dark-lane prefill, ADAPTIVE: the tick period IS the client TPOT, so dark
@@ -39492,6 +39552,47 @@ mod tests {
             interactive_prefill_budget(1024, false, true, true, 8200),
             8200
         );
+    }
+
+    /// The two `MEMRA_PRIME_BATCH_HOLD_MS` windows wait out what is left of the window inside the
+    /// tick instead of skipping the tick: with no arrival the prime runs in this tick, an arrival
+    /// defers it, and an expired window never holds. Both call sites use the wait.
+    #[test]
+    fn prime_hold_waits_out_its_window_instead_of_skipping_the_tick() {
+        use std::cell::Cell;
+        use std::time::{Duration, Instant};
+        let t0 = Instant::now();
+        let clock = Cell::new(t0);
+        let now = || clock.get();
+        let sleep = |d: Duration| clock.set(clock.get() + d);
+        let ms = Duration::from_millis;
+        // Nobody reaches the channel in the 3 ms left: prime in this tick, after the wait.
+        assert!(!super::hold_sees_arrival_with(ms(3), now, || false, sleep));
+        assert!(clock.get() - t0 >= ms(3));
+        // A request arrives 1 ms in: hold, without waiting out the rest.
+        let start = clock.get();
+        let arrived = || clock.get() - start >= ms(1);
+        assert!(super::hold_sees_arrival_with(ms(3), now, arrived, sleep));
+        assert!(clock.get() - start < ms(2));
+        // An expired window does not hold, even with a request already waiting.
+        assert!(!super::hold_sees_arrival_with(
+            Duration::ZERO,
+            now,
+            || true,
+            sleep
+        ));
+        let src: String = include_str!("worker.rs")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(src.contains(
+            "let left = until.saturating_duration_since(w0); hold_waits += \
+             usize::from(!left.is_zero()); let arrived = hold_sees_arrival(left);"
+        ));
+        assert!(src.contains(
+            "let left = Duration::from_millis(pb_hold_ms).saturating_sub(s.t0.elapsed()); \
+             hold_waits += usize::from(!left.is_zero()); held = hold_sees_arrival(left);"
+        ));
     }
 
     #[test]
