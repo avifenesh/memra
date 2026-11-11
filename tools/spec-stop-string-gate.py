@@ -58,7 +58,8 @@ the DIR: what a request writes may not depend on its cohort), and a member 0 tha
 than max(3x, +100 ms) over the median of the boot's solo non-stop rows plus an allowance by end
 kind: none at max_tokens, one of its rounds on EOS (the EOS token carries no text), and on a stop
 string twice plain decode's hold-back, counted in a cohort as two of the request's rounds (the
-median gap between its chunks more than 5 ms apart) per plain decode step held back. Each member 0 that ended on a stop string must carry its
+median gap between its chunks more than 5 ms apart) per plain decode step held back, and at
+least twice the hold-back of its own solo row in the boot, scaled by the cadence ratio. Each member 0 that ended on a stop string must carry its
 `[spec-stop]` receipt. A boot passed `--settle` (a binary that closes a member at its round)
 must also log, per sampler, at least one member 0 that finished inside its cohort while another
 member was still running (`[spec-pool] member finished inside the cohort`); else the gate tested
@@ -823,9 +824,16 @@ def cohort_judge(out, rows, boots, only=None):
                         # completes or cannot. Plain decode alone holds it for a decode step or a
                         # few; in a cohort the same tokens arrive a cohort round apart, so the
                         # hold-back is counted in this request's own cadence (two of its rounds per
-                        # plain step of hold-back, at least two).
+                        # plain step of hold-back, at least two), and at least twice the hold-back
+                        # the same request shows alone on this route (its solo row of the boot:
+                        # a held string can cross a burst boundary), scaled by the cohort's
+                        # cadence over the solo row's.
                         steps = max(1, round((held / 2) / solo_step)) if solo_step > 0 else 1
                         held = max(held, 2 * steps * r["gap_ms"])
+                        alone = solo.get(f"solo-{tag}-{regime}")
+                        if alone and alone.get("close_ms") is not None and alone.get("gap_ms"):
+                            scale = max(1.0, r["gap_ms"] / alone["gap_ms"])
+                            held = max(held, 2 * alone["close_ms"] * scale)
                 elif r["kind"] == "c-eos" and r.get("gap_ms"):
                     # The EOS token carries no text: it may commit a round after the last visible
                     # chunk, one of this request's rounds.
