@@ -14,7 +14,7 @@ Inputs per case ID (the decode lane's layout, `../decode/decode_gate.py`):
 Per step, KL(REF || x) from both sides' top-32 plus one rest bucket (the decode gate's estimator), for
 x = the current route, the new order and the floor. The statistic is the paired difference
   d = KL(REF || new) - KL(REF || cur)
-with a bootstrap 95% interval of its mean over steps. Beside it the floor's own figure on the same steps,
+with two bootstrap 95% intervals of its mean: by tape (the tapes resampled whole; the pass line) and over steps. Beside it the floor's own figure on the same steps,
 f = KL(REF || FLOOR): its mean and the half-width of the bootstrap interval of that mean, which is how far
 the vendor's two programs' KL moves with the choice of steps. A group passes when
   d's interval holds zero or lies below it (no measurable harm against the current route on the same
@@ -92,6 +92,21 @@ def boot(x, n):
     return x.mean().item(), lo, hi
 
 
+def boot_tapes(rows, n):
+    """The by-tape (cluster) bootstrap of the mean of d over steps: resample the tapes with replacement, each
+    keeping all its steps (seeded). Steps of one tape are not independent, so this is the interval the pass line
+    reads; the per-step one is printed beside it."""
+    g = torch.Generator().manual_seed(20261111)
+    d = [r["kn"] - r["kc"] for r in rows]
+    s = torch.tensor([x.sum().item() for x in d], dtype=torch.float64)
+    c = torch.tensor([len(x) for x in d], dtype=torch.float64)
+    m = len(d)
+    idx = torch.randint(0, m, (n, m), generator=g)
+    means = s[idx].sum(1) / c[idx].sum(1)
+    lo, hi = torch.quantile(means, torch.tensor([0.025, 0.975], dtype=torch.float64)).tolist()
+    return lo, hi
+
+
 def group_of(case, prompt):
     if "needle16800" in case:
         return "needle 257k"
@@ -126,14 +141,15 @@ for c in a.cases.split(","):
                      "steps_with_equal_top32": int(row["same"].sum())})
 
 out = {"cases": per_case, "groups": []}
-print("| group | steps | KL cur | KL new | KL floor | d = new - cur: mean [95% interval] | floor's half-width | top-1 cur / new / floor | "
-      "steps with byte-equal top-32 | verdict |")
-print("|---|---|---|---|---|---|---|---|---|---|")
+print("| group | tapes | steps | KL cur | KL new | KL floor | d = new - cur: mean | d by-tape 95% (the pass line) | d per-step 95% | "
+      "floor's half-width | top-1 cur / new / floor | steps with byte-equal top-32 | verdict |")
+print("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 for name in [g for g in ("chat", "long", "needle 257k", "all") if g in steps]:
     cat = lambda k: torch.cat([r[k] for r in steps[name]])
     kc, kn, kf = cat("kc"), cat("kn"), cat("kf")
     n = len(kc)
-    dm, dlo, dhi = boot(kn - kc, a.boot)
+    dm, slo, shi = boot(kn - kc, a.boot)
+    dlo, dhi = boot_tapes(steps[name], a.boot)
     fm, flo, fhi = boot(kf, a.boot)
     half = (fhi - flo) / 2
     t1c, t1n, t1f = cat("t1c").mean().item(), cat("t1n").mean().item(), cat("t1f").mean().item()
@@ -148,10 +164,11 @@ for name in [g for g in ("chat", "long", "needle 257k", "all") if g in steps]:
     if cur_over:
         verdict += " (current route over the band: by d alone)"
     frac = f"{100 * dlo / kc.mean().item():+.1f}% to {100 * dhi / kc.mean().item():+.1f}%"
-    print(f"| {name} | {n} | {kc.mean().item():.3e} | {kn.mean().item():.3e} | {fm:.3e} | {dm:+.2e} [{dlo:+.2e}, {dhi:+.2e}] = {frac} of KL cur | "
+    print(f"| {name} | {len(steps[name])} | {n} | {kc.mean().item():.3e} | {kn.mean().item():.3e} | {fm:.3e} | {dm:+.2e} | "
+          f"[{dlo:+.2e}, {dhi:+.2e}] = {frac} of KL cur | [{slo:+.2e}, {shi:+.2e}] | "
           f"{half:.2e} | {100 * t1c:.1f}% / {100 * t1n:.1f}% / {100 * t1f:.1f}% | {int(cat('same').sum())} | {verdict} |")
     out["groups"].append({"group": name, "steps": n, "kl_cur": kc.mean().item(), "kl_new": kn.mean().item(), "kl_floor": fm,
-                          "kl_floor_interval": [flo, fhi], "floor_half_width": half, "d_mean": dm, "d_interval": [dlo, dhi],
+                          "kl_floor_interval": [flo, fhi], "floor_half_width": half, "d_mean": dm, "d_interval": [dlo, dhi], "d_interval_steps": [slo, shi], "tapes": len(steps[name]),
                           "top1_cur": t1c, "top1_new": t1n, "top1_floor": t1f, "top1_slack": slack,
                           "pass_d": ok_d, "pass_band": ok_band, "pass_top1": ok_top, "current_route_over_band": cur_over})
 

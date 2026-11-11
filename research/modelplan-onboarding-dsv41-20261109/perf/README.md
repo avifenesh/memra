@@ -1144,6 +1144,10 @@ The order changes bytes, so it was judged against the vendor, not against the ol
 run, d = KL(vendor || new) - KL(vendor || old) with a bootstrap 95% interval (10,000 resamples). The
 pass line: d's interval contains zero or lies below it.
 
+Since 2026-11-11 the pass line reads d's by-tape interval: the bootstrap resamples whole tapes (a tape keeps all
+its steps, which are not independent of each other), and the per-step interval is printed beside it. A group of
+few tapes (the 4 long ones) gives a fragile by-tape interval: read it with that caveat until more tapes are in.
+
 | group | steps | KL old | KL new | KL of the vendor's second program | d [95%] | top-1 old / new | verdict |
 |---|---|---|---|---|---|---|---|
 | chat | 517 | 1.631e-02 | 1.509e-02 | 1.432e-02 | -1.22e-03 [-5.55e-03, +2.70e-03] | 97.3% / 96.9% | pass |
@@ -1658,8 +1662,8 @@ weight traffic: 1.1 ms.
   `trace_rot.py`: kernel time by name of a mixed-width trace against the sum of its widths traced
   alone.
 - `order_gate.py`: the distribution-level gate of a reduction-order change: a build's teacher-forced
-  tapes against the current route's and the vendor's floor (top-32 KL, the paired bootstrap interval
-  of the difference per tape group), and the route log's router table (same six experts, flips,
+  tapes against the current route's and the vendor's floor (top-32 KL, the paired difference per tape
+  group with its by-tape bootstrap interval, the pass line, and its per-step one), and the route log's router table (same six experts, flips,
   weight and MoE-output differences).
 - `receipts/`: one directory per comparison (`multi-*`: timed arms with their kernel gates;
   `profab-*`: per-op profiles; `gemm-*`: GEMM shapes; `look-*`, `ncul-*`, `ncu-*`: ncu reports;
