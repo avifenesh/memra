@@ -1,0 +1,25 @@
+2026-11-11T05:39:19+02:00
+boot diag change2 TAG=diag-change2 CELLS=2:200,2:0 GAP=70 EXTRA_ENV=MEMRA_TICK_TRACE=1
+099e88fcec7534f147903eb74e05fd9ef6d7485b6a66ad498b444972bdef19c8  ~/.cache/memra-1211/bin/memra-server-change2
+NVIDIA GB10, 580.178.04, 53
+ 05:39:19 up 17 days, 15:02,  5 users,  load average: 1.22, 1.40, 1.23
+2026-11-11T05:51:10+02:00
+boot diag main TAG=diag-main CELLS=2:200,2:0 GAP=70 EXTRA_ENV=MEMRA_TICK_TRACE=1
+b59c9b3dda86db165a39c9e146d7a0daf7edd5ebc6a63b325f628905693fbdeb  ~/.cache/memra-1211/bin/memra-server-main
+NVIDIA GB10, 580.178.04, 43
+ 05:51:10 up 17 days, 15:14,  5 users,  load average: 0.91, 1.09, 1.11
+2026-11-11T06:10:29+02:00
+boot diag main TAG=diag-plain CELLS=2:200,2:0 GAP=70 EXTRA_ENV=MEMRA_TICK_TRACE=1;MEMRA_SPEC_K=0
+b59c9b3dda86db165a39c9e146d7a0daf7edd5ebc6a63b325f628905693fbdeb  ~/.cache/memra-1211/bin/memra-server-main
+NVIDIA GB10, 580.178.04, 59
+ 06:10:29 up 17 days, 15:34,  5 users,  load average: 0.84, 1.03, 1.02
+2026-11-11T06:28:21+02:00
+boot diag probe TAG=diag-probe CELLS=4:0:greedy:SLOT=1,2:0:greedy:SLOT=1,2:200:greedy:SLOT=1 GAP=3 EXTRA_ENV=MEMRA_TICK_TRACE=1 KNOBS_FILE=~/.cache/memra-1211/run/diag/probe-knobs
+0a9cd2b70aef7038732b36385ae1be9754d5829404ae52663b6bd2e0d75c4f1f  ~/.cache/memra-1211/bin/memra-server-probe
+NVIDIA GB10, 580.178.04, 63
+ 06:28:21 up 17 days, 15:51,  5 users,  load average: 1.32, 1.27, 1.13
+2026-11-11T07:08:40+02:00
+boot diag change2 TAG=diag-hold0 CELLS=2:200,2:0 GAP=70 EXTRA_ENV=MEMRA_TICK_TRACE=1;MEMRA_PRIME_BATCH_HOLD_MS=0
+099e88fcec7534f147903eb74e05fd9ef6d7485b6a66ad498b444972bdef19c8  ~/.cache/memra-1211/bin/memra-server-change2
+NVIDIA GB10, 580.178.04, 60
+ 07:08:40 up 17 days, 16:32,  5 users,  load average: 1.03, 1.07, 1.12
