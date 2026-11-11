@@ -1,0 +1,55 @@
+gemm fp8 wq_a m 1 n 1280 k 5120: median 0.0231 ms (284 GB/s, 0.6 TFLOPS) sha 88ce711510d167e9df865180
+gemm fp8 wq_a m 64 n 1280 k 5120: median 0.0513 ms (137 GB/s, 16.4 TFLOPS) sha ee2028bb85ab1fa0a6ea1ff2
+gemm fp8 wq_a m 4096 n 1280 k 5120: median 0.3181 ms (119 GB/s, 168.8 TFLOPS) sha de2ea394d7e5a15ff5cf9da4
+gemm fp8 wq_a m 8192 n 1280 k 5120: median 0.6210 ms (112 GB/s, 172.9 TFLOPS) sha fdd1ed9cfa8a10e49aee5972
+gemm fp8 wkv m 1 n 512 k 5120: median 0.0220 ms (119 GB/s, 0.2 TFLOPS) sha f25eeb5b673b80b7ed1104d5
+gemm fp8 wkv m 64 n 512 k 5120: median 0.0509 ms (59 GB/s, 6.6 TFLOPS) sha b30eafed302fc6f7844945bd
+gemm fp8 wkv m 4096 n 512 k 5120: median 0.1454 ms (191 GB/s, 147.7 TFLOPS) sha f99ec9ba51be48922356ccb6
+gemm fp8 wkv m 8192 n 512 k 5120: median 0.3027 ms (175 GB/s, 141.9 TFLOPS) sha 485591cf25bf7cf5f371955b
+gemm fp8 wq_b m 1 n 32768 k 1280: median 0.1988 ms (211 GB/s, 0.4 TFLOPS) sha d6300daf0433a7fce0d95aef
+gemm fp8 wq_b m 64 n 32768 k 1280: median 0.2240 ms (206 GB/s, 24.0 TFLOPS) sha 7ea7ddd7e8aa6a570c713d88
+gemm fp8 wq_b m 4096 n 32768 k 1280: median 2.4765 ms (127 GB/s, 138.7 TFLOPS) sha 641de8e3728441fdc0060542
+gemm fp8 wq_b m 8192 n 32768 k 1280: median 4.9817 ms (118 GB/s, 137.9 TFLOPS) sha cfeaee1da57d1a11c9116264
+gemm fp8 idx_wq_b m 1 n 4096 k 1280: median 0.0153 ms (344 GB/s, 0.7 TFLOPS) sha 5210bc94e2a96fd7b6d31ed1
+gemm fp8 idx_wq_b m 64 n 4096 k 1280: median 0.0279 ms (210 GB/s, 24.1 TFLOPS) sha bdb0e76c76afe551acc94e29
+gemm fp8 idx_wq_b m 4096 n 4096 k 1280: median 0.3341 ms (132 GB/s, 128.6 TFLOPS) sha 5114ff8fad587fcf0ec84e6a
+gemm fp8 idx_wq_b m 8192 n 4096 k 1280: median 0.6292 ms (132 GB/s, 136.5 TFLOPS) sha 695b8293286ce5210cd232e3
+gemm fp8 wo_b m 1 n 5120 k 8192: median 0.1998 ms (210 GB/s, 0.4 TFLOPS) sha ae5ce4555ffbef6c712272f5
+gemm fp8 wo_b m 64 n 5120 k 8192: median 0.2177 ms (198 GB/s, 24.7 TFLOPS) sha 7b13b791e078974148f5c694
+gemm fp8 wo_b m 4096 n 5120 k 8192: median 4.7918 ms (25 GB/s, 71.7 TFLOPS) sha b0796dc05584d9198e20efbe
+gemm fp8 wo_b m 8192 n 5120 k 8192: median 11.4084 ms (17 GB/s, 60.2 TFLOPS) sha 66a4659f0463990487ae9d96
+gemm fp8 shared_w13 m 1 n 2304 k 5120: median 0.0245 ms (482 GB/s, 1.0 TFLOPS) sha fd577319a44f451ce87c0334
+gemm fp8 shared_w13 m 64 n 2304 k 5120: median 0.0514 ms (242 GB/s, 29.4 TFLOPS) sha b98b23b8dec2d52e2efd1dd6
+gemm fp8 shared_w13 m 4096 n 2304 k 5120: median 0.5456 ms (95 GB/s, 177.1 TFLOPS) sha 4df598a97c52ef4c5621cfaa
+gemm fp8 shared_w13 m 8192 n 2304 k 5120: median 1.0730 ms (85 GB/s, 180.1 TFLOPS) sha 0064f04ae28f904506621d77
+gemm fp8 shared_w2 m 1 n 5120 k 2304: median 0.0209 ms (566 GB/s, 1.1 TFLOPS) sha 07788fc43a163ef7886c1766
+gemm fp8 shared_w2 m 64 n 5120 k 2304: median 0.0318 ms (397 GB/s, 47.5 TFLOPS) sha 404ddd5e9cc52923d67cc514
+gemm fp8 shared_w2 m 4096 n 5120 k 2304: median 0.6418 ms (98 GB/s, 150.6 TFLOPS) sha dd607b9a65b67edede67f4b5
+gemm fp8 shared_w2 m 8192 n 5120 k 2304: median 1.1062 ms (104 GB/s, 174.7 TFLOPS) sha 53502b8abe88efa9582df24f
+select one row of 32768 keys: topk 0.0573 ms one block, 0.0573 ms long form; candidates 0.0378 ms, 0.0890 ms
+select one row of 131072 keys: topk 0.2079 ms one block, 0.0573 ms long form; candidates 0.1133 ms, 0.1186 ms
+select one row of 262144 keys: topk 0.3982 ms one block, 0.0574 ms long form; candidates 0.2107 ms, 0.1175 ms
+gemm ffma head m 1 n 129280 k 5120: median 9.2484 ms (143 GB/s) sha 5aed36cb1fb79a1f312a0aec
+gemm ffma head m 4 n 129280 k 5120: median 9.2280 ms (143 GB/s) sha 47af928c628d77a5f2ef4e11
+gemm ffma head m 5 n 129280 k 5120: median 9.1673 ms (144 GB/s) sha 254c976b62de390570b5a4ca
+gemm ffma head m 8 n 129280 k 5120: median 9.2249 ms (144 GB/s) sha 8b641b1f6955435e12972f96
+gemm ffma router m 1 n 384 k 5120: median 0.0480 ms (82 GB/s) sha d58ddb83a717adf2be4b7611
+gemm ffma router m 4 n 384 k 5120: median 0.0530 ms (74 GB/s) sha e6f9f48f2874c6331ff77401
+gemm ffma router m 5 n 384 k 5120: median 0.0539 ms (73 GB/s) sha 9941de28b8a92c91fd4652c3
+gemm ffma router m 8 n 384 k 5120: median 0.0693 ms (57 GB/s) sha c9ef3e74e71a36a7c1848107
+gemm mxfp4 grouped exp_w13 experts 6 rows 1 form 0: median 0.1919 ms (185 GB/s, 0.7 TFLOPS) sha 0c540efa98724e75ce4177b0
+gemm mxfp4 grouped exp_w2 experts 6 rows 1 form 0: median 0.1874 ms (189 GB/s, 0.8 TFLOPS) sha 4aeadb36db86ae521da7b9a3
+gemm mxfp4 grouped exp_w13 experts 12 rows 1 form 0: median 0.3638 ms (195 GB/s, 0.8 TFLOPS) sha 40d10faecc3cfaf00ed29a0e
+gemm mxfp4 grouped exp_w2 experts 12 rows 1 form 0: median 0.3584 ms (198 GB/s, 0.8 TFLOPS) sha 29d1af2b055ad45c6cbdfd46
+gemm mxfp4 grouped exp_w13 experts 29 rows 1 form 0: median 0.8509 ms (201 GB/s, 0.8 TFLOPS) sha 3f11d73cc31c16a77c5a8013
+gemm mxfp4 grouped exp_w2 experts 29 rows 1 form 0: median 0.8415 ms (204 GB/s, 0.8 TFLOPS) sha 412582de1f487ee1f4ca7de7
+gemm mxfp4 grouped exp_w13 experts 48 rows 1 form 0: median 1.3883 ms (204 GB/s, 0.8 TFLOPS) sha 46db300cd139762a520275d8
+gemm mxfp4 grouped exp_w2 experts 48 rows 1 form 0: median 1.3723 ms (207 GB/s, 0.8 TFLOPS) sha b78754b18c3c3bbe0fb2d35e
+gemm mxfp4 grouped exp_w13 experts 15 rows 2 form 0: median 0.4515 ms (197 GB/s, 1.6 TFLOPS) sha ef90224c4c10f489007ed024
+gemm mxfp4 grouped exp_w2 experts 15 rows 2 form 0: median 0.4452 ms (200 GB/s, 1.6 TFLOPS) sha f0e221de96aa738e7cbd4596
+gemm mxfp4 grouped exp_w13 experts 64 rows 64 form 0: median 2.0934 ms (199 GB/s, 46.2 TFLOPS) sha 17914946d81c4245ad398a56
+gemm mxfp4 grouped exp_w2 experts 64 rows 64 form 0: median 2.1350 ms (201 GB/s, 45.3 TFLOPS) sha aec9c3d9c43f619aebb360d4
+gemm mxfp4 grouped exp_w13 experts 384 rows 64 form 0: median 12.6213 ms (198 GB/s, 45.9 TFLOPS) sha c3773e8912ebd77af95a934e
+gemm mxfp4 grouped exp_w2 experts 384 rows 64 form 0: median 12.7720 ms (201 GB/s, 45.4 TFLOPS) sha 779a1381fe4ba2f38cc6517f
+gemm mxfp4 grouped exp_w13 experts 384 rows 512 form 0: median 29.4149 ms (142 GB/s, 157.7 TFLOPS) sha c70ceb323b1d1ba45d93fe80
+gemm mxfp4 grouped exp_w2 experts 384 rows 512 form 0: median 30.7141 ms (154 GB/s, 151.0 TFLOPS) sha d3c953c1674af87da7cd94b5

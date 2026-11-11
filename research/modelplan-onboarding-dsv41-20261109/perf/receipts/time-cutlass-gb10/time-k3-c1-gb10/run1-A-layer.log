@@ -1,0 +1,7 @@
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+dsv41-bench: 4096 tokens, layers [2], reps 8, decode 32, chunk 8192, path group1, NVIDIA GB10
+layer 0: load 26.3 s, block 153.7 ms
+layer 1: load 82.1 s, block 136.6 ms
+layer 2: prefill 4096 tokens: first 143.385 ms, reps [143.619, 146.136, 147.442, 145.096, 143.197, 143.555, 143.749, 142.453] ms, median 143.684 ms, 8/8 reruns byte-identical, engram NaN ms, out f181f3205c44f4374109cc1b pre d44f4dd2f9a6a89d58c3f906
+run [2]: whole decode steps at 4128..: [2.016, 2.066, 1.999, 2.053, 2.007, 2.067, 2.016, 2.060, 1.998, 2.054, 2.008, 2.064, 2.076, 2.485, 2.221, 2.178, 2.005, 2.172, 2.021, 2.064, 2.001, 2.031, 1.998, 2.053, 1.990, 2.030, 1.991, 2.057, 2.007, 2.035, 1.982, 2.055] ms, median (steps 2..) 2.035 ms
+layer 2: decode at 4096..4128: steps [2.691, 2.072, 2.020, 2.077, 2.032, 2.071, 2.009, 2.129, 2.378, 2.202, 2.135, 2.065, 2.001, 2.070, 2.034, 2.054, 2.045, 2.475, 2.044, 2.321, 2.021, 2.060, 2.015, 2.050, 2.004, 2.042, 2.004, 2.060, 1.999, 2.051, 1.988, 2.048] ms, median (steps 2..) 2.050 ms

@@ -1508,14 +1508,28 @@ Order gate: the chat (517 steps) and long (194 steps) tapes of this program are 
 their intervals (the by-tape intervals in the section above), top-1 96.7% / 94.3%. CUTLASS's one-ulp fp32
 differences against bs1's chain did not reach a bf16 output on these 711 steps or on the layer gate's tensors.
 
-Timing: owed (GB10 proxy against k3 and bs1 queued behind a landing lease; real timing in the four-card window).
+CheckpointParity on the pack's probe passes in its band (max abs 2.938, bs1's value; the vendor's argmax;
+`receipts/ckpt-cutlass`).
+
+Timing, GB10, a proxy (`receipts/time-cutlass-gb10`, A B B A of the c1 build against k3 and against bs1, steady
+reps): layer 2's prefill of 4,096 tokens 143.7 (k3) and 139.8 (bs1) -> 106.3 to 107.7 ms (-25% against k3), its
+one-token decode step 2.05 (k3) and 2.13 (bs1) -> 1.87-1.88 ms. Both sessions had a slow window (reps of 225-620
+ms on either arm, clocks steady at 2.19 GHz: something else on the box) that took the fourth run of each and the
+third against k3, so the A B B A balance rests on the clean runs and is owed again. GEMM shapes against k3: dense
+FP8 at 4k-8k rows 0.29-0.50 (wo_b 0.70-0.85), experts at 64 rows an expert 0.65, at 512 rows 0.32-0.38; decode
+widths: dense at one row wq_b 0.83, wo_b 0.70, the shared expert 0.66-0.82, wq_a 1.08 and wkv 1.59 (slower), the
+expert groups of one and two rows 1.07-1.14 (slower; against bs1's small-row body 0.85-0.88).
 
 OPEN, blocking: on peer-pull the tp gate fails sporadically at 12- and 16-row calls (ranks agree with each other,
 not with the single card: a few hundred to a few thousand bytes of out_stream, rel_l2 2e-7 to 6e-5). Two ranks,
 layers 2 and 24, interleaved (`receipts/gates-cutlass-gb10/c1/dbg-pp2`): k3 0/4, bs1 0/4 (0/6 with the two runs
 before), this build 3 of 8 runs; host-canonical and default transports passed every run. It comes with this change
-and is not explained yet; the debug arms (host calls serialized, a stream sync after each CUTLASS launch, zeroed
-scale buffers: `dbg_pp3.sh`) are the next step. NOT FOR LANDING until it is.
+and is not explained yet. A debug build with three arms (`c3-debug`, `c3-debug4`; 13 runs an arm, two ranks,
+layers 2 and 24): the plain build 2/13, every CUTLASS host call under one process mutex 1/13, zeroed activation
+scale buffers 1/13, a stream sync after every CUTLASS launch 0/13: not the host calls, not the scale padding; it
+leans toward an overlap on the card. CUTLASS's grouped launch co-scheduled with itself is clean: 2 and 4 streams of
+[setup kernel + grouped GEMM], 200 rounds, every form, 0 of 2,400 outputs differ from the one-stream run
+(`receipts/cutlass-args-probe-gb10/conc_probe_run.txt`). NOT FOR LANDING until it is explained.
 
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 

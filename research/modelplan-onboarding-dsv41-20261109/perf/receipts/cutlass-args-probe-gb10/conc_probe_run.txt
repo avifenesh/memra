@@ -1,0 +1,29 @@
+probe rc 0 19:35:32
+device NVIDIA GB10 sm_121, 48 SMs, CUTLASS 4.8.1
+grouped swapped G 96: workspace 36864 bytes
+grouped swapped G 96: workspace 36864 bytes
+PROBE-PASS T5 grouped swapped16: 2 streams x 200 rounds (256 rows, G 96), outputs differing from the single-stream run: 0 of 400 differ
+grouped swapped G 96: workspace 36864 bytes
+grouped swapped G 96: workspace 36864 bytes
+PROBE-PASS T5 grouped swapped8: 2 streams x 200 rounds (256 rows, G 96), outputs differing from the single-stream run: 0 of 400 differ
+grouped normal G 96: workspace 36864 bytes
+grouped normal G 96: workspace 36864 bytes
+PROBE-PASS T5 grouped normal: 2 streams x 200 rounds (256 rows, G 96), outputs differing from the single-stream run: 0 of 400 differ
+grouped swapped G 96: workspace 36864 bytes
+grouped swapped G 96: workspace 36864 bytes
+grouped swapped G 96: workspace 36864 bytes
+grouped swapped G 96: workspace 36864 bytes
+PROBE-PASS T5 grouped swapped16: 4 streams x 200 rounds (256 rows, G 96), outputs differing from the single-stream run: 0 of 800 differ
+grouped swapped G 96: workspace 36864 bytes
+grouped swapped G 96: workspace 36864 bytes
+grouped swapped G 96: workspace 36864 bytes
+grouped swapped G 96: workspace 36864 bytes
+PROBE-PASS T5 grouped swapped8: 4 streams x 200 rounds (256 rows, G 96), outputs differing from the single-stream run: 0 of 800 differ
+grouped normal G 96: workspace 36864 bytes
+grouped normal G 96: workspace 36864 bytes
+grouped normal G 96: workspace 36864 bytes
+grouped normal G 96: workspace 36864 bytes
+PROBE-PASS T5 grouped normal: 4 streams x 200 rounds (256 rows, G 96), outputs differing from the single-stream run: 0 of 800 differ
+PROBE-RESULT PASS
+PROBE-DONE
+CPRUN-DONE 19:35:32

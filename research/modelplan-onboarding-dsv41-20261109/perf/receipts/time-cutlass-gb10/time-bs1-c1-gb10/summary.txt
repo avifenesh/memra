@@ -1,0 +1,57 @@
+timing proxy time-bs1-c1-gb10
+  arm A: layer-2 4k prefill steady median 139.81 ms, layer decode step 2.132 ms, whole decode step 2.129 ms, 8/8 reruns byte-identical
+  arm A: layer-2 4k prefill steady median 278.54 ms, layer decode step 2.125 ms, whole decode step 2.121 ms, 8/8 reruns byte-identical
+  arm B: layer-2 4k prefill steady median 106.30 ms, layer decode step 1.873 ms, whole decode step 1.877 ms, 8/8 reruns byte-identical
+  arm B: layer-2 4k prefill steady median 107.66 ms, layer decode step 1.875 ms, whole decode step 1.892 ms, 8/8 reruns byte-identical
+  gemm fp8 wq_a m 1 n 1280 k 5120: A 0.0219 ms, B 0.0228 ms, B/A 1.041
+  gemm fp8 wq_a m 64 n 1280 k 5120: A 0.0653 ms, B 0.0510 ms, B/A 0.782
+  gemm fp8 wq_a m 4096 n 1280 k 5120: A 0.6171 ms, B 0.3195 ms, B/A 0.518
+  gemm fp8 wq_a m 8192 n 1280 k 5120: A 1.1942 ms, B 0.6240 ms, B/A 0.523
+  gemm fp8 wkv m 1 n 512 k 5120: A 0.0196 ms, B 0.0215 ms, B/A 1.094
+  gemm fp8 wkv m 64 n 512 k 5120: A 0.0648 ms, B 0.0508 ms, B/A 0.783
+  gemm fp8 wkv m 4096 n 512 k 5120: A 0.2694 ms, B 0.1451 ms, B/A 0.539
+  gemm fp8 wkv m 8192 n 512 k 5120: A 0.5188 ms, B 0.3078 ms, B/A 0.593
+  gemm fp8 wq_b m 1 n 32768 k 1280: A 0.2210 ms, B 0.1957 ms, B/A 0.886
+  gemm fp8 wq_b m 64 n 32768 k 1280: A 0.3008 ms, B 0.2221 ms, B/A 0.738
+  gemm fp8 wq_b m 4096 n 32768 k 1280: A 8.4937 ms, B 2.5401 ms, B/A 0.299
+  gemm fp8 wq_b m 8192 n 32768 k 1280: A 17.0011 ms, B 5.0758 ms, B/A 0.299
+  gemm fp8 idx_wq_b m 1 n 4096 k 1280: A 0.0152 ms, B 0.0157 ms, B/A 1.033
+  gemm fp8 idx_wq_b m 64 n 4096 k 1280: A 0.0258 ms, B 0.0283 ms, B/A 1.095
+  gemm fp8 idx_wq_b m 4096 n 4096 k 1280: A 0.5916 ms, B 0.3277 ms, B/A 0.554
+  gemm fp8 idx_wq_b m 8192 n 4096 k 1280: A 1.1046 ms, B 0.6263 ms, B/A 0.567
+  gemm fp8 wo_b m 1 n 5120 k 8192: A 0.2339 ms, B 0.2041 ms, B/A 0.873
+  gemm fp8 wo_b m 64 n 5120 k 8192: A 0.2904 ms, B 0.2162 ms, B/A 0.744
+  gemm fp8 wo_b m 4096 n 5120 k 8192: A 6.7200 ms, B 4.6395 ms, B/A 0.690
+  gemm fp8 wo_b m 8192 n 5120 k 8192: A 13.4245 ms, B 11.5499 ms, B/A 0.860
+  gemm fp8 shared_w13 m 1 n 2304 k 5120: A 0.0241 ms, B 0.0241 ms, B/A 0.996
+  gemm fp8 shared_w13 m 64 n 2304 k 5120: A 0.0653 ms, B 0.0515 ms, B/A 0.789
+  gemm fp8 shared_w13 m 4096 n 2304 k 5120: A 1.0333 ms, B 0.5472 ms, B/A 0.530
+  gemm fp8 shared_w13 m 8192 n 2304 k 5120: A 2.0144 ms, B 1.0641 ms, B/A 0.528
+  gemm fp8 shared_w2 m 1 n 5120 k 2304: A 0.0219 ms, B 0.0212 ms, B/A 0.970
+  gemm fp8 shared_w2 m 64 n 5120 k 2304: A 0.0411 ms, B 0.0320 ms, B/A 0.779
+  gemm fp8 shared_w2 m 4096 n 5120 k 2304: A 1.2068 ms, B 0.6142 ms, B/A 0.509
+  gemm fp8 shared_w2 m 8192 n 5120 k 2304: A 2.3381 ms, B 1.1010 ms, B/A 0.471
+  gemm ffma head m 1 n 129280 k 5120: A 9.2905 ms, B 9.2926 ms, B/A 1.000
+  gemm ffma head m 4 n 129280 k 5120: A 9.2585 ms, B 9.2619 ms, B/A 1.000
+  gemm ffma head m 5 n 129280 k 5120: A 9.2066 ms, B 9.2084 ms, B/A 1.000
+  gemm ffma head m 8 n 129280 k 5120: A 9.2784 ms, B 9.2823 ms, B/A 1.000
+  gemm ffma router m 1 n 384 k 5120: A 0.0481 ms, B 0.0480 ms, B/A 0.997
+  gemm ffma router m 4 n 384 k 5120: A 0.0527 ms, B 0.0525 ms, B/A 0.996
+  gemm ffma router m 5 n 384 k 5120: A 0.0541 ms, B 0.0536 ms, B/A 0.990
+  gemm ffma router m 8 n 384 k 5120: A 0.0679 ms, B 0.0701 ms, B/A 1.032
+  gemm mxfp4 exp_w13 experts 6 rows 1: A 0.2148 ms, B 0.1896 ms, B/A 0.883
+  gemm mxfp4 exp_w2 experts 6 rows 1: A 0.2092 ms, B 0.1834 ms, B/A 0.876
+  gemm mxfp4 exp_w13 experts 12 rows 1: A 0.4290 ms, B 0.3654 ms, B/A 0.852
+  gemm mxfp4 exp_w2 experts 12 rows 1: A 0.4099 ms, B 0.3604 ms, B/A 0.879
+  gemm mxfp4 exp_w13 experts 29 rows 1: A 0.9970 ms, B 0.8464 ms, B/A 0.849
+  gemm mxfp4 exp_w2 experts 29 rows 1: A 0.9604 ms, B 0.8331 ms, B/A 0.867
+  gemm mxfp4 exp_w13 experts 48 rows 1: A 1.6356 ms, B 1.3840 ms, B/A 0.846
+  gemm mxfp4 exp_w2 experts 48 rows 1: A 1.5802 ms, B 1.3666 ms, B/A 0.865
+  gemm mxfp4 exp_w13 experts 15 rows 2: A 0.5260 ms, B 0.4527 ms, B/A 0.861
+  gemm mxfp4 exp_w2 experts 15 rows 2: A 0.5061 ms, B 0.4480 ms, B/A 0.885
+  gemm mxfp4 exp_w13 experts 64 rows 64: A 3.2131 ms, B 2.1113 ms, B/A 0.657
+  gemm mxfp4 exp_w2 experts 64 rows 64: A 3.3228 ms, B 2.1355 ms, B/A 0.643
+  gemm mxfp4 exp_w13 experts 384 rows 64: A 19.0981 ms, B 12.4185 ms, B/A 0.650
+  gemm mxfp4 exp_w2 experts 384 rows 64: A 19.7347 ms, B 12.6669 ms, B/A 0.642
+  gemm mxfp4 exp_w13 experts 384 rows 512: A 80.4938 ms, B 28.2950 ms, B/A 0.352
+  gemm mxfp4 exp_w2 experts 384 rows 512: A 64.0743 ms, B 31.3960 ms, B/A 0.490
