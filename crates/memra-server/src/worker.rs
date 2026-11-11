@@ -7334,6 +7334,38 @@ struct SpecCostEntry {
     /// its prediction once it has `SPEC_COST_REALIZED_MIN` samples, and corrects the predictions
     /// at other concurrencies in proportion.
     realized: HashMap<(usize, usize), RealizedRate>,
+    /// STALL MARKS (memra#1211): concurrency -> when its mark expires. A speculative burst that
+    /// begins while a request waits for admission gives its tick back (the admission yield);
+    /// a plain session steps in the batched phase and never does. Under sustained arrivals no
+    /// tick is steady, so no realized sample shows that cost and the table's price stands.
+    /// A mark says "speculation at n kept meeting waiting requests": the verdict at n serves
+    /// plain until it expires (`SPEC_COST_REALIZED_TTL` after its last refresh). It is kept
+    /// beside the realized slots, never in them, so it cannot scale another concurrency's
+    /// price (`priced`) and nothing is left to re-measure when it expires. Read by key only.
+    stalled: HashMap<usize, Instant>,
+}
+
+/// Pressed burst entries in a row (a request waiting at the entry hook) that mark the session's
+/// concurrency stalled (`spec_cost_mark_stall`, memra#1211). The probe that measured the stall
+/// price (`research/spec-entry-yield-bound-20261110/`, the slot arm) priced the slot at the
+/// fourth consecutive silent entry; under the entry-yield bound four pressed entries are two
+/// silent yields and two forced rounds. In ordinary concurrency (c = 1..8, three requests per
+/// client back to back) no burst entry met a waiting request at all.
+const SPEC_STALL_ENTRIES: u32 = 4;
+
+/// Whether a session's pressed-entry history (newest burst in bit 0) ends in
+/// `SPEC_STALL_ENTRIES` pressed entries.
+fn spec_press_saturated(hist: u8) -> bool {
+    let run = (1u8 << SPEC_STALL_ENTRIES) - 1;
+    hist & run == run
+}
+
+/// One burst entry into a session's pressed-entry history: the new history, and whether this
+/// entry completes a run of `SPEC_STALL_ENTRIES` pressed entries (the tick then marks its
+/// concurrency stalled).
+fn spec_press_record(hist: u8, pressed: bool) -> (u8, bool) {
+    let hist = (hist << 1) | u8::from(pressed);
+    (hist, pressed && spec_press_saturated(hist))
 }
 
 /// One realized-rate slot: the EMA of per-tick aggregate tok/s samples, the EMA of their squared
@@ -7392,10 +7424,25 @@ const SPEC_COST_FAR_NEIGHBOR: usize = 1;
 
 /// How long a realized spec rate stays evidence against the tie probe. One max-length turn (768
 /// tokens) at the agentic c=2 per-user rate (about 12 tok/s) is 64 s: a slot older than that
-/// was measured on a different turn, depth and acceptance than the one being decided.
+/// was measured on a different turn, depth and acceptance than the one being decided. A stall
+/// mark lives as long (`SpecCostEntry::stalled`): it is evidence about the traffic too.
 const SPEC_COST_REALIZED_TTL: std::time::Duration = std::time::Duration::from_secs(64);
 
 impl SpecCostEntry {
+    /// Whether concurrency `n` carries a live stall mark at `now`.
+    fn stalled_at(&self, n: usize, now: Instant) -> bool {
+        self.stalled.get(&n).is_some_and(|until| now < *until)
+    }
+
+    /// Mark concurrency `n` stalled until `SPEC_COST_REALIZED_TTL` after `now`. Returns
+    /// whether the mark is new (no live mark at n before).
+    fn mark_stall(&mut self, n: usize, now: Instant) -> bool {
+        let new = !self.stalled_at(n, now);
+        self.stalled.retain(|_, until| now < *until);
+        self.stalled.insert(n, now + SPEC_COST_REALIZED_TTL);
+        new
+    }
+
     /// A realized rate at today's acceptance. A spec slot's samples carry the acceptance of
     /// the rounds they were measured on; the window keeps moving with every spec round at any
     /// concurrency, so the slot is rescaled by expected tokens now over expected tokens then
@@ -7769,6 +7816,18 @@ fn spec_cost_verdict(model: &str, n: usize, rung: usize) -> Option<usize> {
         }
         return Some(0);
     }
+    // STALLED CONCURRENCY (memra#1211): speculation at n kept meeting waiting requests at its
+    // burst entries (`spec_cost_mark_stall`). Plain at n, every draft length, until the mark
+    // expires: the stalled sessions demote and newcomers at n are admitted to plain decode.
+    if entry.stalled_at(n, Instant::now()) {
+        if spec_cost_log_due(model, n, rung, 0) {
+            eprintln!(
+                "[spec-cost] model={model:?} n={n} rung={rung} -> K=0 (speculation stalled at \
+                 n: burst entries kept meeting a waiting request; plain until the mark expires)"
+            );
+        }
+        return Some(0);
+    }
     let Some((k, spec_rate, plain_rate)) = spec_cost_best_k(entry, n, rung) else {
         // EXPLORE WITHOUT ACCEPTANCE HISTORY. The verdict needs the model's acceptance, and
         // acceptance only comes from speculative rounds; with no verdict the band decides,
@@ -7841,6 +7900,27 @@ fn spec_cost_observe(model: &str, n: usize, k: usize, tok_per_s: f64) {
                 slot.ema
             );
         }
+    }
+}
+
+/// Mark `model`'s verdict at `n` concurrent sessions stalled (memra#1211): a session's last
+/// `SPEC_STALL_ENTRIES` speculative bursts each began while a request waited for admission.
+/// `n` is the tick's live count, the count its demotion check reads. Never n = 1: a pressed
+/// entry at a tick that began with one live session means the pressing request is not admitted
+/// yet, and it is priced at n >= 2 when it is; a lone session is where speculation pays most.
+fn spec_cost_mark_stall(model: &str, n: usize) {
+    if n < 2 {
+        return;
+    }
+    let mut reg = spec_cost_registry().lock().unwrap();
+    if let Some(entry) = reg.get_mut(model)
+        && entry.mark_stall(n, Instant::now())
+    {
+        eprintln!(
+            "[spec-cost] model={model:?} stalled n={n}: a session's last {SPEC_STALL_ENTRIES} \
+             burst entries met a waiting request; plain at n={n} for {} s",
+            SPEC_COST_REALIZED_TTL.as_secs()
+        );
     }
 }
 
@@ -16962,6 +17042,12 @@ struct Session {
     /// Consecutive speculative bursts of this session that yielded at their entry with
     /// nothing emitted (the entry-yield bound, `SPEC_ENTRY_YIELD_MAX`, memra#1201).
     spec_entry_yields: u32,
+    /// This session's last speculative bursts, newest in bit 0: set when a request waited for
+    /// admission at the burst's entry hook (a pressed entry, memra#1211).
+    spec_press_hist: u8,
+    /// Set by `spec_burst_post` when that burst completed a run of `SPEC_STALL_ENTRIES` pressed
+    /// entries; the tick takes it after phase (a) and marks its concurrency stalled.
+    spec_press_due: bool,
     emission_clock: crate::hybrid_telemetry::EmissionClock,
     /// A disconnected client is billed to the observed abort point but its generated KV is
     /// not a reusable conversation state. Abort retirement drops all session caches instead
@@ -22115,8 +22201,11 @@ pub fn run(
                 drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);
             }
 
+            // The tick's live count: what the demotion below reads, and the concurrency a stall
+            // mark after phase (a) names (memra#1211).
+            let n_tick = active.len() - finished.len();
             if automatic_demote || demote_at.is_some() {
-                let n_live = active.len() - finished.len();
+                let n_live = n_tick;
                 let forced = demote_at.is_some_and(|n| {
                     active.iter().enumerate().any(|(i, s)| {
                         !finished.contains(&i)
@@ -22894,6 +22983,15 @@ pub fn run(
             let spec_ms = t_spec
                 .map(|started| started.elapsed().as_secs_f32() * 1000.0)
                 .unwrap_or(0.0);
+            // STALL MARK (memra#1211): a session whose last SPEC_STALL_ENTRIES bursts each began
+            // while a request waited marks this tick's concurrency stalled, so the cost model
+            // serves plain there until the mark expires. Serial and pooled bursts both set the
+            // flag in `spec_burst_post`.
+            for s in active.iter_mut() {
+                if std::mem::take(&mut s.spec_press_due) {
+                    spec_cost_mark_stall(&s.model, n_tick);
+                }
+            }
             // (b) INTERACTIVE prefill only (TTFT priority, full tick chunk budgets[0]).
             // Dark-lane (judge/harvest) prefill runs AFTER decode (phase d) so a judge
             // prime can never sit between an interactive stream and its next token (the
@@ -30016,6 +30114,8 @@ fn admit(
         tokens_emitted: 0,
         early_done: None,
         spec_entry_yields: 0,
+        spec_press_hist: 0,
+        spec_press_due: false,
         emission_clock: Default::default(),
         aborted: false,
         oom_teardown: false,
@@ -32470,6 +32570,9 @@ struct SpecBurstEmit<'t> {
     /// The session's consecutive silent entry yields, carried in and written back by
     /// `spec_burst_post`.
     entry_yields: u32,
+    /// Whether a request waited for admission at this burst's entry call (memra#1211); `None`
+    /// until the entry call has run. `spec_burst_post` shifts it into the session's history.
+    entry_pressed: Option<bool>,
     tok: &'t memra_tokenizer::Tokenizer,
     decoded_visible: Vec<u8>,
     cursor: usize,
@@ -32517,6 +32620,7 @@ impl<'t> SpecBurstEmit<'t> {
             admit_yield,
             entry: true,
             entry_yields: s.spec_entry_yields,
+            entry_pressed: None,
             tok,
             decoded_visible,
             cursor,
@@ -32656,6 +32760,11 @@ impl SpecBurstEmit<'_> {
     /// round: the round's own hook call then yields.
     fn bound_entry_yield(&mut self, admit_keep: bool, silent: bool) -> bool {
         let entry = std::mem::replace(&mut self.entry, false);
+        if entry {
+            // A pressed entry (memra#1211): a request waited when this burst began, whatever
+            // the bound then does with the yield and whether the call carries a token.
+            self.entry_pressed = Some(!admit_keep);
+        }
         if !silent {
             self.entry_yields = 0;
             return admit_keep;
@@ -32801,9 +32910,13 @@ fn spec_burst_post(
         stop_ids,
         stop_string_at,
         entry_yields,
+        entry_pressed,
         ..
     } = emit;
     s.spec_entry_yields = entry_yields;
+    if let Some(pressed) = entry_pressed {
+        (s.spec_press_hist, s.spec_press_due) = spec_press_record(s.spec_press_hist, pressed);
+    }
     let spec = s.spec.as_mut().expect("spec_burst_post on a spec session");
     if let Some(trace) = s.ttft.as_ref() {
         trace.mark_prime_end();
@@ -35155,6 +35268,7 @@ fn run_spec_cost_calibration(
                         plain_cap,
                         accept: None,
                         realized: HashMap::new(),
+                        stalled: HashMap::new(),
                     },
                 );
             }
@@ -36019,6 +36133,7 @@ mod tests {
             plain_cap: 8,
             accept: Some(t),
             realized: HashMap::new(),
+            stalled: HashMap::new(),
         }
     }
 
@@ -36077,6 +36192,7 @@ mod tests {
                 plain_cap: 16,
                 accept: Some(t),
                 realized: HashMap::new(),
+                stalled: HashMap::new(),
             }
         };
         let flat = entry(3.84, 0.0);
@@ -36395,6 +36511,7 @@ mod tests {
                     plain_cap: 16,
                     accept: None,
                     realized: HashMap::new(),
+                    stalled: HashMap::new(),
                 },
             );
         };
@@ -36487,6 +36604,7 @@ mod tests {
                 plain_cap: 8,
                 accept: None,
                 realized: HashMap::new(),
+                stalled: HashMap::new(),
             },
         );
         for riders in [1usize, 2, 8, 9, 12, 16, 40] {
@@ -39244,6 +39362,7 @@ mod tests {
             admit_yield: true,
             entry: true,
             entry_yields,
+            entry_pressed: None,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
@@ -39385,6 +39504,226 @@ mod tests {
         );
     }
 
+    /// Every (n, K) price of an entry for n = 1..=8, K = 0..=3, through the verdict's own
+    /// pricing (`priced` over the boot table at the window's acceptance).
+    fn spec_cost_prices(e: &super::SpecCostEntry) -> Vec<f64> {
+        let accept = e.accept.expect("a window");
+        let rate_at = |m: usize, k: usize| super::spec_cost_table_rate(e, &accept, m, k);
+        (1..=8)
+            .flat_map(|n| (0..=3).map(move |k| (n, k)))
+            .map(|(n, k)| e.priced(n, k, rate_at))
+            .collect()
+    }
+
+    /// The GB10 table with realized slots at n = 1 (the long stream alone) and n = 3 (two
+    /// short clients beside it), speculation ahead of plain at both.
+    fn stall_entry() -> super::SpecCostEntry {
+        let mut e = gb10_entry([0.7, 0.5, 0.35]);
+        e.realized.insert((1, 0), slot(13.6, 10));
+        e.realized.insert((1, 3), slot(26.7, 10));
+        e.realized.insert((3, 0), slot(36.0, 10));
+        e.realized.insert((3, 3), slot(55.0, 10));
+        e
+    }
+
+    /// memra#1211: a stall mark at n serves plain at n, every draft length, and changes no price
+    /// and no verdict anywhere else. The slot probe's storage (zero-rate samples in the realized
+    /// slot at n) fails this: n's slot becomes zero and n+-1 scale from it.
+    #[test]
+    fn spec_cost_stall_mark_does_not_spread() {
+        let model = "stall-spread";
+        let e = stall_entry();
+        let before = spec_cost_prices(&e);
+        super::spec_cost_registry()
+            .lock()
+            .unwrap()
+            .insert(model.into(), e);
+        let verdicts = |rung: usize| -> Vec<Option<usize>> {
+            (1..=8)
+                .map(|n| super::spec_cost_verdict(model, n, rung))
+                .collect()
+        };
+        let unmarked: Vec<_> = (1..=3).map(verdicts).collect();
+        assert!(
+            unmarked.iter().all(|v| v[2].is_some_and(|k| k > 0)),
+            "n=3 speculates before the mark: {unmarked:?}"
+        );
+        super::spec_cost_mark_stall(model, 3);
+        let after = {
+            let reg = super::spec_cost_registry().lock().unwrap();
+            spec_cost_prices(reg.get(model).unwrap())
+        };
+        assert_eq!(before, after, "a mark is not a price");
+        for rung in 1..=3 {
+            let v = verdicts(rung);
+            assert_eq!(v[2], Some(0), "n=3 rung={rung} serves plain while marked");
+            for n in (1..=8).filter(|&n| n != 3) {
+                assert_eq!(v[n - 1], unmarked[rung - 1][n - 1], "n={n} rung={rung}");
+            }
+        }
+        // A marked concurrency serves plain even with no acceptance history (no exploring).
+        let mut cold = gb10_entry([0.7, 0.5, 0.35]);
+        cold.accept = None;
+        super::spec_cost_registry()
+            .lock()
+            .unwrap()
+            .insert("stall-explore".into(), cold);
+        assert_eq!(super::spec_cost_verdict("stall-explore", 2, 3), Some(3));
+        super::spec_cost_mark_stall("stall-explore", 2);
+        assert_eq!(super::spec_cost_verdict("stall-explore", 2, 3), Some(0));
+        // Never n = 1.
+        super::spec_cost_mark_stall("stall-explore", 1);
+        assert!(
+            !super::spec_cost_registry()
+                .lock()
+                .unwrap()
+                .get("stall-explore")
+                .unwrap()
+                .stalled
+                .contains_key(&1)
+        );
+    }
+
+    /// memra#1211: a mark expires `SPEC_COST_REALIZED_TTL` after it was set, and the verdict
+    /// returns to the price it had, because the realized slots never changed. The slot probe's
+    /// storage fails this: its zero slot is still zero after the time-to-live.
+    #[test]
+    fn spec_cost_stall_mark_expires() {
+        let now = std::time::Instant::now();
+        let past = now
+            .checked_sub(super::SPEC_COST_REALIZED_TTL + std::time::Duration::from_secs(1))
+            .expect("the clock reaches back 65 s");
+        let mut e = stall_entry();
+        let slot_before = e.realized[&(3, 3)];
+        let verdict_before = super::spec_cost_best_k(&e, 3, 3).map(|v| v.0);
+        assert!(verdict_before.is_some_and(|k| k > 0));
+        assert!(e.mark_stall(3, now), "a new mark");
+        assert!(e.stalled_at(3, now));
+        assert!(!e.mark_stall(3, now), "a refresh is not a new mark");
+        assert!(!e.stalled_at(3, now + super::SPEC_COST_REALIZED_TTL));
+        let mut e = stall_entry();
+        e.mark_stall(3, past);
+        assert!(!e.stalled_at(3, now), "expired");
+        let r = e.realized[&(3, 3)];
+        assert_eq!(
+            (r.ema, r.samples),
+            (slot_before.ema, slot_before.samples),
+            "the slot is untouched"
+        );
+        super::spec_cost_registry()
+            .lock()
+            .unwrap()
+            .insert("stall-expire".into(), e);
+        assert_eq!(
+            super::spec_cost_verdict("stall-expire", 3, 3),
+            verdict_before,
+            "the verdict returns to its price"
+        );
+    }
+
+    /// memra#1211: a burst's entry call records whether a request waited, whatever the bound
+    /// does with the yield and whether the call carries a token; later calls change nothing.
+    /// Four pressed entries in a row complete a run, one unpressed entry resets it.
+    #[test]
+    fn spec_press_history_marks_at_four() {
+        let tok = chatml_fixture_tokenizer("spec-press");
+        let (tx, _rx) = event_channel();
+        let burst = |entry_yields: u32| SpecBurstEmit {
+            admit_yield: true,
+            entry: true,
+            entry_yields,
+            entry_pressed: None,
+            tok: &tok,
+            decoded_visible: Vec::new(),
+            cursor: 0,
+            emit_remaining: 64,
+            eos_seen: false,
+            send_ok: true,
+            token_events: 0,
+            flush_tx: tx.clone(),
+            eos_ids: Vec::new(),
+            stop_ids: Vec::new(),
+            stop_strings: Vec::new(),
+            stop_string_at: None,
+            generated_before: 0,
+            slices: 0,
+        };
+        // A silent yield, the bound's forced round, a boundary-token yield: all pressed.
+        for (yields, silent) in [(0, true), (SPEC_ENTRY_YIELD_MAX, true), (0, false)] {
+            let mut e = burst(yields);
+            e.bound_entry_yield(false, silent);
+            assert_eq!(e.entry_pressed, Some(true));
+            e.bound_entry_yield(true, false);
+            assert_eq!(e.entry_pressed, Some(true), "only the entry call records");
+        }
+        let mut e = burst(0);
+        assert_eq!(e.entry_pressed, None, "no entry call yet");
+        e.bound_entry_yield(true, true);
+        assert_eq!(e.entry_pressed, Some(false));
+        let mut hist = 0u8;
+        let mut due = Vec::new();
+        for pressed in [true, true, true, true, true, false, true, true, true, true] {
+            let (h, d) = super::spec_press_record(hist, pressed);
+            hist = h;
+            due.push(d);
+        }
+        assert_eq!(
+            due,
+            [
+                false, false, false, true, true, false, false, false, false, true
+            ]
+        );
+        assert_eq!(super::SPEC_STALL_ENTRIES, 4);
+    }
+
+    /// memra#1211's wiring: the post-burst settle records the entry into the session's history,
+    /// the tick marks the stall after phase (a) at the count its demotion check read, and the
+    /// verdict reads the mark before it prices. Without any one of them the mark does nothing
+    /// and the unit tests above still pass.
+    #[test]
+    fn spec_stall_mark_is_wired() {
+        let worker: String = include_str!("worker.rs")
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let live = worker[..worker.find("mod tests").expect("the test module exists")]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let between = |a: &str, b: &str| -> String {
+            let from = live.find(a).unwrap_or_else(|| panic!("{a} exists"));
+            let to = from
+                + live[from..]
+                    .find(b)
+                    .unwrap_or_else(|| panic!("{b} follows"));
+            live[from..to].to_string()
+        };
+        let post = between("fn spec_burst_post(", "let spec = s.spec.as_mut()");
+        assert!(post.contains(
+            "(s.spec_press_hist, s.spec_press_due) = spec_press_record(s.spec_press_hist, pressed);"
+        ));
+        assert!(
+            live.contains("let n_tick = active.len() - finished.len();")
+                && live.contains("let n_live = n_tick;")
+        );
+        assert!(
+            live.contains(
+                "let spec_ms = t_spec .map(|started| started.elapsed().as_secs_f32() * 1000.0) \
+                 .unwrap_or(0.0); for s in active.iter_mut() { if std::mem::take(&mut \
+                 s.spec_press_due) { spec_cost_mark_stall(&s.model, n_tick); } }"
+            ),
+            "the tick marks right after phase (a)"
+        );
+        let verdict = between(
+            "fn spec_cost_verdict(",
+            "let Some((k, spec_rate, plain_rate)) = spec_cost_best_k(entry, n, rung)",
+        );
+        assert!(verdict.contains("if entry.stalled_at(n, Instant::now()) {"));
+        let emit = between("fn bound_entry_yield(", "if !silent {");
+        assert!(emit.contains("if entry { self.entry_pressed = Some(!admit_keep); }"));
+    }
+
     /// A burst ends at the round its public stream ends, through the real round hook: the flush
     /// that commits EOS (or a stop id) answers false, and so does every later flush, so the
     /// engine runs no rounds after it. A gone client ends it too. Before this verdict the hook
@@ -39398,6 +39737,7 @@ mod tests {
             admit_yield: false,
             entry: true,
             entry_yields: 0,
+            entry_pressed: None,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
@@ -39479,6 +39819,7 @@ mod tests {
             admit_yield: false,
             entry: true,
             entry_yields: 0,
+            entry_pressed: None,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
@@ -39657,6 +39998,7 @@ mod tests {
             admit_yield: false,
             entry: true,
             entry_yields: 0,
+            entry_pressed: None,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
