@@ -54,3 +54,6 @@ research/spec-entry-yield-bound-20261110/tools/probe-arms.patch -text whitespace
 
 # memra#1212: the tie test's raw red and green cargo logs stay byte-exact.
 research/spec-cost-tie-break-20261110/raw/** -text whitespace=-blank-at-eol,-blank-at-eof
+
+# memra#1204: the served greedy pair's result lines quote server log lines that end in a space; stored byte for byte.
+research/argmax-stored-rows-20261110/expert-placement/served-pair/result.txt -text whitespace=-blank-at-eol,-blank-at-eof
