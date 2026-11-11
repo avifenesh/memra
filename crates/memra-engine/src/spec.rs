@@ -2810,6 +2810,34 @@ pub struct PooledBurstReq<'a> {
     pub k: usize,
     pub sampling: Option<SpecSampling>,
     pub on_commit: Option<PooledCommitHook<'a>>,
+    /// Called once, when this member's burst has its outcome, if that outcome is Ok
+    /// (memra#1209). A member that ends early in the lockstep gets it at that round's gate
+    /// pass, while the other members run on; the outcome is still returned as before.
+    pub on_end: Option<PooledEndHook<'a>>,
+}
+
+/// What a pooled member's end hook reads (memra#1209): the burst's outcome and the session
+/// counters its caller reads after a serial burst, final at that point (the driver runs no
+/// further round for the member).
+pub struct PooledMemberEnd<'x> {
+    /// The committed tokens of the burst, as returned in the outcome.
+    pub burst: &'x [u32],
+    pub drafted: usize,
+    pub accepted: usize,
+    /// MTP: the session's acceptance counters after the burst (`SpecSession::telemetry`).
+    pub telemetry: Option<SpecTelemetry>,
+    /// DSpark: the session's round count after the burst (`DsparkSpecSession::rounds`).
+    pub rounds: Option<usize>,
+    /// The other members still in the lockstep: a receipt of what the member did not wait for.
+    pub members_running: usize,
+}
+
+/// A pooled member's end hook (`PooledBurstReq::on_end`, `DsparkPooledReq::on_end`).
+pub type PooledEndHook<'a> = Box<dyn FnOnce(&PooledMemberEnd<'_>) + 'a>;
+
+/// `PooledMemberEnd::members_running`: the members other than `me` whose burst is still live.
+pub(crate) fn pooled_members_running(live: impl Iterator<Item = bool>, me: usize) -> usize {
+    live.enumerate().filter(|&(m, l)| m != me && l).count()
 }
 
 /// `unified_step_probe`'s follow-up step bits: (spec sessions, plain sessions).
@@ -8147,10 +8175,12 @@ impl HybridModel {
         // live in this frame for the whole lockstep.
         let mut stores: Vec<SpecBurstStore> = (0..n).map(|_| SpecBurstStore::default()).collect();
         let mut hooks: Vec<Option<PooledCommitHook<'a>>> = Vec::with_capacity(n);
+        let mut ends: Vec<Option<PooledEndHook<'a>>> = Vec::with_capacity(n);
         let mut args: Vec<(&'a mut SpecSession, usize, usize, Option<SpecSampling>)> =
             Vec::with_capacity(n);
         for r in reqs {
             hooks.push(r.on_commit);
+            ends.push(r.on_end);
             args.push((r.sess, r.max_new, r.k, r.sampling));
         }
         let mut bursts: Vec<Option<SpecBurst<'_, '_, '_>>> = Vec::with_capacity(n);
@@ -8208,7 +8238,23 @@ impl HybridModel {
                 };
                 let Some(gate) = gate else {
                     let b = bursts[j].take().unwrap();
-                    outcomes[j] = Some(self.spec_burst_end(e, b));
+                    let telem = b.rs.cfg.sess_telem;
+                    let r = self.spec_burst_end(e, b);
+                    // memra#1209: the member's caller settles it now, not when the cohort returns.
+                    if let (Ok((out, d, a)), Some(h)) = (&r, ends[j].take()) {
+                        h(&PooledMemberEnd {
+                            burst: out,
+                            drafted: *d,
+                            accepted: *a,
+                            telemetry: telem.map(SpecTelemetryCounters::snapshot),
+                            rounds: None,
+                            members_running: pooled_members_running(
+                                bursts.iter().map(|b| b.as_ref().is_some_and(|b| b.live())),
+                                j,
+                            ),
+                        });
+                    }
+                    outcomes[j] = Some(r);
                     continue;
                 };
                 match self.spec_round_draft_begin(e, &mut b.rs, gate) {

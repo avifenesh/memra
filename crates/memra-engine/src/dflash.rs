@@ -7247,15 +7247,17 @@ impl crate::hybrid::HybridModel {
                         Some(h) => Some(&mut **h),
                         None => None,
                     };
-                    self.dspark_spec_session_burst_inner(
+                    let out = self.dspark_spec_session_burst_inner(
                         e,
                         draft,
-                        r.sess,
+                        &mut *r.sess,
                         r.burst_target,
                         r.request_room,
                         r.eos,
                         on_commit,
-                    )
+                    );
+                    dspark_member_end(r.on_end, &out, r.sess, 0);
+                    out
                 })
                 .collect();
         }
@@ -7263,10 +7265,12 @@ impl crate::hybrid::HybridModel {
         let mut outcomes: Vec<Option<crate::spec::PooledBurstResult>> =
             (0..n).map(|_| None).collect();
         let mut hooks: Vec<Option<DsparkPooledHook<'a>>> = Vec::with_capacity(n);
+        let mut ends: Vec<Option<crate::spec::PooledEndHook<'a>>> = Vec::with_capacity(n);
         let mut sessions: Vec<&'a mut DsparkSpecSession> = Vec::with_capacity(n);
         let mut args: Vec<(usize, usize, &'a [u32])> = Vec::with_capacity(n);
         for r in reqs {
             hooks.push(r.on_commit);
+            ends.push(r.on_end);
             sessions.push(r.sess);
             args.push((r.burst_target, r.request_room, r.eos));
         }
@@ -7311,7 +7315,18 @@ impl crate::hybrid::HybridModel {
                     Ok(Some(p)) => preps[j] = Some(p),
                     Ok(None) => {
                         let b = bursts[j].take().unwrap();
-                        outcomes[j] = Some(self.dspark_burst_end(e, b));
+                        let r = self.dspark_burst_end(e, b);
+                        // memra#1209: the member's caller settles it now, not when the cohort
+                        // returns.
+                        let running = crate::spec::pooled_members_running(
+                            bursts
+                                .iter()
+                                .zip(sessions.iter())
+                                .map(|(b, s)| b.as_ref().is_some_and(|b| b.live(s))),
+                            j,
+                        );
+                        dspark_member_end(ends[j].take(), &r, &*sessions[j], running);
+                        outcomes[j] = Some(r);
                     }
                     Err(err) => {
                         sess.cache.dflash_taps = None;
@@ -7484,6 +7499,28 @@ pub struct DsparkPooledReq<'a> {
     pub request_room: usize,
     pub eos: &'a [u32],
     pub on_commit: Option<DsparkPooledHook<'a>>,
+    /// `PooledBurstReq::on_end` (memra#1209): called once with an Ok outcome, at the round
+    /// the member's burst ends.
+    pub on_end: Option<crate::spec::PooledEndHook<'a>>,
+}
+
+/// Call a dspark member's end hook with its Ok outcome and the session's round count.
+fn dspark_member_end(
+    hook: Option<crate::spec::PooledEndHook<'_>>,
+    r: &crate::spec::PooledBurstResult,
+    sess: &DsparkSpecSession,
+    members_running: usize,
+) {
+    if let (Ok((out, d, a)), Some(h)) = (r, hook) {
+        h(&crate::spec::PooledMemberEnd {
+            burst: out,
+            drafted: *d,
+            accepted: *a,
+            telemetry: None,
+            rounds: Some(sess.rounds),
+            members_running,
+        });
+    }
 }
 
 /// One dspark serving burst in flight (`dspark_burst_begin`): the prologue's fixed inputs,

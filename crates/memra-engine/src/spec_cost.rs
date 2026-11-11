@@ -453,6 +453,7 @@ impl HybridModel {
                     k,
                     sampling: None,
                     on_commit: None,
+                    on_end: None,
                 })
                 .collect();
             let t0 = Instant::now();
