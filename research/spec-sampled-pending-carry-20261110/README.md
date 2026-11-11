@@ -1,6 +1,11 @@
 # A sampled speculative burst carries its pending token (memra#1186, 2026-11-10)
 
-Verdict: exact on every gate run on the RTX 5090, and on GB10 so far; GB10 pending: the rows marked below and the timed cell.
+Verdict: adopted. On GB10 the sampled classes decode 8.4% faster (geometric mean over nine classes,
+1.069 to 1.096 each, 36 of 36 boot pairs in every class; greedy 1.000), a sampled round costs what a
+greedy one does to within 2.1 ms, and a sampled request's response closes 0.1 ms after its last
+chunk instead of 75 to 78 ms. Every seeded text is main's on GB10 and one RTX 5090 Laptop GPU, and
+under the entry-yield bound a sampled stream that holds a carried token advances as a greedy one
+does.
 
 Model: Qwen3.8-27B NVFP4 + Q5_K GGUF with its MTP head, context 8,192, thinking off, every
 switch at the device default unless a cell says otherwise. Devices: GB10, one DGX Spark
@@ -210,7 +215,43 @@ burst after burst, 77 with no-round bursts, first 74 equal true").
 
 ## The timed cell on GB10
 
-GB10 pending: 12 boots, main cand cand main three times, one boot per lease, after the pass/fail cells.
+`tools/ab_cell.py` (MODE=perf), `tools/carry_summary.py`: twelve cold prompts per boot, one
+request at a time, 400-token answers, three prompts (34, about 1.2k and 3.6k tokens) per class:
+temperature 1, temperature 0.7 with top_p 0.95, greedy (the control), and temperature 0.7 with
+top_p 0.8, top_k 20 and a presence penalty of 1.5 (the eager sampled draft). Twelve boots on
+one GB10, main cand cand main three times, one boot per device lease, cost-model K (K=3 on
+every request). Other lanes held the unit between boots; every boot logs its start
+temperature, load, build processes and GPU compute processes on the unit (`gb10/perf/guard.log`).
+
+Boot 6 (candidate) is void: the lease before it belonged to another lane, whose server
+outlived its lease by seconds, and the boot's first telemetry sample shows the SM clock at
+2,184 MHz (an idle unit reads 305 MHz at the start of boots 2 and 3). From boot 7 on a timed
+boot waits until no GPU compute process is left on the unit (none was, at any later start).
+Boot 13, a candidate boot, replaces it, so each arm has six boots. Boot-start GPU temperatures
+were 44 to 64 C. In the table `base` is main.
+
+| class | decode tok/s main | candidate | ratio | boot pairs the candidate wins | round ms main | candidate | close ms main | candidate |
+|---|---:|---:|---:|---|---:|---:|---:|---:|
+| t1, 34 | 20.34 | 21.74 | 1.069 | 36 of 36 | 106.86 | 99.97 | 76.1 | 0.1 |
+| t1, 1.2k | 22.11 | 24.09 | 1.090 | 36 of 36 | 107.41 | 100.05 | 77.8 | 0.2 |
+| t1, 3.6k | 21.24 | 22.88 | 1.077 | 36 of 36 | 109.36 | 101.62 | 75.9 | 0.2 |
+| top_p, 34 | 20.62 | 22.48 | 1.090 | 36 of 36 | 108.77 | 101.08 | 75.9 | 0.1 |
+| top_p, 1.2k | 22.13 | 23.98 | 1.084 | 36 of 36 | 109.86 | 101.35 | 75.1 | 0.2 |
+| top_p, 3.6k | 22.31 | 24.45 | 1.096 | 36 of 36 | 111.17 | 102.61 | 76.1 | 0.2 |
+| penalised, 34 | 19.95 | 21.62 | 1.084 | 36 of 36 | 108.37 | 101.40 | 75.5 | 0.1 |
+| penalised, 1.2k | 20.87 | 22.42 | 1.075 | 36 of 36 | 109.03 | 101.95 | 76.1 | 0.2 |
+| penalised, 3.6k | 21.27 | 23.18 | 1.090 | 36 of 36 | 111.65 | 103.72 | 77.0 | 0.2 |
+| greedy, 34 | 21.56 | 21.52 | 0.998 | 12 of 36 | 99.75 | 99.96 | 0.1 | 0.1 |
+| greedy, 1.2k | 23.55 | 23.57 | 1.001 | 22.5 of 36 | 99.91 | 99.83 | 0.1 | 0.1 |
+| greedy, 3.6k | 23.02 | 23.03 | 1.000 | 20 of 36 | 102.12 | 102.08 | 0.1 | 0.2 |
+
+Decode tok/s is completion tokens over the time after the first chunk, the median over six
+boots. Pooled (geometric mean of the class ratios): temperature 1 1.078, top_p 1.090, penalised
+1.083, all nine sampled classes 1.084; the greedy control 1.000. With the void boot included
+the nine sampled classes pool to 1.083. A sampled round now costs 99.97 to 103.72 ms against
+the greedy round's 99.75 to 102.12 ms: the 7 to 10 ms gap of memra#1186 is closed to within 2.1
+ms. Every request's text is the same in both arms (`one text`). `gb10/perf/summary.md` and
+`summary-with-boot6.md` hold the full tables.
 
 ## The final head
 
