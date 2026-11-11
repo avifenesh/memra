@@ -64,3 +64,9 @@ research/spec-cost-tie-break-20261110/raw/** -text whitespace=-blank-at-eol,-bla
 
 # memra#1204: the served greedy pair's result lines quote server log lines that end in a space; stored byte for byte.
 research/argmax-stored-rows-20261110/expert-placement/served-pair/result.txt -text whitespace=-blank-at-eol,-blank-at-eof
+
+# memra#1225: the served cells' driver lines end in a space after the result JSON; stored byte for byte.
+research/gemma-moe-placement-20261111/served/**/cells.txt -text whitespace=-blank-at-eol,-blank-at-eof
+
+# memra#1200: the run-gen consoles end in a blank line; stored byte for byte.
+research/grid-y-rows-20261111/rtx5090/rungen-*.log -text whitespace=-blank-at-eol,-blank-at-eof
