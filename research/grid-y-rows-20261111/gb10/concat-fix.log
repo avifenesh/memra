@@ -1,0 +1,18 @@
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers)
+repro: T_a=33119 b=2 slot=0 co_T=[32896] steps=16 chat=false
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+prefill: solo argmax=11 margin=0.023346  batch argmax=11 margin=0.023346  logit maxdiff=0.000000e0  MATCH
+  step 1: agree tok=791 solo-margin=0.952520 maxdiff=0.000000e0
+  step 2: agree tok=33686 solo-margin=1.399496 maxdiff=0.000000e0
+  step 3: agree tok=4581 solo-margin=0.174449 maxdiff=0.000000e0
+  step 4: agree tok=13094 solo-margin=1.379823 maxdiff=0.000000e0
+  step 5: agree tok=11 solo-margin=1.487572 maxdiff=0.000000e0
+  step 6: agree tok=791 solo-margin=0.805058 maxdiff=0.000000e0
+  step 7: agree tok=33686 solo-margin=0.820369 maxdiff=0.000000e0
+  step 8: agree tok=4581 solo-margin=1.197375 maxdiff=0.000000e0
+  step 16: agree tok=791 solo-margin=1.989962 maxdiff=0.000000e0
+verdict: streams MATCH for 16 steps
+solo : , per-token exact linear, per-token exact softmax, per-token exact gather, per
+batch: , per-token exact linear, per-token exact softmax, per-token exact gather, per

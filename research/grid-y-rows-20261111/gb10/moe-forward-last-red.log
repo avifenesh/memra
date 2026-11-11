@@ -1,0 +1,6 @@
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 123.27GB (expert budget 118.67GB) -> RESIDENT
+loaded qwen35moe (40 trunk layers; optional MTP skipped)
+prompt text: <220082 chars elided>
+prompt tokens: <66015 ids, sha256/16 of the printed list b801a174d2bde569>
+Error: DriverError(CUDA_ERROR_INVALID_VALUE, "invalid argument")

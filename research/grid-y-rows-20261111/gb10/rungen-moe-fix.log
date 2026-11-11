@@ -1,0 +1,23 @@
+15:42:39 [tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+15:42:42 [moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 122.60GB (expert budget 118.00GB) -> RESIDENT
+15:43:01 loaded qwen35moe (40 trunk layers; optional MTP skipped)
+15:43:02 prompt text: <220082 chars elided>
+15:43:02 prompt tokens: <66015 ids, sha256/16 of the printed list b801a174d2bde569>
+15:43:04 [moe-sk-form] dev=0 qt=6 sms=48 occ128=1 occ32=6 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=256 max_m=9907
+15:43:04 [moe-sk-form] dev=0 qt=5 sms=48 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=256 max_m=9907
+15:43:37 [moe-sk-form] dev=0 qt=2 sms=48 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=252 max_m=17403
+15:43:43 [fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+15:43:45 [fa-pool] grow #1 dev=0 o_len 4096 -> 49152 ml_len 16 -> 192 (retired kept, zero=false)
+15:43:45 [fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+15:43:46 [fa-pool] grow #3 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+15:43:49 [fa-pool] grow #4 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+15:45:21 [fa-pool] grow #5 dev=0 o_len 393216 -> 786432 ml_len 1536 -> 3072 (retired kept, zero=false)
+15:47:02 [fa-pool] grow #6 dev=0 o_len 786432 -> 1572864 ml_len 3072 -> 6144 (retired kept, zero=false)
+16:03:16 prefill argmax=16  decode argmax=16  logit maxdiff=1.248e0  MATCH
+16:03:42 batched-prime argmax=16  tokenwise argmax=16  logit maxdiff=9.580e-1  MATCH
+16:04:59 prefill 66015 tok in 38.3159s = 1722.9 tok/s (pp66015)
+16:05:26 generated 32 tokens in 0.644s = 49.65 tok/s (Stage-B int8 dp4a decode, gen-only; prime 25.993s) [stop: MaxNew]
+16:05:26 tokens: [16, 17, 23, 52141, 1510, 86, 80, 853, 63, 14, 63, 86, 85, 853, 63, 15339, 310, 279, 2424, 579, 1765, 2468, 2020, 8, 321, 279, 5646, 8772, 1510, 83, 8705, 348]
+16:05:26 OUTPUT TEXT: "128-byte `wq_b`/`wv_b` reads to the block's own output range) and the grid becomes `t_q *"
+16:05:26 --- generated text ---
+16:05:26 128-byte `wq_b`/`wv_b` reads to the block's own output range) and the grid becomes `t_q *

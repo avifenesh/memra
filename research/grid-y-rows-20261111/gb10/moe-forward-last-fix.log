@@ -1,0 +1,10 @@
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 122.43GB (expert budget 117.83GB) -> RESIDENT
+loaded qwen35moe (40 trunk layers; optional MTP skipped)
+prompt text: <220082 chars elided>
+prompt tokens: <66015 ids, sha256/16 of the printed list b801a174d2bde569>
+[moe-sk-form] dev=0 qt=6 sms=48 occ128=1 occ32=6 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=256 max_m=9907
+[moe-sk-form] dev=0 qt=5 sms=48 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=256 max_m=9907
+[moe-sk-form] dev=0 qt=2 sms=48 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=252 max_m=17403
+pp-only rep 0: 41.0142s = 1609.6 tok/s
+pp-only MEDIAN: 66015 tok in 41.0142s = 1609.6 tok/s (pp66015, 1 reps)

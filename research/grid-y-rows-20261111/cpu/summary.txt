@@ -1,0 +1,22 @@
+# dev-desk CPU checks at the fix commit (MEMRA_CUDA_ARCH=120a, nvcc 13.1)
+# cargo fmt --all -- --check; cargo clippy --release --locked --all-targets --workspace -- -D warnings;
+# cargo test --release --locked -p memra-engine --lib; cargo test --release --locked -p memra-server
+start
+fmt rc=0
+clippy rc=0
+engine rc=0
+server rc=0
+done
+## engine
+test hybrid_forward::prime_chunk_schedule_tests::grid_yz_row_blocks_tile_rows_under_the_cap ... ok
+test hybrid_forward::prime_chunk_schedule_tests::kda_rows_refusal_names_the_kernels_only_past_the_cap ... ok
+test result: ok. 741 passed; 0 failed; 65 ignored; 0 measured; 0 filtered out; finished in 4.68s
+## server
+test result: ok. 1191 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out; finished in 13.86s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+## clippy tail
+    Finished `release` profile [optimized] target(s) in 4m 13s

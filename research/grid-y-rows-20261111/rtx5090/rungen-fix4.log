@@ -1,0 +1,22 @@
+[tensor-contract] bound 427 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (32 trunk layers; optional MTP skipped)
+prompt text: <14221 chars elided>
+prompt tokens: <3540 ids, sha256/16 of the printed list dbeef21207f74eb4>
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 49152 ml_len 16 -> 192 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+prefill argmax=72  decode argmax=72  logit maxdiff=3.046e-1  MATCH
+batched-prime argmax=72  tokenwise argmax=72  logit maxdiff=2.646e-1  MATCH
+prefill 3540 tok in 0.9472s = 3737.2 tok/s (pp3540)
+generated 64 tokens in 1.221s = 52.41 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.903s) [stop: MaxNew]
+tokens: [72, 25, 874, 1510, 4380, 63, 466, 1510, 5917, 63, 1528, 11, 874, 1510, 2246, 816, 63, 198, 18274, 11, 874, 1510, 19100, 9367, 816, 63, 71159, 13, 561, 1622, 369, 264, 3074, 61384, 198, 63, 1307, 63, 11069, 1510, 2911, 63, 11069, 1510, 17172, 63, 7499, 13, 561, 1510, 1307, 63, 2002, 369, 279, 1132, 1925, 1332, 198, 2877, 3712, 6107, 13, 271]
+OUTPUT TEXT: "i: no `thread` or `run` state, no `response_id`\nhistory, no `previous_response_id` chaining. The request is a single-shot\n`input` → `output` → `usage` transaction. The `input` field is the only place where\nclient history lives.\n\n"
+--- generated text ---
+i: no `thread` or `run` state, no `response_id`
+history, no `previous_response_id` chaining. The request is a single-shot
+`input` → `output` → `usage` transaction. The `input` field is the only place where
+client history lives.
+
+
