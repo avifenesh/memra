@@ -1,0 +1,80 @@
+# CPU checks at d117bf8607 (sm_120a build, cargo --release --locked)
+# cargo fmt --all -- --check
+fmt d117bf8607 rc=0
+# workspace clippy --all-targets -D warnings
+clippy d117bf8607 rc=0
+      1 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 4m 49s
+# the memra-server suite
+test job_store::tests::failed_or_panicked_settlement_does_not_expose_output ... ok
+test result: ok. 1190 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out; finished in 13.73s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+server d117bf8607 rc=0
+# the memra-engine suite
+test result: ok. 714 passed; 0 failed; 65 ignored; 0 measured; 0 filtered out; finished in 4.76s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+engine d117bf8607 rc=101
+# the census at the head
+test worker::tests::spec_boundary_publish_allocates_no_zeroed_plane ... ok
+# the census on the fail-before tree (the base's production code, the head's tests)
+test worker::tests::spec_boundary_publish_allocates_no_zeroed_plane ... FAILED
+the spec publisher calls engine.alloc_u8(
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1202 filtered out; finished in 0.00s
+red rc=101
+# the memra-engine suite again with --no-fail-fast (every target; the CPU host has no GPU driver)
+engine all targets: passed 914 failed 17 ignored 284
+error: 9 targets failed:
+    `-p memra-engine --test f32_gemv_rows_gpu`
+    `-p memra-engine --test hc_mixes_gemv_gpu`
+    `-p memra-engine --test hc_pre_v4_gpu`
+    `-p memra-engine --test kda_fixture_gpu`
+    `-p memra-engine --test kda_fused6_e4m3_gpu`
+    `-p memra-engine --test kda_onorm_zq8_gpu`
+    `-p memra-engine --test mla_absorb_bf16_gpu`
+    `-p memra-engine --test moe_rows_lanemajor_gpu`
+    `-p memra-engine --test tp_ar_gpu`
+failed tests whose panic is the GPU driver library missing: 17 of 17
+the memra-engine lib suite (the CI unit suite, cargo test -p memra-engine --lib): test result: ok. 714 passed; 0 failed; 65 ignored; 0 measured; 0 filtered out; finished in 4.76s
+CPU-CHECKS-DONE

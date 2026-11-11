@@ -41,7 +41,7 @@ The guarantee is in two places. `spec_plane_copy` returns true only when the cop
 
 The claim has two halves: a published entry holds the bytes it held on main, and a plane that was not written is never published.
 
-**CPU census, fail before and pass after** (`cpu-checks.txt` at d117bf8607 on main 11f3c0920b, `cpu-checks-3afa740d13.txt` at 3afa740d13 on main 2628ece940; a CPU build host, sm_120a build). `worker::tests::spec_boundary_publish_allocates_no_zeroed_plane` reads the publisher's source: no `alloc_u8` and no `alloc_zeros` in it, four `prefix_plane_alloc` calls and four `spec_plane_copy` calls (trunk K and V, draft K and V), the trunk arm's `return` and the draft arm's `return None` on a failed copy, the helper's body, and the allocator's two arms. On main's production code with the head's tests (`tools/red_worker.py`) it fails with `the spec publisher calls engine.alloc_u8(`; at the head it passes.
+**CPU census, fail before and pass after** (`cpu-checks.txt` at c232c9132a on main 66ee31fcb6, `cpu-checks-d117bf8607.txt` and `cpu-checks-3afa740d13.txt` on the earlier mains; a CPU build host, sm_120a build). `worker::tests::spec_boundary_publish_allocates_no_zeroed_plane` reads the publisher's source: no `alloc_u8` and no `alloc_zeros` in it, four `prefix_plane_alloc` calls and four `spec_plane_copy` calls (trunk K and V, draft K and V), the trunk arm's `return` and the draft arm's `return None` on a failed copy, the helper's body, and the allocator's two arms. On main's production code with the head's tests (`tools/red_worker.py`) it fails with `the spec publisher calls engine.alloc_u8(`; at the head it passes.
 
 **GPU unit cells** (`unit-cells/3afa740d13/verdicts.txt`, GB10 unit 1; test binaries of main's production code with the head's tests, of the head, and of the red arm):
 
@@ -153,16 +153,25 @@ At 131k on the head's profile, 58.6 ms:
 
 At 260k there is no profile. The publisher's time at the head is 112.3 ms and the boundary 118.8 ms; the copies of 8.36 GB alone would take about 80 ms at the 131k rate (an estimate from the 131k profile, not a reading).
 
-Both are beyond this change. The follow-up item sizes them from the profile above.
+Both are beyond this change. memra#1221 sizes them from the profile above.
 
 ## After the rebase
 
-The branch was rebased from main 2628ece940 onto main 11f3c0920b (v0.141.1). Main moved `worker.rs` in between: the speculative stop strings, the burst-entry yield bound, the DSpark park shape. The rebase applied without a conflict, and none of those changes reaches the publisher (`prefix_insert_from_spec_boundary`), the boundary captures' drain helpers or the allocator. Every cell above ran on binaries from 2628ece940 (B) and from 3afa740d13 (W, the same code on that main).
+The branch was rebased twice: from main 2628ece940 onto 11f3c0920b (v0.141.1), then onto 66ee31fcb6. Main moved `worker.rs` in between: the speculative stop strings, the burst-entry yield bound and the DSpark park shape (by 11f3c0920b), then the speculative cost model's tie-break (`SpecCostEntry`, `spec_cost_verdict`, by 66ee31fcb6). The code commit applied without a conflict both times and is the same patch (d117bf8607 on 11f3c0920b, c232c9132a on 66ee31fcb6), and none of those changes reaches the publisher (`prefix_insert_from_spec_boundary`), the boundary captures' drain helpers or the allocator. Which main each cell used: every cell above ran on binaries from 2628ece940 (B) and from 3afa740d13 (W, the same code on that main); the cells below ran on 11f3c0920b (B') and d117bf8607 (W'). No cell ran on 66ee31fcb6; the CPU checks did (`cpu-checks.txt`, at c232c9132a).
 
 Main's short sampled pair case, parked for the new main, ran on it next to the head's, plus one 131k cell per arm, on unit 1 (B' = main 11f3c0920b, W' = d117bf8607, this PR's code on that main; `tools/spark_build_11f3.sh`, `tools/l5_11f3.sh`, `build/build-*-11f3c0920b.log`, `build/build-head-d117bf8607.log`):
 
-- **Main's short sampled pair case on main 11f3c0920b** (B', unit 1; `pairs/unit1-11f3/`): warm == cold on both later turns, each restored from a spec-published entry with its draft plane (960 of 1,082 and 1,056 of 1,169 tokens), answers cde53ba3 / fcbcfe74 / 5b17104a. Against the head's short sampled case on main 2628ece940 (W, unit 2): the same answers, the same bursts and the same published-entry digests (`pairs/short-sampled-main11f3-vs-head.txt`), across both mains and both units.
-- **The head's short sampled case on W' and one 131k cell per arm (B', W')**: queued on unit 1 behind a landing record at this push.
+- **The short sampled pair case on main 11f3c0920b, both arms** (unit 1, `pairs/unit1-11f3/`; the files name the arms B and W, here B' and W'). Main's case, parked for the new main, and the head's: warm == cold on both later turns on both arms, each restored from a spec-published entry with its draft plane (960 of 1,082 and 1,056 of 1,169 tokens), answers cde53ba3 / fcbcfe74 / 5b17104a on both. B', W' and the head's case on main 2628ece940 (W, unit 2) served the same answers with the same bursts and published the same entry digests (`pairs/short-sampled-main11f3-vs-head.txt`), across both mains and both units.
+- **One 131k cell per arm on main 11f3c0920b** (unit 1, `served/bt131k-11f3/`, the same cell as the campaign above: B' then W', one cell per lease). Single cells, so read them against the campaign's spreads:
+
+| | B' (1 cell) | W' (1 cell) | W' - B' | the 2628ece940 campaign, B and W medians |
+|---|---:|---:|---:|---:|
+| first burst boundary over its rounds, ms | 78.5 | 60.9 | -17.6 | 77.4 / 64.4 |
+| publisher on the scheduler thread, ms | 64.9 | 52.1 | -12.8 | 65.3 / 51.3 |
+| burst 2, ms per round | 139.40 | 138.09 | -1.31 | 138.62 / 138.63 |
+| TTFT, s | 117.894 | 117.822 | -0.072 | 117.862 / 117.888 |
+
+  On both pause readings and on TTFT each cell sits inside its arm's range on the earlier main (B 74.9 to 87.5 and 64.1 to 67.7 ms, W 54.2 to 65.7 and 50.1 to 53.7 ms); burst 2 is 0.10 ms per round above B's range on B' and 0.41 below W's on W'. Both served the same text (e3b0c1e81f9a) with the same burst structure, and published at the first burst boundary after the first token (1,579 and 1,561 ms after it). The change measures the same on the new main.
 
 ## Not covered
 
@@ -182,16 +191,16 @@ Main's short sampled pair case, parked for the new main, ran on it next to the h
 - **U = a25c08f05e** is main with two lines changed (the planes from `prefix_plane_alloc`). W is the same program behind `spec_plane_copy`, plus tests. U's three cells at 131k are in the table as their own arm.
 - **T = ee37f8d3b4** is the design as approved: `prefix_snapshot_batch` extended with the draft plane and called once by the publisher. Its five cells at 131k, its unit cells and one pair case are kept as the record of the arm that lost.
 - **Test binaries.** `basetests-3afa740d13` is main's production code with the head's tests (`tools/red_worker.py`); `unwritten-3afa740d13` is the head with the publisher ignoring a failed copy (`tools/red_unwritten.py`).
-- **CPU checks** ran on a CPU build host with the CUDA 13.1 compiler and an sm_120a build, at 3afa740d13 and again at d117bf8607 after the rebase (`cpu-checks.txt` is the later; `cpu-checks-3afa740d13.txt` the earlier).
+- **CPU checks** ran on a CPU build host with the CUDA 13.1 compiler and an sm_120a build, at 3afa740d13, at d117bf8607 on 11f3c0920b and at c232c9132a on 66ee31fcb6 (`cpu-checks.txt` is the last; `cpu-checks-d117bf8607.txt` and `cpu-checks-3afa740d13.txt` the earlier).
 
 ## Receipts
 
-- `cpu-checks.txt` (d117bf8607), `cpu-checks-3afa740d13.txt`: fmt, workspace clippy, the memra-server suite (and at d117bf8607 the memra-engine suite), the census at the head and on the fail-before tree.
+- `cpu-checks.txt` (c232c9132a), `cpu-checks-d117bf8607.txt`, `cpu-checks-3afa740d13.txt`: fmt, workspace clippy, the memra-server suite (and from d117bf8607 on the memra-engine suite), the census at the head and on the fail-before tree.
 - `build/`: the build logs of every arm and `bins-sha256.txt`.
 - `unit-cells/3afa740d13/`, `unit-cells/ee37f8d3b4/`: `verdicts.txt`, the digest lines of both sides and each cell's log.
 - `served/bt131k/`, `served/bt260k/`: per cell `ab.jsonl`, `guard.log` (the binary's sha256 and the server env) and `trace.txt` (the server log's `[tick-spec]` and `[prefix-cache]` lines with their timestamps); `campaign.log`; `table.txt` (`tools/specpub_tab.py`).
 - `pairs/unit2/`: one file per case (`tools/export_cells.py`: the command, the exit code, the verdict line, each turn's token counts and spec counters, every boot's prefix-cache lines) and `table.txt` (`tools/pairs_tab.py`).
 - `nsys/nsys131k-B/`, `nsys/nsys131k-W/`: `gap.txt` (`tools/specpub_gap.py`), `split.txt` (`tools/specpub_split.py`), `big.txt` (every copy and memset of 64 MB or more), `pf.jsonl`, `guard.log`, `trace.txt`. The profiles themselves stay on the machine.
 - `served/bt131k-11f3/`, `pairs/unit1-11f3/`: the cells after the rebase.
-- `tools/`: the cells (`specpub_cell.sh`, `specpub_ab.py`, `specpub_pairs.py`, `unit_gpu_cells.sh`, `specpub_nsys.sh`), their readers (`specpub_tab.py`, `pairs_tab.py`, `specpub_gap.py`, `specpub_split.py`, `specpub_ttft_order.py`), the builds (`spark_build.sh`, `spark_build_arm.sh`, `spark_build_11f3.sh`, `red_worker.py`, `red_unwritten.py`, `cpu_checks.sh`), and the drivers that take one unit lease per cell and yield to landing and release tickets (`specpub_driver.sh`, `l5_11f3.sh`, `unit_cell.sh`, `landing_quiet.sh`, `fetch_cells.sh`, `fetch_small.sh`, `export_cells.py`).
+- `tools/`: the cells (`specpub_cell.sh`, `specpub_ab.py`, `specpub_pairs.py`, `unit_gpu_cells.sh`, `specpub_nsys.sh`), their readers (`specpub_tab.py`, `pairs_tab.py`, `specpub_gap.py`, `specpub_split.py`, `specpub_ttft_order.py`), the builds (`spark_build.sh`, `spark_build_arm.sh`, `spark_build_11f3.sh`, `red_worker.py`, `red_unwritten.py`, `cpu_checks.sh`, `engine_lib_rerun.sh`), and the drivers that take one unit lease per cell and yield to landing and release tickets (`specpub_driver.sh`, `l5_11f3.sh`, `unit_cell.sh`, `landing_quiet.sh`, `fetch_cells.sh`, `fetch_small.sh`, `export_cells.py`).
 - Full server logs, GPU telemetry and memory samples stay on the machines.
