@@ -1,0 +1,14 @@
+--- a/crates/memra-server/src/worker.rs	2026-11-11 10:31:49.798393076 +0200
++++ b/crates/memra-server/src/worker.rs	2026-11-11 10:40:14.310032188 +0200
+@@ -32634,6 +32634,11 @@
+     budget: usize,
+     spec_counts: (u64, usize, usize),
+ ) -> Option<DoneReceipt> {
++    // RED ARM (memra#1209): main has no early close; every member waits for the cohort.
++    if true {
++        let _ = (burst, request_room, eos_ids, stop_ids, stop_string_at, generated, budget, spec_counts);
++        return None;
++    }
+     if !send_ok {
+         return None;
+     }

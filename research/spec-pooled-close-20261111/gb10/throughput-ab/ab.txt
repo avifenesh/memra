@@ -1,0 +1,16 @@
+tput-1-main    t1     cohorts 3 tok/s [41.5, 42.4, 42.2] median 42.21
+tput-1-main    greedy cohorts 3 tok/s [49.4, 50.6, 50.7] median 50.57
+tput-2-fix     t1     cohorts 3 tok/s [41.3, 42.3, 42.4] median 42.26
+tput-2-fix     greedy cohorts 3 tok/s [50.6, 50.7, 50.7] median 50.70
+tput-3-fix     t1     cohorts 3 tok/s [42.3, 42.3, 42.2] median 42.26
+tput-3-fix     greedy cohorts 3 tok/s [50.7, 50.7, 52.9] median 50.67
+tput-4-main    t1     cohorts 3 tok/s [41.1, 42.3, 41.3] median 41.32
+tput-4-main    greedy cohorts 3 tok/s [50.7, 50.8, 50.7] median 50.70
+tput-5-main    t1     cohorts 3 tok/s [41.7, 42.1, 42.1] median 42.11
+tput-5-main    greedy cohorts 3 tok/s [50.4, 50.3, 50.5] median 50.43
+tput-6-fix     t1     cohorts 3 tok/s [42.1, 42.3, 42.3] median 42.26
+tput-6-fix     greedy cohorts 3 tok/s [50.6, 50.7, 50.7] median 50.67
+t1: main median 42.11 (n=3), fix median 42.26 (n=3), fix/main 1.0037
+  fix/main per pair (both orders): [1.0011, 1.0229, 1.0037]
+greedy: main median 50.57 (n=3), fix median 50.67 (n=3), fix/main 1.0021
+  fix/main per pair (both orders): [1.0027, 0.9993, 1.0049]

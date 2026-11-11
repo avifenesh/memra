@@ -1,0 +1,47 @@
+c72d0117874e9cae397b374cc390a6d4e51b53ff93be2a7d3d726bcc9c0ad471  crates/memra-server/src/worker.rs
+467e320208d2f1b79c54065d1a496f1c15c154d2d0a2c1c03b657c1afe03633d  crates/memra-engine/src/dflash.rs
+0fa00b54267bfa24ce4e04fb0d01748e319e717172dbb53719a113c341e5ec9d  crates/memra-engine/src/spec.rs
+== fmt ==
+FMT_EXIT=0
+== targeted tests ==
+test prompt_ids_tests::stop_token_ids_cap_oov_and_unsigned_shape ... ok
+test prompt_ids_tests::stop_token_ids_parse_validate_and_reach_both_request_builders ... ok
+test tests::stop_token_ids_handlers_return_named_400s ... ok
+test worker::stop_string_tests::empty_stop_string_element_never_matches ... ok
+test worker::stop_string_tests::step_vision_spans_layout ... ok
+test worker::tests::a_step_error_after_an_early_done_is_not_sent ... ok
+test dsv4_serve::stream_text_tests::an_empty_stop_string_never_ends_the_stream ... ok
+test dsv4_serve::stream_text_tests::a_stop_string_inside_one_token_reads_the_same_answer ... ok
+test dsv4_serve::stream_text_tests::a_stop_string_that_completes_across_two_tokens_leaves_no_part_of_itself ... ok
+test worker::tests::dspark_burst_hook_ends_at_the_round_that_completes_a_stop_string ... ok
+test worker::tests::spec_burst_verdict_is_the_post_steps_verdict ... ok
+test worker::tests::spec_burst_ends_at_the_round_that_commits_eos ... ok
+test worker::tests::spec_emission_clamps_engine_overshoot_to_the_request_budget ... ok
+test worker::tests::spec_emission_keeps_intermediate_scheduler_surplus_public ... ok
+test worker::tests::spec_emission_publishes_one_event_per_visible_token_id ... ok
+test worker::tests::stop_string_clamp_ends_the_public_burst_on_the_completing_token ... ok
+test worker::tests::stop_strings_yield_to_an_earlier_eos_or_stop_id_in_the_slice ... ok
+test dsv4_serve::stream_text_tests::a_stop_string_longer_than_the_old_scan_window_ends_the_stream ... ok
+test worker::tests::pooled_member_closes_at_its_round_with_the_post_steps_receipt ... ok
+test worker::tests::stop_token_ids_select_the_visible_prefix_and_stop_reason ... ok
+test worker::tests::stop_token_ids_fence_all_spec_round_partitions_before_decode_or_counting ... ok
+test worker::tests::spec_burst_ends_at_the_round_that_completes_a_stop_string ... ok
+test worker::tests::stop_strings_end_every_spec_round_partition_on_the_completing_token ... ok
+test dsv4_serve::stop_reason_tests::eos_stop_ids_and_stop_strings_read_stop ... ok
+test dsv4_serve::stream_text_tests::a_stop_string_that_straddles_the_next_token_leaves_no_part_of_itself ... ok
+test dsv4_serve::stream_text_tests::a_stop_string_right_after_a_split_character_keeps_the_character ... ok
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 1183 filtered out; finished in 0.01s
+TARGETED_EXIT=0
+== memra-server suite ==
+SUITE_EXIT=0
+test job_store::tests::failed_or_panicked_settlement_does_not_expose_output ... ok
+test result: ok. 1195 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out; finished in 14.16s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+== clippy ==
+CLIPPY_EXIT=0
+      1 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+JOB_DONE

@@ -1,0 +1,18 @@
+companion mtp greedy comp0: 92 runs, 1 distinct text(s), equal to plain decode
+companion mtp greedy comp1: 52 runs, 1 distinct text(s), equal to plain decode
+companion mtp greedy comp2: 52 runs, 1 distinct text(s), equal to plain decode
+companion mtp greedy comp3: 12 runs, 1 distinct text(s), equal to plain decode
+companion mtp t1 comp0: 92 runs, 1 distinct text(s), equal to plain decode
+companion mtp t1 comp1: 52 runs, 1 distinct text(s), equal to plain decode
+companion mtp t1 comp2: 52 runs, 1 distinct text(s), equal to plain decode
+companion mtp t1 comp3: 12 runs, 1 distinct text(s), equal to plain decode
+== fix (mtp, cohorts [2, 4], settle) ==
+  t1: throughput cohorts of 4: aggregate tok/s [57.9, 58.0, 58.0] (median 58.0)
+  t1: solo non-stop close median 35 ms (n=2), limit 135; member 0 close ms by cohort size: 2: median 38 max 176 (n=10); 4: median 40 max 269 (n=10)
+  t1: member 0 finished inside its cohort while another member ran: 18; outside a cohort (its serial burst): 2
+  greedy: throughput cohorts of 4: aggregate tok/s [64.7, 64.1, 64.5] (median 64.5)
+  greedy: solo non-stop close median 27 ms (n=2), limit 127; member 0 close ms by cohort size: 2: median 1 max 170 (n=10); 4: median 2 max 141 (n=10)
+  greedy: member 0 finished inside its cohort while another member ran: 15; outside a cohort (its serial burst): 2
+FAIL fix c4-stop-1-t1: closed 269.2 ms after its last visible chunk, limit 202 ms (solo non-stop median 35 ms, hold-back or EOS allowance 68 ms)
+FAIL fix c4-eos-greedy: closed 139.3 ms after its last visible chunk, limit 127 ms (solo non-stop median 27 ms, hold-back or EOS allowance 0 ms)
+STOP-STRING COHORT GATE: FAIL (2)

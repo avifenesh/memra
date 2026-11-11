@@ -1,0 +1,8 @@
+d07c0b7aaa4aeddfe091396da734798e49bcfcb9f6f4991142014a45073755a1  crates/memra-server/src/worker.rs
+test worker::tests::a_step_error_after_an_early_done_is_not_sent ... ok
+test worker::tests::spec_burst_verdict_is_the_post_steps_verdict ... ok
+test worker::tests::pooled_member_closes_at_its_round_with_the_post_steps_receipt ... FAILED
+thread 'worker::tests::pooled_member_closes_at_its_round_with_the_post_steps_receipt' (1642442) panicked at crates/memra-server/src/worker.rs:39553:43:
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 1205 filtered out; finished in 0.00s
+RED_EXIT=101
+JOB_DONE

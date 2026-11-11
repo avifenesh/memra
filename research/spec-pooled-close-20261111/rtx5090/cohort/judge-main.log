@@ -1,0 +1,45 @@
+companion mtp greedy comp0: 92 runs, 1 distinct text(s), equal to plain decode
+companion mtp greedy comp1: 52 runs, 1 distinct text(s), equal to plain decode
+companion mtp greedy comp2: 52 runs, 1 distinct text(s), equal to plain decode
+companion mtp greedy comp3: 12 runs, 1 distinct text(s), equal to plain decode
+companion mtp t1 comp0: 92 runs, 1 distinct text(s), equal to plain decode
+companion mtp t1 comp1: 52 runs, 1 distinct text(s), equal to plain decode
+companion mtp t1 comp2: 52 runs, 1 distinct text(s), equal to plain decode
+companion mtp t1 comp3: 12 runs, 1 distinct text(s), equal to plain decode
+== main (mtp, cohorts [2, 4]) ==
+  t1: throughput cohorts of 4: aggregate tok/s [58.2, 58.1, 58.1] (median 58.1)
+  t1: solo non-stop close median 35 ms (n=2), limit 135; member 0 close ms by cohort size: 2: median 456 max 899 (n=10); 4: median 1039 max 2011 (n=10)
+  greedy: throughput cohorts of 4: aggregate tok/s [64.0, 64.1, 63.6] (median 64.0)
+  greedy: solo non-stop close median 27 ms (n=2), limit 127; member 0 close ms by cohort size: 2: median 114 max 430 (n=10); 4: median 637 max 1531 (n=10)
+FAIL main c2-free-t1: closed 227.2 ms after its last visible chunk, limit 135 ms (solo non-stop median 35 ms, hold-back or EOS allowance 0 ms)
+FAIL main c2-eos-t1: closed 340.0 ms after its last visible chunk, limit 135 ms (solo non-stop median 35 ms, hold-back or EOS allowance 0 ms)
+FAIL main c2-stop-0-t1: closed 289.4 ms after its last visible chunk, limit 135 ms (solo non-stop median 35 ms, hold-back or EOS allowance 0 ms)
+FAIL main c2-stop-1-t1: closed 739.3 ms after its last visible chunk, limit 203 ms (solo non-stop median 35 ms, hold-back or EOS allowance 68 ms)
+FAIL main c2-stop-2-t1: closed 572.6 ms after its last visible chunk, limit 135 ms (solo non-stop median 35 ms, hold-back or EOS allowance 0 ms)
+FAIL main c2-stop-3-t1: closed 898.7 ms after its last visible chunk, limit 135 ms (solo non-stop median 35 ms, hold-back or EOS allowance 0 ms)
+FAIL main c2-stop-4-t1: closed 788.5 ms after its last visible chunk, limit 135 ms (solo non-stop median 35 ms, hold-back or EOS allowance 0 ms)
+FAIL main c2-span-1-t1: closed 324.6 ms after its last visible chunk, limit 272 ms (solo non-stop median 35 ms, hold-back or EOS allowance 137 ms)
+FAIL main c2-span-2-t1: closed 649.3 ms after its last visible chunk, limit 262 ms (solo non-stop median 35 ms, hold-back or EOS allowance 127 ms)
+FAIL main c4-free-t1: closed 332.8 ms after its last visible chunk, limit 135 ms (solo non-stop median 35 ms, hold-back or EOS allowance 0 ms)
+FAIL main c4-eos-t1: closed 1015.8 ms after its last visible chunk, limit 135 ms (solo non-stop median 35 ms, hold-back or EOS allowance 0 ms)
+FAIL main c4-stop-0-t1: closed 750.9 ms after its last visible chunk, limit 135 ms (solo non-stop median 35 ms, hold-back or EOS allowance 0 ms)
+FAIL main c4-stop-1-t1: closed 2010.6 ms after its last visible chunk, limit 203 ms (solo non-stop median 35 ms, hold-back or EOS allowance 68 ms)
+FAIL main c4-stop-2-t1: closed 1061.3 ms after its last visible chunk, limit 135 ms (solo non-stop median 35 ms, hold-back or EOS allowance 0 ms)
+FAIL main c4-stop-3-t1: closed 1575.0 ms after its last visible chunk, limit 135 ms (solo non-stop median 35 ms, hold-back or EOS allowance 0 ms)
+FAIL main c4-stop-4-t1: closed 1354.2 ms after its last visible chunk, limit 135 ms (solo non-stop median 35 ms, hold-back or EOS allowance 0 ms)
+FAIL main c4-span-0-t1: closed 419.1 ms after its last visible chunk, limit 335 ms (solo non-stop median 35 ms, hold-back or EOS allowance 200 ms)
+FAIL main c4-span-1-t1: closed 778.5 ms after its last visible chunk, limit 272 ms (solo non-stop median 35 ms, hold-back or EOS allowance 137 ms)
+FAIL main c4-span-2-t1: closed 1198.4 ms after its last visible chunk, limit 262 ms (solo non-stop median 35 ms, hold-back or EOS allowance 127 ms)
+FAIL main c2-eos-greedy: closed 136.3 ms after its last visible chunk, limit 127 ms (solo non-stop median 27 ms, hold-back or EOS allowance 0 ms)
+FAIL main c2-stop-2-greedy: closed 257.9 ms after its last visible chunk, limit 127 ms (solo non-stop median 27 ms, hold-back or EOS allowance 0 ms)
+FAIL main c2-stop-4-greedy: closed 429.8 ms after its last visible chunk, limit 127 ms (solo non-stop median 27 ms, hold-back or EOS allowance 0 ms)
+FAIL main c2-span-2-greedy: closed 295.9 ms after its last visible chunk, limit 253 ms (solo non-stop median 27 ms, hold-back or EOS allowance 127 ms)
+FAIL main c4-eos-greedy: closed 747.6 ms after its last visible chunk, limit 127 ms (solo non-stop median 27 ms, hold-back or EOS allowance 0 ms)
+FAIL main c4-stop-0-greedy: closed 214.6 ms after its last visible chunk, limit 127 ms (solo non-stop median 27 ms, hold-back or EOS allowance 0 ms)
+FAIL main c4-stop-2-greedy: closed 947.3 ms after its last visible chunk, limit 127 ms (solo non-stop median 27 ms, hold-back or EOS allowance 0 ms)
+FAIL main c4-stop-3-greedy: closed 159.9 ms after its last visible chunk, limit 127 ms (solo non-stop median 27 ms, hold-back or EOS allowance 0 ms)
+FAIL main c4-stop-4-greedy: closed 1531.3 ms after its last visible chunk, limit 127 ms (solo non-stop median 27 ms, hold-back or EOS allowance 0 ms)
+FAIL main c4-span-0-greedy: closed 772.6 ms after its last visible chunk, limit 327 ms (solo non-stop median 27 ms, hold-back or EOS allowance 200 ms)
+FAIL main c4-span-1-greedy: closed 527.1 ms after its last visible chunk, limit 263 ms (solo non-stop median 27 ms, hold-back or EOS allowance 136 ms)
+FAIL main c4-span-2-greedy: closed 1061.0 ms after its last visible chunk, limit 253 ms (solo non-stop median 27 ms, hold-back or EOS allowance 127 ms)
+STOP-STRING COHORT GATE: FAIL (31)

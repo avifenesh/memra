@@ -1,0 +1,24 @@
+companion dspark greedy comp0: 46 runs, 1 distinct text(s), equal to plain decode
+companion dspark greedy comp1: 26 runs, 1 distinct text(s), equal to plain decode
+companion dspark greedy comp2: 26 runs, 1 distinct text(s), equal to plain decode
+companion dspark greedy comp3: 6 runs, 1 distinct text(s), equal to plain decode
+companion dspark t1 comp0: 46 runs, 1 distinct text(s), not plain decode
+companion dspark t1 comp1: 26 runs, 1 distinct text(s), not plain decode
+companion dspark t1 comp2: 26 runs, 1 distinct text(s), not plain decode
+companion dspark t1 comp3: 6 runs, 1 distinct text(s), not plain decode
+== main-dspark (dspark, cohorts [2, 4]) ==
+  t1: throughput cohorts of 4: aggregate tok/s [40.1, 40.1, 40.1] (median 40.1)
+  t1: solo non-stop close median 0 ms (n=2), limit 100; member 0 close ms by cohort size: 2: median 0 max 853 (n=10); 4: median 1 max 1377 (n=10)
+  greedy: throughput cohorts of 4: aggregate tok/s [41.2, 40.4, 41.2] (median 41.2)
+  greedy: solo non-stop close median 0 ms (n=2), limit 100; member 0 close ms by cohort size: 2: median 173 max 850 (n=10); 4: median 88 max 1683 (n=10)
+FAIL main-dspark c2-stop-2-t1: closed 853.0 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-eos-t1: closed 181.5 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-stop-2-t1: closed 1377.4 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-free-greedy: closed 171.0 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-eos-greedy: closed 180.5 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-stop-4-greedy: closed 811.8 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-span-2-greedy: closed 849.5 ms after its last visible chunk, limit 391 ms (solo non-stop median 0 ms, hold-back or EOS allowance 291 ms)
+FAIL main-dspark c4-free-greedy: closed 345.2 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-stop-4-greedy: closed 1682.9 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-span-2-greedy: closed 1322.2 ms after its last visible chunk, limit 391 ms (solo non-stop median 0 ms, hold-back or EOS allowance 291 ms)
+STOP-STRING COHORT GATE: FAIL (10)

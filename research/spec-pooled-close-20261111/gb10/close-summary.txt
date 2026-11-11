@@ -1,0 +1,58 @@
+## run-gb10/gb10-cohort
+main: solo non-stop close p50 38 ms max 76 (n=4)
+  cohort 2 stop-ended: close p50 619 ms max 1715 (n=16)
+  cohort 2 eos: close p50 598 ms max 1196 (n=2)
+  cohort 2 max_tokens: close p50 232 ms max 463 (n=2)
+  cohort 4 stop-ended: close p50 1382 ms max 2498 (n=16)
+  cohort 4 eos: close p50 699 ms max 1191 (n=2)
+  cohort 4 max_tokens: close p50 400 ms max 574 (n=2)
+  throughput t1: [42.2, 42.3, 42.1] tok/s
+  throughput greedy: [50.5, 50.5, 50.4] tok/s
+fix: solo non-stop close p50 42 ms max 76 (n=4)
+  cohort 2 stop-ended: close p50 80 ms max 343 (n=16)
+  cohort 2 eos: close p50 40 ms max 79 (n=2)
+  cohort 2 max_tokens: close p50 39 ms max 77 (n=2)
+  cohort 4 stop-ended: close p50 83 ms max 530 (n=16)
+  cohort 4 eos: close p50 43 ms max 82 (n=2)
+  cohort 4 max_tokens: close p50 40 ms max 77 (n=2)
+  throughput t1: [41.2, 42.1, 42.1] tok/s
+  throughput greedy: [50.2, 50.6, 50.6] tok/s
+## run-gb10/gb10-cohort-dspark
+main-dspark: solo non-stop close p50 0 ms max 0 (n=4)
+  cohort 2 stop-ended: close p50 90 ms max 853 (n=11)
+  cohort 2 eos: close p50 90 ms max 180 (n=2)
+  cohort 2 max_tokens: close p50 0 ms max 171 (n=7)
+  cohort 4 stop-ended: close p50 88 ms max 1683 (n=11)
+  cohort 4 eos: close p50 91 ms max 182 (n=2)
+  cohort 4 max_tokens: close p50 0 ms max 345 (n=7)
+  throughput t1: [40.1, 40.1, 40.1] tok/s
+  throughput greedy: [41.2, 40.4, 41.2] tok/s
+fix-dspark: solo non-stop close p50 0 ms max 0 (n=4)
+  cohort 2 stop-ended: close p50 1 ms max 180 (n=11)
+  cohort 2 eos: close p50 0 ms max 0 (n=2)
+  cohort 2 max_tokens: close p50 0 ms max 8 (n=7)
+  cohort 4 stop-ended: close p50 4 ms max 180 (n=11)
+  cohort 4 eos: close p50 0 ms max 0 (n=2)
+  cohort 4 max_tokens: close p50 0 ms max 2 (n=7)
+  throughput t1: [40.0, 40.1, 40.1] tok/s
+  throughput greedy: [41.2, 40.9, 40.9] tok/s
+## run-gb10b/gb10-cohort
+fix3: solo non-stop close p50 37 ms max 74 (n=4)
+  cohort 2 stop-ended: close p50 77 ms max 334 (n=16)
+  cohort 2 eos: close p50 39 ms max 77 (n=2)
+  cohort 2 max_tokens: close p50 37 ms max 75 (n=2)
+  cohort 4 stop-ended: close p50 81 ms max 373 (n=16)
+  cohort 4 eos: close p50 41 ms max 80 (n=2)
+  cohort 4 max_tokens: close p50 41 ms max 79 (n=2)
+  throughput t1: [43.0, 42.8, 42.9] tok/s
+  throughput greedy: [51.1, 51.1, 51.1] tok/s
+## run-gb10b/gb10-cohort-dspark
+fix3-dspark: solo non-stop close p50 0 ms max 0 (n=4)
+  cohort 2 stop-ended: close p50 0 ms max 217 (n=11)
+  cohort 2 eos: close p50 0 ms max 0 (n=2)
+  cohort 2 max_tokens: close p50 0 ms max 0 (n=7)
+  cohort 4 stop-ended: close p50 18 ms max 322 (n=11)
+  cohort 4 eos: close p50 9 ms max 11 (n=2)
+  cohort 4 max_tokens: close p50 0 ms max 5 (n=7)
+  throughput t1: [40.4, 40.6, 40.7] tok/s
+  throughput greedy: [41.9, 41.9, 41.8] tok/s
