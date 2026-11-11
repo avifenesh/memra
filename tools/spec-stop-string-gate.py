@@ -133,6 +133,11 @@ COMPANION_TOKENS = 192
 TPUT_REPS = 3
 
 
+def cadence_ms(times):
+    gaps = [b - a for a, b in zip(times, times[1:]) if b - a > 0.005]
+    return round(statistics.median(gaps) * 1e3, 1) if len(gaps) > 1 else None
+
+
 def seed_of(tag):
     return 800 + int(hashlib.sha256(tag.encode()).hexdigest()[:4], 16) % 97
 
@@ -366,10 +371,10 @@ class Server:
                "ttft_ms": None if o["t_first"] is None else round(o["t_first"] * 1e3, 1),
                "e2e_ms": None if o["t_done"] is None else round(o["t_done"] * 1e3, 1),
                "close_ms": tail, "burst_ends": ends, "receipts": receipts,
-               # The median time between the arrivals of two visible chunks: the request's own
-               # emission cadence (a speculative round, or a decode step).
-               "gap_ms": (round(statistics.median(b - a for a, b in zip(o["t_chunks"], o["t_chunks"][1:])) * 1e3, 1)
-                          if len(o["t_chunks"]) > 2 else None),
+               # The request's own emission cadence: the median gap between two visible chunks
+               # more than 5 ms apart. The chunks of one speculative round arrive together, so
+               # this is a round on a speculative route and a decode step on plain decode.
+               "gap_ms": cadence_ms(o["t_chunks"]),
                "park": [m[:200] for m in PARK.findall(chunk)],
                "sha": hashlib.sha256(o["text"].encode()).hexdigest()[:16], "error": o["error"]}
         row.update(extra or {})
@@ -813,8 +818,8 @@ def cohort_judge(out, rows, boots, only=None):
                     # Text that may begin a stop string is held back until the string completes
                     # or cannot. Plain decode alone holds it for a decode step or a few; in a
                     # cohort the same tokens arrive a cohort round apart, so the hold-back is
-                    # counted in this request's own cadence (two of its chunk gaps per plain
-                    # step of hold-back, at least two).
+                    # counted in this request's own cadence (two of its rounds per plain step of
+                    # hold-back, at least two).
                     steps = max(1, round((held / 2) / solo_step)) if solo_step > 0 else 1
                     held = max(held, 2 * steps * r["gap_ms"])
                 if r["close_ms"] is not None:

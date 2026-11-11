@@ -2023,7 +2023,8 @@ completion tokens differ from plain decode's (on DSpark at temperature 1, from i
 a companion that writes another text anywhere (its other cohorts and every speculative boot of the
 DIR, main's included), a stop-ended member 0 without its `[spec-stop]` receipt, and a member 0
 that closes later than the solo rule above; in a cohort the hold-back of a stop string is counted
-in the request's own chunk cadence (two of its chunk gaps per plain decode step of hold-back),
+in the request's own chunk cadence (two of its rounds, the median gap between chunks more than 5 ms apart, per plain decode
+step of hold-back),
 since its tokens arrive a cohort round apart. A boot passed `--settle` must also log, per sampler,
 at least one member 0 that finished inside its cohort while another member was still running
 (`[spec-pool] member finished inside the cohort`); a member 0 that stops in its first, serial
