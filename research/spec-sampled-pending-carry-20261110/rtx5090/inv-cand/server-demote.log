@@ -1,4 +1,4 @@
-[server] build: memra-0.140.0-682a87637204 (id: source-tree, git: unknown)
+[server] build: memra-0.141.1-bd522e3ba252 (id: source-tree, git: unknown)
 [server] starting; models config = [("q", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
@@ -38,7 +38,7 @@
 [kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
 [server] worker ready; serving models: ["q"]
 [server] listening on http://127.0.0.1:18197
-[meter] admit id=chatcmpl-ed90a06c1c80d0586553e8282fa246b5 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-b42f8d0daf81ef163a60282b6e6d5bca tenant=default lane=interactive model="q"
 [admission] per-session draft-state charge: model="q" +39MB (measured capture high-water)
 [admission] request cost: model="q" ctx=1590 path=spec = 31552 B/token x ctx + 137MB prefill-workspace + 0MB fixed = 187MB
 [admission] prefill workspace held: model="q" prompt=1286 call=1286 stack=1286 concat=0 slab_resident=1443MB held=137MB cold=590MB
@@ -49,7 +49,7 @@
 [prefix-cache] insert (spec-boundary): 1248 tokens, 196.3MB (resident 196.3MB / 800MB, model q)
 [spec-acc] ctx=1318 burst=21/22 cum=35/56=0.625
 [spec-gate] demoted session to batched decode: FORCED at DEMOTE_AT=60 (test door) (model q, committed 1350, generated 64, sampled, plain draws from philox event 65)
-[meter] admit id=chatcmpl-5b2a2da4ff9f32a4a702c51f7fbe3959 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d22ab702d192aef353c4271d864d6840 tenant=default lane=interactive model="q"
 [kv-reuse] park-compact: 1526 of 1534 rows retained in 2.4ms (model q)
 [admission] per-session draft-state charge: model="q" +39MB (measured capture high-water)
 [admission] request cost: model="q" ctx=340 path=spec = 31552 B/token x ctx + 4MB prefill-workspace + 311MB fixed = 325MB
@@ -60,7 +60,7 @@
 [spec-acc] ctx=68 burst=16/48 cum=36/81=0.444
 [spec-gate] demoted session to batched decode: FORCED at DEMOTE_AT=60 (test door) (model q, committed 100, generated 64, sampled, plain draws from philox event 65)
 [kv-reuse] park-compact: 276 of 284 rows retained in 2.2ms (model q)
-[meter] admit id=chatcmpl-8bd3968299aa1363195bcc906d0999d3 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-95e25af7f89da8c01393a352ed431240 tenant=default lane=interactive model="q"
 [admission] per-session draft-state charge: model="q" +39MB (measured capture high-water)
 [admission] request cost: model="q" ctx=1590 path=spec = 31552 B/token x ctx + 137MB prefill-workspace + 311MB fixed = 498MB
 [admission] prefill workspace held: model="q" prompt=1286 call=1286 stack=1286 concat=0 slab_resident=1443MB held=137MB cold=590MB
@@ -70,7 +70,7 @@
 [prefix-cache] insert (spec-boundary): 1248 tokens, 196.3MB (resident 392.6MB / 800MB, model q)
 [spec-acc] ctx=1318 burst=18/28 cum=33/60=0.550
 [spec-gate] demoted session to batched decode: FORCED at DEMOTE_AT=60 (test door) (model q, committed 1350, generated 64, sampled, plain draws from philox event 65)
-[meter] admit id=chatcmpl-e444aec0c7b03905f771f4ff16317ed3 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-9557edebe96c9758ac901dad503aa290 tenant=default lane=interactive model="q"
 [kv-reuse] park-compact: 1526 of 1534 rows retained in 2.4ms (model q)
 [admission] per-session draft-state charge: model="q" +39MB (measured capture high-water)
 [admission] request cost: model="q" ctx=340 path=spec = 31552 B/token x ctx + 4MB prefill-workspace + 311MB fixed = 325MB

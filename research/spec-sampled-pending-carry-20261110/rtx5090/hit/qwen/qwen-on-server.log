@@ -1,0 +1,295 @@
+[server] build: memra-0.141.1-bd522e3ba252 (id: source-tree, git: unknown)
+[server] starting; models config = [("gate", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "gate" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "gate": 33 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 2147MB (2147483648 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "gate": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q6_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 33MB (max of parked delta 33MB and capture-time pool peak 1MB; charged per spec admission and gating future captures)
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[fa-pool] grow #5 dev=0 o_len 2162688 -> 4325376 ml_len 8448 -> 16896 (retired kept, zero=false)
+[spec-pool] pooled rows draft engaged: 3 members (arms [GraphGreedy, GraphGreedy, GraphGreedy])
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":3154116608,"still_owned_bytes":7709714312,"pool_reserved_bytes":7985954816,"pool_cached_bytes":276240504,"driver_free_bytes":16896884736,"synchronization_errors":[]}
+[spec-cost] model="gate" depth=2048 pooled=true plain_cap=16 round_overhead=2.52ms draft_step=0.00ms pooled_overhead=Some((4, 0.5788559166666669)) pooled_draft_step=None verify_ms[1..16]=[12.0 13.3 14.2 15.5 17.2 18.8 20.9 23.0 25.6 28.2 30.8 33.4 34.9 36.5 38.1 39.7] plain_ms[1..]=[11.8 13.8 15.5 17.1 19.2 21.2 23.3 25.4 27.8 30.1 32.4 34.8 37.1 39.5 41.8 44.2] (19.0s)
+[prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[spec-boundary] site=cold-prime sampled=279 argmax=279 deviates=0 temp=0.7 sctr=0
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":939524096,"still_owned_bytes":8254973840,"pool_reserved_bytes":8657043456,"pool_cached_bytes":402069616,"driver_free_bytes":16225796096,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 896MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 1536MB (static was 1536MB; measured 795MB; probe kv charge 67MB, draft-state 33MB, drafted 75 accepted 41; [dev0 peak-mapped 9152MB rest-mapped 8256MB charged 100MB -> 795MB]; 1.7s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18099
+[meter] admit id=cmpl-b2f8db5d6be30f9453c39d5b6ee7b964 tenant=default lane=interactive model="gate"
+[spec-cost] model="gate" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 16704 B/token x ctx + 9MB prefill-workspace + 0MB fixed = 12MB
+[admission] prefill workspace held: model="gate" prompt=106 call=106 stack=106 concat=0 slab_resident=1074MB held=9MB cold=36MB
+[spec-k] model="gate" tenant="" K=3 source=cost-model prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 103MB (observed 106MB at ctx 162 path=spec)
+[spec-acc] ctx=106 burst=17/45 cum=17/45=0.378
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 53.8MB / 2147MB, model gate)
+[spec-acc] ctx=139 burst=10/24 cum=27/69=0.391
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 156 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-de832c20f4ebeb3c040039509fd1dda0 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 16704 B/token x ctx + 9MB prefill-workspace + 103MB fixed = 116MB
+[admission] prefill workspace held: model="gate" prompt=106 call=106 stack=106 concat=0 slab_resident=1074MB held=9MB cold=36MB
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="" K=3 source=cost-model prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 103MB (observed 106MB at ctx 162 path=spec)
+[spec-acc] ctx=42 burst=17/45 cum=17/45=0.378
+[spec-acc] ctx=75 burst=10/24 cum=27/69=0.391
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 156 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-b6197f5003ebad958f2afe73577f7eac tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=231 path=spec = 16704 B/token x ctx + 10MB prefill-workspace + 103MB fixed = 117MB
+[admission] prefill workspace held: model="gate" prompt=119 call=119 stack=119 concat=0 slab_resident=1074MB held=10MB cold=41MB
+[prefix-cache] hit: 64 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="" K=3 source=cost-model prompt=119 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 103MB (observed 106MB at ctx 175 path=spec)
+[spec-acc] ctx=55 burst=16/48 cum=16/48=0.333
+[prefix-cache] insert (spec-boundary): 96 tokens, 54.3MB (resident 108.1MB / 2147MB, model gate)
+[spec-acc] ctx=88 burst=9/18 cum=25/66=0.379
+[meter] admit id=cmpl-2f6ddc0ac831a4458ab98f3271acd067 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 16704 B/token x ctx + 9MB prefill-workspace + 103MB fixed = 116MB
+[admission] prefill workspace held: model="gate" prompt=106 call=106 stack=106 concat=0 slab_resident=1074MB held=9MB cold=36MB
+[spec-k] model="gate" tenant="samp-7" K=3 source=cost-model prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=198 argmax=271 deviates=1 temp=0.8 sctr=0
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+[spec-acc] ctx=106 burst=17/42 cum=17/42=0.405
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 161.9MB / 2147MB, model gate, ns "samp-7")
+[spec-carry] site=burst-entry token=28279 event=32
+[spec-acc] ctx=138 burst=11/15 cum=28/57=0.491
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 153 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-80d368d6cafb062e9d56eeeddf14fb9d tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-7" K=3 source=cost-model prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=198 argmax=271 deviates=1 temp=0.8 sctr=0
+[spec-acc] ctx=42 burst=17/42 cum=17/42=0.405
+[spec-carry] site=burst-entry token=28279 event=32
+[spec-acc] ctx=74 burst=11/15 cum=28/57=0.491
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 153 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-fca7ab4bef686050f72c3433a2ec5312 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="samp-1234" K=3 source=cost-model prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=561 argmax=271 deviates=1 temp=0.8 sctr=0
+[spec-acc] ctx=106 burst=12/57 cum=12/57=0.211
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 215.6MB / 2147MB, model gate, ns "samp-1234")
+[spec-carry] site=burst-entry token=9 event=32
+[spec-acc] ctx=138 burst=9/24 cum=21/81=0.259
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 154 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-f0614c420fcc29c50ddc855dcc88c022 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-1234" K=3 source=cost-model prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=561 argmax=271 deviates=1 temp=0.8 sctr=0
+[spec-acc] ctx=42 burst=12/57 cum=12/57=0.211
+[spec-carry] site=burst-entry token=9 event=32
+[spec-acc] ctx=74 burst=9/24 cum=21/81=0.259
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 154 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-6cd018c89beb51a50740c158668f1104 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="samp-99991" K=3 source=cost-model prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-acc] ctx=106 burst=20/39 cum=20/39=0.513
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 269.4MB / 2147MB, model gate, ns "samp-99991")
+[spec-carry] site=burst-entry token=22044 event=34
+[spec-acc] ctx=140 burst=10/18 cum=30/57=0.526
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 155 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-f39a0db3864d6ef6a86d18a72dfbcc96 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-99991" K=3 source=cost-model prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-acc] ctx=42 burst=20/39 cum=20/39=0.513
+[spec-carry] site=burst-entry token=22044 event=34
+[spec-acc] ctx=76 burst=10/18 cum=30/57=0.526
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 155 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-d8816401cd3b870afb3bc0068c39a340 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="samp-x" K=3 source=cost-model prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=198 argmax=271 deviates=1 temp=0.8 sctr=0
+[spec-acc] ctx=106 burst=17/42 cum=17/42=0.405
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 323.2MB / 2147MB, model gate, ns "samp-x")
+[spec-carry] site=burst-entry token=28279 event=32
+[spec-acc] ctx=138 burst=11/15 cum=28/57=0.491
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 153 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-fd9b2022976b7b5c87e58738366a5d05 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=231 path=spec = 16704 B/token x ctx + 10MB prefill-workspace + 103MB fixed = 117MB
+[admission] prefill workspace held: model="gate" prompt=119 call=119 stack=119 concat=0 slab_resident=1074MB held=10MB cold=41MB
+[prefix-cache] hit: 64 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-x" K=3 source=cost-model prompt=119 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=198 argmax=271 deviates=1 temp=0.8 sctr=0
+[spec-acc] ctx=55 burst=15/48 cum=15/48=0.312
+[prefix-cache] insert (spec-boundary): 96 tokens, 54.3MB (resident 377.5MB / 2147MB, model gate, ns "samp-x")
+[spec-carry] site=burst-entry token=8758 event=32
+[spec-acc] ctx=87 burst=10/18 cum=25/66=0.379
+[spec-boundary] site=flush-pending sampled=198 argmax=198 deviates=0 temp=0.8 sctr=48
+[meter] admit id=cmpl-7b34aa235809173725d15219e3ab5b94 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 96 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 96 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-x" K=3 source=cost-model prompt=119 cached=96 lcp=96 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=198 argmax=271 deviates=1 temp=0.8 sctr=0
+[spec-acc] ctx=23 burst=15/48 cum=15/48=0.312
+[spec-carry] site=burst-entry token=8758 event=32
+[spec-acc] ctx=55 burst=10/18 cum=25/66=0.379
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 166 rows hold no resumable state (the checkpoint 119 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-e46d6fb4ba6f1e802cd0138c86c558f6 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 16704 B/token x ctx + 9MB prefill-workspace + 103MB fixed = 116MB
+[admission] prefill workspace held: model="gate" prompt=106 call=106 stack=106 concat=0 slab_resident=1074MB held=9MB cold=36MB
+[spec-k] model="gate" tenant="samp-pen" K=3 source=cost-model prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=198 argmax=271 deviates=1 temp=0.8 sctr=0
+[spec-acc] ctx=106 burst=19/36 cum=19/36=0.528
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 431.3MB / 2147MB, model gate, ns "samp-pen")
+[spec-carry] site=burst-entry token=23977 event=32
+[spec-acc] ctx=138 burst=9/21 cum=28/57=0.491
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 153 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-f40f58e36414882ed5fc5211c3c988c0 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-pen" K=3 source=cost-model prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=198 argmax=271 deviates=1 temp=0.8 sctr=0
+[spec-acc] ctx=42 burst=19/36 cum=19/36=0.528
+[spec-carry] site=burst-entry token=23977 event=32
+[spec-acc] ctx=74 burst=9/21 cum=28/57=0.491
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 153 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-c78374657d89b64581665cc218e5bdfc tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="samp-noplane" K=0 source=eligibility-fallback prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 64 tokens, 53.6MB (resident 484.9MB / 2147MB, model gate, ns "samp-noplane")
+[spec-cost] model="gate" realized n=1 K=0: 84.1 tok/s (now priced from serving)
+[kv-reuse] park-compact: 154 of 162 rows retained in 0.9ms (model gate)
+[meter] admit id=cmpl-a4b083f9b5bb3263c359f19e7f5f157a tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 106 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec-eligible request takes the hit on the PLAIN path (reason: entry carries no draft plane (plain-published)) (model gate)
+[spec-k] model="gate" tenant="samp-noplane" K=0 source=eligibility-fallback prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[spec-boundary] site=plain-first sampled=198 argmax=271 deviates=1 temp=0.8 sctr=0
+[kv-reuse] park-compact: 154 of 162 rows retained in 1.2ms (model gate)
+[meter] admit id=cmpl-4a5c702c58b3ad49c4f053e0cf0cc529 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=240 path=spec = 16704 B/token x ctx + 10MB prefill-workspace + 103MB fixed = 118MB
+[admission] prefill workspace held: model="gate" prompt=128 call=128 stack=128 concat=0 slab_resident=1074MB held=10MB cold=44MB
+[spec-k] model="gate" tenant="samp-fullcover" K=3 source=cost-model prompt=128 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 103MB (observed 106MB at ctx 184 path=spec)
+[spec-boundary] site=cold-prime sampled=5226 argmax=5226 deviates=0 temp=0.8 sctr=0
+[spec-acc] ctx=128 burst=16/45 cum=16/45=0.356
+[prefix-cache] insert (spec-boundary): 128 tokens, 54.8MB (resident 539.8MB / 2147MB, model gate, ns "samp-fullcover")
+[spec-carry] site=burst-entry token=6065 event=32
+[spec-acc] ctx=160 burst=7/27 cum=23/72=0.319
+[spec-boundary] site=flush-pending sampled=16002 argmax=343 deviates=1 temp=0.8 sctr=48
+[meter] admit id=cmpl-6e82fa1f9145877e46c661a37412aeb6 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=240 path=spec = 16704 B/token x ctx + 10MB prefill-workspace + 103MB fixed = 118MB
+[admission] prefill workspace held: model="gate" prompt=128 call=128 stack=128 concat=0 slab_resident=1074MB held=10MB cold=44MB
+[prefix-cache] hit: 128 of 128 prompt tokens from cache (model gate)
+[spec-boundary] site=restore-full-cover sampled=5226 argmax=5226 deviates=0 temp=0.8 sctr=0
+[prefix-cache] spec restore: 128 of 128 prompt tokens + draft plane from cache [continuation] (model gate)
+[spec-k] model="gate" tenant="samp-fullcover" K=3 source=cost-model prompt=128 cached=128 lcp=128 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 103MB (observed 106MB at ctx 184 path=spec)
+[spec-acc] ctx=0 burst=16/45 cum=16/45=0.356
+[spec-carry] site=burst-entry token=6065 event=32
+[spec-acc] ctx=32 burst=7/27 cum=23/72=0.319
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 175 rows hold no resumable state (no turn checkpoint); freed (model gate)
+[meter] admit id=cmpl-9a28fbcfd1fe1f45aab3d33697d42713 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=171 path=spec = 16704 B/token x ctx + 9MB prefill-workspace + 103MB fixed = 115MB
+[admission] prefill workspace held: model="gate" prompt=106 call=106 stack=106 concat=0 slab_resident=1074MB held=9MB cold=36MB
+[spec-k] model="gate" tenant="bnd-g" K=3 source=cost-model prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 593.5MB / 2147MB, model gate, ns "bnd-g")
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 107 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-d605185b1f95b783a56804540e6c8204 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="bnd-7" K=3 source=cost-model prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=114874 argmax=271 deviates=1 temp=4 sctr=0
+[spec-boundary] site=burst-tail-nopending sampled=141702 argmax=271 deviates=1 temp=4 sctr=1
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 647.3MB / 2147MB, model gate, ns "bnd-7")
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 107 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-1063f76f380405ebee588e1599bb3d62 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="bnd-1234" K=3 source=cost-model prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=83115 argmax=271 deviates=1 temp=4 sctr=0
+[spec-boundary] site=burst-tail-nopending sampled=37521 argmax=29 deviates=1 temp=4 sctr=1
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 701.1MB / 2147MB, model gate, ns "bnd-1234")
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 107 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-8108ddc0ddcb904a5977fbd95a5ad051 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="bnd-99991" K=3 source=cost-model prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=124632 argmax=271 deviates=1 temp=4 sctr=0
+[spec-boundary] site=burst-tail-nopending sampled=174266 argmax=271 deviates=1 temp=4 sctr=1
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 754.9MB / 2147MB, model gate, ns "bnd-99991")
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 107 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-f82ba64b11c74654fab0c7434226bd4a tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 16704 B/token x ctx + 9MB prefill-workspace + 103MB fixed = 116MB
+[admission] prefill workspace held: model="gate" prompt=106 call=106 stack=106 concat=0 slab_resident=1074MB held=9MB cold=36MB
+[spec-k] model="gate" tenant="grow" K=3 source=cost-model prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=106 burst=17/45 cum=17/45=0.378
+[prefix-cache] insert (spec-boundary): 64 tokens, 53.8MB (resident 808.6MB / 2147MB, model gate, ns "grow")
+[spec-acc] ctx=139 burst=10/24 cum=27/69=0.391
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 156 rows hold no resumable state (the checkpoint 106 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-9ce518fd92ac56030d22be8c4ddfa9b2 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=231 path=spec = 16704 B/token x ctx + 10MB prefill-workspace + 103MB fixed = 117MB
+[admission] prefill workspace held: model="gate" prompt=119 call=119 stack=119 concat=0 slab_resident=1074MB held=10MB cold=41MB
+[prefix-cache] hit: 64 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="grow" K=3 source=cost-model prompt=119 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=55 burst=16/48 cum=16/48=0.333
+[prefix-cache] insert (spec-boundary): 96 tokens, 54.3MB (resident 863.0MB / 2147MB, model gate, ns "grow")
+[spec-acc] ctx=88 burst=9/18 cum=25/66=0.379
+[meter] admit id=cmpl-50398b3292bb34a28c753b96912a1cdb tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=247 path=spec = 16704 B/token x ctx + 11MB prefill-workspace + 103MB fixed = 119MB
+[admission] prefill workspace held: model="gate" prompt=135 call=135 stack=135 concat=0 slab_resident=1074MB held=11MB cold=46MB
+[prefix-cache] hit: 96 of 135 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 96 of 135 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="grow" K=3 source=cost-model prompt=135 cached=96 lcp=96 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 103MB (observed 107MB at ctx 191 path=spec)
+[spec-acc] ctx=39 burst=19/39 cum=19/39=0.487
+[spec-acc] ctx=72 burst=11/21 cum=30/60=0.500
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 185 rows hold no resumable state (the checkpoint 135 is off the 32-token prime grid); freed (model gate)
+[meter] admit id=cmpl-2d9a8e4c51c1a487e93078b2c3cf7739 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +35MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=231 path=spec = 16704 B/token x ctx + 10MB prefill-workspace + 103MB fixed = 117MB
+[admission] prefill workspace held: model="gate" prompt=119 call=119 stack=119 concat=0 slab_resident=1074MB held=10MB cold=41MB
+[prefix-cache] hit: 96 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 96 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="grow" K=3 source=cost-model prompt=119 cached=96 lcp=96 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=23 burst=16/48 cum=16/48=0.333
+[spec-acc] ctx=56 burst=9/18 cum=25/66=0.379
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 166 rows hold no resumable state (the checkpoint 119 is off the 32-token prime grid); freed (model gate)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

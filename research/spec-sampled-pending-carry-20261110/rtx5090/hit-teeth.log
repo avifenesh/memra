@@ -1,0 +1,64 @@
+== qwen arm: spec-on boot, TEETH/ROLLBACK posture (every door shut) ==
+  ok: drafter attached: [mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf
+  on-grid prompt: 128 tokens (22 filler words)
+  census spec-on: entries published: 12 draft-bearing (insert (spec-boundary)), 1 plain (insert (seed)), 0 other
+    hits x1: hit: 128 of 128 prompt tokens
+    hits x6: hit: 64 of 106 prompt tokens
+    hits x5: hit: 64 of 119 prompt tokens
+    hits x1: hit: 64 of 135 prompt tokens
+    identity clause namespaces (default, "grow") on the spec-on side: 2 draft-bearing, 0 plain -> its hits restored draft-bearing entries
+  ok: server log shows spec restore
+  ok: r1 cold has spec + zero cached
+  ok: r2 hit has cached tokens
+  ok: r2 hit SPEC ENGAGED (accepted > 0)
+  ok: r3 extended hit has cached tokens
+  ok: r3 extended hit SPEC ENGAGED (accepted > 0)
+  ok: r2 text == r1 text (deterministic repeat)
+-- sampled cells (temperature 0.8, seeds: 7 1234 99991, teeth=1) --
+  ok: s7 sampled cold engages spec, zero cached
+  ok: s7 sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: s7 sampled hit stays PLAIN under MEMRA_SPEC_RESTORE_SAMPLED=0
+  ok: s1234 sampled cold engages spec, zero cached
+  ok: s1234 sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: s1234 sampled hit stays PLAIN under MEMRA_SPEC_RESTORE_SAMPLED=0
+  ok: s99991 sampled cold engages spec, zero cached
+  ok: s99991 sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: s99991 sampled hit stays PLAIN under MEMRA_SPEC_RESTORE_SAMPLED=0
+  ok: sx sampled leader engages spec, zero cached
+  ok: sx sampled SUFFIX hit restores a strict prefix
+  ok: sx sampled suffix hit stays PLAIN under the rollback door
+  ok: sx sampled suffix hit reproduces byte-for-byte at one seed
+  ok: sp penalized sampled leader engages spec (entry has a draft plane)
+  ok: sp penalized sampled hit stays PLAIN under the burst-local window door
+  ok: np greedy+penalized leader serves PLAIN (publishes a plane-less entry)
+  ok: np sampled hit on a plane-less entry stays PLAIN (refusal is real)
+  ok: fc on-grid prompt (tokens a multiple of 32)
+  ok: fc sampled leader engages spec, zero cached
+  ok: fc sampled hit is a FULL-COVER cache hit (cached == prompt_tokens)
+  ok: fc sampled full-cover hit stays PLAIN under MEMRA_SPEC_RESTORE_SAMPLED=0
+  ok: teeth: every sampled FIRST token is the greedy argmax (the pre-lane defect)
+-- growth cells (Item 3: a growing conversation must learn a longer boundary) --
+  ok: g2 restores g1's published entry (cached == cap(P1) == 64)
+  ok: g1 turn 1 is cold and engages spec
+  ok: g2 turn 2 restores turn 1's boundary (suffix-fed hit)
+  ok: g3 turn 3 engages spec
+  ok: teeth: turn 3 hits the SAME boundary as turn 2 (no extended entry published)
+  ok: teeth: the turn-2 repeat is not a full-cover hit (nothing was republished)
+-- boundary draws (Item 1) --
+  ok: teeth: no boundary draw happened (MEMRA_SPEC_SAMPLED_BOUNDARY=0)
+  ok: teeth: no sampled burst carried its pending token (the seam keeps the tail pass)
+  ok: plane-less refusal names itself in the log
+  ok: sampled-restore door names itself in the log
+  ok: burst-local-window door names itself in the log
+== qwen arm: spec-off twin boot (identity reference) ==
+  census spec-off: entries published: 0 draft-bearing (insert (spec-boundary)), 2 plain (insert (seed)), 0 other
+    hits x1: hit: 64 of 106 prompt tokens
+    hits x2: hit: 64 of 119 prompt tokens
+    identity clause namespaces (default, "grow") on the spec-off side: 0 draft-bearing, 2 plain -> its hits restored plain entries
+  ok: off-boot rows carry no spec
+  ok: r1 spec==plain byte identity
+  ok: r2 spec==plain byte identity
+  ok: r3 spec==plain byte identity
+  ok: g1 spec==plain byte identity
+  ok: g2 spec==plain byte identity
+SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
