@@ -78,7 +78,7 @@ elif kind == "pairs":
         put(dst / f"{case.name}.txt", "\n".join(lines) + "\n")
 elif kind == "nsys":
     for cell in sorted(src.glob("nsys*")):
-        for name in ("gap.txt", "big.txt", "pf.jsonl", "guard.log", "trace.txt"):
+        for name in ("gap.txt", "split.txt", "big.txt", "pf.jsonl", "guard.log", "trace.txt"):
             if (cell / name).exists():
                 put(dst / cell.name / name, (cell / name).read_text(errors="replace"))
 elif kind == "unit":

@@ -1,0 +1,16 @@
+pause 58.63 ms
+host (the calling thread, inside the pause):
+  allocations: 134, 52.72 ms
+  copy launches: 1.52 ms; every other runtime call: 3.26 ms
+  the last runtime call ends 58.63 ms into the pause
+device (inside the pause):
+  plane copies: 34, 39.55 ms, 4133.6 MB, 209 GB/s read + write
+  small copies: 205, 2.90 ms, 314.0 MB, 217 GB/s read + write
+  memsets: 101, 0.62 ms, 157.0 MB
+  busy 43.07 ms, idle 15.56 ms
+  the host's calls while the device idles (ms): cuMemAllocAsync 14.54, cuMemcpyDtoDAsync 0.24, cuMemsetD8Async 0.09, cuMemcpyDtoHAsync 0.08, cuMemGetInfo 0.05
+  allocation calls: 134, 52.72 ms; the longest five 16.01, 13.60, 7.32, 7.10, 3.37; 7 of 1 ms or more (52.48 ms), 127 under 1 ms (0.25 ms)
+path:
+  pause start -> first plane copy starts: 0.42 ms
+  first plane copy starts -> last plane copy ends: 53.40 ms
+  last plane copy ends -> pause ends: 4.81 ms

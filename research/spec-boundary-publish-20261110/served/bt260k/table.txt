@@ -3,29 +3,30 @@
 03-W: g260k prompt 259946, entry 259904 tokens 8357.4 MB; stall 118.8 pub 116.0 gap 116.5 interval 3119.4 ms; burst 2 187.69 ms per round over 16, later 187.54 over 30, round 187.65; TTFT 313.936 s, total 324.929 s, 134 tok stop, text 5275df37e59f
 04-B: g260k prompt 259946, entry 259904 tokens 8357.4 MB; stall 170.2 pub 142.3 gap 142.2 interval 3178.2 ms; burst 2 189.75 ms per round over 16, later 188.00 over 30, round 188.58; TTFT 313.319 s, total 324.375 s, 134 tok stop, text 5275df37e59f
 05-B: g260k prompt 259946, entry 259904 tokens 8357.4 MB; stall 157.4 pub 140.8 gap 140.5 interval 3166.2 ms; burst 2 189.10 ms per round over 16, later 188.05 over 30, round 188.41; TTFT 313.551 s, total 324.601 s, 134 tok stop, text 5275df37e59f
+06-W: g260k prompt 259946, entry 259904 tokens 8357.4 MB; stall 114.5 pub 112.3 gap 112.0 interval 3114.9 ms; burst 2 187.68 ms per round over 16, later 187.52 over 30, round 187.61; TTFT 313.647 s, total 324.626 s, 134 tok stop, text 5275df37e59f
 
 | | B median (spread) | W median (spread) |
 |---|---:|---:|
-| first burst boundary over its rounds, ms | 157.4 (18.2) | 123.8 (10.2) |
-| publisher on the scheduler thread, ms | 142.2 (1.5) | 113.7 (4.7) |
-| between burst 1 and burst 2, ms | 142.0 (1.7) | 114.1 (4.8) |
-| burst 1 line to burst 2 line, ms | 3166.2 (33.9) | 3128.3 (17.7) |
-| burst 2, ms per round | 189.10 (2.11) | 188.39 (1.41) |
-| later bursts, ms per round | 188.00 (1.02) | 187.78 (0.47) |
-| ms per round, every burst but the first and last | 188.41 (1.36) | 188.01 (0.73) |
-| TTFT, s | 313.551 (0.252) | 313.790 (0.291) |
-| total, s | 324.561 (0.226) | 324.798 (0.261) |
+| first burst boundary over its rounds, ms | 157.4 (18.2) | 118.8 (14.4) |
+| publisher on the scheduler thread, ms | 142.2 (1.5) | 112.3 (4.7) |
+| between burst 1 and burst 2, ms | 142.0 (1.7) | 112.0 (4.8) |
+| burst 1 line to burst 2 line, ms | 3166.2 (33.9) | 3119.4 (22.3) |
+| burst 2, ms per round | 189.10 (2.11) | 187.69 (1.42) |
+| later bursts, ms per round | 188.00 (1.02) | 187.54 (0.50) |
+| ms per round, every burst but the first and last | 188.41 (1.36) | 187.65 (0.76) |
+| TTFT, s | 313.551 (0.252) | 313.647 (0.291) |
+| total, s | 324.561 (0.226) | 324.668 (0.303) |
 
 | W against B | W - B | every W cell under every B cell |
 |---|---:|---|
-| first burst boundary over its rounds, ms | -33.6 (-21.3%) | yes |
-| publisher on the scheduler thread, ms | -28.5 (-20.0%) | yes |
-| between burst 1 and burst 2, ms | -28.0 (-19.7%) | yes |
-| burst 1 line to burst 2 line, ms | -37.8 (-1.2%) | yes |
-| burst 2, ms per round | -0.71 (-0.4%) | no, ranges overlap |
-| later bursts, ms per round | -0.22 (-0.1%) | no, ranges overlap |
-| ms per round, every burst but the first and last | -0.40 (-0.2%) | no, ranges overlap |
-| TTFT, s | 0.239 (+0.1%) | no, every W over every B |
-| total, s | 0.238 (+0.1%) | no, every W over every B |
+| first burst boundary over its rounds, ms | -38.7 (-24.6%) | yes |
+| publisher on the scheduler thread, ms | -29.9 (-21.0%) | yes |
+| between burst 1 and burst 2, ms | -30.1 (-21.2%) | yes |
+| burst 1 line to burst 2 line, ms | -46.7 (-1.5%) | yes |
+| burst 2, ms per round | -1.42 (-0.7%) | no, ranges overlap |
+| later bursts, ms per round | -0.46 (-0.2%) | no, ranges overlap |
+| ms per round, every burst but the first and last | -0.77 (-0.4%) | no, ranges overlap |
+| TTFT, s | 0.096 (+0.0%) | no, every W over every B |
+| total, s | 0.107 (+0.0%) | no, every W over every B |
 
-cells: 3 B, 2 W; texts: 1 distinct sha256 (5275df37e59f); burst structure (generated, rounds, drafted, accepted): 1 distinct; published entry (tokens, MB): [(259904, 8357.4)]
+cells: 3 B, 3 W; texts: 1 distinct sha256 (5275df37e59f); burst structure (generated, rounds, drafted, accepted): 1 distinct; published entry (tokens, MB): [(259904, 8357.4)]

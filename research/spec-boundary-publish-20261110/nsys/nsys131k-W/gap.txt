@@ -1,0 +1,20 @@
+decode window 4034.9 ms, 32830 kernels
+longest pause between decode kernels: 58.63 ms, 1128.0 ms into the window, append_quantize_kv_q8_0_q5_1_rows -> embed_gather_u32
+inside the pause:
+  device copies DtoD: 234, 42.44 ms, 4447.5 MB
+  device copies HtoD: 5, 0.01 ms, 0.0 MB
+  memsets: 101, 0.62 ms, 157.0 MB
+  copy_batch_items_u8 launches: 0, 0.00 ms
+  CUDA runtime calls overlapping the pause (count, ms inside it):
+    cuMemAllocAsync: 134, 52.72 ms
+    cuStreamSynchronize: 1, 1.58 ms
+    cuMemcpyDtoDAsync: 231, 1.52 ms
+    cuMemcpyDtoHAsync: 1, 0.68 ms
+    cuMemsetD8Async: 100, 0.42 ms
+    cuGraphLaunch: 1, 0.35 ms
+    cuMemGetInfo: 5, 0.16 ms
+    cuMemcpyHtoDAsync: 4, 0.04 ms
+whole decode window:
+  device copies of 64 MB or more: 34, 39.55 ms, 4133.6 MB
+  memsets of 64 MB or more: 0, 0.00 ms, 0.0 MB
+  copy_batch_items_u8 launches of 1 ms or more: 0, 0.00 ms (all launches: 0)
