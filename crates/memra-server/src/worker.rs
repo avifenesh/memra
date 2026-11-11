@@ -50896,9 +50896,11 @@ mod tests {
             2,
             "both prefill arms must feed the prefill-OOM predicate the session's own markers"
         );
+        // (memra#1209: and never parks a pooled member its end hook already closed.)
         let guard = format!(
-            "if is_cuda_oom(&err.to_string()) && {pred} active[i].generated.len(), \
-             active[i].tokens_emitted, active[i].oom_retries, step_oom_retries(), ) =>"
+            "if is_cuda_oom(&err.to_string()) && active[i].early_done.is_none() && {pred} \
+             active[i].generated.len(), active[i].tokens_emitted, active[i].oom_retries, \
+             step_oom_retries(), ) =>"
         );
         assert!(
             live_sq.contains(guard.as_str()),
