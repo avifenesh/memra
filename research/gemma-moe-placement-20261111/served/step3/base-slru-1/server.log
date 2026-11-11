@@ -1,0 +1,40 @@
+[server] build: memra-0.141.1-8bb0624f36d8 (id: source-tree, git: unknown)
+[server] starting; models config = [("g26", "<models>/gemma-4-26B_q4_0-it.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "g26" <- <models>/gemma-4-26B_q4_0-it.gguf
+[tensor-contract] bound 658 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4rp] split-plane decode mirrors built: 210 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 20700 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[worker]   loaded "g26": 30 layers, eos=1, stop=[1, 106]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] g26: template caps tools=true think=false think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=true dsv4=false glm5=false ctx=262144 tok="gemma4" instruct=None chat_defaults=None/None
+[route-contract] model="g26" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] g26: decode wave cap 8; scheduler tick cap 8
+[worker] g26: BATCHED DECODE (gemma4 dense arm, default-on; MEMRA_GEMMA4_BATCH=0 = eager kill switch): batched decode chunks; chunked prefill, no prime batching (eager-only for every non-decode entry point)
+[prefix-cache] on: budget 19491MB (19491061760 B, derived: 2 x 29527900160 B max entry for model "g26" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 2244120412160 B (76 resident sessions x 29527900160 B served-context session), requested 59055800320 B; boot driver free 21101674496 B, post-reserve clamp 19491061760 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "g26": plain 112640 B/token, spec 112640 B/token; fixed residual learns from effective-free deltas
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["g26"]
+[server] listening on http://127.0.0.1:18225
+[meter] admit id=cmpl-6bf904e0ceb7f14816bee25085c1593b tenant=default lane=interactive model="g26"
+[admission] request cost: model="g26" ctx=2295 path=plain = 112640 B/token x ctx + 971MB prefill-workspace + 0MB fixed = 1230MB
+[admission] fixed residual high-water: model="g26" 0MB (observed 252MB at ctx 2239 path=plain)
+[fa-pool] grow #0 dev=0 o_len 0 -> 131072 ml_len 0 -> 512 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 131072 -> 270336 ml_len 512 -> 1024 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1024 -> 2048 (retired kept, zero=false)
+[kv-reuse] park-compact declined (eager-only model class (no prefix snapshot)); parking the full 2239-row cache (model g26)
+[meter] admit id=chatcmpl-6a5ba4cf624227f7412c477bc87957f6 tenant=default lane=interactive model="g26"
+[admission] request cost: model="g26" ctx=2317 path=plain = 112640 B/token x ctx + 981MB prefill-workspace + 0MB fixed = 1242MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 2125 prompt tokens; model g26)
+[kv-reuse] park-compact declined (eager-only model class (no prefix snapshot)); parking the full 2261-row cache (model g26)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

@@ -1,0 +1,17 @@
+2026-11-11 19:15:12 start main-res-1
+2026-11-11 19:17:29 done main-res-1 rc=0 gpulock: 5090 leased for 60m {"mode": "pair", "env": {}, "server": "<lane>/bin/memra-server-main", "boot_s": 16.0, "mem_ready_s": 16.009, "text_sha16": "3eb1a6598ed6bf8b", "events": 128, "ttft_s": 0.572, "e2e_s": 1.896, "usage": null, "chat_sha16": "442ccca2203294b0", "chat_events": 78, "chat_ttft_s": 1.184, "chat_e2e_s": 1.993, "peak_mem_mib": 17168} 
+2026-11-11 19:17:29 start fix-res-1
+2026-11-11 19:17:49 done fix-res-1 rc=0 gpulock: 5090 leased for 60m {"mode": "pair", "env": {}, "server": "<lane>/bin/memra-server-fix", "boot_s": 15.0, "mem_ready_s": 15.009, "text_sha16": "3eb1a6598ed6bf8b", "events": 128, "ttft_s": 0.573, "e2e_s": 1.9, "usage": null, "chat_sha16": "442ccca2203294b0", "chat_events": 78, "chat_ttft_s": 1.186, "chat_e2e_s": 1.993, "peak_mem_mib": 17104} 
+2026-11-11 19:17:49 start fix-slru-1
+2026-11-11 19:18:08 done fix-slru-1 rc=0 gpulock: 5090 leased for 60m {"mode": "pair", "env": {"MEMRA_MOE_RESIDENT": "0"}, "server": "<lane>/bin/memra-server-fix", "boot_s": 13.0, "mem_ready_s": 13.006, "text_sha16": "3eb1a6598ed6bf8b", "events": 128, "ttft_s": 1.121, "e2e_s": 2.448, "usage": null, "chat_sha16": "442ccca2203294b0", "chat_events": 78, "chat_ttft_s": 1.187, "chat_e2e_s": 2.002, "peak_mem_mib": 20560} 
+2026-11-11 19:18:08 start fix-spill-1
+2026-11-11 19:18:29 done fix-spill-1 rc=0 gpulock: 5090 leased for 60m {"mode": "pair", "env": {"MEMRA_MOE_RESIDENT": "0", "MEMRA_MOE_SLOTS": "2000"}, "server": "<lane>/bin/memra-server-fix", "boot_s": 11.0, "mem_ready_s": 11.006, "text_sha16": "3eb1a6598ed6bf8b", "events": 128, "ttft_s": 1.002, "e2e_s": 3.359, "usage": null, "chat_sha16": "442ccca2203294b0", "chat_events": 78, "chat_ttft_s": 3.31, "chat_e2e_s": 5.425, "peak_mem_mib": 7024} 
+2026-11-11 19:18:29 start dec-main-res-1
+2026-11-11 19:18:43 done dec-main-res-1 rc=0 gpulock: 5090 leased for 60m {"mode": "decode", "env": {}, "server": "<lane>/bin/memra-server-main", "boot_s": 10.0, "mem_ready_s": 10.01, "text_sha16": "9ad77520768940e8", "events": 256, "completion_tokens": 256, "ttft_s": 0.111, "e2e_s": 2.374, "decode_tok_per_s": 112.7, "peak_mem_mib": 16240} 
+2026-11-11 19:18:43 start dec-fix-res-1
+2026-11-11 19:18:59 done dec-fix-res-1 rc=0 gpulock: 5090 leased for 60m {"mode": "decode", "env": {}, "server": "<lane>/bin/memra-server-fix", "boot_s": 13.0, "mem_ready_s": 13.009, "text_sha16": "9ad77520768940e8", "events": 256, "completion_tokens": 256, "ttft_s": 0.133, "e2e_s": 2.4, "decode_tok_per_s": 112.48, "peak_mem_mib": 16240} 
+2026-11-11 19:18:59 start dec-fix-slru-1
+2026-11-11 19:19:14 done dec-fix-slru-1 rc=0 gpulock: 5090 leased for 60m {"mode": "decode", "env": {"MEMRA_MOE_RESIDENT": "0"}, "server": "<lane>/bin/memra-server-fix", "boot_s": 11.0, "mem_ready_s": 11.006, "text_sha16": "9ad77520768940e8", "events": 256, "completion_tokens": 256, "ttft_s": 0.628, "e2e_s": 2.893, "decode_tok_per_s": 112.57, "peak_mem_mib": 20048} 
+2026-11-11 19:19:15 start dec-fix-spill-1
+2026-11-11 19:19:31 done dec-fix-spill-1 rc=0 gpulock: 5090 leased for 60m {"mode": "decode", "env": {"MEMRA_MOE_RESIDENT": "0", "MEMRA_MOE_SLOTS": "2000"}, "server": "<lane>/bin/memra-server-fix", "boot_s": 10.0, "mem_ready_s": 10.005, "text_sha16": "9ad77520768940e8", "events": 256, "completion_tokens": 256, "ttft_s": 0.344, "e2e_s": 4.874, "decode_tok_per_s": 56.29, "peak_mem_mib": 6096} 
+FINAL-DONE

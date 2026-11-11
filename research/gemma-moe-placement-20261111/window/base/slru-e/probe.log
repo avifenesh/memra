@@ -1,0 +1,53 @@
+gpulock: 5090 leased for 60m
+[tensor-contract] bound 658 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4rp] split-plane decode mirrors built: 210 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 20700 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+argmax-margin-probe: T=2103 window=12 sm_count=82 model=<models>/gemma-4-26B_q4_0-it.gguf
+env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 8192 ml_len 16 -> 32 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 8192 -> 16384 ml_len 32 -> 64 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 16384 -> 32768 ml_len 64 -> 128 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 32768 -> 65536 ml_len 128 -> 256 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 65536 -> 131072 ml_len 256 -> 512 (retired kept, zero=false)
+[fa-pool] grow #6 dev=0 o_len 131072 -> 262144 ml_len 512 -> 1024 (retired kept, zero=false)
+[fa-pool] grow #7 dev=0 o_len 262144 -> 524288 ml_len 1024 -> 2048 (retired kept, zero=false)
+[fa-pool] grow #8 dev=0 o_len 524288 -> 1048576 ml_len 2048 -> 4096 (retired kept, zero=false)
+[fa-pool] grow #9 dev=0 o_len 1048576 -> 2097152 ml_len 4096 -> 8192 (retired kept, zero=false)
+
+pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree
+2091     3841          1.925640106e-1   236751       2.440910339e-1   8.423061371e-1   NO <-- FLIP
+2092     236929        4.028514862e0    236929       4.090415955e0    1.698932648e-1   yes
+2093     236772        5.006523132e-1   236772       3.943386078e-1   4.650554657e-1   yes
+2094     236776        4.757575989e-1   236776       2.234916687e-1   1.800212860e-1   yes
+2095     236772        1.297527313e0    236772       1.134683609e0    1.674594879e-1   yes
+2096     5140          2.225494385e-1   5140         7.205715179e-1   3.081417084e-1   yes
+2097     236768        8.077564240e-1   236768       1.855640411e-1   7.561779022e-1   yes
+2098     236772        8.416881561e-1   236772       9.675865173e-1   2.276630402e-1   yes
+2099     2165          1.967010498e-1   2165         4.873523712e-1   3.883953094e-1   yes
+2100     236772        1.326387405e0    236772       1.851379395e0    9.311656952e-1   yes
+2101     34246         5.177650452e-1   34246        4.887638092e-1   6.828117371e-2   yes
+2102     236772        1.337776184e-1   236772       1.509895325e-1   1.142349243e-1   yes
+
+rows in detail (top-2 ids, text, logits; each program's logit at the other's top-1):
+detail pos=2091 prefill: top1=3841 "times" 18.6702 top2=236751 "s" 18.4776 margin=0.1926 at-decode-top1=18.4776 | decode: top1=236751 "s" 19.3199 top2=1412 "ts" 19.0758 margin=0.2441 at-prefill-top1=18.9471 | spread=0.8423 gap_shift=0.4367
+detail pos=2092 prefill: top1=236929 "`" 25.7712 top2=8347 "`," 21.7427 margin=4.0285 at-decode-top1=25.7712 | decode: top1=236929 "`" 25.9411 top2=8347 "`," 21.8507 margin=4.0904 at-prefill-top1=25.9411 | spread=0.1699 gap_shift=0.0619
+detail pos=2093 prefill: top1=236772 "-" 20.8325 top2=236786 "/" 20.3319 margin=0.5007 at-decode-top1=20.8325 | decode: top1=236772 "-" 20.7286 top2=52025 " kernels" 20.3342 margin=0.3943 at-prefill-top1=20.7286 | spread=0.4651 gap_shift=0.1063
+detail pos=2094 prefill: top1=236776 "A" 21.7897 top2=236772 "-" 21.3140 margin=0.4758 at-decode-top1=21.7897 | decode: top1=236776 "A" 21.7175 top2=236772 "-" 21.4940 margin=0.2235 at-prefill-top1=21.7175 | spread=0.1800 gap_shift=0.2523
+detail pos=2095 prefill: top1=236772 "-" 28.1362 top2=236786 "/" 26.8387 margin=1.2975 at-decode-top1=28.1362 | decode: top1=236772 "-" 27.9687 top2=236786 "/" 26.8340 margin=1.1347 at-prefill-top1=27.9687 | spread=0.1675 gap_shift=0.1628
+detail pos=2096 prefill: top1=5140 "based" 20.5268 top2=27612 "driven" 20.3043 margin=0.2225 at-decode-top1=20.5268 | decode: top1=5140 "based" 20.7167 top2=27612 "driven" 19.9962 margin=0.7206 at-prefill-top1=20.7167 | spread=0.3081 gap_shift=0.4980
+detail pos=2097 prefill: top1=236768 ")" 25.3830 top2=236772 "-" 24.5752 margin=0.8078 at-decode-top1=25.3830 | decode: top1=236768 ")" 24.6268 top2=236772 "-" 24.4412 margin=0.1856 at-prefill-top1=24.6268 | spread=0.7562 gap_shift=0.6222
+detail pos=2098 prefill: top1=236772 "-" 21.7582 top2=236786 "/" 20.9165 margin=0.8417 at-decode-top1=21.7582 | decode: top1=236772 "-" 21.6564 top2=236786 "/" 20.6888 margin=0.9676 at-prefill-top1=21.6564 | spread=0.2277 gap_shift=0.1259
+detail pos=2099 prefill: top1=2165 " `" 24.4248 top2=496 " a" 24.2281 margin=0.1967 at-decode-top1=24.4248 | decode: top1=2165 " `" 24.8132 top2=496 " a" 24.3258 margin=0.4874 at-prefill-top1=24.8132 | spread=0.3884 gap_shift=0.2907
+detail pos=2100 prefill: top1=236772 "-" 21.0147 top2=108 "\n\n" 19.6883 margin=1.3264 at-decode-top1=21.0147 | decode: top1=236772 "-" 20.6085 top2=108 "\n\n" 18.7571 margin=1.8514 at-prefill-top1=20.6085 | spread=0.9312 gap_shift=0.5250
+detail pos=2101 prefill: top1=34246 "fat" 23.3280 top2=236929 "`" 22.8102 margin=0.5178 at-decode-top1=23.3280 | decode: top1=34246 "fat" 23.2597 top2=236929 "`" 22.7710 margin=0.4888 at-prefill-top1=23.2597 | spread=0.0683 gap_shift=0.0290
+detail pos=2102 prefill: top1=236772 "-" 17.6342 top2=1018 "**" 17.5004 margin=0.1338 at-decode-top1=17.6342 | decode: top1=236772 "-" 17.5371 top2=1018 "**" 17.3861 margin=0.1510 at-prefill-top1=17.5371 | spread=0.1142 gap_shift=0.0172
+
+margin distribution (decode config, 12 positions): min 0.1510  p10 0.1856  p50 0.4888  p90 1.8514  max 4.0904
+margin distribution (prefill config): min 0.1338  p50 0.5178  max 4.0285
+DECISION POSITION (the gate's): prefill_top1=236772 decode_top1=236772 margin_p=0.1338 margin_d=0.1510 config_delta_at_ids=0.1142 gap_shift=0.0172
+agreement across sampled positions: 11/12 (1 flip(s))
+flip@2091: margins 0.1926 + 0.2441 = gap shift 0.4367 (spread 0.8423)
+largest gap shift at an agreeing row: 6.221923828e-1 at row 2097 (11 agreeing rows; this is the floor when the window is the whole prompt)
+PRIME-GATE: class=MATCH bp_argmax=236772 tw_argmax=236772 tw_margin=1.509895325e-1 bp_margin=4.258193970e-1 maxdiff=1.170413733e0

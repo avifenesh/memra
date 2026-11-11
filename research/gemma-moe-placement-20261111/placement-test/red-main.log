@@ -1,0 +1,139 @@
+gpulock: 5090 leased for 40m
+
+running 1 test
+test gemma_slru_placement_is_bit_identical_to_resident ... [tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[loader-law] WARNING: token_embd.weight loads as 2D Float ne=[256, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[moe] resident-experts decision (dev0): experts 0.08GB + trunk 0.00GB vs free 24.85GB (expert budget 22.85GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 8 tensors
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 23636 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[fa-pool] grow #0 dev=0 o_len 0 -> 3072 ml_len 0 -> 12 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 3072 -> 6144 ml_len 12 -> 24 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 6144 -> 13312 ml_len 24 -> 48 (retired kept, zero=false)
+[gemma-placement] pairs program: int8 MMA
+[tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 8 tensors
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 23602 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[fa-pool] grow #3 dev=0 o_len 0 -> 3072 ml_len 0 -> 12 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 3072 -> 6144 ml_len 12 -> 24 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 6144 -> 13312 ml_len 24 -> 48 (retired kept, zero=false)
+[gemma-placement] SlruRoomy: cache None (hits, misses, staged B, slots) SLRU calls row=0 pinned=0 chunked=0
+  forward T=1: element 0 -6.653864e0 (0xc0d4ec74) vs -6.653052e0 (0xc0d4e5cd)
+  forward T=8: element 0 -1.0280709e1 (0xc1247dc9) vs -1.0269404e1 (0xc1244f7b)
+  forward T=15: element 0 -9.620208e0 (0xc119ec5f) vs -9.630515e0 (0xc11a1697)
+  forward T=16: element 0 3.6316875e-1 (0x3eb9f141) vs 3.6341852e-1 (0x3eba11fe)
+  forward T=40: element 0 3.6316857e-1 (0x3eb9f13b) vs 3.6341852e-1 (0x3eba11fe)
+  forward T=130: element 0 -6.6538634e0 (0xc0d4ec73) vs -6.6530523e0 (0xc0d4e5ce)
+  forward T=600: element 0 6.683282e0 (0x40d5dd72) vs 6.6896667e0 (0x40d611c0)
+  A prime last row: element 0 -4.7173495e0 (0xc096f487) vs -4.7523675e0 (0xc0981365)
+  A decode 0: element 0 -1.062584e1 (0xc12a0371) vs -1.0600238e1 (0xc1299a93)
+  A decode 1: element 0 1.8217747e1 (0x4191bdf2) vs 1.822385e1 (0x4191ca72)
+  B prime last row (between A's decode steps): element 0 3.583238e-1 (0x3eb77638) vs 3.866467e-1 (0x3ec5f68e)
+  A decode 2: element 0 -5.943476e0 (0xc0be30f5) vs -5.9903035e0 (0xc0bfb091)
+  B decode 0: element 0 6.501378e0 (0x40d00b4a) vs 6.486246e0 (0x40cf8f54)
+  A decode 3: element 0 1.4789643e1 (0x416ca261) vs 1.478597e1 (0x416c9355)
+  B decode 1: element 0 1.4006898e1 (0x41601c41) vs 1.3982493e1 (0x415fb84b)
+  A decode 4: element 0 -1.4756021e0 (0xbfbce088) vs -1.477823e0 (0xbfbd294e)
+  B decode 2: element 0 1.1280626e0 (0x3f90645b) vs 1.0784208e0 (0x3f8a09b1)
+  A decode 5: element 0 -8.460481e0 (0xc1075e21) vs -8.407296e0 (0xc1068449)
+  B decode 3: element 0 -5.333154e0 (0xc0aaa933) vs -5.315977e0 (0xc0aa1c7c)
+[gemma-placement] SlruRoomy: 19/19 rows differ from the resident arm
+[tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 8 tensors
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 23602 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[fa-pool] grow #6 dev=0 o_len 0 -> 3072 ml_len 0 -> 12 (retired kept, zero=false)
+[fa-pool] grow #7 dev=0 o_len 3072 -> 6144 ml_len 12 -> 24 (retired kept, zero=false)
+[fa-pool] grow #8 dev=0 o_len 6144 -> 13312 ml_len 24 -> 48 (retired kept, zero=false)
+[gemma-placement] SlruMid: cache None (hits, misses, staged B, slots) SLRU calls row=0 pinned=0 chunked=0
+  forward T=1: element 0 -6.653864e0 (0xc0d4ec74) vs -6.653052e0 (0xc0d4e5cd)
+  forward T=8: element 0 -1.0280709e1 (0xc1247dc9) vs -1.0269404e1 (0xc1244f7b)
+  forward T=15: element 0 -9.620208e0 (0xc119ec5f) vs -9.630515e0 (0xc11a1697)
+  forward T=16: element 0 3.6316875e-1 (0x3eb9f141) vs 3.6341852e-1 (0x3eba11fe)
+  forward T=40: element 0 3.6316857e-1 (0x3eb9f13b) vs 3.6341852e-1 (0x3eba11fe)
+  forward T=130: element 0 -6.6538634e0 (0xc0d4ec73) vs -6.6530523e0 (0xc0d4e5ce)
+  forward T=600: element 0 6.683282e0 (0x40d5dd72) vs 6.6896667e0 (0x40d611c0)
+  A prime last row: element 0 -4.7173495e0 (0xc096f487) vs -4.7523675e0 (0xc0981365)
+  A decode 0: element 0 -1.062584e1 (0xc12a0371) vs -1.0600238e1 (0xc1299a93)
+  A decode 1: element 0 1.8217747e1 (0x4191bdf2) vs 1.822385e1 (0x4191ca72)
+  B prime last row (between A's decode steps): element 0 3.583238e-1 (0x3eb77638) vs 3.866467e-1 (0x3ec5f68e)
+  A decode 2: element 0 -5.943476e0 (0xc0be30f5) vs -5.9903035e0 (0xc0bfb091)
+  B decode 0: element 0 6.501378e0 (0x40d00b4a) vs 6.486246e0 (0x40cf8f54)
+  A decode 3: element 0 1.4789643e1 (0x416ca261) vs 1.478597e1 (0x416c9355)
+  B decode 1: element 0 1.4006898e1 (0x41601c41) vs 1.3982493e1 (0x415fb84b)
+  A decode 4: element 0 -1.4756021e0 (0xbfbce088) vs -1.477823e0 (0xbfbd294e)
+  B decode 2: element 0 1.1280626e0 (0x3f90645b) vs 1.0784208e0 (0x3f8a09b1)
+  A decode 5: element 0 -8.460481e0 (0xc1075e21) vs -8.407296e0 (0xc1068449)
+  B decode 3: element 0 -5.333154e0 (0xc0aaa933) vs -5.315977e0 (0xc0aa1c7c)
+[gemma-placement] SlruMid: 19/19 rows differ from the resident arm
+[tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 8 tensors
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 23602 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[fa-pool] grow #9 dev=0 o_len 0 -> 3072 ml_len 0 -> 12 (retired kept, zero=false)
+[fa-pool] grow #10 dev=0 o_len 3072 -> 6144 ml_len 12 -> 24 (retired kept, zero=false)
+[fa-pool] grow #11 dev=0 o_len 6144 -> 13312 ml_len 24 -> 48 (retired kept, zero=false)
+[gemma-placement] SlruTight: cache None (hits, misses, staged B, slots) SLRU calls row=0 pinned=0 chunked=0
+  forward T=1: element 0 -6.653864e0 (0xc0d4ec74) vs -6.653052e0 (0xc0d4e5cd)
+  forward T=8: element 0 -1.0280709e1 (0xc1247dc9) vs -1.0269404e1 (0xc1244f7b)
+  forward T=15: element 0 -9.620208e0 (0xc119ec5f) vs -9.630515e0 (0xc11a1697)
+  forward T=16: element 0 3.6316875e-1 (0x3eb9f141) vs 3.6341852e-1 (0x3eba11fe)
+  forward T=40: element 0 3.6316857e-1 (0x3eb9f13b) vs 3.6341852e-1 (0x3eba11fe)
+  forward T=130: element 0 -6.6538634e0 (0xc0d4ec73) vs -6.6530523e0 (0xc0d4e5ce)
+  forward T=600: element 0 6.683282e0 (0x40d5dd72) vs 6.6896667e0 (0x40d611c0)
+  A prime last row: element 0 -4.7173495e0 (0xc096f487) vs -4.7523675e0 (0xc0981365)
+  A decode 0: element 0 -1.062584e1 (0xc12a0371) vs -1.0600238e1 (0xc1299a93)
+  A decode 1: element 0 1.8217747e1 (0x4191bdf2) vs 1.822385e1 (0x4191ca72)
+  B prime last row (between A's decode steps): element 0 3.583238e-1 (0x3eb77638) vs 3.866467e-1 (0x3ec5f68e)
+  A decode 2: element 0 -5.943476e0 (0xc0be30f5) vs -5.9903035e0 (0xc0bfb091)
+  B decode 0: element 0 6.501378e0 (0x40d00b4a) vs 6.486246e0 (0x40cf8f54)
+  A decode 3: element 0 1.4789643e1 (0x416ca261) vs 1.478597e1 (0x416c9355)
+  B decode 1: element 0 1.4006898e1 (0x41601c41) vs 1.3982493e1 (0x415fb84b)
+  A decode 4: element 0 -1.4756021e0 (0xbfbce088) vs -1.477823e0 (0xbfbd294e)
+  B decode 2: element 0 1.1280626e0 (0x3f90645b) vs 1.0784208e0 (0x3f8a09b1)
+  A decode 5: element 0 -8.460481e0 (0xc1075e21) vs -8.407296e0 (0xc1068449)
+  B decode 3: element 0 -5.333154e0 (0xc0aaa933) vs -5.315977e0 (0xc0aa1c7c)
+[gemma-placement] SlruTight: 19/19 rows differ from the resident arm
+[tensor-contract] bound 46 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 8 tensors
+[q4rp] split-plane decode mirrors built: 14 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 23602 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[fa-pool] grow #12 dev=0 o_len 0 -> 3072 ml_len 0 -> 12 (retired kept, zero=false)
+[fa-pool] grow #13 dev=0 o_len 3072 -> 6144 ml_len 12 -> 24 (retired kept, zero=false)
+[fa-pool] grow #14 dev=0 o_len 6144 -> 13312 ml_len 24 -> 48 (retired kept, zero=false)
+[gemma-placement] SlruBelow: cache None (hits, misses, staged B, slots) SLRU calls row=0 pinned=0 chunked=0
+  forward T=1: element 0 -6.653864e0 (0xc0d4ec74) vs -6.653052e0 (0xc0d4e5cd)
+  forward T=8: element 0 -1.0280709e1 (0xc1247dc9) vs -1.0269404e1 (0xc1244f7b)
+  forward T=15: element 0 -9.620208e0 (0xc119ec5f) vs -9.630515e0 (0xc11a1697)
+  forward T=16: element 0 3.6316875e-1 (0x3eb9f141) vs 3.6341852e-1 (0x3eba11fe)
+  forward T=40: element 0 3.6316857e-1 (0x3eb9f13b) vs 3.6341852e-1 (0x3eba11fe)
+  forward T=130: element 0 -6.6538634e0 (0xc0d4ec73) vs -6.6530523e0 (0xc0d4e5ce)
+  forward T=600: element 0 6.683282e0 (0x40d5dd72) vs 6.6896667e0 (0x40d611c0)
+  A prime last row: element 0 -4.7173495e0 (0xc096f487) vs -4.7523675e0 (0xc0981365)
+  A decode 0: element 0 -1.062584e1 (0xc12a0371) vs -1.0600238e1 (0xc1299a93)
+  A decode 1: element 0 1.8217747e1 (0x4191bdf2) vs 1.822385e1 (0x4191ca72)
+  B prime last row (between A's decode steps): element 0 3.583238e-1 (0x3eb77638) vs 3.866467e-1 (0x3ec5f68e)
+  A decode 2: element 0 -5.943476e0 (0xc0be30f5) vs -5.9903035e0 (0xc0bfb091)
+  B decode 0: element 0 6.501378e0 (0x40d00b4a) vs 6.486246e0 (0x40cf8f54)
+  A decode 3: element 0 1.4789643e1 (0x416ca261) vs 1.478597e1 (0x416c9355)
+  B decode 1: element 0 1.4006898e1 (0x41601c41) vs 1.3982493e1 (0x415fb84b)
+  A decode 4: element 0 -1.4756021e0 (0xbfbce088) vs -1.477823e0 (0xbfbd294e)
+  B decode 2: element 0 1.1280626e0 (0x3f90645b) vs 1.0784208e0 (0x3f8a09b1)
+  A decode 5: element 0 -8.460481e0 (0xc1075e21) vs -8.407296e0 (0xc1068449)
+  B decode 3: element 0 -5.333154e0 (0xc0aaa933) vs -5.315977e0 (0xc0aa1c7c)
+[gemma-placement] SlruBelow: 19/19 rows differ from the resident arm
+
+thread 'gemma_slru_placement_is_bit_identical_to_resident' (1039468) panicked at crates/memra-engine/tests/moe_slru_gemma_placement_gpu.rs:528:5:
+SLRU placements are not bit-identical to the resident placement: ["SlruRoomy: no SLRU was built; the gate is vacuous", "SlruMid: no SLRU was built; the gate is vacuous", "SlruTight: no SLRU was built; the gate is vacuous"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    gemma_slru_placement_is_bit_identical_to_resident
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 9.28s
+
+rc=101
