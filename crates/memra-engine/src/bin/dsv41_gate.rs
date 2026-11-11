@@ -1860,6 +1860,46 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             );
         }
     }
+    // the embedding gather on the device against the host's rows (`Runner::embed` and its hc
+    // copies): a table of 1,000 random bf16 rows of 5,120, ids with both ends and repeats, into 4
+    // stream slots, and the one-hot pre-mix
+    {
+        let (vocab, d, hc, s) = (1000usize, 5120usize, 4usize, 37usize);
+        let table = rng.bf16(vocab * d);
+        let ids: Vec<i32> = (0..s)
+            .map(|i| match i {
+                0 | 5 => 0,
+                1 | 6 => vocab as i32 - 1,
+                _ => (rng.next() as usize % vocab) as i32,
+            })
+            .collect();
+        let tb = Buf::from_bytes(&st, &table)?;
+        let ib = Buf::from_i32(&st, &ids)?;
+        let (h, pm) = (ops.buf(s * hc * d * 2)?, ops.buf(s * hc * 4)?);
+        ck("embed rows", unsafe {
+            ffi::memra_v41_embed_rows(
+                tb.p(&st).c(),
+                vocab as i64,
+                ib.p(&st).i(),
+                s as i32,
+                d as i32,
+                hc as i32,
+                h.p(&st).m(),
+                pm.p(&st).fm(),
+                sv,
+            )
+        })?;
+        let (mut wh, mut wp) = (vec![0u8; s * hc * d * 2], vec![0u8; s * hc * 4]);
+        for (t, &id) in ids.iter().enumerate() {
+            let row = &table[id as usize * d * 2..(id as usize + 1) * d * 2];
+            for k in 0..hc {
+                wh[(t * hc + k) * d * 2..(t * hc + k + 1) * d * 2].copy_from_slice(row);
+            }
+            wp[t * hc * 4..t * hc * 4 + 4].copy_from_slice(&1f32.to_le_bytes());
+        }
+        same(rep, "schedule/embed_rows/stream", &h.host(&st)?, &wh);
+        same(rep, "schedule/embed_rows/premix", &pm.host(&st)?, &wp);
+    }
     // the one-row selects over a long row cut into blocks against the one-block forms: a row of few
     // distinct scores (so the threshold has many ties) with some -inf
     for &t in &[20_000usize, 131_072, 262_144] {

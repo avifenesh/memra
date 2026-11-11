@@ -1,0 +1,19 @@
+fmt rc 0
+build start 13:27:35
+build end 13:31:33
+81e04055a5b541c1c824ae7ed88185c24a8b03b49f2e28d9c91366b16fe4e1be  $LANE/bins/emb/dsv41-bench
+fe2c1cbf9b079fd42345c5c17d7bb5590a847c8606b95718c92669b529d677a8  $LANE/bins/emb/dsv41-gate
+25c9d6737a88598ba5553792d3fbf9bfef92efdefd7613c1149525ec7c249def  $LANE/bins/emb/dsv41-run
+c6569d8479355e601e7fa1a64567ef569e0a86208696988cd99008ed65f10fb0  $LANE/bins/emb/dsv41-tpbench
+kernels rc 0 151 checks, 0 failed 0 FAIL lines
+PASS schedule/embed_rows/stream: 1515520 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/embed_rows/premix: 592 bytes, 0 differ [byte-identical to the reference schedule]
+pool probe rc 0
+device 0: sizes MB [1280, 320, 256, 128, 640, 48, 384, 192, 1024, 16] (sum 4.19 GiB); reserve 7.34 GiB; reserved at start 0.00 GiB
+cold      allocations ms: 53.93 11.54 9.18 4.60 22.81 2.36 13.56 6.76 35.45 0.01  (sum 160.2 ms, max 53.93); reserved after 4.19 GiB, used at peak 4.19 GiB
+reserve   one 7.34 GiB block 263.52 ms, freed; reserved 7.34 GiB
+reserved  allocations ms: 0.01 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00  (sum 0.0 ms, max 0.01); reserved after 7.34 GiB, used at peak 4.19 GiB
+again     allocations ms: 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00  (sum 0.0 ms, max 0.00); reserved after 7.34 GiB, used at peak 4.19 GiB
+layer rc 0 161 checks, 0 failed 0 FAIL lines
+layer saved tensors against k3's set: 111 compared, 0 differ
+GATES-EMB-A-DONE 13:36:27

@@ -1,0 +1,6 @@
+dsv41-tpbench: 2 cells x 2 rounds on 1 rank(s) [0], 4/4 layers resident, chunk 8192, max_pos 18360
+  plan prefill-3761: workspace 2.34 GiB + state 0.00 GiB a rank
+  plan prefill-18343: workspace 5.14 GiB + state 0.01 GiB a rank
+  carried state: 641 B a position a rank (+0.5 MiB of window rings a sequence); reserve 5.15 GiB a device-rank
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+dsv41-tpbench: device 0: 4 layers resident would need 17.4 GiB more (8.68 GiB a layer for its ranks) plus 5.2 GiB reserve; 1.3 GiB free: does not fit
