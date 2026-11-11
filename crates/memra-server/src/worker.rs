@@ -389,7 +389,7 @@ fn sub_floor_capture_boundary(b: usize, fed: usize, queued: usize) -> bool {
 }
 
 /// What the two `MEMRA_PRIME_BATCH_HOLD_MS` windows (the batch-formation hold and the
-/// post-retirement refill grace) do with the `left` part of their window at phase (b): wait it out
+/// post-retirement refill grace, memra#1223) do with the `left` part of their window at phase (b): wait it out
 /// in this tick and report whether a request reached the worker's channel meanwhile. `true`: the
 /// caller keeps cold prefill off this tick, and the arrival is admitted at the next tick's top,
 /// where it batches with the held prime or takes its cache hit's first token first. `false`: the
