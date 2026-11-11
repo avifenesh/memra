@@ -10472,6 +10472,559 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cells.record("attn_head_gate");
     }
 
+    // embed-gather-rows (memra#1200): the batched embed gathers (`embed_gather_device_t`,
+    // `_td`, `_tv`) take a row from grid y, which CUDA caps at 65,535 blocks. Every row of
+    // every arm must equal the host expansion of its table row byte for byte, at row counts
+    // below, at and past the cap (65,536 and 131,075 cross one and two block edges). F32 and
+    // BF16 tables: both host expansions are exact (a copy, and bits << 16). The 4,096-row
+    // output hash per qtype is printed so two builds can be compared byte for byte at a row
+    // count every caller uses today.
+    {
+        use memra_engine::hybrid_forward::CUDA_GRID_YZ_MAX;
+        let (n_embd, vocab) = (300usize, 4099usize);
+        let f32_rows: Vec<f32> = (0..vocab * n_embd).map(|i| pr(i + 1201) * 64.0).collect();
+        let bf16_rows: Vec<u16> = (0..vocab * n_embd)
+            .map(|i| ((pr(i + 3307) * 64.0).to_bits() >> 16) as u16)
+            .collect();
+        let f32_bytes: Vec<u8> = f32_rows.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let bf16_bytes: Vec<u8> = bf16_rows.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let tables = [
+            (
+                "F32",
+                memra_engine::QT_F32,
+                4 * n_embd,
+                e.upload_u8(&f32_bytes)?,
+            ),
+            (
+                "BF16",
+                memra_engine::QT_BF16,
+                2 * n_embd,
+                e.upload_u8(&bf16_bytes)?,
+            ),
+        ];
+        let host_row = |qt: i32, tok: usize, j: usize| -> u32 {
+            if qt == memra_engine::QT_F32 {
+                f32_rows[tok * n_embd + j].to_bits()
+            } else {
+                (bf16_rows[tok * n_embd + j] as u32) << 16
+            }
+        };
+        let mut ok_all = true;
+        for &rows in &[
+            1usize,
+            4096,
+            CUDA_GRID_YZ_MAX,
+            CUDA_GRID_YZ_MAX + 1,
+            131_075,
+        ] {
+            // Distinct neighbours (2654435761 is coprime to the prime vocab), so a row
+            // written to the wrong slot or a block that never ran cannot match.
+            let toks: Vec<u32> = (0..rows)
+                .map(|i| ((i as u64 * 2_654_435_761 + 12_345) % vocab as u64) as u32)
+                .collect();
+            let pad = 5usize;
+            let mut padded = vec![0u32; pad];
+            padded.extend_from_slice(&toks);
+            let tok_d = e.htod_u32_v(&toks)?;
+            let padded_d = e.htod_u32_v(&padded)?;
+            for (name, qt, rb, table) in &tables {
+                for arm in ["t", "td", "tv"] {
+                    let got = match arm {
+                        "t" => e.embed_gather_device_t(table, &toks, n_embd, *qt, *rb),
+                        "td" => e.embed_gather_device_td(table, &tok_d, rows, n_embd, *qt, *rb),
+                        _ => e.embed_gather_device_tv(
+                            table,
+                            &padded_d.slice(pad..pad + rows),
+                            rows,
+                            n_embd,
+                            *qt,
+                            *rb,
+                        ),
+                    }
+                    .and_then(|x| {
+                        e.stream().synchronize()?;
+                        e.dtoh(&x)
+                    });
+                    let verdict = match got {
+                        Err(err) => format!("launch error: {err}"),
+                        Ok(x) if x.len() != rows * n_embd => format!("len {}", x.len()),
+                        Ok(x) => {
+                            let bad = (0..rows)
+                                .filter(|&r| {
+                                    (0..n_embd).any(|j| {
+                                        x[r * n_embd + j].to_bits()
+                                            != host_row(*qt, toks[r] as usize, j)
+                                    })
+                                })
+                                .count();
+                            if rows == 4096 && arm == "t" {
+                                let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+                                for v in &x {
+                                    for b in v.to_bits().to_le_bytes() {
+                                        h = (h ^ b as u64).wrapping_mul(0x0100_0000_01b3);
+                                    }
+                                }
+                                println!(
+                                    "embed-gather-rows hash [{name} rows={rows}] fnv1a64={h:016x}"
+                                );
+                            }
+                            if bad == 0 {
+                                String::new()
+                            } else {
+                                format!("{bad} rows differ")
+                            }
+                        }
+                    };
+                    let ok = verdict.is_empty();
+                    ok_all &= ok;
+                    println!(
+                        "embed-gather-rows [{name} {arm} rows={rows}] {} {}",
+                        if ok { "byte-equal" } else { verdict.as_str() },
+                        if ok {
+                            "OK"
+                        } else {
+                            fails += 1;
+                            "FAIL"
+                        }
+                    );
+                }
+            }
+        }
+        if ok_all {
+            cells.record("embed-gather-rows");
+        }
+    }
+
+    // dp4a-rows and gdn-conv-rows (memra#1200): the per-token dp4a matvecs (the GDN beta and
+    // alpha projections land there, out_f < 128) and the prefill GDN conv take a token from
+    // grid y, capped at 65,535 blocks. At 70,000 tokens every output row must equal, bit for
+    // bit, the row an unsplit launch writes: rows 0..65,535 against one launch over those
+    // rows, the rest against one launch over the tail (the conv's tail launch starts `pad`
+    // rows early so its window is the full launch's window).
+    {
+        use cudarc::driver::CudaSlice;
+        use memra_engine::hybrid_forward::CUDA_GRID_YZ_MAX;
+        let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+        let (m, cap) = (70_000usize, CUDA_GRID_YZ_MAX);
+        let (in_f, out_f) = (512usize, 32usize);
+        let x: Vec<f32> = (0..m * in_f).map(|i| pr(i + 7001)).collect();
+        let x_full = e.htod(&x)?;
+        let x_head = e.htod(&x[..cap * in_f])?;
+        let x_tail = e.htod(&x[cap * in_f..])?;
+        // Q8_0 rows (34-byte blocks: f16 scale 2^-6, 32 int8) and Q5_K rows (176-byte blocks:
+        // f16 d and dmin 2^-7, then scales, qh and qs bytes).
+        let q8_row_bytes = in_f / 32 * 34;
+        let q8: Vec<u8> = (0..out_f * q8_row_bytes)
+            .map(|i| match i % 34 {
+                0 => 0x00,
+                1 => 0x24,
+                _ => (pr(i + 11) * 127.0) as i8 as u8,
+            })
+            .collect();
+        let q5_row_bytes = in_f / 256 * 176;
+        let q5: Vec<u8> = (0..out_f * q5_row_bytes)
+            .map(|i| match i % 176 {
+                0 | 2 => 0x00,
+                1 | 3 => 0x20,
+                _ => ((pr(i + 29) + 1.0) * 127.0) as u8,
+            })
+            .collect();
+        let (q8_d, q5_d) = (e.upload_u8(&q8)?, e.upload_u8(&q5)?);
+        type Mv<'a> = Box<
+            dyn Fn(&CudaSlice<f32>, usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>>
+                + 'a,
+        >;
+        let arms: Vec<(&str, Mv)> = vec![
+            (
+                "q8_0-dp4a",
+                Box::new(|xs: &CudaSlice<f32>, rows: usize| {
+                    e.qmatvec_q8_0_fast(&q8_d, xs, rows, in_f, out_f, q8_row_bytes)
+                }),
+            ),
+            (
+                "q5_K-dp4a",
+                Box::new(|xs: &CudaSlice<f32>, rows: usize| {
+                    e.qmatvec_q5_K_fast(&q5_d, xs, rows, in_f, out_f, q5_row_bytes)
+                }),
+            ),
+            (
+                "qmatvec_f32-q8_0",
+                Box::new(|xs: &CudaSlice<f32>, rows: usize| {
+                    e.qmatvec(
+                        &q8_d,
+                        xs,
+                        rows,
+                        in_f,
+                        out_f,
+                        memra_engine::QT_Q8_0,
+                        q8_row_bytes,
+                    )
+                }),
+            ),
+        ];
+        for (name, mv) in &arms {
+            let run = || -> Result<bool, Box<dyn std::error::Error>> {
+                let full = mv(&x_full, m)?;
+                let head = mv(&x_head, cap)?;
+                let tail = mv(&x_tail, m - cap)?;
+                e.stream().synchronize()?;
+                let (full, head, tail) = (
+                    bits(&e.dtoh(&full)?),
+                    bits(&e.dtoh(&head)?),
+                    bits(&e.dtoh(&tail)?),
+                );
+                Ok(full.len() == m * out_f
+                    && full[..cap * out_f] == head[..]
+                    && full[cap * out_f..] == tail[..])
+            };
+            let verdict = match run() {
+                Err(err) => format!("launch error: {err}"),
+                Ok(true) => String::new(),
+                Ok(false) => "rows differ from the unsplit launches".into(),
+            };
+            println!(
+                "dp4a-rows [{name} m={m}] {} {}",
+                if verdict.is_empty() {
+                    "bit-equal"
+                } else {
+                    verdict.as_str()
+                },
+                if verdict.is_empty() {
+                    "OK"
+                } else {
+                    fails += 1;
+                    "FAIL"
+                }
+            );
+        }
+
+        // The prefill GDN conv at the qwen35 window (d_conv 4), a small head layout.
+        let (d_state, num_k, num_v, d_conv) = (128usize, 1usize, 2usize, 4usize);
+        let key_dim = d_state * num_k;
+        let conv_dim = 2 * key_dim + d_state * num_v;
+        let pad = d_conv - 1;
+        let plane = num_v * d_state;
+        let qkv: Vec<f32> = (0..m * conv_dim).map(|i| pr(i + 9203)).collect();
+        let cw: Vec<f32> = (0..conv_dim * d_conv).map(|i| pr(i + 77) * 0.5).collect();
+        let cw_d = e.htod(&cw)?;
+        let conv = |rows: &[f32], t: usize| -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+            let xd = e.htod(rows)?;
+            let (mut q, mut k, mut v) = (
+                e.zeros(t * plane)?,
+                e.zeros(t * plane)?,
+                e.zeros(t * plane)?,
+            );
+            e.ssm_conv1d_gdn(
+                &xd, &cw_d, &mut q, &mut k, &mut v, conv_dim, t, d_conv, d_state, num_v, num_k,
+                key_dim,
+            )?;
+            e.stream().synchronize()?;
+            let mut out = bits(&e.dtoh(&q)?);
+            out.extend(bits(&e.dtoh(&k)?));
+            out.extend(bits(&e.dtoh(&v)?));
+            Ok(out)
+        };
+        let run = || -> Result<bool, Box<dyn std::error::Error>> {
+            let full = conv(&qkv, m)?;
+            let head = conv(&qkv[..cap * conv_dim], cap)?;
+            let tail_t = m - cap + pad;
+            let tail = conv(&qkv[(cap - pad) * conv_dim..], tail_t)?;
+            let mut ok = full.len() == 3 * m * plane;
+            for p in 0..3 {
+                let f = &full[p * m * plane..(p + 1) * m * plane];
+                let h = &head[p * cap * plane..(p + 1) * cap * plane];
+                let tl = &tail[p * tail_t * plane..(p + 1) * tail_t * plane];
+                ok &= f[..cap * plane] == h[..] && f[cap * plane..] == tl[pad * plane..];
+            }
+            Ok(ok)
+        };
+        let verdict = match run() {
+            Err(err) => format!("launch error: {err}"),
+            Ok(true) => String::new(),
+            Ok(false) => "rows differ from the unsplit launches".into(),
+        };
+        println!(
+            "gdn-conv-rows [t={m} conv_dim={conv_dim}] {} {}",
+            if verdict.is_empty() {
+                "bit-equal"
+            } else {
+                verdict.as_str()
+            },
+            if verdict.is_empty() {
+                "OK"
+            } else {
+                fails += 1;
+                "FAIL"
+            }
+        );
+    }
+
+    // kv-append-rows and copy-rows-strided (memra#1200): the prefill KV append (a prime's own
+    // K/V rows into the quantized cache) and the E4B per-layer-embedding row copy take a token
+    // from grid y. One call over 70,000 tokens must leave the cache bytes and the copied rows
+    // bit for bit as one call over the first 65,535 tokens plus one over the rest does.
+    {
+        use memra_engine::hybrid_forward::CUDA_GRID_YZ_MAX;
+        let (m, cap) = (70_000usize, CUDA_GRID_YZ_MAX);
+        let kv_dim = 256usize;
+        let (kbb, vbb) = memra_engine::kv_blk_bytes();
+        let (ktb, vtb) = ((kv_dim / 32) * kbb, (kv_dim / 32) * vbb);
+        let k: Vec<f32> = (0..m * kv_dim).map(|i| pr(i + 4401)).collect();
+        let v: Vec<f32> = (0..m * kv_dim).map(|i| pr(i + 5503)).collect();
+        let run = || -> Result<bool, Box<dyn std::error::Error>> {
+            let (kd, vd) = (e.htod(&k)?, e.htod(&v)?);
+            let (mut kc1, mut vc1) = (e.alloc_u8(m * ktb)?, e.alloc_u8(m * vtb)?);
+            e.append_kv_quantized_rows(
+                &kd, &vd, &mut kc1, &mut vc1, 0, m, kv_dim, kv_dim, ktb, vtb, false,
+            )?;
+            let (mut kc2, mut vc2) = (e.alloc_u8(m * ktb)?, e.alloc_u8(m * vtb)?);
+            for (at, end) in [(0, cap), (cap, m)] {
+                let kh = e.htod(&k[at * kv_dim..end * kv_dim])?;
+                let vh = e.htod(&v[at * kv_dim..end * kv_dim])?;
+                e.append_kv_quantized_rows(
+                    &kh,
+                    &vh,
+                    &mut kc2,
+                    &mut vc2,
+                    at,
+                    end - at,
+                    kv_dim,
+                    kv_dim,
+                    ktb,
+                    vtb,
+                    false,
+                )?;
+            }
+            e.stream().synchronize()?;
+            Ok(e.dtoh_u8(&kc1)? == e.dtoh_u8(&kc2)? && e.dtoh_u8(&vc1)? == e.dtoh_u8(&vc2)?)
+        };
+        let verdict = match run() {
+            Err(err) => format!("launch error: {err}"),
+            Ok(true) => String::new(),
+            Ok(false) => "cache bytes differ from the unsplit launches".into(),
+        };
+        println!(
+            "kv-append-rows [t={m} kv_dim={kv_dim}] {} {}",
+            if verdict.is_empty() {
+                "byte-equal"
+            } else {
+                verdict.as_str()
+            },
+            if verdict.is_empty() {
+                "OK"
+            } else {
+                fails += 1;
+                "FAIL"
+            }
+        );
+
+        // E4B's layout: [t][n_layer][n_epl] source, one layer's [t][n_epl] rows out.
+        let (n_layer, n_epl, il) = (3usize, 64usize, 1usize);
+        let src: Vec<f32> = (0..m * n_layer * n_epl).map(|i| pr(i + 6607)).collect();
+        let stride = n_layer * n_epl;
+        let run = || -> Result<bool, Box<dyn std::error::Error>> {
+            let sd = e.htod(&src)?;
+            let mut full = e.zeros(m * n_epl)?;
+            e.copy_rows_strided(&sd, &mut full, n_epl, m, stride, il * n_epl)?;
+            let sh = e.htod(&src[..cap * stride])?;
+            let st = e.htod(&src[cap * stride..])?;
+            let (mut h, mut tl) = (e.zeros(cap * n_epl)?, e.zeros((m - cap) * n_epl)?);
+            e.copy_rows_strided(&sh, &mut h, n_epl, cap, stride, il * n_epl)?;
+            e.copy_rows_strided(&st, &mut tl, n_epl, m - cap, stride, il * n_epl)?;
+            e.stream().synchronize()?;
+            let mut split = e.dtoh(&h)?;
+            split.extend(e.dtoh(&tl)?);
+            let full = e.dtoh(&full)?;
+            Ok(full
+                .iter()
+                .map(|x| x.to_bits())
+                .eq(split.iter().map(|x| x.to_bits())))
+        };
+        let verdict = match run() {
+            Err(err) => format!("launch error: {err}"),
+            Ok(true) => String::new(),
+            Ok(false) => "rows differ from the unsplit launches".into(),
+        };
+        println!(
+            "copy-rows-strided [t={m}] {} {}",
+            if verdict.is_empty() {
+                "bit-equal"
+            } else {
+                verdict.as_str()
+            },
+            if verdict.is_empty() {
+                "OK"
+            } else {
+                fails += 1;
+                "FAIL"
+            }
+        );
+    }
+
+    // moe-pairs-scatter-rows and mmvq-rows-refusal (memra#1200): the MoE pair scatter (prefill
+    // `moe_ffn_pairs`, a concat prime's summed rows on a routed-MoE trunk) takes a token from
+    // grid y; one call over 70,000 tokens must write every row bit for bit as one call over the
+    // first 65,535 tokens plus one over the rest. The decode-shaped mmvq matvec has no row
+    // split and must refuse 65,536 rows by name instead of failing at launch.
+    {
+        use memra_engine::hybrid_forward::CUDA_GRID_YZ_MAX;
+        let (m, cap, n_embd) = (70_000usize, CUDA_GRID_YZ_MAX, 64usize);
+        // Token t owns pairs 2t and 2t+1, listed in reverse so the slot order is not the id order.
+        let n_pairs = 2 * m;
+        let off: Vec<i32> = (0..=m).map(|t| (2 * t) as i32).collect();
+        let ids: Vec<i32> = (0..m)
+            .flat_map(|t| [(2 * t + 1) as i32, (2 * t) as i32])
+            .collect();
+        let w: Vec<f32> = (0..n_pairs).map(|i| pr(i + 9901)).collect();
+        let yd: Vec<f32> = (0..n_pairs * n_embd).map(|i| pr(i + 9907)).collect();
+        let run = || -> Result<bool, Box<dyn std::error::Error>> {
+            let (yd_d, w_d, ids_d) = (e.htod(&yd)?, e.htod(&w)?, e.htod_i32(&ids)?);
+            let mut full = e.zeros(m * n_embd)?;
+            e.moe_pairs_scatter(
+                &yd_d,
+                &w_d,
+                &e.htod_i32(&off)?,
+                &ids_d,
+                &mut full,
+                m,
+                n_embd,
+            )?;
+            let mut head = e.zeros(cap * n_embd)?;
+            e.moe_pairs_scatter(
+                &yd_d,
+                &w_d,
+                &e.htod_i32(&off[..=cap])?,
+                &ids_d,
+                &mut head,
+                cap,
+                n_embd,
+            )?;
+            let mut tail = e.zeros((m - cap) * n_embd)?;
+            e.moe_pairs_scatter(
+                &yd_d,
+                &w_d,
+                &e.htod_i32(&off[cap..])?,
+                &ids_d,
+                &mut tail,
+                m - cap,
+                n_embd,
+            )?;
+            e.stream().synchronize()?;
+            let mut split = e.dtoh(&head)?;
+            split.extend(e.dtoh(&tail)?);
+            let full = e.dtoh(&full)?;
+            Ok(full
+                .iter()
+                .map(|x| x.to_bits())
+                .eq(split.iter().map(|x| x.to_bits())))
+        };
+        let verdict = match run() {
+            Err(err) => format!("launch error: {err}"),
+            Ok(true) => String::new(),
+            Ok(false) => "rows differ from the unsplit launches".into(),
+        };
+        println!(
+            "moe-pairs-scatter-rows [t={m}] {} {}",
+            if verdict.is_empty() {
+                "bit-equal"
+            } else {
+                verdict.as_str()
+            },
+            if verdict.is_empty() {
+                "OK"
+            } else {
+                fails += 1;
+                "FAIL"
+            }
+        );
+
+        let (rows, in_f, out_f) = (cap + 1, 32usize, 4usize);
+        let attempt = || -> Result<(), Box<dyn std::error::Error>> {
+            let wq = e.upload_u8(&vec![0u8; out_f * 34])?;
+            let x = e.zeros(rows * in_f)?;
+            let (aq, ad) = e.quantize_q8_1(&x, rows, in_f)?;
+            let _ = e.qmatvec_mmvq(
+                &wq,
+                &aq,
+                &ad,
+                rows,
+                in_f,
+                out_f,
+                memra_engine::QT_Q8_0,
+                34,
+                1.0,
+                false,
+            )?;
+            e.stream().synchronize()?;
+            Ok(())
+        };
+        let got = attempt();
+        let ok = got
+            .as_ref()
+            .err()
+            .is_some_and(|err| err.to_string().contains("qmatvec_mmvq"));
+        println!(
+            "mmvq-rows-refusal [m={rows}] {} {}",
+            match &got {
+                Ok(()) => "ran".to_string(),
+                Err(err) => format!("error {err}"),
+            },
+            if ok {
+                "OK"
+            } else {
+                fails += 1;
+                "FAIL"
+            }
+        );
+    }
+
+    // island-smem-refusal (memra#1200): the island-masked prefill attention (a Gemma prime with a
+    // vision overlay) keeps one f32 score per KV row in dynamic shared memory without the opt-in
+    // attribute, so past its limit (near 12,288 rows) the launch fails. It must run below the
+    // limit and, above it, refuse with an error that names the kernel instead of a bare
+    // CUDA_ERROR_INVALID_VALUE.
+    {
+        let (hd, nh) = (64usize, 1usize);
+        let attempt = |t: usize| -> Result<(), Box<dyn std::error::Error>> {
+            let q = e.htod(
+                &(0..t * hd * nh)
+                    .map(|i| pr(i + 801) * 0.1)
+                    .collect::<Vec<_>>(),
+            )?;
+            let k = e.htod(&(0..t * hd).map(|i| pr(i + 803) * 0.1).collect::<Vec<_>>())?;
+            let v = e.htod(&(0..t * hd).map(|i| pr(i + 807) * 0.1).collect::<Vec<_>>())?;
+            let span = e.htod_i32(&vec![0i32; t])?;
+            let mut o = e.zeros(t * hd * nh)?;
+            e.sdpa_naive_island(&q, &k, &v, &mut o, &span, hd, nh, 1, t, t, 0.125, 0)?;
+            e.stream().synchronize()?;
+            Ok(())
+        };
+        let below = attempt(4096);
+        let above = attempt(16_384);
+        let ok = below.is_ok()
+            && above
+                .as_ref()
+                .err()
+                .is_some_and(|err| err.to_string().contains("sdpa_naive_island_f32"));
+        println!(
+            "island-smem-refusal [4096: {} | 16384: {}] {}",
+            match &below {
+                Ok(()) => "ran".to_string(),
+                Err(err) => format!("error {err}"),
+            },
+            match &above {
+                Ok(()) => "ran".to_string(),
+                Err(err) => format!("error {err}"),
+            },
+            if ok {
+                "OK"
+            } else {
+                fails += 1;
+                "FAIL"
+            }
+        );
+    }
+
     // --- step35 CLAMPED SwiGLU (`swiglu_clamp_exp` / `_shexp`, live only on Step-3.7-Flash layers
     // 43 and 44 with limits 7.0 and 16.0): `min(silu(gate*gs), limit) * clamp(up*us, +-limit)`,
     // llama.cpp llama-graph.cpp:2146-2165 / :1751-1770, non-DEEPSEEK4 branch.
