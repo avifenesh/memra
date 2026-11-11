@@ -1,0 +1,24 @@
+{
+ "commit": "66ee31fcb6abdded82b36ac924cff4814b6e24bd",
+ "date": "2026-11-11",
+ "device": "gb10",
+ "failing": [],
+ "perf": {
+  "ornith-ai/ornith-1.5-35b-a3b": {
+   "base_median": 81.43,
+   "candidate_median": 81.36,
+   "delta_pct": -0.09,
+   "regressed": false
+  },
+  "qwen/qwen3.8-27b": {
+   "base_median": 13.73,
+   "candidate_median": 13.75,
+   "delta_pct": 0.15,
+   "regressed": false
+  }
+ },
+ "perf_base": "ae69d86b05f9e4e4b52b4433a8d9d561a8d2f122",
+ "record": "2026-11-11-66ee31fcb6ab",
+ "status": "pass",
+ "target": "sm_121a"
+}
