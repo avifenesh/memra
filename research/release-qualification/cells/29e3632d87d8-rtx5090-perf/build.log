@@ -1,0 +1,1 @@
+$ flock ~/.cache/memra-rig-build.lock nice -n 15 cargo build --release --locked --quiet -p memra-engine --bin kernel-check --bin run-gen --bin run-spec --bin argmax-margin-probe -p memra-server --bin memra-server -p memra-tokenizer --bin tok-parity  (commit 29e3632d87d8e26a2587b4ddabfb205fccb444af, target 120a, tree tree-120a)
