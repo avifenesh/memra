@@ -247,7 +247,8 @@ class Server:
                 "max_tokens": max_tokens, "chat_template_kwargs": {"enable_thinking": False}, **samp}
         if stop:
             body["stop"] = stop
-        o = {"text": "", "usage": {}, "finish": None, "error": None, "t_first": None, "t_last": None, "t_done": None}
+        o = {"text": "", "usage": {}, "finish": None, "error": None, "t_first": None, "t_last": None, "t_done": None,
+             "t_chunks": []}
         parts = []
         t0 = time.monotonic()
         try:
@@ -283,6 +284,7 @@ class Server:
                             if d:
                                 parts.append(d)
                                 o["t_last"] = now
+                                o["t_chunks"].append(now)
                                 if o["t_first"] is None:
                                     o["t_first"] = now
                             if ch.get("finish_reason"):
@@ -362,6 +364,10 @@ class Server:
                "ttft_ms": None if o["t_first"] is None else round(o["t_first"] * 1e3, 1),
                "e2e_ms": None if o["t_done"] is None else round(o["t_done"] * 1e3, 1),
                "close_ms": tail, "burst_ends": ends, "receipts": receipts,
+               # The median time between the arrivals of two visible chunks: the request's own
+               # emission cadence (a speculative round, or a decode step).
+               "gap_ms": (round(statistics.median(b - a for a, b in zip(o["t_chunks"], o["t_chunks"][1:])) * 1e3, 1)
+                          if len(o["t_chunks"]) > 2 else None),
                "park": [m[:200] for m in PARK.findall(chunk)],
                "sha": hashlib.sha256(o["text"].encode()).hexdigest()[:16], "error": o["error"]}
         row.update(extra or {})
@@ -772,6 +778,9 @@ def cohort_judge(out, rows, boots):
             med = statistics.median(base)
             limit = max(3 * med, med + 100)
             own = route[case] == "dspark" and regime != "greedy"
+            # Plain decode's step alone: what one held-back token costs in the reference.
+            steps_ref = [x["gap_ms"] for x in ref.values() if x["regime"] == regime and x.get("gap_ms")]
+            solo_step = statistics.median(steps_ref) if steps_ref else 0.0
             worst, settled_live = {}, 0
             for r in rr:
                 if r.get("member") != 0 or not r["kind"].startswith("c-"):
@@ -795,6 +804,14 @@ def cohort_judge(out, rows, boots):
                                         f"{r['completion_tokens']}-token stop (want one naming it)")
                 held = 2 * (ref.get(f"solo-{tag}-{regime}", {}).get("close_ms") or 0) if not own else \
                     (100 if r["kind"] == "c-span" else 0)
+                if held and r.get("gap_ms"):
+                    # Text that may begin a stop string is held back until the string completes
+                    # or cannot. Plain decode alone holds it for a decode step or a few; in a
+                    # cohort the same tokens arrive a cohort round apart, so the hold-back is
+                    # counted in this request's own cadence (two of its chunk gaps per plain
+                    # step of hold-back, at least two).
+                    steps = max(1, round((held / 2) / solo_step)) if solo_step > 0 else 1
+                    held = max(held, 2 * steps * r["gap_ms"])
                 if r["close_ms"] is not None:
                     worst[n] = max(worst.get(n, 0), r["close_ms"])
                     if r["close_ms"] > limit + held:
