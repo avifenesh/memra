@@ -1,40 +1,32 @@
-2026-11-11T07:13:43+02:00
-boot grace main2 TAG=plain-main2-1 CELLS=1:200,1:0,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1;MEMRA_SPEC_K=0
-cd38751f7fb1318fd4cde5193be3f3a61816a64223df87131a9889ce616d8668  ~/.cache/memra-1211/bin/memra-server-main2
-NVIDIA GB10, 580.178.04, 51
- 07:13:43 up 17 days, 16:37,  5 users,  load average: 0.35, 0.76, 0.98
-2026-11-11T07:42:14+02:00
-boot grace main2 TAG=default-main2-1 CELLS=1:0,1:200,1:1000,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1
-cd38751f7fb1318fd4cde5193be3f3a61816a64223df87131a9889ce616d8668  ~/.cache/memra-1211/bin/memra-server-main2
-NVIDIA GB10, 580.178.04, 54
- 07:42:14 up 17 days, 17:05,  5 users,  load average: 0.97, 1.17, 1.10
-2026-11-11T07:57:51+02:00
-boot grace grace TAG=plain-grace-2 CELLS=1:200,1:0,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1;MEMRA_SPEC_K=0
-3bc0c768b9cf4c4f493ea192c11d73d28b991f874d9ef6bc10c6d92b5bae664f  ~/.cache/memra-1211/bin/memra-server-grace
-NVIDIA GB10, 580.178.04, 61
- 07:57:51 up 17 days, 17:21,  5 users,  load average: 1.05, 0.99, 1.01
-2026-11-11T08:04:45+02:00
-boot grace grace TAG=default-grace-2 CELLS=1:0,1:200,1:1000,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1
-3bc0c768b9cf4c4f493ea192c11d73d28b991f874d9ef6bc10c6d92b5bae664f  ~/.cache/memra-1211/bin/memra-server-grace
-NVIDIA GB10, 580.178.04, 60
- 08:04:45 up 17 days, 17:28,  5 users,  load average: 1.02, 1.01, 1.00
-2026-11-11T08:23:27+02:00
-boot grace grace TAG=plain-grace-3 CELLS=1:200,1:0,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1;MEMRA_SPEC_K=0
-3bc0c768b9cf4c4f493ea192c11d73d28b991f874d9ef6bc10c6d92b5bae664f  ~/.cache/memra-1211/bin/memra-server-grace
-NVIDIA GB10, 580.178.04, 61
- 08:23:27 up 17 days, 17:47,  5 users,  load average: 0.92, 1.05, 1.01
-2026-11-11T08:31:16+02:00
-boot grace grace TAG=default-grace-3 CELLS=1:0,1:200,1:1000,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1
-3bc0c768b9cf4c4f493ea192c11d73d28b991f874d9ef6bc10c6d92b5bae664f  ~/.cache/memra-1211/bin/memra-server-grace
-NVIDIA GB10, 580.178.04, 62
- 08:31:16 up 17 days, 17:54,  5 users,  load average: 0.98, 1.04, 1.01
-2026-11-11T08:46:52+02:00
-boot grace main2 TAG=plain-main2-4 CELLS=1:200,1:0,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1;MEMRA_SPEC_K=0
-cd38751f7fb1318fd4cde5193be3f3a61816a64223df87131a9889ce616d8668  ~/.cache/memra-1211/bin/memra-server-main2
-NVIDIA GB10, 580.178.04, 64
- 08:46:52 up 17 days, 18:10,  5 users,  load average: 1.26, 1.14, 1.09
-2026-11-11T08:53:12+02:00
-boot grace main2 TAG=default-main2-4 CELLS=1:0,1:200,1:1000,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1
-cd38751f7fb1318fd4cde5193be3f3a61816a64223df87131a9889ce616d8668  ~/.cache/memra-1211/bin/memra-server-main2
-NVIDIA GB10, 580.178.04, 64
- 08:53:12 up 17 days, 18:16,  5 users,  load average: 0.99, 1.01, 1.04
+== unit cb33
+2026-11-11T10:20:02+02:00
+boot grace2 main2 TAG=plain-main2-21 CELLS=1:200,1:0,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1;MEMRA_SPEC_K=0
+cd38751f7fb1318fd4cde5193be3f3a61816a64223df87131a9889ce616d8668  /home/avifenesh/.cache/memra-1211/bin/memra-server-main2
+NVIDIA GB10, 580.178.04, 57
+ 10:20:02 up 17 days, 19:43,  5 users,  load average: 1.38, 1.25, 1.14
+2026-11-11T11:02:52+02:00
+boot grace2 grace2 TAG=plain-grace2-22 CELLS=1:200,1:0,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1;MEMRA_SPEC_K=0
+66d637b063205656f50ee24c372d63eea91042ea6b5fcca8738f744bc566ecb2  /home/avifenesh/.cache/memra-1211/bin/memra-server-grace2
+NVIDIA GB10, 580.178.04, 59
+ 11:02:52 up 17 days, 20:26,  5 users,  load average: 0.92, 1.19, 1.24
+2026-11-11T11:20:31+02:00
+boot grace2 grace2 TAG=plain-grace2-23 CELLS=1:200,1:0,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1;MEMRA_SPEC_K=0
+66d637b063205656f50ee24c372d63eea91042ea6b5fcca8738f744bc566ecb2  /home/avifenesh/.cache/memra-1211/bin/memra-server-grace2
+NVIDIA GB10, 580.178.04, 59
+ 11:20:31 up 17 days, 20:44,  5 users,  load average: 1.19, 1.07, 1.09
+2026-11-11T12:25:02+02:00
+boot grace2 grace2 TAG=default-grace2 CELLS=1:0,1:200,1:1000,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1
+66d637b063205656f50ee24c372d63eea91042ea6b5fcca8738f744bc566ecb2  /home/avifenesh/.cache/memra-1211/bin/memra-server-grace2
+NVIDIA GB10, 580.178.04, 45
+ 12:25:02 up 17 days, 21:48,  5 users,  load average: 1.38, 1.33, 1.28
+2026-11-11T12:46:07+02:00
+boot grace2 main2 TAG=default-main2 CELLS=1:0,1:200,1:1000,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1
+cd38751f7fb1318fd4cde5193be3f3a61816a64223df87131a9889ce616d8668  /home/avifenesh/.cache/memra-1211/bin/memra-server-main2
+NVIDIA GB10, 580.178.04, 59
+ 12:46:07 up 17 days, 22:09,  5 users,  load average: 1.53, 1.49, 1.38
+== unit b23d
+2026-11-11T11:48:10+02:00
+boot grace2 main2 TAG=plain-main2-24 CELLS=1:200,1:0,2:200,2:0 GAP=5 EXTRA_ENV=MEMRA_TICK_TRACE=1;MEMRA_SPEC_K=0
+cd38751f7fb1318fd4cde5193be3f3a61816a64223df87131a9889ce616d8668  /home/avifenesh/.cache/memra-1211/bin/memra-server-main2
+NVIDIA GB10, 580.178.04, 46
+ 11:48:10 up 17 days, 21:10,  3 users,  load average: 1.01, 1.36, 1.78
