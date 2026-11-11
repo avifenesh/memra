@@ -31,6 +31,8 @@ Answer rows where the top-1 differs from the served token: a 0, b 0, c 0.
 
 Document rows by a's top-1, a/c spread: im_end 1972 rows, median 1.226, p90 15.799, max 31.805, 0 flips, a margin median 12.50; other 6 rows, median 0.558, p90 13.017, max 36.826, 6 flips, a margin median 0.32.
 
+Value rows (choosing a token of a known value): 27. Smallest margin there, a / b / c: 5.32 / 5.35 / 5.40. Value rows whose runner-up is `<\|im_end\|>`: a 2 (margins 10.80 to 10.94), b 2 (margins 10.03 to 10.80), c 2 (margins 10.84 to 11.52).
+
 Top-2 margin at answer rows, min / p10 / median: a 0.48 / 1.56 / 9.64, b 0.52 / 1.61 / 9.75, c 0.34 / 1.58 / 9.60. Answer rows where the a/c spread exceeds the smaller of the two margins: 0.
 
 Answer rows with a spread above 1 in any pair or a top-2 margin under 1 in any program:
@@ -76,6 +78,8 @@ Answer rows where the top-1 differs from the served token: a 0, b 0, c 0.
 | bc in-turn | 2048 | 0 | 1.135 | 15.334 | 22.727 | 27.876 | 1077 | 685 |
 
 Document rows by a's top-1, a/c spread: im_end 1978 rows, median 1.553, p90 15.973, max 28.467, 0 flips, a margin median 13.68.
+
+Value rows (choosing a token of a known value): 27. Smallest margin there, a / b / c: 4.66 / 5.03 / 4.96. Value rows whose runner-up is `<\|im_end\|>`: a 10 (margins 8.15 to 12.13), b 8 (margins 8.31 to 11.47), c 6 (margins 8.26 to 11.69).
 
 Top-2 margin at answer rows, min / p10 / median: a 0.44 / 1.85 / 9.30, b 0.44 / 1.82 / 9.60, c 0.20 / 1.70 / 9.53. Answer rows where the a/c spread exceeds the smaller of the two margins: 2.
 
@@ -132,6 +136,8 @@ Answer rows where the top-1 differs from the served token: a 0, b 0, c 0.
 
 Document rows by a's top-1, a/c spread: im_end 1570 rows, median 0.598, p90 1.622, max 24.818, 3 flips, a margin median 3.08; other 423 rows, median 0.514, p90 0.992, max 3.420, 148 flips, a margin median 0.74.
 
+Value rows (choosing a token of a known value): 28. Smallest margin there, a / b / c: 4.47 / 4.39 / 4.44. Value rows whose runner-up is `<\|im_end\|>`: a 1 (margins 11.93 to 11.93), b 3 (margins 11.47 to 12.88), c 2 (margins 11.78 to 12.55).
+
 Top-2 margin at answer rows, min / p10 / median: a 0.31 / 1.91 / 8.49, b 0.38 / 2.09 / 8.41, c 0.40 / 2.02 / 8.59. Answer rows where the a/c spread exceeds the smaller of the two margins: 0.
 
 Answer rows with a spread above 1 in any pair or a top-2 margin under 1 in any program:
@@ -177,6 +183,8 @@ Answer rows where the top-1 differs from the served token: a 0, b 0, c 0.
 
 Document rows by a's top-1, a/c spread: im_end 1641 rows, median 0.223, p90 0.816, max 17.900, 13 flips, a margin median 3.29; other 352 rows, median 0.203, p90 0.456, max 1.893, 40 flips, a margin median 0.66.
 
+Value rows (choosing a token of a known value): 28. Smallest margin there, a / b / c: 4.10 / 4.07 / 4.12. Value rows whose runner-up is `<\|im_end\|>`: a 1 (margins 11.35 to 11.35), b 1 (margins 11.04 to 11.04), c 1 (margins 11.40 to 11.40).
+
 Top-2 margin at answer rows, min / p10 / median: a 0.43 / 1.95 / 8.22, b 0.49 / 2.01 / 8.00, c 0.39 / 2.01 / 7.93. Answer rows where the a/c spread exceeds the smaller of the two margins: 0.
 
 Answer rows with a spread above 1 in any pair or a top-2 margin under 1 in any program:
@@ -221,6 +229,8 @@ Answer rows where the top-1 differs from the served token: a 0, b 0, c 0.
 
 Document rows by a's top-1, a/c spread: im_end 1492 rows, median 0.329, p90 0.935, max 25.506, 80 flips, a margin median 3.01; other 487 rows, median 0.248, p90 0.521, max 21.513, 12 flips, a margin median 0.92.
 
+Value rows (choosing a token of a known value): 10. Smallest margin there, a / b / c: 0.28 / 0.29 / 0.11. Value rows whose runner-up is `<\|im_end\|>`: a 1 (margins 10.79 to 10.79), b 1 (margins 10.77 to 10.77), c 1 (margins 11.51 to 11.51).
+
 Top-2 margin at answer rows, min / p10 / median: a 0.28 / 3.48 / 8.30, b 0.29 / 3.94 / 8.25, c 0.11 / 3.47 / 8.13. Answer rows where the a/c spread exceeds the smaller of the two margins: 1.
 
 Answer rows with a spread above 1 in any pair or a top-2 margin under 1 in any program:
@@ -263,6 +273,8 @@ Answer rows where the top-1 differs from the served token: a 0, b 0, c 0.
 | bc in-turn | 2048 | 39 | 0.194 | 0.685 | 12.065 | 25.227 | 132 | 61 |
 
 Document rows by a's top-1, a/c spread: im_end 1482 rows, median 0.237, p90 0.938, max 24.584, 7 flips, a margin median 3.43; other 497 rows, median 0.193, p90 0.420, max 25.923, 46 flips, a margin median 0.97.
+
+Value rows (choosing a token of a known value): 10. Smallest margin there, a / b / c: 0.98 / 0.94 / 0.90. Value rows whose runner-up is `<\|im_end\|>`: a 1 (margins 9.50 to 9.50), b 1 (margins 8.69 to 8.69), c 1 (margins 9.20 to 9.20).
 
 Top-2 margin at answer rows, min / p10 / median: a 0.31 / 3.09 / 8.16, b 0.09 / 2.71 / 8.02, c 0.25 / 2.78 / 8.12. Answer rows where the a/c spread exceeds the smaller of the two margins: 0.
 
