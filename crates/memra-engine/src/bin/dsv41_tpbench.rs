@@ -24,6 +24,9 @@
 //!   --plan                 print the memory plan and the cells, load nothing
 //!   --timed                drain and time every collective (`Group::timed`): a breakdown run, the
 //!                          rows' `comm.timed_s`; never the headline numbers
+//!   --nvtx                 NVTX ranges for an nsys trace (`nsys -t cuda,nvtx`): each prefill cell,
+//!                          the forward's host steps before its first launch (`v41 hash`, `v41 embed`)
+//!                          and every op (`Ctx::nv`)
 //!
 //! Every row carries the per-device pool high-water mark of the cell (`peak_used`), next to the
 //! estimate the load reserved for (`dsv41_gpu::decode::prefill_workspace_bytes`).
@@ -320,6 +323,11 @@ fn run() -> Result<(), String> {
     let res = rn.load_resident(keep, reserve * per_dev)?;
     // --timed: drain and time every collective (a breakdown run; not for the headline numbers)
     rn.grp.timed = has("--timed");
+    if has("--nvtx") {
+        for c in rn.grp.cx.iter_mut() {
+            c.nvtx = true;
+        }
+    }
     // --wide-rows F8,BF16,FFMA,MIX,TILES: the most rows of a call that keep each family's
     // small-row body in groups of 8 (the measurement behind the defaults; bytes do not move)
     if let Some(w) = flag("--wide-rows") {
@@ -497,6 +505,7 @@ fn prefill_cell(
     round: usize,
 ) -> Result<serde_json::Value, String> {
     let start = now_unix();
+    rn.grp.cx[0].nv(c"v41 prefill cell");
     let t = Instant::now();
     let mut seqs: Vec<Seq> = vec![rn.seq_with_capacity(ids.len() + 16)];
     let outs = rn.forward(
@@ -509,6 +518,7 @@ fn prefill_cell(
     let t_fwd = t.elapsed().as_secs_f64();
     let first = rn.argmax_last(&outs[0])?;
     let ttft = t.elapsed().as_secs_f64();
+    rn.grp.cx[0].nv_end();
     drop(outs);
     drop(seqs);
     Ok(serde_json::json!({

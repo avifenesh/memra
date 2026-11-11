@@ -1447,6 +1447,13 @@ Each item now happens at the load:
 | after one 7.34 GiB block was allocated and freed (264 ms, once) | 0.0, 0.01 | 7.34 GiB |
 | a second pass | 0.0, 0.00 | 7.34 GiB |
 
+What stays serial is traced with `dsv41-tpbench --nvtx` (`nsys -t cuda,nvtx`): a range a prefill
+cell and, inside a forward, its hashing (`v41 hash`) and its embedding (`v41 embed`), with every
+op's range. `prefill_serial.py` splits each prompt's time from its cell's start to its first launch
+(the bookkeeping before the hashing, the hashing, the embedding, the rest) with the CUDA calls in
+that span, and lists over the cell what the load should have removed; with the ranges,
+`prefill_window.py` ends a prompt's window with its own cell.
+
 Checked on GB10 (121a, `receipts/emb-gates-gb10`; GB10 writes the 120a bytes): fmt; the kernel
 gate 151 checks, 0 failed, the two new ones byte-equal; the layer gate 161 checks, 0 failed, its
 111 saved tensors equal to k3's; teacher-forced runs through `Runner::forward` (`dsv41-run --cases`: capital, code_pal and a 3,761-token prompt over the first 4 layers, Engram layer 1 inside) write every file byte-equal to the transport fix alone's on one rank and on two ranks of the card (18 of 18 each), one rank's equal to two ranks'; the tp gate at 2 and 4 ranks 480 and 916 checks, 0 failed. `dsv41-tpbench` does not fit on GB10 with the checkpoint in its page cache (1.3 to 2.2 GiB free against a 5.2 GiB reserve, both builds), so the pool's reserve at the load runs only in the four-card window. On the 120a target: the release build, fmt and
@@ -1587,6 +1594,8 @@ weight traffic: 1.1 ms.
   of 0.5 ms and more, the export's own memory-kind numbering (not CUPTI's: 0 is pageable), and
   every large upload of the run. `pool_probe.py`: whether a block reserved in a device's pool and
   freed serves later allocations of other sizes without the pool growing (ctypes, no model).
+  `prefill_serial.py`: a `dsv41-tpbench --nvtx` trace's serial part of each prompt before its first
+  launch, by the forward's ranges.
 - `steady.py`: the calls of `dsv41-tpbench` runs by how long the card has been busy (the first
   0.15 s, to 0.5 s, from 0.5 s on): the steady figure a served step pays next to the burst one.
   `trace_rot.py`: kernel time by name of a mixed-width trace against the sum of its widths traced
