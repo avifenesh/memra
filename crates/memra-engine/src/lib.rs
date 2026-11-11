@@ -3389,6 +3389,21 @@ pub fn moe_vrows_router_syncs_avoided() -> u64 {
     MOE_VROWS_ROUTER_SYNCS_AVOIDED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// memra#1217: SLRU pairs layer calls by how they got their expert pointers: the cache's
+/// full-layer row, one pinned admission, or chunked runs. The non-vacuity receipt for the
+/// placement gate (`tests/moe_slru_pairs_placement_gpu.rs`): each arm asserts the mode it forces ran.
+pub static MOE_SLRU_PAIRS_CALLS: [std::sync::atomic::AtomicU64; 3] = [
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+];
+
+/// Snapshot of [`MOE_SLRU_PAIRS_CALLS`] as (layer row, pinned, chunked).
+pub fn moe_slru_pairs_calls() -> (u64, u64, u64) {
+    let get = |i: usize| MOE_SLRU_PAIRS_CALLS[i].load(std::sync::atomic::Ordering::Relaxed);
+    (get(0), get(1), get(2))
+}
+
 /// `MEMRA_MOE_VROWS_DEDUP_STAT=1` (lane/glm5-moe-loc, default OFF — a MEASUREMENT instrument,
 /// not a serving door): on the host table-build arm, count the pair union's expert VISITS and
 /// DISTINCT experts per layer-call into [`MOE_VROWS_PAIR_VISITS`] /

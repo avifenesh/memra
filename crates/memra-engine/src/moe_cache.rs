@@ -390,6 +390,11 @@ pub struct MoeSlotCache {
     /// Layers whose one-shot prewarm was already attempted (success or not) — spill rigs whose
     /// free slots can't hold a full layer must not re-scan 3*n_expert blocks every token.
     prewarm_tried: HashSet<u16>,
+    /// Blocks one `acquire_pinned` call needs resident AT THE SAME TIME (memra#1217). Non-empty
+    /// only inside that call: eviction skips its members, so admitting one member never evicts
+    /// another. Cleared before the call returns, on the error path too, so a pin never outlives
+    /// the cache lock that the caller holds across admission and the kernels that read the slots.
+    pinned: HashSet<BlockId>,
 
     // --- §D.4 instrumentation ---
     // Lifetime counter, only for the explicit bank qualification installer.
@@ -879,6 +884,7 @@ impl MoeSlotCache {
             per_layer: HashMap::new(),
             dev_rows: HashMap::new(),
             prewarm_tried: HashSet::new(),
+            pinned: HashSet::new(),
             banked_evictions: 0,
             hits: 0,
             misses: 0,
@@ -1020,7 +1026,11 @@ impl MoeSlotCache {
     /// (Deliberately still O(n_slots) PER EVICTION — the opt-in LFU policy is a full-scan argmin
     /// by definition; the Q5 fix targeted the per-HIT scan. Eviction order over the linked lists
     /// == the old probation-then-protected VecDeque order.)
-    fn frequency_victim_in_class(&mut self, class_index: usize, keep: &[BlockId]) -> Option<usize> {
+    fn frequency_victim_in_class(
+        &mut self,
+        class_index: usize,
+        keep: &dyn Fn(&BlockId) -> bool,
+    ) -> Option<usize> {
         let class = &self.classes[class_index];
         let candidate = class
             .probation
@@ -1029,7 +1039,7 @@ impl MoeSlotCache {
             .enumerate()
             .filter_map(|(position, slot)| {
                 let id = self.occupant[slot]?;
-                (!keep.contains(&id)).then_some((
+                (!keep(&id)).then_some((
                     self.frequencies.get(&id).copied().unwrap_or(0.0),
                     position,
                     slot,
@@ -1043,12 +1053,15 @@ impl MoeSlotCache {
 
     /// Pick the LRU victim from the smallest class that can hold `required` bytes.
     fn evict_one(&mut self, required: usize) -> Option<usize> {
+        if !self.pinned.is_empty() {
+            return self.evict_one_unpinned(required);
+        }
         for class_index in 0..self.classes.len() {
             if self.classes[class_index].capacity < required {
                 continue;
             }
             let slot = if self.frequency_evict {
-                self.frequency_victim_in_class(class_index, &[])
+                self.frequency_victim_in_class(class_index, &|_| false)
             } else {
                 self.classes[class_index].pop_lru(&mut self.links)
             };
@@ -1083,7 +1096,7 @@ impl MoeSlotCache {
                 continue;
             }
             let slot = if self.frequency_evict {
-                self.frequency_victim_in_class(class_index, keep)
+                self.frequency_victim_in_class(class_index, &|id| keep.contains(id))
             } else {
                 let class = &mut self.classes[class_index];
                 take(&mut class.probation, &mut self.links, &self.occupant, keep)
@@ -1095,6 +1108,106 @@ impl MoeSlotCache {
             }
         }
         None
+    }
+
+    /// `evict_one` while an `acquire_pinned` call is admitting its set: the same class order and
+    /// the same victim policy (LRU scan, or the LFU argmin), skipping every pinned member. `None`
+    /// when no unpinned victim exists; `acquire_pinned` callers size the set with
+    /// `pin_capacity` first, so that is an invariant failure, reported as an admission error.
+    fn evict_one_unpinned(&mut self, required: usize) -> Option<usize> {
+        let pinned = std::mem::take(&mut self.pinned);
+        let is_pinned = |id: &BlockId| pinned.contains(id);
+        let mut victim = None;
+        for class_index in 0..self.classes.len() {
+            if self.classes[class_index].capacity < required {
+                continue;
+            }
+            victim = if self.frequency_evict {
+                self.frequency_victim_in_class(class_index, &is_pinned)
+            } else {
+                let class = &mut self.classes[class_index];
+                let links = &mut self.links;
+                let occupant = &self.occupant;
+                let pick = |q: &SlruList, links: &[SlotLink]| {
+                    q.iter(links)
+                        .find(|&s| occupant[s].is_some_and(|id| !is_pinned(&id)))
+                };
+                if let Some(slot) = pick(&class.probation, links) {
+                    class.probation.unlink(slot, links);
+                    Some(slot)
+                } else if let Some(slot) = pick(&class.protected, links) {
+                    class.protected.unlink(slot, links);
+                    Some(slot)
+                } else {
+                    None
+                }
+            };
+            if victim.is_some() {
+                break;
+            }
+        }
+        self.pinned = pinned;
+        if let Some(slot) = victim {
+            self.remove_occupant(slot);
+        }
+        victim
+    }
+
+    /// How many blocks of up to `block_bytes` one `acquire_pinned` call can hold at once: every
+    /// slot of a class that fits the block and is free or resident. Pending prefetch slots and
+    /// quarantined slots are in neither list and are not counted. Zero for the banked door and a
+    /// frozen cache, whose admission is not this cache's own SLRU.
+    pub(crate) fn pin_capacity(&self, block_bytes: usize) -> usize {
+        if self.banked.is_some() || self.frozen {
+            return 0;
+        }
+        self.classes
+            .iter()
+            .filter(|class| class.capacity >= block_bytes)
+            .map(|class| class.free.len() + class.probation.len + class.protected.len)
+            .sum()
+    }
+
+    /// memra#1217: make every block of `ids` resident AT THE SAME TIME and return their slots in
+    /// order. Each block goes through `dispatch_source`, so a hit copies nothing and a miss stages
+    /// the same bytes the per-token path stages; while the call runs, eviction skips the set's
+    /// members (`evict_one_unpinned`). The caller sizes `ids` with `pin_capacity` and launches the
+    /// kernels that read these slots before it releases the cache lock: the pin only has to cover
+    /// admission, because any later eviction's H2D is ordered after those kernels on the compute
+    /// stream (the same argument as `on_block_evicted`). A member that is not at its returned
+    /// slot when admission ends is an error, never a silent wrong pointer.
+    pub(crate) fn acquire_pinned<'s>(
+        &mut self,
+        ids: &[BlockId],
+        mut source: impl FnMut(BlockId) -> ExpertSource<'s>,
+        e: &Engine,
+    ) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
+        debug_assert!(self.pinned.is_empty(), "acquire_pinned is not reentrant");
+        self.pinned.extend(ids.iter().copied());
+        let mut slots = Vec::with_capacity(ids.len());
+        let mut failure = None;
+        for &id in ids {
+            match self.dispatch_source(id, source(id), e) {
+                Ok(DispatchSlot::Resident(slot)) => slots.push(slot),
+                Err(err) => {
+                    failure = Some(err);
+                    break;
+                }
+            }
+        }
+        self.pinned.clear();
+        if let Some(err) = failure {
+            return Err(err);
+        }
+        for (id, &slot) in ids.iter().zip(&slots) {
+            if self.table.get(id) != Some(&slot) {
+                return Err(format!(
+                    "MoE cache pinned admission lost {id:?} (slot {slot}); the set exceeded the pinnable capacity"
+                )
+                .into());
+            }
+        }
+        Ok(slots)
     }
 
     /// STAGE 3 bookkeeping: a resident block of `layer` was evicted — the layer is no longer fully

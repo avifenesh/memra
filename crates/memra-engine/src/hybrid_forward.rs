@@ -1204,6 +1204,155 @@ fn q8_expert_supported_for_model(cfg: &ModelConfig, qt: i32) -> bool {
     q8_expert_supported(qt) && !(weight_only_nvfp4 && qt == crate::QT_NVFP4)
 }
 
+/// Where the pairs arm reads its routed experts from (memra#1217). Both variants run the same
+/// kernels over the same bytes; only the pointer provenance differs.
+pub(crate) enum PairsExperts<'a> {
+    /// The fits-VRAM resident slab's `[3 * n_expert]` pointer row (`DevExps::ptr_row`).
+    Resident(&'a CudaSlice<u64>),
+    /// SLRU cache slots, admitted for this call (`moe_pairs_y_down_slru`).
+    Slru { il: u16, max_block: usize },
+}
+
+/// Which routed-expert program the pairs arm runs. A function of the qtypes, the width and the
+/// env seams only, never of the placement, so both placements pick the same one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PairsArm {
+    /// Grouped f16 lane (`MEMRA_MOE_F16G`, the sm_120a and Hopper default).
+    F16g,
+    /// Int8-MMA expert MMQ (`MEMRA_MOE_MMA`).
+    Mma,
+    /// Per-pair q8_1 dp4a matvecs (`_dec` / `_em`), the decode numeric class.
+    Q8,
+}
+
+/// The pairs arm's expert-major CSR for one layer call.
+struct PairsCsr {
+    arm: PairsArm,
+    t: usize,
+    n_used: usize,
+    n_expert: usize,
+    n_embd: usize,
+    n_ff_exp: usize,
+    n_pairs: usize,
+    n_active: usize,
+    /// Active expert ids in ascending order, their CSR offsets (`n_active + 1`), and the pair
+    /// ids in CSR order.
+    ex_ids: Vec<i32>,
+    ex_off: Vec<i32>,
+    ex_pairs: Vec<i32>,
+    exi: CudaSlice<i32>,
+    exo: CudaSlice<i32>,
+    exp_d: CudaSlice<i32>,
+    /// pair -> token (pair-major).
+    pt: CudaSlice<i32>,
+}
+
+/// The pairs arm's program choice for a layer (see `PairsArm`).
+///
+/// INT8-MMA EXPERT MMQ (MEMRA_MOE_MMA=1 default ON): the m16n8k16.s8 tensor-core analog of the
+/// _dec dp4a kernel (cu/mmq_iq_experts.cu). Same CSR grouping; per-expert matvec runs as a
+/// 128x128-tile int8 MMA GEMM over the expert's token group. FP-ORDER differs from dp4a: logits
+/// SHIFT, gated on argmax/spec/closeness, NOT byte-identity. Requires IQ3_S/IQ4_XS + in_f % 256
+/// == 0. t >= 16 (GEMM_M-class rule, MEMRA_MOE_MMA_T overrides the floor): the MMA tile needs
+/// token volume, and spec verify batches must ride the dp4a path whose FP order matches the T=1
+/// decode chain (2026-07-06: MMA at T=2 flipped a verify argmax). The "MMA prime breaks spec"
+/// failure was the ROUTER's cuBLASLt n-dependence (d994271), not MMA's own FP order.
+///
+/// GROUPED f16 LANE admission (MEMRA_MOE_F16G, rounds 46-49): its own door, not a subset of the
+/// MMQ arm: k-quant stragglers fail q8_expert_dec_supported but dequant fine to f16. Same
+/// t >= mma_t floor. MODE 2 (sm_120a naked default, lane/f16g-default-rearb 2026-08-02): every
+/// layer whose three projections pass f16g_proj_ok rides the sk visitor with direct tile loaders
+/// (q35 board-2048 +33.9%, KAT pp512 +46.7%). AUTO-KQUANT (mode 3, lane/q4k-expert-prefill):
+/// admit f16g ONLY where the MMA arm can't take the layer's QTYPES; the rollback seam. Keyed on
+/// qtype capability, NOT use_mma, so MEMRA_MOE_MMA=0 stays a pure dp4a rollback seam. f16g wins
+/// over MMA when both admit.
+fn moe_pairs_arm(m: &MoeWeights, t: usize, n_embd: usize, n_ff_exp: usize) -> PairsArm {
+    static MMA_T: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    let mma_t = *MMA_T.get_or_init(|| {
+        std::env::var("MEMRA_MOE_MMA_T")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(16)
+    });
+    let mma_capable = q8_expert_dec_supported(m.gate_exps.qtype)
+        && q8_expert_dec_supported(m.up_exps.qtype)
+        && q8_expert_dec_supported(m.down_exps.qtype)
+        && n_embd.is_multiple_of(256)
+        && n_ff_exp.is_multiple_of(256);
+    let use_mma = std::env::var("MEMRA_MOE_MMA")
+        .map(|v| v != "0")
+        .unwrap_or(true)
+        && t >= mma_t
+        && mma_capable;
+    let f16g_mode = crate::moe_f16g_mode();
+    let f16g = f16g_mode != 0
+        && t >= mma_t
+        && (f16g_mode != 3 || !mma_capable)
+        && f16g_proj_ok(m.gate_exps.qtype, n_embd)
+        && f16g_proj_ok(m.up_exps.qtype, n_embd)
+        && f16g_proj_ok(m.down_exps.qtype, n_ff_exp);
+    if f16g {
+        PairsArm::F16g
+    } else if use_mma {
+        PairsArm::Mma
+    } else {
+        PairsArm::Q8
+    }
+}
+
+/// Whether the grouped f16 lane's output rows for a run of experts are independent of which
+/// other experts share the launch, the property the SLRU arm's chunked runs rest on. True for
+/// the sk visitor (`MEMRA_MOE_F16G` 2 or 3 with `in_f % 32 == 0` on both GEMM shapes and the sk
+/// form not rolled back): each group's tiles cover the full K with a form picked from that
+/// group's m_e and the device only, and the activation scale is per row. Not argued for the
+/// cuBLAS grouped API (mode 1, whose algorithm may depend on the group list) or the round-49
+/// grid-scan rollback (`MEMRA_F16G_SK=0`); those layers chunk never and need the whole active set
+/// pinned, like the MMA and q8 arms.
+fn moe_f16g_runs_exact(n_embd: usize, n_ff_exp: usize) -> bool {
+    crate::moe_f16g_mode() >= 2
+        && n_embd.is_multiple_of(32)
+        && n_ff_exp.is_multiple_of(32)
+        && crate::moe_f16g_sk_params().0 >= 0
+}
+
+/// The largest block of any of the layer's three expert projections: what one cache slot must
+/// hold for `pin_capacity`.
+fn moe_layer_max_block(m: &MoeWeights) -> usize {
+    m.gate_exps
+        .max_expert_bytes()
+        .max(m.up_exps.max_expert_bytes())
+        .max(m.down_exps.max_expert_bytes())
+}
+
+/// `MEMRA_MOE_SLRU_PAIRS_TRACE=1` (diagnostic): one line per SLRU pairs layer call with its mode,
+/// runs, cache hits and misses, and how long the call held the cache lock.
+fn moe_slru_pairs_trace() -> bool {
+    static T: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *T.get_or_init(|| std::env::var("MEMRA_MOE_SLRU_PAIRS_TRACE").as_deref() == Ok("1"))
+}
+
+/// How the SLRU pairs arm got its expert pointers for one layer call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SlruPairsMode {
+    LayerRow,
+    Pinned,
+    Chunked,
+}
+
+/// Engagement receipt: one line per process per mode, so a run's log says which SLRU pairs
+/// modes ran (the chunked one included) without a flag.
+fn slru_pairs_announce(mode: SlruPairsMode, il: u16, csr: &PairsCsr, runs: usize) {
+    static SEEN: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+    let bit = 1u8 << (mode as u8);
+    if SEEN.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
+        eprintln!(
+            "[moe-slru-pairs] engaged mode={mode:?} arm={:?} il={il} t={} n_active={} runs={runs} \
+             (prefill on the SLRU placement runs the resident pairs program; memra#1217)",
+            csr.arm, csr.t, csr.n_active
+        );
+    }
+}
+
 fn moe_q8_enabled_for_model(cfg: &ModelConfig, m: &MoeWeights) -> bool {
     m.has_uniform_expert_layout()
         && moe_q8_enabled()
@@ -14208,14 +14357,42 @@ impl HybridModel {
             // exact-16 tier and rides the dev per-token program (see MOE_DEV_MAX_T);
             // pairs serves real prefill from 17 up.
             && t > MOE_DEV_MAX_T
-            && m.dev_exps.is_some()
             && moe_q8_enabled_for_model(cfg, m)
             && std::env::var("MEMRA_MOE_PAIRS")
                 .map(|v| v != "0")
                 .unwrap_or(true)
             && std::env::var("MEMRA_MOE_STATS").is_err()
         {
-            return Self::moe_ffn_pairs(e, m, z, &logits, t, cfg);
+            if let Some(dev) = m.dev_exps.as_ref() {
+                return Self::moe_ffn_pairs(
+                    e,
+                    m,
+                    PairsExperts::Resident(&dev.ptr_row),
+                    il,
+                    z,
+                    &logits,
+                    t,
+                    cfg,
+                );
+            }
+            // ONE PREFILL PROGRAM FOR BOTH PLACEMENTS (memra#1217). Without a resident slab the
+            // same pairs program reads its experts from SLRU slots (`moe_pairs_y_down_slru`).
+            // Before this, SLRU prefill fell through to the per-token decode program below, so
+            // the served output depended on how much memory was free at load. Falls through
+            // only when the cache cannot serve the layer's program (`moe_slru_pairs_fits`), the
+            // cache is off (`MEMRA_MOE_CACHE=0`) or frozen (the Hy3 CPU-expert door).
+            if use_cache && !cache_frozen && Self::moe_slru_pairs_fits(e, m, cfg, t, max_block)? {
+                return Self::moe_ffn_pairs(
+                    e,
+                    m,
+                    PairsExperts::Slru { il, max_block },
+                    il,
+                    z,
+                    &logits,
+                    t,
+                    cfg,
+                );
+            }
         }
 
         // t < PRIME_MIN_T: moe_ffn_dev loops tokens serially (1 launch-pair per token) — the
@@ -18161,9 +18338,36 @@ impl HybridModel {
     /// TOTAL per layer (quantize z, gate-pairs, up-pairs, silu, act-quantize, down-pairs,
     /// scatter) regardless of T or expert count. Bit-identity class: per (pair,row) dot =
     /// qmatvec_expert_q8 order; per-token accumulation slot-ordered (scatter kernel).
+    /// memra#1217: whether the SLRU pairs arm can serve this layer call. The grouped f16 lane
+    /// can split the active experts into runs, so one pinnable expert is enough; the MMA and q8
+    /// arms need every active expert pinned at once, bounded here by `min(n_expert, t * n_used)`
+    /// before routing. A layer that fails this keeps the per-token program; on the sm_120a
+    /// default every f16g-admitted qtype takes the f16g lane, so that needs a non-default
+    /// `MEMRA_MOE_F16G` or a qtype the lane does not take, AND a cache smaller than one layer.
+    fn moe_slru_pairs_fits(
+        e: &Engine,
+        m: &MoeWeights,
+        cfg: &ModelConfig,
+        t: usize,
+        max_block: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let moe = cfg.moe.as_ref().unwrap();
+        let (n_embd, n_ff_exp) = (cfg.n_embd as usize, moe.expert_ff_length as usize);
+        let (n_expert, n_used) = (moe.expert_count as usize, moe.expert_used_count as usize);
+        let block = moe_layer_max_block(m);
+        let fit = e.with_moe_cache(max_block, |c, _| Ok(c.pin_capacity(block) / 3))?;
+        Ok(match moe_pairs_arm(m, t, n_embd, n_ff_exp) {
+            PairsArm::F16g if moe_f16g_runs_exact(n_embd, n_ff_exp) => fit >= 1,
+            PairsArm::F16g | PairsArm::Mma | PairsArm::Q8 => fit >= n_expert.min(t * n_used),
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn moe_ffn_pairs(
         e: &Engine,
         m: &MoeWeights,
+        experts: PairsExperts,
+        il: u16,
         z: &CudaSlice<f32>,
         logits: &CudaSlice<f32>,
         t: usize,
@@ -18183,10 +18387,35 @@ impl HybridModel {
             !cfg.swiglu_clamped_anywhere(),
             "moe_ffn_pairs has no per-layer clamp: fused epilogues are plain SiLU"
         );
-        let dev = m.dev_exps.as_ref().unwrap();
-        let (rbg_d, rbu_d) = (m.gate_exps.row_bytes, m.up_exps.row_bytes);
 
-        let (sel_all, w_all) = Self::moe_route(e, logits, t, n_expert, n_used)?;
+        // The pruned-expert mask, as the sequential arm routes: `moe_route_cfg(.., None)` IS
+        // `moe_route`, so an unpruned model's selection is unchanged; a pruned one never selects,
+        // stages or caches a masked id (AGENTS.md, Hy3 expert spill).
+        let (sel_all, w_all) =
+            Self::moe_route_cfg(e, logits, t, n_expert, n_used, m.active_experts.as_deref())?;
+        // The host-visible observers the sequential arm feeds. They are no-ops unless their
+        // trace is armed, and they read only the selection, so the numerics do not move; without
+        // them a calibration or MoESD capture would silently drop every row this arm serves,
+        // which since memra#1217 includes SLRU prefill.
+        if memra_reference::hidden_trace::enabled() {
+            memra_reference::hidden_trace::emit_last_row(
+                "router",
+                il as i64,
+                t,
+                n_expert,
+                &e.dtoh(logits)?,
+            );
+            let last = (t - 1) * n_used;
+            let mut route = Vec::with_capacity(n_used * 2);
+            for slot in 0..n_used {
+                route.push(sel_all[last + slot] as f32);
+                route.push(w_all[last + slot]);
+            }
+            memra_reference::hidden_trace::emit_last_row("route", il as i64, 1, n_used * 2, &route);
+        }
+        crate::moesd::record_host_routes(il, n_expert, n_used, &sel_all)?;
+        Self::trace_moe_routes(il, t, &sel_all, &w_all)?;
+        Self::trace_moe_input(e, il, t, n_embd, z)?;
         let n_pairs = t * n_used;
         // pair arrays: pair p = (token p/n_used, slot p%n_used) — ALREADY slot-ordered per token,
         // so the CSR is trivial: tok_pair_off[tok] = tok*n_used, ids identity.
@@ -18196,7 +18425,6 @@ impl HybridModel {
         let tok_off: Vec<i32> = (0..=t).map(|tok| (tok * n_used) as i32).collect();
         let tok_ids: Vec<i32> = (0..n_pairs as i32).collect();
         let pt = e.htod_i32(&pair_tok)?;
-        let px = e.htod_i32(&pair_ex)?;
         let pw = e.htod(&pair_w)?;
         let toff = e.htod_i32(&tok_off)?;
         let tids = e.htod_i32(&tok_ids)?;
@@ -18220,149 +18448,132 @@ impl HybridModel {
             ex_off.push(ex_pairs.len() as i32);
         }
         let n_active = ex_ids.len();
-        let exi = e.htod_i32(&ex_ids)?;
-        let exo = e.htod_i32(&ex_off)?;
-        let exp_d = e.htod_i32(&ex_pairs)?;
-        let _ = &px; // pair-major twin keeps it; em path uses CSR
+        let csr = PairsCsr {
+            arm: moe_pairs_arm(m, t, n_embd, n_ff_exp),
+            t,
+            n_used,
+            n_expert,
+            n_embd,
+            n_ff_exp,
+            n_pairs,
+            n_active,
+            exi: e.htod_i32(&ex_ids)?,
+            exo: e.htod_i32(&ex_off)?,
+            exp_d: e.htod_i32(&ex_pairs)?,
+            pt,
+            ex_ids,
+            ex_off,
+            ex_pairs,
+        };
 
-        // INT8-MMA EXPERT MMQ (MEMRA_MOE_MMA=1, opt-in): the m16n8k16.s8 tensor-core analog of the
-        // _dec dp4a kernel (cu/mmq_iq_experts.cu). Same CSR grouping; per-expert matvec runs as a
-        // 128x128-tile int8 MMA GEMM over the expert's token group. Weight IQ nibbles decode to int8
-        // at tile-load + per-32 float scale; activation is q8_1_mmq (D4, same quant class as dp4a).
-        // FP-ORDER differs from dp4a (MMA reduction) — logits SHIFT, gated on argmax/spec/closeness,
-        // NOT byte-identity (like the W4A8 path). Requires IQ3_S/IQ4_XS + in_f % 256 == 0.
-        // t >= 16 (GEMM_M-class rule): the MMA tile needs token volume (crossover ~200 tok/expert;
-        // microbench: dp4a wins at tiny groups). ALSO an exactness requirement — spec verify
-        // batches (t=2..K+2) must ride the dp4a path whose FP order matches the T=1 decode chain,
-        // else K=1 self-consistency FAILs (caught 2026-07-06: MMA at T=2 flipped a verify argmax).
-        // DEFAULT ON (2026-07-06, third flip — this time with the real culprit fixed): the
-        // "MMA prime breaks spec" failure was the ROUTER's cuBLASLt n-dependence (d994271),
-        // not MMA's own FP order — both this and the k-quant arms were innocent suspects whose
-        // margin shifts surfaced the router bug. With the router decode-exact at verify t, the
-        // full battery is green with MMA on (spec p1/p2/p3 PASS, raw K=1..8 PASS, argmax MATCH,
-        // pp6257 2862 = 2.1x dec). t>=16 floor still required: verify batches must ride dp4a
-        // (dispatch parity with the T=1 decode chain). MEMRA_MOE_MMA=0 rollback;
-        // MEMRA_MOE_MMA_T overrides the floor (bisect seam).
-        static MMA_T: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-        let mma_t = *MMA_T.get_or_init(|| {
-            std::env::var("MEMRA_MOE_MMA_T")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(16)
-        });
-        let use_mma = std::env::var("MEMRA_MOE_MMA")
-            .map(|v| v != "0")
-            .unwrap_or(true)
-            && t >= mma_t
-            && q8_expert_dec_supported(m.gate_exps.qtype)
-            && q8_expert_dec_supported(m.up_exps.qtype)
-            && q8_expert_dec_supported(m.down_exps.qtype)
-            && n_embd.is_multiple_of(256)
-            && n_ff_exp.is_multiple_of(256);
-        // GROUPED f16 LANE admission (MEMRA_MOE_F16G, rounds 46-49): its own door, no longer a
-        // subset of the MMQ arm — q35's k-quant stragglers (Q6_K/Q4_K down, one Q3_K gate/up
-        // layer) fail q8_expert_dec_supported but dequant fine to f16, so f16g must be able to
-        // take a layer the MMQ arm would reject. Same t >= mma_t floor as MMA: decode and
-        // spec-verify batches must ride the dp4a path whose FP order matches the T=1 chain.
-        // MODE 2 (sm_120a naked default, lane/f16g-default-rearb 2026-08-02): every layer
-        // whose three projections pass f16g_proj_ok rides the sk visitor with direct tile
-        // loaders — with IQ4_XS/IQ3_S direct coverage the sk arm beats the int8-MMA MMQ
-        // tiles on the IQ-bank models too (q35 board-2048 +33.9%, KAT pp512 +46.7%).
-        // AUTO-KQUANT (mode 3, MEMRA_MOE_F16G=3, lane/q4k-expert-prefill): admit f16g ONLY
-        // where the MMA arm can't take the layer's QTYPES — the k-quant expert class whose
-        // baseline is the per-pair _em fallback (Ornith-35B Q4_K: board-2048 3.14x). Its
-        // MMA-capable carve-out (IQ3_S/IQ4_XS/Q4_0 banks on MMQ) was priced pre-IQ-direct;
-        // it survives as the rollback seam. Keyed on qtype capability, NOT use_mma, so
-        // MEMRA_MOE_MMA=0 stays a pure dp4a rollback seam.
-        let mma_capable = q8_expert_dec_supported(m.gate_exps.qtype)
-            && q8_expert_dec_supported(m.up_exps.qtype)
-            && q8_expert_dec_supported(m.down_exps.qtype)
-            && n_embd.is_multiple_of(256)
-            && n_ff_exp.is_multiple_of(256);
-        let f16g_mode = crate::moe_f16g_mode();
-        let f16g = f16g_mode != 0
-            && t >= mma_t
-            && (f16g_mode != 3 || !mma_capable)
-            && f16g_proj_ok(m.gate_exps.qtype, n_embd)
-            && f16g_proj_ok(m.up_exps.qtype, n_embd)
-            && f16g_proj_ok(m.down_exps.qtype, n_ff_exp);
-        if use_mma || f16g {
-            // GROUPED f16 LANE (MEMRA_MOE_F16G, rounds 46-49, experimental door): dequant
-            // the active experts ONCE per projection to f16 and run one grouped f16 GEMM over
-            // the CSR groups. f16-mirror numeric class — argmax/spec gated before promotion.
-            // NOTE: the pair-gather kernel needs pair p ordered EXPERT-MAJOR (ex_pairs order);
-            // the y rows come back in that same CSR order, so gate/up/down all stay pair-major
-            // in ex_pairs order — but moe_pairs_silu_mul and the scatter consume PAIR-ID order.
-            // We therefore gather activations per ex_pairs and scatter y back through ex_pairs.
-            let y_down = if f16g {
-                // CSR order end-to-end: gather z rows by the pair's TOKEN (pair p's token is
-                // p / n_used — the trivial CSR above), silu in CSR order (elementwise), one
-                // permute at the very end back to pair-id order for the scatter.
-                let csr_tok: Vec<i32> = ex_pairs.iter().map(|&p| p / n_used as i32).collect();
-                let csr_tok_d = e.htod_i32(&csr_tok)?;
-                let (z_f16, z_s) = e.moe_f16g_act(z, Some(&csr_tok_d), n_embd, n_pairs)?;
-                let g_csr = e.moe_f16_grouped(
-                    &dev.ptr_row,
-                    0,
-                    n_expert,
-                    &exi,
-                    &ex_off,
-                    &exo,
-                    &z_f16,
-                    &z_s,
-                    n_embd,
-                    n_ff_exp,
-                    n_active,
-                    n_pairs,
-                    m.gate_exps.qtype,
-                    rbg_d,
-                )?;
-                let u_csr = e.moe_f16_grouped(
-                    &dev.ptr_row,
-                    1,
-                    n_expert,
-                    &exi,
-                    &ex_off,
-                    &exo,
-                    &z_f16,
-                    &z_s,
-                    n_embd,
-                    n_ff_exp,
-                    n_active,
-                    n_pairs,
-                    m.up_exps.qtype,
-                    rbu_d,
-                )?;
-                let act_csr = e.moe_pairs_silu_mul(&g_csr, &u_csr, n_pairs * n_ff_exp)?;
-                let (a_f16, a_s) = e.moe_f16g_act(&act_csr, None, n_ff_exp, n_pairs)?;
-                let d_csr = e.moe_f16_grouped(
-                    &dev.ptr_row,
-                    2,
-                    n_expert,
-                    &exi,
-                    &ex_off,
-                    &exo,
-                    &a_f16,
-                    &a_s,
-                    n_ff_exp,
-                    n_embd,
-                    n_active,
-                    n_pairs,
-                    m.down_exps.qtype,
-                    m.down_exps.row_bytes,
-                )?;
-                e.rows_permute(&d_csr, &exp_d, n_pairs, n_embd)?
+        // The routed experts' program. WHERE the expert bytes are read from is the only thing
+        // the two placements change (memra#1217): the resident slab's pointer row, or SLRU slots
+        // pinned for this call. The kernels, the CSR and the numeric class are the same.
+        let y_down = match experts {
+            PairsExperts::Resident(table) => Self::moe_pairs_y_down(e, m, table, &csr, z)?,
+            PairsExperts::Slru { il, max_block } => {
+                Self::moe_pairs_y_down_slru(e, m, il, max_block, &csr, z)?
+            }
+        };
+        let mut moe_out = e.uninit(t * n_embd)?; // scatter fully overwrites per (token,col)
+        e.moe_pairs_scatter(&y_down, &pw, &toff, &tids, &mut moe_out, t, n_embd)?;
+
+        // SHARED EXPERT epilogue at prefill width. The only caller enters with
+        // t > MOE_DEV_MAX_T and a softmax router (no step35, M3 or Hy3), so the plain batched
+        // matmuls are the whole program here.
+        // gate_inp_shexp is OPTIONAL: qwen35moe sigmoid-gates the shared expert
+        // (sigmoid(gate_inp) x sh); M3 and a model without the gate tensor add it directly.
+        // SERVE ISOLATION (lane/concat-prime-exact): the fused sigmoid-dot is the m-INVARIANT
+        // form; every shexp-gate arm shares the same form so a dispatch choice cannot change
+        // bits. The batched (MMA / grouped f16) arms and the q8 arm keep their own activation
+        // call, exactly as before the memra#1217 split.
+        if let (Some(gate_shexp), Some(up_shexp), Some(down_shexp)) =
+            (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
+        {
+            let n_ff_sh = gate_shexp.out_features();
+            let sg_gate = e.matmul(gate_shexp, z, t)?;
+            let sg_up = e.matmul(up_shexp, z, t)?;
+            let mut sa = e.uninit(t * n_ff_sh)?;
+            if matches!(csr.arm, PairsArm::F16g | PairsArm::Mma) {
+                Self::ffn_act(e, cfg, &sg_gate, &sg_up, &mut sa, t * n_ff_sh)?;
             } else {
+                e.silu_mul(&sg_gate, &sg_up, &mut sa, t * n_ff_sh)?;
+            }
+            let sh = e.matmul(down_shexp, &sa, t)?;
+            match &m.gate_inp_shexp {
+                Some(gate_inp_shexp) => {
+                    let g = e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?;
+                    e.add_scaled_rows(&sh, &g, &mut moe_out, n_embd, t)?;
+                }
+                None => e.add_scaled_rows_ungated(&sh, &mut moe_out, n_embd, t)?,
+            }
+        }
+        Ok(moe_out)
+    }
+
+    /// The pairs arm's routed-expert output, `[n_pairs, n_embd]` in PAIR-ID order (what
+    /// `moe_pairs_scatter` consumes), read through `table` (`[3 * n_expert]` u64 expert pointers,
+    /// proj-major: the resident slab's `ptr_row`, a cache `layer_dev_row`, or a pinned-slot table;
+    /// only the entries of the CSR's active experts are dereferenced).
+    fn moe_pairs_y_down(
+        e: &Engine,
+        m: &MoeWeights,
+        table: &CudaSlice<u64>,
+        csr: &PairsCsr,
+        z: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let (n_expert, n_embd, n_ff_exp, n_pairs, n_active, t) = (
+            csr.n_expert,
+            csr.n_embd,
+            csr.n_ff_exp,
+            csr.n_pairs,
+            csr.n_active,
+            csr.t,
+        );
+        let (rbg_d, rbu_d) = (m.gate_exps.row_bytes, m.up_exps.row_bytes);
+        let (exi, exo, exp_d, pt) = (&csr.exi, &csr.exo, &csr.exp_d, &csr.pt);
+        match csr.arm {
+            PairsArm::F16g => {
+                // GROUPED f16 LANE (MEMRA_MOE_F16G, rounds 46-49): dequant the active experts
+                // ONCE per projection to f16 and run one grouped f16 GEMM over the CSR groups.
+                // f16-mirror numeric class. The pair-gather kernel needs pair p ordered
+                // EXPERT-MAJOR (ex_pairs order); the y rows come back in that same CSR order, so
+                // gate/up/down stay in CSR order end-to-end and one permute at the very end puts
+                // y back in pair-id order for the scatter.
+                let csr_tok: Vec<i32> = csr
+                    .ex_pairs
+                    .iter()
+                    .map(|&p| p / csr.n_used as i32)
+                    .collect();
+                let csr_tok_d = e.htod_i32(&csr_tok)?;
+                let d_csr = Self::moe_pairs_f16g_csr(
+                    e,
+                    m,
+                    table,
+                    n_expert,
+                    exi,
+                    &csr.ex_off,
+                    exo,
+                    &csr_tok_d,
+                    n_active,
+                    n_pairs,
+                    z,
+                    n_embd,
+                    n_ff_exp,
+                )?;
+                e.rows_permute(&d_csr, exp_d, n_pairs, n_embd)
+            }
+            PairsArm::Mma => {
                 // gate/up: activation = z, token-major over t tokens; pair_tok gathers the routed row.
                 let z_scr = e.mmq_iq_quantize_act(z, n_embd, t)?;
                 let gate = e.mmq_iq_experts(
-                    &dev.ptr_row,
+                    table,
                     0,
                     n_expert,
-                    &exi,
-                    &exo,
-                    &exp_d,
-                    &pt,
+                    exi,
+                    exo,
+                    exp_d,
+                    pt,
                     &z_scr,
                     n_embd,
                     n_ff_exp,
@@ -18373,13 +18584,13 @@ impl HybridModel {
                     rbg_d,
                 )?;
                 let up = e.mmq_iq_experts(
-                    &dev.ptr_row,
+                    table,
                     1,
                     n_expert,
-                    &exi,
-                    &exo,
-                    &exp_d,
-                    &pt,
+                    exi,
+                    exo,
+                    exp_d,
+                    pt,
                     &z_scr,
                     n_embd,
                     n_ff_exp,
@@ -18403,12 +18614,12 @@ impl HybridModel {
                 let pair_self: Vec<i32> = (0..n_pairs as i32).collect();
                 let pself = e.htod_i32(&pair_self)?;
                 e.mmq_iq_experts(
-                    &dev.ptr_row,
+                    table,
                     2,
                     n_expert,
-                    &exi,
-                    &exo,
-                    &exp_d,
+                    exi,
+                    exo,
+                    exp_d,
                     &pself,
                     &a_scr,
                     n_ff_exp,
@@ -18418,167 +18629,293 @@ impl HybridModel {
                     n_pairs,
                     m.down_exps.qtype,
                     m.down_exps.row_bytes,
-                )?
-            };
-            let mut moe_out = e.uninit(t * n_embd)?;
-            e.moe_pairs_scatter(&y_down, &pw, &toff, &tids, &mut moe_out, t, n_embd)?;
-            if let (Some(gate_shexp), Some(up_shexp), Some(down_shexp)) =
-                (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
-            {
-                let n_ff_sh = gate_shexp.out_features();
-                let sg_gate = e.matmul(gate_shexp, z, t)?;
-                let sg_up = e.matmul(up_shexp, z, t)?;
-                let mut sa = e.uninit(t * n_ff_sh)?;
-                Self::ffn_act(e, cfg, &sg_gate, &sg_up, &mut sa, t * n_ff_sh)?;
-                let sh = e.matmul(down_shexp, &sa, t)?;
-                // shexp gate: qwen35moe sigmoid-gates; M3 has no gate tensor -> weight 1.0.
-                // SERVE ISOLATION (lane/concat-prime-exact): the fused sigmoid-dot is the
-                // m-INVARIANT form — see the sequential arm's note. This is the PAIRS arm,
-                // i.e. the one real prefill actually takes on a resident-expert MoE model,
-                // so the concat-prime isolation fix has to land here as well.
-                match &m.gate_inp_shexp {
-                    Some(gate_inp_shexp) => {
-                        let g = e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?;
-                        e.add_scaled_rows(&sh, &g, &mut moe_out, n_embd, t)?;
-                    }
-                    None => e.add_scaled_rows_ungated(&sh, &mut moe_out, n_embd, t)?,
-                }
+                )
             }
-            return Ok(moe_out);
+            PairsArm::Q8 => {
+                // DECODE-ONCE MMQ (rung 3, MEMRA_MOE_DEC=1 default-on): dequant each weight group
+                // once per (row,group) then dp4a across the expert's tokens. _em re-decoded per
+                // token (NEUTRAL).
+                let dec = std::env::var("MEMRA_MOE_DEC")
+                    .map(|v| v != "0")
+                    .unwrap_or(true);
+                let matvec =
+                    |proj,
+                     pt: &CudaSlice<i32>,
+                     aq: &_,
+                     ad: &_,
+                     inf,
+                     outf,
+                     qtype,
+                     rb|
+                     -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+                        // _dec's decode-once extractors are IQ-only; k-quant expert layers take the
+                        // _em dot path.
+                        if dec && q8_expert_dec_supported(qtype) {
+                            e.moe_pairs_matvec_q8_dec(
+                                table, proj, exi, exo, exp_d, pt, aq, ad, inf, outf, n_expert,
+                                n_active, n_pairs, qtype, rb,
+                            )
+                        } else {
+                            e.moe_pairs_matvec_q8_em(
+                                table, proj, exi, exo, exp_d, pt, aq, ad, inf, outf, n_expert,
+                                n_active, n_pairs, qtype, rb,
+                            )
+                        }
+                    };
+                let (zq, zd) = e.quantize_q8_1(z, t, n_embd)?;
+                let gate = matvec(0, pt, &zq, &zd, n_embd, n_ff_exp, m.gate_exps.qtype, rbg_d)?;
+                let up = matvec(1, pt, &zq, &zd, n_embd, n_ff_exp, m.up_exps.qtype, rbu_d)?;
+                let act = e.moe_pairs_silu_mul(&gate, &up, n_pairs * n_ff_exp)?;
+                let (aq2, ad2) = e.quantize_q8_1(&act, n_pairs, n_ff_exp)?;
+                // down consumes PAIR-major activation rows: pair_tok = identity.
+                let pair_self: Vec<i32> = (0..n_pairs as i32).collect();
+                let pself = e.htod_i32(&pair_self)?;
+                matvec(
+                    2,
+                    &pself,
+                    &aq2,
+                    &ad2,
+                    n_ff_exp,
+                    n_embd,
+                    m.down_exps.qtype,
+                    m.down_exps.row_bytes,
+                )
+            }
         }
+    }
 
-        // DECODE-ONCE MMQ (rung 3, MEMRA_MOE_DEC=1 default-on): dequant each weight group once per
-        // (row,group) then dp4a across the expert's tokens. _em re-decoded per token (NEUTRAL).
-        let dec = std::env::var("MEMRA_MOE_DEC")
-            .map(|v| v != "0")
-            .unwrap_or(true);
-        let matvec = |proj,
-                      exi: &_,
-                      exo: &_,
-                      exp_d: &_,
-                      pt: &_,
-                      aq: &_,
-                      ad: &_,
-                      inf,
-                      outf,
-                      qtype,
-                      rb|
-         -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-            // _dec's decode-once extractors are IQ-only; k-quant expert layers take the _em dot path.
-            let dec = dec && q8_expert_dec_supported(qtype);
-            if dec {
-                e.moe_pairs_matvec_q8_dec(
-                    &dev.ptr_row,
-                    proj,
-                    exi,
-                    exo,
-                    exp_d,
-                    pt,
-                    aq,
-                    ad,
-                    inf,
-                    outf,
-                    n_expert,
-                    n_active,
-                    n_pairs,
-                    qtype,
-                    rb,
-                )
-            } else {
-                e.moe_pairs_matvec_q8_em(
-                    &dev.ptr_row,
-                    proj,
-                    exi,
-                    exo,
-                    exp_d,
-                    pt,
-                    aq,
-                    ad,
-                    inf,
-                    outf,
-                    n_expert,
-                    n_active,
-                    n_pairs,
-                    qtype,
-                    rb,
-                )
-            }
-        };
-        let (zq, zd) = e.quantize_q8_1(z, t, n_embd)?;
-        let gate = matvec(
+    /// The grouped f16 lane over one contiguous run of the CSR's active experts: `ex_ids` names
+    /// the run's experts, `ex_off_host`/`ex_off_dev` its offsets rebased to 0, `csr_tok` the token
+    /// of each of its `n_pairs` CSR rows. Returns those rows' down output `[n_pairs, n_embd]` in
+    /// CSR order. Every step is per CSR row or per expert group: the activation's f16 row scale is
+    /// per row, SiLU is elementwise, and the sk visitor computes each group's tiles over the full
+    /// K with a tile form chosen from that group's m_e and the device alone. So a run's rows do
+    /// not depend on which other experts share the launch, which is what lets the SLRU arm split
+    /// a set it cannot pin at once into runs (`moe_pairs_y_down_slru`) and still produce the
+    /// resident program's bytes; `tests/moe_slru_pairs_placement_gpu.rs` holds that to bit equality.
+    #[allow(clippy::too_many_arguments)]
+    fn moe_pairs_f16g_csr(
+        e: &Engine,
+        m: &MoeWeights,
+        table: &CudaSlice<u64>,
+        n_expert: usize,
+        ex_ids: &CudaSlice<i32>,
+        ex_off_host: &[i32],
+        ex_off_dev: &CudaSlice<i32>,
+        csr_tok: &CudaSlice<i32>,
+        n_active: usize,
+        n_pairs: usize,
+        z: &CudaSlice<f32>,
+        n_embd: usize,
+        n_ff_exp: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let (z_f16, z_s) = e.moe_f16g_act(z, Some(csr_tok), n_embd, n_pairs)?;
+        let g_csr = e.moe_f16_grouped(
+            table,
             0,
-            &exi,
-            &exo,
-            &exp_d,
-            &pt,
-            &zq,
-            &zd,
+            n_expert,
+            ex_ids,
+            ex_off_host,
+            ex_off_dev,
+            &z_f16,
+            &z_s,
             n_embd,
             n_ff_exp,
+            n_active,
+            n_pairs,
             m.gate_exps.qtype,
-            rbg_d,
+            m.gate_exps.row_bytes,
         )?;
-        let up = matvec(
+        let u_csr = e.moe_f16_grouped(
+            table,
             1,
-            &exi,
-            &exo,
-            &exp_d,
-            &pt,
-            &zq,
-            &zd,
+            n_expert,
+            ex_ids,
+            ex_off_host,
+            ex_off_dev,
+            &z_f16,
+            &z_s,
             n_embd,
             n_ff_exp,
+            n_active,
+            n_pairs,
             m.up_exps.qtype,
-            rbu_d,
+            m.up_exps.row_bytes,
         )?;
-        let act = e.moe_pairs_silu_mul(&gate, &up, n_pairs * n_ff_exp)?;
-        let (aq2, ad2) = e.quantize_q8_1(&act, n_pairs, n_ff_exp)?;
-        // down consumes PAIR-major activation rows: pair_tok = identity.
-        let pair_self: Vec<i32> = (0..n_pairs as i32).collect();
-        let pself = e.htod_i32(&pair_self)?;
-        let y_down = matvec(
+        let act_csr = e.moe_pairs_silu_mul(&g_csr, &u_csr, n_pairs * n_ff_exp)?;
+        let (a_f16, a_s) = e.moe_f16g_act(&act_csr, None, n_ff_exp, n_pairs)?;
+        e.moe_f16_grouped(
+            table,
             2,
-            &exi,
-            &exo,
-            &exp_d,
-            &pself,
-            &aq2,
-            &ad2,
+            n_expert,
+            ex_ids,
+            ex_off_host,
+            ex_off_dev,
+            &a_f16,
+            &a_s,
             n_ff_exp,
             n_embd,
+            n_active,
+            n_pairs,
             m.down_exps.qtype,
             m.down_exps.row_bytes,
-        )?;
-        let mut moe_out = e.uninit(t * n_embd)?; // scatter fully overwrites per (token,col)
-        e.moe_pairs_scatter(&y_down, &pw, &toff, &tids, &mut moe_out, t, n_embd)?;
+        )
+    }
 
-        // SHARED EXPERT epilogue at prefill width. The only caller enters with
-        // t > MOE_DEV_MAX_T and a softmax router (no step35, M3 or Hy3), so the plain batched
-        // matmuls are the whole program here.
-        // gate_inp_shexp is OPTIONAL: qwen35moe gates the shared expert (sigmoid(gate_inp) x sh);
-        // a model without the gate tensor adds the shared expert directly.
-        if let (Some(gate_shexp), Some(up_shexp), Some(down_shexp)) =
-            (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
-        {
-            let n_ff_sh = gate_shexp.out_features();
-            let sg_gate = e.matmul(gate_shexp, z, t)?;
-            let sg_up = e.matmul(up_shexp, z, t)?;
-            let mut sa = e.uninit(t * n_ff_sh)?;
-            e.silu_mul(&sg_gate, &sg_up, &mut sa, t * n_ff_sh)?;
-            let sh = e.matmul(down_shexp, &sa, t)?;
-            // shexp gate: qwen35moe sigmoid-gates; no gate tensor -> weight 1.0.
-            // m-INVARIANT fused sigmoid-dot under router_prefill_exact (serve isolation,
-            // lane/concat-prime-exact) — every shexp-gate arm shares the same form so a
-            // dispatch choice cannot change bits.
-            match &m.gate_inp_shexp {
-                Some(gate_inp_shexp) => {
-                    let g = e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?;
-                    e.add_scaled_rows(&sh, &g, &mut moe_out, n_embd, t)?;
+    /// memra#1217: the pairs arm on the SLRU placement. The resident placement reads every
+    /// expert from its slab; here the same kernels read the same bytes from cache slots, so a
+    /// model's prefill no longer depends on whether its experts fit at load. Before this arm,
+    /// SLRU prefill ran the per-token decode program over every prompt token (`moe_ffn_dev` or
+    /// the staged loop), a second numeric class: Ornith-1.5-35B-A3B's prefill logits moved by up
+    /// to 0.56 and a greedy served text split after 95 characters.
+    ///
+    /// Everything happens under ONE hold of the cache lock: admission, the pointer table and the
+    /// kernel launches. No other admission can interleave, so the slots stay put until the
+    /// kernels that read them are enqueued, and any later eviction's H2D runs after them on the
+    /// compute stream. Three ways to get the table, in order:
+    ///   * the layer is fully cache-resident: the cache's own `layer_dev_row` (no copy, no pin);
+    ///   * the active set fits `pin_capacity`: `acquire_pinned` admits it with eviction skipping
+    ///     the set's own members, then one table upload;
+    ///   * grouped f16 only: the active experts split into contiguous CSR runs that each fit, one
+    ///     pinned admission and one `moe_pairs_f16g_csr` per run, concatenated in CSR order
+    ///     (bit-identical by the per-row/per-group argument on `moe_pairs_f16g_csr`).
+    ///
+    /// The caller (`moe_slru_pairs_fits`) only enters when one of these can serve the layer.
+    /// Every MoE call wider than `MOE_DEV_MAX_T` rows takes this arm, not only prefill: a decode
+    /// wave of 17 to 32 rows (the worker's exact-32 tier) did too on the resident placement, and
+    /// now does on both.
+    fn moe_pairs_y_down_slru(
+        e: &Engine,
+        m: &MoeWeights,
+        il: u16,
+        max_block: usize,
+        csr: &PairsCsr,
+        z: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let block_bytes = moe_layer_max_block(m);
+        let trace = moe_slru_pairs_trace();
+        e.with_moe_cache(max_block, |c, eng| {
+            let held = std::time::Instant::now();
+            let (hits0, misses0) = (c.hits, c.misses);
+            let (mode, runs, y) = if let Some(row) = c.layer_dev_row(il, csr.n_expert, eng)? {
+                (
+                    SlruPairsMode::LayerRow,
+                    1,
+                    Self::moe_pairs_y_down(eng, m, row, csr, z)?,
+                )
+            } else {
+                let fit = c.pin_capacity(block_bytes) / 3;
+                if fit >= csr.n_active {
+                    let table = Self::moe_pinned_table(c, eng, m, il, csr.n_expert, &csr.ex_ids)?;
+                    (
+                        SlruPairsMode::Pinned,
+                        1,
+                        Self::moe_pairs_y_down(eng, m, &table, csr, z)?,
+                    )
+                } else if matches!(csr.arm, PairsArm::F16g)
+                    && moe_f16g_runs_exact(csr.n_embd, csr.n_ff_exp)
+                    && fit >= 1
+                {
+                    let mut d_csr = eng.uninit(csr.n_pairs * csr.n_embd)?;
+                    let mut runs = 0;
+                    for a in (0..csr.n_active).step_by(fit) {
+                        let b = (a + fit).min(csr.n_active);
+                        let table =
+                            Self::moe_pinned_table(c, eng, m, il, csr.n_expert, &csr.ex_ids[a..b])?;
+                        let (r0, r1) = (csr.ex_off[a] as usize, csr.ex_off[b] as usize);
+                        let off: Vec<i32> =
+                            csr.ex_off[a..=b].iter().map(|&o| o - r0 as i32).collect();
+                        let tok: Vec<i32> = csr.ex_pairs[r0..r1]
+                            .iter()
+                            .map(|&p| p / csr.n_used as i32)
+                            .collect();
+                        let d_run = Self::moe_pairs_f16g_csr(
+                            eng,
+                            m,
+                            &table,
+                            csr.n_expert,
+                            &eng.htod_i32(&csr.ex_ids[a..b])?,
+                            &off,
+                            &eng.htod_i32(&off)?,
+                            &eng.htod_i32(&tok)?,
+                            b - a,
+                            r1 - r0,
+                            z,
+                            csr.n_embd,
+                            csr.n_ff_exp,
+                        )?;
+                        eng.stream().memcpy_dtod(
+                            &d_run,
+                            &mut d_csr.slice_mut(r0 * csr.n_embd..r1 * csr.n_embd),
+                        )?;
+                        runs += 1;
+                    }
+                    let y = eng.rows_permute(&d_csr, &csr.exp_d, csr.n_pairs, csr.n_embd)?;
+                    (SlruPairsMode::Chunked, runs, y)
+                } else {
+                    return Err(format!(
+                        "SLRU pairs arm entered for layer {il} but the cache can pin {fit} \
+                         experts against {} active on the {:?} arm: moe_slru_pairs_fits and \
+                         the dispatch disagree",
+                        csr.n_active, csr.arm
+                    )
+                    .into());
                 }
-                None => e.add_scaled_rows_ungated(&sh, &mut moe_out, n_embd, t)?,
+            };
+            let hold_us = held.elapsed().as_micros();
+            crate::MOE_SLRU_PAIRS_CALLS[mode as usize]
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            slru_pairs_announce(mode, il, csr, runs);
+            if trace {
+                eprintln!(
+                    "[moe-slru-pairs] il={il} t={} n_active={} arm={:?} mode={mode:?} runs={runs} \
+                     hits={} misses={} hold_us={hold_us}",
+                    csr.t,
+                    csr.n_active,
+                    csr.arm,
+                    c.hits - hits0,
+                    c.misses - misses0,
+                );
             }
+            Ok(y)
+        })
+    }
+
+    /// Admit the gate/up/down blocks of `ex_ids` at once (`MoeSlotCache::acquire_pinned`) and
+    /// upload the `[3 * n_expert]` proj-major pointer table the pairs kernels index; entries of
+    /// experts outside `ex_ids` stay 0 and are never read (the CSR names only `ex_ids`).
+    fn moe_pinned_table(
+        c: &mut crate::moe_cache::MoeSlotCache,
+        e: &Engine,
+        m: &MoeWeights,
+        il: u16,
+        n_expert: usize,
+        ex_ids: &[i32],
+    ) -> Result<CudaSlice<u64>, Box<dyn std::error::Error>> {
+        use crate::moe_cache::{BlockId, PROJ_DOWN, PROJ_GATE, PROJ_UP};
+        use cudarc::driver::DevicePtr;
+        let ids: Vec<BlockId> = ex_ids
+            .iter()
+            .flat_map(|&ex| {
+                [PROJ_GATE, PROJ_UP, PROJ_DOWN].map(|proj| BlockId::new(il, proj, ex as u16))
+            })
+            .collect();
+        let slots = c.acquire_pinned(
+            &ids,
+            |id| match id.proj {
+                PROJ_GATE => m.gate_exps.expert_source(id.ex as usize),
+                PROJ_UP => m.up_exps.expert_source(id.ex as usize),
+                _ => m.down_exps.expert_source(id.ex as usize),
+            },
+            e,
+        )?;
+        let mut host = vec![0u64; 3 * n_expert];
+        let stream = e.stream();
+        for (id, &slot) in ids.iter().zip(&slots) {
+            let (p, _guard) = c.slot(slot).device_ptr(&stream);
+            host[id.proj as usize * n_expert + id.ex as usize] = p;
         }
-        Ok(moe_out)
+        Ok(stream.clone_htod(&host)?)
     }
 
     /// LAUNCH-STRUCTURE STAGE 3: the ZERO-DtoH fully-resident MoE FFN. Caller guarantees the
