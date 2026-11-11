@@ -7903,22 +7903,38 @@ fn spec_cost_observe(model: &str, n: usize, k: usize, tok_per_s: f64) {
     }
 }
 
-/// Mark `model`'s verdict at `n` concurrent sessions stalled (memra#1211): a session's last
-/// `SPEC_STALL_ENTRIES` speculative bursts each began while a request waited for admission.
-/// `n` is the tick's live count, the count its demotion check reads. Never n = 1: a pressed
-/// entry at a tick that began with one live session means the pressing request is not admitted
-/// yet, and it is priced at n >= 2 when it is; a lone session is where speculation pays most.
-fn spec_cost_mark_stall(model: &str, n: usize) {
-    if n < 2 {
-        return;
-    }
+/// The concurrencies a stall mark names (memra#1211): `n`, the tick's live count (what its
+/// demotion check reads, so the stalled session demotes), and `n + waiting`, the wave the
+/// requests waiting at the completing entry are admitted into (what their admission verdict
+/// reads, so they are admitted plain). Marking `n` alone missed the newcomers whenever the tick
+/// count and the admission wave differ (GB10, 2 clients at 200 ms: the mark at n=2, newcomers at
+/// wave 3, 72 of 103 still speculative). Never n = 1: a lone session is where speculation pays
+/// most, and a request pressing it is admitted at n >= 2, which the wave covers.
+fn spec_stall_marks(n: usize, waiting: usize) -> Vec<usize> {
+    let mut marks: Vec<usize> = [n, n + waiting].into_iter().filter(|&m| m >= 2).collect();
+    marks.dedup();
+    marks
+}
+
+/// Mark `model`'s verdict stalled (memra#1211): a session's last `SPEC_STALL_ENTRIES`
+/// speculative bursts each began while a request waited for admission, `waiting` of them at the
+/// last one, in a tick that began with `n` live sessions (`spec_stall_marks`).
+fn spec_cost_mark_stall(model: &str, n: usize, waiting: usize) {
+    let marks = spec_stall_marks(n, waiting);
     let mut reg = spec_cost_registry().lock().unwrap();
-    if let Some(entry) = reg.get_mut(model)
-        && entry.mark_stall(n, Instant::now())
-    {
+    let Some(entry) = reg.get_mut(model) else {
+        return;
+    };
+    let now = Instant::now();
+    let new: Vec<usize> = marks
+        .into_iter()
+        .filter(|&m| entry.mark_stall(m, now))
+        .collect();
+    if !new.is_empty() {
         eprintln!(
-            "[spec-cost] model={model:?} stalled n={n}: a session's last {SPEC_STALL_ENTRIES} \
-             burst entries met a waiting request; plain at n={n} for {} s",
+            "[spec-cost] model={model:?} stalled n={new:?}: a session's last {SPEC_STALL_ENTRIES} \
+             burst entries met a waiting request (tick n={n}, {waiting} waiting); plain there for \
+             {} s",
             SPEC_COST_REALIZED_TTL.as_secs()
         );
     }
@@ -17046,8 +17062,9 @@ struct Session {
     /// admission at the burst's entry hook (a pressed entry, memra#1211).
     spec_press_hist: u8,
     /// Set by `spec_burst_post` when that burst completed a run of `SPEC_STALL_ENTRIES` pressed
-    /// entries; the tick takes it after phase (a) and marks its concurrency stalled.
-    spec_press_due: bool,
+    /// entries, to the number of requests waiting at its entry; the tick takes it after phase
+    /// (a) and marks the stall (`spec_cost_mark_stall`).
+    spec_press_due: Option<usize>,
     emission_clock: crate::hybrid_telemetry::EmissionClock,
     /// A disconnected client is billed to the observed abort point but its generated KV is
     /// not a reusable conversation state. Abort retirement drops all session caches instead
@@ -22988,8 +23005,8 @@ pub fn run(
             // serves plain there until the mark expires. Serial and pooled bursts both set the
             // flag in `spec_burst_post`.
             for s in active.iter_mut() {
-                if std::mem::take(&mut s.spec_press_due) {
-                    spec_cost_mark_stall(&s.model, n_tick);
+                if let Some(waiting) = s.spec_press_due.take() {
+                    spec_cost_mark_stall(&s.model, n_tick, waiting);
                 }
             }
             // (b) INTERACTIVE prefill only (TTFT priority, full tick chunk budgets[0]).
@@ -30115,7 +30132,7 @@ fn admit(
         early_done: None,
         spec_entry_yields: 0,
         spec_press_hist: 0,
-        spec_press_due: false,
+        spec_press_due: None,
         emission_clock: Default::default(),
         aborted: false,
         oom_teardown: false,
@@ -32570,9 +32587,9 @@ struct SpecBurstEmit<'t> {
     /// The session's consecutive silent entry yields, carried in and written back by
     /// `spec_burst_post`.
     entry_yields: u32,
-    /// Whether a request waited for admission at this burst's entry call (memra#1211); `None`
+    /// How many requests waited for admission at this burst's entry call (memra#1211); `None`
     /// until the entry call has run. `spec_burst_post` shifts it into the session's history.
-    entry_pressed: Option<bool>,
+    entry_waiting: Option<usize>,
     tok: &'t memra_tokenizer::Tokenizer,
     decoded_visible: Vec<u8>,
     cursor: usize,
@@ -32620,7 +32637,7 @@ impl<'t> SpecBurstEmit<'t> {
             admit_yield,
             entry: true,
             entry_yields: s.spec_entry_yields,
-            entry_pressed: None,
+            entry_waiting: None,
             tok,
             decoded_visible,
             cursor,
@@ -32650,8 +32667,13 @@ impl<'t> SpecBurstEmit<'t> {
         tokens_emitted: &mut usize,
     ) -> bool {
         // Admission verdict polled at EVERY round boundary (even empty flushes).
-        let keep =
-            !self.admit_yield || PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) == 0;
+        let waiting = if self.admit_yield {
+            PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire)
+        } else {
+            0
+        };
+        self.record_entry(waiting);
+        let keep = waiting == 0;
         let keep = self.bound_entry_yield(keep, slice.is_empty());
         let (tok, flush_tx) = (self.tok, &self.flush_tx);
         if self.eos_seen || self.emit_remaining == 0 || slice.is_empty() {
@@ -32751,6 +32773,16 @@ fn spec_stop_receipt_burst(
 }
 
 impl SpecBurstEmit<'_> {
+    /// A burst's entry call records how many requests waited for admission (memra#1211): a
+    /// pressed entry when any did, whatever the entry-yield bound then does with the yield and
+    /// whether the call carries a token. Later calls of the burst change nothing. Runs before
+    /// `bound_entry_yield`, which consumes the entry flag.
+    fn record_entry(&mut self, waiting: usize) {
+        if self.entry {
+            self.entry_waiting = Some(waiting);
+        }
+    }
+
     /// The entry-yield bound (`SPEC_ENTRY_YIELD_MAX`). `admit_keep` is the admission verdict
     /// of this hook call and `silent` says the call carries no token. Only a burst's entry
     /// call can be a silent yield that matters: a round's hook call carries at least the
@@ -32760,11 +32792,6 @@ impl SpecBurstEmit<'_> {
     /// round: the round's own hook call then yields.
     fn bound_entry_yield(&mut self, admit_keep: bool, silent: bool) -> bool {
         let entry = std::mem::replace(&mut self.entry, false);
-        if entry {
-            // A pressed entry (memra#1211): a request waited when this burst began, whatever
-            // the bound then does with the yield and whether the call carries a token.
-            self.entry_pressed = Some(!admit_keep);
-        }
         if !silent {
             self.entry_yields = 0;
             return admit_keep;
@@ -32910,12 +32937,14 @@ fn spec_burst_post(
         stop_ids,
         stop_string_at,
         entry_yields,
-        entry_pressed,
+        entry_waiting,
         ..
     } = emit;
     s.spec_entry_yields = entry_yields;
-    if let Some(pressed) = entry_pressed {
-        (s.spec_press_hist, s.spec_press_due) = spec_press_record(s.spec_press_hist, pressed);
+    if let Some(waiting) = entry_waiting {
+        let due;
+        (s.spec_press_hist, due) = spec_press_record(s.spec_press_hist, waiting > 0);
+        s.spec_press_due = due.then_some(waiting);
     }
     let spec = s.spec.as_mut().expect("spec_burst_post on a spec session");
     if let Some(trace) = s.ttft.as_ref() {
@@ -39362,7 +39391,7 @@ mod tests {
             admit_yield: true,
             entry: true,
             entry_yields,
-            entry_pressed: None,
+            entry_waiting: None,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
@@ -39526,9 +39555,10 @@ mod tests {
         e
     }
 
-    /// memra#1211: a stall mark at n serves plain at n, every draft length, and changes no price
-    /// and no verdict anywhere else. The slot probe's storage (zero-rate samples in the realized
-    /// slot at n) fails this: n's slot becomes zero and n+-1 scale from it.
+    /// memra#1211: a stall marks the tick's count and the wave its waiting requests are admitted
+    /// into, and nothing else: plain there at every draft length, no price changed, no verdict
+    /// changed anywhere else, never n = 1. The slot probe's storage (zero-rate samples in the
+    /// realized slot) fails this: the slot becomes zero and its neighbours scale from it.
     #[test]
     fn spec_cost_stall_mark_does_not_spread() {
         let model = "stall-spread";
@@ -39548,7 +39578,15 @@ mod tests {
             unmarked.iter().all(|v| v[2].is_some_and(|k| k > 0)),
             "n=3 speculates before the mark: {unmarked:?}"
         );
-        super::spec_cost_mark_stall(model, 3);
+        // Tick count 2, one request waiting: marks n = 2 and the admitted wave n = 3.
+        assert_eq!(super::spec_stall_marks(2, 1), vec![2, 3]);
+        assert_eq!(
+            super::spec_stall_marks(3, 2),
+            vec![3, 5],
+            "two waiting: wave 5"
+        );
+        assert_eq!(super::spec_stall_marks(1, 1), vec![2], "never n = 1");
+        super::spec_cost_mark_stall(model, 2, 1);
         let after = {
             let reg = super::spec_cost_registry().lock().unwrap();
             spec_cost_prices(reg.get(model).unwrap())
@@ -39556,8 +39594,9 @@ mod tests {
         assert_eq!(before, after, "a mark is not a price");
         for rung in 1..=3 {
             let v = verdicts(rung);
+            assert_eq!(v[1], Some(0), "n=2 rung={rung} serves plain while marked");
             assert_eq!(v[2], Some(0), "n=3 rung={rung} serves plain while marked");
-            for n in (1..=8).filter(|&n| n != 3) {
+            for n in (1..=8).filter(|&n| n != 2 && n != 3) {
                 assert_eq!(v[n - 1], unmarked[rung - 1][n - 1], "n={n} rung={rung}");
             }
         }
@@ -39569,10 +39608,9 @@ mod tests {
             .unwrap()
             .insert("stall-explore".into(), cold);
         assert_eq!(super::spec_cost_verdict("stall-explore", 2, 3), Some(3));
-        super::spec_cost_mark_stall("stall-explore", 2);
+        // A press in a tick that began with one live session marks only the wave (n = 2).
+        super::spec_cost_mark_stall("stall-explore", 1, 1);
         assert_eq!(super::spec_cost_verdict("stall-explore", 2, 3), Some(0));
-        // Never n = 1.
-        super::spec_cost_mark_stall("stall-explore", 1);
         assert!(
             !super::spec_cost_registry()
                 .lock()
@@ -39623,7 +39661,7 @@ mod tests {
         assert!(!e.stalled_at(3, now + super::SPEC_COST_REALIZED_TTL));
     }
 
-    /// memra#1211: a burst's entry call records whether a request waited, whatever the bound
+    /// memra#1211: a burst's entry call records how many requests waited, whatever the bound
     /// does with the yield and whether the call carries a token; later calls change nothing.
     /// Four pressed entries in a row complete a run, one unpressed entry resets it.
     #[test]
@@ -39634,7 +39672,7 @@ mod tests {
             admit_yield: true,
             entry: true,
             entry_yields,
-            entry_pressed: None,
+            entry_waiting: None,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
@@ -39653,15 +39691,18 @@ mod tests {
         // A silent yield, the bound's forced round, a boundary-token yield: all pressed.
         for (yields, silent) in [(0, true), (SPEC_ENTRY_YIELD_MAX, true), (0, false)] {
             let mut e = burst(yields);
+            e.record_entry(2);
             e.bound_entry_yield(false, silent);
-            assert_eq!(e.entry_pressed, Some(true));
+            assert_eq!(e.entry_waiting, Some(2));
+            e.record_entry(0);
             e.bound_entry_yield(true, false);
-            assert_eq!(e.entry_pressed, Some(true), "only the entry call records");
+            assert_eq!(e.entry_waiting, Some(2), "only the entry call records");
         }
         let mut e = burst(0);
-        assert_eq!(e.entry_pressed, None, "no entry call yet");
+        assert_eq!(e.entry_waiting, None, "no entry call yet");
+        e.record_entry(0);
         e.bound_entry_yield(true, true);
-        assert_eq!(e.entry_pressed, Some(false));
+        assert_eq!(e.entry_waiting, Some(0));
         let mut hist = 0u8;
         let mut due = Vec::new();
         for pressed in [true, true, true, true, true, false, true, true, true, true] {
@@ -39678,8 +39719,9 @@ mod tests {
         assert_eq!(super::SPEC_STALL_ENTRIES, 4);
     }
 
-    /// memra#1211's wiring: the post-burst settle records the entry into the session's history,
-    /// the tick marks the stall after phase (a) at the count its demotion check read, and the
+    /// memra#1211's wiring: the round hook records the entry's waiting count before the bound
+    /// reads the entry, the post-burst settle records it into the session's history, the tick
+    /// marks the stall after phase (a) from the count its demotion check read, and the
     /// verdict reads the mark before it prices. Without any one of them the mark does nothing
     /// and the unit tests above still pass.
     #[test]
@@ -39703,7 +39745,8 @@ mod tests {
         };
         let post = between("fn spec_burst_post(", "let spec = s.spec.as_mut()");
         assert!(post.contains(
-            "(s.spec_press_hist, s.spec_press_due) = spec_press_record(s.spec_press_hist, pressed);"
+            "(s.spec_press_hist, due) = spec_press_record(s.spec_press_hist, waiting > 0); \
+             s.spec_press_due = due.then_some(waiting);"
         ));
         assert!(
             live.contains("let n_tick = active.len() - finished.len();")
@@ -39712,8 +39755,8 @@ mod tests {
         assert!(
             live.contains(
                 "let spec_ms = t_spec .map(|started| started.elapsed().as_secs_f32() * 1000.0) \
-                 .unwrap_or(0.0); for s in active.iter_mut() { if std::mem::take(&mut \
-                 s.spec_press_due) { spec_cost_mark_stall(&s.model, n_tick); } }"
+                 .unwrap_or(0.0); for s in active.iter_mut() { if let Some(waiting) = \
+                 s.spec_press_due.take() { spec_cost_mark_stall(&s.model, n_tick, waiting); } }"
             ),
             "the tick marks right after phase (a)"
         );
@@ -39722,8 +39765,16 @@ mod tests {
             "let Some((k, spec_rate, plain_rate)) = spec_cost_best_k(entry, n, rung)",
         );
         assert!(verdict.contains("if entry.stalled_at(n, Instant::now()) {"));
-        let emit = between("fn bound_entry_yield(", "if !silent {");
-        assert!(emit.contains("if entry { self.entry_pressed = Some(!admit_keep); }"));
+        let flush = between(
+            "fn flush(",
+            "let (tok, flush_tx) = (self.tok, &self.flush_tx);",
+        );
+        assert!(flush.contains(
+            "let waiting = if self.admit_yield { \
+             PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) } else { 0 }; \
+             self.record_entry(waiting); let keep = waiting == 0; \
+             let keep = self.bound_entry_yield(keep, slice.is_empty());"
+        ));
     }
 
     /// A burst ends at the round its public stream ends, through the real round hook: the flush
@@ -39739,7 +39790,7 @@ mod tests {
             admit_yield: false,
             entry: true,
             entry_yields: 0,
-            entry_pressed: None,
+            entry_waiting: None,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
@@ -39821,7 +39872,7 @@ mod tests {
             admit_yield: false,
             entry: true,
             entry_yields: 0,
-            entry_pressed: None,
+            entry_waiting: None,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
@@ -40000,7 +40051,7 @@ mod tests {
             admit_yield: false,
             entry: true,
             entry_yields: 0,
-            entry_pressed: None,
+            entry_waiting: None,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
