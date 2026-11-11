@@ -111,7 +111,7 @@ RTX 5090, interleaved boots, A/B 1 ABBAAB (97f0364583) and A/B 2 BAABBA (f47c209
 | greedy | 1.000, 0.982, 0.988, 1.017, 0.978, 0.987 | 0.987 | 0.992 | 0.978 to 1.017 |
 
 The cohorts inside one boot spread 2 to 4% (`rtx5090/throughput-ab/`), so a difference below about
-1% is not resolved by these runs. 
+1% is not resolved by these runs.
 
 GB10 (unit-a), A/B ABBAAB, main ede1b8119f and the fix's code, both built on the unit:
 
