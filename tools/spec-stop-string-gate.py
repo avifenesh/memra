@@ -55,8 +55,10 @@ whose text, finish reason or completion tokens differ from its plain row (on a r
 sampled stream is its own, from the same request's solo row in that boot), a companion that
 differs from the same companion anywhere else (its other cohorts and every speculative boot of
 the DIR: what a request writes may not depend on its cohort), and a member 0 that closes later
-than the solo rule above (the non-stop median of the boot's solo rows, max(3x, +100 ms), plus
-twice plain decode's own hold-back). Each member 0 that ended on a stop string must carry its
+than max(3x, +100 ms) over the median of the boot's solo non-stop rows plus an allowance by end
+kind: none at max_tokens, one of its rounds on EOS (the EOS token carries no text), and on a stop
+string twice plain decode's hold-back, counted in a cohort as two of the request's rounds (the
+median gap between its chunks more than 5 ms apart) per plain decode step held back. Each member 0 that ended on a stop string must carry its
 `[spec-stop]` receipt. A boot passed `--settle` (a binary that closes a member at its round)
 must also log, per sampler, at least one member 0 that finished inside its cohort while another
 member was still running (`[spec-pool] member finished inside the cohort`); else the gate tested
@@ -508,9 +510,9 @@ def run_cohort_boot(args):
                         comps = [companion(k, regime, sampler) for k in range(n - 1)]
                         srv.cohort([(f"c-{kind}", rid, msgs, samp, mt, stop)]
                                    + [(c[0], f"{rid}-{c[1]}", c[2], c[3], c[4], c[5]) for c in comps], regime)
-            n = max(sizes)
+            n = min(max(sizes), len(COMPANIONS))
             for rep in range(TPUT_REPS):
-                comps = [companion(k, regime, sampler) for k in range(min(n, len(COMPANIONS)))]
+                comps = [companion(k, regime, sampler) for k in range(n)]
                 srv.cohort([(c[0], f"tput{n}-{rep}-{regime}-{c[1]}", c[2], c[3], c[4], c[5]) for c in comps], regime)
     finally:
         srv.stop()
@@ -776,7 +778,7 @@ def cohort_judge(out, rows, boots, only=None):
                     t["end"] = max(t["end"], r["t_end"])
             rates = [t["tokens"] / ((t["end"] - t["send"]) / 1e3) for t in tput.values() if t["end"] > t["send"]]
             if rates:
-                print(f"  {regime}: throughput cohorts of {max(b['cohort'])}: aggregate tok/s "
+                print(f"  {regime}: throughput cohorts of {min(max(b['cohort']), len(COMPANIONS))}: aggregate tok/s "
                       f"{[round(x, 1) for x in rates]} (median {statistics.median(rates):.1f})")
             if b.get("tput_only"):
                 continue
@@ -812,22 +814,29 @@ def cohort_judge(out, rows, boots, only=None):
                     if len(r["receipts"]) != 1 or r["receipts"][0]["completion_tokens"] != r["completion_tokens"]:
                         failures.append(f"{case} {r['id']}: {len(r['receipts'])} [spec-stop] receipts for a "
                                         f"{r['completion_tokens']}-token stop (want one naming it)")
-                held = 2 * (ref.get(f"solo-{tag}-{regime}", {}).get("close_ms") or 0) if not own else \
-                    (100 if r["kind"] == "c-span" else 0)
-                if held / 2 > 5 and r.get("gap_ms"):
-                    # Text that may begin a stop string is held back until the string completes
-                    # or cannot. Plain decode alone holds it for a decode step or a few; in a
-                    # cohort the same tokens arrive a cohort round apart, so the hold-back is
-                    # counted in this request's own cadence (two of its rounds per plain step of
-                    # hold-back, at least two).
-                    steps = max(1, round((held / 2) / solo_step)) if solo_step > 0 else 1
-                    held = max(held, 2 * steps * r["gap_ms"])
+                held = 0.0
+                if r["kind"] in ("c-stop", "c-span") and r["finish"] == "stop":
+                    held = 2 * (ref.get(f"solo-{tag}-{regime}", {}).get("close_ms") or 0) if not own else \
+                        (100 if r["kind"] == "c-span" else 0)
+                    if held / 2 > 5 and r.get("gap_ms"):
+                        # Text that may begin a stop string is held back until the string
+                        # completes or cannot. Plain decode alone holds it for a decode step or a
+                        # few; in a cohort the same tokens arrive a cohort round apart, so the
+                        # hold-back is counted in this request's own cadence (two of its rounds per
+                        # plain step of hold-back, at least two).
+                        steps = max(1, round((held / 2) / solo_step)) if solo_step > 0 else 1
+                        held = max(held, 2 * steps * r["gap_ms"])
+                elif r["kind"] == "c-eos" and r.get("gap_ms"):
+                    # The EOS token carries no text: it may commit a round after the last visible
+                    # chunk, one of this request's rounds.
+                    held = r["gap_ms"]
+                # A member that ends on its max_tokens gets no allowance: its last token is visible.
                 if r["close_ms"] is not None:
                     worst[n] = max(worst.get(n, 0), r["close_ms"])
                     if r["close_ms"] > limit + held:
                         failures.append(f"{case} {r['id']}: closed {r['close_ms']} ms after its last visible chunk, "
-                                        f"limit {limit + held:.0f} ms (solo non-stop median {med:.0f} ms, plain "
-                                        f"decode's hold-back {held / 2:.0f} ms)")
+                                        f"limit {limit + held:.0f} ms (solo non-stop median {med:.0f} ms, "
+                                        f"hold-back or EOS allowance {held:.0f} ms)")
                 if b.get("settle"):
                     # A member 0 that stops in its first burst (the serial prime burst, before
                     # the cohort forms) or after the others ended has no cohort to leave: its

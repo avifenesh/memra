@@ -22807,8 +22807,11 @@ pub fn run(
                     // site, including the round-cadence flush inside a spec burst
                     // (`MEMRA_SPEC_FIRST_TOKEN_EAGER`, the qwen sse-cadence hook) — a step
                     // OOM after an in-burst flush must not replay the streamed prefix.
+                    // A member closed at its round (memra#1209) never parks for a replay: its
+                    // client already has [DONE], even one with nothing emitted (a stop id first).
                     Err(err)
                         if is_cuda_oom(&err.to_string())
+                            && active[i].early_done.is_none()
                             && step_oom_parkable(
                                 active[i].generated.len(),
                                 active[i].tokens_emitted,
@@ -32703,7 +32706,8 @@ fn spec_burst_verdict(
 
 /// The terminal receipt a pooled cohort member's end hook sends at the round its stream ended
 /// (memra#1209), or None when the post step decides alone: the stream continues, the client is
-/// gone, or the end can only be the context-full one. Built from the values the post step
+/// gone, its sends do not match its kept tokens, or the end can only be the context-full one.
+/// Built from the values the post step
 /// writes back into the session after the cohort returns: generated + the kept tokens, and
 /// the spec counters + this burst's rounds, drafted and accepted.
 #[allow(clippy::too_many_arguments)]
@@ -32714,14 +32718,14 @@ fn pooled_early_done(
     eos_ids: &[u32],
     stop_ids: &[u32],
     stop_string_at: Option<usize>,
-    send_ok: bool,
+    sent: Option<usize>,
     generated: &[u32],
     budget: usize,
     spec_counts: (u64, usize, usize),
 ) -> Option<DoneReceipt> {
-    if !send_ok {
-        return None;
-    }
+    // `sent`: the token events the round hook sent, None once the client is gone (the post
+    // step's disconnect abort).
+    let sent = sent?;
     let (kept, stop) = spec_burst_verdict(
         burst,
         request_room,
@@ -32732,6 +32736,11 @@ fn pooled_early_done(
         budget,
     );
     let reason = stop?;
+    // `finish` requires one token event per kept token before it publishes the terminal
+    // receipt; a member that does not hold it leaves the close to `finish` and its check.
+    if sent != kept {
+        return None;
+    }
     let mut tokens = generated.to_vec();
     tokens.extend_from_slice(&burst[..kept]);
     let (rounds, drafted, accepted) = spec_counts;
@@ -32845,7 +32854,8 @@ fn spec_burst_post(
     // The stop-string check ran at the round hook, after every token (memra#1207). Every
     // decoded byte passed through it, so none is left to find here.
     debug_assert!(
-        stop.is_some() || !contains_stop_string(&s.decoded_bytes, &s.stop_strings),
+        matches!(stop, Some(StopReason::Callback | StopReason::Eos))
+            || !contains_stop_string(&s.decoded_bytes, &s.stop_strings),
         "a stop string completed in the burst and the round hook did not latch it"
     );
     // +3 (was +2): committed excludes a carried pending token (pending-carry, 2026-08-01).
@@ -33182,7 +33192,7 @@ fn step_spec_pooled(
                         &e.eos_ids,
                         &e.stop_ids,
                         e.stop_string_at,
-                        e.send_ok,
+                        e.send_ok.then_some(e.token_events),
                         generated,
                         budget,
                         (
@@ -33192,7 +33202,9 @@ fn step_spec_pooled(
                         ),
                     );
                     if let Some(receipt) = receipt {
-                        receipt.send(tx, n_prompt, n_cached, t0.elapsed().as_secs_f64());
+                        receipt
+                            .clone()
+                            .send(tx, n_prompt, n_cached, t0.elapsed().as_secs_f64());
                         pooled_close_receipt("mtp", request_id, &receipt, end.members_running);
                         *early_done = Some(receipt);
                     }
@@ -34228,7 +34240,8 @@ fn dspark_burst_post(
         "one token event per public dspark spec token"
     );
     debug_assert!(
-        stop.is_some() || !contains_stop_string(&s.decoded_bytes, &s.stop_strings),
+        matches!(stop, Some(StopReason::Callback | StopReason::Eos))
+            || !contains_stop_string(&s.decoded_bytes, &s.stop_strings),
         "a stop string completed in the burst and the emission did not latch it"
     );
     // The engine marks the session done on EOS or when the next round would overflow the
@@ -34371,7 +34384,7 @@ fn step_dspark_pooled(
                             &e.eos_ids,
                             &e.stop_ids,
                             stop_string_at,
-                            e.send_ok,
+                            e.send_ok.then_some(e.token_events),
                             generated,
                             budget,
                             (
@@ -34381,7 +34394,12 @@ fn step_dspark_pooled(
                             ),
                         );
                         if let Some(receipt) = receipt {
-                            receipt.send(tx, n_prompt, n_cached, t0.elapsed().as_secs_f64());
+                            receipt.clone().send(
+                                tx,
+                                n_prompt,
+                                n_cached,
+                                t0.elapsed().as_secs_f64(),
+                            );
                             pooled_close_receipt(
                                 "dspark",
                                 request_id,
@@ -35599,20 +35617,39 @@ fn finish(s: &Session, reason: StopReason) {
         s.spec_drafted,
         s.spec_accepted,
     );
-    match &s.early_done {
-        // A pooled cohort member whose end hook already closed the stream (memra#1209): the
-        // client has its terminal events. What this step computed must be what it got.
+    let consistent = publish_terminal(
+        s.early_done.as_ref(),
+        receipt,
+        &s.tx,
+        (s.n_prompt, s.n_cached, elapsed),
+        &s.request_id,
+    );
+    debug_assert!(consistent, "early Done differs from the post step's");
+}
+
+/// Send a request's terminal receipt, unless a pooled cohort member's end hook already sent one
+/// (memra#1209): the client has its terminal events, so nothing is sent and what this step
+/// computed must equal what it got. Returns false on a difference (logged loudly).
+fn publish_terminal(
+    early: Option<&DoneReceipt>,
+    receipt: DoneReceipt,
+    tx: &EventSender,
+    (n_prompt, n_cached, elapsed_s): (usize, usize, f64),
+    request_id: &str,
+) -> bool {
+    match early {
+        Some(sent) if *sent == receipt => true,
         Some(sent) => {
-            if *sent != receipt {
-                eprintln!(
-                    "[spec-pool] EARLY DONE MISMATCH request={}: sent {sent:?}, the post step \
-                     computed {receipt:?}",
-                    s.request_id
-                );
-                debug_assert_eq!(*sent, receipt, "early Done differs from the post step's");
-            }
+            eprintln!(
+                "[spec-pool] EARLY DONE MISMATCH request={request_id}: sent {sent:?}, the post \
+                 step computed {receipt:?}"
+            );
+            false
         }
-        None => receipt.send(&s.tx, s.n_prompt, s.n_cached, elapsed),
+        None => {
+            receipt.send(tx, n_prompt, n_cached, elapsed_s);
+            true
+        }
     }
 }
 
@@ -35648,11 +35685,12 @@ impl DoneReceipt {
         }
     }
 
-    fn send(&self, tx: &EventSender, n_prompt: usize, n_cached: usize, elapsed_s: f64) {
-        let _ = tx.send(Event::TokenSnapshot(self.tokens.clone()));
+    fn send(self, tx: &EventSender, n_prompt: usize, n_cached: usize, elapsed_s: f64) {
+        let n_tokens = self.tokens.len();
+        let _ = tx.send(Event::TokenSnapshot(self.tokens));
         let _ = tx.send(Event::Done {
-            stop_reason: self.stop_reason.clone(),
-            n_tokens: self.tokens.len(),
+            stop_reason: self.stop_reason,
+            n_tokens,
             n_prompt,
             n_cached,
             elapsed_s,
@@ -36726,7 +36764,9 @@ mod tests {
         UNIFIED_PREFIX_CACHE_SHARE_DIV, UnifiedPrefixTerms, derived_prefix_cache_budget,
         prefix_budget_ctx, prefix_entry_geometry_bytes,
     };
-    use super::{DoneReceipt, pooled_early_done, spec_burst_verdict, step_error_to};
+    use super::{
+        DoneReceipt, pooled_early_done, publish_terminal, spec_burst_verdict, step_error_to,
+    };
     use super::{DraftVerdict, draft_verdict, draft_verdict_message};
     use super::{DsparkBurstEmit, EventSender, SPEC_ENTRY_YIELD_MAX, SpecBurstEmit};
     use super::{
@@ -39570,23 +39610,43 @@ mod tests {
         };
         let mut clock = crate::hybrid_telemetry::EmissionClock::default();
         let generated = vec![a, a]; // two tokens before this burst
-        let early = |e: &SpecBurstEmit, burst: &[u32], room: usize, budget: usize| {
+        let counts = (3 + 4, 10 + 6, 7 + 5);
+        let early_sent = |e: &SpecBurstEmit, burst: &[u32], room: usize, budget: usize, sent| {
             pooled_early_done(
                 burst,
                 room,
                 &e.eos_ids,
                 &e.stop_ids,
                 e.stop_string_at,
-                e.send_ok,
+                sent,
                 &generated,
                 budget,
-                (3 + 4, 10 + 6, 7 + 5),
+                counts,
             )
+        };
+        let early = |e: &SpecBurstEmit, burst: &[u32], room: usize, budget: usize| {
+            early_sent(e, burst, room, budget, e.send_ok.then_some(e.token_events))
+        };
+        // What the post step later computes and `finish` publishes, from the same burst: the
+        // kept tokens appended to `generated`, the counters advanced by this burst.
+        let post = |e: &SpecBurstEmit, burst: &[u32], room: usize, budget: usize| {
+            let (kept, stop) = spec_burst_verdict(
+                burst,
+                room,
+                &e.eos_ids,
+                &e.stop_ids,
+                e.stop_string_at,
+                generated.len(),
+                budget,
+            );
+            let reason = stop.expect("the post step ends the request");
+            let tokens = [&generated[..], &burst[..kept]].concat();
+            DoneReceipt::new(tokens, reason, counts.0, counts.1, counts.2)
         };
         // The terminal events a receipt sends, read off the member's channel.
         let events = |r: &DoneReceipt| {
             let (tx, mut rx) = event_channel();
-            r.send(&tx, 40, 8, 0.5);
+            r.clone().send(&tx, 40, 8, 0.5);
             let mut out = Vec::new();
             while let Ok(ev) = rx.try_recv() {
                 out.push(match ev {
@@ -39633,6 +39693,11 @@ mod tests {
         let r = early(&e, &burst, 64, 64).expect("a stop-ended member closes at its round");
         assert_eq!(
             r,
+            post(&e, &burst, 64, 64),
+            "the receipt the post step computes later"
+        );
+        assert_eq!(
+            r,
             DoneReceipt::new(
                 [&generated[..], &burst[..5]].concat(),
                 StopReason::Callback,
@@ -39649,13 +39714,19 @@ mod tests {
             ]
         );
 
-        // An EOS ends it, counted; a budget spent inside the burst ends it on MaxNew.
+        // An EOS ends it, counted; a budget spent inside the burst ends it on MaxNew. The round
+        // hook sent one event per kept token (the EOS's is empty text).
         let (tx, _rx) = event_channel();
-        let e = emit(tx, &[], 64);
+        let mut e = emit(tx, &[], 64);
+        e.token_events = 2;
         let r = early(&e, &[a, eos, a], 64, 64).expect("EOS closes the member");
         assert_eq!((r.tokens.len(), r.stop_reason.as_str()), (4, "Eos"));
+        assert_eq!(r, post(&e, &[a, eos, a], 64, 64));
         let r = early(&e, &[a, a, a], 2, 4).expect("the budget closes the member");
         assert_eq!((r.tokens.len(), r.stop_reason.as_str()), (4, "MaxNew"));
+        assert_eq!(r, post(&e, &[a, a, a], 2, 4));
+        // Sends that do not match the kept tokens leave the close to `finish` and its check.
+        assert_eq!(early_sent(&e, &[a, eos, a], 64, 64, Some(1)), None);
 
         // A member that runs on, or whose client is gone, gets nothing early: the post step
         // decides (and a context-full end, which reads the session, stays its own).
@@ -39664,6 +39735,40 @@ mod tests {
         let mut gone = emit(tx, &[], 64);
         gone.send_ok = false;
         assert_eq!(early(&gone, &[a, eos], 64, 64), None);
+    }
+
+    /// memra#1209: `finish` publishes the terminal receipt itself unless the member's end hook
+    /// already sent one; then it sends nothing and reports whether what it computed equals what
+    /// the client got.
+    #[test]
+    fn finish_sends_nothing_after_an_early_done_and_checks_it() {
+        let receipt = |n: u32| DoneReceipt::new(vec![1; n as usize], StopReason::Eos, 2, 4, 3);
+        let count = |rx: &mut super::EventReceiver| {
+            let mut n = 0;
+            while rx.try_recv().is_ok() {
+                n += 1;
+            }
+            n
+        };
+        let (tx, mut rx) = event_channel();
+        assert!(publish_terminal(None, receipt(3), &tx, (10, 0, 0.1), "r"));
+        assert_eq!(count(&mut rx), 2, "the token snapshot and Done");
+        assert!(publish_terminal(
+            Some(&receipt(3)),
+            receipt(3),
+            &tx,
+            (10, 0, 0.1),
+            "r"
+        ));
+        assert_eq!(count(&mut rx), 0, "nothing after the early Done");
+        assert!(!publish_terminal(
+            Some(&receipt(3)),
+            receipt(4),
+            &tx,
+            (10, 0, 0.1),
+            "r"
+        ));
+        assert_eq!(count(&mut rx), 0, "a mismatch is reported, never sent");
     }
 
     /// memra#1209: a step error after a member's early Done is not sent (the client has a

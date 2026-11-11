@@ -2019,20 +2019,21 @@ snapshot and Done from the cohort's end hook at the round its burst ended; befor
 waited for the whole cohort call. Each boot also runs member 0's requests alone (the solo rows set
 the close level) and, per sampler, three cohorts of four companions for the aggregate throughput.
 The ref boot runs every request alone. `judge DIR` fails a member 0 whose text, finish reason or
-completion tokens differ from plain decode's (on DSpark at temperature 1, from its own solo row),
-a companion that writes another text anywhere (its other cohorts and every speculative boot of the
-DIR, main's included), a stop-ended member 0 without its `[spec-stop]` receipt, and a member 0
-that closes later than the solo rule above; in a cohort the hold-back of a stop string is counted
-in the request's own chunk cadence (two of its rounds, the median gap between chunks more than 5 ms apart, per plain decode
-step of hold-back),
-since its tokens arrive a cohort round apart. A boot passed `--settle` must also log, per sampler,
-at least one member 0 that finished inside its cohort while another member was still running
-(`[spec-pool] member finished inside the cohort`); a member 0 that stops in its first, serial
-burst has no cohort to leave. `--tput-only` runs the throughput cohorts alone,
-for interleaved A/B boots; `judge DIR --case NAME` judges one boot (main's boot in the same DIR is the
-red arm). MTP cohort boots run with `MEMRA_SPEC_GATE=0`; a DSpark cohort boot runs with
-the gate on and its LOW band at the largest cohort (HIGH at twice it), since with the gate off
-DSpark admits one session at a time and no cohort forms. Receipts:
+completion tokens differ from plain decode's (on DSpark at temperature 1, from its own solo row), a
+companion that writes another text anywhere (its other cohorts and every speculative boot of the
+DIR, main's included), a stop-ended member 0 without its `[spec-stop]` receipt, and a member 0 that
+closes later than the solo limit (max(3x, +100 ms) over the boot's solo non-stop median) plus an
+allowance by end kind: none at `max_tokens`, one of the request's rounds on EOS (the EOS token
+carries no text), and on a stop string twice plain decode's hold-back; in a cohort that hold-back
+is counted in the request's own cadence, two of its rounds (the median gap between chunks more than
+5 ms apart) per plain decode step of hold-back, since its tokens arrive a cohort round apart. A
+boot passed `--settle` must also log, per sampler, at least one member 0 that finished inside its
+cohort while another member was still running (`[spec-pool] member finished inside the cohort`); a
+member 0 that stops in its first, serial burst has no cohort to leave. `--tput-only` runs the
+throughput cohorts alone, for interleaved A/B boots; `judge DIR --case NAME` judges one boot
+(main's boot in the same DIR is the red arm). MTP cohort boots run with `MEMRA_SPEC_GATE=0`; a
+DSpark cohort boot runs with the gate on and its LOW band at the largest cohort (HIGH at twice it),
+since with the gate off DSpark admits one session at a time and no cohort forms. Receipts:
 `research/spec-pooled-close-20261111/`.
 
 ## Generic spill / tiered KV (memra-tier)
