@@ -1,0 +1,398 @@
+[server] build: memra-0.141.1-bd522e3ba252 (id: source-tree, git: unknown)
+[server] starting; models config = [("q", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 52334MB (52334352384 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 52334352384 B; boot driver free 108426801152 B, post-reserve clamp 104668704768 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[fa-pool] grow #0 dev=0 o_len 0 -> 202752 ml_len 0 -> 792 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 202752 -> 405504 ml_len 792 -> 1584 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 405504 -> 811008 ml_len 1584 -> 3168 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 811008 -> 1622016 ml_len 3168 -> 6336 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 36MB (max of parked delta 36MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[fa-pool] grow #5 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":8589934592,"still_owned_bytes":16509783880,"pool_reserved_bytes":16743661568,"pool_cached_bytes":233877688,"driver_free_bytes":27398340608,"synchronization_errors":[]}
+[spec-cost] model="q" depth=2048 pooled=true plain_cap=16 round_overhead=24.36ms draft_step=0.00ms pooled_overhead=Some((4, 8.093952621951217)) pooled_draft_step=None verify_ms[1..16]=[76.3 74.8 74.7 75.6 76.3 77.1 78.7 80.4 83.4 86.4 89.4 92.4 93.7 95.0 96.4 97.7] plain_ms[1..]=[75.5 81.0 83.5 86.0 90.3 94.6 98.9 103.2 107.7 112.3 116.8 121.4 125.9 130.5 135.0 139.5] (45.6s)
+[prime-walk] model="q" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1543503872,"still_owned_bytes":17239592784,"pool_reserved_bytes":17448304640,"pool_cached_bytes":208711856,"driver_free_bytes":26667057152,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1472MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=mtp transient floor 1536MB (static was 1536MB; measured 1308MB; probe kv charge 127MB, draft-state 36MB, drafted 84 accepted 35; [dev0 peak-mapped 18112MB rest-mapped 16640MB charged 163MB -> 1308MB]; 5.6s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[deadline] unified memory (48 SMs, served ctx 8192): streaming TTFT default/max 90000 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 2138000 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18194
+[meter] admit id=chatcmpl-73eb2e93a389427809dd09bc54e665f5 tenant=default lane=interactive model="q"
+[spec-cost] model="q" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=291 path=spec = 31552 B/token x ctx + 12MB prefill-workspace + 0MB fixed = 22MB
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=27 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 311MB (observed 319MB at ctx 235 path=spec)
+[spec-acc] ctx=27 burst=22/30 cum=22/30=0.733
+[spec-acc] ctx=60 burst=16/36 cum=38/66=0.576
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 87 rows hold no resumable state (the checkpoint 27 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-8fc8337f1eeeee32aa7631fd12d5e330 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=194 path=spec = 31552 B/token x ctx + 16MB prefill-workspace + 311MB fixed = 333MB
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=34 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=34 burst=16/45 cum=16/45=0.356
+[spec-acc] ctx=66 burst=18/42 cum=34/87=0.391
+[spec-acc] ctx=98 burst=18/42 cum=52/129=0.403
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 129 rows hold no resumable state (the checkpoint 34 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-d5fbfcf39ac517e0bfca2a21e565b61b tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=34 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=34 burst=16/45 cum=16/45=0.356
+[spec-stop] route=mtp stop string completed: completion_tokens=36 burst_slice=1 slice_pos=4/4 burst_public=4 spans_slices=0
+[spec-acc] ctx=66 burst=3/3 cum=19/48=0.396
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 69 rows hold no resumable state (the checkpoint 34 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-c4eabac3cc96e89ca5b19df8d23c8a87 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1446 path=spec = 31552 B/token x ctx + 590MB prefill-workspace + 311MB fixed = 947MB
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1286 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=1286 burst=15/48 cum=15/48=0.312
+[prefix-cache] insert (spec-boundary): 1248 tokens, 196.3MB (resident 196.3MB / 52334MB, model q)
+[spec-acc] ctx=1318 burst=18/51 cum=33/99=0.333
+[spec-acc] ctx=1353 burst=13/51 cum=46/150=0.307
+[meter] admit id=chatcmpl-881b8669e45285e5f3eead4de7c3fe2f tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1574 path=spec = 31552 B/token x ctx + 649MB prefill-workspace + 311MB fixed = 1010MB
+[prefix-cache] hit: 1248 of 1414 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 1248 of 1414 prompt tokens + draft plane from cache [suffix queued] (model q)
+[spec-cost] model="q" n=1 rung=2 -> K=2 (predicted 20.0 vs plain 13.2 tok/s; pooled=true; priced from K0=table K1=table K2=table)
+[spec-k] model="q" tenant="" K=2 source=cost-model prompt=1414 cached=1248 lcp=1248 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=166 burst=16/30 cum=16/30=0.533
+[prefix-cache] insert (spec-boundary): 1376 tokens, 200.3MB (resident 396.6MB / 52334MB, model q)
+[spec-acc] ctx=198 burst=13/40 cum=29/70=0.414
+[spec-acc] ctx=231 burst=8/22 cum=37/92=0.402
+[meter] admit id=cmpl-399fa584510bb1038e19364f3865b79f tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=348 path=spec = 31552 B/token x ctx + 101MB prefill-workspace + 311MB fixed = 423MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 1248; 2 parked, 220 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=220 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=220 burst=19/45 cum=19/45=0.422
+[prefix-cache] insert (spec-boundary): 192 tokens, 163.0MB (resident 559.6MB / 52334MB, model q)
+[spec-acc] ctx=255 burst=21/24 cum=40/69=0.580
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 283 rows hold no resumable state (the checkpoint 220 is off the 32-token prime grid); freed (model q)
+[meter] admit id=cmpl-366b0ec0681058691f76c37008141531 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=444 path=spec = 31552 B/token x ctx + 130MB prefill-workspace + 311MB fixed = 456MB
+[prefix-cache] hit: 192 of 284 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 192 of 284 prompt tokens + draft plane from cache [suffix queued] (model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=284 cached=192 lcp=192 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=92 burst=21/30 cum=21/30=0.700
+[prefix-cache] insert (spec-boundary): 256 tokens, 165.0MB (resident 724.6MB / 52334MB, model q)
+[spec-acc] ctx=124 burst=22/30 cum=43/60=0.717
+[spec-cost] model="q" realized n=1 K=3: 24.8 tok/s (now priced from serving)
+[spec-acc] ctx=156 burst=24/33 cum=67/93=0.720
+[meter] admit id=chatcmpl-7fc9c9a558589da7223d5af5ea1c8f4e tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=184 path=spec = 31552 B/token x ctx + 11MB prefill-workspace + 311MB fixed = 328MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 24 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=24 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=24 burst=18/39 cum=18/39=0.462
+[spec-acc] ctx=56 burst=20/39 cum=38/78=0.487
+[spec-acc] ctx=89 burst=11/21 cum=49/99=0.495
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 106 rows hold no resumable state (the checkpoint 24 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-dbbee051b45c48c9869f0769729255a1 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=258 path=spec = 31552 B/token x ctx + 16MB prefill-workspace + 311MB fixed = 335MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 34 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=34 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=34 burst=18/39 cum=18/39=0.462
+[spec-acc] ctx=66 burst=7/15 cum=25/54=0.463
+[abort] client disconnected: model "q", prompt 34 (0 cached, 78 fed), 44 generated — billed to abort point, 2.05s
+[meter] admit id=chatcmpl-f0becaf21372b71728e6c8e647ff8c7a tenant=default lane=interactive model="q"
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 34 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=34 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=34 burst=18/39 cum=18/39=0.462
+[spec-acc] ctx=66 burst=17/51 cum=35/90=0.389
+[spec-acc] ctx=100 burst=19/39 cum=54/129=0.419
+[spec-acc] ctx=132 burst=20/42 cum=74/171=0.433
+[spec-acc] ctx=166 burst=16/36 cum=90/207=0.435
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 193 rows hold no resumable state (the checkpoint 34 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-458cfc6902e2df51b6c9f45c768ea2a2 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=291 path=spec = 31552 B/token x ctx + 12MB prefill-workspace + 311MB fixed = 333MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=27 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+[spec-acc] ctx=27 burst=18/39 cum=18/39=0.462
+[spec-acc] ctx=59 burst=11/27 cum=29/66=0.439
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 78 rows hold no resumable state (the checkpoint 27 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-a948f6af80575605db2e87ba62f92fc1 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=193 path=spec = 31552 B/token x ctx + 15MB prefill-workspace + 311MB fixed = 333MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 33 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=33 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=33 burst=20/36 cum=20/36=0.556
+[spec-acc] ctx=66 burst=20/36 cum=40/72=0.556
+[spec-acc] ctx=98 burst=16/45 cum=56/117=0.479
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 128 rows hold no resumable state (the checkpoint 33 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-8418cecadc420f3021efaf91c474b382 tenant=default lane=interactive model="q"
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 33 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=33 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=33 burst=20/36 cum=20/36=0.556
+[spec-stop] route=mtp stop string completed: completion_tokens=37 burst_slice=1 slice_pos=4/4 burst_public=4 spans_slices=0
+[spec-acc] ctx=66 burst=3/3 cum=23/39=0.590
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 69 rows hold no resumable state (the checkpoint 33 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-03c5a72cb6a3a722ffe8f8ac451987db tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1445 path=spec = 31552 B/token x ctx + 589MB prefill-workspace + 311MB fixed = 946MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 1285 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1285 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=1285 burst=16/48 cum=16/48=0.333
+[prefix-cache] insert (spec-boundary): 1248 tokens, 196.3MB (resident 920.9MB / 52334MB, model q)
+[spec-acc] ctx=1318 burst=15/54 cum=31/102=0.304
+[spec-acc] ctx=1351 burst=17/42 cum=48/144=0.333
+[meter] admit id=chatcmpl-c1f7a0a486c36d4c56458c6dd95b81fd tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1573 path=spec = 31552 B/token x ctx + 648MB prefill-workspace + 311MB fixed = 1009MB
+[prefix-cache] hit: 1248 of 1413 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 1248 of 1413 prompt tokens + draft plane from cache [suffix queued] (model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1413 cached=1248 lcp=1248 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=165 burst=17/51 cum=17/51=0.333
+[prefix-cache] insert (spec-boundary): 1376 tokens, 200.3MB (resident 1121.2MB / 52334MB, model q)
+[spec-acc] ctx=200 burst=19/45 cum=36/96=0.375
+[spec-acc] ctx=234 burst=16/33 cum=52/129=0.403
+[meter] admit id=cmpl-4c81d1c97da5cef3243078158385581a tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=355 path=spec = 31552 B/token x ctx + 104MB prefill-workspace + 311MB fixed = 427MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 1248; 2 parked, 227 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=227 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=227 burst=17/42 cum=17/42=0.405
+[prefix-cache] insert (spec-boundary): 192 tokens, 163.0MB (resident 1284.2MB / 52334MB, model q)
+[spec-acc] ctx=259 burst=16/54 cum=33/96=0.344
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 292 rows hold no resumable state (the checkpoint 227 is off the 32-token prime grid); freed (model q)
+[meter] admit id=cmpl-2306e5e628462fcac2e4515202777b87 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=451 path=spec = 31552 B/token x ctx + 133MB prefill-workspace + 311MB fixed = 459MB
+[prefix-cache] hit: 192 of 291 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 192 of 291 prompt tokens + draft plane from cache [suffix queued] (model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=291 cached=192 lcp=192 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=99 burst=13/54 cum=13/54=0.241
+[prefix-cache] insert (spec-boundary): 256 tokens, 165.0MB (resident 1449.2MB / 52334MB, model q)
+[spec-acc] ctx=131 burst=19/45 cum=32/99=0.323
+[spec-acc] ctx=165 burst=20/30 cum=52/129=0.403
+[meter] admit id=chatcmpl-0686326a3a322da46ae9510abe1fc25c tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=184 path=spec = 31552 B/token x ctx + 11MB prefill-workspace + 311MB fixed = 328MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 24 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=24 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=24 burst=20/36 cum=20/36=0.556
+[spec-acc] ctx=57 burst=18/45 cum=38/81=0.469
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 89 rows hold no resumable state (the checkpoint 24 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-3fb9673919c6735f626107a0771015a9 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=257 path=spec = 31552 B/token x ctx + 15MB prefill-workspace + 311MB fixed = 335MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 33 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=33 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=33 burst=16/45 cum=16/45=0.356
+[spec-acc] ctx=65 burst=9/15 cum=25/60=0.417
+[abort] client disconnected: model "q", prompt 33 (0 cached, 79 fed), 46 generated — billed to abort point, 2.27s
+[meter] admit id=chatcmpl-b8f89da13b61089202a2b816f712b7de tenant=default lane=interactive model="q"
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 33 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=33 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=33 burst=16/45 cum=16/45=0.356
+[spec-acc] ctx=65 burst=19/39 cum=35/84=0.417
+[spec-acc] ctx=97 burst=20/42 cum=55/126=0.437
+[spec-acc] ctx=131 burst=19/45 cum=74/171=0.433
+[spec-acc] ctx=165 burst=17/36 cum=91/207=0.440
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 193 rows hold no resumable state (the checkpoint 33 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-bd644306d44e659b6ea4d8b0c72b3ff3 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=291 path=spec = 31552 B/token x ctx + 12MB prefill-workspace + 311MB fixed = 333MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=27 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=27 burst=17/42 cum=17/42=0.405
+[spec-acc] ctx=59 burst=16/39 cum=33/81=0.407
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 87 rows hold no resumable state (the checkpoint 27 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-8277947dd75780af918499fc6e387d2a tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=193 path=spec = 31552 B/token x ctx + 15MB prefill-workspace + 311MB fixed = 333MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 33 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=33 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=33 burst=19/36 cum=19/36=0.528
+[spec-acc] ctx=65 burst=19/45 cum=38/81=0.469
+[spec-acc] ctx=99 burst=18/39 cum=56/120=0.467
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 129 rows hold no resumable state (the checkpoint 33 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-3bf2dc4928302ea4195cf265aae9e942 tenant=default lane=interactive model="q"
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 33 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=33 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=33 burst=19/36 cum=19/36=0.528
+[spec-stop] route=mtp stop string completed: completion_tokens=33 burst_slice=1 slice_pos=1/3 burst_public=1 spans_slices=0
+[spec-acc] ctx=65 burst=2/3 cum=21/39=0.538
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 67 rows hold no resumable state (the checkpoint 33 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-d29d0f6630121fb9b4600c1e256a74b9 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1445 path=spec = 31552 B/token x ctx + 589MB prefill-workspace + 311MB fixed = 946MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 1285 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1285 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=1285 burst=16/45 cum=16/45=0.356
+[prefix-cache] insert (spec-boundary): 1248 tokens, 196.3MB (resident 1645.5MB / 52334MB, model q)
+[spec-acc] ctx=1317 burst=23/33 cum=39/78=0.500
+[spec-acc] ctx=1351 burst=19/36 cum=58/114=0.509
+[meter] admit id=chatcmpl-1fddf821a0aa7bbcceba9de9c38cb31b tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1573 path=spec = 31552 B/token x ctx + 648MB prefill-workspace + 311MB fixed = 1009MB
+[prefix-cache] hit: 1248 of 1413 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 1248 of 1413 prompt tokens + draft plane from cache [suffix queued] (model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1413 cached=1248 lcp=1248 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=165 burst=17/48 cum=17/48=0.354
+[prefix-cache] insert (spec-boundary): 1376 tokens, 200.3MB (resident 1845.8MB / 52334MB, model q)
+[spec-acc] ctx=199 burst=20/45 cum=37/93=0.398
+[spec-acc] ctx=234 burst=7/12 cum=44/105=0.419
+[meter] admit id=cmpl-d2ba581ae5089be3459678143afa4e70 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=355 path=spec = 31552 B/token x ctx + 104MB prefill-workspace + 311MB fixed = 427MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 1248; 2 parked, 227 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=227 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=227 burst=16/45 cum=16/45=0.356
+[prefix-cache] insert (spec-boundary): 192 tokens, 163.0MB (resident 2008.8MB / 52334MB, model q)
+[spec-acc] ctx=259 burst=23/30 cum=39/75=0.520
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 291 rows hold no resumable state (the checkpoint 227 is off the 32-token prime grid); freed (model q)
+[meter] admit id=cmpl-7d2c77840350cf704c0a2157ba095220 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=451 path=spec = 31552 B/token x ctx + 133MB prefill-workspace + 311MB fixed = 459MB
+[prefix-cache] hit: 192 of 291 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 192 of 291 prompt tokens + draft plane from cache [suffix queued] (model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=291 cached=192 lcp=192 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=99 burst=22/30 cum=22/30=0.733
+[prefix-cache] insert (spec-boundary): 256 tokens, 165.0MB (resident 2173.7MB / 52334MB, model q)
+[spec-acc] ctx=132 burst=24/27 cum=46/57=0.807
+[spec-acc] ctx=165 burst=22/27 cum=68/84=0.810
+[meter] admit id=chatcmpl-bf95e27c9663c3c97393dd2361c8f6b8 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=184 path=spec = 31552 B/token x ctx + 11MB prefill-workspace + 311MB fixed = 328MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 24 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=24 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=24 burst=20/36 cum=20/36=0.556
+[spec-acc] ctx=57 burst=18/42 cum=38/78=0.487
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 88 rows hold no resumable state (the checkpoint 24 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-f7715d76690f874e42bbae8aa1de7e98 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=257 path=spec = 31552 B/token x ctx + 15MB prefill-workspace + 311MB fixed = 335MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 33 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=33 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=33 burst=19/36 cum=19/36=0.528
+[spec-acc] ctx=65 burst=8/15 cum=27/51=0.529
+[abort] client disconnected: model "q", prompt 33 (0 cached, 78 fed), 45 generated — billed to abort point, 1.97s
+[meter] admit id=chatcmpl-e8dde204c121351ecfb9fc0b0a3813a8 tenant=default lane=interactive model="q"
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 33 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=33 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=33 burst=19/36 cum=19/36=0.528
+[spec-acc] ctx=65 burst=19/39 cum=38/75=0.507
+[spec-acc] ctx=97 burst=20/36 cum=58/111=0.523
+[spec-acc] ctx=129 burst=18/45 cum=76/156=0.487
+[spec-acc] ctx=162 burst=20/36 cum=96/192=0.500
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 193 rows hold no resumable state (the checkpoint 33 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-e5d165468a588473be9b32aeb7a4dc53 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=291 path=spec = 31552 B/token x ctx + 12MB prefill-workspace + 311MB fixed = 333MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=27 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=27 burst=16/45 cum=16/45=0.356
+[spec-acc] ctx=59 burst=16/42 cum=32/87=0.368
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 88 rows hold no resumable state (the checkpoint 27 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-62facd8ffc4eda84c61eaa644594475f tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=194 path=spec = 31552 B/token x ctx + 16MB prefill-workspace + 311MB fixed = 333MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 34 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=34 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=34 burst=19/36 cum=19/36=0.528
+[spec-acc] ctx=66 burst=18/45 cum=37/81=0.457
+[spec-acc] ctx=99 burst=15/51 cum=52/132=0.394
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 130 rows hold no resumable state (the checkpoint 34 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-43d1899cce84cbd5b035f6c1734cb3a7 tenant=default lane=interactive model="q"
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 34 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=34 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=34 burst=19/36 cum=19/36=0.528
+[spec-stop] route=mtp stop string completed: completion_tokens=43 burst_slice=5 slice_pos=1/1 burst_public=11 spans_slices=0
+[spec-acc] ctx=66 burst=6/15 cum=25/51=0.490
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 76 rows hold no resumable state (the checkpoint 34 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-2e215ceab8507994fb4381a21f08d30d tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1399 path=spec = 31552 B/token x ctx + 568MB prefill-workspace + 311MB fixed = 924MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1376; 2 parked, 1239 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1239 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=1239 burst=20/39 cum=20/39=0.513
+[prefix-cache] insert (spec-boundary): 1216 tokens, 195.3MB (resident 2369.0MB / 52334MB, model q)
+[spec-acc] ctx=1273 burst=18/45 cum=38/84=0.452
+[spec-acc] ctx=1306 burst=15/42 cum=53/126=0.421
+[meter] admit id=chatcmpl-b91a4a4f65d50bf9e8eced8646d86223 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=1527 path=spec = 31552 B/token x ctx + 627MB prefill-workspace + 311MB fixed = 987MB
+[prefix-cache] hit: 1216 of 1367 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 1216 of 1367 prompt tokens + draft plane from cache [suffix queued] (model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=1367 cached=1216 lcp=1216 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=151 burst=18/39 cum=18/39=0.462
+[prefix-cache] insert (spec-boundary): 1344 tokens, 199.3MB (resident 2568.3MB / 52334MB, model q)
+[spec-acc] ctx=183 burst=21/39 cum=39/78=0.500
+[spec-acc] ctx=217 burst=17/39 cum=56/117=0.479
+[meter] admit id=cmpl-413d713ab5b5d7388828fd5a1f2d5133 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=347 path=spec = 31552 B/token x ctx + 100MB prefill-workspace + 311MB fixed = 423MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 1216; 2 parked, 219 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=219 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=219 burst=22/36 cum=22/36=0.611
+[prefix-cache] insert (spec-boundary): 192 tokens, 163.0MB (resident 2731.3MB / 52334MB, model q)
+[spec-acc] ctx=254 burst=19/30 cum=41/66=0.621
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 282 rows hold no resumable state (the checkpoint 219 is off the 32-token prime grid); freed (model q)
+[meter] admit id=cmpl-6f29b112fd83381ae18726ed6dd5e087 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=443 path=spec = 31552 B/token x ctx + 130MB prefill-workspace + 311MB fixed = 455MB
+[prefix-cache] hit: 192 of 283 prompt tokens from cache (model q)
+[prefix-cache] spec restore: 192 of 283 prompt tokens + draft plane from cache [suffix queued] (model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=283 cached=192 lcp=192 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=91 burst=18/39 cum=18/39=0.462
+[prefix-cache] insert (spec-boundary): 256 tokens, 165.0MB (resident 2896.3MB / 52334MB, model q)
+[spec-acc] ctx=123 burst=24/27 cum=42/66=0.636
+[spec-acc] ctx=156 burst=24/24 cum=66/90=0.733
+[meter] admit id=chatcmpl-07899ec14fa1ab87b58b9947588a6bfc tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=185 path=spec = 31552 B/token x ctx + 11MB prefill-workspace + 311MB fixed = 329MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1344; 2 parked, 25 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=25 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=25 burst=18/48 cum=18/48=0.375
+[spec-acc] ctx=60 burst=17/45 cum=35/93=0.376
+[spec-acc] ctx=92 burst=5/6 cum=40/99=0.404
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 98 rows hold no resumable state (the checkpoint 25 is off the 32-token prime grid); freed (model q)
+[meter] admit id=chatcmpl-72ce2340dba2ca133a154eb49f038a27 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +38MB (measured capture high-water)
+[admission] request cost: model="q" ctx=257 path=spec = 31552 B/token x ctx + 15MB prefill-workspace + 311MB fixed = 335MB
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1344; 2 parked, 33 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=33 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=33 burst=16/45 cum=16/45=0.356
+[spec-acc] ctx=65 burst=6/15 cum=22/60=0.367
+[abort] client disconnected: model "q", prompt 33 (0 cached, 76 fed), 43 generated — billed to abort point, 2.29s
+[meter] admit id=chatcmpl-b9b7e815cd4d4b63769015bd99a4b31a tenant=default lane=interactive model="q"
+[worker] spec-affinity: declined (history diverged at 3 of checkpoint 1344; 2 parked, 33 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=33 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=33 burst=16/45 cum=16/45=0.356
+[spec-acc] ctx=65 burst=21/39 cum=37/84=0.440
+[spec-acc] ctx=99 burst=16/51 cum=53/135=0.393
+[spec-acc] ctx=132 burst=18/42 cum=71/177=0.401
+[spec-acc] ctx=164 burst=15/48 cum=86/225=0.382
+[worker] spec-park SKIPPED (grid law): a recurrent trunk's 194 rows hold no resumable state (the checkpoint 33 is off the 32-token prime grid); freed (model q)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
