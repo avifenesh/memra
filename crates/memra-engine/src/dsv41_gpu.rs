@@ -558,6 +558,19 @@ pub mod ffi {
             out_idx: *mut i32,
             stream: *mut c_void,
         ) -> i32;
+        /// Each token's bf16 embedding row from the resident table `[vocab][d]` into its `hc`
+        /// stream slots (`h` `[s][hc][d]`), and the one-hot pre-mix (`pm` `[s][hc]` f32).
+        pub fn memra_v41_embed_rows(
+            table: *const c_void,
+            vocab: i64,
+            ids: *const i32,
+            s: i32,
+            d: i32,
+            hc: i32,
+            h: *mut c_void,
+            pm: *mut f32,
+            stream: *mut c_void,
+        ) -> i32;
         /// The MoE dispatch plan on the device (`MoePlanDev`).
         pub fn memra_v41_moe_plan(
             sel: *const i32,
@@ -3211,6 +3224,18 @@ impl Ctx {
         if self.nvtx {
             unsafe { crate::dsv4_ffi::memra_dsv4_nvtx_pop() };
         }
+    }
+
+    /// Pin the Engram staging for a whole prefill slice (`chunk` rows, at most `max_pos`) now, so
+    /// no forward pins host memory at its first Engram layer (the 4,096-token prefill's first
+    /// layer waited 29-44 ms a rank thread in `cuMemHostAlloc` there). A forward still grows it
+    /// past this size, as before.
+    pub fn presize_stage(&mut self) -> Result<(), String> {
+        let cap = (self.chunk.min(self.max_pos).max(1) * self.g.engram_cols()).max(4096);
+        if self.stage.as_ref().is_none_or(|x| x.cap < cap) {
+            self.stage = Some(engram::Stage::new(&self.ops, cap, self.g.engram_head_dim)?);
+        }
+        Ok(())
     }
 
     /// One prefill row of the window selection (vendor `get_window_topk_idxs`, start_pos 0): the

@@ -140,6 +140,8 @@ pub struct Runner<'a> {
     keep: usize,
     resident: Vec<Option<Vec<LayerW>>>,
     pub(super) head: Option<(Vec<Buf>, Vec<BW>)>,
+    /// each rank's bf16 embedding table `[vocab][dim]` ([`Self::load_embed`])
+    emb: Option<Vec<Buf>>,
     /// the routed experts in pinned host memory, when they are off the card
     host: Option<Arc<HostExperts>>,
     /// the draft head's target layers: a forward keeps the mean over the stream copies of each
@@ -180,6 +182,9 @@ impl<'a> Runner<'a> {
         for c in grp.cx.iter_mut() {
             c.chunk = chunk.max(1);
         }
+        if ec.is_some() && g.engram_layers.iter().any(|&l| l < n_layers) {
+            grp.each(|_, c| c.presize_stage())?;
+        }
         Ok(Self {
             grp,
             g,
@@ -190,6 +195,7 @@ impl<'a> Runner<'a> {
             keep: keep.min(n_layers),
             resident: (0..n_layers).map(|_| None).collect(),
             head: None,
+            emb: None,
             host: None,
             taps: Vec::new(),
             tap_mix: Vec::new(),
@@ -303,6 +309,7 @@ impl<'a> Runner<'a> {
         if self.head.is_none() {
             self.head = Some(self.grp.load_head(self.stm, &self.g)?);
         }
+        self.load_embed()?;
         self.grp.sync_all()?;
         let load_s = t0.elapsed().as_secs_f64();
         let after = self.device_mem()?;
@@ -355,6 +362,18 @@ impl<'a> Runner<'a> {
                 load_s
             );
         }
+        // the runs' reserve mapped into each device's pool now: a first prefill of a length
+        // otherwise grows the pool past its high-water mark one allocation at a time (an
+        // allocation that mapped new memory held its thread 10-18 ms in the 4,096- and
+        // 32,768-token prefills' trace). The pool's release threshold is pinned (`Engine::new`),
+        // so the freed block stays mapped for the runs' allocations.
+        if reserve > 0 {
+            for (d, _) in &devs {
+                let ops = &self.grp.cx[first_rank(*d)].ops;
+                drop(Buf::uninit(&ops.st, reserve)?);
+                ops.sync()?;
+            }
+        }
         Ok(rep)
     }
 
@@ -382,6 +401,7 @@ impl<'a> Runner<'a> {
         if self.head.is_none() {
             self.head = Some(self.grp.load_head(self.stm, &g)?);
         }
+        self.load_embed()?;
         self.keep = self.n_layers;
         // one slice can route to every expert of the rank's range: that many slots is the floor
         let per_rank = g.n_experts / n;
@@ -613,6 +633,58 @@ impl<'a> Runner<'a> {
         Ok((hb, pm))
     }
 
+    /// Each rank's copy of the bf16 embedding table, on the card for good (1.32 GB a rank):
+    /// [`Self::forward`] gathers a call's rows there from its token ids instead of gathering them
+    /// on the host and uploading them from pageable memory to every rank (4.6 ms before the first
+    /// layer of the 4,096-token prefill, 35 ms of the 32,768-token one).
+    pub fn load_embed(&mut self) -> Result<(), String> {
+        if self.emb.is_some() {
+            return Ok(());
+        }
+        let (ei, eb) = self.stm.raw("embed.weight").ok_or("embed.weight missing")?;
+        if ei.dtype != "BF16" || ei.shape != [self.g.vocab as u64, self.g.dim as u64] {
+            return Err(format!("embed.weight: {} {:?}", ei.dtype, ei.shape));
+        }
+        let t = self.grp.each(|_, cx| Buf::from_bytes(&cx.ops.st, eb))?;
+        self.emb = Some(t);
+        Ok(())
+    }
+
+    /// A call's first stream `[s][hc][dim]` bf16 and one-hot pre-mix `[s][hc]` f32 on every
+    /// rank, gathered from the resident table by token id: the bytes of [`Self::embed`]'s rows
+    /// uploaded and copied into the `hc` stream slots.
+    fn embed_dev(&mut self, tokens: &[u32]) -> Result<(Vec<Buf>, Vec<Buf>), String> {
+        let v = self.g.vocab;
+        if let Some(&id) = tokens.iter().find(|&&id| id as usize >= v) {
+            return Err(format!("token {id} outside the vocabulary"));
+        }
+        self.load_embed()?;
+        let (hc, d, s) = (self.g.hc, self.g.dim, tokens.len());
+        let ids: Vec<i32> = tokens.iter().map(|&t| t as i32).collect();
+        let emb = self.emb.as_ref().ok_or("embedding table missing")?;
+        let up = self.grp.each(|r, cx| {
+            let st = cx.ops.st.clone();
+            let idb = Buf::from_i32(&st, &ids)?;
+            let hh = cx.ops.tmp(s * hc * d * 2)?;
+            let pm = cx.ops.tmp(s * hc * 4)?;
+            super::ck("embed rows", unsafe {
+                super::ffi::memra_v41_embed_rows(
+                    emb[r].p(&st).c(),
+                    v as i64,
+                    idb.p(&st).i(),
+                    s as i32,
+                    d as i32,
+                    hc as i32,
+                    hh.p(&st).m(),
+                    pm.p(&st).fm(),
+                    cx.ops.sv(),
+                )
+            })?;
+            Ok((hh, pm))
+        })?;
+        Ok(up.into_iter().unzip())
+    }
+
     /// Run `calls` through the trunk, layer by layer (see the module doc). A sequence's calls run
     /// in the given order from its current length. Returns each call's final stream for
     /// [`Self::logits`]. An error part-way leaves the sequences it touched unusable.
@@ -665,20 +737,8 @@ impl<'a> Runner<'a> {
                 (Some(ec), true) => Some(ec.hash_after(&q.ids, &c.tokens)?),
                 _ => None,
             });
-            let (eb, pm) = self.embed(&c.tokens)?;
+            let (hr, pr) = self.embed_dev(&c.tokens)?;
             q.ids.extend_from_slice(&c.tokens);
-            let s = c.tokens.len();
-            let (hc, d) = (g.hc, g.dim);
-            // each rank uploads the rows once and copies them into the hc stream slots
-            let up = self.grp.each(|_, cx| {
-                let e = Buf::from_bytes(&cx.ops.st, &eb)?;
-                let hh = cx.ops.buf(s * hc * d * 2)?;
-                for k in 0..hc {
-                    super::copy_2d(&cx.ops, &e, 0, d * 2, &hh, k * d * 2, hc * d * 2, d * 2, s)?;
-                }
-                Ok((hh, Buf::from_f32(&cx.ops.st, &pm)?))
-            })?;
-            let (hr, pr): (Vec<Buf>, Vec<Buf>) = up.into_iter().unzip();
             h.push(hr);
             pre.push(pr);
         }

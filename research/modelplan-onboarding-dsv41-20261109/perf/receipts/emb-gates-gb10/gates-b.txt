@@ -1,0 +1,12 @@
+run kpc devices 0 rc 0 174 s 7 log lines
+run emb devices 0 rc 0 143 s 7 log lines
+devices 0: emb against kpc, 18 files compared, 0 differ ()
+run kpc devices 0,0 rc 0 120 s 7 log lines
+run emb devices 0,0 rc 0 115 s 7 log lines
+devices 0,0: emb against kpc, 18 files compared, 0 differ ()
+emb one rank against two ranks: 12 value files compared, 0 differ
+tpbench kpc rc 1  cells
+tpbench emb rc 1  cells
+tp 0,0 default rc 0 480 checks, 0 failed
+tp 0,0,0,0 default rc 0 916 checks, 0 failed
+GATES-EMB-B-DONE 14:02:22

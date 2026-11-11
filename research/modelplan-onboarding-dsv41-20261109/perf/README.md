@@ -1399,6 +1399,61 @@ The interval did not narrow (width 6.05e-03 on 18 tapes, 5.88e-03 on 53): the pr
 more by tape (sd of the per-tape d 9.8e-03 against 4.0e-03 on the 13 chat tapes). Card time 34.9
 minutes on two cards; no thermal stop.
 
+### A prefill's host work, moved to the load
+
+The same trace's host side (`receipts/prefill-host`: `prefill_host.py`, `window_hostgaps.py`,
+`alloc_slow.py` over its sqlite export; four ranks, 40 layers) holds three serial items that the
+2 GB/s copies hid behind queued work and that a prefill pays once its copies run at 50 GB/s:
+
+| item | 4,096 tokens | 32,768 tokens |
+|---|---|---|
+| the prompt's embedding rows, gathered on the host and uploaded from pageable memory to every rank | 41.9 MB a rank at 9 GB/s, 4.4 to 4.7 ms | 335.5 MB a rank at 9.5 GB/s, 35 ms |
+| Engram's pinned staging, allocated at a forward's first Engram layer when it is too small | 29 to 44 ms and 3 to 16 ms a rank thread (`cuMemHostAlloc`) | 51 to 91 ms (grown) |
+| the device pool growing past its high-water mark, one allocation at a time | 6 to 14 ms for each of three allocations a rank thread | 18 and 11 ms |
+
+The host's own issue cost is far below the GPU's: a 4,096-token prefill issues 3,058 launches,
+1,728 event waits and 1,042 pool allocations a rank (medians of microseconds; the long totals in
+a trace are a full queue's back-pressure), about 75 ms a rank against about 0.6 s of GPU work once
+the copies are fast. So what stays on the time to the first token is the serial part before the
+first launch and these items.
+
+The 4,096-token window of `prefill_window.py` ended at the next prompt's first layer, so it
+counted the 32,768-token prompt's upload (36 ms of the "host to device" row) and its start-up (79
+of the 88 ms of host-late idle) as the 4,096 one's. Inside the 4,096 prompt's own layers the host
+left a stream idle 9.4 to 11 ms in all.
+
+Each item now happens at the load:
+
+- The embedding table on the card. Every rank keeps `embed.weight` (bf16 `[129,280][5,120]`, 1.32
+  GB) from the load (`Runner::load_embed`, with the head; a runner that never loads its residency
+  takes it at its first forward). A forward checks the call's ids on the host, uploads them (16 KB
+  at 4,096 tokens) and `v41_embed_rows` writes each token's row into its hc stream slots and the
+  one-hot pre-mix: the bytes of the host gather, its upload and the hc copies (`dsv41-gate
+  kernels`, `schedule/embed_rows`). `forward_batch`'s step block and the draft head keep the host
+  rows (one to a few rows a call, already in one upload).
+- Engram's staging at construction. `Runner::new` pins each rank's staging for a whole slice of
+  `chunk` rows (at most `max_pos`), the size `dsv41-tpbench` reports as the run's pinned memory; a
+  forward grows it only past that.
+- The pool's reserve at the load. `load_resident` allocates the runs' reserve on each device (the
+  longest prefill's workspace and the sequences' state, what it already checks the cards for) and
+  frees it. The pool's release threshold is pinned at the maximum (`Engine::new`), so the block
+  stays mapped and the runs' allocations of any size come out of it. On GB10 (`pool_probe.py`,
+  `receipts/emb-gates-gb10/pool-probe.txt`; ten allocations of a 32,768-token prefill's sizes,
+  4.19 GiB):
+
+| pool | allocation calls, host ms (sum, largest) | pool reserved after |
+|---|---|---|
+| empty | 160.2, 53.9 | 4.19 GiB |
+| after one 7.34 GiB block was allocated and freed (264 ms, once) | 0.0, 0.01 | 7.34 GiB |
+| a second pass | 0.0, 0.00 | 7.34 GiB |
+
+Checked on GB10 (121a, `receipts/emb-gates-gb10`; GB10 writes the 120a bytes): fmt; the kernel
+gate 151 checks, 0 failed, the two new ones byte-equal; the layer gate 161 checks, 0 failed, its
+111 saved tensors equal to k3's; teacher-forced runs through `Runner::forward` (`dsv41-run --cases`: capital, code_pal and a 3,761-token prompt over the first 4 layers, Engram layer 1 inside) write every file byte-equal to the transport fix alone's on one rank and on two ranks of the card (18 of 18 each), one rank's equal to two ranks'; the tp gate at 2 and 4 ranks 480 and 916 checks, 0 failed. `dsv41-tpbench` does not fit on GB10 with the checkpoint in its page cache (1.3 to 2.2 GiB free against a 5.2 GiB reserve, both builds), so the pool's reserve at the load runs only in the four-card window. On the 120a target: the release build, fmt and
+clippy `--all-targets -D warnings`. Owed: the four-card prefill A B B A against the transport fix
+alone and the traced prefill of the host's serial part before the first launch, in the next
+four-card window.
+
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
 Every change in this lane keeps the bytes of the one-card route. At one row on four ranks three
@@ -1526,6 +1581,12 @@ weight traffic: 1.1 ms.
   CUDA extension): an all-gather by copy pattern, kernel stores and NCCL; the engine's copy factors
   one at a time (pool or cudaMalloc blocks, the peer call or device addresses, pull or push) and one
   copy alone a card pair. `copy_sizes.py`: a trace's peer copies by size into one card.
+- `prefill_host.py`, `window_hostgaps.py`, `alloc_slow.py`, `memkind_enum.py`, `big_htod_all.py`: a
+  prefill trace's host side: its host-to-device copies by source memory, the host-late idle of each
+  stream by where it falls (the prompt's layers or the next prompt's start), the pool allocations
+  of 0.5 ms and more, the export's own memory-kind numbering (not CUPTI's: 0 is pageable), and
+  every large upload of the run. `pool_probe.py`: whether a block reserved in a device's pool and
+  freed serves later allocations of other sizes without the pool growing (ctypes, no model).
 - `steady.py`: the calls of `dsv41-tpbench` runs by how long the card has been busy (the first
   0.15 s, to 0.5 s, from 0.5 s on): the steady figure a served step pays next to the burst one.
   `trace_rot.py`: kernel time by name of a mixed-width trace against the sum of its widths traced
@@ -1550,6 +1611,6 @@ weight traffic: 1.1 ms.
   tensors and route logs stay on the box); `eq-*`: two builds' saved layer tensors compared byte
   for byte; `steptrace-*`: kernels by name of a traced step; `ckpt-*`: CheckpointParity and the
   greedy decode gate of a build; `bytecheck-*`: a GB10 build's saved layer tensors against the 120a
-  set, and its one-card gates; `k3four`: an arm on the four cards after a night pass). nsys and ncu report files are
+  set, and its one-card gates; `k3four`: an arm on the four cards after a night pass; `prefill-host`: the host side of the night pass's prefill trace; `emb-gates-gb10`: the gates of the prefill's host work moved to the load). nsys and ncu report files are
   not kept; their exports and summaries are. The 250 ms telemetry files are gzipped; the box's
   working directory in the logs reads `$LANE`.

@@ -3063,6 +3063,37 @@ extern "C" int memra_v41_argmax_rows(const float* x, long ld, int rows, int n, f
 }
 
 // ---------------------------------------------------------------------------------------------
+// The trunk's input on the device: token t's bf16 embedding row, gathered from the resident table, into each of
+// its hc stream slots (`h` [s][hc][d]), and the one-hot carried pre-mix (`pm` [s][hc] f32, 1 in slot 0). The
+// bytes the host gather, its upload and the hc copies wrote. One block a token, 16 bytes a thread a step; an id
+// outside the table (the host refuses those before the launch) leaves its rows zero instead of reading past it.
+
+__global__ void v41_embed_rows_kernel(const uint4* __restrict__ table, long vocab, const int* __restrict__ ids,
+                                      int d16, int hc, uint4* __restrict__ h, float* __restrict__ pm) {
+    const int t = blockIdx.x;
+    const int id = ids[t];
+    const bool ok = id >= 0 && id < vocab;
+    const uint4* src = table + (long)(ok ? id : 0) * d16;
+    uint4* dst = h + (long)t * hc * d16;
+    for (int i = threadIdx.x; i < d16; i += blockDim.x) {
+        const uint4 v = ok ? src[i] : make_uint4(0u, 0u, 0u, 0u);
+        for (int k = 0; k < hc; ++k) dst[(long)k * d16 + i] = v;
+    }
+    if ((int)threadIdx.x < hc) pm[(long)t * hc + threadIdx.x] = threadIdx.x == 0 ? 1.0f : 0.0f;
+}
+
+extern "C" int memra_v41_embed_rows(const void* table, long vocab, const int* ids, int s, int d, int hc, void* h,
+                                    float* pm, void* stream) {
+    if (s <= 0) return s < 0 ? 41048 : 0;
+    if (!table || !ids || !h || !pm || vocab <= 0 || d <= 0 || (d * 2) % 16 != 0 || hc <= 0 || hc > 256)
+        return 41048;
+    if (((unsigned long)table | (unsigned long)h) % 16 != 0) return 41048;
+    v41_embed_rows_kernel<<<s, 256, 0, (cudaStream_t)stream>>>((const uint4*)table, vocab, ids, d * 2 / 16, hc,
+                                                              (uint4*)h, pm);
+    V41_ERR();
+}
+
+// ---------------------------------------------------------------------------------------------
 // CSA2 compressor pooling at ratio 2: out[j] = bf16(kv[2j] * p0 + kv[2j+1] * p1) with p the
 // softmax over the pair of gate scores, per channel (fp32 rows in, bf16 rows out).
 
