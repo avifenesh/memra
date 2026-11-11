@@ -11,40 +11,65 @@ as tool output, at about 32,768 and 65,535 tokens, each with a question whose an
 in the document. 378 answer positions in all.
 
 1. **No answer position differs.** At every one of the 378 rows, the f32-KV prefill (a), the
-   prime over the quantized cache (b) and the served batch decode over a prime-written cache (c)
-   all have the served token as top-1. Every served answer gives every known value right (3 of
-   3, 4 of 4, 3 of 3 at both depths). The server's default arm (the MTP draft) and the plain arm
-   wrote the same text in all six cells.
-2. **The spread at answer rows is close to raw prose, not to the in-turn rows.** a against c at
-   answer rows: median 0.19 to 0.40, p90 0.38 to 1.01, max 0.60 to 2.35 (memra#1197's raw prose
-   at 32,768: p90 0.50, max 2.31). On the in-turn document rows of the same requests: p90 up to
-   15.97 and max up to 36.83, with 40 to 724 rows above 3 per cell. The rows that copy a value
-   (digits, names) have a top-2 margin of at least 4.07 in every program on the JSONL and CSV
-   answers. The 21 answer rows where any program's margin is under 1 (smallest 0.09) are word
-   choices: "with" against "where", "In" against "For", " Que" (of Queequeg) against " named".
-   At each of them a's and c's runner-up is another wording, not another value.
-3. **The large in-turn spread is not specific to repetitive content.** memra#1197 saw it with
-   the JSONL log in a user turn. Here the prose control in a user turn also reaches an a/c max of
-   25.51 and 25.92 on its document rows (32,768 and 65,535), with 63 and 62 rows above 3;
-   memra#1197's raw prose at 32,768 tokens had an a/c max of 2.31 and no row above 3. Most
-   document rows in a user turn are rows where the model would end the turn (`<|im_end|>` is a's
-   top-1 at 1,482 to 1,978 of the 1,978 to 1,993 document rows per cell), but the large spreads
-   are not confined to those rows (`SUMMARY.md`, "Document rows by a's top-1").
+   prime over the quantized cache (b) and the decode over the quantized cache (c) all have the
+   served token as top-1. Every served answer gives every known value right (3 of 3, 4 of 4,
+   3 of 3 at both depths). The server's default arm (the MTP draft) and the plain arm wrote the
+   same text in all six cells.
+2. **At answer rows the programs stay close; on the document rows inside the turn they do not.**
+   a against b at answer rows: p90 0.42 to 0.90, max 0.82 to 3.00. a against c: p90 0.38 to
+   1.01, max 0.60 to 2.35. On the in-turn document rows of the same requests, a against c
+   reaches p90 15.80 and 15.97 on the JSONL log and a max of 17.90 to 36.83 in every cell. The
+   question rows just before the answer (also inside the turn) are as quiet as the answer rows
+   (a/c p90 0.54 to 0.75). The rows that copy a value (digits, names) have a top-2 margin of at
+   least 4.07 in every program on the JSONL and CSV answers. The 21 answer rows where any
+   program's margin is under 1 (smallest 0.09) are word choices: "with" against "where", "In"
+   against "For", " Que" (of Queequeg) against " named". At each of them a's and c's runner-up
+   is another wording, not another value. At 3 of them (rows 65,037 and 65,041 of the JSONL
+   answer at 65,535, row 32,652 of the prose answer at 32,768) the a/c spread is larger than the
+   smaller margin, so the agreement there is within the program-to-program difference.
+3. **Large in-turn spreads also occur on prose, at about a tenth of the JSONL frequency.**
+   memra#1197 saw them with the JSONL log in a user turn. Here the prose control in a user turn
+   reaches an a/b max of 31.78 and 31.02 on its document rows (32,768 and 65,535), with 63 and 62
+   rows above 3 in a/c, against 616 and 724 on the JSONL log. memra#1197's raw prose had an a/b
+   max of 2.05 (32,768) and 5.20 (65,535). Most document rows in a user turn are rows where the
+   model would end the turn (`<|im_end|>` is a's top-1 at 1,482 to 1,978 of the 1,978 to 1,993
+   document rows per cell). On prose and on the JSONL log at 32,768 the large spreads also reach
+   the other rows (a/c max 21.51, 25.92 and 36.83 there); on the CSV table they do not (3.42 and
+   1.89); the JSONL log at 65,535 has no other rows (`SUMMARY.md`, "Document rows by a's top-1").
+
+Comparisons with memra#1197 use a against b. The decode (c) is not the same program in the two
+lanes: memra#1197 ran at 031f146690, and the GB10 deep split rung (0e582f2a61,
+`docs/decisions/FA-SPLIT-DEEP-RUNG.md`), which is in 3de59bbf80, changes this model's decode
+attention summation order past 16,384 keys. a and b do not run decode attention.
 
 What this does not show:
 
 - **It does not show that answer positions are safer than document positions.** 378 rows is
-  small against the rate memra#1197 measured. On the raw JSONL log at 32,768 tokens, a and the
-  served decode flipped with a's margin above 1 at 9 of 2,048 rows. At that rate 378 rows would
-  hold about 1.7 such flips, and zero flips would still turn up about 19% of the time
-  (e^-1.66). On the 150 JSONL answer rows alone the chance is about 52%. Zero here is a result
-  for these six answers, not a bound on the rate.
+  small against the rates memra#1197 measured. There, a and the served decode flipped with a's
+  margin above 1 at 9 of 2,048 raw JSONL rows at 32,768, 3 at 65,535, and none on the raw CSV
+  table or prose. At those rates the 150 JSONL answer rows here would hold about 0.44 such flips
+  (75 x 9 / 2,048 + 75 x 3 / 2,048), and zero flips would turn up about 64% of the time
+  (e^-0.44). Rows inside one answer are not independent, which makes even that optimistic. Zero
+  here is a result for these six answers, not a bound on the rate.
+- **c is the decode kernel over the quantized cache, not exactly the served sequence of
+  programs.** The probe primes the prompt up to the window and then decodes the window, so c's
+  cache holds K/V and recurrent state that c wrote itself for the last 2,048 prompt rows, and c
+  chooses the first answer token with a decode step. The server primes the whole prompt, takes
+  the first answer token from the prime's last-row logits (b's program) and decodes the rest
+  over a cache the prime wrote. Both b and c have the served token at every answer row, which
+  is consistent with the served answer but is not the served cache.
 - One model, one device, one question per document, greedy, thinking off, short answers (46 to
-  74 tokens; the prose answers came in under the 64 planned). Answers that reason at length,
-  sample, or quote long spans from the tool output are not measured.
+  74 tokens; the prose answers are under 64). Answers that reason at length, sample, or quote
+  long spans from the tool output are not measured. The prose answers (Peter Coffin, Queequeg,
+  Father Mapple) are likely answerable from pretraining, so the prose cells do not show that
+  the model read the context.
 - The cache format and the kernel that reads it are still not separated (no f32-cache control,
-  memra#1197 item 3), and 131,072 tokens still cannot run against the f32 reference (memra#1200).
+  memra#1197 item 3), and 131,072 tokens still cannot run against the f32 reference
+  (memra#1200).
 - The default arm is compared by its text only; its logits were not probed.
+- Only the questions and their answers were fixed before the runs. `tools/summarize.py` (the row
+  classes, the margin-under-1 threshold, the value-row definition) was written and extended
+  after the cells ran.
 
 For memra#1177: this answers the open item "the answer positions after a chat turn holding such
 content" within this scope: no position differs and no answer is wrong. The issue stays open for
@@ -80,7 +105,14 @@ a neighboring record is wrong. The source documents and their sha256 are the one
 
 Depth is the prompt plus the answer: about 32,768 and at most 65,535 tokens. The f32 reference
 stops past 65,535 rows (memra#1200), so 131,072 does not run. Records are long in the JSONL log
-(about 650 tokens), so its cuts end shorter than the others.
+(about 650 tokens), so its 65,535 cut ends shorter than the others.
+
+Where the answers sit: the JSONL record is line 22 of the 50 and 100 lines of the two cuts (its
+`"seq": 20` at character 22,382 of the log). The CSV row is line 212 of 229 and 418 (character
+39,516), so at 32,768 it is 17 lines before the end of the document. In Moby-Dick the landlord
+is named at character 45,029 and the preacher first at 104,074, of 123,998 and 250,114
+characters. The cuts are prefixes, so each value is at the same offset at both depths. The CSV
+rows for 1959 and 1961 differ in all four values (population 8869270 and 9214082).
 
 ## Method
 
@@ -94,16 +126,22 @@ Per cell, on one GB10, under its own lease (`tools/answer_cell.py`):
    `usage.prompt_tokens` in every cell.
 2. **Answer ids.** The plain arm's answer text, tokenized by `/v1/tokenize`. `/v1/detokenize` of
    prompt ids plus answer ids gives back the rendered prompt followed by the answer text in every
-   cell. `<|im_end|>` is appended when the answer stopped on it. The probe confirms the ids: the
-   served batch decode's top-1 is the answer token at every answer row (below).
+   cell. `<|im_end|>` is appended when the answer stopped on it; every answer did, and the
+   response's `usage.completion_tokens` equals the answer ids plus that one in all 12 responses.
+   The round trip alone cannot tell two tokenizations of the same text apart; that a, b and c
+   all choose exactly these ids at every answer row (below) is consistent with them being the
+   served ids.
 3. **Teacher-force.** `kvq_rows_probe --ids` reads prompt plus answer as ids. The window is the
    2,048 rows before the first answer position plus every answer position. Row i's logits choose
    token i + 1, so the first answer row is the last prompt row. Programs:
    - **a**, prefill over f32 K/V (`forward_last`'s trunk once over the whole sequence, then the
      LM head on each window row): the reference.
    - **b**, the prime over the quantized cache (`prime_cache` once, then `prime_row_logits`).
-   - **c**, the served batch decode at B=1 over a cache the prime wrote up to the window, then
-     stepped one token at a time through the window: the program that produced the served answer.
+   - **c**, the served batch decode program at B=1 (`--decode batch`): `prime_cache` up to the
+     window, then one decode step per window row. Its cache holds what c itself wrote for the
+     last 2,048 prompt rows, and it chooses the first answer token with a decode step; the
+     server instead takes that token from the prime's last row (Outcome, "What this does not
+     show").
 
 "Answer rows" are the rows that chose an answer token, the closing `<|im_end|>` included; the
 row after the last id is left out. "In-turn rows" are the 2,048 rows before them: the end of
@@ -182,8 +220,9 @@ piece of a name).
 
 The prose value rows with small margins are row 28 of both prose answers: " Que" (the start of
 Queequeg) against " named", margins 0.28, 0.29, 0.11 at 32,768 and 0.98, 0.94, 0.90 at 65,535.
-In the JSONL answer at 65,535, `<|im_end|>` is a's runner-up at two value digits (rows 65,064
-and 65,084), at a margins of 10.51 and 10.06.
+In the JSONL answer at 65,535, `<|im_end|>` is the runner-up at value rows in every program (a
+at 10 of 27, margins 8.15 to 12.13; b at 8; c at 6); every cell has at least one such row, all
+at margins above 8 (`SUMMARY.md`, "Value rows").
 
 Probe self-checks, every cell: `PRIME-LAST` bit-identical (the prime's hidden stack through
 `prime_row_logits` against the prime's own last-row logits), and the served batch step's
@@ -205,7 +244,8 @@ MEMRA_CUDA_ARCH=121a cargo build --release --locked -p memra-engine --bin kvq_ro
 ```
 
 `memra-server` was built from the unmodified tree first, in the same target directory
-(`MEMRA_CUDA_ARCH=121a cargo build --release --locked -p memra-server --bin memra-server`). The
+(`MEMRA_CUDA_ARCH=121a cargo build --release --locked -p memra-server --bin memra-server`). Both
+were built from a `git archive` of the tree, so the server's boot line reads `git: unknown`; the
 two binaries' sha256 are in `receipts/bins.sha256`. One cell:
 
 ```
@@ -213,7 +253,8 @@ python3 tools/answer_cell.py ROOT jsonl-32768 Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
 ```
 
 with `ROOT/bins/` holding the two binaries and `ROOT/requests/` the output of
-`tools/build_requests.py tokenizer.json DOCS_DIR ROOT/requests`. Then
+`tools/build_requests.py tokenizer.json DOCS_DIR ROOT/requests` (`tokenizer.json`: sha256 in
+`receipts/tokenizer.sha256`, the same file as memra#1197's). Then
 `tools/summarize.py RUNS_DIR REQUESTS_DIR tokenizer.json OUT CELL...` and
 `tools/tables.py OUT/SUMMARY.jsonl`.
 
@@ -228,6 +269,7 @@ with `ROOT/bins/` holding the two binaries and `ROOT/requests/` the output of
 - `receipts/requests-manifest.jsonl`: each request's cut (lines, characters, content sha256,
   local prompt token count).
 - `receipts/probe-ids.patch`: the `--ids` change on top of the archived probe.
+- `receipts/tokenizer.sha256`: the tokenizer the requests were sized with.
 - `receipts/bins.sha256`, `receipts/model.txt`: the two binaries' hashes, and the model file's
   Hub record (revision, etag, size; the etag of an LFS file is its sha256, not recomputed here).
 - `runs/<cell>/`: `cell.log` (steps and checks), `meta.json` (prompt and answer lengths, window),
@@ -240,6 +282,7 @@ with `ROOT/bins/` holding the two binaries and `ROOT/requests/` the output of
   probe), `result.json` and `mem.tsv` (exit, lowest MemAvailable), `pre.txt`/`post.txt` (memory
   and GPU state). Home paths are written as `~`.
 
-The documents are not committed. `tools/build_requests.py` rebuilds the requests from the three
-source files of memra#1197 (sources and sha256 in its README); the manifest's content sha256
-checks the result.
+`tools/build_requests.py` reads three files from DOCS_DIR: `diskstats.jsonl` (in this repo at
+`research/spill-f-20260919/box27/background-diskstats.jsonl`), `owid-co2-data.csv` and
+`pg2701.txt` (the external sources of memra#1197, with their sha256 in its README). The
+requests are not committed; the manifest's content sha256 checks a rebuild.

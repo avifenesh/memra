@@ -197,6 +197,13 @@ def main() -> None:
         for p in ("a", "b", "c"):
             res[f"value_rows_min_margin_{p}"] = min(margin(r[p]) for r in val) if val else None
         res["value_rows_ac_spread_max"] = max(r["ac"]["delta"] for r in val) if val else None
+        # Value rows whose runner-up is `<|im_end|>`: the program would end the answer there.
+        for p in ("a", "b", "c"):
+            imr = [r for r in val if r[p]["top"][1][0] == 248046]
+            res[f"value_rows_im_end_runner_up_{p}"] = len(imr)
+            res[f"value_rows_im_end_runner_up_{p}_margin_range"] = (
+                [min(margin(r[p]) for r in imr), max(margin(r[p]) for r in imr)] if imr else None
+            )
         diffs = []
         for r in ans:
             j = r["row"] - fa
@@ -263,6 +270,24 @@ def main() -> None:
                 f"{res[f'document_{lab}_ac_flips']} flips, a margin median {res[f'document_{lab}_a_margin_median']:.2f}"
                 for lab in ("im_end", "other")
                 if res[f"document_{lab}_ac"]["n"]
+            )
+            + "."
+        )
+        md.append("")
+        md.append(
+            f"Value rows (choosing a token of a known value): {res['value_rows']}. Smallest margin there, "
+            f"a / b / c: "
+            + " / ".join(f"{res[f'value_rows_min_margin_{p}']:.2f}" for p in ("a", "b", "c") if res["value_rows"])
+            + ". Value rows whose runner-up is `<\\|im_end\\|>`: "
+            + ", ".join(
+                f"{p} {res[f'value_rows_im_end_runner_up_{p}']}"
+                + (
+                    f" (margins {res[f'value_rows_im_end_runner_up_{p}_margin_range'][0]:.2f} to "
+                    f"{res[f'value_rows_im_end_runner_up_{p}_margin_range'][1]:.2f})"
+                    if res[f"value_rows_im_end_runner_up_{p}"]
+                    else ""
+                )
+                for p in ("a", "b", "c")
             )
             + "."
         )
