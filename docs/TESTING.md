@@ -2022,9 +2022,12 @@ The ref boot runs every request alone. `judge DIR` fails a member 0 whose text, 
 completion tokens differ from plain decode's (on DSpark at temperature 1, from its own solo row),
 a companion that writes another text anywhere (its other cohorts and every speculative boot of the
 DIR, main's included), a stop-ended member 0 without its `[spec-stop]` receipt, and a member 0
-that closes later than the solo rule above. A boot passed `--settle` must also log, for every
-member 0, `[spec-pool] member finished inside the cohort`, and per sampler at least one such
-member while another member was still running. `--tput-only` runs the throughput cohorts alone,
+that closes later than the solo rule above; in a cohort the hold-back of a stop string is counted
+in the request's own chunk cadence (two of its chunk gaps per plain decode step of hold-back),
+since its tokens arrive a cohort round apart. A boot passed `--settle` must also log, per sampler,
+at least one member 0 that finished inside its cohort while another member was still running
+(`[spec-pool] member finished inside the cohort`); a member 0 that stops in its first, serial
+burst has no cohort to leave. `--tput-only` runs the throughput cohorts alone,
 for interleaved A/B boots. MTP cohort boots run with `MEMRA_SPEC_GATE=0`; a DSpark cohort boot runs with
 the gate on and its LOW band at the largest cohort (HIGH at twice it), since with the gate off
 DSpark admits one session at a time and no cohort forms. Receipts:
