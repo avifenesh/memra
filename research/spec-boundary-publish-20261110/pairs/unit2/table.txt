@@ -1,10 +1,15 @@
 | case | arm | later turns equal to cold | restored from a spec-published entry, with its draft plane | answers (sha256, per turn) | entries published (tokens) |
 |---|---|---|---|---|---|
 | deep-greedy | B | = / = | 135,520 of 135,628, 135,584 of 135,716 | a99396c5 / a13b08a4 / 2d03a4e6 | 135,520, 135,584, 135,680 |
+| deep-greedy | W | = / = | 135,520 of 135,628, 135,584 of 135,716 | a99396c5 / a13b08a4 / 2d03a4e6 | 135,520, 135,584, 135,680 |
 | deep-sampled | B | = | 135,520 of 135,612 | 5ac95257 / 7e34878c | 135,520, 135,584 |
+| deep-sampled | W | = | 135,520 of 135,612 | 5ac95257 / 7e34878c | 135,520, 135,584 |
 | short-greedy | B | = / = | 960 of 1,083, 1,056 of 1,171 | f1fb5d52 / ce72af3e / 8c7ed81f | 960, 1,056, 1,152 |
 | short-greedy | T | = / = | 960 of 1,083, 1,056 of 1,171 | f1fb5d52 / ce72af3e / 8c7ed81f | 960, 1,056, 1,152 |
+| short-greedy | W | = / = | 960 of 1,083, 1,056 of 1,171 | f1fb5d52 / ce72af3e / 8c7ed81f | 960, 1,056, 1,152 |
+| short-sampled | W | = / = | 960 of 1,082, 1,056 of 1,169 | cde53ba3 / fcbcfe74 / 5b17104a | 960, 1,056, 1,152 |
 
-deep-greedy: one arm (B)
-deep-sampled: one arm (B)
-short-greedy: arms B, T: answers equal, warm bursts (generated, rounds, drafted, accepted, K) equal, no digest trace
+deep-greedy: arms B, W: answers equal, warm bursts (generated, rounds, drafted, accepted, K) equal, no digest trace
+deep-sampled: arms B, W: answers equal, warm bursts (generated, rounds, drafted, accepted, K) equal, published-entry digests equal
+short-greedy: arms B, T, W: answers equal, warm bursts (generated, rounds, drafted, accepted, K) equal, no digest trace
+short-sampled: one arm (W)

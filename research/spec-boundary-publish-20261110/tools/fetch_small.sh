@@ -9,6 +9,6 @@ D=$HOME/.cache/memra-specpub/fetched/$UNIT; mkdir -p "$D"
 rsync -a --prune-empty-dirs --include='cells/' --include='cells/pairs-*/***' --include='cells/hitgate-*/' \
   --include='cells/hitgate-*/cmd.sh' --include='cells/hitgate-*/rc' --include='cells/hitgate-*/log' \
   --include='runs/' --include='runs/unit-cells*/***' --include='runs/nsys/' --include='runs/nsys/*/' \
-  --include='runs/nsys/*/gap.txt' --include='runs/nsys/*/big.txt' --include='runs/nsys/*/pf.jsonl' \
+  --include='runs/nsys/*/gap.txt' --include='runs/nsys/*/split.txt' --include='runs/nsys/*/big.txt' --include='runs/nsys/*/pf.jsonl' \
   --include='runs/nsys/*/guard.log' --include='runs/nsys/*/trace.txt' --include='runs/nsys/*/run.log' \
   --exclude='*' "spark-$UNIT:.cache/memra-specpub/" "$D/"

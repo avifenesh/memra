@@ -19,7 +19,7 @@ print("| case | arm | later turns equal to cold | restored from a spec-published
 print("|---|---|---|---|---|---|")
 shapes = {}
 for name, v in rows.items():
-    arm, shape = name[-1], name[6:-2]
+    shape, arm = name[6:].rsplit("-", 1)  # pairs-<shape>-<arm>; an arm may carry its main (B11f3)
     later = [t for t in v["turns"] if t != "1"]
     eq = " / ".join("=" if v["turns"][t]["equal"] else "DIFF" for t in later)
     w = v["warm"]

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs on a CPU build host (CUDA 13.1 compiler, sm_120a build, no GPU): the branch's CPU checks at
 # one commit, from a source tree copied with git archive.
-#   fmt, workspace clippy -D warnings on all targets, the memra-server suite, then the census on
+#   fmt, workspace clippy -D warnings on all targets, the memra-server and memra-engine suites, then the census on
 #   the fail-before tree (base production code plus the head's tests; tools/red_worker.py).
 # usage: cpu_checks.sh SRC_DIR SHA RED_WORKER   -> $R/logs/cpu-checks.txt, last line CPU-CHECKS-DONE
 set -u
@@ -25,6 +25,10 @@ T=spec_boundary_publish_allocates_no_zeroed_plane
   nice -n 10 cargo test --release --locked -p memra-server > "$L/server-test.log" 2>&1; rc=$?
   grep -E '^test result|FAILED|panicked' "$L/server-test.log" | head -40
   echo "server $SHA rc=$rc"
+  echo "# the memra-engine suite"
+  nice -n 10 cargo test --release --locked -p memra-engine > "$L/engine-test.log" 2>&1; rc=$?
+  grep -E '^test result|FAILED|panicked' "$L/engine-test.log" | head -40
+  echo "engine $SHA rc=$rc"
   echo "# the census at the head"
   grep -E "^test .*$T" "$L/server-test.log"
   echo "# the census on the fail-before tree (the base's production code, the head's tests)"
