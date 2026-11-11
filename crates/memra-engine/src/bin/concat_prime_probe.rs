@@ -7,7 +7,7 @@
 //! flips greedy argmax.
 //!
 //! modes (all greedy, all engine-level — no server):
-//!   repro   <model> repro   --prompt-a <txt> --prompt-b <txt> [--steps N] [--chat]
+//!   repro   <model> repro   --prompt-a <txt|@file> --prompt-b <txt|@file> [--steps N] [--chat]
 //!           prime A solo vs A in concat [A,B]; lockstep greedy decode from both caches;
 //!           first-divergence step, top-2 margins both sides, full-vocab logit maxdiff.
 //!   posdiff <model> posdiff --prompt-a <txt> --prompt-b <txt> [--order ab|ba] [--chat]
@@ -220,11 +220,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mode = args.next().expect("mode: repro|posdiff|content|margins");
     let rest: Vec<String> = args.collect();
     let chat = rest.iter().any(|a| a == "--chat");
-    let cx = load(&path)?;
+    let mut cx = load(&path)?;
 
     match mode.as_str() {
         "repro" => {
-            let pa = arg(&rest, "--prompt-a").expect("--prompt-a");
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
             let steps: usize = arg(&rest, "--steps")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(96);
@@ -240,12 +240,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .filter(|l| !l.is_empty())
                     .collect()
             } else {
-                vec![arg(&rest, "--prompt-b").expect("--prompt-b or --co-file")]
+                vec![text_arg(&rest, "--prompt-b").expect("--prompt-b or --co-file")]
             };
             let co_toks: Vec<Vec<u32>> = co_texts
                 .iter()
                 .map(|t| encode_prompt(&cx.tok, t, chat))
                 .collect();
+            // Caches hold the longest prompt plus the decode steps (long concat batches,
+            // memra#1200: two members whose rows sum past the grid-y cap).
+            let longest = co_toks
+                .iter()
+                .map(|t| t.len())
+                .chain([ta.len()])
+                .max()
+                .unwrap();
+            cx.ctx_len = cx.ctx_len.max(longest + steps + 8);
             let b = co_toks.len() + 1;
             assert!(slot < b, "--slot must be < batch size {b}");
             println!(
