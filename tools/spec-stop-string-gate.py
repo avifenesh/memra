@@ -65,7 +65,7 @@ line and is judged on its close like the rest.
 
 usage: spec-stop-string-gate.py boot CASE SERVER_BINARY MODEL.gguf --out DIR [--route mtp|dspark]
            [--port N] [--env NAME=VALUE ...] [--cohort 2,4 [--settle] [--tput-only]]
-       spec-stop-string-gate.py judge DIR
+       spec-stop-string-gate.py judge DIR [--case NAME]
 A GPU lease is the caller's business (gpulock / sparklock around each boot).
 Exit 0 on a pass, 1 on any difference, missing coverage or error.
 """
@@ -721,8 +721,9 @@ def self_judge(out, case, rr, failures, cov):
              if untestable else ""))
 
 
-def cohort_judge(out, rows, boots):
-    """The pooled-cohort judge (memra#1209): see the module docstring."""
+def cohort_judge(out, rows, boots, only=None):
+    """The pooled-cohort judge (memra#1209): see the module docstring. `only`: judge that boot
+    (its rows, and every companion against every boot of its route)."""
     failures = []
     route = {b["case"]: b["route"] for b in boots}
     ref = {r["id"]: r for r in rows if r["case"] == "ref"}
@@ -730,7 +731,7 @@ def cohort_judge(out, rows, boots):
         failures.append("no plain (ref) boot in this DIR")
     key = lambda r: (r["sha"], r["finish"], r["completion_tokens"])  # noqa: E731
     for r in rows:
-        if r["error"]:
+        if r["error"] and (only is None or r["case"] in (only, "ref")):
             failures.append(f"{r['case']} {r['id']}: {r['error']}")
     spec_boots = [b for b in boots if b["case"] != "ref"]
     if not spec_boots:
@@ -754,6 +755,8 @@ def cohort_judge(out, rows, boots):
                             + "; ".join(f"{k}: {v[:3]}" for k, v in groups.items()))
     for b in spec_boots:
         case = b["case"]
+        if only is not None and case != only:
+            continue
         mine = [r for r in rows if r["case"] == case]
         print(f"== {case} ({route[case]}, cohorts {b['cohort']}{', settle' if b.get('settle') else ''}) ==")
         for regime in REGIMES:
@@ -846,11 +849,13 @@ def cohort_judge(out, rows, boots):
     return 0 if not failures else 1
 
 
-def judge(out):
+def judge(out, only=None):
     rows = load_rows(out)
     boots = [json.loads(line) for line in (out / "boots.jsonl").read_text().splitlines() if line.strip()]
     if any(b.get("cohort") for b in boots):
-        return cohort_judge(out, rows, boots)
+        return cohort_judge(out, rows, boots, only)
+    if only is not None:
+        raise SystemExit("--case applies to a cohort DIR")
     route = {b["case"]: b["route"] for b in boots}
     ref = {r["id"]: r for r in rows if r["case"] == "ref"}
     failures = []
@@ -984,7 +989,9 @@ def main():
         ap = argparse.ArgumentParser()
         ap.add_argument("cmd")
         ap.add_argument("out", type=pathlib.Path)
-        return judge(ap.parse_args().out)
+        ap.add_argument("--case", help="cohort DIR: judge this boot only")
+        a = ap.parse_args()
+        return judge(a.out, a.case)
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=("boot",))
     ap.add_argument("case")
