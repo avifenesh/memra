@@ -265,7 +265,9 @@ and receipts only):
 - RTX 5090 (`rtx5090/sg-head.log`, `rtx5090/inv-head/`): session-gate ALL TURNS MATCH; the
   seeded-invariance gate PASS, 54 rows, 54 of 54 with main's text sha and tokens, and 54 of 54
   equal to the candidate's rows on 66ee31fcb6 in every field, acceptance included.
-- GB10: pending.
+- GB10 (`gb10/sg-head/`, `gb10/inv-head/`, built on the device): session-gate ALL TURNS MATCH;
+  the seeded-invariance gate PASS, 54 rows, 54 of 54 with main's text sha and tokens, and 54
+  of 54 equal to the candidate's rows on 66ee31fcb6 in every field, acceptance included.
 
 ## Before the rebase
 
@@ -306,7 +308,8 @@ card lease.
   `boundary-cand/` (the burst-boundary gate), `stop/` (the stop-string gate's boots and
   `judge.log`), `stall/` (`stall.jsonl`, `summary.md`, `prefix.txt`, the server logs),
   `close/` (`close.jsonl`, `demote.jsonl`, the summaries, the server logs), `sg-cand/` or
-  `sg-cand.log` (session-gate), and on GB10 `perf/` (the timed cell).
+  `sg-cand.log` (session-gate), `inv-head/` and `sg-head` (the final head), on the RTX 5090
+  `seams-*` and `hit/`, and on GB10 `perf/` (the timed cell).
 - `prerebase/`: the rows before the rebase, above.
 - `tools/`: `rowcmp.py`, `stall_cell.py` (the pre-rebase stall cell), `close_cell.py`,
   `close_summary.py`, `seam_rows.py`, `ab_cell.py` and `carry_summary.py` (the timed cell and
