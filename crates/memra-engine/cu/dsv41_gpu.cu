@@ -1764,9 +1764,35 @@ extern "C" int memra_v41_gemm_f8_ref(const void* a, long lda, const void* as, lo
 }
 
 // ---------------------------------------------------------------------------------------------
+// The order of a dot product over K (the K-segment order). K is cut into V41_KSEG contiguous segments
+// of K / V41_KSEG; a segment's sum is one chain in K order with an fp32 accumulator that starts at
+// zero; the segment sums are added by one fixed binary tree in index order,
+//   ((s0 + s1) + (s2 + s3)) + ((s4 + s5) + (s6 + s7)),
+// in fp32, and rounded to the output type once. Every kernel that takes the form uses these two
+// helpers, at every row count and rank count, so a row's bytes do not depend on the path that
+// computed it. A K that the segments do not divide into whole steps keeps one segment (the chain).
+// WHY: one chain of K / 16 dependent MMAs is bound by the chain's latency; eight chains run through
+// the tensor unit side by side.
+#define V41_KSEG 8
+
+// k16 steps a segment, or 0 when K takes one chain (`step`: the kernel's K step in elements)
+__device__ __forceinline__ int v41_kseg_steps(int K, int step) {
+    return (K % (V41_KSEG * step) == 0 && K >= V41_KSEG * step) ? K / (V41_KSEG * 16) : 0;
+}
+
+// the tree over the segment sums, element by element
+__device__ __forceinline__ float v41_ktree(float s0, float s1, float s2, float s3, float s4, float s5, float s6,
+                                           float s7) {
+    return ((s0 + s1) + (s2 + s3)) + ((s4 + s5) + (s6 + s7));
+}
+
+// ---------------------------------------------------------------------------------------------
 // BF16 GEMM with fp32 accumulation (F.linear on bf16 weights, and on bf16 values promoted to
 // fp32: bf16 x bf16 products are exact in fp32). C[z][M,N] = A[z][M,K] . B[z][N,K]^T, batched
-// over grid.z with element strides. OUTF 0 = bf16, 1 = fp32. Tile 64x128x32, 8 warps.
+// over grid.z with element strides. OUTF 0 = bf16, 1 = fp32. Tile 64x128x32, 8 warps. The sum over K
+// is in the K-segment order: the tile walks K once, and at the end of a segment folds the segment's
+// sum into the tree's saved partials (p1: an odd segment's left neighbour, p2: a pair, p4: the first
+// four).
 
 #define V41_HS 80  // smem bytes per 32-element bf16 row
 
@@ -1783,48 +1809,80 @@ __global__ void __launch_bounds__(256) v41_gemm_bf16_kernel(const v41_bf* __rest
     int m0 = blockIdx.y * V41_GM, n0 = blockIdx.x * V41_GN;
     A += (long)blockIdx.z * sAz;
     B += (long)blockIdx.z * sBz;
-    float acc[2][4][4];
+    float acc[2][4][4], p1[2][4][4], p2[2][4][4], p4[2][4][4];
 #pragma unroll
     for (int i = 0; i < 2; ++i)
 #pragma unroll
         for (int j = 0; j < 4; ++j)
 #pragma unroll
-            for (int e = 0; e < 4; ++e) acc[i][j][e] = 0.f;
-    for (int k0 = 0; k0 < K; k0 += 32) {
-        {  // A: 64 rows x 64 bytes = 256 x 16 B
-            int r = tid >> 2, q = tid & 3;
-            uint4 v = make_uint4(0, 0, 0, 0);
-            if (m0 + r < M) v = *(const uint4*)(A + (long)(m0 + r) * lda + k0 + q * 8);
-            *(uint4*)(&sA[r * V41_HS + q * 16]) = v;
-        }
+            for (int e = 0; e < 4; ++e) acc[i][j][e] = p1[i][j][e] = p2[i][j][e] = p4[i][j][e] = 0.f;
+    // elements a segment (0: one chain over K)
+    int seg = v41_kseg_steps(K, 32) * 16;
+    int slen = seg ? seg : K;
+    // the K loop a segment at a time (one pass of the outer loop when K takes one chain), so that each
+    // fold names its place in the tree at compile time
 #pragma unroll
-        for (int rep = 0; rep < 2; ++rep) {  // B: 128 rows x 64 bytes = 512 x 16 B
-            int i = tid + rep * 256;
-            int r = i >> 2, q = i & 3;
-            uint4 v = make_uint4(0, 0, 0, 0);
-            if (n0 + r < N) v = *(const uint4*)(B + (long)(n0 + r) * ldb + k0 + q * 8);
-            *(uint4*)(&sB[r * V41_HS + q * 16]) = v;
-        }
-        __syncthreads();
+    for (int sidx = 0; sidx < V41_KSEG; ++sidx) {
+        if (sidx * (long)slen >= K) break;
+        for (int k0 = sidx * slen; k0 < (sidx + 1) * slen; k0 += 32) {
+            {  // A: 64 rows x 64 bytes = 256 x 16 B
+                int r = tid >> 2, q = tid & 3;
+                uint4 v = make_uint4(0, 0, 0, 0);
+                if (m0 + r < M) v = *(const uint4*)(A + (long)(m0 + r) * lda + k0 + q * 8);
+                *(uint4*)(&sA[r * V41_HS + q * 16]) = v;
+            }
 #pragma unroll
-        for (int kk = 0; kk < 2; ++kk) {
-            int kb = kk * 32;  // byte offset of this k16 half
-            // the fragments through ldmatrix, four tiles per load
-            uint32_t af[2][4];
+            for (int rep = 0; rep < 2; ++rep) {  // B: 128 rows x 64 bytes = 512 x 16 B
+                int i = tid + rep * 256;
+                int r = i >> 2, q = i & 3;
+                uint4 v = make_uint4(0, 0, 0, 0);
+                if (n0 + r < N) v = *(const uint4*)(B + (long)(n0 + r) * ldb + k0 + q * 8);
+                *(uint4*)(&sB[r * V41_HS + q * 16]) = v;
+            }
+            __syncthreads();
 #pragma unroll
-            for (int mi = 0; mi < 2; ++mi) v41_ldsm_a(af[mi], sA, wm * 32 + mi * 16, V41_HS, kb);
+            for (int kk = 0; kk < 2; ++kk) {
+                int kb = kk * 32;  // byte offset of this k16 half
+                // the fragments through ldmatrix, four tiles per load
+                uint32_t af[2][4];
 #pragma unroll
-            for (int nj = 0; nj < 2; ++nj) {
-                uint32_t bf[4];
-                v41_ldsm_b2(bf, sB, wn * 32 + nj * 16, V41_HS, kb);
+                for (int mi = 0; mi < 2; ++mi) v41_ldsm_a(af[mi], sA, wm * 32 + mi * 16, V41_HS, kb);
 #pragma unroll
-                for (int mi = 0; mi < 2; ++mi) {
-                    v41_mma_bf16(acc[mi][2 * nj], af[mi], bf[0], bf[1]);
-                    v41_mma_bf16(acc[mi][2 * nj + 1], af[mi], bf[2], bf[3]);
+                for (int nj = 0; nj < 2; ++nj) {
+                    uint32_t bf[4];
+                    v41_ldsm_b2(bf, sB, wn * 32 + nj * 16, V41_HS, kb);
+#pragma unroll
+                    for (int mi = 0; mi < 2; ++mi) {
+                        v41_mma_bf16(acc[mi][2 * nj], af[mi], bf[0], bf[1]);
+                        v41_mma_bf16(acc[mi][2 * nj + 1], af[mi], bf[2], bf[3]);
+                    }
                 }
             }
+            __syncthreads();
         }
-        __syncthreads();
+        if (seg) {
+#pragma unroll
+            for (int i = 0; i < 2; ++i)
+#pragma unroll
+                for (int j = 0; j < 4; ++j)
+#pragma unroll
+                    for (int e = 0; e < 4; ++e) {
+                        float v = acc[i][j][e];
+                        if (sidx == 0 || sidx == 2 || sidx == 4 || sidx == 6) {
+                            p1[i][j][e] = v;  // a pair's left segment
+                            v = 0.f;
+                        } else if (sidx == 1 || sidx == 5) {
+                            p2[i][j][e] = p1[i][j][e] + v;  // the first pair of a four
+                            v = 0.f;
+                        } else if (sidx == 3) {
+                            p4[i][j][e] = p2[i][j][e] + (p1[i][j][e] + v);  // the first four
+                            v = 0.f;
+                        } else {
+                            v = p4[i][j][e] + (p2[i][j][e] + (p1[i][j][e] + v));  // the result
+                        }
+                        acc[i][j][e] = v;
+                    }
+        }
     }
     char* Cz = (char*)C + (long)blockIdx.z * sCz * (OUTF == 0 ? 2 : 4);
 #pragma unroll
@@ -1842,14 +1900,19 @@ __global__ void __launch_bounds__(256) v41_gemm_bf16_kernel(const v41_bf* __rest
             }
 }
 
-// Small-M bf16 GEMM (at most V41_SM_MAX rows): the tile kernel's chain exactly. Its fp32 sum runs
-// inside each m16n8k16 MMA over the K steps in order, so one warp owns an 8-column group over the
-// whole K, on the same fragment lanes (rows 0..7 of the tile, column = lane group). The columns and
-// the batch give the parallelism. A warp lands its 8 weight rows and the M rows in shared memory in
-// 16-byte chunks through cp.async, `su` k16 steps per stage, and reads the fragments from there.
-// A few-column output (few warps in the whole launch) is bound by the latency of one fetch after
-// another, so there a warp is its own block and lands its whole K slice at once (one stage); a
-// wide output streams through a two-stage ring of 8 steps, 4 warps per block.
+// Small-M bf16 GEMM (at most V41_SM_MAX rows): the tile kernel's sum exactly. Its fp32 sum runs
+// inside each m16n8k16 MMA over the K steps in order, on the same fragment lanes as the tile (rows
+// 0..7 of the tile, column = lane group); a warp owns an 8-column group. The columns and the batch
+// give the parallelism. A warp lands its 8 weight rows and the M rows in shared memory in 16-byte
+// chunks through cp.async, `su` k16 steps per stage, and reads the fragments from there.
+// SEG 0 (a K the segments do not divide: one chain): one warp sums the whole K. A few-column output
+// (few warps in the whole launch) is bound by the latency of one fetch after another, so there a
+// warp is its own block and lands its whole K slice at once (one stage); a wide output streams
+// through a two-stage ring of 8 steps, 4 warps per block.
+// SEG 1 (the K-segment order): a block is V41_KSEG warps over one 8-column group, warp w sums
+// segment w (its K / V41_KSEG elements, contiguous, a chain from zero in K order), and the segment
+// sums meet in shared memory in v41_ktree, in index order. Every warp streams its own contiguous
+// slice of each weight row (full lines a stage), and the eight chains run side by side.
 #define V41_SMB_U 8
 
 static long v41_gemv_bf16_warp_smem(int m, int su, int stages) {
@@ -1858,19 +1921,22 @@ static long v41_gemv_bf16_warp_smem(int m, int su, int stages) {
 
 // R16: a call of 9 to 16 rows. The tile's 16-wide side then holds 16 rows (rows g + 8 on the same lanes), so
 // a warp's chain over K serves twice the rows with the same MMAs and the same weight fetches.
-template <int OUTF, int R16 = 0>
-__global__ void __launch_bounds__(128) v41_gemv_bf16_kernel(const v41_bf* __restrict__ A, long lda, long sAz,
-                                                            const v41_bf* __restrict__ B, long ldb, long sBz,
-                                                            void* __restrict__ C, long ldc, long sCz, int M, int N,
-                                                            int K, int su, int stages) {
+template <int OUTF, int R16 = 0, int SEG = 0>
+__global__ void __launch_bounds__(SEG ? 32 * V41_KSEG : 128)
+    v41_gemv_bf16_kernel(const v41_bf* __restrict__ A, long lda, long sAz, const v41_bf* __restrict__ B, long ldb,
+                         long sBz, void* __restrict__ C, long ldc, long sCz, int M, int N, int K, int su,
+                         int stages) {
     extern __shared__ __align__(16) uint8_t v41_smb[];
     int warp = threadIdx.x >> 5, lane = threadIdx.x & 31, g = lane >> 2, t = lane & 3;
-    int n0 = (blockIdx.x * (blockDim.x >> 5) + warp) * 8;
-    if (n0 >= N) return;  // the whole warp
+    int n0 = SEG ? blockIdx.x * 8 : (blockIdx.x * (blockDim.x >> 5) + warp) * 8;
+    if (!SEG && n0 >= N) return;  // the whole warp (SEG: the grid has no such block)
     const uint8_t* Ab = (const uint8_t*)(A + (long)blockIdx.z * sAz);
     const uint8_t* Bb = (const uint8_t*)(B + (long)blockIdx.z * sBz);
     bool rowok = g < M;
     bool rowok8 = R16 && g + 8 < M;
+    // the warp's part of K: [kb, kb + KL)
+    int KL = SEG ? K / V41_KSEG : K;
+    long kb = SEG ? (long)warp * KL : 0;
     int P = su * 32 + 16;        // bytes per staged row (+16: bank spread)
     int SB = (M + 8) * P;        // one stage: the M rows, then the 8 weight rows
     uint8_t* wsm = v41_smb + (long)warp * stages * SB;
@@ -1880,19 +1946,19 @@ __global__ void __launch_bounds__(128) v41_gemv_bf16_kernel(const v41_bf* __rest
         long k0 = (long)i * su * 16;
         for (int q = lane; q < 8 * CH; q += 32) {
             int r = q / CH, c = q % CH;
-            bool ok = (n0 + r < N) && (k0 + c * 8 < K);
-            const uint8_t* src = ok ? Bb + ((long)(n0 + r) * ldb + k0 + c * 8) * 2 : Bb;
+            bool ok = (n0 + r < N) && (k0 + c * 8 < KL);
+            const uint8_t* src = ok ? Bb + ((long)(n0 + r) * ldb + kb + k0 + c * 8) * 2 : Bb;
             v41_cp16(st + (M + r) * P + c * 16, src, ok);
         }
         for (int q = lane; q < M * CH; q += 32) {
             int r = q / CH, c = q % CH;
-            bool ok = k0 + c * 8 < K;
-            const uint8_t* src = ok ? Ab + ((long)r * lda + k0 + c * 8) * 2 : Ab;
+            bool ok = k0 + c * 8 < KL;
+            const uint8_t* src = ok ? Ab + ((long)r * lda + kb + k0 + c * 8) * 2 : Ab;
             v41_cp16(st + r * P + c * 16, src, ok);
         }
     };
     float acc[4] = {0.f, 0.f, 0.f, 0.f};
-    int ns = (K + su * 16 - 1) / (su * 16);
+    int ns = (KL + su * 16 - 1) / (su * 16);
     issue(0);
     v41_cp_commit();
     for (int i = 0; i < ns; ++i) {
@@ -1909,7 +1975,7 @@ __global__ void __launch_bounds__(128) v41_gemv_bf16_kernel(const v41_bf* __rest
 #pragma unroll
             for (int v = 0; v < 8; ++v) {
                 int u = u0 + v;
-                if (u >= su || k0 + 16 * u >= K) break;
+                if (u >= su || k0 + 16 * u >= KL) break;
                 uint32_t af[4] = {0u, 0u, 0u, 0u};
                 if (rowok) {
                     af[0] = v41_lds32(sA + u * 32 + t * 4);
@@ -1926,6 +1992,19 @@ __global__ void __launch_bounds__(128) v41_gemv_bf16_kernel(const v41_bf* __rest
         }
     }
     v41_cp_wait<0>();
+    if (SEG) {
+        // the segment sums, [segment][element][lane] after the stages, into the tree on warp 0
+        float* red = (float*)(v41_smb + (long)V41_KSEG * stages * SB);
+#pragma unroll
+        for (int e = 0; e < 4; ++e) red[(warp * 4 + e) * 32 + lane] = acc[e];
+        __syncthreads();
+        if (warp != 0) return;
+#pragma unroll
+        for (int e = 0; e < 4; ++e)
+            acc[e] = v41_ktree(red[(0 * 4 + e) * 32 + lane], red[(1 * 4 + e) * 32 + lane], red[(2 * 4 + e) * 32 + lane],
+                               red[(3 * 4 + e) * 32 + lane], red[(4 * 4 + e) * 32 + lane], red[(5 * 4 + e) * 32 + lane],
+                               red[(6 * 4 + e) * 32 + lane], red[(7 * 4 + e) * 32 + lane]);
+    }
     if (rowok) {
         char* Cz = (char*)C + (long)blockIdx.z * sCz * (OUTF == 0 ? 2 : 4);
 #pragma unroll
@@ -1962,31 +2041,56 @@ extern "C" int memra_v41_gemm_bf16(const void* a, long lda, long sAz, const void
     cudaStream_t st = (cudaStream_t)stream;
     bool r16 = m > V41_SM_MAX && m <= 2 * V41_SM_MAX && m <= v41_wide[1];
     if (m <= V41_SM_MAX || r16) {
-        // one warp per block with its whole K slice staged while the launch is at most 256 warps
-        // and the slice fits a block; else 4 warps per block over the two-stage ring
-        long whole = v41_gemv_bf16_warp_smem(m, k / 16, 1);
-        long warps = (long)((n + 7) / 8) * batch;
-        int su = V41_SMB_U, stages = 2, wpb = 4;
-        if (warps <= 256 && whole <= 96 * 1024) {
-            su = k / 16;
-            stages = 1;
-            wpb = 1;
+        int su, stages, wpb, smem;
+        dim3 grid;
+        // the K-segment order (v41_kseg_steps' rule): V41_KSEG warps a block over one column group
+        bool seg = k % (V41_KSEG * 32) == 0 && k >= V41_KSEG * 32;
+        if (seg) {
+            // a small launch keeps a warp's whole segment in flight (both stages of its ring), a wide one
+            // streams V41_SMB_U steps a stage; fewer steps a stage when the rows need the room
+            int ku = k / V41_KSEG / 16;  // k16 steps a segment
+            long blocks = (long)((n + 7) / 8) * batch;
+            su = (blocks <= 128 && ku > 1) ? (ku + 1) / 2 : (ku < V41_SMB_U ? ku : V41_SMB_U);
+            stages = 2;
+            while (su > 1 && V41_KSEG * v41_gemv_bf16_warp_smem(m, su, stages) + V41_KSEG * 512 > 96 * 1024)
+                su = (su + 1) / 2;
+            wpb = V41_KSEG;
+            // + the tree's inputs: V41_KSEG warps x 4 sums x 32 lanes in fp32
+            smem = (int)(V41_KSEG * v41_gemv_bf16_warp_smem(m, su, stages)) + V41_KSEG * 512;
+            grid = dim3((n + 7) / 8, 1, batch);
+        } else {
+            // one warp per block with its whole K slice staged while the launch is at most 256 warps
+            // and the slice fits a block; else 4 warps per block over the two-stage ring
+            long whole = v41_gemv_bf16_warp_smem(m, k / 16, 1);
+            long warps = (long)((n + 7) / 8) * batch;
+            su = V41_SMB_U;
+            stages = 2;
+            wpb = 4;
+            if (warps <= 256 && whole <= 96 * 1024) {
+                su = k / 16;
+                stages = 1;
+                wpb = 1;
+            }
+            smem = (int)(wpb * v41_gemv_bf16_warp_smem(m, su, stages));
+            grid = dim3((n + 8 * wpb - 1) / (8 * wpb), 1, batch);
         }
-        int smem = (int)(wpb * v41_gemv_bf16_warp_smem(m, su, stages));
-        dim3 grid((n + 8 * wpb - 1) / (8 * wpb), 1, batch);
-#define V41_GEMV_BF(OF)                                                                                            \
+#define V41_GEMV_BF(OF, SG)                                                                                        \
     do {                                                                                                           \
         if (r16) {                                                                                                 \
-            if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_gemv_bf16_kernel<OF, 1>), 96 * 1024);                        \
-            v41_gemv_bf16_kernel<OF, 1><<<grid, 32 * wpb, smem, st>>>((const v41_bf*)a, lda, sAz, (const v41_bf*)b, \
-                                                                       ldb, sBz, c, ldc, sCz, m, n, k, su, stages); \
+            if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_gemv_bf16_kernel<OF, 1, SG>), 96 * 1024);                    \
+            v41_gemv_bf16_kernel<OF, 1, SG><<<grid, 32 * wpb, smem, st>>>(                                         \
+                (const v41_bf*)a, lda, sAz, (const v41_bf*)b, ldb, sBz, c, ldc, sCz, m, n, k, su, stages);         \
         } else {                                                                                                   \
-            if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_gemv_bf16_kernel<OF>), 96 * 1024);                           \
-            v41_gemv_bf16_kernel<OF><<<grid, 32 * wpb, smem, st>>>((const v41_bf*)a, lda, sAz, (const v41_bf*)b,   \
-                                                                    ldb, sBz, c, ldc, sCz, m, n, k, su, stages);    \
+            if (smem > 48 * 1024) V41_SMEM_LIMIT((v41_gemv_bf16_kernel<OF, 0, SG>), 96 * 1024);                    \
+            v41_gemv_bf16_kernel<OF, 0, SG><<<grid, 32 * wpb, smem, st>>>(                                         \
+                (const v41_bf*)a, lda, sAz, (const v41_bf*)b, ldb, sBz, c, ldc, sCz, m, n, k, su, stages);         \
         }                                                                                                          \
     } while (0)
-        if (out_f32) V41_GEMV_BF(1); else V41_GEMV_BF(0);
+        if (seg) {
+            if (out_f32) V41_GEMV_BF(1, 1); else V41_GEMV_BF(0, 1);
+        } else {
+            if (out_f32) V41_GEMV_BF(1, 0); else V41_GEMV_BF(0, 0);
+        }
 #undef V41_GEMV_BF
         V41_ERR();
     }

@@ -1664,20 +1664,26 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         (1, 384, 5120, 1),
         (1, 5000, 1280, 1),
     ] {
-        let a = Buf::from_bytes(&st, &rng.bf16(8 * k * batch))?;
+        // 24 rows a plane: the first 8 are the small-row kernel's, all 24 the tile kernel's
+        let a = Buf::from_bytes(&st, &rng.bf16(24 * k * batch))?;
         let b = Buf::from_bytes(&st, &rng.bf16(n * k * batch))?;
         for out_f32 in [0, 1] {
             let eb = if out_f32 == 1 { 4 } else { 2 };
             let small = ops.buf(m * n * eb * batch)?;
             let full = ops.buf(8 * n * eb * batch)?;
-            for (c, rows) in [(&small, m), (&full, 8)] {
+            let tile = ops.buf(24 * n * eb * batch)?;
+            for (c, rows) in [(&small, m), (&full, 8), (&tile, 24)] {
                 let ldc = n;
                 let s_cz = rows * n;
+                // 24 rows with the small-row limit at 0: the tile kernel
+                if rows == 24 {
+                    v::set_wide_rows(0, 0, 0, 0, 0);
+                }
                 ck("gemm_bf16", unsafe {
                     ffi::memra_v41_gemm_bf16(
                         a.p(&st).c(),
                         k as i64,
-                        (8 * k) as i64,
+                        (24 * k) as i64,
                         b.p(&st).c(),
                         k as i64,
                         (n * k) as i64,
@@ -1693,6 +1699,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                     )
                 })?;
             }
+            v::set_wide_rows_default(1);
             let sh = small.host(&st)?;
             let fh = full.host(&st)?;
             let mut want = Vec::with_capacity(sh.len());
@@ -1706,6 +1713,22 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 &sh,
                 &want,
             );
+            // the two kernels cut K alike: the tile kernel's first 8 rows are the small-row
+            // kernel's 8 rows (a bf16 output; an fp32 output is the FMA kernels' on both)
+            if out_f32 == 0 {
+                let th = tile.host(&st)?;
+                let mut first = Vec::with_capacity(fh.len());
+                for z in 0..batch {
+                    let base = z * 24 * n * eb;
+                    first.extend_from_slice(&th[base..base + 8 * n * eb]);
+                }
+                same(
+                    rep,
+                    &format!("schedule/gemm_bf16_tile/n{n}_k{k}_b{batch}"),
+                    &fh,
+                    &first,
+                );
+            }
         }
         if batch == 1 {
             let small = ops.buf(m * n * 4)?;

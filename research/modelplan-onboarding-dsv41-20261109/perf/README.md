@@ -1126,6 +1126,70 @@ last drops before and after it and a run with a drop inside is flagged; the pref
 each cell's page faults; and a pass starts with a read of the checkpoint into the cache
 (`perf_warm.sh`: 475 GiB in 29 to 55 s when 107 to 274 GiB of it come from the disk).
 
+### The bf16 family in the K-segment order
+
+`wo_a` and the other bf16 linears summed each output over K as one chain of K / 16 dependent MMAs,
+so a few-column call was bound by the chain's latency. The family now sums K in the K-segment
+order: K is cut into 8 contiguous segments, each segment's sum is one fp32 chain in K order from
+zero, and the 8 sums meet in one fixed tree in index order, ((s0 + s1) + (s2 + s3)) + ((s4 + s5) +
+(s6 + s7)), rounded once. Both kernels (the tile kernel above 16 rows, the small-row kernel up to
+16) use it at every row and rank count, so a row's bytes do not depend on the path that computed it
+(the kernel gate checks the tile kernel's first 8 rows against the small-row kernel's bytes). It
+moves `wo_a`, the ratio-1 compressor, the index keys and the index head weights; the router, the
+head and the ratio-2 compressor's fp32 pair keep their FMA chains.
+
+The order changes bytes, so it was judged against the vendor, not against the old route
+(`receipts/ordertapes-k1`, `tools order_gate.py`): the 18 decode-lane tapes (13 chat, 4 long, the
+257k needle; 714 steps) teacher-forced through the whole trunk, top-32 KL against the vendor's own
+run, d = KL(vendor || new) - KL(vendor || old) with a bootstrap 95% interval (10,000 resamples). The
+pass line: d's interval contains zero or lies below it.
+
+| group | steps | KL old | KL new | KL of the vendor's second program | d [95%] | top-1 old / new | verdict |
+|---|---|---|---|---|---|---|---|
+| chat | 517 | 1.631e-02 | 1.509e-02 | 1.432e-02 | -1.22e-03 [-5.55e-03, +2.70e-03] | 97.3% / 96.9% | pass |
+| long | 194 | 3.679e-02 | 2.402e-02 | 3.051e-02 | -1.28e-02 [-3.05e-02, +2.24e-03] | 93.8% / 95.9% | pass |
+| needle 257k | 3 | 1.618e-04 | 1.062e-04 | 3.643e-05 | -5.56e-05 [-1.74e-04, +6.95e-06] | 100% / 100% | pass |
+| all | 714 | 2.181e-02 | 1.745e-02 | 1.866e-02 | -4.35e-03 [-1.01e-02, +6.43e-04] | 96.4% / 96.6% | pass |
+
+The route log (`dsv41-run --routes`) shows the same six experts on 42% (chat), 49% (long) and 37%
+(needle) of the 23.5 M routed rows, from layer 2 on: drift between two valid realizations through
+the quantization steps, not flips at equal inputs (tokens whose six experts equal the vendor's on the
+needle capture's 3,761, new / old / the vendor's second program: layer 1 3,717 / 3,717 / 3,692, 2
+3,647 / 3,645 / 3,526, 14 3,691 / 3,692 / 3,601, 20 3,617 / 3,716 / 3,534, 21 3,731 / 3,731 / 3,728,
+24 3,725 / 3,723 / 3,556; layer 20, the ratio-1 kv source, is the one that moves, and stays above
+the vendor's second program). CheckpointParity on the pack's probe passes
+in its band (max abs 2.91 against 2.14 before, band 6.4; the vendor's argmax;
+`receipts/ckpt-k3/verify-capital`). Greedy ids on the 13 chat cases (`receipts/ckpt-k3`, the decode
+gate): every case follows the vendor's tokens to the same step as the old route, 8 to the end and
+gsm 5, gsm_think 3, story 19, hebrew_para 23, code_pal 19, each divergence a vendor near-tie; the
+run stopped at 57 steps with story's and hebrew_para's tails unfinished, past both divergences.
+The new reference set of the layer gate's 111 tensors was written on a GB10 build of this tree:
+a GB10 (121a) build of the old tree writes the 120a reference set byte for byte (111 of 111;
+`receipts/bytecheck-k3-gb10`).
+
+The first form (k1) kept the 8 accumulators in one warp, so a stage held one k16 step of each
+segment: a weight row was read as 32-byte pieces 1 KB apart. It was 13% slower at one row on one
+card and 7% on the pair; the trace put all of it on the small-row kernel (56.6 -> 139.1 us a layer
+on one rank, 40.9 -> 67.5 on the pair; `receipts/steptrace-{o2,k1}t{1,2}`). The landed form gives
+each segment its own warp: a block is 8 warps over one 8-column group, warp w streams segment w
+contiguously as the one-chain kernel did, and the 8 sums meet in shared memory. Its bytes are k1's
+(all 111 tensors the layer gate saves, `receipts/eq-k1-k3`).
+
+| steady ms, A B B A against a449d3183c | one-row decode | 4-row block | 8-row block |
+|---|---|---|---|
+| one rank, 9 layers (`nrankab-k3-n1`) | 5.012 -> 4.965 (0.991) | | |
+| the pair, 20 layers (`nrankab-k3-pair`, `prefillab-k3-rows-pair`) | 7.119 -> 6.856 (0.963) | 9.870 -> 9.492 (0.962) | 13.905 -> 13.561 (0.975) |
+| four cards, 40 layers (`k3four`) | 10.968 -> 10.004 (0.912) | 14.216 -> 12.935 (0.910) | 18.546 -> 17.302 (0.933) |
+
+Receipt names: `k1` is the first form, `k2` an attempt on it (the accumulator index fixed at compile
+time, the tile's fold by segment: no gain), `k3` the landed form, `o2` the base (a449d3183c); the
+first form's byte gates are in `gates-kseg-k1` (`gates-k1` is an earlier build of that name).
+
+Prefill on one rank (`prefillab-k3-prefill-n1`): 4,096 tokens level (median 0.990), 32,768 tokens
+1.019 (best 1.030). The tile kernel's three saved tree partials take it from 64 to 195 registers a
+thread, so fewer blocks fit a multiprocessor; that cost is open (a narrower tile keeps every
+element's program).
+
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
 Every change in this lane keeps the bytes of the one-card route. At one row on four ranks three
@@ -1135,7 +1199,7 @@ the numbers are for the decision.
 | relaxation | what is exact today | what it costs a layer | relaxed form | would buy | what changes |
 |---|---|---|---|---|---|
 | The router as a tensor-core GEMM | 384 scores, each a chain of 5,120 fused multiply-adds in fp32 in K order (`v41_gemv_ffma_narrow_kernel`), on every rank, ahead of the plan and the experts | 28 us at any rank count (3.9 MB of weights: 3 us of reads) | bf16 MMAs with an fp32 accumulator, the dense GEMMs' form | about 20 us | the scores' last bits; a token whose sixth and seventh scores are closer than that picks another expert |
-| `wo_a` on tensor cores | 8 groups of 1,024 outputs, each a chain over 4,096 bf16 weights with fp32 accumulation in K order (`v41_gemv_bf16_kernel`); split by groups | 49 us on one rank, 38 on two, about 30 on four, where its bytes (17 MB) are 13 us | the same MMA form | about 15 us at four ranks | the last bits of the attention output |
+| `wo_a` on tensor cores | 8 groups of 1,024 outputs, each over 4,096 bf16 weights with fp32 accumulation, since 2026-11-11 in the K-segment order (8 chains of 512 and a fixed tree; see the bf16 family above), before it one chain in K order (`v41_gemv_bf16_kernel`); split by groups | was 49 us on one rank, 38 on two, about 30 on four, where its bytes (17 MB) are 13 us; the K-segment order took 24 us a layer off a four-card one-row step | the same MMA form | landed (the K-segment order) | the last bits of the attention output (judged by the order gate) |
 | Sums of partial outputs in place of two gathers | `wo_b` and the experts' w2 are split by output rows, so each needs all of its input: the `wo_a` columns and the hidden columns are gathered first, then the outputs (4 gathers a layer) | 2 of the 4 collectives | `wo_b` and w2 split by K (a rank holds the columns of its own `wo_a` groups and hidden columns), each rank's partial output summed across ranks (2 reductions a layer, as the baselines do) | 2 collectives a layer at the measured cost of one | the K sum is N partial sums added instead of one chain: last bits of every attention and MoE output |
 
 The first two are one-row items (at more rows both GEMMs fill the card and the chain is not the
@@ -1253,6 +1317,10 @@ weight traffic: 1.1 ms.
   0.15 s, to 0.5 s, from 0.5 s on): the steady figure a served step pays next to the burst one.
   `trace_rot.py`: kernel time by name of a mixed-width trace against the sum of its widths traced
   alone.
+- `order_gate.py`: the distribution-level gate of a reduction-order change: a build's teacher-forced
+  tapes against the current route's and the vendor's floor (top-32 KL, the paired bootstrap interval
+  of the difference per tape group), and the route log's router table (same six experts, flips,
+  weight and MoE-output differences).
 - `receipts/`: one directory per comparison (`multi-*`: timed arms with their kernel gates;
   `profab-*`: per-op profiles; `gemm-*`: GEMM shapes; `look-*`, `ncul-*`, `ncu-*`: ncu reports;
   `base`, `check-*`, `ab-*`, `prof-*`: the first half of the lane; `nrank-*`: N-rank decode traces;
@@ -1265,6 +1333,10 @@ weight traffic: 1.1 ms.
   `pairgates-*`: the tp gates under the graph door and on a pair; `pair-g3`: the three-arm pair
   pass of the staged fused launch and the graph half; `night-pair`: the rehearsal of a four-card
   pass on a pair; `wide-*`, `widesweep-*`: calls of 8 to 128 rows and the per-family limits of
-  the small-row bodies). nsys and ncu report files are
+  the small-row bodies; `ordertapes-*`, `ordergate-base`: the order gate's tables (the tapes'
+  tensors and route logs stay on the box); `eq-*`: two builds' saved layer tensors compared byte
+  for byte; `steptrace-*`: kernels by name of a traced step; `ckpt-*`: CheckpointParity and the
+  greedy decode gate of a build; `bytecheck-*`: a GB10 build's saved layer tensors against the 120a
+  set, and its one-card gates; `k3four`: an arm on the four cards after a night pass). nsys and ncu report files are
   not kept; their exports and summaries are. The 250 ms telemetry files are gzipped; the box's
   working directory in the logs reads `$LANE`.
