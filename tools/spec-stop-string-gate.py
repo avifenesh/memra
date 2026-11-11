@@ -814,7 +814,7 @@ def cohort_judge(out, rows, boots, only=None):
                                         f"{r['completion_tokens']}-token stop (want one naming it)")
                 held = 2 * (ref.get(f"solo-{tag}-{regime}", {}).get("close_ms") or 0) if not own else \
                     (100 if r["kind"] == "c-span" else 0)
-                if held and r.get("gap_ms"):
+                if held / 2 > 5 and r.get("gap_ms"):
                     # Text that may begin a stop string is held back until the string completes
                     # or cannot. Plain decode alone holds it for a decode step or a few; in a
                     # cohort the same tokens arrive a cohort round apart, so the hold-back is
