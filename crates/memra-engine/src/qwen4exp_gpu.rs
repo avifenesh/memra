@@ -14196,7 +14196,8 @@ fn cross_wide_rows(
 
 /// Launch `embed_gather_u32_t` for ONE device-slot token into the pooled `mtp.emb`
 /// buffer (mtp11 deferred chain). Same kernel as the lib.rs `embed_gather_device_*`
-/// family — bit-identical rows by the same per-dtype deq contract. Lives here (not as
+/// family, through the same launcher (`Engine::embed_gather_rows`, row blocks under the
+/// grid-y cap) — bit-identical rows by the same per-dtype deq contract. Lives here (not as
 /// an Engine method) because the deferred chain is this module's machinery.
 fn embed_gather_rows_into(
     e: &Engine,
@@ -14208,25 +14209,15 @@ fn embed_gather_rows_into(
     qtype: i32,
     row_bytes: usize,
 ) -> Res<()> {
-    let f = e.func("embed_gather_u32_t");
-    let cfg = LaunchConfig {
-        grid_dim: (((n_embd as u32).div_ceil(256)).max(1), t as u32, 1),
-        block_dim: (256, 1, 1),
-        shared_mem_bytes: 0,
-    };
-    let (ne, qt, rb, ti) = (n_embd as i32, qtype, row_bytes as i64, t as i32);
-    let stream = e.gpu.stream();
-    let mut b = stream.launch_builder(&f);
-    b.arg(table)
-        .arg(tok_v)
-        .arg(x_out)
-        .arg(&ne)
-        .arg(&qt)
-        .arg(&rb)
-        .arg(&ti);
-    unsafe {
-        b.launch(cfg)?;
-    }
+    e.embed_gather_rows(
+        table,
+        tok_v,
+        &mut x_out.as_view_mut(),
+        t,
+        n_embd,
+        qtype,
+        row_bytes,
+    )?;
     Ok(())
 }
 

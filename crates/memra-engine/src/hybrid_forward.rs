@@ -1283,17 +1283,43 @@ pub const PRIME_MIN_T: usize = 16;
 
 /// CUDA grid dimensions y and z cap at 65,535 (an architecture constant on every compute
 /// capability we target; only grid.x is 2^31-1). Several prime-path kernels launch with the
-/// call's token count in grid.y — the fused GDN conv (`ssm_conv1d_gdn_state_f32`,
-/// lib.rs `ssm_conv1d_gdn_state_pad`), the dp4a matvec family taken at out_f < 128
-/// (`qmatvec*_fast`/`qmatvec_dp4a_named`, which is where the GDN ssm_beta/ssm_alpha
-/// projections land), and the MoE `router_gemv` — so ONE prime call must never carry more
-/// tokens than this. A monolithic prime above it is a guaranteed
+/// call's token count in grid.y — the carried-ring GDN conv (`ssm_conv1d_gdn_state_f32`,
+/// lib.rs `ssm_conv1d_gdn_state_pad`) and the MoE `router_gemv` plain forms among them — so
+/// ONE prime call must never carry more tokens than this. Launchers whose kernel reads only
+/// its own row (the embed gathers, the dp4a matvecs, `qmatvec_f32`, the KV row append, the
+/// strided row copy, the MoE pair scatter) and the prefill GDN conv split their rows into
+/// `grid_yz_row_blocks` instead (memra#1200); `docs/decisions/GRID-Y-ROW-BLOCKS.md` lists the
+/// launches that still carry a row count in grid y. A monolithic prime above it was a guaranteed
 /// `DriverError(CUDA_ERROR_INVALID_VALUE)` at launch: measured on ornith-1.5 serving with
 /// MEMRA_PRIME_CHUNK=0 (cold 64,984 PASS / 65,643 FAIL, darklanes
 /// research/ornith-move-20260829 F2; re-hit on prod by the 2026-09-01 stress campaign at
 /// 66,045/79,717/82,440), and the same wall was hit and chunk-walked away by the glm5 1M
 /// lane's ppN prime.
 pub const CUDA_GRID_YZ_MAX: usize = 65_535;
+
+/// The `forward`/`forward_last` refusal for a trunk whose KDA layers would carry more rows than
+/// grid y allows: the KDA prefill core (`kda_conv_silu`, `kda_gate`, `kda_gate_beta`,
+/// `kda_proj_fused6_raw`) keeps the call's row count in grid y and has no row-block split
+/// (memra#1200). None below the cap or for a trunk without KDA layers.
+pub fn kda_rows_refusal(rows: usize, has_kda: bool) -> Option<String> {
+    (has_kda && rows > CUDA_GRID_YZ_MAX).then(|| {
+        format!(
+            "{rows} rows over a KDA layer: kda_conv_silu, kda_gate, kda_gate_beta and \
+             kda_proj_fused6_raw keep the row count in CUDA grid y, capped at {CUDA_GRID_YZ_MAX}"
+        )
+    })
+}
+
+/// `(first_row, rows)` blocks that cover `0..rows` with at most `CUDA_GRID_YZ_MAX` rows each,
+/// in order: the launch plan of a kernel that takes its row from grid y and is launched once per
+/// block over sub-views (lib.rs `embed_gather_rows`). `rows <= CUDA_GRID_YZ_MAX` is the single
+/// block `(0, rows)`, so such a launcher issues the same one launch it always did; 0 rows is no
+/// block (no launch).
+pub fn grid_yz_row_blocks(rows: usize) -> impl Iterator<Item = (usize, usize)> {
+    (0..rows)
+        .step_by(CUDA_GRID_YZ_MAX)
+        .map(move |row0| (row0, (rows - row0).min(CUDA_GRID_YZ_MAX)))
+}
 
 /// Widest prime range that stays launch-legal through the ring-off tail fold of
 /// `fixed_prime_chunk_ranges`: a trailing remainder shorter than `PRIME_MIN_T`
@@ -5351,6 +5377,13 @@ impl HybridModel {
         Ok((logits, h_seed))
     }
 
+    /// Does any trunk layer mix with KDA (`kda_rows_refusal`)?
+    fn has_kda_layer(&self) -> bool {
+        self.layers
+            .iter()
+            .any(|layer| matches!(layer.mixer, Mixer::Kda(_)))
+    }
+
     /// Prefill forward over `tokens`; returns logits [T, n_vocab] (host f32).
     pub fn forward(
         &self,
@@ -5358,6 +5391,9 @@ impl HybridModel {
         tokens: &[u32],
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
         let _numeric = self.enter_numeric();
+        if let Some(refusal) = kda_rows_refusal(tokens.len(), self.has_kda_layer()) {
+            return Err(format!("forward: {refusal}").into());
+        }
         if self.hyper.is_some() {
             return self.forward_hyper(e, tokens, false);
         }
@@ -5453,12 +5489,33 @@ impl HybridModel {
     /// (output.weight, the largest matrix — 248320 rows) on the LAST hidden row ONLY, not all T.
     /// On a 512-token prompt this turns a [512,248320] GEMM into [1,248320] — the dominant prefill
     /// cost (nsys: ~99ms when done for all T). Bit-identical last-row logits to forward()[last].
+    /// A failure names the row count and the last kernel the engine resolved before it (a
+    /// cudarc `DriverError` carries no site; memra#1200 was a bare `CUDA_ERROR_INVALID_VALUE`).
     pub fn forward_last(
         &self,
         e: &Engine,
         tokens: &[u32],
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
         let _numeric = self.enter_numeric();
+        self.forward_last_rows(e, tokens).map_err(|err| {
+            format!(
+                "forward_last over {} tokens: {err} (last kernel: {})",
+                tokens.len(),
+                crate::last_site_get()
+            )
+            .into()
+        })
+    }
+
+    fn forward_last_rows(
+        &self,
+        e: &Engine,
+        tokens: &[u32],
+    ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
+        if let Some(refusal) = kda_rows_refusal(tokens.len(), self.has_kda_layer()) {
+            return Err(refusal.into());
+        }
         if self.hyper.is_some() {
             return self.forward_hyper(e, tokens, true);
         }
@@ -30331,14 +30388,65 @@ mod prime_chunk_schedule_tests {
         CUDA_GRID_YZ_MAX, PRIME_CHUNK_LAUNCH_CAP, PRIME_MIN_T, PRIME_PIPE_MIN_CHUNK, PrimePpSignal,
         PrimePpStageChannels, PrimePpWaveCredits, PrimePpWaveSlot, active_matrix_values,
         align_prime_ranges_to_gdn, dynamic_prime_chunk_ranges, explicit_prime_chunk,
-        fixed_prime_chunk_ranges, move_prime_cache_layers, parse_step_ep_grouped_prefill,
-        parse_step_tp_prefill, prime_cache_stage_for_layer, recv_prime_pp_signal,
-        restore_prime_cache_layers, step_grouped_decode_shape, step_grouped_prefill_shape,
-        step_tp_prefill_shape, validate_step_prime_batch_modes,
+        fixed_prime_chunk_ranges, grid_yz_row_blocks, kda_rows_refusal, move_prime_cache_layers,
+        parse_step_ep_grouped_prefill, parse_step_tp_prefill, prime_cache_stage_for_layer,
+        recv_prime_pp_signal, restore_prime_cache_layers, step_grouped_decode_shape,
+        step_grouped_prefill_shape, step_tp_prefill_shape, validate_step_prime_batch_modes,
     };
 
     fn sizes(ranges: &[(usize, usize)]) -> Vec<usize> {
         ranges.iter().map(|(start, end)| end - start).collect()
+    }
+
+    /// memra#1200: the row-block plan of a grid-y launcher. At or below the cap it is the one
+    /// block every launcher issued before; above it the blocks tile the rows in order, none
+    /// wider than the cap, so no launch carries more than 65,535 rows in grid y.
+    #[test]
+    fn kda_rows_refusal_names_the_kernels_only_past_the_cap() {
+        assert_eq!(kda_rows_refusal(CUDA_GRID_YZ_MAX, true), None);
+        assert_eq!(kda_rows_refusal(1_000_000, false), None);
+        let refusal = kda_rows_refusal(CUDA_GRID_YZ_MAX + 1, true).unwrap();
+        assert!(refusal.contains("65536 rows over a KDA layer"));
+        assert!(refusal.contains("kda_conv_silu"));
+        assert!(refusal.contains("65535"));
+    }
+
+    #[test]
+    fn grid_yz_row_blocks_tile_rows_under_the_cap() {
+        assert_eq!(grid_yz_row_blocks(0).count(), 0);
+        for rows in [1, 7, 4096, CUDA_GRID_YZ_MAX - 1, CUDA_GRID_YZ_MAX] {
+            assert_eq!(
+                grid_yz_row_blocks(rows).collect::<Vec<_>>(),
+                vec![(0, rows)]
+            );
+        }
+        assert_eq!(
+            grid_yz_row_blocks(CUDA_GRID_YZ_MAX + 1).collect::<Vec<_>>(),
+            vec![(0, CUDA_GRID_YZ_MAX), (CUDA_GRID_YZ_MAX, 1)]
+        );
+        for rows in [
+            CUDA_GRID_YZ_MAX + 1,
+            65_536,
+            131_072,
+            2 * CUDA_GRID_YZ_MAX,
+            2 * CUDA_GRID_YZ_MAX + 1,
+            262_144,
+            1_048_576,
+        ] {
+            let blocks: Vec<_> = grid_yz_row_blocks(rows).collect();
+            assert_eq!(blocks.len(), rows.div_ceil(CUDA_GRID_YZ_MAX));
+            assert!(
+                blocks
+                    .iter()
+                    .all(|&(_, n)| (1..=CUDA_GRID_YZ_MAX).contains(&n))
+            );
+            let mut next = 0;
+            for &(row0, n) in &blocks {
+                assert_eq!(row0, next);
+                next += n;
+            }
+            assert_eq!(next, rows);
+        }
     }
 
     #[allow(clippy::manual_clamp)] // allow: the min/max chain mirrors the reference arithmetic order in pinned sizing/quant math
