@@ -2025,7 +2025,10 @@ DIR, main's included), a stop-ended member 0 without its `[spec-stop]` receipt, 
 that closes later than the solo rule above. A boot passed `--settle` must also log, for every
 member 0, `[spec-pool] member finished inside the cohort`, and per sampler at least one such
 member while another member was still running. `--tput-only` runs the throughput cohorts alone,
-for interleaved A/B boots. Receipts: `research/spec-pooled-close-20261111/`.
+for interleaved A/B boots. MTP cohort boots run with `MEMRA_SPEC_GATE=0`; a DSpark cohort boot runs with
+the gate on and its LOW band at the largest cohort (HIGH at twice it), since with the gate off
+DSpark admits one session at a time and no cohort forms. Receipts:
+`research/spec-pooled-close-20261111/`.
 
 ## Generic spill / tiered KV (memra-tier)
 

@@ -459,8 +459,15 @@ def run_cohort_boot(args):
         if not plan_path.exists():
             raise SystemExit("run the ref boot first: no plan.json")
         plan = json.loads(plan_path.read_text())
-        # No demotion to plain decode, so every member speculates to its end.
-        env = {"MEMRA_SPEC_GATE": "0"}
+        if args.route == "mtp":
+            # No demotion to plain decode, so every member speculates to its end.
+            env = {"MEMRA_SPEC_GATE": "0"}
+        else:
+            # With the gate off DSpark admits one session at a time (no cohort ever forms); with
+            # it on it admits up to the LOW band. LOW at the largest cohort and HIGH at twice it:
+            # every member is admitted to DSpark and none demotes.
+            n = max(sizes + [len(COMPANIONS)])
+            env = {"MEMRA_SPEC_GATE_LOW": str(n), "MEMRA_SPEC_GATE_HIGH": str(2 * n)}
     env["MEMRA_MAX_SESSIONS"] = str(max(sizes + [len(COMPANIONS)]))
     if any(r.get("case") == args.case for r in load_rows(args.out)):
         raise SystemExit(f"{args.out} already holds boot {args.case}")
