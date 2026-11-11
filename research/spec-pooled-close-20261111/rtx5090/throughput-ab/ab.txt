@@ -1,0 +1,8 @@
+tput-12-main   t1     cohorts 3 tok/s [59.8, 59.7, 59.6] median 59.67
+tput-12-main   greedy cohorts 3 tok/s [65.4, 64.6, 65.3] median 65.31
+t1: main median 59.62 (n=6), fix median 59.05 (n=6), fix/main 0.9905
+  fix/main per pair (both orders): [0.9871, 0.9893, 0.9996, 0.9962, 1.0013, 0.9779]
+greedy: main median 64.99 (n=6), fix median 64.50 (n=6), fix/main 0.9925
+  fix/main per pair (both orders): [1.0005, 0.982, 0.9882, 1.0165, 0.978, 0.9867]
+t1: fix/main per pair, A/B 1 (ABBAAB) then A/B 2 (BAABBA): [0.987, 0.989, 1.0, 0.996, 1.001, 0.978]; median 0.993, mean 0.992, min 0.978, max 1.001
+greedy: fix/main per pair, A/B 1 (ABBAAB) then A/B 2 (BAABBA): [1.0, 0.982, 0.988, 1.017, 0.978, 0.987]; median 0.987, mean 0.992, min 0.978, max 1.017

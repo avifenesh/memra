@@ -88,4 +88,17 @@ construction. The gate holds every companion to one text across its cohorts and 
 the fix, and member 0 to plain decode's text, finish reason and usage (on DSpark at temperature 1,
 to its own solo row, since that route's sampled stream is its own).
 
-MEASURED-FIX-TABLE
+Measured on the final head (`tools/spec-stop-string-gate.py --cohort 2,4`, judged per boot):
+
+| device | route | solo non-stop, p50 | cohort of 2: p50 / max | cohort of 4: p50 / max |
+|---|---|---|---|---|
+| RTX 5090 Laptop | MTP | 35 ms | 36 / 179 ms | 38 / 304 ms |
+| RTX 5090 Laptop | DSpark | 0 ms | 0 / 169 ms | 2 / 103 ms |
+| GB10 | MTP | 37 ms | 77 / 334 ms | 81 / 373 ms |
+| GB10 | DSpark | 0 ms | 0 / 217 ms | 18 / 322 ms |
+
+The maxima are stop strings that plain decode also holds back, whose held tokens arrive a cohort
+round apart. Every member 0 equals plain decode's text, finish reason and usage, and every
+companion wrote one text across its cohorts, main and the fix. Throughput of a four-member cohort,
+fix/main over interleaved pairs: 0.992 mean in both samplers on the RTX 5090 (six pairs, 0.978 to
+1.017), 1.009 and 1.002 on GB10 (three pairs, 0.999 to 1.023), inside the spread of one boot.

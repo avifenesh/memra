@@ -1,0 +1,16 @@
+companion dspark greedy comp0: 69 runs, 1 distinct text(s), equal to plain decode
+companion dspark greedy comp1: 39 runs, 1 distinct text(s), equal to plain decode
+companion dspark greedy comp2: 39 runs, 1 distinct text(s), equal to plain decode
+companion dspark greedy comp3: 9 runs, 1 distinct text(s), equal to plain decode
+companion dspark t1 comp0: 69 runs, 1 distinct text(s), not plain decode
+companion dspark t1 comp1: 39 runs, 1 distinct text(s), not plain decode
+companion dspark t1 comp2: 39 runs, 1 distinct text(s), not plain decode
+companion dspark t1 comp3: 9 runs, 1 distinct text(s), not plain decode
+== fix3-dspark (dspark, cohorts [2, 4], settle) ==
+  t1: throughput cohorts of 4: aggregate tok/s [52.9, 52.8, 52.8] (median 52.8)
+  t1: solo non-stop close median 0 ms (n=2), limit 100; member 0 close ms by cohort size: 2: median 4 max 7 (n=10); 4: median 4 max 15 (n=10)
+  t1: member 0 finished inside its cohort while another member ran: 17; outside a cohort (its serial burst): 3
+  greedy: throughput cohorts of 4: aggregate tok/s [54.2, 54.2, 54.1] (median 54.2)
+  greedy: solo non-stop close median 0 ms (n=2), limit 100; member 0 close ms by cohort size: 2: median 0 max 169 (n=10); 4: median 2 max 103 (n=10)
+  greedy: member 0 finished inside its cohort while another member ran: 11; outside a cohort (its serial burst): 7
+STOP-STRING COHORT GATE: PASS

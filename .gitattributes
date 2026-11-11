@@ -47,6 +47,12 @@ research/modelplan-onboarding-dsv41-20261109/encoding/parse/** -text -whitespace
 research/spec-stop-string-20261110/**/texts/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
 research/spec-stop-string-20261110/**/*.log -text whitespace=-blank-at-eol,-blank-at-eof
 
+# memra#1209: the cohort gate's raw answers, logs and red patch, byte-exact (runs.jsonl pins each
+# answer by its sha256).
+research/spec-pooled-close-20261111/**/texts/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
+research/spec-pooled-close-20261111/**/*.log -text whitespace=-blank-at-eol,-blank-at-eof
+research/spec-pooled-close-20261111/cpu/red/red.patch -text whitespace=-blank-at-eol,-blank-at-eof
+
 # memra#1201: the stall cell's raw answer texts and the probe patch stay byte-exact (an answer
 # ends where the cell cut its stream, a patch line can end in a space).
 research/spec-entry-yield-bound-20261110/**/texts/** -text whitespace=-blank-at-eol,-blank-at-eof

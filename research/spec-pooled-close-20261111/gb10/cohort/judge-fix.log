@@ -1,0 +1,16 @@
+companion mtp greedy comp0: 46 runs, 1 distinct text(s), equal to plain decode
+companion mtp greedy comp1: 26 runs, 1 distinct text(s), equal to plain decode
+companion mtp greedy comp2: 26 runs, 1 distinct text(s), equal to plain decode
+companion mtp greedy comp3: 6 runs, 1 distinct text(s), equal to plain decode
+companion mtp t1 comp0: 46 runs, 1 distinct text(s), equal to plain decode
+companion mtp t1 comp1: 26 runs, 1 distinct text(s), equal to plain decode
+companion mtp t1 comp2: 26 runs, 1 distinct text(s), equal to plain decode
+companion mtp t1 comp3: 6 runs, 1 distinct text(s), equal to plain decode
+== fix (mtp, cohorts [2, 4], settle) ==
+  t1: throughput cohorts of 4: aggregate tok/s [41.2, 42.1, 42.1] (median 42.1)
+  t1: solo non-stop close median 75 ms (n=2), limit 226; member 0 close ms by cohort size: 2: median 80 max 343 (n=10); 4: median 83 max 530 (n=10)
+  t1: member 0 finished inside its cohort while another member ran: 19; outside a cohort (its serial burst): 0
+  greedy: throughput cohorts of 4: aggregate tok/s [50.2, 50.6, 50.6] (median 50.6)
+  greedy: solo non-stop close median 4 ms (n=2), limit 104; member 0 close ms by cohort size: 2: median 0 max 205 (n=10); 4: median 3 max 204 (n=10)
+  greedy: member 0 finished inside its cohort while another member ran: 11; outside a cohort (its serial burst): 4
+STOP-STRING COHORT GATE: PASS

@@ -1,0 +1,40 @@
+companion dspark greedy comp0: 69 runs, 1 distinct text(s), equal to plain decode
+companion dspark greedy comp1: 39 runs, 1 distinct text(s), equal to plain decode
+companion dspark greedy comp2: 39 runs, 1 distinct text(s), equal to plain decode
+companion dspark greedy comp3: 9 runs, 1 distinct text(s), equal to plain decode
+companion dspark t1 comp0: 69 runs, 1 distinct text(s), not plain decode
+companion dspark t1 comp1: 39 runs, 1 distinct text(s), not plain decode
+companion dspark t1 comp2: 39 runs, 1 distinct text(s), not plain decode
+companion dspark t1 comp3: 9 runs, 1 distinct text(s), not plain decode
+== main-dspark (dspark, cohorts [2, 4]) ==
+  t1: throughput cohorts of 4: aggregate tok/s [53.0, 52.9, 52.6] (median 52.9)
+  t1: solo non-stop close median 0 ms (n=2), limit 100; member 0 close ms by cohort size: 2: median 256 max 482 (n=10); 4: median 427 max 836 (n=10)
+  greedy: throughput cohorts of 4: aggregate tok/s [54.1, 55.0, 54.1] (median 54.1)
+  greedy: solo non-stop close median 0 ms (n=2), limit 100; member 0 close ms by cohort size: 2: median 98 max 597 (n=10); 4: median 156 max 1276 (n=10)
+FAIL main-dspark c2-free-t1: closed 296.0 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-stop-0-t1: closed 481.8 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-stop-1-t1: closed 296.3 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-stop-2-t1: closed 215.8 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-stop-3-t1: closed 296.5 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-stop-4-t1: closed 129.8 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-span-0-t1: closed 296.5 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-span-1-t1: closed 214.6 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-free-t1: closed 485.2 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-eos-t1: closed 447.2 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-stop-0-t1: closed 836.1 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-stop-1-t1: closed 267.9 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-stop-2-t1: closed 462.5 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-stop-3-t1: closed 353.0 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-stop-4-t1: closed 265.7 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-span-0-t1: closed 486.0 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-span-1-t1: closed 406.9 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-stop-2-greedy: closed 334.0 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-stop-3-greedy: closed 126.2 ms after its last visible chunk, limit 101 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-stop-4-greedy: closed 597.1 ms after its last visible chunk, limit 101 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c2-span-2-greedy: closed 469.3 ms after its last visible chunk, limit 227 ms (solo non-stop median 0 ms, hold-back or EOS allowance 127 ms)
+FAIL main-dspark c4-free-greedy: closed 217.9 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-stop-2-greedy: closed 334.2 ms after its last visible chunk, limit 100 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-stop-4-greedy: closed 1275.8 ms after its last visible chunk, limit 101 ms (solo non-stop median 0 ms, hold-back or EOS allowance 0 ms)
+FAIL main-dspark c4-span-1-greedy: closed 270.8 ms after its last visible chunk, limit 237 ms (solo non-stop median 0 ms, hold-back or EOS allowance 136 ms)
+FAIL main-dspark c4-span-2-greedy: closed 1022.4 ms after its last visible chunk, limit 227 ms (solo non-stop median 0 ms, hold-back or EOS allowance 127 ms)
+STOP-STRING COHORT GATE: FAIL (26)

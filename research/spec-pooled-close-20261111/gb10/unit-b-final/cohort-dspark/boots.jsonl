@@ -1,0 +1,2 @@
+{"case": "ref", "route": "plain", "env": [], "cohort": [2, 4], "settle": false, "tput_only": false}
+{"case": "fix3-dspark", "route": "dspark", "env": ["MEMRA_DSPARK_SPEC=1", "MEMRA_DSPARK_DRAFT=$MODELS/Qwen3.8-27B-DFlash2-memra", "MEMRA_FRSPEC_TRIM=$MODELS/q38-ranks-sxc32768.gguf.txt", "MEMRA_DFLASH_PREC=q4", "MEMRA_PREFIX_CACHE_MB=0"], "cohort": [2, 4], "settle": true, "tput_only": false}
