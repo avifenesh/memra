@@ -111,12 +111,13 @@ boot, the default burst and `MEMRA_SPEC_BURST=2`, greedy and temperature 1 rows,
 |---|---|---:|---:|---|
 | RTX 5090 | default | 13 of 13 | 13 of 13 | met |
 | RTX 5090 | burst 2 | 13 of 13 | 13 of 13 | met |
-| GB10 | default, burst 2 | GB10 pending | | |
+| GB10 | default | 13 of 13 | 13 of 13 | met |
+| GB10 | burst 2 | 13 of 13 | 13 of 13 | met |
 
-Coverage per sampler on the RTX 5090: stop strings spanning commit slices 10 (t1) and 6
-(greedy), two stop strings in one burst 4 and 4, confirmed rejected-draft stops 8 and 8. The
-temperature 1 non-stop rows close a median of 0 ms after their last chunk on both boots: no
-closing tail pass.
+Coverage per sampler, the same on both devices: stop strings spanning commit slices 10 (t1)
+and 6 (greedy), two stop strings in one burst 4 and 4, confirmed rejected-draft stops 8 and 8.
+The temperature 1 non-stop rows close a median of 0 ms after their last chunk on every boot:
+no closing tail pass.
 
 ## The bound holds for the sampled class
 
@@ -135,16 +136,28 @@ the band admits the short requests to plain decode and no stall arises):
 | 4 | 0 | 35 -> 40 | 0.93 -> 1.84 | 0 -> 17 | 0.927 -> 0.906 |
 | 4 | 200 | 44 -> 50 | 0.93 -> 1.61 | 0 -> 22 | 0.730 -> 0.738 |
 
-GB10, default gate: GB10 pending.
+GB10, every switch at its default (the cost model owns the gate there, and the bound was
+measured in this configuration):
 
-- The candidate advances in every cell. Its worst gaps match the bound's greedy rows on the
-  same card and setting (0.95 s at two clients and 0 ms, 0.72 s at 200 ms, 1.84 s at four
-  clients), as they should: a sampled session that holds a carried token now takes the
-  greedy path through the bound.
+| clients | think ms | long tokens in 30 s, main -> candidate | longest gap s | silent no-round bursts | short p50 s |
+|---:|---:|---|---|---|---|
+| 2 | 0 | 62 -> 75 | 0.51 -> 0.96 | 0 -> 32 | 0.492 -> 0.478 |
+| 2 | 200 | 105 -> 130 | 0.49 -> 0.73 | 0 -> 57 | 0.370 -> 0.319 |
+| 4 | 0 | 35 -> 55 (the candidate demoted once) | 0.93 -> 1.78 | 0 -> 15 | 0.907 -> 0.834 |
+| 4 | 200 | 45 -> 52 | 0.91 -> 1.56 | 0 -> 22 | 0.708 -> 0.731 |
+
+The bound's own greedy rows on GB10 (`research/spec-entry-yield-bound-20261110/`, the fix):
+74, 139, 56 and 50 tokens with longest gaps 0.94, 0.73, 1.77 and 1.56 s in the same four
+cells.
+
+- The candidate advances in every cell on both devices. Its worst gaps match the bound's
+  greedy rows on the same device and setting (RTX 5090: 0.95 s at two clients and 0 ms, 0.72 s
+  at 200 ms, 1.84 s at four clients; GB10: within 0.02 s in all four cells), as they should: a
+  sampled session that holds a carried token now takes the greedy path through the bound.
 - Main's sampled request never enters on a carried token, so it emits its boundary token at
   every entry (0 silent bursts) and crawls with a smaller gap. The candidate yields silently
-  once, then runs a round that emits several tokens, and writes 9 to 16 more tokens in the
-  window.
+  once, then runs a round that emits several tokens, and writes 5 to 25 more tokens in the
+  window across the two devices. The short requests' p50 moves by -0.073 to +0.023 s.
 - Every long text is prefix-equal across arms and cells (the stream is cut at a time).
 
 ## The end of a request
@@ -199,7 +212,17 @@ GB10 pending: 12 boots, main cand cand main three times, one boot per lease, aft
 
 ## The final head
 
-Pending: the CPU suites, session-gate and the seeded-invariance gate on the frozen head's build.
+The candidate's crates on ede1b8119f (the branch head's code; the commits after it change docs
+and receipts only):
+
+- CPU, on the dev box: `cargo fmt --all -- --check`, `cargo clippy --release --all-targets --
+  -D warnings`, `cargo test --release -p memra-engine --lib` (739 passed), `cargo test
+  --release -p memra-server` (1,192 passed in the lib suite), `tools/check-flags.sh`,
+  `tools/check-numeric-scope.py`: green.
+- RTX 5090 (`rtx5090/sg-head.log`, `rtx5090/inv-head/`): session-gate ALL TURNS MATCH; the
+  seeded-invariance gate PASS, 54 rows, 54 of 54 with main's text sha and tokens, and 54 of 54
+  equal to the candidate's rows on 66ee31fcb6 in every field, acceptance included.
+- GB10: pending.
 
 ## Before the rebase
 
