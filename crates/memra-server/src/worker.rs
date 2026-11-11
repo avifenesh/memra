@@ -7347,6 +7347,11 @@ struct SpecCostEntry {
     /// session's last pressed entry. Each of the next admissions of the model uses one and marks
     /// the wave its own verdict reads (`spec_cost_admit_wave`); the rest lapse at the next tick.
     wave_marks: usize,
+    /// While a session a stall mark demoted is live and that mark lives: when the mark expires
+    /// (`spec_cost_hold_waves`, refreshed before every admission). Every admission of the model
+    /// marks the wave its verdict reads until then, never longer: the stalled session's waves
+    /// are the stalled set plus arrivals, and they serve plain while its mark does.
+    wave_hold: Option<Instant>,
 }
 
 /// Pressed burst entries in a row (a request waiting at the entry hook) that mark the session's
@@ -7443,12 +7448,39 @@ impl SpecCostEntry {
         self.wave_marks = 0;
     }
 
+    /// The wave hold at `now` for the live sessions' stall counts (`Session::spec_stall_n`):
+    /// the latest expiry among their live marks. A count whose mark expired is dropped.
+    fn wave_hold_for<'a>(
+        &self,
+        keys: impl Iterator<Item = &'a mut Option<usize>>,
+        now: Instant,
+    ) -> Option<Instant> {
+        let mut hold: Option<Instant> = None;
+        for key in keys {
+            let Some(n) = *key else {
+                continue;
+            };
+            match self.stalled.get(&n).copied().filter(|until| now < *until) {
+                Some(until) => hold = Some(hold.map_or(until, |h| h.max(until))),
+                None => *key = None,
+            }
+        }
+        hold
+    }
+
     /// Mark concurrency `n` stalled until `SPEC_COST_REALIZED_TTL` after `now`. Returns
     /// whether the mark is new (no live mark at n before).
     fn mark_stall(&mut self, n: usize, now: Instant) -> bool {
+        self.mark_stall_until(n, now + SPEC_COST_REALIZED_TTL, now)
+    }
+
+    /// Mark concurrency `n` stalled until `until`, keeping a live mark's later expiry. Returns
+    /// whether the mark is new.
+    fn mark_stall_until(&mut self, n: usize, until: Instant, now: Instant) -> bool {
         let new = !self.stalled_at(n, now);
-        self.stalled.retain(|_, until| now < *until);
-        self.stalled.insert(n, now + SPEC_COST_REALIZED_TTL);
+        self.stalled.retain(|_, u| now < *u);
+        let slot = self.stalled.entry(n).or_insert(until);
+        *slot = (*slot).max(until);
         new
     }
 
@@ -7948,35 +7980,98 @@ fn spec_cost_close_wave_marks() {
 /// At a request's admission: when a stalled session left an admission mark open for `model`,
 /// use one and mark the wave this request's verdict reads (memra#1211). Returns whether it did,
 /// so a later re-read of the same request's wave marks that wave too (`spec_cost_mark_wave`).
-fn spec_cost_admit_wave(model: &str, wave: usize) -> bool {
+///
+/// While a session a stall mark demoted is live (`wave_hold`), every admission marks its wave
+/// too, until that mark's own expiry: the wave holds the stalled session.
+fn spec_cost_admit_wave(model: &str, wave: usize) -> Option<WaveMark> {
     let mut reg = spec_cost_registry().lock().unwrap();
-    let Some(entry) = reg.get_mut(model) else {
-        return false;
+    let entry = reg.get_mut(model)?;
+    let mark = if entry.wave_marks > 0 {
+        entry.wave_marks -= 1;
+        WaveMark::Waited
+    } else {
+        WaveMark::Held(entry.wave_hold.filter(|until| Instant::now() < *until)?)
     };
-    if entry.wave_marks == 0 {
-        return false;
-    }
-    entry.wave_marks -= 1;
     drop(reg);
-    spec_cost_mark_wave(model, wave);
-    true
+    spec_cost_mark_wave(model, wave, mark);
+    Some(mark)
 }
 
-/// Mark the wave a waiting request is admitted into (never n = 1).
-fn spec_cost_mark_wave(model: &str, wave: usize) {
+/// Why an admission marks its wave stalled (`spec_cost_admit_wave`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WaveMark {
+    /// The request waited at a stalled session's burst entries: a fresh mark.
+    Waited,
+    /// A session a live stall mark demoted is in the wave: marked until that mark expires.
+    Held(Instant),
+}
+
+/// Mark the wave a request is admitted into (never n = 1).
+fn spec_cost_mark_wave(model: &str, wave: usize, mark: WaveMark) {
     if wave < 2 {
         return;
     }
     let mut reg = spec_cost_registry().lock().unwrap();
-    if let Some(entry) = reg.get_mut(model)
-        && entry.mark_stall(wave, Instant::now())
-    {
-        eprintln!(
-            "[spec-cost] model={model:?} stalled n={wave}: a request that waited at a stalled \
-             session's burst entries is admitted at this wave; plain at n={wave} for {} s",
-            SPEC_COST_REALIZED_TTL.as_secs()
-        );
+    let Some(entry) = reg.get_mut(model) else {
+        return;
+    };
+    let now = Instant::now();
+    match mark {
+        WaveMark::Waited => {
+            if entry.mark_stall(wave, now) {
+                eprintln!(
+                    "[spec-cost] model={model:?} stalled n={wave}: a request that waited at a \
+                     stalled session's burst entries is admitted at this wave; plain at \
+                     n={wave} for {} s",
+                    SPEC_COST_REALIZED_TTL.as_secs()
+                );
+            }
+        }
+        WaveMark::Held(until) => {
+            if entry.mark_stall_until(wave, until, now) {
+                eprintln!(
+                    "[spec-cost] model={model:?} stalled n={wave}: the wave holds a session a \
+                     stall mark demoted; plain at n={wave} while that mark lives ({:.1} s)",
+                    until.saturating_duration_since(now).as_secs_f64()
+                );
+            }
+        }
     }
+}
+
+/// Whether `model`'s verdict at `n` is a live stall mark.
+fn spec_cost_stalled(model: &str, n: usize) -> bool {
+    spec_cost_registry()
+        .lock()
+        .unwrap()
+        .get(model)
+        .is_some_and(|e| e.stalled_at(n, Instant::now()))
+}
+
+/// Tick demotion of one session (`spec_demote_due`). When the verdict that demotes it is a live
+/// stall mark at `n_live`, the session keeps that count (`Session::spec_stall_n`): while that
+/// mark lives, the waves it is live in are marked at admission (`spec_cost_hold_waves`).
+fn spec_demote_due_session(s: &mut Session, n_live: usize) -> bool {
+    let due = spec_demote_due(&s.model, s.spec_k, n_live);
+    if due && spec_cost_stalled(&s.model, n_live) {
+        s.spec_stall_n = Some(n_live);
+    }
+    due
+}
+
+/// Before an admission of `model`: the latest expiry among the live stall marks that demoted a
+/// live session of the model (`SpecCostEntry::wave_hold`). A session whose mark expired drops
+/// its count, so a later mark at the same n does not revive it.
+fn spec_cost_hold_waves(active: &mut [Session], model: &str) {
+    let mut reg = spec_cost_registry().lock().unwrap();
+    let Some(entry) = reg.get_mut(model) else {
+        return;
+    };
+    let keys = active
+        .iter_mut()
+        .filter(|s| s.model == model)
+        .map(|s| &mut s.spec_stall_n);
+    entry.wave_hold = entry.wave_hold_for(keys, Instant::now());
 }
 
 /// The steady serving regime a tick ended in, for realized-rate sampling: every live session
@@ -17104,6 +17199,10 @@ struct Session {
     /// entries, to the number of requests waiting at its entry; the tick takes it after phase
     /// (a) and marks the stall (`spec_cost_mark_stall`).
     spec_press_due: Option<usize>,
+    /// The stall-marked count whose verdict demoted this session (`spec_demote_due_session`).
+    /// While that mark lives, every admission of the model marks its own wave
+    /// (`spec_cost_hold_waves`); it clears when the mark expires.
+    spec_stall_n: Option<usize>,
     emission_clock: crate::hybrid_telemetry::EmissionClock,
     /// A disconnected client is billed to the observed abort point but its generated KV is
     /// not a reusable conversation state. Abort retirement drops all session caches instead
@@ -21728,6 +21827,9 @@ pub fn run(
                     s.constraint.is_some(),
                 )
             });
+            // STALL MARK (memra#1211): the waves a stall-demoted session lives in are marked at
+            // admission while its mark lives.
+            spec_cost_hold_waves(&mut active, &req.model);
             let admitted = admit(
                 &engine,
                 &loaded,
@@ -22300,7 +22402,7 @@ pub fn run(
                                 if s.generated.len() < n {
                                     continue;
                                 }
-                            } else if !spec_demote_due(&s.model, s.spec_k, n_live) {
+                            } else if !spec_demote_due_session(s, n_live) {
                                 continue;
                             }
                             let sess_pos = s.dspark.as_ref().unwrap().pos();
@@ -22364,7 +22466,7 @@ pub fn run(
                                 if s.generated.len() < n {
                                     continue;
                                 }
-                            } else if !spec_demote_due(&s.model, s.spec_k, n_live) {
+                            } else if !spec_demote_due_session(s, n_live) {
                                 continue;
                             }
                             let sess = s.glm5.as_ref().unwrap();
@@ -22448,7 +22550,7 @@ pub fn run(
                             if s.generated.len() < n {
                                 continue;
                             }
-                        } else if !spec_demote_due(&s.model, s.spec_k, n_live) {
+                        } else if !spec_demote_due_session(s, n_live) {
                             continue;
                         }
                         // a session that has not bursted yet has no cache state to hand over
@@ -27332,8 +27434,9 @@ fn admit(
     // projection the admission-gate estimate used for this request's memory reservation
     // (`projected_admission_wave`; the c16 burst-split receipts live on its doc).
     let projected_wave = projected_admission_wave(n_active, n_pending);
-    // STALL MARK (memra#1211): a request that waited at a stalled session's burst entries marks
-    // the wave its verdict reads, before the verdict.
+    // STALL MARK (memra#1211): a request that waited at a stalled session's burst entries, or
+    // any request while a session a live mark demoted is live, marks the wave its verdict reads,
+    // before the verdict.
     let stall_wave = spec_cost_admit_wave(&req.model, projected_wave);
     let mut spec_k_decision = match req_spec_k_replay {
         Some(k) => SpecKDecision {
@@ -29957,8 +30060,8 @@ fn admit(
     // shadow feeds the re-decision AND the K receipt log below, so the logged wave is the
     // one the decision actually consumed.
     let projected_wave = projected_admission_wave(n_active, n_pending);
-    if stall_wave {
-        spec_cost_mark_wave(&req.model, projected_wave);
+    if let Some(mark) = stall_wave {
+        spec_cost_mark_wave(&req.model, projected_wave, mark);
     }
     if spec.is_some() && req_spec_k_replay.is_none() {
         spec_k_decision = choose_spec_k(
@@ -30179,6 +30282,7 @@ fn admit(
         spec_entry_yields: 0,
         spec_press_hist: 0,
         spec_press_due: None,
+        spec_stall_n: None,
         emission_clock: Default::default(),
         aborted: false,
         oom_teardown: false,
@@ -35345,6 +35449,7 @@ fn run_spec_cost_calibration(
                         realized: HashMap::new(),
                         stalled: HashMap::new(),
                         wave_marks: 0,
+                        wave_hold: None,
                     },
                 );
             }
@@ -36211,6 +36316,7 @@ mod tests {
             realized: HashMap::new(),
             stalled: HashMap::new(),
             wave_marks: 0,
+            wave_hold: None,
         }
     }
 
@@ -36271,6 +36377,7 @@ mod tests {
                 realized: HashMap::new(),
                 stalled: HashMap::new(),
                 wave_marks: 0,
+                wave_hold: None,
             }
         };
         let flat = entry(3.84, 0.0);
@@ -36591,6 +36698,7 @@ mod tests {
                     realized: HashMap::new(),
                     stalled: HashMap::new(),
                     wave_marks: 0,
+                    wave_hold: None,
                 },
             );
         };
@@ -36685,6 +36793,7 @@ mod tests {
                 realized: HashMap::new(),
                 stalled: HashMap::new(),
                 wave_marks: 0,
+                wave_hold: None,
             },
         );
         for riders in [1usize, 2, 8, 9, 12, 16, 40] {
@@ -39632,12 +39741,14 @@ mod tests {
         // Tick count 2, one request waiting: n = 2 now, and the wave that request is admitted
         // into (3) at its admission; a second admission has no mark left to use.
         super::spec_cost_mark_stall(model, 2, 1);
-        assert!(
+        assert_eq!(
             super::spec_cost_admit_wave(model, 3),
+            Some(super::WaveMark::Waited),
             "the waiting request marks its wave"
         );
-        assert!(
-            !super::spec_cost_admit_wave(model, 4),
+        assert_eq!(
+            super::spec_cost_admit_wave(model, 4),
+            None,
             "one waiting, one wave"
         );
         let after = {
@@ -39664,7 +39775,10 @@ mod tests {
         // A press in a tick that began with one live session marks only the wave (n = 2).
         super::spec_cost_mark_stall("stall-explore", 1, 1);
         assert_eq!(super::spec_cost_verdict("stall-explore", 2, 3), Some(3));
-        assert!(super::spec_cost_admit_wave("stall-explore", 2));
+        assert_eq!(
+            super::spec_cost_admit_wave("stall-explore", 2),
+            Some(super::WaveMark::Waited)
+        );
         assert_eq!(super::spec_cost_verdict("stall-explore", 2, 3), Some(0));
         // Unused admission marks lapse with the tick.
         let mut e = stall_entry();
@@ -39719,6 +39833,78 @@ mod tests {
         assert!(e.stalled_at(3, now));
         assert!(!e.mark_stall(3, now), "a refresh is not a new mark");
         assert!(!e.stalled_at(3, now + super::SPEC_COST_REALIZED_TTL));
+    }
+
+    /// memra#1211: a session a stall mark demoted holds the waves it lives in. While its mark
+    /// lives, every admission marks the wave its verdict reads, until that mark's own expiry
+    /// and never longer: the hold cannot outlive the stall by more than the time-to-live. When
+    /// the mark expires the session drops its count, admissions return to the price, and a
+    /// later mark at the same count does not revive the hold.
+    #[test]
+    fn spec_cost_stall_hold_ends_with_its_mark() {
+        let now = std::time::Instant::now();
+        let mut e = stall_entry();
+        let verdict_3 = super::spec_cost_best_k(&e, 3, 3).map(|v| v.0);
+        assert!(verdict_3.is_some_and(|k| k > 0), "n=3 speculates unmarked");
+        // A stall marked n = 2 ten seconds ago; the long session demoted there keeps n = 2.
+        let marked_at = now
+            .checked_sub(std::time::Duration::from_secs(10))
+            .expect("the clock reaches back 10 s");
+        assert!(e.mark_stall(2, marked_at));
+        let until = marked_at + super::SPEC_COST_REALIZED_TTL;
+        let mut keys = [Some(2), None, Some(5)];
+        assert_eq!(
+            e.wave_hold_for(keys.iter_mut(), now),
+            Some(until),
+            "the hold is the demoting mark's own expiry"
+        );
+        assert_eq!(
+            keys,
+            [Some(2), None, None],
+            "a count with no live mark drops"
+        );
+        // A held admission marks its wave until that expiry, not for a fresh time-to-live.
+        assert!(e.mark_stall_until(3, until, now));
+        assert!(e.stalled_at(3, now));
+        assert!(
+            !e.stalled_at(3, until),
+            "the held wave expires with the mark"
+        );
+        // Through the registry: the hold marks every admission's wave while it lives.
+        e.wave_hold = Some(until);
+        super::spec_cost_registry()
+            .lock()
+            .unwrap()
+            .insert("stall-hold".into(), e);
+        assert_eq!(
+            super::spec_cost_admit_wave("stall-hold", 4),
+            Some(super::WaveMark::Held(until))
+        );
+        assert_eq!(super::spec_cost_verdict("stall-hold", 4, 3), Some(0));
+        // The mark expires: the session drops its count, the hold ends, n = 3 is priced again.
+        let mut e = stall_entry();
+        let expired_at = now
+            .checked_sub(super::SPEC_COST_REALIZED_TTL + std::time::Duration::from_secs(1))
+            .expect("the clock reaches back 65 s");
+        e.mark_stall(2, expired_at);
+        e.mark_stall_until(3, expired_at + super::SPEC_COST_REALIZED_TTL, expired_at);
+        let mut keys = [Some(2)];
+        assert_eq!(e.wave_hold_for(keys.iter_mut(), now), None);
+        assert_eq!(keys, [None]);
+        // A new mark at the same count later demotes nobody here: the dropped count stays.
+        e.mark_stall(2, now);
+        assert_eq!(e.wave_hold_for(keys.iter_mut(), now), None);
+        e.wave_hold = None;
+        super::spec_cost_registry()
+            .lock()
+            .unwrap()
+            .insert("stall-hold-expired".into(), e);
+        assert_eq!(super::spec_cost_admit_wave("stall-hold-expired", 3), None);
+        assert_eq!(
+            super::spec_cost_verdict("stall-hold-expired", 3, 3),
+            verdict_3,
+            "n=3 returns to its price"
+        );
     }
 
     /// memra#1211: a burst's entry call records how many requests waited, whatever the bound
@@ -39833,11 +40019,24 @@ mod tests {
                  stall_wave = spec_cost_admit_wave(&req.model, projected_wave); let mut \
                  spec_k_decision ="
             ) && admit.contains(
-                "let projected_wave = projected_admission_wave(n_active, n_pending); if \
-                 stall_wave { spec_cost_mark_wave(&req.model, projected_wave); }"
+                "let projected_wave = projected_admission_wave(n_active, n_pending); if let \
+                 Some(mark) = stall_wave { spec_cost_mark_wave(&req.model, projected_wave, mark); }"
             ),
             "each admission marks its own wave before both of its verdicts"
         );
+        assert!(
+            live.contains(
+                "spec_cost_hold_waves(&mut active, &req.model); let admitted = admit( &engine,"
+            ),
+            "the hold is refreshed right before every admission"
+        );
+        assert_eq!(
+            live.matches("} else if !spec_demote_due_session(s, n_live) {")
+                .count(),
+            3,
+            "every tick demotion site records the stall that demoted the session"
+        );
+        assert!(!live.contains("!spec_demote_due(&s.model, s.spec_k, n_live)"));
         let flush = between(
             "fn flush(",
             "let (tok, flush_tx) = (self.tok, &self.flush_tx);",
