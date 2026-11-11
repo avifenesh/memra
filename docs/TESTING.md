@@ -2011,6 +2011,22 @@ design and the second turn must restore from the prefix cache instead. DSpark ad
 runs on plain decode and is judged as plain decode. A GPU lease is
 the caller's business, one per boot. Receipts: `research/spec-stop-string-20261110/`.
 
+Pooled cohorts (memra#1209), `--cohort 2,4` on every boot of a DIR of their own: requests sent at
+once form a pooled cohort, several sessions speculating in one lockstep burst. Member 0 ends early
+(the one-word and three-word stop strings, EOS, or its `max_tokens`) while its companions, other
+prompts with no stop string, run on for 192 tokens. A member whose stream ended gets its token
+snapshot and Done from the cohort's end hook at the round its burst ended; before memra#1209 they
+waited for the whole cohort call. Each boot also runs member 0's requests alone (the solo rows set
+the close level) and, per sampler, three cohorts of four companions for the aggregate throughput.
+The ref boot runs every request alone. `judge DIR` fails a member 0 whose text, finish reason or
+completion tokens differ from plain decode's (on DSpark at temperature 1, from its own solo row),
+a companion that writes another text anywhere (its other cohorts and every speculative boot of the
+DIR, main's included), a stop-ended member 0 without its `[spec-stop]` receipt, and a member 0
+that closes later than the solo rule above. A boot passed `--settle` must also log, for every
+member 0, `[spec-pool] member finished inside the cohort`, and per sampler at least one such
+member while another member was still running. `--tput-only` runs the throughput cohorts alone,
+for interleaved A/B boots. Receipts: `research/spec-pooled-close-20261111/`.
+
 ## Generic spill / tiered KV (memra-tier)
 
 The shared contract is `crates/memra-tier/src/contracts.rs`. The conformance schedules are

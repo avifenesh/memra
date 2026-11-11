@@ -44,8 +44,25 @@ in (`spans_slices=1`), one `two` row whose two stop strings fall in one burst, a
 row whose own log shows the rejected draft; else the gate tested nothing and fails. A DSpark
 boot must hold the spanning row.
 
+Pooled cohorts (memra#1209), `--cohort 2,4` on every boot of its own DIR: requests sent at once
+form a pooled cohort (several sessions speculating in one lockstep burst). Member 0 ends early
+(a one-word or three-word stop string, EOS, or its max_tokens); the companions, other prompts
+with no stop string, run on for 192 tokens. Each boot also runs member 0's requests alone (the
+solo rows, whose non-stop rows set the close level) and, per sampler, three throughput cohorts of
+companions only (aggregate completion tokens per second, first request sent to last response
+ended). The ref boot runs every request alone. The judge fails, per speculative boot, a member 0
+whose text, finish reason or completion tokens differ from its plain row (on a route whose
+sampled stream is its own, from the same request's solo row in that boot), a companion that
+differs from the same companion anywhere else (its other cohorts and every speculative boot of
+the DIR: what a request writes may not depend on its cohort), and a member 0 that closes later
+than the solo rule above (the non-stop median of the boot's solo rows, max(3x, +100 ms), plus
+twice plain decode's own hold-back). Each member 0 that ended on a stop string must carry its
+`[spec-stop]` receipt. A boot passed `--settle` (a binary that closes a member at its round)
+must also log, for each member 0 that ended, that it finished inside its cohort, and per sampler
+at least one of them while another member was still running; else the gate tested nothing.
+
 usage: spec-stop-string-gate.py boot CASE SERVER_BINARY MODEL.gguf --out DIR [--route mtp|dspark]
-           [--port N] [--env NAME=VALUE ...]
+           [--port N] [--env NAME=VALUE ...] [--cohort 2,4 [--settle] [--tput-only]]
        spec-stop-string-gate.py judge DIR
 A GPU lease is the caller's business (gpulock / sparklock around each boot).
 Exit 0 on a pass, 1 on any difference, missing coverage or error.
@@ -61,6 +78,7 @@ import socket
 import statistics
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 
@@ -100,6 +118,17 @@ SETUP = re.compile(r"\[spec-setup\] .* out=(\d+) cont=(true|false)")
 PARK = re.compile(r"\[worker\] (?:spec-park|dspark-park|spec-reuse|dspark-reuse|spec-affinity)[^\n]*")
 RECEIPT = re.compile(r"\[spec-stop\] route=(\w+) stop string completed: completion_tokens=(\d+) "
                      r"burst_slice=(\d+) slice_pos=(\d+)/(\d+) burst_public=(\d+) spans_slices=([01])")
+# memra#1209: a member of a pooled cohort that finished inside the cohort call.
+SETTLE = re.compile(r"\[spec-pool\] member finished inside the cohort: route=(\w+) completion_tokens=(\d+) "
+                    r"members_running=(\d+)")
+COMPANIONS = (
+    "Write about 400 words on how a river gauge network is maintained through a year.",
+    "Write about 400 words on how a weather balloon launch is planned and run.",
+    "Write about 400 words on how a seed bank catalogues and tests its samples.",
+    "Write about 400 words on how a lighthouse keeper's log was kept and read.",
+)
+COMPANION_TOKENS = 192
+TPUT_REPS = 3
 
 
 def seed_of(tag):
@@ -266,13 +295,53 @@ class Server:
             o["error"] = "the stream ended without [DONE]"
         return o
 
-    def row(self, kind, rid, regime, messages, samp, max_tokens, stop=None, want_cached=False):
-        mark = self.log.stat().st_size
-        o = self.stream(messages, samp, max_tokens, stop)
+    def log_since(self, mark):
         time.sleep(0.3)
         with open(self.log, errors="replace") as f:
             f.seek(mark)
-            chunk = f.read()
+            return f.read()
+
+    def row(self, kind, rid, regime, messages, samp, max_tokens, stop=None, want_cached=False):
+        mark = self.log.stat().st_size
+        o = self.stream(messages, samp, max_tokens, stop)
+        return self.record(kind, rid, regime, o, max_tokens, stop, self.log_since(mark), want_cached)
+
+    def cohort(self, members, regime):
+        """Send every member at once (each its own connection and thread) and record one row per
+        member. `members`: (kind, rid, messages, samp, max_tokens, stop). Rows carry the
+        member's index, the cohort's size and the host monotonic send and end times."""
+        mark = self.log.stat().st_size
+        outs = [None] * len(members)
+        t0 = time.monotonic()
+
+        def send(i, m):
+            start = time.monotonic() - t0
+            o = self.stream(m[2], m[3], m[4], m[5])
+            o["t_send"] = start
+            o["t_end"] = None if o["t_done"] is None else start + o["t_done"]
+            outs[i] = o
+
+        threads = [threading.Thread(target=send, args=(i, m)) for i, m in enumerate(members)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        chunk = self.log_since(mark)
+        settle = [{"route": s[0], "completion_tokens": int(s[1]), "members_running": int(s[2])}
+                  for s in SETTLE.findall(chunk)]
+        rows = []
+        for i, (m, o) in enumerate(zip(members, outs)):
+            extra = {"member": i, "cohort": len(members), "t_send": round(o["t_send"] * 1e3, 1),
+                     "t_end": None if o["t_end"] is None else round(o["t_end"] * 1e3, 1)}
+            if i == 0:
+                # Every member's settle line of this cohort: the judge picks member 0's by count.
+                extra["settle"] = settle
+            # The stop-string receipts and park lines are member 0's: only it has stop strings.
+            row, _, _ = self.record(m[0], m[1], regime, o, m[4], m[5], chunk if i == 0 else "", extra=extra)
+            rows.append(row)
+        return rows
+
+    def record(self, kind, rid, regime, o, max_tokens, stop, chunk, want_cached=False, extra=None):
         ends, total = [], 0
         for n, _ in SETUP.findall(chunk):
             total += int(n)
@@ -295,6 +364,7 @@ class Server:
                "close_ms": tail, "burst_ends": ends, "receipts": receipts,
                "park": [m[:200] for m in PARK.findall(chunk)],
                "sha": hashlib.sha256(o["text"].encode()).hexdigest()[:16], "error": o["error"]}
+        row.update(extra or {})
         row["demoted"] = chunk.count("[spec-gate] demoted session")
         speculative = self.case != "ref"
         if row["error"] is None:
@@ -357,7 +427,87 @@ def reject_seen(rounds, cand):
     return False
 
 
+def cohort_members(plan, regime, sampler):
+    """Member 0's requests of one sampler: (kind, tag, messages, samp, max_tokens, stop)."""
+    samp = sampler(seed_of(f"stop-{regime}"))
+    msgs = user(STOP_PROMPT)
+    out = [("free", "free", msgs, samp, MAX_TOKENS, None),
+           ("eos", "eos", user(EOS_PROMPT), sampler(seed_of(f"eos-{regime}")), 160, None)]
+    p = plan.get(regime, {})
+    out += [("stop", f"stop-{i}", msgs, samp, MAX_TOKENS, [w]) for i, w in enumerate(p.get("stop", []))]
+    out += [("span", f"span-{i}", msgs, samp, MAX_TOKENS, [s]) for i, s in enumerate(p.get("span", []))]
+    return out
+
+
+def companion(k, regime, sampler):
+    return ("comp", f"comp{k}", user(COMPANIONS[k]), sampler(seed_of(f"comp-{k}-{regime}")), COMPANION_TOKENS, None)
+
+
+def run_cohort_boot(args):
+    """A pooled-cohort boot (memra#1209): see the module docstring."""
+    ref = args.case == "ref"
+    sizes = [int(x) for x in args.cohort.split(",")]
+    if not all(2 <= n <= len(COMPANIONS) + 1 for n in sizes):
+        raise SystemExit(f"--cohort sizes must lie in 2..{len(COMPANIONS) + 1}")
+    plan_path = args.out / "plan.json"
+    if ref:
+        if plan_path.exists():
+            raise SystemExit(f"{plan_path} exists: the reference boot runs once per DIR")
+        env = {"MEMRA_SPEC_K": "0"}
+        plan = {}
+    else:
+        if not plan_path.exists():
+            raise SystemExit("run the ref boot first: no plan.json")
+        plan = json.loads(plan_path.read_text())
+        # No demotion to plain decode, so every member speculates to its end.
+        env = {"MEMRA_SPEC_GATE": "0"}
+    env["MEMRA_MAX_SESSIONS"] = str(max(sizes + [len(COMPANIONS)]))
+    if any(r.get("case") == args.case for r in load_rows(args.out)):
+        raise SystemExit(f"{args.out} already holds boot {args.case}")
+    srv = Server(args, args.case, env)
+    try:
+        for regime, sampler in REGIMES.items():
+            if ref:
+                # Every request alone: member 0's references (the plan from its free answer) and
+                # each companion's.
+                _, free, _ = srv.row("free", f"solo-free-{regime}", regime, user(STOP_PROMPT),
+                                     sampler(seed_of(f"stop-{regime}")), MAX_TOKENS)
+                plan[regime] = {k: v for k, v in make_plan(free).items() if k in ("stop", "span")}
+                for kind, tag, msgs, samp, mt, stop in cohort_members(plan, regime, sampler)[1:]:
+                    srv.row(kind, f"solo-{tag}-{regime}", regime, msgs, samp, mt, stop=stop)
+                for k in range(len(COMPANIONS)):
+                    kind, tag, msgs, samp, mt, stop = companion(k, regime, sampler)
+                    srv.row(kind, f"solo-{tag}-{regime}", regime, msgs, samp, mt, stop=stop)
+                continue
+            if not args.tput_only:
+                for kind, tag, msgs, samp, mt, stop in cohort_members(plan, regime, sampler):
+                    srv.row(kind, f"solo-{tag}-{regime}", regime, msgs, samp, mt, stop=stop)
+                for n in sizes:
+                    for kind, tag, msgs, samp, mt, stop in cohort_members(plan, regime, sampler):
+                        rid = f"c{n}-{tag}-{regime}"
+                        comps = [companion(k, regime, sampler) for k in range(n - 1)]
+                        srv.cohort([(f"c-{kind}", rid, msgs, samp, mt, stop)]
+                                   + [(c[0], f"{rid}-{c[1]}", c[2], c[3], c[4], c[5]) for c in comps], regime)
+            n = max(sizes)
+            for rep in range(TPUT_REPS):
+                comps = [companion(k, regime, sampler) for k in range(min(n, len(COMPANIONS)))]
+                srv.cohort([(c[0], f"tput{n}-{rep}-{regime}-{c[1]}", c[2], c[3], c[4], c[5]) for c in comps], regime)
+    finally:
+        srv.stop()
+    if ref:
+        plan_path.write_text(json.dumps(plan, indent=1))
+    (args.out / "boots.jsonl").open("a").write(json.dumps({
+        "case": args.case, "route": args.route if not ref else "plain", "env": args.env, "cohort": sizes,
+        "settle": args.settle, "tput_only": args.tput_only}) + "\n")
+    errors = [r for r in load_rows(args.out) if r["case"] == args.case and r["error"]]
+    for r in errors:
+        print(f"ERROR {r['id']}: {r['error']}")
+    return 1 if errors else 0
+
+
 def run_boot(args):
+    if args.cohort:
+        return run_cohort_boot(args)
     ref = args.case == "ref"
     plan_path = args.out / "plan.json"
     if ref:
@@ -556,9 +706,121 @@ def self_judge(out, case, rr, failures, cov):
              if untestable else ""))
 
 
+def cohort_judge(out, rows, boots):
+    """The pooled-cohort judge (memra#1209): see the module docstring."""
+    failures = []
+    route = {b["case"]: b["route"] for b in boots}
+    ref = {r["id"]: r for r in rows if r["case"] == "ref"}
+    if not ref:
+        failures.append("no plain (ref) boot in this DIR")
+    key = lambda r: (r["sha"], r["finish"], r["completion_tokens"])  # noqa: E731
+    for r in rows:
+        if r["error"]:
+            failures.append(f"{r['case']} {r['id']}: {r['error']}")
+    spec_boots = [b for b in boots if b["case"] != "ref"]
+    if not spec_boots:
+        failures.append("no speculative boot in this DIR: nothing was compared")
+    # A companion writes one text wherever it runs: every cohort and every boot of its route.
+    seen = {}
+    for r in rows:
+        if r["case"] == "ref" or r["kind"] != "comp":
+            continue
+        comp = r["id"].rsplit("-", 1)[1]
+        k = (route[r["case"]], r["regime"], comp)
+        seen.setdefault(k, {}).setdefault(key(r), []).append(f"{r['case']}:{r['id']}")
+    for (rt, regime, comp), groups in sorted(seen.items()):
+        n = sum(len(v) for v in groups.values())
+        plain = ref.get(f"solo-{comp}-{regime}")
+        same_plain = plain is not None and key(plain) in groups
+        print(f"companion {rt} {regime} {comp}: {n} runs, {len(groups)} distinct text(s)"
+              f"{'' if plain is None else ', equal to plain decode' if same_plain and len(groups) == 1 else ', not plain decode'}")
+        if len(groups) > 1:
+            failures.append(f"companion {rt} {regime} {comp}: {len(groups)} distinct texts over {n} runs: "
+                            + "; ".join(f"{k}: {v[:3]}" for k, v in groups.items()))
+    for b in spec_boots:
+        case = b["case"]
+        mine = [r for r in rows if r["case"] == case]
+        print(f"== {case} ({route[case]}, cohorts {b['cohort']}{', settle' if b.get('settle') else ''}) ==")
+        for regime in REGIMES:
+            rr = [r for r in mine if r["regime"] == regime]
+            tput = {}
+            for r in rr:
+                if r["id"].startswith("tput") and r.get("t_end") is not None:
+                    rep = r["id"].split("-")[1]
+                    t = tput.setdefault(rep, {"tokens": 0, "send": None, "end": 0.0})
+                    t["tokens"] += r["completion_tokens"] or 0
+                    t["send"] = r["t_send"] if t["send"] is None else min(t["send"], r["t_send"])
+                    t["end"] = max(t["end"], r["t_end"])
+            rates = [t["tokens"] / ((t["end"] - t["send"]) / 1e3) for t in tput.values() if t["end"] > t["send"]]
+            if rates:
+                print(f"  {regime}: throughput cohorts of {max(b['cohort'])}: aggregate tok/s "
+                      f"{[round(x, 1) for x in rates]} (median {statistics.median(rates):.1f})")
+            if b.get("tput_only"):
+                continue
+            solo = {r["id"]: r for r in rr if r["id"].startswith("solo-")}
+            base = [r["close_ms"] for r in solo.values() if r["kind"] in ("free", "eos") and r["close_ms"] is not None]
+            if not base:
+                failures.append(f"{case} {regime}: no solo non-stop row to time the close against")
+                continue
+            med = statistics.median(base)
+            limit = max(3 * med, med + 100)
+            own = route[case] == "dspark" and regime != "greedy"
+            worst, settled_live = {}, 0
+            for r in rr:
+                if r.get("member") != 0 or not r["kind"].startswith("c-"):
+                    continue
+                tag = r["id"].split("-", 1)[1].rsplit("-", 1)[0]
+                n = r["cohort"]
+                want = solo.get(f"solo-{tag}-{regime}") if own else ref.get(f"solo-{tag}-{regime}")
+                if want is None:
+                    failures.append(f"{case} {r['id']}: no reference row")
+                elif key(r) != key(want):
+                    failures.append(f"{case} {r['id']}: tokens {r['completion_tokens']} finish {r['finish']} sha "
+                                    f"{r['sha']}, {'its solo row' if own else 'plain decode'} {want['completion_tokens']} "
+                                    f"{want['finish']} {want['sha']}")
+                for other in spec_boots:
+                    o = next((x for x in rows if x["case"] == other["case"] and x["id"] == r["id"]), None)
+                    if o is not None and route[other["case"]] == route[case] and key(o) != key(r):
+                        failures.append(f"{case} {r['id']}: differs from boot {other['case']}")
+                if r["finish"] == "stop" and r["stop"]:
+                    if len(r["receipts"]) != 1 or r["receipts"][0]["completion_tokens"] != r["completion_tokens"]:
+                        failures.append(f"{case} {r['id']}: {len(r['receipts'])} [spec-stop] receipts for a "
+                                        f"{r['completion_tokens']}-token stop (want one naming it)")
+                held = 2 * (ref.get(f"solo-{tag}-{regime}", {}).get("close_ms") or 0) if not own else \
+                    (100 if r["kind"] == "c-span" else 0)
+                if r["close_ms"] is not None:
+                    worst[n] = max(worst.get(n, 0), r["close_ms"])
+                    if r["close_ms"] > limit + held:
+                        failures.append(f"{case} {r['id']}: closed {r['close_ms']} ms after its last visible chunk, "
+                                        f"limit {limit + held:.0f} ms (solo non-stop median {med:.0f} ms, plain "
+                                        f"decode's hold-back {held / 2:.0f} ms)")
+                if b.get("settle"):
+                    mine_settle = [s for s in r.get("settle", []) if s["completion_tokens"] == r["completion_tokens"]]
+                    if not mine_settle:
+                        failures.append(f"{case} {r['id']}: no line says member 0 finished inside its cohort")
+                    elif mine_settle[0]["members_running"] > 0:
+                        settled_live += 1
+            closes = {n: sorted(r["close_ms"] for r in rr if r.get("member") == 0 and r["kind"].startswith("c-")
+                                and r["cohort"] == n and r["close_ms"] is not None) for n in b["cohort"]}
+            print(f"  {regime}: solo non-stop close median {med:.0f} ms (n={len(base)}), limit {limit:.0f}; member 0 "
+                  f"close ms by cohort size: " + "; ".join(
+                      f"{n}: median {statistics.median(v):.0f} max {max(v):.0f} (n={len(v)})" for n, v in closes.items() if v))
+            if b.get("settle"):
+                print(f"  {regime}: member 0 finished while another member ran: {settled_live}")
+                if settled_live == 0:
+                    failures.append(f"{case} {regime}: no member 0 finished while another member was still running: "
+                                    "the cohort close was not tested")
+    for f in failures:
+        print("FAIL", f)
+    print("STOP-STRING COHORT GATE:", "PASS" if not failures else f"FAIL ({len(failures)})")
+    return 0 if not failures else 1
+
+
 def judge(out):
     rows = load_rows(out)
     boots = [json.loads(line) for line in (out / "boots.jsonl").read_text().splitlines() if line.strip()]
+    if any(b.get("cohort") for b in boots):
+        return cohort_judge(out, rows, boots)
     route = {b["case"]: b["route"] for b in boots}
     ref = {r["id"]: r for r in rows if r["case"] == "ref"}
     failures = []
@@ -702,7 +964,13 @@ def main():
     ap.add_argument("--route", choices=("mtp", "dspark"), default="mtp")
     ap.add_argument("--port", type=int, default=18207)
     ap.add_argument("--env", action="append", default=[], metavar="NAME=VALUE")
+    ap.add_argument("--cohort", help="pooled-cohort boot: member counts, for example 2,4")
+    ap.add_argument("--settle", action="store_true",
+                    help="the binary closes a cohort member at its round: require its log line")
+    ap.add_argument("--tput-only", action="store_true", help="a cohort boot that runs the throughput cohorts only")
     args = ap.parse_args()
+    if (args.settle or args.tput_only) and not args.cohort:
+        ap.error("--settle and --tput-only need --cohort")
     args.out.mkdir(parents=True, exist_ok=True)
     return run_boot(args)
 
