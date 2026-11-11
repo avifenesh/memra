@@ -31,8 +31,9 @@ token on the session, as the greedy tail has since 2026-08-01, and the next burs
 verifies it as column 0 and draws the next position there, at the same position-keyed event
 (memra#1154), from the same row, in the same penalty window. Two rollback seams keep the old
 tail (`MEMRA_SPEC_SAMPLED_BOUNDARY=0`, and `MEMRA_SPEC_PEN_SESSION=0` on a penalised request).
-The context-full check counts a sampled session's pending token, so a sampled request that
-fills its context stops where it stopped before. The worker's two flushes of a pending token
+The context-full check counts a sampled session's pending token, so the stop rule in emitted
+tokens is what it was before (where the last burst ends still moves with round alignment; the
+text stays plain decode's prefix). The worker's two flushes of a pending token
 (a demotion to plain decode, a park at the end of a request) draw the token after it with the
 request's own sampler (`spec_sampled_pending_carry_is_wired` checks both and the context-full
 count; it fails on main, where the park flush passes no sampler).
@@ -82,12 +83,12 @@ included since memra#1207.
 
 | | GB10 main | GB10 candidate | RTX 5090 main | RTX 5090 candidate |
 |---|---|---|---|---|
-| verdict | PASS (`--carry no`) | GB10 pending | PASS (`--carry no`) | PASS |
-| rows with main's text, finish reason and completion tokens | | GB10 pending | | 229 of 229 |
-| boundary draws at a sampled burst's tail | 1,179 | GB10 pending | 1,157 | 0 |
-| sampled bursts that entered on a carried token | 0 | GB10 pending | 0 | 1,222 |
-| yield boot: continuation bursts that ran no round, and how many on a carried token | 23, 0 | GB10 pending | 13, 0 | 13, 13 |
-| load boot: demotions to plain decode | 2 | GB10 pending | 2 | 2 |
+| verdict | PASS (`--carry no`) | PASS | PASS (`--carry no`) | PASS |
+| rows with main's text, finish reason and completion tokens | | 229 of 229 | | 229 of 229 |
+| boundary draws at a sampled burst's tail | 1,179 | 0 | 1,157 | 0 |
+| sampled bursts that entered on a carried token | 0 | 1,252 | 0 | 1,222 |
+| yield boot: continuation bursts that ran no round, and how many on a carried token | 23, 0 | 23, 23 | 13, 0 | 13, 13 |
+| load boot: demotions to plain decode | 2 | 2 | 2 | 2 |
 
 `--carry no` reports the two carry lines on main instead of judging them; under the default
 they fail there, which is the gate's teeth. Before the rebase, on a main without memra#1207,
@@ -97,7 +98,8 @@ plain decode's in both arms.
 
 Where the last token of a request sat, candidate (rows whose last token is the last of a burst
 / the first of the next one), RTX 5090: EOS sampled 2 / 8, greedy 12 / 3; stop string 6 / 5
-and 11 / 7; budget 13 / 7 and 9 / 10. GB10: pending. Every end kind is met on a boundary,
+and 11 / 7; budget 13 / 7 and 9 / 10. GB10: EOS 4 / 3 and 6 / 3; stop string 9 / 8 and 5 / 9; budget
+9 / 2 and 9 / 9. Every end kind is met on a boundary,
 sampled and greedy.
 
 ## Stop strings at temperature 1

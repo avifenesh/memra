@@ -1,0 +1,192 @@
+[server] build: memra-0.141.1-bd522e3ba252 (id: source-tree, git: unknown)
+[server] starting; models config = [("q", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[spec-k] operator pin K=0: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 52380MB (52379611136 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 52379611136 B; boot driver free 108517318656 B, post-reserve clamp 104759222272 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[deadline] unified memory: operator deadline doors set; streaming TTFT max 600000 ms, SSE prefill commit off
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18198
+[meter] admit id=chatcmpl-bfab9e61f79c0482affa9b8d275b1561 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=249 path=plain = 29696 B/token x ctx + 11MB prefill-workspace + 0MB fixed = 19MB
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=25 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 313MB (observed 319MB at ctx 193 path=plain)
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[meter] admit id=chatcmpl-f01f8f51ee37f37e720389aa5ba98261 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=249 path=plain = 29696 B/token x ctx + 11MB prefill-workspace + 313MB fixed = 332MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 25 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=25 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-00c38f529ab1f5e1f3da8b1eb2016b2f tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=251 path=plain = 29696 B/token x ctx + 12MB prefill-workspace + 313MB fixed = 333MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=27 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 313MB (observed 319MB at ctx 195 path=plain)
+[meter] admit id=chatcmpl-1041dc46b81d5d611f4d81c34b34df78 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=251 path=plain = 29696 B/token x ctx + 12MB prefill-workspace + 313MB fixed = 333MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=27 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-a4f31d9f157a2e870274b76a91327817 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=27 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[device-penalty] sparse sampled rows=1 unique-counts=24 execution=one-ragged-launch raw-logits=preserved
+[meter] admit id=chatcmpl-8e9e74e362c045ebed742d20581ace8c tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=27 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-80eb14c45f97fda143841725b1c4807a tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=252 path=plain = 29696 B/token x ctx + 13MB prefill-workspace + 313MB fixed = 334MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=28 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-a084b184b1c09899950c1b8c76cbe5ef tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=28 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[fa-pool] grow #1 dev=0 o_len 6144 -> 73728 ml_len 24 -> 288 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 73728 -> 147456 ml_len 288 -> 576 (retired kept, zero=false)
+[meter] admit id=chatcmpl-ccfe6ea2da71581dd03d9ec3545587d4 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=28 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-b1d123816d96130d699db7434b3b2f9b tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=28 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-dfaa3b8d9ab9566b270ea43967342490 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=28 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-d83775481ef31860f622ef47d5b6227b tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=131 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 334MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-1c89beaf6d6846157c2e413fe2b3b365 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=132 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 334MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-84533d55aa7a428b1023e539e7ea1fa9 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=133 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 334MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-4ea750a39c8f406958ca2ee54a85053e tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=163 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 335MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-ddc616d84a5ec9e8acbf86fc6163d9b1 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=164 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 335MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-cae1b048256102f3a0e41a41a686b583 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=165 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 335MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-3112607807e4428d8102304d4a0ce2ae tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=131 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 334MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-3290c108c9c874990db10129034dbf0e tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=132 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 334MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-b7b52b4bd3c571ef73aed2e9e71b89f9 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=133 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 334MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-4c8a44daf66c56384f13a72f921bfe96 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=163 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 335MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-5eda4bcc549ee0cd8e57a9b24b1b6607 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=164 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 335MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-e5334c6ce920a8207855f5bf7c7567a4 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=165 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 335MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-2d09681edaede35e1c3f94ce65818176 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=226 path=plain = 29696 B/token x ctx + 19MB prefill-workspace + 313MB fixed = 339MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 42 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=42 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] q: 95 masked steps, mask total 0.85 ms (0.009 ms/step)
+[meter] admit id=chatcmpl-55cf64673000ac6989b1c97d2f1fef61 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 42 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=42 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] q: 94 masked steps, mask total 0.74 ms (0.008 ms/step)
+[meter] admit id=chatcmpl-34479552a6645f3e8cde42401af51a35 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=196 path=plain = 29696 B/token x ctx + 17MB prefill-workspace + 313MB fixed = 336MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-fd9f6bf00650a3da6c92e2ec770a7f00 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-3c87023a04e102d27fd70f1cbaa4fd87 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-cf1db5228fa6b186c6ca9427774509e1 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-c8b78bc353c2bb6e32faf330d3d0a9f6 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-674398c4e00138d8314a0b4c6cbcb1d4 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-a1aded0b543b68272ef413a8996505fb tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-c4fa16c6e870428f597d2d641d868d07 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-5abac17a1a5529e002083b35e731e9c7 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-ebe638c7acee4acb10b313f50a8e1691 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-1736a8540aa69238a7d8062ac80fd712 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-e052e7a55d3ca0376447a53110afdb0f tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=36 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-a274f9a6fc95be6d5d65f47666d9fdd5 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=1414 path=plain = 29696 B/token x ctx + 590MB prefill-workspace + 313MB fixed = 945MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 1286 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=1286 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 1248 tokens, 194.0MB (resident 194.0MB / 52380MB, model q)
+[meter] admit id=cmpl-ec3b170a66513df13ba37e7e9f4c3b8d tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=331 path=plain = 29696 B/token x ctx + 100MB prefill-workspace + 313MB fixed = 424MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 219 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=219 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 192 tokens, 162.6MB (resident 356.5MB / 52380MB, model q)
+[fa-pool] grow #3 dev=0 o_len 147456 -> 294912 ml_len 576 -> 1152 (retired kept, zero=false)
+[meter] admit id=chatcmpl-9e0538fb9bd619cffb68d8f88b677094 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=1413 path=plain = 29696 B/token x ctx + 589MB prefill-workspace + 313MB fixed = 945MB
+[worker] plain-affinity: declined (history diverged at 3 of checkpoint 1248; 2 parked, 1285 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=1285 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 1248 tokens, 194.0MB (resident 550.5MB / 52380MB, model q)
+[meter] admit id=cmpl-14b823f954b7e3df103634899192274a tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=339 path=plain = 29696 B/token x ctx + 104MB prefill-workspace + 313MB fixed = 427MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 227 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=227 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 192 tokens, 162.6MB (resident 713.1MB / 52380MB, model q)
+[meter] admit id=chatcmpl-ca81c62110abebb00135606d7402e902 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=299 path=plain = 29696 B/token x ctx + 16MB prefill-workspace + 313MB fixed = 338MB
+[worker] plain-affinity: declined (history diverged at 3 of checkpoint 1248; 2 parked, 35 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=35 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-4b8160cd0be169aab8f63e78b72ac2fe tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 35 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=operator-pin prompt=35 cached=0 lcp=3 active=1 wave=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
