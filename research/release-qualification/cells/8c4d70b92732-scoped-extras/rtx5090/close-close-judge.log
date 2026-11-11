@@ -1,0 +1,44 @@
+| mode | class | request | finish | prompt / cached / completion tokens | text | rounds base | cand | close ms base | cand |
+|---|---|---|---|---|---|---:|---:|---:|---:|
+| close | greedy | eos | stop | 27 / 0 / 52 | equal | 19 | 19 | 52.44 | 52.51 |
+| close | greedy | budget | length | 34 / 0 / 96 | equal | 43 | 43 | 0.08 | 0.08 |
+| close | greedy | stop | stop | 34 / 0 / 36 | equal | 16 | 16 | 0.12 | 0.07 |
+| close | greedy | turn1 | length | 1286 / 0 / 96 | equal | 45 | 45 | 0.09 | 0.08 |
+| close | greedy | turn2 | stop | 1414 / 1248 / 85 | equal | 38 | 38 | 0.07 | 0.06 |
+| close | greedy | park1 | length | 220 / 0 / 64 | equal | 23 | 23 | 0.1 | 0.07 |
+| close | greedy | park2 | length | 284 / 192 / 96 | equal | 29 | 29 | 0.07 | 0.07 |
+| close | greedy | other | stop | 24 / 0 / 85 | equal | 38 | 38 | 0.14 | 0.08 |
+| close | greedy | cancelled | None | hung up after 40 chunks | not judged | None | None | 0.06 | 0.06 |
+| close | greedy | after-cancel | length | 34 / 0 / 160 | equal | 69 | 69 | 0.08 | 0.08 |
+| close | t1 | eos | stop | 27 / 0 / 46 | equal | 21 | 21 | 0.08 | 0.08 |
+| close | t1 | budget | length | 33 / 0 / 96 | equal | 41 | 41 | 0.08 | 0.15 |
+| close | t1 | stop | stop | 33 / 0 / 38 | equal | 17 | 17 | 0.08 | 0.06 |
+| close | t1 | turn1 | length | 1285 / 0 / 96 | equal | 47 | 47 | 0.08 | 0.09 |
+| close | t1 | turn2 | length | 1413 / 1248 / 96 | equal | 50 | 50 | 0.06 | 0.07 |
+| close | t1 | park1 | length | 227 / 0 / 64 | equal | 30 | 30 | 0.11 | 0.06 |
+| close | t1 | park2 | length | 291 / 192 / 96 | equal | 35 | 35 | 0.14 | 0.07 |
+| close | t1 | other | stop | 24 / 0 / 61 | equal | 27 | 27 | 53.5 | 53.7 |
+| close | t1 | cancelled | None | hung up after 40 chunks | not judged | None | None | 0.03 | 0.03 |
+| close | t1 | after-cancel | length | 33 / 0 / 160 | equal | 71 | 71 | 0.12 | 0.12 |
+| close | chat | eos | stop | 27 / 0 / 58 | equal | 26 | 26 | 0.07 | 0.07 |
+| close | chat | budget | length | 33 / 0 / 96 | equal | 44 | 44 | 0.07 | 0.07 |
+| close | chat | stop | stop | 33 / 0 / 36 | equal | 19 | 19 | 0.08 | 0.08 |
+| close | chat | turn1 | length | 1285 / 0 / 96 | equal | 39 | 39 | 0.11 | 0.08 |
+| close | chat | turn2 | stop | 1413 / 1248 / 81 | equal | 38 | 38 | 0.06 | 0.08 |
+| close | chat | park1 | length | 227 / 0 / 64 | equal | 24 | 24 | 0.08 | 0.06 |
+| close | chat | park2 | length | 291 / 192 / 96 | equal | 26 | 26 | 0.12 | 0.06 |
+| close | chat | other | stop | 24 / 0 / 59 | equal | 26 | 26 | 0.14 | 0.09 |
+| close | chat | cancelled | None | hung up after 40 chunks | not judged | None | None | 0.03 | 0.03 |
+| close | chat | after-cancel | length | 33 / 0 / 160 | equal | 65 | 65 | 0.09 | 0.15 |
+| close | pen | eos | stop | 27 / 0 / 59 | equal | 27 | 27 | 0.14 | 0.09 |
+| close | pen | budget | length | 34 / 0 / 96 | equal | 40 | 40 | 0.07 | 0.07 |
+| close | pen | stop | stop | 34 / 0 / 43 | equal | 16 | 16 | 0.13 | 0.09 |
+| close | pen | turn1 | length | 1239 / 0 / 96 | equal | 40 | 40 | 0.1 | 0.07 |
+| close | pen | turn2 | stop | 1367 / 1216 / 92 | equal | 47 | 47 | 0.13 | 0.1 |
+| close | pen | park1 | length | 219 / 0 / 64 | equal | 25 | 25 | 0.08 | 0.07 |
+| close | pen | park2 | length | 283 / 192 / 96 | equal | 32 | 32 | 0.12 | 0.16 |
+| close | pen | other | stop | 25 / 0 / 72 | equal | 33 | 33 | 0.11 | 0.08 |
+| close | pen | cancelled | None | hung up after 40 chunks | not judged | None | None | 0.04 | 0.03 |
+| close | pen | after-cancel | length | 33 / 0 / 160 | equal | 72 | 72 | 0.07 | 0.14 |
+
+rows: 40, with a judged difference: 0
