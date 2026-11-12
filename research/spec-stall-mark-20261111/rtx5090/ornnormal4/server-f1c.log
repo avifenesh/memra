@@ -1,0 +1,324 @@
+[server] build: memra-0.141.1-9ed89dd36d80 (id: source-tree, git: unknown)
+[server] starting; models config = [("q", "/data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- /data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 24.52GB (expert budget 20.91GB) -> RESIDENT
+[worker]   loaded "q": 41 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=8 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 284MB (283770880 B, derived: 2 x 141885440 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 2989752320 B (20 resident sessions x 149487616 B served-context session), requested 283770880 B; boot driver free 5018615808 B, post-reserve clamp 3408003072 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=251 max_m=620
+[fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+[spec] pre-capture pool trim: released 1760MB cached back to the driver (driver free 2192MB < required 3200MB; instantiate allocates from the driver)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 3MB; charged per spec admission and gating future captures)
+[spec-vg] MTP verify-graph pool ENGAGED (vt_cap=4)
+[spec-setup] init=0.24ms cap=0.01ms fill=0.00ms rounds=177.13ms tail=0.23ms total=177.61ms out=9 cont=false
+[spec-setup] init=0.00ms cap=0.05ms fill=0.00ms rounds=965.70ms tail=0.21ms total=965.97ms out=97 cont=true
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":100663296,"still_owned_bytes":20802102060,"pool_reserved_bytes":21038628864,"pool_cached_bytes":236526804,"driver_free_bytes":3800170496,"synchronization_errors":[]}
+[spec-cost] model="q" depth=2048 pooled=false plain_cap=8 round_overhead=3.63ms draft_step=0.00ms pooled_overhead=None pooled_draft_step=None verify_ms[1..16]=[8.7 10.5 12.3 13.9 15.6 17.3 19.0 20.8 22.4 24.1 25.8 27.5 29.0 30.4 31.9 33.4] plain_ms[1..]=[8.1 10.8 13.0 15.2 17.2 19.3 21.4 23.5] (8.8s)
+[prime-walk] model="q" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[spec] pre-capture pool trim: released 864MB cached back to the driver (driver free 2440MB < required 3140MB; instantiate allocates from the driver)
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec-setup] init=0.27ms cap=0.01ms fill=0.00ms rounds=733.11ms tail=10.10ms total=743.49ms out=65 cont=false
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":167772160,"still_owned_bytes":21112700044,"pool_reserved_bytes":21474836480,"pool_cached_bytes":362136436,"driver_free_bytes":3353477120,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 160MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=mtp transient floor 1536MB (static was 1536MB; measured 84MB; probe kv charge 41MB, draft-state 34MB, drafted 96 accepted 32; [dev0 peak-mapped 20640MB rest-mapped 20480MB charged 75MB -> 84MB]; 1.8s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18221
+[meter] admit id=chatcmpl-abdfb5f9a50fa10e2290a248f3089962 tenant=default lane=interactive model="q"
+[spec-cost] model="q" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="q" +36MB (measured capture high-water)
+[admission] request cost: model="q" ctx=283 path=spec = 10208 B/token x ctx + 15MB prefill-workspace + 0MB fixed = 18MB
+[admission] prefill workspace held: model="q" prompt=59 call=59 stack=59 concat=0 slab_resident=336MB held=15MB cold=20MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=59 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 129MB (observed 131MB at ctx 227 path=spec)
+[spec-setup] init=0.23ms cap=0.00ms fill=0.00ms rounds=414.49ms tail=0.04ms total=414.77ms out=32 cont=false
+[spec-acc] ctx=59 burst=15/48 cum=15/48=0.312
+[prefix-cache] insert (spec-boundary): 32 tokens, 66.2MB (resident 66.2MB / 284MB, model q)
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=316.60ms tail=0.22ms total=316.87ms out=33 cont=true
+[spec-acc] ctx=91 burst=18/45 cum=33/93=0.355
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=307.49ms tail=0.04ms total=307.58ms out=33 cont=true
+[spec-acc] ctx=124 burst=15/54 cum=48/147=0.327
+[spec-setup] init=0.01ms cap=0.04ms fill=0.00ms rounds=337.74ms tail=0.05ms total=337.84ms out=33 cont=true
+[spec-acc] ctx=157 burst=13/60 cum=61/207=0.295
+[spec-cost] model="q" realized n=1 K=3: 102.8 tok/s (now priced from serving)
+[spec-cost] model="q" n=1 rung=3 -> K=0 (predicted 107.4 vs plain 123.4 tok/s; pooled=false; priced from K0=table K1=(1,3) K2=(1,3) K3=realized)
+[spec-gate] demoted session to batched decode: 1 active, cost model prefers plain (or HIGH=4 without a model) (model q, committed 190, generated 131, greedy)
+[spec-cost] model="q" realized n=1 K=0: 127.0 tok/s (now priced from serving)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.2ms (model q)
+[meter] admit id=chatcmpl-102cc89e22fe51ec072f348953c8ef06 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=283 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 151MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-eded5903bbacc1b437cc0d06c6d164a1 tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.4ms (model q)
+[admission] request cost: model="q" ctx=282 path=plain = 9280 B/token x ctx + 19MB prefill-workspace + 129MB fixed = 151MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 58 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=58 cached=0 lcp=6 active=1 wave=1 placement=single-or-non-pp2
+[kv-reuse] park-compact: 218 of 226 rows retained in 1.2ms (model q)
+[meter] admit id=chatcmpl-739a9c7b50953dc8032a0873273cf714 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=283 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 151MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[meter] admit id=chatcmpl-2e6e4a1ab1346d1cfef060272a28c735 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-cost] model="q" n=2 rung=3 -> K=0 (predicted 107.4 vs plain 192.1 tok/s; pooled=false; priced from K0=(1,0) K1=(1,3) K2=(1,3) K3=(1,3))
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=1 wave=2 placement=single-or-non-pp2
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=2 wave=2 placement=single-or-non-pp2
+[spec-cost] model="q" realized n=2 K=0: 158.4 tok/s (now priced from serving)
+[meter] admit id=chatcmpl-01aeeae65340e309761e73dcf9beee97 tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[admission] request cost: model="q" ctx=284 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 152MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 6 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=60 cached=0 lcp=7 active=2 wave=2 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 129MB (observed 131MB at ctx 228 path=plain)
+[meter] admit id=chatcmpl-b374553d47003c993d02b0bc4bde4693 tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.2ms (model q)
+[admission] request cost: model="q" ctx=283 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 151MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=2 wave=2 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-a3f7c63051e12b0ee9fda6f3204ccf9a tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 220 of 228 rows retained in 1.1ms (model q)
+[admission] request cost: model="q" ctx=285 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 152MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=61 cached=0 lcp=7 active=2 wave=2 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 129MB (observed 131MB at ctx 229 path=plain)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[meter] admit id=chatcmpl-5ab9081f8816f50ca29f6d2ccdfe9646 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=283 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 151MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=2 wave=2 placement=single-or-non-pp2
+[kv-reuse] park-compact: 221 of 229 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[meter] admit id=chatcmpl-1d1fd5d056c77d53d2144001f3983552 tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=284 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 152MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[meter] admit id=chatcmpl-62e887fe6abbab4b67d105033daa8c76 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-1ade04505d42bf1fca14f8a74e2f8c9a tenant=default lane=interactive model="q"
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=60 cached=0 lcp=7 active=1 wave=3 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-73e48cb97b6b3a9c434ce88cf4aa8aaf tenant=default lane=interactive model="q"
+[spec-cost] model="q" n=4 rung=3 -> K=0 (predicted 107.4 vs plain 279.4 tok/s; pooled=false; priced from K0=(2,0) K1=(1,3) K2=(1,3) K3=(1,3))
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=60 cached=0 lcp=7 active=2 wave=4 placement=single-or-non-pp2
+[admission] request cost: model="q" ctx=283 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 151MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=3 wave=4 placement=single-or-non-pp2
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=4 wave=4 placement=single-or-non-pp2
+[spec-cost] model="q" realized n=4 K=0: 212.6 tok/s (now priced from serving)
+[meter] admit id=chatcmpl-a072c3863306286ace0a739657f0125d tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 220 of 228 rows retained in 1.2ms (model q)
+[admission] request cost: model="q" ctx=285 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 152MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=61 cached=0 lcp=7 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-787e6481e51a5d90f613b9796d99a5da tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-3dd51db1e754ef4c57740619de44a656 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-cc71d25904e7cf1e0108eea553cca43d tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.2ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 220 of 228 rows retained in 1.2ms (model q)
+[admission] request cost: model="q" ctx=284 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 152MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=60 cached=0 lcp=7 active=2 wave=4 placement=single-or-non-pp2
+[admission] request cost: model="q" ctx=282 path=plain = 9280 B/token x ctx + 19MB prefill-workspace + 129MB fixed = 151MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 6 of checkpoint 32; 2 parked, 58 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=58 cached=0 lcp=6 active=3 wave=4 placement=single-or-non-pp2
+[admission] request cost: model="q" ctx=283 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 151MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-f17447007485eedc7cb3572ce618dfb6 tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 221 of 229 rows retained in 1.1ms (model q)
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=32 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-6e219423f9a7a872cbf695003fa0410b tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[meter] admit id=chatcmpl-3e2092dac3f5475bd93ac0ed4206a408 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c71962d7268cf253c784a731cc30b87c tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 218 of 226 rows retained in 1.2ms (model q)
+[kv-reuse] park-compact: 220 of 228 rows retained in 1.1ms (model q)
+[worker] plain-affinity: declined (history diverged at 6 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=2 wave=4 placement=single-or-non-pp2
+[admission] request cost: model="q" ctx=285 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 152MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 6 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=61 cached=0 lcp=7 active=3 wave=4 placement=single-or-non-pp2
+[worker] plain-affinity: declined (history diverged at 6 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=61 cached=0 lcp=7 active=4 wave=4 placement=single-or-non-pp2
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 221 of 229 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 221 of 229 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[meter] admit id=chatcmpl-bf8350ec47048516dbf35e454abeea7b tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a122a6fc199d88d9a1b96d4d61599009 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-c38ad57ddb9b1233e1c0818c538940a0 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a1f5e01bf4390ae1a667effe17e257bd tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-1c1dd4ba35ed291cdac10ad892f4411d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-315fc780e00efde0efe345290af4c21f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-feba8bc173dd3965ada9698a7c4f03bd tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-cee269d4ac7975f20425c7da8a84809d tenant=default lane=interactive model="q"
+[spec-cost] model="q" n=8 rung=3 -> K=0 (far concurrency, no measured spec slot near n: plain)
+[admission] request cost: model="q" ctx=284 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 152MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=60 cached=0 lcp=7 active=1 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=60 cached=0 lcp=7 active=2 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=60 cached=0 lcp=7 active=3 wave=8 placement=single-or-non-pp2
+[admission] request cost: model="q" ctx=283 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 151MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=4 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=5 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=6 wave=8 placement=single-or-non-pp2
+[admit-trim] dev0 driver_free_bytes=2137128960 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22675318700 pool_reserved_bytes=22682796032 driver_free_after=2137128960 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=7 wave=8 placement=single-or-non-pp2
+[admit-trim] dev0 driver_free_bytes=2002911232 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22806414376 pool_reserved_bytes=22817013760 driver_free_after=2002911232 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=7 active=8 wave=8 placement=single-or-non-pp2
+[spec-cost] model="q" realized n=8 K=0: 259.7 tok/s (now priced from serving)
+[meter] admit id=chatcmpl-0ea7bb4d1821f23bb5741136b926d698 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-cedef53484736afe59c86823d2c850a4 tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 220 of 228 rows retained in 1.2ms (model q)
+[kv-reuse] park-compact: 220 of 228 rows retained in 1.1ms (model q)
+[admission] request cost: model="q" ctx=285 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 152MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[admit-trim] dev0 driver_free_bytes=1432485888 floor_bytes=2147483648 reclaimed_bytes=33554432 still_owned_bytes=22944712684 pool_reserved_bytes=23353884672 driver_free_after=1466040320 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=61 cached=0 lcp=7 active=7 wave=8 placement=single-or-non-pp2
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=66198528 pool_cached_gain_bytes=66190336 trim_released_bytes=0 driver_free_bytes 1466040320 -> 1466040320 pool_reserved_bytes 23353884672 -> 23353884672 pool_used_bytes 23075828776 -> 23009638440 pool_retained_bytes=66190336 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 1744MB -> 1810MB
+[admit-trim] dev0 driver_free_bytes=1466040320 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=23009638440 pool_reserved_bytes=23353884672 driver_free_after=1466040320 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=61 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-47eb285ee42ef214fd3e1a4995aabd2f tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[meter] admit id=chatcmpl-7d6d80dde00da24fcb172c0e6a4fe459 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a77c868ce15d9a76cfb42ba82d2eadd2 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-6cf25b2694fd2f142153031175d179ab tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-738e7ad89d736c7247b1ee60e22c10b1 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a35307ec465c2d46df0dd35ec0d9b3fc tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.2ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 220 of 228 rows retained in 1.1ms (model q)
+[admission] request cost: model="q" ctx=284 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 152MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[admit-trim] dev0 driver_free_bytes=1466040320 floor_bytes=2147483648 reclaimed_bytes=671088640 still_owned_bytes=22084745660 pool_reserved_bytes=22682796032 driver_free_after=2137128960 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 60 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=60 cached=0 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+[admission] request cost: model="q" ctx=283 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 151MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[admit-trim] dev0 driver_free_bytes=2137128960 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22215851544 pool_reserved_bytes=22682796032 driver_free_after=2137128960 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=0 active=4 wave=8 placement=single-or-non-pp2
+[admit-trim] dev0 driver_free_bytes=2137128960 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22346947220 pool_reserved_bytes=22682796032 driver_free_after=2137128960 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+[admit-trim] dev0 driver_free_bytes=2070020096 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22478042896 pool_reserved_bytes=22749904896 driver_free_after=2070020096 before prime
+[worker] plain-affinity: declined (identity did not nominate; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[admission] request cost: model="q" ctx=282 path=plain = 9280 B/token x ctx + 19MB prefill-workspace + 129MB fixed = 151MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[admit-trim] dev0 driver_free_bytes=2002911232 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22609138572 pool_reserved_bytes=22817013760 driver_free_after=2002911232 before prime
+[worker] plain-affinity: declined (history diverged at 6 of checkpoint 32; 2 parked, 58 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=58 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[admission] request cost: model="q" ctx=283 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 151MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[admit-trim] dev0 driver_free_bytes=1935802368 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22740224040 pool_reserved_bytes=22884122624 driver_free_after=1935802368 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-f30ef6d4ba7efb2b67f6de3af49988f2 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-d68ddb0f6633c7a8f5eefb7535c250fd tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 221 of 229 rows retained in 1.2ms (model q)
+[kv-reuse] park-compact: 221 of 229 rows retained in 1.2ms (model q)
+[admit-trim] dev0 driver_free_bytes=1466040320 floor_bytes=2147483648 reclaimed_bytes=100663296 still_owned_bytes=22878532556 pool_reserved_bytes=23253221376 driver_free_after=1566703616 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[admit-trim] dev0 driver_free_bytes=1566703616 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=23009628232 pool_reserved_bytes=23253221376 driver_free_after=1566703616 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.2ms (model q)
+[meter] admit id=chatcmpl-45838677eeaae9bef75afc2d7e4a5a2d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-8aa8935fa9847b07789caf3d17a5e017 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-17f14a8c2499e23e5bfdf1b52c57a8ce tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-e0b527d5fe2f5c0a9c2ca559d45c1143 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a3d794295749b329b950e326241360c8 tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-373c11b6ad18d776806367d55585f6d4 tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 218 of 226 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 220 of 228 rows retained in 1.1ms (model q)
+[admission] request cost: model="q" ctx=285 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 152MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[admit-trim] dev0 driver_free_bytes=1499594752 floor_bytes=2147483648 reclaimed_bytes=436207616 still_owned_bytes=22084704828 pool_reserved_bytes=22884122624 driver_free_after=1935802368 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=61 cached=0 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+[admission] request cost: model="q" ctx=283 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 151MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[admit-trim] dev0 driver_free_bytes=1935802368 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22215820920 pool_reserved_bytes=22884122624 driver_free_after=1935802368 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=0 active=4 wave=8 placement=single-or-non-pp2
+[admit-trim] dev0 driver_free_bytes=1935802368 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22346916596 pool_reserved_bytes=22884122624 driver_free_after=1935802368 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+[admit-trim] dev0 driver_free_bytes=1935802368 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22478012272 pool_reserved_bytes=22884122624 driver_free_after=1935802368 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[admit-trim] dev0 driver_free_bytes=1835139072 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22609107948 pool_reserved_bytes=22984785920 driver_free_after=1835139072 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 59 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=59 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[admission] request cost: model="q" ctx=285 path=plain = 9280 B/token x ctx + 20MB prefill-workspace + 129MB fixed = 152MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[admit-trim] dev0 driver_free_bytes=1801584640 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22740203624 pool_reserved_bytes=23018340352 driver_free_after=1801584640 before prime
+[worker] plain-affinity: declined (history diverged at 7 of checkpoint 32; 2 parked, 61 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=cost-model prompt=61 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.2ms (model q)
+[kv-reuse] park-compact: 221 of 229 rows retained in 1.2ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.2ms (model q)
+[kv-reuse] park-compact: 219 of 227 rows retained in 1.1ms (model q)
+[kv-reuse] park-compact: 221 of 229 rows retained in 1.2ms (model q)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
