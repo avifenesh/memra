@@ -1,0 +1,9 @@
+1794490042.676726 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":20356136960,"synchronization_errors":[]}
+1794490093.549182 [spec] pre-capture pool trim: released 15808MB cached back to the driver (driver free 2564MB < required 3200MB; instantiate allocates from the driver)
+1794490093.555964 [spec] draft-session state high-water: 2MB (max of parked delta 0MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794490109.487119 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":5200936960,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":20240707584,"synchronization_errors":[]}
+1794490112.052744 [spec] draft-session state high-water: 2MB (max of parked delta 1MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794490114.627679 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":19454623744,"synchronization_errors":[]}
+1794490114.627802 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794490150.113744 [device-trim] reason=admission-drain {"device":0,"reclaimed_bytes":0,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":883810304,"synchronization_errors":[]}
+1794490150.113781 [admit-oom] capacity reject: model="q38" ctx=1607 does not fit an IDLE box (available 0MB) — HTTP 400 context_length_exceeded

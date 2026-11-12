@@ -1,0 +1,301 @@
+1794474304.007965 [mtp-draft] loading external MTP draft: ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+1794474304.091552 [mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+1794474305.065060 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794474350.751736 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":28961484800,"synchronization_errors":[]}
+1794474351.014703 [prefix-cache] on: budget 50576MB (50576093184 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50576093184 B; boot driver free 104910282752 B, post-reserve clamp 101152186368 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794474401.161073 [spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794474411.584123 [spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+1794474414.700137 [spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+1794474417.044250 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":27161591808,"synchronization_errors":[]}
+1794474417.044303 [spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=9.65ms draft_step=0.00ms pooled_overhead=Some((4, 3.124955255208338)) pooled_draft_step=None verify_ms[1..16]=[75.0 73.1 73.1 73.9 74.7 75.5 77.0 78.4 80.9 83.5 86.0 88.6 90.8 93.0 95.2 97.4] plain_ms[1..]=[73.8 76.7 80.4 84.1 88.4 92.7 96.9 101.2 106.0 110.7 115.4 120.2 124.9 129.6 134.4 139.1 144.6 150.2 155.7 161.3 166.8 172.3 177.9 183.4 189.0 194.5 200.0 205.6 211.1 216.7 222.2 227.7] (66.0s)
+1794474422.162625 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":26365992960,"synchronization_errors":[]}
+1794474426.229358 [spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+1794474426.229575 [prefix-cache] stable-boundary capture armed at 992 of 1031 prompt tokens (model q38)
+1794474426.244071 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1031 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794474427.412908 [specpub-probe] reserve-start planes=34 bytes=31299584 reserved=20434649088 used=20348507876 cached=86141212 mem_available=Some(103005065216)
+1794474427.416438 [specpub-probe] reserve-done planes=34 alloc_us=2888 longest_us=2645 total_us=2933
+1794474428.158263 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=1914.000 generated=0->34 rounds=10 drafted=30 accepted=23 k=3
+1794474428.158273 [specpub-probe] enter why=spec-boundary pos=992 reserved=20602421248 used=19853631184 cached=748790064
+1794474428.158283 [specpub-probe] alloc trunk-k bytes=1079296 us=1 reserved_before=20602421248 reserved_after=20602421248 used_after=19854710480
+1794474428.158286 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19855472336
+1794474428.158291 [specpub-probe] copy bytes=1079296 us=6
+1794474428.158293 [specpub-probe] copy bytes=761856 us=2
+1794474428.158295 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19856551632
+1794474428.158297 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19857313488
+1794474428.158301 [specpub-probe] copy bytes=1079296 us=4
+1794474428.158304 [specpub-probe] copy bytes=761856 us=2
+1794474428.158306 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19858392784
+1794474428.158308 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19859154640
+1794474428.158310 [specpub-probe] copy bytes=1079296 us=4
+1794474428.158312 [specpub-probe] copy bytes=761856 us=3
+1794474428.158314 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19860233936
+1794474428.158345 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19860995792
+1794474428.158348 [specpub-probe] copy bytes=1079296 us=5
+1794474428.158350 [specpub-probe] copy bytes=761856 us=2
+1794474428.158352 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19862075088
+1794474428.158354 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19862836944
+1794474428.158356 [specpub-probe] copy bytes=1079296 us=5
+1794474428.158358 [specpub-probe] copy bytes=761856 us=2
+1794474428.158360 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19863916240
+1794474428.158362 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19864678096
+1794474428.158365 [specpub-probe] copy bytes=1079296 us=6
+1794474428.158367 [specpub-probe] copy bytes=761856 us=2
+1794474428.158369 [specpub-probe] alloc trunk-k bytes=1079296 us=1 reserved_before=20602421248 reserved_after=20602421248 used_after=19865757392
+1794474428.158371 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19866519248
+1794474428.158373 [specpub-probe] copy bytes=1079296 us=10
+1794474428.158375 [specpub-probe] copy bytes=761856 us=2
+1794474428.158377 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19867598544
+1794474428.158379 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19868360400
+1794474428.158381 [specpub-probe] copy bytes=1079296 us=5
+1794474428.158383 [specpub-probe] copy bytes=761856 us=4
+1794474428.158384 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19869439696
+1794474428.158386 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19870201552
+1794474428.158388 [specpub-probe] copy bytes=1079296 us=7
+1794474428.158390 [specpub-probe] copy bytes=761856 us=3
+1794474428.158392 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19871280848
+1794474428.158394 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19872042704
+1794474428.158397 [specpub-probe] copy bytes=1079296 us=5
+1794474428.158399 [specpub-probe] copy bytes=761856 us=5
+1794474428.158401 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19873122000
+1794474428.158404 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19873883856
+1794474428.158406 [specpub-probe] copy bytes=1079296 us=6
+1794474428.158407 [specpub-probe] copy bytes=761856 us=2
+1794474428.158410 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19874963152
+1794474428.158412 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19875725008
+1794474428.158415 [specpub-probe] copy bytes=1079296 us=6
+1794474428.158417 [specpub-probe] copy bytes=761856 us=4
+1794474428.158419 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19876804304
+1794474428.158422 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19877566160
+1794474428.158453 [specpub-probe] copy bytes=1079296 us=12
+1794474428.158456 [specpub-probe] copy bytes=761856 us=5
+1794474428.158459 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19878645456
+1794474428.158461 [specpub-probe] alloc trunk-v bytes=761856 us=1 reserved_before=20602421248 reserved_after=20602421248 used_after=19879407312
+1794474428.158468 [specpub-probe] copy bytes=1079296 us=6
+1794474428.158473 [specpub-probe] copy bytes=761856 us=2
+1794474428.158476 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19880486608
+1794474428.158478 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19881248464
+1794474428.158483 [specpub-probe] copy bytes=1079296 us=5
+1794474428.158517 [specpub-probe] copy bytes=761856 us=7
+1794474428.158520 [specpub-probe] alloc trunk-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19882327760
+1794474428.158522 [specpub-probe] alloc trunk-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19883089616
+1794474428.158525 [specpub-probe] copy bytes=1079296 us=7
+1794474428.158526 [specpub-probe] copy bytes=761856 us=7
+1794474428.158530 [specpub-probe] alloc draft-k bytes=1079296 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19884168912
+1794474428.158532 [specpub-probe] alloc draft-v bytes=761856 us=0 reserved_before=20602421248 reserved_after=20602421248 used_after=19884930768
+1794474428.158534 [specpub-probe] copy bytes=1079296 us=6
+1794474428.158537 [specpub-probe] copy bytes=761856 us=2
+1794474428.158540 [specpub-probe] planes-done why=spec-boundary us=364 reserved=20602421248 used=19884930768
+1794474428.158735 [prefix-cache] insert (spec-boundary): 992 tokens, 188.2MB (resident 188.2MB / 50576MB, model q38)
+1794474428.158793 [specpub-probe] exit why=spec-boundary us=440 reserved=20602421248 used=19884930768
+1794474429.495686 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=1336.583 generated=34->67 rounds=16 drafted=48 accepted=17 k=3
+1794474430.574053 [tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=1078.453 generated=67->99 rounds=13 drafted=39 accepted=19 k=3
+1794474431.491840 [tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=917.841 generated=99->127 rounds=11 drafted=33 accepted=17 k=3
+1794474431.784597 [prefix-cache] stable-boundary capture armed at 259904 of 259946 prompt tokens (model q38)
+1794474432.118072 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=259946 cached=0 lcp=10 active=1 wave=1 placement=single-or-non-pp2
+1794474434.734946 [tick-spec] seq=1 slot=0 trace=- start_ms=0.009 gap_ms=0.009 wall_ms=2616.550 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474437.215822 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=2480.768 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474439.767984 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2552.142 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474442.409530 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2641.531 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474445.139999 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2730.689 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474447.954452 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2814.176 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474450.838708 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2884.209 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474453.805861 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2967.121 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474456.844919 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3039.031 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474459.962170 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3117.473 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474463.177403 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3214.926 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474466.454705 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3277.308 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474469.819370 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3364.603 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474473.258507 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3439.115 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474476.787109 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3528.832 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474480.380233 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3593.114 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474484.064430 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3683.885 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474487.832003 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3767.644 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474491.683607 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3851.468 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474495.599722 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3916.073 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474499.596562 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3996.836 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474503.678383 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4081.784 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474507.831180 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4152.779 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474512.074102 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=4243.155 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474516.391528 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4317.136 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474520.797711 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4400.236 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474525.277731 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4485.923 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474529.838242 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4560.801 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474534.486685 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4647.992 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474539.192532 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4705.830 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474543.987439 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4794.892 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474548.877514 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4889.985 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474553.841591 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4964.085 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474558.882406 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5040.791 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474563.999375 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5116.933 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474569.194775 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5195.374 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474574.455553 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5260.749 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474579.825942 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5370.362 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474585.262575 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5436.583 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474590.794516 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5531.911 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474596.385512 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5590.964 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474602.062032 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5676.780 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474607.808519 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5746.212 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474613.636719 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5828.120 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474619.559346 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5922.970 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474625.551240 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5991.786 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474631.638781 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=6087.246 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474637.779824 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=6141.005 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474644.022832 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=6242.998 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474650.336987 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=6314.437 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474656.739646 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=6402.282 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474663.227139 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=6487.730 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474669.769847 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=6542.424 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474676.405879 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=6636.003 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474683.132003 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=6726.352 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474689.923017 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=6790.983 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474696.800929 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=6877.639 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474703.735629 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=6934.637 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474710.789990 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=7054.552 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474717.924014 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=7133.867 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474725.095493 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=7171.304 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474732.352296 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=7256.777 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474739.699504 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=7347.173 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.078419 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4378.865 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.101710 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=23.283 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.125955 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=24.236 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.148977 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.256 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.171691 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.454 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.193974 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.458 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.217481 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.309 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.240718 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.227 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.262971 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.493 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.287145 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.904 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.310369 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.209 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.332824 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.445 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.355393 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.548 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.378638 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.226 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.400974 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.438 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.424767 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.676 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.448351 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.567 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.470802 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.442 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.494095 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.274 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.517539 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.426 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.540805 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.257 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.563083 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.526 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.587307 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.939 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.610497 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.178 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.633506 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.243 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.656814 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.298 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.679240 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.501 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.702463 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.211 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.725985 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.406 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.749338 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=23.261 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.771880 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.529 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.795156 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.262 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.817665 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.487 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.840259 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.578 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.863620 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=23.334 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.886929 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=23.315 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.910545 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.309 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.933837 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.287 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.957227 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.349 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474744.979784 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.572 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.003003 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.266 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.025599 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.503 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.047939 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.529 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.073631 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.246 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.093872 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.468 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.117222 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.333 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.141481 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=24.239 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.164780 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.290 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.188132 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.389 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.210755 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.554 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.233995 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.300 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.257421 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.334 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.280836 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.400 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.303419 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.571 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.327357 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.922 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.349907 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.534 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.372986 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.332 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.396672 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.411 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.419001 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.501 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.442160 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.227 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.465520 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.351 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.488227 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.636 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.511656 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.405 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.534914 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.242 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794474745.719354 [specpub-probe] reserve-start planes=34 bytes=8200491008 reserved=37480300544 used=36107783516 cached=1372517028 mem_available=Some(85604892672)
+1794474746.182000 [specpub-probe] reserve-done planes=34 alloc_us=461784 longest_us=31948 total_us=461849
+1794474748.214254 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=2679.246 generated=0->32 rounds=12 drafted=36 accepted=19 k=3
+1794474748.214377 [specpub-probe] enter why=spec-boundary pos=259904 reserved=44090523648 used=30310327624 cached=13780196024
+1794474748.214383 [specpub-probe] alloc trunk-k bytes=282775552 us=4 reserved_before=44090523648 reserved_after=44090523648 used_after=30593103176
+1794474748.214384 [specpub-probe] alloc trunk-v bytes=199606272 us=2 reserved_before=44090523648 reserved_after=44090523648 used_after=30792709448
+1794474748.214386 [specpub-probe] copy bytes=282775552 us=13
+1794474748.214391 [specpub-probe] copy bytes=199606272 us=2
+1794474748.214393 [specpub-probe] alloc trunk-k bytes=282775552 us=3 reserved_before=44090523648 reserved_after=44090523648 used_after=31075485000
+1794474748.214395 [specpub-probe] alloc trunk-v bytes=199606272 us=3 reserved_before=44090523648 reserved_after=44090523648 used_after=31275091272
+1794474748.214397 [specpub-probe] copy bytes=282775552 us=6
+1794474748.214398 [specpub-probe] copy bytes=199606272 us=2
+1794474748.214400 [specpub-probe] alloc trunk-k bytes=282775552 us=2 reserved_before=44090523648 reserved_after=44090523648 used_after=31557866824
+1794474748.214401 [specpub-probe] alloc trunk-v bytes=199606272 us=2 reserved_before=44090523648 reserved_after=44090523648 used_after=31757473096
+1794474748.214404 [specpub-probe] copy bytes=282775552 us=6
+1794474748.214407 [specpub-probe] copy bytes=199606272 us=5
+1794474748.214408 [specpub-probe] alloc trunk-k bytes=282775552 us=6 reserved_before=44090523648 reserved_after=44090523648 used_after=32040248648
+1794474748.214422 [specpub-probe] alloc trunk-v bytes=199606272 us=5 reserved_before=44090523648 reserved_after=44090523648 used_after=32239854920
+1794474748.214425 [specpub-probe] copy bytes=282775552 us=9
+1794474748.214427 [specpub-probe] copy bytes=199606272 us=5
+1794474748.214429 [specpub-probe] alloc trunk-k bytes=282775552 us=3 reserved_before=44090523648 reserved_after=44090523648 used_after=32522630472
+1794474748.214432 [specpub-probe] alloc trunk-v bytes=199606272 us=5 reserved_before=44090523648 reserved_after=44090523648 used_after=32722236744
+1794474748.214433 [specpub-probe] copy bytes=282775552 us=9
+1794474748.214597 [specpub-probe] copy bytes=199606272 us=6
+1794474748.214618 [specpub-probe] alloc trunk-k bytes=282775552 us=4 reserved_before=44090523648 reserved_after=44090523648 used_after=33005012296
+1794474748.214619 [specpub-probe] alloc trunk-v bytes=199606272 us=4 reserved_before=44090523648 reserved_after=44090523648 used_after=33204618568
+1794474748.214621 [specpub-probe] copy bytes=282775552 us=7
+1794474748.214622 [specpub-probe] copy bytes=199606272 us=4
+1794474748.214623 [specpub-probe] alloc trunk-k bytes=282775552 us=3 reserved_before=44090523648 reserved_after=44090523648 used_after=33487394120
+1794474748.214624 [specpub-probe] alloc trunk-v bytes=199606272 us=1 reserved_before=44090523648 reserved_after=44090523648 used_after=33687000392
+1794474748.214626 [specpub-probe] copy bytes=282775552 us=6
+1794474748.214627 [specpub-probe] copy bytes=199606272 us=5
+1794474748.214628 [specpub-probe] alloc trunk-k bytes=282775552 us=4 reserved_before=44090523648 reserved_after=44090523648 used_after=33969775944
+1794474748.214629 [specpub-probe] alloc trunk-v bytes=199606272 us=4 reserved_before=44090523648 reserved_after=44090523648 used_after=34169382216
+1794474748.214630 [specpub-probe] copy bytes=282775552 us=7
+1794474748.214633 [specpub-probe] copy bytes=199606272 us=5
+1794474748.214634 [specpub-probe] alloc trunk-k bytes=282775552 us=7 reserved_before=44090523648 reserved_after=44090523648 used_after=34452157768
+1794474748.214635 [specpub-probe] alloc trunk-v bytes=199606272 us=8 reserved_before=44090523648 reserved_after=44090523648 used_after=34651764040
+1794474748.214636 [specpub-probe] copy bytes=282775552 us=8
+1794474748.214637 [specpub-probe] copy bytes=199606272 us=5
+1794474748.214641 [specpub-probe] alloc trunk-k bytes=282775552 us=5 reserved_before=44090523648 reserved_after=44090523648 used_after=34934539592
+1794474748.214642 [specpub-probe] alloc trunk-v bytes=199606272 us=4 reserved_before=44090523648 reserved_after=44090523648 used_after=35134145864
+1794474748.214643 [specpub-probe] copy bytes=282775552 us=7
+1794474748.214644 [specpub-probe] copy bytes=199606272 us=3
+1794474748.214645 [specpub-probe] alloc trunk-k bytes=282775552 us=3 reserved_before=44090523648 reserved_after=44090523648 used_after=35416921416
+1794474748.214646 [specpub-probe] alloc trunk-v bytes=199606272 us=5 reserved_before=44090523648 reserved_after=44090523648 used_after=35616527688
+1794474748.214647 [specpub-probe] copy bytes=282775552 us=14
+1794474748.214649 [specpub-probe] copy bytes=199606272 us=5
+1794474748.214650 [specpub-probe] alloc trunk-k bytes=282775552 us=5 reserved_before=44090523648 reserved_after=44090523648 used_after=35899303240
+1794474748.214651 [specpub-probe] alloc trunk-v bytes=199606272 us=6 reserved_before=44090523648 reserved_after=44090523648 used_after=36098909512
+1794474748.214652 [specpub-probe] copy bytes=282775552 us=8
+1794474748.214653 [specpub-probe] copy bytes=199606272 us=5
+1794474748.214654 [specpub-probe] alloc trunk-k bytes=282775552 us=25 reserved_before=44090523648 reserved_after=44090523648 used_after=36381685064
+1794474748.214655 [specpub-probe] alloc trunk-v bytes=199606272 us=5 reserved_before=44090523648 reserved_after=44090523648 used_after=36581291336
+1794474748.214657 [specpub-probe] copy bytes=282775552 us=8
+1794474748.214658 [specpub-probe] copy bytes=199606272 us=6
+1794474748.214658 [specpub-probe] alloc trunk-k bytes=282775552 us=3 reserved_before=44090523648 reserved_after=44090523648 used_after=36864066888
+1794474748.214660 [specpub-probe] alloc trunk-v bytes=199606272 us=5 reserved_before=44090523648 reserved_after=44090523648 used_after=37063673160
+1794474748.214661 [specpub-probe] copy bytes=282775552 us=6
+1794474748.214663 [specpub-probe] copy bytes=199606272 us=5
+1794474748.214664 [specpub-probe] alloc trunk-k bytes=282775552 us=7 reserved_before=44090523648 reserved_after=44090523648 used_after=37346448712
+1794474748.214665 [specpub-probe] alloc trunk-v bytes=199606272 us=4 reserved_before=44090523648 reserved_after=44090523648 used_after=37546054984
+1794474748.214674 [specpub-probe] copy bytes=282775552 us=8
+1794474748.214675 [specpub-probe] copy bytes=199606272 us=8
+1794474748.214676 [specpub-probe] alloc trunk-k bytes=282775552 us=5 reserved_before=44090523648 reserved_after=44090523648 used_after=37828830536
+1794474748.214677 [specpub-probe] alloc trunk-v bytes=199606272 us=4 reserved_before=44090523648 reserved_after=44090523648 used_after=38028436808
+1794474748.214678 [specpub-probe] copy bytes=282775552 us=9
+1794474748.214679 [specpub-probe] copy bytes=199606272 us=3
+1794474748.214680 [specpub-probe] alloc draft-k bytes=282775552 us=5 reserved_before=44090523648 reserved_after=44090523648 used_after=38311212360
+1794474748.214682 [specpub-probe] alloc draft-v bytes=199606272 us=7 reserved_before=44090523648 reserved_after=44090523648 used_after=38510818632
+1794474748.214683 [specpub-probe] copy bytes=282775552 us=8
+1794474748.214684 [specpub-probe] copy bytes=199606272 us=6
+1794474748.215110 [specpub-probe] planes-done why=spec-boundary us=785 reserved=44090523648 used=38510818632
+1794474748.215190 [prefix-cache] insert (spec-boundary): 259904 tokens, 8357.4MB (resident 8545.6MB / 50576MB, model q38)
+1794474748.215194 [specpub-probe] exit why=spec-boundary us=1086 reserved=44090523648 used=38510818632
+1794474751.267515 [tick-spec] seq=1 slot=0 trace=- start_ms=0.032 gap_ms=0.032 wall_ms=3052.173 generated=32->65 rounds=16 drafted=48 accepted=17 k=3
+1794474751.267520 [spec-cost] model="q38" realized n=1 K=3: 21.6 tok/s (now priced from serving)
+1794474754.054048 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=2786.486 generated=65->98 rounds=15 drafted=45 accepted=18 k=3
+1794474756.472895 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=2418.134 generated=98->131 rounds=13 drafted=39 accepted=20 k=3
+1794474756.845310 [tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=372.997 generated=131->134 rounds=2 drafted=6 accepted=3 k=3

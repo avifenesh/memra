@@ -1,0 +1,24 @@
+2026-11-12T15:26:26+02:00 start, unit idle
+MemFree:        32691440 kB
+MemAvailable:   120920604 kB
+Cached:         88487736 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 1m56s
+waitfor: until awk '/^MemAvailable/{exit !($2/1024 < 2000 + 300)}' /proc/meminfo (deadline 2m00s, every 2s)
+waitfor: not yet
+waitfor: MET after 0m32s
+2026-11-12T15:29:09+02:00 before the request:
+MemFree:          892520 kB
+MemAvailable:    2218448 kB
+Cached:         100372696 kB
+2026-11-12T15:29:10+02:00 after the request:
+MemFree:          869560 kB
+MemAvailable:    2213988 kB
+Cached:         100391004 kB
+waitfor: gone 2530049 (deadline 1m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+waitfor: gone 2523058 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

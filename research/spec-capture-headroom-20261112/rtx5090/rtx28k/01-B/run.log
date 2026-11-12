@@ -1,0 +1,9 @@
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8191/readyz (deadline 10m00s, every 5s)
+waitfor: probe failed (exit 7), 1/5 in a row
+waitfor: probe failed (exit 7), 2/5 in a row
+waitfor: probe failed (exit 7), 3/5 in a row
+waitfor: probe failed (exit 7), 4/5 in a row
+waitfor: MET after 0m20s
+waitfor: gone 313905 (deadline 3m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
