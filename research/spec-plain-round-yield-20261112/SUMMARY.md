@@ -115,6 +115,49 @@ long texts: 12 texts over 6 (cell, stream) keys: PREFIX PASS
 plain texts: 18 (cell, n) keys over 36 requests (beside streams and solo, all arms): IDENTICAL
 long texts: 12 texts over 6 (cell, stream) keys: PREFIX PASS
 
+## gb10/plain6
+
+`python3 tools/summ_plain.py gb10/plain6`
+
+| long streams | class | plain class | arm | boots | plain reqs | TTFT p50 / max s | gap p50 / p95 / max s | E2E p50 / max s | plain tok/s live | long tok/s live | long tok/s idle | long longest gap s | solo gap p50 s | solo E2E s |
+|---:|---|---|---|---:|---:|---|---|---|---:|---:|---:|---:|---:|---|
+| 2 | greedy | pen | change6 | 1 | 4 | 3.139 / 3.146 | 0.115 / 0.117 / 0.117 | 5.87 / 5.88 | 4.15 | 33.30 | 40.56 | 1.208 | 0.073 | 2.96 2.96 |
+| 2 | greedy | pen | parent4 | 1 | 2 | 5.858 / 5.858 | 1.609 / 1.859 / 1.996 | 44.95 / 44.95 | 0.54 | 40.13 | 39.79 | 1.102 | 0.073 | 2.96 2.96 |
+| 2 | greedy | pen+hit | change6 | 1 | 8 | 2.897 / 3.265 | 0.115 / 0.117 / 0.118 | 5.58 / 6.00 | 5.57 | 35.89 | 41.32 | 1.296 | 0.073 | 2.97 2.96 |
+| 2 | greedy | pen+hit | parent4 | 1 | 4 | 6.084 / 6.195 | 1.516 / 1.828 / 1.960 | 42.77 / 44.35 | 0.59 | 42.01 | 41.89 | 1.305 | 0.073 | 2.96 2.96 |
+| 2 | greedy | t1json | change6 | 1 | 4 | 4.714 / 4.923 | 0.188 / 0.191 / 0.192 | 9.23 / 9.45 | 2.60 | 29.38 | 41.47 | 1.107 | 0.072 | 2.96 2.97 |
+| 2 | greedy | t1json | parent4 | 1 | 2 | 7.631 / 7.631 | 1.617 / 1.900 / 1.958 | 46.77 / 46.77 | 0.52 | 39.94 | 42.11 | 1.203 | 0.073 | 2.97 2.97 |
+
+| long streams | arm | boot | request | TTFT s | streams tok/s until its first token | alone TTFT s |
+|---:|---|---|---:|---:|---:|---|
+| 2 | change6 | change6-2 | 0 | 3.15 | 27.34 | 1.21 1.21 |
+| 2 | change6 | change6-2 | 1 | 3.02 | 27.14 | 1.21 1.21 |
+| 2 | change6 | change6-2 | 2 | 3.14 | 26.12 | 1.21 1.21 |
+| 2 | change6 | change6-2 | 3 | 2.90 | 28.59 | 1.21 1.21 |
+| 2 | change6 | change6-2 | 0 | 4.92 | 30.88 | 1.22 1.23 |
+| 2 | change6 | change6-2 | 1 | 4.69 | 30.90 | 1.22 1.23 |
+| 2 | change6 | change6-2 | 2 | 4.46 | 32.99 | 1.22 1.23 |
+| 2 | change6 | change6-2 | 3 | 4.71 | 30.12 | 1.22 1.23 |
+| 2 | change6 | change6-2 | 0 | 3.27 | 24.81 | 1.22 1.21 |
+| 2 | change6 | change6-2 | 0 | 0.07 | 55.59 | 1.22 1.21 |
+| 2 | change6 | change6-2 | 1 | 3.04 | 25.02 | 1.22 1.21 |
+| 2 | change6 | change6-2 | 1 | 0.13 | 30.34 | 1.22 1.21 |
+| 2 | change6 | change6-2 | 2 | 2.90 | 27.96 | 1.22 1.21 |
+| 2 | change6 | change6-2 | 2 | 0.10 | 52.18 | 1.22 1.21 |
+| 2 | change6 | change6-2 | 3 | 3.04 | 27.30 | 1.22 1.21 |
+| 2 | change6 | change6-2 | 3 | 0.12 | 57.03 | 1.22 1.21 |
+| 2 | parent4 | parent4-1 | 0 | 5.86 | 35.33 | 1.21 1.21 |
+| 2 | parent4 | parent4-1 | 1 | 5.63 | 35.86 | 1.21 1.21 |
+| 2 | parent4 | parent4-1 | 0 | 7.63 | 35.78 | 1.23 1.22 |
+| 2 | parent4 | parent4-1 | 1 | 7.13 | 38.98 | 1.23 1.22 |
+| 2 | parent4 | parent4-1 | 0 | 6.20 | 33.58 | 1.21 1.22 |
+| 2 | parent4 | parent4-1 | 0 | 1.58 | 45.62 | 1.21 1.22 |
+| 2 | parent4 | parent4-1 | 1 | 6.08 | 32.87 | 1.21 1.22 |
+| 2 | parent4 | parent4-1 | 1 | 1.61 | 45.90 | 1.21 1.22 |
+
+plain texts: 18 (cell, n) keys over 36 requests (beside streams and solo, all arms): IDENTICAL
+long texts: 12 texts over 6 (cell, stream) keys: PREFIX PASS
+
 ## gb10/longprime
 
 `python3 tools/summ_plain.py gb10/longprime`
@@ -244,7 +287,7 @@ long texts: 12 texts over 6 (cell, stream) keys: PREFIX PASS
 | 2 | 8 | vendor | change3 | 1 | 9.3 | 43.64 | 14.64 | 55.11 | 69.75 | 0.135 / 0.139 | 0.676 | 9.29 | 57.78 |
 | 2 | 8 | vendor | parent3 | 1 | 9.3 | 44.64 | 14.27 | 54.92 | 69.18 | 0.135 / 0.139 | 0.730 | 9.32 | 57.02 |
 
-plain texts: 16 (riders, class, n) keys over 64 requests (beside streams and alone, all arms): DIFFER {(8, 'vendor', 0): {('c6688e3acd19f017', 64), ('9c9afb2481b792e7', 64), ('0f85961509321c8b', 64)}, (8, 'vendor', 1): {('d3e2d8e5f4e0fee3', 64), ('7cbc433d84785da1', 64)}}
+plain texts: 16 (riders, class, n) keys over 64 requests (beside streams and alone, all arms): DIFFER {(8, 'vendor', 0): {('c6688e3acd19f017', 64), ('0f85961509321c8b', 64), ('9c9afb2481b792e7', 64)}, (8, 'vendor', 1): {('7cbc433d84785da1', 64), ('d3e2d8e5f4e0fee3', 64)}}
 long texts: 12 texts over 6 keys: PREFIX PASS
 
 ## gb10/riders9
@@ -290,7 +333,7 @@ long texts: 8 texts over 4 keys: PREFIX PASS
 | 2 | 8 | vendor | change5 | 1 | 5.9 | 107.15 | 22.42 | 86.96 | 109.38 | 0.085 / 0.088 | 0.471 | 5.89 | 97.61 |
 | 2 | 8 | vendor | parent3 | 1 | 5.9 | 106.65 | 22.60 | 86.37 | 108.97 | 0.086 / 0.089 | 0.452 | 5.93 | 94.51 |
 
-plain texts: 24 (riders, class, n) keys over 96 requests (beside streams and alone, all arms): DIFFER {(4, 'vendor', 0): {('b41d0c67ade4dbbd', 64), ('6e1005c63acf10c5', 64)}}
+plain texts: 24 (riders, class, n) keys over 96 requests (beside streams and alone, all arms): DIFFER {(4, 'vendor', 0): {('6e1005c63acf10c5', 64), ('b41d0c67ade4dbbd', 64)}}
 long texts: 16 texts over 8 keys: PREFIX PASS
 
 ## rtx5090/riders6
@@ -320,6 +363,26 @@ long texts: 6 texts over 3 keys: PREFIX PASS
 
 plain texts: 3 (riders, class, n) keys over 12 requests (beside streams and alone, all arms): IDENTICAL
 long texts: 6 texts over 3 keys: PREFIX PASS
+
+## gb10/mixed
+
+`python3 tools/summ_mixed.py gb10/mixed`
+
+| cell | arm | boots | streams tok/s before | streams tok/s live | all tok/s live | request | lane | gap p50 s | TTFT s | E2E s | tok/s live |
+|---|---|---:|---:|---:|---:|---|---|---|---|---|---:|
+| 2:pen@harvest~0#48+t1json~3 | change6 | 1 | 43.65 | 29.46 | 33.61 | pen-0 | harvest | 1.6188 | 3.0622 | 83.849 | 0.46 |
+| | | | | | | t1json-0 | interactive | 0.1887 | 1.9767 | 6.517 | 3.68 |
+| 2:pen@harvest~0#48+t1json~3 | parent4 | 1 | 43.65 | 40.72 | 41.93 | pen-0 | harvest | 1.6104 | 3.0791 | 80.738 | 0.64 |
+| | | | | | | t1json-0 | interactive | 1.6102 | 3.3968 | 42.141 | 0.57 |
+| 2:pen~0+t1json~1 | change6 | 1 | 43.82 | 29.7 | 36.03 | pen-0 | interactive | 0.1153 | 0.3046 | 3.417 | 3.17 |
+| | | | | | | t1json-0 | interactive | 0.1889 | 2.0383 | 6.576 | 3.17 |
+| 2:pen~0+t1json~1 | parent4 | 1 | 43.82 | 40.77 | 41.89 | pen-0 | interactive | 1.6065 | 1.1807 | 39.422 | 0.56 |
+| | | | | | | t1json-0 | interactive | 1.5967 | 3.8068 | 42.017 | 0.56 |
+| 2:t1json~3 | change6 | 1 | 42.98 | 30.12 | 33.9 | t1json-0 | interactive | 0.189 | 1.8043 | 6.342 | 3.78 |
+| 2:t1json~3 | parent4 | 1 | 42.99 | 41.09 | 41.66 | t1json-0 | interactive | 1.5968 | 3.2498 | 41.645 | 0.58 |
+
+plain texts: 3 (class, n, max tokens) keys over 20 requests (beside streams and alone, all arms): IDENTICAL
+long texts: 12 texts over 2 keys: PREFIX PASS
 
 ## gb10/new
 

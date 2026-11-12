@@ -38,6 +38,8 @@ request waits before admission (memra#1249), a long prime's chunks between full 
   | `parent3` | cdfdfd6006, main (#1227 and #1233 landed) | `memra-0.141.1-14a59677bb0e`, sha256 `00b8744f648f...` | sha256 `70130b7d8202...` |
   | `change3` | 9074ec16aa, the first review head (superseded) | `memra-0.141.1-a88473c260ed`, sha256 `48caeb28da7e...` | sha256 `fa3e3999b2d6...` |
   | `change5` | 3eeb4710f0, the review head on cdfdfd6006 (rebased onto main 11b368f7d7 as 29b03f85fb with the same delta; 76af934425 adds a test line only) | `memra-0.141.1-1f4dcebc4fe7`, sha256 `a43e7ff33839...` | sha256 `33af2f820d97...` |
+  | `parent4` | 11b368f7d7, main (memra#1248 and memra#1259 landed) | `memra-0.141.1-32737cebc309`, sha256 `9ee0eb49ada1...` | |
+  | `change6` | 11ae9661d1, the round-2 review head on it | `memra-0.141.1-a18ac57c28ec`, sha256 `66e3098a72ec...` | sha256 `e73828fc3cd9...` |
 
   `mech` and `mech-burst1` ran main 340a5e5bfa (the same crates as #1241's head a20fd8c59f).
 
@@ -79,7 +81,12 @@ identical and stream texts prefix-equal). Server logs are gzipped when large.
 | `rtx5090/plain5` | plain cell, 1,234-token prompts and a prefix-hit re-send, L = 1, 2 | change5, parent3 |
 | `rtx5090/new5` | newcomer cell, L = 1, 2 | parent3, change5 |
 | `rtx5090/inv-change5` | seeded-invariance gate on the review head | |
-| `cpu/` | CPU checks on 76af934425, the review head rebased onto main 11b368f7d7 with its test-only compile fix (fmt, clippy, engine and server suites, flags and numeric censuses), and the red arms | |
+| `gb10/plain6` | plain cell, 1,234-token prompts and a prefix-hit re-send, round-2 head | parent4, change6 |
+| `gb10/mixed` | `tools/mixed_cell.py`: an interactive greedy-with-penalty rider and an interactive json-constrained request a second later (`2:pen~0+t1json~1`); an interactive json request without (`2:t1json~3`) and with (`2:pen@harvest~0#48+t1json~3`) a dark harvest request, beside 2 greedy streams | change6, parent4 |
+| `gb10/inv-change6`, `gb10/bnd-change6` | both gates on the round-2 head | |
+| `gb10/mixed-shed` | the first change6 boot of the mixed cell: the harvest request shed with a 429 (kept as the receipt of the shed) | change6 |
+| `rtx5090/inv-change6` | seeded-invariance gate on the round-2 head | |
+| `cpu/` | CPU checks on 11ae9661d1, the round-2 head on main 11b368f7d7 (fmt, clippy, engine and server suites, flags and numeric censuses), and the red arms | |
 
 Void: `gb10/longprime/void.jsonl` and `void-server-parent2-4.log.gz` are the parent2 boot 4
 whose lease overlapped another lane's page-cache fill on the unit; boot `parent2-5` replaces it.
@@ -133,18 +140,36 @@ tools over these dirs (each command is in its heading). Per dir:
   - `gb10/plain3` (the first review head, `change3`): a newcomer's first token 1.79 s where
     `change2` had 0.31 s, because the prime outlook read phase (b)'s 4 ms windows at the tick's
     start. The time-window rule of the review head answers it.
+- Round-2 head (`change6` against main `parent4`, one boot per arm):
+  - `gb10/plain6`: repeats `gb10/plain5` within 0.003 s on every gap; texts identical.
+  - `gb10/mixed`: an interactive penalty rider kept in phase (c) by an interactive json request
+    (the `rider-uncarried` receipt) 1.607 -> 0.115 s, the json request 1.597 -> 0.189 s; a dark
+    harvest request beside the json request keeps one token per burst's worth of time
+    (1.610 -> 1.619 s) and costs the streams 2% (30.1 -> 29.5 tok/s; 1% on main). The harvest
+    request is admitted with `MEMRA_SHED_HARVEST=100`; `gb10/mixed-shed` is the first change
+    boot, where the default shed it (429) beside the streams and alone.
 - Gates: seeded invariance PASS (54 rows) on `gb10/inv-change`, `gb10/inv-change2`,
-  `gb10/inv-change3`, `gb10/inv-change5`, `rtx5090/inv-change2` and `rtx5090/inv-change5`; burst boundary
-  PASS (229 rows) on `gb10/bnd-change`, `gb10/bnd-change2`, `gb10/bnd-change3` and
-  `gb10/bnd-change5`. Each verdict is the `PASS` line of the dir's `gate.log`.
+  `gb10/inv-change3`, `gb10/inv-change5`, `gb10/inv-change6`, `rtx5090/inv-change2`,
+  `rtx5090/inv-change5` and `rtx5090/inv-change6`; burst boundary PASS (229 rows) on
+  `gb10/bnd-change`, `gb10/bnd-change2`, `gb10/bnd-change3`, `gb10/bnd-change5` and
+  `gb10/bnd-change6`. Each verdict is the `PASS` line of the dir's `gate.log`.
 
 ## Red arms
 
-`tools/redarm.py` writes each arm into a copy of the tree, `tools/dd-redgreen.sh` runs the five
-tests on each (`cpu/redgreen.log`, on 0550953c2a, whose `worker.rs` the head keeps byte for byte): `parent` (the change
-reverted) and `nohook` (no round hook) fail the burst and wiring tests; `nodue` fails the naming
-test; `nowrite` and `noride` fail the wiring test; `nolane` (the lane helper ignores the lane)
-fails the lane test; `nolanewire` (the tick weighs every live plain session without the helper)
-and `nooutlook` (the tick passes no phase (b) hold) fail the wiring test; `noheld` (the prime
-helper ignores the hold) and `nowindows` (phase (b)'s time windows never count as closed) fail
-the prime test. The change passes all five.
+`tools/redarm.py` writes each arm into a copy of the tree, `tools/dd-redgreen.sh` runs the seven
+tests on each (`cpu/redgreen.log`, on the round-2 head 11ae9661d1):
+- `parent` (the change reverted) and `nohook` (no round hook) fail the burst and wiring tests;
+- `nodue` (the verdict never says yes) and `nomtp` (it ignores the tick's bursts) fail the
+  naming test;
+- `nowrite`, `noride` (no host rider), `noridelane` (host riders in every lane), `nolanewire`
+  (the tick weighs every live plain session), `nooutlook` (no phase (b) hold), `carriedB` (no
+  cohort candidate in the riding rule, the second review's arm B) and `nocadencewire` (phase (c)
+  and (d) ignore the cadence) fail the wiring test;
+- `nolane` (the lane helper ignores the lane) fails the lane test;
+- `noheld` (the prime helper ignores the hold), `nowindows` (the time windows never close) and
+  `nochoice` (a waiting choice group or the walker primes) fail the prime test;
+- `carriedA` (rider candidates hold riders back, the second review's arm A) and `carriedC`
+  (dark decoders hold riders back) fail the carried test;
+- `nocadence` (dark work on every yielded tick) fails the cadence test.
+
+The change passes all seven.
