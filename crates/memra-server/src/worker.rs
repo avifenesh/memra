@@ -3019,6 +3019,12 @@ pub struct Metrics {
     /// ticks); parks count successful step-OOM requeues. Pool entry fields are current gauges.
     pub admission_session_defers: u64,
     pub admission_vram_defers: u64,
+    /// Admission passes that requeued an arrival because the reading, less the charges of
+    /// admitted sessions that own no route state yet, did not hold it (memra#1255): the
+    /// reading changes when the tick builds those sessions, so nothing is decided on it.
+    pub admission_settle_waits: u64,
+    /// Total time requests spent in settle waits before their admission, in ms (memra#1255).
+    pub admission_settle_wait_ms: f64,
     /// Requests the VRAM gate refused their DFlash drafter and priced again as plain
     /// (memra#1173): the full charge with the draft plane did not fit. Once per request.
     pub admission_drafter_refusals: u64,
@@ -8643,6 +8649,65 @@ fn pp_boundary_growth_projection(
             .ok()?;
     }
     Some(growth)
+}
+
+/// Whether a session owns its route's device state (memra#1255). `admit` builds the plain cache,
+/// the MTP spec session and every restored or resumed session; the DFlash, gemma-spec and GLM
+/// cold primes build theirs in the tick (`dspark_prime_start`, `dspark_spec_session_new`,
+/// `gemma_spec_session_new`, `glm5_prime_start`). Until then the session has allocated none of
+/// its charge, so the live reading cannot see it.
+fn session_owns_route_state(s: &Session) -> bool {
+    s.cache.is_some()
+        || s.spec.is_some()
+        || s.mtp_prime.is_some()
+        || s.gspec.is_some()
+        || s.dspark.is_some()
+        || s.dspark_prime.is_some()
+        || s.glm5.is_some()
+        || s.glm5_prime.is_some()
+        || s.glm5_plain_prime.is_some()
+}
+
+/// What the admitted sessions that own no route state yet will allocate (memra#1255): the
+/// charge the gate admitted each one on. Pure over `(owns_route_state, charge, workspace)` per
+/// session. `workspace_booked` (the armed memory door) leaves out each charge's prefill
+/// workspace, which the door's pending-prime term books already.
+fn unbuilt_charge_bytes(
+    sessions: impl Iterator<Item = (bool, usize, usize)>,
+    workspace_booked: bool,
+) -> usize {
+    sessions
+        .filter(|(built, _, _)| !built)
+        .map(|(_, charge, workspace)| {
+            if workspace_booked {
+                charge.saturating_sub(workspace)
+            } else {
+                charge
+            }
+        })
+        .fold(0usize, usize::saturating_add)
+}
+
+/// The unbuilt booking over the active set (`unbuilt_charge_bytes`).
+fn unbuilt_session_booking(active: &[Session], workspace_booked: bool) -> usize {
+    unbuilt_charge_bytes(
+        active.iter().map(|s| {
+            (
+                session_owns_route_state(s),
+                s.admitted_charge_bytes,
+                s.admitted_workspace_bytes,
+            )
+        }),
+        workspace_booked,
+    )
+}
+
+/// SETTLE WAIT (memra#1255): an arrival the booked reading does not hold while an admitted
+/// session still owes its unbuilt charge waits for the next pass. The tick builds that session
+/// and the next reading shows what it took, so no reclaim, eager admission, drafter refusal or
+/// capacity reject is decided on this one.
+fn settle_wait(unbuilt_booked: usize, fits_full: bool) -> bool {
+    unbuilt_booked > 0 && !fits_full
 }
 
 /// Prompt rows a session still has to prime (memra#680): its queued rows while the prime runs,
@@ -18009,6 +18074,11 @@ struct Session {
     /// this session, still booked; 0 once released at prime completion (or never booked, on a
     /// card without the release).
     booked_w_bytes: u64,
+    /// The charge the VRAM gate admitted this session on (memra#1255), and the held
+    /// prefill-workspace part of it. Booked against every later reading while the session owns
+    /// no route state (`session_owns_route_state`); 0 for a test-constructed Session.
+    admitted_charge_bytes: usize,
+    admitted_workspace_bytes: usize,
     /// The predicted TOTAL completion tokens behind `shadow_kv_hat`; with
     /// `generated.len()` this gives the per-session remainder the would-reject
     /// Retry-After hint scans (D2 gap G6).
@@ -20072,6 +20142,11 @@ pub fn run(
     let mut n_cached_in = 0u64;
     let mut n_session_defers = 0u64;
     let mut n_vram_defers = 0u64;
+    let mut n_settle_waits = 0u64;
+    // memra#1255: requests in a settle wait, by request id: when the first wait began and how many
+    // passes waited. Read once at admission for the `[admission] settled:` line.
+    let mut settling: HashMap<String, (Instant, u32)> = HashMap::new();
+    let mut settle_wait_ms_total = 0f64;
     let mut n_drafter_refusals = 0u64;
     // RECLAIM BOOKING (`reclaim_owed_booking`): armed by a door-off partial reclaim that freed
     // bytes, disarmed at an arrival that finds nothing owed. Spans ticks: a burst's primes and
@@ -20557,6 +20632,10 @@ pub fn run(
         let mut requeue: std::collections::VecDeque<Box<Request>> = Default::default();
         // Per-tick count of requests the VRAM gate deferred (logged once per tick).
         let mut vram_defers = 0usize;
+        let mut settle_waits = 0usize;
+        // A request that left the queue without being admitted (refused, cancelled) leaves its
+        // settle entry behind; none lives past ten minutes.
+        settling.retain(|_, (since, _)| since.elapsed() < Duration::from_secs(600));
         // The devices of every interactive request the VRAM gate deferred this pass that can still
         // fit once its device's sessions retire: later requests on those devices wait behind it
         // (head-of-line memory order, after the first-token gate).
@@ -21509,6 +21588,19 @@ pub fn run(
                     0
                 };
                 let pending_booked = pending_booked.saturating_add(vmm_owed);
+                // UNBUILT BOOKING (memra#1255): an admitted session whose route builds its state
+                // in the tick (a DFlash, gemma-spec or GLM cold prime) has allocated none of its
+                // charge, so a second arrival read in the same pass, or in a step-OOM replay's
+                // pass, saw the first one's bytes as free and both were admitted on them. Every
+                // reading is reduced by those charges until the tick builds the sessions. On a
+                // single-device deployment only: a PP or TP route that builds its state in the
+                // tick charges per stage, which this scalar booking does not split.
+                let unbuilt_booked = if is_multi_device_deployment(&loaded) {
+                    0
+                } else {
+                    unbuilt_session_booking(&active, admit_memory_cfg.armed)
+                };
+                let pending_booked = pending_booked.saturating_add(unbuilt_booked);
                 let book =
                     move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);
                 let measured_headroom =
@@ -21520,6 +21612,36 @@ pub fn run(
                             "cannot read every model-owned device for memory admission",
                         ),
                     );
+                    continue;
+                }
+                if let Some(headroom) = measured_headroom.as_ref()
+                    && settle_wait(unbuilt_booked, headroom.sufficient(required))
+                {
+                    if settle_waits == 0 {
+                        eprintln!(
+                            "[admission] settle wait: model={model_key:?} ctx={} effective free \
+                             {:.0}MB after {:.0}MB booked for {} admitted session(s) with no \
+                             route state yet < cost {:.0}MB + reserve {:.0}MB; requeued for the \
+                             next pass [queue {}]",
+                            admission_cap,
+                            headroom.limiting_free_bytes() as f64 / 1e6,
+                            unbuilt_booked as f64 / 1e6,
+                            active
+                                .iter()
+                                .filter(|s| !session_owns_route_state(s))
+                                .count(),
+                            cost as f64 / 1e6,
+                            reserve as f64 / 1e6,
+                            queue.len() + requeue.len(),
+                        );
+                    }
+                    settle_waits += 1;
+                    n_settle_waits += 1;
+                    settling
+                        .entry(req.request_id.clone())
+                        .or_insert_with(|| (Instant::now(), 0))
+                        .1 += 1;
+                    requeue.push_back(req);
                     continue;
                 }
                 if let Some(mut headroom) = measured_headroom {
@@ -22601,6 +22723,14 @@ pub fn run(
             // The request is admitted. Effective headroom (driver + pool-cached) said it
             // fits; make sure the DRIVER itself has room for the prime's own allocations
             // before any device work starts (see admit_driver_headroom_bytes).
+            if let Some((since, passes)) = settling.remove(&req.request_id) {
+                let waited_ms = since.elapsed().as_secs_f64() * 1e3;
+                settle_wait_ms_total += waited_ms;
+                eprintln!(
+                    "[admission] settled: model={model_key:?} ctx={admission_cap} admitted after \
+                     {passes} settle wait(s), {waited_ms:.1} ms after the first"
+                );
+            }
             ensure_driver_headroom(&engine, &loaded, "prime");
             let observe_model = &loaded[&model_key].model;
             let observe_n_trunk =
@@ -22929,6 +23059,18 @@ pub fn run(
                             s.request_id, s.model
                         );
                     }
+                    // memra#1255: the charge this session was admitted on, booked while it owns
+                    // no route state (`unbuilt_session_booking`).
+                    s.admitted_charge_bytes = cost;
+                    s.admitted_workspace_bytes =
+                        crate::admit_predict::RequestCharge::from_physical_cost(
+                            cost as u64,
+                            context_cap_bytes as u64,
+                            activation_bytes as u64,
+                            draft_state_bytes as u64,
+                            0,
+                        )
+                        .prefill_workspace_bytes as usize;
                     admission_book.admit(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
                     active.push(s);
                 }
@@ -26144,6 +26286,8 @@ pub fn run(
             m.kv_flex_shed_ms = kv_flex.shed_ms_total;
             m.admission_session_defers = n_session_defers;
             m.admission_vram_defers = n_vram_defers;
+            m.admission_settle_waits = n_settle_waits;
+            m.admission_settle_wait_ms = settle_wait_ms_total;
             m.admission_drafter_refusals = n_drafter_refusals;
             m.admission_vram_hol_holds = n_vram_hol_holds;
             m.prefill_deadline_ticks = n_prefill_deadline_ticks;
@@ -31512,6 +31656,8 @@ fn admit(
         // there); zero until then so a test-constructed Session books nothing.
         booked_kv_bytes: 0,
         booked_w_bytes: 0,
+        admitted_charge_bytes: 0,
+        admitted_workspace_bytes: 0,
         vmm_floor_rows: n_prompt,
         errored: false,
         shadow_kv_hat: 0,
@@ -39832,6 +39978,94 @@ mod tests {
             let v = vram_gate_drained(false, without, dflash);
             assert!(!matches!(v, V::Admit | V::AdmitEager), "{v:?}");
         }
+    }
+
+    #[test]
+    fn an_admitted_session_with_no_route_state_books_its_charge_until_the_tick_builds_it() {
+        // memra#1255. A DFlash cold prime builds its caches and drafter plane in the tick, not
+        // in `admit`, so the live reading of a second arrival in the same pass still held the
+        // first session's whole charge. The receipt (RTX 5090 Laptop, agentic c = 2, main
+        // `46920874c0`): A admitted on 650 MB + its 120 MB plane, then B on the same reading
+        // (driver free and pool used unchanged between the two admission trims), 3,020 MB of
+        // effective free against B's 960 + 169 MB and the 1,576 MB reserve. The step OOMed.
+        use super::{settle_wait, unbuilt_charge_bytes};
+        const MB: usize = 1_000_000;
+        let a = (false, (650 + 120) * MB, 224 * MB); // admitted, no route state yet
+        let built = (true, (960 + 169) * MB, 451 * MB); // a session whose state exists
+        assert_eq!(
+            unbuilt_charge_bytes([a, built].into_iter(), false),
+            770 * MB
+        );
+        assert_eq!(unbuilt_charge_bytes([built].into_iter(), false), 0);
+        assert_eq!(unbuilt_charge_bytes([a, a].into_iter(), false), 1_540 * MB);
+        // The armed memory door books the prime workspace of a priming session already.
+        assert_eq!(unbuilt_charge_bytes([a, built].into_iter(), true), 546 * MB);
+        assert_eq!(
+            unbuilt_charge_bytes([(false, 10, 20)].into_iter(), true),
+            0,
+            "saturates"
+        );
+
+        // B's reading on main fitted; less A's booking it does not, and B waits a pass.
+        let reading = 3_020 * MB;
+        let b_required = (960 + 169 + 1_576) * MB;
+        assert!(reading >= b_required);
+        let booked = unbuilt_charge_bytes([a].into_iter(), false);
+        let fits = reading - booked >= b_required;
+        assert!(!fits);
+        assert!(settle_wait(booked, fits));
+        // Nothing owed: the gate's own verdicts decide, as before. A fit never waits.
+        assert!(!settle_wait(0, false));
+        assert!(!settle_wait(0, true));
+        assert!(!settle_wait(booked, true));
+    }
+
+    #[test]
+    fn every_route_state_field_counts_as_built_and_the_settle_wait_precedes_every_verdict() {
+        // memra#1255: a route whose session state lives in a field `session_owns_route_state`
+        // does not name would be booked for its life; a settle wait taken after the reclaim or
+        // the drafter verdict would decide on the reading it exists to avoid.
+        let src = include_str!("worker.rs");
+        let start = src.find("\nstruct Session {").expect("Session struct");
+        let body = &src[start..start + src[start..].find("\n}\n").unwrap()];
+        let owns = &src[src.find("fn session_owns_route_state(").unwrap()..];
+        let owns = &owns[..owns.find("\n}\n").unwrap()];
+        let mut fields = 0;
+        for line in body.lines() {
+            let Some((name, ty)) = line.trim().split_once(": Option<") else {
+                continue;
+            };
+            let route_state =
+                ty == "Cache>," || ty.ends_with("SpecSession>,") || ty.ends_with("PrimeState>,");
+            if route_state {
+                fields += 1;
+                assert!(
+                    owns.contains(&format!("s.{name}.is_some()")),
+                    "Session::{name} ({ty}) is route state that session_owns_route_state misses"
+                );
+            }
+        }
+        assert_eq!(fields, 9, "the route-state fields this test knows");
+
+        // The production code: everything before the first test module after the worker loop.
+        let prod = &src[..src.find("\nmod abort_park_tests {").expect("test module")];
+        let at = |needle: &str| {
+            assert_eq!(prod.matches(needle).count(), 1, "{needle}");
+            prod.find(needle).unwrap()
+        };
+        let booked = at("let pending_booked = pending_booked.saturating_add(unbuilt_booked);");
+        let book =
+            at("move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);");
+        let settle = at("settle_wait(unbuilt_booked, headroom.sufficient(required))");
+        let reclaim = at("let mut reclaim_spare = if !headroom.sufficient(required) {");
+        let verdict = at("let mut verdict = vram_gate_first_read(");
+        let recorded = at("s.admitted_charge_bytes = cost;");
+        let pushed = prod[recorded..]
+            .find("active.push(s);")
+            .map(|i| i + recorded)
+            .unwrap();
+        assert!(booked < book && book < settle && settle < reclaim && reclaim < verdict);
+        assert!(verdict < recorded && recorded < pushed);
     }
 
     #[test]
