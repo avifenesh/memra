@@ -94,3 +94,7 @@ research/same-pass-admission-20261112/cpu*/*.patch -text whitespace=-blank-at-eo
 research/same-pass-admission-20261112/cpu*/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
 research/same-pass-admission-20261112/gates/**/*.log -text whitespace=-blank-at-eol,-blank-at-eof
 research/same-pass-admission-20261112/harness/*.patch -text whitespace=-blank-at-eol,-blank-at-eof
+
+# memra#1244: the round-yield cells' raw answer texts end lines in a space or end in a blank line; stored byte for byte.
+research/spec-plain-round-yield-20261112/**/texts/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
+research/spec-plain-round-yield-20261112/**/*.log -text whitespace=-blank-at-eol,-blank-at-eof
