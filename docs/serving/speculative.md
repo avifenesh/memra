@@ -130,9 +130,11 @@ spec session keeps at least K=1; the demotion sweep moves it to batched decode i
 A speculating session runs a burst of rounds (`MEMRA_SPEC_BURST`, default 32 tokens) inside the
 worker tick. Same-model MTP sessions on continuation bursts run as a pooled cohort: their bursts
 advance in lockstep and each round's verifies share one target forward, chunked at 16 rows, with
-the draft steps pooled too. Plain device-sampled sessions of the same model can ride the cohort as
-one row per round, byte-identical to their batched stream; a model with a plain session that cannot
-ride (constrained, host-sampled, vision) takes no riders that tick. DSpark sessions form their own
+the draft steps pooled too. Plain sessions of the same model can ride the cohort as one row per
+round, byte-identical to their batched stream: device-sampled ones in any lane, host-sampled ones
+(greedy with a penalty) in the interactive lane. A model with an interactive plain session that
+cannot ride (constrained, vision, fork) takes no riders that tick; a judge or harvest one stays in
+phase (c) and holds no rider back. DSpark sessions form their own
 cohorts. Prime bursts, constrained sessions and the other routes step one session at a time.
 Pooling needs a model whose verify can pool: an MTP head, the batched serving class, no PP cuts,
 no sliding-gated MoE or gemma batch program, and the verify graph off. The verify graph is on by
@@ -256,14 +258,15 @@ session. Cost on Qwen3.5-9B NVFP4 + MTP, one RTX 5090, 256-token greedy, N=3 (20
   [`research/spec-cohort-newcomer-20261112/`](../../research/spec-cohort-newcomer-20261112/)).
 - **A plain session behind the bursts advances once per round** (memra#1244, 2026-11-12). A plain
   interactive request with a host sampler (greedy with a penalty) rides the pooled cohort like a
-  device-sampled one, while the cost model keeps the streams speculative (on GB10's Qwen3.8-27B up to 4 riders
-  beside 2 streams). While an interactive plain session gets its step only after the tick's
+  device-sampled one, while the cost model keeps the streams speculative (on GB10's
+  Qwen3.8-27B up to 4 riders beside 2 streams). While an interactive plain session gets its
+  step only after the tick's
   bursts (constrained, vision, fork, a rider candidate no cohort carries, a prompt whose prime
   phase (b) runs this tick within one chunk), every MTP burst of the tick ends at its first
   round, in a tick with no DFlash2, glm5 or gemma burst. Judge and harvest sessions never engage
-  it, never keep interactive riders in phase (c), and keep their burst cadence on yielded ticks.
-  Before, such a session got one token per
-  burst: on GB10 1.4 to 1.8 s between tokens beside one to three streams, 0.10 to 0.19 s now.
+  it, never keep interactive riders in phase (c), and step once every N yielded ticks (N the
+  rounds of a recent full burst; about half their burst cadence on GB10 while the yield holds).
+  Before, such a session got one token per burst: on GB10 1.4 to 1.8 s between tokens beside one to three streams, 0.10 to 0.19 s now.
   The streams lose 1 to 5% beside a rider row in their forward and pay for the plain session's
   own forward while it is live otherwise (24 to 29% on GB10 beside a constrained request; 29 to
   41% on the RTX 5090, where the rider steps plain inside each round). Where the total falls,
