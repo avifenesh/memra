@@ -70,3 +70,6 @@ research/gemma-moe-placement-20261111/served/**/cells.txt -text whitespace=-blan
 
 # memra#1200: the run-gen consoles end in a blank line; stored byte for byte.
 research/grid-y-rows-20261111/rtx5090/rungen-*.log -text whitespace=-blank-at-eol,-blank-at-eof
+
+# memra#1211: the stall-mark cells' raw answer texts end lines in a space or end in a blank line; stored byte for byte.
+research/spec-stall-mark-20261111/**/texts/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
