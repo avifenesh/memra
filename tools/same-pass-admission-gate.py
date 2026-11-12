@@ -13,21 +13,28 @@ The cell, on one card and one boot:
 1. Learn: each of two cold prompts (A and B, about the same length, distinct text) alone on the
    idle card, to read its charge from the server's own lines (`request cost` + `draft-state
    charge`), its prompt length and its greedy text, and the boot-calibrated transient floor.
-2. Keep the worker busy: one short greedy request (the keeper) decodes through the rest of the
-   cell, so the pair arrives during a tick and queues for one admission pass, and `/metrics` is
-   fresh (an idle worker does not refresh it).
+2. Keep the worker busy: one greedy request (the keeper, a counting run that does not end early)
+   decodes through the rest of the cell, so the pair arrives during a tick and queues for one
+   admission pass, and `/metrics` is fresh (an idle worker does not refresh it). The server runs
+   with `MEMRA_SPEC_GATE_LOW=3` so the keeper and the pair (a projected wave of 3) all stay on the
+   DFlash route; at the default band of 2 the pair is priced plain and builds its cache in
+   `admit`, which is not the shape under test.
 3. Place: hold a ballast (plain driver allocations in a child process) so effective free beside
    the keeper lies between `charge_A + floor` and `charge_A + charge_B + floor` (`--place`):
-   each request fits alone, the two together do not.
+   each request fits alone, the two together do not. The reading is taken again after the
+   ballast and corrected once; a placement outside that band is refused.
 4. Fire A and B together (two threads), greedy.
 
 Verdicts, read from the server log after the pair was fired:
 
-- V1 SAME-PASS: the pair met in one admission pass: `admit` ran for both (two `[spec-k]` lines
-  with the pair's prompt lengths) before the first `[prime-yield]` line, or a `[admission] settle
-  wait:` line printed before it. Otherwise the run reads NOT-PLACED, not PASS.
-- V2 NO-OVERLAP: the pass did not admit both: fails when `admit` ran for both before any prime
-  chunk, i.e. both were charged against a reading that held room for one.
+- V1 SAME-PASS: the pair met in one admission pass on the DFlash route: `admit` ran for both
+  (two `[spec-k]` lines with the pair's prompt lengths, each after a `path=spec` cost line) with
+  no tick between them, or a `[admission] settle wait:` line printed after the first admission
+  and before the next tick. A tick is any line a tick's work prints after the admission pass: a
+  prime chunk (`[prime-yield]`), a decode burst (`[dspark-acc]`) or a step OOM. Otherwise the
+  run reads NOT-PLACED, not PASS.
+- V2 NO-OVERLAP: the pass did not admit both: fails when `admit` ran for both with no tick
+  between, i.e. both were charged against a reading that held room for one.
 - V3 NO-OOM: no `out of memory` line, no panic or worker respawn, and the server is alive.
 - V4 SERVED: both requests answered 200 with the same text as the learn pass of the same prompt
   (greedy; a wait does not change the numeric program).
@@ -68,7 +75,7 @@ RE_DRAFT = re.compile(r"\[admission\] per-session draft-state charge: model=\"[^
 RE_FLOOR = re.compile(r"\[admit-cal\] boot calibration done: .*? transient floor (\d+)MB \(static was")
 OOM_LINES = ("out of memory", "CUDA_ERROR_OUT_OF_MEMORY")
 BAD_LINES = ("panicked", "[worker] FATAL", "[worker] respawn")
-PRIME_LINE = "[prime-yield]"
+TICK_LINES = ("[prime-yield]", "[dspark-acc]", "[admit-oom] step OOM")
 WORKER_ADMIT_LINE = "[spec-k] "  # `admit` decided the request's K: the worker admitted it
 SETTLE_LINE = "[admission] settle wait:"
 
@@ -87,6 +94,13 @@ def prose(seed: int, words: int) -> str:
         x = (x * 1103515245 + 12345) % (1 << 31)
         out.append(WORDS[x % len(WORDS)])
     return " ".join(out) + "\nSummarize the record above in one paragraph."
+
+
+def keeper_prompt() -> str:
+    """A counting run the model continues under greedy decoding instead of ending with a short
+    answer: a summary prompt reached its end of sequence in about 170 tokens, before the pair was
+    placed. No prefix shared with the pair's prompts."""
+    return ", ".join(str(i) for i in range(1, 121)) + ","
 
 
 def gpu_row() -> dict:
@@ -208,6 +222,9 @@ class Server:
                 "MEMRA_TIMEOUT_MS_MAX": "240000",
                 "MEMRA_DSPARK_SPEC": "1",
                 "MEMRA_DSPARK_DRAFT": self.draft,
+                # The keeper and the pair are a projected wave of 3: keep all three on the DFlash
+                # route (the default spec band of 2 prices the third arrival plain).
+                "MEMRA_SPEC_GATE_LOW": "3",
             }
         )
         with self.log.open("wb") as log:
@@ -242,6 +259,19 @@ class Server:
     def metrics(self) -> dict:
         with urllib.request.urlopen(f"{self.base}/metrics", timeout=10) as f:
             return json.load(f)
+
+    def fresh_metrics(self, timeout_s: float = 30.0) -> dict:
+        """A snapshot published after this call began. The worker publishes every 32nd tick (and
+        on admissions and retires); with the keeper decoding, `tokens_out` moves on every publish,
+        so the first snapshot whose `tokens_out` differs from the one read here postdates it."""
+        t0 = self.metrics().get("tokens_out")
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            time.sleep(0.25)
+            m = self.metrics()
+            if m.get("tokens_out") != t0:
+                return m
+        refuse(f"no fresh /metrics snapshot within {timeout_s:.0f}s (is the keeper decoding?)")
 
     def complete(self, prompt: str, max_tokens: int) -> dict:
         body = {"model": "gate", "prompt": prompt, "max_tokens": max_tokens,
@@ -292,25 +322,37 @@ def charge_of(lines: list[str]) -> int | None:
 
 
 def pair_shape(lines: list[str], prompt_lens: set[int]) -> dict:
-    """The pair's admissions against the first prime line after them. A pair admission is a
-    `[spec-k]` line (`admit` decided its K) for one of the pair's prompt lengths; the keeper's
-    short prompt never matches. A prime line is a `[prime-yield]` line, which only a prime
-    chunk prints (the keeper primed before the pair arrived)."""
+    """The pair's admissions against the ticks around them. A pair admission is a `[spec-k]` line
+    (`admit` decided its K) for one of the pair's prompt lengths; the keeper's short prompt never
+    matches. Its route is the path of the nearest `request cost` line before it. A tick line is one
+    a tick's work prints after the admission pass (`TICK_LINES`): two admissions with none between
+    them were taken in one pass, on one reading."""
     def pair_admit(line: str) -> bool:
         m = re.search(r" prompt=(\d+) ", line)
         return line.startswith(WORKER_ADMIT_LINE) and m is not None and int(m.group(1)) in prompt_lens
+
+    def route(i: int) -> str | None:
+        for line in reversed(lines[:i]):
+            if (m := RE_COST.search(line)):
+                return m.group(2)
+        return None
+
     admitted = [i for i, l in enumerate(lines) if pair_admit(l)]
-    primes = [i for i, l in enumerate(lines) if l.startswith(PRIME_LINE)]
+    ticks = [i for i, l in enumerate(lines) if l.startswith(TICK_LINES)]
     settles = [i for i, l in enumerate(lines) if l.startswith(SETTLE_LINE)]
-    first_prime = primes[0] if primes else len(lines)
-    overlap = len(admitted) >= 2 and admitted[1] < first_prime
-    settled = bool(settles) and settles[0] < first_prime
+    routes = [route(i) for i in admitted[:2]]
+    on_route = len(admitted) >= 1 and all(r == "spec" for r in routes)
+    first = admitted[0] if admitted else None
+    next_tick = next((t for t in ticks if first is not None and t > first), len(lines))
+    overlap = len(admitted) >= 2 and admitted[1] < next_tick
+    settled = first is not None and any(first < i < next_tick for i in settles)
     return {
         "pair_admit_lines": admitted[:6],
-        "first_prime_line": first_prime if primes else None,
+        "pair_routes": routes,
+        "next_tick_line": next_tick if first is not None and next_tick < len(lines) else None,
         "settle_lines": settles[:6],
-        "placed": overlap or settled,
-        "both_admitted_before_prime": overlap,
+        "placed": on_route and (overlap or settled),
+        "both_admitted_in_one_pass": on_route and overlap,
         "settle_waits": len(settles),
         "oom_lines": sum(1 for l in lines if any(p in l for p in OOM_LINES)),
         "bad_lines": sum(1 for l in lines if any(p in l for p in BAD_LINES)),
@@ -331,7 +373,7 @@ def main() -> None:
     ap.add_argument("--max-tokens", type=int, default=96)
     ap.add_argument("--ctx", type=int, default=32768)
     ap.add_argument("--port", type=int, default=18176)
-    ap.add_argument("--keeper-tokens", type=int, default=1200,
+    ap.add_argument("--keeper-tokens", type=int, default=8000,
                     help="the keeper's max_tokens: it must outlast the placement and the pair")
     ap.add_argument("--place", type=float, default=0.5,
                     help="where in [charge_A + floor, charge_A + charge_B + floor) to place free")
@@ -376,10 +418,10 @@ def main() -> None:
         # (an idle worker does not refresh it).
         keeper: dict = {}
         keeper_thread = threading.Thread(
-            target=lambda: keeper.update(server.complete(prose(5, 120), args.keeper_tokens)))
+            target=lambda: keeper.update(server.complete(keeper_prompt(), args.keeper_tokens)))
         keeper_thread.start()
-        time.sleep(4.0)
-        busy_free = effective_free(server.metrics())
+        time.sleep(8.0)
+        busy_free = effective_free(server.fresh_metrics())
         lo = learn["A"]["charge"] + floor
         hi = learn["A"]["charge"] + learn["B"]["charge"] + floor
         target = int(lo + (hi - lo) * args.place)
@@ -390,12 +432,19 @@ def main() -> None:
         ballast = Ballast(args.out / "ballast.log")
         if not ballast.set(busy_free - target):
             refuse(f"the driver could not give a {(busy_free - target) / MB:.0f}MB ballast")
-        time.sleep(1.0)
+        # One correction: the keeper's own allocations move the reading after the first take.
+        first = effective_free(server.fresh_metrics())
+        if not ballast.set(max(0, ballast.total + first - target)):
+            refuse("the driver could not give the corrected ballast")
+        summary["first_after_ballast"] = first
         summary["ballast"] = ballast.total
-        summary["free_before_pair"] = effective_free(server.metrics())
-        print(f"placed: beside the keeper {busy_free / MB:.0f}MB, ballast {ballast.total / MB:.0f}MB, "
-              f"after {summary['free_before_pair'] / MB:.0f}MB; one fits at {lo / MB:.0f}MB, two at "
-              f"{hi / MB:.0f}MB, target {target / MB:.0f}MB", flush=True)
+        summary["free_before_pair"] = effective_free(server.fresh_metrics())
+        print(f"placed: beside the keeper {busy_free / MB:.0f}MB, ballast {ballast.total / MB:.0f}MB "
+              f"(first read after it {first / MB:.0f}MB), after {summary['free_before_pair'] / MB:.0f}MB; "
+              f"one fits at {lo / MB:.0f}MB, two at {hi / MB:.0f}MB, target {target / MB:.0f}MB", flush=True)
+        if not lo <= summary["free_before_pair"] < hi:
+            refuse(f"placement missed the band: {summary['free_before_pair'] / MB:.0f}MB not in "
+                   f"[{lo / MB:.0f}, {hi / MB:.0f})MB")
         if not keeper_thread.is_alive():
             refuse("the keeper finished before the pair was placed; raise --keeper-tokens")
         # 3. Fire the pair together.
@@ -425,7 +474,7 @@ def main() -> None:
         same_text = all(results[n]["text"] == learn[n]["text"] for n in prompts)
         verdicts = {
             "V1 SAME-PASS": shape["placed"],
-            "V2 NO-OVERLAP": not shape["both_admitted_before_prime"],
+            "V2 NO-OVERLAP": not shape["both_admitted_in_one_pass"],
             "V3 NO-OOM": shape["oom_lines"] == 0 and shape["bad_lines"] == 0 and alive,
             "V4 SERVED": all(r["status"] == 200 for r in results.values()) and same_text,
         }
@@ -435,7 +484,7 @@ def main() -> None:
             print(f"{k}: {'PASS' if v else 'FAIL'}", flush=True)
         print(f"settle waits {shape['settle_waits']}, oom lines {shape['oom_lines']}", flush=True)
         if not verdicts["V1 SAME-PASS"]:
-            print("NOT-PLACED: the pair did not meet in one admission pass", flush=True)
+            print("NOT-PLACED: the pair did not meet in one admission pass on the DFlash route", flush=True)
             rc = 3
         elif not all(verdicts.values()):
             rc = 1
