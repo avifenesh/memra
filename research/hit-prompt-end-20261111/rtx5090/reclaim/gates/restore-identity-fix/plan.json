@@ -1,0 +1,28 @@
+{
+  "rig": "NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, [N/A], 175.00 W, 615.71.09",
+  "binary_sha256": "fa0f5769442b574b3ce98eda45d2f61f460d3768f01490731e065c0fb1e8a1dc",
+  "binary": "<lane>/bin/memra-server-fix-120a",
+  "model": "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+  "budget_mib": 1024,
+  "turns": 10,
+  "start_tokens": 11000,
+  "grow_tokens": 150,
+  "target_tokens": 12350,
+  "target_ids_sha256": "41089cd3af59304ab7bbf7b811b03a4df16fa2704cbdba30078b1582b5495a9b",
+  "points": [
+    12288,
+    12320,
+    12200,
+    12250,
+    12300
+  ],
+  "grid": 32,
+  "max_tokens": 8,
+  "expected_capture": {
+    "12288": 12288,
+    "12320": 12320,
+    "12200": 12160,
+    "12250": 12224,
+    "12300": 12256
+  }
+}

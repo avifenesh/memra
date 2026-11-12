@@ -1,15 +1,27 @@
-2026-11-12T01:54:09+01:00
-a08e8699662513b7b005c1bbfe7b1a8161023accfebdd76d1630a122a4ba7fe9  crates/memra-server/src/worker.rs
+2026-11-12T06:57:06+01:00
+555199f4b41c55a3bfa44921e3759f9ccc090cdef4835497d4c9149326454feb  crates/memra-server/src/worker.rs
+   Compiling tokio v1.52.3
    Compiling memra-engine v0.141.1 (<lane>/tree-red/crates/memra-engine)
    Compiling memra-server v0.141.1 (<lane>/tree-red/crates/memra-server)
+   Compiling tokio-util v0.7.19
+   Compiling tower v0.5.3
+   Compiling tokio-rustls v0.26.5
+   Compiling tower-http v0.6.11
+   Compiling h2 v0.4.19
+   Compiling hyper v1.10.1
+   Compiling hyper-util v0.1.20
+   Compiling hyper-rustls v0.27.10
+   Compiling axum v0.7.9
+   Compiling reqwest v0.13.5
 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
-    Finished `release` profile [optimized] target(s) in 8m 34s
+    Finished `release` profile [optimized] target(s) in 6m 51s
      Running unittests src/lib.rs (<lane>/target/release/deps/memra_server-84c25559e043e0da)
 
-running 3 tests
+running 4 tests
 test worker::tests::the_hit_suffix_fence_takes_one_call_suffixes_only ... ok
 test worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time ... ok
+test worker::tests::a_reclaim_that_tails_alone_cover_is_not_a_failure ... ok
 test worker::tests::prompt_end_tails_evict_before_any_entry_that_served_a_hit ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 1214 filtered out; finished in 0.02s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1220 filtered out; finished in 0.01s
 

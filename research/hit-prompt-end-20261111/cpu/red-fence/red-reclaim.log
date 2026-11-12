@@ -1,0 +1,34 @@
+2026-11-12T07:13:43+01:00
+e2589fc3777f51c4a435b50d23d0bb9933a5589762f0fa01575c5701107864bc  crates/memra-server/src/worker.rs
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (<lane>/tree-red/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 3m 22s
+     Running unittests src/lib.rs (<lane>/target/release/deps/memra_server-84c25559e043e0da)
+
+running 4 tests
+test worker::tests::the_hit_suffix_fence_takes_one_call_suffixes_only ... ok
+test worker::tests::a_reclaim_that_tails_alone_cover_is_not_a_failure ... FAILED
+test worker::tests::prompt_end_tails_evict_before_any_entry_that_served_a_hit ... ok
+test worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time ... ok
+
+failures:
+
+---- worker::tests::a_reclaim_that_tails_alone_cover_is_not_a_failure stdout ----
+[prefix-cache] insert (seed): 64 tokens, 0.0MB (resident 0.0MB / 0MB, model m)
+[prefix-cache] insert tail: 28 prompt-end tokens past the 64-token entry, 0.0MB (resident 0.0MB, model m)
+[prefix-cache] evict tail (LRU): 28 prompt-end tokens past the 64-token entry, 0.0MB (model m)
+[kv-flex] shed (test): nothing freed while 0.0MB unleased bytes sit above the floor; the victim function and the LRU indexes disagree
+
+thread 'worker::tests::a_reclaim_that_tails_alone_cover_is_not_a_failure' (3012836) panicked at crates/memra-server/src/worker.rs:45514:9:
+assertion `left == right` failed: the tail's bytes are the shed
+  left: 0
+ right: 5
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::a_reclaim_that_tails_alone_cover_is_not_a_failure
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1220 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p memra-server --lib`

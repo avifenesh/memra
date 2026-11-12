@@ -1,6 +1,6 @@
---- <lane>/tree/crates/memra-server/src/worker.rs	2026-11-12 01:51:39.110369128 +0100
-+++ crates/memra-server/src/worker.rs	2026-11-12 02:13:17.252285012 +0100
-@@ -11201,9 +11201,7 @@
+--- <lane>/tree/crates/memra-server/src/worker.rs	2026-11-12 06:50:01.074293541 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 07:10:29.081237786 +0100
+@@ -11477,9 +11477,7 @@
                  .get(&oldest.0)
                  .and_then(|pool| pool.get(oldest.1))
                  .is_some_and(|e| self.hit_ids.contains(&e.id));

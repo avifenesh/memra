@@ -1,13 +1,14 @@
-2026-11-12T02:13:17+01:00
-b884b539bb3ebce196e5e54bb21526c28076df41cbaf15dda2677838c683eba1  crates/memra-server/src/worker.rs
+2026-11-12T07:10:29+01:00
+5fd7e4d6b90dd1eab8370a996a28595142b5f155d306ea66e0b6661ef114e68a  crates/memra-server/src/worker.rs
 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
    Compiling memra-server v0.141.1 (<lane>/tree-red/crates/memra-server)
-    Finished `release` profile [optimized] target(s) in 4m 34s
+    Finished `release` profile [optimized] target(s) in 3m 14s
      Running unittests src/lib.rs (<lane>/target/release/deps/memra_server-84c25559e043e0da)
 
-running 3 tests
+running 4 tests
 test worker::tests::the_hit_suffix_fence_takes_one_call_suffixes_only ... ok
 test worker::tests::prompt_end_tails_evict_before_any_entry_that_served_a_hit ... FAILED
+test worker::tests::a_reclaim_that_tails_alone_cover_is_not_a_failure ... ok
 test worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time ... ok
 
 failures:
@@ -30,7 +31,7 @@ failures:
 [prefix-cache] insert tail: 28 prompt-end tokens past the 64-token entry, 0.0MB (resident 0.0MB, model m)
 [prefix-cache] evict tail (LRU): 28 prompt-end tokens past the 64-token entry, 0.0MB (model m)
 
-thread 'worker::tests::prompt_end_tails_evict_before_any_entry_that_served_a_hit' (384622) panicked at crates/memra-server/src/worker.rs:44544:9:
+thread 'worker::tests::prompt_end_tails_evict_before_any_entry_that_served_a_hit' (2996994) panicked at crates/memra-server/src/worker.rs:45364:9:
 assertion `left == right` failed: the never-used entry goes; B keeps its proven tail
   left: (0, 5)
  right: (1, 10)
@@ -40,6 +41,6 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 failures:
     worker::tests::prompt_end_tails_evict_before_any_entry_that_served_a_hit
 
-test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 1214 filtered out; finished in 0.01s
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1220 filtered out; finished in 0.01s
 
 error: test failed, to rerun pass `-p memra-server --lib`

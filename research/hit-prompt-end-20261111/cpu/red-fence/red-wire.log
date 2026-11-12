@@ -1,20 +1,21 @@
-2026-11-12T02:08:07+01:00
-a99c992b7244f3953123b8e41dacd925981ba155881b90729e2f39c9f361e04f  crates/memra-server/src/worker.rs
+2026-11-12T07:07:11+01:00
+12dc5a7bce1e0ae452ba1a2b38d13de49b1d3b580b57105593130297ae91d40e  crates/memra-server/src/worker.rs
 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
    Compiling memra-server v0.141.1 (<lane>/tree-red/crates/memra-server)
-    Finished `release` profile [optimized] target(s) in 5m 09s
+    Finished `release` profile [optimized] target(s) in 3m 17s
      Running unittests src/lib.rs (<lane>/target/release/deps/memra_server-84c25559e043e0da)
 
-running 3 tests
+running 4 tests
 test worker::tests::the_hit_suffix_fence_takes_one_call_suffixes_only ... ok
-test worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time ... FAILED
 test worker::tests::prompt_end_tails_evict_before_any_entry_that_served_a_hit ... ok
+test worker::tests::a_reclaim_that_tails_alone_cover_is_not_a_failure ... ok
+test worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time ... FAILED
 
 failures:
 
 ---- worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time stdout ----
 
-thread 'worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time' (246792) panicked at crates/memra-server/src/worker.rs:44726:9:
+thread 'worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time' (2986535) panicked at crates/memra-server/src/worker.rs:45594:9:
 assertion failed: src.contains("let fence_yields = cached_hit_waiting_for_ttft || prefill_deadline_mode || \
              hit_suffix_fence_yields( fence_deferred, \
              hit_suffix_fence_allowance(prefill_rate_tok_s, budgets[0]), );")
@@ -24,6 +25,6 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 failures:
     worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time
 
-test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 1214 filtered out; finished in 0.01s
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1220 filtered out; finished in 0.01s
 
 error: test failed, to rerun pass `-p memra-server --lib`

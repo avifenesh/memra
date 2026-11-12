@@ -1,6 +1,6 @@
---- <lane>/tree/crates/memra-server/src/worker.rs	2026-11-12 01:51:39.110369128 +0100
-+++ crates/memra-server/src/worker.rs	2026-11-12 02:08:07.446825120 +0100
-@@ -23636,12 +23636,7 @@
+--- <lane>/tree/crates/memra-server/src/worker.rs	2026-11-12 06:50:01.074293541 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 07:07:11.242182385 +0100
+@@ -23942,12 +23942,7 @@
              // THE BOUND: the fence stands down for a tick once its consecutive deferred ticks
              // add up to the time of one prefill chunk at the measured rate, and while the
              // deadline-aware order is on (`hit_suffix_fence_yields`).

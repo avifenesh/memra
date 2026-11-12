@@ -80,6 +80,16 @@ af051d8edd79):
 - A fanout entry counts as having served a hit; admission books a pending tail for plain sessions
   only; the serving collector's tail witness reads its own cell's log lines.
 
+- A reclaim that tails alone cover is settled. `evict_to_bytes` strips tails before entries and
+  can free bytes with no entry evicted, and the kv-flex shed, the transient reserve and the
+  reclaim on defer keyed on the entry count: such a pass skipped the settle, so its bytes stayed
+  in the pool. A review bot found it on the PR. All three key on the bytes freed now
+  (`a_reclaim_that_tails_alone_cover_is_not_a_failure`, red in `cpu/red-fence/red-reclaim.log`).
+  The cells below predate this change; after it the three reclaim-touching gates passed again on
+  the RTX 5090 (`rtx5090/reclaim/gates/`: exact re-send 9/9 and covered 4/4, day-16
+  newest-turn-fits 12/12 and 31/31, restore-identity 5/5) and one GB10 pair read main 321 / 1,262 ms and the fix 87 / 318 ms, 78 of 90 through a tail, 90 of 90 restored
+  (`gb10/reclaim/`). CPU: `cpu/checks-reclaim.log` (1,210 server tests).
+
 GB10, 4,096 MiB, main / fix / fix / main:
 
 | boot | arm | restored (whole + grid) | hit TTFT p50 / p95, all 90 | whole p50 / p95 | grid p50 / p95 | grid prime_wait p50 / p95 | cold TTFT p50 / p95 | output tok/s | tails attached / hit / skipped / stripped |

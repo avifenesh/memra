@@ -1,0 +1,31 @@
+build fix 2026-11-12T06:50:01+01:00 worker 555199f4b41c55a3
+   Compiling memra-server v0.141.1 (<lane>/tree/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 7m 05s
+fa0f5769442b574b3ce98eda45d2f61f460d3768f01490731e065c0fb1e8a1dc  <lane>/bin/memra-server-fix-120a
+memra-0.141.1-93a38324a6ef
+BUILD-DONE 2026-11-12T06:57:06+01:00
+green rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1220 filtered out; finished in 0.01s
+red-fn rc=101 test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1220 filtered out; finished in 0.01s
+red-wire rc=101 test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1220 filtered out; finished in 0.01s
+red-rule rc=101 test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1220 filtered out; finished in 0.01s
+red-reclaim rc=101 test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1220 filtered out; finished in 0.01s
+RED-FENCE-DONE 2026-11-12T07:17:06+01:00
+== fmt: 2026-11-12T07:17:06+01:00
+== fmt rc=0
+== clippy: 2026-11-12T07:17:10+01:00
+== clippy rc=0
+      1 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+== test-server: 2026-11-12T07:20:26+01:00
+== test-server rc=0
+      3 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+      1 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+      1 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+      1 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+      1 test result: ok. 1210 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out; finished in 13.74s
+      1 test job_store::tests::failed_or_panicked_settlement_does_not_expose_output ... ok
+== flags: 2026-11-12T07:29:19+01:00
+== flags rc=0
+== numeric: 2026-11-12T07:29:22+01:00
+== numeric rc=0
+CHECKS-DONE fail=0 2026-11-12T07:29:25+01:00
+CHAIN-E-DONE 2026-11-12T07:29:25+01:00

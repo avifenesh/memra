@@ -1,0 +1,11 @@
+--- <lane>/tree/crates/memra-server/src/worker.rs	2026-11-12 06:50:01.074293541 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 07:13:43.819349686 +0100
+@@ -6566,7 +6566,7 @@
+         }
+         let t0 = Instant::now();
+         let (n, freed) = px.evict_to_bytes(self.floor);
+-        if freed == 0 {
++        if n == 0 {
+             let unleased = px.evictable_bytes();
+             if unleased == 0 {
+                 // Above-floor residency that is entirely pinned (in-flight fanout leases)
