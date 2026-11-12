@@ -1754,6 +1754,140 @@ fn hit_suffix_fits_one_call(
             .any(|b| b > fed && b < fed + queued)
 }
 
+/// Whether an interactive session restored whole from the prefix cache waits for its first
+/// token this tick (`cached_hit_needs_first_token`): phase (b) then holds all interactive cold
+/// prefill back, the hit-suffix fence included. Shared by phase (b) and the round yield's
+/// prime outlook (memra#1244).
+fn cached_hit_waiting(active: &[Session], finished: &[usize]) -> bool {
+    active.iter().enumerate().any(|(i, s)| {
+        !finished.contains(&i)
+            && s.lane == crate::lanes::Lane::Interactive
+            && cached_hit_needs_first_token(
+                s.n_prompt,
+                s.n_cached,
+                s.prefill_done,
+                s.generated.len(),
+            )
+    })
+}
+
+/// The rows the hit-suffix fence primes this tick (memra#1233 b): interactive plain resumed
+/// rows whose suffix completes in one call (`hit_suffix_fits_one_call`), none while the fence
+/// yields. Shared by phase (b) and the round yield's prime outlook (memra#1244).
+fn hit_suffix_fence_rows(
+    active: &[Session],
+    finished: &[usize],
+    fence_yields: bool,
+    eager_only: &std::collections::HashSet<String>,
+    chunk: usize,
+) -> std::collections::HashSet<usize> {
+    active
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| {
+            !fence_yields
+                && !finished.contains(i)
+                && !confidence_trace_enabled()
+                && s.glm5_plain_prime.is_none()
+                && !eager_only.contains(&s.model)
+                && s.lane == crate::lanes::Lane::Interactive
+                && s.choice.is_none()
+                && s.vision.is_none()
+                && s.spec.is_none()
+                && s.gspec_k == 0
+                && !s.dspark_on
+                && !s.glm5_on
+                && hit_suffix_fits_one_call(
+                    s.n_cached,
+                    s.prefill_done,
+                    s.generated.len(),
+                    s.fed.len(),
+                    s.prefill_queue.len(),
+                    chunk,
+                    [s.snapshot_at, s.ckpt_at, s.seed_at],
+                )
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The rows still inside their same-prefix fanout formation window: phase (b) leaves them
+/// queued so siblings can reach the worker first. Shared by phase (b) and the round yield's
+/// prime outlook (memra#1244).
+fn prefix_fanout_waiting(
+    active: &[Session],
+    finished: &[usize],
+    eager_only: &std::collections::HashSet<String>,
+    pb_hold_ms: u64,
+) -> std::collections::HashSet<usize> {
+    if confidence_trace_enabled() || pb_hold_ms == 0 {
+        return Default::default();
+    }
+    active
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| {
+            !finished.contains(i)
+                && prefix_fanout_eligible(s, eager_only)
+                && s.t0.elapsed().as_millis() < pb_hold_ms as u128
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The rows the deadline-aware prefill order holds back this tick (`deadline_prefill_rows`),
+/// None while it keeps the round robin. The rows are the interactive plain sessions still to
+/// prime, less `advanced` (primed already this tick) and `waiting` (inside a formation
+/// window). Shared by phase (b) and the round yield's prime outlook (memra#1244).
+#[allow(clippy::too_many_arguments)]
+fn prefill_deadline_block(
+    active: &[Session],
+    finished: &[usize],
+    advanced: &std::collections::HashSet<usize>,
+    waiting: &std::collections::HashSet<usize>,
+    rate_tok_s: Option<f64>,
+    chunk: usize,
+    backlog: bool,
+    now: Instant,
+) -> Option<std::collections::HashSet<usize>> {
+    let default_deadline = Duration::from_millis(crate::stream_ttft_ms_max());
+    let rows: Vec<PrefillDeadlineRow> = active
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| {
+            !finished.contains(i)
+                && !advanced.contains(i)
+                && !waiting.contains(i)
+                && s.choice.is_none()
+                && s.lane == crate::lanes::Lane::Interactive
+                && !(s.spec.is_some()
+                    || s.gspec_k > 0
+                    || s.dspark_on
+                    || s.glm5_on
+                    || s.prefill_done)
+                && !s.prefill_queue.is_empty()
+        })
+        .map(|(i, s)| PrefillDeadlineRow {
+            idx: i,
+            queued: s.prefill_queue.len(),
+            slack_s: Some(
+                s.wire_deadline
+                    .unwrap_or(s.t0 + default_deadline)
+                    .saturating_duration_since(now)
+                    .as_secs_f64(),
+            ),
+        })
+        .collect();
+    rate_tok_s
+        .and_then(|rate| deadline_prefill_rows(&rows, rate, chunk, backlog))
+        .map(|allow| {
+            rows.iter()
+                .map(|r| r.idx)
+                .filter(|i| !allow.contains(i))
+                .collect()
+        })
+}
+
 /// THE HIT-SUFFIX FENCE'S STARVATION BOUND (memra#1233 b). Every fenced tick holds the other
 /// interactive prefill back for one tick, and hits that keep arriving could hold it back without
 /// end. The fence therefore keeps an account: `deferred` is the prefill-phase time of the
@@ -23884,10 +24018,69 @@ pub fn run(
                     && lm.model.spec_pool_capable()
                     && !spec_pool_candidate(s, lm)
             });
-            // ROUND YIELD (memra#1244): while a plain session gets its step only after
-            // these bursts, each MTP burst of the tick ends at its first round.
+            // ROUND YIELD (memra#1244): while an interactive plain session gets its step only
+            // after these bursts, each MTP burst of the tick ends at its first round.
             let round_yield = {
-                let plain: Vec<(&str, PlainTick)> = active
+                let chunk = policy.prefill_budget[0];
+                // Phase (b)'s outlook for a plain prime, from the predicates phase (b) reads,
+                // as the tick's start knows them (`plain_prime_runs`).
+                let now = Instant::now();
+                let refill_grace = interactive_refill_until.is_some_and(|until| now < until);
+                let hit_wait = cached_hit_waiting(&active, &finished);
+                let fence_yields = hit_wait
+                    || prefill_deadline_mode
+                    || hit_suffix_fence_yields(
+                        fence_deferred,
+                        hit_suffix_fence_allowance(prefill_rate_tok_s, chunk),
+                    );
+                let hit_rows =
+                    hit_suffix_fence_rows(&active, &finished, fence_yields, &eager_only, chunk);
+                let deferred = refill_grace || hit_wait || !hit_rows.is_empty();
+                let fanout = prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms);
+                let block = if deferred {
+                    None
+                } else {
+                    prefill_deadline_block(
+                        &active,
+                        &finished,
+                        &Default::default(),
+                        &fanout,
+                        prefill_rate_tok_s,
+                        chunk,
+                        !queue.is_empty() || !requeue_oom.is_empty(),
+                        now,
+                    )
+                };
+                let prev_tick = last_phase_b.map_or(Duration::MAX, |t| now.duration_since(t));
+                let mut plain: Vec<(&str, PlainTick)> = Vec::new();
+                for (i, s) in active.iter().enumerate() {
+                    let speculative = s.spec.is_some() || s.gspec_k > 0 || s.dspark_on || s.glm5_on;
+                    if !round_yield_weighs(!finished.contains(&i), speculative, s.lane) {
+                        continue;
+                    }
+                    let held_back = (deferred && !hit_rows.contains(&i))
+                        || fanout.contains(&i)
+                        || block.as_ref().is_some_and(|b| b.contains(&i))
+                        || (block.is_none()
+                            && formation_hold_with(
+                                Duration::from_millis(pb_hold_ms).saturating_sub(s.t0.elapsed()),
+                                prev_tick,
+                                |_| false,
+                            ));
+                    let primes =
+                        plain_prime_runs(s.prefill_done, s.prefill_queue.len(), chunk, held_back);
+                    if let Some(tick) = plain_tick(
+                        plain_rider_candidate(s, &loaded[&s.model], &eager_decode),
+                        s.prefill_done && s.cache.is_some(),
+                        primes,
+                    ) {
+                        plain.push((s.model.as_str(), tick));
+                    }
+                }
+                // The models whose riders stay in phase (c) this tick: a decoding plain
+                // session of any lane that is no rider candidate keeps them there (the
+                // riders' `left_behind`).
+                let left_behind: std::collections::HashSet<&str> = active
                     .iter()
                     .enumerate()
                     .filter(|(i, s)| {
@@ -23896,16 +24089,11 @@ pub fn run(
                             && s.gspec_k == 0
                             && !s.dspark_on
                             && !s.glm5_on
+                            && s.prefill_done
+                            && s.cache.is_some()
+                            && !plain_rider_candidate(s, &loaded[&s.model], &eager_decode)
                     })
-                    .filter_map(|(_, s)| {
-                        plain_tick(
-                            plain_rider_candidate(s, &loaded[&s.model], &eager_decode),
-                            s.prefill_done && s.cache.is_some(),
-                            s.prefill_queue.len(),
-                            policy.prefill_budget[s.lane.idx()],
-                        )
-                        .map(|tick| (s.model.as_str(), tick))
-                    })
+                    .map(|(_, s)| s.model.as_str())
                     .collect();
                 let cohort_models: std::collections::HashSet<&str> = spec_order
                     .iter()
@@ -23915,10 +24103,18 @@ pub fn run(
                     })
                     .map(|&i| active[i].model.as_str())
                     .collect();
-                spec_round_yield_due(admit_yield_on, &plain, &cohort_models)
+                spec_round_yield_due(admit_yield_on, &plain, &cohort_models, &left_behind)
             };
+            if let Some(class) = round_yield {
+                // Engagement receipt, once per class (the dead-arm lesson).
+                static SEEN: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+                let bit = 1u8 << class as u8;
+                if SEEN.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
+                    eprintln!("[spec-round-yield] engaged: {}", class.name());
+                }
+            }
             for &i in &spec_order {
-                active[i].spec_round_yield = round_yield;
+                active[i].spec_round_yield = round_yield.is_some();
             }
             for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] {
                 if pass == SpecPass::Cohorts {
@@ -24416,16 +24612,7 @@ pub fn run(
             // (`cached_hit_waiting_for_ttft`) the suffixes stay queued, so that hit's first token
             // is one decode and never a peer's suffix call (11 of 17 whole hits waited 126 to 278
             // ms behind one or two of them); the suffixes prime on the next tick.
-            let cached_hit_waiting_for_ttft = active.iter().enumerate().any(|(i, s)| {
-                !finished.contains(&i)
-                    && s.lane == crate::lanes::Lane::Interactive
-                    && cached_hit_needs_first_token(
-                        s.n_prompt,
-                        s.n_cached,
-                        s.prefill_done,
-                        s.generated.len(),
-                    )
-            });
+            let cached_hit_waiting_for_ttft = cached_hit_waiting(&active, &finished);
             // THE BOUND: the fence stands down for a tick once its consecutive deferred ticks
             // add up to the time of one prefill chunk at the measured rate, and while the
             // deadline-aware order is on (`hit_suffix_fence_yields`).
@@ -24435,34 +24622,8 @@ pub fn run(
                     fence_deferred,
                     hit_suffix_fence_allowance(prefill_rate_tok_s, budgets[0]),
                 );
-            let hit_suffix_rows: std::collections::HashSet<usize> = active
-                .iter()
-                .enumerate()
-                .filter(|(i, s)| {
-                    !fence_yields
-                        && !finished.contains(i)
-                        && !confidence_trace_enabled()
-                        && s.glm5_plain_prime.is_none()
-                        && !eager_only.contains(&s.model)
-                        && s.lane == crate::lanes::Lane::Interactive
-                        && s.choice.is_none()
-                        && s.vision.is_none()
-                        && s.spec.is_none()
-                        && s.gspec_k == 0
-                        && !s.dspark_on
-                        && !s.glm5_on
-                        && hit_suffix_fits_one_call(
-                            s.n_cached,
-                            s.prefill_done,
-                            s.generated.len(),
-                            s.fed.len(),
-                            s.prefill_queue.len(),
-                            budgets[0],
-                            [s.snapshot_at, s.ckpt_at, s.seed_at],
-                        )
-                })
-                .map(|(i, _)| i)
-                .collect();
+            let hit_suffix_rows =
+                hit_suffix_fence_rows(&active, &finished, fence_yields, &eager_only, budgets[0]);
             // SOLD mixed-cache shape, box1 N=5: five full-cache hits arrived while the worker
             // was inside a cold prime chunk and inherited 269-299ms TTFT (21.6ms envelope).
             // A refill grace covers the channel handoff after a peer retires; the first-token
@@ -24501,21 +24662,7 @@ pub fn run(
             // existing batch-formation window before its same-prefix siblings reach the
             // worker. Matching groups above fire immediately; unmatched misses wait at most
             // the same hold already budgeted for a lone fresh prime.
-            let dedup_waiting: std::collections::HashSet<usize> =
-                if !confidence_trace_enabled() && pb_hold_ms > 0 {
-                    active
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, s)| {
-                            !finished.contains(i)
-                                && prefix_fanout_eligible(s, &eager_only)
-                                && s.t0.elapsed().as_millis() < pb_hold_ms as u128
-                        })
-                        .map(|(i, _)| i)
-                        .collect()
-                } else {
-                    Default::default()
-                };
+            let dedup_waiting = prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms);
             // Long cold prompts used to miss the complete-prompt batch predicate below and
             // execute one synchronous `prime_cache` call per session before decode. Keep one
             // scheduler-level chunk per session, but concatenate eligible chunks so N cold
@@ -24542,43 +24689,16 @@ pub fn run(
                 if defer_interactive_prefill {
                     None
                 } else {
-                    let default_deadline = Duration::from_millis(crate::stream_ttft_ms_max());
-                    let rows: Vec<PrefillDeadlineRow> = active
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, s)| {
-                            !finished.contains(i)
-                                && !dedup_advanced.contains(i)
-                                && !dedup_waiting.contains(i)
-                                && s.choice.is_none()
-                                && s.lane == crate::lanes::Lane::Interactive
-                                && !(s.spec.is_some()
-                                    || s.gspec_k > 0
-                                    || s.dspark_on
-                                    || s.glm5_on
-                                    || s.prefill_done)
-                                && !s.prefill_queue.is_empty()
-                        })
-                        .map(|(i, s)| PrefillDeadlineRow {
-                            idx: i,
-                            queued: s.prefill_queue.len(),
-                            slack_s: Some(
-                                s.wire_deadline
-                                    .unwrap_or(s.t0 + default_deadline)
-                                    .saturating_duration_since(t_prefill_phase)
-                                    .as_secs_f64(),
-                            ),
-                        })
-                        .collect();
-                    let backlog = !queue.is_empty() || !requeue_oom.is_empty();
-                    prefill_rate_tok_s
-                        .and_then(|rate| deadline_prefill_rows(&rows, rate, budgets[0], backlog))
-                        .map(|allow| {
-                            rows.iter()
-                                .map(|r| r.idx)
-                                .filter(|i| !allow.contains(i))
-                                .collect()
-                        })
+                    prefill_deadline_block(
+                        &active,
+                        &finished,
+                        &dedup_advanced,
+                        &dedup_waiting,
+                        prefill_rate_tok_s,
+                        budgets[0],
+                        !queue.is_empty() || !requeue_oom.is_empty(),
+                        t_prefill_phase,
+                    )
                 };
             if prefill_block.is_some() != prefill_deadline_mode {
                 prefill_deadline_mode = prefill_block.is_some();
@@ -34774,44 +34894,94 @@ fn spec_admit_keep(waiting: usize, round_yield: bool, entry: bool) -> bool {
     waiting == 0 && (entry || !round_yield)
 }
 
-/// What a live plain session (no speculative route) does in a tick whose bursts run first.
+/// What a live interactive plain session (no speculative route) does in a tick whose bursts
+/// run first.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum PlainTick {
     /// A rider candidate (`plain_rider_candidate`): it advances once per lockstep round inside
-    /// its model's pooled MTP cohort, when the tick has one and no session of the model is
-    /// `Decoding`.
+    /// its model's pooled MTP cohort, when the tick has one and no session of the model keeps
+    /// the riders in phase (c).
     Rider,
     /// Decoding, and no rider candidate (constrained, vision, a fork, an eager-only model): it
     /// takes one phase (c) step per tick and keeps its model's riders in phase (c) with it.
     Decoding,
-    /// Not decoding yet, and what is left of its prompt fits one prefill chunk: the tick's
-    /// prefill phase, after the bursts, completes its prime.
+    /// Not decoding yet, and this tick's prefill phase, after the bursts, runs a prime call
+    /// that brings its first token within one chunk (`plain_prime_runs`).
     Priming,
 }
 
-/// A live plain session's `PlainTick`. `rider`: it is a rider candidate. `decoding`: its
-/// prompt is primed. Otherwise it still primes, with `queued` prompt tokens left and `chunk`
-/// the tokens its lane's prefill takes per tick: it counts once its first token is one chunk
-/// away. None for a longer prime: its earlier chunks keep alternating with full bursts, as a
-/// speculative newcomer's long prime does (memra#1227), so a long prompt does not hold the
-/// speculating streams at one round per chunk for its whole prime.
-fn plain_tick(rider: bool, decoding: bool, queued: usize, chunk: usize) -> Option<PlainTick> {
+impl PlainTick {
+    /// The class the round yield names in its engagement line. A `Rider` engages it only when
+    /// no cohort carries it this tick.
+    fn name(self) -> &'static str {
+        match self {
+            PlainTick::Rider => "rider-uncarried",
+            PlainTick::Decoding => "decoding",
+            PlainTick::Priming => "priming",
+        }
+    }
+}
+
+/// Which live sessions the round yield weighs (memra#1244 review): plain ones (no speculative
+/// route) of the interactive lane. A judge or harvest session never shortens a burst: phase
+/// (c) still steps it once per tick and phase (d) primes it inside the SLO headroom, so it
+/// keeps one token per burst, which is what "interactive is never preempted; harvest yields
+/// first" asks. Before this filter a dark json-constrained job would have held every
+/// interactive stream at one round per tick for its whole life (24 to 29% of their rate on
+/// GB10, 29 to 41% on the RTX 5090).
+fn round_yield_weighs(live: bool, speculative: bool, lane: crate::lanes::Lane) -> bool {
+    live && !speculative && lane == crate::lanes::Lane::Interactive
+}
+
+/// Whether this tick's prefill phase runs a prime call for an interactive plain session whose
+/// first token it brings within one chunk, as the tick's start knows it: something is left
+/// to prime, phase (b) does not hold the session back this tick (`held_back`: the refill
+/// grace, a cached hit waiting for its first token or the hit-suffix fence deferring cold
+/// prefill, the fanout formation window, the batch-formation hold, the deadline-aware order),
+/// and what is left fits one take at the lane's chunk (`prefill_tick_take`, its sub-floor tail
+/// merge included). A longer prime keeps alternating its chunks with full bursts, as a
+/// speculative newcomer's long prime does (memra#1227, memra#1253), so a long prompt does not
+/// hold the streams at one round per chunk for its whole prime.
+///
+/// A capture boundary inside that last chunk (prefix-cache split, affinity checkpoint, grid
+/// seed) splits it into two calls on two ticks, and both count: each runs a real prime call,
+/// and each would otherwise wait a full burst. Measured on GB10 (a 23,444-token prompt beside
+/// two streams, `research/spec-plain-round-yield-20261112/gb10/longprime`): the grid seed
+/// split the last 916 tokens into 896 and 20, the parent ran a full burst (1.4 to 1.5 s)
+/// before each, and the yield took both off the first token.
+///
+/// The outlook may hold a session back that phase (b) would prime (the formation hold is
+/// judged with the window left and the time since the last prefill phase at the tick's start,
+/// its in-tick wait as no arrival); it never names a session phase (b) skips for one of these
+/// reasons.
+fn plain_prime_runs(prefill_done: bool, queued: usize, chunk: usize, held_back: bool) -> bool {
+    !prefill_done
+        && queued > 0
+        && !held_back
+        && prefill_tick_take(queued, chunk, false, None) == queued
+}
+
+/// A live interactive plain session's `PlainTick`. `rider`: it is a rider candidate.
+/// `decoding`: its prompt is primed. `primes`: this tick runs a prime call that brings its
+/// first token within one chunk (`plain_prime_runs`). None otherwise.
+fn plain_tick(rider: bool, decoding: bool, primes: bool) -> Option<PlainTick> {
     if rider {
         Some(PlainTick::Rider)
     } else if decoding {
         Some(PlainTick::Decoding)
-    } else if queued <= chunk {
+    } else if primes {
         Some(PlainTick::Priming)
     } else {
         None
     }
 }
 
-/// ROUND YIELD (memra#1244): whether this tick's MTP bursts end at their first round. True
-/// when a live plain session gets its step only after phase (a): every `Decoding` and
-/// `Priming` session, and a `Rider` no cohort carries this tick (its model has no session
-/// in `cohort_models`, the models with a pooled-cohort candidate at the tick's start, or a
-/// `Decoding` session of its model keeps the riders in phase (c)).
+/// ROUND YIELD (memra#1244): whether this tick's MTP bursts end at their first round, and the
+/// class that asks for it. It is asked for when a live interactive plain session gets its step
+/// only after phase (a): every `Decoding` and `Priming` session, and a `Rider` no cohort
+/// carries this tick (its model has no session in `cohort_models`, the models with a
+/// pooled-cohort candidate at the tick's start, or is in `left_behind`, the models whose
+/// riders a decoding non-rider of any lane keeps in phase (c)).
 ///
 /// Before, phase (a) ran every burst to its target (32 tokens, 13 rounds on GB10's 27B)
 /// ahead of that session's one step, so it got one token per burst: 1.4 to 1.8 s a token
@@ -34825,15 +34995,15 @@ fn spec_round_yield_due(
     admit_yield_on: bool,
     plain: &[(&str, PlainTick)],
     cohort_models: &std::collections::HashSet<&str>,
-) -> bool {
-    admit_yield_on
-        && plain.iter().any(|&(model, tick)| {
-            tick != PlainTick::Rider
-                || !cohort_models.contains(model)
-                || plain
-                    .iter()
-                    .any(|&(m, t)| m == model && t == PlainTick::Decoding)
-        })
+    left_behind: &std::collections::HashSet<&str>,
+) -> Option<PlainTick> {
+    if !admit_yield_on {
+        return None;
+    }
+    plain.iter().find_map(|&(model, tick)| {
+        (tick != PlainTick::Rider || !cohort_models.contains(model) || left_behind.contains(model))
+            .then_some(tick)
+    })
 }
 
 /// A session that may join this tick's pooled MTP cohort: an unconstrained MTP spec session on
@@ -42392,60 +42562,141 @@ mod tests {
         );
     }
 
-    /// memra#1244: the round yield is due exactly while a plain session gets its step only
-    /// after the tick's bursts: one that decodes and cannot ride, one still to prime, and a
-    /// rider candidate nothing carries (no cohort of its model, or a decoding session of its
-    /// model keeps the riders in phase (c)). A rider a cohort carries advances inside the
-    /// rounds and asks for nothing. Before, no plain session ended a burst.
+    /// memra#1244: the round yield is due exactly while an interactive plain session gets its
+    /// step only after the tick's bursts: one that decodes and cannot ride, one whose prime
+    /// this tick completes, and a rider candidate nothing carries (no cohort of its model, or a
+    /// decoding non-rider of any lane keeps the model's riders in phase (c)). A rider a cohort
+    /// carries advances inside the rounds and asks for nothing. Before, no plain session ended
+    /// a burst.
     #[test]
     fn spec_round_yield_due_names_the_plain_sessions_behind_the_bursts() {
         use super::PlainTick::{Decoding, Priming, Rider};
         let models = |m: &[&'static str]| -> std::collections::HashSet<&'static str> {
             m.iter().copied().collect()
         };
-        let due = |plain: &[(&str, super::PlainTick)], cohorts: &[&'static str]| {
-            super::spec_round_yield_due(true, plain, &models(cohorts))
+        let due_with = |plain: &[(&str, super::PlainTick)],
+                        cohorts: &[&'static str],
+                        behind: &[&'static str]| {
+            super::spec_round_yield_due(true, plain, &models(cohorts), &models(behind))
         };
-        assert!(!due(&[], &["q"]), "no plain session: full bursts");
-        assert!(
-            !due(&[("q", Rider)], &["q"]),
+        let due = |plain: &[(&str, super::PlainTick)], cohorts: &[&'static str]| {
+            due_with(plain, cohorts, &[])
+        };
+        assert_eq!(due(&[], &["q"]), None, "no plain session: full bursts");
+        assert_eq!(
+            due(&[("q", Rider)], &["q"]),
+            None,
             "a carried rider asks for nothing"
         );
-        assert!(!due(&[("q", Rider), ("q", Rider)], &["q", "r"]));
-        assert!(due(&[("q", Decoding)], &["q"]), "it steps once per tick");
-        assert!(
+        assert_eq!(due(&[("q", Rider), ("q", Rider)], &["q", "r"]), None);
+        assert_eq!(
+            due(&[("q", Decoding)], &["q"]),
+            Some(Decoding),
+            "it steps once per tick"
+        );
+        assert_eq!(
             due(&[("q", Priming)], &["q"]),
+            Some(Priming),
             "its prime waits for phase (b)"
         );
-        assert!(due(&[("q", Rider)], &[]), "no cohort carries it");
-        assert!(
+        assert_eq!(
+            due(&[("q", Rider)], &[]),
+            Some(Rider),
+            "no cohort carries it"
+        );
+        assert_eq!(
             due(&[("q", Rider)], &["r"]),
+            Some(Rider),
             "the cohort is another model's"
         );
-        assert!(
-            due(&[("q", Rider), ("q", Decoding)], &["q"]),
-            "the decoding session keeps the rider in phase (c)"
+        assert_eq!(
+            due_with(&[("q", Rider)], &["q"], &["q"]),
+            Some(Rider),
+            "a decoding non-rider (of any lane) keeps the rider in phase (c)"
         );
-        assert!(
+        assert_eq!(
+            due_with(&[("q", Rider)], &["q"], &["r"]),
+            None,
+            "another model's riders are kept back, not this one"
+        );
+        assert_eq!(
             due(&[("q", Rider), ("r", Decoding)], &["q"]),
+            Some(Decoding),
             "another model's plain session still waits"
         );
-        assert!(
-            !super::spec_round_yield_due(false, &[("q", Decoding)], &models(&["q"])),
+        assert_eq!(
+            super::spec_round_yield_due(false, &[("q", Decoding)], &models(&["q"]), &models(&[])),
+            None,
             "lockstep fairness keeps full bursts"
         );
         // The session's class: a rider candidate, a decoding session, and a priming one only
-        // when the tick's prefill chunk completes its prompt.
-        assert_eq!(super::plain_tick(true, true, 0, 1024), Some(Rider));
-        assert_eq!(super::plain_tick(false, true, 0, 1024), Some(Decoding));
-        assert_eq!(super::plain_tick(false, false, 34, 1024), Some(Priming));
-        assert_eq!(super::plain_tick(false, false, 1024, 1024), Some(Priming));
+        // when the tick's prefill phase completes its prompt.
+        assert_eq!(super::plain_tick(true, true, false), Some(Rider));
+        assert_eq!(super::plain_tick(false, true, false), Some(Decoding));
+        assert_eq!(super::plain_tick(false, false, true), Some(Priming));
         assert_eq!(
-            super::plain_tick(false, false, 1025, 1024),
+            super::plain_tick(false, false, false),
             None,
-            "a longer prime keeps its cadence"
+            "nothing this tick primes"
         );
-        assert_eq!(super::plain_tick(false, false, 34, 0), None);
+        assert_eq!(
+            [Rider, Decoding, Priming].map(super::PlainTick::name),
+            ["rider-uncarried", "decoding", "priming"]
+        );
+    }
+
+    /// memra#1244 review: the round yield weighs interactive plain sessions only. A judge or
+    /// harvest session keeps one token per burst (phase (c) steps it, phase (d) primes it in
+    /// the SLO headroom) and never shortens an interactive stream's burst; a speculative or
+    /// finished session is no plain session. Before the filter a dark-lane json-constrained job
+    /// held every interactive stream at one round per tick for its whole life.
+    #[test]
+    fn spec_round_yield_weighs_interactive_plain_sessions_only() {
+        use crate::lanes::Lane;
+        assert!(super::round_yield_weighs(true, false, Lane::Interactive));
+        assert!(
+            !super::round_yield_weighs(true, false, Lane::Judge),
+            "judge work yields first"
+        );
+        assert!(
+            !super::round_yield_weighs(true, false, Lane::Harvest),
+            "harvest yields first"
+        );
+        assert!(
+            !super::round_yield_weighs(true, true, Lane::Interactive),
+            "a speculative session"
+        );
+        assert!(
+            !super::round_yield_weighs(false, false, Lane::Interactive),
+            "a finished session"
+        );
+    }
+
+    /// memra#1244 review: a plain session counts as priming only when this tick's prefill
+    /// phase runs a prime call for it and what is left of its prompt fits one take. Not when
+    /// nothing is left (an empty queue, a primed prompt), not when phase (b) holds it back
+    /// (refill grace, cached-hit wait, hit-suffix fence, fanout window, formation hold,
+    /// deadline order), and not when the rest takes more than one chunk (its sub-floor tail
+    /// merge counts as one).
+    #[test]
+    fn plain_prime_runs_only_when_phase_b_primes_the_last_chunk() {
+        let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+        let runs = |done: bool, queued: usize, held: bool| {
+            super::plain_prime_runs(done, queued, 1024, held)
+        };
+        assert!(runs(false, 34, false));
+        assert!(runs(false, 1024, false));
+        assert!(
+            runs(false, 1024 + floor - 1, false),
+            "the sub-floor tail merges into the one call"
+        );
+        assert!(
+            !runs(false, 1024 + floor, false),
+            "two chunks: the cadence stays"
+        );
+        assert!(!runs(false, 0, false), "nothing left to prime");
+        assert!(!runs(true, 34, false), "the prompt is primed");
+        assert!(!runs(false, 34, true), "phase (b) holds it back this tick");
     }
 
     /// memra#1244, through the real round hook: with the tick's round yield on, the burst's
@@ -42547,18 +42798,49 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ");
         let at = |a: &str| live.find(a).unwrap_or_else(|| panic!("{a} exists"));
+        let weighs =
+            at("if !round_yield_weighs(!finished.contains(&i), speculative, s.lane) { continue; }");
+        let outlook = at(
+            "let primes = plain_prime_runs(s.prefill_done, s.prefill_queue.len(), chunk, held_back);",
+        );
         let named = at(
             "plain_tick( plain_rider_candidate(s, &loaded[&s.model], &eager_decode), \
-             s.prefill_done && s.cache.is_some(), s.prefill_queue.len(), \
-             policy.prefill_budget[s.lane.idx()], )",
+             s.prefill_done && s.cache.is_some(), primes, )",
         );
-        let due = at("spec_round_yield_due(admit_yield_on, &plain, &cohort_models) };");
-        let written = at("for &i in &spec_order { active[i].spec_round_yield = round_yield; }");
+        let due =
+            at("spec_round_yield_due(admit_yield_on, &plain, &cohort_models, &left_behind) };");
+        let written =
+            at("for &i in &spec_order { active[i].spec_round_yield = round_yield.is_some(); }");
         let passes = at("for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] {");
         assert!(
-            named < due && due < written && written < passes,
-            "the yield is decided and written before any burst of the tick"
+            weighs < outlook && outlook < named && named < due && due < written && written < passes,
+            "only interactive plain sessions are weighed, and the yield is decided and written \
+             before any burst of the tick"
         );
+        // The prime outlook reads phase (b)'s own predicates: the same helpers, called before
+        // phase (a) and again in phase (b).
+        let outlook_block = &live[at("let round_yield = {")..due];
+        for held in [
+            "let refill_grace = interactive_refill_until.is_some_and(|until| now < until);",
+            "let hit_wait = cached_hit_waiting(&active, &finished);",
+            "hit_suffix_fence_rows(&active, &finished, fence_yields, &eager_only, chunk);",
+            "let deferred = refill_grace || hit_wait || !hit_rows.is_empty();",
+            "let fanout = prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms);",
+            "prefill_deadline_block( &active, &finished, &Default::default(), &fanout,",
+            "let held_back = (deferred && !hit_rows.contains(&i)) || fanout.contains(&i) || \
+             block.as_ref().is_some_and(|b| b.contains(&i)) || (block.is_none() && \
+             formation_hold_with(",
+        ] {
+            assert!(outlook_block.contains(held), "the outlook reads {held}");
+        }
+        for phase_b in [
+            "let cached_hit_waiting_for_ttft = cached_hit_waiting(&active, &finished);",
+            "hit_suffix_fence_rows(&active, &finished, fence_yields, &eager_only, budgets[0]);",
+            "let dedup_waiting = prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms);",
+            "prefill_deadline_block( &active, &finished, &dedup_advanced, &dedup_waiting,",
+        ] {
+            assert!(live[due..].contains(phase_b), "phase (b) reads {phase_b}");
+        }
         assert!(
             live.contains("round_yield: s.spec_round_yield,"),
             "the burst's emission state reads the session's verdict"
