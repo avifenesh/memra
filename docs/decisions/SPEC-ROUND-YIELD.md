@@ -129,8 +129,8 @@ throughput-for-latency trade: the plain request's gap falls from 0.46 to 0.72 s 
 0.07 s. On GB10 the rider row is inside the cohort's forward, so a riding request raises the
 total there.
 
-**Several host-sampled riders** (`gb10/riders10`, `gb10/riders9`, `rtx5090/riders6`,
-`rtx5090/riders5`; L greedy streams, then R greedy-with-penalty requests of 64 tokens at once,
+**Several host-sampled riders** (`gb10/riders10`, `gb10/riders9`, `rtx5090/riders7`,
+`rtx5090/riders6`, `rtx5090/riders5`; L greedy streams, then R greedy-with-penalty requests of 64 tokens at once,
 then the same R alone; one boot per arm, the review head against main). Riders exist only
 while the streams stay speculative:
 
@@ -140,6 +140,10 @@ while the streams stay speculative:
 | GB10 | 2 + 5 | 0.093 -> 0.093 | 6.5 -> 6.5 | 20.6 -> 20.5 | 49.5 -> 49.4 | 70.0 -> 69.9 |
 | GB10 | 2 + 6 | 0.095 -> 0.096 | 6.7 -> 6.7 | 19.9 -> 20.0 | 57.6 -> 57.6 | 77.5 -> 77.5 |
 | GB10 | 2 + 8 | 0.106 -> 0.106 | 7.5 -> 7.5 | 18.2 -> 18.2 | 68.6 -> 68.5 | 86.8 -> 86.7 |
+| RTX 5090 | 2 + 1 | 0.751 -> 0.069 | 48.7 -> 4.5 | 88.3 -> 64.3 | 1.3 -> 14.3 | 89.6 -> 78.6 |
+| RTX 5090 | 1 + 2 | 0.486 -> 0.057 | 31.8 -> 3.8 | 67.8 -> 42.7 | 4.0 -> 33.8 | 71.8 -> 76.5 |
+| RTX 5090 | 2 + 2 | 0.030 -> 0.030 | 2.1 -> 2.1 | 64.7 -> 62.0 | 61.8 -> 59.7 | 126.5 -> 121.7 |
+| RTX 5090 | 1 + 3 | 0.030 -> 0.033 | 2.1 -> 2.3 | 31.2 -> 30.3 | 90.6 -> 84.2 | 121.8 -> 114.4 |
 | RTX 5090 | 2 + 4 | 0.037 -> 0.037 | 2.6 -> 2.7 | 50.9 -> 50.4 | 97.3 -> 95.6 | 148.2 -> 145.9 |
 | RTX 5090 | 2 + 8 | 0.055 -> 0.055 | 3.9 -> 3.9 | 34.6 -> 34.0 | 132.2 -> 129.9 | 166.8 -> 163.9 |
 
@@ -148,12 +152,15 @@ and carry the riders: a burst keeps its 13 rounds, each about 25 ms longer (a 13
 1,523 -> 1,848 ms, `gb10/riders`, which ran the same cell on the first review head: 1.615 ->
 0.133 s). The streams lose 17% while the riders are live, and the total rises 46%. With 5 or
 more riders (7 sessions in flight) GB10's cost model demotes the streams to batched decode in
-both arms, and
-on the RTX 5090 the band does so above 4 (HIGH = 4, since the card has no cost table for this
-model). So from 5 riders up the streams are plain on both arms and nothing rides: those rows
-are plain batches, equal across arms. On the 5090 the riding case is 4 sessions in flight
-(2 + 2 and 1 + 3, `rtx5090/riders6`, pending). Every rider text is identical across arms,
-beside the streams and alone.
+both arms. The RTX 5090 has no cost table for this model, and its band (HIGH = 4) demotes them
+from 4 sessions in flight. Those rows are plain batches on both arms, nothing rides, and the
+arms are equal within the spread of single boots (the riders' alone rate, with no stream in
+flight, differs as much between the same boots). On the 5090,
+several riders ride only at 3 in flight: 1 stream and 2 riders. Each rider there takes its
+plain step inside every round, so the stream gives up 37% while the riders are live, and the
+total still rises 6%; with 2 streams and 1 rider the streams give up 27% and the total falls
+12%, the latency-for-throughput trade of the plain-cell rows. Every rider text is identical
+across arms, beside the streams and alone.
 
 **Which requests ride, per card.** A plain session rides when it is unconstrained, has no
 vision input and no fork, and the cost model or the band admitted it to plain decode. On
@@ -218,7 +225,8 @@ are the ones that land apart from main's own later changes:
 **The review head.** The review changes (the lane filter, the prime outlook, the time-window
 rule) ran as `change5` (3eeb4710f0 on cdfdfd6006) against main `parent3` (cdfdfd6006, with
 #1233's prefix-hit fence). Main then moved to 9d7c086c67 (memra#1173's drafter admission
-refusal, in the admission path); the branch rebased onto it with the same code delta. One boot
+refusal, in the admission path) and 11b368f7d7 (memra#1221's pre-capture guard, in `spec.rs`);
+the branch rebased onto 11b368f7d7 with the same code delta. One boot
 per arm, prompts of 1,234 tokens (two prefill chunks, so a cold prime's first chunk keeps its
 full burst, memra#1253) and a `+hit` cell that sends each prompt again, so the prefix cache
 restores 1,234 of 1,234 tokens and the request is a prefix-hit newcomer:
@@ -244,16 +252,17 @@ falls on every row of this table, so here the change trades throughput for laten
 cards. Texts are identical across arms and alone on both cards.
 
 **Gates on the change.** Seeded invariance (`seeded-invariance-gate.py`): PASS on GB10 for
-`change`, `change2`, `change3` and `change5` and on the 5090 for `change2` (`change5` pending),
+`change`, `change2`, `change3` and `change5` and on the 5090 for `change2` and `change5`,
 54 rows each over 10 prompts (ref, K=0 to 3, demotion). Burst boundary
 (`spec-burst-boundary-gate.py`, GB10): PASS for `change`, `change2`, `change3` and `change5`,
 229 rows each over the grid default, 1:2, 3:2, 3:3. Texts: every plain text is identical
 across arms and identical beside the streams and alone, and every stream text is a prefix of
 the longest run of its stream, except the vendor-shape riders noted above. CPU checks on the
-review head rebased onto main 9d7c086c67 (`cpu/`, 0550953c2a; the code delta is the one the
-cells ran, plus a test-only compile fix): fmt, clippy, the engine (741) and server (1,220)
-suites and the flags and numeric censuses pass, and each of the ten red arms fails exactly the
-test it was built to fail.
+review head rebased onto main 11b368f7d7 (`cpu/checks.log`, 76af934425; the code delta is the
+one the cells ran, plus a test-only compile fix): fmt, clippy, the engine (743) and server
+(1,220) suites and the flags and numeric censuses pass. Each of the ten red arms fails exactly the test it was
+built to fail (`cpu/redgreen.log`, on 0550953c2a, whose `worker.rs` the head keeps byte for
+byte).
 
 ## Rejected
 
