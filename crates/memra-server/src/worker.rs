@@ -43960,7 +43960,8 @@ mod tests {
     /// Two more pins: only a trimmed prime is named (a lone speculative newcomer beside plain
     /// riders would otherwise run its whole first burst and then a second burst as a one-member
     /// cohort in the same tick), and the cohort pass reads the prime quantum before the cohorts
-    /// form (or a cohort runs a whole burst between a long prime's first and second chunk).
+    /// form (or a cohort runs a whole burst between a long prime's first and second chunk). The
+    /// pre-cohort reclaim (memra#1266) sits between the two, after the newcomers primed.
     #[test]
     fn spec_newcomers_prime_before_cohorts_is_wired() {
         let worker: String = include_str!("worker.rs")
@@ -43983,9 +43984,11 @@ mod tests {
             "if pass == SpecPass::Cohorts { for &i in &spec_order { let owes = \
              memra_engine::prime_walker::prime_yield_enabled() && \
              crate::prime_fairness::owes_peer_quantum( i, active.iter().map(|s| \
-             s.prime_service.pending), ); active[i].prime_service.peer_quantum = owes; } let mut \
-             cohorts: Vec<(String, bool, Vec<usize>)> = Vec::new();",
+             s.prime_service.pending), ); active[i].prime_service.peer_quantum = owes; }",
         );
+        // memra#1266: between the quantum and the cohorts, the pre-cohort reclaim funds the
+        // largest member's verify round.
+        let reclaim = at(concat!("let reclaim = reclaim_for_spec_round", "("));
         let passes = at(
             "for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] { if pass == SpecPass::Cohorts {",
         );
@@ -44000,7 +44003,8 @@ mod tests {
         assert!(
             named < passes
                 && passes < quantum
-                && quantum < cohorts
+                && quantum < reclaim
+                && reclaim < cohorts
                 && cohorts < pooled
                 && pooled < steps
                 && steps < serial
