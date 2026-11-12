@@ -20197,7 +20197,12 @@ pub fn run(
     let mut fence_deferred = Duration::ZERO;
     // The shortest phase (a) that ran a speculative round (memra#1244): phase (b) comes at
     // least that long after the start of a tick whose bursts run (`prefill_windows_close`).
-    let mut shortest_phase_a: Option<Duration> = None;
+    // ROUND YIELD (memra#1244 review): the last 64 phase (a)s that ran a speculative round (the
+    // outlook's window rule reads their shortest), the rounds of the last 64 bursts the yield
+    // did not end (a yielded tick's dark cadence reads their longest), and that cadence.
+    let mut phase_a_recent: RecentWindow<Duration, 64> = RecentWindow::new();
+    let mut burst_rounds_recent: RecentWindow<u64, 64> = RecentWindow::new();
+    let mut dark_cadence = DarkCadence::default();
     let mut step_stats = StepStats::new(
         std::env::var("MEMRA_LANE_WINDOW_S")
             .ok()
@@ -23756,9 +23761,10 @@ pub fn run(
                 // as the tick's start knows them (`plain_prime_runs`).
                 // Phase (b)'s time windows (refill grace, fanout formation window,
                 // batch-formation hold, each `MEMRA_PRIME_BATCH_HOLD_MS` long) close before it
-                // reads them when they are shorter than any phase (a) (`prefill_windows_close`).
+                // reads them when they are shorter than any recent phase (a)
+                // (`prefill_windows_close`).
                 let windows_close =
-                    prefill_windows_close(Duration::from_millis(pb_hold_ms), shortest_phase_a);
+                    prefill_windows_close(Duration::from_millis(pb_hold_ms), phase_a_recent.min());
                 let now = Instant::now();
                 let refill_grace =
                     !windows_close && interactive_refill_until.is_some_and(|until| now < until);
@@ -23808,8 +23814,19 @@ pub fn run(
                                 prev_tick,
                                 |_| false,
                             ));
-                    let primes =
-                        plain_prime_runs(s.prefill_done, s.prefill_queue.len(), chunk, held_back);
+                    let primes = plain_prime_runs(
+                        s.prefill_done,
+                        s.prefill_queue.len(),
+                        chunk,
+                        held_back,
+                        choice_waiting(s),
+                        plain_prime_walks(
+                            s,
+                            memra_engine::plan_backend::decode_batch_unconverted(
+                                &loaded[&s.model].model.plan,
+                            ),
+                        ),
+                    );
                     if let Some(tick) = plain_tick(
                         plain_rider_candidate(s, &loaded[&s.model], &eager_decode),
                         s.prefill_done && s.cache.is_some(),
@@ -23818,34 +23835,33 @@ pub fn run(
                         plain.push((s.model.as_str(), tick));
                     }
                 }
-                // The models whose riders stay in phase (c) this tick: a decoding plain
-                // session of any lane that is no rider candidate keeps them there (the
-                // riders' `left_behind`).
-                let left_behind: std::collections::HashSet<&str> = active
+                // The models whose riders a cohort carries, by phase (a)'s own rule.
+                let carried = carried_rider_models(
+                    active
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| !finished.contains(i))
+                        .map(|(_, s)| ride_facts(s, &loaded[&s.model], &eager_decode)),
+                );
+                // The tick's bursts: the yield ends MTP bursts only, so it is decided only
+                // when there is one and no burst without the round hook would run in full.
+                let (mtp_bursts, hookless_bursts) = spec_order
                     .iter()
-                    .enumerate()
-                    .filter(|(i, s)| {
-                        !finished.contains(i)
-                            && s.spec.is_none()
-                            && s.gspec_k == 0
-                            && !s.dspark_on
-                            && !s.glm5_on
-                            && s.prefill_done
-                            && s.cache.is_some()
-                            && !plain_rider_candidate(s, &loaded[&s.model], &eager_decode)
-                    })
-                    .map(|(_, s)| s.model.as_str())
-                    .collect();
-                let cohort_models: std::collections::HashSet<&str> = spec_order
-                    .iter()
-                    .filter(|&&i| {
-                        !finished.contains(&i)
-                            && spec_pool_candidate(&active[i], &loaded[&active[i].model])
-                    })
-                    .map(|&i| active[i].model.as_str())
-                    .collect();
-                spec_round_yield_due(admit_yield_on, &plain, &cohort_models, &left_behind)
+                    .filter(|&&i| !finished.contains(&i))
+                    .fold((false, false), |(mtp, hookless), &i| {
+                        let hooked = round_hooked(&active[i]);
+                        (mtp || hooked, hookless || !hooked)
+                    });
+                spec_round_yield_due(
+                    admit_yield_on,
+                    mtp_bursts,
+                    hookless_bursts,
+                    &plain,
+                    &carried,
+                )
             };
+            // Dark work keeps its burst cadence on the yield's short ticks (`DarkCadence`).
+            let dark_turn = dark_cadence.turn(round_yield.is_some(), burst_rounds_recent.max());
             if let Some(class) = round_yield {
                 // Engagement receipt, once per class (the dead-arm lesson).
                 static SEEN: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
@@ -23858,7 +23874,7 @@ pub fn run(
                 active[i].spec_round_yield = round_yield.is_some();
             }
             let phase_a_at = Instant::now();
-            let rounds_at: u64 = spec_order.iter().map(|&i| active[i].spec_rounds).sum();
+            let rounds_at: Vec<u64> = spec_order.iter().map(|&i| active[i].spec_rounds).collect();
             for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] {
                 if pass == SpecPass::Cohorts {
                     // A newcomer's prime that suspended in the first pass is pending now, so
@@ -23901,25 +23917,27 @@ pub fn run(
                     // per (now longer) tick. Measured on the q9 mixed cell at c=8 (two such rows
                     // beside four riders): 0.94x aggregate with riders, the tail set by the rows
                     // left behind.
-                    let mut left_behind: std::collections::HashSet<String> =
-                        std::collections::HashSet::new();
-                    for (i, s) in active.iter().enumerate() {
-                        if finished.contains(&i) {
-                            continue;
-                        }
-                        if plain_rider_candidate(s, &loaded[&s.model], &eager_decode) {
-                            riders_of.entry(s.model.clone()).or_default().push(i);
-                        } else if s.spec.is_none()
-                            && s.gspec_k == 0
-                            && !s.dspark_on
-                            && !s.glm5_on
-                            && s.prefill_done
-                            && s.cache.is_some()
-                        {
-                            left_behind.insert(s.model.clone());
+                    // Only an interactive one does (memra#1244 review): a dark row stays in
+                    // phase (c) at one token per burst and never keeps interactive riders out.
+                    // The same rule names the riders nothing carries in the round yield's
+                    // outlook (`carried_rider_models`).
+                    {
+                        let carried = carried_rider_models(
+                            active
+                                .iter()
+                                .enumerate()
+                                .filter(|(i, _)| !finished.contains(i))
+                                .map(|(_, s)| ride_facts(s, &loaded[&s.model], &eager_decode)),
+                        );
+                        for (i, s) in active.iter().enumerate() {
+                            if !finished.contains(&i)
+                                && carried.contains(s.model.as_str())
+                                && plain_rider_candidate(s, &loaded[&s.model], &eager_decode)
+                            {
+                                riders_of.entry(s.model.clone()).or_default().push(i);
+                            }
                         }
                     }
-                    riders_of.retain(|m, _| !left_behind.contains(m));
                     // A cohort of two or more, or one MTP member carrying riders.
                     cohorts.retain(|(m, d, v)| {
                         v.len() >= 2 || (!*d && !v.is_empty() && riders_of.contains_key(m))
@@ -24303,14 +24321,17 @@ pub fn run(
             }
             // Only a phase (a) that ran a speculative round: one whose bursts all ended at
             // their entry call (a waiting admission, the entry-yield bound) can take no time.
-            if spec_order
+            let burst_rounds = spec_order
                 .iter()
-                .map(|&i| active[i].spec_rounds)
-                .sum::<u64>()
-                > rounds_at
-            {
-                let took = phase_a_at.elapsed();
-                shortest_phase_a = Some(shortest_phase_a.map_or(took, |d| d.min(took)));
+                .zip(&rounds_at)
+                .map(|(&i, &at)| active[i].spec_rounds.saturating_sub(at))
+                .max()
+                .unwrap_or(0);
+            if burst_rounds > 0 {
+                phase_a_recent.push(phase_a_at.elapsed());
+                if round_yield.is_none() {
+                    burst_rounds_recent.push(burst_rounds);
+                }
             }
             // Freeze this before prefill/decode work; the summary must describe phase (a),
             // not elapsed time from phase (a)'s start to the end of the whole scheduler tick or
@@ -24937,6 +24958,7 @@ pub fn run(
                     || active[i].dspark_on
                     || !active[i].prefill_done
                     || active[i].cache.is_none()
+                    || !(dark_turn || active[i].lane == crate::lanes::Lane::Interactive)
                 {
                     continue;
                 }
@@ -24981,6 +25003,7 @@ pub fn run(
                         && active[i].cache.is_some()
                         && !eager_decode.contains(&active[i].model)
                         && !rider_ledger.served.contains(&i)
+                        && (dark_turn || active[i].lane == crate::lanes::Lane::Interactive)
                 })
                 .collect();
             decoding.sort_by_key(|&i| active[i].lane.idx());
@@ -25280,7 +25303,12 @@ pub fn run(
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(8.0);
-            let adaptive_cap = (headroom_ms * prime_tok_per_ms) as usize;
+            // A yielded tick that is not dark work's turn primes no dark prompt (`DarkCadence`).
+            let adaptive_cap = if dark_turn {
+                (headroom_ms * prime_tok_per_ms) as usize
+            } else {
+                0
+            };
             // task #17 increment (2026-07-30): CONCAT small FRESH dark prefills — the
             // harvest profile (many short prompts) previously burned one tick per
             // session; a single prime_cache_batch serves them together at m = sum_T,
@@ -32719,8 +32747,7 @@ fn prefill_tick(
         }
         // Text-only hyper segments use the same saved trunk on both arms.
         // Keep the queue and capture boundaries intact until this segment finishes.
-        let saved_hyper = s.glm5_plain_prime.is_some()
-            || (hyper_trunk && s.vision.is_none() && s.capture.is_none());
+        let saved_hyper = plain_prime_walks(s, hyper_trunk);
         let chunk: Vec<u32> = if saved_hyper {
             s.prefill_queue.iter().take(take).copied().collect()
         } else {
@@ -34649,11 +34676,12 @@ fn spec_admit_keep(waiting: usize, round_yield: bool, entry: bool) -> bool {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum PlainTick {
     /// A rider candidate (`plain_rider_candidate`): it advances once per lockstep round inside
-    /// its model's pooled MTP cohort, when the tick has one and no session of the model keeps
-    /// the riders in phase (c).
+    /// its model's pooled MTP cohort when one carries it this tick (`carried_rider_models`).
     Rider,
     /// Decoding, and no rider candidate (constrained, vision, a fork, an eager-only model): it
     /// takes one phase (c) step per tick and keeps its model's riders in phase (c) with it.
+    /// A prompt fed tokenwise (an eager monolithic carried suffix, a remainder under
+    /// `PRIME_MIN_T`) is the same trade: one prompt token per tick.
     Decoding,
     /// Not decoding yet, and this tick's prefill phase, after the bursts, runs a prime call
     /// that brings its first token within one chunk (`plain_prime_runs`).
@@ -34692,7 +34720,9 @@ fn round_yield_weighs(live: bool, speculative: bool, lane: crate::lanes::Lane) -
 /// back in the outlook.
 /// Read at the tick's start instead, a newcomer admitted at the tick's top is always inside
 /// its 4 ms window, and the outlook held its prime behind a full burst (GB10, first token
-/// 1.79 s against 0.31 s).
+/// 1.79 s against 0.31 s). The shortest phase (a) is over the last 64 that ran a round
+/// (`RecentWindow`), so one short phase (a), say of a small co-loaded model, keeps the windows
+/// open only until it leaves the window, not for the process's life.
 fn prefill_windows_close(window: Duration, shortest_phase_a: Option<Duration>) -> bool {
     shortest_phase_a.is_some_and(|phase_a| window < phase_a)
 }
@@ -34716,11 +34746,160 @@ fn prefill_windows_close(window: Duration, shortest_phase_a: Option<Duration>) -
 ///
 /// Phase (b)'s time windows count only while they can outlast a phase (a)
 /// (`prefill_windows_close`); the formation hold's in-tick wait counts as no arrival.
-fn plain_prime_runs(prefill_done: bool, queued: usize, chunk: usize, held_back: bool) -> bool {
+///
+/// No prime call runs either (memra#1244 review) for a follower of an n>1 choice group while
+/// the group is admitted (`choice_waiting`: `prefill_tick` returns at once), nor for a prompt
+/// on the hyper-trunk plain prime walker (`plain_prime_walks`), which may suspend inside the
+/// call and finish on a later tick. A prompt fed tokenwise is the `Decoding` trade.
+///
+/// The outlook reads phase (b)'s inputs at the tick's start: the prefill rate before phase (b)
+/// marks this tick's (`prefill_rate_mark`), and no fanout session advanced yet. On the tick
+/// after a prefill its deadline order can differ from phase (b)'s, for that one tick.
+fn plain_prime_runs(
+    prefill_done: bool,
+    queued: usize,
+    chunk: usize,
+    held_back: bool,
+    choice_waits: bool,
+    walks: bool,
+) -> bool {
     !prefill_done
         && queued > 0
         && !held_back
+        && !choice_waits
+        && !walks
         && prefill_tick_take(queued, chunk, false, None) == queued
+}
+
+/// Whether a plain prompt primes through the hyper-trunk walker (`prefill_tick`'s saved trunk),
+/// whose prime may suspend and resume on a later tick: a segment already on it, or a text-only
+/// prompt (no vision, no capture) on a hyper trunk.
+fn plain_prime_walks(s: &Session, hyper_trunk: bool) -> bool {
+    s.glm5_plain_prime.is_some() || (hyper_trunk && s.vision.is_none() && s.capture.is_none())
+}
+
+/// What the riding rule reads of one live session (memra#1244 review): its model, whether it
+/// may join the model's pooled MTP cohort this tick (`spec_pool_candidate`), whether it is a
+/// plain rider candidate (`plain_rider_candidate`), whether it is a plain session that
+/// decodes, and its lane.
+#[derive(Clone, Copy, Debug)]
+struct RideFacts<'a> {
+    model: &'a str,
+    cohort: bool,
+    rider: bool,
+    plain_decoding: bool,
+    interactive: bool,
+}
+
+/// `RideFacts` of a live session.
+fn ride_facts<'a>(
+    s: &'a Session,
+    lm: &LoadedModel,
+    eager_decode: &std::collections::HashSet<String>,
+) -> RideFacts<'a> {
+    RideFacts {
+        model: s.model.as_str(),
+        cohort: spec_pool_candidate(s, lm),
+        rider: plain_rider_candidate(s, lm, eager_decode),
+        plain_decoding: s.spec.is_none()
+            && s.gspec_k == 0
+            && !s.dspark_on
+            && !s.glm5_on
+            && s.prefill_done
+            && s.cache.is_some(),
+        interactive: s.lane == crate::lanes::Lane::Interactive,
+    }
+}
+
+/// The models whose plain riders a pooled MTP cohort carries this tick (memra#1244 review):
+/// a model with a cohort candidate, unless an interactive plain session of it decodes and is
+/// no rider candidate. That session would take one phase (c) step per tick while the riders
+/// advance once per round, so it keeps them in phase (c) with it (the q9 mixed cell at c=8:
+/// two such rows beside four riders, 0.94x aggregate with riders). A dark one does not: it
+/// stays in phase (c) at one token per burst, and a dark json-constrained job cannot hold an
+/// interactive rider out of its cohort (and the round yield on for the streams). Phase (a)
+/// forms the riders from this set, and the round yield's outlook calls a rider outside it
+/// uncarried, so the two read one rule.
+fn carried_rider_models<'a>(
+    facts: impl IntoIterator<Item = RideFacts<'a>>,
+) -> std::collections::HashSet<&'a str> {
+    let mut cohorts = std::collections::HashSet::new();
+    let mut held = std::collections::HashSet::new();
+    for f in facts {
+        if f.cohort {
+            cohorts.insert(f.model);
+        }
+        if f.plain_decoding && !f.rider && f.interactive {
+            held.insert(f.model);
+        }
+    }
+    cohorts.retain(|m| !held.contains(m));
+    cohorts
+}
+
+/// A burst the round yield can end: an MTP burst, whose emission hook takes the round verdict
+/// (`SpecBurstEmit`). The DFlash2, glm5 and gemma bursts run to their target (memra#1246).
+fn round_hooked(s: &Session) -> bool {
+    s.spec.is_some() && s.gspec_k == 0 && !s.dspark_on && !s.glm5_on
+}
+
+/// The last `N` values of a per-tick measurement (memra#1244 review), so one odd tick does not
+/// set the round yield's inputs for the process's life.
+struct RecentWindow<T, const N: usize> {
+    vals: std::collections::VecDeque<T>,
+}
+
+impl<T: Copy + Ord, const N: usize> RecentWindow<T, N> {
+    fn new() -> Self {
+        Self {
+            vals: std::collections::VecDeque::with_capacity(N),
+        }
+    }
+
+    fn push(&mut self, v: T) {
+        if self.vals.len() == N {
+            self.vals.pop_front();
+        }
+        self.vals.push_back(v);
+    }
+
+    fn min(&self) -> Option<T> {
+        self.vals.iter().copied().min()
+    }
+
+    fn max(&self) -> Option<T> {
+        self.vals.iter().copied().max()
+    }
+}
+
+/// DARK CADENCE (memra#1244 review). Beside full bursts a tick is one burst long, and phase (c)
+/// steps each dark plain row once and phase (d) primes one dark chunk inside the SLO headroom
+/// per tick: one dark step per burst. A tick whose bursts the round yield ends is one round
+/// long, so the same rule would run dark work up to a burst's rounds times as often (13 on
+/// GB10's 27B), charged to the interactive streams the yield already slows. So on yielded ticks
+/// dark work runs once every `rounds` ticks, `rounds` being the longest recent burst the yield
+/// did not end (the burst it replaces), and on every tick that is not yielded. With no burst
+/// measured yet it runs every tick.
+#[derive(Default)]
+struct DarkCadence {
+    yielded: u64,
+}
+
+impl DarkCadence {
+    /// Whether this tick's phase (c) steps dark rows and phase (d) primes dark prompts.
+    fn turn(&mut self, yielded: bool, rounds: Option<u64>) -> bool {
+        if !yielded {
+            self.yielded = 0;
+            return true;
+        }
+        self.yielded += 1;
+        if self.yielded >= rounds.unwrap_or(1).max(1) {
+            self.yielded = 0;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 /// A live interactive plain session's `PlainTick`. `rider`: it is a rider candidate.
@@ -34740,10 +34919,13 @@ fn plain_tick(rider: bool, decoding: bool, primes: bool) -> Option<PlainTick> {
 
 /// ROUND YIELD (memra#1244): whether this tick's MTP bursts end at their first round, and the
 /// class that asks for it. It is asked for when a live interactive plain session gets its step
-/// only after phase (a): every `Decoding` and `Priming` session, and a `Rider` no cohort
-/// carries this tick (its model has no session in `cohort_models`, the models with a
-/// pooled-cohort candidate at the tick's start, or is in `left_behind`, the models whose
-/// riders a decoding non-rider of any lane keeps in phase (c)).
+/// only after phase (a): every `Decoding` and `Priming` session, and a `Rider` whose model is
+/// not in `carried` (`carried_rider_models`, read at the tick's start; phase (a) forms its
+/// cohorts after the newcomers' pass, so a rider whose cohort a newcomer completes counts as
+/// uncarried for that one tick). Only in a tick with an MTP burst (`mtp_bursts`) and with no
+/// burst the round hook cannot end (`hookless_bursts`: DFlash2, glm5, gemma): with none the
+/// yield has nothing to end, and beside a hookless burst the plain session waits out that
+/// burst anyway while the MTP streams would lose their rounds.
 ///
 /// Before, phase (a) ran every burst to its target (32 tokens, 13 rounds on GB10's 27B)
 /// ahead of that session's one step, so it got one token per burst: 1.4 to 1.8 s a token
@@ -34755,16 +34937,16 @@ fn plain_tick(rider: bool, decoding: bool, primes: bool) -> Option<PlainTick> {
 /// glm5 and gemma bursts have no round hook that ends them.
 fn spec_round_yield_due(
     admit_yield_on: bool,
+    mtp_bursts: bool,
+    hookless_bursts: bool,
     plain: &[(&str, PlainTick)],
-    cohort_models: &std::collections::HashSet<&str>,
-    left_behind: &std::collections::HashSet<&str>,
+    carried: &std::collections::HashSet<&str>,
 ) -> Option<PlainTick> {
-    if !admit_yield_on {
+    if !admit_yield_on || !mtp_bursts || hookless_bursts {
         return None;
     }
     plain.iter().find_map(|&(model, tick)| {
-        (tick != PlainTick::Rider || !cohort_models.contains(model) || left_behind.contains(model))
-            .then_some(tick)
+        (tick != PlainTick::Rider || !carried.contains(model)).then_some(tick)
     })
 }
 
@@ -34798,7 +34980,11 @@ fn spec_pool_candidate(s: &Session, lm: &LoadedModel) -> bool {
 /// so it comes back as the host logits row the batched step returns for it
 /// (`rider_sample_rows`, the plain step's own epilogue) and `advance_sample_emit` samples it
 /// as in phase (c). Until then such a session stayed in phase (c) at one token per burst and
-/// kept every rider of its model there with it.
+/// kept every rider of its model there with it. Only an interactive one (memra#1244 review):
+/// a host-sampled judge or harvest session stays in phase (c) at one token per burst, since on
+/// a card with no cost table for the model a rider takes its plain step inside every round
+/// (the RTX 5090 on Qwen3.8-27B: two streams at 64.3 tok/s instead of 88.3 beside one). A
+/// device-sampled dark session rides as before this change.
 fn plain_rider_candidate(
     s: &Session,
     lm: &LoadedModel,
@@ -34814,6 +35000,7 @@ fn plain_rider_candidate(
         && s.constraint.is_none()
         && s.vision.is_none()
         && s.choice.is_none()
+        && (devsample_meta(s).is_some() || s.lane == crate::lanes::Lane::Interactive)
         && lm.model.plain_rider_capable()
 }
 
@@ -42037,23 +42224,19 @@ mod tests {
 
     /// memra#1244: the round yield is due exactly while an interactive plain session gets its
     /// step only after the tick's bursts: one that decodes and cannot ride, one whose prime
-    /// this tick completes, and a rider candidate nothing carries (no cohort of its model, or a
-    /// decoding non-rider of any lane keeps the model's riders in phase (c)). A rider a cohort
-    /// carries advances inside the rounds and asks for nothing. Before, no plain session ended
-    /// a burst.
+    /// this tick completes, and a rider candidate no cohort carries (`carried_rider_models`). A
+    /// rider a cohort carries advances inside the rounds and asks for nothing. Only in a tick
+    /// with an MTP burst and no burst the round hook cannot end (memra#1244 review: with no
+    /// burst it has nothing to end; beside a DFlash2, glm5 or gemma burst the plain session
+    /// waits that burst out anyway). Before, no plain session ended a burst.
     #[test]
     fn spec_round_yield_due_names_the_plain_sessions_behind_the_bursts() {
         use super::PlainTick::{Decoding, Priming, Rider};
         let models = |m: &[&'static str]| -> std::collections::HashSet<&'static str> {
             m.iter().copied().collect()
         };
-        let due_with = |plain: &[(&str, super::PlainTick)],
-                        cohorts: &[&'static str],
-                        behind: &[&'static str]| {
-            super::spec_round_yield_due(true, plain, &models(cohorts), &models(behind))
-        };
-        let due = |plain: &[(&str, super::PlainTick)], cohorts: &[&'static str]| {
-            due_with(plain, cohorts, &[])
+        let due = |plain: &[(&str, super::PlainTick)], carried: &[&'static str]| {
+            super::spec_round_yield_due(true, true, false, plain, &models(carried))
         };
         assert_eq!(due(&[], &["q"]), None, "no plain session: full bursts");
         assert_eq!(
@@ -42072,25 +42255,11 @@ mod tests {
             Some(Priming),
             "its prime waits for phase (b)"
         );
-        assert_eq!(
-            due(&[("q", Rider)], &[]),
-            Some(Rider),
-            "no cohort carries it"
-        );
+        assert_eq!(due(&[("q", Rider)], &[]), Some(Rider), "nothing carries it");
         assert_eq!(
             due(&[("q", Rider)], &["r"]),
             Some(Rider),
-            "the cohort is another model's"
-        );
-        assert_eq!(
-            due_with(&[("q", Rider)], &["q"], &["q"]),
-            Some(Rider),
-            "a decoding non-rider (of any lane) keeps the rider in phase (c)"
-        );
-        assert_eq!(
-            due_with(&[("q", Rider)], &["q"], &["r"]),
-            None,
-            "another model's riders are kept back, not this one"
+            "the carried riders are another model's"
         );
         assert_eq!(
             due(&[("q", Rider), ("r", Decoding)], &["q"]),
@@ -42098,9 +42267,23 @@ mod tests {
             "another model's plain session still waits"
         );
         assert_eq!(
-            super::spec_round_yield_due(false, &[("q", Decoding)], &models(&["q"]), &models(&[])),
+            super::spec_round_yield_due(false, true, false, &[("q", Decoding)], &models(&["q"])),
             None,
             "lockstep fairness keeps full bursts"
+        );
+        assert_eq!(
+            super::spec_round_yield_due(true, false, false, &[("q", Rider)], &models(&[])),
+            None,
+            "no MTP burst in the tick: nothing to end"
+        );
+        assert_eq!(
+            super::spec_round_yield_due(true, false, false, &[("q", Decoding)], &models(&[])),
+            None
+        );
+        assert_eq!(
+            super::spec_round_yield_due(true, true, true, &[("q", Decoding)], &models(&["q"])),
+            None,
+            "a burst without the round hook runs in full beside it"
         );
         // The session's class: a rider candidate, a decoding session, and a priming one only
         // when the tick's prefill phase completes its prompt.
@@ -42145,6 +42328,117 @@ mod tests {
         );
     }
 
+    /// memra#1244 review: phase (a) and the round yield's outlook read one riding rule. A model's
+    /// riders are carried when it has a cohort candidate and no interactive plain session of
+    /// it decodes without riding. A rider candidate never holds riders back (the reviewer's red
+    /// arm A), no cohort means nothing is carried (red arm B), and a dark decoder holds nothing
+    /// back. Before, the outlook kept its own copy, and a dark json-constrained job kept an
+    /// interactive rider out of its cohort.
+    #[test]
+    fn carried_rider_models_follow_one_rule() {
+        let f = |model: &'static str,
+                 cohort: bool,
+                 rider: bool,
+                 plain_decoding: bool,
+                 interactive: bool| super::RideFacts {
+            model,
+            cohort,
+            rider,
+            plain_decoding,
+            interactive,
+        };
+        let carried = |facts: Vec<super::RideFacts<'static>>| {
+            let mut v: Vec<&str> = super::carried_rider_models(facts).into_iter().collect();
+            v.sort_unstable();
+            v
+        };
+        let stream = f("q", true, false, false, true);
+        let rider = f("q", false, true, true, true);
+        assert_eq!(
+            carried(vec![stream, rider]),
+            ["q"],
+            "a cohort carries its riders"
+        );
+        assert_eq!(
+            carried(vec![stream, rider, f("q", false, true, true, true)]),
+            ["q"],
+            "a rider candidate does not hold riders back"
+        );
+        assert!(
+            carried(vec![rider]).is_empty(),
+            "no cohort candidate: nothing carried"
+        );
+        assert!(
+            carried(vec![stream, rider, f("q", false, false, true, true)]).is_empty(),
+            "an interactive decoder that cannot ride keeps the riders in phase (c)"
+        );
+        assert_eq!(
+            carried(vec![stream, rider, f("q", false, false, true, false)]),
+            ["q"],
+            "a dark one does not"
+        );
+        assert_eq!(
+            carried(vec![
+                stream,
+                f("r", true, false, false, true),
+                f("r", false, false, true, true)
+            ]),
+            ["q"],
+            "another model's decoder holds only its own riders"
+        );
+        assert_eq!(
+            carried(vec![stream, f("q", false, false, false, true)]),
+            ["q"],
+            "a session still to prime holds nothing back"
+        );
+    }
+
+    /// memra#1244 review: on ticks the round yield ends, dark work keeps its burst cadence. Beside
+    /// full bursts it runs every tick; on yielded ticks once every `rounds` ticks, `rounds` being
+    /// the longest recent burst the yield did not end; with none measured, every tick. The
+    /// recent window keeps the last N values. Before, a yielded tick stepped every dark row and
+    /// primed a dark chunk, up to a burst's rounds times as often per second.
+    #[test]
+    fn dark_work_keeps_its_burst_cadence_on_yielded_ticks() {
+        let mut c = super::DarkCadence::default();
+        assert!(c.turn(false, Some(13)), "full bursts: every tick");
+        let turns: Vec<bool> = (0..26).map(|_| c.turn(true, Some(13))).collect();
+        assert_eq!(
+            turns.iter().filter(|&&t| t).count(),
+            2,
+            "once every 13 yielded ticks"
+        );
+        assert!(turns[12] && turns[25] && !turns[0] && !turns[11]);
+        assert!(!c.turn(true, Some(13)));
+        assert!(
+            c.turn(false, Some(13)),
+            "a full tick runs dark work and restarts the count"
+        );
+        assert!(!c.turn(true, Some(13)));
+        let mut c = super::DarkCadence::default();
+        assert!(
+            c.turn(true, None) && c.turn(true, None),
+            "no burst measured yet: every tick"
+        );
+        assert!(c.turn(true, Some(1)) && c.turn(true, Some(0)));
+
+        let mut w: super::RecentWindow<u64, 3> = super::RecentWindow::new();
+        assert_eq!((w.min(), w.max()), (None, None));
+        for v in [5, 1, 9] {
+            w.push(v);
+        }
+        assert_eq!((w.min(), w.max()), (Some(1), Some(9)));
+        w.push(7);
+        w.push(8);
+        assert_eq!(
+            (w.min(), w.max()),
+            (Some(7), Some(9)),
+            "the oldest values leave the window"
+        );
+        w.push(6);
+        assert_eq!((w.min(), w.max()), (Some(6), Some(8)));
+    }
+
     /// memra#1244 review: a plain session counts as priming only when this tick's prefill
     /// phase runs a prime call for it and what is left of its prompt fits one take. Not when
     /// nothing is left (an empty queue, a primed prompt), not when phase (b) holds it back
@@ -42155,7 +42449,7 @@ mod tests {
     fn plain_prime_runs_only_when_phase_b_primes_the_last_chunk() {
         let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
         let runs = |done: bool, queued: usize, held: bool| {
-            super::plain_prime_runs(done, queued, 1024, held)
+            super::plain_prime_runs(done, queued, 1024, held, false, false)
         };
         assert!(runs(false, 34, false));
         assert!(runs(false, 1024, false));
@@ -42170,6 +42464,14 @@ mod tests {
         assert!(!runs(false, 0, false), "nothing left to prime");
         assert!(!runs(true, 34, false), "the prompt is primed");
         assert!(!runs(false, 34, true), "phase (b) holds it back this tick");
+        assert!(
+            !super::plain_prime_runs(false, 34, 1024, false, true, false),
+            "a choice follower waits for its group: no prime call"
+        );
+        assert!(
+            !super::plain_prime_runs(false, 34, 1024, false, false, true),
+            "the hyper-trunk walker may suspend inside the call"
+        );
         // Phase (b)'s 4 ms windows close inside any phase (a) that ran a round; a window that
         // can outlast one, or one with nothing measured yet, stays open.
         use super::prefill_windows_close as close;
@@ -42289,22 +42591,86 @@ mod tests {
         let weighs =
             at("if !round_yield_weighs(!finished.contains(&i), speculative, s.lane) { continue; }");
         let outlook = at(
-            "let primes = plain_prime_runs(s.prefill_done, s.prefill_queue.len(), chunk, held_back);",
+            "let primes = plain_prime_runs( s.prefill_done, s.prefill_queue.len(), chunk, held_back, \
+             choice_waiting(s), plain_prime_walks( s, \
+             memra_engine::plan_backend::decode_batch_unconverted( &loaded[&s.model].model.plan, ), ), );",
         );
         let named = at(
             "plain_tick( plain_rider_candidate(s, &loaded[&s.model], &eager_decode), \
              s.prefill_done && s.cache.is_some(), primes, )",
         );
-        let due =
-            at("spec_round_yield_due(admit_yield_on, &plain, &cohort_models, &left_behind) };");
+        let carried_outlook = at(
+            "let carried = carried_rider_models( active .iter() .enumerate() .filter(|(i, _)| \
+             !finished.contains(i)) .map(|(_, s)| ride_facts(s, &loaded[&s.model], &eager_decode)), );",
+        );
+        let bursts = at(
+            "let (mtp_bursts, hookless_bursts) = spec_order .iter() .filter(|&&i| \
+             !finished.contains(&i)) .fold((false, false), |(mtp, hookless), &i| { let hooked = \
+             round_hooked(&active[i]); (mtp || hooked, hookless || !hooked) });",
+        );
+        let due = at(
+            "spec_round_yield_due( admit_yield_on, mtp_bursts, hookless_bursts, &plain, &carried, ) };",
+        );
+        let cadence = at(
+            "let dark_turn = dark_cadence.turn(round_yield.is_some(), burst_rounds_recent.max());",
+        );
         let written =
             at("for &i in &spec_order { active[i].spec_round_yield = round_yield.is_some(); }");
         let passes = at("for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] {");
         assert!(
-            weighs < outlook && outlook < named && named < due && due < written && written < passes,
+            weighs < outlook
+                && outlook < named
+                && named < carried_outlook
+                && carried_outlook < bursts
+                && bursts < due
+                && due < cadence
+                && cadence < written
+                && written < passes,
             "only interactive plain sessions are weighed, and the yield is decided and written \
              before any burst of the tick"
         );
+        // Phase (a) forms its riders through the same rule as the outlook.
+        let cohorts = at("let mut riders_of: HashMap<String, Vec<usize>> = HashMap::new();");
+        let carried_phase_a = live[cohorts..].find(
+            "let carried = carried_rider_models( active .iter() .enumerate() .filter(|(i, _)| \
+             !finished.contains(i)) .map(|(_, s)| ride_facts(s, &loaded[&s.model], &eager_decode)), \
+             ); for (i, s) in active.iter().enumerate() { if !finished.contains(&i) && \
+             carried.contains(s.model.as_str()) && plain_rider_candidate(s, &loaded[&s.model], \
+             &eager_decode) { riders_of.entry(s.model.clone()).or_default().push(i); } }",
+        );
+        assert!(
+            passes < cohorts && carried_phase_a.is_some(),
+            "phase (a) reads carried_rider_models"
+        );
+        let facts = &live[at("fn ride_facts<'a>(")..at("fn carried_rider_models<'a>(")];
+        for fact in [
+            "cohort: spec_pool_candidate(s, lm),",
+            "rider: plain_rider_candidate(s, lm, eager_decode),",
+            "plain_decoding: s.spec.is_none() && s.gspec_k == 0 && !s.dspark_on && !s.glm5_on && \
+             s.prefill_done && s.cache.is_some(),",
+            "interactive: s.lane == crate::lanes::Lane::Interactive,",
+        ] {
+            assert!(facts.contains(fact), "the riding rule reads {fact}");
+        }
+        assert!(
+            live.contains(
+                "fn round_hooked(s: &Session) -> bool { s.spec.is_some() && s.gspec_k == 0 && \
+                 !s.dspark_on && !s.glm5_on }"
+            ),
+            "an MTP burst is the one the hook ends"
+        );
+        // Dark work: phase (c) steps dark rows and phase (d) primes dark chunks on its turn only.
+        for dark in [
+            "|| !(dark_turn || active[i].lane == crate::lanes::Lane::Interactive) { continue; }",
+            "&& (dark_turn || active[i].lane == crate::lanes::Lane::Interactive) }) .collect(); \
+             decoding.sort_by_key(|&i| active[i].lane.idx());",
+            "let adaptive_cap = if dark_turn { (headroom_ms * prime_tok_per_ms) as usize } else { 0 };",
+        ] {
+            assert!(
+                live[passes..].contains(dark),
+                "dark work waits its turn: {dark}"
+            );
+        }
         // The prime outlook reads phase (b)'s own predicates: the same helpers, called before
         // phase (a) and again in phase (b).
         let outlook_block = &live[at("let round_yield = {")..due];
@@ -42314,7 +42680,7 @@ mod tests {
             "hit_suffix_fence_rows(&active, &finished, fence_yields, &eager_only, chunk);",
             "let deferred = refill_grace || hit_wait || !hit_rows.is_empty();",
             "let windows_close = prefill_windows_close(Duration::from_millis(pb_hold_ms), \
-             shortest_phase_a);",
+             phase_a_recent.min());",
             "let fanout = if windows_close { Default::default() } else { prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms) };",
             "prefill_deadline_block( &active, &finished, &Default::default(), &fanout,",
             "let held_back = (deferred && !hit_rows.contains(&i)) || fanout.contains(&i) || \
@@ -42323,14 +42689,16 @@ mod tests {
         ] {
             assert!(outlook_block.contains(held), "the outlook reads {held}");
         }
-        // Phase (a) measures the shortest phase (a) that ran bursts.
+        // Phase (a) measures each phase (a) that ran a round, and the rounds of a burst the
+        // yield did not end.
         assert!(
             live[written..].contains(
-                "if spec_order .iter() .map(|&i| active[i].spec_rounds) .sum::<u64>() > rounds_at { \
-                 let took = phase_a_at.elapsed(); shortest_phase_a = \
-                 Some(shortest_phase_a.map_or(took, |d| d.min(took))); }"
+                "let burst_rounds = spec_order .iter() .zip(&rounds_at) .map(|(&i, &at)| \
+                 active[i].spec_rounds.saturating_sub(at)) .max() .unwrap_or(0); if burst_rounds > 0 \
+                 { phase_a_recent.push(phase_a_at.elapsed()); if round_yield.is_none() { \
+                 burst_rounds_recent.push(burst_rounds); } }"
             ),
-            "phase (a) measures the shortest phase (a) that ran a round"
+            "phase (a) measures the recent phase (a)s and bursts"
         );
         for phase_b in [
             "let cached_hit_waiting_for_ttft = cached_hit_waiting(&active, &finished);",
@@ -42353,8 +42721,10 @@ mod tests {
         );
         let rider = &live[at("fn plain_rider_candidate(")..at("struct RiderLedger")];
         assert!(
-            !rider.contains("devsample_meta"),
-            "a host-sampled session is a rider candidate"
+            rider.contains(
+                "&& (devsample_meta(s).is_some() || s.lane == crate::lanes::Lane::Interactive)"
+            ),
+            "an interactive host-sampled session is a rider candidate, a dark one is not"
         );
     }
 
