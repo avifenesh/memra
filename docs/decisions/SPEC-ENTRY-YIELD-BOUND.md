@@ -121,6 +121,8 @@ rows, equal to that card's base rows).
   it). Neighbors inherit the zero through `priced()`, whose choice between equal neighbors is
   memra#1212. A price that sees these ticks needs a decay or time-to-live on its zero samples and
   its own normal-concurrency proof.
+  **Settled 2026-11-11** by the stall mark ([`SPEC-STALL-MARK.md`](SPEC-STALL-MARK.md)): the same
+  verdict, stored beside the realized slots with a 64 s time-to-live instead of in them.
 - **Not changed: the cold-first ordering and the cost model's admission of short newcomers.**
   Changing the ordering serializes newcomers behind full bursts, which is what the band does and
   pays for with about 1.6 s of short-request latency. Those are policy questions with their own

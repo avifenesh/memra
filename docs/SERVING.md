@@ -2991,6 +2991,23 @@ neither number scales with `MEMRA_SPEC_BURST` anymore.
   and a pooled cohort steps before the cold-first loop. It is a liveness guarantee, not a share
   policy (memra#1211). Content is unchanged: where a burst ends is content-neutral.
   Receipts: `research/spec-entry-yield-bound-20261110/`.
+- **The stall mark** (memra#1211, 2026-11-11): the entry-yield bound keeps a speculating stream
+  live under sustained short arrivals, but the cost model kept pricing speculation above plain
+  there, because no tick under those arrivals is steady and the realized-rate sampler takes no
+  sample. A burst entry is *pressed* when a request waits at its entry hook call (any reserved
+  request, the gauge the admission yield reads). When a session's last four burst entries were
+  all pressed, the cost model marks the tick's live count (never n = 1), and each request
+  waiting at that entry marks the wave it is admitted into. The verdict at a marked n is plain
+  at every draft length, so the stalled session demotes and the newcomers are admitted to plain
+  decode. While the demoted session lives under its mark, every admission marks its own wave
+  until that mark's expiry, and each of the session's plain decode steps that sees a waiting
+  request refreshes the mark. A mark expires 64 s after its last refresh, so a single waiting
+  request per 64 s keeps it while that session lives. The mark is not a price: no realized
+  slot changes, nothing scales from it, and on expiry the verdict returns to the price it had.
+  The measured ordinary cell (c = 1..8, 160-token requests) set no mark. The mark adds no new
+  transition: it moves only the draft length at admission and the demotion the verdict already
+  chooses, so greedy text is unchanged and a seeded sampled request on the MTP route keeps its
+  text (the seeded-invariance gate). Receipts: `research/spec-stall-mark-20261111/`.
 - **The burst ends with the public stream** (GB10 decode round 5, 2026-11-09): the round hook
   also ends the burst at the round that commits EOS or a stop id, and when the client is gone.
   Before that, such a request's last burst ran out to its full target on tokens nobody sees, and
