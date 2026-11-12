@@ -79,3 +79,6 @@ research/hit-prompt-end-20261111/cpu/red-fence/green.log -text whitespace=-blank
 research/hit-prompt-end-20261111/cpu/red-fence/red-fn.patch -text whitespace=-blank-at-eol,-blank-at-eof
 # memra#1227: the cohort-newcomer cells' raw answer texts end lines in a space or end in a blank line; stored byte for byte.
 research/spec-cohort-newcomer-20261112/**/texts/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
+
+# memra#1173: the drafter-admission CPU cell's raw green cargo log ends in a blank line; stored byte for byte.
+research/drafter-admission-20261112/cpu/green.log -text whitespace=-blank-at-eol,-blank-at-eof
