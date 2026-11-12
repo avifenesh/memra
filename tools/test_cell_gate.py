@@ -767,33 +767,45 @@ class Toolchain(unittest.TestCase):
 
 
 class BuildNvcc(unittest.TestCase):
-    """The record names the nvcc build.rs `resolve_nvcc` picks, not the first on PATH: on the
-    5090 rig the distro /usr/bin/nvcc (12.4) precedes the toolkit on PATH, the build used
+    """The record names the nvcc the build compiled with, not the first on PATH: on the 5090
+    rig the distro /usr/bin/nvcc (12.4) precedes the toolkit on PATH, the build used
     $CUDA_HOME's 13.4, and the records said 12.4."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        root = Path(self.tmp.name)
-        self.distro = self.fake(root / "usr/bin", "12.4")
-        self.local = root / "usr/local"
+        self.root = Path(self.tmp.name)
+        self.distro = self.fake(self.root / "usr/bin", "12.4")
+        self.local = self.root / "usr/local"
         self.t131 = self.fake(self.local / "cuda-13.1/bin", "13.1")
         self.t134 = self.fake(self.local / "cuda-13.4/bin", "13.4")
-        self.env = {"PATH": f"{self.distro.parent}{os.pathsep}/bin"}
+        self.tree = self.root / "tree"
+        self.tree.mkdir()
+        # Only the fake distro dir: the scripts' #!/bin/sh needs no PATH, and the host's own
+        # nvcc must not take part.
+        self.env = {"PATH": str(self.distro.parent)}
 
     def tearDown(self):
+        for path in self.root.rglob("*"):
+            if path.is_dir() and not path.is_symlink():
+                path.chmod(0o755)
         self.tmp.cleanup()
 
     @staticmethod
-    def fake(directory, release):
-        directory.mkdir(parents=True)
+    def fake(directory, release, label=None, body=None):
+        directory.mkdir(parents=True, exist_ok=True)
         nvcc = directory / "nvcc"
-        nvcc.write_text(f"#!/bin/sh\necho 'Cuda compilation tools, release {release}, V{release}.0'\n"
-                        f"echo 'Build cuda_{release}.fixture'\n")
+        nvcc.write_text(body or (f"#!/bin/sh\necho 'Cuda compilation tools, release {release}, V{release}.0'\n"
+                                 f"echo 'Build cuda_{label or release}.fixture'\n"))
         nvcc.chmod(0o755)
         return nvcc
 
     def found(self, env):
-        return ce.toolchain(Path(self.tmp.name), env, local=self.local)["nvcc"]
+        return ce.toolchain(self.tree, env, local=self.local)["nvcc"]
+
+    def build_output(self, line):
+        out = self.tree / "target/release/build/memra-engine-0123456789abcdef"
+        out.mkdir(parents=True)
+        (out / "output").write_text(f"cargo:rerun-if-env-changed=MEMRA_NVCC\n{line}\n")
 
     def test_newest_toolkit_wins_over_a_distro_nvcc_first_on_path(self):
         self.assertEqual(self.found(self.env), "Build cuda_13.4.fixture")
@@ -805,6 +817,49 @@ class BuildNvcc(unittest.TestCase):
     def test_memra_nvcc_wins_over_everything(self):
         env = {**self.env, "CUDA_HOME": str(self.t131.parent.parent), "MEMRA_NVCC": str(self.distro)}
         self.assertEqual(self.found(env), "Build cuda_12.4.fixture")
+
+    def test_cuda_home_without_nvcc_falls_through_to_the_newest(self):
+        empty = self.root / "empty-toolkit"
+        empty.mkdir()
+        self.assertEqual(self.found({**self.env, "CUDA_HOME": str(empty)}), "Build cuda_13.4.fixture")
+
+    def test_the_build_scripts_own_output_wins(self):
+        # An incremental build kept fatbins from the build script's last run (13.1); the
+        # environment would resolve 13.4 now. The record names what built them.
+        self.build_output(f"cargo:warning=nvcc from $CUDA_HOME: {self.t131}")
+        env = {**self.env, "CUDA_HOME": str(self.t134.parent.parent)}
+        self.assertEqual(self.found(env), "Build cuda_13.1.fixture")
+        self.assertEqual(ce.built_nvcc(self.tree), str(self.t131))
+
+    def test_the_auto_detected_line_is_read(self):
+        self.build_output(f"cargo:warning=nvcc auto-detected CUDA 13.1 at {self.t131} (newest of 2; also saw 12.4 @ /usr/bin/nvcc)")
+        self.assertEqual(ce.built_nvcc(self.tree), str(self.t131))
+
+    def test_a_symlinked_toolkit_counts_once(self):
+        (self.local / "cuda").symlink_to(self.local / "cuda-13.4")
+        self.assertEqual(Path(ce.build_nvcc(self.env, self.local)).resolve(), self.t134.resolve())
+
+    def test_a_same_release_tie_keeps_path_first(self):
+        on_path = self.fake(self.root / "opt/cuda/bin", "13.4", label="path-13.4")
+        env = {"PATH": f"{on_path.parent}{os.pathsep}{self.distro.parent}"}
+        self.assertEqual(self.found(env), "Build cuda_path-13.4.fixture")
+
+    def test_release_parse_matches_build_rs(self):
+        # build.rs nvcc_version: text after the first "release " up to the comma; minor 0 when
+        # it does not parse.
+        beta = self.fake(self.root / "beta/bin", None, body="#!/bin/sh\necho 'Cuda compilation tools, release 13.4 beta, V13.4.0'\n")
+        self.assertEqual(ce.nvcc_release(beta, {}), (13, 0))
+        none = self.fake(self.root / "none/bin", None, body="#!/bin/sh\necho 'no version here'\n")
+        self.assertIsNone(ce.nvcc_release(none, {}))
+
+    def test_bad_candidates_do_not_abort_the_record(self):
+        garbage = self.fake(self.root / "garbage/bin", None, body="#!/bin/sh\nprintf 'release \\377\\376,'\n")
+        locked = self.root / "locked"
+        locked.mkdir()
+        self.fake(locked / "bin", "99.0")
+        locked.chmod(0)
+        env = {"PATH": f"{garbage.parent}{os.pathsep}{locked / 'bin'}{os.pathsep}{self.distro.parent}"}
+        self.assertEqual(self.found(env), "Build cuda_13.4.fixture")
 
 
 class DeviceLock(unittest.TestCase):

@@ -716,23 +716,34 @@ def build(repo, commit, target, work, log, role="tree", bins=None):
 
 
 def nvcc_release(path, env):
-    """`nvcc --version`'s release as (major, minor), parsed as build.rs `nvcc_version` does;
-    None when the binary does not run or prints no release."""
+    """`nvcc --version`'s release as (major, minor), parsed as build.rs `nvcc_version` does:
+    the text after the first "release " up to the next comma, major required, minor 0 when
+    absent; None when the binary does not run, exits non-zero or prints no release."""
     try:
-        run = subprocess.run([str(path), "--version"], capture_output=True, text=True, env=env)
-    except OSError:
+        run = subprocess.run([str(path), "--version"], capture_output=True, text=True, errors="replace", env=env)
+    except (OSError, ValueError):
         return None
-    match = re.search(r"release (\d+)(?:\.(\d+))?", run.stdout) if run.returncode == 0 else None
-    return (int(match[1]), int(match[2] or 0)) if match else None
+    if run.returncode != 0 or "release " not in run.stdout:
+        return None
+    parts = run.stdout.split("release ", 1)[1].split(",", 1)[0].strip().split(".")
+    try:
+        major = int(parts[0])
+    except ValueError:
+        return None
+    try:
+        minor = int(parts[1]) if len(parts) > 1 else 0
+    except ValueError:
+        minor = 0
+    return (major, minor)
 
 
 def build_nvcc(env, local=Path("/usr/local")):
-    """The nvcc a build in `env` compiles with, by the rule of build.rs `resolve_nvcc`:
-    MEMRA_NVCC, then the first of CUDA_HOME, CUDA_PATH, CUDA_ROOT whose bin/nvcc exists, else
-    the newest release among the PATH entries, <local>/cuda and <local>/cuda-* (ties keep
-    discovery order). Not the first nvcc on PATH: a rig with a distro /usr/bin/nvcc (12.4,
-    older than sm_120) ahead of the toolkit builds with the toolkit, and the record has to
-    name that one."""
+    """The nvcc a build in `env` resolves, by the rule of build.rs `resolve_nvcc`: MEMRA_NVCC,
+    then the first of CUDA_HOME, CUDA_PATH, CUDA_ROOT whose bin/nvcc exists, else the newest
+    release among the PATH entries, <local>/cuda and <local>/cuda-* (same-release ties keep
+    discovery order; build.rs lists <local>/cuda-* in directory order, this in sorted order).
+    Not the first nvcc on PATH: a rig with a distro /usr/bin/nvcc (12.4, older than sm_120)
+    ahead of the toolkit builds with the toolkit. A fallback for `built_nvcc`."""
     if env.get("MEMRA_NVCC"):
         return env["MEMRA_NVCC"]
     for var in ("CUDA_HOME", "CUDA_PATH", "CUDA_ROOT"):
@@ -743,9 +754,12 @@ def build_nvcc(env, local=Path("/usr/local")):
     candidates += [tree / "bin/nvcc" for tree in sorted(local.glob("cuda-*"))]
     seen, ranked = set(), []
     for candidate in candidates:
-        if not candidate.is_file():
+        try:
+            if not candidate.is_file():
+                continue
+            real = candidate.resolve()
+        except OSError:
             continue
-        real = candidate.resolve()
         if real in seen:
             continue
         seen.add(real)
@@ -758,17 +772,53 @@ def build_nvcc(env, local=Path("/usr/local")):
     return str(ranked[0][2])
 
 
+# build.rs prints the nvcc it compiles with: `nvcc from MEMRA_NVCC: <path>`,
+# `nvcc from $CUDA_HOME: <path>` (or CUDA_PATH, CUDA_ROOT), `nvcc auto-detected CUDA X.Y at <path>`.
+BUILT_NVCC = re.compile(r"^cargo:warning=nvcc from [^:]+: (?P<a>.+)$"
+                        r"|^cargo:warning=nvcc auto-detected CUDA \S+ at (?P<b>\S+)")
+
+
+def built_nvcc(tree):
+    """The nvcc the build script last ran with in this tree, read from its own output
+    (target/release/build/memra-engine-*/output). build.rs reruns only when its inputs change,
+    so an incremental build keeps fatbins from that run; resolving again could name a compiler
+    that did not build them. None when no output names one."""
+    outputs = []
+    for path in (Path(tree) / "target/release/build").glob("memra-engine-*/output"):
+        try:
+            outputs.append((path.stat().st_mtime, path))
+        except OSError:
+            continue
+    for _, path in sorted(outputs, reverse=True):
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            match = BUILT_NVCC.match(line.strip())
+            if match:
+                return (match["a"] or match["b"]).strip()
+    return None
+
+
 def toolchain(tree, env, local=Path("/usr/local")):
     """Compiler versions the build used, for the record (not a qualification input). They
     run in the build tree with the build's environment, so rustup resolves the tree's
-    rust-toolchain.toml as cargo did, not the caller's directory default, and nvcc is the
-    one build.rs resolves in that environment (`build_nvcc`)."""
+    rust-toolchain.toml as cargo did, not the caller's directory default. nvcc is the one the
+    build script names in its output (`built_nvcc`), else the one build.rs would resolve in
+    that environment (`build_nvcc`). A path that is a symlink retargeted after the build ran
+    reports the new target's version."""
     out = {}
-    for name, command in (("rustc", ["rustc", "-V"]), ("nvcc", [build_nvcc(env, local), "--version"])):
+    try:
+        nvcc = built_nvcc(tree) or build_nvcc(env, local)
+    except (OSError, ValueError):
+        nvcc = "nvcc"
+    for name, command in (("rustc", ["rustc", "-V"]), ("nvcc", [nvcc, "--version"])):
         try:
-            text = subprocess.run(command, cwd=tree, capture_output=True, text=True, env=env).stdout.strip()
+            text = subprocess.run(command, cwd=tree, capture_output=True, text=True, errors="replace",
+                                  env=env).stdout.strip()
             out[name] = text.splitlines()[-1] if text else "unavailable"
-        except OSError:
+        except (OSError, ValueError):
             out[name] = "unavailable"
     return out
 
