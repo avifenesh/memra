@@ -2794,9 +2794,9 @@ pub struct MoePlanDev {
     pub ng: usize,
 }
 
-/// The form of the CUTLASS GEMMs: 0 by the call's rows (the naked default), 1 normal (rows on A),
-/// 2 swapped tileN 8, 3 swapped tileN 16. The bytes do not depend on it; gates and benches set it
-/// to run every form.
+/// The form of the dense CUTLASS GEMMs: 0 by the call's rows (the naked default), 1 normal (rows
+/// on A), 2 swapped tileN 8, 3 swapped tileN 16. The bytes do not depend on it; gates and benches
+/// set it to run every form. The grouped expert GEMMs ([`moe_gemm`]) take the normal form only.
 pub static GEMM_FORM: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 
 /// The most rows of the padded scale layout of a plan's local experts: each group's rows rounded
@@ -2864,7 +2864,8 @@ pub fn moe_gemm(
             k as i32,
             (k / 2) as i64,
             plan.rows as i32,
-            GEMM_FORM.load(std::sync::atomic::Ordering::Relaxed),
+            // the normal form at every width (`cu/dsv41_cutlass.cu`: the swapped grouped forms are gone)
+            0,
             blk.p(st).m(),
             bytes,
             ops.sv(),

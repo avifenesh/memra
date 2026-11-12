@@ -669,8 +669,10 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
     let dev = e.ctx().name().unwrap_or_default();
     let ops = Ops::new(st.clone());
     let mut out = Vec::new();
-    // --form F: the CUTLASS form of every GEMM below (0 by rows, 1 normal, 2/3 swapped tileN 8/16)
+    // --form F: the CUTLASS form of every dense GEMM below (0 by rows, 1 normal, 2/3 swapped tileN
+    // 8/16); the grouped expert GEMMs have the normal form only (0 and 1; 2 and 3 run them as 1)
     let form: i32 = flag(a, "--form").and_then(|x| x.parse().ok()).unwrap_or(0);
+    let gform = form.min(1);
     v::GEMM_FORM.store(form, std::sync::atomic::Ordering::Relaxed);
     // the trunk's dense FP8 linears: (name, n, k)
     let dense = [
@@ -912,7 +914,7 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
                         k as i32,
                         (k / 2) as i64,
                         rows as i32,
-                        form,
+                        gform,
                         blk.p(&st).m(),
                         bytes,
                         ops.sv(),
@@ -924,13 +926,13 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
             let bytes = (act * n * k / 2 + m * k + m * n * 2) as f64;
             let flops = 2.0 * (m * n * k) as f64;
             eprintln!(
-                "gemm mxfp4 grouped {name} groups {ng} with rows {act} rows {rows} form {form}: median {:.4} ms ({:.0} GB/s, {:.1} TFLOPS) sha {hsh}",
+                "gemm mxfp4 grouped {name} groups {ng} with rows {act} rows {rows} form {gform}: median {:.4} ms ({:.0} GB/s, {:.1} TFLOPS) sha {hsh}",
                 med,
                 bytes / med / 1e6,
                 flops / med / 1e9
             );
             out.push(format!(
-                "{{\"op\": \"mxfp4_grouped\", \"name\": \"{name}\", \"groups\": {ng}, \"experts\": {act}, \"rows\": {rows}, \"form\": {form}, \"n\": {n}, \"k\": {k}, \"median_ms\": {med:.5}, \"ms\": {}, \"sha\": \"{hsh}\"}}",
+                "{{\"op\": \"mxfp4_grouped\", \"name\": \"{name}\", \"groups\": {ng}, \"experts\": {act}, \"rows\": {rows}, \"form\": {gform}, \"n\": {n}, \"k\": {k}, \"median_ms\": {med:.5}, \"ms\": {}, \"sha\": \"{hsh}\"}}",
                 fmt_list(&ms)
             ));
         }

@@ -24,6 +24,14 @@
 // device MoE plan's expert offsets, so nothing is read back to the host and a CUDA graph replays the call with
 // whatever routing the plan holds. Host problem shapes are not passed (CUTLASS launches one CTA an SM and its
 // scheduler walks the device shapes); groups with no rows have no tiles.
+//
+// Grouped calls take the normal form only, at every width. CUTLASS 4.8.1's ptr-array kernel in the swapped forms
+// (tileN 8 and 16) is not deterministic on GB10 when other work runs on the card beside it: now and then one warp's
+// slice of a tile (its 2 x 16 output columns of one row) comes out of one wrong K step, with the same inputs
+// (2 ranks on one card, peer-pull, 40 rounds of 12/16/32-row calls a run: tileN 16 22-28 corrupt outputs a run,
+// tileN 8 forced at every width 174-194, the normal form 0 in every run; receipts research/
+// modelplan-onboarding-dsv41-20261109/perf/receipts/race-cutlass-gb10). The dense (non-grouped) swapped forms
+// showed no such slice in the same runs and stay.
 #include <cuda_runtime.h>
 #include <stdint.h>
 
@@ -262,6 +270,7 @@ __global__ void __launch_bounds__(1024) setup_kernel(const int* __restrict__ off
     pad_prefix(off, G, pad);
     Arrays<C> ar(blk, G * nproj);
     long kbt4 = (long)((k / 32 + 3) / 4) * 4;
+    static_assert(!C::kSwap, "grouped calls take the normal form only (see the top of this file)");
     for (int i = threadIdx.x; i < G * nproj; i += blockDim.x) {
         int g = i % G, j = i / G;
         int proj = j == 0 ? p0 : p1;
@@ -271,27 +280,15 @@ __global__ void __launch_bounds__(1024) setup_kernel(const int* __restrict__ off
         BF* dd = (j == 0 ? d0 : d1) + (long)off[g] * ldc;
         ar.pd[i] = dd;
         ar.sd[i] = dstride<C>(ldc);
-        if constexpr (!C::kSwap) {
-            ar.ps[i] = {rows, n, k};
-            ar.pa[i] = (const typename C::EAe*)act;
-            ar.pb[i] = (const typename C::EBe*)ex[g].w[proj];
-            ar.psa[i] = (const SFT*)actsf;
-            ar.psb[i] = (const SFT*)ex[g].s[proj];
-            ar.sa[i] = kstride<typename C::SA>(k);
-            ar.sb[i] = kstride<typename C::SB>(ldw_el);
-            ar.lsa[i] = C::SfCfg::tile_atom_to_shape_SFA(make_shape(rows, n, k, 1));
-            ar.lsb[i] = C::SfCfg::tile_atom_to_shape_SFB(make_shape(rows, n, k, 1));
-        } else {
-            ar.ps[i] = {n, rows, k};
-            ar.pa[i] = (const typename C::EAe*)ex[g].w[proj];
-            ar.pb[i] = (const typename C::EBe*)act;
-            ar.psa[i] = (const SFT*)ex[g].s[proj];
-            ar.psb[i] = (const SFT*)actsf;
-            ar.sa[i] = kstride<typename C::SA>(ldw_el);
-            ar.sb[i] = kstride<typename C::SB>(k);
-            ar.lsa[i] = C::SfCfg::tile_atom_to_shape_SFA(make_shape(n, rows, k, 1));
-            ar.lsb[i] = C::SfCfg::tile_atom_to_shape_SFB(make_shape(n, rows, k, 1));
-        }
+        ar.ps[i] = {rows, n, k};
+        ar.pa[i] = (const typename C::EAe*)act;
+        ar.pb[i] = (const typename C::EBe*)ex[g].w[proj];
+        ar.psa[i] = (const SFT*)actsf;
+        ar.psb[i] = (const SFT*)ex[g].s[proj];
+        ar.sa[i] = kstride<typename C::SA>(k);
+        ar.sb[i] = kstride<typename C::SB>(ldw_el);
+        ar.lsa[i] = C::SfCfg::tile_atom_to_shape_SFA(make_shape(rows, n, k, 1));
+        ar.lsb[i] = C::SfCfg::tile_atom_to_shape_SFB(make_shape(rows, n, k, 1));
     }
 }
 
@@ -343,8 +340,6 @@ using PN4 = Cfg<F4, 128, _128, false, false>;
 using PS4x8 = Cfg<F4, 128, _8, true, false>;
 using PS4x16 = Cfg<F4, 128, _16, true, false>;
 using GN4 = Cfg<F4, 128, _128, false, true>;
-using GS4x8 = Cfg<F4, 128, _8, true, true>;
-using GS4x16 = Cfg<F4, 128, _16, true, true>;
 
 // the form for a call of at most `rows` rows a group (a token picks an expert once: a group's rows <= the call's)
 static int pick(int form, int rows) {
@@ -399,37 +394,23 @@ extern "C" int memra_v41_cutlass_sfrow(const int* off, int e0, int ng, int np, i
     return cudaGetLastError() == cudaSuccess ? 0 : 41047;
 }
 
-// Bytes of the argument block of a grouped call of `groups` groups (arrays and CUTLASS's workspace), for the
-// largest of the three forms.
-extern "C" long memra_v41_cutlass_moe_bytes(int groups) {
-    long a = grouped_bytes<GN4>(groups), b = grouped_bytes<GS4x8>(groups), c = grouped_bytes<GS4x16>(groups);
-    return a > b ? (a > c ? a : c) : (b > c ? b : c);
-}
+// Bytes of the argument block of a grouped call of `groups` groups (arrays and CUTLASS's workspace).
+extern "C" long memra_v41_cutlass_moe_bytes(int groups) { return grouped_bytes<GN4>(groups); }
 
 // One grouped call over the local experts [e0, e0 + ng) of a plan: projection proj0 of every expert into d0
 // and, when nproj is 2, projection proj1 into d1 (w1 and w3 in one launch). Projections index the expert table
 // records (`ExpW`, the rank's table: record g is local expert g): 0 w1, 1 w2, 2 w3. a: e4m3 codes [np][k] with
 // pair p at row p; asf: their scales placed through `memra_v41_cutlass_sfrow`; ldw: a weight row's bytes (e2m1
 // pairs: k / 2); n: output columns; d rows at pair index with pitch ldc. rows: the call's tokens (a group's
-// most rows), for the form; blk: `memra_v41_cutlass_moe_bytes(ng * nproj)` bytes of device memory that live
-// until the launch has run (a captured graph replays from the same block).
+// most rows; none: nothing to do); form: 0 (by rows) or 1, both the normal form (the swapped grouped forms are
+// gone, see the top of this file; 2 and 3 are refused); blk: `memra_v41_cutlass_moe_bytes(ng * nproj)` bytes of
+// device memory that live until the launch has run (a captured graph replays from the same block).
 extern "C" int memra_v41_cutlass_moe(const int* off, int e0, int ng, int nproj, int proj0, int proj1, const void* ex,
                                      const void* a, const void* asf, void* d0, void* d1, long ldc, int n, int k,
                                      long ldw, int rows, int form, void* blk, long blk_bytes, void* stream) {
     if (ng <= 0 || ng > 1024 || nproj < 1 || nproj > 2 || e0 < 0 || k % 128 || ldc % 8 || ldw % 16) return 41042;
-    if (proj0 < 0 || proj0 > 2 || proj1 < 0 || proj1 > 2 || form < 0 || form > 3 || n <= 0) return 41042;
+    if (proj0 < 0 || proj0 > 2 || proj1 < 0 || proj1 > 2 || form < 0 || form > 1 || n <= 0) return 41042;
     if (rows <= 0) return 0;
-    cudaStream_t st = (cudaStream_t)stream;
-    const int* o = off + e0;
-    long ldw_el = ldw * 2;
-    switch (pick(form, rows)) {
-        case kNormal:
-            return grouped<GN4>(o, ng, nproj, proj0, proj1, ex, a, asf, d0, d1, ldc, n, k, ldw_el, blk, blk_bytes, st);
-        case kSwap8:
-            return grouped<GS4x8>(o, ng, nproj, proj0, proj1, ex, a, asf, d0, d1, ldc, n, k, ldw_el, blk, blk_bytes,
-                                  st);
-        default:
-            return grouped<GS4x16>(o, ng, nproj, proj0, proj1, ex, a, asf, d0, d1, ldc, n, k, ldw_el, blk, blk_bytes,
-                                   st);
-    }
+    return grouped<GN4>(off + e0, ng, nproj, proj0, proj1, ex, a, asf, d0, d1, ldc, n, k, ldw * 2, blk, blk_bytes,
+                        (cudaStream_t)stream);
 }

@@ -1795,7 +1795,8 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             }
             prow += (host.off[e + 1] - host.off[e]).next_multiple_of(128);
         }
-        for form in [1, 2, 3, 0] {
+        // the grouped calls take the normal form only (by rows: 0, and 1)
+        for form in [1, 0] {
             let (got, _, sfrow) = grouped(0, ne, form, &tabd, (0, 0))?;
             if form == 1 {
                 rep.raw(

@@ -1,0 +1,14 @@
+PROBE-BUILD rc 0
+GS4x16   stages 4 | SFB smem cosize 2048 (per stage by take<0,2> 512) | SFB TMA box 128 rows x 128 k -> 512 SF codes | tx MK 8704 NK 2560 | SFA cosize 2048 | B cosize 8192 | kernel smem 84992
+         SmemLayoutSFB: ((_16,(_2,_4)),((_32,_4),_1),_4):((_16,(_256,_4)),((_0,_1),_0),_512)
+GS4x8    stages 5 | SFB smem cosize 2560 (per stage by take<0,2> 512) | SFB TMA box 128 rows x 128 k -> 512 SF codes | tx MK 8704 NK 1536 | SFA cosize 2560 | B cosize 5120 | kernel smem 97280
+         SmemLayoutSFB: ((_8,(_4,_4)),((_32,_4),_1),_5):((_16,(_128,_4)),((_0,_1),_0),_512)
+GN4      stages 2 | SFB smem cosize 1024 (per stage by take<0,2> 512) | SFB TMA box 128 rows x 128 k -> 512 SF codes | tx MK 16896 NK 8704 | SFA cosize 1024 | B cosize 32768 | kernel smem 78848
+         SmemLayoutSFB: (((_32,_4),_1),((_32,_1),_4,_1),_2):(((_16,_4),_512),((_0,_1),_1,_512),_512)
+PS4x16   stages 4 | SFB smem cosize 2048 (per stage by take<0,2> 512) | SFB TMA box 128 rows x 128 k -> 512 SF codes | tx MK 8704 NK 2560 | SFA cosize 2048 | B cosize 8192 | kernel smem 83968
+         SmemLayoutSFB: ((_16,(_2,_4)),((_32,_4),_1),_4):((_16,(_256,_4)),((_0,_1),_0),_512)
+PS4x8    stages 5 | SFB smem cosize 2560 (per stage by take<0,2> 512) | SFB TMA box 128 rows x 128 k -> 512 SF codes | tx MK 8704 NK 1536 | SFA cosize 2560 | B cosize 5120 | kernel smem 96256
+         SmemLayoutSFB: ((_8,(_4,_4)),((_32,_4),_1),_5):((_16,(_128,_4)),((_0,_1),_0),_512)
+PN4      stages 2 | SFB smem cosize 1024 (per stage by take<0,2> 512) | SFB TMA box 128 rows x 128 k -> 512 SF codes | tx MK 16896 NK 8704 | SFA cosize 1024 | B cosize 32768 | kernel smem 77824
+         SmemLayoutSFB: (((_32,_4),_1),((_32,_1),_4,_1),_2):(((_16,_4),_512),((_0,_1),_1,_512),_512)
+PROBE-DONE

@@ -1,0 +1,30 @@
+d4keep-0 rc 1 3884 checks, 68 failed fails 68 secs 76 00:59:35
+FAIL layer2/rows16/rep4/wide/rank0/dbg_moe_out: 4961 of 163840 bytes differ (rel_l2 1.050e-3, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep4/wide/rank1/dbg_moe_out: 4961 of 163840 bytes differ (rel_l2 1.050e-3, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep4/rank0/out_stream: 3375 of 655360 bytes differ (rel_l2 4.983e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep4/rank1/out_stream: 3375 of 655360 bytes differ (rel_l2 4.983e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+d4keep-1 rc 1 3884 checks, 68 failed fails 68 secs 84 01:00:59
+FAIL layer2/rows16/wide/rank0/dbg_moe_out: 8201 of 163840 bytes differ (rel_l2 1.102e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/wide/rank1/dbg_moe_out: 8201 of 163840 bytes differ (rel_l2 1.102e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rank0/out_stream: 6035 of 655360 bytes differ (rel_l2 1.969e-5, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rank1/out_stream: 6035 of 655360 bytes differ (rel_l2 1.969e-5, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+d4base-0 rc 1 1964 checks, 28 failed fails 28 secs 77 01:02:16
+FAIL layer2/rows12/rep6/rank0/out_stream: 1414 of 491520 bytes differ (rel_l2 3.623e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep6/rank1/out_stream: 1414 of 491520 bytes differ (rel_l2 3.623e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep7/pipelined/rank0/out_stream: 2614 of 655360 bytes differ (rel_l2 5.403e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep7/pipelined/rank1/out_stream: 2614 of 655360 bytes differ (rel_l2 5.403e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+d4sync-0 rc 0 1964 checks, 0 failed fails 0 secs 82 01:03:38
+d4gsync-0 rc 0 1964 checks, 0 failed fails 0 secs 89 01:05:07
+d4keep-2 rc 1 3884 checks, 36 failed fails 36 secs 78 01:06:25
+FAIL layer2/rows12/rep11/pipelined/rank0/dbg_moe_out: 1608 of 122880 bytes differ (rel_l2 4.897e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep11/pipelined/rank1/dbg_moe_out: 1608 of 122880 bytes differ (rel_l2 4.897e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep11/pipelined/rank0/out_stream: 1098 of 491520 bytes differ (rel_l2 4.282e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep11/pipelined/rank1/out_stream: 1098 of 491520 bytes differ (rel_l2 4.282e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+d4base-1 rc 1 1964 checks, 22 failed fails 22 secs 74 01:07:39
+FAIL layer2/rows12/rank0/out_stream: 2070 of 491520 bytes differ (rel_l2 2.284e-5, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rank1/out_stream: 2070 of 491520 bytes differ (rel_l2 2.284e-5, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep10/rank0/out_stream: 2267 of 655360 bytes differ (rel_l2 5.428e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep10/rank1/out_stream: 2267 of 655360 bytes differ (rel_l2 5.428e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+d4sync-1 rc 0 1964 checks, 0 failed fails 0 secs 78 01:08:57
+d4gsync-1 rc 0 1964 checks, 0 failed fails 0 secs 76 01:10:13
+RACE-RUN-DONE 01:10:13

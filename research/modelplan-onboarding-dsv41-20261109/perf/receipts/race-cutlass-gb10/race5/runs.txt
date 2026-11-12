@@ -1,0 +1,16 @@
+d5keep-0 rc 1 3884 checks, 88 failed fails 88 secs 93 01:25:44
+FAIL layer2/rows16/rep2/pipelined/rank0/dbg_moe_out: 1598 of 163840 bytes differ (rel_l2 5.119e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep2/pipelined/rank1/dbg_moe_out: 1598 of 163840 bytes differ (rel_l2 5.119e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep2/pipelined/rank0/out_stream: 930 of 655360 bytes differ (rel_l2 2.741e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep2/pipelined/rank1/out_stream: 930 of 655360 bytes differ (rel_l2 2.741e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+d5keep-1 rc 1 3884 checks, 62 failed fails 62 secs 84 01:27:08
+FAIL layer2/rows16/rep9/wide/rank0/dbg_moe_out: 2858 of 163840 bytes differ (rel_l2 6.843e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep9/wide/rank1/dbg_moe_out: 2858 of 163840 bytes differ (rel_l2 6.843e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep9/rank0/out_stream: 1568 of 655360 bytes differ (rel_l2 2.181e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep9/rank1/out_stream: 1568 of 655360 bytes differ (rel_l2 2.181e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+d5keep-2 rc 1 3884 checks, 88 failed fails 88 secs 86 01:28:34
+FAIL layer2/rows12/rep4/pipelined/rank0/dbg_moe_out: 2912 of 122880 bytes differ (rel_l2 1.012e-3, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep4/pipelined/rank1/dbg_moe_out: 2912 of 122880 bytes differ (rel_l2 1.012e-3, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep4/pipelined/rank0/out_stream: 2243 of 491520 bytes differ (rel_l2 1.612e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep4/pipelined/rank1/out_stream: 2243 of 491520 bytes differ (rel_l2 1.612e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+RACE-RUN-DONE 01:28:34

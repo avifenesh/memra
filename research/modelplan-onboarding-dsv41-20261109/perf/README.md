@@ -1471,7 +1471,8 @@ output) for decode, verify and small batches. The forms give the same bytes: on 
 normal one at 1-64 rows an expert and for the dense shapes (probe revs 4-6), the kernel gate holds every form to
 the normal one byte for byte on 22 dense shapes and on grouped calls over uneven, partly empty groups, and the
 choice between them is speed only (`GEMM_FORM`, by the call's rows: at most 8 rows tileN 8, at most 16 tileN 16,
-else normal).
+else normal). The grouped expert calls lost their swapped forms to the peer-pull race below: they take the normal
+form at every width.
 
 Dense calls use the plain kernel (its TMA descriptors are kernel parameters, so a graph captures them as our
 kernels were). The experts use the ptr-array grouped kernel over a plan's local experts (two groups an expert
@@ -1520,7 +1521,7 @@ FP8 at 4k-8k rows 0.29-0.50 (wo_b 0.70-0.85), experts at 64 rows an expert 0.65,
 widths: dense at one row wq_b 0.83, wo_b 0.70, the shared expert 0.66-0.82, wq_a 1.08 and wkv 1.59 (slower), the
 expert groups of one and two rows 1.07-1.14 (slower; against bs1's small-row body 0.85-0.88).
 
-OPEN, blocking: on peer-pull the tp gate fails sporadically at 12- and 16-row calls (ranks agree with each other,
+RESOLVED (the section below): on peer-pull the tp gate failed sporadically at 12- and 16-row calls (ranks agree with each other,
 not with the single card: a few hundred to a few thousand bytes of out_stream, rel_l2 2e-7 to 6e-5). Two ranks,
 layers 2 and 24, interleaved (`receipts/gates-cutlass-gb10/c1/dbg-pp2`): k3 0/4, bs1 0/4 (0/6 with the two runs
 before), this build 3 of 8 runs; host-canonical and default transports passed every run. It comes with this change
@@ -1529,7 +1530,36 @@ layers 2 and 24): the plain build 2/13, every CUTLASS host call under one proces
 scale buffers 1/13, a stream sync after every CUTLASS launch 0/13: not the host calls, not the scale padding; it
 leans toward an overlap on the card. CUTLASS's grouped launch co-scheduled with itself is clean: 2 and 4 streams of
 [setup kernel + grouped GEMM], 200 rounds, every form, 0 of 2,400 outputs differ from the one-stream run
-(`receipts/cutlass-args-probe-gb10/conc_probe_run.txt`). NOT FOR LANDING until it is explained.
+(`receipts/cutlass-args-probe-gb10/conc_probe_run.txt`).
+
+The race, explained (`receipts/race-cutlass-gb10`, GB10, two ranks on one card, peer-pull, layers 2 and 24). A
+debug build repeats the gate's 12/16/32-row passes 10-80 times a run on other prompt rows (identical prompt rows hid
+most stale or wrong reads behind equal bytes), which turned a 15-20% chance of a failed run into 11-14 corrupt passes a
+run at 40 rounds. Arms that do not remove it, two runs or more each: the split MoE's activation scale buffer kept and never freed
+(4 and 6 failed checks), no temporary ever returned to the device pool (0 and 4), the pool's cross-stream reuse off
+(6 and 8), every TMA store and descriptor wait on writes, not reads (10 and 0), an empty kernel after each CUTLASS
+launch (6 and 4), the gathers' copies as kernels instead of the copy engine (10 and 18), w1 and w3 as two launches
+(18 and 16). Arms that remove it: a host sync of the stream after each CUTLASS launch (0 in four runs) and a sync of
+every rank before and after each gather (0 and 0). No buffer is used off its stream outside the gathers and the side
+stream's own joins (a per-pointer tracker over every `Buf`). Stage copies inside the split MoE, compared between
+the gate's two passes over the same rows: the routing input, the device plan, the activation codes and scale rows
+are equal; the first output that differs is the grouped w1 + w3 launch's (w3 50 times, w1 10), for one to five pair
+rows, in two runs of 16 columns 64 apart: one warp's share of a 128 x 16 tile (the 8-warp tiled MMA puts a warp on
+rows 16w and 64 + 16w and on 8 of the 16 columns), off by a wrong K step (values ~10% away, correlated with the
+right ones). The kernel itself is not deterministic with other work on the card: CUTLASS 4.8.1's ptr-array
+block-scaled kernel in the swapped tileN 16 form, and worse in tileN 8 (forced at every width: 174 and 194 failed
+checks a run, at 32 rows too), while its normal 128 x 128 form had 0 in every run (three runs at 40 rounds). The
+mainloop's scale-factor staging was checked on the host (512 codes a stage against a 128 x 128 box, transaction
+bytes 8704 + 2560 for tileN 16): no overflow. The exact fault inside the swapped ptr-array path is not pinned; it
+needs the card busy beside it, which the self-concurrency probe did not reproduce.
+
+Fix: the grouped calls take the normal form only (`cu/dsv41_cutlass.cu`; the swapped grouped instantiations are
+removed, forms 2 and 3 are refused, the dense swapped forms stay: no corrupt dense output in any run, attention and
+shared expert included). The forms give the same bytes, so the outputs do not move. Proof on the gate as it
+failed (2 ranks on one card, peer-pull, layers 2 and 24, decode 2), the fixed build and the unchanged one
+interleaved in one lease, 13 runs each: unchanged 4 of 13 runs failed (12- and 16-row passes of layer 2), fixed 0
+of 13 (`race-cutlass-gb10/race7`); at 40 rounds a run the debug build's normal-form arm had 0 failed checks in three
+runs against 22-28 for the unchanged form.
 
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 

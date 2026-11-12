@@ -1,0 +1,10 @@
+# d4: KEEP with the moe_split stage stashes (localize), then base / SYNC / GSYNC at REPS=40
+d4keep-0 d4 40 0 V41DBG_KEEP=1
+d4keep-1 d4 40 0 V41DBG_KEEP=1
+d4base-0 d4 40 0 X=1
+d4sync-0 d4 40 0 V41DBG_SYNC=1
+d4gsync-0 d4 40 0 V41DBG_GSYNC=1
+d4keep-2 d4 40 0 V41DBG_KEEP=1
+d4base-1 d4 40 0 X=1
+d4sync-1 d4 40 0 V41DBG_SYNC=1
+d4gsync-1 d4 40 0 V41DBG_GSYNC=1

@@ -1,0 +1,12 @@
+d3xs-0 rc 1 524 checks, 8 failed fails 8 secs 51 00:31:35
+FAIL layer2/rows16/pipelined/rank0/out_stream: 2156 of 655360 bytes differ (rel_l2 7.526e-6, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/pipelined/rank1/out_stream: 2156 of 655360 bytes differ (rel_l2 7.526e-6, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep3/rank0/out_stream: 1127 of 655360 bytes differ (rel_l2 1.072e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep3/rank1/out_stream: 1127 of 655360 bytes differ (rel_l2 1.072e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+d3keep-0 rc 1 3884 checks, 44 failed fails 44 secs 81 00:32:56
+FAIL layer2/rows16/rep4/wide/rank0/dbg_moe_out: 1679 of 163840 bytes differ (rel_l2 5.118e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep4/wide/rank1/dbg_moe_out: 1679 of 163840 bytes differ (rel_l2 5.118e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep4/rank0/out_stream: 944 of 655360 bytes differ (rel_l2 2.917e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep4/rank1/out_stream: 944 of 655360 bytes differ (rel_l2 2.917e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+STOP (yield): stopped before d3base-0 00:32:56
+RACE-RUN-DONE 00:32:56

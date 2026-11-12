@@ -1,0 +1,703 @@
+diff --git a/crates/memra-engine/cu/dsv41_cutlass.cu b/crates/memra-engine/cu/dsv41_cutlass.cu
+index cabd1e4c53..32cdbaf2b3 100644
+--- a/crates/memra-engine/cu/dsv41_cutlass.cu
++++ b/crates/memra-engine/cu/dsv41_cutlass.cu
+@@ -24,8 +24,11 @@
+ // device MoE plan's expert offsets, so nothing is read back to the host and a CUDA graph replays the call with
+ // whatever routing the plan holds. Host problem shapes are not passed (CUTLASS launches one CTA an SM and its
+ // scheduler walks the device shapes); groups with no rows have no tiles.
++#define V41DBG_FULLWAIT_FLAG 1
+ #include <cuda_runtime.h>
+ #include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
+ 
+ #include "cute/tensor.hpp"
+ #include "cutlass/cutlass.h"
+@@ -38,6 +41,44 @@
+ 
+ using namespace cute;
+ 
++// DEBUG ONLY (race hunt): arms from non-MEMRA env names
++namespace v41dbg {
++__global__ void nop() {}
++static int env(const char* k) {
++    int on = getenv(k) != nullptr;
++    if (on) fprintf(stderr, "[v41dbg] arm %s ON\n", k);
++    return on;
++}
++static int sync_on() {
++    static int v = env("V41DBG_SYNC");
++    return v;
++}
++static int nop_on() {
++    static int v = env("V41DBG_NOP");
++    return v;
++}
++// the grouped calls' form: 0 by rows, else 1 normal / 2 swapped 8 / 3 swapped 16
++static int gform() {
++    static int v = env("V41DBG_GNORMAL") ? 1 : env("V41DBG_GSWAP8") ? 2 : 0;
++    return v;
++}
++static void init() {
++    static int done = [] {
++        if (env("V41DBG_FULLWAIT")) {
++            int one = 1;
++            cudaError_t e = cudaMemcpyToSymbol(cute::v41dbg_fullwait, &one, sizeof(int));
++            fprintf(stderr, "[v41dbg] FULLWAIT device flag set: %d\n", (int)e);
++        }
++        return 1;
++    }();
++    (void)done;
++}
++static void after(cudaStream_t st) {
++    if (nop_on()) nop<<<1, 1, 0, st>>>();
++    if (sync_on()) cudaStreamSynchronize(st);
++}
++}  // namespace v41dbg
++
+ namespace v41c {
+ 
+ using F8 = cutlass::mx_float8_t<cutlass::float_e4m3_t>;
+@@ -165,6 +206,7 @@ static int plain(const void* a, long lda, const void* asf, const void* w, long l
+     if (gemm.can_implement(args) != cutlass::Status::kSuccess) return 41044;
+     if (gemm.initialize(args, nullptr, st) != cutlass::Status::kSuccess) return 41045;
+     if (gemm.run(st) != cutlass::Status::kSuccess) return 41046;
++    v41dbg::after(st);
+     cudaError_t e = cudaGetLastError();
+     return e == cudaSuccess ? 0 : 41047;
+ }
+@@ -332,6 +374,7 @@ static int grouped(const int* off, int G, int nproj, int p0, int p1, const void*
+     if (gemm.can_implement(args) != cutlass::Status::kSuccess) return 41044;
+     if (gemm.initialize(args, ws, st) != cutlass::Status::kSuccess) return 41045;
+     if (gemm.run(st) != cutlass::Status::kSuccess) return 41046;
++    v41dbg::after(st);
+     cudaError_t e = cudaGetLastError();
+     return e == cudaSuccess ? 0 : 41047;
+ }
+@@ -375,6 +418,7 @@ extern "C" int memra_v41_cutlass_gemm(const void* a, long lda, const void* asf,
+     if (m < 0 || n <= 0 || k <= 0 || k % 128 || lda % 16 || ldw % 16 || ldc % 8 || wfmt < 0 || wfmt > 2) return 41040;
+     if (form < 0 || form > 3) return 41040;
+     if (m == 0) return 0;
++    v41dbg::init();
+     cudaStream_t st = (cudaStream_t)stream;
+     long ldw_el = wfmt == 0 ? ldw : ldw * 2;
+     switch (pick(form, m)) {
+@@ -419,9 +463,11 @@ extern "C" int memra_v41_cutlass_moe(const int* off, int e0, int ng, int nproj,
+     if (ng <= 0 || ng > 1024 || nproj < 1 || nproj > 2 || e0 < 0 || k % 128 || ldc % 8 || ldw % 16) return 41042;
+     if (proj0 < 0 || proj0 > 2 || proj1 < 0 || proj1 > 2 || form < 0 || form > 3 || n <= 0) return 41042;
+     if (rows <= 0) return 0;
++    v41dbg::init();
+     cudaStream_t st = (cudaStream_t)stream;
+     const int* o = off + e0;
+     long ldw_el = ldw * 2;
++    if (v41dbg::gform()) form = v41dbg::gform();
+     switch (pick(form, rows)) {
+         case kNormal:
+             return grouped<GN4>(o, ng, nproj, proj0, proj1, ex, a, asf, d0, d1, ldc, n, k, ldw_el, blk, blk_bytes, st);
+diff --git a/crates/memra-engine/src/bin/dsv41_gate.rs b/crates/memra-engine/src/bin/dsv41_gate.rs
+index b449b18eab..f16926e73c 100644
+--- a/crates/memra-engine/src/bin/dsv41_gate.rs
++++ b/crates/memra-engine/src/bin/dsv41_gate.rs
+@@ -3428,12 +3428,25 @@ fn tp_gate(
+         if lw.ratio == 0 || lw.index_source {
+             let (hb, pb) = (h.host(&cx.ops.st)?, pre.host(&cx.ops.st)?);
+             let (rh, rp) = (g.hc * g.dim * 2, g.hc * 4);
++            // DEBUG ONLY (race hunt): V41DBG_REPS more rounds, each on other prompt rows
++            let reps: usize = std::env::var("V41DBG_REPS")
++                .ok()
++                .and_then(|x| x.parse().ok())
++                .unwrap_or(1);
++            for dbg_rep in 0..reps {
+             for rows in [12usize, 16, 32] {
+                 if rows >= s {
+                     continue;
+                 }
+-                let tag = format!("layer{l}/rows{rows}");
++                let off = if dbg_rep == 0 { 0 } else { (dbg_rep * 7) % (s - rows) };
++                let tag = if dbg_rep == 0 {
++                    format!("layer{l}/rows{rows}")
++                } else {
++                    format!("layer{l}/rows{rows}/rep{dbg_rep}")
++                };
+                 let mut want: Option<(Vec<u8>, Vec<u8>)> = None;
++                let mut dbg_prev: std::collections::HashMap<(usize, String), Vec<u8>> =
++                    std::collections::HashMap::new();
+                 let side: Vec<usize> = v::SIDE_LIMITS
+                     .iter()
+                     .map(|x| x.load(std::sync::atomic::Ordering::Relaxed))
+@@ -3454,23 +3467,110 @@ fn tp_gate(
+                     let mut sh1 = Shared::default();
+                     load_shared(&f, &pfx, l, &g, s, &mut sh1, &cx.ops)?;
+                     let (mut ls1, mut tr1) = (LayerState::default(), Trace::default());
+-                    let h1 = Buf::from_bytes(&cx.ops.st, &hb[..rows * rh])?;
+-                    let p1 = Buf::from_bytes(&cx.ops.st, &pb[..rows * rp])?;
++                    let h1 = Buf::from_bytes(&cx.ops.st, &hb[off * rh..(off + rows) * rh])?;
++                    let p1 = Buf::from_bytes(&cx.ops.st, &pb[off * rp..(off + rows) * rp])?;
++                    let dbg_keep = std::env::var_os("V41DBG_KEEP").is_some();
++                    let was_trace = cx.trace;
++                    cx.trace = was_trace || dbg_keep;
+                     let (o, op) =
+                         cx.block_forward(&lw, &h1, &p1, 0, rows, &mut sh1, &mut ls1, &mut tr1)?;
++                    cx.trace = was_trace;
+                     let (o, op) = (o.host(&cx.ops.st)?, op.host(&cx.ops.st)?);
+                     let mut shn: Vec<Shared> = (0..n).map(|_| Shared::default()).collect();
+                     let (mut hn, mut pn) = (Vec::with_capacity(n), Vec::with_capacity(n));
+                     for r in 0..n {
+                         let ops = &grp.cx[r].ops;
+                         load_shared(&f, &pfx, l, &g, s, &mut shn[r], ops)?;
+-                        hn.push(Buf::from_bytes(&ops.st, &hb[..rows * rh])?);
+-                        pn.push(Buf::from_bytes(&ops.st, &pb[..rows * rp])?);
++                        hn.push(Buf::from_bytes(&ops.st, &hb[off * rh..(off + rows) * rh])?);
++                        pn.push(Buf::from_bytes(&ops.st, &pb[off * rp..(off + rows) * rp])?);
+                     }
+                     let mut lsn: Vec<LayerState> = (0..n).map(|_| LayerState::default()).collect();
+                     let mut trn: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
+                     let (on, opn) =
+                         grp.block_forward(&lws, &hn, &pn, 0, rows, &mut shn, &mut lsn, &mut trn)?;
++                    if dbg_keep {
++                        let pass = if wide { "wide" } else { "pipelined" };
++                        // the moe_split stashes: pipelined recorded, wide compared, column-masked
++                        for r in 0..n {
++                            let st = &grp.cx[r].ops.st;
++                            for (name, b, pitch, off, len) in trn[r].dbg.iter() {
++                                let bytes = b.host(st)?;
++                                let key = (r, name.clone());
++                                if !wide {
++                                    dbg_prev.insert(key, bytes);
++                                    continue;
++                                }
++                                let Some(prev) = dbg_prev.get(&key) else { continue };
++                                let rows_n = bytes.len() / (*pitch).max(1);
++                                let (mut nrow, mut first, mut nbytes) = (0usize, usize::MAX, 0usize);
++                                for i in 0..rows_n {
++                                    let a = &bytes[i * pitch + off..i * pitch + off + len];
++                                    let bb = &prev[i * pitch + off..i * pitch + off + len];
++                                    let dn = a.iter().zip(bb).filter(|(x, y)| x != y).count();
++                                    if dn > 0 {
++                                        nrow += 1;
++                                        first = first.min(i);
++                                        nbytes += dn;
++                                    }
++                                }
++                                println!(
++                                    "DBGSTAGE {tag} rank{r} {name}: {} ({nrow} of {rows_n} rows, {nbytes} bytes differ, first row {})",
++                                    if nrow == 0 { "same" } else { "DIFF" },
++                                    if first == usize::MAX { 0 } else { first }
++                                );
++                                if nrow > 0 && (name.ends_with("hb_own") || name.ends_with("gb") || name.ends_with("ub")) {
++                                    let mut det = String::new();
++                                    let mut k = 0;
++                                    for i in 0..rows_n {
++                                        for c in (0..*len).step_by(2) {
++                                            let at = i * pitch + off + c;
++                                            if bytes[at..at + 2] != prev[at..at + 2] && k < 48 {
++                                                let f = |x: &[u8]| f32::from_bits((u16::from_le_bytes([x[0], x[1]]) as u32) << 16);
++                                                det += &format!(" ({i},{}:{:.6}/{:.6})", c / 2, f(&prev[at..at + 2]), f(&bytes[at..at + 2]));
++                                                k += 1;
++                                            }
++                                        }
++                                    }
++                                    println!("DBGDET {tag} rank{r} {name}:{det}");
++                                }
++                            }
++                        }
++                        // where the MoE output differs: per row, the differing elements in each rank's columns
++                        if let (Some(one), true) = (tr1.moe_out.as_ref(), true) {
++                            let want = one.host(&cx.ops.st)?;
++                            if let Some(b) = trn[0].moe_out.as_ref() {
++                                let got = b.host(&grp.cx[0].ops.st)?;
++                                if got != want {
++                                    let dim = g.dim;
++                                    let mut line = format!("DBGMAP {tag}/{pass} moe_out rank0 view:");
++                                    for i in 0..rows {
++                                        let mut per = vec![0usize; n];
++                                        for c in 0..dim {
++                                            let k = (i * dim + c) * 2;
++                                            if got[k..k + 2] != want[k..k + 2] {
++                                                per[lws.iter().position(|w| c >= w.dim0 && c < w.dim0 + w.shared[1].n).unwrap_or(0)] += 1;
++                                            }
++                                        }
++                                        if per.iter().any(|&x| x > 0) {
++                                            line += &format!(" row{i}:{per:?}");
++                                        }
++                                    }
++                                    println!("{line}");
++                                }
++                            }
++                        }
++                        for (what, one) in [("attn_out", &tr1.attn_out), ("moe_out", &tr1.moe_out)] {
++                            let Some(one) = one.as_ref() else { continue };
++                            let want = one.host(&cx.ops.st)?;
++                            for r in 0..n {
++                                let b = if what == "attn_out" { &trn[r].attn_out } else { &trn[r].moe_out };
++                                if let Some(b) = b.as_ref() {
++                                    let got = b.host(&grp.cx[r].ops.st)?;
++                                    same_bytes(rep, &format!("{tag}/{pass}/rank{r}/dbg_{what}"), &got, &want, "bf16");
++                                }
++                            }
++                        }
++                    }
+                     let Some((wh, wp)) = want.as_ref() else {
+                         // the reference pass: the ranks against the single card, as everywhere
+                         for r in 0..n {
+@@ -3507,6 +3607,7 @@ fn tp_gate(
+                     }
+                 }
+             }
++            }
+             // back to the group's own limits
+             v::set_wide_rows_default(n);
+         }
+diff --git a/crates/memra-engine/src/dsv41_gpu.rs b/crates/memra-engine/src/dsv41_gpu.rs
+index 13f9407d00..10af810f9e 100644
+--- a/crates/memra-engine/src/dsv41_gpu.rs
++++ b/crates/memra-engine/src/dsv41_gpu.rs
+@@ -31,6 +31,79 @@ pub mod experts;
+ pub mod graph;
+ pub mod tp;
+ 
++/// DEBUG ONLY (race hunt): arms read once from non-MEMRA env names.
++pub mod dbgarm {
++    use std::sync::OnceLock;
++    fn flag(c: &OnceLock<bool>, k: &str) -> bool {
++        *c.get_or_init(|| {
++            let on = std::env::var_os(k).is_some();
++            if on {
++                eprintln!("[v41dbg] arm {k} ON");
++            }
++            on
++        })
++    }
++    pub fn asfkeep() -> bool {
++        static C: OnceLock<bool> = OnceLock::new();
++        flag(&C, "V41DBG_ASFKEEP")
++    }
++    pub fn poolbig() -> bool {
++        static C: OnceLock<bool> = OnceLock::new();
++        flag(&C, "V41DBG_POOLBIG")
++    }
++    pub fn noreuse() -> bool {
++        static C: OnceLock<bool> = OnceLock::new();
++        flag(&C, "V41DBG_NOREUSE")
++    }
++    pub fn keep() -> bool {
++        static C: OnceLock<bool> = OnceLock::new();
++        flag(&C, "V41DBG_KEEP")
++    }
++    pub fn gsync() -> bool {
++        static C: OnceLock<bool> = OnceLock::new();
++        flag(&C, "V41DBG_GSYNC")
++    }
++    pub fn cpkern() -> bool {
++        static C: OnceLock<bool> = OnceLock::new();
++        flag(&C, "V41DBG_CPKERN")
++    }
++    pub fn splitproj() -> bool {
++        static C: OnceLock<bool> = OnceLock::new();
++        flag(&C, "V41DBG_SPLITPROJ")
++    }
++    pub fn xstream() -> bool {
++        static C: OnceLock<bool> = OnceLock::new();
++        flag(&C, "V41DBG_XSTREAM")
++    }
++    /// one line per (call site, home, size class): a buffer's pointer taken for a stream other
++    /// than the one that allocated it
++    pub fn xs_log(len: usize, home: &str, alloc: usize, used: usize, at: &'static std::panic::Location<'static>) {
++        use std::collections::HashMap;
++        use std::sync::Mutex;
++        static SEEN: Mutex<Option<HashMap<(String, &'static str, bool), u64>>> = Mutex::new(None);
++        let big = len > (1 << 20);
++        let key = (format!("{}:{}", at.file(), at.line()), home_static(home), big);
++        let mut g = SEEN.lock().unwrap_or_else(|e| e.into_inner());
++        let m = g.get_or_insert_with(HashMap::new);
++        let c = m.entry(key).or_insert(0);
++        *c += 1;
++        if *c == 1 || c.is_power_of_two() {
++            eprintln!(
++                "[v41dbg] xstream #{c} len={len} home={home} alloc=0x{alloc:x} use=0x{used:x} at {}:{}",
++                at.file(),
++                at.line()
++            );
++        }
++    }
++    fn home_static(h: &str) -> &'static str {
++        match h {
++            "Free" => "Free",
++            "Pool" => "Pool",
++            _ => "Alias",
++        }
++    }
++}
++
+ pub mod ffi {
+     use std::os::raw::c_void;
+     /// Peers of one rank in a small gather inside kernels (`V41_PUSH_PEERS`).
+@@ -877,7 +950,7 @@ struct TmpFree {
+ 
+ impl TmpPool {
+     fn take(&self, n: usize) -> Option<CudaSlice<u8>> {
+-        if n > TMP_POOL_MAX_BUF && !self.capture {
++        if n > TMP_POOL_MAX_BUF && !self.capture && !dbgarm::poolbig() {
+             return None;
+         }
+         let mut f = self.free.lock().unwrap_or_else(|e| e.into_inner());
+@@ -887,11 +960,11 @@ impl TmpPool {
+     }
+     fn put(&self, s: CudaSlice<u8>) {
+         let n = s.len();
+-        if n > TMP_POOL_MAX_BUF && !self.capture {
++        if n > TMP_POOL_MAX_BUF && !self.capture && !dbgarm::poolbig() {
+             return;
+         }
+         let mut f = self.free.lock().unwrap_or_else(|e| e.into_inner());
+-        if f.bytes + n > TMP_POOL_MAX_BYTES && !self.capture {
++        if f.bytes + n > TMP_POOL_MAX_BYTES && !self.capture && !dbgarm::poolbig() {
+             return;
+         }
+         f.bytes += n;
+@@ -961,7 +1034,7 @@ impl Buf {
+             // SAFETY: as in `uninit`
+             None => unsafe { st.alloc::<u8>(n) }.map_err(|e| format!("alloc {len}: {e:?}"))?,
+         };
+-        let home = if n <= TMP_POOL_MAX_BUF || pool.capture {
++        let home = if n <= TMP_POOL_MAX_BUF || pool.capture || dbgarm::poolbig() {
+             Home::Pool(pool.clone())
+         } else {
+             Home::Free
+@@ -983,7 +1056,19 @@ impl Buf {
+     pub fn from_i32(st: &Arc<CudaStream>, v: &[i32]) -> Result<Self, String> {
+         Self::from_bytes(st, &i32_bytes(v))
+     }
++    #[track_caller]
+     pub fn p(&self, st: &Arc<CudaStream>) -> Dp {
++        if dbgarm::xstream() {
++            let (a, u) = (self.s.stream().cu_stream() as usize, st.cu_stream() as usize);
++            if a != u {
++                let h = match &self.home {
++                    Home::Free => "Free",
++                    Home::Pool(_) => "Pool",
++                    Home::Alias => "Alias",
++                };
++                dbgarm::xs_log(self.len, h, a, u, std::panic::Location::caller());
++            }
++        }
+         let (p, _g) = (*self.s).device_ptr(st);
+         Dp(p)
+     }
+@@ -998,6 +1083,7 @@ impl Buf {
+         Self::own(s, self.len, Home::Alias)
+     }
+     /// Device address `off` bytes in.
++    #[track_caller]
+     pub fn at(&self, st: &Arc<CudaStream>, off: usize) -> Dp {
+         assert!(off <= self.len, "Buf::at past the end");
+         Dp(self.p(st).0 + off as u64)
+@@ -1103,6 +1189,27 @@ impl Ops {
+     pub fn tmp(&self, len: usize) -> Result<Buf, String> {
+         Buf::pooled(&self.st, &self.pool, len, false)
+     }
++    /// DEBUG ONLY: a buffer of this stream kept for the process (slot `key`), never freed (a
++    /// smaller one is leaked when it grows).
++    pub fn dbg_keep(&self, key: u8, len: usize) -> Result<Buf, String> {
++        static M: Mutex<Option<HashMap<(usize, u8), (u64, usize)>>> = Mutex::new(None);
++        let k = (self.st.cu_stream() as usize, key);
++        let mut g = M.lock().unwrap_or_else(|e| e.into_inner());
++        let m = g.get_or_insert_with(HashMap::new);
++        let (addr, cap) = match m.get(&k).copied() {
++            Some((a, c)) if c >= len => (a, c),
++            _ => {
++                let b = Buf::zeros(&self.st, len)?;
++                let a = b.p(&self.st).addr();
++                std::mem::forget(b);
++                m.insert(k, (a, len));
++                (a, len)
++            }
++        };
++        // SAFETY: a live allocation that is never freed; the alias frees nothing
++        let s = unsafe { self.st.upgrade_device_ptr::<u8>(addr, cap) };
++        Ok(Buf::own(s, len, Home::Alias))
++    }
+ 
+     /// act_quant(x, 32, "ue8m0") of `rows` bf16 rows of `k` (gathered through `rowidx` when it
+     /// is not null) into e4m3 codes `[rows][k]` and ue8m0 scales in the CUTLASS GEMMs' layout of
+@@ -2668,6 +2775,11 @@ pub fn moe_gemm(
+     k: usize,
+ ) -> Result<(), String> {
+     let st = &ops.st;
++    if proj.0 != proj.1 && dbgarm::splitproj() {
++        // DEBUG ONLY: the two projections as two grouped launches
++        moe_gemm(ops, plan, tab, (proj.0, proj.0), a, asf, (d.0, Dp::NULL), ldc, n, k)?;
++        return moe_gemm(ops, plan, tab, (proj.1, proj.1), a, asf, (d.1, Dp::NULL), ldc, n, k);
++    }
+     let nproj = if proj.0 == proj.1 { 1 } else { 2 };
+     // SAFETY: a size query, no device work
+     let bytes = unsafe { ffi::memra_v41_cutlass_moe_bytes((plan.ng * nproj) as i32) };
+@@ -2795,6 +2907,48 @@ pub struct Trace {
+     pub route_w: Vec<f32>,
+     pub moe_out: Option<Buf>,
+     pub engram_out: Option<Buf>,
++    /// DEBUG ONLY: (name, copy, row pitch bytes, first byte of the compared columns, their bytes)
++    pub dbg: Vec<(String, Buf, usize, usize, usize)>,
++}
++
++/// DEBUG ONLY: stashes made where no Trace is at hand, by stream; drained into a Trace by [`dbg_drain`].
++pub static DBG_POOL: Mutex<Vec<(usize, (String, Buf, usize, usize, usize))>> = Mutex::new(Vec::new());
++pub fn dbg_stash_g(ops: &Ops, name: String, b: &Buf, pitch: usize, off: usize, len: usize) -> Result<(), String> {
++    let o = ops.buf(b.len)?;
++    copy_d2d(ops, b, 0, &o, 0, b.len)?;
++    DBG_POOL
++        .lock()
++        .unwrap_or_else(|e| e.into_inner())
++        .push((ops.st.cu_stream() as usize, (name, o, pitch, off, len)));
++    Ok(())
++}
++pub fn dbg_drain(ops: &Ops, tr: &mut Trace) {
++    let k = ops.st.cu_stream() as usize;
++    let mut g = DBG_POOL.lock().unwrap_or_else(|e| e.into_inner());
++    let all = std::mem::take(&mut *g);
++    for (s, e) in all {
++        if s == k {
++            tr.dbg.push(e);
++        } else {
++            g.push((s, e));
++        }
++    }
++}
++
++/// DEBUG ONLY: a stream-ordered copy of `b` into `tr.dbg` (no host wait).
++pub fn dbg_stash(
++    ops: &Ops,
++    tr: &mut Trace,
++    name: String,
++    b: &Buf,
++    pitch: usize,
++    off: usize,
++    len: usize,
++) -> Result<(), String> {
++    let o = ops.buf(b.len)?;
++    copy_d2d(ops, b, 0, &o, 0, b.len)?;
++    tr.dbg.push((name, o, pitch, off, len));
++    Ok(())
+ }
+ 
+ /// What the keys side of one attention call hands its query side: `qr`, the KV rows the heads
+diff --git a/crates/memra-engine/src/dsv41_gpu/tp.rs b/crates/memra-engine/src/dsv41_gpu/tp.rs
+index d6beb1bb38..477110fa5f 100644
+--- a/crates/memra-engine/src/dsv41_gpu/tp.rs
++++ b/crates/memra-engine/src/dsv41_gpu/tp.rs
+@@ -463,6 +463,7 @@ fn de(e: impl std::fmt::Debug) -> String {
+ }
+ 
+ /// Device-to-device copy of `b` from `src` into the same region of `dst`, on `ops`'s stream.
++#[track_caller]
+ fn copy_blk(ops: &super::Ops, src: &Buf, dst: &Buf, b: Blk) -> Result<(), String> {
+     copy_addr(ops, src.p(&ops.st).addr(), dst.p(&ops.st).addr(), b)
+ }
+@@ -475,6 +476,30 @@ fn copy_addr(ops: &super::Ops, src: u64, dst: u64, b: Blk) -> Result<(), String>
+     }
+     let s0 = src + b.off as u64;
+     let d0 = dst + b.off as u64;
++    if super::dbgarm::cpkern() {
++        // DEBUG ONLY: the copy as a kernel on the stream (no copy engine)
++        let kcopy = |from: u64, to: u64, n: usize| {
++            ck("blk_pack", unsafe {
++                ffi::memra_v41_blk_pack(
++                    from as *mut std::ffi::c_void,
++                    n as i64,
++                    n as i64,
++                    1,
++                    to as *mut std::ffi::c_void,
++                    0,
++                    ops.sv(),
++                )
++            })
++        };
++        if b.rows == 1 || b.width == b.pitch {
++            return kcopy(s0, d0, b.width * b.rows.max(1));
++        }
++        for i in 0..b.rows {
++            let o = (i * b.pitch) as u64;
++            kcopy(s0 + o, d0 + o, b.width)?;
++        }
++        return Ok(());
++    }
+     let st = ops.sv() as CUstream;
+     let r = if b.rows == 1 {
+         unsafe { cuMemcpyDtoDAsync_v2(d0, s0, b.width, st) }
+@@ -587,6 +612,28 @@ impl Group {
+             ));
+         }
+         let parallel = issue_parallel()?;
++        if super::dbgarm::noreuse() {
++            use cudarc::driver::sys::*;
++            for &d in devices {
++                let mut dev: CUdevice = 0;
++                let mut pool: CUmemoryPool = std::ptr::null_mut();
++                unsafe {
++                    cuDeviceGet(&mut dev, d as i32);
++                    cuDeviceGetDefaultMemPool(&mut pool, dev);
++                }
++                for a in [
++                    CUmemPool_attribute::CU_MEMPOOL_ATTR_REUSE_FOLLOW_EVENT_DEPENDENCIES,
++                    CUmemPool_attribute::CU_MEMPOOL_ATTR_REUSE_ALLOW_OPPORTUNISTIC,
++                    CUmemPool_attribute::CU_MEMPOOL_ATTR_REUSE_ALLOW_INTERNAL_DEPENDENCIES,
++                ] {
++                    let mut v: i32 = 0;
++                    let rc = unsafe {
++                        cuMemPoolSetAttribute(pool, a, &mut v as *mut i32 as *mut std::ffi::c_void)
++                    };
++                    eprintln!("[v41dbg] device {d} pool {a:?} = 0: {rc:?}");
++                }
++            }
++        }
+         let mut engines = Vec::with_capacity(n);
+         for &d in devices {
+             let e = Engine::new(d).map_err(|e| format!("rank on device {d}: {e}"))?;
+@@ -832,6 +879,9 @@ impl Group {
+                 return Err(format!("allgather: region {b:?} outside a rank buffer"));
+             }
+         }
++        if super::dbgarm::gsync() {
++            self.sync_all()?;
++        }
+         let t0 = if self.timed {
+             self.sync_all()?;
+             Some(Instant::now())
+@@ -951,6 +1001,9 @@ impl Group {
+             self.sync_all()?;
+             self.stats.secs += t.elapsed().as_secs_f64();
+         }
++        if super::dbgarm::gsync() {
++            self.sync_all()?;
++        }
+         Ok(())
+     }
+ 
+@@ -1619,7 +1672,7 @@ impl Group {
+             (p, Some(m))
+         };
+         drop((a_pre, a_post, a_comb));
+-        if self.trace {
++        if self.trace || super::dbgarm::keep() {
+             for (r, (aa, mm)) in a.into_iter().zip(m.into_iter().flatten()).enumerate() {
+                 tr[r].attn_out = Some(aa);
+                 tr[r].moe_out = Some(mm);
+@@ -2294,6 +2347,20 @@ impl Group {
+                 } else {
+                     None
+                 };
++                if super::dbgarm::keep() {
++                    super::dbg_drain(&c.ops, trr);
++                    let w = &lw[r];
++                    let ops = &c.ops;
++                    super::dbg_stash(ops, trr, format!("r{r0}/x2"), &x2[r], d * 2, 0, d * 2)?;
++                    super::dbg_stash(ops, trr, format!("r{r0}/plan_off"), &plan.off, plan.off.len, 0, plan.off.len)?;
++                    super::dbg_stash(ops, trr, format!("r{r0}/plan_ptok"), &plan.ptok, plan.ptok.len.max(1), 0, plan.ptok.len)?;
++                    super::dbg_stash(ops, trr, format!("r{r0}/plan_pw"), &plan.pw, plan.pw.len.max(1), 0, plan.pw.len)?;
++                    super::dbg_stash(ops, trr, format!("r{r0}/hb_own"), &hb, inter * 2, w.hid0 * 2, w.hid_l * 2)?;
++                    if let Some((qq, sc)) = q.as_ref() {
++                        super::dbg_stash(ops, trr, format!("r{r0}/q_own"), qq, inter, w.hid0, w.hid_l)?;
++                        super::dbg_stash(ops, trr, format!("r{r0}/sc_own"), sc, inter / 32, w.hid0 / 32, w.hid_l / 32)?;
++                    }
++                }
+                 Ok((plan, hb, q))
+             })?
+         };
+@@ -2339,6 +2406,15 @@ impl Group {
+                 .collect();
+             self.allgather(&refs, &blks)?;
+         }
++        if super::dbgarm::keep() {
++            for r in 0..self.n() {
++                if let Some((qq, sc)) = qs[r].as_ref() {
++                    let ops = &self.cx[r].ops;
++                    super::dbg_stash(ops, &mut tr[r], format!("r{r0}/q_all"), qq, inter, 0, inter)?;
++                    super::dbg_stash(ops, &mut tr[r], format!("r{r0}/sc_all"), sc, inter / 32, 0, inter / 32)?;
++                }
++            }
++        }
+         self.each(|r, c| {
+             let st = c.ops.st.clone();
+             let out = m[r].at(&st, r0 * d * 2);
+@@ -2347,6 +2423,13 @@ impl Group {
+                 None => c.split_out(&lw[r], &plans[r], &hbs[r], rows, out),
+             }
+         })?;
++        if super::dbgarm::keep() {
++            for r in 0..self.n() {
++                let ops = &self.cx[r].ops;
++                let w = &lw[r];
++                super::dbg_stash(ops, &mut tr[r], format!("r{r0}/m_own"), &m[r], d * 2, w.dim0 * 2, w.shared[1].n * 2)?;
++            }
++        }
+         let refs: Vec<&Buf> = m.iter().collect();
+         let blks: Vec<Blk> = lw
+             .iter()
+@@ -2843,9 +2926,13 @@ impl Ctx {
+         let sfrow = self.ops.tmp(np * 4)?;
+         super::moe_sfrow(&self.ops, plan, &sfrow)?;
+         let aq = self.ops.tmp(np * d)?;
+-        let asf = self
+-            .ops
+-            .tmp(super::sf_bytes(super::moe_pad_rows(plan), d))?;
++        let asf = if super::dbgarm::asfkeep() {
++            self.ops
++                .dbg_keep(1, super::sf_bytes(super::moe_pad_rows(plan), d))?
++        } else {
++            self.ops
++                .tmp(super::sf_bytes(super::moe_pad_rows(plan), d))?
++        };
+         self.ops.act_quant_sf(
+             x,
+             d,
+@@ -2870,6 +2957,14 @@ impl Ctx {
+             hn,
+             d,
+         )?;
++        if super::dbgarm::keep() {
++            let o = &self.ops;
++            super::dbg_stash_g(o, "sfrow".into(), &sfrow, sfrow.len.max(1), 0, sfrow.len)?;
++            super::dbg_stash_g(o, "aq".into(), &aq, d, 0, d)?;
++            super::dbg_stash_g(o, "asf".into(), &asf, asf.len.max(1), 0, asf.len)?;
++            super::dbg_stash_g(o, "gb".into(), &gb, hn * 2, 0, hn * 2)?;
++            super::dbg_stash_g(o, "ub".into(), &ub, hn * 2, 0, hn * 2)?;
++        }
+         ck("swiglu", unsafe {
+             ffi::memra_v41_swiglu(
+                 gb.p(&st).m(),
+diff --git a/crates/memra-engine/third_party/cutlass/include/cute/arch/copy_sm90_tma.hpp b/crates/memra-engine/third_party/cutlass/include/cute/arch/copy_sm90_tma.hpp
+index a0b5faa487..19cbcc557f 100644
+--- a/crates/memra-engine/third_party/cutlass/include/cute/arch/copy_sm90_tma.hpp
++++ b/crates/memra-engine/third_party/cutlass/include/cute/arch/copy_sm90_tma.hpp
+@@ -1243,10 +1243,18 @@ tma_desc_commit_group() {
+ 
+ 
+ // Wait until at most Count committed TMA_STOREs are pending and all prior commits are complete
++#if defined(V41DBG_FULLWAIT_FLAG)
++static __device__ int v41dbg_fullwait;
++#endif
+ template <int Count>
+ CUTE_HOST_DEVICE static void
+ tma_store_wait() {
+ #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
++#if defined(V41DBG_FULLWAIT_FLAG)
++    if (*(volatile int*)&v41dbg_fullwait) {
++      asm volatile("cp.async.bulk.wait_group %0;" : : "n"(Count) : "memory");
++    } else
++#endif
+     asm volatile(
+       "cp.async.bulk.wait_group.read %0;"
+       :
+@@ -1263,6 +1271,11 @@ tma_store_wait() {
+ CUTE_HOST_DEVICE static void
+ tma_desc_wait_group() {
+ #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
++#if defined(V41DBG_FULLWAIT_FLAG)
++    if (*(volatile int*)&v41dbg_fullwait) {
++      asm volatile("cp.async.bulk.wait_group %0;" : : "n"(0) : "memory");
++    } else
++#endif
+     asm volatile(
+       "cp.async.bulk.wait_group.read %0;"
+       :

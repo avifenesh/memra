@@ -1,0 +1,17 @@
+# round 0: calibration (base stress), then every arm once, the unchanged build in the middle
+d1base-0 d1 10 0 X=1
+d1asf-0 d1 10 0 V41DBG_ASFKEEP=1
+d1pool-0 d1 10 0 V41DBG_POOLBIG=1
+d1noreuse-0 d1 10 0 V41DBG_NOREUSE=1
+c2-0 c2 1 2 X=1
+d1wait-0 d1 10 0 V41DBG_FULLWAIT=1
+d1nop-0 d1 10 0 V41DBG_NOP=1
+d1sync-0 d1 10 0 V41DBG_SYNC=1
+d1base-1 d1 10 0 X=1
+d1asf-1 d1 10 0 V41DBG_ASFKEEP=1
+d1pool-1 d1 10 0 V41DBG_POOLBIG=1
+d1noreuse-1 d1 10 0 V41DBG_NOREUSE=1
+c2-1 c2 1 2 X=1
+d1wait-1 d1 10 0 V41DBG_FULLWAIT=1
+d1nop-1 d1 10 0 V41DBG_NOP=1
+d1sync-1 d1 10 0 V41DBG_SYNC=1
