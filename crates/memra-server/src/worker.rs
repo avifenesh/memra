@@ -22782,23 +22782,42 @@ pub fn run(
             // admission yield does not see it) waited out a whole lockstep burst before its
             // prime: on GB10's 27B 1.6 to 2.4 s to the first token behind two or three
             // streams, against 0.3 s behind one. Now the sessions that have emitted nothing
-            // and start a prime this tick step first (`spec_cold_serial_first`), the cohorts
-            // form after them, so a session whose prime completed joins this tick's lockstep
-            // instead of waiting a burst for its second token, and every other serial session
-            // steps last. Order across independent sessions and cohort membership are
+            // and start a trimmed prime this tick step first (`spec_cold_serial_first`), the
+            // cohorts form after them, so a session whose prime completed joins this tick's
+            // lockstep instead of waiting a burst for its second token, and every other serial
+            // session steps last. Order across independent sessions and cohort membership are
             // content-neutral (the pooled step is the serial step's stream), so this moves
             // when tokens come, never which.
             let cold_first = spec_cold_serial_first(&spec_order, admit_yield_on, |i| {
                 let s = &active[i];
                 let lm = &loaded[&s.model];
+                // Only a prime whose step ends at a chunk or at one token: an MTP session
+                // with a same-model speculative peer on a model that pools (`spec_burst_pre`
+                // trims exactly that prime burst). Every other first step (a lone session, the
+                // DFlash2, glm5 and gemma routes) is a prime plus a whole first burst and keeps
+                // its place after the cohorts.
                 !finished.contains(&i)
                     && s.generated.is_empty()
                     && !s.prime_service.pending
-                    && !dspark_pool_candidate(s, lm, &dspark_drafts)
+                    && s.spec_pool_peer
+                    && lm.model.spec_pool_capable()
                     && !spec_pool_candidate(s, lm)
             });
             for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] {
                 if pass == SpecPass::Cohorts {
+                    // A newcomer's prime that suspended in the first pass is pending now, so
+                    // its peers owe it the bounded quantum in this tick: read it before the
+                    // cohorts size their bursts (`decode_target`), or a cohort runs a whole
+                    // burst between the newcomer's first and second chunk. The per-session
+                    // loop below reads it again for the serial steps.
+                    for &i in &spec_order {
+                        let owes = memra_engine::prime_walker::prime_yield_enabled()
+                            && crate::prime_fairness::owes_peer_quantum(
+                                i,
+                                active.iter().map(|s| s.prime_service.pending),
+                            );
+                        active[i].prime_service.peer_quantum = owes;
+                    }
                     // (model, dspark cohort?, members)
                     let mut cohorts: Vec<(String, bool, Vec<usize>)> = Vec::new();
                     for &i in &spec_order {
@@ -22809,11 +22828,6 @@ pub fn run(
                         let lm = &loaded[&s.model];
                         let dspark = dspark_pool_candidate(s, lm, &dspark_drafts);
                         if !dspark && !spec_pool_candidate(s, lm) {
-                            continue;
-                        }
-                        // A DFlash2 session that primed in this tick joins the next tick's cohort,
-                        // as before: its first burst hands a prefix capture to the end of the tick.
-                        if dspark && cold_first.contains(&i) {
                             continue;
                         }
                         match cohorts
@@ -24166,6 +24180,8 @@ pub fn run(
                     .filter(|s| s.lane == crate::lanes::Lane::Interactive)
                     .count();
                 let n_pref = active.iter().filter(|s| !s.prefill_done).count();
+                // `spec_calls` counts handled steps, so it exceeds `spec` by one for each session
+                // that primed and joined a cohort in this tick (memra#1227).
                 // `spec` + `demoted` (lane/spec-gate): the policy's own observables — how many
                 // rows are on the serial burst path this tick, and the cumulative handoff count
                 // (thrash = this climbing per tick instead of per load crossing).
@@ -33207,7 +33223,9 @@ fn spec_burst_post(
     if let Some(waiting) = entry_waiting {
         let due;
         (s.spec_press_hist, due) = spec_press_record(s.spec_press_hist, waiting > 0);
-        s.spec_press_due = due.then_some(waiting);
+        // Merged, not assigned: a session can run two bursts in one tick (its prime, then the
+        // cohort it joined, memra#1227), and the tick's sweep reads this once after both.
+        s.spec_press_due = due.then_some(waiting).or(s.spec_press_due);
     }
     let spec = s.spec.as_mut().expect("spec_burst_post on a spec session");
     if let Some(trace) = s.ttft.as_ref() {
@@ -33307,10 +33325,12 @@ enum SpecPass {
 }
 
 /// The spec sessions that step before the tick's pooled cohorts, in `order`'s order: those
-/// `cold_serial` names, which the worker sets to a session that has emitted nothing, is no
-/// cohort candidate (it still primes) and holds no suspended prime (a long prime keeps the
-/// place the prime policy gives it after its first chunk, so a cohort waits one chunk per
-/// newcomer at most). None under `MEMRA_ADMIT_YIELD=0`, the lockstep-fairness order.
+/// `cold_serial` names, which the worker sets to an MTP session that has emitted nothing, is
+/// no cohort candidate (it still primes), has a same-model speculative peer on a model that
+/// pools (so its prime burst ends at one token) and holds no suspended prime (a long prime
+/// keeps the place the prime policy gives it after its first chunk). A cohort therefore waits
+/// one prime chunk per newcomer at most. None under `MEMRA_ADMIT_YIELD=0`, the
+/// lockstep-fairness order.
 fn spec_cold_serial_first(
     order: &[usize],
     admit_yield_on: bool,
@@ -40209,7 +40229,7 @@ mod tests {
         let post = between("fn spec_burst_post(", "let spec = s.spec.as_mut()");
         assert!(post.contains(
             "(s.spec_press_hist, due) = spec_press_record(s.spec_press_hist, waiting > 0); \
-             s.spec_press_due = due.then_some(waiting);"
+             s.spec_press_due = due.then_some(waiting).or(s.spec_press_due);"
         ));
         assert!(
             live.contains("let n_tick = active.len() - finished.len();")
@@ -40331,6 +40351,10 @@ mod tests {
     /// ahead of the cohort pass, forms the cohorts inside the second pass (so a session that
     /// primed in the first can join), and the per-session loop reads the pass. Without any one
     /// of them a newcomer waits out a pooled burst again and the unit tests above still pass.
+    /// Two more pins: only a trimmed prime is named (a lone speculative newcomer beside plain
+    /// riders would otherwise run its whole first burst and then a second burst as a one-member
+    /// cohort in the same tick), and the cohort pass reads the prime quantum before the cohorts
+    /// form (or a cohort runs a whole burst between a long prime's first and second chunk).
     #[test]
     fn spec_newcomers_prime_before_cohorts_is_wired() {
         let worker: String = include_str!("worker.rs")
@@ -40346,8 +40370,15 @@ mod tests {
         let named = at(
             "let cold_first = spec_cold_serial_first(&spec_order, admit_yield_on, |i| { let s = \
              &active[i]; let lm = &loaded[&s.model]; !finished.contains(&i) && \
-             s.generated.is_empty() && !s.prime_service.pending && !dspark_pool_candidate(s, lm, \
-             &dspark_drafts) && !spec_pool_candidate(s, lm) });",
+             s.generated.is_empty() && !s.prime_service.pending && s.spec_pool_peer && \
+             lm.model.spec_pool_capable() && !spec_pool_candidate(s, lm) });",
+        );
+        let quantum = at(
+            "if pass == SpecPass::Cohorts { for &i in &spec_order { let owes = \
+             memra_engine::prime_walker::prime_yield_enabled() && \
+             crate::prime_fairness::owes_peer_quantum( i, active.iter().map(|s| \
+             s.prime_service.pending), ); active[i].prime_service.peer_quantum = owes; } let mut \
+             cohorts: Vec<(String, bool, Vec<usize>)> = Vec::new();",
         );
         let passes = at(
             "for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] { if pass == SpecPass::Cohorts {",
@@ -40362,7 +40393,8 @@ mod tests {
         let marks = at("spec_cost_close_wave_marks(); for s in active.iter_mut() {");
         assert!(
             named < passes
-                && passes < cohorts
+                && passes < quantum
+                && quantum < cohorts
                 && cohorts < pooled
                 && pooled < steps
                 && steps < serial
