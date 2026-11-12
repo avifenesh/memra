@@ -1,0 +1,284 @@
+# A newcomer primes before the pooled cohorts and joins the tick's lockstep (memra#1227)
+
+Date: 2026-11-12. Qwen3.8-27B NVFP4 + Q5_K with its MTP head, context 8,192, eight sessions,
+every switch at its default, `MEMRA_TICK_TRACE=1` on the cells. Rate and latency cells: the N of
+every figure is in its row; a boot is one server start, one boot per device lease. Decision
+record: [`docs/decisions/SPEC-COHORT-NEWCOMER.md`](../../docs/decisions/SPEC-COHORT-NEWCOMER.md).
+Follows `research/spec-stall-mark-20261111/` (memra#1211), whose head is the base arm here.
+
+**Verdict: adopted (memra#1227).** A speculative session that has emitted nothing now primes
+before the tick's pooled cohorts and joins that tick's lockstep. On GB10, both arms interleaved
+on one unit: a newcomer's first token behind two or three long speculating streams comes at
+0.27 and 0.29 s where it came at 1.86 and 2.03 s (p50, 24 newcomers per arm and cell); behind
+one stream its second token follows the first by 0.005 s where it waited 1.26 s. Closed-loop
+clients gain 9 to 11% aggregate tok/s at c = 2, 3 and 4 (four phases per arm) because a
+newcomer shares the cohort's forwards one burst earlier. Every text is equal across arms,
+greedy and seeded sampled, and the seeded-invariance and burst-boundary gates pass. Measured
+costs: a cohort under short arrivals with a think time now meets waiting requests at its burst
+entries and takes memra#1211's stall mark (two long streams, two clients at 200 ms think: 43%
+fewer long tokens for half the short latency and 65% more short requests); behind ONE long stream that stream's gap per newcomer is one of 0.40 s where it was two
+of 0.31 s; at c = 2 closed loop the first-token p50 is 0.40 s where it was 0.30 s (the two
+clients now end in the same burst, so their next requests arrive together), with the p95
+unchanged and each request ending about 1 s sooner. Not covered: a newcomer admitted to plain
+decode (memra#1244).
+
+## Conditions
+
+- **GB10**: one DGX Spark unit per comparison (both arms on that unit), the calibrated cost
+  model owns the gate. `Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`.
+- **RTX 5090 Laptop GPU**: the same 27B; its calibration is refused on this card (memra#1191),
+  so the band owns the gate.
+- **Binaries** (GB10 `121a`, the 5090 `120a`):
+
+  | arm | tree | binary |
+  |---|---|---|
+  | `base` | a20fd8c59f, memra#1241's head (crates equal main 340a5e5bfa) | GB10 `memra-0.141.1-5b4e956cdb89`, sha256 `03d6896b4970...` (built on each unit, byte-identical); 5090 sha256 `c9e96631dc03...` |
+  | `change` | 301df182c6 on a20fd8c59f (rebased onto main as 8d8a6ce08c, crates unchanged) | GB10 `memra-0.141.1-51f0eb72655f`, sha256 `9cbc34a774d4...`; 5090 sha256 `3d08768c1f22...` |
+  | `gb10/repro` only | memra#1241's head binary from that lane, built on the engine tree before its rebase | sha256 `777a202764ec...` |
+
+- **Cells**:
+  - `tools/newcomer_cell.py`: L long streamed requests (max_tokens 3000) run alone for 8 s,
+    then 12 streamed 16-token newcomers are sent one at a time at a fixed list of offsets after
+    the previous one ended; the long streams run 4 s more. A cell is `L:class[:newcomer class]`;
+    `t1` is temperature 1 with fixed seeds, `pen` is greedy with a frequency penalty (admitted
+    to plain decode).
+  - `normal_cell.py` of `research/spec-stall-mark-20261111/tools/`: c closed-loop clients, three
+    greedy 160-token streamed requests each.
+  - `tools/stall_cell.py`: memra#1241's stall cell with `LONGS=2` long streams.
+- **Leases**: one boot per lease, both arms of a comparison on one unit: newcomer cell on unit
+  A (order base, change, change, base), closed loop and stall cells on unit B (change, base,
+  base, change; base, change).
+
+## Where the wait came from (`gb10/repro/`)
+
+One boot of the base on GB10, tick trace on. With two long streams live, a newcomer admitted
+at a tick top:
+
+```
+[spec-k] model="q" tenant="" K=3 source=cost-model prompt=34 cached=0 lcp=0 active=3 wave=3
+[tick-spec] seq=1 slot=2 start_ms=1742.442 wall_ms=217.631 generated=0->1      <- the cohort's burst (1742 ms), then the prime (218 ms)
+[tick-spec] seq=2 slot=0 start_ms=1960.087 wall_ms=0.001 generated=344->379    <- the cohort members' results
+[tick-spec] seq=3 slot=1 start_ms=1960.101 wall_ms=0.001 generated=305->337
+[tick] act=3 ... spec=3 spec_calls=3 spec_ms=1960.1
+```
+
+With one long stream there is no cohort, so the newcomer primes first, and its prime burst
+ends at one token because a peer is live. The stream's serial burst then runs before the
+newcomer's second token:
+
+```
+[tick-spec] seq=1 slot=1 start_ms=0.004 wall_ms=212.668 generated=0->1         <- the prime
+[tick-spec] seq=2 slot=0 start_ms=212.684 wall_ms=1195.731 generated=368->400  <- the long stream's serial burst
+[tick] act=2 ... spec=2 spec_calls=2 spec_ms=1408.4
+[tick-spec] seq=2 slot=1 start_ms=1638.674 generated=1->16                     <- next tick: the cohort of two
+```
+
+Every newcomer behind a cohort pays it (12 of 12 at L = 2 and at L = 3), not only some starts
+of an ordinary cell as memra#1227 recorded: an arrival ends the cohort's burst at its round
+(the admission yield), the next tick admits it, and the cohort then runs a whole burst (32
+tokens per member) before the prime.
+
+## The newcomer cell, GB10 (`gb10/newcomer/`)
+
+Two boots per arm on one unit, 12 newcomers per cell and boot (24 per row). `summ_newcomer.py`
+prints the table and the text check.
+
+| long streams | class (long/new) | arm | boots | newcomers | TTFT p50 s | TTFT p95 s | TTFT max s | 1st to 2nd token p50 s | newcomer E2E p50 s | long tok/s (sum), per boot | all tok/s (long + newcomers), per boot | long longest gap s, max | long ITL p50 / p99 ms |
+|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|---:|---|
+| 0 | greedy/greedy | base | 2 | 24 | 0.211 | 0.221 | 0.254 | 0.099 | 0.709 | - | 7.73, 7.76 | - | - |
+| 0 | greedy/greedy | change | 2 | 24 | 0.210 | 0.225 | 0.252 | 0.098 | 0.703 | - | 7.77, 7.76 | - | - |
+| 1 | greedy/greedy | base | 2 | 24 | 0.267 | 0.302 | 0.302 | 1.262 | 2.184 | 23.07, 23.31 | 27.67, 27.95 | 0.316 | 0.0 / 309.8 |
+| 1 | greedy/greedy | change | 2 | 24 | 0.273 | 0.300 | 0.300 | 0.005 | 0.912 | 21.67, 21.7 | 28.85, 28.89 | 0.403 | 0.0 / 396.2 |
+| 1 | greedy/pen | base | 2 | 24 | 0.125 | 1.761 | 1.783 | 0.074 | 1.289 | 21.22, 21.42 | 22.68, 22.89 | 18.691 | 0.0 / 174.6 |
+| 1 | greedy/pen | change | 2 | 24 | 0.125 | 1.730 | 1.737 | 0.074 | 1.272 | 21.52, 21.46 | 23.0, 22.94 | 18.561 | 0.0 / 172.4 |
+| 2 | greedy/greedy | base | 2 | 24 | 1.863 | 2.152 | 2.173 | 0.007 | 2.563 | 39.26, 39.85 | 43.31, 43.92 | 0.911 | 0.0 / 415.0 |
+| 2 | greedy/greedy | change | 2 | 24 | 0.268 | 0.308 | 0.319 | 0.007 | 1.015 | 36.98, 36.82 | 43.81, 43.65 | 0.607 | 0.0 / 414.6 |
+| 2 | greedy/pen | base | 2 | 24 | 0.132 | 1.770 | 1.851 | 0.075 | 1.296 | 36.7, 36.73 | 37.94, 37.98 | 18.554 | 0.0 / 287.3 |
+| 2 | greedy/pen | change | 2 | 24 | 0.125 | 1.750 | 1.758 | 0.074 | 1.273 | 37.11, 36.97 | 38.37, 38.23 | 18.421 | 0.0 / 283.5 |
+| 2 | t1/t1 | base | 2 | 24 | 1.881 | 2.159 | 2.214 | 0.007 | 2.704 | 36.95, 36.95 | 40.95, 40.96 | 0.993 | 0.0 / 514.4 |
+| 2 | t1/t1 | change | 2 | 24 | 0.267 | 0.316 | 0.317 | 0.007 | 1.093 | 36.25, 36.27 | 42.96, 43.01 | 0.702 | 0.0 / 414.3 |
+| 3 | greedy/greedy | base | 2 | 24 | 2.029 | 2.412 | 2.419 | 0.009 | 2.934 | 51.41, 51.37 | 55.18, 55.14 | 0.962 | 0.0 / 569.6 |
+| 3 | greedy/greedy | change | 2 | 24 | 0.289 | 0.336 | 0.336 | 0.009 | 1.144 | 48.32, 47.83 | 54.76, 54.26 | 0.926 | 0.0 / 449.1 |
+
+`prefix check: 44 long texts, 336 newcomer texts, 0 mismatches -> PASS`
+
+- **First token behind a cohort**: 1.863 s to 0.268 s behind two streams, 2.029 s to 0.289 s
+  behind three, 1.881 s to 0.267 s for seeded sampled requests (T = 1). The worst newcomer of
+  the change (0.34 s) is ahead of the best of the base behind a cohort (1.5 s).
+- **Second token behind one stream**: 1.262 s to 0.005 s, and the newcomer's 16 tokens end at
+  0.91 s where they ended at 2.18 s.
+- **"All tok/s"** is the long streams' tokens inside the newcomer window plus the newcomers'
+  own, over the window. The windows differ in length across arms (a newcomer that waits less
+  ends sooner, and the schedule is relative to the previous newcomer's end), so the long
+  streams' rate alone does not compare. All tok/s: +4% behind one stream, +0.3% behind two,
+  -1.2% behind three (54.51 against 55.16 tok/s, mean of two boots).
+- **Each member's gap per newcomer** (the long streams' gaps above 150 ms inside the window,
+  one stream per row of `long_streams`): behind one stream the base has two gaps of 0.31 s per
+  newcomer (its prime, then the two-member tick), the change one of 0.40 s (the prime and a
+  two-member round together). Behind two streams the median of each member's twelve longest
+  gaps is 0.41 to 0.51 s on the base and 0.41 s on the change, behind three 0.44 to 0.64 s and
+  0.44 s; the longest gap falls or holds in every cohort cell (0.91 to 0.61 s, 0.99 to 0.70 s,
+  0.96 to 0.93 s).
+- **A plain newcomer** (`pen` rows) is equal across arms and is memra#1244: while the long
+  streams live it gets one token per tick, 1.4 to 1.7 s apart (16 tokens in 21 to 28 s behind
+  two streams; 1.29 s once they ended at 3,000 tokens, which is the 18 s "gap" of those rows).
+- **Texts**: 44 long texts prefix-equal and 336 newcomer texts equal across the four boots.
+
+## Closed loop, GB10 (`gb10/closed-loop/`)
+
+c = 2, 3, 4, each twice per boot, two boots per arm on one unit (four phases per row).
+`summ_norm.py` prints the table and the text check.
+
+| c | arm | phases | aggregate tok/s per phase | mean | TTFT p50 s | TTFT p95 s | TTFT max s | inter-token p99 ms | admissions by K | stall marks | demotions |
+|---:|---|---:|---|---:|---:|---:|---:|---:|---|---:|---:|
+| 2 | base | 4 | 36.55, 36.09, 36.61, 36.14 | 36.35 | 0.301 | 0.483 | 0.490 | 308.5 | K3/cost-model x24 | 0 | 0 |
+| 2 | change | 4 | 40.3, 40.68, 40.3, 40.7 | 40.49 | 0.401 | 0.486 | 0.487 | 231.6 | K3/cost-model x24 | 0 | 0 |
+| 3 | base | 4 | 45.45, 44.77, 45.56, 44.81 | 45.15 | 0.825 | 2.445 | 2.455 | 438.0 | K3/cost-model x36 | 0 | 0 |
+| 3 | change | 4 | 49.0, 49.87, 49.01, 48.58 | 49.11 | 0.452 | 0.835 | 0.837 | 441.4 | K3/cost-model x36 | 0 | 0 |
+| 4 | base | 4 | 52.74, 53.38, 53.92, 53.71 | 53.44 | 1.924 | 2.706 | 3.022 | 463.0 | K3/cost-model x48 | 0 | 0 |
+| 4 | change | 4 | 58.02, 58.15, 58.1, 58.22 | 58.12 | 0.604 | 0.913 | 1.066 | 459.3 | K3/cost-model x48 | 0 | 0 |
+
+`text check: 216 requests, 54 (phase, prompt) groups, 0 with more than one text, 0 request errors -> PASS`
+
+- Aggregate: +11.4% at c = 2, +8.8% at c = 3, +8.8% at c = 4. A request that starts while
+  others run now joins their lockstep in the tick it primes in, where it used to wait a burst
+  outside it.
+- First token: p50 0.83 to 0.45 s at c = 3 and 1.92 to 0.60 s at c = 4; p95 2.45 to 0.84 s
+  and 2.71 to 0.91 s.
+- **c = 2 is a measured trade on the first token**: p50 0.30 to 0.40 s, p95 equal (0.48 s),
+  and each request ends about 1 s sooner (7.5 to 7.9 s against 8.5 to 9.0 s). On the change
+  the two clients run in lockstep from their first tick and end in the same burst, so their
+  next requests arrive together and the second waits the first's prime and tick. On the base
+  they ran one tick apart in all four phases (the slow start mode of memra#1240's census).
+- 0 stall marks, 0 demotions, the same draft length at every admission (K = 3) on both arms.
+  216 requests, every text equal.
+
+## The stall cells with two long streams, GB10 (`gb10/stall-2long/`)
+
+memra#1241's cells (closed-loop clients of one-token requests for 30 s, `clients:think ms`)
+with two long streams instead of one, so the long streams are a cohort. One unit, one boot per
+arm for all four cells (base, then change), then one more boot per arm for the two 200 ms
+cells (change, then base; rows `change-r2`, `base-r2`). A short request is one token, so all
+tokens = long tokens + short requests. `summ_stall.py` prints the per-stream table and the
+text check.
+
+| cell | arm, run | long tokens in 30 s (both streams) | short requests served | all tokens | short p50 s | short p95 s | stall marks | newcomers admitted plain |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| 2:0 | base | 361 | 145 | 506 | 0.386 | 0.414 | 2 | 139 of 145 |
+| 2:0 | change | 381 | 192 | 573 | 0.304 | 0.313 | 1 | 184 of 192 |
+| 4:0 | base | 295 | 233 | 528 | 0.456 | 0.935 | 2 | 216 of 233 |
+| 4:0 | change | 305 | 308 | 613 | 0.362 | 0.755 | 1 | 292 of 308 |
+| 2:200 | base, run 1 | 757 | 67 | 824 | 0.664 | 0.672 | 0 | 0 of 67 |
+| 2:200 | base, run 2 | 770 | 68 | 838 | 0.655 | 0.665 | 0 | 0 of 68 |
+| 2:200 | change, run 1 | 435 | 111 | 546 | 0.336 | 0.352 | 2 | 106 of 111 |
+| 2:200 | change, run 2 | 437 | 111 | 548 | 0.335 | 0.349 | 2 | 106 of 111 |
+| 4:200 | base, run 1 | 462 | 104 | 566 | 0.855 | 1.094 | 0 | 0 of 104 |
+| 4:200 | base, run 2 | 330 | 181 | 511 | 0.409 | 0.735 | 2 | 168 of 181 |
+| 4:200 | change, run 1 | 371 | 193 | 564 | 0.401 | 0.633 | 2 | 180 of 193 |
+| 4:200 | change, run 2 | 370 | 193 | 563 | 0.397 | 0.640 | 2 | 180 of 193 |
+
+- **0 ms think: both classes gain** (single runs). The long cohort gets 381 and 305 tokens
+  where it got 361 and 295, the short p50 falls from 0.39 to 0.30 s and from 0.46 to 0.36 s,
+  and a third more short requests are served. Both arms set a stall mark and demote the
+  streams.
+- **2:200 is a stable trade** (two runs per arm). The long cohort gets 43% fewer tokens (435
+  and 437 against 757 and 770) and the cell 34% fewer tokens in all; the short requests get
+  half the latency (p50 0.34 s against 0.66 s) and 65% more of them are served (111 against 67
+  and 68). The base never sets a stall mark there; the change always does.
+- **4:200: the base is bimodal across boots** (marked in 1 of 2, n = 2). In run 1 it set no
+  mark (462 long tokens, short p50 0.86 s); in run 2 it set the mark itself and demoted (330
+  long tokens, short p50 0.41 s). The change is in the marked mode in both runs (371 and 370
+  long tokens, 193 short requests at 0.40 s): its long tokens lie between the base's two modes
+  (12% above the marked boot, 20% below the unmarked one), and its short requests and all
+  tokens are at or above the base's better mode (563 and 564 tokens in all against 511 and
+  566).
+- **Why.** On the base a one-token request admitted beside the cohort waited out the cohort's
+  burst and primed after it, so the next arrival was rarely waiting when a burst began: no
+  pressed entries, no stall mark (memra#1211), and the streams kept speculating while each
+  short answer took 0.66 to 0.86 s. With the change the short requests prime first, the next
+  arrival is waiting when the cohort's burst begins, the mark fires after four such entries,
+  the streams demote and newcomers are admitted plain. That is memra#1241's outcome for one
+  long stream at 2:200 (226 tokens for the stream, short p50 0.32 s): here 218 and 217 tokens
+  per stream at 0.34 s. The share policy memra#1241 landed now reaches a cohort; a cohort no
+  longer keeps its rate by making arrivals wait a burst.
+- Long texts are prefix-equal across arms and runs in every cell (24 texts).
+
+## Exactness
+
+- **Seeded-invariance** (`tools/seeded-invariance-gate.py --penalised device`): GB10 change
+  (`gb10/inv/`) PASS, 54 rows, 10 prompts, cases ref, K = 0..3 and demote; RTX 5090 change
+  (`rtx5090/inv/`) PASS, 54 rows.
+- **Burst-boundary** (`tools/spec-burst-boundary-gate.py`): GB10 change (`gb10/bnd/`) PASS, 229 rows, grid default, 1:2, 3:2, 3:3 (1,252 sampled bursts entered on a carried token, none drew at a burst's tail). A first run on the other unit lost its ssh connection at 224 of 229 rows, every row passing until then, and was stopped; it is not a result and is not kept.
+- **Cells**: every long text prefix-equal and every newcomer and closed-loop text equal across
+  arms on both devices (the tables' text checks).
+
+## RTX 5090 Laptop GPU (`rtx5090/`)
+
+The no-regression check: the newcomer cell (two boots per arm, base, change, change, base),
+the closed-loop cell c = 1, 2, 4, 8 (one boot per arm, single runs), seeded-invariance.
+
+| long streams | class (long/new) | arm | boots | newcomers | TTFT p50 s | TTFT p95 s | TTFT max s | 1st to 2nd token p50 s | newcomer E2E p50 s | long tok/s (sum), per boot | all tok/s (long + newcomers), per boot | long longest gap s, max | long ITL p50 / p99 ms |
+|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|---:|---|
+| 0 | greedy/greedy | base | 2 | 24 | 0.140 | 0.141 | 0.152 | 0.035 | 0.318 | - | 9.68, 9.68 | - | - |
+| 0 | greedy/greedy | change | 2 | 24 | 0.140 | 0.142 | 0.147 | 0.035 | 0.318 | - | 9.68, 9.68 | - | - |
+| 1 | greedy/greedy | base | 2 | 24 | 0.159 | 0.189 | 0.194 | 0.463 | 0.936 | 65.62, 62.66 | 72.77, 69.75 | 0.194 | 0.0 / 79.1 |
+| 1 | greedy/greedy | change | 2 | 24 | 0.157 | 0.175 | 0.175 | 0.002 | 0.438 | 63.22, 63.1 | 72.29, 72.16 | 0.218 | 0.0 / 52.1 |
+| 2 | greedy/greedy | base | 2 | 24 | 0.809 | 0.993 | 1.015 | 0.035 | 1.994 | 82.33, 78.76 | 87.25, 83.56 | 0.408 | 0.0 / 198.8 |
+| 2 | greedy/greedy | change | 2 | 24 | 0.834 | 0.922 | 0.924 | 0.034 | 1.984 | 83.35, 83.42 | 88.23, 88.3 | 0.386 | 0.0 / 155.5 |
+| 2 | t1/t1 | base | 2 | 24 | 0.902 | 1.051 | 1.073 | 0.035 | 2.108 | 71.23, 70.45 | 75.88, 75.1 | 0.474 | 0.0 / 201.0 |
+| 2 | t1/t1 | change | 2 | 24 | 0.919 | 1.007 | 1.010 | 0.035 | 2.092 | 71.86, 71.0 | 76.58, 75.72 | 0.385 | 0.0 / 198.9 |
+| 3 | greedy/greedy | base | 2 | 24 | 0.146 | 0.195 | 0.205 | 0.031 | 0.646 | 95.66, 93.4 | 103.83, 101.47 | 0.204 | 28.6 / 157.3 |
+| 3 | greedy/greedy | change | 2 | 24 | 0.137 | 0.149 | 0.151 | 0.031 | 0.632 | 97.99, 97.72 | 106.2, 105.95 | 0.157 | 28.1 / 148.9 |
+
+`prefix check: 32 long texts, 240 newcomer texts, 0 mismatches -> PASS`
+
+R5090-| c | arm | phases | aggregate tok/s per phase | mean | TTFT p50 s | TTFT p95 s | TTFT max s | inter-token p99 ms | admissions by K | stall marks | demotions |
+|---:|---|---:|---|---:|---:|---:|---:|---:|---|---:|---:|
+| 2 | base | 4 | 36.55, 36.09, 36.61, 36.14 | 36.35 | 0.301 | 0.483 | 0.490 | 308.5 | K3/cost-model x24 | 0 | 0 |
+| 2 | change | 4 | 40.3, 40.68, 40.3, 40.7 | 40.49 | 0.401 | 0.486 | 0.487 | 231.6 | K3/cost-model x24 | 0 | 0 |
+| 3 | base | 4 | 45.45, 44.77, 45.56, 44.81 | 45.15 | 0.825 | 2.445 | 2.455 | 438.0 | K3/cost-model x36 | 0 | 0 |
+| 3 | change | 4 | 49.0, 49.87, 49.01, 48.58 | 49.11 | 0.452 | 0.835 | 0.837 | 441.4 | K3/cost-model x36 | 0 | 0 |
+| 4 | base | 4 | 52.74, 53.38, 53.92, 53.71 | 53.44 | 1.924 | 2.706 | 3.022 | 463.0 | K3/cost-model x48 | 0 | 0 |
+| 4 | change | 4 | 58.02, 58.15, 58.1, 58.22 | 58.12 | 0.604 | 0.913 | 1.066 | 459.3 | K3/cost-model x48 | 0 | 0 |
+
+`text check: 216 requests, 54 (phase, prompt) groups, 0 with more than one text, 0 request errors -> PASS`
+
+- Behind one stream the change acts as on GB10: second token 0.463 to 0.002 s, newcomer end
+  to end 0.94 to 0.44 s.
+- Behind two streams the band admits the third request to plain decode (`K=0
+  source=concurrency`, wave 3) while the two streams keep speculating, so its prime is in phase
+  (b) on both arms: first token 0.81 and 0.83 s. That is memra#1244's ordering, not this
+  change. Behind three streams every session is plain.
+- No row regresses; every text is equal.
+
+## CPU checks (dev desk, `devdesk/`)
+
+On the change's final crates (`checks.log`): `cargo fmt --all -- --check`, `cargo clippy
+--release --all-targets -- -D warnings`, the `memra-engine` lib suite (741 passed, 65 ignored:
+device tests), the `memra-server` suite (1,206 passed, 14 ignored), the flags census and the
+numeric-scope census all exit 0.
+
+Red/green (`redgreen.log`, `tools/dd-redgreen.sh`, `tools/redarm.py`), three tests:
+`spec_cold_serial_first_names_the_newcomers`, `spec_pass_steps_each_step_once`,
+`spec_newcomers_prime_before_cohorts_is_wired`.
+
+| arm | what it is | fails |
+|---|---|---|
+| `main` | the base's `worker.rs` with only the two pure functions and the tests added (phase (a) as before) | the wiring test |
+| `oldorder` | `spec_cold_serial_first` names nobody | the naming test |
+| `nojoin` | a session that primed first is never handled in the cohort pass | the pass test |
+| `swapped` | the cohort pass runs first | the wiring test |
+| green | the change | none (3 of 3 pass) |
+
+## Files
+
+- `gb10/repro/`: the reproduction boot (rows, tick-trace server log, texts).
+- `gb10/newcomer/`, `gb10/closed-loop/`, `gb10/stall-2long/`, `rtx5090/newcomer/`,
+  `rtx5090/closed-loop/`: rows (`newcomer.jsonl`, `normal.jsonl`, `stall.jsonl`), `guard.log`
+  (binary sha256, card, load at each boot), `boots.log`, the server logs gzipped (a row's
+  `log_from`/`log_to` are byte offsets into the gunzipped log; the gzip level is the highest
+  whose bytes do not trip the public-boundary scanner by chance), `texts/`.
+- `gb10/inv/`, `gb10/bnd/`, `rtx5090/inv/`: gate rows, logs and texts.
+- `devdesk/`: the CPU check and red/green logs.
+- `tools/`: `newcomer_cell.py`, `stall_cell.py` (memra#1241's with `LONGS`), `summ_newcomer.py`,
+  `summ_norm.py`, `summ_stall.py`, `dd-redgreen.sh` and `redarm.py` (the red arms).

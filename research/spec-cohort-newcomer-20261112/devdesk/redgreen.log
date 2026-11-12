@@ -1,0 +1,60 @@
+== red-main: 2026-11-12T04:37:35+01:00
+red-main spec_cold_serial_first_names_the_newcomers rc=0
+red-main spec_pass_steps_each_step_once rc=0
+red-main spec_newcomers_prime_before_cohorts_is_wired rc=101
+test worker::tests::spec_cold_serial_first_names_the_newcomers ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.00s
+test worker::tests::spec_pass_steps_each_step_once ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.00s
+test worker::tests::spec_newcomers_prime_before_cohorts_is_wired ... FAILED
+thread 'worker::tests::spec_newcomers_prime_before_cohorts_is_wired' (1794324) panicked at crates/memra-server/src/worker.rs:40290:59:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p memra-server --lib`
+== red-oldorder: 2026-11-12T04:41:31+01:00
+red-oldorder spec_cold_serial_first_names_the_newcomers rc=101
+red-oldorder spec_pass_steps_each_step_once rc=0
+red-oldorder spec_newcomers_prime_before_cohorts_is_wired rc=0
+test worker::tests::spec_cold_serial_first_names_the_newcomers ... FAILED
+thread 'worker::tests::spec_cold_serial_first_names_the_newcomers' (1840656) panicked at crates/memra-server/src/worker.rs:40294:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-server --lib`
+test worker::tests::spec_pass_steps_each_step_once ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.00s
+test worker::tests::spec_newcomers_prime_before_cohorts_is_wired ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.02s
+== red-nojoin: 2026-11-12T04:46:10+01:00
+red-nojoin spec_cold_serial_first_names_the_newcomers rc=0
+red-nojoin spec_pass_steps_each_step_once rc=101
+red-nojoin spec_newcomers_prime_before_cohorts_is_wired rc=0
+test worker::tests::spec_cold_serial_first_names_the_newcomers ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.00s
+test worker::tests::spec_pass_steps_each_step_once ... FAILED
+thread 'worker::tests::spec_pass_steps_each_step_once' (1970691) panicked at crates/memra-server/src/worker.rs:40329:13:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-server --lib`
+test worker::tests::spec_newcomers_prime_before_cohorts_is_wired ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.01s
+== red-swapped: 2026-11-12T04:50:36+01:00
+red-swapped spec_cold_serial_first_names_the_newcomers rc=0
+red-swapped spec_pass_steps_each_step_once rc=0
+red-swapped spec_newcomers_prime_before_cohorts_is_wired rc=101
+test worker::tests::spec_cold_serial_first_names_the_newcomers ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.00s
+test worker::tests::spec_pass_steps_each_step_once ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.00s
+test worker::tests::spec_newcomers_prime_before_cohorts_is_wired ... FAILED
+thread 'worker::tests::spec_newcomers_prime_before_cohorts_is_wired' (2001754) panicked at crates/memra-server/src/worker.rs:40345:59:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p memra-server --lib`
+== green: 2026-11-12T04:54:37+01:00
+green spec_cold_serial_first_names_the_newcomers rc=0
+green spec_pass_steps_each_step_once rc=0
+green spec_newcomers_prime_before_cohorts_is_wired rc=0
+test worker::tests::spec_cold_serial_first_names_the_newcomers ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.00s
+test worker::tests::spec_pass_steps_each_step_once ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.00s
+test worker::tests::spec_newcomers_prime_before_cohorts_is_wired ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1219 filtered out; finished in 0.01s
+REDGREEN-DONE 2026-11-12T04:59:06+01:00
+DD-ALL-DONE 2026-11-12T04:59:06+01:00
