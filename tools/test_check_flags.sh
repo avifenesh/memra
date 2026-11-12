@@ -58,7 +58,7 @@ fixture() {
     # The placeholder row keeps the registry non-empty when a case documents nothing: the row-shape
     # half refuses (rc=2) a registry with no rows at all, which is a parser or registry break.
     {
-        printf '# Flags\n\n'
+        printf '# Flags\n\n| Flag | What it does |\n|---|---|\n'
         printf '| `MEMRA_FIXTURE_PLACEHOLDER` | fixture row |\n'
         [[ -n "$documented" ]] && printf '| `%s` | documented in the fixture |\n' "$documented"
     } > "$root/docs/FLAGS.md"
@@ -401,6 +401,14 @@ $GOOD_ROW" "$GOOD_HIST
 
 A second copy.")"
 
+# R5: a row a blank line separated from its table renders as text and no census sees it.
+check "shape: a row under no table header is RED (it renders as text)" 1 \
+    "row sits under no table header" \
+    "$(shape_fixture "$HDR
+$GOOD_ROW
+
+| \`MEMRA_FIXTURE_LOOSE\` | off | a loose row |" "$GOOD_HIST")"
+
 # The shape half cannot be skipped by deleting it: a census without its checker refuses.
 noshape_root=$(shape_fixture "$HDR
 $GOOD_ROW" "$GOOD_HIST")
@@ -549,10 +557,10 @@ fi
 # (MEMRA_MIMO_SPLIT_STAGE_TIMING, 3 assertions) on 2026-11-03 = 40; + 3 CPU-expert-companion
 # arms and a fifth live flag (MEMRA_CPU_EXPERT_IO_CPUSET, 3 assertions) the same day = 46;
 # + 3 build-script arms and a sixth live flag (MEMRA_MMQ_X_Q45K, 3 assertions) the same day = 52;
-# + 2 registry arms (env-registry.txt, 2026-11-12) = 54.
+# + 2 registry arms (env-registry.txt, 2026-11-12) = 54; + 1 orphan-row arm (R5) the same day = 55.
 # (This constant caught its own first draft: it was written 23 and the run refused at 19. It
 # went 19 -> 24 on 2026-08-23 when the grandfather list was deleted.)
-EXPECTED_ASSERTIONS=54
+EXPECTED_ASSERTIONS=55
 total=$((pass + fail))
 printf '\ntest_check_flags: %d passed, %d failed (%d assertions, expected %d)\n' \
     "$pass" "$fail" "$total" "$EXPECTED_ASSERTIONS"

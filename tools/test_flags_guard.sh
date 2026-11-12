@@ -133,7 +133,7 @@ stage() {
         # really a re-grant refusal. Nothing else here needed the file: it was always empty.
         # One placeholder row: the census's row-shape half (memra#127) refuses a registry with no
         # rows at all (rc=2, a parser or registry break), which would red every arm below.
-        printf '# Flags\n\n| `MEMRA_FIXTURE_PLACEHOLDER` | fixture row |\n' > docs/FLAGS.md
+        printf '# Flags\n\n| Flag | What it does |\n|---|---|\n| `MEMRA_FIXTURE_PLACEHOLDER` | fixture row |\n' > docs/FLAGS.md
         # An empty crate src keeps the census non-vacuous-by-construction (it refuses outright
         # when no crates/*/src exists) while reading zero flags, so the seed push is green.
         : > crates/memra-tokenizer/src/lib.rs

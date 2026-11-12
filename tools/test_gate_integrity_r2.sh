@@ -98,8 +98,8 @@ assert_rc "A-9 control: the live tree is green" 0 "$RC"
 # 24 -> 34 on 2026-09-27 with the row-shape arms (memra#127), 34 -> 40 on 2026-11-03 with
 # the CUDA-side getenv arms, 40 -> 46 the same day with the CPU expert companion arms, and
 # 46 -> 52 the same day with the build-script arms, and 52 -> 54 on 2026-11-12 with the
-# engine-registry arms (env-registry.txt).
-assert_has "A-9 control: the fixture reports its assertion count" "$out" "expected 54"
+# engine-registry arms (env-registry.txt), and 54 -> 55 the same day with the orphan-row arm (R5).
+assert_has "A-9 control: the fixture reports its assertion count" "$out" "expected 55"
 
 echo "=== A-16: the port guard refuses rather than measuring a stranger ==="
 # TEETH: a real listener on the port. `python3 -c` binds, prints the port, and holds it until

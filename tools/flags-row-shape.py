@@ -22,6 +22,10 @@ parts of that shape a machine can check without guessing at meaning:
                     MAX_DEFAULT_CHARS characters: the default is a statement, not a narrative.
   R3 decide-by      a row names at most one distinct `decide-by` date. Two dates in one row is
                     a contradiction by construction (one of them is stale).
+  R5 no orphan row  every table row sits under a header and delimiter line. A blank or text
+                    line ends a table on GitHub, so a row after one renders as a line of pipes
+                    and no reader or table census sees it as a row (132 such rows before the
+                    2026-11-12 rewrite).
   R4 history links  every `FLAGS-HISTORY.md#<anchor>` link in the registry resolves to a section
                     heading in docs/FLAGS-HISTORY.md, and every section there is linked from the
                     registry. A dangling pointer is a row pointing at evidence that is not there;
@@ -98,6 +102,11 @@ def census(flag_doc, history_doc):
         rows += 1
         row_cells = cells(line)
         name = row_cells[0].strip() if row_cells else "?"
+        if header is None:
+            violations.append(
+                f"{flag_doc}:{idx}: {name}: row sits under no table header. A blank or text line"
+                " above it ends the table, so it renders as text; put it in its section's table"
+            )
         if len(line) > MAX_ROW_CHARS:
             violations.append(
                 f"{flag_doc}:{idx}: {name}: row is {len(line)} chars, cap {MAX_ROW_CHARS}."
@@ -164,8 +173,9 @@ def census(flag_doc, history_doc):
         print(f"flags-row-shape: {len(violations)} row-shape violation(s)", file=sys.stderr)
         return 1
     print(
-        f"flags-row-shape: {rows} rows within {MAX_ROW_CHARS} chars, default cells within"
-        f" {MAX_DEFAULT_CHARS}, one decide-by each, {len(sections)} history sections all linked"
+        f"flags-row-shape: {rows} rows within {MAX_ROW_CHARS} chars, all under a table header,"
+        f" default cells within {MAX_DEFAULT_CHARS}, one decide-by each, {len(sections)} history"
+        " sections all linked"
     )
     return 0
 
