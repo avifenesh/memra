@@ -68,6 +68,7 @@ line here.
 | [SPEC-K-COLD-SHORT-5090.md](SPEC-K-COLD-SHORT-5090.md) | 2026-11-10 | Rejected | K=2 for cold short prompts on the RTX 5090 Laptop GPU; the rung stays at K=3 because the faster depth follows acceptance. |
 | [SPEC-ENTRY-YIELD-BOUND.md](SPEC-ENTRY-YIELD-BOUND.md) | 2026-11-10 | Adopted | A speculating session yields at a burst's entry with nothing emitted at most once in a row, then runs one round (memra#1201). |
 | [SPEC-STALL-MARK.md](SPEC-STALL-MARK.md) | 2026-11-11 | Adopted | When a speculating session's last four burst entries each met a waiting request, the cost model marks that concurrency plain for 64 s (memra#1211). |
+| [SPEC-COHORT-NEWCOMER.md](SPEC-COHORT-NEWCOMER.md) | 2026-11-12 | Adopted | A speculative newcomer with a same-model speculative peer primes before the tick's pooled cohorts and joins that tick's lockstep (memra#1227). |
 | [SAMPLED-VERIFY-POSITION-KEYED.md](SAMPLED-VERIFY-POSITION-KEYED.md) | 2026-11-10 | Adopted | The MTP route verifies a sampled round by position (one Philox event per generated position); the Leviathan/Chen rejection walk rejected (memra#1154). |
 | [SAMPLED-PENDING-CARRY.md](SAMPLED-PENDING-CARRY.md) | 2026-11-10 | Adopted | A sampled MTP burst carries its pending token into the next burst like a greedy one; GB10 sampled decode +8.4%, greedy flat (memra#1186). |
 | [DSV4-SAMPLER-RADIX-DEFAULT.md](DSV4-SAMPLER-RADIX-DEFAULT.md) | 2026-09-07 | Adopted | The DSv4 sampler orders candidates by radix when `MEMRA_DSV4_SAMPLE_SORT` is unset; `comparison` stays the explicit oracle arm. |

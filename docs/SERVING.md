@@ -3008,6 +3008,19 @@ neither number scales with `MEMRA_SPEC_BURST` anymore.
   transition: it moves only the draft length at admission and the demotion the verdict already
   chooses, so greedy text is unchanged and a seeded sampled request on the MTP route keeps its
   text (the seeded-invariance gate). Receipts: `research/spec-stall-mark-20261111/`.
+- **Newcomers prime before the pooled cohorts** (memra#1227, 2026-11-12): a speculative
+  session that has emitted nothing steps before the tick's pooled cohorts, and a session whose
+  prime completed joins that tick's lockstep. Before, the cohorts stepped first, so a newcomer
+  admitted at the tick top waited a whole lockstep burst (32 tokens per member) for its prime,
+  and behind a single stream its second token waited that stream's burst. On GB10's
+  Qwen3.8-27B the first token behind two or three long streams comes at 0.27 and 0.29 s where
+  it came at 1.86 and 2.03 s, and closed-loop clients at c = 2..4 gain 9 to 11% aggregate.
+  A suspended long prime keeps the prime policy's place after its first chunk, DFlash2 cohorts
+  keep the next-tick join, and `MEMRA_ADMIT_YIELD=0` keeps the cohorts first. Session order
+  and cohort membership are content-neutral, so texts are unchanged. A cohort under short
+  arrivals now meets waiting requests at its burst entries, so the stall mark above applies to
+  it as it does to one stream. A request admitted to plain decode is not covered (memra#1244).
+  Receipts: `research/spec-cohort-newcomer-20261112/`.
 - **The burst ends with the public stream** (GB10 decode round 5, 2026-11-09): the round hook
   also ends the burst at the round that commits EOS or a stop id, and when the client is gone.
   Before that, such a request's last burst ran out to its full target on tokens nobody sees, and
