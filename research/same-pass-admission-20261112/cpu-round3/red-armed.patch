@@ -1,0 +1,11 @@
+--- /home/avifenesh/.cache/memra-1255/worker-fix6.keep	2026-11-12 23:03:47.369217747 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 23:20:59.225363542 +0100
+@@ -21572,7 +21572,7 @@
+                         &admission_costs,
+                         &prime_slab,
+                         &prime_coop,
+-                        false,
++                        true,
+                     )
+                 } else {
+                     0

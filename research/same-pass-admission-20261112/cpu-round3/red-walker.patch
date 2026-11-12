@@ -1,0 +1,11 @@
+--- /home/avifenesh/.cache/memra-1255/worker-fix6.keep	2026-11-12 23:03:47.369217747 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 23:39:47.678081839 +0100
+@@ -8905,7 +8905,7 @@
+                 unstarted_walker: prime_walker_unstarted(
+                     s.spec.is_some(),
+                     s.mtp_prime.is_some(),
+-                    session_owns_route_state(s),
++                    true,
+                 ),
+                 cooperative: cooperative(&s.model),
+                 snapshot_bytes: session_snapshot_bytes_owed(s),

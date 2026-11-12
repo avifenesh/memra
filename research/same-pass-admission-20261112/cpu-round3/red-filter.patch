@@ -1,0 +1,11 @@
+--- /home/avifenesh/.cache/memra-1255/worker-fix6.keep	2026-11-12 23:03:47.369217747 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 23:34:17.707549995 +0100
+@@ -8890,7 +8890,7 @@
+ ) -> usize {
+     let mut by_model: HashMap<&str, Vec<PrimeOwed>> = HashMap::new();
+     for s in active {
+-        if !prime_owed_counts(skip_unbuilt, session_owns_route_state(s)) {
++        if !prime_owed_counts(skip_unbuilt, true) {
+             continue;
+         }
+         let rows = session_pending_prime_rows(s.prefill_done, s.prefill_queue.len());

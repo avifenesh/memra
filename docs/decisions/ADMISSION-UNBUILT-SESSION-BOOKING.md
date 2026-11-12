@@ -75,9 +75,9 @@ session with no cache and no drafter session, and its prime start then took 518 
   the top of every admission pass, so it lasts the pass the request waited in. Behind it a
   dark-lane request is shed with a 429 for that pass, exactly as behind a VRAM defer; a dark-lane
   request that takes a settle wait itself arms no hold, as a dark-lane VRAM defer arms none. An
-  arrival
-  that would not fit even without the booking takes no settle wait and so arms no settle hold;
-  its VRAM defer arms the hold only when it can fit once its device's sessions retire, as before.
+  arrival that would not fit even without the booking takes no settle wait and so arms no settle
+  hold; its VRAM defer arms the hold only when it can fit once its device's sessions retire, as
+  before.
   The hold's cost: a later arrival on those devices waits at most as long as the settle wait,
   until the unbuilt sessions are built, even one that would fit. No cell measured here reaches it
   (in the gate and at agentic c = 2 nothing queues behind the waiting request), so its cost is
@@ -137,9 +137,10 @@ session with no cache and no drafter session, and its prime start then took 518 
 ## Measured
 
 Receipts: `research/same-pass-admission-20261112/` (its README names every binary). "Base" is
-`445f964ea7`, memra#1248's head. "The head" is this PR's final code (`fix5`, built on
-`11b368f7d7`, whose crates differ from `445f964ea7` only in the MTP route's pre-capture guard,
-`spec.rs` and `unified_memory.rs`). "The first cut" (`fix`) and "round 1" (`fix3`) are this change
+`445f964ea7`, memra#1248's head. "The head" is this PR's code after review round 2 (`fix5`,
+built on `11b368f7d7`, whose crates differ from `445f964ea7` only in the MTP route's pre-capture
+guard, `spec.rs` and `unified_memory.rs`); round 3 changed only a log line's session count and
+test pins, so its decisions are the PR head's. "The first cut" (`fix`) and "round 1" (`fix3`) are this change
 before each review round. None of the differences between the three changes a decision in the
 gate, the agentic replay or the cells: nothing queued behind a settle wait; every settle wait was
 for an arrival that fit the reading without the booking; and the pending-prime term is never read
@@ -258,7 +259,9 @@ the reading without the booking, so it goes to the partial reclaim at once.
   reads is 361 MB lower), and the owed term leaves A out: 375 MB owed is B's own entry alone. Its
   need is 320 MB larger, one more entry went, and both were admitted in one pass with no
   out-of-memory line. The round-2 build before its last refactor (`df6ab6cc7f69818e`, the same
-  decisions) gave the same numbers twice.
+  decisions) gave the same numbers twice. The head's partial-reclaim line now counts only the
+  priming sessions the owed term keeps (round 3); the runs here print the earlier count, which
+  included the unbuilt session.
 
 ### CPU
 
@@ -272,6 +275,10 @@ its hold fails `every_route_state_field_counts_as_built_and_the_settle_wait_prec
 Round 2 (`cpu-round2/`): the owed terms counting unbuilt sessions again, or the reading without the
 booking keeping their pending-prime share, fails
 `an_unbuilt_session_is_booked_once_and_left_out_of_the_reading_without_the_booking`, and the settle
-hold without its Interactive guard fails the source-order test. The head's tree, on `11b368f7d7`,
-passes all four, the full `memra-server` suite (1,219 passed), clippy with `-D warnings`, fmt,
-the flags census and the numeric-scope check.
+hold without its Interactive guard fails the source-order test. Round 3 (`cpu-round3/`): the
+same test pins the skip's four literals, and flipping any one of them fails it (the armed door's
+booked term made to skip unbuilt sessions, its built-only term made not to, v2's filter or its
+`prime_walker_unstarted` argument made to treat every session as built). The PR head's tree, on
+`11b368f7d7`, passes the five admission tests (the source-order test and the reclaim booking's
+wiring test among them), the full `memra-server` suite (1,219 passed), clippy with
+`-D warnings`, fmt, the flags census and the numeric-scope check.

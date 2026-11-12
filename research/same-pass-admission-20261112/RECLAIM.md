@@ -24,7 +24,11 @@ DFlash prime with no route state): A, then B 20 ms later. One run per row; gener
 <!-- RECLAIM:END -->
 
 `fix5a-*` is the round-2 build before its last refactor (`reclaim_owed_bytes` took the skip as an
-argument instead of deriving it): the same decisions, the same numbers. `fix5-r6` is the PR head.
+argument instead of deriving it): the same decisions, the same numbers. Their `cell.log` files end
+with the run labels from before the rename (`reclaim fix5-r4`, `reclaim fix5-r5`); the sha on
+each log's second line names the binary. `fix5-r6` ran the round-2 head binary; round 3 changed
+only the partial-reclaim line's session count (it now counts the priming sessions the owed term
+keeps, so the head would print `0 priming sessions` here) and test pins.
 
 The reclaim lines (`serve.log.gz` in each run):
 

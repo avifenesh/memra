@@ -1,0 +1,11 @@
+--- /home/avifenesh/.cache/memra-1255/worker-fix6.keep	2026-11-12 23:03:47.369217747 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 23:09:12.080461881 +0100
+@@ -8768,7 +8768,7 @@
+ ) -> usize {
+     pending_booked
+         .saturating_sub(unbuilt_booked)
+-        .saturating_sub(pending_prime.saturating_sub(pending_prime_built))
++        .saturating_sub(0 * pending_prime.saturating_sub(pending_prime_built))
+ }
+ 
+ /// One still-priming session as the corrected pending-prime term reads it (WP-B day 39).

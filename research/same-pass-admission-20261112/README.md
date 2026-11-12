@@ -19,7 +19,8 @@ Qwen3.8-27B NVFP4 + Q5_K with the DFlash2 drafter. Every gate run is a single ru
 | label | tree | target | binary sha256 (first 16) | version string |
 |---|---|---|---|---|
 | base | `445f964ea7` (memra#1248's head) | sm_120a | `2b16d303ec4f96b8` | `memra-0.141.1-740591922061` |
-| fix5, "the head" | this PR's final code (`worker.rs` sha256 `0a44e1773fcbefc8`), built on `11b368f7d7` | sm_120a | `94dd52f97f6017be` | `memra-0.141.1-61d6d6b1bccd` |
+| fix6 | the PR head's code (`worker.rs` sha256 `affcc345dc682d54`), built on `11b368f7d7`; not run on a device (round 3 changed a log line's count and test pins only) | sm_120a | `e9ddcb16f3be773d` | `memra-0.141.1-67cb0215cc40` |
+| fix5, "the head" | the code after review round 2 (`worker.rs` sha256 `0a44e1773fcbefc8`), built on `11b368f7d7`; round 3 changed only the partial-reclaim line's session count and test pins, so its decisions are the PR head's | sm_120a | `94dd52f97f6017be` | `memra-0.141.1-61d6d6b1bccd` |
 | fix5a | the round-2 build before its last refactor (`worker.rs` `590f55f649c64feb`; the same decisions) | sm_120a | `df6ab6cc7f69818e` | `memra-0.141.1-88d952d164ab` |
 | fix3, "round 1" | the code after the first review round, on `445f964ea7` (`worker.rs` `3c6f6d9043c4cea5`) | sm_120a | `58f08d69a1b02938` | `memra-0.141.1-fcef2a79bffb` |
 | fix, "the first cut" | this PR's code before the review on `445f964ea7` (`worker.rs` sha256 `6ba2aee6f41d0e59`) | sm_120a | `80d3e8d7e42219d6` | `memra-0.141.1-e906635b927a` |
@@ -56,7 +57,7 @@ only the MTP route's pre-capture guard (`spec.rs`, `unified_memory.rs`), which n
 | `diag/` | the diagnostic build's agentic boot (`agentic-c2-145032`) and the gate cell's first cut (`gate-g1`) |
 | `cpu/` | the first cut's CPU red and green arms and full checks |
 | `cpu-head/` | round 1's red and green arms (each arm's patch and log), its full checks, the gate tool's test; `head-11b368f7d7/` the full checks on the rebased tree |
-| `cpu-round2/` | the head's red and green arms and its full checks, on `11b368f7d7` |
+| `cpu-round2/`, `cpu-round3/` | the red and green arms and the full checks of review rounds 2 and 3, on `11b368f7d7` (round 3 is the PR head's tree) |
 | `harness/` | the wrappers that ran every cell, the patch scripts, and the table scripts |
 
 Logs and telemetry over 20 kB are gzipped.
@@ -105,17 +106,23 @@ route state yet) and a 7,343-token arrival B in the same pass that fits neither 
 to the partial reclaim at once. Base sized it 681 MB (416 MB owed, A counted only by its call and
 returned rows) and evicted 3 entries; the head sized it 1,001 MB (A's 362 MB charge booked once
 through the unbuilt booking, 375 MB owed, A left out) and evicted 4. Both admitted B in A's pass
-on the DFlash route with no out-of-memory line; the head's number held in three runs.
+on the DFlash route with no out-of-memory line; the head's numbers came out the same in its one run
+on the head binary and in two runs on the build before the last refactor.
 
 ## CPU
 
-`cpu-round2/`, the head's tree on `11b368f7d7` (`harness/dd-fix5.sh`), each arm one line reverted:
+`cpu-round3/`, the PR head's tree on `11b368f7d7` (`harness/dd-fix6.sh`), each arm one line reverted
+(`cpu-round2/` holds the same arms' first run, before round 3's pins):
 
 | arm | patch | result |
 |---|---|---|
 | `red-skip` | the owed terms count unbuilt sessions again (`prime_owed_counts` always true) | `an_unbuilt_session_is_booked_once_and_left_out_of_the_reading_without_the_booking` FAILED |
 | `red-share` | the reading without the booking keeps the unbuilt sessions' pending-prime share | `an_unbuilt_session_is_booked_once_and_left_out_of_the_reading_without_the_booking` FAILED |
 | `red-guard` | the settle hold without its Interactive guard | `every_route_state_field_counts_as_built_and_the_settle_wait_precedes_every_verdict` FAILED |
+| `red-armed` | the armed door's booked pending-prime term skips unbuilt sessions (`false` to `true`) | `every_route_state_field_counts_as_built_and_the_settle_wait_precedes_every_verdict` FAILED |
+| `red-built` | the built-only term counts them (`true` to `false`) | `every_route_state_field_counts_as_built_and_the_settle_wait_precedes_every_verdict` FAILED |
+| `red-filter` | v2's filter treats every session as built | `every_route_state_field_counts_as_built_and_the_settle_wait_precedes_every_verdict` FAILED |
+| `red-walker` | v2 passes `true` to `prime_walker_unstarted` for the owns-route-state argument | `every_route_state_field_counts_as_built_and_the_settle_wait_precedes_every_verdict` FAILED |
 | `green` | none | all five admission tests pass |
 
 `cpu-head/`, round 1: `red-stack` (the predicate without the unbuilt sessions), `red-unbooked`
