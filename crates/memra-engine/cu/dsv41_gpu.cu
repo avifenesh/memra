@@ -662,14 +662,34 @@ static int v41_sms() {
     return sms[dev & 63] > 0 ? sms[dev & 63] : 1;
 }
 
-// Whether a grouped call of at most `max_tiles` tiles is the small-row body's (the Rust side asks before it picks
-// the body; the two bodies give the same bytes, so this is speed only). The small-row body wins while the call
-// is a few waves of blocks on the card: on GB10 (48 SMs, dsv41-bench gemm, A B B A, every expert share of one,
-// two and four ranks) it took 0.31-0.98 of CUTLASS's time at 72 to 240 blocks of 64 output columns and lost at
-// 432 and more (1.10-1.23; 0.92-0.97 for the widest w2 at 480), so the line sits at 16/3 blocks an SM (256 on
-// GB10). The block count is taken at the plan's most tiles (an upper bound on the experts with rows).
-extern "C" int memra_v41_moe_small_fits(int max_tiles, int n, int nproj) {
-    if (max_tiles <= 0 || n <= 0 || nproj < 1) return 0;
+// The current device's compute capability as major * 10 + minor (cached a device).
+static int v41_cc() {
+    static int cc[64] = {0};
+    int dev = 0;
+    cudaGetDevice(&dev);
+    if (!cc[dev & 63]) {
+        int ma = 0, mi = 0;
+        cudaDeviceGetAttribute(&ma, cudaDevAttrComputeCapabilityMajor, dev);
+        cudaDeviceGetAttribute(&mi, cudaDevAttrComputeCapabilityMinor, dev);
+        cc[dev & 63] = ma * 10 + mi;
+    }
+    return cc[dev & 63];
+}
+
+// Whether a grouped call of at most `max_tiles` tiles of `bm` rows is the small-row body's (the Rust side asks
+// before it picks the body; the two bodies give the same bytes, so this is speed only). Measured per card with
+// dsv41-bench gemm (A B B A, every expert share of one and four ranks, small / CUTLASS normal time):
+// - GB10 (sm_121, 48 SMs): the small-row body wins while the call is a few waves of blocks on the card: 0.31-0.98
+//   at 72 to 240 blocks of 64 output columns, 1.10-1.23 at 432 and more (0.92-0.97 for the widest w2 at 480),
+//   at any tile rows; the line sits at 16/3 blocks an SM (256 on GB10). The block count is taken at the plan's
+//   most tiles (an upper bound on the experts with rows).
+// - RTX PRO 6000 Max-Q (sm_120, 188 SMs; 2026-11-12): the line is in tile rows, not blocks: at 1 to 4 rows an
+//   expert the small-row body wins at every block count measured (median 0.61 at 1 row, 0.73 at 4; 0.63 at
+//   384 experts x 1 row, 30,720 blocks), 8 rows is break-even (median 1.01) and 16 loses (1.83). Other sm_120
+//   cards take this rule until measured.
+extern "C" int memra_v41_moe_small_fits(int max_tiles, int n, int nproj, int bm) {
+    if (max_tiles <= 0 || n <= 0 || nproj < 1 || bm < 1) return 0;
+    if (v41_cc() == 120) return bm <= 4;
     long blocks = (long)max_tiles * ((n + 63) / 64) * nproj;
     return blocks * 3 <= 16L * v41_sms();
 }

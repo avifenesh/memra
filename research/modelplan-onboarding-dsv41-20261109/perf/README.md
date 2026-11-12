@@ -1617,7 +1617,14 @@ behind (1.4-9.6). The split route's decode calls (each rank holds every expert b
 layout at one row: 0.47 and 0.31.) The route (`moe_gemm`): a plan of tiles of at most 8 rows whose launch is at most 16/3 blocks an
 SM (`memra_v41_moe_small_fits`, 256 on GB10) takes the small-row body, every other call CUTLASS's normal form. On
 four ranks that is the one- and two-row decode steps, on two ranks the one-row step; one card and every wider call
-stay on CUTLASS. The line is measured on GB10 only; the PRO 6000's crossover is owed (window).
+stay on CUTLASS on GB10.
+
+On the RTX PRO 6000 Max-Q (sm_120, 188 SMs; wrx window 2026-11-12, one card, `dsv41-bench gemm`, warm-up plus two
+kept runs, all 126 shapes byte-equal, receipts on wrx `receipts-perf/decode-bench-pro6000/crossover.md`) the line is in
+tile rows, not blocks: small / CUTLASS median 0.612 at 1 row an expert, 0.654 at 2, 0.728 at 4, 1.013 at 8, 1.83 at 16,
+3.3-10.6 from 32 up. At 1 to 4 rows the small body wins at every block count (384 experts x 1 row, 30,720 blocks:
+0.634), so GB10's block line would send those calls to the slower form. The rule is per card: sm_120 takes the
+small body at tiles of at most 4 rows (a call of at most 4 rows), sm_121 keeps the block line.
 
 Gates of this build on GB10 (`receipts/gates-cutlass-gb10/f4`, 121a): kernels 270/0 (the 18 new small-row checks:
 the body against the per-expert dense call on six routings of tiles up to 8 rows, 2304- and 576-column shares, w1 +

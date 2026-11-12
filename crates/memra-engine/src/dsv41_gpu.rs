@@ -637,7 +637,7 @@ pub mod ffi {
         ) -> i32;
         /// Whether a grouped call of at most `max_tiles` tiles takes the small-row body (speed
         /// only: the bodies give the same bytes).
-        pub fn memra_v41_moe_small_fits(max_tiles: i32, n: i32, nproj: i32) -> i32;
+        pub fn memra_v41_moe_small_fits(max_tiles: i32, n: i32, nproj: i32, bm: i32) -> i32;
         /// A bench's choice of the most rows of a call that keep a family's small-row body in
         /// groups of 8 (0 block-scaled dense, 1 bf16, 2 fp32 FMA, 3 the one-pass mHC kernel).
         pub fn memra_v41_wide_rows(family: i32, rows: i32);
@@ -2876,8 +2876,14 @@ pub fn moe_gemm(
     let nproj = if proj.0 == proj.1 { 1 } else { 2 };
     // SAFETY: a host-side decision, no device work
     let small = plan.bm <= SMALL_M
-        && unsafe { ffi::memra_v41_moe_small_fits(plan.max_tiles as i32, n as i32, nproj as i32) }
-            != 0;
+        && unsafe {
+            ffi::memra_v41_moe_small_fits(
+                plan.max_tiles as i32,
+                n as i32,
+                nproj as i32,
+                plan.bm as i32,
+            )
+        } != 0;
     if small {
         return ck("moe_small", unsafe {
             ffi::memra_v41_moe_small(
