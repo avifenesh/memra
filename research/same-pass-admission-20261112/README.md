@@ -65,16 +65,17 @@ Logs and telemetry over 20 kB are gzipped.
 ## Gate
 
 `GATES.md` has every line. Two cold prompts (5,772 and 5,741 prompt tokens, charges 816 and
-814 MB) fired together beside a decoding keeper. The gate applied a reserve of 1,653 MB (the
-boot floor of 1,576 MB plus the verify-graph pool's debt, read from a probe that defers): one
-fits at 2,469 MB of effective free, two at 3,283 MB; the ballast placed it at 2,874 MB.
+814 MB) fired together beside a decoding keeper. The gate applied a reserve of 1,653 MB, the
+boot floor the calibration line prints as 1,576 MiB (read from a probe that defers): one fits at
+2,469 MB of effective free, two at 3,283 MB; the ballast placed it at 2,874 MB. The calibration
+line prints MiB and the admission lines decimal MB: 1,576 MiB is 1,653 MB.
 
 | run | binary | exit | verdicts | what happened |
 |---|---|---|---|---|
 | `base-g6` | base | 1 | V2 V3 FAIL | Both requests admitted in one pass: the two `[admit-trim]` lines read the same `driver_free_after` 2,137,063,424 and `still_owned` 20,536,576,036 bytes. The first prime chunk ran out of memory with 22 MB of driver free; one session parked and replayed, and the keeper (4,896 tokens streamed) was not parked and answered 503. The pair answered 200 with the reference text after the replay |
 | `fix5-g6` | the head | 0 | V1 to V4 PASS | The second request took a settle wait (`effective free 2059MB after 815MB booked ... < cost 814MB + reserve 1653MB`) for 3,215.8 ms, the tick that built the first session, then a VRAM defer until the first finished. No out-of-memory line, both 200 with the reference text, the keeper served 12,000 tokens |
 | `base-g5`, `fix3-g5` | base, round 1 | 1, 0 | as above | The same readings and verdicts; the settle wait 3,540.3 ms |
-| `base-g4`, `fix-g4` | base, the first cut | 1, 0 | as above | The same verdicts before the gate probed the reserve (band from the floor, 2,392 to 3,206 MB; placement 2,799 MB, inside the applied band too) |
+| `base-g4`, `fix-g4` | base, the first cut | 1, 0 | as above | The same verdicts before the gate probed the reserve (band from the floor read as 1,576 MB instead of MiB, 2,392 to 3,206 MB; placement 2,799 MB, inside the applied band too) |
 
 ## Agentic replay at c = 2
 

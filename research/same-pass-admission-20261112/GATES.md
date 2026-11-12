@@ -12,7 +12,7 @@ in the server log.
 |---|---|---|
 | `fix5-g6`, `base-g6` | the PR head's code (`fix5`, `94dd52f97f6017be`), base | this PR's head: band from the probed reserve |
 | `fix3-g5`, `base-g5` | round 1 (`fix3`, `58f08d69a1b02938`), base | the same |
-| `base-g4`, `fix-g4` | base, the code before the review (`fix`, `80d3e8d7e42219d6`) | before the reserve probe: band from the boot floor (1,576 MB); the server applied 1,653 MB, so the band was 2,468 to 3,282 MB and the placement at 2,799 MB sat inside it |
+| `base-g4`, `fix-g4` | base, the code before the review (`fix`, `80d3e8d7e42219d6`) | before the reserve probe: band from the boot floor read as 1,576 MB (the calibration line prints 1,576 MiB = 1,653 MB, the reserve the server applied), so the band was 2,468 to 3,282 MB and the placement at 2,799 MB sat inside it |
 
 The cell: learn each prompt's charge alone on the idle card; start a keeper (a counting run,
 greedy) so the worker is in a tick when the pair arrives and `/metrics` is fresh; probe the
