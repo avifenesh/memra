@@ -3,7 +3,7 @@
 > Status page of the ASR modality lane (`lane/asr-modality-20260909`) at its 2026-09-10 handoff,
 > moved from the repository root on 2026-11-12. On 2026-09-12 the owner stopped serving bring-up
 > for this lane, which continued as research and correctness work only (the decision is in
-> [ASR-MODALITY-PLAN.md](../../ASR-MODALITY-PLAN.md)). Nothing here is a serving claim or a roster
+> [PLAN.md](PLAN.md)). Nothing here is a serving claim or a roster
 > commitment; the receipts and gates below stay valid as engine records. Current speech state:
 > [docs/SPEECH.md](../../docs/SPEECH.md).
 
@@ -101,8 +101,8 @@ only under the new hash's name.
    they are ever wanted, session revision semantics, cancellation and reset.
 
 No speech pack has a support state. The measured ladder, with what each state still needs, is
-the [Measured status ladder](../../ASR-MODALITY-PLAN.md#measured-status-ladder-2026-09-09)
-section of ASR-MODALITY-PLAN.md; the speech support rules are in
+the [Measured status ladder](PLAN.md#measured-status-ladder-2026-09-09)
+section of the lane plan; the speech support rules are in
 [docs/SPEECH.md §3](../../docs/SPEECH.md#3-support-states-for-a-speech-model).
 
 ## Rules this lane runs under
@@ -112,7 +112,7 @@ FSL-1.1-ALv2. External implementations only ever produce offline oracle files.
 
 The lane's pushes used `MEMRA_SKIP_PERF_CI=1` and said so in the PR body; hosted CI gated the
 merge. The flag is retired, and the pre-push hook now refuses it
-([docs/FLAGS.md](../../docs/FLAGS.md#release-qualification-controls)). Pushes follow the
+([docs/FLAGS.md](../../docs/FLAGS.md#gate-bench-and-ci-inputs)). Pushes follow the
 current rules in [AGENTS.md](../../AGENTS.md#branches-and-pushes).
 
 Do not resume the removed mixed-precision or matrix variants, and do not tighten FP16 below its

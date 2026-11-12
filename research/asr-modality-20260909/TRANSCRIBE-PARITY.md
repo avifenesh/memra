@@ -1,13 +1,13 @@
-# End-to-end native transcription against the rental oracle
+# End-to-end native transcription against the pinned oracle
 
 Stage 5. Memra runs the whole clip: native log-mel, native window program, native encoder,
 native cached decoder, native beam-1 policy. Nothing from the oracle enters the run. The
 oracle is read afterwards, by `tools/check_whisper_transcribe.py`, to score it.
 
-Binary `.lane-asr-stage2/target/release/whisper-stage`
+Binary `whisper-stage`, release build
 (sha256 `baf38cb6ada267058cb1f8b776ab72303c4fb0c284417ecbfa3d6e25a7eb590c`), checkpoint
-`~/hebrew-asr-data/models/whisper-large-v3-ivrit-766847c9`, oracle
-`~/hebrew-asr-data/oracle/whisper-large-v3-ivrit`, numeric class F32,
+`ivrit-ai/whisper-large-v3@766847c9795b3b5cc0d42f8476199c711d5cee21`, the pinned
+`whisper-large-v3-ivrit` oracle (local copies), numeric class F32,
 `MEMRA_SPEECH_THREADS=16`, `nice -n 15`, pinned to the machine's efficiency cores.
 
 ## How the policy was derived, before it was written
@@ -61,14 +61,14 @@ Two things follow, and they matter for how this is read:
 
 Diagnostic inputs are the native clip log-mel for d1-000, the native F32 encoder for window 5
 and the native decoder forced onto the oracle prefix; the encoder capture and the per-step
-logits are under `.lane-asr-stage2/diag/` and are scratch, not receipts.
+logits stayed in the lane's local scratch directory and are not receipts.
 
 ## Scope
 
 CPU reference only. No GPU execution, no serving endpoint, no timestamp-alignment gate, no
 F16 end-to-end arm. Text is scored with the checkpoint tokenizer through offline tooling
 because Memra has no native detokenizer yet; that is a `NativeReference` gap, listed in
-`ASR-MODALITY-PLAN.md`.
+[PLAN.md](PLAN.md) (then `ASR-MODALITY-PLAN.md` at the repository root).
 
 ## The eight HF-oracle clips, complete
 

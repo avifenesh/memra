@@ -1,144 +1,181 @@
-# The draft regime — how every memra model gets its speculative draft
+# The draft regime
 
-This is the DEFAULT, applied identically to every supported model. It replaced the
-old per-model mix of external drafts, separate trim files, and env knobs with **one
-draft file per model, zero flags** (measured sweep on the 27B champion itself:
-p1 +3.4%, p2 +2.5%, p3 +0.9% over the previous board config — 2026-07-18, jsonl).
+How to build and attach a speculative draft for a model that drafts with an MTP/NextN head: the
+three rules a draft must follow, the two-command build, the attach forms and the checklist for a
+new model. For anyone adding speculative decoding to a GGUF model.
 
-## The three laws (all measured, all violated at cost before being written down)
+Scope: MTP/NextN heads, embedded in the GGUF or shipped as a standalone draft file. Other drafter
+classes have their own attach and gates: the Gemma assistant drafter (`MEMRA_DRAFT`, with the ranks
+trim below), the DFlash2/DSpark block drafters (`MEMRA_DSPARK_SPEC` plus `MEMRA_DSPARK_DRAFT`, and
+`MEMRA_DSV4_DRAFTER` on DeepSeek-V4), the GLM-5.3 MTP block (`MEMRA_GLM5_MTP`, `MEMRA_GLM5_SPEC`)
+and Hy3's eager draft chain. The drafter table is in
+[ARCHITECTURE.md](../ARCHITECTURE.md#8-speculative-decoding), flag contracts in
+[FLAGS.md](FLAGS.md), and each model card names its drafter. Verification always runs the target's
+full vocabulary, so a draft or a trim moves speed and acceptance, never output.
 
-1. **Per-model, every time.** Rank files and draft heads are vocab+distribution
-   artifacts of the EXACT serving model. Derive fresh ranks from the model's OWN
-   generations for every model and every requant of a model. Foreign ranks measured
-   −12 acceptance pts on an identical tokenizer; corpus text is prompts only, never
-   the counted distribution; ranks also inherit their corpus MIX (wiki-heavy ranks
-   lose ~12 pts on code prompts). Corpus floor: ≥4× topN generated tokens. Derive with
-   the CHAT TEMPLATE ON when you serve chat (frspec-owngen's default; `--raw` is for
-   pure-continuation serving) — a raw-derived rank set left a chat cell with 10.9%
-   structurally-unproposable tokens (every one a guaranteed rejection; −15 acceptance
-   pts, 31B 2026-07-19). The rank corpus must cover every prompt CLASS you serve —
-   coverage is the whole game: an oracle control (exact escapees injected into the
-   trim set) flipped a −17% cell to +2% at identical acceptance, so a trim wins any
-   cell whose emitted distribution it covers and loses any cell it doesn't. A
-   class×K sweep confirmed the sign NEVER flips with K, only with class coverage.
-   On very large vocabs (gemma 262k) a finite own-gen corpus cannot guarantee
-   coverage — the serve-time ADAPTIVE TRIM closes the gap (gemma: on by default
-   with ranks; below).
-2. **Byte-verbatim extraction.** The draft block comes out of the serving GGUF's own
-   bytes (`tools/extract_mtp_draft.py`) — external draft ≡ embedded head, proven at
-   acceptance parity. Never re-convert the MTP block from the HF checkpoint:
-   converter-produced drafts collapsed to ~35-39% acceptance with no tensor-level
-   difference findable (open mystery; route deprecated).
-3. **Quantize AFTER trimming, judge by e2e tok/s.** Head → NVFP4 (measured zero
-   acceptance cost vs q5_K at ~¼ the bytes — the hqmtp order), block → Q4_K_M
-   (measured faster AND higher acceptance than Q8_0: cheaper rounds waste fewer
-   drafts). The verdict metric for any draft/trim decision is END-TO-END TOK/S
-   under the board protocol; acceptance is a diagnostic for why, never the decision.
+## The three laws
 
-## Build one (two commands, any supported model)
+Each was measured, and each was violated at a cost before it was written down (evidence at the end).
+
+1. **Per-model, every time.** Rank files and draft heads are artifacts of the exact serving model's
+   vocabulary and output distribution. Derive ranks from the model's own generations for every
+   model and every requant; external text is prompts only, never the counted distribution. Derive
+   with the chat template on when you serve chat (`--raw` is for pure continuation), cover every
+   prompt class you serve, and generate at least 4x topN tokens. A trim wins any cell whose emitted
+   distribution it covers and loses any cell it does not.
+2. **Byte-verbatim extraction.** The draft block comes out of the serving GGUF's own bytes
+   (`tools/extract_mtp_draft.py`); an extracted draft matches the embedded head's acceptance. Never
+   re-convert the MTP block from the HF checkpoint: converter-produced drafts collapse in acceptance.
+3. **Quantize after trimming, judge by end-to-end tok/s.** Head to NVFP4, block to Q4_K_M. The
+   verdict metric for any draft or trim decision is end-to-end tok/s under the board protocol;
+   acceptance explains why, it never decides.
+
+## Build a draft file
+
+Requirements: a release build of `frspec-owngen`
+(`cargo build --release -p memra-engine --bin frspec-owngen`), a GPU that holds the model, and a
+llama.cpp checkout whose `llama-quantize` has the NVFP4 type. `tools/make-trimmed-draft.sh` reads
+`MEMRA_GGUFPY` (llama.cpp's `gguf-py` directory), `MEMRA_QUANTIZE` (the `llama-quantize` binary)
+and `MEMRA_CONVERT_PY` (a Python with numpy, default `python3`). The first two default to one
+developer machine's layout, so set them.
 
 ```bash
-# 1. ranks from the model's own generations (~30-60 min GPU; built-in mixed prompt
-#    pack, or point it at your own prompts / a HF dataset with hfds:owner/name)
+# 1. ranks from the model's own generations: the built-in mixed prompt pack, or your own
+#    prompts (.txt/.md file, directory, .jsonl) or a Hugging Face dataset as hfds:owner/name
 ./target/release/frspec-owngen model.gguf ranks.gguf 32768
 
-# 2. extract + trim + quantize -> the draft file
-tools/make-trimmed-draft.sh model.gguf ranks.gguf.txt draft.gguf 32768 [imatrix.gguf]
+# 2. extract + trim + quantize -> the draft file (block Q4_K_M, head NVFP4)
+MEMRA_GGUFPY=/path/to/llama.cpp/gguf-py \
+MEMRA_QUANTIZE=/path/to/llama.cpp/build/bin/llama-quantize \
+  tools/make-trimmed-draft.sh model.gguf ranks.gguf.txt draft.gguf 32768 [imatrix.gguf]
 ```
 
-Serve: `MEMRA_MTP_DRAFT=draft.gguf ./target/release/memra-server` (or run-spec).
-Validate before trusting: `frspec-owngen model.gguf out.gguf --validate` A/Bs
-baseline-vs-trimmed spec e2e and prints a GOOD/WASH/BAD verdict.
+Step 1 writes `ranks.gguf` (the `d2t` table) and `ranks.gguf.txt` (one id per line, rank order),
+and warns when the corpus is under 4x topN tokens. `--preset code|chat|agentic|mixed`, `--ngen N`
+and `--temp T` (default 0, greedy) shape the corpus.
 
-On a shared-GPU rig, run the corpus in bounded chunks instead of holding the GPU lock
-for the whole generation: `--corpus-out corpus-ids.txt --limit 64` generates 64 prompts,
-appends their ids, and exits; rerunning the same command resumes (greedy temp-0 makes the
-segmented corpus identical to a single-run corpus). The final chunk writes the ranks.
+Check before trusting: `frspec-owngen model.gguf out.gguf --validate` reloads with the trim applied
+and A/Bs speculative decoding (K=3) against the untrimmed embedded head. It prints `GOOD` when the
+trim wins end to end, `WASH` within 2% (keep it only if the VRAM saving matters) and `BAD` below
+that (widen topN or regenerate the ranks). A model without an embedded MTP head skips the check.
+
+On a shared GPU, run the corpus in bounded chunks: `--corpus-out corpus-ids.txt --limit 64`
+generates 64 prompts, appends their ids and exits; rerunning the same command resumes, and the
+final chunk writes the ranks. Greedy decoding makes the chunked corpus identical to a single run.
+
+## Attach
+
+| Form | What it does |
+| --- | --- |
+| nothing | an embedded MTP/NextN head drafts with its full vocabulary head |
+| `MEMRA_FRSPEC_TRIM=<ranks.txt\|ranks.gguf\|hf:...>` | trims the embedded head at load to the ranked rows; no draft file needed |
+| `MEMRA_MODELS="name=/model.gguf+/draft.gguf"` | attaches a draft file to one model (both parts accept `hf:` specs) |
+| `MEMRA_MTP_DRAFT=<draft.gguf>` | attaches a draft file process-wide (`run-spec`, single-model servers) |
+| `MEMRA_GEMMA_DRAFT_RANKS=<ranks.txt>` | trims a Gemma assistant drafter at load (Gemma variant below) |
+
+The server refuses to start when a `+draft` path is missing, is not a file or fails to load, and
+quotes the cause, rather than serving plain decode under a config that asked for speculative
+decoding. Boot proofs: `[frspec-trim] self-trimmed head: 32768 rows of` for a load-time trim,
+`[worker] <name>: regime draft attached (` for a draft file. Admission (`MEMRA_SPEC_GATE`) keeps
+drafting off on a cross-device PP-2 placement, where plain batched decode measured faster; see
+[FLAGS.md](FLAGS.md) and the [Step-3.7-Flash card](models/step37-flash.md).
 
 ## Targets that ship no NextN head (donor-block variant)
 
-Some published GGUFs of supported arches strip the NextN/MTP block entirely
-(`nextn_predict_layers` absent, one fewer block — Ornith-1.0-9B/35B, KAT-Coder-V2.5).
-`run-spec`/spec serving on such a file needs an external head: build the draft from the
-same-backbone DONOR GGUF that carries the block, trimmed with the TARGET's own ranks:
+Some published GGUFs of supported architectures strip the NextN/MTP block entirely
+(`nextn_predict_layers` absent, one fewer block: Ornith-1.0-9B and 35B, KAT-Coder-V2.5). Build the
+draft from a same-backbone donor GGUF that carries the block, trimmed with the target's own ranks:
+`make-trimmed-draft.sh <donor.gguf> <target-ranks.txt> <draft.gguf>`.
 
-- **Extraction source** = the donor (law 2 still byte-verbatim, just from the donor's
-  bytes): `make-trimmed-draft.sh <donor.gguf> <target-ranks.txt> <draft.gguf>`. The donor
-  must match the target's trunk interface — the loader asserts n_embd, head_dim, n_head,
-  n_head_kv; vocab must be identical for the d2t map.
-- **Ranks** = ALWAYS the target's own generations (law 1 is not relaxed by the donor).
-- At load, draft-token embedding comes from the SERVING model's token_embd (the draft
-  file's copy is ignored), so only the donor's NextN block + trimmed lm head ride along.
-  Verify-based spec stays exact regardless — donor/target post-train drift costs
-  acceptance (speed), never correctness. Gate exactly like any draft: run-spec K=1..8
-  self-consistency + acceptance > 0, adopt on e2e only.
-- Donor pairs in service: Qwen3.5-9B-NVFP4-MTP → Ornith-1.0-9B;
-  Qwen3.6-35B-A3B-UD-IQ4_XS (blk.40) → Ornith-1.0-35B, KAT-Coder-V2.5-Dev
-  (receipts: `research/ornith-drafters-20260801/`).
+- Law 2 still holds (the bytes are the donor's) and law 1 is not relaxed: the ranks always come
+  from the target's own generations.
+- The donor must match the target's trunk interface. The loader asserts `n_embd` and head_dim,
+  and `n_head` and `n_head_kv` for a natural NextN clone; the vocabulary must be identical for the
+  `d2t` map.
+- At load the draft's token embedding comes from the serving model's `token_embd`, so only the
+  donor's NextN block and trimmed head ride along. Donor and target drift costs acceptance, never
+  correctness. Gate it like any draft: `run-spec` K=1..8 self-consistency, acceptance above zero,
+  adoption on end-to-end tok/s.
+- Known donor pairs: Qwen3.5-9B-NVFP4-MTP for Ornith-1.0-9B; Qwen3.6-35B-A3B-UD-IQ4_XS (`blk.40`)
+  for Ornith-1.0-35B and KAT-Coder-V2.5-Dev
+  ([research/ornith-drafters-20260801/](../research/ornith-drafters-20260801/)).
 
-## Targets that ship their NextN head as a SEPARATE file (step35 / Step-3.7-Flash)
+## Targets that ship their NextN head as a separate file (Step-3.7-Flash)
 
-StepFun publishes the three chained NextN/MTP blocks in their own GGUF
-(`Step3.7-flash-mtp-Q8_0.gguf`), so the trunk parses `nextn_predict_layers=0` and loads
-with no head. **`nextn=0` on this arch does not mean the model has no drafter** — nothing
-needs to be built, the published head just has to be attached:
+StepFun publishes the three chained NextN/MTP blocks of Step-3.7-Flash in their own GGUF
+(`Step3.7-flash-mtp-Q8_0.gguf`), so the trunk reads `nextn_predict_layers=0` and loads with no
+head. Nothing needs to be built; attach the published head:
 
 ```bash
 MEMRA_MODELS="step=/models/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf+/models/Step3.7-flash-mtp-Q8_0.gguf" \
   ./target/release/memra-server
 ```
 
-Same `+draft` convention as every regime drafter above; `MEMRA_MTP_DRAFT=<head.gguf>` is
-the global equivalent. The loader resolves step35's PER-LAYER draft geometry (64 vs 96
-q-heads, the SWA(512) window, the head-wise `attn_gate` width) from the drafter file's own
-arrays, so no geometry flags are involved.
-
-Serve a step35 trunk **without** the head and the server says so at load — one WARN naming
-plain decode and the attach string. Point `+draft` at a path that is missing or unloadable
-and the server **refuses to start** with the cause quoted, rather than quietly serving plain
-decode under a config that asked for spec.
-
-**Spec over PP-2 is live (#87 closed 2026-08-08).** The 2026-08-06 quarantine (sticky
-`CUDA_ERROR_ILLEGAL_ADDRESS` at c>=2, `research/pp2-spec-20260806/`) was the ppN
-reverse-publication hole, fixed by `PpNRt::fence_stages_behind` — crash gate 212/212 at
-c=2..8 on the previously-fatal placement, run-spec K=1..8 PASS with acceptance identical
-to door-shut (`research/pp2spec-crash-20260807/`). Spec + a drafter now boots and serves
-over any PP placement. The v0.72 worker follows the head stage and removes the old
-placement-order slowdown, but the placement-aware scheduler defaults PP-2 spec admission
-off because plain batching wins every measured c=1/2/4 cell. Use
-`MEMRA_SPEC_GATE=0` only for rollback or an explicit spec measurement. Receipts:
-`research/step-draft-20260807/`, `research/specplace-20260808/`.
-
-## Prebuilt drafts
-
-Every board model's draft (built by exactly this pipeline, from exactly the published
-model bytes) ships at [huggingface.co/tiyuvta/memra-bench](https://huggingface.co/tiyuvta/memra-bench)
-with per-file provenance (source model, rank corpus, commands). Use ours for the board
-models; build your own (commands above) for any other model, requant, or finetune —
-a finetune's distribution moved, so its draft must too (law 1).
+The loader resolves the per-layer draft geometry (64 against 96 q-heads, the SWA(512) window, the
+head-wise `attn_gate` width) from the drafter file's own arrays, so no geometry flag is involved.
+A trunk whose pack declares an external MTP drafter and boots without one logs one WARN naming
+plain decode and the attach string.
 
 ## Gemma variant
 
-Gemma drafters are already standalone byte-verbatim GGUFs (law 2 by provenance); the trim
-applies at LOAD instead of at build: `MEMRA_GEMMA_DRAFT_RANKS=<ranks.txt>` (the `.txt`
-sidecar frspec-owngen emits). Laws 1 and 3 apply unchanged — own-gen ranks per model,
-adopt on e2e only.
+Gemma assistant drafters are standalone byte-verbatim GGUFs already (law 2 by provenance), attached
+with `MEMRA_DRAFT`. The trim applies at load: `MEMRA_GEMMA_DRAFT_RANKS=<ranks.txt>`, the `.txt`
+that `frspec-owngen` writes (it skips `--validate` here; Gemma drafters validate through
+`gemma-gate`). Laws 1 and 3 apply unchanged.
 
-With ranks set, the **adaptive trim** is on by default (`MEMRA_GEMMA_TRIM_ADAPT`,
-512 spare head slots): coverage escapes self-identify at serve time — they arrive as
-verify corrections and ride in with the prompt — so the loop writes their head rows
-into the spare slots and persists the ids to `<ranks>.learned` (pre-filled on the next
-load: first-miss cost is once per serve lifetime, not per request). This closed the
-one cell the static trim lost: 31B chat −17% → +2.5% vs untrimmed, and trim ≥
-untrimmed on every measured cell (both models, N=2 interleaved, 2026-07-19).
-Measured verdicts: 26B trim adopted, 31B trim adopted on BOTH cells (depth +5.2%,
-chat +2.5% warm), E4B stays untrimmed (small head, trim buys nothing — structural).
+With ranks set, the adaptive trim is on by default (`MEMRA_GEMMA_TRIM_ADAPT`, 512 spare head slots,
+`0` for the static trim). Tokens the trim cannot propose arrive as verify corrections or with the
+prompt; the loop writes their head rows into the spare slots and persists the ids to
+`<ranks>.learned`, which the next load pre-fills, so a distribution's escapes cost one miss per
+serve lifetime, not per request.
 
-## Regime checklist for a new supported model
+## Prebuilt drafts
 
-- [ ] own-gen ranks derived from the published artifact (`frspec-owngen`)
-- [ ] draft built via `make-trimmed-draft.sh` (byte-verbatim + NVFP4 head + Q4_K_M block)
-- [ ] e2e A/B vs no-draft and vs any prior draft, board protocol (interleaved, N≥2,
-      power pinned, window validated) — adopt only on e2e win
-- [ ] draft + ranks uploaded to the HF bench repo with provenance in the README
-- [ ] board row + README model table cross-link the HF file
+Each model card names its drafter in its **Drafters** row; most cards do not say where the file
+is published, so this section does. The drafts and ranks in
+[huggingface.co/tiyuvta/memra-bench](https://huggingface.co/tiyuvta/memra-bench) (`drafts/`, with
+per-file provenance) cover Qwen3.5-9B, Qwen3.6-27B and Qwen3.6-35B-A3B, plus own-generated ranks
+for the Gemma 4 26B, 31B and E4B QAT trunks. Newer models publish theirs in the model's own
+repository (for example `tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF` and
+`tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF`). Build your own for any other model, requant or
+finetune: a finetune's distribution moved, so its draft must too (law 1).
+
+## Checklist for a new model
+
+- [ ] own-generated ranks from the published artifact (`frspec-owngen`)
+- [ ] a draft file from `make-trimmed-draft.sh` (byte-verbatim block, NVFP4 head, Q4_K_M block),
+      or a load-time trim with `MEMRA_FRSPEC_TRIM` when the GGUF carries its head
+- [ ] `run-spec` K=1..8 self-consistency and acceptance above zero
+- [ ] end-to-end A/B against no draft and against any prior draft under the board protocol
+      (interleaved, N of 2 or more, power pinned, window validated); adopt only on an end-to-end win
+- [ ] draft and ranks published with provenance (source model, rank corpus, commands)
+- [ ] the model card names the drafter and links the published draft file
+
+## Evidence
+
+The measurements behind the laws, with their dates. Raw rows are in
+`research/tune-data/rig5090.jsonl` unless a lane is named; the previous text of this page is in
+[history/DRAFT-REGIME.md](history/DRAFT-REGIME.md).
+
+- One draft file per model replaced the earlier mix of external drafts, separate trim files and
+  env knobs: on the 27B board model, p1 +3.4%, p2 +2.5% and p3 +0.9% over the previous board
+  configuration (2026-07-18). The script's recipe measured 101 tok/s at 85.2% acceptance (K=3) on
+  the unsloth 27B artifact against 99.6 tok/s at 83.3% for the draft it replaced
+  (`tools/make-trimmed-draft.sh` header, 2026-07-17).
+- Law 1: foreign ranks cost 12 acceptance points on an identical tokenizer, and wiki-heavy ranks
+  lose about 12 points on code prompts. A raw-derived rank set left a Gemma 31B chat cell with 10.9%
+  structurally unproposable tokens, every one a guaranteed rejection, at -15 acceptance points
+  (2026-07-19). An oracle control that injected the exact escapees into the trim set flipped a -17%
+  cell to +2% at identical acceptance, and a class-by-K sweep showed the sign flips only with class
+  coverage, never with K. A 2.5k-token corpus cost 6.5 acceptance points.
+- Law 2: an extracted draft matched the embedded head at acceptance parity. Converter-produced
+  drafts collapsed to about 35-39% acceptance with no tensor-level difference found; the route is
+  deprecated and the cause is still open.
+- Law 3: an NVFP4 head measured zero acceptance cost against q5_K at about a quarter of the bytes,
+  and a Q4_K_M block measured faster and higher acceptance than Q8_0 (cheaper rounds waste fewer
+  drafts).
+- Gemma: the adaptive trim closed the one cell the static trim lost (31B chat -17% to +2.5% against
+  untrimmed), and trim was at or above untrimmed on every measured cell (26B and 31B, N=2
+  interleaved, 2026-07-19). Verdicts: 26B trim adopted, 31B trim adopted on both cells (depth +5.2%,
+  chat +2.5% warm), E4B stays untrimmed (a small head, the trim buys nothing).
+  Bring-up records: [research/gemma4-bringup/](../research/gemma4-bringup/).

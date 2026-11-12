@@ -67,7 +67,7 @@ From `docs/MODELS.md`, lines 60-72 at d1ed663256.
 
 *Stale against code: `/v1/audio/*` exists and fails closed; DeepSeek-V4-Flash TP/EP, GLM-5.3-Flash TP-2/TP-4 and Hy3 EP-4 run. The current state is in [docs/MODELS.md](../MODELS.md).*
 
-Whisper large-v3 has a [native speech plan and metadata pack skeleton](../../ASR-MODALITY-PLAN.md).
+Whisper large-v3 has a [native speech plan and metadata pack skeleton](../../research/asr-modality-20260909/PLAN.md).
 The source census is bound, and native CPU mel and encoder stages have passed a 2-second
 HF oracle gate in their documented numeric classes. The complete speech program has no native
 support state. Decoder policy and FastConformer/RNNT remain unfinished; neither path is

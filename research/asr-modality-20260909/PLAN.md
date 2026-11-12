@@ -1,9 +1,19 @@
 # Native ASR modality plan
 
-> **Serving bring-up PAUSED (owner decision, 2026-09-12).** This lane continues as research and
-> correctness work only; nothing in it is a serving claim or a roster commitment, and no serving
-> qualification cell is scheduled for it until the owner reopens it. Receipts and gates below stay
-> valid as engine records.
+> Plan and bring-up record of the ASR modality lane (`lane/asr-modality-20260909`), moved from the
+> repository root (`ASR-MODALITY-PLAN.md`) on 2026-11-12. On 2026-09-12 the owner stopped serving
+> bring-up for this lane, which continued as research and correctness work only: nothing here is a
+> serving claim or a roster commitment, and the receipts and gates below stay valid as engine
+> records. The current speech contract, including the condensed ASR runtime contract, is
+> [docs/SPEECH.md](../../docs/SPEECH.md); the lane's status page is [STATUS.md](STATUS.md).
+>
+> Against the old text there are four classes of edit and nothing else. (1) Private and deployment
+> detail is removed without a marker: the private-lane and product-lane ownership sentences, the
+> private requirements line, the rental and production-host rules and the fleet-rollout clause.
+> (2) Where a removal left a sentence broken it was reworded: "the private oracle lane" is now "the
+> oracle lane", and "No rental is needed for this skeleton. All rig work" is now "This skeleton
+> needs no GPU. All its work". (3) Relative links are fixed for the new path, and the old PAUSED
+> banner became the note above. (4) Dated notes in italics are added.
 
 Status: native CPU mel, encoder, cached decoder, beam-1 policy and clip window program all execute; end-to-end clip parity is measured on 36 of the 71 oracle clips (stopped clean; sweep closed 2026-09-10, partial-sweep verdict stands). See the measured status ladder below. Tracking: [#414](https://github.com/avifenesh/memra/issues/414).
 Engine baseline: `1657a5a80`; lane `lane/asr-modality-20260909`.
@@ -11,7 +21,7 @@ Engine baseline: `1657a5a80`; lane `lane/asr-modality-20260909`.
 Build both native speech paths now. Memra owns model math, frontend, state and decoding.
 External implementations supply pinned offline oracle data only. There is no external serving
 bridge. Engine code is FSL-1.1-ALv2; checkpoint licenses and notices remain separate.
-This document covers engine work. Product strategy, economics and customer records stay private.
+This document covers engine work.
 
 ## Scope and honest size
 
@@ -22,6 +32,9 @@ speech config directly through `model_packs::whisper::PACK`, compiles a canonica
 with a typed speech subplan and binds the shared `TensorContract`. The speech entry is not in
 the text `PACKS` registry or generic `model inspect` CLI yet. Wiring that CLI and a native
 reference executor is follow-up work, not a second engine.
+
+*Note, 2026-11-12: `llama_dense` was the newest pack at this lane's baseline. Later packs include
+`whisper`, `nemotron_rnnt`, `qwen3_tts`, `hy3`, `minimax_m3` and `deepseek_v41`.*
 
 The estimate is **16-30 agent-hours for FP16 native paths**, or **18-34 hours including optional
 INT8**. The **1-2 hour Whisper pack** is one component, not an estimate for the complete audio
@@ -39,7 +52,7 @@ is a derived artifact. Its revision is not the source-weight revision. Do not tr
 quality receipt until conversion equivalence has been established tensor by tensor.
 
 Actual range-read headers and index are checked in under
-[`crates/memra-gguf/src/model_packs/whisper/fixtures`](crates/memra-gguf/src/model_packs/whisper/fixtures).
+[`crates/memra-gguf/src/model_packs/whisper/fixtures`](../../crates/memra-gguf/src/model_packs/whisper/fixtures).
 `source.lock.json` records metadata hashes, shard sizes and publisher-declared payload hashes.
 The initial metadata skeleton did not download payloads. The frontend follow-up downloaded both
 source shards and verified their publisher SHA256 values before the CPU encoder oracle capture.
@@ -93,7 +106,7 @@ The future importer must preserve storage offsets/strides and reject executable 
 LSTM weights share flat storage; aliasing must not become duplicate or silently substituted data.
 
 The full name/shape/storage census is
-[`research/asr-modality-20260909/nemo-tensor-census.json`](research/asr-modality-20260909/nemo-tensor-census.json).
+[`research/asr-modality-20260909/nemo-tensor-census.json`](nemo-tensor-census.json).
 Architecture config and archive layout are beside it.
 
 | Group | Tensors | Elements | Key shapes |
@@ -118,7 +131,7 @@ projected with the encoder row via the four prompt tensors. It is not an RNNT to
 by guesswork. The SentencePiece vocabulary has 13087 symbols plus blank/padding at the decoder
 boundary. Pin blank index, LSTM gate order and prompt scheduling to oracle captures before use.
 Fine-tuned student artifacts need their own byte manifest and census; the base archive hash is
-not evidence for a successor. The private oracle lane owns that successor selection.
+not evidence for a successor.
 
 ## Operators, reuse and missing work
 
@@ -177,7 +190,7 @@ oracle arm; text-only no-timestamp output cannot establish word-boundary alignme
 
 ## Oracle plan and qualification ladder
 
-The private oracle lane produces offline captures over all **71 clips**, with PCM hashes,
+The oracle lane produces offline captures over all **71 clips**, with PCM hashes,
 original sample boundaries, tokenizer/scorer hashes, exact source and derived artifact revisions,
 conversion command/version, backend versions, decoding settings and output hashes. This Memra
 lane consumes pinned files. No faster-whisper or NeMo dependency enters the runtime.
@@ -188,7 +201,7 @@ lane consumes pinned files. No faster-whisper or NeMo dependency enters the runt
 2. Capture faster-whisper FP16 **beam1**, temperature zero, Hebrew transcription: mel values,
    conv/encoder rows, decoder step logits and token IDs, self/cross KV snapshots, raw UTF-8 text,
    suppression/timestamp state and final output. Freeze the actual oracle versions used by the
-   private lane; `semantic-sources.json` is source-reading provenance, not an execution receipt.
+   oracle lane; `semantic-sources.json` is source-reading provenance, not an execution receipt.
 3. Capture NeMo greedy streaming at `[56,0]`: per-chunk frontend/subsampler rows, encoder output,
    last-channel/last-time/length caches, prompt rows, predictor hidden/cell, joint logits, blank
    and token transitions, partial transcripts, reset and end-of-stream flush. Include uneven
@@ -213,7 +226,7 @@ The integrated acceptance battery records first partial p95 <=500 ms, no >1 s co
 update stalls, finalization p50 <=800 ms and p95 <1500 ms per domain, with failed/missing finals
 counted. Timing starts from capture of the last owned speech sample, not decoder submission.
 Separate endpoint, frontend, encoder, decoder, queue and delivery time; record cold/warm and
-concurrency. The private product lane owns quality thresholds, scoring and release claims.
+concurrency.
 
 ## Work breakdown and next executable step
 
@@ -236,20 +249,19 @@ by this bounded assignment. Add the speech inspector CLI before checkpoint execu
 weights with explicit accumulation/norm precision; only introduce INT8 after a separately
 receipted quality and latency win. Generic Q8_0 is not CT2 per-row INT8.
 
-No rental is needed for this skeleton. All rig work is CPU-only and niced. No local cargo tests, runtime gates, CI,
+This skeleton needs no GPU. All its work is CPU-only and niced. No local cargo tests, runtime gates, CI,
 smoke servers or inference were run. Required text-only pre-push checks ran under nice. Push uses `MEMRA_SKIP_PERF_CI=1`; hosted CI is required.
-Later GPU work must use an explicitly nonproduction lane-owned rental, validate CUDA allocation,
-keep useful work queued, and destroy it with inventory readback at lane completion. Existing
-production and training hosts are outside this lane. A release follows `docs/RELEASING.md` after
-qualification; this draft is not a fleet rollout or a support declaration.
+Later GPU work must validate CUDA allocation. A release follows `docs/RELEASING.md` after
+qualification; this draft is not a support declaration.
+
+*Note, 2026-11-12: `MEMRA_SKIP_PERF_CI` is retired, and the pre-push hook refuses it
+([AGENTS.md](../../AGENTS.md#perf-board-and-pre-push-hook)).*
 
 ## Sources and evidence limits
 
 - [Pinned Whisper source files](https://huggingface.co/ivrit-ai/whisper-large-v3/tree/766847c9795b3b5cc0d42f8476199c711d5cee21), checked-in metadata and publisher hash declarations.
 - [Pinned NeMo archive](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/blob/1c8deaecc64b91f034d73e08dd8b64625eb3395d/nemotron-3.5-asr-streaming-0.6b.nemo), locally verified SHA256 and restricted tensor census.
 - [OpenAI Whisper audio/model sources](https://github.com/openai/whisper), [faster-whisper](https://github.com/SYSTRAN/faster-whisper), [NeMo](https://github.com/NVIDIA/NeMo): exact reading revisions in `research/asr-modality-20260909/semantic-sources.json`. Reading does not license vendoring kernels.
-- Private requirements read at Darklanes `ae42664bed248cd91124a9cf76829637734b0a2f`, sections 1/2/3/6 of the two-tier program, and its model-onboarding checklist. No private corpus or customer content is copied here.
-
 ## Measured status ladder, 2026-09-09
 
 Where the two paths actually stand after the decode stage. Every "done" row below is bound to
@@ -292,6 +304,11 @@ is bring-up evidence, not production permission.
   owned speech sample.
 - Optional INT8. CT2 serves per-row INT8; generic Q8_0 is not that. It stays optional until a
   separately receipted quality and latency win exists, and it is not a prerequisite for FP16.
+
+*Note, 2026-11-12: the endpoint item is stale. Since 2026-09-11 `memra-server` (there is no
+`memra serve` command) carries `/v1/audio/transcriptions` and the `/v1/audio/sessions` lifecycle,
+where transcription and session open answer 503 `engine_unbound` while no speech pack is
+resident; see [docs/SPEECH.md](../../docs/SPEECH.md#1-current-state).*
 
 ### Nemotron 3.5 streaming RNNT, Hebrew successor
 

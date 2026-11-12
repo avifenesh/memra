@@ -1,821 +1,306 @@
-# Speech program
+# Speech
 
-> **Serving bring-up PAUSED (owner decision, 2026-09-12).** This lane continues as research and
-> correctness work only; nothing in it is a serving claim or a roster commitment, and no serving
-> qualification cell is scheduled for it until the owner reopens it. Receipts and gates below stay
-> valid as engine records.
+What memra has for speech models (ASR and TTS), the contracts a served speech path must meet, and
+the path a new speech model takes into the engine. For contributors working on the speech packs,
+the speech reference stages and the `/v1/audio/*` routes.
 
-What it takes for memra to serve any speech model, and how a new one gets onboarded.
+The program record (starting position, measured TTS artifact facts, incumbent board, targets,
+ranked plan and kill criteria) is
+[research/speech-program-20260911/](../research/speech-program-20260911/README.md). The ASR lane's
+plan and status are [PLAN.md](../research/asr-modality-20260909/PLAN.md) and
+[STATUS.md](../research/asr-modality-20260909/STATUS.md).
 
-This file owns the *program*: model families in scope, what "support" means for a speech
-model on the same support-state ladder the text models use, the repeatable onboarding path,
-the gate set, and the performance thesis with its kill criteria. The lane-level bring-up
-record for the first two checkpoints lives in [ASR-MODALITY-PLAN.md](../ASR-MODALITY-PLAN.md)
-and its receipts in `research/asr-modality-20260909/`; this file does not restate them.
+## 1. Current state
 
-Engine only. Fleet placement, pricing, customer exposure and published facts are private and
-are not decided here.
-
----
-
-## 1. Where the code actually is, 2026-09-10
-
-Honest starting position, because a program that starts from a flattering framing is worth
-less than one that starts from a measured deficit.
+No speech pack holds a support state (§3), and no speech model can be served.
 
 | Path | State | Evidence |
 | --- | --- | --- |
-| Whisper large-v3, Hebrew transcription | Frontend, conv stem, 32 encoder blocks, cached decoder, beam-1 policy and clip window program all execute in the CPU reference. End-to-end clip parity **missed its gate** and landed on a diagnosis | log-mel 5.6743622e-5 (bound 1e-3); encoder F32 0.0002231598; 36 of 71 clips swept, 213/259 windows token-exact, `d1` 0.0739 pt / `whatsapp` 0.2237 pt WER vs CT2 against a 0.05 pt limit |
-| Nemotron 3.5 streaming RNNT `[56,0]` | The whole path executes and streams: frontend, cache-aware FastConformer, prompt kernel, LSTM predictor, joint, greedy, session state | 657/657 tensors, frontend 5.34058e-05, encoder 2.533197403e-07 over 26 chunks, head 9.155273438e-05, greedy 9/9, session 26/26 partials plus final identical |
-| Audio-LM class (Qwen3-ASR, Voxtral) | Not started | n/a |
-| **GPU execution for any speech operation** | **Does not exist.** No CUDA kernel, no residency plan, no performance receipt | Every number above is a CPU reference measured on efficiency cores |
-| Streaming TTS (§2.4) | **A non-executing `qwen3_tts` pack defines the pinned tensor, prefill, decode and emit contracts; `NativeReference` remains unset.** <!-- support: none; not NativeReference --> Header fixtures cover 404 talker tensors and 271 codec-decoder tensors, with refusal tests for malformed contracts. The native forward, codec decoder and stage-parity execution are still unimplemented. The streaming emit contract is fixed in §2.4.1 and measured parity bounds are recorded in §2.4.2 | `crates/memra-gguf/src/model_packs/qwen3_tts/`; `docs/SPEECH.md` §2.4.1, §2.4.2; receipts private (darklanes `research/tts-pack-20260911/`) |
-| **Audio endpoint in `memra serve`** | **Exists as of 2026-09-11 and fails CLOSED.** `/v1/audio/transcriptions` plus the `/v1/audio/sessions` lifecycle (open / frames / close / list) carry the session contract, the resident-session cap, the per-lane bounded queue, the typed shed taxonomy and the declared decode; with no speech pack resident every path refuses `engine_unbound` rather than answering with something that is not the model. **The transcript bytes are step 2's work** | `audio_api.rs`, 18 handler + contract tests; scheduler in `memra-lanes::audio_stream`, 20 tests |
+| Whisper large-v3 (`ivrit-ai/whisper-large-v3`, Hebrew) | Pack `whisper` binds the checkpoint (1,259 tensors). The CPU reference runs the log-mel frontend, conv stem, 32 encoder blocks, cached decoder, beam-1 policy and clip window program; `whisper-stage transcribe` takes PCM and returns token ids. Clip parity against CT2 beam-1 missed its 0.05 pt per-domain WER gate on a 36-clip partial sweep (`d1` 0.0739 pt, `whatsapp` 0.2237 pt), with every divergent window traced to a cause | [STATUS.md](../research/asr-modality-20260909/STATUS.md), [TRANSCRIBE-PARITY.md](../research/asr-modality-20260909/TRANSCRIBE-PARITY.md) |
+| Nemotron 3.5 streaming RNNT (`nvidia/nemotron-3.5-asr-streaming-0.6b` and a Hebrew successor, `[56,0]` arm) | Pack `nemotron_rnnt` binds the archive (657 tensors) and refuses to run it. The CPU reference runs the whole streaming path (`rnnt-stage stream`): frontend, cache-aware FastConformer, prompt kernel, LSTM predictor, joint, greedy decode and session state, token-exact against NeMo on two speech clips and a silence clip | [STATUS.md](../research/asr-modality-20260909/STATUS.md), [RNNT-ENCODER.md](../research/asr-modality-20260909/RNNT-ENCODER.md) |
+| Qwen3-TTS (`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice@0c0e3051`) | Pack `qwen3_tts` holds the census (404 talker and 271 codec-decoder tensors), the talker prefill, the declared decode and the emit contract (§2.4.1), with refusal tests for malformed contracts. No native forward, codec decoder or stage-parity execution | `crates/memra-gguf/src/model_packs/qwen3_tts/` |
+| MiMo-V2.6 audio input (audio-LM class) | Portable reference oracles cover the PCM log-mel frontend, the codec Conv1D frontend and encoder layers, RVQ, the patch-encoder attention, and code grouping with the embedding sum. Research CUDA kernels cover the codec frontend, codec encoder layers, RVQ selection, the embedding sum and the audio patch encoder; only `mimo_*` probe and gate bins reach them, and no request path takes audio input | `crates/memra-reference/src/mimo_audio*.rs`, the `mimo_audio_*` rows of [KERNELS.md](KERNELS.md) |
+| GPU execution of an ASR or TTS pack | None. No Whisper, RNNT or TTS operation has a CUDA kernel, a residency plan or a performance receipt; every speech number above is a CPU reference | n/a |
+| `/v1/audio/*` in `memra-server` | `POST /v1/audio/transcriptions`, `POST` and `GET /v1/audio/sessions`, and `POST /v1/audio/sessions/{id}/frames` and `/close` carry the session contract, the resident-session cap, the per-lane bounded queue, the typed shed codes and the declared decode. No speech pack can be resident, so the two opening POSTs (transcriptions, session open) answer 503 `engine_unbound` once the request passes validation; `GET /v1/audio/sessions` answers 200 with the operator view (drive, caps, shed counters); frames and close answer 404 `unknown_session`, since no session can open | `crates/memra-server/src/audio_api.rs`, `memra-lanes::audio_stream`, [API-SURFACES.md](API-SURFACES.md#audio) |
 
-So: memra has a correctness spine for two speech families, a serving surface that admits and
-sheds honestly, and **no speed**. On the metric this program is about, memra has not entered the
-race: there is still no GPU number, and an endpoint that refuses is not a product. What the
-spine buys is an ORACLE: every GPU kernel written from here has a banked CPU reference to be
-byte-identical against, so correctness is checkable from the first kernel instead of argued. That
-is a statement about what can be VERIFIED, not about what it costs to enter; per the owner ruling
-of 2026-09-11 ("engineering needed is not a blocker ever, thats what we are doing, building an
-engine and selling its work"), no model, family or step in this document is ranked by how much
-work it is.
+The speech packs sit outside `PACKS`, so automatic pack selection and `memra model inspect` never
+reach them, and the reference executor refuses a speech plan (`native speech execution pending`).
+Code: packs in `crates/memra-gguf/src/model_packs/{whisper,nemotron_rnnt,qwen3_tts}/`, reference
+stages in `crates/memra-reference/src/speech/`, the CPU stage runners `whisper-stage`,
+`rnnt-stage` and `speech-text`, the scheduler in `crates/memra-lanes/src/audio_stream.rs`.
 
-`NativeReference` is unset for every speech model. Nothing here is production permission. <!-- support: none; not NativeReference -->
+The Whisper reference operators (`crates/memra-reference/src/speech/`, numeric programs and bounds
+in [ENCODER-NUMERICS.md](../research/asr-modality-20260909/ENCODER-NUMERICS.md)) are native CPU
+code, not CUDA support:
 
----
+| Operator | Program | Numeric class |
+| --- | --- | --- |
+| `WhisperFrontend::compute` | periodic Hann, direct real DFT, Slaney filters, Whisper log normalization | F32 |
+| `WhisperEncoder::encode` | biased strided convolution, positions, LayerNorm, full attention, residual FFNs | F32, or binary16 values with FP32 accumulation |
+| `gelu_erf` | owned A&S 7.1.26 evaluation matching the pinned HF CPU program | FP32 fused polynomial |
+| matrix product (`matrix.rs`) | four fixed FMA partial sums, AVX2 over time rows, cache-resident row groups, columns split over `MEMRA_SPEECH_THREADS` workers (default 1) | one reduction order at every group size and thread count, bit-identical by construction |
+| `WhisperDecoderSession::step`, `decode.rs` | cached self and cross attention, tied logits, the pinned beam-1 suppression, timestamp grammar and forced-timestamp rules | as the encoder |
 
 ## 2. Families in scope
 
-Four architecture classes, chosen because they cover the field: between them they hold the
-models buyers actually pay to run, on both the STT and the TTS side. They are NOT chosen for
-reusing parts of the engine we already have, and the order they are attacked in is argued in §7
-on decision value, never on how much of each one is already built.
+Four architecture classes cover the field on both the STT and the TTS side. The order of work
+across them is argued in the program record on decision value, never on how much is already built.
 
-### 2.1 Encoder-decoder AED (Whisper family)
+| Class | Examples | Engine shape |
+| --- | --- | --- |
+| Encoder-decoder AED (Whisper) | `whisper-large-v3`, `large-v3-turbo`, `distil-*` | Bidirectional encoder over a fixed padded window; decoder with a self-attention KV cache and an independent fixed cross-attention K/V per window. The batch and utterance path, not the streaming one: post-hoc causalization of an offline AED encoder went from 7.6 to 17.6 WER with a p50 word commit of 4.1 s ([qfuxa/qwen3-asr-0.6b-streaming](https://huggingface.co/qfuxa/qwen3-asr-0.6b-streaming)) |
+| Cache-aware streaming transducer (FastConformer, RNNT, TDT) | `nemotron-3.5-asr-streaming-0.6b`, `nemotron-speech-streaming-en-0.6b`, `parakeet-tdt-*`, Zipformer | Encoder trained with fixed left and right context, so caches run it frame by frame: attention last-channel cache, causal-convolution last-time cache, cache lengths, subsampler and frontend carry, position offset, a two-layer LSTM predictor and a joint with a blank transition |
+| Audio-LM | `Qwen3-ASR-1.7B` (Qwen3-1.7B decoder, projector and a 300M AuT encoder with a dynamic 1 s to 8 s attention window), `Voxtral-Mini-4B-Realtime` (970M causal sliding-window encoder, 25M adapter, 3.4B Ministral decoder), MiMo-V2.6 audio | Audio encoder plus projector into a native text decoder, the vision path's projector-prefix shape, no cross-attention cache. Voxtral adds Ada-RMSNorm delay conditioning (`NormKind` has `Rms` and `LayerNorm` today) and a sinusoidal-embedding MLP in the decoder FFN. MiMo-V2.6 turns each four RVQ code rows into one 4096-wide trunk token |
+| Streaming TTS (codec audio-LM) | `Qwen3-TTS-12Hz-*`, `chatterbox`, `orpheus-*`, `higgs-tts-2`, `csm-1b`, `kyutai/tts-*` | Text decoder emitting discrete codec tokens, a multi-codebook sampling head (one step emits several tokens), a codec decoder and the streaming emit contract (§2.4.1). No audio encoder |
 
-Bidirectional encoder over a fixed padded window, autoregressive decoder with cross-attention.
-`whisper-large-v3`, `large-v3-turbo`, `distil-*`, and any Hebrew or other adaptation of them.
+Licences differ inside a family (`nemotron-3.5-asr-streaming-0.6b` is OpenMDW-1.1,
+`nemotron-speech-streaming-en-0.6b` the NVIDIA Open Model License): read the card of the exact
+artifact. For TTS the licence is a step-0 gate, since several of the best expressive checkpoints are
+non-commercial on purpose. Out of scope until something in scope is qualified: speech translation,
+diarization, speaker ID, voice conversion and audio understanding beyond transcription.
 
-Engine shape: full encoder recompute per window; decoder holds a self-attention KV cache **and
-an independent fixed cross-attention K/V** for that window. The two cache lifetimes are the
-risky part and they are why this family is not the streaming answer: the encoder is not causal,
-so streaming it means either re-encoding a growing buffer or bolting causality on after the
-fact. Post-hoc causalization of an offline AED encoder, even repaired by self-distillation,
-went 7.6 to 17.6 WER with p50 word-commit 4.1 s
-([qfuxa/qwen3-asr-0.6b-streaming](https://huggingface.co/qfuxa/qwen3-asr-0.6b-streaming)).
-Treat this family as the **batch/utterance** path, not the streaming path.
+### 2.4 Streaming TTS: what the artifact fixes
 
-### 2.2 Cache-aware streaming transducer (FastConformer / RNNT / TDT)
+Read the frame rate off the artifact, not the name. The pinned Qwen3-TTS artifact is a 12.5 Hz codec
+(`output_sample_rate` 24000, `decode_upsample_rate` 1920): one frame is exactly 80.00 ms, and a
+second of audio costs 12.5 talker forwards, each with a nested 15-step code predictor. Three more
+facts shape the emit contract, and the pack pins them (`EMIT`, `frames_for_audible`): frame 0 is
+silent and structural (peak about 5e-05, about -85 dBFS); the vendor reference emits
+`max_new_tokens - 1` frames; and on an EOS-terminated prompt the two vendor entry points disagree by
+one frame (17 frames of audio against 16 code rows), so the parity set needs such a prompt.
 
-Encoder trained with a fixed left/right attention context so activation caches make a
-non-autoregressive encoder run autoregressively; every frame is processed exactly once.
-`nemotron-3.5-asr-streaming-0.6b`, `nemotron-speech-streaming-en-0.6b`, `parakeet-tdt-*`,
-Zipformer transducers.
-
-Engine shape: attention last-channel cache, causal-convolution last-time cache, cache lengths,
-subsampler and frontend carry, position offset, plus a two-layer LSTM predictor hypothesis and
-a joint with a blank transition. This is the family memra streams natively today.
-
-Licence discipline for this family, learned the expensive way: `nemotron-3.5-asr-streaming-0.6b`
-is OpenMDW-1.1 and `nemotron-speech-streaming-en-0.6b` is the NVIDIA Open Model License. **Never
-infer a licence across a family**; read the card of the exact artifact.
-
-### 2.3 Audio-LM (Qwen3-ASR, Voxtral Realtime)
-
-An audio encoder plus a projector into an ordinary text decoder. `Qwen3-ASR-1.7B` is
-Qwen3-1.7B + projector + a 300M AuT encoder with a dynamic 1 s to 8 s attention window;
-`Voxtral-Mini-4B-Realtime` is a 970M causal sliding-window encoder + 25M adapter + a 3.4B
-Ministral decoder with Ada-RMSNorm delay conditioning.
-
-Engine shape: the decoder is a first-class native text path already, and the
-projector-prefix shape is the one the **vision** path already implements. There is no
-cross-attention cache to manage, which removes the Whisper family's worst streaming hazard.
-New surface: the audio encoder itself, its window/cache program, and, for Voxtral, a new
-norm variant (`NormKind` is RMS only today) plus a sinusoidal-embedding MLP injected into the
-decoder FFN.
-
-### 2.4 Streaming TTS (codec audio-LM)
-
-A text decoder that emits DISCRETE AUDIO CODEC TOKENS instead of text tokens, plus a codec
-decoder that turns those tokens back into a waveform. `Qwen3-TTS-12Hz-*`, `chatterbox`,
-`orpheus-*`, `higgs-tts-2`, `csm-1b`, `kyutai/tts-*`.
-
-Engine shape: the decoder is a first-class native text path already, exactly as in §2.3, and
-there is no audio ENCODER in this class at all: the audio direction is generation, not
-perception. New surface: the codec tokenizer's DECODER, a multi-codebook sampling head (a step
-emits several tokens across codebooks, not one), and a streaming emit contract that says when a
-partial waveform may leave the box. **This inventory sizes the work; it does not rank the
-family.** Ordering across families is argued on market pull, licence, where the engine's edge
-lands, headroom against the published bar and revenue surface, never on how close a family is to
-the code that already exists (owner ruling 2026-09-11; darklanes
-`LAW:effort-is-not-a-selection-criterion`).
-
-The frame rate is the thing to read off the artifact before anything else, because it sets the
-step budget directly: a 12 Hz codec means roughly **twelve full decoder forwards per second of
-generated audio**, so a 1.9B model spends its whole session in a short, repeated, launch-bound
-step. That is the same shape §6.3's profile measured on the ASR side, and it is why this family
-is the best-matched case in the engine for graph capture.
-
-**Read the rate, do not read the name.** `Qwen3-TTS-12Hz-1.7B-CustomVoice` @ `0c0e3051` is a
-**12.5 Hz** codec: `output_sample_rate` 24000 and `decode_upsample_rate` 1920, so one frame is
-**80.00 ms exactly** and a second of audio costs 12.5 steps, not 12. Neither 83.33 ms nor 2000
-samples appears anywhere in the artifact. Three more facts about that artifact belong to the
-streaming emit contract this family needs, and none of them can be inferred from a sibling:
-
-- **The first emitted codec frame is silent** (peak 5.72e-05, about -85 dBFS) and it is
-  structural, not a truncation artifact: the same 1920 samples sliced out of a 12-frame
-  generation peak at 5.01e-05 while the rest of the clip peaks at 0.289. A TTFA clock stopped at
-  the first chunk therefore times the arrival of silence, and the emit contract owes a caller
-  either the silence with its duration declared or the first audible frame, never one labelled as
-  the other. Re-measured independently on 2026-09-11 on a second host: frame 0 peak 4.816e-05
-  against a rest-of-clip peak of 0.2451.
-- **The vendor reference emits `max_new_tokens - 1` codec frames** (`min_new_tokens` is 2 and
-  returns one frame), so a harness or a port that passes a frame count straight through is one
-  frame short of what it reports.
-- **The frame count also depends on WHY the talker stopped, and the two vendor entry points
-  disagree when it stops on EOS.** Measured 2026-09-11 on the pinned artifact at
-  `0c0e3051f131929182e2c023b9537f8b1c68adfe`, on a fixture that terminates on `codec_eos` rather
-  than on the frame cap: the outer entry point returned **17 frames of audio** while the inner
-  `model.generate` returned **16 code rows** for the same prompt and seed, so the codec decode of
-  the returned codes is one frame shorter than the end-to-end audio and the two cannot be compared
-  sample for sample. A fixture that hits the cap cannot show this at all, which is why the parity
-  set needs at least one EOS-terminated prompt. The outer entry point does not post-process: its
-  returned audio is **bit-identical** to a re-decode of its own captured codes, so the whole
-  difference is in the codes. An emit contract that does not say which count a client is promised
-  is ambiguous on every request that ends on EOS.
-
-All three are measured. The first two have red arms in darklanes
-`ops/serving/tts_ttfa_slo.py`; the EOS entry-point divergence is not yet armed and needs the
-EOS-terminated stage-parity fixture. The receipts are private
-(`research/tts-qual-20260911/`, `research/tts-pack-20260911/` at darklanes
-`aea8ba8e6d441b02edcdae00be2361301c4aaf8a`).
+Parity bounds are measured, not typed. Greedy decoding on the codec head is chaotic under any change
+of arithmetic (bf16 against float32 on one pin, fixture and seed flips 37 of 39 talker argmaxes), so
+argmax and code identity are reachable only by a path bit-identical to the vendor kernels; any other
+native path is compared distributionally or on quality and reported that way. The codec decoder is
+the one stage with a real tolerance: the vendor's own bf16-vs-F32 floor, max abs sample delta
+0.00738058 at 36.5 dB SNR, is the bound for a native codec decoder. A stage-coherent oracle captures
+every stage from one generation and checks that the decode of its own codes is bit-identical to the
+audio it returned. A non-autoregressive model such as `Kokoro-82M` (StyleTTS 2 + ISTFTNet, one
+forward pass per utterance) has no decode loop, no session state and no cache across chunks, so
+none of the decode-loop levers reach it; it may be served, but no speed claim is made on it. The measurements and their conditions
+are in the program record (§2.4, §2.4.2); their raw receipts are not in this repository.
 
 ### 2.4.1 The streaming emit contract
 
-FIXED HERE BEFORE THE IMPLEMENTATION, on 2026-09-11, so a battery can be written against it in
-parallel with the code rather than after it. Every constant below is read off the pinned artifact
-or measured on it; none is inherited from a sibling model, which is §4 step 2's frontend discipline
-applied to the output side.
+Fixed on 2026-09-11, before the implementation, so a battery can be written against it. Every
+constant is read off the pinned artifact or measured on it; the pack's `EmitContract` holds them.
 
-**Frame geometry.** One emitted chunk is exactly **1920 samples at 24000 Hz = 80.00 ms**, the
-codec's `decode_upsample_rate`. A partial frame is never emitted: the codec cannot decode one, and
-a chunk that is not a whole number of frames is a contract violation rather than a small chunk.
-The frame rate is **12.5 Hz**, not the 12 Hz in the model's name.
-
-**Audibility is declared on the wire, not inferred by the client.** Frame 0 is silent and
-structural, so the emit stream marks every frame with `audible` and with the `peak` that produced
-the marking, plus the threshold the server used. A client's time-to-first-audio clock stops at the
-first frame with `audible: true`, and the silent frames are still delivered with their duration
-declared. The field is checkable rather than trusted, because `peak` and the threshold are on the
-wire too, so a client can recompute `audible` from the PCM and refuse a server that disagrees with
-itself. An endpoint that emits silence and calls it audio produces a number about 80 ms better
-than the product, which is the first bullet above.
-
-**Two clocks, always reported side by side.** Time to first CHUNK and time to first AUDIBLE frame
-are different numbers, and the difference is the silent lead-in, measured at 76.8 ms at batch 1
-and 61.2 ms at 64 streams on the reference runtime. A response that reports one without the other
-lets a reader pick the flattering one, so the terminal event carries both.
-
-**Frame count is promised in EMITTED frames, never in `max_new_tokens`.** The vendor off-by-one
-and the EOS divergence above are internal to the engine. A client asks for N frames and receives N
-chunks of 1920 samples, or receives a terminal event saying how many it got and why it stopped
-(`eos`, `frame_limit`, `cancelled`). Which of the two vendor counts is authoritative is a pack
-decision recorded in the pack, not something left to the caller.
-
-**Admission reuses the existing typed shed taxonomy; it does not grow a second one.** The four
-codes in `memra-lanes::audio_stream::ShedCode` cover this surface unchanged, each keeping its
-meaning rather than being reinterpreted:
-
-| code | status | what it means on the TTS surface |
-| --- | --- | --- |
-| `engine_unbound` | 503 | no TTS pack resident. Fails CLOSED, exactly as the transcription surface does today |
-| `sessions_exceeded` | 503 | the resident-session cap is full |
-| `queue_overflow` | 429 | this stream's bounded frame backlog is full, i.e. the engine is not keeping up with real time for this lane. On ASR the queue holds inbound audio; on TTS it holds outbound frames the client has not drained. Same code, same meaning: THIS LANE FELL BEHIND |
-| `unknown_session` | 404 | a cancel or close on an id that is not open |
-
-Every refusal carries the code, the limit it hit and the value observed, and the retryable arms
-carry `retry-after` and `x-should-retry`. A capacity limit that is reached is product behaviour;
-one that silently eats a stream is the defect this taxonomy exists to prevent.
-
-**Request validation is NOT shedding and does not use these codes.** An unknown voice, an
-unsupported language id, an unsupported response format or an input over the length limit is a 400
-with its own typed reason, because it is a malformed request and not a capacity event. Mixing the
-two makes a shed counter lie: an operator reading `queue_overflow` would be reading a client's
-typos.
-
-**Cancel is a real seam, not a dropped connection.** A cancelled stream stops producing frames,
-releases its session slot, and emits a terminal event marked `cancelled` with the frame count it
-reached. A client that disconnects without cancelling must produce the same release, because a slot
-leaked per abandoned connection is a capacity limit reached by accident.
-
-**Rollback seam.** The decode shape this family serves is the DECLARED one from §5 (G7): for this
-artifact the vendor recommendation is SAMPLED on both the talker and the nested code predictor, and
-greedy stays the instrument for byte-identity gates and is never the served shape. The declared
-shape is a registry entry, so rolling it back is a registry change and not a code change, and the
-response reports the shape it actually used so the contract is checkable from outside.
-
-**What is deliberately NOT in this contract.** No mp3 or opus encoding is promised: the frame
-geometry above is a PCM contract, and an encoded format changes the chunk quantum, which would make
-the 1920-sample rule unenforceable. No speed or pitch parameter is promised, because neither is a
-property of this artifact's decode path and inventing one would be a format compatibility
-shortcut. No claim about voice quality: this family is qualified on identity against a pinned
-reference and on latency, and quality is a different gate owned elsewhere.
-
-### 2.4.2 Parity bounds for this family are measured, and the first ones written down were unreachable
-
-§4 step 5 says a bound is measured against truth and never typed, and §5's G3 row records the
-precedent: an original 1e-2 F16-vs-F32 gate FAILED and the bound became the same-fixture
-HF-F16-vs-F32 floor, 0.2771682739. This family needs the same correction and it is bigger.
-
-**Greedy decoding on this model's codec head is chaotic under any change to its arithmetic.** Same
-pin, same fixture, same seed, greedy on both loops, ONE thing changed (the vendor's own dtype,
-bfloat16 against float32): **37 of 39 talker argmaxes flip, the first at step 2, and 582 of 624
-codec ids differ.** The cause is measured, not argued: the head's top-2 margin over those 39 steps
-is min **0.125**, p10 0.475, p50 2.000, with **10 of 39 steps below 1.0**, and at the first flip
-the logit delta was **2.588** against a margin of **1.25**. Once one code differs the two runs are
-generating different audio, so the per-step logit delta grows without bound after that (0.137,
-3.31, 2.588, 9.33, 11.2, 16.6, 26.8, 21.4) and the end-to-end waveform comparison goes to a
-NEGATIVE SNR. Two different valid utterances are uncorrelated.
-
-Three consequences, and they bind the pack rather than the write-up:
-
-1. **A generic compiler was never going to pass an argmax-identity gate here.** The 2026-09-11
-   reference-runtime probe found `torch.compile(mode="default")` diverging at step 2 with 584 of
-   624 ids differing, and read the cause as inductor's fused BF16 reduction order. The vendor's own
-   F32 arm reproduces the same divergence at the same step with the same magnitude and no compiler
-   in the path, so the instability is a property of the MODEL. That probe's conclusion stands and
-   its cause is now general.
-2. **S2 argmax-identity and S3 code bit-identity are reachable only by a path that is
-   bit-identical to the vendor's bf16 kernels.** There is no tolerance to be had, because the
-   margin distribution says any perturbation diverges. A native implementation that is not
-   bit-identical has to be compared distributionally or on quality, and must be reported that way
-   rather than as a passed identity gate.
-3. **The codec decoder is the one stage where a real numerical tolerance exists**, because it has
-   no autoregression: given pinned codes it is a deterministic conv stack. Measured on identical
-   pinned codes with only the codec's arithmetic varying, the vendor's own bf16-vs-F32 floor is
-   **max abs sample delta 0.00738058, mean 0.000524672, SNR 36.5 dB**, against a signal RMS of
-   0.05071. That is **7.4x the 1e-3 peak and 23.5 dB under the 60 dB SNR** that the qualifying
-   lane's pre-registration wrote down, so those two numbers are the vendor's own two arithmetics
-   failing them. The bound for a native codec decoder is the measured 0.00738058 / 36.5 dB,
-   re-derived exactly as G3's was, and the 1e-3 / 60 dB pair is retired for this family rather
-   than quietly not applied.
-
-The same arm establishes that the codec is a usable gate at all: decoding one pinned code list
-twice in one process is **bit-identical**, and re-decoding it in a fresh process on a different
-host under a different driver a day later is **bit-identical to the banked waveform**. So the
-codec is reproducible and its tolerance means something. The autoregressive half is not
-reproducible across arithmetic changes, and no tolerance on it means anything.
-
-**One consequence for how an oracle has to be captured.** If S1/S2 are hooked out of one vendor
-entry point and S3/S4 out of another, the stages are not from the same generation and no
-implementation can pass them jointly. On this artifact the two entry points emit different codes at
-the same seed (602 of 624 ids differing, first divergent frame 1), and the first banked oracle had
-exactly that shape, which is why its own S4 and S5 disagree at SNR -2.856 dB inside one file. **A
-stage-coherent oracle captures every stage from ONE generation, and its internal consistency check
-is that S4, the decode of that generation's own codes, is bit-identical to S5, the audio that
-generation returned.** That check is cheap and it is the one that catches an incoherent oracle, so
-it belongs in the gate set rather than in a lane's write-up.
-
-A NON-autoregressive TTS model (`Kokoro-82M`: StyleTTS 2 + ISTFTNet, one forward pass per
-utterance) is a different program in this class's clothing. It has no decode loop, no session
-state and no cache across chunks, so none of the levers above reach it. It may be served; it may
-never be the model a speed claim is made on.
-
-**Licence is a step-0 gate for this family specifically**, harder than for ASR: the authors of
-expressive TTS sell that exact capability, and several of the best checkpoints are
-non-commercial on purpose. Read the artifact's own licence file, and read it before the census.
-
-**Out of scope until something in scope is qualified:** speech translation, diarization,
-speaker ID, voice conversion, and audio understanding beyond transcription. Naming them is not
-a roadmap. (TTS was on this list until 2026-09-11 and is now §2.4.)
-
----
+- **Frame geometry.** One chunk is exactly 1920 samples at 24000 Hz (80.00 ms). A partial frame is
+  never emitted; a chunk that is not a whole number of frames is a contract violation.
+- **Audibility is declared on the wire.** Every frame carries `audible`, the `peak` behind it and
+  the server's threshold (`audible_peak` 1e-3, -60 dBFS), so a client can recompute `audible` from
+  the PCM. Silent frames are still delivered, with their duration declared.
+- **Two clocks.** The terminal event reports time to first chunk and time to first audible frame;
+  the difference, the silent lead-in, measured 76.8 ms at batch 1 and 61.2 ms at 64 streams on the
+  vendor reference runtime.
+- **Frame count is promised in emitted frames, never in `max_new_tokens`.** A client that asks for
+  N frames gets N chunks, or a terminal event with the count and the stop reason (`eos`,
+  `frame_limit`, `cancelled`). Which vendor count is authoritative is a pack decision.
+- **Admission reuses the ASR shed codes** (`memra_lanes::audio_stream::ShedCode`) with their
+  meanings: `engine_unbound` 503 (no TTS pack resident; fails closed), `sessions_exceeded` 503 (the
+  session cap is full), `queue_overflow` 429 (the stream's bounded backlog is full: the lane fell
+  behind real time; on TTS the queue holds outbound frames the client has not drained),
+  `unknown_session` 404. Every refusal carries the code, the limit and the observed value; the
+  retryable codes carry `retry-after` and `x-should-retry`.
+- **Request validation is not shedding.** An unknown voice, unsupported language or format, or an
+  over-length input is a 400 with its own typed reason, so a shed counter never counts client typos.
+- **Cancel is a real seam.** A cancelled stream stops, releases its slot and ends with a `cancelled`
+  terminal event carrying its frame count. A disconnect without cancel releases the same way.
+- **Rollback seam.** The served decode is the declared one (G7, §5): for this artifact the vendor
+  samples on both the talker and the code predictor (`SERVED_DECODE`: temperature 0.9 and top-k 50
+  on each loop, talker repetition penalty 1.05). Greedy is the instrument for byte-identity gates,
+  never the served shape. The shape is a registry entry, and the response reports the one it used.
+- **Not in the contract.** No mp3 or opus (an encoded format changes the chunk quantum), no speed or
+  pitch parameter, no voice-quality claim.
 
 ## 3. Support states for a speech model
 
-Same ladder as the text models. Loading and running are not support.
+The same three states as the text packs ([ARCHITECTURE.md](../ARCHITECTURE.md#10-support-states)).
+Loading and running are not support. What each state requires of a speech pack:
 
-**`NativeReference`**, the complete speech forward and decode execute in memra's unfused <!-- support: none; not NativeReference -->
-native executor, with persisted stage parity beneath them. Requires: the pack in the registry,
-the plan compiled through the shared `TensorContract`, the tokenizer bound in **both**
-directions inside the engine, speech plans accepted by the reference executor and by
-`model inspect`. Bring-up evidence only. **Not production permission.**
+- `NativeReference`: the complete speech forward and decode execute in memra's unfused native <!-- support: none; not NativeReference -->
+  executor with persisted stage parity: the pack in the registry, the plan compiled through the
+  shared `TensorContract`, the tokenizer bound in both directions inside the engine, and speech
+  plans accepted by the reference executor and by `model inspect`.
+- `NativeQualified`: the first state plus checkpoint parity on the full pinned clip set and the <!-- support: none; not NativeQualified -->
+  battery of §5, bound to one artifact, plan, numeric stream, binary and bundle hash.
+- `NativeTuned`: the second state plus current binary-bound rewrite receipts for each admitted <!-- support: none; not NativeTuned -->
+  device and execution surface, with phase profiles and end-to-end measurements.
 
-**`NativeQualified`**, `NativeReference` plus checkpoint parity on the full pinned clip set, <!-- support: none; not NativeQualified NativeReference -->
-plus the serving battery of §5 bound to one artifact, one plan, one numeric stream, one binary
-and one bundle hash. Minimum state for production admission.
-
-**`NativeTuned`**, `NativeQualified` plus current binary-bound rewrite receipts for each <!-- support: none; not NativeQualified NativeTuned -->
-admitted device and execution surface, with phase profiles and end-to-end measurements.
-
-Both current checkpoints are below `NativeReference`: the state is unset for every speech pack, <!-- support: none; not NativeReference -->
-and that is why no speech model may be served.
-
----
+Every speech pack is below the first state. What blocks it: the Whisper tokenizer's encode
+direction (the detokenizer agrees with the scorer 36/36; no byte-level BPE encode is ported), the
+RNNT's move onto the shared `TensorContract` (it needs a torch-zip `CheckpointDialect`), and speech
+plans in the reference executor and `model inspect`.
 
 ## 4. Onboarding a new speech model
 
-Seven steps, in order. This is a path, not a per-model adventure: each step has a fixed
-artifact and a fixed refusal. Skipping one is how a model gets served fluently and wrongly.
+Seven steps, in order, on top of the general procedure in [ONBOARDING.md](ONBOARDING.md). Each has
+a fixed artifact and a fixed refusal.
 
-**0. Pin and licence.** Exact repository revision (never a mutable family tag), full payload
-SHA256 verified locally against the publisher's declaration, archive layout recorded, licence
-read from the artifact's own card. A finetuned successor gets its own manifest and census; the
-base archive hash is not evidence for it.
-
-**1. Tensor census.** Count, element total, dtypes, shapes, storage offsets and strides against
-the real archive. Reject missing, extra, duplicate and silently-aliased storage, LSTM gate
-weights share flat storage and aliasing must not become substituted data. Metadata parsing only:
-a restricted unpickler for torch archives, no model code executed, no tensor storage
-materialized.
-
-**2. Frontend contract.** Sample rate, FFT size, hop, window shape and periodicity, mel bank
-flavour (Slaney vs HTK), filter count, log floor and clamp, normalization, dither, and padding
-semantics. **Never inherited from a sibling model**: Whisper is FFT400/hop160/128-mel with a
-`(x+4)/4` scaling and a 30 s right pad; the Nemotron RNNT is FFT512/hop160/window400 with
-`normalize=NA` and its own stored window and filter buffers. Two speech models in the same
-engine already disagree on this.
-
-**3. Tokenizer, vocabulary and decode policy.** Special ids pinned as plan constants **and**
-gated against the checkpoint's own generation config. Both directions bound in the engine:
-encode and detokenize. Suppression lists, timestamp rules, blank index, prompt slots and
-language/task ids. No chat template is appropriate for an ASR model; an audio-LM's text decoder
-still has one and it must come from the checkpoint, never from a fallback.
-
-**4. Streaming state contract**, if the model streams. Cache shapes and total element count per
-session, left and right context accounting, and which `att_context_size`-style arms are
-*expressible* versus which are *admitted*. Only the admitted arm is qualified. Right-context
-samples are never exposed before they arrive.
-
-**5. Stage parity against a pinned oracle.** Frontend, then encoder, then head or decoder, then
-the decode policy, each with its own predeclared numeric bound and a first-divergence log.
-Bounds are measured against truth, not typed: the F16 encoder bound is the same-fixture
-HF-F16-vs-F32 floor, not a round number. External implementations supply pinned offline fixture
-data only; no external inference library enters the runtime or sits behind a served endpoint.
-
-**6. End-to-end and serve.** Checkpoint parity on the full pinned clip set (exact token ids and
-output UTF-8 bytes for the matched deterministic program), then the serving battery of §5. A
-mismatch is a diagnostic gate; it is never rounded into a pass by WER similarity.
-
----
+0. **Pin and licence.** Exact revision, full payload SHA256 checked against the publisher, archive
+   layout recorded, licence read from the artifact's own card. A finetuned successor gets its own
+   manifest and census.
+1. **Tensor census.** Count, elements, dtypes, shapes, storage offsets and strides against the real
+   archive; reject missing, extra, duplicate and silently aliased storage (LSTM gate weights share
+   flat storage). Metadata only: a restricted unpickler, no model code, no tensor storage read.
+2. **Frontend contract.** Sample rate, FFT, hop, window, mel flavour (Slaney or HTK), filter count,
+   log floor and clamp, normalization, dither, padding. Never inherited: Whisper is
+   FFT400/hop160/128-mel with `(x+4)/4` scaling and a 30 s right pad; the Nemotron RNNT is
+   FFT512/hop160/window400 with `normalize=NA` and its own stored window and filter buffers.
+3. **Tokenizer and decode policy.** Special ids pinned as plan constants and gated against the
+   checkpoint's generation config; encode and detokenize both in the engine; suppression, timestamp
+   rules, blank index, prompt slots, language and task ids. No chat template for ASR; an audio-LM's
+   decoder takes its template from the checkpoint.
+4. **Streaming state contract**, if the model streams: cache shapes and elements per session,
+   context accounting, and which `att_context_size` arms are expressible against admitted. Only the
+   admitted arm is qualified.
+5. **Stage parity against a pinned oracle.** Frontend, encoder, head or decoder, decode policy,
+   each with a predeclared bound measured against truth (the F16 encoder bound is the same-fixture
+   HF-F16-vs-F32 floor) and a first-divergence log. External code supplies offline fixtures only.
+6. **End to end, then serve.** Exact token ids and UTF-8 bytes on the full pinned clip set for the
+   matched deterministic program, then the battery of §5. A mismatch is never rounded into a pass
+   by WER similarity.
 
 ## 5. The gate set
 
-A gate that has never failed proves nothing. Every row below names its caller, its trigger, the
-input set that makes it non-vacuous, and a red arm that **has actually fired**. Rows whose red
-arm has not fired yet are marked, and they are not counted as protection.
+A gate that has never failed proves nothing. A row whose red arm has not fired says so and does
+not count as protection.
 
-| Gate | Caller / trigger | Non-vacuous input set | Red arm that fired |
+| Gate | Caller | Non-vacuous input | Red arm |
 | --- | --- | --- | --- |
-| **G1 census** | `model inspect` on the speech pack; hosted CI on the checked-in fixtures | The real archive: 1,259 Whisper tensors / 657 RNNT tensors | Wrong, missing, extra and duplicate tensors are all rejected paths in the skeleton; the RNNT aliased-storage case is explicitly tested |
-| **G2 frontend** | speech stage runner; hosted CI on the checked-in binary fixture | Synthetic 2 s waveform **and** 364 real 30 s windows across 71 clips | Yes. Successive frontend diagnostics are recorded in `research/asr-modality-20260909/`; the 1e-3 bound is measured against HF FP32, not asserted |
-| **G3 encoder numerics** | stage runner, F32 and strict F16 arms | Same fixtures, both arithmetic classes | **Yes, this one failed and was re-derived.** The original 1e-2 F16-vs-F32 gate FAILED; the bound is now the same-fixture HF F16-vs-F32 floor 0.2771682739, and every failed diagnostic stays recorded |
-| **G4 decoder / head / greedy** | stage runner; session replay | 12 decoder steps argmax; RNNT 9/9 tokens, 26/26 chunk partials | Yes. 46 divergent windows in the 36-clip sweep, each traced to a cause, 31 of them measured CT2 fp16 precision effects |
-| **G5 tokenizer** | plan compile; generation-config cross-check | Checkpoint generation config, added tokens, suppression list | Partly. Detokenize agrees with the scorer's tokenizer 36/36. **Encode direction is missing, so this gate is currently half-vacuous and is named as such** |
-| **G6 checkpoint parity** | full clip sweep vs pinned oracle | 71 clips, two domains, per-domain WER delta bound 0.05 pt | **Yes, RED today.** 0.0739 `d1` and 0.2237 `whatsapp` against the 0.05 pt limit on the 36-clip partial sweep |
-| **G7 serve decode contract** | registry half: the acceptance gate a candidate passes before it gets traffic, on any entry declaring `task = "transcription"`. Live half: post-deploy probe against the served binary | Both registry shapes we would serve (streaming RNNT, batch Whisper), every shipped registry snapshot, and the pinned RNNT beam decoder itself. Live half: the exact default decode shape, submitted with no decoding parameters, twice | **Registry half: yes, and its red arms are the configs a person actually writes**: an entry that declares nothing (and so inherits faster-whisper's `[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]` ladder), a text model's vendor-sampling stanza copied across, and beam on a streaming partial path. **Registry half, engine side: yes, and it now refuses at LOAD.** `validate_asr_decode_contract` (memra-server) rejects a silent transcription entry, a text model's sampling stanza copied across, beam on a partial-emitting path, a ladder that starts hot or is non-monotonic, a determinism flag that contradicts its ladder, a beam width that does not match its strategy, and decode keys on a non-ASR row — 10 tests, each named after the stanza a person writes, with the two shapes we would actually serve asserted PASSING so the gate is not a wall. **Live half: ARMABLE but NOT ARMED**: the endpoint exists (§1) and reports the resolved decode on `x-memra-asr-decode` even on its refusal, but two byte-identical no-parameter transcriptions cannot be compared until an engine is bound. It reports `not-armed`. See §5.1 |
-| **G8 streams@SLO battery** | darklanes `ops/serving/asr_streams_slo.py` against a served endpoint on a lane-owned box; the scheduler half is `cargo test -p memra-lanes --lib audio_stream` in hosted CI | Readiness, model id, streaming partial/final/revision shape, concurrency ladder c1 → c4 → c16 → c64, admission limit, cancel, reconnect, flush, rollback. Minimum duration per rung, derived not typed: `queue_frames / (1000/frame_ms - served_rate_hz/streams)`, i.e. the PER-LANE bleed (the aggregate form gives 2.56 s for the measured c4 geometry whose real answer is 10.24 s, and would bless exactly the rung length that misses the defect) | **Yes, and it is the best red arm we own — and half of it now runs with no GPU.** On the card: one A100 holding a resident RNNT student plus a resident large-v3 **shed 54 of 71 streams on incoming-queue overflow at c4** while c1 ran fine. In CI: `MEMRA_AUDIO_DRIVE=per_lane_worker` drives the SAME `AudioScheduler` the endpoint drives, at the measured step cost (31.522 ms at batch 1, 35.890 ms at batch 32), and refuses 4 of 4 streams at c4 with every refusal a typed `queue_overflow` pinned at the cap, while `fused` holds 64 of 64 at max queue depth ≤ 3. A THIRD red arm came out of writing it: a 10 s probe of the broken shape refuses NOTHING while its backlog is already 48 of 64, so a short ladder rung passes the defect — which is why the duration is derived above. **The GPU half of G8 is still unrun: the CI half bounds scheduling logic and makes no claim about milliseconds** |
-| **G10 TTFA battery** (§2.4 family only) | **Clock and chunk-contract half: darklanes `ops/serving/tts_ttfa_slo.py --self-test`, run by darklanes `.github/workflows/gates.yml` on every push.** Served half: serving battery on a lane-owned box, once a TTS pack exists | Armed half: the TTFA clock (`plan_request`), the chunk classifier (`classify_chunk`) and the ladder decision rules (`verdict`), against the measured chunk shapes of `Qwen3-TTS-12Hz-1.7B-CustomVoice` @ `0c0e3051` and against two malformed ladders. Unarmed half: readiness, model id, the streaming partial-chunk event contract, the admission limit and its typed refusal, cancel, rollback | **HALF ARMED, and the half that is armed found two real defects before any pack exists.** Red arms, all eight refused and four of them mutation-tested until they stopped refusing: a vacuous chunk, the **measured** silent lead-in at its own amplitude (5.72e-05), the sister lane's 16 kHz void-run rate, the vendor off-by-one (a frame count passed straight through as `max_new_tokens` is one frame short), a partial frame, a ladder of silent rows, a ladder carrying means instead of p95, and the served half refusing while no pack is bound. **The served half is still NOT ARMED and is not counted as protection**, same treatment as G5's missing encode direction and G7's live half |
-| **G9 non-vacuity** | every numeric gate | n/a | Each numeric gate carries a first-divergence log and refuses an empty input set; a sweep that scores zero clips is a failure, not a pass |
+| G1 census | pack tests on checked-in header fixtures (`cargo test -p memra-gguf`) | 1,259 Whisper and 657 RNNT tensors from the real archives | wrong, missing, extra and duplicate tensors rejected; RNNT aliased storage tested |
+| G2 frontend | stage runner; hosted CI on the checked-in fixture | synthetic 2 s waveform and 364 real 30 s windows across 71 clips | yes; the 1e-3 bound is measured against HF FP32 |
+| G3 encoder numerics | stage runner, F32 and strict F16 | the same fixtures in both classes | yes: the 1e-2 F16-vs-F32 gate failed; the bound is the HF F16-vs-F32 floor 0.2771682739 |
+| G4 decoder, head, greedy | stage runner; session replay | 12 decoder steps; RNNT 9/9 tokens, 26/26 partials | yes: 46 divergent windows in the 36-clip sweep, each traced |
+| G5 tokenizer | plan compile; generation-config check | generation config, added tokens, suppression list | partly: detokenize 36/36; encode missing, so half-vacuous |
+| G6 checkpoint parity | clip sweep against the pinned oracle | 71 clips, two domains, WER delta bound 0.05 pt | yes, red: `d1` 0.0739, `whatsapp` 0.2237 (36 clips) |
+| G7 served decode | registry half: `validate_asr_decode_contract` at metadata load (§5.1); live half: an out-of-repo post-deploy probe | the streaming RNNT and batch Whisper registry shapes and the pinned RNNT beam decoder; live: the default decode sent twice with no parameters | registry half yes; live half armable, not armed |
+| G8 streams@SLO | scheduler half: `cargo test -p memra-lanes --lib audio_stream` in hosted CI; served half: an out-of-repo battery | readiness, model id, partial/final/revision shape, ladder c1, c4, c16, c64, admission limit, cancel, reconnect, flush, rollback; each rung lasts at least `queue_frames / (1000/frame_ms - served_rate_hz/streams)`, the per-lane bleed (the aggregate form gives 2.56 s for the measured c4 geometry, whose real answer is 10.24 s, and would bless exactly the rung length that misses the defect) | yes. Outside this repository, one A100 with a resident RNNT student and large-v3 shed 54 of 71 streams on queue overflow at c4 while c1 ran fine. In CI, `MEMRA_AUDIO_DRIVE=per_lane_worker` at the measured step cost (31.522 ms batch 1, 35.890 ms batch 32) refuses 4 of 4 at c4 with typed `queue_overflow`, `fused` holds 64 of 64 at queue depth 3 or less, and a 10 s probe of the broken shape refuses nothing at backlog 48 of 64 (why rung length is derived). GPU half unrun |
+| G10 TTFA (§2.4 only) | clock and chunk half: an out-of-repo self-test; served half: once a TTS pack exists | the pinned artifact's measured chunk shapes and two malformed ladders | half armed: eight red arms refuse (vacuous chunk, measured silent lead-in, a 16 kHz void-run rate, vendor off-by-one, partial frame, silent-row ladder, means instead of p95, served half unbound). Served half not armed |
+| G9 non-vacuity | every numeric gate | n/a | a first-divergence log; an empty input set or a zero-clip sweep fails |
 
-Two rules that bind all of them:
-
-- **Timing starts from capture of the last owned speech sample**, not from decoder submission.
-  Endpoint, frontend, encoder, decoder, queue and delivery time are separated, and cold versus
-  warm and each concurrency level are recorded separately.
-- **Admission must shed with a typed error, not drop.** The c4 collapse was a bounded-queue
-  overflow that lost streams. A capacity limit that is reached is a product behaviour; a
-  capacity limit that silently eats streams is a defect.
+Two rules bind every gate. Timing starts from capture of the last owned speech sample, not decoder
+submission, with endpoint, frontend, encoder, decoder, queue and delivery time, cold and warm, and
+each concurrency level recorded separately. Admission sheds with a typed error, never a drop: a
+limit that is reached is defined behaviour, one that silently eats streams is a defect.
 
 ### 5.1 G7, the served decode contract
 
-G7 was recorded NOT BUILT above because a decode default is a product decision. It has
-been made and recorded; the decision and its evidence are private, the contract it puts on
-this engine is not.
+**What G7 asserts.** A served ASR endpoint decodes deterministically, by written contract, in the
+way its WER was measured, and it says which decode that is. This is the text models' rule (serve
+the vendor recommendation, verify the shape a client sends) applied to speech, where every family
+in §2 recommends a deterministic decode:
 
-**What G7 asserts.** A served ASR endpoint decodes **deterministically, by written
-contract**, in a way that matches the decode its WER was measured on, and it **says which
-decode that is** rather than being silent about it.
-
-That is not a departure from the serving discipline the text models are held to. The rule
-there is *serve the vendor recommendation and verify the shape a client actually sends*;
-the reason it reads as "serve sampled" is that for text generation the vendor
-recommendation happens to be sampled. For speech it happens to be deterministic, in every
-family in §2:
-
-- `openai/whisper` v20250625: `DecodingOptions.temperature: float = 0.0`. Called as a
-  library it is greedy (`beam_size: Optional[int] = None`); the CLI ships
-  `--beam_size` default `5`. Both deterministic.
+- `openai/whisper` v20250625: `DecodingOptions.temperature: float = 0.0`. Called as a library it is
+  greedy (`beam_size: Optional[int] = None`); the CLI ships `--beam_size` default `5`. Both
+  deterministic.
 - `faster-whisper` 1.2.1 / CTranslate2 4.8.2: `beam_size: int = 5` at temperature 0, and
-  `temperature > 0` is a **different code path** (`sampling_topk: 0`,
-  `sampling_temperature: t`), so temperature 0 means no sampling arguments exist at all.
+  `temperature > 0` is a different code path (`sampling_topk: 0`, `sampling_temperature: t`), so
+  temperature 0 means no sampling arguments exist at all.
 - NeMo: `RNNTDecodingConfig.strategy: str = "greedy_batch"`, and
   `nemotron-3.5-asr-streaming-0.6b`'s own `model_config.yaml` ships
   `decoding.strategy: greedy_batch`. The only `temperature` in the RNNT decode surface is
   `softmax_temperature`, which sharpens beam scoring; it draws no sample.
 
-**The temperature-fallback ladder is quality-failure recovery, not a decode default.** Its
-first rung is always 0.0, and a hotter rung is reached only when the previous one failed a
-quality test (`compression_ratio > 2.4`, `avg_logprob < -1.0`); a high no-speech
-probability *cancels* fallback rather than triggering it. An endpoint may serve the ladder,
-but only declared exactly, and only if the response reports the temperature it used.
+**The temperature-fallback ladder is quality-failure recovery, not a decode default.** Its first
+rung is 0.0; a hotter rung is reached only after a failed quality test (`compression_ratio > 2.4`,
+`avg_logprob < -1.0`), and a high no-speech probability cancels fallback. An endpoint may serve a
+ladder only declared exactly, with the temperature it used reported.
 
-**Beam is not free for a streaming partial path, and it fails two different ways.** On
+**Beam is not free on a streaming partial path, and it fails two different ways.** On
 `nemo_toolkit 3.1.0+ea1ebf55b` (`rnnt_beam_decoding.py` sha256
 `6e5a8b190b338717865db2f23d87e28ba5be9a0b1f1559dab1f9c885b4c27e53`), `tsd` (L744), `alsd`
-(L907), `maes` (L1139) and the batched beam wrapper (L1704) each raise
-`NotImplementedError` on a partial hypothesis, and `nsc` is not wired. But
-`default_beam_search` (L591) **accepts** partials and collapses the beam to do it: L624-628
-rebuild `kept_hyps` as a one-element list seeded from `partial_hypotheses.y_sequence[-1]`
-and `dec_state`, score reset to `0.0`, no alternative carried. Served width across a chunk
-boundary is 1 whatever `beam_size` says, so the offline beam WER does not transfer. A
-bring-up that knows only the first failure and reaches for `default` finds that it runs.
+(L907), `maes` (L1139) and the batched beam wrapper (L1704) each raise `NotImplementedError` on a
+partial hypothesis, and `nsc` is not wired. But `default_beam_search` (L591) accepts partials and
+collapses the beam to do it: L624-628 rebuild `kept_hyps` as a one-element list seeded from
+`partial_hypotheses.y_sequence[-1]` and `dec_state`, score reset to `0.0`, no alternative carried.
+Served width across a chunk boundary is 1 whatever `beam_size` says, so the offline beam WER does
+not transfer. A bring-up that knows only the first failure and reaches for `default` finds that it
+runs.
 
-**The contract on this engine.** A speech model's registry entry must declare, explicitly:
-whether the decode is deterministic; the strategy by name, with a beam width if it is a
-beam family; the fallback ladder exactly, or `[]` to disable it, with its trigger
-thresholds if non-empty; and whether the entry serves streaming partials. No stochastic
-sampling key may resolve into a transcription request. Silence is a violation, not a
-default. And a transcription response must report the temperature that produced it:
-without that field the contract cannot be checked from the outside at all, which is the
-same reason HTTP 200 is not a receipt for the text models.
+**The contract on this engine.** A transcription entry in the model metadata file
+(`MEMRA_MODEL_METADATA`, `surface = "transcription"`) declares `decode_deterministic`,
+`decode_strategy` (`greedy`, `greedy_batch`, `beam` or `default_beam_search`), `decode_beam_size`
+exactly for a beam family, `decode_temperature_ladder` exactly (or `[]`), and `serves_partials`. No
+stochastic sampling key may resolve into a transcription request. Silence is a violation, not a
+default. A transcription response must report the temperature that produced it: without that field
+the contract cannot be checked from the outside at all, which is the same reason HTTP 200 is not a
+receipt for the text models.
 
-**Where the gate lives.** The rule set and the red/green suite are in the private
-repository, wired into the acceptance gate that a candidate passes before it gets traffic
-and into hosted CI. The engine's obligations are the two above: carry the registry keys
-through to the resolved decode, and report the temperature actually used per segment.
+**What the engine refuses on its own.** `validate_asr_decode_contract` runs inside
+`validate_openrouter_metadata`, so every metadata load, boot and hot reload refuses: an entry that
+declares nothing (the message quotes the `[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]` ladder silence inherits
+from a faster-whisper-class call); any `default_*` sampling key or `non_thinking_sampling` table on
+a transcription row; an unserved strategy (`maes`, `tsd`, `alsd`, `nsc`); a beam family with no
+width or width 0, or a width without a beam family; beam on a `serves_partials = true` row; a rung
+outside [0, 1], a ladder that starts hot or does not strictly increase; `decode_deterministic =
+true` under a hotter rung or `false` with none; and any decode key off the transcription surface.
+At request time `top_p` is a 400, and `temperature` must be 0 or a rung of the declared ladder.
 
-**Where G7 does not protect yet.** The live half (two identical no-parameter transcriptions of
-one clip must return byte-identical text) is written and fixture-tested and **still cannot
-fire**. The reason changed on 2026-09-11: the endpoint now exists and resolves the declared
-decode — it reports it on an `x-memra-asr-decode` response header even on its own refusal, so an
-operator can see WHICH decode a registry row resolved to — but with no engine bound there are no
-two transcripts to compare. It reports `not-armed` rather than passing. Same treatment as G5's
-missing encode direction, for the same reason.
+**Where G7 does not protect yet.** The live half (two identical no-parameter transcriptions of one
+clip return byte-identical text) cannot fire. The endpoint reports the resolved decode on the
+`x-memra-asr-decode` header even on its `engine_unbound` refusal
+(`<strategy>;temperature=<rung>;partials=<bool>;language=<code or auto>`), but with no engine bound
+there are no two transcripts to compare, so the probe reports `not-armed` rather than passing.
 
-**What the engine now refuses on its own.** `validate_asr_decode_contract` runs inside
-`validate_openrouter_metadata`, i.e. at every metadata load, boot and hot reload. A gate can only
-check the file it was pointed at; the binary refuses a silent or self-contradictory transcription
-entry whatever produced the file. The refusals, each a stanza a person writes: an entry that
-declares nothing (and the refusal quotes the `[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]` ladder silence
-inherits), any `default_*` sampling key or `non_thinking_sampling` table on a transcription row,
-a strategy that is not served (`maes`/`tsd`/`alsd`/`nsc` among them — declaring one would look
-configured and fail at runtime), a beam family with no width or a width with no beam family, beam
-on a `serves_partials = true` row (with the `kept_hyps` collapse cited in the refusal), a ladder
-that starts hot or does not strictly increase, `decode_deterministic = true` under a hotter rung,
-`decode_deterministic = false` with no hotter rung, and any decode key on a non-ASR surface.
+### 5.2 ASR runtime contract
 
----
+Condensed from the lane plan ([PLAN.md](../research/asr-modality-20260909/PLAN.md#runtime-contract)).
 
-## 6. Performance thesis
+- **Input.** Mono 16 kHz PCM in monotonic, sample-indexed 80 ms frames (`FRAME_MS`). Frame cadence
+  is not an 80 ms word-latency claim.
+- **RNNT.** The admitted arm is `att_context_size [56,0]`, not the archive's first default
+  `[56,3]`; the schema expresses `[56,3]`, `[56,6]` and `[56,13]` without admitting them.
+  Attention and convolution state persist across chunks, valid lengths are tracked, right-context
+  samples are never exposed early. LSTM state persists across emitted symbols, a blank advances
+  acoustic time but not predictor state, and symbols per frame are bounded.
+- **Whisper.** A completed bounded waveform at an utterance boundary, capped at 12 s of owned audio.
+  The encoder is recomputed per waveform; decoder self-attention and cross-attention K/V are cached
+  only within that waveform. The first arm is Hebrew transcription with no previous-text
+  conditioning, no RNNT text injection and no hindsight rewrite from future audio.
+- **Endpointing.** A native causal endpointer is reserved: 20 ms VAD frames, 300 ms trailing
+  non-speech, 200 ms pre-roll and trailing context, 400 ms left context at forced boundaries, in
+  memra-owned DSP.
+- **Two tiers.** The next utterance's RNNT runs while the previous Whisper finalizes. Requests carry
+  stream, segment, revision and the owned half-open sample interval; an immutable final replaces
+  only its own provisional segment. Reset, cancel, reconnect and errors never leak or duplicate state.
+- **Decode.** Deterministic beam 1 (Whisper) and greedy (RNNT); omitted parameters are qualified
+  against it, including bounded no-speech behaviour. Text models keep their sampled defaults.
+  Timestamp mode is a separate pinned oracle arm.
+- **Acceptance targets** (the plan's battery): first partial p95 at most 500 ms, no update stall over
+  1 s in continuing speech, finalization p50 at most 800 ms and p95 under 1500 ms per domain, failed
+  and missing finals counted.
 
-### 6.1 The headline metric
+## 6. Metrics
 
-**For ASR:** concurrent real-time streams per GPU at a fixed end-of-speech-to-final p95, on an
-accuracy-tier model (>= ~1B parameters). Short form: **streams@SLO**. The derived number a
-buyer actually reads is `box $/hr / streams@SLO` = cost per concurrent stream-hour.
+- **streams@SLO (ASR):** concurrent real-time streams per GPU at a fixed end-of-speech-to-final
+  p95, on an accuracy-tier model (about 1B parameters or more), on a named card at a declared chunk
+  profile. A streams figure without its chunk is not comparable.
+- **TTFA (TTS):** p95 perceived first-audible latency at a stated concurrency on a named card:
+  synthesis start to the first non-empty chunk, plus the leading silence inside the stream.
+- ASR and TTS figures are different clocks: never blended into one speech claim, nor with batch RTFx.
+- The server's SLO is `MEMRA_AUDIO_FINAL_SLO_MS` (default 800, p95 end of speech to final),
+  reported by `GET /v1/audio/sessions` and enforced by the G8 battery, not the engine. The plan's
+  acceptance battery set p50 800 ms and p95 1500 ms (§5.2).
 
-**For TTS (§2.4):** the same shape with a different clock, **p95 TTFA at a stated concurrency on
-a named card**. TTFA is *perceived first-audible latency*: wall-clock from synthesis start to the
-first non-empty audio chunk, **plus the leading silence inside the stream**. The second term is
-not a detail — a model that answers instantly with 200 ms of silence has not started speaking,
-and only a definition that charges for that silence can tell the two apart.
+No speech metric has a memra measurement on a GPU.
 
-The ASR and TTS numbers are different metrics on different clocks and **may never be blended into
-one "fastest speech" claim**. Neither may be blended with batch RTFx.
+## 7. Program plan, targets and kill criteria
 
-Why this and not the alternatives:
+The [program record](../research/speech-program-20260911/README.md) keeps the old section numbers:
+§6.2 the incumbent board, §6.3 the target pair (p95 TTFS under 238 ms on the Pipecat harness, held
+at 240 or more streams on one card at a declared chunk), §7 the ranked plan, §8 the kill criteria.
+Step 1 (2026-09-10) found the c4 collapse was the drive shape, not the card, so K1 does not fire.
+Step 3 part one (2026-09-11, no GPU) landed the `/v1/audio/*` surface, typed shedding, the decode
+contract at metadata load and the scheduler arms in CI; the bound engine and the G8 battery on a
+card are not landed. Step 2 (GPU RNNT kernels) ranks behind step 3, so K2 has no verdict. Step 4,
+the audio-LM accuracy tier, waits on K4: quality decides first.
 
-- **Not cost per audio-hour for batch.** That fight is over and nobody won it, because it
-  stopped mattering. The Open ASR Leaderboard measures Whisper large-v3 at **RTFx 146** and
-  Parakeet TDT 0.6B v3 at **RTFx 3330** on one A100-SXM4-80GB at batch 64
-  ([arXiv:2510.06961](https://arxiv.org/html/2510.06961v4)). At RTFx 146 on a rented A100 a
-  full audio-hour of compute is under a cent. Making that 2x cheaper moves nothing.
-- **Not raw RTF for a single stream.** A single stream needs RTF < 1 and then stops caring;
-  everything above that is invisible to the user and worth nothing to the buyer.
-- **Not finalization latency alone.** It is a constraint, not the axis. Our own first cell
-  delivered p50 714/762 ms and p95 1047/1100 ms with 1702 of 1702 finals present against a
-  1500 ms gate, latency passed and the product still failed. Latency belongs *inside* the
-  metric as the SLO, which is exactly how streams@SLO is defined.
-- **Streams@SLO is where the market actually prices the difference.** Every hosted speech
-  vendor publishes a higher rate for streaming than for async on the same audio, and that
-  multiple is the concurrency cost; none of them charges a premium for batch throughput. The
-  price table and the margin arithmetic are business facts and stay private, not in this
-  repository.
-- **And it is where the published field is thin**, which is the honest reason it is worth
-  attacking (§6.2).
+## 8. What memra does not claim
 
-### 6.2 What the incumbents actually deliver
-
-Batch throughput, published and comparable:
-
-| System | Number | Conditions | Source |
-| --- | --- | --- | --- |
-| Whisper large-v3 (transformers) | RTFx **146**, WER 7.44% | A100-SXM4-80GB, batch 64 | [arXiv:2510.06961](https://arxiv.org/html/2510.06961v4) Table 3 |
-| Whisper large-v3-turbo | RTFx **200**, WER 7.83% | same | same |
-| Canary-1B-v2 | RTFx **749**, WER 7.15% | same | same |
-| Parakeet TDT 0.6B v3 | RTFx **3330**, WER 6.32% | same | same |
-| ASR NIM Parakeet-0.6B-CTC, offline | **353.62** RTFX at 1 stream, **3707.4** at 32 | H100 | [NVIDIA ASR NIM performance](https://docs.nvidia.com/nim/speech/26.02.0/reference/performances/asr/performance.html) |
-| faster-whisper / CTranslate2 | "up to 4 times faster than openai/whisper for the same accuracy", 50-70% less VRAM, INT8 on GPU and CPU. **No measured RTFx published by the project itself** | n/a | [SYSTRAN/faster-whisper](https://github.com/SYSTRAN/faster-whisper) |
-
-Streaming concurrency, published:
-
-| System | Number | Conditions | Source |
-| --- | --- | --- | --- |
-| ASR NIM Parakeet-0.6B-CTC, high-throughput | **512 streams**, avg 166.85 ms, p95 615.9 ms, 494.12 RTFX | H100 | [NVIDIA ASR NIM performance](https://docs.nvidia.com/nim/speech/26.02.0/reference/performances/asr/performance.html) |
-| same, low-latency config | **64 streams**, avg 32.012 ms, p95 37.779 ms | H100 | same |
-| same, low-latency config | **64 streams**, avg 53.643 ms, p95 97.948 ms | A100 | same |
-| ASR NIM **Nemotron ASR Streaming** (en-US, low-latency, 160 ms chunks) | **128 streams** p95 **92.2** ms / **256** streams not published | A100 | same |
-| same | **128** streams p95 **69.0** ms, **256** streams avg 74.7 / p95 **123.9** ms, RTFX 253.8 | H100 | same |
-| same | **128** streams p95 **54.6** ms, **256** streams avg 62.1 / p95 **89.4** ms, RTFX 253.9 | **B200** | same |
-| ASR NIM **Parakeet-1.1B-CTC** (en-US, low-latency) | "Maximum effective # of streams with n-gram language model: **160**"; 64 streams p95 56.0 ms | B200 | same |
-| ASR NIM Parakeet-1.1B-RNNT (multilingual, low-latency) | stream counts to 128 published, **latency columns EMPTY — ABSENT** | B200 | same |
-| Qwen3-ASR-1.7B streaming | **48-64 concurrent streams**, p95 finalization **under 0.50 s**, 100 ms client chunks | one RTX PRO 6000 or H100 | [Baseten model library](https://www.baseten.co/library/qwen3-asr-1-7b-streaming/) |
-| **`nemotron-3.5-asr-streaming-0.6b`, the publisher's own card** | **240 streams at an 80 ms chunk** ("~17x more ... 240 vs. 14" against buffered Parakeet RNNT 1.1B), **2,400 at 1120 ms**, "sustains ~1,000 parallel requests". Clock is **median final-token latency vs number of parallel requests** — **p95 ABSENT** | single H100 | [nvidia/nemotron-3.5-asr-streaming-0.6b](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b) |
-| Kyutai STT-1B (delayed streams, 500 ms architectural delay) | **400 real-time streams**, **no latency SLO attached at all — ABSENT** | one H100 | [kyutai.org/stt](https://kyutai.org/stt/) |
-| same, Rust server | **64 simultaneous connections at RTF 3x**, no percentile | one L40S | same |
-| faster-whisper / CTranslate2 | **No number exists, because no streaming path exists.** CT2 serves bounded utterances | n/a | n/a |
-| whisper.cpp | No published streams-per-GPU figure found. Its `stream` example is a single-session sliding window | n/a | n/a |
-| vLLM, SGLang | No published streaming-ASR concurrency benchmark found in this search. vLLM exposes Whisper as a batch transcription endpoint | n/a | n/a |
-| Whisper-Streaming (LocalAgreement-2) | **3.3 s** average English word-emission latency; no concurrency figure | A40 | [IJCNLP-AACL 2023 demo](https://aclanthology.org/2023.ijcnlp-demo.3.pdf) |
-| Deepgram Nova-3 | P50 **337-509 ms** audio-to-final, min 184 ms; architecture and streams-per-GPU undisclosed | hosted | [Deepgram latency docs](https://developers.deepgram.com/docs/measuring-streaming-latency) |
-
-And the one board measured with OUR clock, independently and reproducibly — the Pipecat STT
-benchmark, `TTFS = final TranscriptionFrame receipt − speech_end_time`, 1,000 samples of
-`pipecat-ai/smart-turn-data-v3.1-train`, semantic WER, every row a hosted API over the network
-([pipecat-ai/stt-benchmark](https://github.com/pipecat-ai/stt-benchmark)):
-
-| Vendor / model | TTFS median | TTFS P95 | TTFS P99 | WER mean | Streams per GPU |
-| --- | ---: | ---: | ---: | ---: | --- |
-| NVIDIA Nemotron 3.0 ASR (en) | **221 ms** | **238 ms** | 252 ms | 1.90% | ABSENT |
-| NVIDIA Nemotron 3.5 ASR (multilingual) | 236 ms | 253 ms | 266 ms | 4.54% | ABSENT |
-| Deepgram nova-3-general | 247 ms | 298 ms | 326 ms | 1.71% | ABSENT |
-| Soniox stt-rt-v4 | 249 ms | 281 ms | 310 ms | 1.25% | ABSENT |
-| Soniox stt-rt-v5 | 260 ms | 305 ms | 313 ms | 1.34% | ABSENT |
-| AssemblyAI universal-3-5-pro | 282 ms | 354 ms | 393 ms | 1.44% | ABSENT |
-| Cartesia ink-2 | 299 ms | 328 ms | 1584 ms | 1.47% | ABSENT |
-| ElevenLabs scribe_v2_realtime | 281 ms | 348 ms | 407 ms | 3.16% | ABSENT |
-| Meta muse-voice-transcribe-1.0 | 392 ms | 1292 ms | 1922 ms | **0.97%** | ABSENT |
-| Google gemini-3.5-transcribe-live | 458 ms | 532 ms | 599 ms | 2.24% | ABSENT |
-| Mistral voxtral-mini-transcribe-realtime | 525 ms | 973 ms | 1913 ms | 4.44% | ABSENT |
-| OpenAI gpt-4o-transcribe | 637 ms | 965 ms | 1655 ms | 3.24% | ABSENT |
-| OpenAI gpt-realtime-whisper | 740 ms | 878 ms | 1080 ms | 2.92% | ABSENT |
-| Speechmatics | 495 ms | 676 ms | 736 ms | 1.40% | ABSENT |
-| Azure | 1016 ms | 1345 ms | 1791 ms | 1.21% | ABSENT |
-| Google latest-long | 878 ms | 1155 ms | 1570 ms | 2.84% | ABSENT |
-
-Every `ABSENT` above is recorded, not estimated: no hosted vendor publishes streams per GPU, and
-the two boards are DISJOINT — the hosted board has our clock and no concurrency, the NIM board has
-concurrency and a different clock. Nobody publishes the pair.
-
-Read those tables together and the gap is specific, and narrower than the first reading of it.
-
-**The NIM latency column is not our clock.** The harness is `riva_streaming_asr_client
---simulate_realtime --interim_results=false` over one LibriSpeech dev-clean file, three
-iterations per stream, and the reported figure is "Overall latency of all responses", measured
-from chunk submission to response receipt. That is per-chunk response time. Our SLO starts at
-capture of the last owned speech sample and ends at the final transcript. The two are not
-comparable and treating them as comparable makes our position look worse than it is
-(`TRAP:riva-512-is-not-our-tier`).
-
-**But the stream counts on that board ARE published at our tier, which the earlier reading of it
-missed.** Parakeet-1.1B-CTC and Parakeet-1.1B-RNNT are ≥ 1B and both have rows; the B200 section
-states a ceiling outright — "Maximum effective # of streams with n-gram language model: 160" for
-1.1B-CTC at 160 ms chunks. So "nobody publishes concurrency at the accuracy tier" was wrong.
-What nobody publishes is **concurrency AND a finalization SLO AND a WER on a named corpus, for
-one model on one card**. Every row in the field has exactly two of those three.
-
-**The accuracy-tier hosted figure with a finalization SLO is still one vendor's.** Baseten reports
-Qwen3-ASR-1.7B at 48-64 concurrent streams with p95 finalization under 0.50 s on one RTX PRO 6000,
-on unnamed audio in an unstated language, unreproduced by us.
-
-### 6.3 The specific gap we intend to beat, and where we stand
-
-Target, restated 2026-09-11 so it is falsifiable against what the field actually publishes. It is
-a PAIR, because the two published boards are disjoint and a claim that wins only one leg is
-hollow:
-
-1. **Latency leg.** p95 TTFS (`speech_end` → final segment, the Pipecat harness clock) **< 238 ms**
-   on the `pipecat-ai/smart-turn-data-v3.1-train` sample set, i.e. at or under the best hosted row
-   in the field (NVIDIA Nemotron 3.0 ASR, 221 ms median / 238 ms p95), at a semantic WER inside
-   1 pt of it.
-2. **Concurrency leg.** That p95 held at **>= 240 concurrent real-time streams on ONE card at a
-   declared chunk profile**, on a named card, at the accuracy tier (>= ~1B). The profile is part
-   of the target and not a detail: per `PATTERN:chunk-size-is-a-served-profile-not-a-constant` one
-   chunk knob moves a published ceiling by 4.8x, and the two rows this target is set against are
-   240 streams at an **80 ms** chunk and 2,400 at **1120 ms** on the same card. A streams number
-   without its chunk is not comparable to anything, including our own earlier one.
-
-   **Raised from 128 on 2026-09-11, against us.** The old figure was set against Baseten's 48-64
-   and read as "roughly 2x the only comparable published figure". The publisher of the checkpoint
-   this engine already streams end to end now states **240 streams on a single H100 at an 80 ms
-   chunk** on its own model card (§6.2), so 128 would have been **0.53x the incumbent on the same
-   architecture**, not 2x ahead of it. Entering a race behind the leader while quoting a target
-   that says "2x" is how a program congratulates itself. Two caveats keep the new number honest:
-   it is measured at the 0.6B tier, and its clock is a MEDIAN, so there is still no published p95
-   at any concurrency from anybody — which is the gap, and the reason the pair is stated as p95
-   AND streams rather than either alone.
-
-Leadership is winning both legs at once on one card, and saying which card. Either leg alone is
-already published by somebody else.
-
-Where we stand: **streams@SLO = 0, and the latency leg is the harder one.** There is no GPU kernel
-for any speech operation. Our own best measured finalization number is the two-tier RNNT student's
-p50 714/762 ms and p95 1047/1100 ms at c1 on a different (Hebrew) corpus — **4.4x the p95 leg** —
-and the 480 ms of lookahead that bought this lane's only free quality win
-(`att_context_size [56,6]`) is ALONE twice the entire 238 ms budget. The honest reading: the
-concurrency leg is reachable with scheduler and kernel work that is already scoped; the latency leg
-is a chunk/lookahead policy question that no amount of kernel speed answers, because the budget is
-spent on audio we deliberately wait for.
-
-**Step 1 ran on 2026-09-10 and the collapse is engineering, not physics.** On one A100 80GB PCIe,
-profiled at phase level: of a 26.18 ms streaming step only **12.06 ms is kernel execution**, there
-are **2,904 device kernel launches per 80 ms of audio**, and the identical fused step costs
-**31.522 ms at batch 1 and 35.890 ms at batch 32 (+13.9%**, reproduced at +14.7% in a second
-process). A card that is SM-saturated at c4 scales roughly linearly in batch; this one is flat.
-On that same card, in the same session, with the same audio and the same 64-frame bounded queue,
-the drive shape alone decides the outcome: one worker at batch 1 sheds **2 of 4** streams at c4
-with every lane at the queue cap, while one fused batch-N step consuming a frame from every lane
-holds **64 of 64** at max queue depth 3 and 44% step duty.
-
-So the ceiling this program has to beat is not the A100. It is our own scheduler. That is the
-result §7 step 1 was bought to produce, and it clears K1. Step 3 has since moved that scheduler
-into the engine (`memra-lanes::audio_stream`) with the losing drive shape kept as a named red arm,
-so the collapse can be re-run in CI without a card. It does **not** establish a
-`streams@SLO`: the batched arm replays one captured chunk across lanes on a shared batched cache
-with no finalizer, no endpointing and no latency percentile, so it bounds compute capacity and
-nothing else. Turning that bound into a served number is step 3.
-
-Receipts (private): darklanes `research/speech-k1-20260910/RESULTS.md`.
-
----
-
-## 7. Ranked plan
-
-Sized in GPU-hours, which are the scarce axis. **Development time is not the schedule and it is
-not a criterion**, owner ruling 2026-09-11, verbatim: *"engineering needed is not a blocker ever,
-thats what we are doing, building an engine and selling its work."* Every step below is ordered by
-what it decides and what it is worth, never by what it costs to write; the GPU-hour figures size
-the rental, not the priority.
-
-**Step 0, this document. 0 GPU-hours, done.** Defines the capability, the ladder, the
-onboarding path, the gate set and the kill criteria, so that every step below has a registered
-decision rule before it spends anything.
-
-**Step 1, the incumbent baseline board. ~2.5 GPU-hours on one A100-80GB. Decisive, and it
-spends the fewest GPU-hours of any step that can still kill the program; do this before writing a
-single kernel.** One rented non-production A100-SXM4-80GB
-(so the numbers are directly comparable to the leaderboard's own A100 batch-64 rows), CUDA
-allocation verified before the first byte is staged. Three arms on our pinned clip set plus one
-English control:
-
-- **A**: faster-whisper/CT2 large-v3, batch 1 / 8 / 64: does RTFx 146 reproduce on our audio,
-  and what does CT2 actually cost per audio-hour on a card we could rent?
-- **B**: CT2 under N simultaneous single-clip requests, N = 1, 4, 16, 64: the concurrency
-  behaviour of the incumbent, which nobody publishes.
-- **C**: reproduce the c4 collapse, with SM occupancy, VRAM and queue depth sampled
-  throughout.
-
-Decides: **is our c4 collapse a capacity wall or an admission defect?** If the card is under
-~40% occupancy when it sheds, the collapse is ours to fix, the streams@SLO target is reachable,
-and the program is real. If the card is saturated at c4 with an accuracy-tier model resident,
-the product does not exist at that tier and K1 fires.
-
-**Step 2, GPU kernels for the RNNT path. ~4-6 GPU-hours. DEPRIORITISED behind step 3 by the
-2026-09-10 step-1 result**, which found 54% of the streaming step is gap between launches and
-took one card from 4 streams to 64 with a scheduler change and no kernel. Kernels are not where
-the loss is; the serving surface is. Take the family that already
-streams end to end and put it on the GPU: frontend, FastConformer subsampler and blocks,
-prompt kernel, predictor, joint. Exit, and it is deliberately not "RTFx > 1", which any GPU
-clears instantly and would prove nothing: **byte identity against the banked CPU reference**,
-plus a per-stream RTF measured interleaved against CTranslate2 on the same card in the same
-session. That second half is what feeds K2, so the step that produces the number and the
-criterion that judges it are the same measurement, not two separate ones taken weeks apart.
-The parity half is CHECKABLE because the CPU reference already exists: an oracle, not a discount.
-
-**Step 3, audio endpoint in `memra serve` plus the G8 battery. ~6-10 GPU-hours. PART ONE LANDED
-2026-09-11 with no GPU; the measurement half is unrun.**
-
-Landed: the `/v1/audio/*` surface (§1), per-lane sessions, the fused batch-N drive as the default,
-the per-lane batch-1 drive as a named red arm (`MEMRA_AUDIO_DRIVE`), typed admission shedding with
-a code / limit / observed on every refusal, the shed counters an operator reads per code, the ASR
-decode contract refused at metadata load, and the scheduler's red and green arms running in hosted
-CI against the measured step cost. 38 tests. No GPU, no rental.
-
-Not landed, and it is the half that produces the number: a bound engine behind the surface (that
-is step 2), the partial/final/revision event stream, cancel/reconnect/flush, and the G8 battery on
-a card. **Exit is unchanged and unmet: a measured `streams@SLO` on one named card with the c4 red
-arm reproduced and then green.** Nothing in the landed half is a performance receipt; the step
-cost it schedules against is a 2026-09-10 A100 measurement, not a claim about any other card.
-
-**Step 4, the accuracy tier (audio-LM class). Gated on steps 1 and 3.** AuT encoder, audio
-projector, the streaming window and cache program. ~3-6 GPU-hours of bring-up before any
-qualification. **Do not start this before the base-model question resolves elsewhere**, see K4.
-
-**Step 5, the TTS family (§2.4). ~11-16 GPU-hours to a published p95 TTFA row.** Steps 0-5 of §4
-on a codec audio-LM are CPU work and cost **zero GPU-hours**: pin and licence, tensor census,
-the codec tokenizer's contract (frame rate, codebook count, codebook cardinality — the TTS
-analogue of §4's frontend contract, and equally un-inheritable between models), tokenizer and
-decode policy, and stage parity against a pinned oracle. The GPU half is the codec DECODER, the
-multi-codebook sampling head, and the streaming emit contract, then G10.
-
-Its exit is deliberately not "it produces intelligible speech", which any correct port clears:
-**byte identity against the banked CPU reference**, then a p95 TTFA at c1 / c8 / c32 / c64 on one
-named card with the leading-silence term measured, not assumed.
-
-This step rested on a claim that was an architectural inference and not a receipt: that a
-12 Hz codec decode step is launch-bound the way §6.3's ASR step measured. **That cell ran on
-2026-09-11 and came back positive**, on one rented RTX 5090 against `Qwen3-TTS-12Hz-1.7B-CustomVoice`
-on a stock reference path, with its acceptance criterion committed before the box was rented:
-
-| Quantity | §6.3's ASR step (A100) | The TTS decode step (RTX 5090) |
-|---|---:|---:|
-| Step wall | 26.18 ms | **57.99 ms** |
-| Kernel inside the step | 12.06 ms | **13.62 ms** |
-| Gap | 54% | **76.5%** |
-| Device launches per 80 ms of audio | 2,904 | **7,021.8** |
-| Batch 1 -> 32, same step | +13.9% | **+3.4%** wall |
-
-One talker forward emits exactly 80.00 ms of audio and contains a nested 15-step autoregressive
-code predictor over the remaining codebooks before the 28-layer talker forward runs, which is why
-the launch count is 2.4x the ASR step's in a step with a wider gap. Mean kernel duration is
-**1.94 us**, below the per-launch host cost. The step's priority is therefore correct and the
-ordering is not re-argued. Receipts are private (darklanes
-`research/tts-launchbound-20260911/`); the numbers above are the whole of what they say.
-
-**Step 5's FLOOR ran on 2026-09-11 and the qualification lane is open.** On one rented RTX 5090
-against the same pinned artifact, on the vendor reference path with no memra in it, first-audible
-p95 TTFA is **241.69 ms at batch 1** and **332.23 ms at 64 streams under batched arrival**, so
-streams at the 155 ms bar is **zero** on the reference runtime and the gap to close is about
-2.1x at 64 streams. The owner's rule for this program stands: **the first measure is the floor,
-not a decision.** Two results from that lane bind engine work here rather than the lane's own
-write-up:
-
-- **The parity oracle is bit-reproducible**, all five stages at max abs delta 0.0 under greedy on
-  both loops with a fixed seed, so the native port can be checked stage by stage from its first
-  kernel instead of argued. Reference-runtime only; `NativeReference` stays unset. <!-- support: none; not NativeReference -->
-- **`torch.compile(mode="reduce-overhead")` REFUSES this shape**: CUDA graph trees fail on
-  warm-up with `accessing tensor output of CUDAGraphs that has been overwritten by a subsequent
-  run`, raised inside the talker's own decoder layer loop, because the nested code predictor
-  consumes the talker's output tensor across runs. Generic graph capture does not own this step.
-  A capture that works has to cover the whole 80 ms frame (one 28-layer talker forward plus the
-  15 code-predictor forwards inside it) and copy out of graph-owned memory at the boundary. That
-  is the design brief for the pack's decode step, and it is measured rather than assumed.
-
-Steps 2 and 3 run on the cheapest card that fits, not on an A100; step 1 uses an A100
-specifically because that is the card the published rows were measured on.
-
----
-
-## 8. Kill criteria
-
-Registered here before the spend, so the program can be stopped by evidence rather than by
-fatigue.
-
-- **K1, capacity wall. ANSWERED 2026-09-10: does not fire.** The criterion was: if step 1 shows
-  the card SM-saturated at c4 with an accuracy-tier model resident, "many concurrent streams on
-  one card at the accuracy tier" is not a thing that exists. Step 1 measured the opposite. The
-  card is idle between launches, not saturated (§6.3), and the same card goes from shedding 2 of
-  4 to holding 64 of 64 on a drive-shape change with no kernel written. A resident large-v3
-  finalizer costs the student 30% on the mean step and 2x on p95, which is a real budget item for
-  step 3 and still leaves each stream under half of real time. **K1 does not fire; the program
-  continues.**
-- **K2, no engine advantage. NOT SETTLED, and its decision content has largely expired.** The
-  criterion was: if step 2's GPU RNNT path lands within noise of CTranslate2's per-stream RTF on
-  the same card after one optimization cycle, memra is not meaningfully faster on throughput and
-  the batch axis is closed permanently. That path still has zero lines of code, so there is
-  nothing to compare and no verdict may be issued. Step 1 closed the axis anyway, by price rather
-  than by speed: batch-64 CTranslate2 measured on the pinned clip set costs about $0.015 per
-  audio-hour of compute against a published market price one to two orders of magnitude higher,
-  so engine throughput on the batch axis moves the P&L by a couple of points whatever it turns
-  out to be. **The "our engine is fast on batch transcription" claim should be dropped from this
-  program now rather than after step 2 measures it.** Streams@SLO carries the program alone.
-- **K3, no business.** If step 3's streams@SLO on an RTX PRO 6000 lands below the break-even
-  count for that card, the engine costs more per stream-hour than the cheapest published
-  streaming price and the program is not a business. Sell the model, not the engine. (The
-  break-even count and the arithmetic behind it are business facts and live in the private
-  repository, not here.)
-- **K4, quality decides first.** No amount of streams@SLO matters if the model behind it
-  cannot clear the quality bar its market is judged on. The base-model question is open and
-  owned by another lane. **Step 4 stays capped until that lane reports**, and speed work must
-  not be used as evidence that the model question is settled.
-
-K1 was answered on 2026-09-10 for about $3.58 of rented A100 time, well inside the ~7 GPU-hour
-estimate, and it cleared. K2 needs step 2 to exist before it can be answered at all, and §6.3's
-result reorders the plan so that step 3 comes first.
-
----
-
-## 9. What this program does not claim
-
-- No speech model is supported. `NativeReference` is unset for both current checkpoints, <!-- support: none; not NativeReference --> and
-  loading, running and streaming on a CPU reference are not support. The TTS family entered
-  scope on 2026-09-11 with **no pack, no codec decoder and no reference**, so it is further
-  from support than either ASR family, not closer.
-- No speed claim of any kind exists for memra on speech. There is no GPU number.
-- The 3.3 s, 512-stream, 48-64-stream, RTFx 146 and RTFx 3330 figures above are other people's
-  measurements under their own conditions, cited so the gap is checkable. None of them was
-  reproduced by us, and none of them was measured on Hebrew audio.
-- Nothing here is a fleet rollout, a release, or a customer-facing claim.
+- No speech model is supported. Loading, running and streaming on a CPU reference are not support,
+  and the TTS pack binds its artifact and executes nothing.
+- No speed claim of any kind exists for memra on speech. No ASR or TTS pack has a GPU number.
+- The third-party figures in the program record are other people's measurements under their own
+  conditions; none was reproduced here, and none was measured on Hebrew audio.
