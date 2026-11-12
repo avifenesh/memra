@@ -545,11 +545,22 @@ pub(crate) fn capture_err_is_oom(reason: &str) -> bool {
     reason.contains("CUDA_ERROR_OUT_OF_MEMORY") || reason.contains("out of memory")
 }
 
+/// The reserved bytes the pre-capture pool trim leaves in the pool (the `keep` handed to
+/// `cuMemPoolTrimTo`): what the pool holds now less the bytes the driver is short of
+/// (`required - driver_free`). The trim used to release every cached block; a cold long
+/// request then reserved the same bytes again one burst later, on the scheduler thread, for
+/// its prefix publication (memra#1221: 1.7 GB released for a driver 0.58 GB short at a
+/// 260k prompt on GB10). Admission's driver-headroom rung trims the same way.
+pub(crate) fn capture_trim_keep(reserved: usize, driver_free: usize, required: usize) -> usize {
+    reserved.saturating_sub(required.saturating_sub(driver_free))
+}
+
 /// Impure half of the pre-capture reserve check: reads the device, trims the async pool
 /// when the driver alone is short but cached blocks would cover it (graph instantiate and
 /// cuBLAS workspaces allocate from the DRIVER, not from our pool — a pool sitting on freed
 /// blocks starves them), and returns the refusal reason line when the capture must not be
-/// attempted. `None` = go ahead.
+/// attempted. `None` = go ahead. The trim hands back the driver's shortfall
+/// ([`capture_trim_keep`]), not the whole cache.
 pub(crate) fn capture_headroom_refusal(e: &Engine, need: usize) -> Option<String> {
     let Ok((driver_free, _total)) = e.ctx().mem_get_info() else {
         return None; // unreadable device: keep the historical try-and-fail behavior
@@ -581,12 +592,19 @@ pub(crate) fn capture_headroom_refusal(e: &Engine, need: usize) -> Option<String
         )),
         None => {
             if driver_free < required && pool_cached > 0 {
-                let trimmed = e.pool_trim_to_zero();
+                // The driver gets the bytes it is short of, not the whole cache: the blocks
+                // that stay are what the next allocations reuse (a cold request's prefix
+                // publication, memra#1221). An unreadable pool reads as 0 reserved, which
+                // trims everything, as before.
+                let (reserved, _) = e.pool_reserved_used();
+                let trimmed = e.pool_trim_to(capture_trim_keep(reserved, driver_free, required));
                 if trimmed > 0 {
                     eprintln!(
-                        "[spec] pre-capture pool trim: released {}MB cached back to the driver \
-                         (driver free {}MB < required {}MB; instantiate allocates from the driver)",
+                        "[spec] pre-capture pool trim: released {}MB of {}MB cached back to the \
+                         driver (driver free {}MB < required {}MB; instantiate allocates from \
+                         the driver)",
                         trimmed / (1 << 20),
+                        pool_cached / (1 << 20),
                         driver_free / (1 << 20),
                         required / (1 << 20),
                     );
@@ -17499,9 +17517,47 @@ mod mtp_capture_admission_tests {
 #[cfg(test)]
 mod capture_headroom_tests {
     use super::{
-        CAPTURE_HEADROOM_FLOOR, capture_err_is_oom, capture_headroom_verdict,
+        CAPTURE_HEADROOM_FLOOR, capture_err_is_oom, capture_headroom_verdict, capture_trim_keep,
         draft_capture_bootstrap_estimate,
     };
+
+    /// memra#1221: the pre-capture trim hands the driver its shortfall and keeps the rest of
+    /// the cached pool. The arithmetic, then the call site: the refusal check trims through
+    /// `capture_trim_keep` and never to zero.
+    #[test]
+    fn pre_capture_trim_releases_the_shortfall_not_the_cache() {
+        const MIB: usize = 1 << 20;
+        // The 260k cell of memra#1221: 36,440 MiB reserved, the driver 581 MiB short.
+        assert_eq!(
+            capture_trim_keep(36_440 * MIB, 2_559 * MIB, 3_140 * MIB),
+            (36_440 - 581) * MIB
+        );
+        // Nothing short: the pool keeps everything (the call site does not trim then).
+        assert_eq!(
+            capture_trim_keep(1_000 * MIB, 4_000 * MIB, 3_140 * MIB),
+            1_000 * MIB
+        );
+        // A shortfall above what the pool holds, or an unreadable pool (0 reserved): keep 0,
+        // which releases every cached block, as the trim did before.
+        assert_eq!(capture_trim_keep(100 * MIB, 0, 3_140 * MIB), 0);
+        assert_eq!(capture_trim_keep(0, 2_559 * MIB, 3_140 * MIB), 0);
+
+        let src = include_str!("spec.rs");
+        let production = &src[..src.find("mod capture_headroom_tests").unwrap()];
+        let at = production
+            .find("pub(crate) fn capture_headroom_refusal(")
+            .unwrap();
+        let body = &production[at..];
+        let body = &body[..body.find("\n}\n").unwrap()];
+        assert!(
+            !body.contains("pool_trim_to_zero"),
+            "the pre-capture trim releases the whole cached pool"
+        );
+        assert!(
+            body.contains("e.pool_trim_to(capture_trim_keep(reserved, driver_free, required))"),
+            "the pre-capture trim does not keep the pool's blocks above the shortfall"
+        );
+    }
 
     /// TOOTH for the pre-capture reserve check (lane/step37-vram-admission-20260830): a
     /// capture attempt must be refused BEFORE it allocates when the device cannot cover its
