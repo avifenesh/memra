@@ -238,15 +238,17 @@ session. Cost on Qwen3.5-9B NVFP4 + MTP, one RTX 5090, 256-token greedy, N=3 (20
   session's plain steps that see a waiting request refresh the mark; it expires 64 s after the last
   refresh. Greedy text and seeded sampled text are unchanged
   ([SPEC-STALL-MARK.md](../decisions/SPEC-STALL-MARK.md)).
-- **Newcomers prime before the pooled cohorts** (memra#1227, 2026-11-12). A speculative session
-  that has emitted nothing steps before the tick's pooled cohorts, and a session whose prime
-  completed joins that tick's lockstep. Before, the cohorts stepped first, so a newcomer admitted
+- **Newcomers prime before the pooled cohorts** (memra#1227, 2026-11-12). An MTP speculative
+  session that has emitted nothing and has a same-model speculative peer on a model that pools (so
+  its prime burst ends at one token) steps before the tick's pooled cohorts, and a session whose
+  prime completed joins that tick's lockstep. Before, the cohorts stepped first, so a newcomer admitted
   at the tick top waited a whole lockstep burst (32 tokens per member) for its prime, and behind a
   single stream its second token waited that stream's burst. On GB10's Qwen3.8-27B the first token
   behind two or three long streams comes at 0.27 and 0.29 s where it came at 1.86 and 2.03 s, and
-  closed-loop clients at c = 2..4 gain 9 to 11% aggregate. A suspended long prime keeps the prime
-  policy's place after its first chunk, DFlash2 cohorts keep the next-tick join, and
-  `MEMRA_ADMIT_YIELD=0` keeps the cohorts first. Session order and cohort membership are
+  closed-loop clients at c = 2..4 gain 9 to 11% aggregate. A long prime runs its first chunk there and
+  then keeps the prime policy's place, with the cohort running one round between its chunks; a
+  lone speculative session and the DFlash2, glm5 and gemma routes (a prime plus a whole first
+  burst) keep their place after the cohorts; `MEMRA_ADMIT_YIELD=0` keeps the cohorts first. Session order and cohort membership are
   content-neutral, so texts are unchanged. A cohort under short arrivals now meets waiting
   requests at its burst entries, so the stall mark above applies to it as it does to one stream. A
   request admitted to plain decode is not covered (memra#1244)
