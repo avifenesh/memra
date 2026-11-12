@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Burst client for tools/admit-mem-burst-gate.sh (memra#680). Sends B concurrent open-output chat requests
 (no max_tokens, temperature 0, non-streaming), released on one barrier, each a one-sentence summary of a 5000-char
-docs/SERVING.md slice with its own salt (the lane B day-31 burst shape). Writes one JSON line per request with
+slice of a pinned docs/SERVING.md copy with its own salt (the lane B day-31 burst shape). Writes one JSON line per request with
 status, Retry-After, usage and finish_reason, then exits 0. It judges nothing; the gate does.
 
 usage: admit-mem-burst-client.py <base-url> <model> <burst> <out.jsonl>
@@ -9,7 +9,11 @@ usage: admit-mem-burst-client.py <base-url> <model> <burst> <out.jsonl>
 import json, os, sys, threading, time, urllib.error, urllib.request
 
 base, model, burst, out = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
-text = open(os.path.join(os.path.dirname(__file__), "..", "docs", "SERVING.md"), encoding="utf-8").read()
+# The prompt source is a pinned copy of the first 20,000 characters of docs/SERVING.md as of
+# 2026-11-12, so a docs edit no longer moves the burst prompts: receipts from that day on compare
+# with each other (earlier receipts read the SERVING.md of their own day). Request b reads
+# [(900+b)*13, (900+b)*13+5000), so bursts of up to 254 requests stay inside the copy.
+text = open(os.path.join(os.path.dirname(__file__), "admit-mem-burst-prompt.txt"), encoding="utf-8").read()
 rows, lock = [], threading.Lock()
 barrier = threading.Barrier(burst)
 

@@ -1,0 +1,240 @@
+# Serving — the OpenAI surface and the replica fleet
+
+This is the serve-surface doc: fleet topology and measured throughput, the isolation
+contract, the OpenAI tools surface, the gateway listing surface (`/v1/models` schema,
+rate-limit headers, graceful drain), safetensors/FP8 checkpoint serving, cross-request
+prompt caching with per-tenant `cache_salt` isolation, and the honestly-stated numeric
+edges of batched serving.
+
+> Numbers here are engineering receipts, each labeled with its rig — see
+> [Rigs](PERFORMANCE.md#rigs--what-was-measured-on-what) for what each label is. A number
+> without its rig label is not a number: the same cell moves 5-12% between two pods of the
+> same SKU and ~2x between a 188-SM and an 82-SM board. The open gaps stated below travel
+> with the wins.
+
+The qualified published shape is a 2x RTX PRO 6000 Blackwell pair. PP-3/PP-4 infrastructure is
+experimental until its exact-topology and sampled-serving battery lands. Which provider hosts which role —
+serving, verification, tuning — is a deployment fact and lives in darklanes, not here. The
+Provider runbooks are not in this repo at all — they moved to darklanes with the rest of
+deployment. What stays here is `deploy/systemd/`, the supervision contract.
+
+Multi-GPU serving has two shapes, and which one applies is decided by whether the model fits
+on one card:
+
+- **Replica fleet** (the default for a model that fits): N independent `memra-server`
+  processes, one engine per GPU (`Engine::new(0)`; `CUDA_VISIBLE_DEVICES` is the placement
+  mechanism), fronted by an admission proxy. This is the throughput shape — see
+  [Fleet tooling](#fleet-tooling).
+- **Pipeline-parallel PP-2** (qualified for a model that fits only across the pair): ONE engine
+  process, the layer trunk cut into stages, each stage's weights and KV resident on its own
+  card. Opt-in via `MEMRA_PP_STAGES` / `MEMRA_PP_DEVICES`; see
+  [Pipeline-parallel serving](#pipeline-parallel-pp-2-serving) below for what is gated and
+  what is refused.
+- **Pipeline-parallel PP-3/PP-4** (experimental): the same stage-local weight/KV and peer-copy
+  runtime, with `MEMRA_PP_WAVE=1` filling stages from independent request or prompt-microchunk
+  waves. It is default-off and has no published performance/support claim yet; see
+  [the design decision](decisions/PRO6000-MULTICARD.md).
+
+Tensor parallelism is neither. Step-3.7 has an exact model-specific TP2/TP4/EP implementation,
+but that does not establish generic dense TP or transfer a topology/default to another model.
+
+### Step topology contract (placement only)
+
+Step-3.7's model-specific planner validates deterministic PP, TP, EP, and hybrid
+rank placement through eight ranks. It checks the checkpoint's alternating 64/96
+query-head geometry, eight KV heads, and native 128-row E4M3 scale-block
+boundaries before CUDA allocation. Current product acceptance remains one through
+four GPUs.
+
+This contract refuses illegal layouts early. It is not evidence that serving
+TP/EP, native P2P, or multi-card throughput is complete; those surfaces require
+separate official-model and target-hardware gates.
+
+When memory pressure leaves a MoE MTP head non-resident, the MTP route logs
+`[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk`
+and verifies eagerly. This admission check also applies to `MEMRA_SPEC_VERIFY_GRAPH=1`;
+resident heads retain the existing graph default. See [the capture receipt](../research/mtp-head-nonresident-capture-20260908/RESULTS.md).
+
+## Fleet tooling
+
+(Not to be confused with the OpenAI `tools` API surface — that is
+"[OpenAI tools surface](#openai-tools-surface-serve-tools-lane-2026-08-02)" below.)
+
+| tool | what it does |
+|---|---|
+| `tools/serve-fleet.sh start\|stop\|status\|restart` | declarative fleet supervisor: brings up `REPLICAS_PER_GPU` replicas per GPU in `GPUS`, fronts them with the proxy, health-loop restarts anything that dies. systemd-free; pidfiles under `$FLEET_RUN` |
+| `tools/serve-proxy.py` | least-outstanding reverse proxy with per-backend admission cap (default 8 = the engine's exactness-tier batch width and the two-replicas-per-GPU anti-thrash bound). Bounded FIFO queue with deadline → 429 + Retry-After; `/health` + `/metrics` JSON. Request bodies default to 32 MiB with bounded buffering and can be raised explicitly to the server's 192 MiB ceiling via `--max-body-mb 192`; the proxy always rejects dual credentials and authenticates headers before accepting a body. |
+| `tools/load-serve.py` | concurrent OpenAI-format load harness: aggregate output tok/s, p50/p95 latency, JSONL per load point |
+| `tools/serve-smoke.sh` | OpenAI-surface smoke gate for a single server |
+| `deploy/systemd/memra-server.service` | example unit for a **single supervised instance** (the other deployment shape — `serve-fleet.sh` is the systemd-free multi-replica path). `Type=notify` with `READY=1` after the models load and the socket binds, `WATCHDOG=1` pings only while inference is live, `STOPPING=1` + `EXTEND_TIMEOUT_USEC` so a drain is not SIGKILLed, and exit 70 (unrecoverable GPU) distinguished from exit 1 (bad config). Copy, do not symlink: every path is site-specific and the value is the supervision contract in the directive choices, each commented with the failure it prevents |
+
+## Measured numbers (Qwen3.5-9B Q8_0; receipts in `research/`)
+
+- **Single replica (H100, rented pod):** temp-0.7 c=8/16/32 medians **654/657/659 tok/s** after the
+  batched decode tick (z-batched FA + KV append, device sampling, lean logits — +25-36%
+  over the pre-batched tick; N=4, `research/batched-tick-inc2-20260801/`; chunk-8 era —
+  see the exact-16 tier below).
+- **Managed fleet, 3 rented H100s x 2 replicas (v0.60-validated):** **1,477 tok/s** through the
+  admission proxy at c=96 (N=2 interleaved passes: 1477.0/1473.1), zero 429s/5xx —
+  managed now matches the v0.59-era 1,480 direct number (the ~7% admission-overhead gap
+  closed at the fleet level). Chaos-tested: SIGKILL a replica mid-load, breaker DOWN the
+  same second, supervisor restart +2s, backend UP +9s, 8/768 requests lost (exactly the
+  victim's in-flight cap), aggregate across the kill 1,487 tok/s; greedy hash identical
+  on all 6 replicas in every condition, 18/18 (`research/fleet-v060-20260801/SUMMARY.md`).
+  The proxy cap (8) was calibrated on the v0.59 core — the cap re-sweep is pending the
+  next box window (stale-verdict risk flagged in the validation summary).
+- **Single replica (RTX 5090 Laptop — the local rig, exact-16 tier):** with the Q8_0 split-plane mirror
+  (`MEMRA_Q8RP=1` on 24GB; Hopper default), the worker auto-selects decode chunk 16 —
+  c=16 median **494.5 tok/s vs 416.4** at chunk 8, same mirror, interleaved N=4
+  (**+18.8%**; +33.8% vs the mirror-less baseline); c=32 at `MEMRA_CTX=2048` runs
+  **502.1** with 128/128 ok (single run; `research/batched-tick-inc3-20260801/`).
+- **Historical fixed-solo m=1 measurement** (serve-path phase 2, 2026-08-05): with
+  `MEMRA_SERVE_B1FAST=1`, a lone session's tick runs `decode_layers_eager` verbatim instead of
+  the batched body, inheriting the whole m=1 fusion chain. Order-paired N=5 on the 5090 (82 SM), decode-only `step_p50`:
+  **+8.33%** on the 9B (123.7 → 134.1 tok/s, 5/5 wins) and **+5.19%** on the 27B (43.6 → 45.8,
+  5/5); c=8 saturation flat (−0.00% / −0.18%). The arm closed the c=1 performance gap phase 1
+  measured against naked decode and put serve c=1 level with the same-board `run-gen`
+  denominator (134.8/134.5/134.0). It also **retired the solo graph door as a performance win**:
+  `GraphSession` replay amortized the same launch overhead this removes outright, so with the
+  fast path in place the door was a net loss at every length measured out to mt=1024. Both
+  doors are OFF by default since 2026-08-13 because a request gaining a peer otherwise changes
+  numeric program mid-stream. These remain fixed-solo opt-ins, not the serving default (FLAGS
+  §serve; `research/servepath-p2-20260805/`, `research/eosclass-20260813/`).
+- **Spec fast lane, now REQUEST-CONDITIONED inside one process** (lane/spec-gate, 2026-08-07 —
+  this supersedes the "run spec and bulk as separate server processes" guidance): MTP
+  speculative serving is a single-stream latency tier — 1.82x plain serving at c=1 on the 27B
+  (131.8 vs 72.5 tok/s) — and plain batching overtakes between c=2 and c=4 because the spec
+  path is a serial burst QUEUE, not a contended one (phase (a) steps each spec session's whole
+  burst in a host loop; phase (c) excludes spec rows from batched decode). Pooling the verify
+  is REFUTED at a 16-column exact-kernel width ceiling (`research/spec-scaling-20260806/`), so
+  the answer is scheduling policy: **one server now admits spec only while `active+1 <= 2` and
+  DEMOTES live spec sessions into the batched phase at `active >= 4`**, with `active==3` a
+  hysteresis band and demotion one-way per session. The handoff is a real cache transfer
+  (`(cache, next_pred)` into the session's cache + `device_next`, a carried pending flushed
+  first) and is byte-exact for greedy: a session demoted mid-generation emits a stream
+  byte-identical to one batched from the start. Measured q9 on the 5090, N=5 interleaved: the
+  gated curve tracks spec at c=1-2 (251.2 tok/s, 1.81x over batched) and batched at c=4-8
+  (504.7 tok/s, 2.03x over always-spec), with per-stream p50 at c=8 equal to batched's 1.963s
+  rather than spec's 3.973s. Constrained spec sessions do not demote (unmasked argmax) and stay on
+  the serial path, bounded by the admit ceiling. Sampled sessions demote since 2026-11-01. The
+  handed token is already a draw (the MTP boundary draw since 2026-08-19, the DFlash2 round's
+  bonus/residual draw) and the penalty window is the worker sampler's own history. The one seam
+  was the Philox counter: plain draws use stream_pos = token index in the same space the spec
+  events consumed, so a demoted sampled row starts its plain draws at the spec session's first
+  unused event (`demoted_philox_base` in `worker.rs`). GLM5 sessions still demote greedy only. One residual, disclosed: a first-wave TTFT p95 transient (0.423s vs never-spec's
+  0.017s at c=4) confined to the at-most-`LOW` sessions admitted before a load ramp — p50
+  matches never-spec; set `MEMRA_SPEC_GATE_LOW=0` to never admit spec if cold-ramp p95
+  outweighs c=1 throughput. Flags: `MEMRA_SPEC_GATE` (rollback seam),
+  `MEMRA_SPEC_GATE_LOW`/`_HIGH`. Receipts: `research/spec-serving-20260801/`,
+  `research/spec-gate-20260806/`. **The defaults are placement-aware:** a current-train q9
+  re-sweep keeps single-card at LOW=2/HIGH=4 (spec wins c=1/2, plain wins c=4), while
+  sharded cross-device PP-2 uses LOW=0/HIGH=1 because plain wins every q9 and step35
+  c=1/2/4 cell. Within admitted single-card requests, the 2026-08-08 K policy uses `K=3`
+  for cold prompts and `K=2` when a prompt of at least 1024 tokens actually resumes at
+  least 1024 tokens. This is intentionally shallower on cached-long: K=2 beat K=3 on
+  both q9 and q27. Since memra#1093 the cached-long rung serves greedy requests only: a greedy
+  verify writes the same tokens at any K, while a sampled verify draws its Philox events per
+  round, so a sampled resume at the cached-long K left the text its cold twin wrote at the
+  cold-long K. A sampled request takes its cold twin's rung whatever it restored
+  (`spec_k_cached_tokens`; `research/spec-k-resume-20261109/`): on the RTX 5090 such resumes
+  decode about 3% slower at K=3 (59.6 against 61.5 tok/s, n = 24 turns per arm), TTFT unchanged.
+  Since 2026-11-09 a cold prompt of 1,024+ tokens takes `K=2` on the two cards whose cell has it
+  ahead, the RTX 5090 Laptop GPU and the RTX PRO 6000 Blackwell Max-Q (by device name), where
+  Qwen3.8-27B decodes up to 12% faster than at `K=3` (4 to 7% at T=1 from 3.6k tokens; flat at
+  about 1.2k on the RTX 5090 with one request) with the first token unchanged
+  (`research/spec-k-cold-long-20261109/`, `docs/decisions/SPEC-K-COLD-LONG-K2.md`); on those cards
+  a sampled resume therefore runs the depth a greedy one does. GB10, whose cell has `K=3` ahead,
+  and every other card keep `K=3` there. `MEMRA_SPEC_K` remains the
+  operator pin, including `0` for plain. Receipts: `research/specplace-20260808/`,
+  `research/kpolicy-20260808/`.
+- **Spec engages on prefix-cache hits** (v0.93.0, lane/spec-on-cache-hit — whole-entry
+  restores only; **SAMPLED hits included since lane/sampled-hit-spec 2026-08-19**). A spec
+  session's boundary capture publishes its prefix entry with the MTP draft plane and
+  boundary hidden alongside the trunk KV (`PREFIX_ENTRY_LAYOUT_VERSION` 2; plane + hidden
+  bytes counted in the entry budget). On an unconstrained, spec-eligible WHOLE-entry hit the
+  worker re-arms a warm spec session instead of downgrading: qwen/MTP via
+  `spec_session_from_restored_deferred` (restored trunk + draft plane + entry
+  anchor; the engine feeds any prompt suffix itself, mirroring prefill_tick's program arms),
+  gemma via `gemma_spec_session_from_restored` (drafter seed regenerated from a non-empty
+  suffix feed; full-cover gemma hits stay plain by design). `spec_restore_refusal` refuses
+  `entry_pos != fed_len`, so a partial restore can never route into a spec session — the
+  mid-entry-restore hazard class the lcprestore rollback recorded stays closed. Every
+  non-convertible shape (no draft plane, constrained, partial hit, conversion decline)
+  serves plain exactly as before **and the downgrade log line names the reason**;
+  `cached_tokens` counts the restored prefix only.
+  - **Sampled hits.** v0.93.0 shipped this greedy-only and the DE deploy then measured the
+    consequence: 3 cache hits, 3 plain downgrades, 0 restores, because the paying tenant's
+    traffic is sampled — which is what the OpenAI surface defaults to (`temperature` 1.0).
+    The greedy-only premise ("a sampled hit's first token must be host-sampled") did not
+    hold against the code it was protecting: the cold sampled spec path did not host-sample
+    its own first token either — it argmaxed it, as did every continuation burst. Until
+    memra#1154 sampled spec was distributionally exact, not byte-equal to plain sampling;
+    the MTP route now writes plain decode's text, and the restore's identity target here
+    stays the COLD SPEC session: per seed, a full-cover sampled hit is byte-identical to the cold
+    sampled leader, with the same accepted/drafted counts. **That argmax is itself fixed
+    since lane/sampled-spec-quality (2026-08-19) — see "Sampled boundary tokens" below —
+    and the restore draws its seed by the same rule from the same row, so the per-seed
+    identity is unchanged.** Rollback: `MEMRA_SPEC_RESTORE_SAMPLED=0` restores the v0.93.0
+    posture.
+  - **Sampled restores are SOLO-ONLY** (`MEMRA_SPEC_RESTORE_LOAD_GUARD`, default on,
+    2026-08-19). Measured on the sold shape: the lever is 1.623x solo (192 out) and 1.350x at
+    c1 (60 out), then **0.669x at c2** and 0.813x at c16 — the crossover is between c1 and c2.
+    Two concurrent sampled spec sessions already cost a third of aggregate throughput, because
+    each burst is stepped in a serial host loop and spec sessions are excluded from batched
+    decode, so two of them serialise what would otherwise be a 2-wide batch. The reason this
+    cannot be cleaned up after the fact is that a sampled spec session is the ONE kind the
+    tick's demotion sweep will not hand back to the batched path (its sampler history and
+    Philox stream live on the session; that handoff is a separate, unmeasured lane). A greedy
+    restore in the same position IS demoted the moment load arrives and measures 1.00x at c16,
+    which is why the guard is sampled-only. So the admission is conservative up front: a
+    sampled restore is admitted only when the request is SOLO — demand `max(worker-visible,
+    HTTP in-flight)` <= 1, read as late as possible, after the restore's own KV copy, because
+    the head of an arriving fan-out is invisible in `active + queue` at tick top. The refusal
+    names itself: `[spec-restore-guard] sampled restore REFUSED: demand N > SOLO watermark 1
+    (...)`. An operator `MEMRA_SPEC_K` pin or `MEMRA_SPEC_GATE=0` owns the policy and bypasses
+    it.
+  - **Sampled boundary tokens are SAMPLED** (`MEMRA_SPEC_SAMPLED_BOUNDARY`, default on).
+    A burst's first emitted token does not come from the accept walk — it comes off a
+    logits row that already exists (the prime's last row on a cold burst, the row after the
+    last committed token on a continuation burst, the entry's boundary row on a converted
+    hit). All three were `argmax` in both sampling regimes, so a sampled stream took a
+    greedy token once per burst. MEASURED, not estimated, on 18 real agent prompts at the
+    API's own default temperature (1.0), 256 tokens each: **3.52% of generated tokens were
+    boundary tokens at c=1 (one per 28.4 — below the 1-in-32 the burst size suggests, since
+    bursts also end on EOS, budget and admission yield), and 48.8% of those draws returned a
+    different token than the argmax they replaced ⇒ 1.71% of a customer's tokens came from
+    the wrong distribution.** At c=8 the rate falls to 0.50%, and the reason matters: the
+    spec admit/demote gate keeps only 2 of 18 requests on the spec path under load, so the
+    exposure is CONCENTRATED in the low-concurrency interactive tier, not diluted by scale.
+    Every boundary token is now drawn from the request's
+    own filtered/penalized target through the SESSION's Philox stream — never a second
+    stream — using the same primitive the full-accept bonus uses, so `sample_check`'s
+    distributional oracle covers it (arm 9: 20k draws, TV against the CPU-referenced target
+    with the Monte-Carlo floor printed, teeth cells for the argmax rule and an unpenalized
+    target). Greedy is byte-unaffected.
+    Since memra#1186 a continuation burst has no boundary token of its own. A sampled burst
+    ends on a pending token (emitted, not yet in the caches). It used to commit that token
+    with a solo trunk pass, draw the boundary token from the pass's logits, and the next
+    burst fed the boundary token with a second solo pass. Now it stashes the pending token
+    on the session, as a greedy burst has since 2026-08-01, and the next burst's round 0
+    verifies it as column 0 and draws the next position from that column at its own
+    position-keyed event (memra#1154): the same row, the same penalty window, the same
+    event, so the same token. The two passes are gone from every burst boundary; on GB10
+    they were 10 to 12 ms of wall per sampled round. A request's last pending token stays
+    on the session when the request ends. It is committed by one pass with the request's
+    own sampler in two cases: when the session is parked for reuse, after the response has
+    ended, and when the session is demoted to plain decode, once, mid-response. The drawn
+    boundary tokens that remain are the cold prime's first token, a converted hit's seed,
+    and the token after a burst that ended with no pending token (a one-token first burst,
+    an admission yield right after the prime). With the door shut
+    (`MEMRA_SPEC_SAMPLED_BOUNDARY=0`), or with `MEMRA_SPEC_PEN_SESSION=0` on a penalised
+    request, the old tail stays: both define their text by the burst boundary. Under
+    `MEMRA_SPEC_REPLAY=1` every round commits its bonus, so no burst ends on a pending
+    token and nothing is carried. The context-full stop counts a sampled session's pending
+    token, so its rule in emitted tokens is what it was; where the last burst ends still moves
+    with round alignment, and the text stays a prefix of plain decode's.
+    Record: `docs/decisions/SAMPLED-PENDING-CARRY.md`; receipts:
+    `research/spec-sampled-pending-carry-20261110/`.
+  - **Penalty history spans the SESSION** (`MEMRA_SPEC_PEN_SESSION`, default on). The burst
+    seeded `pen_hist` from the `prompt` slice it was handed, so a continuation burst — the
+    majority of a s
