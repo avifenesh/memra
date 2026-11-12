@@ -7,10 +7,11 @@
 #
 # Arch selection: sm_120a (RTX 50-series, default — the ONLY prebuilt since 2026-09-02) /
 # sm_100a (B200 source build) / sm_90a (Hopper source build) / sm_89 (Ada source build).
-# B200 is runtime-qualified from source but has no published prebuilt, so the release installer
+# B200 builds and runs from source but has no published prebuilt, so the release installer
 # refuses it before network access; sm_90a/sm_89 prebuilts were retired the same day and the
 # installer likewise points their users at a source build. Other targets
-# auto-detect from nvidia-smi; override with MEMRA_CUDA_ARCH.
+# auto-detect from nvidia-smi; override with MEMRA_CUDA_ARCH. A compute capability with no
+# build target (8.6, for example) is refused before network access.
 # Requirements at RUN time: Linux x86_64, NVIDIA driver >= 580 (CUDA 13
 # runtime support), and the CUDA 13 runtime libraries (cudart, cublas, cublasLt). The glibc
 # floor is NOT stated here on purpose — it is read out of the release's own SHA256SUMS and
@@ -29,7 +30,10 @@ command -v tar  >/dev/null 2>&1 || err "tar is required"
 [ "$(uname -s)" = "Linux" ]   || err "prebuilt binaries are Linux-only; build from source: cargo install memra-server"
 [ "$(uname -m)" = "x86_64" ]  || err "prebuilt binaries are x86_64-only; build from source: cargo install memra-server"
 
-# Resolve CUDA arch: explicit MEMRA_CUDA_ARCH, else nvidia-smi compute cap, else 120a.
+# Resolve CUDA arch: explicit MEMRA_CUDA_ARCH, else nvidia-smi compute cap, else 120a (no
+# nvidia-smi, or no answer from it, as when installing before the driver). A capability that is
+# not in the build table (crates/memra-engine/src/cuda_arch.rs) is refused here: the sm_120a
+# binary would install and then refuse to load on that GPU.
 # B200 is recognized but refused before any network call because no sm_100a release asset is
 # published yet. Source builds auto-detect it and carry their own hardware-qualified gates.
 ARCH="${MEMRA_CUDA_ARCH:-}"
@@ -41,21 +45,32 @@ if [ -z "$ARCH" ] && command -v nvidia-smi >/dev/null 2>&1; then
         10.0)      ARCH=100a ;;
         9.0)       ARCH=90a  ;;
         8.9)       ARCH=89   ;;
+        # Only a value shaped like a capability is refused. With no driver loaded, nvidia-smi
+        # prints an error ("NVIDIA-SMI has failed ...", "No devices were found") on stdout, and
+        # that case keeps the 120a fallback, as when nvidia-smi is absent.
+        [0-9]*.[0-9]*) err "this GPU reports compute capability $cap, and memra has no build target for it.
+Targets: 12.0 (sm_120a, the prebuilt), 12.1 (sm_121a), 10.0 (sm_100a), 9.0 (sm_90a) and 8.9 (sm_89);
+the last four build from source. MEMRA_CUDA_ARCH=<target> skips this detection." ;;
+        *)         ;;
     esac
 fi
 ARCH="${ARCH:-120a}"
-[ "$ARCH" != "100a" ] || err "B200 sm_100a is source-only in the release installer: the
-runtime-qualified backend has no published prebuilt yet. Build from source on the B200:
+[ "$ARCH" != "100a" ] || err "B200 sm_100a is source-only in the release installer: no sm_100a
+prebuilt is published. Build from source on the B200:
     MEMRA_CUDA_ARCH=100a cargo build --release --bins
-(`MEMRA_CUDA_ARCH` is optional on the B200 because source builds auto-detect compute capability
+(MEMRA_CUDA_ARCH is optional on the B200 because source builds auto-detect compute capability
 10.0). Use only model and kernel paths covered by the B200 receipt matrix."
 
 # Resolve version only after arch admission, so a known-unpublished B200 target fails locally
 # instead of making a GitHub API request and later blaming a missing release asset.
 VERSION="${MEMRA_VERSION:-}"
 if [ -z "$VERSION" ]; then
-    VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-        | grep -m1 '"tag_name"' | cut -d'"' -f4) || err "could not resolve latest release"
+    # Read the whole response before grep: `curl | grep -m1` closes the pipe early, and curl then
+    # prints "curl: (23) Failure writing output" although the tag resolved.
+    LATEST=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest") \
+        || err "could not resolve latest release"
+    VERSION=$(printf '%s\n' "$LATEST" | grep -m1 '"tag_name"' | cut -d'"' -f4)
+    [ -n "$VERSION" ] || err "could not resolve latest release (no tag_name in the GitHub reply)"
 fi
 
 BASE="https://github.com/$REPO/releases/download/$VERSION"
