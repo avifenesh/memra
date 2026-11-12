@@ -85,3 +85,12 @@ research/drafter-admission-20261112/cpu/green.log -text whitespace=-blank-at-eol
 
 # memra#1221: the pre-capture guard gates' raw answer texts end lines in a space; stored byte for byte.
 research/spec-capture-headroom-20261112/**/texts/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
+
+# memra#1255: the same-pass admission receipts keep their tool output whitespace (the raw cargo logs end in a
+# blank line, a red patch has a blank context line, the red summaries and a gate log end lines in a space);
+# stored byte for byte.
+research/same-pass-admission-20261112/cpu*/*.log -text whitespace=-blank-at-eol,-blank-at-eof
+research/same-pass-admission-20261112/cpu*/*.patch -text whitespace=-blank-at-eol,-blank-at-eof
+research/same-pass-admission-20261112/cpu*/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
+research/same-pass-admission-20261112/gates/**/*.log -text whitespace=-blank-at-eol,-blank-at-eof
+research/same-pass-admission-20261112/harness/*.patch -text whitespace=-blank-at-eol,-blank-at-eof
