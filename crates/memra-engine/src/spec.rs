@@ -1782,6 +1782,13 @@ impl SpecSession {
     /// WP-B day 37 (the on-demand KV planes): the on-demand VMM planes this session holds,
     /// trunk cache and draft scratch together. The server compares it with the count its
     /// construction scope allocated, so a plane this visitor cannot reach refuses the session.
+    /// The most rows a prefix entry reads in place from this session's trunk or draft planes
+    /// (memra#1221 part 2): 0 when nothing is lent. While it is not 0, dropping the session frees
+    /// none of its lent planes (they move to the entries).
+    pub fn lent_rows(&self) -> usize {
+        self.cache.lent_rows().max(self.scratch.lent_rows())
+    }
+
     pub fn kv_on_demand_planes(&self) -> usize {
         self.cache.on_demand_planes()
             + self
@@ -2793,14 +2800,8 @@ impl MtpScratch {
     fn set_len(&mut self, e: &Engine, n: usize) -> Result<(), Box<dyn std::error::Error>> {
         let caller = std::panic::Location::caller();
         // Every plane is checked against its lend before any plane moves (memra#1221).
-        for index in 0..self.plane_count() {
-            if let Some(why) = self
-                .plane(index)
-                .0
-                .lend_floor_refusal("MTP scratch length", n)
-            {
-                return Err(format!("{why} (plane={index}, called from {caller})").into());
-            }
+        if let Some(why) = self.lend_floor_refusal(n) {
+            return Err(format!("{why}, called from {caller})").into());
         }
         if !self.can_rewind_to(n) {
             // set_plane_len re-checks and reports the operands; call it so the failure carries
@@ -2817,6 +2818,25 @@ impl MtpScratch {
             self.set_plane_len(e, index, n)?;
         }
         Ok(())
+    }
+
+    /// The refusal of setting every plane's length to `n` while a lend reads rows past it
+    /// (memra#1221), naming the first plane that refuses.
+    fn lend_floor_refusal(&self, n: usize) -> Option<String> {
+        (0..self.plane_count()).find_map(|index| {
+            self.plane(index)
+                .0
+                .lend_floor_refusal("MTP scratch length", n)
+                .map(|why| format!("{why} (plane={index}"))
+        })
+    }
+
+    /// The most rows a live lend reads on any draft plane (0 when none lends).
+    fn lent_rows(&self) -> usize {
+        (0..self.plane_count())
+            .map(|index| self.plane(index).0.lent_rows())
+            .max()
+            .unwrap_or(0)
     }
 
     fn can_rewind_to(&self, n: usize) -> bool {
@@ -11673,6 +11693,14 @@ impl HybridModel {
     /// The checkpoint is CONSUMED (`turn_ckpt` taken): its snapshot buffers are freed here, and
     /// this turn's own prime installs a fresh one at the new prompt end. Returns the position
     /// rewound to, or `None` when the session holds no checkpoint (caller: full re-prime).
+    ///
+    /// LENT ROWS (memra#1221 review). A prefix entry may read the session's rows in place up to
+    /// its prime boundary capture, which can sit above the checkpoint (the seed's grid boundary
+    /// over a stable stop under it). The rewind is checked against every trunk layer's and draft
+    /// plane's lends before anything is written; when a lend reads rows past the checkpoint, the
+    /// session moves into a fresh cache of its own capacity instead (the route
+    /// [`Self::spec_grow_and_rewind_to_checkpoint`] takes): the checkpoint's rows are copied, the
+    /// lent planes move to their entries, and the session survives.
     pub fn spec_rewind_to_checkpoint(
         &self,
         e: &Engine,
@@ -11685,6 +11713,22 @@ impl HybridModel {
             return Err(
                 "SWA ring rewind checkpoint has been lapped; full re-prime required".into(),
             );
+        }
+        if let Some(why) = sess.turn_ckpt.as_ref().and_then(|ckpt| {
+            sess.cache
+                .checkpoint_lend_refusal(&ckpt.snap, false)
+                .or_else(|| {
+                    sess.scratch
+                        .lend_floor_refusal(ckpt.pos)
+                        .map(|w| format!("{w})"))
+                })
+        }) {
+            eprintln!(
+                "[spec] rewind below a lent prefix row: the session moves to a fresh cache \
+                 ({why})"
+            );
+            let cap = sess.cache.max_ctx;
+            return self.spec_rewind_into_fresh(e, sess, cap);
         }
         let Some(ckpt) = sess.turn_ckpt.take() else {
             return Ok(None);
@@ -11731,6 +11775,21 @@ impl HybridModel {
         if target_cap <= sess.cache.max_ctx {
             return self.spec_rewind_to_checkpoint(e, sess);
         }
+        self.spec_rewind_into_fresh(e, sess, target_cap)
+    }
+
+    /// Rewind `sess` to its turn checkpoint inside a fresh cache and scratch of `target_cap`
+    /// rows: the checkpoint's KV rows are copied from the parked cache, its recurrent state from
+    /// the checkpoint's snapshot, and the old planes go (or move to the prefix entries that read
+    /// them). The growth path of [`Self::spec_grow_and_rewind_to_checkpoint`], and the in-place
+    /// rewind's route past a lend (`target_cap` = the session's own capacity). All fallible work
+    /// completes before `sess` is mutated.
+    fn spec_rewind_into_fresh(
+        &self,
+        e: &Engine,
+        sess: &mut SpecSession,
+        target_cap: usize,
+    ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
         let Some(ckpt) = sess.turn_ckpt.as_ref() else {
             return Ok(None);
         };
@@ -18538,11 +18597,70 @@ mod lend_floor_tests {
         );
         let all = body("    fn set_len(&mut self, e: &Engine, n: usize)");
         let guard = all
-            .find(".lend_floor_refusal(\"MTP scratch length\", n)")
+            .find("self.lend_floor_refusal(n)")
             .expect("set_len checks every plane's lend");
         assert!(
             guard < all.find("self.set_plane_len(e, index, n)?").unwrap(),
             "set_len checks after a plane moved"
+        );
+        let every = body("    fn lend_floor_refusal(&self, n: usize)");
+        assert!(
+            every.contains("(0..self.plane_count()).find_map(")
+                && every.contains(".lend_floor_refusal(\"MTP scratch length\", n)"),
+            "the scratch's floor reads every plane: {every}"
+        );
+    }
+
+    /// memra#1221 review: the checkpoint restore checks every layer's lends before its first
+    /// write, and the speculative checkpoint rewind checks the trunk's and the scratch's lends
+    /// before the restore or the scratch moves anything, taking the fresh-cache route instead.
+    #[test]
+    fn checkpoint_rewinds_check_the_lends_before_writing() {
+        let flat = |s: &str| s.split_whitespace().collect::<String>();
+        let pp = include_str!("pp.rs");
+        let a = pp.find("pub fn restore_cache_checkpoint(").unwrap();
+        let restore = flat(&pp[a..a + pp[a..].find("\n}\n").unwrap()]);
+        let guard = restore
+            .find("target.checkpoint_lend_refusal(snap,source.is_some())")
+            .expect("the restore checks the lends");
+        for write in [
+            "copy_u8_into(",
+            "copy_u8_range_into(",
+            "dst.len=len;",
+            ".rewind_to(len)?",
+        ] {
+            assert!(
+                guard < restore.find(write).unwrap_or_else(|| panic!("{write}")),
+                "a write ({write}) before the lend check"
+            );
+        }
+        let src = include_str!("spec.rs");
+        let a = src.find("    pub fn spec_rewind_to_checkpoint(").unwrap();
+        let rewind = flat(&src[a..a + src[a..].find("\n    }\n").unwrap()]);
+        let guard = rewind
+            .find(".checkpoint_lend_refusal(&ckpt.snap,false)")
+            .expect("the rewind checks the trunk's lends");
+        let scratch = rewind
+            .find("sess.scratch.lend_floor_refusal(ckpt.pos)")
+            .expect("the rewind checks the scratch's lends");
+        let fresh = rewind
+            .find("returnself.spec_rewind_into_fresh(e,sess,cap);")
+            .expect("a refusal takes the fresh-cache route");
+        let first_write = rewind.find("crate::pp::restore_cache_checkpoint(").unwrap();
+        assert!(
+            guard < fresh && scratch < fresh && fresh < first_write,
+            "{rewind}"
+        );
+        assert!(fresh < rewind.find("sess.turn_ckpt.take()").unwrap());
+        // A lent registry plane refuses before `take_plane` releases the registry's ownership.
+        let tt = include_str!("tier_transfer.rs");
+        let a = tt.find("    pub fn take_device(").unwrap();
+        let take = flat(&tt[a..a + tt[a..].find("\n    }\n").unwrap()]);
+        assert!(
+            take.find("ifplane.lent_bytes()>0{returnErr(Error::Busy);}")
+                .unwrap()
+                < take.find("self.take_plane(lease)?").unwrap(),
+            "{take}"
         );
     }
 

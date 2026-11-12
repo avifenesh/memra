@@ -983,13 +983,17 @@ impl CudaTransfers {
     /// Transfer native backing out without a copy. The caller assumes accounting
     /// after this returns; live leases/bindings fail Busy without losing ownership.
     pub fn take_device(&mut self, lease: &DeviceLease) -> Result<CudaSlice<u8>> {
-        if self
-            .owner
-            .resolve::<Rc<RefCell<KvPlane>>>(lease)?
-            .borrow()
-            .is_vmm()
         {
-            return Err(Error::Unsupported);
+            let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(lease)?;
+            let plane = backing.borrow();
+            if plane.is_vmm() {
+                return Err(Error::Unsupported);
+            }
+            // A lent plane's storage may move only to its loan (memra#1221): refuse before
+            // `take_plane` releases the registry's ownership.
+            if plane.lent_bytes() > 0 {
+                return Err(Error::Busy);
+            }
         }
         self.take_plane(lease)?
             .into_pooled()
