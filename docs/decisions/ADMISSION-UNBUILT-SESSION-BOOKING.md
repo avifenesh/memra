@@ -125,68 +125,108 @@ session with no cache and no drafter session, and its prime start then took 518 
 ## Measured
 
 Receipts: `research/same-pass-admission-20261112/` (its README names every binary). "Base" is
-`445f964ea7`, memra#1248's head, whose landing `9d7c086c67` changes no code after it; "the
-change" is this PR's code on it. Every gate run is a single run.
+`445f964ea7`, memra#1248's head; "the head" is this PR's final code on it (`fix3`), and "the
+first cut" is its code before the review (`fix`: no head-of-line hold on a settle wait, a settle
+wait also for an arrival that did not fit even without the booking, the settle time measured to
+admission, no unbuilt stack in the pending-prime term). On this card only the last is reached in
+these runs, through the door-off reclaim booking after a partial reclaim in the agentic replay. The PR head is the same code rebased onto `11b368f7d7`; the landings between change
+`crates/memra-engine/src/spec.rs` and `unified_memory.rs` only (the MTP pre-capture guard, its
+narrow trim on unified memory only), which none of these runs reaches, so the device runs were
+not repeated; the CPU checks were. Every gate run is a single run.
 
 ### Same-pass gate (RTX 5090)
 
 `tools/same-pass-admission-gate.py`: two cold prompts (5,772 and 5,741 prompt tokens, charges
-816 and 814 MB, transient floor 1,576 MB) fired together beside a decoding keeper, a ballast
-placing effective free at 2,799 MB, where one fits (2,392 MB) and two do not (3,206 MB).
+816 and 814 MB) fired together beside a decoding keeper. The gate applied a reserve of 1,653 MB
+(the boot floor of 1,576 MB plus the verify-graph pool's debt, read from a probe that defers),
+so one request fits at 2,469 MB of effective free and two at 3,283 MB; a ballast placed the
+reading at 2,874 MB.
 
 | run | exit | failed verdicts | settle waits | out-of-memory lines | the keeper |
 |---|---|---|---|---|---|
-| base | 1 | V2 (both admitted in one pass), V3 (step OOM) | 0 | 2 | not parked after 3,872 streamed tokens: 503 |
-| the change | 0 | none | 1 | 0 | 8,000 tokens, 200 |
+| base | 1 | V2 (both admitted in one pass), V3 (step OOM) | 0 | 2 | not parked after 4,896 streamed tokens: 503 |
+| the head | 0 | none | 1 | 0 | 12,000 tokens, 200 |
 
 - **Base.** The two `[admit-trim]` lines of the pass read the same `driver_free_after`
-  (2,137,063,424 bytes) and `still_owned` (20,410,368,036): the second request was charged on
+  (2,137,063,424 bytes) and `still_owned` (20,536,576,036): the second request was charged on
   the reading the first was admitted on. The first prime chunk ran out of memory with 22 MB of
   driver free. One pair session parked and replayed, and both pair requests answered 200 with
   the reference text; the keeper, mid-stream, could not be parked.
-- **The change.** The second request read `effective free 1985MB after 814MB booked ... < cost
-  815MB + reserve 1653MB` and waited one pass. After the first session's prime started the real
-  reading (1,981 to 2,112 MB) still did not hold it, so it took the ordinary VRAM defer until
-  the first finished, and was admitted 7,637.6 ms after its settle wait. Both answered 200 with
-  the reference greedy text.
+- **The head.** The second request read `effective free 2059MB after 815MB booked ... < cost
+  814MB + reserve 1653MB` and waited one pass, 3,540.3 ms: the tick that built the first session
+  and ran its first prime chunk. The real reading then still did not hold it, so it took the
+  ordinary VRAM defer until the first finished. Both answered 200 with the reference greedy text.
+- **The first cut**, against base, before the gate probed the reserve (band from the floor,
+  2,392 to 3,206 MB, placement 2,799 MB, inside the applied band too): the same verdicts, base
+  exit 1 with 2 out-of-memory lines and the keeper's 503, the first cut exit 0 with 1 settle wait.
 
 ### Agentic replay at c = 2
 
 The 29-turn agentic workload (8 sessions, tool calls, thinking on, T = 1.0, seed 1234),
-two closed-loop users, a fresh boot per row.
+two closed-loop users, a fresh boot per row, two boots per lease in the order B F, F B, B F, F B
+on the RTX 5090 (the first two pairs on the first cut, the last two on the head) and one boot
+per lease B F F B on GB10.
 
-| card | boot | turns ok | tokens | agg gen tok/s | TTFT p50 / p95 s | settle waits | settled wait ms | step OOM |
+| card | boot | turns ok | tokens | agg gen tok/s | TTFT p50 / p95 s | settle waits, ms | step OOM | texts as boot 1 |
 |---|---|---|---|---|---|---|---|---|
-| RTX 5090 | base | 29/29 | 10,818 | 35.51 | 3.91 / 16.48 | 0 | 0 | 0 |
-| RTX 5090 | change | 29/29 | 10,818 | 36.11 | 4.00 / 15.52 | 1 | 3,264 | 0 |
-| RTX 5090 | change | 29/29 | 10,818 | 37.02 | 3.61 / 15.56 | 0 | 0 | 0 |
-| RTX 5090 | base | 29/29 | 9,765 | 35.86 | 3.29 / 15.05 | 0 | 0 | 1 |
-| GB10 | base | 29/29 | 11,125 | 28.03 | 3.58 / 11.71 | 0 | 0 | 0 |
-| GB10 | change | 29/29 | 11,125 | 28.01 | 3.57 / 11.73 | 0 | 0 | 0 |
-| GB10 | change | 29/29 | 11,125 | 28.03 | 3.57 / 11.72 | 0 | 0 | 0 |
-| GB10 | base | 29/29 | 11,125 | 27.95 | 3.58 / 11.73 | 0 | 0 | 0 |
+| RTX 5090 | base | 29/29 | 10,818 | 35.51 | 3.91 / 16.48 | 0 | 0 | 29/29 |
+| RTX 5090 | first cut | 29/29 | 10,818 | 36.11 | 4.00 / 15.52 | 1, 3,264 | 0 | 29/29 |
+| RTX 5090 | first cut | 29/29 | 10,818 | 37.02 | 3.61 / 15.56 | 0 | 0 | 29/29 |
+| RTX 5090 | base | 29/29 | 9,765 | 35.86 | 3.29 / 15.05 | 0 | 1 | 27/29 |
+| RTX 5090 | base | 29/29 | 10,262 | 37.08 | 3.13 / 14.77 | 0 | 2 | 27/29 |
+| RTX 5090 | head | 29/29 | 10,818 | 37.94 | 3.84 / 15.10 | 1, 3,190 | 0 | 29/29 |
+| RTX 5090 | head | 29/29 | 10,818 | 35.37 | 3.25 / 15.53 | 1, 2,182 | 0 | 29/29 |
+| RTX 5090 | base | 29/29 | 9,765 | 36.45 | 3.23 / 15.48 | 0 | 1 | 27/29 |
+| GB10 | base | 29/29 | 11,125 | 28.03 | 3.58 / 11.71 | 0 | 0 | 29/29 |
+| GB10 | the first cut | 29/29 | 11,125 | 28.01 | 3.57 / 11.73 | 0 | 0 | 29/29 |
+| GB10 | the first cut | 29/29 | 11,125 | 28.03 | 3.57 / 11.72 | 0 | 0 | 29/29 |
+| GB10 | base | 29/29 | 11,125 | 27.95 | 3.58 / 11.73 | 0 | 0 | 29/29 |
 
-- **The out-of-memory on base** is the same shape as the gate's: in the second base boot two
-  `[admit-trim]` lines of one pass read the same `driver_free_after` (2,136,342,528) and
-  `still_owned` (21,736,474,480), and the first prime chunk ran out of memory. The parked
-  session replayed and the boot answered every turn, but wrote 9,765 tokens and 2 of 29 turns
-  with another text; every other boot on the card wrote the same 29 texts.
-- **The settle wait's cost** in the replay: one wait in four change boots, 3,264 ms from the
-  wait to the admission (that span includes the first session's prime chunk the arrival waited
-  behind). Throughput and TTFT on the change are within the spread of base.
+- **Base ran out of memory in three of four boots on the RTX 5090**, four step OOMs in all, each
+  in the gate's shape: two `[admit-trim]` lines of one pass read the same `driver_free_after`
+  (2,136,342,528) and `still_owned` (21,736,474,480), and the first prime chunk after them ran out
+  of memory. The parked sessions replayed and every turn was answered, but each of those boots
+  wrote 2 of 29 turns with another text (9,765 or 10,262 tokens against 10,818). The change ran
+  out of memory in none of its four boots and wrote the same 29 texts in each.
+- **The settle wait's cost.** Three of the change's four boots took one settle wait each:
+  3,264, 3,190 and 2,182 ms, each the tick that built the owing session and ran its first prime
+  chunk. Throughput is level (base 35.51, 35.86, 37.08, 36.45; the change 36.11, 37.02, 37.94,
+  35.37 tok/s), and so is TTFT p95. TTFT p50 reads 3.13 to 3.91 s on base and 3.25 to 4.00 s on
+  the change; the base boots that ran out of memory wrote other, shorter texts, so the two are
+  not the same work.
 - **GB10** has the memory to admit both, so neither binary waited or deferred there; the four
   boots wrote the same 29 texts and the same throughput within 0.3%.
 
 ### Normal-concurrency cells
 
 DFlash2 drafter, closed-loop clients at c = 1, 2, 4, 8, 6 requests per client, greedy chat,
-160 new tokens, streamed. On GB10 (one boot each, base then the change) every c wrote the same
-text per prompt in both boots, with no settle wait, defer or out-of-memory line; tok/s base |
-change: c1 27.16 | 27.03, c2 32.76 | 33.20, c4 46.67 | 46.59, c8 79.13 | 81.00.
+160 new tokens, streamed. No request in any boot took a settle wait or ran out of memory, and
+every boot wrote the same text per prompt at every c.
+
+| card | c | base tok/s | change tok/s |
+|---|---|---|---|
+| RTX 5090 (B F F B, the head) | 1 | 73.35, 72.11 | 72.19, 71.93 |
+| RTX 5090 | 2 | 81.46, 78.32 | 78.24, 77.05 |
+| RTX 5090 | 4 | 121.35, 120.94 | 121.09, 121.61 |
+| RTX 5090 | 8 | 146.50, 146.27 | 146.70, 146.81 |
+| GB10 (B F, the first cut) | 1 | 27.16 | 27.03 |
+| GB10 | 2 | 32.76 | 33.20 |
+| GB10 | 4 | 46.67 | 46.59 |
+| GB10 | 8 | 79.13 | 81.00 |
+
+On the RTX 5090 the first base boot is the high one at c1 and c2 and the second sits with the
+head's two, the shape of drift across the lease; the change took no settle wait in these cells,
+so its only work there is the booking's sum over the active sessions each pass.
 
 ### CPU
 
-Reverting either half of the change by one line (the booking books nothing; the settle wait
-never fires) fails `an_admitted_session_with_no_route_state_books_its_charge_until_the_tick_builds_it`.
-The change's tree passes both worker tests, the full `memra-server` suite, clippy with
-`-D warnings`, fmt, the flags census and the numeric-scope check.
+Each half of the head reverted by one line fails a test: the booking that books nothing or the
+settle wait that never fires fails
+`an_admitted_session_with_no_route_state_books_its_charge_until_the_tick_builds_it` (first cut,
+`cpu/`); the settle wait without the unbooked fit fails it too, the pending-prime term without
+the unbuilt sessions' stacks fails `the_armed_door_books_the_whole_prompt_stack_of_an_unbuilt_session`,
+and the settle wait without its hold fails
+`every_route_state_field_counts_as_built_and_the_settle_wait_precedes_every_verdict`
+(`cpu-head/`). The head's tree passes all three, the full `memra-server` suite (1,218 passed),
+clippy with `-D warnings`, fmt, the flags census and the numeric-scope check, on its base and
+again rebased onto `11b368f7d7`.
