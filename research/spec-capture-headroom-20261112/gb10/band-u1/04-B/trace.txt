@@ -1,0 +1,6 @@
+1794502356.522813 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":89530150912,"synchronization_errors":[]}
+1794502407.092367 [spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794502423.086840 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":87634202624,"synchronization_errors":[]}
+1794502428.222682 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":86847713280,"synchronization_errors":[]}
+1794502428.222826 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794502550.061704 [spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2478MB (driver 1408MB + pool-cached 1070MB) < required 3141MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume

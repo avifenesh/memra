@@ -46,6 +46,10 @@ for c in ("probe131k", "probe260k", "ih131k-u1", "zt131k", "fa260k-u1", "pa260k-
           "qa131k-u1", "short-u1"):
     if (D / "runs" / c).exists():
         tree(D / "runs" / c, R / "gb10" / c)
+# The band cells keep their server logs (about 57 KB each): band_rows.py reads the capture point
+# from the prime-chunk lines, which trace.txt leaves out.
+if (D / "runs/band-u1").exists():
+    tree(D / "runs/band-u1", R / "gb10/band-u1", KEEP | {"server.log"})
 for c in ("nsys131k-B", "nsys260k-B"):
     tree(D / "nsys" / c, R / "gb10/nsys" / c)
 g = D / "runs/gates"
@@ -58,14 +62,15 @@ if g.exists():
 for c in ("rtx28k", "rtx60k", "rtx100k", "rtx28k-v", "rtx28k-v2"):
     if (D / "runs" / c).exists():
         tree(D / "runs" / c, R / "rtx5090" / c)
-for f in ("full-final.txt", "census-final.txt", "census-narrow-trim.txt", "build5090.log", "build5090-d75d.log"):
+for f in ("full-r2.txt", "census-r2-raw.txt", "census-r2-zero.txt", "full-final.txt", "census-final.txt",
+          "census-narrow-trim.txt", "build5090.log", "build5090-d75d.log"):
     if (D / "logs" / f).exists():
         put(D / "logs" / f, R / "cpu" / f)
 for f in ("specpub_cell.sh", "specpub_ab.py", "specpub_tab.py", "serve.sh", "serve_short.sh", "fill_cache.sh",
           "short_cell.sh", "mem_holder.py", "short_req.py", "unit_cell.sh", "ab_run.sh", "rtx_cell.sh", "rtx_ab.sh",
           "probe_i.py", "probe_i782.py", "probe_p.py", "probe_h.py", "spark_build_probe.sh", "spark_build_arms.sh",
           "gate_run.sh", "rows.py", "tsrun.py", "pf_long_memra.py", "eos_ab.py", "specpub_nsys.sh", "specpub_gap.py",
-          "specpub_split.py", "sizes-memra.json", "receipts.py"):
+          "specpub_split.py", "sizes-memra.json", "receipts.py", "band_u1.sh", "band_rows.py"):
     put(D / "tools" / f, R / "tools" / f)
 total = sum(p.stat().st_size for p in R.rglob("*") if p.is_file())
 print(f"receipts: {sum(1 for p in R.rglob('*') if p.is_file())} files, {total / 1e6:.2f} MB")

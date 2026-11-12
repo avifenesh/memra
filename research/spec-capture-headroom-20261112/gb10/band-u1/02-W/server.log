@@ -1,0 +1,408 @@
+1794501416.479907 [server] build: memra-0.141.1-a1ea6afc035a (id: source-tree, git: unknown)
+1794501416.480832 [server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1794501416.482004 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1794501416.482480 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1794501416.682226 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1794501416.827028 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1794501416.827073 [worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1794501416.873025 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1794501433.046289 [mtp-draft] loading external MTP draft: ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+1794501433.127146 [mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+1794501433.618561 [frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+1794501433.804903 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1794501433.805483 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1794501433.805506 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794501433.805687 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1794501433.805715 [route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1794501475.962063 [fa-pool] grow #0 dev=0 o_len 0 -> 3244032 ml_len 0 -> 12672 (retired kept, zero=false)
+1794501476.267768 [fa-pool] grow #1 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+1794501479.777604 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":89218564096,"synchronization_errors":[]}
+1794501479.777631 [wave-probe] 32 sessions at depth 2048: two 16-row waves 260.4 ms, one 32-row wave 265.0 ms (tensor-core tier 228.1 ms) -> wave cap 32, tensor-core b32 on (45.7s; released 16288MB of cached pool to the driver)
+1794501479.777636 [worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+1794501480.106776 [vision] tower loaded from ~/models/Qwen3.8-27B-NVFP4 (27 blocks, out_width 5120, f32-resident)
+1794501480.113532 [vision] overlay intake: tower dev0 -> intake dev0 (cross_context=false) publish=Auto servable=true
+1794501480.113579 [prefix-cache] on: budget 50296MB (50296039424 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50296039424 B; boot driver free 104350175232 B, post-reserve clamp 100592078848 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794501480.113584 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794501531.056487 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1794501531.056570 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+1794501531.056576 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q6_K_mmvq
+1794501531.057334 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1794501531.057389 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1794501531.057392 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1794501531.062987 [spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794501531.075278 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1412.502
+1794501531.075308 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794501535.620751 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1411.767
+1794501535.620779 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794501537.484339 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1415.873
+1794501537.484369 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794501539.428034 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1412.102
+1794501539.428062 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794501541.293008 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1437.271
+1794501541.293034 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794501541.813359 [spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+1794501544.961742 [spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+1794501547.326468 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":87307313152,"synchronization_errors":[]}
+1794501547.326514 [spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=12.60ms draft_step=0.00ms pooled_overhead=Some((4, 3.3397961927083344)) pooled_draft_step=None verify_ms[1..16]=[75.8 73.8 73.8 74.6 75.3 76.0 77.5 79.0 81.5 84.0 86.4 88.9 91.1 93.3 95.5 97.6] plain_ms[1..]=[74.6 77.5 81.3 85.1 89.2 93.2 97.2 101.2 106.0 110.7 115.5 120.2 125.0 129.7 134.5 139.2 144.9 150.6 156.3 162.0 167.7 173.3 179.0 184.7 190.4 196.1 201.8 207.5 213.1 218.8 224.5 230.2] (67.2s)
+1794501547.326731 [prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1794501549.875764 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1794501549.875797 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1794501549.904105 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2556.367
+1794501549.904135 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794501552.448646 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":86547156992,"synchronization_errors":[]}
+1794501552.448689 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1794501552.448690 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1214MB; probe kv charge 127MB, draft-state 34MB, drafted 87 accepted 34; [dev0 peak-mapped 19808MB rest-mapped 18432MB charged 161MB -> 1214MB]; 5.1s)
+1794501552.448693 [admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794501552.448711 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794501552.448712 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794501552.448714 [kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+1794501552.448716 [deadline] unified memory (48 SMs, served ctx 262144): streaming TTFT default/max 997311 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 3045311 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+1794501552.449172 [server] worker ready; serving models: ["q38"]
+1794501552.450551 [server] listening on http://127.0.0.1:8090
+1794501556.776557 [meter] admit id=chatcmpl-02ee24ce9c0cfa77bf5ee23a7290d295 tenant=default lane=interactive model="q38"
+1794501556.883023 [spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+1794501556.883054 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794501556.883055 [admission] request cost: model="q38" ctx=131622 path=spec = 31552 B/token x ctx + 4479MB prefill-workspace + 0MB fixed = 8632MB
+1794501556.883356 [prefix-cache] stable-boundary capture armed at 131008 of 131046 prompt tokens (model q38)
+1794501557.050609 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=131046 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794501557.050735 [admission] fixed residual high-water: model="q38" 642MB (observed 4793MB at ctx 131566 path=spec)
+1794501559.570170 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2434.503
+1794501559.570196 [prime-yield] count=1 remaining=63 chunks=1 wall_ms=2434.503 max_chunk_ms=2434.503
+1794501559.570199 [tick-spec] seq=1 slot=0 trace=- start_ms=0.009 gap_ms=0.009 wall_ms=2519.373 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501559.570201 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2519.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501562.070316 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2499.900
+1794501562.070348 [prime-yield] count=2 remaining=62 chunks=1 wall_ms=2499.900 max_chunk_ms=2499.900
+1794501562.070349 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2500.059 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501562.070352 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2500.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501564.643115 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2572.613
+1794501564.643144 [prime-yield] count=3 remaining=61 chunks=1 wall_ms=2572.613 max_chunk_ms=2572.613
+1794501564.643146 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2572.759 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501564.643148 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2572.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501567.298517 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2655.234
+1794501567.298554 [prime-yield] count=4 remaining=60 chunks=1 wall_ms=2655.234 max_chunk_ms=2655.234
+1794501567.298556 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=2655.373 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501567.298559 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2655.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501570.039775 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2741.072
+1794501570.039824 [prime-yield] count=5 remaining=59 chunks=1 wall_ms=2741.072 max_chunk_ms=2741.072
+1794501570.039826 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2741.231 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501570.039828 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2741.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501572.856092 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2816.141
+1794501572.856128 [prime-yield] count=6 remaining=58 chunks=1 wall_ms=2816.141 max_chunk_ms=2816.141
+1794501572.856130 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2816.284 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501572.856132 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2816.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501575.759796 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2903.529
+1794501575.759826 [prime-yield] count=7 remaining=57 chunks=1 wall_ms=2903.529 max_chunk_ms=2903.529
+1794501575.759829 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=2903.673 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501575.759831 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2903.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501578.736894 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2976.914
+1794501578.736924 [prime-yield] count=8 remaining=56 chunks=1 wall_ms=2976.914 max_chunk_ms=2976.914
+1794501578.736927 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=2977.069 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501578.736929 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2977.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501581.808217 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3071.138
+1794501581.808248 [prime-yield] count=9 remaining=55 chunks=1 wall_ms=3071.138 max_chunk_ms=3071.138
+1794501581.808250 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=3071.298 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501581.808252 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3071.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501584.942352 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3133.957
+1794501584.942385 [prime-yield] count=10 remaining=54 chunks=1 wall_ms=3133.957 max_chunk_ms=3133.957
+1794501584.942388 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=3134.102 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501584.942390 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3134.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501588.171363 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3228.844
+1794501588.171759 [prime-yield] count=11 remaining=53 chunks=1 wall_ms=3228.844 max_chunk_ms=3228.844
+1794501588.171789 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3228.994 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501588.172555 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3229.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501591.459555 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3288.005
+1794501591.459583 [prime-yield] count=12 remaining=52 chunks=1 wall_ms=3288.005 max_chunk_ms=3288.005
+1794501591.459585 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3288.155 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501591.459587 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3288.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501594.807751 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3348.021
+1794501594.807778 [prime-yield] count=13 remaining=51 chunks=1 wall_ms=3348.021 max_chunk_ms=3348.021
+1794501594.807780 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3348.168 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501594.807782 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3348.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501598.255467 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3447.527
+1794501598.255493 [prime-yield] count=14 remaining=50 chunks=1 wall_ms=3447.527 max_chunk_ms=3447.527
+1794501598.255496 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3447.675 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501598.255498 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3447.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501601.774160 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3518.515
+1794501601.774188 [prime-yield] count=15 remaining=49 chunks=1 wall_ms=3518.515 max_chunk_ms=3518.515
+1794501601.774190 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3518.661 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501601.774192 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3518.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501605.373513 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3599.192
+1794501605.373535 [prime-yield] count=16 remaining=48 chunks=1 wall_ms=3599.192 max_chunk_ms=3599.192
+1794501605.373538 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=3599.331 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501605.373539 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3599.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501609.045257 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3671.077
+1794501609.045288 [prime-yield] count=17 remaining=47 chunks=1 wall_ms=3671.077 max_chunk_ms=3671.077
+1794501609.045291 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=3671.229 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501609.045293 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3671.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501612.806453 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3761.510
+1794501612.806479 [prime-yield] count=18 remaining=46 chunks=1 wall_ms=3761.510 max_chunk_ms=3761.510
+1794501612.806481 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3761.652 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501612.806483 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3761.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501616.643906 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3837.369
+1794501616.643934 [prime-yield] count=19 remaining=45 chunks=1 wall_ms=3837.369 max_chunk_ms=3837.369
+1794501616.643936 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=3837.513 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501616.643938 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3837.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501620.563696 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3919.517
+1794501620.563722 [prime-yield] count=20 remaining=44 chunks=1 wall_ms=3919.517 max_chunk_ms=3919.517
+1794501620.563724 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=3919.673 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501620.563726 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3919.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501624.556990 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=3993.123
+1794501624.557016 [prime-yield] count=21 remaining=43 chunks=1 wall_ms=3993.123 max_chunk_ms=3993.123
+1794501624.557018 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=3993.264 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501624.557021 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=3993.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501628.638707 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=4081.550
+1794501628.638734 [prime-yield] count=22 remaining=42 chunks=1 wall_ms=4081.550 max_chunk_ms=4081.550
+1794501628.638737 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=4081.688 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501628.638739 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=4081.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501632.792057 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=4153.023
+1794501632.792101 [prime-yield] count=23 remaining=41 chunks=1 wall_ms=4153.023 max_chunk_ms=4153.023
+1794501632.792105 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4153.167 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501632.792108 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=4153.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501637.027533 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=4235.463
+1794501637.027558 [prime-yield] count=24 remaining=40 chunks=1 wall_ms=4235.463 max_chunk_ms=4235.463
+1794501637.027561 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=4235.604 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501637.027563 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=4235.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501641.344212 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=4316.505
+1794501641.344236 [prime-yield] count=25 remaining=39 chunks=1 wall_ms=4316.505 max_chunk_ms=4316.505
+1794501641.344239 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4316.646 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501641.344241 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=4316.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501645.739747 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=4395.354
+1794501645.739772 [prime-yield] count=26 remaining=38 chunks=1 wall_ms=4395.354 max_chunk_ms=4395.354
+1794501645.739774 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=4395.498 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501645.739776 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=4395.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501650.213604 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=4473.661
+1794501650.213638 [prime-yield] count=27 remaining=37 chunks=1 wall_ms=4473.661 max_chunk_ms=4473.661
+1794501650.213640 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4473.821 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501650.213643 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=4473.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501654.766072 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=4552.171
+1794501654.766107 [prime-yield] count=28 remaining=36 chunks=1 wall_ms=4552.171 max_chunk_ms=4552.171
+1794501654.766110 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=4552.322 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501654.766113 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=4552.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501659.402705 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=4636.588
+1794501659.402733 [prime-yield] count=29 remaining=35 chunks=1 wall_ms=4636.588 max_chunk_ms=4636.588
+1794501659.402736 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4636.732 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501659.402738 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=4636.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501664.116303 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=4713.421
+1794501664.116330 [prime-yield] count=30 remaining=34 chunks=1 wall_ms=4713.421 max_chunk_ms=4713.421
+1794501664.116333 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4713.569 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501664.116335 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=4713.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501668.901251 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=4784.749
+1794501668.901279 [prime-yield] count=31 remaining=33 chunks=1 wall_ms=4784.749 max_chunk_ms=4784.749
+1794501668.901282 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4784.896 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501668.901284 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=4784.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501673.887115 [prime-chunk] phase=mtp-trunk rows=4070 wall_ms=4985.395
+1794501673.887176 [prime-yield] count=32 remaining=32 chunks=1 wall_ms=4985.395 max_chunk_ms=4985.395
+1794501673.887179 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=4985.559 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501673.887182 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=4985.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501673.911173 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=24.149
+1794501673.911201 [prime-yield] count=33 remaining=31 chunks=1 wall_ms=24.149 max_chunk_ms=24.149
+1794501673.911203 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=24.295 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501673.911205 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=24.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501673.934602 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.254
+1794501673.934630 [prime-yield] count=34 remaining=30 chunks=1 wall_ms=23.254 max_chunk_ms=23.254
+1794501673.934632 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=23.396 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501673.934633 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501673.957994 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.250
+1794501673.958021 [prime-yield] count=35 remaining=29 chunks=1 wall_ms=23.250 max_chunk_ms=23.250
+1794501673.958023 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.375 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501673.958025 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501673.981357 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.231
+1794501673.981383 [prime-yield] count=36 remaining=28 chunks=1 wall_ms=23.231 max_chunk_ms=23.231
+1794501673.981385 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.348 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501673.981387 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.003867 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=22.379
+1794501674.003894 [prime-yield] count=37 remaining=27 chunks=1 wall_ms=22.379 max_chunk_ms=22.379
+1794501674.003896 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.495 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.003897 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=22.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.027143 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.153
+1794501674.027170 [prime-yield] count=38 remaining=26 chunks=1 wall_ms=23.153 max_chunk_ms=23.153
+1794501674.027172 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.266 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.027174 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.049714 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=22.442
+1794501674.049739 [prime-yield] count=39 remaining=25 chunks=1 wall_ms=22.442 max_chunk_ms=22.442
+1794501674.049741 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.556 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.049743 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=22.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.072204 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=22.358
+1794501674.072234 [prime-yield] count=40 remaining=24 chunks=1 wall_ms=22.358 max_chunk_ms=22.358
+1794501674.072236 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.475 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.072237 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=22.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.095507 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.177
+1794501674.095532 [prime-yield] count=41 remaining=23 chunks=1 wall_ms=23.177 max_chunk_ms=23.177
+1794501674.095534 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.291 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.095535 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.118852 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.215
+1794501674.118877 [prime-yield] count=42 remaining=22 chunks=1 wall_ms=23.215 max_chunk_ms=23.215
+1794501674.118879 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.330 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.118881 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.141364 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=22.384
+1794501674.141389 [prime-yield] count=43 remaining=21 chunks=1 wall_ms=22.384 max_chunk_ms=22.384
+1794501674.141391 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.497 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.141393 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=22.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.164676 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.180
+1794501674.164701 [prime-yield] count=44 remaining=20 chunks=1 wall_ms=23.180 max_chunk_ms=23.180
+1794501674.164703 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.294 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.164705 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.187121 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=22.319
+1794501674.187146 [prime-yield] count=45 remaining=19 chunks=1 wall_ms=22.319 max_chunk_ms=22.319
+1794501674.187148 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.434 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.187150 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=22.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.210469 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.224
+1794501674.210494 [prime-yield] count=46 remaining=18 chunks=1 wall_ms=23.224 max_chunk_ms=23.224
+1794501674.210496 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.337 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.210498 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.234059 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.161
+1794501674.234091 [prime-yield] count=47 remaining=17 chunks=1 wall_ms=23.161 max_chunk_ms=23.161
+1794501674.234093 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.274 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.234095 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.257057 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.170
+1794501674.257082 [prime-yield] count=48 remaining=16 chunks=1 wall_ms=23.170 max_chunk_ms=23.170
+1794501674.257084 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.284 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.257085 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.280338 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.153
+1794501674.280363 [prime-yield] count=49 remaining=15 chunks=1 wall_ms=23.153 max_chunk_ms=23.153
+1794501674.280365 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.266 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.280367 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.303589 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.123
+1794501674.303614 [prime-yield] count=50 remaining=14 chunks=1 wall_ms=23.123 max_chunk_ms=23.123
+1794501674.303616 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.237 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.303617 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.327061 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.149
+1794501674.327095 [prime-yield] count=51 remaining=13 chunks=1 wall_ms=23.149 max_chunk_ms=23.149
+1794501674.327097 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.262 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.327099 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.349381 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=22.388
+1794501674.349406 [prime-yield] count=52 remaining=12 chunks=1 wall_ms=22.388 max_chunk_ms=22.388
+1794501674.349408 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.501 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.349410 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=22.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.373405 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.897
+1794501674.373429 [prime-yield] count=53 remaining=11 chunks=1 wall_ms=23.897 max_chunk_ms=23.897
+1794501674.373431 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=24.010 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.373433 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=24.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.396770 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.238
+1794501674.396794 [prime-yield] count=54 remaining=10 chunks=1 wall_ms=23.238 max_chunk_ms=23.238
+1794501674.396796 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.352 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.396798 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.420606 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.713
+1794501674.420630 [prime-yield] count=55 remaining=9 chunks=1 wall_ms=23.713 max_chunk_ms=23.713
+1794501674.420632 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.826 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.420633 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.443129 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=22.391
+1794501674.443153 [prime-yield] count=56 remaining=8 chunks=1 wall_ms=22.391 max_chunk_ms=22.391
+1794501674.443155 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.504 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.443157 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=22.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.466455 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.203
+1794501674.466479 [prime-yield] count=57 remaining=7 chunks=1 wall_ms=23.203 max_chunk_ms=23.203
+1794501674.466481 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.317 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.466483 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.490255 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.331
+1794501674.490287 [prime-yield] count=58 remaining=6 chunks=1 wall_ms=23.331 max_chunk_ms=23.331
+1794501674.490289 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.445 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.490291 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.513243 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.199
+1794501674.513267 [prime-yield] count=59 remaining=5 chunks=1 wall_ms=23.199 max_chunk_ms=23.199
+1794501674.513269 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.312 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.513271 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.535758 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=22.390
+1794501674.535782 [prime-yield] count=60 remaining=4 chunks=1 wall_ms=22.390 max_chunk_ms=22.390
+1794501674.535784 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.503 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.535785 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=22.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.559881 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.996
+1794501674.559905 [prime-yield] count=61 remaining=3 chunks=1 wall_ms=23.996 max_chunk_ms=23.996
+1794501674.559907 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=24.109 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.559908 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=24.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.583143 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.134
+1794501674.583167 [prime-yield] count=62 remaining=2 chunks=1 wall_ms=23.134 max_chunk_ms=23.134
+1794501674.583169 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=23.247 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.583171 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.605674 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=22.402
+1794501674.605698 [prime-yield] count=63 remaining=1 chunks=1 wall_ms=22.402 max_chunk_ms=22.402
+1794501674.605700 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=22.516 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794501674.605701 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=22.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501674.629226 [prime-chunk] phase=mtp-draft-fill rows=4070 wall_ms=23.320
+1794501674.629251 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.002 success=true
+1794501676.140294 [spec-acc] ctx=131046 burst=21/33 cum=21/33=0.636
+1794501676.140714 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=1534.876 generated=0->33 rounds=11 drafted=33 accepted=21 k=3
+1794501676.140835 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1534.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501676.140846 [specpub-probe] enter why=spec-boundary pos=131008 reserved=28521267200 used=24717159496 cached=3804107704
+1794501676.140851 [specpub-probe] alloc trunk-k bytes=142536704 us=3 reserved_before=28521267200 reserved_after=28521267200 used_after=24859696200
+1794501676.140853 [specpub-probe] alloc trunk-v bytes=100614144 us=1 reserved_before=28521267200 reserved_after=28521267200 used_after=24960310344
+1794501676.140855 [specpub-probe] copy bytes=142536704 us=7
+1794501676.140859 [specpub-probe] copy bytes=100614144 us=2
+1794501676.140860 [specpub-probe] alloc trunk-k bytes=142536704 us=0 reserved_before=28521267200 reserved_after=28521267200 used_after=25102847048
+1794501676.140862 [specpub-probe] alloc trunk-v bytes=100614144 us=1 reserved_before=28521267200 reserved_after=28521267200 used_after=25203461192
+1794501676.140864 [specpub-probe] copy bytes=142536704 us=2
+1794501676.140867 [specpub-probe] copy bytes=100614144 us=2
+1794501676.140868 [specpub-probe] alloc trunk-k bytes=142536704 us=2 reserved_before=28521267200 reserved_after=28521267200 used_after=25345997896
+1794501676.140870 [specpub-probe] alloc trunk-v bytes=100614144 us=1 reserved_before=28521267200 reserved_after=28521267200 used_after=25446612040
+1794501676.140872 [specpub-probe] copy bytes=142536704 us=4
+1794501676.140873 [specpub-probe] copy bytes=100614144 us=4
+1794501676.140874 [specpub-probe] alloc trunk-k bytes=142536704 us=1 reserved_before=28521267200 reserved_after=28521267200 used_after=25589148744
+1794501676.140886 [specpub-probe] alloc trunk-v bytes=100614144 us=1 reserved_before=28521267200 reserved_after=28521267200 used_after=25689762888
+1794501676.140946 [specpub-probe] copy bytes=142536704 us=4
+1794501676.140947 [specpub-probe] copy bytes=100614144 us=4
+1794501676.140949 [specpub-probe] alloc trunk-k bytes=142536704 us=4 reserved_before=28521267200 reserved_after=28521267200 used_after=25832299592
+1794501676.140950 [specpub-probe] alloc trunk-v bytes=100614144 us=2 reserved_before=28521267200 reserved_after=28521267200 used_after=25932913736
+1794501676.140951 [specpub-probe] copy bytes=142536704 us=3
+1794501676.140952 [specpub-probe] copy bytes=100614144 us=6
+1794501676.140953 [specpub-probe] alloc trunk-k bytes=142536704 us=16 reserved_before=28521267200 reserved_after=28521267200 used_after=26075450440
+1794501676.140954 [specpub-probe] alloc trunk-v bytes=100614144 us=3 reserved_before=28521267200 reserved_after=28521267200 used_after=26176064584
+1794501676.140955 [specpub-probe] copy bytes=142536704 us=3
+1794501676.140957 [specpub-probe] copy bytes=100614144 us=5
+1794501676.140958 [specpub-probe] alloc trunk-k bytes=142536704 us=3 reserved_before=28521267200 reserved_after=28521267200 used_after=26318601288
+1794501676.140959 [specpub-probe] alloc trunk-v bytes=100614144 us=3 reserved_before=28521267200 reserved_after=28521267200 used_after=26419215432
+1794501676.140960 [specpub-probe] copy bytes=142536704 us=3
+1794501676.140961 [specpub-probe] copy bytes=100614144 us=5
+1794501676.140962 [specpub-probe] alloc trunk-k bytes=142536704 us=4 reserved_before=28521267200 reserved_after=28521267200 used_after=26561752136
+1794501676.140963 [specpub-probe] alloc trunk-v bytes=100614144 us=3 reserved_before=28521267200 reserved_after=28521267200 used_after=26662366280
+1794501676.140964 [specpub-probe] copy bytes=142536704 us=3
+1794501676.140965 [specpub-probe] copy bytes=100614144 us=7
+1794501676.140966 [specpub-probe] alloc trunk-k bytes=142536704 us=3 reserved_before=28521267200 reserved_after=28521267200 used_after=26804902984
+1794501676.140967 [specpub-probe] alloc trunk-v bytes=100614144 us=3 reserved_before=28521267200 reserved_after=28521267200 used_after=26905517128
+1794501676.140969 [specpub-probe] copy bytes=142536704 us=3
+1794501676.140970 [specpub-probe] copy bytes=100614144 us=5
+1794501676.140970 [specpub-probe] alloc trunk-k bytes=142536704 us=6 reserved_before=28521267200 reserved_after=28521267200 used_after=27048053832
+1794501676.140971 [specpub-probe] alloc trunk-v bytes=100614144 us=3 reserved_before=28521267200 reserved_after=28521267200 used_after=27148667976
+1794501676.140973 [specpub-probe] copy bytes=142536704 us=3
+1794501676.140974 [specpub-probe] copy bytes=100614144 us=5
+1794501676.140975 [specpub-probe] alloc trunk-k bytes=142536704 us=4 reserved_before=28521267200 reserved_after=28521267200 used_after=27291204680
+1794501676.140976 [specpub-probe] alloc trunk-v bytes=100614144 us=1 reserved_before=28521267200 reserved_after=28521267200 used_after=27391818824
+1794501676.140977 [specpub-probe] copy bytes=142536704 us=3
+1794501676.140978 [specpub-probe] copy bytes=100614144 us=4
+1794501676.140979 [specpub-probe] alloc trunk-k bytes=142536704 us=3 reserved_before=28521267200 reserved_after=28521267200 used_after=27534355528
+1794501676.140980 [specpub-probe] alloc trunk-v bytes=100614144 us=5 reserved_before=28521267200 reserved_after=28521267200 used_after=27634969672
+1794501676.140981 [specpub-probe] copy bytes=142536704 us=4
+1794501676.140982 [specpub-probe] copy bytes=100614144 us=6
+1794501676.140983 [specpub-probe] alloc trunk-k bytes=142536704 us=6 reserved_before=28521267200 reserved_after=28521267200 used_after=27777506376
+1794501676.140985 [specpub-probe] alloc trunk-v bytes=100614144 us=4 reserved_before=28521267200 reserved_after=28521267200 used_after=27878120520
+1794501676.140985 [specpub-probe] copy bytes=142536704 us=2
+1794501676.140987 [specpub-probe] copy bytes=100614144 us=5
+1794501676.140988 [specpub-probe] alloc trunk-k bytes=142536704 us=5 reserved_before=28521267200 reserved_after=28521267200 used_after=28020657224
+1794501676.140990 [specpub-probe] alloc trunk-v bytes=100614144 us=9 reserved_before=28521267200 reserved_after=28521267200 used_after=28121271368
+1794501676.140997 [specpub-probe] copy bytes=142536704 us=2
+1794501676.140998 [specpub-probe] copy bytes=100614144 us=3
+1794501676.147723 [specpub-probe] alloc trunk-k bytes=142536704 us=6556 reserved_before=28521267200 reserved_after=28521267200 used_after=28263808072
+1794501676.173681 [specpub-probe] alloc trunk-v bytes=100614144 us=25919 reserved_before=28521267200 reserved_after=28621930496 used_after=28364422216
+1794501676.173862 [specpub-probe] copy bytes=142536704 us=18
+1794501676.173868 [specpub-probe] copy bytes=100614144 us=2
+1794501676.185041 [specpub-probe] alloc trunk-k bytes=142536704 us=11489 reserved_before=28621930496 reserved_after=28756148224 used_after=28506958920
+1794501676.189451 [specpub-probe] alloc trunk-v bytes=100614144 us=4208 reserved_before=28756148224 reserved_after=28823257088 used_after=28607573064
+1794501676.189604 [specpub-probe] copy bytes=142536704 us=17
+1794501676.189607 [specpub-probe] copy bytes=100614144 us=2
+1794501676.201720 [specpub-probe] alloc draft-k bytes=142536704 us=12430 reserved_before=28823257088 reserved_after=28991029248 used_after=28750109768
+1794501676.208750 [specpub-probe] alloc draft-v bytes=100614144 us=6903 reserved_before=28991029248 reserved_after=29091692544 used_after=28850723912
+1794501676.208866 [specpub-probe] copy bytes=142536704 us=17
+1794501676.208871 [specpub-probe] copy bytes=100614144 us=3
+1794501676.208873 [specpub-probe] planes-done why=spec-boundary us=68111 reserved=29091692544 used=28850723912
+1794501676.208884 [prefix-cache] unified memory: insert budget 3936MB (configured 50296MB; live free 3403MB, headroom 3758MB, resident 0MB, new entry 4290MB)
+1794501676.208891 [prefix-cache] WARNING: first prefix insert is larger than the entire byte budget; this shape cannot produce cross-request hits. Subsequent refusals remain visible in prefix_cache_skips_budget
+1794501676.208896 [prefix-cache] insert refused: entry 4290478080 exceeds budget 3935847352 (spec-boundary, model q38)
+1794501676.209695 [specpub-probe] exit why=spec-boundary us=68896 reserved=29091692544 used=24560266312
+1794501678.145046 [spec-acc] ctx=131079 burst=19/42 cum=40/75=0.533
+1794501678.145084 [tick-spec] seq=1 slot=0 trace=- start_ms=0.071 gap_ms=0.071 wall_ms=1935.414 generated=33->66 rounds=14 drafted=42 accepted=19 k=3
+1794501678.145088 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1935.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501679.654011 [spec-acc] ctx=131112 burst=20/33 cum=60/108=0.556
+1794501679.654038 [tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=1508.918 generated=66->95 rounds=11 drafted=33 accepted=20 k=3
+1794501679.654040 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1508.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794501694.750381 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1794501694.750409 [server] drain complete in 0.0s; exiting
+1794501694.868438 [server] GPU worker shutdown complete

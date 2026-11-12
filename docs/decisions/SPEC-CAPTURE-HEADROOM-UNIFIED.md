@@ -65,6 +65,14 @@ head's guard fired in none.
 There was no out-of-memory line and no kernel OOM in either window. With the memory short at a
 request's arrival, admission refuses the request (HTTP 400) on both arms before any capture.
 
+**The band this change opens** (`gb10/band-u1`, B V V B): the raw reading under the requirement
+and `MemAvailable` above it. The holder kept `MemAvailable` near 3.5 GB through a 131k prompt's
+prime. Main's guard refused the capture in both cells (driver 1,389 and 1,408 MB + pool 1,070 MB
+< 3,140 MB, with `MemAvailable` at 3,429 and 3,476 MB). The head's guard let it go ahead without
+a trim at `MemAvailable` 3,463 and 3,470 MB, and the capture succeeded in both: no capture
+warning, no out-of-memory line, no kernel OOM, `MemAvailable` no lower than 3,225 MB to the
+request's end. All four cells served the same text in the same rounds.
+
 ## The change
 
 `capture_headroom_refusal` (`spec.rs`) reads `unified_memory::allocatable_mem_info` instead of
@@ -124,4 +132,9 @@ the raw `cuMemGetInfo`:
   GB10 driver allocations are charged to the cgroup is not established. Admission, the prefix
   budget and the MoE residency decision already read it this way; this change extends it to the
   capture guard. The cells here ran on the host, outside any memory cgroup limit.
-- The band raw < required <= MemAvailable + pool: band cells pending (review S3).
+- The band raw < required <= `MemAvailable` was measured in two head cells and two main cells
+  at 131k, with a holder that gives back 256 MB when the server's use pushes `MemAvailable` under
+  its target (it did so once per cell, on both arms). The capture's appetite there is 2 x 34 MB
+  under a 3,072 MB floor, so these cells show the head's capture succeeding in the band; they do
+  not show how an over-ask ends when nothing gives memory back. On unified memory that can be the
+  kernel's OOM killer rather than a `CUDA_ERROR_OUT_OF_MEMORY`.
