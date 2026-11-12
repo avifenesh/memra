@@ -424,12 +424,15 @@ a `[shed]` line.
   GLM cold prime builds its caches and drafter plane in the tick after `admit`, so until then the
   live reading does not show them. Every later reading is reduced by the charge such a session
   was admitted on, until the tick builds it; before this, a second arrival in the same pass (or a
-  step-OOM replay's pass) was admitted on the same bytes (memra#1255). An arrival that does not
-  fit the booked reading while some charge is still owed waits for the next pass
-  (`[admission] settle wait:`): no reclaim, eager admission, drafter refusal or capacity reject
-  is decided on a reading the tick is about to change. `[admission] settled:` names the passes
-  and milliseconds it waited; `/metrics` `admission_settle_waits` and `admission_settle_wait_ms`
-  count them. Single-device deployments only. Record:
+  step-OOM replay's pass) was admitted on the same bytes (memra#1255). An arrival that the
+  booking alone keeps out (it does not fit the booked reading but fits the reading without it)
+  waits for the next pass (`[admission] settle wait:`): no reclaim, eager admission, drafter
+  refusal or capacity reject is decided on a reading the tick is about to change, and later
+  requests on its devices wait behind it for that pass as they do behind a VRAM defer. An
+  arrival that fits neither goes on to those verdicts at once, on the booked reading.
+  `[admission] settled:` names the passes and milliseconds it waited, printed once `admit` has
+  built the session; `/metrics` `admission_settle_waits` and `admission_settle_wait_ms` count
+  them. Single-device deployments only (`is_multi_device_deployment`). Record:
   [`decisions/ADMISSION-UNBUILT-SESSION-BOOKING.md`](decisions/ADMISSION-UNBUILT-SESSION-BOOKING.md).
 - **A prefill at risk goes first.** Prefilling sessions normally advance one chunk per tick in turn.
   When a session would miss its first-token deadline under that order but would make it served

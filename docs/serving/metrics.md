@@ -60,7 +60,7 @@ Present for the operator and completion-domain scopes.
 | `admission_session_defers`, `admission_vram_defers` | admission decisions deferred at the session cap or by the VRAM gate. A queued request counts once per tick it is deferred |
 | `admission_vram_hol_holds` | requests held behind an earlier VRAM-deferred request in the same admission pass |
 | `admission_drafter_refusals` | DFlash requests the VRAM gate refused their drafter and priced again as plain, once per request |
-| `admission_settle_waits`, `admission_settle_wait_ms` | admission passes that requeued an arrival because the reading, less the charges of admitted sessions that own no route state yet, did not hold it (a settle wait, once per pass it waits), and the total milliseconds those requests waited before their admission (memra#1255) |
+| `admission_settle_waits`, `admission_settle_wait_ms` | admission passes that requeued an arrival because the reading, less the charges of admitted sessions that own no route state yet, did not hold it while the reading without those charges did (a settle wait, once per pass it waits), and the total milliseconds requests spent in settle waits, from a request's first settle wait to the pass that let it past, before any VRAM defer that follows (memra#1255) |
 | `prefill_deadline_ticks` | ticks whose interactive prefill used the earliest-deadline order instead of round robin |
 | `prefix_headroom_evictions` | prefix-cache entries evicted to give back the transient reserve after an insert |
 | `step_oom_parks` | successful step-OOM requeues |

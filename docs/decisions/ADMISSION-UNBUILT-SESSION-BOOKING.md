@@ -37,17 +37,46 @@ session with no cache and no drafter session, and its prime start then took 518 
   every reading subtracts (`unbuilt_session_booking`, through `pending_booked` and
   `AdmissionHeadroom::less_pending`). The tick builds the state, and the next reading shows what
   it took. On the armed memory door (the RTX PRO 6000 Workstation Edition) the workspace part is
-  left out, since the door's pending-prime term books it already.
-- **The settle wait.** An arrival that does not fit the booked reading while some charge is
-  still owed is requeued for the next pass, before the reclaim, the eager arm, the drafter
-  refusal and the capacity reject (`settle_wait`). Each of those would decide on a reading the
-  tick is about to change: a reclaim would evict prefix entries and parked sessions the real
-  reading may not need, and a drafter refusal holds for the request's life. A settle wait lasts
-  until the owing session's prime starts, normally one tick. `[admission] settle wait:` prints
-  once per pass; `[admission] settled:` names the passes and milliseconds a request waited when
-  it is admitted; `/metrics` gains `admission_settle_waits` and `admission_settle_wait_ms`.
+  left out and the door's pending-prime term books it: one prime call's slab and returned rows,
+  and the whole-prompt stack of every session whose walker has not started. A session that owns
+  no route state counts as such a session (`prime_walker_unstarted`); before this change that
+  term counted only an MTP session before its walker starts, so a cold DFlash or GLM session's
+  stack was booked by neither term.
+- **The settle wait.** An arrival the booked reading does not hold, while some charge is still
+  owed and the reading without that booking would hold it, is requeued for the next pass, before
+  the reclaim, the eager arm, the drafter refusal and the capacity reject (`settle_wait`). Each
+  of those would decide on a reading the tick is about to change: a reclaim would evict prefix
+  entries and parked sessions the real reading may not need, and a drafter refusal holds for the
+  request's life. A settle wait lasts until the owing sessions are built, one tick: every spec
+  session steps each tick and its first step builds the state. An arrival the reading does not
+  hold even without the booking gains nothing from a wait (the tick can only lower the reading,
+  a retire aside), so it goes on to those verdicts at once, decided on the booked reading so
+  none of them spends the bytes an unbuilt session will take.
+- **The settle wait holds the line.** Like a VRAM defer, an interactive settle wait arms the
+  head-of-line memory hold for its devices (`C8-SERVING-24GB.md`): later requests on those
+  devices wait behind it, so a smaller arrival neither spends the memory it waits for nor, as
+  one more cold prime, becomes another unbuilt booking ahead of it. The hold set is made anew at
+  the top of every admission pass, so it lasts the pass the request waited in. Behind it a
+  dark-lane request is shed with a 429 for that pass, exactly as behind a VRAM defer. An arrival
+  that would not fit even without the booking takes no settle wait and so arms no settle hold;
+  its VRAM defer arms the hold only when it can fit once its device's sessions retire, as before.
+  The hold's cost: a later arrival on those devices waits at most as long as the settle wait,
+  until the unbuilt sessions are built, even one that would fit. No cell measured here reaches it
+  (in the gate and at agentic c = 2 nothing queues behind the waiting request), so its cost is
+  unmeasured.
+- **What it prints and counts.** `[admission] settle wait:` once per pass;
+  `[admission] settled:` when `admit` has built the session, with the passes the request waited
+  and the milliseconds those waits took. The settle time ends at the pass that lets the request
+  past the settle check, before any VRAM defer that follows. `/metrics`:
+  `admission_settle_waits` (once per pass a request waits) and `admission_settle_wait_ms`.
 - **Routes that build their state in `admit` are unchanged.** Their sessions own their state when
   the next arrival is read, so nothing is booked for them.
+- **A partial reclaim's booking counts it twice, toward safety.** Door off, after a partial
+  reclaim, the reclaim booking books what the priming sessions owe through the same pending-prime
+  term, which now includes an unbuilt session's stack and call, while the unbuilt booking books
+  that session's whole charge, its workspace included. Until the tick builds the session the
+  workspace is counted twice; the error can only add a settle pass, and it ends when the session
+  is built.
 
 ## Rejected
 
@@ -59,18 +88,32 @@ session with no cache and no drafter session, and its prime start then took 518 
   reads (`ADMIT-BY-MEMORY-DEFAULT.md`).
 - **One cold DFlash admission per pass.** It would serialize admissions that fit together, and
   it misses the step-OOM replay, which re-admits beside a session admitted in an earlier pass.
-- **Deciding on the booked reading at once** (reclaim, eager arm, drafter refusal). The booked
-  reading is a bound, not a measurement; the real one arrives a tick later. Refusing a request
-  its drafter for life, or evicting the prefix cache, on that bound trades a one-tick wait for a
-  lasting cost.
+- **Deciding at once on the booked reading for an arrival the booking alone keeps out**
+  (reclaim, eager arm, drafter refusal). The booked reading is a bound, not a measurement; the
+  real one arrives a tick later. Refusing a request its drafter for life, or evicting the prefix
+  cache, on that bound trades a one-tick wait for a lasting cost.
 - **Booking the charge less what `admit` was seen to allocate.** A session that owns no state
   allocated nothing in `admit`; the predicate is exact where the subtraction would be noise.
+- **Building the route state in `admit`, in this change** (memra#1263 proposes it). Calling
+  `dspark_prime_start` in the admission pass would put the target caches and drafter plane in
+  the live reading at once, and most settle waits would not happen. The wait's cost is real: the
+  one settle wait in the agentic replay lasted 3,263.7 ms, one tick, because the tick that built
+  the owing session also ran its first 4,096-row prime chunk (`[prime-yield] ... wall_ms=3258.586`,
+  the next line). It is not a small change: the admission pass would need the drafter that the
+  tick borrows mutably, the capture decision and the TTFT prime mark; the yield-off rollback
+  (`dspark_spec_session_new`), gemma-spec and GLM build and prime in one call and would need a
+  split; and an allocation failure in the pass would need the park and requeue a failure in the
+  tick takes today. It would not remove the booking either: the walker's whole-prompt stack and
+  call workspace are still allocated chunk by chunk in the tick, so that part of the charge stays
+  owed until the walker starts.
 
 ## Not covered
 
-- **PP and TP deployments.** Their charge is planned per stage; the scalar booking is applied on
-  single-device deployments only (`is_multi_device_deployment`). A multi-device route that builds
-  its state in the tick (GLM PP) keeps the old reading until a per-stage booking exists.
+- **Multi-device deployments.** The booking is a scalar on the primary device, applied only
+  when `is_multi_device_deployment` is false. That excludes PP and TP, whose charge is planned
+  per stage, and also any deployment whose loaded models span more than one device, such as two
+  single-card models on a two-card box. A multi-device route that builds its state in the tick
+  (GLM PP) keeps the old reading until a per-device booking exists.
 - **A lone cold prime that overruns the reserve** (memra#1258): one cold DFlash admission, with
   its charge and the reserve met and no peer admitted in its pass (`active=0`, earlier sessions
   parked), ran out of memory in its first prime chunk. It was the first request of the pair in

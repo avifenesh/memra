@@ -3023,7 +3023,8 @@ pub struct Metrics {
     /// admitted sessions that own no route state yet, did not hold it (memra#1255): the
     /// reading changes when the tick builds those sessions, so nothing is decided on it.
     pub admission_settle_waits: u64,
-    /// Total time requests spent in settle waits before their admission, in ms (memra#1255).
+    /// Total time requests spent in settle waits, in ms (memra#1255): from a request's first
+    /// settle wait to the pass that let it past, before any VRAM defer that follows.
     pub admission_settle_wait_ms: f64,
     /// Requests the VRAM gate refused their DFlash drafter and priced again as plain
     /// (memra#1173): the full charge with the draft plane did not fit. Once per request.
@@ -8702,12 +8703,14 @@ fn unbuilt_session_booking(active: &[Session], workspace_booked: bool) -> usize 
     )
 }
 
-/// SETTLE WAIT (memra#1255): an arrival the booked reading does not hold while an admitted
-/// session still owes its unbuilt charge waits for the next pass. The tick builds that session
-/// and the next reading shows what it took, so no reclaim, eager admission, drafter refusal or
-/// capacity reject is decided on this one.
-fn settle_wait(unbuilt_booked: usize, fits_full: bool) -> bool {
-    unbuilt_booked > 0 && !fits_full
+/// SETTLE WAIT (memra#1255): an arrival the booked reading does not hold, while an admitted
+/// session still owes its unbuilt charge and the reading without that booking would hold it,
+/// waits for the next pass. The tick builds that session and the next reading shows what it took,
+/// so no reclaim, eager admission, drafter refusal or capacity reject is decided on this one. An
+/// arrival the reading does not hold even without the booking gains nothing from a wait (the tick
+/// can only lower the reading): it goes on to those verdicts at once, on the booked reading.
+fn settle_wait(unbuilt_booked: usize, fits_booked: bool, fits_unbooked: bool) -> bool {
+    unbuilt_booked > 0 && !fits_booked && fits_unbooked
 }
 
 /// Prompt rows a session still has to prime (memra#680): its queued rows while the prime runs,
@@ -8736,11 +8739,20 @@ fn pending_prime_bytes(
         .fold(0usize, usize::saturating_add)
 }
 
+/// Whether a still-priming session owes its whole-prompt stack, its walker not yet started: an
+/// MTP spec session before its walker starts, and (memra#1255) any session that owns no route
+/// state yet. A DFlash, gemma-spec or GLM cold prime builds its walker in the tick after `admit`,
+/// so until then the armed door's pending-prime term must book that stack: the unbuilt booking
+/// leaves the prefill workspace to this term on the armed door.
+fn prime_walker_unstarted(mtp_spec: bool, mtp_prime_started: bool, owns_route_state: bool) -> bool {
+    (mtp_spec && !mtp_prime_started) || !owns_route_state
+}
+
 /// One still-priming session as the corrected pending-prime term reads it (WP-B day 39).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PrimeOwed {
     rows: usize,
-    /// On the MTP spec route with its walker not yet started (its whole-prompt stack is owed).
+    /// Its walker not yet started, so its whole-prompt stack is owed (`prime_walker_unstarted`).
     unstarted_walker: bool,
     /// The walker persists across ticks (`MEMRA_PRIME_YIELD` and the model supports the walk).
     cooperative: bool,
@@ -8863,7 +8875,11 @@ fn pending_prime_bytes_v2(
             .or_default()
             .push(PrimeOwed {
                 rows,
-                unstarted_walker: s.spec.is_some() && s.mtp_prime.is_none(),
+                unstarted_walker: prime_walker_unstarted(
+                    s.spec.is_some(),
+                    s.mtp_prime.is_some(),
+                    session_owns_route_state(s),
+                ),
                 cooperative: cooperative(&s.model),
                 snapshot_bytes: session_snapshot_bytes_owed(s),
             });
@@ -20146,6 +20162,9 @@ pub fn run(
     // memra#1255: requests in a settle wait, by request id: when the first wait began and how many
     // passes waited. Read once at admission for the `[admission] settled:` line.
     let mut settling: HashMap<String, (Instant, u32)> = HashMap::new();
+    // Requests past their settle waits and not yet admitted: when they got past, the passes they
+    // waited and the milliseconds those took, for the `settled:` line at admission.
+    let mut settled: HashMap<String, (Instant, u32, f64)> = HashMap::new();
     let mut settle_wait_ms_total = 0f64;
     let mut n_drafter_refusals = 0u64;
     // RECLAIM BOOKING (`reclaim_owed_booking`): armed by a door-off partial reclaim that freed
@@ -20636,6 +20655,7 @@ pub fn run(
         // A request that left the queue without being admitted (refused, cancelled) leaves its
         // settle entry behind; none lives past ten minutes.
         settling.retain(|_, (since, _)| since.elapsed() < Duration::from_secs(600));
+        settled.retain(|_, (since, _, _)| since.elapsed() < Duration::from_secs(600));
         // The devices of every interactive request the VRAM gate deferred this pass that can still
         // fit once its device's sessions retire: later requests on those devices wait behind it
         // (head-of-line memory order, after the first-token gate).
@@ -21603,8 +21623,18 @@ pub fn run(
                 let pending_booked = pending_booked.saturating_add(unbuilt_booked);
                 let book =
                     move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);
-                let measured_headroom =
-                    admission_headroom(&engine, &loaded, device_requirements.as_deref()).map(book);
+                let raw_headroom =
+                    admission_headroom(&engine, &loaded, device_requirements.as_deref());
+                // The reading without the unbuilt booking (memra#1255): only an arrival it holds
+                // takes a settle wait.
+                let fits_unbooked = raw_headroom.clone().is_some_and(|h| {
+                    h.less_pending(
+                        pending_booked.saturating_sub(unbuilt_booked),
+                        primary_device,
+                    )
+                    .sufficient(required)
+                });
+                let measured_headroom = raw_headroom.map(book);
                 if device_requirements.is_some() && measured_headroom.is_none() {
                     fail_request(
                         req,
@@ -21615,7 +21645,7 @@ pub fn run(
                     continue;
                 }
                 if let Some(headroom) = measured_headroom.as_ref()
-                    && settle_wait(unbuilt_booked, headroom.sufficient(required))
+                    && settle_wait(unbuilt_booked, headroom.sufficient(required), fits_unbooked)
                 {
                     if settle_waits == 0 {
                         eprintln!(
@@ -21641,8 +21671,27 @@ pub fn run(
                         .entry(req.request_id.clone())
                         .or_insert_with(|| (Instant::now(), 0))
                         .1 += 1;
+                    // A settle wait holds the line like a VRAM defer (HEAD-OF-LINE MEMORY ORDER):
+                    // a later request admitted past it in this pass would spend the memory it
+                    // waits for, and as a cold DFlash prime would be one more unbuilt booking to
+                    // wait behind.
+                    if lane == crate::lanes::Lane::Interactive {
+                        memory_hold.extend(model_devices(&engine, &loaded[&model_key]));
+                    }
                     requeue.push_back(req);
                     continue;
+                }
+                // Past its settle waits, if it took any: their time ends here, before any VRAM
+                // defer that follows. The `settled:` line prints when `admit` succeeds.
+                if let Some((since, passes)) = settling.remove(&req.request_id) {
+                    let waited_ms = since.elapsed().as_secs_f64() * 1e3;
+                    settle_wait_ms_total += waited_ms;
+                    let entry =
+                        settled
+                            .entry(req.request_id.clone())
+                            .or_insert((Instant::now(), 0, 0.0));
+                    entry.1 += passes;
+                    entry.2 += waited_ms;
                 }
                 if let Some(mut headroom) = measured_headroom {
                     // EFFECTIVE free, not driver `free`: `mem_get_info` cannot see blocks the
@@ -22723,14 +22772,6 @@ pub fn run(
             // The request is admitted. Effective headroom (driver + pool-cached) said it
             // fits; make sure the DRIVER itself has room for the prime's own allocations
             // before any device work starts (see admit_driver_headroom_bytes).
-            if let Some((since, passes)) = settling.remove(&req.request_id) {
-                let waited_ms = since.elapsed().as_secs_f64() * 1e3;
-                settle_wait_ms_total += waited_ms;
-                eprintln!(
-                    "[admission] settled: model={model_key:?} ctx={admission_cap} admitted after \
-                     {passes} settle wait(s), {waited_ms:.1} ms after the first"
-                );
-            }
             ensure_driver_headroom(&engine, &loaded, "prime");
             let observe_model = &loaded[&model_key].model;
             let observe_n_trunk =
@@ -23071,6 +23112,13 @@ pub fn run(
                             0,
                         )
                         .prefill_workspace_bytes as usize;
+                    if let Some((_, passes, waited_ms)) = settled.remove(&s.request_id) {
+                        eprintln!(
+                            "[admission] settled: model={:?} admitted after {passes} settle \
+                             wait(s), {waited_ms:.1} ms in them",
+                            s.model
+                        );
+                    }
                     admission_book.admit(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
                     active.push(s);
                 }
@@ -27641,7 +27689,7 @@ struct AdmissionDeviceHeadroom {
     pool_used_bytes: usize,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum AdmissionHeadroom {
     Primary {
         free_bytes: usize,
@@ -40013,11 +40061,75 @@ mod tests {
         let booked = unbuilt_charge_bytes([a].into_iter(), false);
         let fits = reading - booked >= b_required;
         assert!(!fits);
-        assert!(settle_wait(booked, fits));
+        assert!(settle_wait(booked, fits, true));
         // Nothing owed: the gate's own verdicts decide, as before. A fit never waits.
-        assert!(!settle_wait(0, false));
-        assert!(!settle_wait(0, true));
-        assert!(!settle_wait(booked, true));
+        assert!(!settle_wait(0, false, true));
+        assert!(!settle_wait(0, true, true));
+        assert!(!settle_wait(booked, true, true));
+        // An arrival the reading does not hold even without the booking gains nothing from a
+        // wait (the tick only lowers the reading): it goes on to the verdicts at once.
+        assert!(!settle_wait(booked, false, false));
+    }
+
+    #[test]
+    fn the_armed_door_books_the_whole_prompt_stack_of_an_unbuilt_session() {
+        // memra#1255 review: on the armed memory door the unbuilt booking leaves each session's
+        // prefill workspace to the pending-prime term, so that term must count the whole-prompt
+        // stack of a session that owns no route state yet (a DFlash, gemma-spec or GLM cold
+        // prime builds its walker in the tick). Two cold DFlash sessions of 5,741 and 5,772
+        // rows: together the two terms book every charge less the workspace, each session's
+        // stack, and one call (the slab and its returned rows: the calls run one after another).
+        use super::{
+            PrimeOwed, pending_prime_for_model, prime_walker_unstarted, unbuilt_charge_bytes,
+        };
+        let shape = memra_engine::hybrid_forward::PrimeWorkspaceShape {
+            call_row_bytes: 400_000,
+            slab_row_bytes: 300_000,
+            prompt_row_bytes: 20_480,
+            n_layers: 64,
+            swa_ring: false,
+        };
+        // Who owes the stack: an unbuilt session, an MTP session before its walker starts.
+        assert!(
+            prime_walker_unstarted(false, false, false),
+            "unbuilt DFlash/GLM/gemma"
+        );
+        assert!(
+            prime_walker_unstarted(true, false, true),
+            "MTP, walker not started"
+        );
+        assert!(
+            !prime_walker_unstarted(true, true, true),
+            "MTP, walker started"
+        );
+        assert!(
+            !prime_walker_unstarted(false, false, true),
+            "plain, cache built in admit"
+        );
+        let rows = [5_741usize, 5_772];
+        let call = |r: usize| shape.call_row_bytes * shape.call_rows(r);
+        let stack = |r: usize| shape.prompt_row_bytes * r;
+        let workspace = |r: usize| call(r) + stack(r);
+        let kv_and_plane = 345_000_000usize;
+        let sessions = rows.map(|r| (false, kv_and_plane + workspace(r), workspace(r)));
+        let owed: Vec<PrimeOwed> = rows
+            .iter()
+            .map(|&r| PrimeOwed {
+                rows: r,
+                unstarted_walker: prime_walker_unstarted(false, false, false),
+                cooperative: true,
+                snapshot_bytes: 0,
+            })
+            .collect();
+        let booked = unbuilt_charge_bytes(sessions.into_iter(), true)
+            + pending_prime_for_model(&owed, Some(&shape), None, 0);
+        let largest_call = rows.iter().map(|&r| call(r)).max().unwrap();
+        let returned =
+            shape.prompt_row_bytes * rows.iter().map(|&r| shape.call_rows(r)).max().unwrap();
+        assert_eq!(
+            booked,
+            2 * kv_and_plane + stack(rows[0]) + stack(rows[1]) + largest_call + returned
+        );
     }
 
     #[test]
@@ -40056,7 +40168,9 @@ mod tests {
         let booked = at("let pending_booked = pending_booked.saturating_add(unbuilt_booked);");
         let book =
             at("move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);");
-        let settle = at("settle_wait(unbuilt_booked, headroom.sufficient(required))");
+        let unbooked = at("pending_booked.saturating_sub(unbuilt_booked),");
+        let settle =
+            at("settle_wait(unbuilt_booked, headroom.sufficient(required), fits_unbooked)");
         let reclaim = at("let mut reclaim_spare = if !headroom.sufficient(required) {");
         let verdict = at("let mut verdict = vram_gate_first_read(");
         let recorded = at("s.admitted_charge_bytes = cost;");
@@ -40064,8 +40178,30 @@ mod tests {
             .find("active.push(s);")
             .map(|i| i + recorded)
             .unwrap();
-        assert!(booked < book && book < settle && settle < reclaim && reclaim < verdict);
-        assert!(verdict < recorded && recorded < pushed);
+        assert!(booked < book && book < unbooked && unbooked < settle);
+        assert!(settle < reclaim && reclaim < verdict);
+        // The settle branch holds the line for later requests on its devices, as a VRAM defer
+        // does, before it requeues (and before the reclaim, so nothing is decided past it).
+        let hold = settle
+            + prod[settle..]
+                .find("memory_hold.extend(")
+                .expect("settle hold");
+        let requeued = settle + prod[settle..].find("requeue.push_back(req);").unwrap();
+        let next = settle + prod[settle..].find("continue;").unwrap();
+        assert!(hold < requeued && requeued < next && next < reclaim);
+        // The hold lasts one pass: the set is made anew at the top of every admission pass.
+        let pass =
+            at("settled.retain(|_, (since, _, _)| since.elapsed() < Duration::from_secs(600));");
+        let hold_set =
+            at("let mut memory_hold: std::collections::HashSet<usize> = Default::default();");
+        let drain = at("while let Some(mut req) = queue.pop_front() {");
+        assert!(pass < hold_set && hold_set < drain && drain < settle);
+        // The settle time ends when the request gets past the check, before the reclaim and
+        // any VRAM defer; the `settled:` line prints only for a session `admit` built.
+        let past = at("if let Some((since, passes)) = settling.remove(&req.request_id) {");
+        assert!(next < past && past < reclaim);
+        let line = at("\"[admission] settled: model={:?} admitted after {passes} settle \\");
+        assert!(verdict < recorded && recorded < line && line < pushed);
     }
 
     #[test]
