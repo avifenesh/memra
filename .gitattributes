@@ -82,3 +82,6 @@ research/spec-cohort-newcomer-20261112/**/texts/*.txt -text whitespace=-blank-at
 
 # memra#1173: the drafter-admission CPU cell's raw green cargo log ends in a blank line; stored byte for byte.
 research/drafter-admission-20261112/cpu/green.log -text whitespace=-blank-at-eol,-blank-at-eof
+
+# memra#1221: the pre-capture guard gates' raw answer texts end lines in a space; stored byte for byte.
+research/spec-capture-headroom-20261112/**/texts/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
