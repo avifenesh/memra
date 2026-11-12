@@ -30,7 +30,7 @@ for d in sys.argv[1:]:
             rows.append(r)
 groups = collections.defaultdict(lambda: collections.defaultdict(list))
 for r in rows:
-    groups[(r["longs"], r["class"], r.get("newcomer_class", r["class"]))][r["arm"].rsplit("-", 1)[0]].append(r)
+    groups[(r["longs"], r["class"], r.get("newcomer_class", r["class"]) + ("+long" if r.get("long_prompts") else ""))][r["arm"].rsplit("-", 1)[0]].append(r)
 print("| long streams | class (long/new) | arm | boots | newcomers | TTFT p50 s | TTFT p95 s | TTFT max s | 1st to 2nd token p50 s | newcomer E2E p50 s | long tok/s (sum), per boot | all tok/s (long + newcomers), per boot | long longest gap s, max | long ITL p50 / p99 ms |")
 print("|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|---:|---|")
 for key in sorted(groups):
@@ -53,7 +53,7 @@ bad = 0
 checked_long = checked_new = 0
 bycell = collections.defaultdict(list)
 for r in rows:
-    bycell[(r["cell"], r["longs"], r["class"], r.get("newcomer_class", r["class"]))].append(r)
+    bycell[(r["cell"], r["longs"], r["class"], r.get("newcomer_class", r["class"]) + ("+long" if r.get("long_prompts") else ""))].append(r)
 for key, rs in sorted(bycell.items()):
     for i in range(key[1]):
         texts = [(r["arm"], (r["_dir"] / r["long_streams"][i]["text_file"]).read_text()) for r in rs]

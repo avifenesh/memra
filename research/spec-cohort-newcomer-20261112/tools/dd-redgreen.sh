@@ -5,6 +5,10 @@
 #   oldorder  spec_cold_serial_first names nobody (the cohorts step first): the naming test fails.
 #   nojoin    a session that primed first is never handled in the cohort pass: the pass test fails.
 #   swapped   the cohort pass runs first: the wiring test fails.
+#   nopeer    every newcomer is named, trimmed prime or not (a lone speculative newcomer beside
+#             plain riders then bursts twice in one tick): the wiring test fails.
+#   noquantum the cohort pass does not read the prime quantum before the cohorts form (a cohort
+#             then runs a whole burst between a long prime's chunks): the wiring test fails.
 # Then green: all three pass.
 set -u
 D=$HOME/.cache/memra-1227
@@ -26,7 +30,7 @@ run() {
   grep -E "^test .*(ok|FAILED)$|panicked at|test result|^error" "$D/redgreen-$name.log" | head -n 30
 }
 rm -f "$D"/redgreen-*.log
-for arm in main oldorder nojoin swapped; do
+for arm in main oldorder nojoin swapped nopeer noquantum; do
   python3 "$D/tools/redarm.py" "$arm" "$D/worker.green.rs" "$D/worker.base.rs" "$W" || { echo "red arm $arm did not apply"; cp "$D/worker.green.rs" "$W"; exit 1; }
   run "red-$arm"
 done

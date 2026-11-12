@@ -1,7 +1,7 @@
-[server] build: memra-0.141.1-51f0eb72655f (id: source-tree, git: unknown)
+[server] build: memra-0.141.1-2c65e91e03d3 (id: source-tree, git: unknown)
 [server] starting; models config = [("q", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
-[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
 [worker] Engine ready (device=0, MEMRA_FAST=true)
 [worker] loading model "q" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
@@ -31,14 +31,14 @@
 [spec] draft-session state high-water: 37MB (max of parked delta 37MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1644167168,"still_owned_bytes":17213437776,"pool_reserved_bytes":17414750208,"pool_cached_bytes":201312432,"driver_free_bytes":7468089344,"synchronization_errors":[]}
 [admit-cal] post-probe pool trim: released 1568MB cached back to the driver
-[admit-cal] boot calibration done: model="q" route=mtp transient floor 1536MB (static was 1536MB; measured 1403MB; probe kv charge 127MB, draft-state 37MB, drafted 66 accepted 41; [dev0 peak-mapped 18176MB rest-mapped 16608MB charged 164MB -> 1403MB]; 4.1s)
+[admit-cal] boot calibration done: model="q" route=mtp transient floor 1536MB (static was 1536MB; measured 1403MB; probe kv charge 127MB, draft-state 37MB, drafted 66 accepted 41; [dev0 peak-mapped 18176MB rest-mapped 16608MB charged 164MB -> 1403MB]; 4.2s)
 [admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
 [admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
 [admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
 [kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
 [server] worker ready; serving models: ["q"]
 [server] listening on http://127.0.0.1:18229
-[meter] admit id=chatcmpl-405c66263c64385e6670c7f595609d2d tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-90b15fc3768c3d12367f8baa889b6679 tenant=default lane=interactive model="q"
 [admission] per-session draft-state charge: model="q" +39MB (measured capture high-water)
 [admission] request cost: model="q" ctx=1590 path=spec = 31552 B/token x ctx + 137MB prefill-workspace + 0MB fixed = 187MB
 [admission] prefill workspace held: model="q" prompt=1286 call=1286 stack=1286 concat=0 slab_resident=1443MB held=137MB cold=590MB
@@ -50,7 +50,7 @@
 [spec-acc] ctx=1318 burst=21/22 cum=35/56=0.625
 [spec-gate] demoted session to batched decode: FORCED at DEMOTE_AT=60 (test door) (model q, committed 1350, generated 64, sampled, plain draws from philox event 65)
 [kv-reuse] park-compact: 1526 of 1534 rows retained in 1.8ms (model q)
-[meter] admit id=chatcmpl-1422ad3aa143107c40dad3aee015c49a tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-303651af282e5c52f64b9ce18bf38dd4 tenant=default lane=interactive model="q"
 [admission] per-session draft-state charge: model="q" +39MB (measured capture high-water)
 [admission] request cost: model="q" ctx=340 path=spec = 31552 B/token x ctx + 4MB prefill-workspace + 311MB fixed = 325MB
 [admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
@@ -59,8 +59,8 @@
 [spec-acc] ctx=36 burst=20/33 cum=20/33=0.606
 [spec-acc] ctx=68 burst=16/48 cum=36/81=0.444
 [spec-gate] demoted session to batched decode: FORCED at DEMOTE_AT=60 (test door) (model q, committed 100, generated 64, sampled, plain draws from philox event 65)
-[kv-reuse] park-compact: 276 of 284 rows retained in 1.9ms (model q)
-[meter] admit id=chatcmpl-4bc03f9732fec8b5bf61e42669ad1dc3 tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 276 of 284 rows retained in 1.6ms (model q)
+[meter] admit id=chatcmpl-8daddf662332289596e9262d85fa4e75 tenant=default lane=interactive model="q"
 [admission] per-session draft-state charge: model="q" +39MB (measured capture high-water)
 [admission] request cost: model="q" ctx=1590 path=spec = 31552 B/token x ctx + 137MB prefill-workspace + 311MB fixed = 498MB
 [admission] prefill workspace held: model="q" prompt=1286 call=1286 stack=1286 concat=0 slab_resident=1443MB held=137MB cold=590MB
@@ -70,8 +70,8 @@
 [prefix-cache] insert (spec-boundary): 1248 tokens, 196.3MB (resident 392.6MB / 800MB, model q)
 [spec-acc] ctx=1318 burst=18/28 cum=33/60=0.550
 [spec-gate] demoted session to batched decode: FORCED at DEMOTE_AT=60 (test door) (model q, committed 1350, generated 64, sampled, plain draws from philox event 65)
-[meter] admit id=chatcmpl-af0392b944704857a97cfc76f6577951 tenant=default lane=interactive model="q"
 [kv-reuse] park-compact: 1526 of 1534 rows retained in 1.8ms (model q)
+[meter] admit id=chatcmpl-eb5b2cad8f79ef8df88400e93de03446 tenant=default lane=interactive model="q"
 [admission] per-session draft-state charge: model="q" +39MB (measured capture high-water)
 [admission] request cost: model="q" ctx=340 path=spec = 31552 B/token x ctx + 4MB prefill-workspace + 311MB fixed = 325MB
 [admission] prefill workspace held: model="q" prompt=36 call=36 stack=36 concat=0 slab_resident=1443MB held=4MB cold=17MB
