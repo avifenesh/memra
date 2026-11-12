@@ -715,12 +715,56 @@ def build(repo, commit, target, work, log, role="tree", bins=None):
     return tree, cache
 
 
-def toolchain(tree, env):
+def nvcc_release(path, env):
+    """`nvcc --version`'s release as (major, minor), parsed as build.rs `nvcc_version` does;
+    None when the binary does not run or prints no release."""
+    try:
+        run = subprocess.run([str(path), "--version"], capture_output=True, text=True, env=env)
+    except OSError:
+        return None
+    match = re.search(r"release (\d+)(?:\.(\d+))?", run.stdout) if run.returncode == 0 else None
+    return (int(match[1]), int(match[2] or 0)) if match else None
+
+
+def build_nvcc(env, local=Path("/usr/local")):
+    """The nvcc a build in `env` compiles with, by the rule of build.rs `resolve_nvcc`:
+    MEMRA_NVCC, then the first of CUDA_HOME, CUDA_PATH, CUDA_ROOT whose bin/nvcc exists, else
+    the newest release among the PATH entries, <local>/cuda and <local>/cuda-* (ties keep
+    discovery order). Not the first nvcc on PATH: a rig with a distro /usr/bin/nvcc (12.4,
+    older than sm_120) ahead of the toolkit builds with the toolkit, and the record has to
+    name that one."""
+    if env.get("MEMRA_NVCC"):
+        return env["MEMRA_NVCC"]
+    for var in ("CUDA_HOME", "CUDA_PATH", "CUDA_ROOT"):
+        if env.get(var) and (Path(env[var]) / "bin/nvcc").is_file():
+            return str(Path(env[var]) / "bin/nvcc")
+    candidates = [Path(d) / "nvcc" for d in env.get("PATH", "").split(os.pathsep) if d]
+    candidates.append(local / "cuda/bin/nvcc")
+    candidates += [tree / "bin/nvcc" for tree in sorted(local.glob("cuda-*"))]
+    seen, ranked = set(), []
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        real = candidate.resolve()
+        if real in seen:
+            continue
+        seen.add(real)
+        release = nvcc_release(real, env)
+        if release:
+            ranked.append((release, len(ranked), real))
+    if not ranked:
+        return "nvcc"
+    ranked.sort(key=lambda r: (-r[0][0], -r[0][1], r[1]))
+    return str(ranked[0][2])
+
+
+def toolchain(tree, env, local=Path("/usr/local")):
     """Compiler versions the build used, for the record (not a qualification input). They
     run in the build tree with the build's environment, so rustup resolves the tree's
-    rust-toolchain.toml as cargo did, not the caller's directory default."""
+    rust-toolchain.toml as cargo did, not the caller's directory default, and nvcc is the
+    one build.rs resolves in that environment (`build_nvcc`)."""
     out = {}
-    for name, command in (("rustc", ["rustc", "-V"]), ("nvcc", ["nvcc", "--version"])):
+    for name, command in (("rustc", ["rustc", "-V"]), ("nvcc", [build_nvcc(env, local), "--version"])):
         try:
             text = subprocess.run(command, cwd=tree, capture_output=True, text=True, env=env).stdout.strip()
             out[name] = text.splitlines()[-1] if text else "unavailable"

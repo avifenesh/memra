@@ -750,15 +750,61 @@ class Toolchain(unittest.TestCase):
             fake.mkdir()
             (fake / "rustc").write_text("#!/bin/sh\nif [ -f rust-toolchain.toml ]; then echo 'rustc 1.97.1 (pinned)'; "
                                         "else echo 'rustc 1.98.1 (default)'; fi\n")
-            (fake / "nvcc").write_text("#!/bin/sh\necho 'Build cuda fixture'\n")
+            # A release line, as a real nvcc prints: build_nvcc skips a binary without one.
+            (fake / "nvcc").write_text("#!/bin/sh\necho 'Cuda compilation tools, release 99.0, V99.0.0'\n"
+                                       "echo 'Build cuda fixture'\n")
             for tool in fake.iterdir():
                 tool.chmod(0o755)
             tree = root / "tree"
             tree.mkdir()
             (tree / "rust-toolchain.toml").write_text('[toolchain]\nchannel = "1.97.1"\n')
             self.assertNotEqual(Path.cwd().resolve(), tree.resolve())
-            found = ce.toolchain(tree, {**os.environ, "PATH": f"{fake}{os.pathsep}{os.environ['PATH']}"})
+            env = {k: v for k, v in os.environ.items() if k not in ("MEMRA_NVCC", "CUDA_HOME", "CUDA_PATH", "CUDA_ROOT")}
+            env["PATH"] = f"{fake}{os.pathsep}{os.environ['PATH']}"
+            # No toolkit under `local`, so the only nvcc is the fake one on PATH.
+            found = ce.toolchain(tree, env, local=root / "no-toolkits")
             self.assertEqual(found, {"rustc": "rustc 1.97.1 (pinned)", "nvcc": "Build cuda fixture"})
+
+
+class BuildNvcc(unittest.TestCase):
+    """The record names the nvcc build.rs `resolve_nvcc` picks, not the first on PATH: on the
+    5090 rig the distro /usr/bin/nvcc (12.4) precedes the toolkit on PATH, the build used
+    $CUDA_HOME's 13.4, and the records said 12.4."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.distro = self.fake(root / "usr/bin", "12.4")
+        self.local = root / "usr/local"
+        self.t131 = self.fake(self.local / "cuda-13.1/bin", "13.1")
+        self.t134 = self.fake(self.local / "cuda-13.4/bin", "13.4")
+        self.env = {"PATH": f"{self.distro.parent}{os.pathsep}/bin"}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    @staticmethod
+    def fake(directory, release):
+        directory.mkdir(parents=True)
+        nvcc = directory / "nvcc"
+        nvcc.write_text(f"#!/bin/sh\necho 'Cuda compilation tools, release {release}, V{release}.0'\n"
+                        f"echo 'Build cuda_{release}.fixture'\n")
+        nvcc.chmod(0o755)
+        return nvcc
+
+    def found(self, env):
+        return ce.toolchain(Path(self.tmp.name), env, local=self.local)["nvcc"]
+
+    def test_newest_toolkit_wins_over_a_distro_nvcc_first_on_path(self):
+        self.assertEqual(self.found(self.env), "Build cuda_13.4.fixture")
+
+    def test_cuda_home_wins_over_the_newest(self):
+        env = {**self.env, "CUDA_HOME": str(self.t131.parent.parent)}
+        self.assertEqual(self.found(env), "Build cuda_13.1.fixture")
+
+    def test_memra_nvcc_wins_over_everything(self):
+        env = {**self.env, "CUDA_HOME": str(self.t131.parent.parent), "MEMRA_NVCC": str(self.distro)}
+        self.assertEqual(self.found(env), "Build cuda_12.4.fixture")
 
 
 class DeviceLock(unittest.TestCase):
