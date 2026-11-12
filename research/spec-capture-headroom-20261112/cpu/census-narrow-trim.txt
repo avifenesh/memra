@@ -1,0 +1,18 @@
+# 2026-11-12T10:39:16+01:00 census of memra#1221 (sm_120a build, cargo --release --locked)
+fmt rc=0
+# at the head
+test spec::capture_headroom_tests::bootstrap_estimate_scales_with_heads_and_never_underflows ... ok
+test spec::capture_headroom_tests::capture_oom_predicate_matches_the_quoted_driver_text ... ok
+test spec::capture_headroom_tests::capture_reserve_check_refuses_short_devices_and_counts_pool_cache ... ok
+test spec::capture_headroom_tests::pre_capture_trim_releases_the_shortfall_not_the_cache ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 803 filtered out; finished in 0.00s
+head rc=0
+# on the fail-before file (main's trim in the head's file)
+test spec::capture_headroom_tests::bootstrap_estimate_scales_with_heads_and_never_underflows ... ok
+test spec::capture_headroom_tests::capture_oom_predicate_matches_the_quoted_driver_text ... ok
+test spec::capture_headroom_tests::capture_reserve_check_refuses_short_devices_and_counts_pool_cache ... ok
+test spec::capture_headroom_tests::pre_capture_trim_releases_the_shortfall_not_the_cache ... FAILED
+the pre-capture trim releases the whole cached pool
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 803 filtered out; finished in 0.00s
+red rc=101
+CENSUS-DONE

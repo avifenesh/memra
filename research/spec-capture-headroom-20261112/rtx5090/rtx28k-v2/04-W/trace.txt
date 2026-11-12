@@ -1,0 +1,32 @@
+1794486262.189627 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":1375731712,"still_owned_bytes":16576991232,"pool_reserved_bytes":16743661568,"pool_cached_bytes":166670336,"driver_free_bytes":8174829568,"synchronization_errors":[]}
+1794486262.190353 [prefix-cache] on: budget 2260MB (2259943424 B, derived: 2 x 1129971712 B max entry for model "q38" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 90499973120 B (76 resident sessions x 1190789120 B served-context session), requested 2259943424 B; boot driver free 8174829568 B, post-reserve clamp 6564216832 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794486269.245981 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":1275068416,"still_owned_bytes":16602330976,"pool_reserved_bytes":16844324864,"pool_cached_bytes":241993888,"driver_free_bytes":8074166272,"synchronization_errors":[]}
+1794486273.013788 [spec] draft-session state high-water: 35MB (max of parked delta 35MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794486273.952692 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1577058304,"still_owned_bytes":17332139856,"pool_reserved_bytes":17582522368,"pool_cached_bytes":250382512,"driver_free_bytes":7300317184,"synchronization_errors":[]}
+1794486273.952734 [admit-cal] post-probe pool trim: released 1504MB cached back to the driver
+1794486273.952745 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1341MB; probe kv charge 127MB, draft-state 35MB, drafted 69 accepted 40; [dev0 peak-mapped 18272MB rest-mapped 16768MB charged 162MB -> 1341MB]; 4.7s)
+1794486274.154783 [prefix-cache] stable-boundary capture armed at 992 of 1031 prompt tokens (model q38)
+1794486285.590860 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=11434.614 generated=0->32 rounds=12 drafted=24 accepted=19 k=2
+1794486285.603687 [prefix-cache] insert (spec-boundary): 992 tokens, 188.2MB (resident 188.2MB / 2260MB, model q38)
+1794486292.035630 [tick-spec] seq=1 slot=0 trace=- start_ms=0.016 gap_ms=0.016 wall_ms=6431.890 generated=32->65 rounds=17 drafted=34 accepted=16 k=2
+1794486298.021737 [tick-spec] seq=1 slot=0 trace=- start_ms=0.030 gap_ms=0.030 wall_ms=5984.240 generated=65->98 rounds=16 drafted=32 accepted=17 k=2
+1794486301.386204 [tick-spec] seq=1 slot=0 trace=- start_ms=0.019 gap_ms=0.019 wall_ms=3362.739 generated=98->116 rounds=9 drafted=18 accepted=11 k=2
+1794486301.770165 [prefix-cache] stable-boundary capture armed at 27968 of 28006 prompt tokens (model q38)
+1794486323.742898 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=21967.164 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486345.986413 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=22243.049 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486360.338121 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=14351.358 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486365.381658 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=5043.231 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486370.655481 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=5273.599 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486376.160196 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=5504.478 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486381.058235 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=4897.863 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486381.074108 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=15.863 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486381.090024 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=15.815 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486381.106050 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=15.837 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486381.121928 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=15.803 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486381.137813 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=15.812 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486381.153533 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=15.821 generated=0->0 rounds=0 drafted=0 accepted=0 k=2
+1794486381.813574 [tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=659.982 generated=0->34 rounds=13 drafted=26 accepted=20 k=2
+1794486381.813885 [prefix-cache] insert (spec-boundary): 27968 tokens, 1039.4MB (resident 1227.6MB / 2260MB, model q38)
+1794486382.568244 [tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=754.088 generated=34->66 rounds=15 drafted=30 accepted=17 k=2
+1794486383.268954 [tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=700.575 generated=66->100 rounds=14 drafted=28 accepted=20 k=2
+1794486383.319724 [tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=50.693 generated=100->103 rounds=1 drafted=2 accepted=2 k=2

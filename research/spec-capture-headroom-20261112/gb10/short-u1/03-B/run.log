@@ -1,0 +1,27 @@
+2026-11-12T16:29:22+02:00 start, unit idle
+MemFree:        105624344 kB
+MemAvailable:   121876928 kB
+Cached:         16843580 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 1m55s
+waitfor: until [ $(grep -c prime-chunk ~/.cache/memra-1221/runs/short-u1/03-B/server.log) -gt 6 ] (deadline 1m00s, every 1s)
+waitfor: not yet
+waitfor: MET after 0m03s
+2026-11-12T16:31:35+02:00 prime started, holder on:
+MemFree:        81378316 kB
+MemAvailable:   98310848 kB
+Cached:         17566344 kB
+waitfor: gone 2747647 (deadline 8m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m30s
+2026-11-12T16:32:05+02:00 after the request:
+MemFree:          805048 kB
+MemAvailable:    2064776 kB
+Cached:         98008404 kB
+waitfor: gone 2747849 (deadline 1m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+waitfor: gone 2742507 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
