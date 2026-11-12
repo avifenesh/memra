@@ -45,7 +45,7 @@ class SupportSourceInputs(unittest.TestCase):
         self.assertLessEqual(set(vp.Tree(ROOT, 'HEAD').input_modes(*prefixes, recursive=False)), set(prefixes))
 
     def test_fixed_current_and_potential_documents_select_only_census(self):
-        for path in ('README.md', 'STATUS.md', 'AGENTS.md', 'docs/new.md',
+        for path in ('README.md', 'ARCHITECTURE.md', 'AGENTS.md', 'docs/new.md',
                      'docs/nested/new.md', 'docs/.md', 'docs/archive-sibling/new.md'):
             with self.subTest(path=path):
                 plan = self.plan(path)
@@ -72,7 +72,8 @@ class SupportSourceInputs(unittest.TestCase):
 
     def test_content_exclusions_do_not_invent_a_census_or_native_waiver(self):
         for path in ('docs/archive/old.md', 'docs/new.txt', 'docs/new.MD', 'research/new.md',
-                     data.PACK_ROOT + '/hy3/not-mod.rs', data.PACK_ROOT + '/hy3/nested/mod.rs'):
+                     'STATUS.md', data.PACK_ROOT + '/hy3/not-mod.rs',
+                     data.PACK_ROOT + '/hy3/nested/mod.rs'):
             with self.subTest(path=path):
                 plan = self.plan(path)
                 self.assertFalse(data.reads_source_doc(path))
@@ -87,7 +88,7 @@ class SupportSourceInputs(unittest.TestCase):
 
     def test_creation_deletion_and_before_after_content_inventory(self):
         before = self.base
-        for path in ('docs/new.md', data.PACK_ROOT + '/new_pack/mod.rs', 'STATUS.md'):
+        for path in ('docs/new.md', data.PACK_ROOT + '/new_pack/mod.rs', 'ARCHITECTURE.md'):
             for present in (True, False):
                 with self.subTest(path=path, present=present):
                     if present:
@@ -161,12 +162,12 @@ class SupportSourceInputs(unittest.TestCase):
         self.assertEqual(mode, {path: '160000'})
         self.fixture.fixture.g('rm', '--cached', path)
         self.fixture.fixture.commit()
-        self.fixture.fixture.put('STATUS.md/nested.txt', 'wrong fixed-file type\n')
+        self.fixture.fixture.put('ARCHITECTURE.md/nested.txt', 'wrong fixed-file type\n')
         self.fixture.fixture.commit()
-        self.assertEqual(self.plan('STATUS.md')['mode'], 'full')
+        self.assertEqual(self.plan('ARCHITECTURE.md')['mode'], 'full')
         self.assertIn('ambiguous support fixture copy input type',
                       vp.local_plan(self.repo, self.base)['reason'])
-        shutil.rmtree(self.repo / 'STATUS.md')
+        shutil.rmtree(self.repo / 'ARCHITECTURE.md')
         self.fixture.fixture.commit()
         self.fixture.fixture.put(data.PACK_ROOT, 'wrong copy-root type\n')
         self.fixture.fixture.commit()

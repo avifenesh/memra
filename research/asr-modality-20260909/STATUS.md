@@ -1,15 +1,14 @@
 # ASR lane status
 
-> **Serving bring-up PAUSED (owner decision, 2026-09-12).** This lane continues as research and
-> correctness work only; nothing in it is a serving claim or a roster commitment, and no serving
-> qualification cell is scheduled for it until the owner reopens it. Receipts and gates below stay
-> valid as engine records.
+> Status page of the ASR modality lane (`lane/asr-modality-20260909`) at its 2026-09-10 handoff,
+> moved from the repository root on 2026-11-12. On 2026-09-12 the owner stopped serving bring-up
+> for this lane, which continued as research and correctness work only (the decision is in
+> [ASR-MODALITY-PLAN.md](../../ASR-MODALITY-PLAN.md)). Nothing here is a serving claim or a roster
+> commitment; the receipts and gates below stay valid as engine records. Current speech state:
+> [docs/SPEECH.md](../../docs/SPEECH.md).
 
-Updated 2026-09-10 (sweep closed at 36 of 71 clips, partial-sweep verdict stands by owner
-decision; both `real` divergences diagnosed as CT2 fp16 threshold effects; engine detokenizer
-agreement 36/36; scratch disposed, stop receipt banked).
-Worktree `~/projects/memra/wt-asr-modality`, branch `lane/asr-modality-20260909`.
-Draft PR https://github.com/avifenesh/memra/pull/416, issue #414 remains claimed.
+The lane's [PR #416](https://github.com/avifenesh/memra/pull/416) merged on 2026-09-10. Issue
+#414 (native GPU ASR and the audio serving contract) is open.
 
 ## Committed and gated
 
@@ -62,8 +61,9 @@ fp16 steps apart with the clip's text unchanged. `d1-013` window 6 step 146 look
 timestamp-forcing threshold, which sits inside one fp16 step: native F32 +0.008751, matched
 FP32 +0.008760, CT2 fp16 -0.000860, against an fp16 step of 0.015625. The native branch is
 the FP32-correct one. The engine's own detokenizer agrees with the checker's tokenizer on
-36/36 clips. Full analysis: `research/asr-modality-20260909/TRANSCRIBE-PARITY.md`,
-`WHATSAPP-001-W3-DIAGNOSIS.json` and `D1-013-W6-DIAGNOSIS.json`.
+36/36 clips. Full analysis: [TRANSCRIBE-PARITY.md](TRANSCRIBE-PARITY.md),
+[WHATSAPP-001-W3-DIAGNOSIS.json](WHATSAPP-001-W3-DIAGNOSIS.json) and
+[D1-013-W6-DIAGNOSIS.json](D1-013-W6-DIAGNOSIS.json).
 
 The speech matrix product is cache-blocked and optionally threaded; both are bit-identical by
 construction and re-proved on the real checkpoint. One encoder window fell 122.950 s to
@@ -72,29 +72,26 @@ construction and re-proved on the real checkpoint. One encoder window fell 122.9
 ## Sweep closed at 36 clips: the partial verdict stands
 
 The 71-clip sweep is closed and will not be resumed (owner decision, 2026-09-10: the
-partial-sweep verdict stands; no further rig CPU-hours on it). History: the previous worker's
-session died at ~22:21 UTC 2026-09-09 with its 22:30 timer gone with it; the takeover killed
-the parent script at 23:08:51Z and let the in-flight `d1-013` bank itself at 23:17:58Z. 36
-clips are banked (`d1-000..013`, `whatsapp-000..021`); the unswept 35 are `d1-014..016` and
-`whatsapp-022..053`. Sweep CPU: 1050.8 CPU-minutes over 36 clips (62230 s user + 820 s
-system), 18:13:36Z start. Stop receipt:
-`research/asr-modality-20260909/sweep-stop-20260909.json`.
+partial-sweep verdict stands; no further CPU-hours on it). 36 clips are banked (`d1-000..013`, `whatsapp-000..021`); the
+unswept 35 are `d1-014..016` and `whatsapp-022..053`. The stop receipt,
+[sweep-stop-20260909.json](sweep-stop-20260909.json), records the stop time, the clip lists and
+the sweep's CPU cost.
 
 The one binary that stands behind all 36 banked clips is pinned by sha256
 `baf38cb6ada267058cb1f8b776ab72303c4fb0c284417ecbfa3d6e25a7eb590c` in that stop receipt and
-in `stage5-transcribe-parity.json`, so the banked clips stay attributable after the scratch
-copies were deleted at handoff. If the last 35 clips are ever wanted, that is a new lane:
-rebuild the binary from this branch (Commands below), record its hash beside the old one, and
-score only under the new hash's name.
+in [stage5-transcribe-parity.json](stage5-transcribe-parity.json), so the banked clips stay
+attributable after the sweep binary was deleted. If the last 35 clips are ever wanted, that is a
+new lane: rebuild the binary (Commands below), record its hash beside the old one, and score
+only under the new hash's name.
 
 ## Next executable stage
 
-1. The sweep is closed at 36 clips and stays closed. If the remaining 35 are ever reopened,
-   run them as a new lane with a fresh binary hash recorded beside the old one, and give any
-   flipping window a matched-program FP32 reference before a verdict, comparing the decision
-   variable, not the candidate margin (see `D1-013-W6-DIAGNOSIS.json`): the banked `hf-fp32`
-   windows pad in waveform space and the CT2 program zero-fills in feature space, so on any
-   padded window the two references are not the same program.
+1. The sweep stays closed. If the remaining 35 clips are ever reopened as a new lane (above),
+   give any flipping window a matched-program FP32 reference before a verdict, comparing the
+   decision variable, not the candidate margin (see
+   [D1-013-W6-DIAGNOSIS.json](D1-013-W6-DIAGNOSIS.json)): the banked `hf-fp32` windows pad in
+   waveform space and the CT2 program zero-fills in feature space, so on any padded window the
+   two references are not the same program.
 2. Tokenizer encoding and vocabulary binding in the engine for the Whisper path (the detokenizer
    exists and agrees 36/36; `Tokenizer::from_hf_dir` still refuses this checkpoint's
    pre-tokenizer, and no BPE encode is ported).
@@ -103,56 +100,64 @@ score only under the new hash's name.
 4. RNNT beyond three clips and one arm: a real corpus, the `[56,3]`/`[56,6]`/`[56,13]` arms if
    they are ever wanted, session revision semantics, cancellation and reset.
 
-The measured ladder, including everything `NativeReference` and `NativeQualified` still need, <!-- support: none; not NativeQualified NativeReference -->
-is the "Measured status ladder" section of `ASR-MODALITY-PLAN.md`.
+No speech pack has a support state. The measured ladder, with what each state still needs, is
+the [Measured status ladder](../../ASR-MODALITY-PLAN.md#measured-status-ladder-2026-09-09)
+section of ASR-MODALITY-PLAN.md; the speech support rules are in
+[docs/SPEECH.md §3](../../docs/SPEECH.md#3-support-states-for-a-speech-model).
 
 ## Rules this lane runs under
 
-CPU only on the rig, one process, `nice -n 15`, efficiency cores, no GPU, no local CI, no
-battery, no smoke server. Pushes use `MEMRA_SKIP_PERF_CI=1` and say so in the PR body; hosted
-CI still gates the merge. Engine licence is FSL-1.1-ALv2. External implementations only ever
-produce offline oracle files.
+CPU only: one process, no GPU, no local CI, no battery and no smoke server. Engine licence is
+FSL-1.1-ALv2. External implementations only ever produce offline oracle files.
+
+The lane's pushes used `MEMRA_SKIP_PERF_CI=1` and said so in the PR body; hosted CI gated the
+merge. The flag is retired, and the pre-push hook now refuses it
+([docs/FLAGS.md](../../docs/FLAGS.md#release-qualification-controls)). Pushes follow the
+current rules in [AGENTS.md](../../AGENTS.md#branches-and-pushes).
 
 Do not resume the removed mixed-precision or matrix variants, and do not tighten FP16 below its
 measured reference floor.
 
-## Artifact locations
+## Artifacts
 
-Checkpoint: `~/hebrew-asr-data/models/whisper-large-v3-ivrit-766847c9/`, both shard hashes verified.
-RNNT checkpoint: `~/hebrew-asr-data/models/campaign-20260908/clean-step-21959.nemo`,
-sha256 `585c40f214a53e8b5ba565c6176aa6cb548c7c8ab2f7ec5dc6dd45dbdff46ee4`.
-CPU oracle root: `~/hebrew-asr-data/oracle-cpu/asr-modality-20260909/` (`final-enc-f32/`,
-`final-enc-f16/`, `final-dec-f32/`, `final-dec-f16/`; references `hf-f32/`, `hf-f16/`,
-`decoder-hf-f32/`, `decoder-hf-f16-encf32/`).
-Rental oracle: `~/hebrew-asr-data/oracle/whisper-large-v3-ivrit/` (MANIFEST.json; 71 CT2 clips
-with log-mel, encoder output, beam-1 tokens and post-suppression logits; 8 HF FP32 clips with
-raw pre-processor logits).
-Receipts: `research/asr-modality-20260909/`.
-Tiny fixture directory: `crates/memra-reference/src/speech/fixtures/`.
-Synthetic `tiny-encoder.safetensors` needs `git add -f`; generic weight files are ignored.
+- Whisper checkpoint: `ivrit-ai/whisper-large-v3` at revision
+  `766847c9795b3b5cc0d42f8476199c711d5cee21`, both shard hashes verified.
+- RNNT checkpoint: `clean-step-21959.nemo`, sha256
+  `585c40f214a53e8b5ba565c6176aa6cb548c7c8ab2f7ec5dc6dd45dbdff46ee4`.
+- Oracle captures, kept outside the repository: a CPU oracle with the native encoder and decoder
+  finals (FP32 and FP16) and their HF FP32 and FP16 references, and the CT2 oracle (a
+  `MANIFEST.json`, which `check_whisper_real_audio.py` and `check_whisper_transcribe.py` read;
+  71 CT2 clips with log-mel, encoder output, beam-1 tokens and post-suppression logits; 8 HF
+  FP32 clips with raw pre-processor logits).
+- Tiny fixtures: [memra-reference speech fixtures](../../crates/memra-reference/src/speech/fixtures/).
+  The synthetic `tiny-*.safetensors` files need `git add -f`, because `.gitignore` ignores
+  `*.safetensors`.
 
 ## Commands
 
-Python: `~/hebrew-asr-data/venv-nemo/bin/python` (numpy, torch, transformers, ct2, nemo, jiwer).
-Build: `PATH=$HOME/.cargo/bin:$PATH CARGO_TARGET_DIR=.lane-asr-stage2/target nice -n 15 \
-cargo build -p memra-reference --bin whisper-stage --release -j 2`.
-Mel: `whisper-stage mel|mel-clip CHECKPOINT PCM.f32 OUT.f32`.
-Encoder: `whisper-stage encoder CHECKPOINT MEL.f32 NEW_OUT f32|f16` (output dir must not exist).
-Decoder: `whisper-stage decoder CHECKPOINT ENCODER.f32 TOKENS.txt NEW_OUT f32|f16`.
-Transcribe: `whisper-stage transcribe CHECKPOINT PCM.f32 NEW_OUT f32|f16`.
-RNNT: `rnnt-stage frontend|encoder|head|stream ARCHIVE ... ` built into
-`.lane-asr-stage3/target` so the sweep binary is never rebuilt under it.
+Build both stage runners (CPU only). In the table below, `NEW_OUT_DIR` must not exist yet.
+
+```sh
+cargo build -p memra-reference --release --bin whisper-stage --bin rnnt-stage
+```
+
+| Stage | Command |
+| --- | --- |
+| Mel | `whisper-stage mel\|mel-clip CHECKPOINT_DIR PCM.f32 OUT.f32` |
+| Encoder | `whisper-stage encoder CHECKPOINT_DIR MEL.f32 NEW_OUT_DIR f32\|f16` |
+| Decoder | `whisper-stage decoder CHECKPOINT_DIR ENCODER.f32 TOKENS.txt NEW_OUT_DIR f32\|f16` |
+| Transcribe | `whisper-stage transcribe CHECKPOINT_DIR PCM.f32 NEW_OUT_DIR f32\|f16` |
+| RNNT frontend | `rnnt-stage frontend ARCHIVE.nemo PCM.f32 OUT.f32` |
+| RNNT encoder | `rnnt-stage encoder ARCHIVE.nemo ORACLE_DIR NEW_OUT_DIR DROP_EXTRA_PRE_ENCODED` |
+| RNNT head | `rnnt-stage head ARCHIVE.nemo ENCODER_ORACLE_DIR NEW_OUT_DIR PROMPT_SLOT` |
+| RNNT stream | `rnnt-stage stream ARCHIVE.nemo PCM.f32 NEW_OUT_DIR PROMPT_SLOT` |
+
 Gates: `tools/check_whisper_stages.py`, `tools/check_whisper_decoder.py`,
 `tools/check_whisper_real_audio.py`, `tools/check_whisper_transcribe.py`,
 `tools/check_rnnt_frontend.py`, `tools/check_rnnt_encoder.py`, `tools/check_rnnt_head.py`,
-`tools/check_rnnt_stream.py`.
+`tools/check_rnnt_stream.py`. All but `check_rnnt_stream.py` need numpy, and
+`check_whisper_transcribe.py` also needs transformers and jiwer.
 Captures: `tools/nemo_encoder_oracle.py`, `tools/nemo_rnnt_oracle.py`,
-`tools/nemo_stream_oracle.py`.
-Run every gate from the worktree root; the receipts hash source paths relative to it.
-
-Scratch `.lane-asr-stage2/` and `.lane-asr-stage3/` was disposed at handoff (2026-09-10):
-`sweep-stop-20260909.json` moved to `research/asr-modality-20260909/`; sweep checkpoints,
-both `target/` trees, the sweep binary and all diagnostic scratch deleted. `/tmp` ASR scratch
-(`/tmp/asr-real`, `/tmp/asr-wt-backup`, `/tmp/asr-redarm-dir.txt`, `/tmp/asr-redarm-3144124`,
-`/tmp/nemo-census-21959.json`) deleted with it; the binary hash stays pinned in the receipts.
-Both root checkouts stay on main. Keep this worktree/branch for the open PR.
+`tools/nemo_stream_oracle.py`. They need numpy, torch and nemo; `nemo_encoder_oracle.py` also
+needs yaml.
+Run every gate from the repository root; the receipts hash source paths relative to it.

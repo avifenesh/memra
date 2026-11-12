@@ -1,53 +1,67 @@
 <!--
-Read CONTRIBUTING.md before filling this in. PRs missing the sections below are considered
-incomplete and will be closed, not reviewed in a partial state. Delete this comment block once
-you've read it.
+Read CONTRIBUTING.md first. Fill the sections your change reaches and delete the rest.
+A section marked "GPU" is required only when change_impact.py reports a GPU cell.
 -->
 
 ## What this changes and why
 
-<!-- One or two sentences. Not "makes it faster" — name the mechanism. -->
+<!-- One or two sentences. Name the mechanism, not "makes it faster". -->
 
-## Correctness gates (paste actual output, not "passed")
+## Change impact
+
+```
+$ python3 tools/change_impact.py --base origin/main --head HEAD
+<paste>
+
+$ python3 tools/cell_evidence.py need --base origin/main --head HEAD
+<paste>
+```
+
+## CPU checks
+
+```
+<the tests `python3 tools/validation_plan.py local --base origin/main` selects, and their results>
+```
+
+## Correctness gates (GPU; paste output, not "passed")
 
 ```
 $ ./target/release/kernel-check
-<paste tail>
+<tail: ALL GREEN (<n> cells, <m> skipped)>
 
 $ ./target/release/run-gen ...
-<paste tail — must show prefill/decode argmax MATCH>
+<tail: the verify-prefill argmax line ending in MATCH; on a prompt of 16+ tokens, the batched-prime line too>
 
 $ ./target/release/run-spec ...
-<paste tail — must show K=1..8 self-consistency PASS>
+<tail: === SELF-CONSISTENCY PASS ===>
 ```
 
-## Performance — prefill AND decode, interleaved, N≥3 medians
+## Performance: prefill and decode (GPU, when a perf cell is reached)
 
-Protocol: [`research/benchmarks.md`](../research/benchmarks.md). `gpu-full-power on` verified.
-Baseline and branch measured in the same session, interleaved (not sequential runs on different
-days) — cross-session ratios have been measured to drift up to ~10% from clock/thermal state alone.
+Protocol: [the method](https://github.com/avifenesh/memra/blob/main/docs/PERFORMANCE.md#method).
+Base and branch interleaved in the same session, both orders, N >= 3 medians, GPU power and clock
+state recorded. Runs from different sessions drift by up to about 10% and are not evidence.
 
-| Metric | Baseline (main) | This branch | Ratio |
+| Metric | Base (main) | This branch | Ratio |
 |---|---|---|---|
 | pp512 (prefill, tok/s) | | | |
 | pp2048 (prefill, tok/s) | | | |
 | tg128 @ 512-ctx (decode, tok/s) | | | |
 
-## Main runners exercised (not just the isolated kernel benchmark)
+## Main runners exercised (GPU)
 
-- [ ] `run-gen` on a real model, full output attached/pasted, argmax line included
-- [ ] `run-spec` (required if this touches attention, GEMM, MoE dispatch, or KV cache)
-- [ ] `memra-server` request/response (required if this touches request handling or batching)
+- [ ] `run-gen` on a real model, full output pasted, argmax line included
+- [ ] `run-spec` (required if this touches attention, GEMM, MoE dispatch or the KV cache)
+- [ ] `memra-server` request and response (required if this touches request handling or batching)
 
-## Scope check
+## Prior work
 
-- [ ] This targets sm_120a (RTX 5090 Laptop or equivalent consumer Blackwell) — the only tuned
-      target. Portability PRs (sm_89, sm_90, datacenter Blackwell) must first address
-      [Requirements and limits](../README.md#requirements-and-limits) in the PR description.
-- [ ] I checked [`research/tune-data/`](../research/tune-data/) for prior attempts at this exact
-      change and either found none, or am including new evidence that overturns a prior result
-      (link the record and explain what's different).
+- [ ] I checked the [research index](https://github.com/avifenesh/memra/blob/main/research/INDEX.md)
+      and `research/tune-data/` for prior attempts at this change, and found none or include new
+      evidence that overturns the earlier result (link it and say what differs).
 
-## Hardware used to produce the numbers above
+## Hardware used
 
-<!-- GPU model, driver/CUDA version. "I don't have sm_120a hardware" means this should be an issue, not a PR. -->
+<!-- GPU, VRAM, driver, CUDA version and MEMRA_CUDA_ARCH. With no GPU of any target this change
+     reaches, open an issue instead of a PR. Without hardware for one affected target, say so
+     here: the change still needs that cell's record before it lands. -->

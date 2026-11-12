@@ -1,18 +1,28 @@
 # DeepSeek-V4.1-Flash
 
-Support state: **NativeReference** for the `deepseek_v41` pack <!-- support: deepseek_v41-reference -->.
-The plan runs in the reference executor on CPU and the tiny gate passes. Checkpoint parity,
-rewrite and serve gates are pending, so nothing serves this model yet.
-NativeQualified needs those gates first. <!-- support: none; not NativeQualified -->
+DeepSeek's V4.1 Flash (the 1017 checkpoint) as a native ModelPlan pack that runs in the reference
+executor on CPU. Nothing serves it yet.
 
-## Recommended path
+| | |
+|---|---|
+| **Serving route** | none |
+| **Pack** | `deepseek_v41`, **NativeReference** (record `deepseek_v41-reference`: Config, TokenizerTemplate, TensorCensus and TinyParity passed; CheckpointParity, RewriteParity and Serve pending) <!-- support: deepseek_v41-reference --> |
+| **Artifact** | `deepseek-ai/DeepSeek-V4.1-Flash-1017@1bae0e1088993b9b82de08f59de5be5a34e42170`, 48 safetensors shards, 96,085 header tensors |
+| **Hardware** | CPU (reference executor) |
+| **Input** | text in the plan; the serve surface refuses image parts |
 
-There is no serving path. What runs today is onboarding and the reference executor:
+NativeQualified needs the checkpoint, rewrite and serve gates first. <!-- support: none; not NativeQualified -->
+
+## Run it
+
+What runs today is onboarding and the reference executor, from a source checkout (the release
+tarball does not ship the `memra` CLI):
 
 ```bash
-memra model inspect deepseek-ai/DeepSeek-V4.1-Flash-1017@1bae0e1088993b9b82de08f59de5be5a34e42170 \
+cargo run -p memra-cli --bin memra -- model inspect \
+  deepseek-ai/DeepSeek-V4.1-Flash-1017@1bae0e1088993b9b82de08f59de5be5a34e42170 \
   --against deepseek_v41 --out inspect
-memra model verify tiny --against deepseek_v41 --out tiny
+cargo run -p memra-cli --bin memra -- model verify tiny --against deepseek_v41 --out tiny
 ```
 
 `verify tiny` runs the main fixture (prefill past the window, then decode with DSpark drafts) and
@@ -21,8 +31,7 @@ vendor `model.py` produced on the same checkpoint image, and memra matches all t
 
 ## What the pack covers
 
-- Source: `deepseek-ai/DeepSeek-V4.1-Flash-1017@1bae0e1088993b9b82de08f59de5be5a34e42170`, 48
-  safetensors shards, 96,085 header tensors. Dense weights FP8 e4m3 in 32x32 blocks, routed
+- Storage: dense weights FP8 e4m3 in 32x32 blocks, routed
   experts MXFP4, Engram tables FP8 rows. The census binds every tensor, the vision tower
   included, which the text plan does not execute.
 - Architecture, read from `config.json` and the vendor `inference/model.py`: 40 trunk layers and

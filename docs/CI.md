@@ -1,78 +1,122 @@
-# CPU checks and native GPU qualification
+# CI
 
-Standard public runners execute builds, static gates, and CPU tests in `ci.yml`.
-The `portable-suites` job runs the memra-tier, memra-kv and memra-cli suites, including
-integration tests and compile-fail doctests, through **one entry point**,
-`tools/portable-suites.sh`: `cargo test -p memra-tier -p memra-kv -p memra-cli --offline
---locked --no-fail-fast` behind `tools/skip-census.py` (static census over `src/` and
-`tests/`, run-side budget 0, `--min-passed 300`), the raw cargo output banked at
-`target/portable-suites.log`. The same job runs the wrapper's teeth
-(`tools/test_portable_suites.sh`: planted failures must red it, an undeclared skip must red
-the census, the wiring holds), the collector suite with both rig lock paths held under a
-unittest floor, and the floor tool's own teeth. `tools/local-ci.sh`'s CPU chain runs the same
-wrapper with `CARGO_BUILD_JOBS=8 RUST_TEST_THREADS=8` while it overlaps the chain with device
-checks; hosted execution keeps its runner defaults. `tools/ci-portable.sh` (the name PR #590
-introduced for a second runner of the same suites) only forwards to the wrapper. Details and
-the measured counts: `docs/TESTING.md`, "Standing execution". Nothing in that job runs GPU
-tests or grants GPU qualification.
+What the hosted GitHub workflows run, how a change is routed to thin or full CPU validation, and how
+to request a GPU qualification run. It is for contributors reading a CI result. Hosted runners have
+no GPU: device evidence comes from the batteries in [Testing](TESTING.md); CPU job selection is in
+[Validation selection](VALIDATION-SELECTION.md). The earlier text of this page is in
+[history/CI.md](history/CI.md).
 
-The same job ends with the CPU failure controls of the GPU adapter below
-(`tools/unittest-floor.sh tools test_gpu_ci.py 9`; 10 measured 2026-09-21; a bare
-`unittest discover` is green over zero tests). The `gates` job runs
-`tools/check-workflow-keys.py`, a standard-library walker (no PyYAML, so the gate cannot fail
-for a missing dependency) that refuses a duplicate mapping key at any depth and reports a
-construct outside its documented scope as "cannot answer" (exit 2), never as green. GitHub refuses a workflow file with a duplicate
-key and runs zero jobs; main carried two `portable-suites` jobs on 2026-09-21 (#592 and #590)
-and every run was red at the workflow level until one was removed. The `gates` step protects
-the other workflow files; `ci.yml` itself is protected by the same census in
-`tools/hooks/pre-push` (no skip switch) and by a PR run on a current merge ref.
+## Workflows
+
+| workflow | trigger | runs |
+|---|---|---|
+| `ci-public.yml` (`public-ci`) | PR to main; push to main | `route`, then the thin jobs or `full`; always `ci/merge-result` |
+| `ci.yml` (`ci`) | `workflow_call` (from `public-ci` full mode, `release.yml`, `publish.yml`); daily at 02:19 UTC; manual | the complete CPU inventory |
+| `gpu-ci.yml` | manual, with a full 40-character candidate commit | controlled build, a GPU capture on a provisioned worker, the `gpu-qualification/pro-ubuntu24` check |
+| `boundary-refs.yml` | daily at 06:10 UTC; manual | the public-boundary scan over published refs |
+| `release.yml` | tag `v*` | `ci.yml`, the release guard, the build matrix, the GitHub release ([Releasing](RELEASING.md)) |
+| `publish.yml` | tag `v*` (publishes); manual (a dry run unless the `publish` input is true) | `ci.yml`, then the crates.io publish |
+| `mtp-context-receipts.yml`, `mtp-depth-receipts.yml`, `prompt-depth-router.yml` | PRs that touch their research directories; manual | reproduction of those research receipts |
+| `prompt-prefix-depth.yml` | `workflow_call` from `prompt-depth-router.yml`; manual | the prefix-depth receipt and its native compile check |
+
+`ci.yml` has no PR or push trigger of its own: a PR or a push to main runs `ci-public.yml`, which
+calls `ci.yml` only in full mode.
+
+## Thin or full
+
+`route` picks thin mode only when the event is a PR to main opened by the repository owner from a
+repository the owner owns (checked by the PR user's login and immutable account id and by the head
+repository's owner), or a push to main, **and** `tools/trusted_public_ci.py route-plan`, run with
+isolated Python from the event base checkout (never the candidate), plans thin. Everything else is
+full: external and fork PRs, unknown events, a missing trusted entry, and any change the trusted
+planner expands (routing or policy source, unknown dependency ownership, missing inputs). The actor,
+labels and commit authors never select thin mode.
+
+Thin mode runs, for the affected packages only:
+
+- `merge-validation`, each command once: the static merge guards (action pins, workflow keys,
+  conflict markers, docs registry, publish members, stub ABI, arch matrix), the scoped guards the
+  plan reaches (PDL chain, flags coverage, gate OFF-arm lint, support-state census, coalescer
+  contract) and the changed-input CPU contracts.
+- `boundary`: a public-boundary scan of every blob introduced in the pinned commit range. It does
+  not prove whole-tree allowlist drift; full mode does.
+- `build` and `clippy` through `tools/validation_plan.py cargo`, with the build-identity check, the
+  DSv4 native control admission and `cargo fmt --all -- --check`.
+- `arch` at `sm_100a` and `sm_121a` with the fatbin-vs-lookup census; the `100a` cell also runs the
+  B200 kernel-twin ABI, SASS, layout and admission gates.
+
+Functional tests for an owner change run locally before the push.
+
+Full mode is `ci.yml`. Its job selection is a workflow constant, never candidate output, and
+`release.yml` and `publish.yml` wait for it before any effect. This is the merge-time check
+inventory:
+
+| job | what it runs |
+|---|---|
+| `changes` | records the complete selection as `validation-plan.json` |
+| `gates` | the action-pin, workflow-key, conflict-marker, docs-registry, support-state and flags censuses with their self-tests; the releasability censuses (publish members, stub ABI, arch matrix), their teeth and the crates.io publish-order fixture; the gate-integrity, release-guard, release-battery, argmax-floor, changelog, pre-push, Q35 cold-mixed, canonical-config and MLA/KDA memory fixtures; the fatbin-lookup and skip-census teeth; the `remove_var` door lint and the PDL-chain census; the validation-selection, release-qualification, compiler-input, build-reuse, cache-qualification, per-card runner and physical-GPU-resolution controls; the CPU admission contracts and the coalescer contract; the public CI integration test; the CUDA-free unit suites through the skip census (memra-gguf, -reference, -tokenizer, -validate and -sampling at budget 20 and at least 400 passed; memra-net-guard at budget 0) and memra-lanes |
+| `boundary` | `tools/test_public_boundary.py`, then `tools/check-public-boundary.py check` over the whole tree and `verify-allowlist` (allowlist drift) |
+| `build` | the release binaries at `sm_120a`, the build-identity check, the parity-geometry and argmax instrument tests, the DSv4 CPU contract tests |
+| `clippy` | `-D warnings` over the workspace |
+| `server-tests` | `cargo test --release -p memra-server` |
+| `portable-suites` | `tools/portable-suites.sh` and its teeth, the tier collector suite with both rig lock paths held, the GPU CI adapter's CPU controls |
+| `engine-tests` | the memra-native CPU expert backend, the DSv4 door-reach gate, `memra-engine --lib` unfiltered through the skip census (budget 0, at least 300 passed) |
+| `arch-coverage` | builds at `sm_100a` and `sm_121a` with the fatbin-vs-lookup census; the `100a` cell also runs the B200 static teeth |
+| `publish-dryrun` | crate package verification on the newest stable toolchain |
+| `complete` | requires every job above and reports the validated head to the caller |
+
+The commands and pass conditions of the CPU contracts and fixtures are in
+[Testing](TESTING.md#cpu-contracts-and-fixtures).
+
+## `ci/merge-result`
+
+`ci/merge-result` reports one source-bound result per `public-ci` event. In thin mode
+`trusted_public_ci.py result` checks every selected job and the contract execution receipt against
+the same commit; in full mode it requires `route` and `full` to succeed and `ci.yml` to report the
+exact head as validated. A skipped, failed or cancelled selected job, a stale receipt or a wrong
+commit fails it. It is not a required check until a branch protection rule requires it.
+
+`tools/ci_merge_validation.json` binds the full command inventory, both workflows' bytes and the
+static merge guard inputs, so a changed command or a missing mapping cannot silently drop coverage;
+a deliberate workflow edit updates its hashes in the same change.
+`python3 tools/test_public_ci_integration.py` drives routing and execution against real Git events.
+`tools/check-workflow-keys.py` (CI `gates` job and the pre-push hook, no skip switch) refuses a
+duplicate mapping key at any depth, since GitHub runs zero jobs for such a file; it reports a
+construct outside its scope as "cannot answer" (exit 2), never as green.
 
 ## Requesting GPU qualification
 
-`gpu-ci.yml` accepts an explicit full candidate commit through `workflow_dispatch`.
-Its initial supported scope is the existing generic release battery on one physical
-RTX PRO 6000 card, physical GPU0, Ubuntu 24.04. That battery covers the qwen35 class only,
-the two `tools/release-roster.tsv` models
-([Release qualification](RELEASE-QUALIFICATION.md#what-a-record-covers)). It does not replace
-additional hardware, topology, model-support, HTTP, performance, or release-publication gates.
+`gpu-ci.yml` runs the generic release battery for an explicit candidate on one RTX PRO 6000,
+physical GPU0, Ubuntu 24.04. That battery covers the qwen35 class only, the two
+`tools/release-roster.tsv` checkpoints
+([what a record covers](RELEASE-QUALIFICATION.md#what-a-record-covers)); it replaces no other
+hardware, topology, model, HTTP, performance or publication gate. The `build_reuse_only` input
+measures the controlled build and a verified restore on CPU, with no GPU job.
 
-1. The CPU job checks out that exact candidate and requires the content-bound
-   qualification tooling tracked in [PR #566](https://github.com/avifenesh/memra/pull/566).
-   Until that dependency and the pinned input configuration are present, dispatch
-   fails as an unconfigured request before GPU queueing and publishes no candidate
-   check run.
-2. A valid committed qualification for the same source inputs and OS profile may
-   be reused through `release_qualification.py verify`. This reuses the original
-   tested evidence, not a new binary or an mtime.
-3. Otherwise, the CPU job requires a pinned coordinator input manifest, compiles
-   through the controlled native builder, and packages its six ELF files and build
-   evidence. The GPU job receives that immutable Actions artifact ID and SHA-256.
-4. The coordinator provisions an isolated worker with the run-specific label
-   `memra-ci-pro-ubuntu24-<run-id>`. The worker checks the capsule, proves a real CUDA
-   allocation, downloads the exact input bytes, and invokes the coordinator's
-   physical-card lease wrapper around the native capture.
-5. Seal runs only after the wrapper exits and writes its final cleanup record.
-   Failed or interrupted work cannot seal. Raw native output and lease records are
-   retained as Actions artifacts, including failures.
-6. A separate standard-runner job attaches `gpu-qualification/pro-ubuntu24` to the
-   requested candidate, comparing it with the commit read from the validated sealed
-   source descriptor for a new capture. A skipped GPU job passes only when the CPU
-   verifier accepted reusable native evidence. CPU build success alone never passes
-   this check.
+1. The CPU job checks out the exact candidate and requires `tools/qualify-release.py`,
+   `release_qualification.py`, `release_inputs.py` and `release_input_view.py`.
+2. A committed qualification for the same source inputs and OS profile is reused through
+   `release_qualification.py verify`: the original evidence, not a new binary.
+3. Otherwise the input manifest (below) must be set before any GPU time; the job then builds through
+   the controlled native builder and packages the six binaries and their build evidence.
+4. The coordinator provisions an isolated worker labelled `memra-ci-pro-ubuntu24-<run-id>`, which
+   checks the capsule, proves a real CUDA allocation, downloads the exact inputs and runs the capture
+   inside the coordinator's physical-card lease wrapper.
+5. The seal runs only after the wrapper exits and writes its cleanup record. Raw output and lease
+   records are kept as artifacts, failures included.
+6. A standard-runner job attaches `gpu-qualification/pro-ubuntu24` to the candidate. A skipped GPU
+   job passes only when the CPU verifier accepted reusable evidence; a CPU build never passes it.
 
-Provisioning and cleanup are coordinator responsibilities. The engine workflow
-contains no provider credentials or fleet policy. The GPU job has a read-only
-repository token; only the final reporting job can write checks. Keep public PR
-code isolated from deployment credentials, and run the workflow only for candidates
-the maintainer has selected for native qualification.
+Provisioning and cleanup belong to the coordinator: the workflow holds no provider credentials. The
+GPU job has a read-only token; only the reporting job writes checks. Run it only for candidates the
+maintainer selected. `tools/unittest-floor.sh tools test_gpu_ci.py 9` runs the adapter's CPU
+failure controls in CI.
 
-## Input manifest
+### Input manifest
 
-Set repository variables `GPU_CI_INPUTS_URL` and `GPU_CI_INPUTS_SHA256` to an immutable
-HTTPS manifest and its SHA-256. The manifest identifies the existing coordinator
-wrapper and the actual named kernel-oracle GGUF files. Do not rename or substitute
-an oracle to satisfy the inventory. The qualifier retains the full required-cell
-manifests, actual model hashes and skip budgets.
+Set the repository variables `GPU_CI_INPUTS_URL` and `GPU_CI_INPUTS_SHA256` to an immutable HTTPS
+manifest and its SHA-256. It names the lease wrapper and the named kernel-oracle GGUF files; never
+rename or substitute an oracle to satisfy the inventory. The example shows the schema only:
 
 ```json
 {
@@ -94,26 +138,14 @@ manifests, actual model hashes and skip budgets.
 }
 ```
 
-The example is a schema illustration, not a usable model manifest. The coordinator
-supplies real URLs, byte counts, hashes, and the established wrapper. The adapter
-does not invent another lock namespace or fabricate lease evidence.
+Downloads enforce HTTPS, exact sizes and SHA-256, unique plain file names, disk headroom and a total
+ceiling. Capsules admit only the named metadata and the six executables, with no links, duplicates or
+traversal. Python imports use a private cache outside the checkout and write no bytecode.
 
-Downloads enforce HTTPS, exact byte counts and SHA-256, unique plain filenames,
-disk headroom and a total input ceiling. Artifacts cannot redirect outside HTTPS.
-Build capsules permit only the named metadata and six executables, with no links,
-duplicate members or traversal. A foreign source/build or changed ELF refuses.
-Python imports use a private cache outside the checkout and disable bytecode writes,
-so adapter verification cannot contaminate the native producer's clean-source gate.
+### Receipt custody
 
-## Receipt custody and release
-
-Download both the controlled-build and native-evidence artifacts before their
-retention expires. Preserve the exact executable archive separately from the
-evidence publication. Bank reviewed evidence using the native qualifier's `bank`
-command in a clean candidate checkout; the workflow never pushes a publication
-commit or bypasses review automatically.
-
-The release workflow still validates committed evidence and the exact bytes being
-packaged. A CI result for this one OS/card scope does not qualify another shipped
-OS profile or another hardware path. The input manifest and runner must be ready
-before dispatch; an unconfigured workflow is explicitly unqualified.
+Download the controlled-build and native-evidence artifacts before retention expires, and keep the
+executable archive apart from the evidence. Bank reviewed evidence with the native qualifier's
+`bank` command in a clean candidate checkout; the workflow never pushes a publication commit. The
+release workflow still validates committed evidence and the exact bytes it packages, and a result for
+this OS and card covers no other OS profile or hardware path.

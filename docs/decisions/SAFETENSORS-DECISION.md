@@ -2,7 +2,7 @@
 
 Decision doc + build spec for adding SafeTensors (HF) weight loading to the memra engine.
 This is the spec the loader is built against. Everything below is verified against the
-on-disk models at `/home/avifenesh/ai-ml/hf-models/{qwen35-9b-hf, qwen35-4b-hf, eagle3-qwen35-9b}`,
+on-disk models `{qwen35-9b-hf, qwen35-4b-hf, eagle3-qwen35-9b}`,
 the safetensors spec/crate, the local llama.cpp conversion source, and the current engine code.
 
 **Goal (from the user):** "obviously it should support not only gguf." The engine forward/decode
@@ -137,7 +137,7 @@ Recommendation: put it in a new module `crates/memra-gguf/src/safetensors.rs` (r
 
 ## 2. HF name -> engine (ggml) name map
 
-`bid` = layer index N. Ground truth: `/home/avifenesh/projects/llama.cpp/conversion/qwen.py`,
+`bid` = layer index N. Ground truth: `llama.cpp/conversion/qwen.py`,
 `gguf-py/gguf/tensor_mapping.py`, `gguf-py/gguf/constants.py`. Consumer side: `hybrid.rs` /
 `model.rs` (which exact ggml names the forward loads).
 

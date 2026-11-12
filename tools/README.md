@@ -1,37 +1,21 @@
-# tools/ index
+# tools
 
-One line per tool, newest first. Started 2026-08-30 (lane/kv-host-spill-20260830); earlier
-scripts are documented in their own headers and in docs/FLAGS.md / docs/SERVING.md rows.
-When you add a tool, add its line.
+Scripts and small binaries for building, gating, measuring and releasing memra. It is for
+contributors looking for the right tool. There is no per-tool index: each tool documents itself in
+its header comment, and most print it with `--help` or on a usage error.
 
-- `peer-copy-direction-probe.cu`: byte-validating fabric diagnostic that contrasts Memra PP's
-  producer-issued peer write with consumer-issued peer-read copies over the same retained primary
-  contexts, peer grants, CUDA events, and 16 KiB to 64 MiB size ladder. It identifies whether a
-  host's copy engine is sound in both directions; it is a correctness diagnostic, not a bandwidth
-  benchmark.
-- `box-health.sh`: the box-window boot receipt — *is this machine fit to be MEASURED on?* Run it
-  FIRST on every box window. Nine documented degradation classes that report 100% utilisation
-  with clean logs (persistent power cap, the false-600W ~600 MHz signature, a PCIe link silently
-  negotiated down, 256 MB BAR1, out-of-range CPU affinity mask, IOMMU translated mode, ACS
-  ReqRedir, P-state normalization) plus section 8's kernel peer-read probe. Idle P8 Gen1 is
-  recorded, then classified from a required active-link recheck immediately after that ladder.
-  `exit 0` = fit to measure, `exit 1` = do not open the window; OUTDIR is the receipt. Promoted from
-  lane/glm5-tp-transport in lane/glm5-extract2; docs row in docs/TESTING.md ("Box health before
-  measurement").
-- `peer-read-probe.cu`: a self-contained `simpleP2P`-class KERNEL peer dereference — the only
-  check that catches the driver staging SM-issued peer access through system memory while
-  `nvidia-smi topo -p2p r` and `cudaMemcpy` both look healthy. Built and run by `box-health.sh`
-  section 8; standalone for a fabric bring-up:
-  `nvcc -O2 -arch=${MEMRA_CUDA_ARCH:-sm_120} -o peer-read-probe tools/peer-read-probe.cu`.
-  Exit 0 = bytes validated both directions, 2 = WRONG BYTES, 3 = CUDA error, 4 = fewer than
-  two devices, 5 = no peer-capable pair.
+Where to look instead:
 
-- `kv-host-spill-identity-gate.sh`: cached-vs-fresh byte-identity gate with a host-tier arm
-  (demote -> promote -> restore must equal the tier-off cold bytes); `MEMRA_HOSTGATE_TEETH=1`
-  is the forced-tiny `MEMRA_KV_HOST_MB=1` red arm whose verdict must invert; with
-  `MEMRA_DSPARK_SPEC=1` (the drafter arm) it also requires the DFlash tail's restore.
-- `kv-host-spill-failure-gate.sh`: executes the host tier's failure paths loudly (pool-full
-  refusal, `MEMRA_KV_HOST_VERIFY` digest mismatch via the `MEMRA_KV_HOST_FAULT=flip-demote`
-  door and, since verify digest v3, `flip-demote-{draft,hidden,logits}` for the draft plane and
-  the boundary rows, pinned-alloc latch-off via `alloc-fail`) and pins byte-identical cold
-  serving under each.
+- Which gate to run for a change, its command and pass line: [docs/TESTING.md](../docs/TESTING.md).
+- The CPU contracts and fixtures (`test_*`, `run_*_contract.py`, the censuses):
+  [docs/TESTING.md, CPU contracts](../docs/TESTING.md#cpu-contracts-and-fixtures).
+- The dev-loop gate: [fast-gate/README.md](fast-gate/README.md).
+- Hosted workflows and GPU CI (`gpu-ci.py`, `trusted_public_ci.py`): [docs/CI.md](../docs/CI.md).
+- Release tools (`release-battery.sh`, `release_qualification.py`, `qualify-release.py`,
+  `cell_evidence.py`, `daily-regression.py`): [docs/RELEASE-QUALIFICATION.md](../docs/RELEASE-QUALIFICATION.md)
+  and [docs/RELEASING.md](../docs/RELEASING.md).
+- The pre-push hook: `hooks/pre-push`, enabled with `git config core.hooksPath tools/hooks`.
+
+The earlier index, with its notes on `box-health.sh`, `peer-read-probe.cu`,
+`peer-copy-direction-probe.cu` and the host-tier spill gates, is kept in
+[docs/history/TESTING.md](../docs/history/TESTING.md#tools-index).

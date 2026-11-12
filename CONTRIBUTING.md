@@ -1,162 +1,192 @@
 # Contributing to memra
 
-Contributions follow the [current project scope](README.md#project-status): budgeted
-research questions and maintenance for existing commitments.
+This page is for anyone sending a fix, a kernel, a model or a hardware report: what proof each
+kind of change needs and how to produce it. Memra is in active development
+([project status](README.md#project-status)).
 
-Issues welcome anytime. PRs welcome **only when they carry proof**, per the rules below: CI is compile-only (no GPU runners on either target arch), so a human reviewer is the only gate between claim and merged code. Unproven PRs (no gates run, no numbers, "should be faster", AI-generated diffs with no on-device verification) will be closed, not debated. This is not gatekeeping: every accepted kernel becomes load-bearing in a correctness contract (see [Testing](docs/TESTING.md)), and reverting a bad merge costs far more than rejecting an unproven one.
+Issues are welcome at any time. A pull request is welcome when it carries the proof its change
+needs. GitHub runners have no GPU, so a change that reaches GPU code is judged on the output
+pasted in the PR. A PR that claims a passing gate or a speedup without that output is closed.
 
-By submitting a contribution, you agree to license it under
-[FSL-1.1-ALv2](LICENSE), including its future Apache-2.0 grant. If you cannot grant
-those rights, state that before submitting the contribution.
+By submitting a contribution, you agree to license it under [FSL-1.1-ALv2](LICENSE), including
+its future Apache-2.0 grant. If you cannot grant those rights, say so before you submit.
 
 ## Before you write code
 
-1. Read [`research/tune-data/*.jsonl`](research/tune-data/) for your target kernel/model. Labeled corpus of *every* prior tuning attempt, wins and losses both. If your idea was already tried and rejected, the record says why. Re-proposing a measured loss without new evidence is spam.
-2. Read [`ARCHITECTURE.md`](ARCHITECTURE.md) for the sm_120a hardware ledger: several plausible optimizations (e.g. NVFP4 grouped/MoE GEMM, sm_90/sm_100 kernel ports) are already known infeasible on this silicon; check before spending effort.
-3. Have access to a development GPU: sm_120a Blackwell for the main lane, or an H100 (sm_90a) for Hopper-lane changes. Its evidence ledger is [`ARCHITECTURE-H100.md`](ARCHITECTURE-H100.md). Main-lane work can iterate on RTX 50-series hardware. Its pre-merge evidence covers the cells the change reaches, from a device of each affected build target; an RTX 5090 counts for `sm_120a` ([Testing](docs/TESTING.md), [per-cell evidence](docs/RELEASE-QUALIFICATION.md#change-impact-and-per-cell-evidence)). A tag takes the tag battery, which covers two qwen35-class checkpoints, on a designated non-serving 2x RTX PRO 6000 pair ([Releasing](docs/RELEASING.md#the-gate-on-the-rig-before-tagging)). If you cannot produce the development evidence, open an issue describing the idea instead of a PR; the final verification receipt may be supplied by a maintainer with access to the box.
+1. Search [`research/INDEX.md`](research/INDEX.md) (one verdict line per research lane) and
+   [`research/tune-data/`](research/tune-data/) (every tuning attempt, wins and losses) for your
+   kernel or model. A measured loss is not re-proposed without new evidence.
+2. Read [ARCHITECTURE.md](ARCHITECTURE.md) for how a checkpoint becomes a plan and how optimized
+   paths are checked, and [`docs/decisions/`](docs/decisions/) for what was chosen or rejected.
+3. A new model or family follows [ONBOARDING.md](docs/ONBOARDING.md). To propose a model
+   without onboarding it yourself, open an issue with the checkpoint ID, quantization, target GPU
+   and use case; a proposal is not a support commitment. Drafts, trims and acceptance work follow
+   [DRAFT-REGIME.md](docs/DRAFT-REGIME.md).
+4. [AGENTS.md](AGENTS.md) holds the standing repo rules (flags, defaults, evidence, public
+   boundary). They apply to human contributors too.
+5. A change that reaches a GPU cell needs a GPU of a target it reaches ([Build](#build)). If you
+   cannot produce that evidence, open an issue that describes the idea instead of a pull request.
 
-## Required proof, in order
+## Build
 
-Every PR touching a kernel, forward pass, dispatch policy, or anything on the decode/prefill hot
-path must include, in the PR description, evidence for **all** of the following. A PR missing any
-one of these is incomplete, not "mostly done": do not open it yet.
-
-### 1. Correctness gates (all three, all green)
-
-```bash
-tools/local-ci.sh                      # one command: kernel-check + prime-gate + argmax gate + VERIFY-GATE
-                                       # + spec self-consistency + decode-batch-gate + graph-warmup stress + serve-smoke
-```
-
-or individually:
-
-```bash
-./target/release/kernel-check          # every quant kernel vs a CPU reference
-./target/release/run-gen  ...          # prefill argmax MUST match decode argmax; the
-                                       # batched-prime line (#46) must not be MISMATCH-STRUCTURED
-./target/release/run-spec ...          # K=1..8 self-consistency: every K token-identical to plain decode
-```
-
-run-gen prints a second gate line on text prompts >= 16 tokens: `batched-prime argmax=...`
-compares `prime_cache` (the config that seeds real generation and serving) against the
-tokenwise reference. `FLIP-NEARTIE` there is the documented cross-config drift class
-(reported, non-fatal); `MISMATCH-STRUCTURED` fails the run. Multi-prompt battery:
-`./target/release/prime-gate <model.gguf> --prompts-file <f> [--chat]`.
-
-Paste actual pass/fail output (or relevant tail), not "gates pass." A kernel that reduces in different floating-point order can flip an argmax at tight logit margins, which has silently broken "faster" kernels before (`research/tune-data/`), so a green run *right now, on your branch* is required, not an assumption.
-
-Changes touching the Hopper (sm_90a) lane build from source (`MEMRA_CUDA_ARCH=90a`) and run its
-gates directly on an H100 — kernel-check config pins (incl. the
-KQRP, f16-mirror, f16g-sk, and batched-seqs pins), decode-batch (config + strict, gates 1–3 incl.
-gate3c lean-logits), decode-dc, graph-decode, and graph-session. (These lived in the
-`tools/validate-h100.sh` one-command battery until it was retired with the Hopper CI lane on
-2026-09-02.) `ALL GATES GREEN` output
-pasted, same rule as above. Gate1's config-mode verdict is the multi-seed fraction rule
-(#47): FAIL iff >= 4 of 6 `MEMRA_GATE_SEED` draws diverge before step 3 (near-tie seeds
-are legal FP dice, plumbing fails every draw); `MEMRA_GATE_CANARY=1` is the teeth check
-when recalibrating.
-
-### 1b. Perf regression battery (local CI)
+`rust-toolchain.toml` pins Rust 1.97.1. CI and releases build with CUDA 13.1; use 13.1 or newer.
+[Installation](docs/INSTALLATION.md) covers toolkit discovery and per-target notes. Build what you
+test rather than the whole workspace:
 
 ```bash
-tools/local-ci.sh --perf               # full cell battery (~15 min); --perf-quick = 31B subset
+git config core.hooksPath tools/hooks        # once per clone
+cargo build --release -p memra-server --bin memra-server
+cargo build --release -p memra-engine --bin kernel-check --bin run-gen --bin run-spec
 ```
 
-This is the drift detector correctness gates cannot be: it re-measures every published
-model cell (plain AND spec, short AND depth) and, critically, records **speculative
-acceptance and tokens/round** per spec cell, verdicting each against the rolling median of
-its last 5 rows (`research/tune-data/perf-ci.jsonl`). FAIL = >3% tok/s drop or >0.05
-acceptance drop. Acceptance drift is invisible to every exactness gate (decode and verify
-shift *together*, bit-consistently) and silently cost this repo half its 31B short-spec
-margin across ~40 green-gated commits in July 2026, hence the battery. Cells whose model
-files are absent on your machine skip cleanly; set `MEMRA_MODELS_DIR` to your model root.
-The pre-push hook requires a battery row newer than your newest engine-touching commit
-(warn-only on machines without models; `MEMRA_SKIP_PERF_CI=1` overrides: say why in the PR).
+`MEMRA_CUDA_ARCH` picks the build target. Unset, `build.rs` detects the GPU's compute capability
+and falls back to `120a` when there is no GPU or no matching target (that build will not load on
+an unmatched GPU). Compiling needs no GPU.
 
-### 2. Performance: prefill AND decode, both, never just one
+| Target | GPUs | Push evidence | CI | Prebuilt |
+|---|---|---|---|---|
+| `120a` (default) | RTX 50-series, RTX PRO 6000 Blackwell | required when reached | build, CPU tests | yes |
+| `121a` | GB10 (DGX Spark, aarch64 host) | required when reached | compile | no |
+| `100a` | B200 | not push-gated | compile | no |
+| `90a` | H100 | not push-gated | none | no |
+| `89` | Ada (portable correctness build) | not push-gated | none | no |
 
-A kernel that helps decode and quietly regresses prefill (or vice versa) is net loss, not win. Report both every time, even if your change nominally targets only one:
+## What proof your change needs
 
-| Metric | Baseline (main) | Your branch | Ratio |
-|---|---|---|---|
-| pp512 (prefill, tok/s) | | | |
-| pp2048 (prefill, tok/s) | | | |
-| tg128 @ 512-ctx (decode, tok/s) | | | |
+Three tools say what a diff reaches. Run them first, paste their output in the PR, and run the
+selected CPU tests locally before you push. The table below is a guide; `change_impact.py`
+decides.
 
-Use exact protocol in [`research/benchmarks.md`](research/benchmarks.md): **N≥3 medians**, `gpu-full-power on` verified beforehand, and baseline + branch measured **interleaved in same session** (sequential cross-session runs drift up to ~10% from clock/thermal state, same-session-only number is not evidence).
+```bash
+python3 tools/change_impact.py --base origin/main --head HEAD      # (build target, scope) cells
+python3 tools/cell_evidence.py need --base origin/main --head HEAD # the evidence those cells need
+python3 tools/validation_plan.py local --base origin/main          # the CPU suites to run
+```
 
-### 3. Main runners exercised, not just the micro-kernel
+| The change touches | Proof in the PR |
+|---|---|
+| Docs that no crate reads, tests, research receipts, CPU tooling under `tools/` and `.github/`, `memra-cli`, `memra-net-guard` | The CPU suites above, plus `python3 tools/check-support-states.py` and `python3 tools/check-public-boundary.py` for docs. No GPU cell. Research files a gate reads (its prompts and calibration logs) count as gate inputs. |
+| Kernels (`.cu`, FFI shims), the numeric program (engine, gguf, kv, tokenizer, sampling, reference, runtime), the build | The three gates on a device of each affected push-gated target and the main runners exercised. Before/after prefill and decode numbers when `change_impact.py` reports a `perf` cell. A `.cu` change updates its [KERNELS.md](docs/KERNELS.md) rows. |
+| Serving (`memra-server`, `memra-lanes`, `memra-tier`) | As above, plus `tools/serve-smoke.sh` and one real request through `memra-server`. |
+| A device-keyed default | The gates and an interleaved A/B on that card's device class. |
+| A gate, its tools or its rules (`memra-validate`, the battery scripts and binaries, `tools/change-impact.toml`, the pre-push hook) | All three kinds: battery, serve-smoke and perf. |
+| A model pack the battery does not run (any but `qwen35` and `qwen35_moe`) | That pack's own gates; `change_impact.py` reports it as `UNCOVERED`. |
+| Multi-card surfaces (PP, TP/EP, P2P, placement) | The same, run on a multi-card box, in the PR body. |
 
-Benchmark binaries alone (`decode-bench`, `mvq-msweep`) prove a kernel is fast in isolation; they do not prove the engine still works. Every PR must also show clean run through actual model-serving paths your change touches:
+Some Markdown files are crate inputs (`docs/FLAGS.md` feeds the boot env audit;
+`docs/EXECUTION-SURFACES.md` is pinned by a test), so editing them reaches cells.
+`tools/cell_evidence.py run` produces a device record and `bank` stores it under
+`research/release-qualification/cells/`; the rule is in
+[RELEASE-QUALIFICATION.md](docs/RELEASE-QUALIFICATION.md). If you cannot run one affected
+target's battery, say so in the PR: the change still needs that record before it reaches `main`,
+and a maintainer can produce it.
 
-- `run-gen`: end-to-end generation on at least one real model (not a synthetic/random-weight
-  smoke test), full output shown, prefill/decode argmax line included.
-- `run-spec`: if your change touches anything upstream of speculative decoding's target forward
-  (attention, GEMM, MoE dispatch, KV cache), run this too, not just `run-gen`.
-- `memra-server`: if your change touches request handling, batching, or anything server-side, one
-  real request/response through the OpenAI-compatible endpoint.
+## The three gates
 
-"It compiles and the unit-level gate passed" is not evidence the runners still produce sane
-output end to end: show them running.
+```bash
+tools/local-ci.sh            # correctness stage: kernel-check, run-gen argmax, run-spec K=1..8, and more
+tools/local-ci.sh --perf     # plus the perf cell battery from research/tune-data/perf-cells.json
+```
 
-## What gets a PR closed on sight
+Or run them one by one and paste the tails:
 
-- No before/after numbers, or numbers from a different session without the interleaved-protocol
-  disclosure above.
-- Only one of {prefill, decode} measured when the change plausibly touches both.
-- Correctness gates claimed "passing" with no pasted output.
-- AI-generated kernel/algorithm changes with no evidence they were run on real sm_120a hardware.
-- Portability changes (targeting sm_89, sm_90, datacenter Blackwell, etc.) without first reading
-  [Installation](docs/INSTALLATION.md), [Models and hardware](docs/MODELS.md), and [Scope](#scope) below: this is a single-target engine,
-  not a general runtime.
-- Drive-by style-only diffs bundled with unrelated functional changes: split them.
+- `kernel-check` compares every kernel with a CPU reference and ends with
+  `ALL GREEN (<n> cells, <m> skipped)`.
+- `run-gen` prints a `verify-prefill` argmax line (batched prefill against token-by-token
+  decode) that must end in `MATCH`. On text prompts of 16 tokens or more it adds a
+  `batched-prime` line, which compares `prime_cache` (the path that seeds real generation and
+  serving) with the tokenwise reference: `MISMATCH-STRUCTURED` fails the run, `FLIP-NEARTIE` is
+  reported. `prime-gate <model.gguf> --prompts-file <f> [--chat]` runs the batched-prime check
+  over many prompts.
+- `run-spec` checks K=1..8 against plain decoding and ends with `=== SELF-CONSISTENCY PASS ===`.
 
-## Scope
+`tools/local-ci.sh` needs `jq`, and `MEMRA_MODELS_DIR` pointing at your model root; cells whose
+model files are absent are skipped. Hopper (sm_90a) has no CI lane: build with
+`MEMRA_CUDA_ARCH=90a` and run `kernel-check`, `decode-batch-gate`, `decode-dc-gate`,
+`graph-decode-gate` and `graph-session-gate` on an H100 ([H100 card](docs/rigs/h100.md)). The
+lane's evidence ledger is [ARCHITECTURE-H100.md](ARCHITECTURE-H100.md), append-only.
+[TESTING.md](docs/TESTING.md) has what each gate catches and the full catalog.
 
-This is a from-scratch engine hard-tuned for Blackwell sm_120a across two hardware classes:
-RTX PRO 6000 Blackwell pairs for verification, final tuning, and serving (including PP-2),
-and RTX 50-series for development and single-card tuning. H100 SXM remains the separately
-compile-gated sm_90a lane. Existing 5090 boards remain 5090 receipts; they are not relabeled
-as target-pair measurements. See [`docs/PERFORMANCE.md` §Rigs](docs/PERFORMANCE.md#rigs--what-was-measured-on-what)
-and
-[Installation](docs/INSTALLATION.md) and [Models and hardware](docs/MODELS.md) before proposing portability work: other GPUs compile
-via the portable arch (`MEMRA_CUDA_ARCH=89` builds the Ada correctness-first eval lane) but
-are untuned, and tuning choices throughout the codebase assume these two Blackwell classes
-or the separately gated Hopper lane.
+A micro-benchmark (`decode-bench`) shows a kernel is fast in isolation, not that the engine still
+works. Also show the main runners on the paths your change touches: `run-gen` end to end on a real
+model (not random weights), with its full output; `run-spec` when the change is upstream of the
+speculative target forward (attention, GEMM, MoE dispatch, KV cache); and one real request and
+response through `memra-server` when it touches request handling or batching.
+
+## Performance numbers
+
+Report prefill and decode, every time: a kernel that helps one and costs the other is a loss.
+Follow the [method](docs/PERFORMANCE.md#method): base and branch interleaved in the same
+session, in both orders, N >= 3 runs per arm (five on an anomaly), with the GPU's power and clock
+state recorded. Sequential runs from different sessions drift by up to about 10% and are not
+evidence. Speculative changes also report acceptance, which exactness gates cannot see. The PR
+template has the table.
+
+## The pre-push hook
+
+`git config core.hooksPath tools/hooks` installs it. Do not bypass it with `--no-verify`. It
+refuses a push when:
+
+- the perf board is stale (`python3 tools/update-perf-board.py` regenerates it);
+- the `MEMRA_*` flags census fails (`tools/check-flags.sh`): a new read needs its
+  [FLAGS.md](docs/FLAGS.md) row in the same commit;
+- a releasability census (publish list, stub ABI, arch matrix), the docs-registry census, the
+  numeric-scope census or the workflow-file census fails;
+- a tracked file carries a merge-conflict marker, or the push range carries an nsys profile;
+- the public-boundary check fails (`tools/check-public-boundary.py`);
+- native evidence is missing: a branch push needs a passing record for each cell it reaches on
+  each push-gated target, and a tag needs the full release record.
+
+Only the flags census has a skip, `MEMRA_SKIP_FLAGS_CENSUS=1`, which is logged to
+`.git/memra-gate-skips.log`. `MEMRA_SKIP_PERF_CI=1` refuses the push. A topic branch can go up as
+development work that claims no native evidence, with `MEMRA_RELEASE_QUALIFICATION_MODE=development`;
+`main` and tags refuse that mode. A fast-forward that changes only Markdown no crate reads prints
+`DOCS ONLY` and needs no device record.
+
+## What gets a PR closed
+
+- Gates claimed as passing with no pasted output.
+- A change with a `perf` cell and no before/after numbers, or with numbers from different sessions.
+- Only prefill or only decode measured when the change can touch both.
+- Kernel or algorithm changes, AI-generated or not, with no run on the hardware they target.
+- Portability work that has not read [Installation](docs/INSTALLATION.md) and the
+  [hardware cards](docs/rigs/README.md): the targets above are the ones memra builds.
+- Style-only edits mixed into a functional change: split them.
 
 ## Validation reports from your rig are the easiest contribution
 
-memra is hard-tuned on RTX PRO 6000 Blackwell pairs and the RTX 5090 Laptop, and reports from
-**every end-user rig** are wanted. Filing a
-[hardware validation report](.github/ISSUE_TEMPLATE/hardware-validation.md) is genuinely
-useful even if you never touch the code:
+A [hardware validation report](https://github.com/avifenesh/memra/issues/new?template=hardware-validation.md)
+helps even if you never touch the code. Correctness output alone is useful.
 
-- **Desktop 50-series (5090/5080/5070 Ti/5070):** the 5090 is the development and
-  single-card-tuning rig with a tracked regression board. The other cards share sm_120 but
-  have different SM-count/bandwidth ratios; a perf battery
-  (`MEMRA_MODELS_DIR=... tools/local-ci.sh --perf`) plus an interleaved pairing (protocol:
-  [`research/benchmarks.md`](research/benchmarks.md)) is the evidence that moves them from
-  "should work" to "supported".
-- **Older NVIDIA (Ada/Ampere):** the main build targets sm_120a; `MEMRA_CUDA_ARCH=89` builds
-  the in-tree Ada eval lane. "What breaks where" reports map the compatibility floor,
-  correctness output alone advances the story.
+- **sm_120 cards (RTX 5090, 5080, 5070 Ti, 5070):** they share the RTX 5090's build, not its
+  measurements: SM count and memory bandwidth differ per card.
+  `MEMRA_MODELS_DIR=... tools/local-ci.sh --perf` plus an interleaved pairing per
+  the [method](docs/PERFORMANCE.md#method) is the evidence a card's results need.
+- **GB10, H100, B200, Ada:** build from source for the card's target and report what passes and
+  what breaks. A GPU with no build target (Ampere and older) cannot run memra: the installer
+  refuses it, and a source build falls back to `120a`, which does not load there.
 
-## Where to look first
+## Where code lives
 
-| Crate | What it does |
+[ARCHITECTURE.md](ARCHITECTURE.md) explains how the crates fit together.
+
+| Crate | Role |
 |---|---|
-| `memra-engine` | CUDA kernels (`cu/`), forward passes, speculative decoding, MoE cache, graph decode |
-| `memra-gguf` | GGUF parser + tensor loading (memory-mapped) |
-| `memra-tokenizer` | BPE tokenizer + chat templates from GGUF metadata |
-| `memra-runtime` | CUDA device/stream/memory primitives over cudarc |
-| `memra-kv` | KV cache + format policy behind the KvDev device seam |
-| `memra-sampling` | Host sampler + device Philox sampling behind one trait |
-| `memra-validate` | Gate harness: tolerance policy, deterministic vectors, N-median runner |
-| `memra-server` | OpenAI-compatible HTTP server (axum): batched decode, prefill batching, KV reuse |
-| `memra-probe` | Unpublished Phase-0 dev spike (`publish = false`): one hand-written kernel built to an sm_120a fatbin, launched through cudarc on a CC 12.0 card |
+| `memra-engine` | CUDA kernels (`cu/`), forward passes, batched and graph decode, speculative decoding, MoE, PP/TP/EP, and the gate and bench binaries |
+| `memra-server` | `memra-server`: the axum HTTP server, GPU worker thread, scheduler, API dialects and admission |
+| `memra-gguf` | GGUF and safetensors loading, quant decode, `ModelPlan`, tensor contracts, model packs, execution manifests, `hf:` specs |
+| `memra-reference` | The portable CPU reference executor for `ModelPlan`, with its speech, audio and vision stages and checkpoint runners |
+| `memra-cli` | `memra model inspect`, `scaffold`, `verify` and `qualify` |
+| `memra-tokenizer` | GGUF-native BPE and SPM tokenizers and chat templates |
+| `memra-sampling` | Host sampler chain with llama.cpp CPU semantics |
+| `memra-kv` | KV and recurrent cache structure, sizing and format policy |
+| `memra-tier` | Exact-byte tiering contracts |
+| `memra-lanes` | Serving lanes, SLO admission and step statistics |
+| `memra-runtime` | CUDA context and GEMM checks |
+| `memra-validate` | The shared gate protocol: vectors, tolerance bands, N-run medians, the ALL GREEN tally |
+| `memra-net-guard` | SSRF address classification for server-side URL fetches |
+| `memra-probe` | The Phase-0 stack probe: builds custom kernels into a fatbin and launches them through cudarc; unpublished (`publish = false`) |
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md): hard hardware constraints and the sm_120a feasibility ledger.
-- [`docs/DRAFT-REGIME.md`](docs/DRAFT-REGIME.md): the standard drafter pipeline (own-gen ranks → byte-verbatim extraction → trim/quantize, adopt on e2e only). Any PR touching drafts, trims, or acceptance follows it: its three laws were each violated at measured cost before being written down.
-- [`docs/decisions/`](docs/decisions/): design decision records.
-- [`research/benchmarks.md`](research/benchmarks.md): the exact A/B measurement protocol referenced above.
-- [`research/tune-data/`](research/tune-data/): labeled corpus of tuning experiments (config → measured result, wins and losses both). Check before re-trying something already measured.
+Earlier versions of this page carried the rationale of the proof policy, gate history and a scope
+statement; they are kept in
+[docs/history/README-and-CONTRIBUTING.md](docs/history/README-and-CONTRIBUTING.md).

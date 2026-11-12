@@ -1,0 +1,217 @@
+# COOKBOOK history
+
+Records moved out of [docs/COOKBOOK.md](../COOKBOOK.md) on 2026-11-12, verbatim except for the removal
+of private deployment detail. The current contract is in the main doc; this file is not.
+
+Below are the cookbook's model sections as they stood at commit `d1ed663256`: the launch blocks
+that ran, with their local artifact paths, and the measurements and narratives next to them.
+
+## Qwen3.8-27B
+
+Dense hybrid (GDN + gated attention). Both paths are tuned and supported; choose from receipts for
+the exact artifact and card rather than transferring a format-level performance claim.
+Artifacts: [tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF](https://huggingface.co/tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF)
+(trunk, pre-trimmed masked MTP head, ranks `.txt`).
+
+### RTX 5090 / 24 GB class: DFlash2 q4 + masked head (default)
+
+```bash
+MEMRA_COMPAT=openai \
+MEMRA_MODELS="q38=hf:tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp" \
+MEMRA_DSPARK_SPEC=1 \
+MEMRA_DSPARK_DRAFT=hf:tiyuvta/Qwen3.8-27B-DFlash2-memra \
+MEMRA_FRSPEC_TRIM=hf:tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF:q38-ranks-sxc32768.gguf \
+MEMRA_DFLASH_PREC=q4 \
+MEMRA_CTX=8192 \
+MEMRA_MAX_SESSIONS=8 \
+MEMRA_PREFIX_CACHE_MB=0 \
+memra-server
+```
+
+This is the measured local default: the 5090 ABBA receipt is 83.85 -> 87.10 E2E tok/s
+(+3.87%) on the held-out agentic pack. Verification stays full-vocab, so the rank mask moves
+proposal cost and acceptance, never emitted tokens. The 24 GB envelope is intentionally bounded
+to `MEMRA_CTX=8192` and eight sessions; set a larger context only after sizing it on the actual
+workload. Boot proof: the resolved q4 precision, the DFlash route path, and
+`[dspark] q38: DFlash2 draft head TRIMMED to 32768 rows`.
+
+The masked MTP head remains the rollback path: unset `MEMRA_DSPARK_SPEC` and use the prior
+`+hf:tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF:frspec-sxc32768` attachment.
+
+### RTX PRO 6000 Blackwell 96 GB: long-context serving
+
+[deployment detail removed] Full 262K context, 32 sessions, 16 GB prefix cache.
+
+```bash
+MEMRA_COMPAT=openai \
+MEMRA_MODELS="q38=/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf" \
+MEMRA_MTP_DRAFT=/models/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf \
+MEMRA_CTX=262144 \
+MEMRA_MAX_SESSIONS=32 \
+MEMRA_PREFIX_CACHE_MB=16384 \
+memra-server
+```
+
+On a 24 GB card, set `MEMRA_CTX` to the workload instead: 262144 reserves KV for clients
+that never send it; [SERVING.md](../SERVING.md#config-recommendation-send-max_tokens) covers the ladder and the
+`MEMRA_CTX` fallback trade.
+
+### RTX PRO 6000 Blackwell: DFlash2 drafter (the measured-fastest spec route)
+
+The [DFlash2 block-diffusion drafter](https://huggingface.co/tiyuvta/Qwen3.8-27B-DFlash2-memra)
+replaces the MTP arm for this model (arming it disables MTP spec: two spec programs never
+coexist). Defaults do the tuning: the drafter quantizes to q4_0 at load
+(`MEMRA_DFLASH_PREC=q4`) and the round consumes the FR-Spec vocab trim when armed. Output is
+byte-identical to plain decode by construction: the verifier arbitrates every committed token.
+
+```bash
+MEMRA_COMPAT=openai \
+MEMRA_MODELS="q38=/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf" \
+MEMRA_DSPARK_SPEC=1 \
+MEMRA_DSPARK_DRAFT=hf:tiyuvta/Qwen3.8-27B-DFlash2-memra \
+MEMRA_FRSPEC_TRIM=q38-ranks-sxc32768.gguf.txt \
+MEMRA_CTX=262144 \
+MEMRA_MAX_SESSIONS=32 \
+MEMRA_PREFIX_CACHE_MB=16384 \
+memra-server
+```
+
+Boot receipts: `[dspark] q38: DFlash2 draft head TRIMMED to 32768 rows` and the route line.
+[deployment detail removed] Measured
+on this card at the vendor-default SAMPLED shape [deployment detail removed] (memra >=
+v0.113.0, sampled sessions stack in the spec-gate LOW band; x3 interleaved, medians):
+c=1 127/117, c=2 128/120, c=4 87/85 agg tok/s vs the MTP head: the DFlash2 route wins
+every rung. Single-stream wall rates on the same card: prose ~131-146, code ~208-239,
+digit-heavy ~287-339 tok/s (drafter acceptance rises with output predictability). The
+greedy instrument numbers (chat 142.9 / agentic 157.2 vs MTP 126.9 / 148.6) remain the
+byte-exactness receipts, not the serving verdict. Under load the spec-gate sheds to plain
+batching at c>=4 (aggregate parity).
+
+Multi-turn conversations no longer resume a parked DFlash session at its end (memra#1093): its
+rows past the prompt were written by verify and decode, off the prime grid, and resuming them left
+the cold text. With `MEMRA_DSPARK_PREFIX_RESTORE` off (the RTX 5090 default) a DFlash retire parks
+the session rewound to its last prime boundary (`[worker] dspark-park REWOUND (grid law)`), and a
+next turn that extends those tokens exactly resumes there and primes the rest
+(`dspark-reuse: ... resumed at the prime boundary`), the same stream a cold prime gives. With the
+switch on (the GB10 and Max-Q default), the retire frees the session and turn N+1 restores DFlash
+from an on-grid prefix entry carrying the draft tail. The old pool resume measured turn-over-turn
+TTFT −16% → −83% vs cold re-prime on an 8-turn conversation; that speed was not exact. The rewind
+is: on the RTX 5090 a three-turn chat's long-decode turn 3 resumes in 0.275 s instead of a 2.46 s
+re-prime, byte-equal to cold (`research/pool-rewind-dspark-20261108/`). It needs the prefix cache
+on and a next turn whose cap fits the parked session; an agent client whose caps grow every turn
+re-primes as before.
+
+### NVFP4 safetensors trunk + ranks trim
+
+No GGUF anywhere: the compressed-tensors NVFP4 checkpoint
+[`unsloth/Qwen3.8-27B-NVFP4`](https://huggingface.co/unsloth/Qwen3.8-27B-NVFP4)
+(`16b6615af3548b88e2d8e382457bc705b00479cf`) loads natively, its own
+`model_mtp.safetensors` head drafts out of the box, and the ranks `.txt` self-trims the head at
+load (byte-level row gather from the trunk's own `output.weight`, zero requant; memra ≥ v0.84).
+Do not substitute the official FP8 checkpoint: its BF16 output head is a different loader class
+and is not this measured NVFP4 configuration.
+
+```bash
+MEMRA_FRSPEC_TRIM=q38-ranks-sxc32768.gguf.txt \
+MEMRA_MODELS="q38=/models/Qwen3.8-27B-NVFP4" \
+memra-server
+```
+
+`MEMRA_FULL_PREC=1` disables the trim by design: the exactness ceiling wants the natural
+full head.
+
+---
+
+## Qwen3.5-9B
+
+Dense. NVFP4 GGUF on `sm_120a`, Q8_0 on the H100 lane. MTP + own-gen trimmed draft.
+
+### RTX 5090: NVFP4
+
+```bash
+MEMRA_COMPAT=openai \
+MEMRA_MODELS="q9=/models/Qwen3.5-9B-NVFP4.gguf" \
+memra-server
+```
+
+The tuned path is the default: no flags needed for speed. `MEMRA_SPEC_K` remains the
+operator pin, including `0` for plain decode.
+
+---
+
+## Ornith-1.5-35B-A3B
+
+MoE. NVFP4 GGUF with a trained MTP head; masked own-gen ranks trim adopted as the serving
+default (see the board entry). NVFP4 is not an upstream llama.cpp tensor type: this file
+runs on memra. Artifacts:
+[tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF](https://huggingface.co/tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF).
+
+### RTX PRO 6000 Blackwell: trunk + masked head
+
+```bash
+MEMRA_COMPAT=openai \
+MEMRA_MODELS="ornith=hf:tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF:Q5K-mtp+hf:tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF:frspec-owngen32768" \
+memra-server
+```
+
+Without the `+draft` suffix the trunk's embedded head drafts (still correct: the mask
+only moves cost). Boot log proof: `[worker] ornith: regime draft attached (…owngen32768.gguf)`.
+
+Ranks-only alternative (self-trim at load, no separate draft file; the adopted serving
+default, board entry 412c45b0):
+
+```bash
+MEMRA_FRSPEC_TRIM=ornith15-ranks-owngen-32768.txt \
+MEMRA_MODELS="ornith=hf:tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF:Q5K-mtp" \
+memra-server
+```
+
+---
+
+## Gemma-4 31B
+
+Dense, vision-capable. [deployment detail removed] On an
+RTX PRO 6000: Q6_K trunk, the official NVFP4 MTP drafter with ranks trim, and the Gemma
+vision seam.
+
+### RTX PRO 6000 Blackwell: serving with vision + drafter
+
+```bash
+MEMRA_COMPAT=openai \
+MEMRA_MODELS="gemma31=/models/gemma-4-31B-it-Q6_K.gguf" \
+MEMRA_DRAFT=/models/gemma-4-31B-it-official-NVFP4-MTP.gguf \
+MEMRA_GEMMA_DRAFT_RANKS=/models/gemma31b-ranks-32768.gguf.txt \
+MEMRA_GEMMA_TRIM_ADAPT=512 \
+MEMRA_GEMMA_VISION=1 \
+MEMRA_GEMMA_MMPROJ=/models/gemma-4-31B-it-mmproj.gguf \
+MEMRA_CTX=262144 \
+MEMRA_MAX_SESSIONS=16 \
+MEMRA_PREFIX_CACHE_MB=16384 \
+memra-server
+```
+
+The Gemma vision seam is `MEMRA_GEMMA_VISION=1` + `MEMRA_GEMMA_MMPROJ`. Do **not** set
+`MEMRA_VISION_DIR` here; that is the Qwen tower seam, and one vision path per worker.
+
+---
+
+## Step-3.7-Flash 196B-A11B
+
+MoE, two-card PP-2. Receipts: `research/pp2-batch-20260806/`,
+`research/pp2-spec-20260806/`, `research/pp2-hardening-20260806/`, rig 2× RTX PRO 6000
+Blackwell Server Edition 96 GB. The split adds **zero deviation**: every f32 logit of every
+step bit-compared, 0 differing bits across all seven gate configs.
+
+### 2× RTX PRO 6000 Blackwell: PP-2
+
+```bash
+MEMRA_PP_STAGES=2 MEMRA_PP_DEVICES=0,1 \
+MEMRA_COMPAT=openai \
+MEMRA_MODELS="step=/models/Step-3.7-Flash-IQ4_XS.gguf" \
+memra-server
+```
+
+The request-conditioned K policy selects `K=0` on this sharded shape by itself: no
+`MEMRA_SERVE_SPEC=0` needed. Boot log proof:
+`[pp] cross-device transport: stage0=dev0 stage1=dev1`. A config that silently did not
+split is the failure mode that banner exists to rule out.

@@ -1,1167 +1,516 @@
-# Architecture onboarding
+# Model onboarding
 
-Use this procedure only for work admitted under the [project scope](../README.md#project-status).
-Routine bring-ups are paused.
+Onboarding takes a new model family, or a new artifact of a known family, from a pinned checkpoint
+to a support record. This procedure is for maintainers and agents. The owner rules behind it are in
+[AGENTS.md, Model onboarding](../AGENTS.md#model-onboarding-compile-a-native-plan-not-a-new-engine-path-owner-2026-08-22).
 
-This is the single maintained path from an artifact in hand to gates green. For new upstream
-models, start from the official safetensors checkpoint together with its config,
-tokenizer/template, quantization metadata, and every indexed or auxiliary tensor file. That set is
-the semantic source, not the runtime layout: memra repacks each supported tensor class into a
-measured rig-native layout and fails closed on missing, duplicate, substituted, or unsupported
-surfaces. GGUF remains a fully supported self-contained import and distribution format and follows
-the same gates. Neither container format may silently redefine the checkpoint's compute program.
+Memra compiles each model into a native `ModelPlan`, binds the checkpoint's tensors to that plan,
+and validates every tuned program against the reference executor. A new model is a model pack, not
+a new engine path. The preferred semantic source is the official safetensors checkpoint with its
+config, tokenizer, template, quantization metadata and every indexed or auxiliary tensor file.
+GGUF stays a supported import format and passes the same gates. Neither format may redefine the
+checkpoint's compute program, and a missing, duplicate, substituted or unsupported surface fails
+closed.
 
-Use a dedicated branch/worktree and a target-rig receipt directory. Do not enable a broad
-dispatch door until the architecture's geometry, tokenizer/template, and standing canaries
-are explicit. A same-family model may reuse existing semantics only after the artifact proves
-that the relevant contracts are unchanged.
+Related documents: [Testing](TESTING.md) (gate catalog), [Release qualification](RELEASE-QUALIFICATION.md)
+(per-cell push evidence, and [what a tag record covers](RELEASE-QUALIFICATION.md#what-a-record-covers)),
+[Releasing](RELEASING.md) (the release procedure), [Flags](FLAGS.md),
+[Serving](SERVING.md) (drafter attach syntax), [Draft regime](DRAFT-REGIME.md),
+[Tokenizer program](TOKENIZER-PROGRAM.md), [Execution surfaces](EXECUTION-SURFACES.md) and
+[`support-records.toml`](support-records.toml). A worked same-family example (Qwen 3.8 27B FP8
+safetensors, 2026-08) and the procedure this page replaced are in
+[history/ONBOARDING.md](history/ONBOARDING.md).
 
-Canonical supporting documents:
+## The pieces
 
-- [Testing](TESTING.md) defines fast-gate versus the scoped and full merge batteries;
-  [Releasing](RELEASING.md#the-gate-on-the-rig-before-tagging) defines the qwen35-class tag battery.
-- [Flags](FLAGS.md) owns runtime parameters, rollback seams, and diagnostic flags.
-- [Serving](SERVING.md) owns the public API and drafter attach syntax.
-- [Performance](PERFORMANCE.md) owns rig authority and measurement protocol.
+| Path | What it owns |
+|---|---|
+| `crates/memra-gguf/src/model_plan.rs` | `ModelPlan`, the typed program: norms, RoPE, attention and state mixers, gates, MLPs, residual topology, logits transforms, MTP blocks, multimodal operations. No kernel choice. |
+| `crates/memra-gguf/src/tensor_contract.rs` | Checkpoint names to semantic `TensorId`s with shape, owner, transform and quant layout, per dialect (GGUF or HF). |
+| `crates/memra-gguf/src/model_packs/<family>/` | The `ModelPack` (fields below). Statically linked Rust; no plugin ABI. |
+| `crates/memra-gguf/src/config.rs` | Parses an artifact into `ModelConfig` (`Arch`, sizes, per-layer arrays). `ArchGeometryTable` holds per-layer geometry for Qwen35, Qwen35Moe, Qwen4Exp, Step35 and MiMoV2; other architectures keep their own config paths. |
+| `crates/memra-gguf/src/checkpoint_binding.rs` | `bind_source`: the contract against the checkpoint's metadata census, before any upload. `audit_consumption`: bound tensors the loader never read. |
+| `crates/memra-gguf/src/execution_manifest.rs` | Which tuned rewrites a plan is eligible for, per `RewriteSurface` (`CarriedPrime`, `DecodeEager`, `DecodeBatch`, `DecodeGraph`, `MtpSpec`, `Glm5Spec`, `Pipeline`), and the receipts that admit them. Per-operation support comes from `op_registry.rs` ([Execution surfaces](EXECUTION-SURFACES.md)). |
+| `crates/memra-reference/` | The unfused CPU executor and semantic baseline. An unsupported operation is a named error, never a fallback. |
+| `crates/memra-cli/` | The `memra model` commands: `inspect`, `scaffold`, `verify`, `qualify`. |
+| `docs/support-records.toml` | One record per supported capability, with the receipts behind each passed gate. |
+
+`ModelPack` fields: `family`, `aliases`, `matches_config`, `config_layout`, `output_head`,
+`tensor_consumption`, `tokenizer_sources`, `template`, `support`, `gates`, `checkpoint_parity`,
+`plan_builder`, `tensor_schema` and `tiny_plan`. Load-time selection walks `PACKS` in order and
+takes the first pack whose `matches_config` accepts the config (`llama_dense` is last).
+`ONBOARDING_PROFILES` are artifact-storage profiles (`hy3_nvfp4`, `mimo_v2_mint`, `mimo_v2_source`)
+that `--against` can name but that never auto-select. `--against` takes a family name or any alias.
+
+## Support states and their gates
+
+A pack's `support` field is its ModelPlan state, not a claim about older handwritten paths.
+`tools/check-support-states.py` (CI gates job) requires it to equal the highest state its own
+records in `docs/support-records.toml` prove, and every passed gate in a record must cite a
+tracked `gates.txt` receipt for the same family (or `ci:verify-tiny`, the hosted tiny test, for
+Config and TinyParity). The full rules are at the top of that file.
+
+- `NativeReference` needs Config and TinyParity. <!-- support: none; not NativeReference -->
+- `NativeQualified` adds TokenizerTemplate, TensorCensus, CheckpointParity and Serve on a pinned, <!-- support: none; not NativeQualified -->
+  non-tiny artifact, with a memra commit, topology and route in the record.
+- `NativeTuned` adds RewriteParity. <!-- support: none; not NativeTuned -->
+
+A pack with `support: None` inspects but has no native execution, and `verify tiny` refuses it.
+A tiny fixture never promotes a pack. Every pack declares all seven gates.
+
+| Gate | Written by | Receipt in the bundle directory |
+|---|---|---|
+| Config | `inspect`, `verify tiny` (`verify config` checks it and writes nothing) | `gates.txt` |
+| TokenizerTemplate | `inspect` | `tokenizer-contract.tsv` (`tokenizer-error.txt` on failure) |
+| TensorCensus | `inspect` | `tensor-census.tsv`, `binding=` in `artifact.lock` (`contract-error.txt` on failure) |
+| TinyParity | `verify tiny` | `tiny-gate.tsv`, `reference-oracle.tsv` |
+| CheckpointParity | `verify checkpoint` | `checkpoint-parity.tsv` |
+| RewriteParity | `verify rewrite` | `rewrite-receipts.tsv`, `rewrite-receipts/<id>.tsv` |
+| Serve | `verify serve` | `serve-gate.tsv`, `serve.log`, `serve-response.json` |
+
+Each stage that writes a directory rewrites its `gates.txt` from the lock's verdicts and every
+receipt there that still binds to the lock and the family.
 
 ## Ordered checklist
 
-| Phase | Work | Exit condition |
+Run from source with `cargo run -p memra-cli --bin memra -- model ...`, or a built `memra`. Any
+error prints `memra: <error>` and exits 2. `<bundle>` is one directory reused by inspect,
+checkpoint, rewrite and serve; each stage reads what the previous one wrote there.
+
+| Phase | Command or work | Exit condition |
 |---|---|---|
-| 0 | Isolate the lane and freeze the source/artifact identity | branch, source SHA, artifact manifest, rig, and receipt directory recorded |
-| 1 | Inspect metadata, tensor inventory, tokenizer, and raw chat template | every field classified as derived, reused, new semantic work, or STOP |
-| 2 | Build one declarative per-layer geometry table | every trunk and MTP/draft execution row resolves heads, rotary geometry, window, and gate kind |
-| 3 | Implement only genuinely new math and tensor ownership | loaders and kernels fail closed on unsupported shapes and doors |
-| 4 | Prove tokenizer, chat, tools, and thinking behavior | parity/goldens cover exact bytes and the public thinking mapping |
-| 5 | Attach and validate any drafter | interface, block topology, output head, K=1..8, and acceptance are proven |
-| 6 | Generate standing gate scaffolds | chunk, tick, B>1 geometry, naked/canary rows, and map rows are reviewed |
-| 7 | Enable broader execution arms in stages | eager first, then prefill/batch/spec/graph/PP only after their own liveness gates |
-| 8 | Run the target-rig battery and close receipts | kernel, argmax, spec, invariance, batch, and serve gates are green with raw logs |
-| 9 | Update canonical docs and release surfaces | no duplicate runbook, generated surfaces current, merge/tag only after target-rig approval |
+| 0 | Branch, receipt namespace, pinned source | `hf-id@<40-char sha>` or a local artifact plus its byte manifest recorded |
+| 1 | `memra model inspect <source> --against <family> --out <bundle>` | Config, TokenizerTemplate and TensorCensus pass, or every difference is classified |
+| 2 | `memra model scaffold <family> --out <dir>`, then the Rust pack | `memra model verify config <source> --against <family>` passes |
+| 3 | Typed operation plus its reference implementation, only where the plan needs one | `memra model verify tiny --against <family> --out <dir>` matches the pinned oracle |
+| 4 | Tokenizer, template, tools, thinking | token-id parity and rendered-byte goldens pass |
+| 5 | Drafter attach | `run-spec` K=1..8 self-consistency and non-zero acceptance |
+| 6 | `tools/generate-arch-gates.py` | chunk, tick and B>1 scaffolds reviewed and merged by hand |
+| 7 | Rewrite receipts, then `memra model verify rewrite <receipt> --against <family> --out <bundle>` | every enabled rewrite has a bound receipt |
+| 8 | `verify checkpoint`, `verify serve`, the device battery | all green with raw logs |
+| 9 | Pack `support`, record, `memra model qualify`, model card, INDEX row | `python3 tools/check-support-states.py` passes |
 
 ## 0. Freeze the lane and artifact
 
-Start from an isolated worktree. Record the exact source tree before the first model run:
+Work on a dedicated branch or worktree. Put receipts under a dated
+`research/modelplan-onboarding-<topic>-<YYYYMMDD>/` directory (for example
+[`research/modelplan-onboarding-dsv41-20261109/`](../research/modelplan-onboarding-dsv41-20261109/)).
+Record the branch, the source commit, the worktree status and the GPU state at entry.
 
-```bash
-export ARCH=<short-architecture-id>
-export MODEL=/data/path/to/model.gguf
-export R=research/${ARCH}-bringup-$(date +%Y%m%d)
-mkdir -p "$R/raw"
-
-git branch --show-current | tee "$R/branch.txt"
-git rev-parse HEAD | tee "$R/source-commit.txt"
-git status --short | tee "$R/worktree-status.txt"
-sha256sum "$MODEL" | tee "$R/artifact.sha256"
-nvidia-smi --query-gpu=index,name,memory.total,memory.used \
-  --format=csv | tee "$R/gpu-entry.csv"
-```
-
-For split GGUF, hash every shard and enter through any shard only after `gguf-inspect` confirms
-the merged tensor count and per-shard ownership. For a directory artifact, hash the config,
-tokenizer files, index, and every indexed tensor shard. Durable copies live under `/data`;
-benchmark/eval copies on a remote research box are staged byte-identically to local NVMe and
-their staged manifest hash is recorded.
+The source is either a pinned Hugging Face revision, `owner/repo@<40-character commit sha>`, or a
+local path: a GGUF file (any shard of a split GGUF), an HF safetensors directory (`config.json`
+plus `model.safetensors[.index.json]`), or a Hy3 repack directory with `manifest.json`. A pinned remote
+source is inspected from its config, tokenizer files and safetensors headers over HTTP range reads;
+no weights download. Execution (`verify checkpoint`, `verify serve`) needs the artifact on disk.
+For a local artifact, hash every file the source reads: the config, tokenizer files, index and
+every indexed shard, or every GGUF shard.
 
 Do not edit model metadata to make a parser accept it. If the artifact changes, start a new
-manifest and preserve the old receipt.
-
-The `memra model inspect` artifact lock is bound to the code as well as to the bytes. Its
-`plan_sha256` hashes the compiled plan's text for every source. For a GGUF or Hy3-repack source,
-`config_sha256` hashes the normalized `ModelConfig`'s text instead of a `config.json`, so a
-`ModelConfig` field change moves the lock when the same artifact is inspected again (removing
-`n_layer_total` on 2026-11-03 did). A regenerated lock needs its rewrite receipts regenerated
-with it. `normalized-config.txt` beside the lock is that `ModelConfig` text for every source, so
-the normalization an HF `config.json` went through can be read without rerunning the parser.
+manifest and keep the old receipt.
 
 ## 1. Inspect before implementing
 
-Build the header inspector and capture both metadata and tensor patterns:
-
 ```bash
-cargo build --release -p memra-gguf --bin gguf-inspect
-target/release/gguf-inspect "$MODEL" --all \
-  2>&1 | tee "$R/raw/gguf-inspect-all.log"
-target/release/gguf-inspect "$MODEL" --config \
-  2>&1 | tee "$R/raw/gguf-inspect-config.log"
+cargo run -p memra-cli --bin memra -- model inspect <source> --against <family> --out <bundle>
+# family=<family> tensors=<n> artifacts=<bundle>
 ```
 
-The audit is four inventories:
+`inspect` writes, in `<bundle>`:
+
+- `artifact.lock`: source, revision, family, the pack's support state and checkpoint tolerance,
+  `config_sha256`, `census_sha256`, `plan_sha256`, `rewrite_manifest_sha256`, and the `binding=`
+  and `tokenizer=` verdicts;
+- `normalized-config.txt`: the `ModelConfig` the pack compiled from;
+- `tensor-census.tsv`: every tensor with semantic and physical name, dtype, shape, storage and
+  bytes;
+- `model-plan.txt`: the compiled plan;
+- `execution-rewrites.tsv`: each tuned rewrite, its surface, implementation, plan hash and
+  eligibility;
+- `tokenizer-contract.tsv`: tokenizer hash, dialect and template hash (or the engine renderer);
+- `placement-checkpoint-<N>.tsv` for 2 to 4 pipeline stages, when the tensor contract binds;
+- `gates.txt`.
+
+The lock is bound to the code as well as to the bytes. `plan_sha256` hashes the compiled plan's
+text. For an HF source `config_sha256` hashes the `config.json` bytes; for a GGUF or repack source it
+hashes `normalized-config.txt`, so a `ModelConfig` field change moves the lock when the same artifact
+is inspected again. A regenerated lock needs its rewrite receipts regenerated with it.
+
+`gguf-inspect <model.gguf> --all` (or `--config`) prints a GGUF's raw header and metadata when the
+normalized view is not enough.
+
+Read the outputs as four inventories:
 
 1. Config: architecture id, layer count, per-layer arrays, head dimensions, attention classes,
-   RoPE parameters, window, MoE/router fields, normalization, clamp values, and MTP depth.
-2. Tensors: naming patterns, shapes, dtypes/layouts, split-shard ownership, optional gates,
-   position factors, expert banks, output heads, and companion draft blocks.
-3. Tokenizer: tokenizer model, `tokenizer.ggml.pre`, normalizer/pre-tokenizer, vocabulary and
-   special ids, BOS/EOS behavior, and exact encoding on a frozen parity corpus.
+   RoPE parameters, window, MoE and router fields, normalization, clamp values, MTP depth.
+2. Tensors: naming patterns, shapes, dtypes and layouts, shard ownership, optional gates, position
+   factors, expert banks, output heads, companion draft blocks.
+3. Tokenizer: model, `tokenizer.ggml.pre` or pre-tokenizer, normalizer, vocabulary and special ids,
+   BOS and EOS behavior, exact encoding on a frozen parity corpus.
 4. Template: raw template hash, roles, tools branch, generation prompt, whitespace, reasoning
-   boundaries, `enable_thinking`, and any string-valued reasoning control.
+   boundaries, `enable_thinking` and any string-valued reasoning control.
 
 Classify every difference:
 
 | Class | Action |
 |---|---|
-| Mechanically derived | Parse it once and place it in `ModelConfig` or the geometry table. |
-| Existing semantic contract | Reuse only after model-backed parity proves identical behavior. |
-| New semantic contract | Add a narrow loader/renderer/kernel path plus confusion-guard tests. |
-| Unsupported or ambiguous | STOP and keep the dispatch door closed. |
+| Mechanically derived | Parse it once into `ModelConfig` (and the geometry table where the family uses one). |
+| Existing semantic contract | Reuse it only after model-backed parity proves identical behavior. |
+| New semantic contract | Add a typed operation, a narrow loader or renderer path, and confusion-guard tests (phase 3). |
+| Unsupported or ambiguous | Stop. The plan refuses and the dispatch door stays closed. |
 
-Tensor shape is evidence, not semantics. A shape-compatible output head, gate, or draft block
-must not be borrowed without name/topology confirmation.
+Tensor shape is evidence, not semantics. Do not borrow a shape-compatible output head, gate or
+draft block without name and topology confirmation.
 
-## 2. Declare per-layer geometry once
+## 2. Write the pack and its plan
 
-Architecture recognition and geometry live in `crates/memra-gguf/src/config.rs`.
-`ArchGeometryTable` contains a compact set of `LayerGeometry` classes plus one class id per
-layer. Each row declares:
+`memra model scaffold <family> --out <dir>` writes a worksheet into an empty directory:
+`pack.toml`, `aliases.txt`, `config-normalization.txt`, `tensor-schema.tsv`,
+`tokenizer-template.txt` and a `gates.txt` with all seven gates pending. No code reads these
+files. Fill them in, then write the pack as Rust in `crates/memra-gguf/src/model_packs/<family>/`
+and register it in `PACKS` (or `ONBOARDING_PROFILES` for a storage profile of an existing plan).
 
-- `mixer`: full or linear attention;
-- query and KV head counts;
-- K and V head dimensions;
-- rotary width and base;
-- optional sliding window;
-- whether RoPE factors apply; and
-- `AttentionGateKind::{None,FusedQ,SeparateHead}`.
+- If the math exists, the pack is small: aliases, `matches_config`, config normalization, the
+  tensor schema and a `plan_builder` that composes existing operations. A sibling with existing
+  math is one pack, not another forward implementation.
+- A new architecture string needs its `Arch` variant and parsing in `config.rs`
+  (`ModelConfig::from_hf`, `from_gguf`). Families that use `ArchGeometryTable` declare every
+  trunk and MTP layer there; tuned arms read `layer_geometry()` or `full_attention_geometry_at()`
+  instead of per-architecture match arms. A companion drafter resolves its rows from its own
+  config; never fabricate an out-of-range row or borrow a trunk row because a shape looks close.
+- Geometry tests: every layer resolves the expected class, class counts and transitions match the
+  metadata, MTP rows resolve deliberately, windowed and full rows differ where the artifact says
+  they differ, the gate kind matches tensor ownership, and missing or malformed arrays fail
+  instead of falling back to projection-wide scalars.
+- Runtime policy reads the plan or its manifest, never an architecture-name allowlist.
 
-Populate the table from authoritative artifact metadata. Map every retained trunk layer and
-every appended MTP layer. A companion drafter resolves its rows from its own parsed config;
-never fabricate an out-of-range row or borrow a trunk row because the tensor shape looks close.
+`memra model verify config <source> --against <family>` compiles the plan from the config alone.
 
-All migrated execution arms read `layer_geometry()` or
-`full_attention_geometry_at(layer)`. Do not reintroduce arch-specific head/rotary/window
-match-arms in prefill, decode, verify, or batched code. New math, tensor names, clamps, router
-semantics, and template behavior remain architecture-specific and do not belong in this table.
+### The name map is a SECOND surface
 
-Minimum geometry tests:
-
-- every artifact layer resolves the expected class;
-- class counts and class transitions match metadata;
-- MTP/draft rows resolve deliberately;
-- full versus windowed rows differ in every field the artifact says differs;
-- gate kind is mutually exclusive and matches tensor ownership; and
-- missing/malformed arrays fail instead of falling back to projection-wide scalars.
-
-### The name map is a SECOND surface; the loader now binds the contract first (memra#541)
-
-The tensor contract (`tensor_contract.rs`) and the engine's ggml -> HF name map
-(`hf_mapping::{ggml_to_hf, resolve_ggml}`) are two independent spellings of the same
-checkpoint. Until 2026-09-22 only `TensorCensus`, `memra model inspect` and the `memra-reference`
-executor read the CONTRACT; the ENGINE's loader read the MAP, and a row the map was missing did
-not fail: the name resolved to `None`, read as an ABSENT tensor, and several load sites treated
-absent as a legal shape (a zero-filled router selection bias, a dropped shared expert, a skipped
-optional projection). The model then loaded, served, and computed something else. Three such
-gaps reached a real-artifact load in the GLM-5.3-Flash lane alone.
-
-Since memra#541 both loaders (`Model::load_dense_from_source`, `HybridModel::load_from_source`)
-go through `memra_gguf::checkpoint_binding::bind_source` BEFORE any upload: the source's
-metadata census is bound against the pack's contract, and a missing, unexpected, duplicate,
+The tensor contract (`tensor_contract.rs`) and the engine's ggml-to-HF name map
+(`hf_mapping::{ggml_to_hf, resolve_ggml}`) are two spellings of the same checkpoint. Both loaders
+(`Model::load_dense_from_source`, `HybridModel::load_from_source`) call
+`memra_gguf::checkpoint_binding::bind_source` before any upload. A missing, unexpected, duplicate,
 ambiguous, wrong-shape or wrong-quant tensor refuses the load with
 `checkpoint refused before upload (pack <family>, <dialect>, N census tensors): <error>`. What
-`model inspect` refuses, the server refuses, with the same text. Output-head ownership is the
-pack's declaration (`ModelPack::output_head`): an absent `output.weight` selects the token
-embedding only under `TiedHeadAllowed` (and never when config.json says
-`tie_word_embeddings: false`); a `SeparateHead` family refuses. The dense loader addresses every
-trunk tensor by `TensorId` through the binding; the hybrid loader reads through a
-`RecordingSource`, and at the end `audit_consumption` names every bound tensor the loader never
-read. The pack's `tensor_consumption` decides whether that list is a `[tensor-contract]` report
-or a refusal; `Refuse` is a per-family qualification state that needs a receipt on a real
-artifact (qwen35 GGUF: `research/loader-census-20260922/`).
+`model inspect` refuses, the server refuses, with the same text.
 
-The map-completeness pin is still worth writing for a new architecture: compile the real plan
-and require EVERY tensor the GGUF-dialect contract declares to resolve through `resolve_ggml`
-onto a name the HF dialect of the SAME contract declares for the SAME `TensorId`. Pin the
-count. No per-name allowlist. `glm5_next_every_contract_tensor_resolves_through_the_engine_map`
-in `hf_mapping.rs` is the template; it is CPU-only. The bind catches a checkpoint that does not
-match the contract; the pin catches a map that does not match the contract; the consumption
-audit catches a loader that matches neither.
+- Output-head ownership is the pack's `output_head`. An absent `output.weight` selects the token
+  embedding only under `TiedHeadAllowed`, and never when `config.json` says
+  `tie_word_embeddings: false`. A `SeparateHead` family refuses.
+- The hybrid loader reads through a `RecordingSource`, and `audit_consumption` names every bound
+  tensor it never read. The pack's `tensor_consumption` makes that list a report (`Report`) or a
+  refusal (`Refuse`). `Refuse` needs a receipt on a real artifact
+  ([`research/loader-census-20260922/`](../research/loader-census-20260922/) for qwen35).
+- Write the map-completeness pin for a new architecture: compile the real plan and require every
+  tensor the GGUF-dialect contract declares to resolve through `resolve_ggml` onto a name the HF
+  dialect of the same contract declares for the same `TensorId`. Pin the count; no per-name
+  allowlist. `glm5_next_every_contract_tensor_resolves_through_the_engine_map` in `hf_mapping.rs`
+  is the template, and it runs on CPU.
+- Where the plan declares a tensor (a selection-bias router, an always-on shared expert, residual
+  topology parameters), the loader refuses by name instead of substituting a default. Add the
+  refusal in the same change as the semantics and run both arms before merging.
 
-Where the plan DECLARES a tensor (a selection-bias router, an always-on shared expert, a
-residual topology's parameters), the loader refuses by name rather than substituting a default.
-Add the refusal in the same change as the semantics, and execute both arms before merging.
+The bind catches a checkpoint that does not match the contract, the pin catches a map that does
+not match it, and the consumption audit catches a loader that matches neither. The history of this
+boundary (memra#541) is in [history/ONBOARDING.md](history/ONBOARDING.md).
 
-## 3. Implement new semantics behind closed doors
+## 3. Add new semantics behind closed doors
 
-Add only the pieces the audit marked as genuinely new:
+When the plan reports an operation memra does not have, add the typed operation to
+`model_plan.rs` and its implementation to `memra-reference` first. Tuned backends then get an
+explicit rewrite (phase 7); until then the operation runs only in the reference executor, and the
+generated [Execution surfaces](EXECUTION-SURFACES.md) table shows it with no tuned program.
 
-- parser aliases and typed metadata;
-- loader ownership and required tensor checks;
-- attention/FFN/router math;
-- quantization layout handling;
-- tokenizer or chat renderer;
-- drafter topology; and
-- target-specific kernels.
-
-Start with the most direct reference path. Keep graph, device-counter, pointer-table, resident,
-grouped, fused, and batched doors closed until they consume the same declared geometry and have
-an arm-specific exactness/liveness gate. A refusal with the architecture and missing contract
-named is preferable to a plausible wrong answer.
+Add only what the inspection marked new: parser aliases and typed metadata, tensor ownership and
+required-tensor checks, attention, FFN or router math, quantization layouts, tokenizer or chat
+renderer, drafter topology, target kernels. Keep graph, device-counter, pointer-table, resident,
+grouped, fused and batched doors closed until they consume the same declared geometry and have an
+arm-specific exactness and liveness gate. A refusal that names the architecture and the missing
+contract beats a plausible wrong answer.
 
 Kernel tests need confusion guards, not only happy paths. Exercise the nearest wrong
 interpretation: fused versus separate gates, full versus partial rotary, windowed versus full
-attention, block-local versus file-level heads, uniform versus mixed quant layouts, and pruned
-versus retained ids.
+attention, block-local versus file-level heads, uniform versus mixed quant layouts, pruned versus
+retained ids.
 
-A tiny oracle taken from the vendor's own code pins the program only if both sides evaluate their
-primitives the same way, once the source stores activations in bf16 and selects by top-k. One f32
+`memra model verify tiny --against <family> --out <dir>` builds the pack's `tiny_plan`, runs a
+deterministic fixture twice in the reference executor (it must be bit-identical), writes
+`tiny-fixture.txt`, any `tiny-checkpoint/` image and `reference-oracle.tsv`, and compares the run
+against a reviewed oracle pinned at `crates/memra-cli/tests/fixtures/tiny-oracle/<family>.tsv`
+(registered in `pinned_tiny_oracle` in `crates/memra-cli/src/lib.rs`) within the pack's
+`checkpoint_parity` tolerance. A family without a pinned oracle cannot pass. A divergence is
+reviewed and the oracle re-pinned on purpose, never regenerated silently. Hosted CI runs `verify
+tiny` for every supported pack (`ci:verify-tiny` in the records).
+
+A tiny oracle from the vendor's code pins the program only if both sides evaluate their
+primitives the same way once the source stores activations in bf16 and selects by top-k. One f32
 ulp of accumulation difference flips a bf16 rounding, the flip changes a selection, and later
-layers move by O(1), past any tolerance worth having. The `deepseek_v41` tiny gate evaluates
-GEMMs, reductions and transcendental functions in f64 and rounds once, on both the vendor side and
-the reference side, takes top-k ties in index order (the CUDA `topk` rule), and matches the
-vendor `model.py`, run with torch stand-ins for its tilelang kernels, to the bit
-(`research/modelplan-onboarding-dsv41-20261109/`). A fixture also pins only the splits it runs:
-where the source's prefill and decode lay a row out differently (V4.1 below its window), a split
-there is another numeric program, so the gate pins one variant per layout.
+layers move by O(1). The `deepseek_v41` tiny gate evaluates GEMMs, reductions and transcendental
+functions in f64 and rounds once on both the vendor and the reference side, takes top-k ties in
+index order (the CUDA `topk` rule), and matches the vendor `model.py` (torch stand-ins for its
+tilelang kernels) to the bit
+([`research/modelplan-onboarding-dsv41-20261109/`](../research/modelplan-onboarding-dsv41-20261109/)).
+A fixture also pins only the splits it runs. Where prefill and decode lay a row out differently, a
+split there is another numeric program, so the gate pins one variant per layout (the
+`deepseek_v41` `split60` and `window128` oracles).
 
-## 4. Prove tokenizer, template, tools, and thinking
+## 4. Prove tokenizer, template, tools and thinking
 
-Tokenizer and template work are separate gates:
+The pack declares where the tokenizer comes from (`tokenizer_sources`: `TokenizerJson`,
+`GgufMetadata`) and who owns the chat dialect (`template`): `ArtifactRequired` fails when the
+artifact carries no template; `EngineRenderer(<name>)` names an engine-owned renderer and refuses an
+artifact that also carries a template. `memra-tokenizer` accepts the pre-tokenizers `qwen35`,
+`qwen2`, `deepseek-v3`, `gemma4` and `glm4` and refuses any other at load. Explicit HF-to-GGUF
+tokenizer programs are in [Tokenizer program](TOKENIZER-PROGRAM.md).
 
-- compare token ids against the authoritative tokenizer on a frozen corpus, including Unicode,
-  whitespace, punctuation, code, and special-token boundaries;
+Tokenizer and template are separate gates:
+
+- compare token ids against the authoritative tokenizer on a frozen corpus that covers Unicode,
+  whitespace, punctuation, code and special-token boundaries (`tok-parity`);
 - hash and archive the source template;
-- render golden conversations for system/user/assistant/tool roles, generation prompts, and
+- render golden conversations for system, user, assistant and tool roles, generation prompts and
   assistant continuations;
-- verify tool calls and reasoning stripping on the live server surface; and
-- map `reasoning_effort`/`reasoning` through the per-architecture behavior table.
+- check tool calls and reasoning stripping on the live server;
+- map `reasoning_effort` and `reasoning` through the per-architecture behavior table.
 
-Template marker detection is only capability triage. A template that mentions Qwen markers may
-still have different roles, whitespace, tool semantics, or thinking control and require its own
-renderer. The public gate is the rendered bytes and served response behavior.
+Template marker detection is only triage. A template with Qwen markers can still differ in roles,
+whitespace, tool semantics or thinking control. The gate is the rendered bytes and the served
+response.
 
 ## 5. Attach drafters explicitly
 
-The served convention is `MEMRA_MODELS="alias=/path/trunk.gguf+/path/draft.gguf"`.
-Direct `run-spec` work may use `MEMRA_MTP_DRAFT` where the binary documents it.
+The served form is `MEMRA_MODELS="alias=/path/trunk.gguf+/path/draft.gguf"`; a missing or
+non-file draft is a boot refusal ([Serving](SERVING.md)). Direct `run-spec` work may use
+`MEMRA_MTP_DRAFT`. How each model's draft is built (ranks, trim, quantization) is in
+[Draft regime](DRAFT-REGIME.md). A safetensors checkpoint carries an embedded MTP head when any
+tensor named `mtp.*` is in it; `tools/serve-st-gate.sh` applies the same test.
 
-Before allocating the full model, validate:
-
-- architecture and vocabulary compatibility;
-- embedding width, attention geometry, token ids, and MTP depth;
-- block sequence and state topology;
-- exact block-local output-head ownership; and
-- any architecture-specific transforms.
-
-Then require both:
+Before allocating the full model, check architecture and vocabulary compatibility, embedding
+width, attention geometry, token ids, MTP depth, block sequence and state topology, block-local
+output-head ownership, and any architecture-specific transforms. Then require both:
 
 1. naked `run-spec` K=1..8 self-consistency; and
-2. non-vacuous acceptance/e2e evidence on the served model-drafter-prompt regime.
+2. non-zero acceptance and end-to-end evidence on the served model, drafter and prompt regime.
 
-Self-consistency proves verification correctness. It does not prove that a shape-compatible
-head is semantically useful; 0% acceptance can still be self-consistent.
+Self-consistency proves verification is correct. It does not prove that a shape-compatible head is
+useful: 0% acceptance can still be self-consistent.
 
 ## 6. Generate standing gate scaffolds
 
-`tools/generate-arch-gates.py` renders the repeated mechanics. It requires the architecture
-name and default artifact path plus an explicit JSON spec:
+`tools/generate-arch-gates.py` renders the repeated mechanics from the architecture name, a default
+artifact path and an explicit JSON spec:
 
 ```bash
-python3 tools/generate-arch-gates.py --list-ports          # what is already bound, and what is free
-python3 tools/generate-arch-gates.py "$ARCH" "$MODEL" \
-  --spec "$R/gate-spec.json" \
-  --out-dir "tools/generated-arch-gates/$ARCH"
+python3 tools/generate-arch-gates.py --list-ports       # bound ports, and the free ones in the band
+python3 tools/generate-arch-gates.py "<architecture>" <artifact> \
+  --spec <receipt-dir>/gate-spec.json \
+  --out-dir tools/generated-arch-gates/<slug>
 python3 -m unittest tools.test_generate_arch_gates
-tools/test_gate_template_integrity.sh                      # teeth on a GENERATED gate, CPU only
-shellcheck "tools/generated-arch-gates/$ARCH"/*.sh
+tools/test_gate_template_integrity.sh                   # runs a generated gate against a stub server, CPU only
+shellcheck tools/generated-arch-gates/<slug>/*.sh
 ```
 
-The output contains chunk-invariance, tick-invariance, and B>1 geometry scripts; naked/canary
-`models.tsv` rows; `map.tsv` rows; and a normalized spec with output hashes. The generator does
-not modify the canonical registries. Review the fragments and merge them deliberately.
+`--out-dir` defaults to `tools/generated-arch-gates/<slug>`; `--force` replaces generator-owned
+files. The output holds `<slug>-chunk-invariance-gate.sh`, `<slug>-tick-invariance-gate.sh` and
+`<slug>-b2-geometry-gate.sh`, `fast-gate-models.tsv` (naked and canary rows for
+`tools/fast-gate/models.tsv`), `fast-gate-map.tsv` (rows for `tools/fast-gate/map.tsv`) and the
+normalized spec with output hashes (`gate-spec.json`, `schema_version` 2). The generator never
+edits the canonical registries: review the fragments and merge them by hand.
 
-### What the generated gates already do for you (do not re-implement it)
+What the generated gates already do (the rule is in [Testing](TESTING.md), its history in
+[history/TESTING.md](history/TESTING.md)):
 
-`GATE-INTEGRITY-20260819` audited this tooling three times. Rounds 1 and 2 fixed hand-written
-gates; round 3 fixed this template, because a template mints its defects indefinitely. Every
-generated gate now carries the rules, and the spec is validated against them:
+- the B>1 gate's port comes from the reserved band 18300-18399, checked against a computed census
+  of the ports `tools/` binds and against sibling generated specs;
+- that port has its own override, `MEMRA_<SLUG>_B2GEO_PORT`;
+- the B>1 gate guards the port at run time through `tools/port-guard.sh` and refuses to run
+  without it;
+- in every generated gate, a skip (missing artifact, `nvidia-smi`, GPUs or declared drafter) exits
+  77 and is appended to `$MEMRA_SKIP_CENSUS` when wired; `MEMRA_ARCH_GATE_ALLOW_SKIP=1` accounts
+  for it and the run says it proves nothing;
+- a drafter requested by the environment and absent is a hard FAIL;
+- an empty completion (`{"reasoning": null, "content": null}`) is refused;
+- the canary must match its declared `canary_expect_regex`, and the number of assertions that ran
+  must equal the count the spec implies (`1 + sum(concurrency) + 2`).
 
-- **The port comes from a reserved band, 18300-18399, and the generator refuses anything else.**
-  Hand-written gates own 8002-8317 and 18086-18099. The example in this document used to say
-  **8094**, which is `tools/step35-b2-geometry-gate.sh`'s port, so every gate ever generated
-  from it collided with that gate *and* with every sibling generated from the same example. The
-  generator now computes the tree's port census by scanning `tools/` (and refuses an implausibly
-  small census rather than certifying a port as free), and checks sibling
-  `tools/generated-arch-gates/*/gate-spec.json` too.
-- **Each gate gets its own override variable**, derived from the slug:
-  `MEMRA_<SLUG>_B2GEO_PORT`. Not a shared `MEMRA_GATE_PORT`: that re-creates the collision the
-  moment two gates run under one environment.
-- **The gate guards the port at run time** through `tools/port-guard.sh`: a pre-flight refusal
-  before the bind, a post-boot assertion that the healthy responder is *our* child, and rc 2
-  when neither `ss` nor `lsof` exists (an unobservable port is not a free port). A gate that
-  cannot find `tools/port-guard.sh` refuses to run rather than running unguarded.
-- **A SKIP is fatal by default: exit 77, not exit 0.** A missing artifact, a missing
-  `nvidia-smi`, too few GPUs, or a declared-but-absent drafter print the SKIP, append a row to
-  `$MEMRA_SKIP_CENSUS` when a census is wired, and exit 77. Set
-  `MEMRA_ARCH_GATE_ALLOW_SKIP=1` to account for a skip deliberately: the run then exits 0 and
-  says out loud that it proves nothing. This is what makes the last line of this section
-  enforceable instead of advisory.
-- **A drafter that was requested by env and is absent is a hard FAIL**, never a plain boot.
-  `tools/accept-gate.sh` states the law: *"A missing drafter must NOT silently degrade into a
-  no-spec run that reports PASS."*
-- **An empty completion is refused.** A 200 answering `{"reasoning": null, "content": null}` is
-  non-empty and is not an error, so the old reference guard passed and every concurrent response
-  matched that same null: the byte-identity headline held while the model produced nothing.
-- **The canary needs a declared discriminator.** `batch.canary_expect_regex` names the verdict
-  line the injected seam is *guaranteed* to break. A canary that reads "the exit code was
-  nonzero" certifies nothing: rc 75 is a GPU-lock timeout in which not one assertion ran.
-- **The assertion COUNT is asserted.** The generator computes it from the spec
-  (`1 + sum(concurrency) + 2`) and the gate refuses a run in which a different number of
-  assertions executed, so an arm that quietly stops running reds the gate instead of shrinking
-  it.
+The spec carries what the generator cannot derive. The prompt must cross the real window or class
+boundary. Chunk and tick sets must straddle the suspected segmentation boundary. The canary seam
+must change the runtime world and be shown to bite, and `canary_expect_regex` names the verdict
+line that seam is guaranteed to break. PP topology must match the only valid placement, the
+concurrency widths must execute B>1, and the liveness regexes must prove the intended arm ran.
+`port` is the one non-scientific field; pick a free value from `--list-ports`. The field reference
+is the [appendix](#appendix-gate-spec-fields).
 
-The spec shape is (`schema_version` 2):
+Copy the current base probe lists from `tools/fast-gate/map.tsv` before installing generated rows.
+Do not make a canary pass by changing only its expected label,
+and do not treat SKIP from a missing artifact or GPU as evidence.
 
-```json
-{
-  "id": "x",
-  "artifact_env": "MEMRA_NEWARCH_GGUF",
-  "chunk": {
-    "label": "newarch-window",
-    "prompts": ["research/newarch/prompt-past-window.txt"],
-    "chunks": [4096, 513, 512, 256, 64],
-    "steps": 24,
-    "seam": "MEMRA_NEWARCH_CHUNK_LEGACY"
-  },
-  "tick": {
-    "label": "newarch-tick",
-    "prompts": ["research/newarch/prompt-past-window.txt"],
-    "budgets": [0, 1024, 513, 512, 256, 64],
-    "splits": [64, 256, 512],
-    "steps": 24,
-    "seam": "MEMRA_NEWARCH_CALLLOCAL"
-  },
-  "batch": {
-    "model_alias": "newarch",
-    "draft_path": null,
-    "draft_env": "MEMRA_NEWARCH_DRAFT_GGUF",
-    "canary_env": {"MEMRA_NEWARCH_BATCH": "0"},
-    "canary_expect_regex": "FAIL: no batched-walk evidence",
-    "required_gpus": 2,
-    "pp_stages": 2,
-    "pp_devices": [0, 1],
-    "concurrency": [2, 4],
-    "port": 18301,
-    "receipt_dir": "research/newarch-batch/raw",
-    "server_env": {
-      "MEMRA_SERVE_SPEC": "0",
-      "MEMRA_SERVE_B1FAST": "0"
-    },
-    "request": {
-      "messages": [{"role": "user", "content": "Give one deterministic test response."}],
-      "max_tokens": 48,
-      "temperature": 0.0
-    },
-    "liveness": {
-      "cap_regex": "newarch: decode chunk cap [0-9]+",
-      "cap_min": 2,
-      "walk_regex": "\\[newarch-batch\\] first B>1"
-    }
-  },
-  "mapping": [
-    {
-      "path_regex": "^crates/memra-engine/src/(decode|decode_batch|forward|hybrid_forward|pp|prime_graph|graph_update|mla)\\.rs$",
-      "kernel_scope": "synthetic",
-      "base_probes": ["g12", "q9", "q35"],
-      "base_spec_probes": ["q35spec"],
-      "gate_families": ["chunk", "tick", "batch"]
-    },
-    {
-      "path_regex": "^crates/memra-server/",
-      "kernel_scope": "none",
-      "base_probes": ["sstress", "accept"],
-      "base_spec_probes": [],
-      "gate_families": ["tick", "batch"]
-    }
-  ]
-}
+## 7. Qualify rewrites and enable execution arms
+
+A tuned program is a rewrite of the plan, admitted only by a receipt. `execution-rewrites.tsv`
+lists each rewrite with its surface, implementation, plan hash and eligibility. The gate binaries
+write receipts (`memra-rewrite-parity-v1`) bound to `MEMRA_ARTIFACT_LOCK=<bundle>/artifact.lock`,
+to the file `MEMRA_REWRITE_RECEIPT=<file>` names ([Flags](FLAGS.md));
+`modelplan_reference_gate` takes the receipt path as its second argument
+(`<config.json> <receipt.tsv>`):
+
+| Surface | Receipt writer |
+|---|---|
+| `DecodeEager` | `modelplan_reference_gate` |
+| `CarriedPrime` | `prime-batch-gate` |
+| `DecodeBatch`, `Pipeline` | `decode-batch-gate` |
+| `DecodeGraph` | `graph-decode-gate` |
+| `MtpSpec` | `run-spec` |
+
+No gate binary writes a `Glm5Spec` receipt today.
+
+`memra model verify rewrite <receipt> --against <family> --out <bundle>` checks that the bundle's
+lock names the family, then checks the receipt's rewrite id (eligible in
+`execution-rewrites.tsv`), surface, implementation, plan hash and artifact-lock hash against the
+bundle, requires `status=passed` and `first_violation=none`, and copies it to
+`<bundle>/rewrite-receipts/<id>.tsv` with an index row in `rewrite-receipts.tsv`. A receipt is
+valid only for its artifact lock, serialized plan, stream and numeric class, and binary.
+
+`MEMRA_REWRITE_BUNDLE=<bundle>` installs the bundle in `memra-server`. An invalid bundle fails the
+model load. Optional batch, graph or prime surfaces without a receipt use the receipt-backed native
+eager rewrite; required speculative or pipeline surfaces fail closed.
+
+Promote arms in this order, keeping a reference path and requiring output identity plus liveness
+evidence at each step:
+
+1. parser and loader;
+2. eager prefill and tokenwise decode (`DecodeEager`);
+3. chunked and per-tick prefill (`CarriedPrime`);
+4. MTP verify (`MtpSpec`, or `Glm5Spec` for the glm5_next loop);
+5. PP placement (`Pipeline`);
+6. batched prefill and decode (`DecodeBatch`);
+7. device-counter, graph and session paths (`DecodeGraph`);
+8. fused or grouped kernels.
+
+A faster arm's throughput never waives a quality or routing mismatch.
+
+## 8. Run the qualification ladder and the device battery
+
+Checkpoint parity compares the native runner's last-position logits for the token ids 1, 2, 3, 4
+with a Hugging Face transformers fp32 oracle:
+
+```bash
+memra model verify checkpoint <local-hf-dir> --against <family> --out <bundle>
+# first run: inspects again, writes <bundle>/capture-hf-oracle.py and oracle-request.tsv, and stops
+python3 <bundle>/capture-hf-oracle.py --out <bundle>/hf-oracle.tsv   # needs torch and transformers
+memra model verify checkpoint <local-hf-dir> --against <family> --out <bundle> \
+  --oracle <bundle>/hf-oracle.tsv --native-runner <binary>
 ```
 
-The manifest is explicit because the scientific inputs are not derivable:
+The pack must declare `checkpoint_parity` (`max_abs`, `max_rel`, `require_argmax`). The runner is
+`run-safetensors` or a `memra-reference` checkpoint runner (`glm5_checkpoint_runner`,
+`llama_dense_checkpoint_runner`, `mimo_v2_checkpoint_runner`); the CLI calls it on the directory
+with `MEMRA_FULL_PREC=1` and `MEMRA_ORACLE_OUT=<bundle>/native-oracle.tsv`.
+Without `--native-runner`, the CLI reads `MEMRA_NATIVE_CHECKPOINT_RUNNER`.
 
-- the prompt must cross the actual window/class boundary;
-- chunk and tick sets must straddle the suspected segmentation boundary;
-- the canary seam must change the runtime world and be shown to bite;
-- `canary_expect_regex` must name the verdict line that seam is *guaranteed* to break: only you
-  know what the seam does, and the generator cannot infer it;
-- PP topology must match the only valid placement;
-- the concurrency widths must execute B>1; and
-- liveness regexes must prove the intended architecture arm ran.
+```bash
+memra model verify serve <local-artifact> --against <family> --out <bundle> \
+  --native-runner target/release/memra-server
+```
 
-`port` is the one field that is NOT a scientific input, which is why it is the one field the
-generator refuses on its own authority: pick any free value in 18300-18399 from `--list-ports`.
+`verify serve` needs the bundle's lock (same source, `binding=passed`, `tokenizer=passed`) and a
+passed checkpoint receipt bound to that lock. It boots the runner on a free loopback port with
+`MEMRA_MODELS=verify=<source>`, `MEMRA_REWRITE_BUNDLE=<bundle>` and an API key, waits for
+`/readyz` (`MEMRA_SERVE_VERIFY_TIMEOUT_S`, default 180), and requires a one-token
+`/v1/completions` answer. Without `--native-runner`, the CLI reads `MEMRA_NATIVE_SERVE_RUNNER`.
 
-Re-copy the current base probe lists from `tools/fast-gate/map.tsv` before installing generated
-rows. Do not make a canary pass by changing only the expected label, and do not treat `SKIP`
-from a missing artifact or GPU as evidence: the generated gates now enforce that last one with
-exit 77 rather than leaving it to your judgement, because for two audit rounds it was left to
-judgement and the template shipped `exit 0`.
-
-## 7. Enable execution arms in gate order
-
-Recommended promotion order:
-
-1. parser plus loader;
-2. eager prefill and tokenwise decode;
-3. chunked and per-tick prefill;
-4. MTP verify;
-5. PP placement;
-6. batched prefill/decode;
-7. device-counter/graph/session paths; and
-8. optimized fused or grouped kernels.
-
-At each step, preserve a reference path and require both output identity and liveness evidence.
-Do not use a faster arm's throughput to waive a model-quality or routing mismatch.
-
-## 8. Target-rig battery and receipts
-
-Run every command through the rig's shared GPU lock. Tee raw stderr/stdout before parsing it.
-The minimum new-architecture battery is:
+Then run the device battery on the target hardware, under the box's GPU lock
+([AGENTS.md, lock names](../AGENTS.md#lock-names-are-a-correctness-surface)), with raw logs teed
+first and parsed second:
 
 | Gate | Required proof |
 |---|---|
-| Config/parser tests | metadata arrays and geometry classes are exact |
-| `kernel-check` | final `ALL GREEN`, including new confusion guards |
-| `run-gen` | prefill/decode argmax `MATCH`, batched-prime/tokenwise `MATCH`, pinned tokens unchanged where refactoring |
+| Config and parser tests | metadata arrays and geometry classes exact |
+| `kernel-check` | final `ALL GREEN (<n> cells, <m> skipped)`, new confusion guards included |
+| `tools/argmax-margin-gate.sh` | calibrated prefill-versus-decode verdict, `--decode eager` and `--decode batch` |
+| `run-gen` | batched-prime and tokenwise `MATCH`; pinned tokens unchanged across refactors |
 | `run-spec` | K=1..8 `SELF-CONSISTENCY PASS` for every supported drafter |
-| Chunk/tick gates | naked invariant result plus a canary that breaks the same assertion |
-| B>1 geometry | c=2/c=4 equals c=1 and logs prove the B>1 arm executed |
-| `serve-smoke` | real API, streaming, concurrency, deterministic output, and spec/plain identity green |
-| Architecture surface | tokenizer/template/thinking/tools goldens and live requests green |
+| Chunk and tick gates | naked invariant result plus a canary that breaks the same assertion |
+| B>1 geometry | c=2 and c=4 equal c=1, and the logs prove the B>1 arm ran |
+| `tools/serve-smoke.sh` | real API, streaming, concurrency, deterministic output, spec/plain identity |
+| Architecture surface | tokenizer, template, thinking and tool goldens plus live requests |
 
-`tools/fast-gate/fast-gate.sh --tier 2` executes the standing correctness battery, but a new
-architecture also needs its explicit artifact probes until the canonical battery owns them.
-A clean-tree fast-gate run must name `--probes`; an empty diff otherwise runs nothing.
+The argmax gate judges a cell against a floor calibrated for its model, prompt, decode program and
+exact device name, and against main's stored rows. Calibrate a new cell with
+`tools/argmax-margin-gate.sh <model> --prompt <file> --decode <eager|batch> --calibrate`; floors
+live in `tools/argmax-margin-floors.tsv` and stored rows in `tools/argmax-margin-rows/`. A cell with
+no floor row reports UNCALIBRATED, and a flip there fails
+([ARGMAX-GATE-GAP-SHIFT-FLOOR](decisions/ARGMAX-GATE-GAP-SHIFT-FLOOR.md),
+[ARGMAX-GATE-STORED-ROWS](decisions/ARGMAX-GATE-STORED-ROWS.md)).
 
-Record:
+`tools/fast-gate/fast-gate.sh --tier 2` runs the full local battery (`tools/local-ci.sh`). A new
+architecture also needs its own artifact probes until the standing battery owns them, and a
+clean-tree fast-gate run must name `--probes`: an empty diff runs nothing.
 
-- source commit and staged tree hash used by remote builds;
-- artifact and staged-copy manifests;
-- exact commands and environment;
-- GPU process state at entry and on any failure;
-- raw logs, not summary-only rows;
-- generated token arrays for before/after refactors;
-- naked and canary logs; and
-- server logs carrying liveness evidence.
-
-An unexplained process death is “cause unknown, repro needed,” not OOM. Every median states N
-and thermal regime; correctness receipts do not become performance claims.
+Push evidence follows the change, not the lane: `python3 tools/cell_evidence.py need` lists the
+cells a diff reaches ([Release qualification](RELEASE-QUALIFICATION.md)). A pack the device battery
+does not cover (only `qwen35` and `qwen35_moe` have roster models in `tools/change-impact.toml`)
+produces no device cell; the gate names it UNCOVERED, and the pack's own gates go in the PR body.
+What to record, and how to word a failure, is
+[AGENTS.md, Evidence discipline](../AGENTS.md#evidence-discipline).
 
 ## 9. Close the lane
 
-Update only canonical docs. Add flags to [Flags](FLAGS.md), serving contracts to
-[Serving](SERVING.md), and gate ownership to [Testing](TESTING.md). Do not copy those tables
-into a per-model runbook.
+1. Set the pack's `support` field and add its record to `docs/support-records.toml` in the same
+   PR, with tracked `gates.txt` receipts for every passed gate and the pending gates listed as
+   pending. Run `python3 tools/check-support-states.py`.
+2. A serving qualification record (`memra-qualification-record-v1`, written by
+   `tools/collect-serving-qualification.py`, which targets qwen35 today) must name the cells
+   `cell.streaming`, `cell.cache`, `cell.concurrency`, `cell.cancellation` and
+   `cell.long_context`. `memra model qualify <record> [--evidence-dir <dir>]` checks that each
+   `passed` cell names an evidence file whose sha256 matches, and refuses a promotion past the first
+   state unless every cell passed. It checks consistency; it runs nothing.
+3. Write a short `docs/models/<model>.md` card: pack state with its support marker, the measured
+   configurations and their gates, deeper sources. Commands go in [Cookbook](COOKBOOK.md); the card
+   links them. A new hardware or workload class gets a `docs/rigs/` or `docs/workloads/` card.
+4. Add the lane's row to `research/INDEX.md`.
+5. A changed default, format, target or arm gets a record in [decisions/](decisions/README.md).
+6. Flags go in [Flags](FLAGS.md), serving contracts in [Serving](SERVING.md), gate ownership in
+   [Testing](TESTING.md). Moved published numbers follow
+   [AGENTS.md, Perf board](../AGENTS.md#perf-board-and-pre-push-hook).
 
-If published performance numbers move, update `research/tune-data/current-board.json` and run
-`tools/update-perf-board.py`; commit the JSON and every generated surface together. Never edit
-PERF marker blocks by hand.
+Before merge: the battery is green, raw receipts are committed, unsupported doors still fail
+closed, generated perf surfaces pass `python3 tools/update-perf-board.py --check`, no unrelated
+work is staged, and a tag follows [Releasing](RELEASING.md).
 
-Before merge/tag:
+## What stays architecture-specific
 
-- the target-rig battery is green;
-- raw receipts are committed;
-- unsupported doors still fail closed;
-- generated perf surfaces pass `--check`;
-- no unrelated work is staged; and
-- the release follows [Releasing](RELEASING.md).
-
-## What remains architecture-specific
-
-| Surface | Why it cannot be generated honestly |
+| Surface | Why it cannot be generated |
 |---|---|
-| New attention, FFN, router, or recurrence math | Metadata names dimensions; it does not define numerical semantics. |
+| New attention, FFN, router or recurrence math | Metadata names dimensions; it does not define numerical semantics. |
 | Tensor ownership and transforms | Shape-compatible tensors can have different roles or block locality. |
-| Tokenizer/pre-tokenizer | Named or regex behavior must match the authoritative implementation byte-for-byte. |
-| Chat/tools/thinking | Marker inventory cannot reproduce control flow, roles, whitespace, or reasoning boundaries. |
-| Drafter state topology and head selection | K=1..8 exactness cannot identify the semantically correct head by itself. |
+| Tokenizer and pre-tokenizer | Named or regex behavior must match the authoritative implementation byte for byte. |
+| Chat, tools and thinking | A marker inventory cannot reproduce control flow, roles, whitespace or reasoning boundaries. |
+| Drafter state topology and head selection | K=1..8 exactness cannot identify the right head by itself. |
 | Canary seams and prompts | They must be calibrated against a real failure mechanism and execution class. |
-| Performance promotion | rtx6000/H100 evidence does not replace the owned deployment or default-flip rig. |
+| Performance promotion | Evidence from one card does not set the default of the device the default is keyed on. |
 
-The kit removes repeated geometry threading and gate boilerplate. It does not automate away
+The kit removes repeated geometry threading and gate boilerplate. It does not automate
 architecture research.
 
-## Worked example: Qwen 3.8 27B FP8-ST
-
-Prepared 2026-08-08 for the expected Qwen 3.8 drop. Re-run the release lookup and preflight;
-the assumptions below are not a substitute for current official metadata. This is an executable
-same-architecture runbook, not a substitute for a bring-up lane when a STOP condition fires.
-
-This worked example assumes the production candidate is the official Qwen FP8 safetensors
-directory and forbids substituting Q8_0, GGUF, NVFP4, or a community requant for missing
-official bytes. The frozen Qwen 3.6 GGUF appears below only as:
-
-- the real-weight oracle for `kernel-check`, whose model-backed sections are GGUF-specific;
-- an A/B performance reference; and
-- a byte-verbatim MTP donor for a small external drafter, and only when the trunk interface is
-  exactly compatible.
-
-The shipped defaults are the desired path: `MEMRA_ST_E4M3` and `MEMRA_ST_E4M3_BLK` are on,
-and block-128 prefill uses the native `MEMRA_FP8_MMQ` source. Do not set
-`MEMRA_ST_E4M3=1`, `MEMRA_ST_E4M3_BLK=1`, or `MEMRA_FP8_MMQ=1`; naked behavior is the
-production behavior. `MEMRA_FP8_MMQ=1` additionally admits a duplicate stash source and is
-not this path.
-
-### Before release
-
-Run from the dedicated worktree in Bash; the snippets use Bash arrays and `PIPESTATUS`. Every GPU
-command on the local 5090 uses the shared lock. Raw logs are written first and parsed second.
-
-```bash
-set -euo pipefail
-# Dedicated worktree for the 3.8 lane. Create it if absent rather than aborting under `set -e`:
-#   git -C ~/projects/bw24 worktree add ~/projects/wt-cx-38prep -b lane/cx-38prep main
-Q38_WORKTREE=${Q38_WORKTREE:-$HOME/projects/wt-cx-38prep}
-cd "$Q38_WORKTREE"
-
-export Q38_REPO=Qwen/Qwen3.8-27B-FP8
-export Q38_DIR=/data/ai-ml/hf-models/qwen38-27b-fp8
-export Q38_DERIVED_ROOT=/data/ai-ml/hf-models/qwen38-27b-derived
-export Q38_VENV_ROOT=/data/ai-ml/venvs
-export Q36_REF=/data/ai-ml/hf-models/qwen36-27b-hf-min
-export Q36_ST=/data/ai-ml/hf-models/qwen36-27b-blk128fp8
-export Q36_GGUF=/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
-export Q36_DRAFT=/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
-export R=research/qwen38-bringup-$(date +%Y%m%d)
-mkdir -p "$R"
-
-# A copied shell must not turn a default-path gate into an inherited experiment.
-unset MEMRA_ST_E4M3 MEMRA_ST_E4M3_BLK MEMRA_FP8_MMQ
-unset MEMRA_FP8_BLK_GPU MEMRA_PP_FP8 MEMRA_MTP_DRAFT MEMRA_FRSPEC_TRIM
-unset MEMRA_SPEC_K
-
-tools/preflight-38.sh 2>&1 | tee "$R/preflight.log"
-```
-
-`PREFLIGHT-38: READY-WITH-WAITS` is green before release. A missing official repository and
-target directory are expected `WAIT`s. Any `FAIL` is fixed before day one.
-
-### Day-one clock
-
-| Time | Work | Exit condition |
-|---|---|---|
-| H+00:00 | Bind the exact official repo/revision; fetch metadata | official FP8 repo and immutable revision recorded |
-| H+00:15 | Config and tokenizer diff | same-architecture verdict; otherwise STOP |
-| H+00:30 | Download FP8 weights; create manifest | every indexed shard present and hashed |
-| H+01:00 | Build binaries and current HF reference environment | release binaries and reference imports succeed |
-| H+01:30 | FP8 header census | every F8 weight is per-tensor or block-128 |
-| H+02:00 | Model-backed `kernel-check` | final line `ALL GREEN` |
-| H+02:30 | Naked memra first light and residency proof | native FP8 residency, no silent class fallback |
-| H+03:15 | HF greedy-reference comparison | identical generated token ids |
-| H+04:00 | Chunk invariance | invariant across the pinned chunk sizes |
-| H+04:30 | Embedded-MTP `run-spec` | K=1..8 self-consistency passes |
-| H+05:15 | ST serve battery and thinking surface | serve gate green; Qwen thinking switch detected and exercised |
-| H+06:30 | Own-generation ranks and trim validation | corpus floor met; in-model trim A/B recorded |
-| H+09:00 | External drafter build and gates | donor compatible, draft built, K=1..8 passes, e2e verdict recorded |
-| H+10:00 | Close receipt | every publish gate green or an explicit STOP recorded |
-
-Downloads, the HF reference environment, and the model-backed kernel battery can overlap.
-Do not overlap two GPU jobs.
-
-### H+00:00 - bind the official artifact
-
-Search the official namespace instead of assuming the release name. An official BF16 repo is
-source/reference material; the official FP8 sibling is the only production candidate.
-
-```bash
-curl -fsS \
-  'https://huggingface.co/api/models?author=Qwen&search=Qwen3.8-27B&limit=100' \
-  | tee "$R/hf-search.json"
-jq -r '.[] | (.id // .modelId)' "$R/hf-search.json"
-
-# Set this to the exact official FP8 id printed above if the release spelling differs.
-export Q38_REPO=Qwen/Qwen3.8-27B-FP8
-jq -e --arg repo "$Q38_REPO" \
-  'any(.[]; (.id // .modelId) == $repo)' "$R/hf-search.json"
-
-curl -fsS "https://huggingface.co/api/models/$Q38_REPO" \
-  | tee "$R/hf-model.json"
-export Q38_REV
-Q38_REV=$(jq -er '.sha' "$R/hf-model.json")
-printf 'repo=%s\nrevision=%s\n' "$Q38_REPO" "$Q38_REV" \
-  | tee "$R/artifact-source.txt"
-export A="$Q38_DERIVED_ROOT/$Q38_REV"
-mkdir -p "$A" "$Q38_VENV_ROOT"
-printf 'derived_artifacts=%s\n' "$A" | tee -a "$R/artifact-source.txt"
-```
-
-STOP if the FP8 sibling is absent. Do not fill the gap with Q8_0, a local conversion, or a
-community FP8 requant.
-
-Fetch the small files first:
-
-```bash
-mapfile -t META_FILES < <(
-  jq -r '.siblings[].rfilename' "$R/hf-model.json" \
-  | grep -E '(^README\.md$|\.json$|chat_template.*\.jinja$)'
-)
-hf download "$Q38_REPO" "${META_FILES[@]}" \
-  --revision "$Q38_REV" --local-dir "$Q38_DIR" \
-  2>&1 | tee "$R/hf-metadata-download.log"
-```
-
-### H+00:15 - same-architecture gate
-
-Run the mechanized diff before downloading the weight shards:
-
-```bash
-set +e
-python3 research/qwen38-prep-20260803/arch-diff-fields.py --expect-fp8 \
-  "$Q38_DIR/config.json" "$Q36_REF/config.json" \
-  2>&1 | tee "$R/config-diff.log"
-CONFIG_RC=${PIPESTATUS[0]}
-set -e
-
-case "$CONFIG_RC" in
-  0) echo "same-architecture config; continue" ;;
-  2) echo "architecture matches; FP8 metadata waits for tensor-header proof" ;;
-  *) echo "STOP: architecture/config contract changed"; exit 1 ;;
-esac
-```
-
-Verify the tokenizer and thinking dialect. Qwen 3.8 must remain the Qwen ChatML class:
-
-```bash
-python3 - "$Q38_DIR/tokenizer_config.json" "$Q36_REF/tokenizer_config.json" <<'PY' \
-  2>&1 | tee "$R/tokenizer-contract.log"
-import json
-import sys
-
-new = json.load(open(sys.argv[1]))
-ref = json.load(open(sys.argv[2]))
-hard = ("tokenizer_class", "pretokenize_regex", "add_bos_token")
-bad = [(key, ref.get(key), new.get(key)) for key in hard if new.get(key) != ref.get(key)]
-template = new.get("chat_template") or ""
-markers = ("enable_thinking", "add_generation_prompt", "<think>")
-missing = [marker for marker in markers if marker not in template]
-print("hard-field diffs:", bad)
-print("missing Qwen thinking markers:", missing)
-if bad or missing:
-    raise SystemExit(1)
-PY
-
-jq -S '.model.type, .pre_tokenizer' "$Q38_DIR/tokenizer.json" \
-  > "$R/tokenizer38-structure.json"
-jq -S '.model.type, .pre_tokenizer' "$Q36_REF/tokenizer.json" \
-  > "$R/tokenizer36-structure.json"
-diff -u "$R/tokenizer36-structure.json" "$R/tokenizer38-structure.json" \
-  | tee "$R/tokenizer-structure.diff"
-test "${PIPESTATUS[0]}" -eq 0
-```
-
-Any tokenizer-class, pre-tokenizer, regex, or thinking-template change is a bring-up lane,
-not a runbook edit.
-
-On a true same-architecture result, `ModelConfig` must resolve the existing Qwen3.5 geometry
-classes, including the explicit appended MTP row. Record the class count and transitions in the
-receipt. Any new per-layer head array, rotary class, window, or attention-gate layout is not a
-same-architecture fast path: STOP and return to the declarative geometry phase above.
-
-### Config-diff checklist
-
-These are the frozen Qwen 3.6 values and memra's current interpretation. “GO with gates” means
-the parser consumes the value generically; it does not waive model-backed, HF-reference, or
-serve gates.
-
-| Config field | Frozen 3.6 value | Day-one classification |
-|---|---|---|
-| `architectures` | `["Qwen3_5ForConditionalGeneration"]` | any change: STOP; current HF mapping does not recognize a new Qwen 3.8 class |
-| top/text `model_type` | `qwen3_5` / `qwen3_5_text` | any change: STOP; only these names map to the Qwen35 engine |
-| `num_hidden_layers` | `64` | GO with gates; parsed size |
-| `hidden_size` | `5120` | GO with gates; parsed size, but a change forbids the 3.6 MTP donor |
-| `intermediate_size` | `17408` | GO with gates; parsed size |
-| `num_attention_heads` | `24` | any change: STOP |
-| `num_key_value_heads` | `4` | any change: STOP |
-| `head_dim` | `256` | any change: STOP; FA dispatch and MTP interface are head-dimension keyed |
-| `full_attention_interval` | `4` | any change: STOP |
-| `layer_types` | 64 entries repeating `linear, linear, linear, full` | new type, changed cycle, interval mismatch, or count mismatch with `num_hidden_layers`: STOP |
-| `linear_num_key_heads` | `16` | any change: STOP |
-| `linear_num_value_heads` | `48` | any change: STOP |
-| `linear_key_head_dim` / `linear_value_head_dim` | `128` / `128` | any change: STOP |
-| `linear_conv_kernel_dim` | `4` | any change: STOP |
-| `attention_bias` / `attention_dropout` | `false` / `0.0` | any change: STOP; these are not generic runtime knobs |
-| `attn_output_gate` / `output_gate_type` | `true` / `swish` | any change: STOP; the Qwen35 forward assumes this gate contract |
-| `hidden_act` | `silu` | any change: STOP |
-| `tie_word_embeddings` | `false` | any change: STOP; tensor ownership and output-head loading change |
-| `rope_parameters.rope_type` | `default` | any change, including YaRN: STOP |
-| `rope_parameters.rope_theta` | `10000000` | any change: STOP |
-| `rope_parameters.partial_rotary_factor` | `0.25` | any change: STOP |
-| `rope_parameters.mrope_interleaved` | `true` | any change: STOP |
-| `rope_parameters.mrope_section` | `[11,11,10]` | any change: STOP |
-| `vocab_size` | `248320` | GO for plain loading if tokenizer gates pass; change forbids the 3.6 MTP donor |
-| `bos_token_id` / `eos_token_id` | `248044` / `248044` | review chat stops; tokenizer/template gates must explain any change |
-| `image_token_id` / `video_token_id` | `248056` / `248057` | text-only load may continue if tokenizer contract is unchanged |
-| `mtp_num_hidden_layers` | `1` | any change: publish/spec STOP |
-| `mtp_use_dedicated_embeddings` | `false` | any change: publish/spec STOP |
-| `max_position_embeddings` | `262144` | GO with gates; parsed limit |
-| `rms_norm_eps` | `1e-6` | GO with gates; parsed numeric value |
-| `num_experts` | absent | any value: STOP; this is no longer the dense-hybrid architecture |
-| `quant_method` / `fmt` | `fp8` / `e4m3` | explicit different value: STOP |
-| `weight_block_size` | `[128,128]` | block-128 direct class; a different explicit block: STOP |
-| `activation_scheme` | `dynamic` | explicit different value: STOP |
-
-The config is not authoritative for scale granularity. The tensor sibling shape is:
-
-- one scale value: `MEMRA_ST_E4M3`, per-tensor direct;
-- `[out,1]` or `out` values: per-row, no direct kernel, STOP;
-- `[ceil(out/128),ceil(in/128)]`: `MEMRA_ST_E4M3_BLK`, block-128 direct;
-- anything else: unsupported, STOP.
-
-### H+00:30 - full download and immutable manifest
-
-```bash
-hf download "$Q38_REPO" --revision "$Q38_REV" --local-dir "$Q38_DIR" \
-  2>&1 | tee "$R/hf-full-download.log"
-
-while read -r shard; do
-  test -f "$Q38_DIR/$shard" || {
-    echo "missing indexed shard: $shard"
-    exit 1
-  }
-done < <(jq -r '.weight_map[]' "$Q38_DIR/model.safetensors.index.json" | sort -u)
-
-find "$Q38_DIR" -maxdepth 1 -type f -print0 \
-  | sort -z | xargs -0 sha256sum \
-  > "$R/q38-files.sha256"
-du -sh "$Q38_DIR" | tee "$R/q38-size.txt"
-```
-
-Do not mutate the downloaded config to make a diff pass. A RoPE override creates a different
-model configuration and belongs in a separate lane.
-
-### H+01:00 - build and HF reference environment
-
-```bash
-cargo build --release \
-  --bin kernel-check \
-  --bin run-gen \
-  --bin run-spec \
-  --bin concat-prime-probe \
-  --bin frspec-owngen \
-  --bin memra-server \
-  2>&1 | tee "$R/build.log"
-
-export HFV="$Q38_VENV_ROOT/q38-hf-$Q38_REV"
-uv venv "$HFV"
-uv pip install --python "$HFV/bin/python" --upgrade \
-  torch transformers accelerate safetensors \
-  2>&1 | tee "$R/hf-reference-install.log"
-"$HFV/bin/python" -c \
-  'import torch, transformers; print("torch", torch.__version__); print("transformers", transformers.__version__)' \
-  | tee "$R/hf-reference-versions.txt"
-```
-
-If the released model card names a newer minimum or an additional package, install that exact
-requirement and record it. Do not use an older environment merely because it imports.
-
-### H+01:30 - FP8 artifact classification
-
-```bash
-python3 tools/inspect-fp8-st.py "$Q38_DIR" --require-direct \
-  2>&1 | tee "$R/fp8-header-census.log"
-```
-
-This check is header-only. It must report at least one FP8 weight and zero per-row/unsupported
-weights. Runtime still has to prove finite scales, no E4M3 NaN refusal, supported transforms,
-native residency, and native prefill dispatch.
-
-### H+02:00 - model-backed kernel battery
-
-`kernel-check` cannot use an ST directory as its real-weight oracle. Pass the frozen Qwen 3.6
-GGUF so the 27B shape sections are model-backed, while the synthetic FP8 cells cover per-tensor
-and block-128 arithmetic:
-
-```bash
-flock /tmp/memra-5090.lock \
-  target/release/kernel-check "$Q36_GGUF" \
-  2>&1 | tee "$R/kernel-check.log"
-grep -q 'ALL GREEN' "$R/kernel-check.log"
-```
-
-A new Qwen 3.8 shape that is not represented by the existing synthetic cells is a kernel lane,
-not a reason to accept a skipped section.
-
-### H+02:30 - naked direct-path proof
-
-Use a prompt longer than the prefill GEMM threshold so block-128 MMQ can dispatch:
-
-```bash
-export PROBE=tools/fast-gate/prompts/probe.txt
-FP8_DEFAULT_ENV=(
-  -u MEMRA_ST_E4M3
-  -u MEMRA_ST_E4M3_BLK
-  -u MEMRA_FP8_MMQ
-  -u MEMRA_FP8_BLK_GPU
-  -u MEMRA_PP_FP8
-)
-
-flock /tmp/memra-5090.lock env "${FP8_DEFAULT_ENV[@]}" \
-  MEMRA_CHAT=1 \
-  MEMRA_NGEN=32 \
-  MEMRA_PROMPT_FILE="$PROBE" \
-  MEMRA_RESIDENCY_CENSUS=1 \
-  target/release/run-gen "$Q38_DIR" \
-  2>&1 | tee "$R/run-gen-naked.log"
-
-grep -q 'argmax=.*MATCH' "$R/run-gen-naked.log"
-grep -Eq 'F8_E4M3(_BLK)?:[[:space:]]+[1-9]' "$R/run-gen-naked.log"
-if grep -Eq 'block-128[[:space:]]*:[[:space:]]*[1-9]' "$R/fp8-header-census.log"; then
-  flock /tmp/memra-5090.lock env "${FP8_DEFAULT_ENV[@]}" \
-    MEMRA_CHAT=1 \
-    MEMRA_PROMPT_FILE="$PROBE" \
-    MEMRA_PP_ONLY=1 \
-    MEMRA_PP_WARMUP=1 \
-    MEMRA_PP_REPS=1 \
-    target/release/run-gen "$Q38_DIR" \
-    2>&1 | tee "$R/run-gen-pp-direct.log"
-  grep -Eq 'fp8-mmq dispatches: [1-9]' "$R/run-gen-pp-direct.log"
-fi
-```
-
-Run one diagnostic rollback census. This is proof of the seam, not a production arm:
-
-```bash
-flock /tmp/memra-5090.lock env "${FP8_DEFAULT_ENV[@]}" \
-  MEMRA_ST_E4M3=0 \
-  MEMRA_CHAT=1 \
-  MEMRA_NGEN=1 \
-  MEMRA_PROMPT_FILE="$PROBE" \
-  MEMRA_RESIDENCY_CENSUS=1 \
-  target/release/run-gen "$Q38_DIR" \
-  2>&1 | tee "$R/run-gen-q8-rollback-census.log"
-! grep -Eq 'F8_E4M3(_BLK)?:[[:space:]]+[1-9]' "$R/run-gen-q8-rollback-census.log"
-grep -Eq 'Q8_0:[[:space:]]+[1-9]' "$R/run-gen-q8-rollback-census.log"
-```
-
-The naked log must contain native `F8_E4M3` and/or `F8_E4M3_BLK` residency. The rollback log
-must remove those native bytes and increase Q8_0 residency. Residual small Q8_0 tensors are
-allowed; routing the FP8 projection bank through Q8_0 is not. Any native decline, NaN refusal,
-bad grid, or zero block-MMQ dispatch is STOP.
-
-Never set `MEMRA_FP8_MMQ=0`; that reintroduces
-dequant-per-call. Never use `MEMRA_FP8_MMQ=1`; that enables the duplicate stash source.
-
-### H+03:15 - Hugging Face greedy-reference gate
-
-Generate the reference from the same official FP8 directory, same prompt, same chat template,
-thinking enabled, and greedy decoding. The comparator checks the rendered prompt ids before it
-checks the generated ids:
-
-```bash
-flock /tmp/memra-5090.lock \
-  "$HFV/bin/python" tools/hf-greedy-reference.py "$Q38_DIR" \
-  --prompt-file "$PROBE" \
-  --tokens-out "$R/hf-greedy.json" \
-  --max-new-tokens 32 \
-  2>&1 | tee "$R/hf-greedy.log"
-
-python3 tools/compare-greedy-tokens.py \
-  "$R/hf-greedy.json" "$R/run-gen-naked.log" \
-  2>&1 | tee "$R/hf-vs-memra.log"
-```
-
-The gate is exact prompt-token and generated-token identity. A mismatch is not waived as “close
-logits”; prompt-token failure is tokenizer/template work, while a generated-token failure after
-prompt parity is model arithmetic.
-
-### H+04:00 - chunk invariance
-
-The probe and wrapper accept an HF safetensors directory:
-
-```bash
-MEMRA_CHUNKINV_LOG="$R/chunk-invariance.raw.log" \
-flock /tmp/memra-5090.lock \
-  tools/chunk-invariance-gate.sh "$Q38_DIR" \
-  --chunks 2048,64,32 --steps 48 --expect-invariant \
-  2>&1 | tee "$R/chunk-invariance.gate.log"
-grep -q 'chunk-invariance-gate: PASS' "$R/chunk-invariance.gate.log"
-```
-
-This same-family example reuses the standing Qwen chunk contract and its calibrated canary. If
-the config audit found a new window/class boundary, do not reuse the Qwen prompt or seam; generate
-a dedicated chunk/tick/B>1 scaffold from the real mechanism as described above.
-
-Any chunk-dependent result is STOP. Do not tune the chunk list or switch the expectation to make
-the release pass.
-
-### H+04:30 - embedded MTP gate
-
-If the checkpoint carries its own MTP tensors, run without `MEMRA_SPEC_K` so the binary executes
-its K=1..8 self-consistency battery:
-
-```bash
-if jq -e 'any(.weight_map | keys[]; startswith("mtp."))' \
-  "$Q38_DIR/model.safetensors.index.json" >/dev/null; then
-  flock /tmp/memra-5090.lock env \
-    -u MEMRA_SPEC_K \
-    -u MEMRA_MTP_DRAFT \
-    -u MEMRA_FRSPEC_TRIM \
-    MEMRA_CHAT=1 \
-    MEMRA_NGEN=64 \
-    MEMRA_PROMPT_FILE="$PROBE" \
-    target/release/run-spec "$Q38_DIR" \
-    2>&1 | tee "$R/run-spec-embedded.log"
-  grep -q 'SELF-CONSISTENCY PASS' "$R/run-spec-embedded.log"
-else
-  printf 'WAIT: checkpoint carries no embedded MTP tensors; run-spec waits for a compatible draft\n' \
-    | tee "$R/run-spec-embedded.WAIT"
-fi
-```
-
-Plain first-light evidence may continue without a head, but publication does not: `run-spec`
-waits until either the embedded head or the compatible external draft below exists.
-
-### H+05:15 - serving and thinking surface
-
-Run the existing ST battery:
-
-```bash
-flock /tmp/memra-5090.lock \
-  tools/serve-st-gate.sh "$Q38_DIR" \
-  2>&1 | tee "$R/serve-st-gate.log"
-grep -q 'serve-st-gate: 0 failed' "$R/serve-st-gate.log"
-```
-
-Pin the per-architecture thinking mapping in unit tests:
-
-```bash
-cargo test -p memra-tokenizer qwen_think_mode_covers_all_three_directions \
-  2>&1 | tee "$R/test-qwen-thinking.log"
-cargo test -p memra-server reasoning_effort_maps_to_think_switch \
-  2>&1 | tee "$R/test-reasoning-effort.log"
-```
-
-Then exercise the actual Qwen 3.8 template:
-
-```bash
-export ADDR=127.0.0.1:8188
-export BASE=http://$ADDR
-flock -F /tmp/memra-5090.lock env MEMRA_COMPAT=openai MEMRA_SERVE_SPEC=0 \
-  MEMRA_MODELS="q38=$Q38_DIR" MEMRA_ADDR="$ADDR" \
-  target/release/memra-server > "$R/thinking-server.log" 2>&1 &
-SPID=$!
-trap 'kill "$SPID" 2>/dev/null || true; wait "$SPID" 2>/dev/null || true' EXIT
-for _ in $(seq 600); do
-  curl -sf "$BASE/health" >/dev/null && break
-  sleep 2
-done
-curl -sf "$BASE/health" >/dev/null
-grep -Eq 'q38: template caps .*think=true think_switch=true chat_ok=true' \
-  "$R/thinking-server.log"
-
-for effort in absent none high; do
-  extra=
-  [ "$effort" != absent ] && extra=",\"reasoning_effort\":\"$effort\""
-  curl -fsS "$BASE/v1/chat/completions" \
-    -H 'Content-Type: application/json' \
-    -d "{\"model\":\"q38\",\"messages\":[{\"role\":\"user\",\"content\":\"Why is the sky blue?\"}],
-         \"max_tokens\":64,\"temperature\":0$extra}" \
-    > "$R/thinking-$effort.json"
-done
-
-python3 - "$R" <<'PY'
-import json
-import pathlib
-import sys
-
-root = pathlib.Path(sys.argv[1])
-records = {
-    name: json.load(open(root / f"thinking-{name}.json"))["choices"][0]["message"]
-    for name in ("absent", "none", "high")
-}
-for name, message in records.items():
-    emitted = (message.get("reasoning") or "") + (message.get("content") or "")
-    assert emitted.strip(), f"{name}: empty response"
-assert not (records["none"].get("reasoning") or ""), "none did not close thinking"
-assert (records["absent"].get("reasoning") or ""), "default did not use Qwen thinking"
-assert (records["high"].get("reasoning") or ""), "high did not enable Qwen thinking"
-print("THINKING-SURFACE PASS: default/high on, none off")
-PY
-
-kill "$SPID"
-wait "$SPID" || true
-trap - EXIT
-```
-
-For the Qwen binary switch, `low`, `medium`, and `high` all mean thinking on; `none` and
-`minimal` mean off; absent preserves the template default, which is on.
-
-### H+06:30 - own-generation trim regime
-
-Ranks always come from Qwen 3.8's own generations with chat templating on. Use bounded chunks
-so the shared GPU lock is released between batches:
-
-```bash
-export PACK=research/gemma4-bringup/corpus-prompts
-export RANKS="$A/q38-own-ranks-32768.gguf"
-export CORPUS="$A/q38-own-corpus-ids.txt"
-test "$(find "$PACK" -type f -name '*.txt' | wc -l)" -eq 254
-
-while [ ! -f "$RANKS" ]; do
-  flock /tmp/memra-5090.lock \
-    target/release/frspec-owngen "$Q38_DIR" "$RANKS" 32768 \
-    --ngen 1024 \
-    --corpus-out "$CORPUS" \
-    --limit 32 \
-    --validate \
-    "$PACK" \
-    2>&1 | tee -a "$R/frspec-owngen.log"
-done
-
-awk '
-  { total += NF }
-  END {
-    print "own-generated tokens:", total
-    if (total < 131072) exit 1
-  }
-' "$CORPUS" | tee "$R/own-corpus-count.txt"
-sha256sum "$CORPUS" "$RANKS" "$RANKS.txt" | tee "$R/own-ranks.sha256"
-```
-
-This is the daily-drafter regime's canonical 254-prompt pack, greedy decoding, chat template on,
-and bounded 32-prompt lock holds. The 1,024-token window is deliberately larger than the older
-512-token receipts so the current four-times-top-N floor is enforceable rather than theoretical.
-The floor is at least 131,072 own-generated tokens for a 32,768-row head. If the count misses it,
-STOP and expand the frozen prompt pack; do not build from the warning-sized corpus. The final
-`--validate` run records embedded-MTP baseline versus runtime-trimmed e2e throughput. Acceptance
-explains the result; e2e tokens/s decides it.
-
-### H+09:00 - build the external trimmed drafter
-
-The current standalone builder extracts MTP bytes from a GGUF donor. It does not extract from
-the ST directory. The approved donor variant is executable only when the Qwen 3.8 trunk/MTP
-interface is exactly the frozen Qwen 3.6 interface:
-
-```bash
-python3 - "$Q38_DIR/config.json" "$Q36_REF/config.json" <<'PY' \
-  2>&1 | tee "$R/donor-interface.log"
-import json
-import sys
-
-new = json.load(open(sys.argv[1])).get("text_config")
-ref = json.load(open(sys.argv[2])).get("text_config")
-keys = (
-    "hidden_size",
-    "num_attention_heads",
-    "num_key_value_heads",
-    "head_dim",
-    "vocab_size",
-    "mtp_num_hidden_layers",
-    "mtp_use_dedicated_embeddings",
-)
-bad = [(key, ref.get(key), new.get(key)) for key in keys if new.get(key) != ref.get(key)]
-print("donor interface diffs:", bad)
-if bad:
-    raise SystemExit(1)
-PY
-
-export DRAFT="$A/draft-q38-owntrim-nvfp4head-q4blk.gguf"
-tools/make-trimmed-draft.sh \
-  "$Q36_GGUF" "$RANKS.txt" "$DRAFT" 32768 \
-  2>&1 | tee "$R/make-trimmed-draft.log"
-sha256sum "$DRAFT" "$RANKS" "$RANKS.txt" \
-  | tee "$R/drafter.sha256"
-
-flock /tmp/memra-5090.lock env \
-  -u MEMRA_SPEC_K \
-  -u MEMRA_MTP_DRAFT \
-  -u MEMRA_FRSPEC_TRIM \
-  MEMRA_MTP_DRAFT="$DRAFT" \
-  MEMRA_CHAT=1 \
-  MEMRA_NGEN=64 \
-  MEMRA_PROMPT_FILE="$PROBE" \
-  target/release/run-spec "$Q38_DIR" \
-  2>&1 | tee "$R/run-spec-owntrim.log"
-grep -q 'SELF-CONSISTENCY PASS' "$R/run-spec-owntrim.log"
-
-mkdir -p "$R/drafter-prompts"
-cp "$PROBE" "$R/drafter-prompts/probe.txt"
-cp research/e2e/prompts/p3-agentic-long.txt "$R/drafter-prompts/p3-agentic-long.txt"
-
-run_draft_arm() {
-  local arm=$1 rep=$2 draft=${3:-}
-  local envs=(
-    MEMRA_SPEC_K=3
-    MEMRA_NGEN=256
-    MEMRA_CHAT=1
-    MEMRA_PROMPT_DIR="$R/drafter-prompts"
-  )
-  [ -n "$draft" ] && envs+=(MEMRA_MTP_DRAFT="$draft")
-  flock /tmp/memra-5090.lock env \
-    -u MEMRA_MTP_DRAFT \
-    -u MEMRA_FRSPEC_TRIM \
-    "${envs[@]}" \
-    target/release/run-spec "$Q38_DIR" \
-    2>&1 | tee "$R/drafter-ab-$arm-r$rep.log"
-}
-
-# Adjacent, alternating order: embedded/trimmed, then trimmed/embedded.
-run_draft_arm embedded 1
-run_draft_arm owntrim 1 "$DRAFT"
-run_draft_arm owntrim 2 "$DRAFT"
-run_draft_arm embedded 2
-
-grep -hE '^\[SWEEP\]|SELF-CONSISTENCY' "$R"/drafter-ab-*.log \
-  | tee "$R/drafter-ab-summary.txt"
-
-flock /tmp/memra-5090.lock env \
-  MEMRA_MTP_DRAFT="$Q36_DRAFT" \
-  MEMRA_SPEC_K=3 \
-  MEMRA_NGEN=256 \
-  MEMRA_CHAT=1 \
-  MEMRA_PROMPT_DIR="$R/drafter-prompts" \
-  target/release/run-spec "$Q36_GGUF" \
-  2>&1 | tee "$R/q36-daily-reference.log"
-```
-
-The donor supplies only byte-verbatim NextN/MTP block bytes; ranks are from Qwen 3.8, and the
-serving model supplies token embeddings. Verify-based speculation remains exact, but donor drift
-can reduce acceptance. The four A/B runs are one adjacent, alternating N=2 session over short and
-agentic-long prompt classes. Adopt the external draft only when both per-prompt evidence and the
-aggregate e2e tokens/s justify it; acceptance is diagnostic.
-
-The Qwen 3.6 daily run is a frozen operational reference, not a Qwen 3.8 acceptance threshold.
-Keep its number separate from the embedded-versus-owntrim Qwen 3.8 decision.
-
-If the donor-interface check fails, do not create a full-model GGUF bridge. Keep the embedded ST
-MTP path and open a narrowly scoped ST-MTP extraction lane before publishing an external draft.
-
-### Completion and STOP matrix
-
-Day one is complete only when the receipt directory contains:
-
-- official repo id and immutable revision;
-- full local file hashes;
-- config and tokenizer verdicts;
-- FP8 header census;
-- model-backed `kernel-check` raw log;
-- naked and rollback residency logs;
-- HF and memra token streams plus exact comparison;
-- chunk-invariance raw log;
-- embedded and external-draft `run-spec` logs;
-- ST serve battery;
-- thinking default/off/on responses;
-- own-generation corpus/rank/draft paths under `/data`, their hashes, and the e2e verdict.
-
-Hard architecture STOP, open a bring-up lane:
-
-- new `architectures`/`model_type`;
-- changed full-attention cycle, attention/KV head counts, head dimension, attention gate/bias,
-  GDN geometry, RoPE contract, tokenizer class/pre-tokenizer, or dense-to-MoE change;
-- new tensor names or shapes the current Qwen35 mapping cannot resolve.
-
-Artifact/direct-path STOP:
-
-- no official FP8 release;
-- explicit non-E4M3 or non-128 block metadata;
-- per-row or unsupported FP8 scale layouts;
-- native FP8 residency absent, block-MMQ dispatch absent for a block artifact, or any FP8 bank
-  silently landing in Q8_0;
-- HF greedy token mismatch.
-
-Correctness/publish STOP:
-
-- `kernel-check`, internal argmax, chunk invariance, or K=1..8 self-consistency failure;
-- no embedded or interface-compatible external MTP head that passes `run-spec`;
-- missing `enable_thinking`, `think_switch=false`, or live default/off/on mapping failure;
-- external donor interface mismatch or a trimmed draft that loses e2e throughput.
-
-Do not merge, tag, or publish support from this runbook until every applicable gate is green.
+## Appendix: gate spec fields
+
+The input spec for `tools/generate-arch-gates.py` is a JSON object with exactly the keys below;
+unknown or missing keys are refused. `valid_spec()` in `tools/test_generate_arch_gates.py` is a
+complete example the unit tests keep valid. Environment names must match `^[A-Z_][A-Z0-9_]*$`.
+`artifact_env` and `draft_env` are variables the generated scripts read. `seam` and the
+`canary_env` keys must be flags the engine reads (each has a [Flags](FLAGS.md) row), or the canary
+cannot bite.
+
+| Key | Contents |
+|---|---|
+| `id` | `[a-z0-9]+` |
+| `artifact_env` | variable that overrides the artifact path |
+| `chunk` | `label`, `prompts` (repo-relative), `chunks`, `steps`, `seam` |
+| `tick` | `label`, `prompts`, `budgets` (0 allowed), `steps`, `seam`; optional `splits` |
+| `batch` | `model_alias`, `canary_env`, `canary_expect_regex` (starts with `FAIL`), `required_gpus`, `pp_stages`, `pp_devices` (one per stage), `concurrency` (each at least 2), `port` (18300-18399), `receipt_dir`, `server_env`, `request` (non-empty `messages`), `liveness` (`cap_regex` with a `[0-9]+`, `cap_min`, `walk_regex`); optional `draft_path`, `draft_env` |
+| `mapping` | non-empty list of rows with `path_regex`, `kernel_scope`, `base_probes`, `base_spec_probes`, `gate_families` (`chunk`, `tick`, `batch`) |
+
+`server_env` may not set `MEMRA_ADDR`, `MEMRA_MODELS`, `MEMRA_PP_DEVICES` or `MEMRA_PP_STAGES`
+(the generator owns them), and `canary_env` may not set those or any `server_env` key.

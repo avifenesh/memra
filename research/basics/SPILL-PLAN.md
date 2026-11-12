@@ -1,5 +1,9 @@
 # Tiered Spilling — Build Plan
 
+> `ARCHITECTURE.md:N` cites below refer to the June 2026 plan, now
+> [docs/archive/ARCHITECTURE-2026-06.md](../../docs/archive/ARCHITECTURE-2026-06.md). Its lines
+> have shifted since this plan was written; search by the quoted text.
+
 I have verified all the load-bearing references. Now I'll synthesize the plan.
 
 # Concrete Plan: General Tiered Weight Spilling in bw24 (Beyond EDGE-1 Experts)

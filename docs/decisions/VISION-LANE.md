@@ -40,8 +40,7 @@ Owner directive: serve vision (image AND video), one-day lane, back to perf afte
   longest 16777216 (area), Qwen2VLImageProcessorFast semantics.
 - **Weights location**: the ct-NVFP4 checkpoint has ZERO visual tensors (recipe strips
   the tower). The official FP8 checkpoint carries all 333 `model.visual.*` tensors in
-  ONE shard: `outside.safetensors` (box:
-  /data/memra/models/Qwen3.8-27B-FP8-.../outside.safetensors). Tensor names:
+  ONE shard: `outside.safetensors` (in the checkpoint's own directory). Tensor names:
   blocks.N.attn.{qkv,proj}.{weight,bias}, blocks.N.mlp.linear_fc{1,2}.{weight,bias},
   norms per block, patch_embed + pos_embed + merger (verify exact names on load).
 

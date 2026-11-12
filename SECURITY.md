@@ -1,40 +1,52 @@
-# Security Policy
+# Security policy
 
-memra loads GGUF and safetensors model files by memory-mapping them and parsing headers/tensor
-metadata directly: a malicious or corrupted model file is untrusted input to a memory-unsafe
-surface (CUDA kernels, raw byte repacking, mmap'd tensor reads). Treat any parser bug reachable
-from a model file as a security issue, not just a correctness bug.
+How to report a vulnerability in memra, and what counts as one.
 
-## Reporting a vulnerability
+memra memory-maps GGUF and safetensors files and parses their headers and tensor metadata
+directly. A malicious or corrupt model file is untrusted input to memory-unsafe code (CUDA
+kernels, raw byte repacking, mmap'd tensor reads), so a parser bug reachable from a model file is a
+security issue, not only a correctness bug.
 
-Do not open a public issue for a suspected security vulnerability. Instead:
+## Report privately
 
-- Use [GitHub's private vulnerability reporting](https://github.com/avifenesh/memra/security/advisories/new) for this repo, or
-- Email the maintainer directly (see the GitHub profile for contact) with a clear repro (a minimal
-  crafted GGUF/safetensors file or a description of the malformed field, and the crash/UB
-  observed).
+Do not open a public issue. Use
+[GitHub private vulnerability reporting](https://github.com/avifenesh/memra/security/advisories/new),
+or email the maintainer (contact on the GitHub profile). Include:
 
-Include:
-- The specific file/loader path involved (`memra-gguf`, the safetensors loader in `memra-engine`, etc.)
-- A minimal reproducing input if possible
-- What you observed (crash, OOB read/write, panic, incorrect output) and how you triggered it
+- the component and code path, for example the GGUF parser (`crates/memra-gguf`), the safetensors
+  loader (`crates/memra-gguf/src/safetensors.rs`, `source.rs`) or the HTTP server
+  (`crates/memra-server`);
+- a minimal reproducing input: a crafted file, or the malformed field and its value;
+- what you observed (crash, out-of-bounds read or write, panic, wrong output) and how you
+  triggered it;
+- the version (`memra-server --version`) or the commit.
 
-## Scope
+## In scope
 
-In scope: memory-safety and parsing issues triggerable by a crafted model file (GGUF header
-fields, tensor metadata, safetensors JSON header, NVFP4/quant block layouts). Also in scope:
-`memra-server`'s HTTP-facing request handling, including its bearer authentication, multi-key
-tenant isolation, rate limiting, metering, and metrics access-control surfaces. Configuration
-and fail-open bugs involving the auth seams `MEMRA_API_KEY`, `MEMRA_API_KEYS`,
-`MEMRA_METRICS_TOKEN`, and `MEMRA_ALLOW_OPEN_BIND` are in scope as well.
+- Crafted model files: GGUF header fields, tensor metadata, the safetensors JSON header, NVFP4 and
+  other quantized block layouts, and the tokenizer and chat-template metadata the server renders.
+- `memra-server` request handling on every route, including image inputs and the `/v1/audio/*`
+  routes.
+- Authentication and isolation: `MEMRA_API_KEY`, the `MEMRA_API_KEYS` keyring and its tenant cache
+  namespaces, rate limits, metering, metrics access (`MEMRA_METRICS_TOKEN`), and the refusal of
+  an open non-loopback bind (`MEMRA_ALLOW_OPEN_BIND`). A fail-open configuration bug counts.
+- Server-initiated fetches: `image_url` downloads when `MEMRA_FETCH_URLS=1`, and the SSRF
+  classifier in `crates/memra-net-guard`.
+- Rewrite bundles and their receipts, which `memra-server` loads at boot (`MEMRA_REWRITE_BUNDLE`).
 
-The single-user, single-machine research-engine caveat is limited to engine-internal deployment
-assumptions that are not exposed through a crafted model file or the server request/auth surface.
-It does not put a `memra-server` authentication, tenant-isolation, rate-limit, metering, or
-metrics-access bug out of scope.
+## Out of scope
+
+The operator is trusted: environment variables, local file paths and the host are under the
+operator's control, and running with `MEMRA_ALLOW_OPEN_BIND=1` and no key is a choice the server
+warns about at boot. This does not cover the model-file, request, authentication and fetch
+surfaces above.
+
+## Supported versions
+
+The latest release and `main`. Fixes land on `main` and ship in the next tag; older tags are not
+patched.
 
 ## Response
 
-This is a small research project without a dedicated security team. Expect an acknowledgment
-within a reasonable window, not an SLA. Fixes land as normal commits once triaged; there is no
-separate security-release channel at this project's current size.
+memra has no dedicated security team. Expect an acknowledgment, not an SLA. A fix lands as a
+normal commit once triaged; there is no separate security-release channel.

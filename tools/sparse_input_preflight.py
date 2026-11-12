@@ -20,15 +20,15 @@ import tomllib
 
 READER_PINS = {
     'tools/hooks/pre-push':
-        '7f6a52c5432a09aee2125e5dfe03c927a545f3e9b61b2dfca2f3decac49877db',
+        'b15512bedf4352dc38cb6161049b9d95e9ecede3586dc7e3dd9d1b618a72eb22',
     'tools/update-perf-board.py':
-        '4f1a20c47639bdcf1f53f622e3b13bf1336dc5a42d19f2977739cfdc3ac37c4e',
+        '5d26b819c4fc3781b8597c9e5021b0eecd547923df98608ee188394ab99be71e',
     'tools/support_record_inputs.py':
-        'd3548a8fa3f765046e1864efd78c028d596151971a45908dad38230f021276d5',
+        '94e1315c1f7ac180654b5468bc4b86ba26fe6b5bfc995da096ae20cfe72c8317',
     'tools/check-support-states.py':
-        '27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec',
+        'e1f7cd51677d82dbe4b082a477c3696d889c53ac85b5e466f211fb9310f982c3',
     'tools/test_check_support_states.py':
-        '366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050',
+        'e318d8b354e1987f88b65431e6873eefa27fd3fe28036566fb17e077462aa90e',
     'tools/test_public_boundary.py':
         '8c56eb6bff531e71d80983294e2988bb9507173b37994ee138bca6d267004b0f',
     'tools/check-public-boundary.py':
@@ -201,7 +201,7 @@ def modeled_inputs(tree, checks):
                     if tree.entries[n][0] not in ('040000', '100644', '100755'):
                         raise Refusal('ambiguous support copy input Git type: ' + n)
                 required.update(copied)
-            required.update(tree.regular(n) for n in ('README.md', 'STATUS.md', 'AGENTS.md',
+            required.update(tree.regular(n) for n in ('README.md', 'ARCHITECTURE.md', 'AGENTS.md',
                                                        CLI_SOURCE, PACK_ROOT + '/mod.rs'))
         else:
             links = {n for n, entry in tree.entries.items() if entry[0] == '120000'}

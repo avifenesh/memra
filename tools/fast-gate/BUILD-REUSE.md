@@ -1,37 +1,21 @@
 # Reuse an exact controlled build
 
-`tools/local_build_cache.py` retains an existing controlled build capsule across
-sessions and worktrees. A hit restores its six binaries and provenance files to
-a new directory. It avoids rerunning a build when that exact candidate and build
-are still the intended input to the next step.
-
-This is opt-in development tooling. It does not change fast-gate selection,
-release qualification, pre-push policy, or the CUDA static archive fingerprint in
-`crates/memra-engine/build.rs`. A cache hit proves build identity. Model, numeric,
-request, hardware, topology, and serving qualification still need their original
-gates. Loading these binaries on another machine does not qualify that machine.
+`tools/local_build_cache.py` keeps a completed controlled build capsule across sessions and worktrees
+and restores its six binaries and provenance files into a new directory. It is for contributors who
+would otherwise rebuild the same candidate for the next step. It is opt-in development tooling: it
+changes no fast-gate selection, release qualification, pre-push policy or the CUDA archive
+fingerprint in `crates/memra-engine/build.rs`. A cache hit proves build identity and nothing else;
+model, numeric, request, hardware, topology and serving gates still run, and loading the binaries on
+another machine proves nothing about that machine.
 
 ## Use
 
-Start with a completed `qualify-release.py build` directory. An oracle manifest
-is not needed to retain and restore this build. Use a clean checkout at the
-build's exact commit. The current producer admits `controlled-cargo-v3`,
-Linux x86-64 and CUDA `120a`; this adapter inherits those limits.
-
-The descriptor records one of two scopes. `controlled-build-only` contains
-`source.json`, `build.json`, `build.log`, `fetch.log` and the six build binaries.
-Its `oracle_manifest` is explicitly null. `gpu-ci-capsule` additionally contains
-the pinned `oracle-manifest.json` required by `gpu-ci.py pack-build`. Attaching or
-removing that manifest changes the descriptor and cache key. No oracle descriptor
-is fabricated to make a build-only bundle look ready for capture.
-
-Keep the descriptor independently of the cache. It is the caller's expected
-source, compiler, platform, configuration, optional oracle and binary identity. Export it
-only from a build whose provenance you already trust. The cache provides content
-verification, not authenticity against a writer who can replace that descriptor.
+Start from a completed `tools/qualify-release.py build` directory and a clean checkout at the
+build's exact commit. The producer admits `controlled-cargo-v3`, Linux x86-64 and CUDA `120a`; this
+tool inherits those limits.
 
 ```bash
-# These paths are outside the source checkout. Each restore has a new output path.
+# Paths outside the source checkout. Each restore needs a new output path.
 python3 tools/local_build_cache.py describe \
   --repo "$PWD" --build "$BUILD_DIR" --out "$LANE_DIR/build.expected.json"
 
@@ -44,85 +28,48 @@ python3 tools/local_build_cache.py load \
   --out "$LANE_DIR/restored-build"
 ```
 
-`--cache` defaults to `~/.cache/memra/controlled-builds-v2`. All successful commands
-emit a JSON record with the scope, content key and measured elapsed seconds. Missing,
-stale, malformed or corrupt inputs fail with a nonzero exit status and a reason.
-A miss is a reason to build or investigate the mismatch; it never runs a compiler
-or silently changes a build specification. Repeated `store` validates an existing
-entry and leaves its inode unchanged. `load` refuses an existing output path.
+`--cache` defaults to `~/.cache/memra/controlled-builds-v2`. Every success prints a JSON record with
+the scope, content key and elapsed seconds. Missing, stale, malformed or corrupt inputs exit nonzero
+with a reason; a miss never runs a compiler. A repeated `store` validates the existing entry and
+leaves it untouched, and `load` refuses an existing output path.
 
-The restored directory contains a copy of each executable, not links to mutable cache
-files. It contains no incremental Cargo target, dependency cache, model weights,
-GPU receipts or resident process state. A build-only restore is not a valid
-`gpu-ci.py` capture input: first attach real pinned oracle inputs through the
-existing GPU CI flow. A full GPU capsule can be passed as `--build` to that flow.
-Qualification still verifies the runtime platform and all other capture inputs.
+The descriptor (`describe`) has one of two scopes. `controlled-build-only` holds `source.json`,
+`build.json`, `build.log`, `fetch.log` and the six binaries, with `oracle_manifest` null.
+`gpu-ci-capsule` adds the pinned `oracle-manifest.json` that `gpu-ci.py pack-build` needs; adding or
+removing it changes the key. A build-only restore is not a `gpu-ci.py` capture input until real
+pinned oracle inputs are attached through the GPU CI flow ([CI](../../docs/CI.md)).
 
-## Admission and storage
+Keep the descriptor apart from the cache, and export it only from a build you already trust: the
+cache verifies content, not authenticity against someone who can replace the descriptor.
 
-The v2 expectation binds the complete `source.json`, `build.json`, optional parsed
-oracle manifest, scope, and size/SHA-256 of every permitted capsule member. Thus it includes the
-exact commit, tracked modes, source input inventory, build command, compiler
-executable identities, compiler environment, numeric settings, build platform,
-logs, and binary hashes recorded by the controlled producer. Full-record matching
-is deliberately conservative: a rebuild with new log bytes receives another key.
-No cross-commit or semantic build equivalence is claimed. V1 expectations are
-rejected; export a v2 expectation from the trusted build to use this schema.
+## What is checked
 
-At export, store and restore, `release_inputs.verify_checkout` verifies actual
-tracked bytes and modes, symlink closure, untracked and ignored build/gate inputs,
-and effective ancestor/repository Cargo configuration. `release_qualification`
-checks source provenance; the adapter additionally requires the exact candidate
-and snapshot. Git index hints cannot conceal changed bytes. These checks inherit
-the producer's admitted input namespaces and controlled compiler filesystem
-boundary. They do not make an arbitrary Cargo invocation hermetic.
+The v2 descriptor binds all of `source.json` and `build.json`, the optional oracle manifest, the
+scope and the size and SHA-256 of every capsule member: the exact commit, tracked modes, source
+inventory, build command, compiler identities and environment, numeric settings, platform, logs and
+binary hashes. A rebuild with new log bytes gets a new key; no cross-commit equivalence is claimed,
+and v1 descriptors are rejected. Export, store and restore re-verify the checkout's tracked bytes,
+modes, symlinks, untracked and ignored inputs and effective Cargo configuration. Restores unpack
+privately, verify every payload against the descriptor, run the build verifier and write plain file
+copies: no links to cache files, no Cargo target, no model weights. Publication is an atomic
+no-replace hard link with read-only archives, so use a local filesystem with hard links and rename.
+The whole capsule is rehashed on admission; measure that cost against the build before relying on it.
 
-The existing `gpu-ci.py` functions verify, pack and unpack full GPU capsules.
-Before oracle attachment, the adapter uses the same
-`release_qualification.validate_build` authority and exact binary identity
-checks. A narrow local pack/unpack path admits only the ten build files, with
-the existing capsule size ceiling and the same regular-file, duplicate-member,
-path and inventory restrictions. Unexpected files, links and missing members
-are rejected. The producer's working directory can contain other build outputs;
-only the declared capsule inventory is packed. Store
-unpacks its private archive and verifies the resulting payload before publishing
-with an atomic no-replace hard link. Each writer uses its own temporary directory
-on the cache filesystem. Published archives are read-only. A competing publisher
-can validate the existing entry but cannot replace it through this API. Restore
-unpacks privately, verifies every payload against the independently held
-expectation, runs the existing build verifier, and checks the checkout again.
-Temporary directories are removed on success and failure. Use a local filesystem
-supporting hard links and rename; filesystem errors fail closed.
-
-The entire capsule is rehashed on admission. This costs CPU and I/O in proportion
-to source and binary size. Measure it against the actual build before selecting
-it for a lane. The cache does not skip compilation after edits and does not reduce
-model loading or gate execution time. It preserves the exact build context that
-the current producer records, not a claim about unrecorded inputs in other build
-systems. The descriptor and cache should receive the same custody as build logs.
-
-## CPU checks and native acceptance
-
-Run the bounded admission suite with a non-vacuity floor:
+## Tests and native acceptance
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 bash tools/unittest-floor.sh tools test_local_build_cache.py 46 -v
+PYTHONDONTWRITEBYTECODE=1 bash tools/unittest-floor.sh tools test_local_build_cache.py 48 -v
 ```
 
-The suite uses the real source and build verifiers with temporary, clearly marked
-synthetic capsule payloads. The same controls run against both inventories.
-They exercise actual-byte changes hidden by Git flags,
-mode changes, included fixtures, untracked/ignored inputs, ancestor Cargo config,
-exact-commit rejection, compiler/platform/numeric/oracle changes, binary and
-record tampering, missing/truncated/duplicate/unexpected payloads, immutable
-publication, independent restore files, and the complete CLI path. Build-only
-controls also refuse missing native provenance and oracle attachments hidden in
-an archive. CLI timing rows are synthetic admission
-cost, not native compilation savings or GPU evidence.
+48 is the floor `.github/workflows/ci.yml` enforces for this suite. It runs the real source and build
+verifiers against synthetic capsules: hidden byte and mode changes, untracked and ignored inputs,
+ancestor Cargo config, wrong commits, compiler, platform, numeric and oracle changes, tampered
+binaries and records, missing or duplicate members and the whole CLI. Its timings are admission cost,
+not native build savings.
 
-Before claiming saved native latency, record one controlled native build's full
-elapsed time and capsule size, then record store/load elapsed time in the same
-environment. Compare the restored binary hashes with that build and run its next
-required gate unchanged on the designated non-production hardware. A cache hit
-alone cannot satisfy that gate. CPU admission tests are sufficient to exercise
-this adapter's refusal behavior, not to qualify any model or hardware.
+Before claiming saved native time, record one controlled build's full elapsed time and capsule size,
+then store and load times in the same environment, compare the restored binary hashes with the build
+and run the next required gate unchanged on the target hardware. A cache hit never satisfies that gate.
+
+The earlier text of this page is kept in
+[docs/history/TESTING.md](../../docs/history/TESTING.md#reuse-an-exact-controlled-build).

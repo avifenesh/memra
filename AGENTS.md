@@ -2,7 +2,7 @@
 
 Standing rules for this repo. The user's own words in the current conversation come first, above these rules and above any skill. Rules for every repo are in `~/.config/agents/SHARED.md`; this file adds what is specific to memra.
 
-Memra follows darklanes `DIRECTION.md` and the [project status](README.md#project-status): general engine development and routine bring-ups are paused; scoped, budgeted research and maintenance continue. Banked work lives on `origin/bank/*`; re-derive it against current `main` before resuming.
+Memra is in active development (owner, 2026-11-08: "we are in ongoing developments"); the [project status](README.md#project-status) states the current focus. Banked work lives on `origin/bank/*`; re-derive it against current `main` before resuming.
 
 `AGENTS.md` is the only instruction file here. Put scoped rules in nested `AGENTS.md` files; do not add a `CLAUDE.md`, an import stub or a symlink.
 
@@ -11,7 +11,7 @@ Memra follows darklanes `DIRECTION.md` and the [project status](README.md#projec
 - Work on a dedicated branch or worktree, never on `main`. Stage only your lane and leave unrelated dirty work alone.
 - Install the hook once with `git config core.hooksPath tools/hooks`, and do not bypass it with `--no-verify`. What it checks and its one skip switch are under [Perf board and pre-push hook](#perf-board-and-pre-push-hook).
 - For Memra topic pushes, use `MEMRA_RELEASE_QUALIFICATION_MODE=development` and state that the push has no native qualification. This does not replace native release or serving gates, and main and tags always refuse it (`docs/RELEASE-QUALIFICATION.md`).
-- A push to main needs evidence only for the cells the change reaches (owner, 2026-11-02: "We need to seperate what affect and what not affect"). `python3 tools/cell_evidence.py need` lists them; each push-gated build target needs a passing record from one of its devices for the exact final commit (the RTX 5090 counts for `sm_120a`). Docs, tests, research, CPU tooling, comment-only edits and changes gated to other targets need none. Tags still need the full record.
+- A push to main needs evidence only for the cells the change reaches (owner, 2026-11-02: "We need to seperate what affect and what not affect"). `python3 tools/cell_evidence.py need` lists them; each push-gated build target needs a passing record from one of its devices for the exact final commit (an RTX 5090 or an RTX PRO 6000 counts for `sm_120a`). Docs, tests, research, CPU tooling, comment-only edits and changes gated to other targets need none. Tags still need the full record.
 - To integrate, fetch `origin/main` right before the merge, replay the whole lane on its tip and resolve overlapping behavior instead of picking one side. Migrate new upstream architecture checks to the equivalent plan operation or capability and keep the upstream numerical program. Run the affected upstream regressions, the ModelPlan/compiler suite, the engine and server suites, `cargo fmt --all -- --check` and `git diff --check`, then confirm the remote `main` SHA after the push.
 
 ## Model onboarding: compile a native plan, not a new engine path (owner, 2026-08-22)
@@ -27,7 +27,7 @@ The onboarding structure:
 - `crates/memra-gguf/src/model_packs/<family>/` owns aliases, config normalization, the tensor schema, plan construction, tokenizer/template requirements and the gate manifest. A sibling with existing math is normally one small pack, not another forward implementation.
 - `crates/memra-gguf/src/execution_manifest.rs` derives eager, batch, graph, speculative, carried-prime and pipeline capabilities from plan operations. Runtime policy inspects the plan or its manifest, never an architecture-name allowlist.
 - `crates/memra-reference/` is the unfused native executor and semantic baseline. Tuned decode, batch, graph, spec and PP paths are validated rewrites of the same plan.
-- `crates/memra-cli/` owns `memra model inspect`, `scaffold` and `verify`. Onboarding receipts go under a dated `research/modelplan-onboarding-*` namespace.
+- `crates/memra-cli/` owns `memra model inspect`, `scaffold`, `verify` and `qualify`. Onboarding receipts go under a dated `research/modelplan-onboarding-*` namespace.
 
 There are exactly three positive support states:
 
@@ -37,7 +37,7 @@ There are exactly three positive support states:
 
 A pack's `support` field and every state named in the docs must match a record in `docs/support-records.toml` (`tools/check-support-states.py`, CI gates job). A new state lands with its record and its tracked gate receipts in the same PR. "Loads", "shares an architecture name" and "works through another engine" are not support states.
 
-Procedure for an admitted native model experiment:
+Procedure for native model onboarding (step by step in `docs/ONBOARDING.md`):
 
 1. Start from an immutable artifact (`hf-id@<40-character revision>`, or a local artifact plus its byte manifest) in its own branch and receipt namespace.
 2. Run `cargo run -p memra-cli --bin memra -- model inspect <source> --against <family> --out <dir>` and read the artifact lock, normalized config, tensor census, compiled plan and capability manifest before changing runtime code.
@@ -48,7 +48,7 @@ Procedure for an admitted native model experiment:
 
 ## Correctness
 
-The three gates from `CONTRIBUTING.md`: `kernel-check`, the `run-gen` argmax gate and `run-spec` K=1..8 self-consistency. A kernel change is done only with before/after numbers measured per `research/benchmarks.md`.
+The three gates from `CONTRIBUTING.md`: `kernel-check`, the `run-gen` argmax gate and `run-spec` K=1..8 self-consistency. A kernel change is done only with before/after numbers measured per the method in `docs/PERFORMANCE.md`.
 
 ### One numeric program per request
 
@@ -70,10 +70,10 @@ The prefill numeric config is part of the acceptance config: prefill writes the 
 
 - Blackwell sm_120 is the primary optimized target.
 - GB10 (DGX Spark, compute capability 12.1) builds `121a`: its own SASS, the `120a` policy family (`BUILT_CUDA_ARCH` reads `120a`; the exact target is `BUILT_CUDA_TARGET`). Key new policy on the family, never on the target string. Record: `docs/decisions/SM121-SPARK-TARGET.md`.
-- Step-3.7 multi-card: RTX PRO 6000 Blackwell is the blocking qualification target. Local RTX 5090 evidence is a later compatibility follow-up and does not block a Step release unless the change also alters a generic 5090-facing mechanism or default. Use the hash-bound `step-pro` pre-push gate, never a skip override.
+- Step-3.7 multi-card: RTX PRO 6000 Blackwell is the blocking qualification target. RTX 5090 evidence is a later compatibility follow-up and does not block a Step release unless the change also alters a generic 5090-facing mechanism or default. Use the hash-bound `step-pro` pre-push gate, never a skip override.
 - Multi-card topology: never call PP or replicas TP, and never force a TP degree that violates attention-head, KV-head or expert partitioning.
-- Another accelerator: an admitted experiment chooses its runtime per the project status; a new Memra backend is not the default answer. An admitted secondary backend keeps the model bytes, is off at build time by default, documents its disabled target-specific kernels and passes a same-prompt golden-output gate before producing scored evidence. The naked sm_120a build and its defaults do not change.
-- Hopper (sm_90a): the arch auto-detects on an H100 (`MEMRA_CUDA_ARCH=90a` forces it). Promotions are compile-gated behind `memra_hopper_mma`, so the sm_120a build stays byte-identical. Ledger: `ARCHITECTURE-H100.md` (append-only); flags: `docs/FLAGS.md` §7. The Hopper CI lane is retired, so run kernel-check config pins, decode-batch (config and strict), decode-dc, graph-decode and graph-session on Hopper hardware directly. Lessons from that lane: compare perf only interleaved on the same box (cross-run and cross-day comparisons are invalid from clock drift, competitor denominators included); re-sweep thresholds and verdicts when the code under them moves; put any guard for a live lane inside a battery that runs; measure every wgmma scheduling change, since nvcc 13.1 is form-sensitive there (C7514/15/17/19).
+- Another accelerator: an experiment there may run on another runtime; a new Memra backend is not the default answer. An admitted secondary backend keeps the model bytes, is off at build time by default, documents its disabled target-specific kernels and passes a same-prompt golden-output gate before producing scored evidence. The naked sm_120a build and its defaults do not change.
+- Hopper (sm_90a): the arch auto-detects on an H100 (`MEMRA_CUDA_ARCH=90a` forces it). Promotions are compile-gated behind `memra_hopper_mma`, so the sm_120a build stays byte-identical. Ledger: `ARCHITECTURE-H100.md` (append-only); flags: `docs/FLAGS.md` §7. The Hopper CI lane is retired, so run `kernel-check` with its config pins, `decode-batch-gate` (config and strict), `decode-dc-gate`, `graph-decode-gate` and `graph-session-gate` on Hopper hardware directly. Lessons from that lane: compare perf only interleaved on the same box (cross-run and cross-day comparisons are invalid from clock drift, competitor denominators included); re-sweep thresholds and verdicts when the code under them moves; put any guard for a live lane inside a battery that runs; measure every wgmma scheduling change, since nvcc 13.1 is form-sensitive there (C7514/15/17/19).
 - Rented box and instance ids live in the gitignored `LANE-LOCAL.md`, never in tracked files.
 
 ### Per-hardware arm selection (owner, 2026-08-13)
@@ -82,7 +82,7 @@ Do not give up a local win to simplify a remote default. When a mechanism's win 
 
 ## Flags doctrine and door hygiene
 
-Winners are defaults: naked commands run the tuned path. An environment variable exists only as a runtime parameter, machine-specific config (VRAM budgets, KV formats, spill), rollback seam (`MEMRA_FAST=0` oracle path), diagnostic or explicitly blocked experimental door. Catalog: `docs/FLAGS.md`. A new `MEMRA_*` read needs its FLAGS.md row in the same commit; a prefix row such as `MEMRA_TCOL_*` covers a family.
+Winners are defaults: naked commands run the tuned path. An environment variable exists only as a runtime parameter, machine-specific config (VRAM budgets, KV formats, spill), rollback seam (`MEMRA_FAST=0` oracle path), diagnostic or explicitly blocked experimental door. Catalog: `docs/FLAGS.md` (row history in `docs/FLAGS-HISTORY.md`). A new `MEMRA_*` read needs its FLAGS.md row in the same commit; a prefix row such as `MEMRA_TCOL_*` covers a family.
 
 Doors are decided, not kept (owner, 2026-09-05: "we stop leaving unneeded flags."):
 
@@ -97,7 +97,7 @@ Changing a default:
 - Give each new or changed mechanism, flag, hardware default or release gate its own branch and receipt namespace, and prove forced ON/OFF correctness first.
 - A performance or default decision needs a balanced same-window interleaved A/B in both orders (three runs by default, five on an anomaly; LAW:interleaved-ab, owner 2026-08-30), raw hashes, failures and 250 ms telemetry. Serving claims also record TTFT, E2E, TPOT and ITL p50/p95/p99 plus request and token throughput.
 - Winners become naked hardware-specific defaults, losing or flat arms are deleted, and inconclusive arms stay default-OFF with a named missing gate.
-- When a win depends on the hardware, measure it on both the local RTX 5090 and a PRO 6000 and key the arm on the device (owner, 2026-08-13: "Local performance is not sacrificed to make a remote default simpler."). One-rig evidence sets a one-rig default at most. Prefer detection (SM, VRAM, card class) over env flags for hardware-shaped choices, and keep the env var as the rollback seam.
+- When a win depends on the hardware, measure it on both an RTX 5090 and a PRO 6000 and key the arm on the device (owner, 2026-08-13: "Local performance is not sacrificed to make a remote default simpler."). One-rig evidence sets a one-rig default at most. Prefer detection (SM, VRAM, card class) over env flags for hardware-shaped choices, and keep the env var as the rollback seam.
 - Update the board source and regenerate (next section), and keep `docs/FLAGS.md` and `docs/TESTING.md` aligned.
 
 ## Perf board and pre-push hook
@@ -117,10 +117,10 @@ GitHub runners have no GPU. `.github/workflows/ci-public.yml` routes owner PRs a
 The GPU battery follows the change's content (owner, 2026-09-27: "we dont need to run full battery on every change, its depend on change content and what it touces."; 2026-11-02: "we can run regression tests once a day and fix per hardware instead of constantly running"):
 
 - **Change impact** decides the cells: `tools/change_impact.py` maps a diff to (build target, scope) cells from the arch table in `build.rs` and the rules in `tools/change-impact.toml` (`docs/RELEASE-QUALIFICATION.md`). Add a rule when a path's reach is narrower than its crate's default; an unknown path reaches every target.
-- **Push evidence**: for each affected push-gated target, one passing `tools/cell_evidence.py` record from a device of that target: the device battery (`kernel-check`, calibrated `run-gen` argmax, eager and served-batch, `run-spec` K=1..8 on the roster), plus serve-smoke for serving cells and the interleaved perf A/B against the push base for performance-relevant ones. A gate change needs all three. A local RTX 5090 counts for `sm_120a`, except for a default keyed on a card name, which that card must run. The push base's rules apply, so a change cannot relax its own requirements. The hook refuses and names every unproven cell.
+- **Push evidence**: for each affected push-gated target, one passing `tools/cell_evidence.py` record from a device of that target: the device battery (`kernel-check`, calibrated `run-gen` argmax, eager and served-batch, `run-spec` K=1..8 on the roster), plus serve-smoke for serving cells and the interleaved perf A/B against the push base for performance-relevant ones. A gate change needs all three. An RTX 5090 or an RTX PRO 6000 counts for `sm_120a`, except for a default keyed on a card name, which that card must run. The push base's rules apply, so a change cannot relax its own requirements. The hook refuses and names every unproven cell.
 - **Scoped extras** still go in the PR body: the lane's own GPU cells and red arms, the pack gate of an UNCOVERED pack, and pair-only surfaces (PP, TP/EP, P2P, multi-card placement), which need a pair.
 - **Daily regression** (`tools/daily-regression.py`, one user timer per device, installed disabled): main's head on each device's full cell set, results on the `regression/<device>` branch, one `daily-regression` issue per failing device. Fix a failing device on that device.
-- **Tag battery** (`tools/release-battery.sh` on a non-serving 2x RTX PRO 6000 pair, required before any tag and bound into the release qualification record): it covers the qwen35 class only, and within it two checkpoints (owner, 2026-11-03). `kernel-check` runs once with the `tools/kernel-check-27b.cells` and `tools/kernel-check-step35.cells` cells required, then the calibrated argmax gate with its batched-prime arm and greedy `run-spec` K=1..8 run on each `tools/release-roster.tsv` row: Ornith-1.5-35B-A3B (`own`, qwen35_moe) and Qwen3.8-27B (`vendor`, qwen35), both NVFP4+Q5_K MTP GGUFs. kernel-check's real-weight oracle cells on the GGUFs in `MEMRA_KC_MODELS_DIR` add kernel-level evidence only. A tag PASS carries no model evidence for any other checkpoint, family or format, and no served-path evidence: the battery never starts `memra-server`, so the serving gates come only from the full battery and scoped-battery cells. Other families' evidence comes from their own family gates (the pack's gate manifest, the scoped battery's cells on that family, `step-pro` for Step-3.7) and from the daily per-device regression above.
+- **Tag battery** (`tools/release-battery.sh`, required before any tag): the release qualification record holds one `tools/qualify-release.py capture` per release OS profile, each on one leased RTX PRO 6000 Blackwell card (compute capability 12.0). The battery covers the qwen35 class only, and within it two checkpoints (owner, 2026-11-03). `kernel-check` runs once with the `tools/kernel-check-27b.cells` and `tools/kernel-check-step35.cells` cells required, then the calibrated argmax gate (the eager cell with its batched-prime arm, and the served-batch cell) and greedy `run-spec` K=1..8 run on each `tools/release-roster.tsv` row: Ornith-1.5-35B-A3B (`own`, qwen35_moe) and Qwen3.8-27B (`vendor`, qwen35), both NVFP4+Q5_K MTP GGUFs. kernel-check's real-weight oracle cells on the GGUFs in `MEMRA_KC_MODELS_DIR` add kernel-level evidence only. A tag PASS carries no model evidence for any other checkpoint, family or format, and no served-path evidence: the battery never starts `memra-server`, so the serving gates come only from the full battery and scoped-battery cells. Other families' evidence comes from their own family gates (the pack's gate manifest, the scoped battery's cells on that family, `step-pro` for Step-3.7) and from the daily per-device regression above.
 - Never run the battery on a serving box.
 
 Documentation changes use text and link checks. CPU-only development, admission and artifact-transport tooling uses its CPU contract, failure-injection and integration checks (artifact tooling also needs native build/restore integrity evidence) and must leave native math, emitted programs, build defaults, model artifacts, tolerances and required gate coverage unchanged. Such a merge qualifies no model, runtime or serving binary; do not rent GPUs for it. `docs/TESTING.md` and `tools/fast-gate/README.md` define the boundary.
@@ -140,11 +140,11 @@ Exactly two memra GPU lock files exist, one per rig class. A third name gives no
 | rig | lock |
 |---|---|
 | any 2x RTX PRO 6000 pair or 3-card pod | `/tmp/memra-gpu.lock` |
-| the local RTX 5090 | `/tmp/memra-5090.lock` |
+| an RTX 5090 | `/tmp/memra-5090.lock` |
 
-The lease wrapper's per-card locks, `/tmp/memra-gpu-locks/<UUID>.lock`, are not a campaign lock: `tools/memra-gpu-run` holds a card's lock for one lease, together with the box's lock above (`--box-lock`), so a lease and a campaign exclude each other.
+The lease wrapper's per-card locks, `/tmp/memra-gpu-locks/<UUID>.lock`, are not a campaign lock: `tools/memra-gpu-run` holds a card's lock for one lease, together with the box's lock above when `--box-lock` names it, so a lease and a campaign exclude each other.
 
-`MEMRA_CI_LOCK` and `MEMRA_GPU_LOCK` remain override seams, but their defaults stay on this table. On the local rig, take the GPU through `gpulock` (SHARED.md), which also respects these locks. A DGX Spark is taken through its `sparklock` lease, never a local flock, which other machines cannot see; the `gb10` cell-evidence row does this with the unit from the box's `MEMRA_SPARK_UNIT`.
+`MEMRA_CI_LOCK` and `MEMRA_GPU_LOCK` remain override seams, but their defaults stay on this table. Where `gpulock` exists (SHARED.md), take the GPU through it; it also respects these locks. A DGX Spark is taken through its `sparklock` lease, never a local flock, which other machines cannot see; the `gb10` cell-evidence row does this with the unit from the box's `MEMRA_SPARK_UNIT`.
 
 ## Measurements and decisions are a corpus
 
@@ -152,11 +152,11 @@ Every measurement and decision this repo produces is kept here on purpose (owner
 
 - Measurements: `docs/PERFORMANCE.md` (boards with conditions) and `research/<lane>/` (the raw runs behind them). Both, never one alone.
 - Decisions: a decision that changes a default, format, target or arm gets a record in `docs/decisions/` naming what was chosen, what was rejected and the measurement that settled it. Rejections matter as much as adoptions.
-- Architecture ledgers: `ARCHITECTURE.md` and `ARCHITECTURE-H100.md`.
-- `docs/KERNELS.md` maps every `.cu` entry symbol to purpose, qtype, arch guard, dispatch flag and FFI binding. Update the affected rows in the same change that touches a `.cu` file or FFI shim. `docs/FLAGS.md` is the flag catalog and `docs/MODELS.md` the model board.
+- Architecture: `ARCHITECTURE.md` is the engine overview and `ARCHITECTURE-H100.md` the Hopper lane ledger; superseded plans keep their place in `docs/archive/`.
+- `docs/KERNELS.md` maps every `.cu` entry symbol to what it computes, its types, arch guard, selector, caller and gate. Update the affected rows in the same change that touches a `.cu` file or FFI shim. `docs/FLAGS.md` is the flag catalog and `docs/MODELS.md` the model board.
 - `docs/ROUTER.md` says where each kind of question lives; start there.
 - `research/INDEX.md` has one verdict line per research dir. Check it before re-running an experiment and add your lane's row when it closes. The root `.ignore` keeps raw receipts out of default `rg` (`rg -u` includes them).
-- The machine-local lesson corpus is `~/projects/darklanes/agent-knowledge/gpu/` (index `gpu/README.md`). Read it before designing a cell, gate or kernel change and promote new lessons there when a lane closes. Search it with `rg '^LAW:|^TRAP:|^GATE:'` for rules, `rg '^VERDICT:|^KNEE:'` for what was already tried or blessed, and `rg '^QUIRK:<model>'` under `gpu/models/`.
+- The machine-local lesson corpus is `~/projects/darklanes/agent-knowledge/gpu/` (index `gpu/README.md`), not this repo's `agent-knowledge/`, which holds the README craft guide. Read it before designing a cell, gate or kernel change and promote new lessons there when a lane closes. Search it with `rg '^LAW:|^TRAP:|^GATE:'` for rules, `rg '^VERDICT:|^KNEE:'` for what was already tried or blessed, and `rg '^QUIRK:<model>'` under `gpu/models/`.
 
 Do not delete a measurement or decision record to reduce clutter. Banner a superseded record, name what replaced it and leave the numbers. Anything that does not belong in a public engine repo (deployment, location, fleet, business) moves to darklanes rather than being dropped.
 
@@ -165,7 +165,7 @@ Do not delete a measurement or decision record to reduce clutter. Banner a super
 - The pre-registered target does not decide whether a result is valid. If the numbers redirect the work, the lane's name goes stale, not its results.
 - A method-vs-method comparison is a result even when the method you hoped for loses. State it plainly.
 - Partial coverage of the model x hardware x sampler grid is not a defect. The field's bar is one model on one hardware; owner: "i never saw a paper on arxiv that measure on more then one model and one hardware without it becoming a product." State the scope and publish.
-- Separate mechanism wins from empirical, model-dependent wins. A mechanism win holds by construction: draft-side grammar masking (`MEMRA_DRAFT_MASK`) never proposes grammar-illegal ids, so it strictly reduces wasted draft work on any model.
+- Separate mechanism wins from empirical, model-dependent wins. A mechanism win holds by construction: draft-side grammar masking (always on for constrained speculative requests) never proposes grammar-illegal ids, so it strictly reduces wasted draft work on any model.
 - Frame publishable work as ongoing research with stated scope, and report the direction the evidence points, including against the hypothesis.
 
 Estimate effort in agent-days: one agent-day is about one human-week, weekends included (owner, 2026-08-13). Size alone is not an argument against a mechanism; price it and let Avi decide. This changes estimates, not the correctness and evidence gates.
@@ -191,10 +191,10 @@ memra is a public engine under FSL-1.1-ALv2, not a product (owner, 2026-08-16): 
 
 ## Releases
 
-Tag every board-moving or user-facing change: `git tag vX.Y.Z && git push origin vX.Y.Z`. The `release` workflow compiles, drafts the changelog from conventional commits (`tools/changelog.sh`) and publishes. Bump minor per mechanism or board move, patch per fix or docs. Prefixes `perf:`, `feat:`, `fix:`, `config:` and `docs:` are public; `data:`, `chore:`, `wip:` and `probe:` are filtered as research-log noise. Full process: `docs/RELEASING.md`.
+Tag every board-moving or user-facing change. The tag is annotated and sits on the last qualification data commit, not on the release commit: `git tag -a vX.Y.Z -F tag-message.txt <last data commit> && git push origin vX.Y.Z`. The `release` workflow verifies the release qualification record, rebuilds the tested commit the record names and refuses to package binaries that differ from the record's, drafts the changelog from conventional commits (`tools/changelog.sh`), signs `SHA256SUMS` with cosign and publishes. Bump minor per mechanism or board move, patch per fix or docs. Prefixes `perf:`, `feat:`, `fix:`, `config:` and `docs:` are public; `data:`, `chore:`, `wip:` and `probe:` are filtered as research-log noise. Full process: `docs/RELEASING.md`.
 
 Version numbers are shared between parallel sessions:
 
 1. Claim the number first: `git push --force-with-lease=refs/heads/release/claim-vX.Y.Z: origin HEAD:refs/heads/release/claim-vX.Y.Z`. If origin refuses, the number is taken; pick the next one. Never delete another session's `release/claim-*` branch.
 2. On the tagged commit, `[workspace.package].version` and the pinned `[workspace.dependencies]` versions equal the tag. `tools/release-guard.sh` refuses a mismatched or unclaimed tag in `release.yml` and `publish.yml`.
-3. Never renumber over a broken tag. Mark a mismatched release as skipped for version mismatch and as a prerelease (v0.102.0 shows the form); tags are never deleted and releases are never recut under the same number.
+3. Never renumber over a broken tag. Mark a mismatched release as skipped for version mismatch and as a prerelease, and list its tag in `tools/changelog-skip-tags.txt`; tags are never deleted and releases are never recut under the same number.

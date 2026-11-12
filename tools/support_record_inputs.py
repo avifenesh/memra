@@ -9,14 +9,14 @@ import tomllib
 
 RECORDS = 'docs/support-records.toml'
 READERS = {
-    'tools/check-support-states.py': '27b4a68fb545cfd434caab8764f42becd021a52d7d6a36fb9fba466d396cf8ec',
-    'tools/test_check_support_states.py': '366556ebf11d27173032f1fe9cd71ef59d18b3c1f2314f920f214a63e5482050',
+    'tools/check-support-states.py': 'e1f7cd51677d82dbe4b082a477c3696d889c53ac85b5e466f211fb9310f982c3',
+    'tools/test_check_support_states.py': 'e318d8b354e1987f88b65431e6873eefa27fd3fe28036566fb17e077462aa90e',
 }
 GATES = {'Config', 'TokenizerTemplate', 'TensorCensus', 'TinyParity',
          'CheckpointParity', 'RewriteParity', 'Serve'}
 PACK_ROOT = 'crates/memra-gguf/src/model_packs'
 CLI_SOURCE = 'crates/memra-cli/src/lib.rs'
-ROOT_DOCS = {'README.md', 'STATUS.md', 'AGENTS.md'}
+ROOT_DOCS = {'README.md', 'ARCHITECTURE.md', 'AGENTS.md'}
 COPY_ROOTS = (PACK_ROOT, 'docs')
 
 

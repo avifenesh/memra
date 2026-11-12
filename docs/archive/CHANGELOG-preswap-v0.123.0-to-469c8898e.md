@@ -1,5 +1,7 @@
 # Pre-swap changelog: v0.123.0 to 469c8898e (old history, 108 non-merge commits)
 
+> **Superseded record (2026-09), kept as written** except that one private storage location is redacted (`[redacted: ...]`). Releases since v0.124.0 carry their own notes, drafted by `tools/changelog.sh` ([Releasing](../RELEASING.md)).
+
 The memra repository history was rebuilt from a zero-commit content snapshot on 2026-09-01.
 The snapshot commit (`49d1d6f65`, "catch-up sync: memra@469c8898e") is the root of the
 current history and corresponds to old-history commit `469c8898e` (old main tip), which was
@@ -11,8 +13,8 @@ file is the record, generated with the same script against the archive bundle:
 
     bash tools/changelog.sh v0.123.0 469c8898e   # run inside memra-FINAL-preswap-all-refs.bundle
 
-Archive bundle: rig `~/repo-backups-20260901/memra-FINAL-preswap-all-refs.bundle`, and R2
-bucket `tiyuvta-capture` prefix `repo-bundles/20260901/`. The bundle carries
+Archive bundle: `memra-FINAL-preswap-all-refs.bundle` ([redacted: private storage location]).
+The bundle carries
 `refs/tags/v0.123.0` (tag object 4826ab9bb, peels to bc0952fe5) and `refs/heads/main` at
 469c8898e among 373 refs. The 38 files that differ between 469c8898e and the snapshot root are
 the provider-mention purge re-applied to research raw files (42 insertions, 42 deletions, no

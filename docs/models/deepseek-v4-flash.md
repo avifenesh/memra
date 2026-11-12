@@ -1,157 +1,78 @@
-# DeepSeek V4 Flash
+# DeepSeek-V4-Flash
 
-> **Serving bring-up reopened (owner goal, 2026-09-23).** The 2026-09-12 pause is lifted for the
-> bring-up and tuning lane ([issue #4](https://github.com/avifenesh/memra/issues/4)). Support is
-> still experimental: the numbers below are engine measurements with their conditions, not a
-> serving-grade claim.
+DeepSeek's V4 Flash (the 0731 checkpoint) as NVFP4 safetensors on two cards, through its own
+engine (`Dsv4Gpu`) and serve door rather than a ModelPlan pack. Bring-up and tuning continue in
+[issue #4](https://github.com/avifenesh/memra/issues/4).
 
-| | Recommended use |
+| | |
 |---|---|
-| **Status** | Experimental engine support; functional and gated, not serving-grade |
-| **Path** | Exact-source sharded Safetensors checkpoint through the dedicated two-card implementation; no GGUF conversion |
-| **Hardware** | 2x RTX PRO 6000 Blackwell (the bring-up and tuning rig) |
-| **Use this when** | You are evaluating or contributing to the experimental path, not deploying it as a supported server |
+| **Serving route** | NVFP4 checkpoint directory, 2x RTX PRO 6000 Blackwell, TP/EP placement by default since 2026-09-25 (memra #710), PP-2 as the explicit `MEMRA_DSV4_TOPOLOGY=pp` placement (it aggregates more at c2, at a higher TTFT). Throughput last measured 2026-09-28; gate cells re-run on a Max-Q pair on 2026-11-08. Standing gate: none |
+| **Pack** | `deepseek_v4`, support `None`: no pack state. The drafter pack `deepseek_v4_dspark` is NativeReference on a tiny fixture (record `deepseek_v4_dspark-reference`), which says nothing about the target <!-- support: deepseek_v4_dspark-reference --> |
+| **Artifact** | `tiyuvta/DeepSeek-V4-Flash-0731-NVFP4@5bd16a784784585ca3bd7ccca102f648ceb19245`, the current revision; it differs from the first revision `3369bf0f52808b1bae86a7cab07bd1a7f5042e9d` only in `README.md`, and the 2026-11-06 fix-stack TP/EP cells loaded `3369bf0f` ([`research/fix-stack-path-coverage-20261106/`](../../research/fix-stack-path-coverage-20261106/)). The measurements below name `@bafd09f8cab4f4f4f25e1cdafbcdefc05b90ee38`, which the repository's history (it starts on 2026-11-02) no longer holds. No tracked receipt compares those bytes with the current files. Source `deepseek-ai/DeepSeek-V4-Flash-0731`. No GGUF conversion |
+| **Drafters** | the checkpoint's own DSpark drafter, `MEMRA_DSV4_DRAFTER=dspark` (about 10.7 GiB on the second card); unset serves plain |
+| **Hardware measured** | 2x RTX PRO 6000 Blackwell: Workstation, Server and Max-Q edition pairs |
+| **Input** | text; tools through the DSML protocol |
 
-## Current served program
+## Run it
 
-memra-server naked on 2x RTX PRO 6000 Blackwell, NVFP4 checkpoint
-`tiyuvta/DeepSeek-V4-Flash-0731-NVFP4@3369bf0f`. Since 2026-09-25 (memra #710) the two-card load
-is TP/EP:
-- every layer sits on both cards;
-- experts are split by id;
-- attention is split by head (exact attention TP2);
-- the DSpark drafter's experts are split the same way.
+No cookbook block. `memra-server` loads a checkpoint directory whose `config.json` says
+`model_type: deepseek_v4` onto cards `0,1` (`MEMRA_DSV4_DEVICES`) with no other flags.
 
-The served program implements the 0731 encoding's activation quantization (RefFp8Round) only.
-A preview-encoding checkpoint (`deepseek_v4_preview`, clamp-only) is gate-only: memra-server
-refuses it at load by name, before the weights load.
+- **TP/EP** (default): every layer on both cards, experts split by id, attention split by head
+  (exact attention TP2), the DSpark drafter's experts split the same way. Sixteen plain lanes
+  coalesce their steps into one captured B-row step.
+- The served program implements the 0731 encoding's activation quantization (`RefFp8Round`) only.
+  A preview-encoding checkpoint (`deepseek_v4_preview`) is gate-only: the server refuses it by name
+  at load, before the weights load.
+- The chat dialect is code (`encoding_dsv4`); the artifact ships no `chat_template`, and the pack
+  names the engine renderer.
+- Plain requests replay each step on full-token CUDA graphs with the device sampler.
 
-Plain requests replay each step on full-token CUDA graphs, with the device sampler.
-`MEMRA_DSV4_TOPOLOGY=pp` loads PP-2, an explicit placement that aggregates more at c2 (decision:
-[DSV4-TPEP-DEFAULT](../decisions/DSV4-TPEP-DEFAULT.md)). All rows: 256 max tokens, one boot per
-row, median of N=3 rows (N=2 for DSpark), 2026-09-24/25, same text on every request of every arm.
+## Measured
+
+2x RTX PRO 6000 Blackwell, 256 max tokens, one boot per row, same text on every request of every
+arm. Decision: [DSV4-TPEP-DEFAULT](../decisions/DSV4-TPEP-DEFAULT.md).
+
+Single stream at the flip (2026-09-24/25, median of N=3 rows, N=2 for DSpark), tok/s:
 
 | arm | Workstation pair, c1 greedy | Server Edition pair, c1 greedy / sampled | TTFT p50 (SE) |
 |---|---|---|---|
 | plain, TP/EP (default) | 80.73 | 71.20 / 72.65 | 172 ms |
 | plain, PP-2 (`pp`) | 68.51 | 62.38 / 58.40 | 210 ms |
-| DSpark (`MEMRA_DSV4_DRAFTER=dspark`), TP/EP | 82.73 | 72.79 / 63.57 | 207 ms |
+| DSpark, TP/EP | 82.73 | 72.79 / 63.57 | 207 ms |
 | DSpark, PP-2 | 70.60 | 61.72 / 53.90 | 267 ms |
 
-Since 2026-09-26 the TP/EP decode chain runs with programmatic dependent launch, a
-vocab-parallel head, one kernel for the compressor snapshots and push joins
-(`research/dsv4f-bringup-20260923/levers-20260926/`). The same bits, and on the Server Edition
-pair, greedy aggregate tok/s:
+[Receipt](../../research/dsv4f-bringup-20260923/tpep-default/RESULTS.md).
 
-| cell | before (N=5) | levers on (N=5) |
-|---|---|---|
-| c1 | 67.53 | 77.19 (decode 80.95) |
-| c2 | 93.74 | 104.42 |
-| c4 | 123.39 | 130.44 to 135.10 |
+After the September levers (same bits at every step), on Server Edition pairs:
 
-A DSpark round's compressor rollback and its verify row placement are single launches since
-2026-09-26 (`research/dsv4f-bringup-20260923/dspark-round/`): DSpark greedy c1 89.16 to 93.17
-tok/s and sampled 75.84 to 78.65 on a second SE pair (N=3), and the chunked prefill's TTFT 18% to
-21% lower. Same bits.
+- c1 by the close of 2026-09-27: greedy 97.10 / 97.26 tok/s (TPOT 9.8 ms), sampled
+  97.96 / 97.97 ([`ceiling/CEILING.md`](../../research/dsv4f-bringup-20260923/ceiling/CEILING.md),
+  "Close"). The same file measures 6.7 GB read per rank per step and a 1.45 ms launch floor.
+- Aggregate, greedy, 16 serving lanes, after #906 and #909 (2026-09-28): c4 209-215, c8 289-298,
+  c16 336-340 (TPOT 42 ms), c24 312-315 tok/s; a 16-row captured step takes 37.4 ms
+  ([`levers-20260927/`](../../research/dsv4f-bringup-20260923/levers-20260927/)).
+- Context on TP/EP: the C4 compressed stores split by position across the two ranks, 8.5 KB per
+  token per rank at 1M. A served session reaches 1M tokens plain and 500k with DSpark
+  ([`kv-split/`](../../research/dsv4f-bringup-20260923/kv-split/)).
 
-Since 2026-09-27 a TP/EP step of 1 to 16 rows runs the routed experts as the fused pair over the
-rank's experts: two launches per layer, where the grouped chain took about fourteen
-(`research/dsv4f-bringup-20260923/levers-20260927/`). Same bits. On a second SE pair, greedy
-aggregate tok/s, main against fused, N=3:
+## Limits
 
-| cell | main | fused |
-|---|---|---|
-| c1 | 77.36 | 84.49 (decode 88.86), +9.2% |
-| c2 | 103.75 | 116.45, +12.2% |
-| c4 | 130.48 | 146.44, +12.2% |
-| DSpark c1 | 88.99 | 95.63, +7.5% |
+- `min_p` and `response_format` refuse by name. Penalized greedy serves on the plain path.
+- Parked-prefix reuse is opt-in through `MEMRA_DSV4_KV_HOST_MB` (default 0); with it off,
+  `n_cached` is 0.
+- The drafter route keeps one lane; aggregate comes from the plain TP/EP route.
+- A successful load or prompt is not a support state: the target pack declares none.
 
-Since 2026-09-27 the prefill FP8 tile runs 8 token rows by 4 outputs at 128 registers with an
-exact `cvt` E4M3 decode (`research/dsv4f-bringup-20260923/prefill-tile/`): greedy TTFT p50 at an
-8k prompt 17.69 to 14.36 s (-18.9%), at 32k 73.93 to 60.97 s (-17.5%), SE pair, N=3. Same bits.
+## Deeper sources
 
-Since 2026-09-27 the HC finish runs its Sinkhorn projection on a fifth warp, beside the collapse
-and the RMSNorm (`research/dsv4f-bringup-20260923/hc-finish/`). Greedy c1 goes from 89.17 to
-91.01 tok/s (+2.0%, decode 96.1) on the SE pair, N=2. Same bits.
-
-Since 2026-09-27 the shared expert runs on one TP/EP rank per layer, the one with fewer of the
-step's routed slots, and its rows ride the expert join
-(`research/dsv4f-bringup-20260923/levers-20260927/`). Greedy c1 goes from 91.18 to 94.66 tok/s
-(+3.7%, decode 99.1) on the second SE pair, N=2. Same bits.
-
-By the close of 2026-09-27, with the TP/EP joined MoE tail, the attention small-kernel fusions and
-the router-built x mirror also landed, greedy c1 is 97.10 / 97.26 tok/s (decode 102.1, TPOT 9.8
-ms) and sampled c1 97.96 / 97.97 on the SE pair. That is +9.0% over the same morning's main
-(`research/dsv4f-bringup-20260923/ceiling/CEILING.md`, "Close"). The same file measures the
-step's floors: 6.7 GB read per rank per step, and a 1.45 ms launch floor.
-
-Since 2026-09-28 a multi-request step runs each per-request stage as one launch for every row,
-and captured B-row steps take up to 16 rows (#906). Dense-fast M-row launches also take 16 rows
-(#909). Against main of 2026-09-27, one boot per row, 16 serving lanes:
-
-| cell | before | after #906 (second SE pair) | after #909 too (first SE pair) |
-|---|---|---|---|
-| greedy c4 | 160 tok/s | 206 .. 209 | 209 .. 215 |
-| greedy c8 | 199 | 286 .. 288 | 289 .. 298 |
-| greedy c16 | 200 (TPOT 73 ms) | 266 .. 267 (TPOT 53 ms) | 336 .. 340 (TPOT 42 ms) |
-| greedy c24 | 199 | 268 .. 269 | 312 .. 315 |
-
-A 16-row captured step goes from 68.3 to 37.4 ms. Every served text is the same as main's
-(`research/dsv4f-bringup-20260923/levers-20260927/`).
-
-Concurrency: the plain TP/EP route serves sixteen lanes whose steps share one captured B-row
-graph step (memra #710, #667; four until 2026-09-27). Aggregate on the Workstation pair, at four
-lanes:
-
-| | c2 | c4 |
-|---|---|---|
-| TP/EP, four lanes | 102.0 tok/s, TTFT 0.24 s | 132.8, TTFT 0.42 s |
-| PP-2, two pipelined lanes | 120.9, TTFT 0.30 s | 120.6, TTFT 4.5 s |
-
-At sixteen lanes, with the coalescer that keeps them in one batch, on the SE pair
-(`research/dsv4f-bringup-20260923/lanes16/`): greedy c8 190 .. 192 tok/s, c16 196 .. 198 (TTFT
-p50 1.5 s), c24 193 .. 195 with every request served. Four lanes give 153 .. 160 at each of
-these, and refuse a sixth of the c24 requests. c4 is the same at both widths.
-
-Known cost of TP/EP:
-- **Context.** The C4 compressed stores are split by position across the two ranks (#710,
-  `research/dsv4f-bringup-20260923/kv-split/`): 8.5 KB per token per rank at 1M against 13.8 KB
-  replicated. A served session reaches 1M plain and 500k with DSpark, up from 800k and 300k. The
-  cost is 0.4% to 2.0% decode and about 1% TTFT on the SE pair.
-
-Receipts: `research/dsv4f-bringup-20260923/tpep-default/RESULTS.md`, `tp-rows/RESULTS.md`,
-`dspark-ep/RESULTS.md`, `ceiling/CEILING.md`.
-
-### Before the flip: PP-2, 2026-09-23
-
-Medians of four boots per arm on the Workstation pair: plain 63.34 greedy / 57.38 sampled (TTFT
-192 ms), DSpark 76.07 / 62.47 (TTFT 240 ms).
-
-What the rows carry, each step measured against the tree before it with the same text on every
-prompt:
-
-| step | plain greedy | DSpark greedy |
-|---|---|---|
-| one-token MoE stream visitor (#664) | +29.2% over the sktail tail | |
-| multi-row stream visitor on the verify rounds (#669) | | +26.8% |
-| deferred MoE checks (#670): one fault readback per transaction instead of 129 synchronizing reads per step | +6.8% | +2.7% |
-| small-kernel diet (#339): one fused HC finish and one fused Q norm/pack per one-token step | +4.3% (measured before #670) | flat |
-| latency kernels: register-resident rmsnorm, one-warp router, one-warp expert prefix, grouped `wo_a` on the dense-fast program | +13.3% (55.92 -> 63.34) | +3.9% (73.23 -> 76.07) |
-
-The diet and grouped `wo_a` change one-token programs only; the other latency kernels run on
-verify rows too, where a round pays its layers once per 3.56 committed tokens. That is why
-DSpark gains less than plain from these steps.
-
-- The first pair measured for this bring-up had the hardware power brake latched (722 MHz
-  effective SM clock behind a reported 2865 MHz) and produced 15.86 / 22.07 tok/s. Those rates
-  are withdrawn; the correctness verdicts from that pair stand.
-
-- Served DSpark greedy equals served plain greedy on every tested prompt since #660. Before that
-  fix the two differed on 8/8 prompts.
-- Per-token weight traffic is 11.44 GB. At the measured 1.54 TB/s practical read bandwidth
-  that bounds c1 at 135 tok/s for PP-2 and 270 tok/s for TP-2 (`ceiling/CEILING.md`).
-
-Receipts: `research/dsv4f-bringup-20260923/` (`REBASELINE.md`, `m1-stream-664/RESULTS.md`,
-`mrow-stream/RESULTS.md`, `moe-defer-670/RESULTS.md`, `small-diet/RESULTS.md`, `latency/RESULTS.md`, `PRIOR-ART.md`, `power-brake/POWER-BRAKE.md`, `spec-identity-660/RESULTS.md`; `BASELINE.md` is the withdrawn braked-pair run).
-Deeper history: the [DeepSeek section](../MODELS.md#deepseek-v4-checkpoint-dirs-serve-through-their-own-door-lanedsv4-flash-revival-20260822).
-Do not infer production support from a successful load or prompt.
+- Bring-up lane: [`research/dsv4f-bringup-20260923/`](../../research/dsv4f-bringup-20260923/)
+  (`REBASELINE.md`, `tpep-default/`, `levers-20260926/`, `levers-20260927/`, `ceiling/`,
+  `kv-split/`, `lanes16/`).
+- Gate constants derived from the loaded program, Max-Q pair, 2026-11-08 (pass/fail cells, no
+  performance claim): [`research/dsv4-census-derived-20261108/`](../../research/dsv4-census-derived-20261108/README.md).
+- Serve door: `crates/memra-server/src/dsv4_serve.rs`; flags: the `MEMRA_DSV4_*` rows of
+  [FLAGS.md](../FLAGS.md).
+- Lever-by-lever history and the PP-2 rows before the flip:
+  [history](../history/MODELS.md#deepseek-v4-flash-card-lever-history-2026-09-23-to-2026-09-28).
+- The DeepSeek-V4.1-Flash pack is a different program with [its own card](deepseek-v41-flash.md).

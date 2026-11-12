@@ -2,7 +2,7 @@
 
 Resident-quantized GEMM strategy for the memra engine (RTX 5090 Laptop, sm_120, GB203, 24 GB, 847 GB/s, 82 SMs).
 
-Status: decision for Task #8 (unblock OOM). Decisive, copy-oriented. Grounded in the live engine code and the local llama.cpp checkout (`/home/avifenesh/projects/llama.cpp/ggml/src/ggml-cuda/`, all line numbers below verified against that tree on 2026-06-26).
+Status: decision for Task #8 (unblock OOM). Decisive, copy-oriented. Grounded in the live engine code and the local llama.cpp checkout (`llama.cpp/ggml/src/ggml-cuda/`, all line numbers below verified against that tree on 2026-06-26).
 
 ---
 
@@ -100,7 +100,7 @@ Enable `BLACKWELL_MMA_AVAILABLE` for the NVFP4 MMQ tile path (`mma_block_scaled_
 
 ## 3. Exact files to copy (per kernel / dtype)
 
-All paths relative to `/home/avifenesh/projects/llama.cpp/ggml/src/ggml-cuda/`. Compile as one (or few) self-contained sm_120a fatbin(s); these TUs have no host C++ deps beyond the headers listed.
+All paths relative to `llama.cpp/ggml/src/ggml-cuda/`. Compile as one (or few) self-contained sm_120a fatbin(s); these TUs have no host C++ deps beyond the headers listed.
 
 ### Headers / shared (always)
 - `common.cuh` — CC macros (`GGML_CUDA_CC_DP4A=610` :51, `GGML_CUDA_CC_BLACKWELL=1200` :59); `BLACKWELL_MMA_AVAILABLE` define (:286-288); `turing_mma_available` (:348); `blackwell_mma_available` (:360); `ggml_cuda_dp4a` (:694); `NO_DEVICE_CODE`.
@@ -169,7 +169,7 @@ This is fully compatible with the existing cargo+separate-nvcc model: the Rust c
 
 **Decision: ship Q8_0/Q4_K mixed GGUFs as the primary, correctness-first daily path NOW; treat NVFP4 GGUFs as the VRAM/throughput upgrade behind Stage C.** Reasons, decisive:
 
-1. **What we actually have on disk today is Q8_0** (`/home/avifenesh/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf`) and f16 — **no NVFP4 GGUF is present**. The Q8_0/Q4_K path is the one that runs against real files this step. NVFP4 is aspirational until we have/produce the NVFP4 GGUFs.
+1. **What we actually have on disk today is Q8_0** (`qwen3.5-9b-judge-q8_0.gguf`) and f16 — **no NVFP4 GGUF is present**. The Q8_0/Q4_K path is the one that runs against real files this step. NVFP4 is aspirational until we have/produce the NVFP4 GGUFs.
 2. **NVFP4 only fixes one slice of a mixed file.** Daily GGUFs are mixed per-tensor (NVFP4 + Q4_K + Q6_K + Q8_0 + BF16). Even an "NVFP4" model still has Q*/BF16 tensors that need MMVQ/MMQ. So MMVQ/MMQ is required regardless; NVFP4 is additive, not a replacement engine.
 3. **NVFP4's wins are real but back-loaded:** VRAM (9B 5.3 GB, 27B 5.6 GB — huge 24 GB headroom) and prefill throughput (762 TFLOP block-scale MMA). But the native FP4 path is the *only* component that needs the CUDA-12.8 build and the `BLACKWELL_MMA_AVAILABLE` gate — i.e. the highest-toolchain-risk piece. Putting it last keeps the bring-up unblocked.
 4. **At M=1 decode (the daily hot path) NVFP4's advantage is bandwidth, not math.** Decode is memory-bound; the win is fewer weight bytes/token (NVFP4 9B ~5.3 GB -> ~160 tok/s ceiling at 847 GB/s vs Q8_0 8.9 GB -> ~95 tok/s). That is purely the MMVQ `vec_dot_nvfp4_q8_1` path — no native FP4 MMA needed. So even the NVFP4 *decode* benefit lands in Stage A; only NVFP4 *prefill* throughput needs Stage C.

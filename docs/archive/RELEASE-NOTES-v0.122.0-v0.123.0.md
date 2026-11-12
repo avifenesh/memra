@@ -1,10 +1,12 @@
 # Release notes: v0.122.0 and v0.123.0
 
+> **Superseded record (2026-09), kept as written** except that one private storage location is redacted (`[redacted: ...]`) and two link targets are updated to resolve from this folder. Releases since v0.124.0 carry their own notes, drafted by `tools/changelog.sh` ([Releasing](../RELEASING.md)).
+
 Public change record for the two tags. The repository history was rebuilt from a content
 snapshot on 2026-09-01 (zero-history swap), and the old repository's GitHub Releases page did not
 survive it, so these notes, which used to live in the README, are kept here byte for byte.
 The old history is preserved in the archive bundle `memra-FINAL-preswap-all-refs.bundle`
-(rig `~/repo-backups-20260901/`, and R2 bucket `tiyuvta-capture` under `repo-bundles/20260901/`);
+([redacted: private storage location]);
 it carries `refs/tags/v0.123.0` and the old main tip `469c8898e`. crates.io is continuous:
 `memra-engine 0.123.0` was published 2026-09-01T04:59Z from old-history commit `bc0952fe5`,
 which is tag `v0.123.0`.
@@ -13,7 +15,7 @@ which is tag `v0.123.0`.
 
 The glm5_next bring-up consolidation, the step37 NVFP4 program restore with its first
 default flips, and two new-architecture bring-ups. Flag defaults are per-row decisions with
-receipts in [docs/FLAGS.md](docs/FLAGS.md); numbers below carry their lane receipt paths and
+receipts in [docs/FLAGS.md](../FLAGS.md); numbers below carry their lane receipt paths and
 are lane measurements, not serving claims.
 
 - **glm5_next (GLM-5.3-Flash) full serving stack**, bring-up state: the 45-layer hybrid
@@ -66,7 +68,7 @@ are lane measurements, not serving claims.
 ## What v0.122.0 ships
 
 KV host tier and serving-guard release. Every new flag defaults OFF with an audited row in
-[docs/FLAGS.md](docs/FLAGS.md); numbers below are from the 2026-08-31 qualification pod battery
+[docs/FLAGS.md](../FLAGS.md); numbers below are from the 2026-08-31 qualification pod battery
 (2x RTX PRO 6000 Blackwell 96 GB).
 
 - **Graph-launch guard on every serving-reachable captured-graph route.** When driver-free

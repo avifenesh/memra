@@ -1,5 +1,11 @@
 # GB10 F8F4 prefill GEMM v2: per-call weight image, pipelined tile (2026-11-06)
 
+> **Amended by [GB10-F8F4-GEMM-V3.md](GB10-F8F4-GEMM-V3.md) (2026-11-08):** on GB10, every GEMM
+> that takes the v2 tile runs the v3 mainloop, which feeds the same tile by TMA under mbarriers and
+> keeps every output bit-identical; `MEMRA_MMQ_F8F4_V3=0` is the rollback to the v2 mainloop. The
+> v2 decision below (the per-call weight image, the tile, the row floor) and its numbers are
+> unchanged.
+
 **Status:** decided on one device class (unified-memory 120a family, measured on two DGX Spark
 units), for F8F4 GEMMs of at least 2,048 rows over whole 256-value k groups. Discrete cards keep
 the v1 tile.

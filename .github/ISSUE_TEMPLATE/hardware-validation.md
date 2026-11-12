@@ -1,50 +1,52 @@
 ---
 name: Hardware validation report
-about: You ran memra on your rig — share the results, whatever the card
+about: You ran memra on your GPU; share the results, whatever the card
 ---
 
 <!--
-memra is tuned on ONE machine: an RTX 5090 Laptop (82 SMs, ~847 GB/s). Reports from EVERY
-end-user rig are wanted:
+Reports from any NVIDIA GPU help, and correctness output alone is useful.
 
-- Other sm_120 cards (desktop 5090, 5080, 5070 Ti, 5070) share the architecture — kernels
-  are expected to WORK, tuning ratios are unvalidated. These reports bless the 50-series.
-  (The 188-SM RTX PRO 6000 server die already validated binary-compat + bit-consistency.)
-- Older NVIDIA cards (Ada/Ampere): the main build targets sm_120a and an `arch/sm89-l40s`
-  branch exists for Ada — "what breaks where" reports map the compatibility floor.
-- Correctness output alone is already valuable; perf cells with a llama.cpp pairing are gold.
+- sm_120 cards (RTX 5090, 5080, 5070 Ti, 5070, RTX PRO 6000 Blackwell) run the prebuilt sm_120a
+  build. They share the build, not the measurements: device-keyed defaults were measured on the
+  cards that set them.
+- GB10 (DGX Spark), H100, B200 and Ada build from source. MEMRA_CUDA_ARCH (121a, 90a, 100a, 89)
+  is detected from the GPU when unset.
+- A GPU with no build target (Ampere and older) cannot run memra: the installer refuses it, and
+  a source build falls back to sm_120a, which does not load there.
 -->
 
 ## Your hardware
 
-- GPU: <exact model + VRAM, e.g. RTX 5090 desktop, 32 GB>
-- Driver / CUDA toolkit:
+- GPU: <exact model and VRAM, e.g. RTX 5090 desktop, 32 GB>
+- Driver / CUDA version:
 - OS:
-- Power state during runs: <e.g. stock / power-limited, and whether it stayed pinned>
+- Install: <prebuilt release tag, or source commit plus MEMRA_CUDA_ARCH>
+- Power state during runs: <e.g. stock or power-limited, and whether it stayed pinned>
 
 ## Correctness (required)
 
 ```
-<./target/release/kernel-check tail — expect "ALL GREEN: kernels match CPU reference.">
+<kernel-check tail; expect "ALL GREEN (<n> cells, <m> skipped)">
 ```
 
 ```
-<run-gen output on any supported model, including the "verify-prefill ... MATCH" gate line>
+<run-gen output on a model with a card in docs/models/, including the "verify-prefill ... MATCH" line>
 ```
 
-If you have a supported model with an MTP drafter, also paste the `run-spec` PASS line.
+If the model has an MTP drafter, also paste the `run-spec` line `=== SELF-CONSISTENCY PASS ===`.
 
-## Performance cells (optional, but the valuable part)
+## Performance cells (optional)
 
-If you have the models locally: `MEMRA_MODELS_DIR=<your model root> tools/local-ci.sh --perf`
-— paste the per-cell verdict lines. Cells whose models you don't have skip cleanly.
+With the models present: `MEMRA_MODELS_DIR=<your model root> tools/local-ci.sh --perf` (needs
+`jq`), then paste the per-cell verdict lines. The cells and their model file names are in
+`research/tune-data/perf-cells.json`; cells whose models you do not have are skipped.
 
-For a llama.cpp comparison, follow the interleaved protocol in
-[`research/benchmarks.md`](../../research/benchmarks.md) (same session, both orders,
-N≥2, one engine on the GPU at a time) — sequential numbers drift up to ~10% and can't
-be used. State llama.cpp's build commit and flags.
+For a comparison with another engine, follow the interleaved protocol in
+[research/benchmarks.md](https://github.com/avifenesh/memra/blob/main/research/benchmarks.md):
+same session, both orders, N >= 3 runs per arm, one engine on the GPU at a time. Sequential
+numbers drift by up to about 10% and cannot be used. State the other engine's version and flags.
 
 ## Anything that broke
 
-Kernel launch failures, wrong output, OOM at sizes that fit — exact output, per the
-bug-report template rules (paste, don't paraphrase).
+Kernel launch failures, wrong output, out-of-memory at sizes that should fit: the exact output,
+pasted.

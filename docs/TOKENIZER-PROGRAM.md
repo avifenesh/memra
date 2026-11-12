@@ -1,6 +1,12 @@
 # Tokenizer input programs
 
-The HF byte-level BPE loader preserves `tokenizer.json.normalizer` and added-token matching flags. Missing or null normalization means identity. Supported declarations are NFC and Sequence wrappers containing only NFC or further supported sequences; an empty Sequence is identity. Other programs and malformed declarations refuse at load, including when the experimental unknown-pretokenizer option is enabled. Programs are limited to 32 levels and 256 stages. The JSON parser independently limits value nesting to 128 levels before constructing the program.
+The contract for how `memra-tokenizer` applies a Hugging Face normalizer and added-token
+declarations, and the Memra GGUF metadata key that carries them. For converter authors and anyone
+onboarding a model's tokenizer.
+
+## HF tokenizers
+
+The HF byte-level BPE loader preserves `tokenizer.json.normalizer` and added-token matching flags. Missing or null normalization means identity. Supported declarations are NFC and Sequence wrappers containing only NFC or further supported sequences; an empty Sequence is identity. Other programs and malformed declarations refuse at load, including when `MEMRA_ALLOW_UNKNOWN_PRETOKENIZER=1` (the experimental unknown-pre-tokenizer option, [FLAGS.md](FLAGS.md)) is set. Programs are limited to 32 levels and 256 stages. The JSON parser independently limits value nesting to 128 levels before constructing the program.
 
 NFC uses `unicode-normalization-alignments` 0.1.12, the implementation and Unicode 9.0 data used by the pinned HF `tokenizers` 0.22.2 reference. Added-token word boundaries use Unicode 16.0 regex word categories. The program is retained by `Tokenizer::normalization_program()`; `normalizer::NFC_UNICODE_VERSION` identifies the normalization tables. Updating these interpretations requires fresh parity evidence.
 
@@ -19,7 +25,7 @@ Special declarations precede ordinary additions; declaration order is preserved 
 
 Existing GGUF artifacts without an input-program declaration use their established GGUF tokenizer behavior and identity normalization. Family names such as `qwen2` never enable NFC.
 
-Memra defines the optional **STRING** metadata key `tokenizer.memra.input_program`. This is a Memra extension, not a general GGUF normalization key. Its JSON object has:
+Memra defines the optional **STRING** metadata key `tokenizer.memra.input_program` (`GGUF_INPUT_PROGRAM_KEY`). This is a Memra extension, not a general GGUF normalization key. Its JSON object has:
 
 - `version`: integer `1`;
 - `normalizer`: the explicit HF declaration, or `null` for identity;
@@ -44,6 +50,6 @@ Onboarding validates an explicit declaration using the runtime tokenizer and inc
 
 ## Validation
 
-`cargo test --locked -p memra-tokenizer --all-targets` includes frozen, independently generated HF 0.22.2 expectations: 315 cases across 31 variants through HF and explicit GGUF imports, special-recognition/postprocessing controls, unsupported-import cases and unchanged no-declaration behavior. The pinned real-vocabulary qualification separately exercises 551 raw multilingual/adversarial inputs and the real special-token matrix.
+`cargo test --locked -p memra-tokenizer --all-targets` includes frozen, independently generated HF 0.22.2 expectations: 315 cases across 31 variants through HF and explicit GGUF imports, special-recognition/postprocessing controls, unsupported-import cases and unchanged no-declaration behavior. The pinned real-vocabulary capture separately exercises 551 raw multilingual/adversarial inputs and the real special-token matrix. Provenance: [`crates/memra-tokenizer/tests/fixtures/nfc/README.md`](../crates/memra-tokenizer/tests/fixtures/nfc/README.md).
 
-The expected token IDs were captured before the implementation. Decoder strings and offsets in the capture are diagnostics; this change qualifies input normalization/matching and does not add an offset API.
+The expected token IDs were captured before the implementation. Token IDs and import acceptance are the regression predicates; decoder strings and offsets in the capture are diagnostics, and there is no offset API.

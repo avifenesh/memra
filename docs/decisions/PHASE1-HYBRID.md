@@ -1,11 +1,15 @@
 # PHASE 1 — Correct logit-matched Qwen3.5-9B hybrid forward in Rust + cudarc on sm_120
 
+> **Plan (undated), kept as written.** This is the phase-1 build plan for the first
+> logit-matched hybrid forward on one RTX 5090 Laptop GPU. The code has moved past it; the current
+> engine overview is [ARCHITECTURE.md](../../ARCHITECTURE.md).
+
 Goal of this phase: a **bit-faithful, logit-matched** forward pass for the daily-target hybrid
 (Qwen3.5-9B judge first, then 27B dense) running on the RTX 5090 Laptop (sm_120a fatbin via
 cudarc 0.19.8). **Correctness first, speed second.** Every kernel has a CPU/llama.cpp oracle and a
 numeric gate before any sm_120-fast variant is allowed to replace it.
 
-Ground truth lives at `/home/avifenesh/projects/llama.cpp` (the qwen35 arch is fully implemented
+Ground truth lives in a llama.cpp checkout (the qwen35 arch is fully implemented
 there) and at the FLA / vLLM references. **Copy, do not invent.** This doc gives exact files, line
 ranges, shapes, and the order to build them.
 
@@ -16,7 +20,7 @@ The repo already has the spine pieces in place — build on them, do not duplica
 - `crates/memra-gguf/src/bin/inspect.rs` — `gguf-inspect` (built at `target/release/gguf-inspect`), and a `rope_dump` binary already exist.
 - `crates/memra-probe` — the proven sm_120a nvcc→fatbin + cudarc launch spine (FP16/FP8/block-FP4 mma.sync verified). Reuse its `build.rs` nvcc pattern for all `.cu` kernels.
 
-Verified daily-target geometry (Qwen3.5-9B, Q8_0 GGUF `/home/avifenesh/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf`):
+Verified daily-target geometry (Qwen3.5-9B, Q8_0 GGUF `qwen3.5-9b-judge-q8_0.gguf`):
 n_embd=4096, n_layer=32 (8 full-attn at il=3,7,11,15,19,23,27,31; 24 linear), n_head=16, n_head_kv=4,
 head_dim=256, n_ff=12288, n_vocab=248320, rms_eps=1e-6, rope_freq_base=1e7, n_rot=64,
 rope_sections=[11,11,10,0], rope_type=IMROPE(40), full_attention_interval=4, +1 MTP block (il=32).
@@ -227,7 +231,7 @@ scale=1/sqrtf(128). g passed RAW (kernel does expf), beta pre-sigmoid'd, q/k pre
 
 ## 5. Exact files to copy, per kernel
 
-All paths under `/home/avifenesh/projects/llama.cpp` unless noted. Copy the math node-for-node.
+All paths are relative to the llama.cpp checkout unless noted. Copy the math node-for-node.
 
 **GDN scan** (`cu/gated_delta_net.cu`):
 - `ggml/src/ggml-cuda/gated_delta_net.cu:4-168` kernel — port the **!KDA branch lines 84-111** for decode; lines 161-167 write state back. Drop the `keep_rs_t` branch (145-158) for Phase 1. Drop `ggml_cuda_pdl_sync()` (optional overlap).
@@ -260,7 +264,7 @@ Pin everything identical: same Q8_0 GGUF, same prompt, batch=1, greedy/temp=0, R
 KV+state f32 in our impl first.
 
 1. **Reference dump (llama.cpp):** build llama.cpp with CUDA; run
-   `llama-cli -m /home/avifenesh/ai-ml/models/qwen3.5-9b-judge-q8_0.gguf -p "<prompt>" -n 1 --no-warmup --temp 0 -ngl 99`
+   `llama-cli -m qwen3.5-9b-judge-q8_0.gguf -p "<prompt>" -n 1 --no-warmup --temp 0 -ngl 99`
    and dump `result_output` (first-token logits) — add a debug print of the `result_output` tensor for a
    single ubatch, or use a tiny eval harness. The GGML CUDA `GGML_OP_GATED_DELTA_NET` path is live
    (`ggml-cuda.cu:5433-5439`), so you can also diff the GDN op output directly on the 5090.

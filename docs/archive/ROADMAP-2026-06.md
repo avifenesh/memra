@@ -1,7 +1,10 @@
 # memra Build Roadmap — full scope, no shortcuts (week+ project)
 
-Working method (per user): **A. research every component via workflow. B. implement via workflow** —
-main thread orchestrates + reviews; agents write code. Don't inline-code everything (saves context).
+> **Superseded record (2026-06), kept as written** except that deployment detail is redacted (`[redacted: ...]`)
+> and the agent working-method notes are removed. Its companion plan is
+> [ARCHITECTURE-2026-06.md](ARCHITECTURE-2026-06.md) (the "ARCHITECTURE.md" below); the current
+> engine overview is [ARCHITECTURE.md](../../ARCHITECTURE.md).
+
 Every "naive/Stage-A" placeholder is DEBT to be paid in full, not deferred. Hand-write the FA3/FA4
 algorithmic improvements adapted to sm_120 (FA3/FA4 binaries don't run here: no wgmma/tcgen05).
 
@@ -46,7 +49,7 @@ algorithmic improvements adapted to sm_120 (FA3/FA4 binaries don't run here: no 
    - FA-4 improvements BY HAND: the newer softmax/exp schedule + tile refinements from the FA4 beta.
    - head_dim 256 (qwen35), GQA, partial RoPE already applied upstream, causal. Prefill + decode (fattn-vec style).
 4. **CUDA graph capture** for the decode step (320 launches/token → 1 graph replay).
-5. **KV quant kernels**: q8_0 K / q5_1 V (matches the daily serve script), asymmetric, fused into attention.
+5. **KV quant kernels**: q8_0 K / q5_1 V (matches the llama.cpp reference setup), asymmetric, fused into attention.
 
 ### Rust runtime features
 6. **MoE forward** (qwen35moe, Qwen3.6-35B-A3B): router softmax top-8/256 + grouped expert GEMM
@@ -55,12 +58,12 @@ algorithmic improvements adapted to sm_120 (FA3/FA4 binaries don't run here: no 
    norm +1, dim-reverse), config.json→ModelConfig, sharding. Add GpuTensor::Bf16 resident variant.
 8. **Spilling**: tiered VRAM↔pinned-host↔mmap-disk for MoE experts + weights that don't fit; SLRU
    hot-expert cache; prefetch. (qwen36-35B Q6_K = 31GB spills.)
-9. **Spec decode**: MTP (built-in NextN head — daily serve script uses --spec-type draft-mtp) + EAGLE3.1
-   (drafts on disk). draft-n-max 3, p-min 0.2 like the serve script.
+9. **Spec decode**: MTP (built-in NextN head — the llama.cpp reference uses --spec-type draft-mtp) + EAGLE3.1
+   (drafts on disk). draft-n-max 3, p-min 0.2 like the llama.cpp reference.
 
 ### Benchmark (the headline)
 10. **Beat vLLM + SGLang + llama.cpp** on prefill + decode + overall, each at its BEST-tuned setup
-    (copy user's serve scripts for flags: -fa on, KV q8_0/q5_1, MTP spec, CUDA graphs, full power, ctx 64k).
+    (llama.cpp reference flags: -fa on, KV q8_0/q5_1, MTP spec, CUDA graphs, full power, ctx 64k).
     N=5 medians, gpu-full-power on. research/benchmarks.md tracks it.
 
 ### Web-sweep ranked techniques (folded 2026-07-03 from the web-sweep agent output)
@@ -74,7 +77,7 @@ algorithmic improvements adapted to sm_120 (FA3/FA4 binaries don't run here: no 
     in draft). memra hook: striped-vocab MTP head (mtp-tail work) + q6_K lm_head is 1.07ms/tok — a
     frequency-sliced draft head skips most of it per draft token. MED value, needs MTP live first.
 14. **NVFP4 tensor-split fix** (llama PR) — multi-GPU tensor-split only; DEAD for the single-GPU
-    local rig, note for L40S/fleet mirrors if they ever go multi-card.
+    local rig, [redacted: deployment detail].
 15. **ST-MoE prefetch** — layer-wise async expert prefetch on a dedicated stream (lmcache.md:99-100
     pattern + ST-MOE-PLAN.md). The lmcache async load/store stream template is the substrate; wire
     into moe_cache.rs SLRU when MoE spilling becomes the active target.
@@ -82,10 +85,3 @@ algorithmic improvements adapted to sm_120 (FA3/FA4 binaries don't run here: no 
 ## Reference docs (all researched)
 ARCHITECTURE.md, PHASE1-HYBRID.md, QUANT-GEMM-DECISION.md, SAFETENSORS-DECISION.md,
 research/{sm120-empirical-capabilities, benchmarks, current-model-targets, claim-verification-report}.md
-
-## Orchestration pattern for implementation workflows
-- Agents write SELF-CONTAINED new .cu files + a documented launcher signature + a CPU/llama reference
-  for the validation gate. Avoid parallel edits to shared lib.rs (main thread integrates launchers).
-- Each kernel agent returns: the .cu source, the launcher signature, and the exact validation (vs
-  dequant.rs CPU oracle or vs llama.cpp). Main thread integrates + runs the gate + reviews.
-- Worktree isolation for agents that must touch shared files concurrently.

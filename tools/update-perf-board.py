@@ -65,13 +65,13 @@ def fmt_ratio(memra, llama, threshold):
 
 def render_date_block(board):
     return (
-        f"Measured {board['updated']} on the tracked measuring rig ({board['rig']}, {board['protocol']}) "
+        f"Measured {board['updated']} on the tracked measuring rig ({board['rig']}) "
         "against llama.cpp built on the same machine, same exact prompts, both engines "
-        "re-baselined the same day. The llama.cpp columns are frozen reference points "
-        "recorded through 2026-08-03, when head-to-head benching stopped (owner call) — "
-        "regression anchors, not a live scoreboard. Boards move with the tuning campaign — "
-        "`research/tune-data/rig5090.jsonl` is the running record; the generated boards "
-        "in this document are refreshed with every board-moving merge."
+        f"re-baselined the same day. Protocol: {board['protocol']}. The llama.cpp columns are "
+        "frozen reference points recorded through 2026-08-03: regression anchors, not a live "
+        "scoreboard. `research/tune-data/rig5090.jsonl` is the running record; a change that "
+        "moves a published number updates `research/tune-data/current-board.json` and "
+        "regenerates these blocks."
     )
 
 
@@ -99,7 +99,7 @@ def render_spec_table(board):
 
 def render_models_block(board):
     lines = [
-        "| Model | Class | Quant | Drafter | Supported since |",
+        "| Model | Class | Quant | Drafter | First served in |",
         "|---|---|---|---|---|",
     ]
     for row in board["supported_models"]:
@@ -117,7 +117,7 @@ def h100_rows_sorted(board):
 def render_h100_block(board):
     h = board["h100_board"]
     lines = [
-        f"Measured {h['updated']} on {h['rig']} against {h['competitor']} — {h['protocol']}",
+        f"Measured {h['updated']} on {h['rig']} against {h['competitor']}: {h['protocol']}",
         "",
         f"| Model | memra e2e | {h['competitor']} e2e (artifact) | Ratio |",
         "|---|---:|---:|---:|",

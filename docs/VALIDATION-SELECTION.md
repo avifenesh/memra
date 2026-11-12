@@ -1,229 +1,110 @@
-# Select validation from changed inputs
+# Validation selection
 
-The planner separates three questions:
+How `tools/validation_plan.py` decides which CPU checks a change needs, and what
+`tools/validation_coverage.py` admits when one composite test covers several behavior edges. It is for
+contributors reading a plan and for maintainers of the planner. Device evidence is a separate
+question ([Testing](TESTING.md)); the hosted jobs are in [CI](CI.md).
 
-1. Which declared inputs and dependency edges can this change affect?
-2. Which checks cover those edges, and why can another check be omitted?
-3. Which actual assertions passed for the candidate, model, hardware and request?
+The planner keeps three questions apart: which declared inputs and dependency edges the change can
+affect; which checks cover those edges, and why another check can be omitted; and which assertions
+actually passed for the candidate, model, hardware and request. Missing information means affected.
+A successful build is not a numerical or serving result, and the planner never turns a CPU result or
+a missing model into GPU evidence.
 
-An edge is affected or unaffected within the declared input graph. Missing information
-means affected. A successful build is not a numerical or serving result.
-
-## Plan the current worktree
+## Run it
 
 ```sh
 python3 tools/validation_plan.py local --base origin/main > validation-plan.json
 tools/fast-gate/fast-gate.sh --plan --diff origin/main
+python3 tools/validation_plan.py contracts --selected <names>   # run named CPU contracts
+python3 tools/validation_plan.py check-registry                 # every workspace package has a component
 ```
 
-The JSON records changed paths, direct packages, dependency witnesses, binary edge decisions,
-selected CI components, reasons for omissions, CPU contracts and separate native obligations.
-Untracked source is included. Index-masked or ignored build inputs refuse a narrow plan.
+Other subcommands: `ci` (the event form CI uses), `census <ref>` (the input census of a commit) and
+`cargo build|clippy|publish` (run Cargo for the selected packages). The plan JSON records the changed
+paths, the directly owning packages, dependency witnesses, each binary edge decision, the selected CI
+components (`build`, `clippy`, `server`, `engine`, `portable`, `core`, `lanes`, `arch`, `publish`),
+the reason for every omission, the CPU contracts and the native obligations, which it reports and
+never discharges. Untracked source is included; index-masked or ignored build inputs refuse a narrow
+plan.
 
-Cargo normal, development, build and target-specific dependencies all participate. An edit to
-`memra-server` selects its checks without rerunning its unchanged dependencies' unit suites.
-An edit to `memra-gguf` reaches its consumers. Cargo manifests, toolchains, workflow changes,
-unresolved input expressions and unregistered inputs select the complete CI plan.
+## Selection rules
 
-Inputs outside a crate are real dependencies. The census reads both sides of the change,
-including literal/raw/multiline/concatenated Rust includes and runtime fixture paths. Textual
-Rust includes across crates inherit all source and external inputs from the source-owning
-crate, transitively. Rust source outside crates and referenced symlinks expand validation
-until their module-resolution graph has an explicit contract. Whitespace and comments between
-macro tokens do not hide an include. The
-reviewed build-script and dynamic-include contracts in `tools/validation_inputs.json` are
-source-hash bound. For example, `docs/FLAGS.md` generates engine code and is not merely prose.
-The running tool's contracts always apply. The census of a commit adds that commit's own
-contracts, so a later re-pin cannot refuse an older commit, and a commit cannot drop an
-input the running tool declares for the same bytes.
-A producer edit invalidates its declaration until the changed dependency is reviewed.
-Unreferenced research receipts do not rebuild the engine. A standalone research probe retains
-its own experiment requirement; it does not imply that every engine program changed.
+- Cargo normal, development, build and target-specific dependencies all count. An edit to
+  `memra-server` selects its checks without rerunning its unchanged dependencies' suites; an edit to
+  `memra-gguf` reaches its consumers. Package groups: core (`memra-gguf`, `-reference`, `-tokenizer`,
+  `-validate`, `-sampling`, `-net-guard`), portable (`memra-tier`, `-kv`, `-cli`), native
+  (`memra-engine`, `-server`, `-probe`).
+- Cargo manifests, toolchains, workflow changes, unresolved input expressions and unregistered
+  inputs select the complete plan.
+- Inputs outside a crate are dependencies. The census reads both sides of the change, including
+  literal, raw, multiline and concatenated Rust includes and runtime fixture paths. Reviewed
+  build-script and dynamic-include contracts in `tools/validation_inputs.json` are source-hash bound:
+  `docs/FLAGS.md`, for example, generates engine code. A producer edit invalidates its declaration
+  until the changed dependency is reviewed.
+- Symlinks, unproven `..` traversal, missing directories, `cfg_attr` module paths and Rust source
+  outside crates expand validation until their graph has an explicit contract.
+- Unreferenced research receipts do not rebuild the engine. Research and oracle inputs keep
+  fast-gate's native expansion even when no Cargo package rebuilds.
+- Known Python contracts in the planner's `TOOL_CONTRACTS` (for example `public-boundary`,
+  `support-records`, `q35-cache`, `sampled-mtp`) run their real tests without Cargo or GPU loading.
+  A shared Python input selects every declared consumer that is present; a selected but incomplete or
+  deleted input refuses execution instead of skipping the contract.
+- Boundary checker, test, policy and allowlist inputs select the public-boundary CPU contract, whose
+  runner requires at least 60 tests and refuses any skip or expected failure.
+- The support-records contract derives its required evidence from the `docs/support-records.toml`
+  of both trees; a referenced evidence path must exist, and unknown record shapes, noncanonical paths
+  or symlink ambiguity under the copied docs and model-pack trees expand planning.
+- Builds filter binary targets but keep workspace feature unification. Clippy narrows to affected
+  packages only when Cargo reports the same resolved feature programs as the workspace; otherwise it
+  checks the whole workspace. Architecture-conditioned native consumers keep the other-architecture
+  compile check.
+- Selection omits a whole unaffected suite group. It never hides tests with a name filter or lowers
+  a test or skip floor.
 
-Runtime fixture paths under `research` and `docs` retain their canonical targets across
-`.` and proven `..` traversal. Removing a parent component requires a known directory in
-the inspected tree and no symlink along the traversed spelling. Symlinks, missing
-directories, escaping traversal and pattern-dependent parents expand validation.
-Compiled include literals use the same physical traversal check after their complete
-`concat!` or registered environment expression is resolved. A symlink cannot disappear
-through `..` cancellation, even when its path is split across string fragments.
-Conditional `cfg_attr` module path attributes expand validation until their transitive
-module graph has a contract; the selector does not evaluate cfg truth. Raw identifiers
-for path and cfg_attr retain the same input reach as their ordinary spellings. Comments and
-quoted example code cannot create those attribute readers.
+The graph is an explicit dependency contract, not whole-program analysis. A new input mechanism is
+declared or stays expanded; file names alone never prove native independence.
 
-Format and glob suffixes keep their conservative reach. Traversal to the repository root
-covers the whole subtree, and the census inspects both sides of deletions and renames.
+## Where the plan is used
 
-The graph is an explicit dependency contract, not whole-program static analysis. New input
-mechanisms must be declared or remain expanded. File names alone do not prove native
-independence. Execution traces help find missing edges but do not by themselves prove an
-unobserved edge cannot run.
-
-## CI behavior
-
-The existing check names remain stable. Each job uses its own affected-component decision.
-Missing outputs or a failed classifier select the full job and clear partial package lists.
-An explicit `contracts=none` skips unaffected Python contracts; a missing contract output runs
-all available contracts. Thus a documentation-only change does not install sampled-test dependencies.
-
-Shared Python inputs select every declared present consumer. For example,
-`cache_qualification.py` reaches Q35 consistency tests, the background and serving
-collectors directly, and sampled-MTP through the serving collector. Each keeps its existing CPU command and
-native obligations. An absent collector is not invented; a selected incomplete or
-deleted input refuses execution instead of silently skipping the contract.
-`validation-plan.json` is retained with the run, including the omission explanations.
-
-Builds filter binary targets while retaining workspace feature unification. Clippy targets
-affected packages only when Cargo reports the same resolved dependency feature programs as
-the workspace; ambiguity or drift retains the full workspace check. Package verification also
-includes forward dependencies and the same feature guard, so it does not silently use an older
-published dependency or a different feature program. CUDA setup remains available for that
-conservative Clippy/package fallback.
-Architecture-conditioned native consumers retain the other-architecture compile check.
-Existing CPU suite groups and their test/skip floors remain intact; selection omits a whole
-unaffected group rather than hiding tests with name filters or weakening a floor.
-
-Global integrity checks still run, including the public boundary, support/flag registries,
-workflow validity and static skip census. The latter must remain global even when an unrelated
-compiled suite is omitted. A malformed skip declaration cannot hide behind a skipped job.
-
-Boundary-only checker, test, policy and allowlist inputs select the public-boundary
-CPU contract. Its runner executes the real suite with a floor of 60 and refuses any skip or expected failure.
-Cargo owners and old/new include consumers are resolved first; a boundary input consumed
-by Rust keeps both its package/native obligations and the boundary CPU contract. Missing,
-nonregular or symlinked contract inputs expand planning or refuse execution.
-Staged and committed ancestor types are checked too: populated submodule directories
-do not become ordinary declared boundary inputs because their children exist on disk. Unmodelled
-inputs and readers retain conservative expansion. The unconditional CI boundary job still
-runs the full repository check and allowlist drift scan. Policy and allowlist edits do not
-exempt themselves from those scans; history and pre-push guards remain unchanged.
-
-Known Python contract changes run their actual tests without Cargo or GPU loading. Fast-gate
-reports that CPU result separately from any live-evidence campaign the issue still owes.
-The Q35 cache contract also includes its consumed `research/sellgate-20260812/workload.lock.json`
-and the two banked logs under `research/spill-lead-20260919/integration-day12/integ68-q35ab/`:
-`main-q35-cold-mixed.log` and `integ68-q35-cold-mixed.log`. Prompt IDs are generated from the
-workload fields; replay goldens come from seed rows in those logs. This exact input inventory
-does not infer all repository fixture dependencies. The historical inputs and Q35 native
-obligation remain unchanged. Its always-run CI replay is retained independently of selection.
-The support-records contract derives persisted gate evidence from the before and after
-`docs/support-records.toml` trees. Each referenced evidence path is required for execution;
-both exact sibling `artifact.lock` and `tiny-gate.tsv` paths affect selection even when absent.
-The census chooses `artifact.lock` first and otherwise reads `tiny-gate.tsv`, so optional-file
-creation and deletion must retain the consumer. Neither alternative is made unconditionally
-required. Missing required evidence retains a named refusal. Changed census/test reader bytes,
-unknown record shapes or CI tokens, noncanonical paths and symlink ambiguity expand planning.
-Unknown-reader execution expands to all available CPU names, including explicit none and stale
-subsets, and runs the actual census without trusting derived required-evidence assumptions.
-Static inputs, metadata syntax, canonical paths and symlink checks remain mandatory. Known
-reader evidence keeps its named missing-file refusal.
-Execution admission validates every pinned census reader and record as a regular file
-before reading any content. Broken links and non-directory ancestors remain unsafe inputs,
-including when they hide every leaf. Directory descriptors anchor each path component with
-nofollow opens. Nonblocking leaf open and fstat reject a FIFO replacement after stat.
-Hashes still use exact raw reader bytes. Type and symlink failures remain hard refusals
-when unknown-reader expansion is enabled. The checkout root remains the trusted base.
-The same pinned readers select exact current and potential one-level pack modules, root pack
-lists, CLI source, root README/STATUS/AGENTS and non-archive docs Markdown. Rust package and probe
-handling runs before the content shortcut, retaining every native obligation. Both event trees
-contribute inputs, including creation and deletion. No repository-wide fixture inference.
-The CPU test copies whole docs and model_packs trees, so symlink, gitlink and unsupported type
-ambiguity under those roots or their ancestors expands planning even for excluded content.
-Planning checks these types before reader or compiler-input content I/O. The local no-follow
-inventory includes ignored copy inputs; ignored actual reader content prevents scoped planning.
-Unreadable local regular files also expand because the fixture cannot copy them.
-Exact local ancestor queries retain staged gitlink types when physical directories exist.
-Readable excluded archive/non-mod content does not gain a blanket census requirement. The
-independent always-run support checks and tested execution fallback remain unchanged. Broader
-cited-receipt-parent transport is derived separately from required evidence parents plus the
-pinned test's explicit legacy tiny parent. Both event trees preflight those exact recursive
-roots and ancestors for unsafe types, ignored physical inputs, unreadable regular files,
-missing directories and enumeration errors before compiler-input I/O. This transport
-guard leaves readable unrelated receipt content outside the census content shortcut.
-A receipt at repository root expands checks because the test copies the entire repository.
-Its CPU shortcut requires every changed input to be a declared CPU contract or plain docs.
-The generic unittest floor uses actual discovered, executed and successful outcomes.
-Skipped, expected-failure, incomplete, malformed or assertions-disabled execution cannot
-admit a CPU contract. The stated caller floors and native qualification requirements remain.
-Research/oracle inputs retain fast-gate's native expansion even when they do not rebuild a
-Cargo package; an absent compiler dependency does not prove an absent native probe dependency.
-The serving collector also selects its sampled-MTP consumer when that collector is present.
-Sampled collector dependencies install from its tracked requirements into a temporary private
-Python environment, which is removed on success or failure. The network-guard crate belongs to
-the CPU core component and keeps its own zero-skip test floor when present in the workspace.
-Tier 2 and release/tag qualification are unchanged. Native diagnostic selection remains
-shadow-only until its own selected/full and failure-control evidence admits a narrower class.
+In `public-ci` thin mode the trusted entry (`tools/trusted_public_ci.py`, run from the event base)
+uses the plan to pick the build, clippy and arch packages, the scoped merge guards and the
+changed-input CPU contracts. A failed or missing plan selects full mode. Full mode (`ci.yml`) runs the
+complete inventory whatever the plan says, so global checks (public boundary, support and flag
+registries, workflow validity, the static skip census) always run there ([CI](CI.md)). `fast-gate`
+reports the same CPU contracts separately from any live-evidence campaign a change still owes. Native
+diagnostic selection stays shadow-only until a selected/full comparison and failure controls admit a
+narrower class ([fast-gate](../tools/fast-gate/README.md)).
 
 ## Cover several edges with one test
 
-`tools/validation_coverage.py` selects a deterministic, cost-weighted set of tests from a
-reviewed manifest. It favors additional required edges per unit cost. It is a greedy set-cover
-heuristic, not a claim of a globally optimal schedule.
-
-Each test declares:
-
-- A stable ID and the independently asserted edges it covers.
-- Hashes for every harness, oracle and helper input supporting that coverage claim.
-- Its model, artifact, hardware and numerical-program scope for native execution.
-  Each native identity must be a nonempty string in both the contract and execution context.
-- A positive cost, whose unit is stated by the manifest author.
-- Mandatory regressions and required red-control test IDs.
-
-The manifest also supplies the candidate context and required edges. A context mismatch,
-changed harness, missing control or uncovered edge refuses the reduced plan. The optimizer
-does not merge server boots or state. Fresh-process and reset requirements remain part of
-each test's contract.
+`tools/validation_coverage.py` picks a deterministic, cost-weighted set of tests from a reviewed
+manifest, favoring the most uncovered required edges per unit cost. It is a greedy set cover, not an
+optimal schedule.
 
 ```sh
 python3 tools/validation_coverage.py coverage-manifest.json --root . > selected-tests.json
 python3 tools/validation_coverage.py coverage-manifest.json --root . --results results.json
 ```
 
-`results.json` is keyed by selected test ID. Each entry names the returned `contract_id` and
-needs `status: "passed"`, the exact
-context, positive integer `executed`, zero integer `skipped`, and an `edges` map with explicit
-`"passed"` assertions. Exit success alone does not cover an edge. The contract digest binds required edges, selected test definitions, controls, source pins and
-execution context. Source hashes are checked again when results are admitted. Every asserted
-edge of every selected regression and control must pass, including edges beyond the requested
-subset. A no-change plan says no validation ran; it cannot produce a pass.
-An empty requested-edge list produces no-change only when no mandatory test is requested.
-Explicit mandatory requests still select their complete control bundles and validate their
-scope and source pins. Unavailable mandatory tests expand selection. With zero requested
-edges, execution admission still requires every selected guard/control assertion, a real
-execution count and no skips; it grants no native qualification.
-Scope keys must be present in the execution context, including explicitly declared nulls.
-Context matching preserves JSON types recursively: booleans, integers and floating-point
-values cannot substitute for one another, even inside arrays or objects. Object key order
-does not change identity. Signed floating-point zero retains the distinction already bound
-by the contract digest. The same comparison protects the selected, bound and per-result
-contexts; a typed mismatch expands selection or refuses result admission.
-This validation is for the declared behavior assertions, not model or release admission.
+Each test in the manifest declares a stable id and the edges it independently asserts; hashes of
+every harness, oracle and helper input behind that claim; its model, artifact, hardware and
+numerical-program scope (each a nonempty string); a positive cost; and its mandatory regressions and
+red-control test ids. The manifest also gives the candidate context and the required edges. A context
+mismatch, a changed harness, a missing control or an uncovered edge refuses the reduced plan. The
+optimizer never merges server boots or state.
 
-A composite serving collector can, for example, assert streaming termination, cold/warm cache
-accounting, offered concurrency, disconnect/recovery and a declared context envelope in one
-cache-enabled boot, followed by its required cache-disabled red boot. Those are distinct
-properties. Offered HTTP overlap does not prove a particular GPU batch width, and an 8k
-context observation does not cover a model's maximum context. Keep each assertion and its
-raw evidence separately visible, even when one invocation covers several edges.
+`results.json` is keyed by selected test id. Each entry names its `contract_id` and needs
+`status: "passed"`, the exact context, a positive integer `executed`, `skipped: 0` and an `edges` map
+of explicit `"passed"` assertions; exit success alone covers nothing. Source hashes are checked again
+at admission, and every asserted edge of every selected regression and control must pass. Context
+matching preserves JSON types recursively. A no-change plan says no validation ran and cannot pass.
 
-The scoped-validation research receipt demonstrates selection and result checking against a
-real composite run. It records the exact candidate context and the remaining qualification
-limits; it does not infer savings against an unmeasured alternative run schedule.
+One composite boot can assert several properties (streaming termination, cache accounting, offered
+concurrency, disconnect and recovery, a context envelope). Keep each assertion and its raw evidence
+visible on its own: offered HTTP overlap does not prove a GPU batch width, and an 8k context
+observation does not cover a model's maximum. The worked example, with its stated limits, is
+`research/scoped-validation-20261002/`.
 
-## Deterministic scheduling contracts
-
-`python3 tools/check-coalescer-contract.py --out target/coalescer-contract` extracts the exact
-server Coalescer implementation, records its hash, and compiles CPU-only fixtures with `rustc`.
-Channel handshakes assert pending membership and one-workspace serialization. A virtual clock
-asserts adaptive timeout and publication-origin behavior without assuming an OS wake-up time.
-A real callback advances virtual time, publishes through production code, and drives a pending
-row. Removing either duration or publication writes must fail that assertion.
-Both positive fixtures and all five independently mutated controls must match their exact
-test counts and expected failing assertions. CI and local-ci run the same entry point.
-
-These replace the jittered full-batch-rate unit verdict, whose requested 1.5 ms sleep did not
-bound actual scheduling delay. They do not establish a batching performance guarantee under
-arbitrary host load. The observed failed batch widths remain in the research receipt.
-
-Local CPU planning reads require regular files below the trusted root. LocalTree text/raw-byte reads, Cargo manifest command planning and the planner-owned include registry use anchored nofollow components with nonblocking leaf open and fstat. Unsafe types raise into the existing full-planning or CLI refusal boundary. Snapshot Git readers, raw bytes/text normalization, default Cargo arrays and all required CPU/native obligations remain.
+The earlier text of this page, including the full input-census hardening rules, is kept in
+[history/TESTING.md](history/TESTING.md#select-validation-from-changed-inputs).

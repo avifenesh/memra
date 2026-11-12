@@ -1,270 +1,403 @@
-# API surfaces: `/v1/messages` and `/v1/responses`
+# HTTP API reference
 
-memra-server speaks three request dialects over ONE serving core. `/v1/chat/completions`
-(plus raw `/v1/completions`) is the native surface; `/v1/messages` (Anthropic Messages
-API) and `/v1/responses` (OpenAI Responses API) are **translation surfaces**: the request
-is rewritten into the internal chat request, flows through the same tenant auth, budget
-admission, ledger receipts, metering, rate limits and capture posture as a chat
-completion, and only the response rendering differs. A request costs and bills the same
-number of tokens no matter which dialect carried it.
+This is the request and response contract of `memra-server`: every route, the rules all routes
+share, and the fields each surface accepts or refuses. It is for client developers. Operating the
+server (models, caching, deployment, supervision) is [Serving](SERVING.md); every `MEMRA_*`
+variable named here has its row in [Flags](FLAGS.md).
 
-Both surfaces exist so agentic clients that are hard-wired to one dialect can point at
-this server directly: an Anthropic-format client via `ANTHROPIC_BASE_URL`-style
-configuration, a Responses-format client via a custom provider with
-`wire_api = "responses"`. No proxy in between.
+Four routes generate text over one serving core. `/v1/chat/completions` and `/v1/completions`
+are native; `/v1/messages` (Anthropic) and `/v1/responses` (OpenAI Responses) rewrite their body
+into the internal chat request and share its auth, admission, deadline and usage path, so only the
+rendering differs. A client hard-wired to one dialect points straight at the server: an
+Anthropic-format client through its base-URL setting, a Responses-format client through a custom
+provider with `wire_api = "responses"`. On every surface a field the engine cannot honor is a 400
+naming the field, never a silent downgrade; cosmetic and client-telemetry fields are accepted and
+ignored.
 
-The house law applies on both: a semantic feature the engine cannot honor is a **clear
-400 naming the field**, never a silent downgrade. Cosmetic or client-telemetry fields are
-accepted and ignored.
+## Routes
 
-A JSON body that does not parse into the request type gets the OpenAI error object on the
-routes that parse through the server's JSON extractor: chat and text completions,
-embeddings, rerank, tokenize, detokenize, audio transcriptions and audio sessions. A type or
-syntax error is a 400 `invalid_request_error`. A type error names `param` when the parser
-has a path for it (`stream`, `stop_token_ids[0]`), and the message carries no line or
-column. A syntax error names no field and reads `invalid JSON: <description>`. A missing or
-non-JSON content type is a 415 in the same shape. `/v1/messages` and
-`/v1/responses` parse their own bodies.
+`router()` in `crates/memra-server/src/lib.rs` is the authority.
 
-On chat and text completions an explicit `null` is absent for every field openai-python
-declares nullable, as on `/v1/responses`: `stream: null` runs non-streaming and text
-`prompt: null` is an omitted prompt. Null is a 400 naming the field only where it has no
-absent meaning: `model`, chat `messages` and `tools`, and memra's own fields with no null form
-(`background`, `stop_token_ids`). On chat, `max_tokens` and `max_completion_tokens` name one
-cap: a null one is absent, and a body that sets both to values is a 400.
+| Method | Path | Purpose | Auth |
+|---|---|---|---|
+| GET | `/health`, `/livez` | Inference liveness (same handler) | open |
+| GET | `/readyz` | Readiness for traffic | open |
+| GET | `/models` | Model list; `?schema=openai` (default), `openrouter` or `openmodels` | open |
+| GET | `/v1/models` | OpenAI model list with per-model capabilities | open |
+| GET | `/v1/models/{id}` | One model; the id may contain a raw or `%2F`-encoded slash | open |
+| GET | `/v1/auth/check` | 204 when the key is accepted | key (Bearer or `x-api-key`) |
+| POST | `/v1/chat/completions` | OpenAI chat completions | key |
+| POST | `/v1/completions` | Text completions (native or OpenAI shape) | key |
+| POST | `/v1/messages` | Anthropic Messages | key (Bearer or `x-api-key`) |
+| POST | `/v1/responses` | OpenAI Responses, stateless | key |
+| GET | `/v1/responses/{id}` | Poll a background response | key |
+| POST | `/v1/responses/{id}/cancel` | Cancel a background response | key |
+| GET | `/v1/jobs/{id}` | Poll a background chat or text job | key |
+| POST | `/v1/jobs/{id}/cancel` | Cancel a background chat or text job | key |
+| POST | `/v1/embeddings` | Embeddings from a prefill | key |
+| POST | `/v1/rerank` | Cohere-shaped rerank from a prefill | key |
+| POST | `/v1/tokenize`, `/v1/detokenize` | Token inspection, CPU only | key |
+| POST | `/v1/audio/transcriptions` | Batch transcription (fails closed today) | key |
+| POST, GET | `/v1/audio/sessions` | Open or list streaming audio sessions | key |
+| POST | `/v1/audio/sessions/{id}/frames`, `/v1/audio/sessions/{id}/close` | Append frames, close a session | key |
+| GET | `/metrics` | Serving counters, JSON or Prometheus text | metrics |
+| GET | `/yield/metrics` | Per-lane QoS counters and step p50/p99 | metrics |
 
-Two further OpenAI/Cohere-shaped routes exist outside this document's scope because they
-do not generate: `POST /v1/embeddings` and `POST /v1/rerank` are prefill-only **capture
-surfaces** over a causal LM, with their own schemas, caps and worker semantics, see
-[Serving](SERVING.md#embeddings-and-rerank--the-capture-surfaces-laneembed-serve-2026-08-26).
-They share the accounting described below: one admitted worker request per input, billed
-as prompt tokens.
+The stock server has no `/admin/*` route; a deployment binary adds its own through `ServerWiring`.
 
-## Buffered chat and text completion jobs
+## Rules every route shares
 
-`POST /v1/chat/completions` and `POST /v1/completions` accept the boolean
-`background` extension. It defaults to false, and `background: true` needs no
-server switch. Combining background and streaming is a named HTTP 400; malformed boolean
-values return a named HTTP 400 for `background`. Existing decoding defaults still apply
-when the request omits decoding fields.
+### Authentication
 
-An admitted background request returns `{id, status: "queued"}`. Retrieve the
-retained result using `GET /v1/jobs/{id}` and cancel through
-`POST /v1/jobs/{id}/cancel`. Both routes authenticate the current tenant; foreign
-and unknown ids return the same 404. Rotated keys for one tenant retain access.
-Pending jobs contain only identity/status. A terminal result keeps the original
-chat, OpenAI-text or native-text envelope, with job identity/status added. Status
-is completed, incomplete for a token/context cutoff, cancelled, or failed. A
-cancelled partial contains the produced output and an explicit cancelled error.
-Worker and ledger errors remain failed jobs. Repeated GETs retain the same body.
+- `MEMRA_API_KEY` sets one bearer key (tenant `default`). `MEMRA_API_KEYS` sets a keyring (a TOML
+  file of SHA-256 hashes, hot-reloaded, or an inline list) with per-key tenant, lane class and
+  rate limit. With neither, the server is open; a non-loopback bind then refuses to start unless
+  `MEMRA_ALLOW_OPEN_BIND=1`. Key management: [Serving](SERVING.md#api-keys--multi-key-tenant-auth-laneapi-keys-2026-08-05).
+- Keys travel as `Authorization: Bearer <key>`. `/v1/messages` and `/v1/auth/check` also take
+  `x-api-key`; when both headers are present, each is tried.
+- Auth reads headers only and runs before the body is read, so a rejected caller cannot spend the
+  body parser.
+- Metrics auth is required when the bind is non-loopback, when API keys are configured, or when
+  `MEMRA_METRICS_TOKEN` is set. With a metrics token, only that token reads metrics and API keys
+  get 403. Without one, an API key reads metrics, scoped to its tenant under a keyring.
 
-Background delivery uses normal admission/model limits and the deployment's
-JobStore seam. It clears the worker wire deadline and bypasses the synchronous
-feasibility gate; `timeout_ms` does not bound generation. Synchronous requests
-retain their deadline and partial-error behavior. Retention and capacity keep
-their defaults. See the [delivery contract](SERVING.md#background-delivery-for-long-non-streaming-requests-background-true).
+### Errors, limits and nulls
 
-## OpenAI chat/completions streaming usage
+- Errors use the OpenAI object `{"error":{"message","type","param","code"}}`, except on
+  `/v1/messages`, which uses the Anthropic shape. Responses carry an `x-request-id` header.
+- The body ceiling is 192 MiB; a larger body is a 413 (`request_too_large`) before admission.
+- An unknown model is a 400 with `param: "model"` and code `model_not_found`. A request may name
+  the exact roster id or a unique suffix after the last `/`; an ambiguous suffix is refused.
+- A body that does not parse is a 400 `invalid_request_error`. A type error names `param` when the
+  parser has a path for it (`stream`, `stop_token_ids[0]`); a syntax error reads
+  `invalid JSON: <description>`. A missing or non-JSON content type is a 415. This applies to the
+  routes that parse through the server's JSON extractor (chat, completions, embeddings, rerank,
+  tokenize, detokenize, audio); `/v1/messages` and `/v1/responses` parse their own bodies.
+- On chat and text completions an explicit `null` means absent for every field openai-python
+  declares nullable (`stream: null` runs non-streaming, `prompt: null` is an omitted prompt). Null
+  is a 400 only where it has no absent meaning: `model`, chat `messages` and `tools`, and memra's
+  own `background` and `stop_token_ids`. `max_tokens` and `max_completion_tokens` name one cap; a
+  body that sets both to values is a 400.
+- While the server drains after SIGTERM, new generation requests get a 503 with `Retry-After`.
 
-On `/v1/chat/completions` and OpenAI-mode `/v1/completions`,
-`stream_options.include_usage: true` sends `usage: null` on content and finish chunks,
-then one `choices: []` chunk with the full non-stream usage object (including cached
-prompt tokens and any speculative acceptance fields) before `[DONE]`. Absent/false
-preserves the legacy stream byte shape: usage appears on the choices-bearing finish
-chunk, not on content chunks. Failed streams keep their error + `[DONE]` ending,
-without fabricating a successful terminal usage chunk.
-## Token-id stops on chat and completions
-`POST /v1/chat/completions` and `POST /v1/completions` accept optional
-`stop_token_ids: [u32]` (default `[]`, at most 16 entries). A longer list or an id
-outside the loaded model's vocabulary returns HTTP 400 `invalid_request_error`
-with `param: "stop_token_ids"`. Vocabulary validation follows `prompt_ids` when
-model vocabulary metadata is unknown.
-Matching uses the raw sampled/accepted id **before detokenization**. The first
-matching id ends generation with `finish_reason: "stop"`; that id and any later
-ids in its speculative burst are neither emitted nor included in
-`usage.completion_tokens`. Explicit token stops take precedence over EOS (ordinary
-EOS accounting is unchanged when not explicitly listed). This applies to streaming
-and non-streaming responses. String `stop` remains independently supported.
+### Lanes, concurrency and session affinity
+
+- `x-lane: interactive | judge | harvest` picks the admission lane; an unknown value is a 400.
+  Batch-class keys default to `harvest` and get a 403 on `interactive`. Lane policy:
+  [Serving](SERVING.md#multi-tenant-qos--the-x-lane-slo-gate-laneqos-p95-2026-08-02).
+- Responses on the four generation surfaces, tokenize and detokenize carry `X-RateLimit-Limit`,
+  `-Remaining` and `-Reset` with concurrency-slot meaning: the lane's session cap, the free
+  slots, and the estimated seconds until one frees. A request past the waiting-queue bound or
+  its lane's SLO, or whose estimated queue wait exceeds its deadline, is shed at admission with a
+  429.
+- Session affinity uses the first present of `session_id`, `user` and the `x-session-id` header
+  (on Messages, `metadata.user_id`; on Responses, `prompt_cache_key`).
+- `cache_salt` names a prefix-cache namespace: requests share cached prefixes only with the same
+  salt. Under a keyring the namespace is also scoped to the tenant.
+
+### Deadlines: `timeout_ms`
+
+All four generation surfaces, embeddings and rerank take `timeout_ms` in milliseconds.
+Non-streaming accepts 1000 through 90000, default 90000. Streaming defaults to and caps at the
+deployment's first-token ceiling (`MEMRA_STREAM_TTFT_MS_MAX`; 90000 unless the operator raises it
+or the device has unified memory). Blocking, it bounds the complete response; streaming, it bounds
+the time to the first generated token.
+
+- A non-streaming request whose pessimistic estimate cannot finish inside its deadline is refused
+  up front with a 400 (`code: "nonstream_deadline_infeasible"`) that names a `max_tokens` that
+  fits. It takes no slot and runs no GPU work.
+- A miss before any token is generated, or before stream headers, is a 408 `deadline_exceeded`,
+  and no usage is counted. `/v1/messages` and `/v1/responses` answer every non-streaming miss
+  this way.
+- On chat and text completions, a non-streaming miss after generation started returns the tokens
+  produced so far with `finish_reason: "error"` and an `error` object (`code: "deadline_exceeded"`,
+  `metadata.error_type: "timeout"`); the native completion shape reports `stop_reason: "Deadline"`
+  with the same `error`. Those delivered tokens count as usage.
+- A stream already committed for prefill keepalives ends with a named error event: an `error`
+  event of type `timeout` on `/v1/messages`, `response.failed` with `code: "deadline_exceeded"`
+  on `/v1/responses`.
+
+Semantics: [Serving](SERVING.md#request-deadlines-and-the-billing-promise-timeout_ms).
+
+### Reasoning controls
+
+One effort table serves every surface: `none` and `minimal` turn thinking off; `low`, `medium`
+and `high` turn it on at that level; `xhigh`, `max` and `ultra` map to the highest level the
+model's template distinguishes; anything else is a 400. On a model with only an on/off switch, a
+graded value means on. With no reasoning field at all, the model's own default applies, or the
+`default_reasoning_effort` its `MEMRA_MODEL_METADATA` entry declares.
+
+| Surface | Fields |
+|---|---|
+| `/v1/chat/completions` | `reasoning_effort`; `reasoning` object with exactly `effort`, `enabled`, `exclude` (any other key, `max_tokens` included, is a 400); `include_reasoning: false` and `reasoning.exclude: true` mean reasoning off, not hidden; `enable_thinking` aliases `reasoning.enabled`; `chat_template_kwargs` accepts only `enable_thinking` |
+| `/v1/messages` | `thinking.type`: `enabled`, `disabled`, or `adaptive` (the model's default); `thinking.budget_tokens` is a 400; `output_config.effort` uses the table above, and `thinking.type` wins the on/off switch when both are present |
+| `/v1/responses` | `reasoning.effort` uses the table; `reasoning.summary` (or its alias `generate_summary`) accepts only `"auto"`, since reasoning is returned verbatim; other keys are a 400 |
+
+Contradictory switches are a 400, and so is an off-request on a template that cannot turn
+reasoning off. Reasoning tokens count against the one `max_tokens` budget.
+
+### Tool calls and structured output
+
+- Tools are client-defined functions: chat `tools: [{"type":"function","function":{name,
+  description?, parameters?}}]`. They render through the chat template's tools branch, and the
+  model's tool-call blocks parse into OpenAI `tool_calls` with `finish_reason: "tool_calls"`.
+- `tool_choice`: `"auto"` (default) and `"none"` keep the native path; `"required"` (needs
+  declared tools) and `{"type":"function","function":{"name":...}}` (the name must be declared)
+  force a call through a tool-call grammar.
+- `parallel_tool_calls: false` limits the reply to one call; `true` is a 400 on a single-call
+  template; omitted keeps the template's own behavior.
+- `response_format`: `{"type":"text"}`, `{"type":"json_object"}` and
+  `{"type":"json_schema","json_schema":{...,"schema":{...}}}` decode under an llguidance grammar.
+  The DeepSeek-V4-Flash route refuses `response_format` by name.
+- `/v1/models` reports `capabilities.tools`, `forced_tool_calls`, `parallel_tool_calls` and
+  `structured_output` per model. More: [Serving](SERVING.md#openai-tools-surface-serve-tools-lane-2026-08-02).
+
+## Chat and text completions
+
+### Response shape: native or OpenAI
+
+`/v1/chat/completions` always returns OpenAI shapes. `/v1/completions` returns the native memra
+shape `{model, text, tokens, stop_reason, n_tokens, prompt_tokens, cached_tokens, elapsed_s}`
+unless OpenAI shape is on: `MEMRA_COMPAT=openai` turns it on, any other value keeps the native
+shape, and with `MEMRA_COMPAT` unset it is on exactly when `MEMRA_API_KEY` is set. The native
+shape is what the validation harnesses read.
+
+### Request fields
+
+| Field | Chat | Completions | Handling |
+|---|---|---|---|
+| `model`, `max_tokens`, `stream`, `stream_options`, `temperature`, `top_p`, `top_k`, `min_p`, `frequency_penalty`, `presence_penalty`, `repetition_penalty`, `seed`, `stop`, `stop_token_ids`, `n`, `background`, `cache_salt`, `session_id`, `user`, `timeout_ms`, `max_ctx` | yes | yes | supported |
+| `messages`, `max_completion_tokens`, `tools`, `tool_choice`, `parallel_tool_calls`, `response_format`, reasoning fields | yes | | supported |
+| `prompt` or `prompt_ids`, `chat` (wrap the prompt in the chat template as one user turn) | | yes | supported; `prompt_ids` are checked against the vocabulary |
+| `logit_bias` | 400 | 400 | no device-side bias hook |
+| `logprobs` | 400 unless `false` | 400 | not implemented |
+| `top_logprobs` | 400 | | not implemented |
+| `best_of` | 400 unless 1 | 400 unless 1 | use `n` |
+
+Chat messages take `system`, `developer` (treated as system), `user`, `assistant` and `tool`
+roles, string or part-array content, and `image_url` parts on vision models (data URIs always;
+`http(s)` only with `MEMRA_FETCH_URLS=1`).
+
+### Streaming usage
+
+With `stream_options.include_usage: true` on chat or OpenAI-shape completions, content and finish
+chunks carry `usage: null`, then one `choices: []` chunk carries the full usage object (cached
+prompt tokens and speculative acceptance fields included) before `[DONE]`. Without it, usage rides
+the choices-bearing finish chunk. A failed stream ends with its error and `[DONE]`, never with a
+fabricated usage chunk.
+
+### Token-id stops on chat and completions
+
+`stop_token_ids: [u32]` (default `[]`, at most 16) stops on raw sampled or accepted ids, before
+detokenization. A longer list or an id outside the vocabulary is a 400 with
+`param: "stop_token_ids"`; when the model's vocabulary size is unknown, the vocabulary check is
+skipped, as for `prompt_ids`. The first match ends generation with `finish_reason: "stop"`; that id
+and any later ids in its speculative burst are neither emitted nor counted in
+`usage.completion_tokens`. Listed ids win over EOS; unlisted EOS keeps its usual accounting. String
+`stop` works independently, streaming or not.
+
+### Multiple choices: `n`
+
+`n` defaults to 1 and is bounded at 8; a boot's decode-slot cap can lower it, and `/v1/models`
+reports `capabilities.max_choices`. One leader prefills once; its prompt KV and recurrent state
+are copied into independent rows, each with its own sampler, cache, parser and stop state. With
+`seed`, row i uses `(seed + i) mod 2^64`; without, one master seed is drawn for the group.
+`max_tokens` bounds each choice. Admission reserves n times the output bound and n decode slots
+under one request-quota entry, and counts the prompt once; `usage.completion_tokens` sums all
+rows. Streams may interleave indices, each row has one finish reason, and `[DONE]` ends every
+stream, after the last row or after the error event of a failed stream. A worker failure never
+becomes a successful partial choice list. With a deployment ledger attached, a receipt failure
+returns `request_ledger_unavailable` (HTTP 500 before headers; after them, that error body and
+`[DONE]`) and releases every reservation.
+
+The route is text-only and single-device. Speculative, parallel, sliding-window, latent and other
+unsupported states refuse `n > 1` by name rather than switching numerical program, and
+`background: true` with `n > 1` is refused.
+
+### Background jobs: `background`
+
+`background: true` on chat or text completions returns `{id, status: "queued"}`. Poll with
+`GET /v1/jobs/{id}` and cancel with `POST /v1/jobs/{id}/cancel`. Both authenticate the tenant (a
+rotated key of the same tenant keeps access), and a foreign or unknown id is the same 404.
+
+- A pending job shows identity and status. A terminal one keeps its original chat, OpenAI-text or
+  native-text envelope plus its status: `completed`, `incomplete` (token or context cutoff),
+  `cancelled` (with the partial output and a cancelled error) or `failed`. Repeated polls return
+  the same body.
+- A background request keeps the normal admission and model limits but skips the synchronous
+  deadline and feasibility gate, so `timeout_ms` does not bound it. With `stream` it is a 400, and
+  a non-boolean value is a 400.
+- The stock in-memory store keeps a result for `MEMRA_BACKGROUND_JOB_TTL_SECS` (900 by default)
+  after the job ends, under a store cap of `MEMRA_BACKGROUND_JOB_MAX_BYTES` (64 MiB). A deployment
+  binary may supply its own store.
+
+Delivery contract: [Serving](SERVING.md#background-delivery-for-long-non-streaming-requests-background-true).
+
 ## `/v1/tokenize` and `/v1/detokenize`: token inspection
-Both are CPU-only `POST` endpoints using the same bearer authentication, 192 MiB
-body ceiling and bounded body-admission pools as chat completions, and they take the
-same per-tenant request slot (the `x-ratelimit-*` trio, a named 429 at the key's
-concurrency cap). Rendering runs off the async workers. They do not queue GPU work or
-bill generation usage.
-- `/v1/tokenize`: `{"model":"id","prompt":"text"}` or
-  `{"model":"id","messages":[...],"tools":[...],"chat_template_kwargs":{...},"add_generation_prompt":true}`.
-  Returns `{"tokens":[...],"count":N,"max_model_len":...}`. Send exactly one of
-  `prompt` and `messages`; the other chat fields are optional and require `messages`.
-  Text messages use chat completion's semantic builder and prompt-accounting renderer,
-  including tools and model metadata defaults. `add_generation_prompt` defaults to
-  `true`, matching chat's billed `prompt_tokens`; `false` omits the generation suffix.
-  Image/video messages are explicitly refused, not partially counted. Raw prompts parse literal
-  special tokens; `add_special_tokens` (default `true`, prompt form only) adds the model's BOS
-  exactly as `/v1/completions` does, so the default `count` is that route's billed
-  `prompt_tokens`, and `false` gives the reversible ids that `/v1/detokenize` returns as the
-  exact input. `max_model_len` is the context cap advertised
-  by `/v1/models` (null when unknown), not a separate guessed limit.
-- `/v1/detokenize`: `{"model":"id","tokens":[0,1,...]}` returns `{"prompt":"text"}`.
-  Control tokens decode to their literal strings. OOV ids receive the same named
-  HTTP 400 (`param: "prompt_ids"`) as raw-id completions.
-Unknown models use chat's HTTP 400 `model_not_found` error (`param: "model"`).
-Errors are OpenAI-shaped; handler responses carry `x-request-id` and echo a supplied
-request id. Token inspection uses the worker's verified tokenizer source, including
-GGUF tokenizer overrides for HF-directory models, even without prepaid enforcement. The
-DSv4 directory route renders through the same plain-versus-tools predicate as the worker and
-this endpoint, so the prompt it serves is the prompt counted here.
+
+Both are CPU-only POST routes with the same key, body ceiling and per-tenant request slot as chat
+completions (the `x-ratelimit-*` trio and a named 429 at the key's concurrency cap). They queue no
+GPU work and count no generation usage. Both echo a supplied `x-request-id` header.
+
+- `/v1/tokenize` takes `{"model","prompt"}` or `{"model","messages","tools"?,
+  "chat_template_kwargs"?, "add_generation_prompt"?}`, exactly one of `prompt` and `messages`. It
+  returns `{"tokens":[...],"count":N,"max_model_len":...}`. Messages render through chat's own
+  builder, tools and model metadata defaults included; `add_generation_prompt` defaults to `true`,
+  matching chat's `prompt_tokens`. Image and video messages are refused, not partially counted. A
+  raw prompt parses literal special tokens; `add_special_tokens` (default `true`, prompt form only)
+  adds BOS exactly as `/v1/completions` does, and `false` returns the reversible ids
+  `/v1/detokenize` maps back to the exact input. `max_model_len` is the context `/v1/models`
+  advertises, or null.
+- `/v1/detokenize` takes `{"model","tokens":[...]}` and returns `{"prompt":"text"}`. Control
+  tokens decode to their literal strings; an out-of-vocabulary id is a 400 with
+  `param: "prompt_ids"`.
+
+Token inspection uses the worker's tokenizer source, including GGUF tokenizer overrides for
+HF-directory models. The DeepSeek-V4-Flash route renders with the same plain-versus-tools
+predicate, so the prompt it serves is the prompt counted here.
 
 ## `/v1/messages`: Anthropic Messages API
 
-`POST /v1/messages` (query strings such as `?beta=true` are accepted). Streaming and
-blocking. `anthropic-version` is accepted and not enforced.
-
-**Auth**: `x-api-key: <key>` **and** `Authorization: Bearer <key>` are both accepted and
-resolve against the same tenant keyring / single-key / open-server rules as every other
-surface. If both headers are present, each is tried.
-
-**Supported request fields**
-
-| Field | Handling |
-|---|---|
-| `model` | same registry as `/v1/models`; unknown model → 400 (`not_found`-coded body) |
-| `max_tokens` | required, ≥ 1 (Anthropic contract) |
-| `messages` | roles `user` / `assistant` / `system`; content string or block array |
-| content blocks | `text`; `image` (base64 source only, becomes the vision path); `tool_use` (assistant) → internal tool_calls; `tool_result` (user; string or text-block content, `is_error` accepted) → internal tool turn; `mid_conv_system` → system turn; `thinking`/`redacted_thinking` in history are **dropped** (chat templates re-render history without think segments, same law as the template itself) |
-| `system` | string or text-block array (concatenated; `cache_control` markers ignored, prefix caching here is automatic) |
-| `tools` | client-defined tools (`name`, `description`, `input_schema`); rendered through the model template's tools branch. Server-executed tool types (`web_search_*`, `bash_*`, `code_execution_*`, …) → clear 400 |
-| `tool_choice` | `{"type":"auto"}` / `{"type":"none"}`; `any` / `tool` need constrained decoding → clear 400. `disable_parallel_tool_use` ignored |
-| `stop_sequences` | native stop strings; the matched sequence is reported as `stop_sequence` |
-| `temperature`, `top_p`, `top_k` | native |
-| `stream` | Anthropic SSE vocabulary (below) |
-| `thinking` | `enabled` → model-native thinking on, `disabled` → off, `adaptive` → the model's own default (Anthropic's "the model decides", which is what that arm does). Any other `type` → 400. **`budget_tokens` → 400**: reasoning tokens are output tokens under the single `max_tokens` budget and no lever can cap a segment, so accepting it would promise a spend cap this server cannot keep (lane/reasoning-schema-20260823; it used to be accepted, never read, never enforced) |
-| `output_config.effort` | the SAME canonical set as `reasoning_effort` on the chat surface and `reasoning.effort` on `/v1/responses` (`none`/`minimal`/`low`/`medium`/`high`; `xhigh`/`max`/`ultra` clamp to `high`; Claude Code sends `xhigh` by default on current models): `none`/`minimal` suppress thinking, invalid values 400. When `thinking.type` is also present it wins the on/off switch (the documented Anthropic lever); the effort is still validated and still supplies the level for level-consuming templates. Before issue #31 this field was silently dropped |
-| `timeout_ms` | request deadline in milliseconds. Non-streaming accepts `1000`..=`90000`, default `90000`; streaming uses the deployment's `MEMRA_STREAM_TTFT_MS_MAX` (normally the same 90000). The SAME semantics as the chat surface and `/v1/responses`: complete-response deadline when blocking, first-generated-token deadline when streaming. A pre-header miss is HTTP `408`; an extended stream already committed for prefill keepalives ends with a named `timeout` error event instead. Both are `deadline_exceeded`, cancel generation, and bill zero. See SERVING.md "Request deadlines and the billing promise". |
-| `metadata.user_id` | session-affinity nomination (same as `user` on the chat surface) |
-| `mcp_servers` | → clear 400 (server-side MCP does not run here) |
-| `output_config.*` other than `effort` | → 400 naming the key (previously accepted and ignored) |
-| everything else | accepted and ignored (`cache_control` anywhere, `context_management`, `service_tier`, beta-paired fields) |
-
-**Response**: `{"id":"msg_…","type":"message","role":"assistant","content":[…],
-"stop_reason":…,"stop_sequence":…,"usage":{…}}`. Content blocks in generation order:
-`thinking` (when the model produced separated reasoning; `signature` is honestly empty:
-there is no signing key here), `text`, then `tool_use` blocks (`input` is the parsed JSON
-object). `stop_reason`: `tool_use` | `stop_sequence` | `max_tokens` | `end_turn`.
-
-**Usage honesty**: `input_tokens` excludes cache reads (Anthropic semantics);
-`cache_read_input_tokens` is worker-truth prompt tokens whose KV was resumed from cache;
-`cache_creation_input_tokens` is 0: there is no separate cache-write billing tier.
-
-**Streaming**: `message_start` (real admission-truth input tokens) → `ping` →
-`content_block_start` / `content_block_delta` (`text_delta`, `thinking_delta`,
-`input_json_delta`, a `signature_delta` before a thinking block closes) /
-`content_block_stop` per block → `message_delta` (cumulative usage, final
-`stop_reason`/`stop_sequence`) → `message_stop`. Mid-stream faults emit `event: error`
-with the Anthropic error body, then close. SSE comment keep-alives cover long prefill.
-
-**Errors** are Anthropic-shaped everywhere on this surface:
-`{"type":"error","error":{"type":…,"message":…},"request_id":…}` with the standard
-status→type mapping (400 `invalid_request_error`, 401 `authentication_error`, 403
-`permission_error`, 404 `not_found_error`, 413 `request_too_large`, 429
-`rate_limit_error`, 5xx `api_error`, 503/529 `overloaded_error`). Statuses and retry
-headers (`Retry-After`, `retry-after-ms`, `x-should-retry`) are identical to the chat
-surface; only the body shape differs. The request id is also exposed as both
-`request-id` and `x-request-id` headers.
-
-Not implemented: `/v1/messages/count_tokens` (clients fall back to their own counting)
-and server-side tools. Assistant-history `thinking` blocks are accepted and dropped, as
-described above.
-
-## `/v1/responses`: OpenAI Responses API (stateless subset)
-
-`POST /v1/responses`. Streaming and blocking. Auth: `Authorization: Bearer <key>`, same
-tenant rules as every surface.
-
-This is the **stateless** Responses API: no conversation state is stored server-side, and
-the client resends the full conversation in `input` each turn (`store:false` semantics:
-exactly what Responses-only agent CLIs do against custom providers). Stateful features
-refuse with a clear 400 naming the field:
-
-- `previous_response_id`
-- `store: true` (`false`/absent are fine)
-- `conversation`
-- `truncation: "auto"` (no server-side context trimming; the honest value is `"disabled"`)
-- `prompt` (stored prompt templates)
-- `input` items of type `item_reference`
-
-A non-boolean `stream`, `store` or `background` (for example `"true"`, `1` or `{}`) is a 400
-naming the field, with the message `<field> must be a boolean`. An explicit `null` is absent:
-OpenAI declares all three nullable.
-
-**Supported request fields**
+`POST /v1/messages`, streaming and blocking. Query strings such as `?beta=true` are accepted, and
+`anthropic-version` is accepted and not enforced.
 
 | Field | Handling |
 |---|---|
 | `model` | same registry as `/v1/models` |
-| `input` | string, or item array: `message` (roles `user`/`assistant`/`system`/`developer`; parts `input_text`/`output_text`/`text`; `input_image` → vision path), `function_call` (`name`, string `arguments`, `call_id`) → assistant tool_calls (consecutive calls merge into one turn), `function_call_output` (`call_id`, string-or-content-array `output`) → tool turn, `reasoning` items (this server's own prior output echoed back) are consumed |
-| `instructions` | leading system turn |
-| `tools` | flattened `{"type":"function","name",…,"parameters"}` → template tools branch. Non-function tool types (`web_search`, `namespace`, `custom`, …) are **dropped** from the toolset with a server log line: stock Responses clients send some unconditionally, so a 400 would refuse every default-config request; a dropped tool is one the model never sees (it cannot be half-called), not a silent behavior change to anything that is produced |
-| `tool_choice` | `"auto"` / `"none"`; forcing forms → clear 400 |
-| `max_output_tokens` | native `max_tokens` |
-| `temperature`, `top_p`, `user` | native |
-| `timeout_ms` | request deadline in milliseconds. Non-streaming accepts `1000`..=`90000`, default `90000`; streaming uses the deployment's `MEMRA_STREAM_TTFT_MS_MAX` (normally the same 90000). The SAME semantics as the chat surface and `/v1/messages`: complete-response deadline when blocking, first-generated-token deadline when streaming. A pre-header miss is HTTP `408`; an extended stream already committed for prefill keepalives ends with `response.failed` and `code: "deadline_exceeded"`. Both cancel generation and bill zero. See SERVING.md "Request deadlines and the billing promise". |
-| `reasoning.effort` | mapped to the model's native thinking control through the ONE canonical table every surface shares (`none`/`minimal`/`low`/`medium`/`high`; `xhigh`/`max`/`ultra` clamp to `high`; anything else 400s; identical acceptance on the chat surface's `reasoning_effort` and `/v1/messages`' `output_config.effort`, issue #31). On a model with no graded ladder a graded value translates to reasoning ON, byte-identical to `reasoning:{"enabled":true}`, documented in SERVING.md, so stock codex/Claude Code effort values work on every served model. `reasoning.summary` accepts only `"auto"`, this server returns reasoning verbatim and does not summarise, so a summary mode it cannot perform is a 400; any other `reasoning` key, and a non-object `reasoning`, are 400s matching the chat surface exactly |
-| `text.format` | `text` no-op; `json_object` / `json_schema` → the same constrained decoder as the chat surface's `response_format` |
-| `background` | `true` returns `status: "queued"` and holds this one request's result until its TTL expires after the job ends (polls do not consume it): poll `GET /v1/responses/{id}`, cancel `POST /v1/responses/{id}/cancel`. With `stream: true` it is a 400. A non-boolean value is the same 400 chat completions give (`background must be a boolean`, param `background`); `null` is absent. [Delivery contract](SERVING.md#background-delivery-for-long-non-streaming-requests-background-true) |
-| `prompt_cache_key` | session-affinity nomination. It is deliberately NOT a cache salt: prefix-cache isolation stays tenant-scoped, so a shared instructions prefix keeps its cross-session cache hits |
-| everything else | accepted and ignored (`include`, `parallel_tool_calls`, `stream_options`, `client_metadata`, `metadata`, `service_tier`, `text.verbosity`) |
+| `max_tokens` | required, at least 1 |
+| `messages` | roles `user`, `assistant`, `system`; string or block-array content |
+| content blocks | `text`; `image` (base64 source only); `tool_use` on assistant turns becomes tool calls; `tool_result` on user turns (string or text-block content, `is_error` accepted) becomes a tool turn; `mid_conv_system` becomes a system turn; `thinking` and `redacted_thinking` in history are dropped, as templates re-render history without think segments; other block types are a 400 |
+| `system` | string or text-block array, concatenated; `cache_control` markers are ignored (prefix caching is automatic) |
+| `tools` | client-defined tools (`name`, `description`, `input_schema`); server tool types (`web_search_*`, `bash_*`, `code_execution_*`, ...) are a 400 |
+| `tool_choice` | `{"type":"auto"}` or `{"type":"none"}`; `any` and `tool` are a 400 on this surface (use the chat surface's `required` or named form to force a call); `disable_parallel_tool_use` is ignored |
+| `stop_sequences` | stop strings; the match is reported as `stop_sequence` |
+| `temperature`, `top_p`, `top_k`, `timeout_ms` | as on chat |
+| `thinking`, `output_config.effort` | see [Reasoning controls](#reasoning-controls); other `output_config` keys are a 400 |
+| `metadata.user_id` | session affinity |
+| `mcp_servers` | 400: server-side MCP does not run here |
+| anything else | accepted and ignored (`cache_control`, `context_management`, `service_tier`, beta fields) |
 
-**Response** (blocking): `{"id":"resp_…","object":"response","status":…,"output":[…],
+**Response**: `{"id":"msg_...","type":"message","role":"assistant","content":[...],
+"stop_reason","stop_sequence","usage"}`. Content blocks come in generation order: `thinking`
+(when the model separated its reasoning; `signature` is empty, as there is no signing key),
+`text`, then `tool_use` blocks with `input` as parsed JSON. `stop_reason` is `tool_use`,
+`stop_sequence`, `max_tokens` or `end_turn`.
+
+**Usage**: `input_tokens` excludes cache reads (Anthropic semantics); `cache_read_input_tokens`
+counts prompt tokens whose KV was resumed from cache; `cache_creation_input_tokens` is 0.
+
+**Streaming**: `message_start` (with real input token counts), `ping`, then per block
+`content_block_start`, `content_block_delta` (`text_delta`, `thinking_delta`, `input_json_delta`,
+and a `signature_delta` before a thinking block closes) and `content_block_stop`, then
+`message_delta` (cumulative usage, final `stop_reason` and `stop_sequence`) and `message_stop`. A
+mid-stream fault emits `event: error` with the Anthropic error body, then closes. SSE comments keep
+the connection alive through long prefill.
+
+**Errors**: `{"type":"error","error":{"type","message"},"request_id"}` with the standard status
+mapping (400 `invalid_request_error`, 401 `authentication_error`, 403 `permission_error`, 404
+`not_found_error`, 408 `timeout`, 413 `request_too_large`, 429 `rate_limit_error`, 5xx
+`api_error`, 503 and 529 `overloaded_error`). Statuses and retry headers (`Retry-After`, `retry-after-ms`,
+`x-should-retry`) match the chat surface. The request id is in both `request-id` and
+`x-request-id`.
+
+Not implemented: `/v1/messages/count_tokens` and server-side tools.
+
+## `/v1/responses`: OpenAI Responses API (stateless subset)
+
+`POST /v1/responses`, streaming and blocking. Nothing is stored between requests: the client sends
+the whole conversation in `input` each turn (`store: false` semantics). These stateful features
+are a 400 naming the field: `previous_response_id`, `store: true`, `conversation`,
+`truncation: "auto"`, `prompt` (stored prompt templates) and `input` items of type
+`item_reference`. A non-boolean `stream`, `store` or `background` is a 400 (`<field> must be a
+boolean`); `null` is absent.
+
+| Field | Handling |
+|---|---|
+| `model` | same registry as `/v1/models` |
+| `input` | a string, or items: `message` (roles `user`, `assistant`, `system`, `developer`; parts `input_text`, `output_text`, `text`, `input_image`), `function_call` (`name`, string `arguments`, `call_id`; consecutive calls merge into one assistant turn), `function_call_output` (`call_id`, string or content-array `output`), and `reasoning` items (this server's earlier output echoed back), which are consumed |
+| `instructions` | a leading system turn |
+| `tools` | `{"type":"function","name",...,"parameters"}` entries render through the template's tools branch. Other tool types (`web_search`, `namespace`, `custom`, ...) are dropped with a server log line: stock clients send some unconditionally, and a dropped tool is one the model never sees |
+| `tool_choice` | `"auto"`, `"none"`, `"required"`, or `{"type":"function","name":...}`, mapped to the chat forms |
+| `parallel_tool_calls` | boolean (anything else is a 400), passed to the chat rule above |
+| `max_output_tokens` | the `max_tokens` cap |
+| `temperature`, `top_p`, `user`, `timeout_ms` | as on chat |
+| `reasoning` | see [Reasoning controls](#reasoning-controls) |
+| `text.format` | `text` is a no-op; `json_object` and `json_schema` use the chat surface's constrained decoder; other types are a 400 |
+| `background` | `true` returns `status: "queued"`; poll `GET /v1/responses/{id}`, cancel `POST /v1/responses/{id}/cancel`. The result stays until its TTL passes after the job ends; polls do not consume it. With `stream: true` it is a 400 |
+| `prompt_cache_key` | session affinity only; it is not a cache salt, so a shared instructions prefix keeps its cross-session cache hits |
+| anything else | accepted and ignored (`include`, `stream_options`, `client_metadata`, `metadata`, `service_tier`, `text.verbosity`) |
+
+**Response** (blocking): `{"id":"resp_...","object":"response","status",...,"output":[...],
 "usage":{"input_tokens","input_tokens_details":{"cached_tokens"},"output_tokens",
-"total_tokens"},…}`. Output items in generation order: `reasoning` (with
-`summary[].summary_text`; `encrypted_content` is null), `message` with `output_text`
-content, `function_call` items (`call_id`, `name`, string `arguments`). A token-budget
-cutoff is `status:"incomplete"` with `incomplete_details.reason:"max_output_tokens"`,
-never a fake `completed`.
+"total_tokens"}}`. Output items come in generation order: `reasoning` (with
+`summary[].summary_text`; `encrypted_content` is null), `message` with `output_text` content, and
+`function_call` items (`call_id`, `name`, string `arguments`). A token-budget cutoff is
+`status: "incomplete"` with `incomplete_details.reason: "max_output_tokens"`.
 
-**Streaming** honors the grammar strict clients verify: `response.created` first; every
-item opens with `response.output_item.added` **before** any of its deltas
-(`response.output_text.delta`, `response.reasoning_summary_text.delta`,
-`response.function_call_arguments.delta`); the full final item rides
-`response.output_item.done` (the authoritative content for spec-following clients);
-exactly one terminal event: `response.completed` (carrying `response.id` + usage),
-`response.incomplete`, or `response.failed` (fault, with `error.code`/`message`), then
-the stream closes. Every frame carries its `type` inside the data JSON and a monotonic
+**Streaming** follows the grammar strict clients check: `response.created` first; every item
+opens with `response.output_item.added` before any of its deltas (`response.output_text.delta`,
+`response.reasoning_summary_text.delta`, `response.function_call_arguments.delta`); the final
+item rides `response.output_item.done`; then exactly one terminal event, `response.completed`
+(with `response.id` and usage), `response.incomplete` or `response.failed` (with `error.code` and
+`message`), and the stream closes. Every frame carries its `type` in the data JSON and a monotonic
 `sequence_number`.
 
-**Errors** before the stream commits use the standard OpenAI error body
-(`{"error":{"message","type","param","code"}}`), statuses and retry headers identical to
-the chat surface.
+**Errors** before the stream commits use the OpenAI error body, statuses and retry headers.
 
-## Accounting parity (all three dialects)
+## Usage accounting across surfaces
 
-One admission path (`surfaces::admit_translated` mirrors `chat_completions` exactly):
-canonical model resolution → tenant auth → lane → **`timeout_ms` validation** →
-tenant admission / prepaid reservation → ledger receipt (`route` records which dialect:
-`/v1/messages`, `/v1/responses`) → rate-limit slot → **deadline-aware backpressure** →
-meter line → worker submit → deadline-bounded admission wait.
-A request deadline, its 408, its zero-debit ledger outcome and the admission sheds are
-therefore identical on all four dialects; see SERVING.md "Request deadlines and the
-billing promise" for the contract and the outcome→debit census. Receipt discipline on the response side is the chat
-surface's: prompt usage recorded at admission, one completion record per token, terminal
-complete/reject synced before the response finishes. Per-tenant capture (when armed)
-stores the **translated** internal messages array, the exact prompt the template
-rendered, with the same consent/trial posture as chat completions.
+Every generation surface enters one admission path (`surfaces::admit_translated` mirrors
+`chat_completions`), so a request counts the same prompt and completion tokens whichever dialect
+carried it, and the deadline gate, the 408s and the admission sheds behave the same on all four;
+only the non-streaming partial on a mid-generation deadline differs by dialect (see
+[Deadlines](#deadlines-timeout_ms)). Prompt usage is
+recorded at admission and completion tokens as they stream. The stock server ships no accounting:
+a deployment binary attaches metering, a request ledger, tenant budgets or capture through
+`ServerWiring`, and the stock binary refuses their variables (`MEMRA_REQUEST_LEDGER`,
+`MEMRA_TENANT_BUDGETS`, `MEMRA_CAPTURE_DIR`, ...) at boot.
 
-## Bounded choices on chat and text completions
+## Embeddings and rerank
 
-`n` defaults to 1. Both endpoints accept bounded multi-choice generation on an eligible shared-prefill route. The global bound is 8; a deployment's decode-slot cap can be smaller. `/v1/models` reports `capabilities.max_choices` for each loaded model/boot. That is API eligibility, not a model support or numerical qualification state.
+Both run a prefill of a causal LM, with no decode step, and read the last prompt position.
 
-One leader follows the ordinary prefill path. Its completed prompt KV and recurrent state are copied into independent choice rows. Each row owns its sampler/history, cache, parser and termination state. With a supplied seed, row i uses `(seed + i) mod 2^64`; without a supplied seed, one fresh master seed is drawn for the group. No row borrows another row's mutable parser or RNG.
+- `POST /v1/embeddings`: `{model, input: string | [string] (1 to 32), dimensions?,
+  encoding_format?, timeout_ms?}`. Each vector is the last-token hidden state after the final
+  norm, L2-normalized; `dimensions` truncates (Matryoshka) and re-normalizes. Only
+  `encoding_format: "float"` is served. Returns `{object: "list", data: [{object: "embedding",
+  index, embedding}], model, usage: {prompt_tokens, total_tokens}}`.
+- `POST /v1/rerank`: `{model, query, documents: [string] (1 to 64), top_n?, instruction?,
+  return_documents?, timeout_ms?}`. Scores come from the model's yes/no logits (the
+  Qwen3-Reranker convention). Returns `{results: [{index, relevance_score, document?}], usage}`.
 
-`max_tokens` bounds each choice. The parent request's completion reservation covers `n * resolved_output_bound`, while prompt input is reserved and counted once. `usage.completion_tokens` sums observed outputs across all choices; prompt and cached-prompt counts describe the leader's one prompt. Internal receipt metadata expresses the aggregate output bound. One HTTP request uses one tenant-request quota entry and n worker/route decode slots. Each private state and the transient prompt snapshot must fit admission before generation.
+Each input is one admitted worker request with the usual auth, lane and rate limits, and its
+tokens count as prompt usage. Worker
+semantics: [Serving](SERVING.md#embeddings-and-rerank--the-capture-surfaces-laneembed-serve-2026-08-26).
 
-Responses carry one indexed `choices` entry per row. Streaming may interleave indices; each row has one finish reason. `[DONE]` ends every stream: after all terminal rows and successful parent accounting, or after the error event that ends a failed stream (since 2026-11-06, the same as an OpenAI-shape `n` = 1 stream; until then a failed `n` > 1 stream closed without `[DONE]`). With `stream_options.include_usage=true`, choice chunks carry null usage and one final empty-choice chunk carries the sum. Otherwise the final choices-bearing finish chunk carries aggregate usage. Dropping the group stream closes every child receiver; a worker failure cannot become a successful partial choice list.
+## Audio
 
-Prompt or completion receipt callback failures return `request_ledger_unavailable` and reject the parent ledger row. Before SSE headers, the response is HTTP 500. After headers, the stream emits the same error body, then `[DONE]`, with no successful usage. All choice receivers and request/decode-slot reservations are released.
+`/v1/audio/transcriptions` and the `/v1/audio/sessions` lifecycle (open, list, append frames,
+close) exist with their session, frame and shed contracts. No speech pack can be resident yet, so
+a request that passes validation fails closed with a 503 and code `engine_unbound`. Transcription
+takes JSON with base64 audio in `file`; a multipart form is refused with a message. `top_p` is a
+400, and `temperature` is accepted only as a rung of the model's declared ladder. Speech program:
+[Speech](SPEECH.md).
 
-The implemented route is text-only and single-device, with completed-prefix-copy-compatible full-attention or GDN state. Selected speculative, parallel, sliding-window, latent and unsupported states refuse explicitly. A caller is never moved silently to a different numerical program to honor n. `best_of > 1` remains a named refusal and directs callers to n; its legacy value1 no-op remains compatible. `background:true` with n>1 is refused by name before worker or receipt intake; n=1 retains background delivery.
+## Models, health and metrics
 
-Capture, when enabled by the deployment, retains one prompt with n and indexed JSON-line raw completion deltas. Consent/redaction and finalization remain owned by the existing metering implementation. No production billing backend, model support state, compiler/numerical default or release gate is changed by this API capability.
+- `GET /v1/models` lists each served model with `context_length`, modalities and a `capabilities`
+  block (`streaming`, `max_choices`, `tools`, `forced_tool_calls`, `parallel_tool_calls`,
+  `structured_output`, `reasoning`, `prompt_caching`). Pricing, lifecycle and reliability fields
+  come from the optional `MEMRA_MODEL_METADATA` file. `GET /models` defaults to
+  `{"object":"list","data":[{"id":...,"object":"model"}]}`; `?schema=openrouter` and
+  `?schema=openmodels` render the
+  listing feeds described in [Serving](SERVING.md#gateway-listing-surface).
+- `GET /health` and `/livez` report inference liveness: `status` `ok`, `draining` or `unhealthy`,
+  with worker phase and GPU probe blocks. `ok` and `draining` answer 200; a dead, faulted, stalled
+  or still-loading worker answers 503. `GET /readyz` answers `ready` (200) or `not_ready` (503).
+  Supervision: [Serving](SERVING.md#health-readiness-and-fault-handling-serve-hardening-lane-2026-08-06).
+- `GET /metrics` returns JSON, or Prometheus text when `Accept` prefers `text/plain` or
+  `application/openmetrics-text`. `GET /yield/metrics` returns per-lane QoS counters and engine
+  step p50/p99.
 
-Exact qualification evidence and its fixture limits belong in `research/n-choices-528-20261003/`. A code declaration or CPU result alone is not native model qualification.
+History of this contract (dated changes and the old accounting text):
+[history/API-SURFACES.md](history/API-SURFACES.md).

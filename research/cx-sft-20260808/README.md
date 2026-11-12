@@ -1,8 +1,12 @@
 # SFT trace generation
 
-`tools/sft-gen.py` drives the installed `opencode run` command against the
-ToS-pinned `openrouter/deepseek/deepseek-v4-flash-0731` model entry. Corpus data
-is written to the separate `~/projects/sft-traces` repository; only the
+Moved from `docs/SFT-TRACE-GENERATION.md` on 2026-11-12, verbatim except for the removal of
+private detail and a note that the scale runner's pipeline scripts are not in this repository. This
+is training-data tooling for this lane, not engine documentation.
+
+`tools/sft-gen.py` drives the installed `opencode run` command against a
+ToS-pinned model entry. Corpus data
+is written to a separate corpus repository; only the
 generator, tests, and receipts live in memra.
 
 ## Task battery
@@ -11,8 +15,8 @@ The battery has 24 templates: bug-fix, refactor, test-writing, and explanation
 tasks over six reduced Python fixtures. The fixtures are adapted from these
 real memra shapes:
 
-- cache-token accounting and revenue arithmetic
-- cumulative fleet counter restart/delta handling
+- cache-token accounting arithmetic
+- cumulative counter restart/delta handling
 - speculative-acceptance log parsing
 - generated perf-board marker replacement
 - batched-output first-divergence evidence
@@ -25,7 +29,7 @@ the fixture, the Python standard library, CPU execution, and no network,
 fixture and is required for non-interactive file and test tool calls.
 
 Before any API call, the generator reads the live opencode config and requires
-the requested OpenRouter model entry to retain the exact provider
+the requested model entry to retain the exact provider
 order/allowlist, `allow_fallbacks=false`, and usage accounting. Config drift
 fails closed instead of producing traces with stale authorization metadata.
 
@@ -43,7 +47,7 @@ Generate the full 24-trace batch:
 
 ```bash
 python3 tools/sft-gen.py \
-  --output ~/projects/sft-traces/corpus/deepseek-v4-flash-20260808.jsonl
+  --output <corpus-repo>/corpus/<batch>.jsonl
 ```
 
 Use `--limit`, `--category`, or repeated `--template` flags for a bounded
@@ -78,16 +82,8 @@ for private-key blocks and common API/token formats. The normalized record is
 scanned again before append. A hit fails closed without printing the matched
 value.
 
-The corpus header references:
-
-- `research/finetune-sku-20260802/REPORT.md`
-- `research/finetune-sku-20260802/openrouter-tos-20260802.html`
-- `research/finetune-sku-20260802/deepseek-open-platform-tos-20260802.html`
-
-The stored OpenRouter receipt displays July 27, 2026 and already contains the
-competing-service sentence. The live page displayed July 29, 2026 when checked
-on August 8. The owner GO for task #56 authorizes this generation lane; the
-header records that provenance without broadening the legal conclusion.
+The corpus header references the pilot report and the provider terms receipts
+under `research/finetune-sku-20260802/`.
 
 This tool generates traces only. It does not schedule training, use a GPU,
 merge the lane, tag a release, or push a remote.
@@ -96,8 +92,9 @@ merge the lane, tag a release, or push a remote.
 
 `tools/sft-scale.py` scales the proof battery into balanced, deterministic
 prompt variants while preserving the same six fixture shapes and four task
-kinds. It migrates the 24 proof records into the darklanes K3 corpus layout,
-then admits each new trace only after:
+kinds. It migrates the 24 proof records into the K3 corpus layout,
+then admits each new trace only after these pipeline scripts, which are not in
+this repository (`--pipeline-dir`):
 
 1. `validate_trace.py`
 2. `verify_outcome.py`
@@ -120,12 +117,11 @@ Run the 1,000-trace pilot:
 python3 tools/sft-scale.py \
   --target-verified 1000 \
   --batch-size 50 \
-  --workers 6 \
-  --budget-usd 150
+  --workers 6
 ```
 
-Every completed batch is committed to `~/projects/sft-traces`, and
-`research/cx-sft-20260808/PROGRESS.md` is committed on `lane/sft-corpus`.
+Every completed batch is committed to the corpus repository, and
+`research/cx-sft-20260808/PROGRESS.md` is committed on the lane branch.
 Before each batch the runner revalidates the exact opencode provider policy,
 the steering-file hash, and the three pipeline-script hashes. It stops before
 new calls if steering or pipeline code changes, or if the conservative

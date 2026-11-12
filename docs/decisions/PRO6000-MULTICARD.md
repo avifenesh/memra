@@ -1,8 +1,9 @@
 # RTX PRO 6000 Blackwell: 2–4 card model placement
 
 Status: capacity-aware automatic placement is implemented behind an experimental door. The HY3
-W4A16 EP-4 program is qualified on the named RTX PRO 6000 host; other model x card-count choices
-remain receipt-scoped.
+W4A16 EP-4 program reported passing its gates on four RTX PRO 6000 Blackwell Server Edition cards
+on 2026-08-30 (the receipts are not tracked here; see the [Hy3 card](../models/hy3.md)); other
+model x card-count choices remain receipt-scoped.
 
 ## Decision
 

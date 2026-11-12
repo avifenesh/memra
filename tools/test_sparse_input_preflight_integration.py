@@ -54,7 +54,7 @@ def populate(root):
              for p in ps if not p.startswith('ci:')}
     roots = {'docs', 'crates/memra-gguf/src/model_packs', LEGACY}
     roots.update(str(PurePosixPath(n).parent) for n in cited)
-    names = sorted(roots | set(PRODUCERS) | {BOARD, 'README.md', 'STATUS.md', 'AGENTS.md',
+    names = sorted(roots | set(PRODUCERS) | {BOARD, 'README.md', 'ARCHITECTURE.md', 'AGENTS.md',
                                            'crates/memra-cli/src/lib.rs'})
     rows = subprocess.check_output(['git', '-C', str(REPO), '--literal-pathspecs',
                                     'ls-tree', '-r', '-z', 'HEAD', '--', *names]).split(b'\0')

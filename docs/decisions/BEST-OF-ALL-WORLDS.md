@@ -1,5 +1,10 @@
 # memra — Best-of-all-worlds map + our edges
 
+> **Plan (2026-06-26), kept as written.** It scoped memra to one RTX 5090 Laptop GPU with no
+> multi-GPU support. The engine has outgrown that scope (more device classes, multi-card
+> placement), and the code has moved past this map. The current engine overview is
+> [ARCHITECTURE.md](../../ARCHITECTURE.md).
+
 Philosophy (user 2026-06-26): rewrite everything that can be done better. Take the best idea for each
 component from each engine, port it to our format (mostly reading+writing, not inventing algorithms),
 and fill the gaps where ALL of them are bad. Target = ONLY RTX 5090 Laptop sm_120. No multi-GPU

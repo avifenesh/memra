@@ -1,5 +1,18 @@
 # Benchmarks — bw24 vs llama.cpp on RTX 5090 Laptop (the beat-targets)
 
+> **Stale record (banner added 2026-11-12).** This page is kept as written; parts of it are no
+> longer current. The "bw24 vs llama.cpp" beat-target framing is retired (bw24 is memra's early
+> name). The N rules below (N>=2-3 medians, N>=3 pairs) are superseded by the three-run
+> interleaved default, five on an anomaly. `gpu-full-power` is a host-local command, not part of
+> memra: record the GPU power and clock state instead. The rig and deployment notes in the
+> 2026-08-05 correction are out of date, "The 27B serving board" is now in
+> [PERFORMANCE history](../docs/history/PERFORMANCE.md), and `ARCHITECTURE.md §3.10` means the
+> June 2026 plan, now [ARCHITECTURE-2026-06.md](../docs/archive/ARCHITECTURE-2026-06.md). The
+> current protocol: "Changing a default" in [AGENTS.md](../AGENTS.md#flags-doctrine-and-door-hygiene),
+> [Method](../docs/PERFORMANCE.md#method) in PERFORMANCE.md and the
+> [paired protocol](../docs/COMPETITOR-SETUP.md#5-paired-protocol) in Competitor setup. The false
+> readings recorded under each window rule still stand.
+
 > **DOCTRINE CHANGE (owner, 2026-09-12): external benching RESUMES, monthly.** The 2026-08-03
 > stop is lifted. (1) The competitor arm is the current pinned release of SGLang (primary) and
 > vLLM (control) at its documented best configuration for the model and card, recorded with

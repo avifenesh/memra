@@ -1,7 +1,8 @@
 # Workload cards
 
-Start from the request shape, then choose a qualified model and rig. These cards give the default
-direction; [serving](../SERVING.md) owns the complete API and operations contract.
+Start from the request shape, then pick a model and a card. Each workload card names the measured
+model and card pairs, the settings that matter and how to validate; [serving](../SERVING.md) owns
+the full API and operations contract.
 
 - [Interactive agents](interactive-agents.md)
 - [Long context and prefix reuse](long-context.md)

@@ -4,39 +4,45 @@ about: Wrong output, crash, gate failure, or performance regression
 ---
 
 <!--
-Read CONTRIBUTING.md first. This isn't red tape — memra has no CI on sm_120a hardware, so a
-report without the details below usually can't be reproduced or actioned at all, and will
-sit or get closed rather than fixed. For a security vulnerability, do NOT use this template —
-see SECURITY.md instead.
+For a security vulnerability, do not use this template: see SECURITY.md.
+GitHub CI has no GPU, so a GPU bug can only be reproduced from the details below. Paste output;
+do not paraphrase it.
 -->
 
 ## What happened
 
-<!-- What you expected vs what you observed. Be specific: "wrong output" is not actionable;
-     "argmax MISMATCH at token 12" or "run-gen panics with <exact message>" is. -->
+<!-- Expected vs observed. "argmax MISMATCH at token 12" or "run-gen panics with <exact message>"
+     is actionable; "wrong output" is not. -->
 
 ## Repro
 
 ```
-<exact command you ran, with flags/env vars>
+<exact command, with every MEMRA_* variable you set>
 ```
 
-- Model: <exact model + quant, e.g. Qwen3.6-27B-NVFP4, or the HF/GGUF path>
-- Was this a fresh checkout of `main`, or a specific commit/branch? <commit hash>
+- Model: <HF id and file, e.g. hf:tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp, or a local path and where it came from>
+- Version: <output of `memra-server --version`>
+- Install: <prebuilt release tag, or source commit plus MEMRA_CUDA_ARCH>
 
-## Gate output at the time of the bug (if applicable)
+## Output
 
 ```
-<kernel-check / run-gen / run-spec output showing the gate result — paste actual output, not "gates failed">
+<the first 40 lines of the boot log, then the lines around the failure>
 ```
 
-## Your hardware
+## Gate output (if applicable)
 
-- GPU: <model — this project targets sm_120a specifically; if you're on different hardware, say so>
-- Driver / CUDA version:
-- OS:
+```
+<kernel-check / run-gen / run-spec tail>
+```
 
-## What you've already checked
+## Hardware
 
-- [ ] I searched [`research/tune-data/`](../research/tune-data/) and existing issues for this
-- [ ] This reproduces on a clean `main` checkout, not just a local branch
+- GPU and VRAM:
+- Driver and CUDA version (from `nvidia-smi`):
+- OS and glibc:
+
+## Checked
+
+- [ ] I searched existing issues and, for a performance report, the [research index](https://github.com/avifenesh/memra/blob/main/research/INDEX.md)
+- [ ] This reproduces on the latest release or a clean `main` checkout
