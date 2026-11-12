@@ -3029,8 +3029,9 @@ pub struct Metrics {
     /// Requests the VRAM gate refused their DFlash drafter and priced again as plain
     /// (memra#1173): the full charge with the draft plane did not fit. Once per request.
     pub admission_drafter_refusals: u64,
-    /// Requests that waited behind an earlier request the VRAM gate deferred in the same
-    /// admission pass (head-of-line memory order), counted per pass like the defers.
+    /// Requests that waited behind an earlier VRAM-deferred or settle-waiting (memra#1255)
+    /// request in the same admission pass (head-of-line memory order), counted per pass like the
+    /// defers.
     pub admission_vram_hol_holds: u64,
     /// Ticks whose interactive prefill left the round robin for the deadline-aware order
     /// (`deadline_prefill_rows`).
@@ -8748,6 +8749,28 @@ fn prime_walker_unstarted(mtp_spec: bool, mtp_prime_started: bool, owns_route_st
     (mtp_spec && !mtp_prime_started) || !owns_route_state
 }
 
+/// Whether the pending-prime term counts a session (memra#1255). `skip_unbuilt` leaves out a
+/// session that owns no route state yet: with the memory door off on a single-device deployment
+/// its whole charge, workspace included, is in the unbuilt booking already, and the reading
+/// without the unbuilt booking must not carry any of it.
+fn prime_owed_counts(skip_unbuilt: bool, owns_route_state: bool) -> bool {
+    !skip_unbuilt || owns_route_state
+}
+
+/// The bookings the reading without the unbuilt booking subtracts (memra#1255): every booking
+/// less the unbuilt charges and less the unbuilt sessions' share of the pending-prime term (the
+/// term over every session less the term over the sessions that own route state).
+fn unbooked_pending(
+    pending_booked: usize,
+    unbuilt_booked: usize,
+    pending_prime: usize,
+    pending_prime_built: usize,
+) -> usize {
+    pending_booked
+        .saturating_sub(unbuilt_booked)
+        .saturating_sub(pending_prime.saturating_sub(pending_prime_built))
+}
+
 /// One still-priming session as the corrected pending-prime term reads it (WP-B day 39).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PrimeOwed {
@@ -8863,9 +8886,13 @@ fn pending_prime_bytes_v2(
     admission_costs: &HashMap<String, AdmissionCostModel>,
     slab_bytes: &dyn Fn(&str) -> usize,
     cooperative: &dyn Fn(&str) -> bool,
+    skip_unbuilt: bool,
 ) -> usize {
     let mut by_model: HashMap<&str, Vec<PrimeOwed>> = HashMap::new();
     for s in active {
+        if !prime_owed_counts(skip_unbuilt, session_owns_route_state(s)) {
+            continue;
+        }
         let rows = session_pending_prime_rows(s.prefill_done, s.prefill_queue.len());
         if rows == 0 || !admission_costs.contains_key(&s.model) {
             continue;
@@ -10812,11 +10839,13 @@ fn reclaim_prefix_target(resident: usize, need: usize) -> usize {
 /// The prime transients the sessions still priming will allocate after this reading
 /// (`pending_prime_bytes_v2`: one call's slab growth and returned rows, the unstarted walkers'
 /// stacks, the checkpoints the primes will take), with the gate's own slab and walker readings.
+/// `skip_unbuilt` leaves out the sessions that own no route state yet (`prime_owed_counts`).
 fn pending_prime_owed_bytes(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
     active: &[Session],
     admission_costs: &HashMap<String, AdmissionCostModel>,
+    skip_unbuilt: bool,
 ) -> usize {
     pending_prime_bytes_v2(
         active,
@@ -10832,20 +10861,25 @@ fn pending_prime_owed_bytes(
                     .get(name)
                     .is_some_and(|lm| lm.model.mtp_prime_walk_supported())
         },
+        skip_unbuilt,
     )
 }
 
 /// What the sessions still priming will allocate after this reading, which the door-off gate does
 /// not book: their prime transients (`pending_prime_owed_bytes`) and the prefix entries they
 /// publish (`pending_seed_bytes`). The seeds are uncapped: on a full cache a landing seed replaces
-/// bytes, but a partial reclaim makes room and the seeds regrow into it.
+/// bytes, but a partial reclaim makes room and the seeds regrow into it. Read by the door-off
+/// partial reclaim only, so where the unbuilt booking applies (a single-device deployment) it
+/// leaves out the sessions with no route state yet, whose whole charge that booking carries
+/// (memra#1255).
 fn reclaim_owed_bytes(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
     active: &[Session],
     admission_costs: &HashMap<String, AdmissionCostModel>,
 ) -> usize {
-    pending_prime_owed_bytes(engine, loaded, active, admission_costs)
+    let skip_unbuilt = !is_multi_device_deployment(loaded);
+    pending_prime_owed_bytes(engine, loaded, active, admission_costs, skip_unbuilt)
         .saturating_add(pending_seed_bytes(active))
 }
 
@@ -20657,8 +20691,9 @@ pub fn run(
         settling.retain(|_, (since, _)| since.elapsed() < Duration::from_secs(600));
         settled.retain(|_, (since, _, _)| since.elapsed() < Duration::from_secs(600));
         // The devices of every interactive request the VRAM gate deferred this pass that can still
-        // fit once its device's sessions retire: later requests on those devices wait behind it
-        // (head-of-line memory order, after the first-token gate).
+        // fit once its device's sessions retire, or that took a settle wait (memra#1255): later
+        // requests on those devices wait behind it (head-of-line memory order, after the
+        // first-token gate).
         let mut memory_hold: std::collections::HashSet<usize> = Default::default();
         // KV-FLEX GRANT REFRESH (lane/kv-flex-20260831): re-derive the borrowable slice
         // from live effective-free VRAM once per tick, before this tick's admissions and
@@ -20917,7 +20952,8 @@ pub fn run(
                 }
             }
             // HEAD-OF-LINE MEMORY ORDER (2026-11-07). Once the VRAM gate below defers an
-            // interactive request that could fit once its device's sessions retire, every later
+            // interactive request that could fit once its device's sessions retire (or, since
+            // memra#1255, an interactive request takes a settle wait), every later
             // request on a device it shares waits behind it this pass: interactive ones keep their
             // queue order, dark-lane ones shed as they do at capacity. It sits after every check
             // that refuses without spending memory (slot capacity, template, first-token gate),
@@ -21517,24 +21553,42 @@ pub fn run(
                 } else {
                     0
                 };
+                // memra#1255: the unbuilt booking applies on a single-device deployment only.
+                let unbuilt_applies = !is_multi_device_deployment(&loaded);
+                let prime_slab = |name: &str| {
+                    loaded
+                        .get(name)
+                        .map_or(0, |lm| lm.model.prime_slab_bytes(&engine))
+                };
+                let prime_coop = |name: &str| {
+                    memra_engine::prime_walker::prime_yield_enabled()
+                        && loaded
+                            .get(name)
+                            .is_some_and(|lm| lm.model.mtp_prime_walk_supported())
+                };
                 let pending_prime = if admit_memory_cfg.armed {
                     pending_prime_bytes_v2(
                         &active,
                         &admission_costs,
-                        &|name| {
-                            loaded
-                                .get(name)
-                                .map_or(0, |lm| lm.model.prime_slab_bytes(&engine))
-                        },
-                        &|name| {
-                            memra_engine::prime_walker::prime_yield_enabled()
-                                && loaded
-                                    .get(name)
-                                    .is_some_and(|lm| lm.model.mtp_prime_walk_supported())
-                        },
+                        &prime_slab,
+                        &prime_coop,
+                        false,
                     )
                 } else {
                     0
+                };
+                // The same term over the sessions that own route state only, for the reading
+                // without the unbuilt booking (memra#1255, `unbooked_pending`).
+                let pending_prime_built = if admit_memory_cfg.armed && unbuilt_applies {
+                    pending_prime_bytes_v2(
+                        &active,
+                        &admission_costs,
+                        &prime_slab,
+                        &prime_coop,
+                        true,
+                    )
+                } else {
+                    pending_prime
                 };
                 // PENDING SEED (memra#680 remaining term, lane B day 35): a session armed to seed
                 // the prefix cache allocates that entry when its prime completes, after this gate
@@ -21578,9 +21632,26 @@ pub fn run(
                 // reading reduces the primary device, as the door's own booking does. Disarmed
                 // (every naked boot until a partial reclaim runs) it is 0 and the gate is unchanged.
                 let reclaim_booked = if reclaim_booking && !admit_memory_cfg.armed {
-                    let prime_owed =
-                        pending_prime_owed_bytes(&engine, &loaded, &active, &admission_costs);
-                    if reclaim_booking_disarms(reclaim_booking, prime_owed, pending_seed_uncapped) {
+                    // memra#1255: whether anything is still owed counts every priming session;
+                    // what is booked leaves out the sessions with no route state yet, whose
+                    // whole charge the unbuilt booking carries.
+                    let prime_owed_any = pending_prime_owed_bytes(
+                        &engine,
+                        &loaded,
+                        &active,
+                        &admission_costs,
+                        false,
+                    );
+                    let prime_owed = if unbuilt_applies {
+                        pending_prime_owed_bytes(&engine, &loaded, &active, &admission_costs, true)
+                    } else {
+                        prime_owed_any
+                    };
+                    if reclaim_booking_disarms(
+                        reclaim_booking,
+                        prime_owed_any,
+                        pending_seed_uncapped,
+                    ) {
                         reclaim_booking = false;
                         eprintln!(
                             "[admit-oom] reclaim booking off: no session owes prime or seed bytes \
@@ -21615,10 +21686,10 @@ pub fn run(
                 // reading is reduced by those charges until the tick builds the sessions. On a
                 // single-device deployment only: a PP or TP route that builds its state in the
                 // tick charges per stage, which this scalar booking does not split.
-                let unbuilt_booked = if is_multi_device_deployment(&loaded) {
-                    0
-                } else {
+                let unbuilt_booked = if unbuilt_applies {
                     unbuilt_session_booking(&active, admit_memory_cfg.armed)
+                } else {
+                    0
                 };
                 let pending_booked = pending_booked.saturating_add(unbuilt_booked);
                 let book =
@@ -21629,7 +21700,12 @@ pub fn run(
                 // takes a settle wait.
                 let fits_unbooked = raw_headroom.clone().is_some_and(|h| {
                     h.less_pending(
-                        pending_booked.saturating_sub(unbuilt_booked),
+                        unbooked_pending(
+                            pending_booked,
+                            unbuilt_booked,
+                            pending_prime,
+                            pending_prime_built,
+                        ),
                         primary_device,
                     )
                     .sufficient(required)
@@ -40133,6 +40209,83 @@ mod tests {
     }
 
     #[test]
+    fn an_unbuilt_session_is_booked_once_and_left_out_of_the_reading_without_the_booking() {
+        // memra#1255 review round 2. One cold DFlash session S that owns no route state yet and
+        // one plain session P still priming. With the door off after a partial reclaim, the
+        // reclaim booking counts what P owes and not S (S's whole charge is the unbuilt
+        // booking); the reading without the unbuilt booking is the raw reading less P's term
+        // alone; the partial reclaim's need counts S's workspace once. On the armed door, the
+        // unbooked reading also drops S's share of the pending-prime term.
+        use super::{
+            PrimeOwed, pending_prime_for_model, prime_owed_counts, prime_walker_unstarted,
+            reclaim_owed_booking, unbooked_pending, unbuilt_charge_bytes,
+        };
+        let shape = memra_engine::hybrid_forward::PrimeWorkspaceShape {
+            call_row_bytes: 400_000,
+            slab_row_bytes: 300_000,
+            prompt_row_bytes: 20_480,
+            n_layers: 64,
+            swa_ring: false,
+        };
+        let owed_of = |rows: usize, owns: bool, mtp: bool| PrimeOwed {
+            rows,
+            unstarted_walker: prime_walker_unstarted(mtp, false, owns),
+            cooperative: true,
+            snapshot_bytes: 0,
+        };
+        // (owns_route_state, PrimeOwed): S unbuilt (5,741 rows), P a plain session priming.
+        let sessions = [
+            (false, owed_of(5_741, false, false)),
+            (true, owed_of(1_300, true, false)),
+        ];
+        let v2 = |skip_unbuilt: bool| {
+            let owed: Vec<PrimeOwed> = sessions
+                .iter()
+                .filter(|(owns, _)| prime_owed_counts(skip_unbuilt, *owns))
+                .map(|(_, o)| *o)
+                .collect();
+            pending_prime_for_model(&owed, Some(&shape), None, 0)
+        };
+        let p_only = pending_prime_for_model(&[sessions[1].1], Some(&shape), None, 0);
+        let s_workspace =
+            shape.call_row_bytes * shape.call_rows(5_741) + shape.prompt_row_bytes * 5_741;
+        let s_charge = 345_000_000 + s_workspace;
+        let budget = 1 << 40;
+
+        // Door off, single device, the reclaim booking armed by a partial reclaim.
+        assert_eq!(v2(true), p_only, "the booked owed term leaves S out");
+        let reclaim_booked = reclaim_owed_booking(true, v2(true), 0, budget, 0);
+        let unbuilt = unbuilt_charge_bytes([(false, s_charge, s_workspace)].into_iter(), false);
+        assert_eq!(unbuilt, s_charge);
+        let pending_booked = reclaim_booked + unbuilt;
+        // The reading without the booking: the raw reading less the other bookings only.
+        assert_eq!(unbooked_pending(pending_booked, unbuilt, 0, 0), p_only);
+        // The partial reclaim's need: the bookings less the reclaim booking, plus what is owed,
+        // counts S's charge (its workspace included) once.
+        let need_bookings = pending_booked - reclaim_booked + v2(true);
+        assert_eq!(need_bookings, s_charge + p_only);
+        // Counting S in the owed term too would add its stack and call a second time.
+        assert!(pending_booked - reclaim_booked + v2(false) > s_charge + p_only + 5_741 * 20_480);
+
+        // Armed door: the booked reading keeps S's stack in the pending-prime term and leaves
+        // its workspace out of the unbuilt booking; the reading without the booking drops both.
+        let armed_unbuilt =
+            unbuilt_charge_bytes([(false, s_charge, s_workspace)].into_iter(), true);
+        let pending_prime = v2(false);
+        let pending_prime_built = v2(true);
+        let armed_booked = pending_prime + armed_unbuilt;
+        assert_eq!(
+            unbooked_pending(
+                armed_booked,
+                armed_unbuilt,
+                pending_prime,
+                pending_prime_built
+            ),
+            p_only
+        );
+    }
+
+    #[test]
     fn every_route_state_field_counts_as_built_and_the_settle_wait_precedes_every_verdict() {
         // memra#1255: a route whose session state lives in a field `session_owns_route_state`
         // does not name would be booked for its life; a settle wait taken after the reclaim or
@@ -40168,7 +40321,9 @@ mod tests {
         let booked = at("let pending_booked = pending_booked.saturating_add(unbuilt_booked);");
         let book =
             at("move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);");
-        let unbooked = at("pending_booked.saturating_sub(unbuilt_booked),");
+        let unbooked = at(
+            "unbooked_pending(\n                            pending_booked,\n                            unbuilt_booked,\n                            pending_prime,\n                            pending_prime_built,\n                        ),",
+        );
         let settle =
             at("settle_wait(unbuilt_booked, headroom.sufficient(required), fits_unbooked)");
         let reclaim = at("let mut reclaim_spare = if !headroom.sufficient(required) {");
@@ -40189,6 +40344,11 @@ mod tests {
         let requeued = settle + prod[settle..].find("requeue.push_back(req);").unwrap();
         let next = settle + prod[settle..].find("continue;").unwrap();
         assert!(hold < requeued && requeued < next && next < reclaim);
+        // Only an interactive settle wait holds the line, on its own model's devices.
+        let guarded = at(
+            "if lane == crate::lanes::Lane::Interactive {\n                        memory_hold.extend(model_devices(&engine, &loaded[&model_key]));",
+        );
+        assert!(settle < guarded && guarded < hold && hold < requeued);
         // The hold lasts one pass: the set is made anew at the top of every admission pass.
         let pass =
             at("settled.retain(|_, (since, _, _)| since.elapsed() < Duration::from_secs(600));");
@@ -49380,11 +49540,18 @@ mod tests {
         };
         let booked = at("let reclaim_booked = if reclaim_booking && !admit_memory_cfg.armed {");
         let prime = at(
-            "let prime_owed = pending_prime_owed_bytes(&engine, &loaded, &active, &admission_costs);",
+            "let prime_owed_any = pending_prime_owed_bytes( &engine, &loaded, &active, \
+             &admission_costs, false, );",
+        );
+        // memra#1255: the booked amount leaves out unbuilt sessions where the unbuilt booking
+        // applies; whether anything is owed still counts them.
+        let skipped = at(
+            "let prime_owed = if unbuilt_applies { pending_prime_owed_bytes(&engine, &loaded, \
+             &active, &admission_costs, true) } else { prime_owed_any };",
         );
         let disarm = at(
-            "if reclaim_booking_disarms(reclaim_booking, prime_owed, pending_seed_uncapped) { \
-             reclaim_booking = false;",
+            "if reclaim_booking_disarms( reclaim_booking, prime_owed_any, pending_seed_uncapped, \
+             ) { reclaim_booking = false;",
         );
         let booking = at(
             "reclaim_owed_booking( reclaim_booking, prime_owed, pending_seed_uncapped, \
@@ -49393,7 +49560,7 @@ mod tests {
         let joined = at("let pending_booked = pending_booked.saturating_add(reclaim_booked);");
         let book =
             at("move |h: AdmissionHeadroom| h.less_pending(pending_booked, primary_device);");
-        assert!(booked < prime && prime < disarm && disarm < booking);
+        assert!(booked < prime && prime < skipped && skipped < disarm && disarm < booking);
         assert!(booking < joined && joined < book);
 
         let keyed = at(
@@ -49439,7 +49606,7 @@ mod tests {
         let owed_fn = &flat[at("fn reclaim_owed_bytes(")..];
         let owed_fn = &owed_fn[..owed_fn.find("}fn").expect("the next item follows")];
         assert!(owed_fn.contains(
-            "pending_prime_owed_bytes(engine,loaded,active,admission_costs).saturating_add(pending_seed_bytes(active))"
+            "letskip_unbuilt=!is_multi_device_deployment(loaded);pending_prime_owed_bytes(engine,loaded,active,admission_costs,skip_unbuilt).saturating_add(pending_seed_bytes(active))"
         ));
         let prime_fn = &flat[at("fn pending_prime_owed_bytes(")..];
         let prime_fn = &prime_fn[..prime_fn.find("}fn").expect("the next item follows")];
@@ -53565,7 +53732,7 @@ mod tests {
             "let pending_seed_uncapped = if admit_memory_cfg.armed || reclaim_booking { pending_seed_bytes(&active) } else { 0 }; let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_uncapped, kv_flex_effective_budget(), px.total_bytes, ) } else { 0 };"
         ));
         assert!(live.contains(
-            "if reclaim_booking_disarms(reclaim_booking, prime_owed, pending_seed_uncapped) {"
+            "if reclaim_booking_disarms( reclaim_booking, prime_owed_any, pending_seed_uncapped, ) {"
         ));
         assert!(live.contains(
             "reclaim_owed_booking( reclaim_booking, prime_owed, pending_seed_uncapped, kv_flex_effective_budget(), px.total_bytes, )"

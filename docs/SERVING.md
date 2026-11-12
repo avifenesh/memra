@@ -405,7 +405,8 @@ a `[shed]` line.
 - **A memory-deferred request holds the queue.** When the VRAM gate defers an interactive request
   that would fit once its device's sessions retire and its evictable prefix entries go, later
   requests on that device wait behind it; dark-lane ones shed. Refusals that need no memory (slot
-  capacity, template, the first-token gate) still answer at once. `/metrics`
+  capacity, template, the first-token gate) still answer at once. An interactive request in a
+  settle wait (below) holds the queue the same way for that pass. `/metrics`
   `admission_vram_hol_holds` counts the held requests.
 - **A DFlash request that does not fit with its drafter is served plain.** A speculating request is
   charged its session, its draft state and the reserve. On the MTP route a request that fits only
