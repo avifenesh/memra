@@ -1,4 +1,4 @@
-[server] build: memra-0.141.1-51f0eb72655f (id: source-tree, git: unknown)
+[server] build: memra-0.141.1-2c65e91e03d3 (id: source-tree, git: unknown)
 [server] starting; models config = [("q", "/home/avifenesh/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
@@ -11,7 +11,7 @@
 [worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
 [route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
 [worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
-[prefix-cache] on: budget 51207MB (51207241728 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 51207241728 B; boot driver free 106172579840 B, post-reserve clamp 102414483456 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[prefix-cache] on: budget 51669MB (51668631552 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 51668631552 B; boot driver free 107095359488 B, post-reserve clamp 103337263104 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
 [admission] "q": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
 [spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
 [admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
@@ -22,18 +22,18 @@
 [deadline] unified memory (48 SMs, served ctx 8192): streaming TTFT default/max 90000 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 2138000 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
 [server] worker ready; serving models: ["q"]
 [server] listening on http://127.0.0.1:18197
-[meter] admit id=chatcmpl-d2bf674aa8bea709367e99a403feb36e tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-4db4f63d8796e36cfed067b9d24b8284 tenant=default lane=interactive model="q"
 [admission] request cost: model="q" ctx=1863 path=plain = 29696 B/token x ctx + 715MB prefill-workspace + 0MB fixed = 771MB
 [spec-k] model="q" tenant="" K=0 source=operator-pin prompt=1559 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
-[admission] fixed residual high-water: model="q" 317MB (observed 371MB at ctx 1807 path=plain)
-[prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 202.5MB / 51207MB, model q)
+[admission] fixed residual high-water: model="q" 334MB (observed 387MB at ctx 1807 path=plain)
+[prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 202.5MB / 51669MB, model q)
 [fa-pool] grow #0 dev=0 o_len 0 -> 153600 ml_len 0 -> 600 (retired kept, zero=false)
 [fa-pool] grow #1 dev=0 o_len 153600 -> 307200 ml_len 600 -> 1200 (retired kept, zero=false)
-[meter] admit id=cmpl-207dfae184afeb993fed3d38a9be7b28 tenant=default lane=interactive model="q"
-[admission] request cost: model="q" ctx=571 path=plain = 29696 B/token x ctx + 122MB prefill-workspace + 317MB fixed = 456MB
+[meter] admit id=cmpl-cbb0f0551e9c2374d883cd64fd39ba6a tenant=default lane=interactive model="q"
+[admission] request cost: model="q" ctx=571 path=plain = 29696 B/token x ctx + 122MB prefill-workspace + 334MB fixed = 473MB
 [worker] plain-affinity: declined (history diverged at 0 of checkpoint 1536; 1 parked, 267 prompt tokens; model q)
 [spec-k] model="q" tenant="" K=0 source=operator-pin prompt=267 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
-[prefix-cache] insert (seed): 224 tokens, 163.5MB (resident 366.1MB / 51207MB, model q)
+[prefix-cache] insert (seed): 224 tokens, 163.5MB (resident 366.1MB / 51669MB, model q)
 [fa-pool] grow #2 dev=0 o_len 307200 -> 614400 ml_len 1200 -> 2400 (retired kept, zero=false)
 [server] SIGTERM: draining (0 in flight, deadline 30s)
 [server] drain complete in 0.0s; exiting

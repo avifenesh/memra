@@ -30,6 +30,16 @@ elif arm == "nojoin":
 elif arm == "swapped":
     s = swap(green, "            for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] {\n",
              "            for pass in [SpecPass::Cohorts, SpecPass::ColdSerial] {\n")
+elif arm == "nopeer":
+    s = swap(green, "                    && s.spec_pool_peer\n                    && lm.model.spec_pool_capable()\n                    && !spec_pool_candidate(s, lm)\n",
+             "                    && !spec_pool_candidate(s, lm)\n")
+elif arm == "noquantum":
+    a = "                    for &i in &spec_order {\n                        let owes = memra_engine::prime_walker::prime_yield_enabled()\n"
+    b = "                        active[i].prime_service.peer_quantum = owes;\n                    }\n"
+    i = green.index(a)
+    j = green.index(b, i) + len(b)
+    assert green.count(a) == 1
+    s = green[:i] + green[j:]
 else:
     raise SystemExit(f"unknown arm {arm}")
 out.write_text(s)

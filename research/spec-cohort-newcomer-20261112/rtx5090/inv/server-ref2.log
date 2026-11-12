@@ -1,7 +1,7 @@
-[server] build: memra-0.141.1-51f0eb72655f (id: source-tree, git: unknown)
+[server] build: memra-0.141.1-2c65e91e03d3 (id: source-tree, git: unknown)
 [server] starting; models config = [("q", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
-[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
 [worker] Engine ready (device=0, MEMRA_FAST=true)
 [worker] loading model "q" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
@@ -21,15 +21,15 @@
 [kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
 [server] worker ready; serving models: ["q"]
 [server] listening on http://127.0.0.1:18229
-[meter] admit id=chatcmpl-604a8610ce2e1a637058301e2aee2b7f tenant=default lane=interactive model="q"
+[meter] admit id=chatcmpl-a5445717f365a60bca8dfcc61777b632 tenant=default lane=interactive model="q"
 [admission] request cost: model="q" ctx=1863 path=plain = 29696 B/token x ctx + 715MB prefill-workspace + 0MB fixed = 771MB
 [spec-k] model="q" tenant="" K=0 source=operator-pin prompt=1559 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
 [admission] fixed residual high-water: model="q" 311MB (observed 365MB at ctx 1807 path=plain)
 [prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 202.5MB / 800MB, model q)
 [fa-pool] grow #0 dev=0 o_len 0 -> 153600 ml_len 0 -> 600 (retired kept, zero=false)
 [fa-pool] grow #1 dev=0 o_len 153600 -> 307200 ml_len 600 -> 1200 (retired kept, zero=false)
-[kv-reuse] park-compact: 1784 of 1807 rows retained in 2.1ms (model q)
-[meter] admit id=cmpl-5ada5833485d532c6be5c289fdbbbda1 tenant=default lane=interactive model="q"
+[kv-reuse] park-compact: 1784 of 1807 rows retained in 2.0ms (model q)
+[meter] admit id=cmpl-71ad2f2eb289e6b9b1de46eb595880cb tenant=default lane=interactive model="q"
 [admission] request cost: model="q" ctx=571 path=plain = 29696 B/token x ctx + 122MB prefill-workspace + 311MB fixed = 451MB
 [worker] plain-affinity: declined (history diverged at 0 of checkpoint 1536; 1 parked, 267 prompt tokens; model q)
 [spec-k] model="q" tenant="" K=0 source=operator-pin prompt=267 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
@@ -37,5 +37,5 @@
 [fa-pool] grow #2 dev=0 o_len 307200 -> 614400 ml_len 1200 -> 2400 (retired kept, zero=false)
 [server] SIGTERM: draining (0 in flight, deadline 30s)
 [server] drain complete in 0.0s; exiting
-[kv-reuse] park-compact: 507 of 515 rows retained in 2.1ms (model q)
+[kv-reuse] park-compact: 507 of 515 rows retained in 2.0ms (model q)
 [server] GPU worker shutdown complete

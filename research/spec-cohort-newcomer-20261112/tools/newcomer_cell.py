@@ -20,7 +20,9 @@ usage: newcomer_cell.py OUT BINARY ARM
 env: CELL_MODEL, CELL_PORT (18227), CELLS ("2:greedy" = 2 long streams, greedy; comma list;
      class greedy or t1 (temperature 1, fixed seeds); an optional third field is the newcomers'
      class when it differs, e.g. "2:greedy:pen": pen is greedy with a frequency penalty, which
-     the server admits to plain decode), LEAD (8), NEW (12), NEWTOK (16), TAIL (4),
+     the server admits to plain decode; an optional fourth field "long" gives each newcomer a
+     prompt of about LONGWORDS words (default 4200, about 6,000 tokens), so its prime spans
+     several chunks; each long prompt starts differently, so none is a prefix-cache hit), LEAD (8), NEW (12), NEWTOK (16), TAIL (4),
      GAPS ("0.9,1.7,0.5,2.3,1.1,0.3,1.9,0.7,2.9,1.3,0.1,2.1"), GAP (3: idle seconds after each
      cell), EXTRA_ENV ("K=V;K=V" added to the server's environment), TAG (row and log label;
      default ARM)
@@ -58,6 +60,27 @@ NEW_TOPICS = ["a river delta forms", "a bridge is inspected", "bread dough rises
               "a forest fire is mapped", "a census is planned", "a violin is tuned", "a library catalogs books",
               "a city plans bus routes", "a vineyard is pruned", "a glacier is measured", "a museum lends art",
               "a printing press works", "a dam controls floods", "a lighthouse is kept", "a road is resurfaced"]
+LONGWORDS = int(os.environ.get("LONGWORDS", "4200"))
+LONG_SUBJECTS = ["the tide gauge", "the survey boat", "the depth sounder", "the shore marker", "the field notebook", "the weather mast",
+                 "the harbor pilot", "the chart table", "the mooring line", "the signal lamp", "the supply crate", "the base station"]
+LONG_VERBS = ["was checked before dawn by", "was moved to the north pier by", "was repaired on the second day by", "was logged twice by",
+              "was left in the shed by", "was carried up the slope by", "was cleaned and stored by"]
+LONG_PEOPLE = ["the junior surveyor", "the boat crew", "the night watch", "the visiting engineer", "the project lead", "the two students"]
+
+
+def long_prompt(ci, n):
+    """About LONGWORDS words of plain sentences, a different start for every (cell, newcomer)."""
+    out, k, words = [f"Report {ci}-{n}, entry order {n * 7 + ci}."], n * 7 + ci * 3, 0
+    while words < LONGWORDS:
+        sent = (f"{LONG_SUBJECTS[k % len(LONG_SUBJECTS)].capitalize()} {LONG_VERBS[(k // 3) % len(LONG_VERBS)]} "
+                f"{LONG_PEOPLE[(k // 5) % len(LONG_PEOPLE)]} on day {k % 29 + 1}.")
+        out.append(sent)
+        words += len(sent.split())
+        k += 1
+    out.append("In one short sentence, say which item was moved to the north pier most often.")
+    return " ".join(out)
+
+
 CLASSES = {"greedy": lambda i: {"temperature": 0}, "t1": lambda i: {"temperature": 1.0, "seed": 611 + i},
            # a greedy request with a penalty is admitted to plain decode (K=0, eligibility)
            "pen": lambda i: {"temperature": 0, "frequency_penalty": 0.3}}
@@ -120,6 +143,7 @@ def main():
             longs = int(cell[0])
             cls = cell[1] if len(cell) > 1 and cell[1] else "greedy"
             ncls = cell[2] if len(cell) > 2 and cell[2] else cls
+            long_new = len(cell) > 3 and cell[3] == "long"
             hang_up = threading.Event()
             ltimes, ldone, lths = [], [], []
             mark0 = log.stat().st_size
@@ -141,7 +165,8 @@ def main():
             for n in range(NEW):
                 threading.Event().wait(GAPS[n % len(GAPS)])
                 body = {"model": "q", "max_tokens": NEWTOK, "stream": True, **CLASSES[ncls](100 + n),
-                        "messages": [{"role": "user", "content": f"Explain how {NEW_TOPICS[(ci * 5 + n) % len(NEW_TOPICS)]}, "
+                        "messages": [{"role": "user", "content": long_prompt(ci, n) if long_new else
+                                      f"Explain how {NEW_TOPICS[(ci * 5 + n) % len(NEW_TOPICS)]}, "
                                       f"step by step, in plain words. Case {ci}-{n}."}],
                         "chat_template_kwargs": {"enable_thinking": False}}
                 times, done = [], {}
@@ -181,7 +206,7 @@ def main():
                               "sha": hashlib.sha256(text.encode()).hexdigest()[:16], "text_file": f"texts/{name}"})
             tt = [x["ttft_s"] for x in news if x["ttft_s"] is not None]
             sec = [x["second_s"] for x in news if x["second_s"] is not None]
-            row = {"arm": ARM, "cell": ci, "class": cls, "newcomer_class": ncls, "longs": longs, "extra_env": os.environ.get("EXTRA_ENV", ""),
+            row = {"arm": ARM, "cell": ci, "class": cls, "newcomer_class": ncls, "long_prompts": long_new, "longs": longs, "extra_env": os.environ.get("EXTRA_ENV", ""),
                    "lead_s": LEAD, "window_s": round(t2 - t1, 2), "tail_s": TAIL, "newcomers": len(news),
                    "newcomer_errors": sum(1 for x in news if x["error"]),
                    "ttft_p50_s": pct(tt, 0.5), "ttft_p95_s": pct(tt, 0.95), "ttft_max_s": max(tt) if tt else None,
