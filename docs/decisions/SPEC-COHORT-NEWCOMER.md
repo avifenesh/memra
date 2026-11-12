@@ -78,8 +78,7 @@ unit, one boot per lease, arms interleaved. Rows, server logs and the table tool
 receipts. The newcomer cell, the closed loop and most stall boots ran the first form of the
 change (every session that had emitted nothing stepped first); the long-prompt cell, run 2 of
 the 0 ms stall cells and the exactness gates ran the final form. For a newcomer with a
-same-model speculative peer and a one-chunk prime, which is every newcomer of the first-form
-cells, the two forms run the same code, and the final form's short-prompt cells repeat them.
+same-model speculative peer and a one-chunk prime, which is every newcomer of the newcomer and closed-loop cells, the two forms run the same code (the stall cells' few newcomers admitted speculative beside demoted streams are one-token requests that end at their prime), and the final form's short-prompt cells repeat them.
 
 **The newcomer cell.** L long greedy streams run alone for 8 s, then 12 streamed 16-token
 newcomers are sent one at a time. Two boots per arm (base, change, change, base), 24 newcomers

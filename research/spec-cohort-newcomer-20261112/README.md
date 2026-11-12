@@ -57,8 +57,7 @@ decode (memra#1244).
   the stall cells' first three boots per arm pair and the RTX 5090 cells. `change2` (the
   final form) ran the long-prompt cell with its short-prompt cells again, run 2 of the 0 ms
   stall cells, the exactness gates and one RTX 5090 boot. For a newcomer with a same-model
-  speculative peer and a one-chunk prime, which is every newcomer of the first-form cells, the
-  two forms run the same code.
+  speculative peer and a one-chunk prime, which is every newcomer of the newcomer and closed-loop cells, the two forms run the same code (the stall cells' few newcomers admitted speculative beside demoted streams are one-token requests that end at their prime).
 
 ## Where the wait came from (`gb10/repro/`)
 
