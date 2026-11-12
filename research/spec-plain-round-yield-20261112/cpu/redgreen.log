@@ -1,0 +1,76 @@
+== red-parent: 2026-11-12T13:01:05+01:00
+red-parent spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
+red-parent spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=101
+red-parent spec_round_yield_is_wired rc=101
+test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.00s
+test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... FAILED
+thread 'worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits' (2943838) panicked at crates/memra-server/src/worker.rs:41461:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-server --lib`
+test worker::tests::spec_round_yield_is_wired ... FAILED
+thread 'worker::tests::spec_round_yield_is_wired' (2943906) panicked at crates/memra-server/src/worker.rs:41508:59:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p memra-server --lib`
+== red-nohook: 2026-11-12T13:04:16+01:00
+red-nohook spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
+red-nohook spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=101
+red-nohook spec_round_yield_is_wired rc=101
+test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.00s
+test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... FAILED
+thread 'worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits' (2954526) panicked at crates/memra-server/src/worker.rs:41460:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-server --lib`
+test worker::tests::spec_round_yield_is_wired ... FAILED
+thread 'worker::tests::spec_round_yield_is_wired' (2954540) panicked at crates/memra-server/src/worker.rs:41524:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p memra-server --lib`
+== red-nodue: 2026-11-12T13:07:18+01:00
+red-nodue spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=101
+red-nodue spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
+red-nodue spec_round_yield_is_wired rc=0
+test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... FAILED
+thread 'worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts' (2961161) panicked at crates/memra-server/src/worker.rs:41374:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-server --lib`
+test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.00s
+test worker::tests::spec_round_yield_is_wired ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.01s
+== red-nowrite: 2026-11-12T13:10:19+01:00
+red-nowrite spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
+red-nowrite spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
+red-nowrite spec_round_yield_is_wired rc=101
+test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.00s
+test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.00s
+test worker::tests::spec_round_yield_is_wired ... FAILED
+thread 'worker::tests::spec_round_yield_is_wired' (2982790) panicked at crates/memra-server/src/worker.rs:41507:59:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p memra-server --lib`
+== red-noride: 2026-11-12T13:13:21+01:00
+red-noride spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
+red-noride spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
+red-noride spec_round_yield_is_wired rc=101
+test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.00s
+test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.00s
+test worker::tests::spec_round_yield_is_wired ... FAILED
+thread 'worker::tests::spec_round_yield_is_wired' (3030669) panicked at crates/memra-server/src/worker.rs:41533:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.02s
+error: test failed, to rerun pass `-p memra-server --lib`
+== green: 2026-11-12T13:16:51+01:00
+green spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
+green spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
+green spec_round_yield_is_wired rc=0
+test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.00s
+test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.00s
+test worker::tests::spec_round_yield_is_wired ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.01s
+REDGREEN-DONE 2026-11-12T13:20:57+01:00
+DD-ALL-DONE 2026-11-12T13:20:57+01:00
