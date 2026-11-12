@@ -7936,6 +7936,7 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
             // counters locate a latency slope; gauges show whether retired state is accumulating.
             "admission_session_defers": m.admission_session_defers,
             "admission_vram_defers": m.admission_vram_defers,
+            "admission_drafter_refusals": m.admission_drafter_refusals,
             "admission_vram_hol_holds": m.admission_vram_hol_holds,
             "prefill_deadline_ticks": m.prefill_deadline_ticks,
             "prefix_headroom_evictions": m.prefix_headroom_evictions,
@@ -9418,6 +9419,7 @@ fn build_request_with_trace(
         constraint_ready: None,
         oom_retries: 0, // step-OOM park budget: fresh from the HTTP layer (lane/admit-oom)
         spec_k_replay: None,
+        drafter_refused: false,
         prepared_prompt: None,
         capture: None,      // set only by the embeddings/rerank routes
         images: Vec::new(), // /v1/completions is a raw-text surface
@@ -10007,6 +10009,7 @@ fn build_chat_request_with_trace(
             constraint_ready: None,
             oom_retries: 0, // step-OOM park budget: fresh from the HTTP layer (lane/admit-oom)
             spec_k_replay: None,
+            drafter_refused: false,
             prepared_prompt: None,
             // Filled by decode_pending_vision AFTER budget admission (hermes
             // decode-bomb finding, fixed 2026-08-23) — the pad runs above were rendered

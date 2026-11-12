@@ -162,6 +162,7 @@ async fn run_capture(
         constraint_ready: None,
         oom_retries: 0,
         spec_k_replay: None,
+        drafter_refused: false,
         prepared_prompt: None,
         images: Vec::new(),
         gemma_images: Vec::new(),

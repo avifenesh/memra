@@ -1372,6 +1372,7 @@ fn admission_dflash_inputs(
     let greedy = sampler.is_greedy();
     DsparkColdPrefixAdmission {
         route_ready: serve_spec_enabled()
+            && !req.drafter_refused
             && !confidence_trace_enabled()
             && peer_probe_allows_spec
             && req.capture.is_none()
@@ -2357,6 +2358,14 @@ pub struct Request {
     /// requests leave this None and run the K policy after tokenization; a parked request
     /// carries Some(K), including K=0, so changing queue depth cannot change its decision.
     pub spec_k_replay: Option<usize>,
+    /// The VRAM gate refused this request its DFlash drafter (memra#1173): the full charge,
+    /// draft plane included, did not fit and the charge without the plane did. The request is
+    /// priced and served PLAIN from then on: `admission_request_may_spec` returns false, so the
+    /// gate charges no draft plane, and `admit` builds no drafter session on any route (cold
+    /// prime, pool resume, prefix restore, cold-drafter conversion), so no plane is allocated.
+    /// Sticky for the request's life, a step-OOM park replay included. Always false from the
+    /// HTTP layer.
+    pub drafter_refused: bool,
     /// Constrained decoding (`response_format` json_object/json_schema): the parsed
     /// grammar spec. None = unconstrained — the request takes the exact legacy path
     /// (no factory, no matcher, no masking branch).
@@ -2487,6 +2496,7 @@ pub(crate) fn choice_requests(
             lane: leader.lane,
             oom_retries: 0,
             spec_k_replay: leader.spec_k_replay,
+            drafter_refused: leader.drafter_refused,
             grammar: leader.grammar.clone(),
             prepared_constraint: None,
             constraint_ready: None,
@@ -2999,6 +3009,10 @@ pub struct Metrics {
     /// ticks); parks count successful step-OOM requeues. Pool entry fields are current gauges.
     pub admission_session_defers: u64,
     pub admission_vram_defers: u64,
+    /// Requests the VRAM gate refused their DFlash drafter and served plain (memra#1173): the
+    /// full charge with the draft plane did not fit and the charge without it did. Once per
+    /// request.
+    pub admission_drafter_refusals: u64,
     /// Requests that waited behind an earlier request the VRAM gate deferred in the same
     /// admission pass (head-of-line memory order), counted per pass like the defers.
     pub admission_vram_hol_holds: u64,
@@ -17763,6 +17777,10 @@ struct Session {
     /// the queue after a step-time CUDA OOM. Bounded by STEP_OOM_MAX_RETRIES before the
     /// honest error — a session that cannot make progress must not retry forever.
     oom_retries: u32,
+    /// The request's `Request::drafter_refused` (memra#1173), kept so a step-OOM park replay
+    /// stays plain: the replayed request must not be re-admitted with the drafter the gate
+    /// refused it.
+    drafter_refused: bool,
     /// STEP-OOM PARK replay plan (lane/admit-oom): everything needed to rebuild this
     /// session's `Request` if a step-time OOM parks it back to the admission queue. Held
     /// because `admit` consumes the Request and the Session keeps only derived state (the
@@ -20045,6 +20063,7 @@ pub fn run(
     let mut n_cached_in = 0u64;
     let mut n_session_defers = 0u64;
     let mut n_vram_defers = 0u64;
+    let mut n_drafter_refusals = 0u64;
     // RECLAIM BOOKING (`reclaim_owed_booking`): armed by a door-off partial reclaim that freed
     // bytes, disarmed at an arrival that finds nothing owed. Spans ticks: a burst's primes and
     // seeds land over many of them.
@@ -22104,34 +22123,43 @@ pub fn run(
                             px.unpin(&pin);
                         }
                     }
-                    let eager_arm = !headroom.sufficient(required)
-                        && draft_state_bytes > 0
-                        && memra_engine::spec::spec_capture_gate_on()
-                        && {
-                            let requirements_eager = if pp_plan.is_some()
-                                || !request_state.is_empty()
-                                || !pending_state.is_empty()
-                                || !peer_workspace.is_empty()
-                            {
-                                Some(parallel_device_requirements(
-                                    engine.ctx().ordinal(),
-                                    cost.saturating_sub(draft_state_bytes),
-                                    reserve,
-                                    pp_plan.as_ref().map(|(devices, stages)| {
-                                        (devices.as_slice(), stages.as_slice())
-                                    }),
-                                    &request_state,
-                                    &pending_state,
-                                    &peer_workspace,
-                                ))
-                            } else {
-                                None
-                            };
-                            admission_headroom(&engine, &loaded, requirements_eager.as_deref())
-                                .map(book)
-                                .is_some_and(|h| h.sufficient(required_eager))
+                    // memra#1173: the arm exists only where something enforces it. On the MTP
+                    // route the pre-capture gate does. On the DFlash route nothing refuses
+                    // the drafter plane once a drafter session exists, so the request is
+                    // refused its drafter here and priced again as plain.
+                    let draft_arm = draft_state_arm(
+                        draft_state_bytes,
+                        dspark_drafts.contains_key(&model_key),
+                        memra_engine::spec::spec_capture_gate_on(),
+                    );
+                    let mut refuse_drafter = false;
+                    let eager_arm = !headroom.sufficient(required) && draft_arm.is_some() && {
+                        let requirements_eager = if pp_plan.is_some()
+                            || !request_state.is_empty()
+                            || !pending_state.is_empty()
+                            || !peer_workspace.is_empty()
+                        {
+                            Some(parallel_device_requirements(
+                                engine.ctx().ordinal(),
+                                cost.saturating_sub(draft_state_bytes),
+                                reserve,
+                                pp_plan.as_ref().map(|(devices, stages)| {
+                                    (devices.as_slice(), stages.as_slice())
+                                }),
+                                &request_state,
+                                &pending_state,
+                                &peer_workspace,
+                            ))
+                        } else {
+                            None
                         };
-                    if eager_arm {
+                        admission_headroom(&engine, &loaded, requirements_eager.as_deref())
+                            .map(book)
+                            .is_some_and(|h| h.sufficient(required_eager))
+                    };
+                    if eager_arm && draft_arm == Some(DraftStateArm::RefuseDrafter) {
+                        refuse_drafter = true;
+                    } else if eager_arm {
                         // Grep-stable receipt: the session is admitted for EAGER serving;
                         // if headroom later grows, an opportunistic capture stays bounded
                         // by the pre-capture gate's own post-capture floor.
@@ -22181,12 +22209,18 @@ pub fn run(
                             admission_headroom(&engine, &loaded, device_requirements.as_deref())
                                 .map(book)
                                 .is_some_and(|h| h.sufficient(required));
-                        let eager_ok = draft_state_bytes > 0
-                            && memra_engine::spec::spec_capture_gate_on()
+                        let eager_ok = draft_arm.is_some()
                             && admission_headroom(&engine, &loaded, requirements_eager.as_deref())
                                 .map(book)
                                 .is_some_and(|h| h.sufficient(required_eager));
-                        if captured_ok || eager_ok {
+                        if !captured_ok
+                            && eager_ok
+                            && draft_arm == Some(DraftStateArm::RefuseDrafter)
+                        {
+                            // The drained card holds the request only without its draft
+                            // plane: same verdict as the arm above.
+                            refuse_drafter = true;
+                        } else if captured_ok || eager_ok {
                             eprintln!(
                                 "[admission] reject averted: model={model_key:?} \
                                      ctx={} headroom recovered after fence+trim re-read \
@@ -22444,6 +22478,29 @@ pub fn run(
                             }
                         }
                         requeue.push_back(req); // waits (FIFO), never rejected
+                        continue;
+                    }
+                    if refuse_drafter {
+                        // Grep-stable receipt. The request goes back to the FRONT of the
+                        // queue and this same pass prices it again as a plain request (no
+                        // draft plane in the cost, no drafter session in `admit`), so it
+                        // keeps its place and the gate decides on what will be allocated.
+                        // At most once per request: a refused request charges no draft
+                        // state, so `draft_state_arm` is None for it.
+                        eprintln!(
+                            "[admission] drafter refused: model={model_key:?} ctx={} \
+                             draft plane {:.0}MB does not fit (available {:.0}MB, required \
+                             {:.0}MB with it, {:.0}MB without); the request is priced again \
+                             and served PLAIN, no drafter session is created",
+                            admission_cap,
+                            draft_state_bytes as f64 / 1e6,
+                            headroom.limiting_free_bytes() as f64 / 1e6,
+                            required as f64 / 1e6,
+                            required_eager as f64 / 1e6,
+                        );
+                        n_drafter_refusals += 1;
+                        req.drafter_refused = true;
+                        queue.push_front(req);
                         continue;
                     }
                     // ADMIT RECEIPT (memra#680): armed, every arrival this gate lets through is a
@@ -26038,6 +26095,7 @@ pub fn run(
             m.kv_flex_shed_ms = kv_flex.shed_ms_total;
             m.admission_session_defers = n_session_defers;
             m.admission_vram_defers = n_vram_defers;
+            m.admission_drafter_refusals = n_drafter_refusals;
             m.admission_vram_hol_holds = n_vram_hol_holds;
             m.prefill_deadline_ticks = n_prefill_deadline_ticks;
             m.prefix_headroom_evictions = n_prefix_headroom_evictions;
@@ -26827,6 +26885,9 @@ fn admission_request_may_spec(
     if confidence_trace_enabled()
         || !served_spec_route_capable(lm, dspark_armed)
         || !serve_spec_enabled()
+        // memra#1173: the gate refused this request its drafter; it is priced plain, and
+        // `admit` builds no drafter session for it (`Request::drafter_refused`).
+        || req.drafter_refused
     {
         return false;
     }
@@ -26844,6 +26905,37 @@ fn admission_request_may_spec(
         .k
     }) > 0;
     peer_probe_spec_admission(candidate, peer_probe_allows_spec)
+}
+
+/// What the VRAM gate may do with a spec request whose full charge (draft state included)
+/// does not fit while its charge without the draft state does (memra#1173).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DraftStateArm {
+    /// MTP route: the draft state is the draft-graph CAPTURE high-water, and the pre-capture
+    /// gate (`MEMRA_SPEC_CAPTURE_GATE`) refuses a capture the device cannot hold. The session
+    /// is admitted and serves eagerly, so the term it was not charged is never allocated.
+    EagerCapture,
+    /// DFlash route: the draft state is the drafter KV plane, which every drafter session
+    /// allocates when it is created; no later gate can refuse it. The gate refuses the request
+    /// its drafter and prices it again as a plain request.
+    RefuseDrafter,
+}
+
+/// The arm the gate may take instead of deferring or refusing such a request, or None when
+/// the full charge is the only honest one: nothing was charged for draft state, or the MTP
+/// capture gate that would enforce an eager admission is off. The DFlash arm does not depend
+/// on that gate: `Request::drafter_refused` enforces it.
+fn draft_state_arm(
+    draft_state_bytes: usize,
+    dflash_route: bool,
+    capture_gate_on: bool,
+) -> Option<DraftStateArm> {
+    match (draft_state_bytes, dflash_route, capture_gate_on) {
+        (0, _, _) => None,
+        (_, true, _) => Some(DraftStateArm::RefuseDrafter),
+        (_, false, true) => Some(DraftStateArm::EagerCapture),
+        (_, false, false) => None,
+    }
 }
 
 /// Whether the model serves ANY speculation route: the embedded MTP head, or an armed DFlash2
@@ -27650,6 +27742,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         choice: s.choice.clone(),
         route_ticket: None,
         spec_k_replay: Some(s.spec_k),
+        drafter_refused: s.drafter_refused,
         prepared_prompt: None,
         images: Vec::new(),
         gemma_images: Vec::new(),
@@ -27915,6 +28008,7 @@ fn admit(
         max_prompt_tokens: req.max_prompt_tokens,
     });
     let req_oom_retries = req.oom_retries;
+    let req_drafter_refused = req.drafter_refused;
     let req_spec_k_replay = req.spec_k_replay;
     let vision_memory = req.vision_memory.take();
 
@@ -28436,7 +28530,11 @@ fn admit(
             })
             .unwrap_or(false);
     let cold_prefix_inputs = DsparkColdPrefixAdmission {
+        // memra#1173: a request the VRAM gate refused its drafter takes no DFlash route at
+        // all. Every drafter-session site below (cold prime, pool resume, prefix restore,
+        // cold-drafter conversion) reads this struct, so this one term closes them all.
         route_ready: dspark_draft_ready
+            && !req_drafter_refused
             && memra_engine::plan_backend::gdn_dspark_compatible(&lm.model.plan)
             && serve_spec
             && !confidence_trace_enabled(),
@@ -28532,7 +28630,15 @@ fn admit(
             hit_available: false,
             ..cold_prefix_inputs
         });
-        if without_shape_veto {
+        if req_drafter_refused && dspark_draft_ready {
+            // The serve-side half of the gate's `[admission] drafter refused:` receipt.
+            eprintln!(
+                "[dspark] declined: drafter refused at admission (its draft plane did not \
+                 fit); serving PLAIN (prompt={} decode_budget={})",
+                prompt.len(),
+                budget,
+            );
+        } else if without_shape_veto {
             eprintln!(
                 "[dspark] cache-preferred: prompt={} decode_budget={} lcp={policy_lcp} — a cold \
                  prime would discard a prefix hit that {} tokens of speculation cannot repay; \
@@ -31160,6 +31266,7 @@ fn admit(
         spec,
         mtp_prime: None,
         oom_retries: req_oom_retries,
+        drafter_refused: req_drafter_refused,
         vision_memory,
         replay,
         spec_drafted: 0,
@@ -38223,6 +38330,7 @@ mod tests {
             lane: Lane::Interactive,
             oom_retries: 0,
             spec_k_replay: None,
+            drafter_refused: false,
             grammar: None,
             prepared_constraint: None,
             constraint_ready: None,
@@ -38840,6 +38948,7 @@ mod tests {
             lane: crate::lanes::Lane::Interactive,
             oom_retries: 0,
             spec_k_replay: None,
+            drafter_refused: false,
             grammar: None, // moved into the compiler job above
             prepared_constraint: None,
             constraint_ready: Some(ready_tx),
@@ -39431,6 +39540,156 @@ mod tests {
                 + squashed.matches("prefix_insert_budget(engine,").count(),
             4
         );
+    }
+
+    #[test]
+    fn a_dflash_request_is_never_admitted_with_its_draft_plane_uncharged() {
+        // memra#1173. The gate's second arm fits a spec request without its draft-state term.
+        // That is honest on the MTP route, where the term is a capture the pre-capture gate
+        // refuses. On the DFlash route the term is the drafter KV plane, allocated by every
+        // drafter session with nothing later to refuse it (1,229 MB at a 30k cap for a
+        // drafter with no sliding layer), so that arm admitted a plane nothing had charged.
+        use super::{DraftStateArm, draft_state_arm};
+        let plane = 1_229 << 20;
+        // DFlash route: the request is refused its drafter, whatever the MTP capture gate says.
+        assert_eq!(
+            draft_state_arm(plane, true, true),
+            Some(DraftStateArm::RefuseDrafter)
+        );
+        assert_eq!(
+            draft_state_arm(plane, true, false),
+            Some(DraftStateArm::RefuseDrafter)
+        );
+        // MTP route: the eager arm, and only while the gate that enforces it is armed.
+        assert_eq!(
+            draft_state_arm(plane, false, true),
+            Some(DraftStateArm::EagerCapture)
+        );
+        assert_eq!(draft_state_arm(plane, false, false), None);
+        // Nothing charged for draft state (a plain request, a refused one): no second arm.
+        for dflash in [false, true] {
+            for gate in [false, true] {
+                assert_eq!(draft_state_arm(0, dflash, gate), None);
+            }
+        }
+
+        // The wiring the verdict needs, at each seam it crosses.
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        // The gate consults the arm at both of its headroom reads and admits nothing on the
+        // DFlash one: the refused request goes back to the queue front and is priced again.
+        assert_eq!(
+            squashed
+                .matches("draft_arm == Some(DraftStateArm::RefuseDrafter)")
+                .count(),
+            2,
+            "the first read and the drained re-read both refuse the drafter"
+        );
+        assert!(squashed.contains(
+            "let eager_arm = !headroom.sufficient(required) && draft_arm.is_some() && {"
+        ));
+        assert!(squashed.contains("let eager_ok = draft_arm.is_some() && admission_headroom("));
+        assert!(squashed.contains(
+            "n_drafter_refusals += 1; req.drafter_refused = true; queue.push_front(req); continue;"
+        ));
+        // A refused request is priced plain: no spec estimate, so no draft plane in its cost
+        // and no second refusal.
+        let may_spec = &production[production.find("fn admission_request_may_spec(").unwrap()..];
+        let may_spec = &may_spec[..may_spec.find("\n}\n").unwrap()];
+        assert!(may_spec.contains("|| req.drafter_refused"), "{may_spec}");
+        // `admit` creates no drafter session for it: every drafter route reads `route_ready`.
+        assert!(squashed.contains(
+            "route_ready: dspark_draft_ready && !req_drafter_refused && \
+             memra_engine::plan_backend::gdn_dspark_compatible(&lm.model.plan)"
+        ));
+        let planned = &production[production.find("fn admission_dflash_inputs(").unwrap()..];
+        let planned = &planned[..planned.find("\n}\n").unwrap()];
+        assert!(
+            planned
+                .contains("route_ready: serve_spec_enabled()\n            && !req.drafter_refused"),
+            "{planned}"
+        );
+        for site in [
+            "dspark_resume",
+            "dspark_prefix_restored",
+            "DSPARK cold-drafter restore:",
+        ] {
+            assert!(production.contains(site), "{site}");
+        }
+        // The pool resume and the prefix restore require the cold preference; the cold-drafter
+        // conversion requires the same inputs with the shape veto lifted.
+        assert!(squashed.contains(
+            "if admission_restore.is_none() && dspark_draft_ready && dspark_prefers_cold && spec.is_none()"
+        ));
+        assert!(squashed.contains(
+            "if dspark_prefix_restore_on() && dspark_prefers_cold && spec_restored.is_none() && \
+             let Some(draft) = dspark_draft"
+        ));
+        assert!(squashed.contains(
+            "&& dspark_prefers_cold_over_prefix(DsparkColdPrefixAdmission { hit_available: false, \
+             ..cold_prefix_inputs }) && let Some(draft) = dspark_draft"
+        ));
+        // Sticky across a step-OOM park replay and a choice group.
+        assert!(production.contains("drafter_refused: s.drafter_refused,"));
+        assert!(production.contains("drafter_refused: leader.drafter_refused,"));
+        assert!(production.contains("drafter_refused: req_drafter_refused,"));
+    }
+
+    #[test]
+    fn a_refused_drafter_closes_every_dflash_route() {
+        // memra#1173: `route_ready` false (what `drafter_refused` makes it) declines the cold
+        // prime, and with it the pool resume and the prefix restore that require the cold
+        // preference, for every load and hit shape that would otherwise take the route.
+        let base = super::DsparkColdPrefixAdmission {
+            route_ready: true,
+            prime_feasible: true,
+            greedy: true,
+            greedy_penalized: false,
+            sampled: false,
+            constrained: false,
+            vision: false,
+            cold: true,
+            gate_on: true,
+            pin: None,
+            projected_wave: 1,
+            low: 4,
+            n_active: 0,
+            has_live_non_demotable: false,
+            prompt_len: 30_000,
+            decode_budget: 4_096,
+            hit_available: false,
+            hit_restorable: false,
+            pool_resumable: false,
+        };
+        assert!(super::dspark_prefers_cold_over_prefix_with(base, true));
+        for (hit_available, hit_restorable, pool_resumable) in [
+            (false, false, false),
+            (true, false, false),
+            (true, true, false),
+            (true, false, true),
+        ] {
+            for sampled in [false, true] {
+                let refused = super::DsparkColdPrefixAdmission {
+                    route_ready: false,
+                    greedy: !sampled,
+                    sampled,
+                    hit_available,
+                    hit_restorable,
+                    pool_resumable,
+                    ..base
+                };
+                assert!(!super::dspark_prefers_cold_over_prefix_with(refused, true));
+                // The cold-drafter conversion's own predicate: the veto lifted.
+                assert!(!super::dspark_prefers_cold_over_prefix_with(
+                    super::DsparkColdPrefixAdmission {
+                        hit_available: false,
+                        ..refused
+                    },
+                    true
+                ));
+            }
+        }
     }
 
     #[test]
@@ -53541,6 +53800,7 @@ mod tests {
             lane: crate::lanes::Lane::Interactive,
             oom_retries: 0,
             spec_k_replay: None,
+            drafter_refused: false,
             grammar: None,
             prepared_constraint: None,
             constraint_ready: None,
