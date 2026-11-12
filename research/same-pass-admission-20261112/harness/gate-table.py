@@ -26,7 +26,9 @@ for d in sorted(Path(sys.argv[1]).iterdir()):
         print(f"- placement: effective free beside the keeper {busy / MB:.0f} MB, ballast "
               f"{s.get('ballast', 0) / MB:.0f} MB, before the pair {s.get('free_before_pair', 0) / MB:.0f} MB; "
               f"one fits at {s['one_fits_at'] / MB:.0f} MB, two at {s['two_fit_at'] / MB:.0f} MB, "
-              f"target {s['target_free'] / MB:.0f} MB")
+              f"target {s['target_free'] / MB:.0f} MB" +
+              (f"; band from the probed reserve {s['reserve'] / MB:.0f} MB (probe HTTP {s['reserve_probe']['status']})"
+               if "reserve" in s else "; band from the boot floor"))
     if "shape" in s:
         sh = s["shape"]
         print(f"- the pair's admissions (`[spec-k]` lines after the fire, line index): {sh.get('pair_admit_lines', sh.get('worker_admit_lines'))}; "

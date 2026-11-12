@@ -1,0 +1,12 @@
+--- /home/avifenesh/.cache/memra-1255/worker-fix3.keep	2026-11-12 20:13:26.173884259 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 20:17:08.890702150 +0100
+@@ -8710,7 +8710,8 @@
+ /// arrival the reading does not hold even without the booking gains nothing from a wait (the tick
+ /// can only lower the reading): it goes on to those verdicts at once, on the booked reading.
+ fn settle_wait(unbuilt_booked: usize, fits_booked: bool, fits_unbooked: bool) -> bool {
+-    unbuilt_booked > 0 && !fits_booked && fits_unbooked
++    let _ = fits_unbooked;
++    unbuilt_booked > 0 && !fits_booked
+ }
+ 
+ /// Prompt rows a session still has to prime (memra#680): its queued rows while the prime runs,

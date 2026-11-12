@@ -1,0 +1,12 @@
+--- /home/avifenesh/.cache/memra-1255/worker-fix3.keep	2026-11-12 20:13:26.173884259 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 20:13:26.189884533 +0100
+@@ -8745,7 +8745,8 @@
+ /// so until then the armed door's pending-prime term must book that stack: the unbuilt booking
+ /// leaves the prefill workspace to this term on the armed door.
+ fn prime_walker_unstarted(mtp_spec: bool, mtp_prime_started: bool, owns_route_state: bool) -> bool {
+-    (mtp_spec && !mtp_prime_started) || !owns_route_state
++    let _ = owns_route_state;
++    mtp_spec && !mtp_prime_started
+ }
+ 
+ /// One still-priming session as the corrected pending-prime term reads it (WP-B day 39).

@@ -1,0 +1,11 @@
+--- /home/avifenesh/.cache/memra-1255/worker-fix3.keep	2026-11-12 20:13:26.173884259 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 20:21:05.248763215 +0100
+@@ -21676,7 +21676,7 @@
+                     // waits for, and as a cold DFlash prime would be one more unbuilt booking to
+                     // wait behind.
+                     if lane == crate::lanes::Lane::Interactive {
+-                        memory_hold.extend(model_devices(&engine, &loaded[&model_key]));
++                        let _ = &memory_hold;
+                     }
+                     requeue.push_back(req);
+                     continue;

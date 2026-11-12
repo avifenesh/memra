@@ -1,0 +1,25 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (/home/avifenesh/.cache/memra-1255/tree-fix3/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 4m 23s
+     Running unittests src/lib.rs (/home/avifenesh/.cache/memra-1255/target-fix2-check/release/deps/memra_server-84c25559e043e0da)
+
+running 3 tests
+test worker::tests::an_admitted_session_with_no_route_state_books_its_charge_until_the_tick_builds_it ... ok
+test worker::tests::the_armed_door_books_the_whole_prompt_stack_of_an_unbuilt_session ... ok
+test worker::tests::every_route_state_field_counts_as_built_and_the_settle_wait_precedes_every_verdict ... FAILED
+
+failures:
+
+---- worker::tests::every_route_state_field_counts_as_built_and_the_settle_wait_precedes_every_verdict stdout ----
+
+thread 'worker::tests::every_route_state_field_counts_as_built_and_the_settle_wait_precedes_every_verdict' (2892861) panicked at crates/memra-server/src/worker.rs:40191:9:
+assertion failed: hold < requeued && requeued < next && next < reclaim
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::every_route_state_field_counts_as_built_and_the_settle_wait_precedes_every_verdict
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p memra-server --lib`

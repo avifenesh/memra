@@ -13,9 +13,10 @@ write equal text.
 
 ## RTX 5090 Laptop GPU
 
-Base `2b16d303ec4f96b8`, change `80d3e8d7e42219d6`, two boots per lease in the order
-B F, F B, B F, F B. The enforced power limit (each boot's `guard.log` and 250 ms
-`telemetry.csv`) was not changed.
+Base `2b16d303ec4f96b8`; the change's first cut `fix-*` (`80d3e8d7e42219d6`) and its head
+`fix3-*` (`58f08d69a1b02938`). Two boots per lease in the order B F, F B (first cut), B F, F B
+(head). The enforced power limit (each boot's `guard.log` and 250 ms `telemetry.csv`) was not
+changed.
 
 <!-- AGENTIC-5090:START -->
 | boot | turns ok | tokens | wall s | agg gen tok/s | TTFT p50 / p95 s | settle waits (passes) | settled requests, wait ms sum / max | VRAM defer lines | drafter refused | step-OOM parks | out of memory |
@@ -24,17 +25,25 @@ B F, F B, B F, F B. The enforced power limit (each boot's `guard.log` and 250 ms
 | fix-194923 | 29/29 | 10,818 | 305.3 | 36.11 | 4.00 / 15.52 | 1 | 1, 3264 / 3264 | 0 | 0 | 0 | 0 |
 | fix-200031 | 29/29 | 10,818 | 298.0 | 37.02 | 3.61 / 15.56 | 0 | 0, 0 / 0 | 0 | 0 | 0 | 0 |
 | base-200825 | 29/29 | 9,765 | 274.8 | 35.86 | 3.29 / 15.05 | 0 | 0, 0 / 0 | 0 | 0 | 1 | 1 |
+| base-211904 | 29/29 | 10,262 | 282.7 | 37.08 | 3.13 / 14.77 | 0 | 0, 0 / 0 | 0 | 0 | 2 | 2 |
+| fix3-212638 | 29/29 | 10,818 | 290.7 | 37.94 | 3.84 / 15.10 | 1 | 1, 3190 / 3190 | 0 | 0 | 0 | 0 |
+| fix3-213723 | 29/29 | 10,818 | 311.3 | 35.37 | 3.25 / 15.53 | 1 | 1, 2182 / 2182 | 0 | 0 | 0 | 0 |
+| base-214522 | 29/29 | 9,765 | 270.3 | 36.45 | 3.23 / 15.48 | 0 | 0, 0 / 0 | 0 | 0 | 1 | 1 |
 
 Text identity per (session, turn) against base-194054:
 - base-194054: 29/29 identical
 - fix-194923: 29/29 identical
 - fix-200031: 29/29 identical
 - base-200825: 27/29 identical
+- base-211904: 27/29 identical
+- fix3-212638: 29/29 identical
+- fix3-213723: 29/29 identical
+- base-214522: 27/29 identical
 <!-- AGENTIC-5090:END -->
 
 ## DGX Spark (GB10)
 
-Base `32980dc5fd052485`, change `ba6cf06e6979acc9`, one boot per `sparklock` lease, B F F B.
+Base `32980dc5fd052485`, the change's first cut `ba6cf06e6979acc9`, one boot per `sparklock` lease, B F F B.
 
 <!-- AGENTIC-GB10:START -->
 | boot | turns ok | tokens | wall s | agg gen tok/s | TTFT p50 / p95 s | settle waits (passes) | settled requests, wait ms sum / max | VRAM defer lines | drafter refused | step-OOM parks | out of memory |
