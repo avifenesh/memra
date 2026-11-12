@@ -13,10 +13,14 @@
 //! size. `MemAvailable` already subtracts the kernel's own watermark reserve, so a floor kept
 //! on top of it (the admission driver-headroom rung, the transient reserve) stays a floor.
 //!
-//! Only SIZING reads (prefix-cache budget, admission's effective free, the MoE residency
-//! decision) take [`allocatable_mem_info`]. The crash guards that protect the driver itself
-//! (graph-launch floor, pre-capture headroom, the driver-headroom trim) keep the raw reading:
-//! on unified memory it can only be lower, so they stay on the conservative side.
+//! SIZING reads (prefix-cache budget, admission's effective free, the MoE residency decision)
+//! and the pre-capture headroom guard take [`allocatable_mem_info`]. The guard moved in
+//! memra#1221: with a full page cache the raw reading sat at 2-3 GB while `MemAvailable` was
+//! near 100 GB, so the guard trimmed the pool (a 260k prompt's publication then grew it back on
+//! the scheduler thread) and refused 1k requests' captures, while a capture with the trim
+//! skipped at that reading succeeded. The graph-launch floor and admission's driver-headroom
+//! trim keep the raw reading: on unified memory it can only be lower, so they stay on the
+//! conservative side.
 
 use cudarc::driver::{CudaContext, DriverError};
 
