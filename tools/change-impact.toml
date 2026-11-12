@@ -40,7 +40,7 @@ schema = "memra-change-impact-v1"
 # ---- build targets -------------------------------------------------------------------
 # push_gate = true: a push that reaches this target needs evidence from one of its devices.
 # push_gate = false: no device in reach for every push; the daily run of a device of this
-# target (when one exists) and the pre-tag full battery cover it. Flip it when the family
+# target (when one exists) covers it; the tag battery builds sm_120a only. Flip it when the family
 # gets an owned device and a support claim.
 
 [target."120a"]
@@ -56,7 +56,7 @@ note = "GB10 (DGX Spark). Its own 121a SASS in the 120a policy family; a GB10 co
 [target."100a"]
 name = "sm_100a"
 push_gate = false
-note = "B200. Compile-only CI cell; device runs only on a rented box."
+note = "B200, best effort. CI compiles it (100a cell); device runs need a B200."
 
 [target."90a"]
 name = "sm_90a"
@@ -66,7 +66,7 @@ note = "H100. The Hopper CI lane is retired; run its battery on Hopper hardware 
 [target."89"]
 name = "sm_89"
 push_gate = false
-note = "Portable eval build. Compile-only CI cell."
+note = "Ada (RTX 40-series, L4, L40S), not maintained. CI does not compile it."
 
 # ---- devices -------------------------------------------------------------------------
 # A device counts for the target its compute capability maps to in the arch table, so the

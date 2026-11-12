@@ -2862,8 +2862,8 @@ pub(crate) fn admission_deadline_response(deadline: RequestDeadline, stream: boo
 pub(crate) const PREFILL_FLOOR_TOK_S: u64 = 2_000;
 
 /// Pessimistic decode rate for the feasibility estimate, tokens/second. The slowest arm
-/// measured through the customer path on the current fleet is ~100 tok/s (verbose prose at
-/// 30k context); 60 leaves room for a busier box without refusing honest work.
+/// measured through the serving path is ~100 tok/s (verbose prose at 30k context); 60 leaves
+/// room for a busier box without refusing honest work.
 /// Override: `MEMRA_DECODE_FLOOR_TOK_S`.
 pub(crate) const DECODE_FLOOR_TOK_S: u64 = 60;
 
@@ -5972,9 +5972,9 @@ fn parse_template_kwargs(kwargs: &Option<serde_json::Value>) -> Result<Option<bo
             other => {
                 return Err(format!(
                     "chat_template_kwargs.{other} is not supported by this server's \
-                     template renderer (it would change nothing about the prompt); the only \
-                     supported key is enable_thinking (preserve_thinking is RECOGNISED but \
-                     refuses in both directions — see its own message)"
+                     template renderer (it would change nothing about the prompt); the \
+                     supported keys are enable_thinking and preserve_thinking (true only; false \
+                     refuses with its own message)"
                 ));
             }
         }

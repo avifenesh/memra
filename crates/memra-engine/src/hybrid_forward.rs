@@ -30441,7 +30441,7 @@ impl HybridModel {
 //  e4b-arch-map.md; llama reference: src/models/gemma4.cpp (E4B arms). Wired:           //
 //  forward (prefill logits), whole-prompt prime, eager and dc decode, the graph-exec    //
 //  loop (MEMRA_E4B_GRAPH), and gemma-gate's batched verify and assistant-drafter        //
-//  spec, qualified 2026-11-04 (docs/models/gemma4-e4b.md). NOT wired: chunked prime,    //
+//  spec, gated 2026-11-04 (docs/models/gemma4-e4b.md). NOT wired: chunked prime,        //
 //  batched decode, pipeline stages, memra-server's gspec attach.                        //
 // ===================================================================================== //
 impl HybridModel {

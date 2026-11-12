@@ -2323,7 +2323,8 @@ impl HybridModel {
         // Qwen35-MoE is the second exception (lane/cx-q35bug, 2026-08-12): on the Q35
         // sellgate workload the eager-B1 -> batched-B2 transition changed emitted token ids and
         // selected EOS at tokens 15/17/25. Keep that family on this generic batched trunk at B=1
-        // too; dense Qwen35 retains the measured eager fast path.
+        // too. The eager B=1 door is off on every GatedDeltaNet plan as well (see the trunk
+        // check in b1_fast_plan_eligible), so no Qwen3.5-class model takes it.
         let b1_stage_fast = b_n == 1
             && Self::b1_fast_on()
             && self.b1_fast_plan_eligible()

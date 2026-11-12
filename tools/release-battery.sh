@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# release-battery.sh — the GPU release gate, run on the rig before tagging.
+# release-battery.sh — the GPU release gate, run before tagging on one leased RTX PRO 6000
+# Blackwell card per release OS profile (tools/qualify-release.py capture).
 #
-# CI is compile-only. This is the only thing that proves kernels compute right answers,
+# GitHub runners have no GPU: ci.yml runs the CPU suites and compiles 120a, 121a and 100a. This is
+# the only thing that proves kernels compute right answers,
 # and until 2026-08-28 it was three prose commands in docs/RELEASING.md whose model list
 # read `<each affected model>`. That phrase is what let v0.118.0 ship without running
 # ornith-1.5-35b-a3b: the change touched no kernel, the GGUF was not on the rig, and

@@ -45,7 +45,7 @@ pub fn resolve_arg(arg: &str) -> Result<String, String> {
         cmd.arg("--include").arg(format!("*{p}*"));
     }
     let status = cmd.status().map_err(|e| {
-        format!("`hf` CLI not runnable ({e}) — install with: pip install -U 'huggingface_hub[cli]'")
+        format!("`hf` CLI not runnable ({e}); install it with: curl -LsSf https://hf.co/cli/install.sh | bash -s -- --exclude-skill (needs Python 3.10 or newer with venv)")
     })?;
     if !status.success() {
         return Err(format!("hf download {repo} failed ({status})"));

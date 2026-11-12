@@ -32622,9 +32622,8 @@ fn advance_sample_emit(
 ///
 /// - the dense `Arch::Qwen35` class on the RTX PRO 6000 Blackwell card class. Qwen3.8-27B, vendor non-thinking
 ///   shape: Server Edition plain c1/c16 46.49 -> 68.66 / 94.95 -> 300.93 tok/s
-///   (`research/pro-device-penalty-sampling-20260824/`, darklanes verdict `q38-devpenalty-flip`);
-///   Workstation Edition aggregate c8 155.16 -> 294.05 tok/s, six interleaved boots (darklanes
-///   `research/qorn-md-single-card-20260910/DEVPENALTY-RESULTS.md`).
+///   (`research/pro-device-penalty-sampling-20260824/`); Workstation Edition aggregate c8
+///   155.16 -> 294.05 tok/s, six interleaved boots (raw runs not in this repository).
 ///
 /// - the dense `Arch::Qwen35` class on GB10 (DGX Spark), keyed by the device name. Qwen3.8-27B,
 ///   vendor non-thinking shape, six boots off on on off off on: flat one at a time (decode

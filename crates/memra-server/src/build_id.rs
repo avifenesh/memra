@@ -194,7 +194,7 @@ pub(crate) fn degraded_build_id(pkg_name: &str, pkg_version: &str) -> String {
 /// The documented `system_fingerprint` shape: `memra-<version>-<12 lowercase hex>`.
 ///
 /// This is the assertion the old envelope tests were missing. They checked
-/// `starts_with("memra-")`, which `memra-unknown` passes, so the defect that served prod a
+/// `starts_with("memra-")`, which `memra-unknown` passes, so the defect that served a
 /// meaningless fingerprint was inside the tested surface the whole time.
 pub(crate) fn fingerprint_is_well_formed(fp: &str) -> bool {
     // Belt and braces: the literal that shipped must never validate again, whatever the

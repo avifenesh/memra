@@ -10,9 +10,8 @@
 //! there on 2026-08-30 21:33 git aborted with "detected dubious ownership" and this script
 //! baked `unknown`. The 03:30 build-script output of that same day
 //! (`serving/dist/target/release/build/memra-server-*/output` =
-//! `MEMRA_BUILD_SHA=unknown`) is the binary the fleet was serving, and prod answered
-//! `system_fingerprint: memra-unknown` to every customer request for a whole deploy
-//! generation. Nothing warned, at build time or at boot, because a successful build with a
+//! `MEMRA_BUILD_SHA=unknown`) is a binary that answered `system_fingerprint: memra-unknown`
+//! to every request for a whole build generation. Nothing warned, at build time or at boot, because a successful build with a
 //! meaningless label looks exactly like a successful build.
 //!
 //! WHAT IT DOES NOW. The identity is `<crate version>-<content id>`, where the content id

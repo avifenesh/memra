@@ -127,7 +127,7 @@ jobs:
             echo "sm_120a = RTX 50-series (the tuned target). Prebuilts publish sm_120a only;"
             echo "other arches (Hopper, Ada, B200) build from source with MEMRA_CUDA_ARCH."
             echo ""
-            echo "Quick start: ./kernel-check   # expect: ALL GREEN: kernels match CPU reference."
+            echo "Quick start: ./kernel-check   # expect a last line: ALL GREEN (<n> cells, <m> skipped)"
             echo "Docs: https://github.com/avifenesh/memra"
           } > "/tmp/$pkg/README.txt"
           tar -C /tmp -czf "/tmp/$pkg.tar.gz" "$pkg"

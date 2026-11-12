@@ -122,10 +122,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let config_path = args
         .next()
-        .ok_or("usage: modelplan-reference-gate <config.json> <receipt.tsv>")?;
+        .ok_or("usage: modelplan_reference_gate <config.json> <receipt.tsv>")?;
     let receipt_path = args
         .next()
-        .ok_or("usage: modelplan-reference-gate <config.json> <receipt.tsv>")?;
+        .ok_or("usage: modelplan_reference_gate <config.json> <receipt.tsv>")?;
     let cfg = ModelConfig::from_hf(&HfConfig::try_parse(&std::fs::read_to_string(
         config_path,
     )?)?);
