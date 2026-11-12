@@ -28,6 +28,12 @@ every request is a cold prime:
            full admission and that refusal. The gate stops after --window-hits window steps.
            No admission door is touched.
 
+  band     (DFlash only, before the descent) one greedy request with effective free
+           --band-mb below the window's bottom, C + reserve: the idle card holds neither the
+           full charge nor the charge without the plane, and it does hold the plain charge,
+           which is smaller (a DFlash walker is charged the whole prompt's stack, a plain prime
+           one take: 325 MB apart at the default shape). The unfixed tree answers HTTP 400.
+
 Verdicts (every number from the server's own lines, /metrics and nvidia-smi):
   V1 window_reached   at least --window-hits steps landed in the window. Otherwise REFUSED:
                       the cell did not test the arm (card too small or too large for the shape).
@@ -48,6 +54,10 @@ Verdicts (every number from the server's own lines, /metrics and nvidia-smi):
                       when it did. The detail line says whether the two sampled references
                       agree (they are different random programs and need not).
 
+  V7 idle_serves_plain  the band step printed `drafter refused`, answered 200 with tokens and
+                      no `usage.spec`, and its greedy text equals the references. RED on the
+                      unfixed tree (HTTP 400 `context_length_exceeded`).
+
 Without --draft the boot serves the MTP route, where the second arm stays (`--route mtp`
 verdicts): M2 every window step printed `eager-arm admit` and the pre-capture gate's `capture
 skipped pre-attempt` refusal (the capture state the request was not charged for was not
@@ -64,7 +74,7 @@ a ballast the driver cannot hold, the window not reached).
 
 usage: drafter-admission-gate.py [--external-lock FD] --model GGUF [--draft DIR] --bin memra-server \\
            --out NEW_DIR [--port N] [--ctx N] [--prompt-words N] [--max-tokens N] \\
-           [--window-hits N] [--max-steps N]
+           [--window-hits N] [--max-steps N] [--band-mb N]
 Lock: the canonical rig lock only (`/tmp/memra-gpu.lock` or `/tmp/memra-5090.lock`), held for
 the whole cell; `--external-lock FD` inherits the caller's FD (`gpulock run` passes FD 9) and
 is verified with tools/tier-lock-proof.py before anything binds a port or boots a server.
@@ -396,13 +406,13 @@ def in_window(row: dict) -> bool:
 
 
 def verdicts(rows: list[dict], window_hits: int, draft_bytes: int, log_text: str, alive: bool, health: int,
-             refs: dict, full: dict, dflash: bool = True) -> dict:
+             refs: dict, full: dict, dflash: bool = True, band: dict | None = None) -> dict:
     """The verdicts over the recorded steps: pure, so the gate's teeth are testable.
 
     `rows[1:]` are the ballast steps; `full` is a full speculating admission on the idle card
     whose /metrics reading before it is live (the boot's second request: the worker publishes
     none before its first); `refs` holds the four reference texts (`spec_greedy`,
-    `spec_sampled`, `plain_greedy`, `plain_sampled`)."""
+    `spec_sampled`, `plain_greedy`, `plain_sampled`); `band` is the band step (DFlash only)."""
     window = [r for r in rows[1:] if in_window(r)]
     v = {}
     v["V1 window_reached"] = (
@@ -458,7 +468,7 @@ def verdicts(rows: list[dict], window_hits: int, draft_bytes: int, log_text: str
         # Qwen3.8-27B), so peak pool use cannot show its absence. M2's refusal line does.
         v["INFO peak_pool_use"] = (True, peaks)
     bad = {b: log_text.count(b) for b in BAD_LINES if b in log_text}
-    fivexx = [r["status"] for r in rows if r["status"] >= 500]
+    fivexx = [r["status"] for r in rows + ([band] if band else []) if r["status"] >= 500]
     v["V5 no_oom"] = (
         not bad and not fivexx and alive and health == 200,
         f"bad lines {bad}, 5xx {fivexx}, alive {alive}, /health {health}",
@@ -480,6 +490,18 @@ def verdicts(rows: list[dict], window_hits: int, draft_bytes: int, log_text: str
         + f"; greedy references agree {refs['spec_greedy'] == refs['plain_greedy']}; sampled references agree "
         f"{refs['spec_sampled'] == refs['plain_sampled']}",
     )
+    if dflash and band is not None:
+        ok = (
+            band["status"] == 200 and (band["completion_tokens"] or 0) > 0 and not band["speculated"]
+            and len(band["refused_lines"]) == 1 and len(band["declined_lines"]) == 1
+            and band["text"] == refs["plain_greedy"] == refs["spec_greedy"]
+        )
+        v["V7 idle_serves_plain"] = (
+            ok,
+            f"band step at {band['effective_free_before'] / MB:.0f}MB effective free: status {band['status']} tokens "
+            f"{band['completion_tokens']} speculated {band['speculated']} refused lines {len(band['refused_lines'])} "
+            f"same text {band['text'] == refs['plain_greedy']}",
+        )
     return v
 
 
@@ -506,6 +528,7 @@ def main() -> None:
     ap.add_argument("--max-tokens", type=int, default=48)
     ap.add_argument("--window-hits", type=int, default=2)
     ap.add_argument("--max-steps", type=int, default=12)
+    ap.add_argument("--band-mb", type=int, default=150)
     ap.add_argument("--gpu-lock", default=os.environ.get("MEMRA_GPU_LOCK", LOCKS[1]))
     args = ap.parse_args(argv)
     if lock_fd is None:
@@ -552,6 +575,7 @@ def main() -> None:
 
     server = Server(args.bin, args.model, args.draft, args.port, args.ctx, args.out / "server.log")
     ballast = None
+    band = None
     rows: list[dict] = []
     try:
         server.boot()
@@ -585,6 +609,22 @@ def main() -> None:
         time.sleep(1.0)
         context_bytes = max(0, gpu_row()["used_mib"] - used_before) * MIB
         idle_free = effective_free(server.metrics()) - context_bytes
+        unread_context = context_bytes  # not yet in a /metrics reading
+        if dflash:
+            # The band step: below the window's bottom, above the plain requirement.
+            ballast.set(max(0, idle_free - (cost + reserve - args.band_mb * MB)))
+            time.sleep(1.0)
+            band = run_step(server, -1, args.prompt_words, args.max_tokens, ballast.total,
+                            ballast_added=ballast.total + unread_context)
+            with (args.out / "steps.jsonl").open("a") as f:
+                f.write(json.dumps(band) + "\n")
+            print(
+                f"band step: free {band['effective_free_before'] / MB:.0f}MB (ballast {ballast.total / MB:.0f}MB) "
+                f"status {band['status']} speculated {band['speculated']} refused {len(band['refused_lines'])}",
+                flush=True,
+            )
+            idle_free = effective_free(server.metrics()) + ballast.total
+            unread_context = 0  # in the live reading from here on
         # Descend from about D/2 above the estimated requirement in steps of D/3. A request the
         # card refuses (the ballast went past the window: the estimate was high) turns the
         # descent into a bisection between the last full admission and that refusal.
@@ -597,7 +637,8 @@ def main() -> None:
             time.sleep(1.0)
             hits = sum(in_window(r) for r in rows)
             row = run_step(server, step, args.prompt_words, args.max_tokens, ballast.total, sampled=hits % 2 == 1,
-                           ballast_added=ballast.total - before_total + (context_bytes if step == 1 else 0))
+                           ballast_added=ballast.total - before_total + unread_context)
+            unread_context = 0
             row["target_effective_free"] = target
             rows.append(row)
             with (args.out / "steps.jsonl").open("a") as f:
@@ -613,6 +654,15 @@ def main() -> None:
             # The next request reads the memory this one left: re-base on the live reading
             # (it already has the ballast's context and chunks in it).
             idle_free = effective_free(server.metrics()) + ballast.total
+            if row["cost_path"] == "spec" and row["cost_mb"] * MB != cost:
+                # The cost model moved (a plain run teaches it a fixed residual): the window
+                # moved with it. Start the descent again from the new requirement.
+                cost = row["cost_mb"] * MB
+                required = cost + draft + reserve
+                lo_full, hi_refused = 0, None
+                if not in_window(row):
+                    target = required + draft // 2
+                    continue
             if in_window(row):
                 continue  # the same headroom again, for the other request kind
             if row["status"] == 200:
@@ -634,7 +684,7 @@ def main() -> None:
         server.stop()
 
     log_text = server.log.read_text(errors="replace")
-    result = verdicts(rows, args.window_hits, draft, log_text, alive, health, refs, spec_sampled, dflash)
+    result = verdicts(rows, args.window_hits, draft, log_text, alive, health, refs, spec_sampled, dflash, band)
     summary = {
         "gpu": gpu,
         "binary": args.bin,
@@ -649,6 +699,7 @@ def main() -> None:
         "required_estimate_bytes": required,
         "ballast_context_bytes": context_bytes,
         "full_admission": spec_sampled,
+        "band_step": band,
         "steps": rows,
         "verdicts": {k: {"pass": ok, "detail": detail} for k, (ok, detail) in result.items()},
     }
