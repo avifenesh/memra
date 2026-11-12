@@ -23422,6 +23422,8 @@ pub fn run(
             // gates verify). Shares MEMRA_ADMIT_YIELD: `0` restores the full pre-lane behavior
             // (index order + full-burst holds) in one flag, for tiers that want lockstep
             // fairness.
+            // The pooled cohorts below stepped ahead of this order until memra#1227; the
+            // newcomers' pass now runs before them (`spec_cold_serial_first`).
             // BATCHDRAFT ANATOMY (diagnostics only): the original tick trace started below,
             // after this loop, so its `decode_ms` omitted the entire serial spec phase. Start a
             // phase clock here and emit one boundary record per request. This adds no sync and is
@@ -33518,7 +33520,8 @@ fn spec_burst_pre(
     // not a pooled-cohort candidate, so its whole first burst ran serially in phase (a), one
     // session after another, before any of them reached a pooled round (q9 on a 5090, a c=4
     // wave: four serial 32-token first bursts). Where the model pools, the prime burst emits
-    // one token and the session joins the next tick's cohort. Only with a same-model spec peer
+    // one token and the session joins a cohort: this tick's when its prime completed ahead of
+    // the cohorts (memra#1227), else the next tick's. Only with a same-model spec peer
     // live (`spec_pool_peer`, set per tick): a lone session keeps its full first burst, so a
     // single-stream sampled request draws the same stream as before. Burst size is
     // content-neutral for greedy; for sampled it moves one boundary draw.
@@ -33648,9 +33651,9 @@ fn spec_burst_pre(
 /// (`research/spec-entry-yield-bound-20261110/`): about 10 to 12.5 more long-stream tokens per
 /// added second of short-request latency at every N. N = 1 keeps the longest gap under 1.8 s in
 /// every cell. Each speculating session that holds a carried token costs a waiting request at
-/// most one round every second burst; with several such sessions their rounds add up, and a
-/// pooled cohort's forced round also runs ahead of the tick's newcomers (the cohort steps before
-/// the cold-first loop). The share between the two classes is memra#1211.
+/// most one round every second burst; with several such sessions their rounds add up. (A pooled
+/// cohort's forced round also ran ahead of the tick's newcomers until memra#1227: the cohorts
+/// now step after the newcomers' primes.) The share between the two classes is memra#1211.
 const SPEC_ENTRY_YIELD_MAX: u32 = 1;
 
 /// The MTP spec burst's SSE emission state: one per burst, fed by the engine's round-cadence
