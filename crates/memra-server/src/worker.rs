@@ -42739,7 +42739,7 @@ mod tests {
         // Phase (b)'s 4 ms windows close inside any phase (a) that ran a round; a window that
         // can outlast one, or one with nothing measured yet, stays open.
         use super::prefill_windows_close as close;
-        let ms = Duration::from_millis;
+        let ms = std::time::Duration::from_millis;
         assert!(
             close(ms(4), Some(ms(99))),
             "a 4 ms window inside a 99 ms round"
