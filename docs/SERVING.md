@@ -420,6 +420,17 @@ a `[shed]` line.
   greedy request writes the same text either way; a seeded sampled one writes its plain stream
   (memra#1154). `/metrics` `admission_drafter_refusals` counts them. Record:
   [`decisions/DRAFTER-ADMISSION-REFUSAL.md`](decisions/DRAFTER-ADMISSION-REFUSAL.md).
+- **A session admitted without its state yet keeps its charge booked.** A DFlash, gemma-spec or
+  GLM cold prime builds its caches and drafter plane in the tick after `admit`, so until then the
+  live reading does not show them. Every later reading is reduced by the charge such a session
+  was admitted on, until the tick builds it; before this, a second arrival in the same pass (or a
+  step-OOM replay's pass) was admitted on the same bytes (memra#1255). An arrival that does not
+  fit the booked reading while some charge is still owed waits for the next pass
+  (`[admission] settle wait:`): no reclaim, eager admission, drafter refusal or capacity reject
+  is decided on a reading the tick is about to change. `[admission] settled:` names the passes
+  and milliseconds it waited; `/metrics` `admission_settle_waits` and `admission_settle_wait_ms`
+  count them. Single-device deployments only. Record:
+  [`decisions/ADMISSION-UNBUILT-SESSION-BOOKING.md`](decisions/ADMISSION-UNBUILT-SESSION-BOOKING.md).
 - **A prefill at risk goes first.** Prefilling sessions normally advance one chunk per tick in turn.
   When a session would miss its first-token deadline under that order but would make it served
   alone, the tick advances sessions in earliest-deadline order until one chunk of tokens is used.
