@@ -538,13 +538,24 @@ mod tests {
             bytes: 1312,
         };
         PrefixEntry {
+            loan_charge: 0,
             recurrent_in_test: false,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             pool_key: ("model-a".into(), "tenant-a\u{1f}ns".into()),
             toks: (0..128).collect(),
             kv: vec![Some(PrefixPlane {
-                k: root.ctx().default_stream().clone_htod(&[71u8; 8]).unwrap(),
-                v: root.ctx().default_stream().clone_htod(&[81u8; 8]).unwrap(),
+                k: root
+                    .ctx()
+                    .default_stream()
+                    .clone_htod(&[71u8; 8])
+                    .unwrap()
+                    .into(),
+                v: root
+                    .ctx()
+                    .default_stream()
+                    .clone_htod(&[81u8; 8])
+                    .unwrap()
+                    .into(),
                 len: 8,
                 k_tok_bytes: 1,
                 v_tok_bytes: 1,
@@ -584,8 +595,18 @@ mod tests {
         src.latent = vec![None];
         src.tp = None;
         src.draft = Some(PrefixPlane {
-            k: root.ctx().default_stream().clone_htod(&[91u8; 12]).unwrap(),
-            v: root.ctx().default_stream().clone_htod(&[92u8; 16]).unwrap(),
+            k: root
+                .ctx()
+                .default_stream()
+                .clone_htod(&[91u8; 12])
+                .unwrap()
+                .into(),
+            v: root
+                .ctx()
+                .default_stream()
+                .clone_htod(&[92u8; 16])
+                .unwrap()
+                .into(),
             len: 4,
             k_tok_bytes: 3,
             v_tok_bytes: 4,

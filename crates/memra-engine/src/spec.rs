@@ -12,7 +12,7 @@ mod prime;
 pub use prime::{MtpPrimeState, MtpPrimeWalker};
 
 use crate::Engine;
-use crate::cache::{Cache, KvLayer};
+use crate::cache::{Cache, KvLayer, KvPlane};
 use crate::forward::argmax;
 use crate::hybrid::{FullAttnLayer, HybridModel, Mixer, MtpHead};
 use cudarc::driver::CudaSlice;
@@ -1884,7 +1884,7 @@ impl SpecSession {
     /// rewrites generated positions only). Returns `(k, v, k_tok_bytes, v_tok_bytes)`.
     /// None when the scratch is ring-backed (Step35 SWA — physical rows are not
     /// prefix-addressable; the prefix cache already refuses that class end to end).
-    pub fn draft_plane_ref(&self) -> Option<(&CudaSlice<u8>, &CudaSlice<u8>, usize, usize)> {
+    pub fn draft_plane_ref(&self) -> Option<(&KvPlane, &KvPlane, usize, usize)> {
         if self.scratch.kv.ring.is_some() {
             return None;
         }
@@ -2785,6 +2785,10 @@ impl MtpScratch {
                 )
                 .into());
         }
+        // A lent draft plane's rows below its lend are a published prefix entry's (memra#1221).
+        if let Some(why) = kv.lend_floor_refusal("MTP scratch length", n) {
+            return Err(format!("{why} (plane={index}, called from {caller})").into());
+        }
         kv.len = n;
         e.set_i32_one(&mut kv.len_d, n as i32)
     }
@@ -2795,6 +2799,16 @@ impl MtpScratch {
     #[track_caller]
     fn set_len(&mut self, e: &Engine, n: usize) -> Result<(), Box<dyn std::error::Error>> {
         let caller = std::panic::Location::caller();
+        // Every plane is checked against its lend before any plane moves (memra#1221).
+        for index in 0..self.plane_count() {
+            if let Some(why) = self
+                .plane(index)
+                .0
+                .lend_floor_refusal("MTP scratch length", n)
+            {
+                return Err(format!("{why} (plane={index}, called from {caller})").into());
+            }
+        }
         if !self.can_rewind_to(n) {
             // set_plane_len re-checks and reports the operands; call it so the failure carries
             // which plane refused and why, instead of this bare aggregate.
@@ -18494,5 +18508,76 @@ mod ctx_edge_659_census {
                 "break;"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod lend_floor_tests {
+    use super::*;
+
+    /// memra#1221 part 2: the MTP scratch's two length setters refuse a length below rows a
+    /// prefix entry reads in place, before any plane moves.
+    #[test]
+    fn scratch_length_setters_check_the_lend_before_writing() {
+        let src = include_str!("spec.rs");
+        let production = &src[..src.find("\n#[cfg(test)]\nmod lend_floor_tests {").unwrap()];
+        let body = |start: &str| {
+            let a = production.find(start).unwrap_or_else(|| panic!("{start}"));
+            &production[a..a + production[a..]
+                .find("\n    }\n")
+                .expect("the function ends")]
+        };
+        let plane = body("    fn set_plane_len(");
+        let guard = plane
+            .find("kv.lend_floor_refusal(\"MTP scratch length\", n)")
+            .expect("set_plane_len checks the lend");
+        assert!(
+            guard < plane.find("kv.len = n;").unwrap(),
+            "the check follows the write"
+        );
+        let all = body("    fn set_len(&mut self, e: &Engine, n: usize)");
+        let guard = all
+            .find(".lend_floor_refusal(\"MTP scratch length\", n)")
+            .expect("set_len checks every plane's lend");
+        assert!(
+            guard < all.find("self.set_plane_len(e, index, n)?").unwrap(),
+            "set_len checks after a plane moved"
+        );
+    }
+
+    /// GPU cell (memra#1221 part 2): with rows `[0, 40)` of the scratch's K plane lent, a length
+    /// under 40 refuses through both setters and leaves the length where it was; 40 and above
+    /// pass. The lend dropped, any length passes again.
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn the_mtp_scratch_refuses_a_length_below_its_lend() {
+        use memra_gguf::config::{HfConfig, ModelConfig};
+        let e = Engine::new(0).unwrap();
+        let cfg = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"qwen3_5","num_hidden_layers":4,"hidden_size":64,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+            "intermediate_size":128,"vocab_size":16,"max_position_embeddings":256,
+            "full_attention_interval":2,"linear_conv_kernel_dim":3,
+            "linear_key_head_dim":32,"linear_value_head_dim":32,
+            "linear_num_key_heads":1,"linear_num_value_heads":2}"#,
+        ));
+        let plan = memra_gguf::model_plan::ModelPlan::compile(&cfg).unwrap();
+        let mut scratch = MtpScratch::new(&e, &cfg, &plan, 64, None).unwrap();
+        scratch.set_len(&e, 50).unwrap();
+        let lend = scratch.kv.k.lend(40 * scratch.kv.k_tok_bytes).unwrap();
+        for n in [0usize, 39] {
+            let err = scratch.set_len(&e, n).expect_err("set_len below the lend");
+            assert!(err.to_string().contains("lent to a prefix entry"), "{err}");
+            let err = scratch
+                .set_plane_len(&e, 0, n)
+                .expect_err("set_plane_len below the lend");
+            assert!(err.to_string().contains("lent to a prefix entry"), "{err}");
+            assert_eq!(scratch.kv.len, 50, "a refused length moved the plane");
+        }
+        scratch.set_len(&e, 40).unwrap();
+        scratch.set_plane_len(&e, 0, 45).unwrap();
+        drop(lend);
+        scratch.set_len(&e, 0).unwrap();
+        eprintln!("[lend floor cell] MTP scratch: lengths 0 and 39 refused under a 40-row lend");
     }
 }

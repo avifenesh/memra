@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 
 use cudarc::driver::CudaSlice;
 use memra_engine::Engine;
-use memra_engine::cache::Cache;
+use memra_engine::cache::{Cache, KvPlane};
 use memra_engine::decode::{GenParams, StopReason};
 use memra_engine::decode_batch::{DevPenalty, DevSamp};
 use memra_engine::hybrid::{HybridModel, StepTpKvDeviceAdmission};
@@ -4800,7 +4800,22 @@ fn spec_pool_take_extension(
             SpecExtensionTake::Rewound(sess, committed, pos)
         }
         Ok(None) => decline("the checkpoint vanished"),
-        Err(err) => decline(&format!("restore failed: {err}")),
+        Err(err) => {
+            note_lend_rewind_refusal(&err.to_string(), "grid-rewind", model);
+            decline(&format!("restore failed: {err}"))
+        }
+    }
+}
+
+/// A speculative session's rewind refused because its target lies below rows it lends to a
+/// prefix entry (memra#1221 part 2: `KvPlane::lend`). The request primes cold instead; one line
+/// per refusal, so a cell can count what the guard costs.
+fn note_lend_rewind_refusal(err: &str, site: &str, model: &str) {
+    if err.contains("lent to a prefix entry") {
+        eprintln!(
+            "[spec] rewind refused below a lent prefix row ({site}); the request primes cold \
+             (model {model})"
+        );
     }
 }
 
@@ -10612,13 +10627,65 @@ fn alloc_with_single_reclaim_retry<T, E>(
     }
 }
 
+/// The bytes of one prefix-entry plane (memra#1221 part 2): the entry's own allocation, or rows
+/// `[0, pos)` of a live session's plane read in place (a [`memra_engine::cache::KvLend`]: the
+/// speculative prime boundary's publication lends the session's planes instead of copying
+/// them). Either way it dereferences to a `CudaSlice<u8>` of exactly the plane's bytes, so every
+/// reader (restores, digests, the host tier, exports) reads it as before.
+enum PlaneBuf {
+    Owned(CudaSlice<u8>),
+    Lent(memra_engine::cache::KvLend),
+}
+
+impl std::ops::Deref for PlaneBuf {
+    type Target = CudaSlice<u8>;
+    fn deref(&self) -> &CudaSlice<u8> {
+        match self {
+            PlaneBuf::Owned(slice) => slice,
+            PlaneBuf::Lent(lend) => lend,
+        }
+    }
+}
+
+impl From<CudaSlice<u8>> for PlaneBuf {
+    fn from(slice: CudaSlice<u8>) -> Self {
+        PlaneBuf::Owned(slice)
+    }
+}
+
+impl PlaneBuf {
+    /// The entry's own allocation, to write it while the entry is being built. A lent plane is
+    /// another owner's rows and is never written through an entry.
+    fn owned_mut(&mut self) -> Result<&mut CudaSlice<u8>, Box<dyn std::error::Error>> {
+        match self {
+            PlaneBuf::Owned(slice) => Ok(slice),
+            PlaneBuf::Lent(_) => Err("a lent prefix plane is read-only".into()),
+        }
+    }
+
+    /// The lend this plane reads, when it is not the entry's own allocation.
+    fn lend(&self) -> Option<&memra_engine::cache::KvLend> {
+        match self {
+            PlaneBuf::Owned(_) => None,
+            PlaneBuf::Lent(lend) => Some(lend),
+        }
+    }
+}
+
 /// One full-attn layer's cached prefix bytes: exactly `len` tokens of quantized K/V.
 struct PrefixPlane {
-    k: CudaSlice<u8>,
-    v: CudaSlice<u8>,
+    k: PlaneBuf,
+    v: PlaneBuf,
     len: usize,
     k_tok_bytes: usize,
     v_tok_bytes: usize,
+}
+
+impl PrefixPlane {
+    /// The plane's two buffers.
+    fn bufs(&self) -> [&PlaneBuf; 2] {
+        [&self.k, &self.v]
+    }
 }
 
 /// A cached token-prefix: per-layer KV byte copies + recurrent conv/ssm copies + the logits
@@ -10671,8 +10738,14 @@ struct PrefixEntry {
     /// predecessor-pairing anchor). Empty = unavailable; a spec restore then leaves the
     /// fill's zeros row-0 fallback to cover it (acceptance-only).
     last_h: Vec<f32>,
-    /// Device bytes of the whole entry, its `prompt_end` tail included.
+    /// Device bytes the entry is charged, its `prompt_end` tail included: what it holds itself.
+    /// A plane read in place from a live session ([`PlaneBuf::Lent`]) is not here while the
+    /// session holds it; once the session dropped it, the plane's bytes are charged to one of
+    /// the entries that read it (`loan_charge`, memra#1221 part 2).
     bytes: usize,
+    /// The part of `bytes` that is lent planes' storage this entry was charged after their
+    /// owner dropped them (`PrefixCache::reconcile_loans`).
+    loan_charge: usize,
     last_use: Instant,
     /// Recency-index identity (Q3, audit 2026-08-05): unique per insert (monotonic counter,
     /// assigned by `insert`), disambiguating equal `last_use` Instants in the LRU BTreeMap key.
@@ -10745,10 +10818,32 @@ impl PrefixEntry {
         })
     }
 
-    /// Device bytes without the tail (what the host tier would hold).
+    /// Device bytes without the tail (what the host tier would hold): the entry's planes at
+    /// their own length, lent ones included, whoever is charged for them.
     fn base_bytes(&self) -> usize {
-        self.bytes
+        self.logical_bytes()
             .saturating_sub(self.prompt_end.as_ref().map_or(0, |t| t.bytes))
+    }
+
+    /// The entry's bytes as a copy of its own would hold them (memra#1221 part 2): the charged
+    /// bytes without the adopted storage charged here, plus every lent plane at its length.
+    fn logical_bytes(&self) -> usize {
+        self.bytes.saturating_sub(self.loan_charge) + self.lent_bytes()
+    }
+
+    /// Bytes of the planes this entry reads in place.
+    fn lent_bytes(&self) -> usize {
+        self.lends().map(|l| l.len()).sum()
+    }
+
+    /// Every lend this entry's planes read (trunk K/V and the draft plane).
+    fn lends(&self) -> impl Iterator<Item = &memra_engine::cache::KvLend> {
+        self.kv
+            .iter()
+            .flatten()
+            .chain(self.draft.iter())
+            .flat_map(PrefixPlane::bufs)
+            .filter_map(PlaneBuf::lend)
     }
 
     /// Does this entry carry recurrent state (GDN conv/ssm planes)? Such an entry restores
@@ -11151,6 +11246,38 @@ struct PrefixCache {
     /// token length on a hit, `best_lcp` on a miss (both already computed; no new scan).
     /// Lower-edge buckets `LCP_HIST_EDGES` (see `lcp_bucket`).
     lcp_hist: [u64; 11],
+    /// Lent planes the entries read in place, one book per lending plane (memra#1221 part 2,
+    /// `reconcile_loans`).
+    loans: HashMap<u64, LoanBook>,
+    /// Lent planes whose owner dropped them while an entry read them, charged to the cache.
+    loan_adoptions: u64,
+    /// Adopted planes copied into exact planes of their entries' own and freed.
+    loan_compactions: u64,
+    /// The last reconcile trace line's numbers, so an unchanged state prints once.
+    loan_trace_last: Option<(usize, usize, usize, usize)>,
+}
+
+/// One lending plane's book in the prefix cache (memra#1221 part 2). While the plane's owner
+/// (a live or parked speculative session) holds it, the entries that read it are charged
+/// nothing for it: the bytes are the session's. Once the owner dropped it and the plane moved to
+/// its loan (adoption), its bytes are charged once, to one of the entries reading it (`holder`).
+struct LoanBook {
+    loan: std::sync::Weak<memra_engine::cache::KvLoan>,
+    /// Entries reading the plane.
+    sharers: usize,
+    /// Bytes the sharers read, summed (what compaction would copy).
+    read: usize,
+    /// The entry (id) the adopted storage is charged to, and how much.
+    holder: u64,
+    charged: usize,
+}
+
+/// Compaction of an adopted plane (memra#1221 part 2) copies every sharer's rows into an exact
+/// plane of its own (`read` bytes) and frees the adopted plane (`held` bytes): it runs only when
+/// that frees more than it copies. An adopted plane is the session's whole capacity, so this is
+/// the open-output or large-`max_tokens` session whose entry is under half of it.
+fn loan_compaction_frees_more(held: usize, read: usize) -> bool {
+    held.saturating_sub(read) > read
 }
 
 /// Lower edges of the LCP histogram buckets: bucket i counts samples in
@@ -11698,8 +11825,256 @@ impl PrefixCache {
         if pool.is_empty() {
             self.entries.remove(key);
         }
+        let mut dead = dead;
+        self.unbook_lends(&mut dead);
         self.total_bytes = self.total_bytes.saturating_sub(dead.bytes);
         Some(dead)
+    }
+
+    /// Book a just-inserted entry's lends (memra#1221 part 2): one book per lending plane, the
+    /// first sharer its holder.
+    fn book_lends(&mut self, e: &PrefixEntry) {
+        for lend in e.lends() {
+            let book = self
+                .loans
+                .entry(lend.loan_id())
+                .or_insert_with(|| LoanBook {
+                    loan: lend.loan(),
+                    sharers: 0,
+                    read: 0,
+                    holder: e.id,
+                    charged: 0,
+                });
+            book.sharers += 1;
+            book.read += lend.len();
+        }
+    }
+
+    /// An entry leaves the cache: its lends leave their books. When it was charged a plane that
+    /// another entry still reads, the charge moves to that entry (the storage is not freed), so
+    /// the leaving entry's `bytes` are what its departure frees.
+    fn unbook_lends(&mut self, dead: &mut PrefixEntry) {
+        let lends: Vec<(u64, usize)> = dead.lends().map(|l| (l.loan_id(), l.len())).collect();
+        for (id, len) in lends {
+            let (sharers, holder, charged) = {
+                let Some(book) = self.loans.get_mut(&id) else {
+                    continue;
+                };
+                book.sharers = book.sharers.saturating_sub(1);
+                book.read = book.read.saturating_sub(len);
+                (book.sharers, book.holder, book.charged)
+            };
+            if sharers == 0 {
+                self.loans.remove(&id);
+                continue;
+            }
+            if holder != dead.id || charged == 0 {
+                continue;
+            }
+            dead.bytes = dead.bytes.saturating_sub(charged);
+            dead.loan_charge = dead.loan_charge.saturating_sub(charged);
+            let next_id = self.entry_reading_loan_mut(id).map(|next| {
+                next.bytes += charged;
+                next.loan_charge += charged;
+                next.id
+            });
+            match next_id {
+                Some(next_id) => {
+                    self.total_bytes += charged;
+                    if let Some(book) = self.loans.get_mut(&id) {
+                        book.holder = next_id;
+                    }
+                }
+                None => {
+                    eprintln!(
+                        "[prefix-loan] book {id} names {sharers} readers but no entry reads it; \
+                         dropped"
+                    );
+                    self.loans.remove(&id);
+                }
+            }
+        }
+    }
+
+    /// An entry that reads the lending plane `id`.
+    fn entry_reading_loan_mut(&mut self, id: u64) -> Option<&mut PrefixEntry> {
+        self.entries
+            .values_mut()
+            .flatten()
+            .find(|e| e.lends().any(|l| l.loan_id() == id))
+    }
+
+    /// Bring the charged bytes in line with what the lent planes hold (memra#1221 part 2): a
+    /// plane whose owner dropped it is now held by its loan and is charged to one of its readers;
+    /// with `engine`, an adopted plane that compaction frees more of than it copies is copied
+    /// into exact planes of the readers' own and freed instead. Runs at the tick top, after
+    /// retirement, and before every insert and eviction decision; free when nothing is lent.
+    fn reconcile_loans(&mut self, engine: Option<&Engine>, why: &str) {
+        if self.loans.is_empty() {
+            return;
+        }
+        let ids: Vec<u64> = self.loans.keys().copied().collect();
+        for id in ids {
+            let Some(book) = self.loans.get(&id) else {
+                continue;
+            };
+            let Some(loan) = book.loan.upgrade() else {
+                continue;
+            };
+            loan.reap();
+            let held = loan.held_bytes();
+            drop(loan);
+            let (charged, read, holder) = (book.charged, book.read, book.holder);
+            if charged == 0 && held > 0 {
+                self.loan_adoptions += 1;
+            }
+            if let Some(engine) = engine
+                && held > 0
+                && loan_compaction_frees_more(held, read)
+            {
+                self.charge_loan(id, holder, 0);
+                if self.compact_loan(engine, id, held, read) {
+                    continue;
+                }
+            }
+            let Some((charged, holder)) = self.loans.get(&id).map(|b| (b.charged, b.holder)) else {
+                continue;
+            };
+            if held != charged {
+                self.charge_loan(id, holder, held);
+            }
+        }
+        self.trace_loans(engine, why);
+    }
+
+    /// Set book `id`'s charge to `bytes` on its holder.
+    fn charge_loan(&mut self, id: u64, holder: u64, bytes: usize) {
+        let Some(old) = self.loans.get(&id).map(|b| b.charged) else {
+            return;
+        };
+        let Some(e) = self.entries.values_mut().flatten().find(|e| e.id == holder) else {
+            return;
+        };
+        e.bytes = e.bytes.saturating_sub(old) + bytes;
+        e.loan_charge = e.loan_charge.saturating_sub(old) + bytes;
+        self.total_bytes = self.total_bytes.saturating_sub(old) + bytes;
+        if let Some(book) = self.loans.get_mut(&id) {
+            book.charged = bytes;
+        }
+    }
+
+    /// Copy every reader's rows of the adopted plane `id` into an exact plane of its own; the
+    /// adopted plane is freed when the last lend goes. False when an allocation or copy failed:
+    /// the readers converted so far keep their copies and the rest keep reading the plane.
+    fn compact_loan(&mut self, engine: &Engine, id: u64, held: usize, read: usize) -> bool {
+        let mut copied = 0usize;
+        let mut failed = false;
+        'entries: for e in self.entries.values_mut().flatten() {
+            for plane in e.kv.iter_mut().flatten().chain(e.draft.iter_mut()) {
+                for buf in [&mut plane.k, &mut plane.v] {
+                    let Some(lend) = buf.lend().filter(|l| l.loan_id() == id) else {
+                        continue;
+                    };
+                    let n = lend.len();
+                    let own = prefix_plane_alloc(engine, n).ok().and_then(|mut own| {
+                        engine.copy_u8_into(&mut own, 0, lend, n).ok().map(|()| own)
+                    });
+                    let Some(own) = own else {
+                        failed = true;
+                        break 'entries;
+                    };
+                    *buf = PlaneBuf::Owned(own);
+                    e.bytes += n;
+                    copied += n;
+                }
+            }
+        }
+        self.total_bytes += copied;
+        if failed {
+            // The readers converted so far keep their copies; the book is rebuilt from the
+            // entries that still read the plane, charged nothing until the caller charges it.
+            let readers: Vec<(u64, usize)> = self
+                .entries
+                .values()
+                .flatten()
+                .flat_map(|e| {
+                    e.lends()
+                        .filter(|l| l.loan_id() == id)
+                        .map(move |l| (e.id, l.len()))
+                })
+                .collect();
+            match (self.loans.get_mut(&id), readers.first()) {
+                (Some(book), Some(&(first, _))) => {
+                    book.sharers = readers.len();
+                    book.read = readers.iter().map(|r| r.1).sum();
+                    book.holder = first;
+                    book.charged = 0;
+                }
+                _ => {
+                    self.loans.remove(&id);
+                }
+            }
+            eprintln!(
+                "[prefix-loan] compact: plane {id} ({:.1}MB held) stopped after {:.1}MB: an \
+                 allocation or copy failed; the rest stays adopted",
+                held as f64 / 1e6,
+                copied as f64 / 1e6,
+            );
+            return false;
+        }
+        // Every lend of the plane went with the conversions above; the book goes with them.
+        self.loans.remove(&id);
+        self.loan_compactions += 1;
+        if tick_trace_enabled() {
+            eprintln!(
+                "[prefix-loan] compact: plane {id} held {:.1}MB, its readers copied {:.1}MB \
+                 ({:.1}MB read)",
+                held as f64 / 1e6,
+                copied as f64 / 1e6,
+                read as f64 / 1e6,
+            );
+        }
+        true
+    }
+
+    /// The reconcile trace (MEMRA_TICK_TRACE=1): the charged bytes (`total_bytes`) against the
+    /// bytes the entries really hold, counted from the entries and the loans themselves, and the
+    /// pool's used bytes. Printed when they change.
+    fn trace_loans(&mut self, engine: Option<&Engine>, why: &str) {
+        if !tick_trace_enabled() {
+            return;
+        }
+        let mut seen = std::collections::HashSet::new();
+        let (mut own, mut adopted, mut lent_live) = (0usize, 0usize, 0usize);
+        for e in self.entries.values().flatten() {
+            own += e.bytes.saturating_sub(e.loan_charge);
+            for lend in e.lends() {
+                if seen.insert(lend.loan_id()) {
+                    adopted += lend.held_bytes();
+                    if lend.held_bytes() == 0 {
+                        lent_live += 1;
+                    }
+                }
+            }
+        }
+        let real = own + adopted;
+        let now = (self.loans.len(), self.total_bytes, real, lent_live);
+        if self.loan_trace_last == Some(now) {
+            return;
+        }
+        self.loan_trace_last = Some(now);
+        let used = engine.map_or(0, |e| e.pool_reserved_used().1);
+        eprintln!(
+            "[prefix-loan] reconcile why={why} books={} lent_live={lent_live} adopted={:.1}MB \
+             charged={:.1}MB real={:.1}MB adoptions={} compactions={} pool_used={:.1}MB",
+            self.loans.len(),
+            adopted as f64 / 1e6,
+            self.total_bytes as f64 / 1e6,
+            real as f64 / 1e6,
+            self.loan_adoptions,
+            self.loan_compactions,
+            used as f64 / 1e6,
+        );
     }
 
     /// The capacity victim: the GLOBAL oldest unleased entry. NEWEST-TURN-FITS (memra#523 item
@@ -11841,7 +12216,9 @@ impl PrefixCache {
     ) -> Option<u64> {
         // Floor + flex grant (lane/kv-flex-20260831); with MEMRA_KV_FLEX off the grant is 0 by
         // construction and this is exactly prefix_cache_budget_bytes(). On unified memory the
-        // live-free guard clamps it (prefix_insert_budget).
+        // live-free guard clamps it (prefix_insert_budget). The resident bytes it reads include
+        // every lent plane whose owner dropped it (memra#1221 part 2).
+        self.reconcile_loans(None, "insert");
         let budget = prefix_insert_budget(
             engine,
             kv_flex_effective_budget(),
@@ -11873,6 +12250,7 @@ impl PrefixCache {
     ) -> Option<PrefixPin> {
         // Floor + flex grant (lane/kv-flex-20260831); grant is 0 with the flag off. On unified
         // memory the live-free guard clamps it (prefix_insert_budget).
+        self.reconcile_loans(None, "insert");
         let budget = prefix_insert_budget(
             engine,
             kv_flex_effective_budget(),
@@ -11980,6 +12358,7 @@ impl PrefixCache {
         }
         let inserted_id = e.id;
         let lk = Self::lru_key(&e);
+        self.book_lends(&e);
         let idx = {
             let pool = self.entries.entry(key.clone()).or_default();
             pool.push(e);
@@ -12092,6 +12471,7 @@ impl PrefixCache {
     /// admission-tick shed must not stall behind gigabytes of D2H). The loop stops when no
     /// unleased victim remains. Returns (entries evicted, bytes freed).
     fn evict_to_bytes(&mut self, target: usize) -> (usize, usize) {
+        self.reconcile_loans(None, "evict");
         let mut n = 0usize;
         let mut freed = 0usize;
         while self.total_bytes > target {
@@ -12116,6 +12496,7 @@ impl PrefixCache {
     /// Drop every EVICTABLE entry (session cache alloc failed — sessions win over
     /// ordinary cache residency, while in-flight fanout leases remain authoritative).
     fn evict_all(&mut self) -> usize {
+        self.reconcile_loans(None, "evict");
         let mut n = 0usize;
         while let Some((key, i)) = self.oldest_evictable() {
             let Some(_dead) = self.remove_at(&key, i) else {
@@ -13854,8 +14235,8 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
                 .map_err(|err| format!("V plane H2D failed: {err}"))?;
         }
         Ok(PrefixPlane {
-            k,
-            v,
+            k: k.into(),
+            v: v.into(),
             len: p.len,
             k_tok_bytes: p.k_tok_bytes,
             v_tok_bytes: p.v_tok_bytes,
@@ -13907,6 +14288,7 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
         None => None,
     };
     let entry = PrefixEntry {
+        loan_charge: 0,
         #[cfg(test)]
         recurrent_in_test: false,
         layout_version: src.layout_version,
@@ -15508,6 +15890,35 @@ fn prefix_plane_alloc(
     }
 }
 
+/// How a spec boundary publication's KV and draft rows reach the entry (memra#1221 part 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SpecPlanes {
+    /// The entry reads the session's rows `[0, pos)` in place ([`KvPlane::lend`]): the MTP
+    /// publisher. The session never writes them again while the entry lives (every rewind below a
+    /// lend refuses), and if the session ends first its plane moves to the entry.
+    Lend,
+    /// The entry copies the rows into planes of its own: the DSpark and GLM-5 publishers, whose
+    /// park rewinds are not checked against a lend.
+    Copy,
+}
+
+/// One plane of a lending spec boundary publication: rows `[0, bytes)` of the session's live
+/// plane, read in place. `None` when the plane cannot lend; the caller then drops the plane as
+/// it drops one whose copy failed.
+fn spec_plane_lend(plane: &KvPlane, bytes: usize) -> Option<memra_engine::cache::KvLend> {
+    #[cfg(test)]
+    if spec_plane_copy_fault() {
+        return None;
+    }
+    match plane.lend(bytes) {
+        Ok(lend) => Some(lend),
+        Err(err) => {
+            eprintln!("[prefix-cache] spec publish: a plane did not lend {bytes} bytes: {err}");
+            None
+        }
+    }
+}
+
 /// One plane of a spec boundary publication: `[0, bytes)` of the live `src` into `dst`, a plane
 /// [`prefix_plane_alloc`] sized at exactly `bytes` and did not zero. True when the plane holds
 /// its bytes: the copy of the whole plane is enqueued, or the plane has no bytes and is the
@@ -15583,7 +15994,7 @@ fn prefix_snapshot_batch(
                 .into());
             }
             let (s, gs) = from.device_ptr(&st);
-            let (d, gd) = to.device_ptr_mut(&st);
+            let (d, gd) = to.owned_mut()?.device_ptr_mut(&st);
             items.push((s, d, n as u64));
             guards.push(gs);
             guards.push(gd);
@@ -15706,8 +16117,8 @@ fn prefix_snapshot(
                 let v = prefix_plane_alloc(engine, vb)?;
                 bytes += kb + vb;
                 kv.push(Some(PrefixPlane {
-                    k,
-                    v,
+                    k: k.into(),
+                    v: v.into(),
                     len: l.len,
                     k_tok_bytes: l.k_tok_bytes,
                     v_tok_bytes: l.v_tok_bytes,
@@ -15743,6 +16154,7 @@ fn prefix_snapshot(
         None
     };
     Ok(PrefixEntry {
+        loan_charge: 0,
         #[cfg(test)]
         recurrent_in_test: false,
         layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
@@ -16056,8 +16468,8 @@ fn prefix_tail_snapshot(
                 let v = prefix_plane_alloc(engine, rows * l.v_tok_bytes)?;
                 bytes += rows * (l.k_tok_bytes + l.v_tok_bytes);
                 kv.push(Some(PrefixPlane {
-                    k,
-                    v,
+                    k: k.into(),
+                    v: v.into(),
                     len: rows,
                     k_tok_bytes: l.k_tok_bytes,
                     v_tok_bytes: l.v_tok_bytes,
@@ -16102,7 +16514,7 @@ fn prefix_tail_snapshot(
                 .into());
             }
             let (s, gs) = from.device_ptr(&st);
-            let (d, gd) = to.device_ptr_mut(&st);
+            let (d, gd) = to.owned_mut()?.device_ptr_mut(&st);
             items.push((s + off as u64, d, len as u64));
             guards.push(gs);
             guards.push(gd);
@@ -16859,6 +17271,11 @@ fn trace_prefix_entry_state(
 /// spec rollbacks never truncate below the prime boundary. Publication length == capture.pos
 /// and must prefix `committed` — NEVER derived from `cache.pos` (the commit-gate invariant;
 /// research/cache-spec-design-20260814/PORT-PLAN.md item 2).
+///
+/// `planes` says how the KV and draft rows reach the entry (memra#1221 part 2): the MTP
+/// publisher LENDS them (the entry reads the session's own rows in place, no allocation and no
+/// copy at the boundary; the session's plane moves to the entry if the session ends first), the
+/// DSpark and GLM-5 publishers COPY them into planes of the entry's own.
 #[allow(clippy::too_many_arguments)]
 fn prefix_insert_from_spec_boundary(
     engine: &Engine,
@@ -16867,16 +17284,18 @@ fn prefix_insert_from_spec_boundary(
     pool_key: &PoolKey,
     committed: &[u32],
     cache: &Cache,
-    draft_plane: Option<(&CudaSlice<u8>, &CudaSlice<u8>, usize, usize)>,
+    draft_plane: Option<(&KvPlane, &KvPlane, usize, usize)>,
     // DSPARK only: the drafter's readable KV tail, so a later long-decode request can restore
     // instead of cold-priming. `None` from every other publisher.
     dspark_draft: Option<memra_engine::dflash::DflashKvTail>,
     cap: memra_engine::spec::SpecBoundaryCapture,
+    planes: SpecPlanes,
     why: &str,
 ) {
     if memra_engine::pp::pp_host_bounce_active() {
         return;
     }
+    let t0 = Instant::now();
     let pos = cap.pos;
     if pos == 0 || pos > committed.len() || cap.logits.is_empty() {
         return;
@@ -16974,20 +17393,35 @@ fn prefix_insert_from_spec_boundary(
                 }
                 let kb = pos * l.k_tok_bytes;
                 let vb = pos * l.v_tok_bytes;
-                // No memset: a plane is exactly its bytes long and its copy writes all of it
-                // (`spec_plane_copy`). A plane whose copy fails leaves with the insert.
-                let (Ok(mut k), Ok(mut v)) = (
-                    prefix_plane_alloc(engine, kb),
-                    prefix_plane_alloc(engine, vb),
-                ) else {
-                    return; // alloc pressure: publication is an optimization, drop silently
+                let (k, v) = match planes {
+                    // The session's rows [0, pos) in place: nothing allocated, nothing copied. A
+                    // plane that cannot lend leaves with the insert, as a failed copy does.
+                    SpecPlanes::Lend => {
+                        let (Some(k), Some(v)) =
+                            (spec_plane_lend(&l.k, kb), spec_plane_lend(&l.v, vb))
+                        else {
+                            return;
+                        };
+                        (PlaneBuf::Lent(k), PlaneBuf::Lent(v))
+                    }
+                    // No memset: a plane is exactly its bytes long and its copy writes all of it
+                    // (`spec_plane_copy`). A plane whose copy fails leaves with the insert.
+                    SpecPlanes::Copy => {
+                        let (Ok(mut k), Ok(mut v)) = (
+                            prefix_plane_alloc(engine, kb),
+                            prefix_plane_alloc(engine, vb),
+                        ) else {
+                            return; // alloc pressure: publication is an optimization, drop silently
+                        };
+                        if !spec_plane_copy(engine, &mut k, &l.k, kb)
+                            || !spec_plane_copy(engine, &mut v, &l.v, vb)
+                        {
+                            return;
+                        }
+                        bytes += kb + vb;
+                        (k.into(), v.into())
+                    }
                 };
-                if !spec_plane_copy(engine, &mut k, &l.k, kb)
-                    || !spec_plane_copy(engine, &mut v, &l.v, vb)
-                {
-                    return;
-                }
-                bytes += kb + vb;
                 kv.push(Some(PrefixPlane {
                     k,
                     v,
@@ -17010,8 +17444,8 @@ fn prefix_insert_from_spec_boundary(
     // DRAFT PLANE publication (lane/spec-on-cache-hit): slice the MTP scratch rows
     // `[0..pos)` exactly like the trunk KV above — append-only below the prime boundary
     // for the session's lifetime, so the live buffers still hold the prime fill's rows.
-    // A failed copy drops ONLY the plane (the trunk entry stays publishable and serves
-    // plain hits); publication is an optimization, never a correctness dependency. The
+    // A failed lend or copy drops ONLY the plane (the trunk entry stays publishable and serves
+    // plain hits); publication is an optimization, never a correctness dependency. A copied
     // plane is allocated without a memset, like the trunk's: dropped, it is never read.
     let draft = draft_plane.and_then(|(k_src, v_src, k_tok_bytes, v_tok_bytes)| {
         let kb = pos * k_tok_bytes;
@@ -17023,18 +17457,30 @@ fn prefix_insert_from_spec_boundary(
             );
             return None;
         }
-        let (Ok(mut k), Ok(mut v)) = (
-            prefix_plane_alloc(engine, kb),
-            prefix_plane_alloc(engine, vb),
-        ) else {
-            return None; // alloc pressure: trunk-only entry
+        let (k, v) = match planes {
+            SpecPlanes::Lend => {
+                let (Some(k), Some(v)) = (spec_plane_lend(k_src, kb), spec_plane_lend(v_src, vb))
+                else {
+                    return None; // trunk-only entry
+                };
+                (PlaneBuf::Lent(k), PlaneBuf::Lent(v))
+            }
+            SpecPlanes::Copy => {
+                let (Ok(mut k), Ok(mut v)) = (
+                    prefix_plane_alloc(engine, kb),
+                    prefix_plane_alloc(engine, vb),
+                ) else {
+                    return None; // alloc pressure: trunk-only entry
+                };
+                if !spec_plane_copy(engine, &mut k, k_src, kb)
+                    || !spec_plane_copy(engine, &mut v, v_src, vb)
+                {
+                    return None;
+                }
+                bytes += kb + vb;
+                (k.into(), v.into())
+            }
         };
-        if !spec_plane_copy(engine, &mut k, k_src, kb)
-            || !spec_plane_copy(engine, &mut v, v_src, vb)
-        {
-            return None;
-        }
-        bytes += kb + vb;
         Some(PrefixPlane {
             k,
             v,
@@ -17072,9 +17518,20 @@ fn prefix_insert_from_spec_boundary(
         id: 0, // recency identity assigned by PrefixCache::insert
         pins: 0,
         prompt_end: None,
+        loan_charge: 0,
     };
     trace_prefix_entry_state(engine, &e, e.pos, "spec-snapshot", why);
+    let lent = e.lent_bytes();
     let _ = px.insert_demoting(pool_key, e, why, engine, hpx);
+    if tick_trace_enabled() {
+        let (reserved, used) = engine.pool_reserved_used();
+        eprintln!(
+            "[specpub] {planes:?} publication why={why} pos={pos} lent={:.1}MB us={} \
+             pool_reserved={reserved} pool_used={used}",
+            lent as f64 / 1e6,
+            t0.elapsed().as_micros(),
+        );
+    }
 }
 
 /// Device bytes allocated by a plain snapshot, including both TP ranks. Use live lengths,
@@ -18443,6 +18900,7 @@ fn publish_dspark_prefix_capture_inner(
         None,
         dspark_tail,
         cap,
+        SpecPlanes::Copy,
         "dspark-boundary",
     );
     // The key was absent above, so an entry under it now is the one this call inserted.
@@ -18508,6 +18966,7 @@ fn drain_mtp_prefix_captures(
             sp.draft_plane_ref(),
             None, // MTP publisher: its draft state rides `draft`, not the dspark tail
             cap,
+            SpecPlanes::Lend,
             "spec-boundary",
         );
     }
@@ -18561,6 +19020,7 @@ fn drain_glm5_prefix_capture(
         None,
         tail,
         cap,
+        SpecPlanes::Copy,
         "glm5-boundary",
     );
 }
@@ -23595,6 +24055,9 @@ pub fn run(
                 })
             };
             let automatic_demote = spec_k_pin().is_none() && spec_gate_on();
+            // Lent planes whose owner dropped them since the last tick are charged (or compacted)
+            // before this tick's publications and admissions read the cache (memra#1221 part 2).
+            px.reconcile_loans(Some(&engine), "tick");
             // PREFIX-CACHE spec publication sweep (lane/spec-prefix-cache): a speculative
             // session whose first cold burst produced a boundary capture publishes it ONCE, at
             // the tick boundary after the burst — commit-gated (the capture's pos prefixes the
@@ -26359,6 +26822,9 @@ pub fn run(
                 }
             }
         }
+        // The retired sessions' lent planes moved to their entries: charge or compact them now
+        // (memra#1221 part 2).
+        px.reconcile_loans(Some(&engine), "retire");
         if oom_teardowns > 0 {
             // memra#145: RECLAIM BEFORE RETRY. Until 2026-09-04 this block only trimmed the
             // pool, so every park/retry round released the same ~9 GB of freed session state
@@ -30783,6 +31249,7 @@ fn admit(
                             None
                         }
                         Err(err) => {
+                            note_lend_rewind_refusal(&err.to_string(), "affinity", &req.model);
                             eprintln!(
                                 "[worker] affinity rewind failed ({err}); \
                                        dropping session, full prime"
@@ -40456,6 +40923,7 @@ mod tests {
         assert_eq!(unified_insert_budget(configured, 0, 0, 0, headroom), 0);
         // The insert loop evicts LRU entries down to the clamped budget (the existing policy).
         let entry = |k: &super::PoolKey, first: u32| PrefixEntry {
+            loan_charge: 0,
             recurrent_in_test: false,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             dspark_draft: None,
@@ -45770,6 +46238,7 @@ mod tests {
     fn a_dflash_request_prefers_a_restorable_hit_over_a_longer_plain_one() {
         use super::{PREFIX_ENTRY_LAYOUT_VERSION, PrefixCache, PrefixEntry};
         let entry = |k: &super::PoolKey, n: u32| PrefixEntry {
+            loan_charge: 0,
             recurrent_in_test: false,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             dspark_draft: None,
@@ -47487,6 +47956,7 @@ mod tests {
     /// under test live entirely in the host-side key/toks matching.
     fn entry(pool_key: &PoolKey, toks: Vec<u32>) -> PrefixEntry {
         PrefixEntry {
+            loan_charge: 0,
             recurrent_in_test: false,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             dspark_draft: None,
@@ -52686,6 +53156,7 @@ mod tests {
     /// exact-key dedupe never collides and survivors are readable back out of the pools).
     fn entry_b(pool_key: &PoolKey, ident: u32, bytes: usize) -> PrefixEntry {
         PrefixEntry {
+            loan_charge: 0,
             recurrent_in_test: false,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             dspark_draft: None,
@@ -53004,7 +53475,7 @@ mod tests {
         kv_fill: Vec<Option<(Vec<u8>, Vec<u8>)>>,
         draft_tok: (usize, usize),
         draft_host: (Vec<u8>, Vec<u8>),
-        draft: (cudarc::driver::CudaSlice<u8>, cudarc::driver::CudaSlice<u8>),
+        draft: (super::KvPlane, super::KvPlane),
         recur_fill: Vec<Option<(Vec<f32>, Vec<f32>)>>,
         last_h: Vec<f32>,
         logits: Vec<f32>,
@@ -53076,8 +53547,8 @@ mod tests {
                 .map(|_| next() as u8)
                 .collect();
             let draft = (
-                stream.clone_htod(&dk).unwrap(),
-                stream.clone_htod(&dv).unwrap(),
+                stream.clone_htod(&dk).unwrap().into(),
+                stream.clone_htod(&dv).unwrap().into(),
             );
             let recur_fill = src
                 .recur
@@ -53130,13 +53601,9 @@ mod tests {
             &self,
             engine: &Engine,
             pos: usize,
-            draft_plane: Option<(
-                &cudarc::driver::CudaSlice<u8>,
-                &cudarc::driver::CudaSlice<u8>,
-                usize,
-                usize,
-            )>,
+            draft_plane: Option<(&super::KvPlane, &super::KvPlane, usize, usize)>,
             key: &super::PoolKey,
+            planes: super::SpecPlanes,
         ) -> super::PrefixCache {
             let stream = engine.stream();
             let n = self.src.kv.len();
@@ -53173,6 +53640,7 @@ mod tests {
                 draft_plane,
                 None,
                 cap,
+                planes,
                 "spec-boundary",
             );
             px
@@ -53214,6 +53682,87 @@ mod tests {
             assert_eq!(bits(&entry.last_h), bits(&self.last_h), "{what}");
             assert_eq!(bits(&entry.last_logits), bits(&self.logits), "{what}");
         }
+
+        /// memra#1221 part 2: the lending publication of the same capture is the copy's twin.
+        /// Every KV and draft plane of the lent entry reads the source's own rows in place (its
+        /// device pointer is the source's), holds the copy's bytes, and is charged nothing; the
+        /// entry's logical bytes are the copy's, its round-trip digest is the copy's.
+        fn assert_lent_twin(
+            &self,
+            engine: &Engine,
+            copied: &super::PrefixCache,
+            lent: &super::PrefixCache,
+            key: &super::PoolKey,
+            pos: usize,
+            what: &str,
+        ) {
+            use cudarc::driver::DevicePtr;
+            let stream = engine.stream();
+            let ptr = |s: &cudarc::driver::CudaSlice<u8>| s.device_ptr(&stream).0;
+            let (Some(c), Some(l)) = (
+                copied.key_index(key, &self.committed[..pos]),
+                lent.key_index(key, &self.committed[..pos]),
+            ) else {
+                panic!(
+                    "{what}: the lending publication published {:?} entries",
+                    lent.total_bytes
+                );
+            };
+            let (c, l) = (&copied.entries[key][c], &lent.entries[key][l]);
+            let mut lent_bytes = 0;
+            for (il, (cp, lp)) in c.kv.iter().zip(&l.kv).enumerate() {
+                match (cp, lp) {
+                    (Some(cp), Some(lp)) => {
+                        let src = self.src.kv[il].as_ref().expect("a source layer");
+                        for (cb, lb, sb) in [(&cp.k, &lp.k, &src.k), (&cp.v, &lp.v, &src.v)] {
+                            assert!(lb.lend().is_some(), "{what}: layer {il} not lent");
+                            assert_eq!(ptr(lb), ptr(sb), "{what}: layer {il} not read in place");
+                            assert_eq!(lb.len(), cb.len(), "{what}: layer {il} length");
+                            assert_eq!(
+                                engine.dtoh_u8(lb).unwrap(),
+                                engine.dtoh_u8(cb).unwrap(),
+                                "{what}: layer {il} bytes"
+                            );
+                            lent_bytes += lb.len();
+                        }
+                    }
+                    (None, None) => {}
+                    _ => panic!("{what}: layer {il} out of kind"),
+                }
+            }
+            match (&c.draft, &l.draft) {
+                (Some(cp), Some(lp)) => {
+                    for (cb, lb, sb) in
+                        [(&cp.k, &lp.k, &self.draft.0), (&cp.v, &lp.v, &self.draft.1)]
+                    {
+                        assert!(lb.lend().is_some(), "{what}: draft not lent");
+                        assert_eq!(ptr(lb), ptr(sb), "{what}: draft not read in place");
+                        assert_eq!(
+                            engine.dtoh_u8(lb).unwrap(),
+                            engine.dtoh_u8(cb).unwrap(),
+                            "{what}: draft bytes"
+                        );
+                        lent_bytes += lb.len();
+                    }
+                }
+                (None, None) => {}
+                _ => panic!("{what}: draft plane out of kind"),
+            }
+            assert_eq!(l.lent_bytes(), lent_bytes, "{what}: lent bytes");
+            assert_eq!(l.bytes + lent_bytes, c.bytes, "{what}: charged bytes");
+            assert_eq!(l.logical_bytes(), c.bytes, "{what}: logical bytes");
+            assert_eq!(lent.total_bytes, l.bytes, "{what}: the cache's charge");
+            let (dc, dl) = (
+                super::prefix_entry_roundtrip_digest(engine, c).unwrap(),
+                super::prefix_entry_roundtrip_digest(engine, l).unwrap(),
+            );
+            assert_eq!(dl, dc, "{what}: round-trip digest");
+            eprintln!(
+                "[specpub lend cell] {what}: lent {lent_bytes} bytes in place, charged {} of {}, \
+                 digest {dl} == copy",
+                l.bytes, c.bytes
+            );
+        }
     }
 
     /// The spec boundary publisher allocates no zeroed plane: its planes come from the plain
@@ -53239,19 +53788,18 @@ mod tests {
         ] {
             assert!(!publish.contains(gone), "the spec publisher calls {gone}");
         }
-        // Trunk K and V, draft K and V: one allocation and one copy each.
+        // Trunk K and V, draft K and V: one allocation and one copy each on the copying arm.
         assert_eq!(publish.matches("prefix_plane_alloc(engine, ").count(), 4);
         assert_eq!(publish.matches("spec_plane_copy(engine, ").count(), 4);
         // A failed trunk copy abandons the insert; a failed draft copy drops the draft plane.
-        assert!(publish.contains(
-            "                if !spec_plane_copy(engine, &mut k, &l.k, kb)\n                    \
-             || !spec_plane_copy(engine, &mut v, &l.v, vb)\n                {\n                    \
-             return;\n                }"
+        let flat = publish.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(flat.contains(
+            "if !spec_plane_copy(engine, &mut k, &l.k, kb) || !spec_plane_copy(engine, &mut v, \
+             &l.v, vb) { return; }"
         ));
-        assert!(publish.contains(
-            "        if !spec_plane_copy(engine, &mut k, k_src, kb)\n            \
-             || !spec_plane_copy(engine, &mut v, v_src, vb)\n        {\n            \
-             return None;\n        }"
+        assert!(flat.contains(
+            "if !spec_plane_copy(engine, &mut k, k_src, kb) || !spec_plane_copy(engine, &mut v, \
+             v_src, vb) { return None; }"
         ));
         // The copy is the whole plane or nothing, and its fault is compiled into tests only.
         let copy = body("fn spec_plane_copy(");
@@ -53261,6 +53809,184 @@ mod tests {
         let alloc = body("fn prefix_plane_alloc(");
         assert!(alloc.contains("engine.alloc_u8_uninit(bytes)"));
         assert!(alloc.contains("engine.alloc_u8(1)"));
+    }
+
+    /// memra#1221 part 2: the MTP publisher lends the session's rows; DSpark and GLM-5 copy. The
+    /// lending arm of the publisher allocates nothing and copies nothing: trunk K and V and draft
+    /// K and V each come from one `spec_plane_lend`, a trunk plane that does not lend abandons
+    /// the insert and a draft plane that does not lend leaves the entry trunk-only, as a failed
+    /// copy does. The lend helper carries the test fault the copy helper carries.
+    #[test]
+    fn spec_boundary_publish_lends_on_the_mtp_path() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let body = |start: &str| {
+            let a = production.find(start).unwrap_or_else(|| panic!("{start}"));
+            &production[a..a + production[a..].find("\n}\n").expect("the function ends")]
+        };
+        let flat = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        let drain = flat(body("fn drain_mtp_prefix_captures("));
+        assert!(
+            drain.contains("cap, SpecPlanes::Lend, \"spec-boundary\","),
+            "{drain}"
+        );
+        let dspark = flat(body("fn publish_dspark_prefix_capture_inner("));
+        assert!(
+            dspark.contains("cap, SpecPlanes::Copy, \"dspark-boundary\","),
+            "{dspark}"
+        );
+        let glm5 = flat(body("fn drain_glm5_prefix_capture("));
+        assert!(
+            glm5.contains("cap, SpecPlanes::Copy, \"glm5-boundary\","),
+            "{glm5}"
+        );
+        let publish = body("fn prefix_insert_from_spec_boundary(");
+        assert_eq!(publish.matches("spec_plane_lend(").count(), 4);
+        let arms: Vec<&str> = publish.split("SpecPlanes::Lend => {").skip(1).collect();
+        assert_eq!(arms.len(), 2, "a trunk and a draft lending arm");
+        for (arm, fail) in arms.iter().zip(["return;", "return None;"]) {
+            let arm = &arm[..arm
+                .find("SpecPlanes::Copy =>")
+                .expect("the copying arm follows")];
+            let arm: String = arm
+                .lines()
+                .filter(|l| !l.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            for gone in [
+                "prefix_plane_alloc",
+                "spec_plane_copy",
+                "copy_u8_into",
+                "alloc_u8",
+            ] {
+                assert!(!arm.contains(gone), "a lending arm calls {gone}: {arm}");
+            }
+            assert!(
+                arm.contains(fail),
+                "a lending arm without its failure return: {arm}"
+            );
+            assert!(
+                arm.contains("PlaneBuf::Lent(k), PlaneBuf::Lent(v)"),
+                "{arm}"
+            );
+        }
+        let lend = body("fn spec_plane_lend(");
+        assert!(lend.contains("#[cfg(test)]\n    if spec_plane_copy_fault() {"));
+        assert!(lend.contains("match plane.lend(bytes) {"));
+    }
+
+    /// memra#1221 part 2: every call site of a write that could start below a lent row is
+    /// pinned: `Cache::rollback`, `Cache::rewind_recurrent_from`, the MTP scratch's `set_len`
+    /// and `set_plane_len`, `KvPlane::into_pooled` and `KvPlane::release_beyond`. Each of them
+    /// refuses (or, for a release, keeps) below a live lend, so a new caller is safe by
+    /// construction; this census makes it visible. Counts are per file, tests and bins included,
+    /// except this file, where only the production code counts. A new caller: check what it
+    /// does with the refusal (the cold path is the fallback) and update its row.
+    #[test]
+    fn every_caller_of_a_write_below_a_lend_is_pinned() {
+        let calls: [(&str, &str); 6] = [
+            ("rollback", concat!(".roll", "back(")),
+            (
+                "rewind_recurrent_from",
+                concat!(".rewind_recurrent", "_from("),
+            ),
+            ("set_len", concat!("set_", "len(e,")),
+            ("set_plane_len", concat!("set_plane_", "len(e,")),
+            ("into_pooled", concat!(".into_", "pooled()")),
+            ("release_beyond", concat!(".release_", "beyond(")),
+        ];
+        let pinned: [(&str, &str, usize); 21] = [
+            ("memra-engine/src/bin/decode_batch_bench.rs", "rollback", 6),
+            ("memra-engine/src/bin/spec_econ.rs", "rollback", 2),
+            (
+                "memra-engine/src/bin/step_prefill_rollback_gate.rs",
+                "rollback",
+                1,
+            ),
+            ("memra-engine/src/bin/verify_mscale.rs", "rollback", 7),
+            ("memra-engine/src/bin/verify_probe.rs", "rollback", 9),
+            ("memra-engine/src/bin/verify_shape_bisect.rs", "rollback", 3),
+            ("memra-engine/src/decode.rs", "rollback", 2),
+            ("memra-engine/src/dflash.rs", "rewind_recurrent_from", 1),
+            ("memra-engine/src/eagle.rs", "rollback", 1),
+            ("memra-engine/src/hybrid_forward.rs", "rollback", 1),
+            ("memra-engine/src/spec.rs", "rollback", 4),
+            ("memra-engine/src/spec.rs", "set_len", 26),
+            ("memra-engine/src/spec.rs", "set_plane_len", 10),
+            ("memra-engine/src/spec_cost.rs", "rollback", 3),
+            ("memra-engine/src/tier_transfer.rs", "into_pooled", 1),
+            ("memra-kv/src/lib.rs", "rollback", 2),
+            ("memra-kv/src/lib.rs", "rewind_recurrent_from", 1),
+            ("memra-kv/src/lib.rs", "into_pooled", 1),
+            ("memra-kv/src/lib.rs", "release_beyond", 3),
+            ("memra-kv/src/plane.rs", "release_beyond", 1),
+            ("memra-kv/src/tiered/tests.rs", "rollback", 2),
+        ];
+        let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let mut files = Vec::new();
+        let mut dirs = vec![crates.clone()];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                let name = path.file_name().unwrap().to_string_lossy().into_owned();
+                if path.is_dir() && name != "target" && !name.starts_with('.') {
+                    dirs.push(path);
+                } else if name.ends_with(".rs") {
+                    files.push(path);
+                }
+            }
+        }
+        let mut seen = 0usize;
+        for path in files {
+            let rel = path
+                .strip_prefix(&crates)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let mut text = std::fs::read_to_string(&path).unwrap();
+            if rel == "memra-server/src/worker.rs" {
+                // This census lives here: only the production code counts.
+                text.truncate(text.find("\nmod tests {").unwrap());
+            }
+            for (name, needle) in calls {
+                let found = text.matches(needle).count();
+                let want = pinned
+                    .iter()
+                    .find(|(f, n, _)| *f == rel && *n == name)
+                    .map_or(0, |p| p.2);
+                assert_eq!(
+                    found, want,
+                    "{rel}: {found} call sites of {name}, pinned {want}: check each new one \
+                     against a live lend (memra#1221) and update the census"
+                );
+                seen += found;
+            }
+        }
+        assert_eq!(
+            seen,
+            pinned.iter().map(|p| p.2).sum::<usize>(),
+            "a pinned file is gone"
+        );
+    }
+
+    /// memra#1221 part 2: compaction runs exactly when copying an adopted plane's readers frees
+    /// more than it copies.
+    #[test]
+    fn loan_compaction_frees_more_than_it_copies() {
+        use super::loan_compaction_frees_more as frees;
+        // 256 rows held under 97 read: freeing 159 for a copy of 97.
+        assert!(frees(256, 97));
+        // 256 under 200, and the break-even 256 under 128: no.
+        assert!(!frees(256, 200));
+        assert!(!frees(256, 128));
+        assert!(frees(257, 128));
+        // A plane held at exactly its rows, or not held at all (owner alive): no.
+        assert!(!frees(97, 97));
+        assert!(!frees(0, 97));
+        // An open-output session of 262,144 rows under a 10,000-token entry: yes.
+        assert!(frees(262_144, 10_000));
+        // A bounded 131,046-token request (+512 +8) under its 131,008-row entry: no.
+        assert!(!frees(131_566, 131_008));
     }
 
     /// GPU cell: the spec boundary publication is the copy program. A tiny hybrid config always,
@@ -53287,9 +54013,10 @@ mod tests {
             for (pos, live) in [(1usize, 1usize), (97, 97), (97, 131)] {
                 let fx = SpecPubFixture::new(&engine, cfg, live, &mut next);
                 let (dk_tok, dv_tok) = fx.draft_tok;
-                let dk_short = stream
+                let dk_short: super::KvPlane = stream
                     .clone_htod(&fx.draft_host.0[..pos * dk_tok - 1])
-                    .unwrap();
+                    .unwrap()
+                    .into();
                 for case in ["draft", "short-draft", "no-draft"] {
                     let draft_plane = match case {
                         "draft" => Some((&fx.draft.0, &fx.draft.1, dk_tok, dv_tok)),
@@ -53298,7 +54025,9 @@ mod tests {
                     };
                     let what = format!("{name} pos {pos} live {live} {case}");
                     let key: super::PoolKey = (format!("specpub-{case}"), String::new());
-                    let px = fx.publish(&engine, pos, draft_plane, &key);
+                    let px = fx.publish(&engine, pos, draft_plane, &key, super::SpecPlanes::Copy);
+                    let lent = fx.publish(&engine, pos, draft_plane, &key, super::SpecPlanes::Lend);
+                    fx.assert_lent_twin(&engine, &px, &lent, &key, pos, &what);
                     let at = px
                         .key_index(&key, &fx.committed[..pos])
                         .unwrap_or_else(|| panic!("{what}: no entry"));
@@ -53403,54 +54132,323 @@ mod tests {
         };
         let (pos, live) = (97usize, 131usize);
         for (name, cfg) in &SpecPubFixture::configs() {
+            for planes in [super::SpecPlanes::Copy, super::SpecPlanes::Lend] {
+                let name = &format!("{name} {planes:?}");
+                let fx = SpecPubFixture::new(&engine, cfg, live, &mut next);
+                let trunk_planes = 2 * fx.kv_fill.iter().flatten().count();
+                let (dk_tok, dv_tok) = fx.draft_tok;
+                let draft_plane = Some((&fx.draft.0, &fx.draft.1, dk_tok, dv_tok));
+                for (ordinal, plane) in [
+                    (0, "the first trunk K"),
+                    (1, "the first trunk V"),
+                    (trunk_planes - 1, "the last trunk V"),
+                ] {
+                    let key: super::PoolKey = (format!("specpub-fault-{ordinal}"), String::new());
+                    SPEC_PLANE_COPY_FAULT.with(|fault| fault.set(Some(ordinal)));
+                    let px = fx.publish(&engine, pos, draft_plane, &key, planes);
+                    assert!(
+                        SPEC_PLANE_COPY_FAULT.with(|fault| fault.get()).is_none(),
+                        "{name}: the fault on {plane} did not fire"
+                    );
+                    assert!(
+                        px.key_index(&key, &fx.committed[..pos]).is_none() && px.total_bytes == 0,
+                        "{name}: an entry was published although the copy of {plane} failed"
+                    );
+                }
+                for (ordinal, plane) in [
+                    (trunk_planes, "the draft K"),
+                    (trunk_planes + 1, "the draft V"),
+                ] {
+                    let what = format!("{name}, failed copy of {plane}");
+                    let key: super::PoolKey = (format!("specpub-fault-{ordinal}"), String::new());
+                    SPEC_PLANE_COPY_FAULT.with(|fault| fault.set(Some(ordinal)));
+                    let px = fx.publish(&engine, pos, draft_plane, &key, planes);
+                    assert!(
+                        SPEC_PLANE_COPY_FAULT.with(|fault| fault.get()).is_none(),
+                        "{what}: the fault did not fire"
+                    );
+                    let at = px
+                        .key_index(&key, &fx.committed[..pos])
+                        .unwrap_or_else(|| panic!("{what}: no trunk-only entry"));
+                    let entry = &px.entries[&key][at];
+                    assert!(
+                        entry.draft.is_none(),
+                        "{what}: the draft plane was published"
+                    );
+                    fx.assert_trunk(&engine, entry, pos, &what);
+                    assert_eq!(
+                        entry.logical_bytes(),
+                        fx.trunk_entry_bytes(pos),
+                        "{what} bytes"
+                    );
+                }
+                eprintln!(
+                    "[specpub fault cell] {name}: 3 failed trunk planes published nothing, 2 failed \
+                 draft planes published trunk-only ({trunk_planes} trunk planes)"
+                );
+            }
+        }
+    }
+
+    /// GPU cell (memra#1221 part 2): a lent plane outlives its lender, every write below a live
+    /// lend refuses, and the last reader frees the plane. The lending publication reads the
+    /// session's rows in place. Then: a rollback and a recurrent rewind below the lent rows refuse
+    /// and leave every layer's length as it was; `into_pooled` of a lent draft plane refuses (the
+    /// plane moves to its loan). The lender dropped, its planes are the entry's: the reconcile
+    /// charges their whole capacity to the cache (once), the entry restores the session's bytes
+    /// into a fresh cache, and evicting it frees what was charged. A second entry evicted while
+    /// its lender lives frees nothing, and its lender then frees its own planes. At the end the
+    /// pool's used bytes are the baseline and nothing is charged.
+    #[test]
+    #[ignore = "requires a CUDA GPU; MEMRA_B1_MODEL adds a checkpoint's geometry"]
+    fn a_lent_plane_outlives_its_lender_and_its_last_reader_frees_it() {
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let stream = engine.stream();
+        let used = || {
+            stream.synchronize().unwrap();
+            engine.pool_reserved_used().1
+        };
+        let mut seed = 0x7a5d_1e0f_33c4_9b21u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let (pos, live) = (97usize, 131usize);
+        for (name, cfg) in &SpecPubFixture::configs() {
+            let base = used();
             let fx = SpecPubFixture::new(&engine, cfg, live, &mut next);
-            let trunk_planes = 2 * fx.kv_fill.iter().flatten().count();
             let (dk_tok, dv_tok) = fx.draft_tok;
-            let draft_plane = Some((&fx.draft.0, &fx.draft.1, dk_tok, dv_tok));
-            for (ordinal, plane) in [
-                (0, "the first trunk K"),
-                (1, "the first trunk V"),
-                (trunk_planes - 1, "the last trunk V"),
-            ] {
-                let key: super::PoolKey = (format!("specpub-fault-{ordinal}"), String::new());
-                SPEC_PLANE_COPY_FAULT.with(|fault| fault.set(Some(ordinal)));
-                let px = fx.publish(&engine, pos, draft_plane, &key);
-                assert!(
-                    SPEC_PLANE_COPY_FAULT.with(|fault| fault.get()).is_none(),
-                    "{name}: the fault on {plane} did not fire"
-                );
-                assert!(
-                    px.key_index(&key, &fx.committed[..pos]).is_none() && px.total_bytes == 0,
-                    "{name}: an entry was published although the copy of {plane} failed"
-                );
-            }
-            for (ordinal, plane) in [
-                (trunk_planes, "the draft K"),
-                (trunk_planes + 1, "the draft V"),
-            ] {
-                let what = format!("{name}, failed copy of {plane}");
-                let key: super::PoolKey = (format!("specpub-fault-{ordinal}"), String::new());
-                SPEC_PLANE_COPY_FAULT.with(|fault| fault.set(Some(ordinal)));
-                let px = fx.publish(&engine, pos, draft_plane, &key);
-                assert!(
-                    SPEC_PLANE_COPY_FAULT.with(|fault| fault.get()).is_none(),
-                    "{what}: the fault did not fire"
-                );
-                let at = px
-                    .key_index(&key, &fx.committed[..pos])
-                    .unwrap_or_else(|| panic!("{what}: no trunk-only entry"));
-                let entry = &px.entries[&key][at];
-                assert!(
-                    entry.draft.is_none(),
-                    "{what}: the draft plane was published"
-                );
-                fx.assert_trunk(&engine, entry, pos, &what);
-                assert_eq!(entry.bytes, fx.trunk_entry_bytes(pos), "{what} bytes");
-            }
-            eprintln!(
-                "[specpub fault cell] {name}: 3 failed trunk copies published nothing, 2 failed \
-                 draft copies published trunk-only ({trunk_planes} trunk planes)"
+            let key: super::PoolKey = ("specpub-loan".into(), String::new());
+            let mut px = fx.publish(
+                &engine,
+                pos,
+                Some((&fx.draft.0, &fx.draft.1, dk_tok, dv_tok)),
+                &key,
+                super::SpecPlanes::Lend,
             );
+            let at = px.key_index(&key, &fx.committed[..pos]).expect("an entry");
+            let small = px.entries[&key][at].bytes;
+            assert_eq!(
+                px.total_bytes, small,
+                "{name}: a borrowed entry is charged its own planes"
+            );
+            // Writes below the lend refuse before any write.
+            let SpecPubFixture {
+                mut src,
+                draft,
+                kv_fill,
+                ..
+            } = fx;
+            let lens = |c: &super::Cache| {
+                c.kv.iter()
+                    .map(|l| l.as_ref().map(|l| l.len))
+                    .collect::<Vec<_>>()
+            };
+            let before = lens(&src);
+            let n = src.kv.len();
+            let rowed: Vec<bool> = src
+                .kv
+                .iter()
+                .map(|l| l.as_ref().is_some_and(|l| l.len > 0))
+                .collect();
+            let snap = |rows: usize| memra_engine::cache::CacheSnapshot {
+                kv_len: rowed.iter().map(|&r| r.then_some(rows)).collect(),
+                tp_kv_len: vec![None; n],
+                conv: vec![None; n],
+                ssm: vec![None; n],
+                pos: rows,
+            };
+            let below = snap(pos - 1);
+            let err = src
+                .rollback(&engine, &below, 0)
+                .expect_err("a rollback below the lend");
+            assert!(
+                err.to_string().contains("lent to a prefix entry"),
+                "{name}: {err}"
+            );
+            let no_planes: Vec<Option<cudarc::driver::CudaSlice<f32>>> = vec![None; n];
+            let err = src
+                .rewind_recurrent_from(&engine, pos - 1, &no_planes, &no_planes)
+                .expect_err("a recurrent rewind below the lend");
+            assert!(
+                err.to_string().contains("lent to a prefix entry"),
+                "{name}: {err}"
+            );
+            assert_eq!(
+                lens(&src),
+                before,
+                "{name}: a refused rewind moved a length"
+            );
+            let at_lend = snap(pos);
+            src.rollback(&engine, &at_lend, 0)
+                .expect("a rollback to the lent rows");
+            let (draft_k, draft_v) = draft;
+            let err = draft_k
+                .into_pooled()
+                .expect_err("into_pooled of a lent plane");
+            assert!(
+                err.to_string().contains("lent to a prefix entry"),
+                "{name}: {err}"
+            );
+            // The lender goes: its planes are the entry's.
+            let capacity: usize = src
+                .kv
+                .iter()
+                .flatten()
+                .filter(|l| l.len > 0)
+                .map(|l| l.k.capacity_bytes() + l.v.capacity_bytes())
+                .sum::<usize>()
+                + draft_v.capacity_bytes();
+            let draft_k_cap = px.entries[&key][at]
+                .draft
+                .as_ref()
+                .and_then(|d| d.k.lend())
+                .map(|l| l.held_bytes())
+                .unwrap();
+            drop(src);
+            drop(draft_v);
+            // The charge-only reconcile (the one inserts and evictions run): no compaction.
+            px.reconcile_loans(None, "test");
+            assert_eq!(
+                px.loan_compactions, 0,
+                "{name}: a charge-only reconcile compacted"
+            );
+            let charged = px.total_bytes - small;
+            assert_eq!(
+                charged,
+                capacity + draft_k_cap,
+                "{name}: the adopted planes' charge"
+            );
+            assert_eq!(
+                px.entries[&key][at].loan_charge, charged,
+                "{name}: charged once"
+            );
+            // The adopted entry restores the session's rows.
+            let mut dst = super::Cache::new(&engine, cfg, SpecPubFixture::CAP_ROWS).unwrap();
+            super::prefix_restore(&engine, &mut dst, &px.entries[&key][at], &key, None)
+                .expect("a restore from the adopted entry");
+            for (il, fill) in kv_fill.iter().enumerate() {
+                if let (Some((k, v)), Some(l)) = (fill, dst.kv[il].as_ref()) {
+                    let (kb, vb) = (pos * l.k_tok_bytes, pos * l.v_tok_bytes);
+                    assert_eq!(
+                        engine.dtoh_u8_view(&l.k.slice(0..kb)).unwrap(),
+                        k[..kb],
+                        "{name} K {il}"
+                    );
+                    assert_eq!(
+                        engine.dtoh_u8_view(&l.v.slice(0..vb)).unwrap(),
+                        v[..vb],
+                        "{name} V {il}"
+                    );
+                }
+            }
+            drop(dst);
+            let held = used();
+            assert_eq!(px.evict_all(), 1, "{name}");
+            let freed = held - used();
+            assert_eq!(px.total_bytes, 0, "{name}: charged after the eviction");
+            assert!(px.loans.is_empty(), "{name}: books after the eviction");
+            assert!(
+                freed >= charged,
+                "{name}: evicting the adopted entry freed {freed} of {charged} charged bytes"
+            );
+            // A borrower evicted while its lender lives frees nothing; the lender then frees.
+            let fx = SpecPubFixture::new(&engine, cfg, live, &mut next);
+            let mut px = fx.publish(&engine, pos, None, &key, super::SpecPlanes::Lend);
+            let lender = used();
+            assert_eq!(px.evict_all(), 1, "{name}");
+            assert!(
+                lender - used() <= small,
+                "{name}: evicting a borrower freed its lender's rows"
+            );
+            drop(fx);
+            assert!(px.loans.is_empty() && px.total_bytes == 0, "{name}");
+            let end = used();
+            eprintln!(
+                "[specpub loan cell] {name}: borrowed charge {small}, adopted charge {charged}, \
+                 evict freed {freed}; pool used base {base} end {end}"
+            );
+            assert_eq!(
+                end, base,
+                "{name}: pool used did not return to its baseline"
+            );
+        }
+    }
+
+    /// GPU cell (memra#1221 part 2): an adopted plane is compacted exactly when copying its
+    /// readers' rows frees more than it copies (`loan_compaction_frees_more`). A capacity of 256
+    /// rows under 97 lent rows compacts: every plane becomes the entry's own, its bytes and
+    /// round-trip digest are the copy publication's, its charge is the copy's bytes, and the
+    /// adopted planes are freed. 200 lent rows of 256 stay adopted, charged their capacity.
+    #[test]
+    #[ignore = "requires a CUDA GPU; MEMRA_B1_MODEL adds a checkpoint's geometry"]
+    fn adopted_planes_compact_only_when_that_frees_more_than_it_copies() {
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let stream = engine.stream();
+        let used = || {
+            stream.synchronize().unwrap();
+            engine.pool_reserved_used().1
+        };
+        let mut seed = 0x51ed_270b_9a8c_4f13u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let live = SpecPubFixture::CAP_ROWS;
+        for (name, cfg) in &SpecPubFixture::configs() {
+            for (pos, compacts) in [(97usize, true), (200, false)] {
+                let what = format!("{name} pos {pos}");
+                let base = used();
+                let fx = SpecPubFixture::new(&engine, cfg, live, &mut next);
+                let (dk_tok, dv_tok) = fx.draft_tok;
+                let draft = Some((&fx.draft.0, &fx.draft.1, dk_tok, dv_tok));
+                let key: super::PoolKey = ("specpub-compact".into(), String::new());
+                let copied = fx.publish(&engine, pos, draft, &key, super::SpecPlanes::Copy);
+                let mut px = fx.publish(&engine, pos, draft, &key, super::SpecPlanes::Lend);
+                let (c_bytes, digest) = {
+                    let c = &copied.entries[&key]
+                        [copied.key_index(&key, &fx.committed[..pos]).unwrap()];
+                    (
+                        c.bytes,
+                        super::prefix_entry_roundtrip_digest(&engine, c).unwrap(),
+                    )
+                };
+                let at = px.key_index(&key, &fx.committed[..pos]).unwrap();
+                let read = px.entries[&key][at].lent_bytes();
+                drop(fx);
+                px.reconcile_loans(Some(&engine), "test");
+                let e = &px.entries[&key][at];
+                assert_eq!(
+                    super::prefix_entry_roundtrip_digest(&engine, e).unwrap(),
+                    digest,
+                    "{what}: the entry's bytes after the reconcile"
+                );
+                if compacts {
+                    assert_eq!(e.lent_bytes(), 0, "{what}: a plane still lent");
+                    assert_eq!(e.bytes, c_bytes, "{what}: the compacted charge");
+                    assert!(px.loans.is_empty() && px.loan_compactions > 0, "{what}");
+                } else {
+                    assert_eq!(e.lent_bytes(), read, "{what}: a plane compacted");
+                    assert!(e.bytes > c_bytes && px.loan_compactions == 0, "{what}");
+                }
+                let charged = px.total_bytes;
+                assert_eq!(px.evict_all(), 1, "{what}");
+                drop(copied);
+                let end = used();
+                eprintln!(
+                    "[specpub compact cell] {what}: read {read}, charged {charged} (copy {c_bytes}), \
+                     compactions {}, digest {digest}; pool used base {base} end {end}",
+                    px.loan_compactions
+                );
+                assert_eq!(
+                    end, base,
+                    "{what}: pool used did not return to its baseline"
+                );
+            }
         }
     }
 
@@ -53470,8 +54468,8 @@ mod tests {
             .collect();
         let stream = engine.stream();
         let plane = super::PrefixPlane {
-            k: stream.clone_htod(&kbytes).unwrap(),
-            v: stream.clone_htod(&vbytes).unwrap(),
+            k: stream.clone_htod(&kbytes).unwrap().into(),
+            v: stream.clone_htod(&vbytes).unwrap().into(),
             len,
             k_tok_bytes: k_tok,
             v_tok_bytes: v_tok,
@@ -53558,9 +54556,9 @@ mod tests {
         let (mut draft, _) = gpu_plane(engine, 4, 34, 24, 9);
         let stream = engine.stream();
         let bump = |p: &mut super::PrefixPlane| {
-            let mut k = stream.clone_dtoh(&p.k).unwrap();
+            let mut k = stream.clone_dtoh(&*p.k).unwrap();
             k[0] ^= 0xff;
-            p.k = stream.clone_htod(&k).unwrap();
+            p.k = stream.clone_htod(&k).unwrap().into();
         };
         match flip {
             "trunk" => bump(&mut trunk),
@@ -53577,6 +54575,7 @@ mod tests {
         let tail_k = stream.clone_htod(&word(0.25, 16, flip == "tail")).unwrap();
         let tail_v = stream.clone_htod(&word(0.75, 16, false)).unwrap();
         super::PrefixEntry {
+            loan_charge: 0,
             recurrent_in_test: false,
             layout_version: super::PREFIX_ENTRY_LAYOUT_VERSION,
             pool_key: ("m".into(), String::new()),
