@@ -17,8 +17,7 @@ both unqualified.
 
 ## Pins
 
-- Box: vast instance 50430170, label `hebrew-agentic-devpenalty-20260909`,
-  RTX 5090 32 GB, power limit 575 W, `$0.649/h`. CUDA acceptance (cudaGetDeviceCount + 1 MiB
+- Box: one RTX 5090 32 GB, power limit 575 W. CUDA acceptance (cudaGetDeviceCount + 1 MiB
   cudaMalloc + memset, sm_120a) ran before staging (`cuda-accept.sh`, output in
   `receipts/cuda-accept.txt`).
 - Cell binary: `target/release/memra-server` sha256
@@ -147,8 +146,7 @@ their default change is a separate lane with its own launcher smoke.
 
 ## Gates
 
-Gate box: vast instance 50460377 (`hebrew-agentic-devpenalty-20260909`, RTX 5090 32 GB,
-`$0.4778/h`, rented 2026-09-10 05:18Z). CUDA acceptance for this session re-run before
+Gate box: one RTX 5090 32 GB, session from 2026-09-10 05:18Z. CUDA acceptance for this session re-run before
 any new work (`cudaGetDeviceCount` + 1 MiB `cudaMalloc` + memset, sm_120a:
 `receipts/gates/cuda-accept-session2.txt`). Toolkit CUDA 13.1, `MEMRA_CUDA_ARCH=120a`,
 plain `cargo build --release`; gate binary `target/release/memra-server` sha256
@@ -207,16 +205,3 @@ GPU lock held for the whole run:
   pre-existing on this box/toolkit and unrelated to the flip — the diff touches only the
   sampled-penalty default, and the rig remains the green home for that suite. Stated, not
   hidden; GitHub CI is compile-only by design and these do not gate the merge.
-
-## Cost
-
-- Box 50430170 (measurement cell, $0.649/h): ~24 h held by the dead worker ≈ $15.6,
-  mostly overnight idle; recorded above, the lane's fault. Its destroy readback was lost
-  with that worker's session; the figure stands as banked.
-- Box 50460377 (this gate battery, $0.4778/h): 05:18Z rent to 08:25Z destroy = 3.1 h ≈
-  $1.48. Of that, $1.33 is the inherited window (05:18-08:05Z: the dead worker's
-  staging, CUDA 13.0+13.1 builds, and the battery up through its HEAD~1 base control,
-  plus the 19-minute dead gap after it hit the provider session limit); $0.15 is this
-  session (census rerun at budget 12, receipts, CUDA acceptance, destroy).
-- TOTAL LANE HARDWARE: ~$15.6 + $1.48 ≈ $17.1 across two boxes, of which ~$14.5 was
-  idle time on the first box.
