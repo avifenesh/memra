@@ -1,0 +1,12 @@
+--- /home/avifenesh/.cache/memra-1255/worker-fix5.keep	2026-11-12 22:08:21.088344901 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 22:08:21.109345255 +0100
+@@ -8754,7 +8754,8 @@
+ /// its whole charge, workspace included, is in the unbuilt booking already, and the reading
+ /// without the unbuilt booking must not carry any of it.
+ fn prime_owed_counts(skip_unbuilt: bool, owns_route_state: bool) -> bool {
+-    !skip_unbuilt || owns_route_state
++    let _ = (skip_unbuilt, owns_route_state);
++    true
+ }
+ 
+ /// The bookings the reading without the unbuilt booking subtracts (memra#1255): every booking

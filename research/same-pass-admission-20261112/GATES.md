@@ -10,7 +10,8 @@ in the server log.
 
 | run | binary | gate tool |
 |---|---|---|
-| `fix3-g5`, `base-g5` | the PR head's code (`fix3`, `58f08d69a1b02938`), base | this PR's head: band from the probed reserve |
+| `fix5-g6`, `base-g6` | the PR head's code (`fix5`, `94dd52f97f6017be`), base | this PR's head: band from the probed reserve |
+| `fix3-g5`, `base-g5` | round 1 (`fix3`, `58f08d69a1b02938`), base | the same |
 | `base-g4`, `fix-g4` | base, the code before the review (`fix`, `80d3e8d7e42219d6`) | before the reserve probe: band from the boot floor (1,576 MB); the server applied 1,653 MB, so the band was 2,468 to 3,282 MB and the placement at 2,799 MB sat inside it |
 
 The cell: learn each prompt's charge alone on the idle card; start a keeper (a counting run,
@@ -43,6 +44,17 @@ effective free (driver free plus pool-cached bytes) beside the keeper is midway 
 - same greedy text as the learn pass: True; keeper: {'status': 503, 'completion_tokens': None}
 - verdicts: V1 SAME-PASS PASS, V2 NO-OVERLAP FAIL, V3 NO-OOM FAIL, V4 SERVED PASS
 
+### `base-g6`
+
+- binary `memra-server-base-120a` (sha in `gate.log`), card NVIDIA GeForce RTX 5090 Laptop GPU, enforced power limit 160.00 W at the start; wrapper `gate base-g6 rc=1 2026-11-12T23:09:50+02:00`
+- learn alone: A 5772 prompt tokens, charge 816 MB; B 5741 prompt tokens, charge 814 MB; transient floor 1576 MB
+- placement: effective free beside the keeper 3981 MB, ballast 832 MB, before the pair 2874 MB; one fits at 2469 MB, two at 3283 MB, target 2876 MB; band from the probed reserve 1653 MB (probe HTTP 408)
+- the pair's admissions (`[spec-k]` lines after the fire, line index): [7, 12, 23]; their routes: ['spec', 'spec']; next tick line: 13; settle-wait lines: 0 (first at []); `out of memory` lines: 2; panic/respawn lines: 0; server alive: True
+- pair A: HTTP 200, completion tokens 96
+- pair B: HTTP 200, completion tokens 96
+- same greedy text as the learn pass: True; keeper: {'status': 503, 'completion_tokens': None}
+- verdicts: V1 SAME-PASS PASS, V2 NO-OVERLAP FAIL, V3 NO-OOM FAIL, V4 SERVED PASS
+
 ### `fix-g4`
 
 - binary `memra-server-fix-120a` (sha in `gate.log`), card NVIDIA GeForce RTX 5090 Laptop GPU, enforced power limit 158.86 W at the start; wrapper `gate fix-g4 rc=0 2026-11-12T19:37:49+02:00`
@@ -60,6 +72,17 @@ effective free (driver free plus pool-cached bytes) beside the keeper is midway 
 - learn alone: A 5772 prompt tokens, charge 816 MB; B 5741 prompt tokens, charge 814 MB; transient floor 1576 MB
 - placement: effective free beside the keeper 3981 MB, ballast 832 MB, before the pair 2874 MB; one fits at 2469 MB, two at 3283 MB, target 2876 MB; band from the probed reserve 1653 MB (probe HTTP 408)
 - the pair's admissions (`[spec-k]` lines after the fire, line index): [8, 29]; their routes: ['spec', 'spec']; next tick line: 13; settle-wait lines: 1 (first at [12]); `out of memory` lines: 0; panic/respawn lines: 0; server alive: True
+- pair A: HTTP 200, completion tokens 96
+- pair B: HTTP 200, completion tokens 96
+- same greedy text as the learn pass: True; keeper: {'status': 200, 'completion_tokens': 12000}
+- verdicts: V1 SAME-PASS PASS, V2 NO-OVERLAP PASS, V3 NO-OOM PASS, V4 SERVED PASS
+
+### `fix5-g6`
+
+- binary `memra-server-fix5-120a` (sha in `gate.log`), card NVIDIA GeForce RTX 5090 Laptop GPU, enforced power limit 150.00 W at the start; wrapper `gate fix5-g6 rc=0 2026-11-12T23:08:28+02:00`
+- learn alone: A 5772 prompt tokens, charge 816 MB; B 5741 prompt tokens, charge 814 MB; transient floor 1576 MB
+- placement: effective free beside the keeper 3981 MB, ballast 832 MB, before the pair 2874 MB; one fits at 2469 MB, two at 3283 MB, target 2876 MB; band from the probed reserve 1653 MB (probe HTTP 408)
+- the pair's admissions (`[spec-k]` lines after the fire, line index): [7, 28]; their routes: ['spec', 'spec']; next tick line: 12; settle-wait lines: 1 (first at [11]); `out of memory` lines: 0; panic/respawn lines: 0; server alive: True
 - pair A: HTTP 200, completion tokens 96
 - pair B: HTTP 200, completion tokens 96
 - same greedy text as the learn pass: True; keeper: {'status': 200, 'completion_tokens': 12000}

@@ -1,0 +1,62 @@
+{
+ "bin": "/home/avifenesh/.cache/memra-1255/bin/memra-server-base-120a",
+ "budget_mb": 2815,
+ "entry_mb": 400,
+ "learn": {
+  "A": {
+   "charge": 362000000,
+   "prompt_tokens": 2008
+  },
+  "B": {
+   "charge": 893000000,
+   "prompt_tokens": 7365
+  }
+ },
+ "floor_mb": 1576,
+ "prefix_inserts": 4,
+ "busy_free_mb": 2862,
+ "lo_mb": 2015,
+ "hi_mb": 2546,
+ "target_mb": 2280,
+ "free_before_pair_mb": 2280,
+ "partial_reclaims": [
+  {
+   "evicted": 4,
+   "freed_mb": 927,
+   "need_mb": 1483,
+   "owed_mb": 534,
+   "priming": 1
+  }
+ ],
+ "partial_lines": [
+  "[admit-oom] reclaim-on-defer (partial): evicted 4 prefix entries (927MB, oldest first) for 1483MB (534MB of it owed by 1 priming sessions and the arrival's own entry); kept 0 unleased entries (0MB); effective free 1908MB -> 2835MB; still short, nothing unleased left (model gate)",
+  "[admit-oom] reclaim booking on: admission books what priming sessions owe (prime transients and pending seeds, capped together at the cache's room) until nothing is owed (model gate)"
+ ],
+ "flush_lines": 1,
+ "settle_lines": 0,
+ "pair_admit_lines": [
+  9,
+  25
+ ],
+ "routes": [
+  "spec",
+  "plain"
+ ],
+ "both_in_one_pass": false,
+ "oom_lines": 0,
+ "answers": {
+  "A": {
+   "status": 200,
+   "same_text": true
+  },
+  "B": {
+   "status": 200,
+   "same_text": true
+  }
+ },
+ "keeper": {
+  "status": 200,
+  "completion_tokens": 6000
+ },
+ "alive": true
+}

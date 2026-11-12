@@ -35,4 +35,6 @@ fill("AGENTIC.md", {"AGENTIC-5090": run("ab-table.py", "agentic-5090"),
                     "AGENTIC-GB10": run("ab-table.py", "agentic-gb10")})
 fill("CELLS.md", {"CELLS-5090": run("cell-table.py", "cells-5090"),
                   "CELLS-GB10": run("cell-table.py", "cells-gb10")})
+if (r / "RECLAIM.md").exists():
+    fill("RECLAIM.md", {"RECLAIM": run("reclaim-table.py", "reclaim")})
 EOF
