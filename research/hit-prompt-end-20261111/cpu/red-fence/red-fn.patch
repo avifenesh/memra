@@ -1,0 +1,12 @@
+--- <lane>/tree/crates/memra-server/src/worker.rs	2026-11-12 01:51:39.110369128 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 02:02:44.188053853 +0100
+@@ -1759,7 +1759,8 @@
+ /// one tick and the suffixes prime beside the cold chunks, as before the fence existed: waiting
+ /// prefill is never held back longer than one chunk's time plus one fenced tick.
+ fn hit_suffix_fence_yields(deferred: Duration, allowance: Duration) -> bool {
+-    !deferred.is_zero() && deferred >= allowance
++    let _ = (deferred, allowance);
++    false
+ }
+ 
+ /// The fence's allowance: the time one tick-budget chunk takes at the measured tick prefill rate

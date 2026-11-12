@@ -1,0 +1,515 @@
+{
+  "verdict": "PREFIX-EXACT-RESEND: p1=11000 p2=11150 grid=32 capture_p1=10976 resend_ok=0/2 growth_ok=1/2 identical=9/9 tails=0 covered_ok=0/4 V1=FAIL V2=FAIL V3=ok V4=FAIL V5=FAIL -> FAIL",
+  "pass": false,
+  "plan": {
+    "rig": "NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, [N/A], 615.71.09",
+    "binary": "<lane>/bin/memra-server-main-120a",
+    "binary_sha256": "ad438a3319ce82113afb8d1f2a649196891d42a87009166a2d0ccde9996e324f",
+    "model": "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "budget_mib": 2048,
+    "p1": 11000,
+    "p2": 11150,
+    "grid": 32,
+    "p3": 11000,
+    "capture_len_p1": 10976,
+    "max_tokens": 16
+  },
+  "cold": {
+    "p1": {
+      "status": 200,
+      "elapsed_s": 11.196,
+      "prompt_tokens": 11000,
+      "completion_tokens": 16,
+      "cached_tokens": 0,
+      "finish_reason": "length",
+      "text": "ClickListenerWORD announced agreedrie earn_link.array(text materials,pffffvg \u00a9 unlessajax",
+      "text_sha256": "9b5aec538d30a8f59b25cf09904557919a70f9d95ccfc902c01fd493b0f73eb3",
+      "error": null,
+      "lines": [
+        "[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung",
+        "[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)",
+        "[spec-k] model=\"gate\" tenant=\"cold\" K=0 source=eligibility-fallback prompt=11000 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+        "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=11000 budget=8192 seed_at=None",
+        "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2808 budget=1024 seed_at=None",
+        "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1784 budget=1024 seed_at=None",
+        "[primeseg] call start=10240 take=760 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=760 budget=1024 seed_at=None"
+      ],
+      "primeseg": [
+        {
+          "start": 0,
+          "take": 8192,
+          "grid_off": 0
+        },
+        {
+          "start": 8192,
+          "take": 1024,
+          "grid_off": 0
+        },
+        {
+          "start": 9216,
+          "take": 1024,
+          "grid_off": 0
+        },
+        {
+          "start": 10240,
+          "take": 760,
+          "grid_off": 0
+        }
+      ],
+      "hit_lines": [],
+      "tails": [],
+      "tails_replaced": []
+    },
+    "p2": {
+      "status": 200,
+      "elapsed_s": 9.137,
+      "prompt_tokens": 11150,
+      "completion_tokens": 16,
+      "cached_tokens": 0,
+      "finish_reason": "length",
+      "text": "able)\t\t;\t\t;\t\t;\t\t;\t\t",
+      "text_sha256": "472b5686de481749f9ad464bd58aae709a848473d9e527d9792a6e8c5d4f173c",
+      "error": null,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cold\" K=0 source=eligibility-fallback prompt=11150 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+        "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=11150 budget=8192 seed_at=None",
+        "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2958 budget=1024 seed_at=None",
+        "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1934 budget=1024 seed_at=None",
+        "[primeseg] call start=10240 take=910 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=910 budget=1024 seed_at=None"
+      ],
+      "primeseg": [
+        {
+          "start": 0,
+          "take": 8192,
+          "grid_off": 0
+        },
+        {
+          "start": 8192,
+          "take": 1024,
+          "grid_off": 0
+        },
+        {
+          "start": 9216,
+          "take": 1024,
+          "grid_off": 0
+        },
+        {
+          "start": 10240,
+          "take": 910,
+          "grid_off": 0
+        }
+      ],
+      "hit_lines": [],
+      "tails": [],
+      "tails_replaced": []
+    },
+    "p3": {
+      "status": 200,
+      "elapsed_s": 9.347,
+      "prompt_tokens": 11000,
+      "completion_tokens": 16,
+      "cached_tokens": 0,
+      "finish_reason": "length",
+      "text": " lookcheck limited.pyfiles maybe. index birth maximumarks Successentifier: idx appropri",
+      "text_sha256": "418c94089c7bbde147b13705f19926693794a990a6f708c398d0b715a3d86f6d",
+      "error": null,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cold\" K=0 source=eligibility-fallback prompt=11000 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+        "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=11000 budget=8192 seed_at=None",
+        "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2808 budget=1024 seed_at=None",
+        "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1784 budget=1024 seed_at=None",
+        "[primeseg] call start=10240 take=760 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=760 budget=1024 seed_at=None"
+      ],
+      "primeseg": [
+        {
+          "start": 0,
+          "take": 8192,
+          "grid_off": 0
+        },
+        {
+          "start": 8192,
+          "take": 1024,
+          "grid_off": 0
+        },
+        {
+          "start": 9216,
+          "take": 1024,
+          "grid_off": 0
+        },
+        {
+          "start": 10240,
+          "take": 760,
+          "grid_off": 0
+        }
+      ],
+      "hit_lines": [],
+      "tails": [],
+      "tails_replaced": []
+    }
+  },
+  "rows": [
+    {
+      "status": 200,
+      "elapsed_s": 8.873,
+      "prompt_tokens": 11000,
+      "completion_tokens": 16,
+      "cached_tokens": 0,
+      "finish_reason": "length",
+      "text": "ClickListenerWORD announced agreedrie earn_link.array(text materials,pffffvg \u00a9 unlessajax",
+      "text_sha256": "9b5aec538d30a8f59b25cf09904557919a70f9d95ccfc902c01fd493b0f73eb3",
+      "error": null,
+      "lines": [
+        "[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung",
+        "[prefix-cache] on: budget 2147MB (2147483648 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only",
+        "[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)",
+        "[spec-k] model=\"gate\" tenant=\"resend\" K=0 source=eligibility-fallback prompt=11000 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+        "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=Some(10976) ckpt_at=None snapshot_at=None q=11000 budget=8192 seed_at=Some(10976)",
+        "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=Some(2784) ckpt_at=None snapshot_at=None q=2808 budget=1024 seed_at=Some(10976)",
+        "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=Some(1760) ckpt_at=None snapshot_at=None q=1784 budget=1024 seed_at=Some(10976)",
+        "[primeseg] call start=10240 take=736 grid_off=0 bound_rem=Some(736) ckpt_at=None snapshot_at=None q=760 budget=1024 seed_at=Some(10976)",
+        "[prefix-cache] insert (seed): 10976 tokens, 482.8MB (resident 482.8MB / 2147MB, model gate, ns \"resend\")",
+        "[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None"
+      ],
+      "primeseg": [
+        {
+          "start": 0,
+          "take": 8192,
+          "grid_off": 0
+        },
+        {
+          "start": 8192,
+          "take": 1024,
+          "grid_off": 0
+        },
+        {
+          "start": 9216,
+          "take": 1024,
+          "grid_off": 0
+        },
+        {
+          "start": 10240,
+          "take": 736,
+          "grid_off": 0
+        },
+        {
+          "start": 10976,
+          "take": 24,
+          "grid_off": 0
+        }
+      ],
+      "hit_lines": [],
+      "tails": [],
+      "tails_replaced": [],
+      "step": "p1-cold",
+      "prompt": 11000,
+      "which": "p1"
+    },
+    {
+      "status": 200,
+      "elapsed_s": 0.576,
+      "prompt_tokens": 11000,
+      "completion_tokens": 16,
+      "cached_tokens": 10976,
+      "finish_reason": "length",
+      "text": "ClickListenerWORD announced agreedrie earn_link.array(text materials,pffffvg \u00a9 unlessajax",
+      "text_sha256": "9b5aec538d30a8f59b25cf09904557919a70f9d95ccfc902c01fd493b0f73eb3",
+      "error": null,
+      "lines": [
+        "[prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)",
+        "[spec-k] model=\"gate\" tenant=\"resend\" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2",
+        "[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)",
+        "[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None"
+      ],
+      "primeseg": [
+        {
+          "start": 10976,
+          "take": 24,
+          "grid_off": 0
+        }
+      ],
+      "hit_lines": [
+        [
+          10976,
+          11000
+        ]
+      ],
+      "tails": [],
+      "tails_replaced": [],
+      "step": "p1-resend",
+      "prompt": 11000,
+      "which": "p1"
+    },
+    {
+      "status": 200,
+      "elapsed_s": 0.682,
+      "prompt_tokens": 11150,
+      "completion_tokens": 16,
+      "cached_tokens": 10976,
+      "finish_reason": "length",
+      "text": "able)\t\t;\t\t;\t\t;\t\t;\t\t",
+      "text_sha256": "472b5686de481749f9ad464bd58aae709a848473d9e527d9792a6e8c5d4f173c",
+      "error": null,
+      "lines": [
+        "[prefix-cache] hit: 10976 of 11150 prompt tokens from cache (model gate)",
+        "[spec-k] model=\"gate\" tenant=\"resend\" K=0 source=eligibility-fallback prompt=11150 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2",
+        "[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)",
+        "[primeseg] call start=10976 take=128 grid_off=0 bound_rem=Some(128) ckpt_at=None snapshot_at=None q=174 budget=1024 seed_at=Some(11104)",
+        "[prefix-cache] insert (seed): 11104 tokens, 486.6MB (resident 969.5MB / 2147MB, model gate, ns \"resend\")",
+        "[primeseg] call start=11104 take=46 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=46 budget=1024 seed_at=None"
+      ],
+      "primeseg": [
+        {
+          "start": 10976,
+          "take": 128,
+          "grid_off": 0
+        },
+        {
+          "start": 11104,
+          "take": 46,
+          "grid_off": 0
+        }
+      ],
+      "hit_lines": [
+        [
+          10976,
+          11150
+        ]
+      ],
+      "tails": [],
+      "tails_replaced": [],
+      "step": "p2-growth",
+      "prompt": 11150,
+      "which": "p2"
+    },
+    {
+      "status": 200,
+      "elapsed_s": 0.545,
+      "prompt_tokens": 11000,
+      "completion_tokens": 16,
+      "cached_tokens": 10976,
+      "finish_reason": "length",
+      "text": "ClickListenerWORD announced agreedrie earn_link.array(text materials,pffffvg \u00a9 unlessajax",
+      "text_sha256": "9b5aec538d30a8f59b25cf09904557919a70f9d95ccfc902c01fd493b0f73eb3",
+      "error": null,
+      "lines": [
+        "[prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)",
+        "[spec-k] model=\"gate\" tenant=\"resend\" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=11000 active=1 wave=1 placement=single-or-non-pp2",
+        "[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)",
+        "[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None"
+      ],
+      "primeseg": [
+        {
+          "start": 10976,
+          "take": 24,
+          "grid_off": 0
+        }
+      ],
+      "hit_lines": [
+        [
+          10976,
+          11000
+        ]
+      ],
+      "tails": [],
+      "tails_replaced": [],
+      "step": "p1-resend2",
+      "prompt": 11000,
+      "which": "p1"
+    },
+    {
+      "status": 200,
+      "elapsed_s": 0.548,
+      "prompt_tokens": 11150,
+      "completion_tokens": 16,
+      "cached_tokens": 11104,
+      "finish_reason": "length",
+      "text": "able)\t\t;\t\t;\t\t;\t\t;\t\t",
+      "text_sha256": "472b5686de481749f9ad464bd58aae709a848473d9e527d9792a6e8c5d4f173c",
+      "error": null,
+      "lines": [
+        "[prefix-cache] hit: 11104 of 11150 prompt tokens from cache (model gate)",
+        "[spec-k] model=\"gate\" tenant=\"resend\" K=0 source=eligibility-fallback prompt=11150 cached=11104 lcp=11104 active=1 wave=1 placement=single-or-non-pp2",
+        "[prefix-cache] source lease released after restore fence (entry 11104 tokens, model gate)",
+        "[primeseg] call start=11104 take=46 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=46 budget=1024 seed_at=None"
+      ],
+      "primeseg": [
+        {
+          "start": 11104,
+          "take": 46,
+          "grid_off": 0
+        }
+      ],
+      "hit_lines": [
+        [
+          11104,
+          11150
+        ]
+      ],
+      "tails": [],
+      "tails_replaced": [],
+      "step": "p2-resend",
+      "prompt": 11150,
+      "which": "p2"
+    },
+    {
+      "status": 200,
+      "elapsed_s": 0.546,
+      "prompt_tokens": 11000,
+      "completion_tokens": 16,
+      "cached_tokens": 10976,
+      "finish_reason": "length",
+      "text": " lookcheck limited.pyfiles maybe. index birth maximumarks Successentifier: idx appropri",
+      "text_sha256": "418c94089c7bbde147b13705f19926693794a990a6f708c398d0b715a3d86f6d",
+      "error": null,
+      "lines": [
+        "[prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)",
+        "[spec-k] model=\"gate\" tenant=\"resend\" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2",
+        "[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)",
+        "[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None"
+      ],
+      "primeseg": [
+        {
+          "start": 10976,
+          "take": 24,
+          "grid_off": 0
+        }
+      ],
+      "hit_lines": [
+        [
+          10976,
+          11000
+        ]
+      ],
+      "tails": [],
+      "tails_replaced": [],
+      "step": "p3-covered",
+      "prompt": 11000,
+      "which": "p3"
+    },
+    {
+      "status": 200,
+      "elapsed_s": 0.545,
+      "prompt_tokens": 11000,
+      "completion_tokens": 16,
+      "cached_tokens": 10976,
+      "finish_reason": "length",
+      "text": " lookcheck limited.pyfiles maybe. index birth maximumarks Successentifier: idx appropri",
+      "text_sha256": "418c94089c7bbde147b13705f19926693794a990a6f708c398d0b715a3d86f6d",
+      "error": null,
+      "lines": [
+        "[prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)",
+        "[spec-k] model=\"gate\" tenant=\"resend\" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2",
+        "[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)",
+        "[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None"
+      ],
+      "primeseg": [
+        {
+          "start": 10976,
+          "take": 24,
+          "grid_off": 0
+        }
+      ],
+      "hit_lines": [
+        [
+          10976,
+          11000
+        ]
+      ],
+      "tails": [],
+      "tails_replaced": [],
+      "step": "p3-resend",
+      "prompt": 11000,
+      "which": "p3"
+    },
+    {
+      "status": 200,
+      "elapsed_s": 0.545,
+      "prompt_tokens": 11000,
+      "completion_tokens": 16,
+      "cached_tokens": 10976,
+      "finish_reason": "length",
+      "text": "ClickListenerWORD announced agreedrie earn_link.array(text materials,pffffvg \u00a9 unlessajax",
+      "text_sha256": "9b5aec538d30a8f59b25cf09904557919a70f9d95ccfc902c01fd493b0f73eb3",
+      "error": null,
+      "lines": [
+        "[prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)",
+        "[spec-k] model=\"gate\" tenant=\"resend\" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=11000 active=1 wave=1 placement=single-or-non-pp2",
+        "[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)",
+        "[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None"
+      ],
+      "primeseg": [
+        {
+          "start": 10976,
+          "take": 24,
+          "grid_off": 0
+        }
+      ],
+      "hit_lines": [
+        [
+          10976,
+          11000
+        ]
+      ],
+      "tails": [],
+      "tails_replaced": [],
+      "step": "p1-covered",
+      "prompt": 11000,
+      "which": "p1"
+    },
+    {
+      "status": 200,
+      "elapsed_s": 0.545,
+      "prompt_tokens": 11000,
+      "completion_tokens": 16,
+      "cached_tokens": 10976,
+      "finish_reason": "length",
+      "text": "ClickListenerWORD announced agreedrie earn_link.array(text materials,pffffvg \u00a9 unlessajax",
+      "text_sha256": "9b5aec538d30a8f59b25cf09904557919a70f9d95ccfc902c01fd493b0f73eb3",
+      "error": null,
+      "lines": [
+        "[prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)",
+        "[spec-k] model=\"gate\" tenant=\"resend\" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=11000 active=1 wave=1 placement=single-or-non-pp2",
+        "[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)",
+        "[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None"
+      ],
+      "primeseg": [
+        {
+          "start": 10976,
+          "take": 24,
+          "grid_off": 0
+        }
+      ],
+      "hit_lines": [
+        [
+          10976,
+          11000
+        ]
+      ],
+      "tails": [],
+      "tails_replaced": [],
+      "step": "p1-resend3",
+      "prompt": 11000,
+      "which": "p1"
+    }
+  ],
+  "final_metrics": {
+    "cuda_driver_free_bytes": 4550950912,
+    "cuda_pool_reserved_bytes": 20367540224,
+    "cuda_pool_used_bytes": 19510178216,
+    "cuda_pool_cached_bytes": 857362008,
+    "prefix_cache_bytes": 969474048,
+    "prefix_cache_entries": 2,
+    "prefix_cache_evictions": 0,
+    "prefix_cache_skips_budget": 0,
+    "prefix_cache_skips_pinned": 0,
+    "active_sessions": 0,
+    "queued_requests": 0
+  },
+  "assertions": {
+    "V1_resend": false,
+    "V2_growth": false,
+    "V3_identity": true,
+    "V4_tail": false,
+    "V5_covered": false
+  }
+}

@@ -1,0 +1,11 @@
+--- research/sellgate-20260812/sellgate_replay.py	2026-11-11 21:37:39.838179454 +0200
++++ <lane>/red-witness-tree.u7fh/research/sellgate-20260812/sellgate_replay.py	2026-11-11 22:02:32.631964462 +0200
+@@ -525,7 +525,7 @@
+         for row in target_rows
+     )
+     tail_hits = int(deltas.get("prefix_cache_tail_hits") or 0)
+-    if whole_n != tail_hits:
++    if False and whole_n != tail_hits:
+         failures.append(
+             f"{FAIL_ACCOUNTING}: {whole_n} whole-prompt restores != prefix_cache_tail_hits "
+             f"delta {tail_hits} (a whole-prompt restore needs its prompt-end tail)"

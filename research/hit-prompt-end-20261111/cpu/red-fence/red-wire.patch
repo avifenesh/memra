@@ -1,0 +1,16 @@
+--- <lane>/tree/crates/memra-server/src/worker.rs	2026-11-12 01:51:39.110369128 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 02:08:07.446825120 +0100
+@@ -23636,12 +23636,7 @@
+             // THE BOUND: the fence stands down for a tick once its consecutive deferred ticks
+             // add up to the time of one prefill chunk at the measured rate, and while the
+             // deadline-aware order is on (`hit_suffix_fence_yields`).
+-            let fence_yields = cached_hit_waiting_for_ttft
+-                || prefill_deadline_mode
+-                || hit_suffix_fence_yields(
+-                    fence_deferred,
+-                    hit_suffix_fence_allowance(prefill_rate_tok_s, budgets[0]),
+-                );
++            let fence_yields = cached_hit_waiting_for_ttft || prefill_deadline_mode;
+             let hit_suffix_rows: std::collections::HashSet<usize> = active
+                 .iter()
+                 .enumerate()

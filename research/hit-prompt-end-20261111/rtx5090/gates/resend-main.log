@@ -1,0 +1,61 @@
+2026-11-12T01:42:41+02:00
+ad438a3319ce82113afb8d1f2a649196891d42a87009166a2d0ccde9996e324f  <lane>/bin/memra-server-main-120a
+NVIDIA GeForce RTX 5090 Laptop GPU, 615.71.09, 79
+ 01:42:41 up 24 days, 16:49,  9 users,  load average: 11.46, 10.84, 10.34
+p1-cold: [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+p1-cold: [prefix-cache] on: budget 2147MB (2147483648 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+p1-cold: [admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+p1-cold: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+p1-cold: [primeseg] call start=0 take=8192 grid_off=0 bound_rem=Some(10976) ckpt_at=None snapshot_at=None q=11000 budget=8192 seed_at=Some(10976)
+p1-cold: [primeseg] call start=8192 take=1024 grid_off=0 bound_rem=Some(2784) ckpt_at=None snapshot_at=None q=2808 budget=1024 seed_at=Some(10976)
+p1-cold: [primeseg] call start=9216 take=1024 grid_off=0 bound_rem=Some(1760) ckpt_at=None snapshot_at=None q=1784 budget=1024 seed_at=Some(10976)
+p1-cold: [primeseg] call start=10240 take=736 grid_off=0 bound_rem=Some(736) ckpt_at=None snapshot_at=None q=760 budget=1024 seed_at=Some(10976)
+p1-cold: [prefix-cache] insert (seed): 10976 tokens, 482.8MB (resident 482.8MB / 2147MB, model gate, ns "resend")
+p1-cold: [primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+p1-resend: [prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+p1-resend: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+p1-resend: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p1-resend: [primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+p2-growth: [prefix-cache] hit: 10976 of 11150 prompt tokens from cache (model gate)
+p2-growth: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11150 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+p2-growth: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p2-growth: [primeseg] call start=10976 take=128 grid_off=0 bound_rem=Some(128) ckpt_at=None snapshot_at=None q=174 budget=1024 seed_at=Some(11104)
+p2-growth: [prefix-cache] insert (seed): 11104 tokens, 486.6MB (resident 969.5MB / 2147MB, model gate, ns "resend")
+p2-growth: [primeseg] call start=11104 take=46 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=46 budget=1024 seed_at=None
+p1-resend2: [prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+p1-resend2: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=11000 active=1 wave=1 placement=single-or-non-pp2
+p1-resend2: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p1-resend2: [primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+p2-resend: [prefix-cache] hit: 11104 of 11150 prompt tokens from cache (model gate)
+p2-resend: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11150 cached=11104 lcp=11104 active=1 wave=1 placement=single-or-non-pp2
+p2-resend: [prefix-cache] source lease released after restore fence (entry 11104 tokens, model gate)
+p2-resend: [primeseg] call start=11104 take=46 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=46 budget=1024 seed_at=None
+p3-covered: [prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+p3-covered: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+p3-covered: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p3-covered: [primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+p3-resend: [prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+p3-resend: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+p3-resend: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p3-resend: [primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+p1-covered: [prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+p1-covered: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=11000 active=1 wave=1 placement=single-or-non-pp2
+p1-covered: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p1-covered: [primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+p1-resend3: [prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+p1-resend3: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=11000 active=1 wave=1 placement=single-or-non-pp2
+p1-resend3: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p1-resend3: [primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+| step | prompt | cached_tokens | hit line | prime calls | off-grid calls | tails inserted | elapsed s | sha[:16] | cold sha[:16] | == cold |
+| --- | ---: | ---: | --- | ---: | ---: | --- | ---: | --- | --- | --- |
+| p1-cold | 11000 | 0 | [] | 5 | 0 | [] | 8.873 | 9b5aec538d30a8f5 | 9b5aec538d30a8f5 | yes |
+| p1-resend | 11000 | 10976 | [(10976, 11000)] | 1 | 0 | [] | 0.576 | 9b5aec538d30a8f5 | 9b5aec538d30a8f5 | yes |
+| p2-growth | 11150 | 10976 | [(10976, 11150)] | 2 | 0 | [] | 0.682 | 472b5686de481749 | 472b5686de481749 | yes |
+| p1-resend2 | 11000 | 10976 | [(10976, 11000)] | 1 | 0 | [] | 0.545 | 9b5aec538d30a8f5 | 9b5aec538d30a8f5 | yes |
+| p2-resend | 11150 | 11104 | [(11104, 11150)] | 1 | 0 | [] | 0.548 | 472b5686de481749 | 472b5686de481749 | yes |
+| p3-covered | 11000 | 10976 | [(10976, 11000)] | 1 | 0 | [] | 0.546 | 418c94089c7bbde1 | 418c94089c7bbde1 | yes |
+| p3-resend | 11000 | 10976 | [(10976, 11000)] | 1 | 0 | [] | 0.545 | 418c94089c7bbde1 | 418c94089c7bbde1 | yes |
+| p1-covered | 11000 | 10976 | [(10976, 11000)] | 1 | 0 | [] | 0.545 | 9b5aec538d30a8f5 | 9b5aec538d30a8f5 | yes |
+| p1-resend3 | 11000 | 10976 | [(10976, 11000)] | 1 | 0 | [] | 0.545 | 9b5aec538d30a8f5 | 9b5aec538d30a8f5 | yes |
+PREFIX-EXACT-RESEND: p1=11000 p2=11150 grid=32 capture_p1=10976 resend_ok=0/2 growth_ok=1/2 identical=9/9 tails=0 covered_ok=0/4 V1=FAIL V2=FAIL V3=ok V4=FAIL V5=FAIL -> FAIL
+gate resend-main rc=1

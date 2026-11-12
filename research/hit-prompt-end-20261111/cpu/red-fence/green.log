@@ -1,0 +1,15 @@
+2026-11-12T01:54:09+01:00
+a08e8699662513b7b005c1bbfe7b1a8161023accfebdd76d1630a122a4ba7fe9  crates/memra-server/src/worker.rs
+   Compiling memra-engine v0.141.1 (<lane>/tree-red/crates/memra-engine)
+   Compiling memra-server v0.141.1 (<lane>/tree-red/crates/memra-server)
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 8m 34s
+     Running unittests src/lib.rs (<lane>/target/release/deps/memra_server-84c25559e043e0da)
+
+running 3 tests
+test worker::tests::the_hit_suffix_fence_takes_one_call_suffixes_only ... ok
+test worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time ... ok
+test worker::tests::prompt_end_tails_evict_before_any_entry_that_served_a_hit ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 1214 filtered out; finished in 0.02s
+

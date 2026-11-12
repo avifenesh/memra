@@ -1,0 +1,62 @@
+2026-11-12T01:47:39+02:00
+d65351ac4ed9220799c665b8e7ed8621cfd05b772e3ab3063f9a03f4dc1b12f3  <lane>/bin/memra-server-fix
+NVIDIA GB10, 580.178.04, 63
+ 01:47:39 up 18 days, 11:11,  5 users,  load average: 1.04, 1.12, 1.11
+p1-cold: [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+p1-cold: [prefix-cache] on: budget 2147MB (2147483648 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+p1-cold: [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+p1-cold: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+p1-cold: [primeseg] call start=0 take=8192 grid_off=0 bound_rem=Some(10976) ckpt_at=None snapshot_at=None q=11000 budget=8192 seed_at=Some(10976)
+p1-cold: [primeseg] call start=8192 take=1024 grid_off=0 bound_rem=Some(2784) ckpt_at=None snapshot_at=None q=2808 budget=1024 seed_at=Some(10976)
+p1-cold: [primeseg] call start=9216 take=1024 grid_off=0 bound_rem=Some(1760) ckpt_at=None snapshot_at=None q=1784 budget=1024 seed_at=Some(10976)
+p1-cold: [primeseg] call start=10240 take=736 grid_off=0 bound_rem=Some(736) ckpt_at=None snapshot_at=None q=760 budget=1024 seed_at=Some(10976)
+p1-cold: [prefix-cache] insert (seed): 10976 tokens, 482.8MB (resident 482.8MB / 2147MB, model gate, ns "resend")
+p1-cold: [primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+p1-cold: [prefix-cache] insert tail: 24 prompt-end tokens past the 10976-token entry, 157.6MB (resident 640.4MB, model gate, ns "resend")
+p1-resend: [prefix-cache] hit: 11000 of 11000 prompt tokens from cache (model gate)
+p1-resend: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=11000 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+p1-resend: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p2-growth: [prefix-cache] hit: 10976 of 11150 prompt tokens from cache (model gate)
+p2-growth: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11150 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+p2-growth: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p2-growth: [primeseg] call start=10976 take=128 grid_off=0 bound_rem=Some(128) ckpt_at=None snapshot_at=None q=174 budget=1024 seed_at=Some(11104)
+p2-growth: [prefix-cache] insert (seed): 11104 tokens, 486.6MB (resident 1127.1MB / 2147MB, model gate, ns "resend")
+p2-growth: [primeseg] call start=11104 take=46 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=46 budget=1024 seed_at=None
+p2-growth: [prefix-cache] insert tail: 46 prompt-end tokens past the 11104-token entry, 158.3MB (resident 1285.3MB, model gate, ns "resend")
+p1-resend2: [prefix-cache] hit: 11000 of 11000 prompt tokens from cache (model gate)
+p1-resend2: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=11000 lcp=11000 active=1 wave=1 placement=single-or-non-pp2
+p1-resend2: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p2-resend: [prefix-cache] hit: 11150 of 11150 prompt tokens from cache (model gate)
+p2-resend: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11150 cached=11150 lcp=11104 active=1 wave=1 placement=single-or-non-pp2
+p2-resend: [prefix-cache] source lease released after restore fence (entry 11104 tokens, model gate)
+p3-covered: [prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+p3-covered: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+p3-covered: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p3-covered: [primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+p3-covered: [prefix-cache] evict tail (replaced): 24 prompt-end tokens past the 10976-token entry, 157.6MB (model gate, ns "resend")
+p3-covered: [prefix-cache] insert tail: 24 prompt-end tokens past the 10976-token entry, 157.6MB (resident 1285.3MB, model gate, ns "resend")
+p3-resend: [prefix-cache] hit: 11000 of 11000 prompt tokens from cache (model gate)
+p3-resend: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=11000 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+p3-resend: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p1-covered: [prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+p1-covered: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=11000 active=1 wave=1 placement=single-or-non-pp2
+p1-covered: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+p1-covered: [primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+p1-covered: [prefix-cache] evict tail (replaced): 24 prompt-end tokens past the 10976-token entry, 157.6MB (model gate, ns "resend")
+p1-covered: [prefix-cache] insert tail: 24 prompt-end tokens past the 10976-token entry, 157.6MB (resident 1285.3MB, model gate, ns "resend")
+p1-resend3: [prefix-cache] hit: 11000 of 11000 prompt tokens from cache (model gate)
+p1-resend3: [spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=11000 lcp=11000 active=1 wave=1 placement=single-or-non-pp2
+p1-resend3: [prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+| step | prompt | cached_tokens | hit line | prime calls | off-grid calls | tails inserted | elapsed s | sha[:16] | cold sha[:16] | == cold |
+| --- | ---: | ---: | --- | ---: | ---: | --- | ---: | --- | --- | --- |
+| p1-cold | 11000 | 0 | [] | 5 | 0 | [(24, 10976)] | 8.947 | 9b5aec538d30a8f5 | 9b5aec538d30a8f5 | yes |
+| p1-resend | 11000 | 11000 | [(11000, 11000)] | 0 | 0 | [] | 1.224 | 9b5aec538d30a8f5 | 9b5aec538d30a8f5 | yes |
+| p2-growth | 11150 | 10976 | [(10976, 11150)] | 2 | 0 | [(46, 11104)] | 1.56 | f8a235218b399416 | f8a235218b399416 | yes |
+| p1-resend2 | 11000 | 11000 | [(11000, 11000)] | 0 | 0 | [] | 1.224 | 9b5aec538d30a8f5 | 9b5aec538d30a8f5 | yes |
+| p2-resend | 11150 | 11150 | [(11150, 11150)] | 0 | 0 | [] | 1.224 | f8a235218b399416 | f8a235218b399416 | yes |
+| p3-covered | 11000 | 10976 | [(10976, 11000)] | 1 | 0 | [(24, 10976)] | 1.354 | e361d5fa7ae75e74 | e361d5fa7ae75e74 | yes |
+| p3-resend | 11000 | 11000 | [(11000, 11000)] | 0 | 0 | [] | 1.227 | e361d5fa7ae75e74 | e361d5fa7ae75e74 | yes |
+| p1-covered | 11000 | 10976 | [(10976, 11000)] | 1 | 0 | [(24, 10976)] | 1.351 | 9b5aec538d30a8f5 | 9b5aec538d30a8f5 | yes |
+| p1-resend3 | 11000 | 11000 | [(11000, 11000)] | 0 | 0 | [] | 1.222 | 9b5aec538d30a8f5 | 9b5aec538d30a8f5 | yes |
+PREFIX-EXACT-RESEND: p1=11000 p2=11150 grid=32 capture_p1=10976 resend_ok=2/2 growth_ok=2/2 identical=9/9 tails=4 covered_ok=4/4 V1=ok V2=ok V3=ok V4=ok V5=ok -> PASS
+gate resend-fix rc=0

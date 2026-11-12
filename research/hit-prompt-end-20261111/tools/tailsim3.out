@@ -1,0 +1,39 @@
+budget strict cold_attach attach_mode -> stats
+2936 baseline(no tails) {'hit_tail': 0, 'hit_base': 75, 'miss_hot': 15}
+2936 False True item {'hit_tail': 8, 'hit_base': 0, 'miss_hot': 82}
+2936 False True tails {'hit_tail': 8, 'hit_base': 0, 'miss_hot': 82}
+2936 False True free {'hit_tail': 5, 'hit_base': 3, 'miss_hot': 82}
+2936 False False item {'hit_tail': 10, 'hit_base': 22, 'miss_hot': 58}
+2936 False False tails {'hit_tail': 1, 'hit_base': 74, 'miss_hot': 15}
+2936 False False free {'hit_tail': 13, 'hit_base': 62, 'miss_hot': 15}
+2936 True True item {'hit_tail': 0, 'hit_base': 75, 'miss_hot': 15}
+2936 True True tails {'hit_tail': 0, 'hit_base': 75, 'miss_hot': 15}
+2936 True True free {'hit_tail': 4, 'hit_base': 71, 'miss_hot': 15}
+2936 True False item {'hit_tail': 0, 'hit_base': 75, 'miss_hot': 15}
+2936 True False tails {'hit_tail': 0, 'hit_base': 75, 'miss_hot': 15}
+2936 True False free {'hit_tail': 6, 'hit_base': 69, 'miss_hot': 15}
+2936 hybrid True item {'hit_tail': 7, 'hit_base': 20, 'miss_hot': 63}
+2936 hybrid True tails {'hit_tail': 0, 'hit_base': 75, 'miss_hot': 15}
+2936 hybrid True free {'hit_tail': 12, 'hit_base': 63, 'miss_hot': 15}
+2936 hybrid False item {'hit_tail': 10, 'hit_base': 22, 'miss_hot': 58}
+2936 hybrid False tails {'hit_tail': 1, 'hit_base': 74, 'miss_hot': 15}
+2936 hybrid False free {'hit_tail': 13, 'hit_base': 62, 'miss_hot': 15}
+4295 baseline(no tails) {'hit_tail': 0, 'hit_base': 90, 'miss_hot': 0}
+4295 False True item {'hit_tail': 75, 'hit_base': 0, 'miss_hot': 15}
+4295 False True tails {'hit_tail': 40, 'hit_base': 47, 'miss_hot': 3}
+4295 False True free {'hit_tail': 83, 'hit_base': 4, 'miss_hot': 3}
+4295 False False item {'hit_tail': 78, 'hit_base': 11, 'miss_hot': 1}
+4295 False False tails {'hit_tail': 34, 'hit_base': 55, 'miss_hot': 1}
+4295 False False free {'hit_tail': 70, 'hit_base': 19, 'miss_hot': 1}
+4295 True True item {'hit_tail': 25, 'hit_base': 65, 'miss_hot': 0}
+4295 True True tails {'hit_tail': 23, 'hit_base': 67, 'miss_hot': 0}
+4295 True True free {'hit_tail': 35, 'hit_base': 55, 'miss_hot': 0}
+4295 True False item {'hit_tail': 27, 'hit_base': 63, 'miss_hot': 0}
+4295 True False tails {'hit_tail': 25, 'hit_base': 65, 'miss_hot': 0}
+4295 True False free {'hit_tail': 30, 'hit_base': 60, 'miss_hot': 0}
+4295 hybrid True item {'hit_tail': 78, 'hit_base': 10, 'miss_hot': 2}
+4295 hybrid True tails {'hit_tail': 35, 'hit_base': 54, 'miss_hot': 1}
+4295 hybrid True free {'hit_tail': 74, 'hit_base': 15, 'miss_hot': 1}
+4295 hybrid False item {'hit_tail': 78, 'hit_base': 11, 'miss_hot': 1}
+4295 hybrid False tails {'hit_tail': 34, 'hit_base': 55, 'miss_hot': 1}
+4295 hybrid False free {'hit_tail': 70, 'hit_base': 19, 'miss_hot': 1}

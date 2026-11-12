@@ -1,0 +1,111 @@
+[server] build: memra-0.141.1-018c10c75b7b (id: source-tree, git: unknown)
+[env-audit] registry absent in this build (no docs/FLAGS.md at build time); the MEMRA_* audit is inert
+[server] starting; models config = [("gate", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "gate" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 2147MB (2147483648 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18118
+[meter] admit id=cmpl-ac5be2c5123da8895a3c8dc7868e1afd tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=11080 path=plain = 29696 B/token x ctx + 1963MB prefill-workspace + 0MB fixed = 2292MB
+[admission] prefill workspace held: model="gate" prompt=11000 call=8207 stack=8207 concat=1039 slab_resident=0MB held=1963MB cold=2020MB
+[spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 328MB (observed 656MB at ctx 11024 path=plain)
+[primeseg] call start=0 take=8192 grid_off=0 bound_rem=Some(10976) ckpt_at=None snapshot_at=None q=11000 budget=8192 seed_at=Some(10976)
+[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=Some(2784) ckpt_at=None snapshot_at=None q=2808 budget=1024 seed_at=Some(10976)
+[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=Some(1760) ckpt_at=None snapshot_at=None q=1784 budget=1024 seed_at=Some(10976)
+[primeseg] call start=10240 take=736 grid_off=0 bound_rem=Some(736) ckpt_at=None snapshot_at=None q=760 budget=1024 seed_at=Some(10976)
+[prefix-cache] insert (seed): 10976 tokens, 482.8MB (resident 482.8MB / 2147MB, model gate, ns "resend")
+[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+[fa-pool] grow #0 dev=0 o_len 0 -> 1056768 ml_len 0 -> 4128 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 1056768 -> 2113536 ml_len 4128 -> 8256 (retired kept, zero=false)
+[kv-reuse] park-compact: 11016 of 11024 rows retained in 3.1ms (model gate)
+[meter] admit id=cmpl-ceb0160a8f894335519a0dfdb2527ca3 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=11080 path=plain = 29696 B/token x ctx + 623MB prefill-workspace + 328MB fixed = 1281MB
+[admission] prefill workspace held: model="gate" prompt=11000 call=8207 stack=8207 concat=1039 slab_resident=1443MB held=623MB cold=2020MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 11000 prompt tokens; model gate)
+[prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+[kv-reuse] park-compact: 11016 of 11024 rows retained in 3.4ms (model gate)
+[meter] admit id=cmpl-b7501b93a34623adff8eef96a98f1580 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=11230 path=plain = 29696 B/token x ctx + 623MB prefill-workspace + 328MB fixed = 1285MB
+[admission] prefill workspace held: model="gate" prompt=11150 call=8207 stack=8207 concat=1039 slab_resident=1443MB held=623MB cold=2024MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 11150 prompt tokens; model gate)
+[prefix-cache] hit: 10976 of 11150 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11150 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 329MB (observed 660MB at ctx 11174 path=plain)
+[primeseg] call start=10976 take=128 grid_off=0 bound_rem=Some(128) ckpt_at=None snapshot_at=None q=174 budget=1024 seed_at=Some(11104)
+[prefix-cache] insert (seed): 11104 tokens, 486.6MB (resident 969.5MB / 2147MB, model gate, ns "resend")
+[primeseg] call start=11104 take=46 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=46 budget=1024 seed_at=None
+[kv-reuse] park-compact: 11166 of 11174 rows retained in 3.1ms (model gate)
+[meter] admit id=cmpl-69e906adc4cfc79d4f741021aa0708d9 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=11080 path=plain = 29696 B/token x ctx + 623MB prefill-workspace + 329MB fixed = 1281MB
+[admission] prefill workspace held: model="gate" prompt=11000 call=8207 stack=8207 concat=1039 slab_resident=1443MB held=623MB cold=2020MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 11000 prompt tokens; model gate)
+[prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=11000 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+[kv-reuse] park-compact: 11016 of 11024 rows retained in 3.1ms (model gate)
+[meter] admit id=cmpl-8f1f1fd832e8853c87e9b2685823bdd2 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=11230 path=plain = 29696 B/token x ctx + 623MB prefill-workspace + 329MB fixed = 1286MB
+[admission] prefill workspace held: model="gate" prompt=11150 call=8207 stack=8207 concat=1039 slab_resident=1443MB held=623MB cold=2024MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 11150 prompt tokens; model gate)
+[prefix-cache] hit: 11104 of 11150 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11150 cached=11104 lcp=11104 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 11104 tokens, model gate)
+[primeseg] call start=11104 take=46 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=46 budget=1024 seed_at=None
+[kv-reuse] park-compact: 11166 of 11174 rows retained in 3.4ms (model gate)
+[meter] admit id=cmpl-9525915a8536e89674507b53411f2168 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=11080 path=plain = 29696 B/token x ctx + 623MB prefill-workspace + 329MB fixed = 1281MB
+[admission] prefill workspace held: model="gate" prompt=11000 call=8207 stack=8207 concat=1039 slab_resident=1443MB held=623MB cold=2020MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 11000 prompt tokens; model gate)
+[prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+[kv-reuse] park-compact: 11016 of 11024 rows retained in 3.5ms (model gate)
+[meter] admit id=cmpl-b71c2b8246d3713128ebda4275f8c7dc tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 11000 prompt tokens; model gate)
+[prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=10976 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+[kv-reuse] park-compact: 11016 of 11024 rows retained in 3.2ms (model gate)
+[meter] admit id=cmpl-64c2332b65cd0c60c3eac8b4544e6c9b tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 11000 prompt tokens; model gate)
+[prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=11000 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+[kv-reuse] park-compact: 11016 of 11024 rows retained in 3.2ms (model gate)
+[meter] admit id=cmpl-1bcee420ddcf94341538d0914a643a72 tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 11000 prompt tokens; model gate)
+[prefix-cache] hit: 10976 of 11000 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="resend" K=0 source=eligibility-fallback prompt=11000 cached=10976 lcp=11000 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 10976 tokens, model gate)
+[primeseg] call start=10976 take=24 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=24 budget=1024 seed_at=None
+[kv-reuse] park-compact: 11016 of 11024 rows retained in 3.1ms (model gate)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

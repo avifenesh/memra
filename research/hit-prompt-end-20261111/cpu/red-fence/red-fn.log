@@ -1,0 +1,27 @@
+2026-11-12T02:02:44+01:00
+7d0aa907a697557c65fbb4eb3d3d37359807983f98afa0d9d32c5d9508ab68e1  crates/memra-server/src/worker.rs
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (<lane>/tree-red/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 5m 22s
+     Running unittests src/lib.rs (<lane>/target/release/deps/memra_server-84c25559e043e0da)
+
+running 3 tests
+test worker::tests::the_hit_suffix_fence_takes_one_call_suffixes_only ... ok
+test worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time ... FAILED
+test worker::tests::prompt_end_tails_evict_before_any_entry_that_served_a_hit ... ok
+
+failures:
+
+---- worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time stdout ----
+
+thread 'worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time' (201362) panicked at crates/memra-server/src/worker.rs:44688:9:
+no cold tick timed yet: one deferred tick is the allowance
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::the_hit_suffix_fence_yields_after_its_share_of_prefill_time
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 1214 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p memra-server --lib`

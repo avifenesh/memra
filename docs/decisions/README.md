@@ -56,6 +56,7 @@ line here.
 | [KV-PARK-COMPACT-DEFAULT.md](KV-PARK-COMPACT-DEFAULT.md) | 2026-11-04 | Adopted | Continuation-pool park compaction is the default on the RTX 5090 class and the RTX PRO 6000 Workstation Edition, keyed by device name. |
 | [PINNED-DESTINATIONS.md](PINNED-DESTINATIONS.md) | 2026-09-21 | Amended | Pinned host destinations are cached on the RTX PRO 6000 class and write-combined elsewhere; since 2026-11-04 this sets only the tier gates' transfer engine. |
 | [PREFIX-CACHE-POLICY.md](PREFIX-CACHE-POLICY.md) | 2026-09-21 | Adopted | Plain LRU is the only prefix-cache eviction policy; the segmented (SLRU) arm and its two doors deleted. Re-tested 2026-11-07, unchanged. |
+| [PREFIX-PROMPT-END-TAIL.md](PREFIX-PROMPT-END-TAIL.md) | 2026-11-11 | Adopted | A grid entry carries the prompt-end tail of the prompt that published it, so an exact re-send restores its whole prompt; a restored hit's one-call suffix primes ahead of cold chunks, bounded; a tail never costs an entry that served a hit. LRU-item tails and strict tails-first rejected by measurement. |
 | [PREFIX-CACHE-DISCRETE.md](PREFIX-CACHE-DISCRETE.md) | 2026-11-07 | Adopted | A discrete card's derived prefix budget leaves the session peak; value-per-byte eviction, second-hit admission and four other levers rejected. |
 | [GENERIC-SPILL-INTERFACE-V1.md](GENERIC-SPILL-INTERFACE-V1.md) | 2026-09-19 | Adopted | `memra-tier::contracts` is the only shared schema for spill control-plane contracts; no runtime default or hardware qualification. |
 

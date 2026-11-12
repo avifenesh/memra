@@ -1,0 +1,38 @@
+2026-11-11T22:02:32+02:00
+b7337ccc770b59291bb2bdd3a66d2d25b89f9b2aff57ecf293843bd47240b420  <lane>/red-witness-tree.u7fh/research/sellgate-20260812/sellgate_replay.py
+test_both_banked_receipts_pass_under_the_grid_law (test_q35_cold_mixed_gate.BankedReplay.test_both_banked_receipts_pass_under_the_grid_law) ... ok
+test_red_twin_old_expectation_fails_as_usage_mismatch (test_q35_cold_mixed_gate.BankedReplay.test_red_twin_old_expectation_fails_as_usage_mismatch)
+The pre-fix law (a hit caches the whole prompt) must go red on a grid-aligned receipt. ... ok
+test_wrong_grid_fails (test_q35_cold_mixed_gate.BankedReplay.test_wrong_grid_fails) ... ok
+test_every_class_has_a_distinct_line (test_q35_cold_mixed_gate.FailLines.test_every_class_has_a_distinct_line) ... ok
+test_capture_len_matches_the_server_law (test_q35_cold_mixed_gate.GridLaw.test_capture_len_matches_the_server_law) ... ok
+test_expected_hit_cached_refuses_a_seedless_prompt (test_q35_cold_mixed_gate.GridLaw.test_expected_hit_cached_refuses_a_seedless_prompt) ... ok
+test_gdn_grid_mirrors_engine_env_read (test_q35_cold_mixed_gate.GridLaw.test_gdn_grid_mirrors_engine_env_read) ... ok
+test_counter_drift_is_cell_accounting (test_q35_cold_mixed_gate.MutatedReceipts.test_counter_drift_is_cell_accounting) ... ok
+test_hit_reporting_neither_length_is_a_usage_mismatch (test_q35_cold_mixed_gate.MutatedReceipts.test_hit_reporting_neither_length_is_a_usage_mismatch) ... ok
+test_hit_reporting_the_prompt_end_passes (test_q35_cold_mixed_gate.MutatedReceipts.test_hit_reporting_the_prompt_end_passes)
+memra#1233: an exact re-send restores the whole prompt through the entry's tail. ... ok
+test_hit_reporting_the_prompt_end_without_a_tail_hit_fails (test_q35_cold_mixed_gate.MutatedReceipts.test_hit_reporting_the_prompt_end_without_a_tail_hit_fails)
+A whole-prompt restore the server did not count as a tail hit is the off-grid ... FAIL
+test_seed_restoring_neither_length_fails_as_seed_usage (test_q35_cold_mixed_gate.MutatedReceipts.test_seed_restoring_neither_length_fails_as_seed_usage) ... ok
+test_short_request_is_a_token_regression_not_a_usage_mismatch (test_q35_cold_mixed_gate.MutatedReceipts.test_short_request_is_a_token_regression_not_a_usage_mismatch) ... ok
+test_seed_accepts_cold_grid_entry_and_prompt_end (test_q35_cold_mixed_gate.SeedJudge.test_seed_accepts_cold_grid_entry_and_prompt_end) ... ok
+test_seed_rejects_neither_length (test_q35_cold_mixed_gate.SeedJudge.test_seed_rejects_neither_length) ... ok
+
+======================================================================
+FAIL: test_hit_reporting_the_prompt_end_without_a_tail_hit_fails (test_q35_cold_mixed_gate.MutatedReceipts.test_hit_reporting_the_prompt_end_without_a_tail_hit_fails)
+A whole-prompt restore the server did not count as a tail hit is the off-grid
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<lane>/red-witness-tree.u7fh/tools/test_q35_cold_mixed_gate.py", line 181, in test_hit_reporting_the_prompt_end_without_a_tail_hit_fails
+    self.assertEqual(summary["verdict"], "FAIL")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'PASS' != 'FAIL'
+- PASS
++ FAIL
+
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.008s
+
+FAILED (failures=1)
