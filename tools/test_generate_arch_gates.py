@@ -49,7 +49,8 @@ def valid_spec() -> dict:
             "pp_devices": [0, 1],
             "concurrency": [2, 4],
             # Inside the band reserved for generated gates. It was 8094 here and in
-            # docs/ONBOARDING.md, which is tools/step35-b2-geometry-gate.sh's port (A-16).
+            # the ONBOARDING example (now docs/history/ONBOARDING.md), which is
+            # tools/step35-b2-geometry-gate.sh's port (A-16).
             "port": 18300,
             "receipt_dir": "research/qwen38-batch/raw",
             "server_env": {

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # tools/box-health.sh — the box-window boot receipt: is this machine fit to be MEASURED on?
 #
-# Born as `HEALTH.sh` in lane/glm5-tp-transport (2026-09-01); promoted to a first-class fleet
-# tool in lane/glm5-extract2 because nothing in it is glm5, TP, or even memra — every check is
-# a host/driver/fabric fact that silently degrades ANY workload. Documented in docs/TESTING.md
-# ("Box health before measurement").
+# Born as `HEALTH.sh` in lane/glm5-tp-transport (2026-09-01) and moved here in
+# lane/glm5-extract2, because nothing in it is specific to GLM-5, TP or memra: every check is
+# a host, driver or fabric fact that silently degrades any workload. docs/TESTING.md lists it
+# under "Hardware bring-up"; the earlier write-up is "Box health before measurement" in
+# docs/history/TESTING.md.
 #
 # CONTRACT
 #   usage:  bash tools/box-health.sh [OUTDIR]
@@ -29,8 +30,8 @@
 #
 # RUN THIS FIRST, BEFORE ANY MEASUREMENT, ON EVERY BOX WINDOW. Every check below is a
 # documented case of a box reporting 100% utilisation with clean logs and no error while
-# delivering a fraction of its capability. Sources are section numbers in darklanes
-# research/pro6000-multicard-research-20260901/RESEARCH.md.
+# delivering a fraction of its capability. The section numbers (§5.4, RESEARCH.md 2.8, ...)
+# cite the RTX PRO 6000 multi-card research notes of 2026-09-01, kept outside this repository.
 #
 # Exit 0 = every hard check passed. Non-zero = do not open the window on this box; fix or
 # re-place first. A window that measures on a degraded box banks the degradation as a result.
@@ -110,7 +111,7 @@ done < "$OUT/power-limits.csv"
 # ---------------------------------------------------------------------------------------
 # §5.4: a 600 W WS card can drop to 577-675 MHz at 34-37 °C with sw_power_cap asserted,
 # delivering ~1/10 to 1/20 of its FP32 throughput; reproduced across three machines, both
-# OSes, four driver branches; VBIOS reflash does NOT fix it. NEVER flash VBIOS in-fleet.
+# OSes, four driver branches; VBIOS reflash does NOT fix it, so never flash the VBIOS for it.
 # The signature is the COMBINATION: power at cap AND clocks.sm < 1 GHz AND temp < 50 °C.
 log ""
 log "--- 2. false-600W degradation signature (RESEARCH.md 5.4) — NEVER flash VBIOS in-fleet ---"
@@ -226,9 +227,9 @@ log "NUMA nodes: $(lscpu 2>/dev/null | awk -F: '/NUMA node\(s\)/{gsub(/ /,"",$2)
 # "iommu: Default domain type: Translated" / "DMAR: IOMMU enabled".
 # ACS: when ReqRedir/CmpltRedir are set, ALL P2P traffic is forced through the upstream root
 # port. Measured GPU0<->GPU1 ~50 GB/s ACS ON -> ~103 GB/s ACS OFF. Verify with
-# `lspci -vv | grep ACSCtl: | grep -c ReqRedir+` -> should be 0. And: our fleet is VMs, where
-# "virtual machines require ACS to function, hence disabling ACS is not an option" — so this
-# is a RECORD-IT check, not always a fix-it one.
+# `lspci -vv | grep ACSCtl: | grep -c ReqRedir+` -> should be 0. On a VM, "virtual machines
+# require ACS to function, hence disabling ACS is not an option", so this is a RECORD-IT
+# check, not always a fix-it one.
 log ""
 log "--- 6. IOMMU mode + ACS state (RESEARCH.md 2.8) — RECORD per box ---"
 cat /proc/cmdline > "$OUT/cmdline.txt" 2>/dev/null && log "cmdline: $(cat /proc/cmdline)"
@@ -350,7 +351,7 @@ if [ "${NSTUCK:-0}" != "0" ]; then
 fi
 
 # ---------------------------------------------------------------------------------------
-# 10. Fleet identity, so the receipt is attributable
+# 10. Box identity, so the receipt is attributable
 # ---------------------------------------------------------------------------------------
 log ""
 log "--- 10. identity ---"

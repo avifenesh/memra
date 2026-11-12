@@ -6,7 +6,8 @@
 # publish.yml's inline guard refused the crates (correctly), but release.yml had NO
 # guard — it built and published GitHub releases whose binaries self-report a different
 # version than the tag they hang on. Three renumbers and one near-bad deploy in a week.
-# Those three releases are annotated "[SKIPPED — version mismatch]".
+# Those three releases were marked skipped for version mismatch on the old history; GitHub
+# releases on this history start at v0.124.0 (docs/RELEASING.md, "The 2026-09-01 history swap").
 #
 # RECORD CORRECTED 2026-08-23: v0.105.0 was originally filed with those three, and that
 # was wrong. Its Cargo mismatch was real but incidental — its release run (32581590491)

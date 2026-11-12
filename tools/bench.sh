@@ -137,8 +137,6 @@ cat <<EOF
 EOF
 
 echo "=================================================================="
-echo " Headline bars to beat (24GB sm_120, single-stream, MEASURED llama.cpp):"
-echo "   9B decode 126.6 t/s | 27B decode no-spec 42.1 / peak(MTP) 66.6 t/s"
-echo "   9B prefill 6220 pp$P | 27B prefill 1980 pp$P"
-echo " memra now: 9B Q8_0 decode 59.6 t/s (no-spec). Ranking table in COMPETITOR-SETUP.md section 6."
+echo " Compare these medians with the frozen baselines in docs/COMPETITOR-SETUP.md and the"
+echo " boards in docs/PERFORMANCE.md (card, N and date per row). Past rankings: COMPETITOR-SETUP.md section 6."
 echo "=================================================================="

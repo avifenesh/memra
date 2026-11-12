@@ -25,9 +25,9 @@
 # split with dynamic boundaries but takes MEMRA_PRIME_PIPE=0. Bits still agree, split
 # liveness still passes, and ONLY the overlap assertion must turn RED.
 #
-# NEEDS 2-4 GPUs with P2P. On a single-GPU rig (the local 5090) it SKIPs:
-# a same-device "split" exercises the seam but not the placement this lever exists for; the
-# box battery is the authority (AGENTS.md: CI is compile-only, the battery is the real gate).
+# NEEDS 2-4 GPUs with P2P. On a single-GPU host it SKIPs: a same-device "split" exercises the
+# seam but not the placement this lever exists for. The multi-GPU box battery is the authority
+# (GitHub runners have no GPU, so CI never runs this gate).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 PROBE="${CARGO_TARGET_DIR:-./target}"/release/concat-prime-probe

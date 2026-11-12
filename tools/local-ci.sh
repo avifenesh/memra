@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# memra local CI — the real gate (GitHub CI is compile-only; the rig is the test machine).
+# memra local CI: the GPU correctness and perf battery. GitHub runners have no GPU, so
+# .github/workflows/ci.yml runs the CPU inventory and compiles the CUDA targets; this
+# script runs the gates that need a GPU and the models.
 #
 #   tools/local-ci.sh                correctness stage only (~3 min)
 #   tools/local-ci.sh --perf         correctness + full perf battery (~15 min)
@@ -27,8 +29,8 @@
 #
 # Window discipline (recorded per row, enforced where it can be): no other compute
 # process on the GPU (co-resident engines spill experts and read 10x low), host load
-# sane, power profile noted (pin it with gpu-full-power on|off — profiles pair fairly
-# only against themselves).
+# sane, power profile noted (hold one power and clock setting for the whole window; a
+# profile pairs fairly only against itself).
 #
 # GPU LOCK (lane/localci-lock-20260821): a bare invocation is safe on a shared rig. This
 # script takes ${MEMRA_CI_LOCK:-/tmp/memra-5090.lock} ONCE, before the first GPU-touching

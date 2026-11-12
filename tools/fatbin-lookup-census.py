@@ -22,9 +22,9 @@ It reads what nvcc actually emitted (`cuobjdump --list-text`, a HOST tool — no
 re-evaluating the preprocessor and hoping to agree with the toolchain. It proves every looked-up
 name IS PRESENT in some fatbin for this arch.
 
-It does NOT prove the code path runs. That needs real sm_89 (Ada) and sm_90a (Hopper) silicon;
-the rig is sm_120a and prod boxes are untouchable. The class is narrowed here, not closed —
-docs/RELEASING.md says so where sm_89/sm_90a support is described.
+It does NOT prove the code path runs. That needs a run on real sm_89 (Ada) or sm_90a (Hopper)
+silicon, which a host-only census never has. The class is narrowed here, not closed;
+docs/RELEASING.md ("Prebuilt targets and limits") states the same limit.
 
 REFUSALS (all fail-closed; the empty cases are refusals, not passes)
   1. no fatbins found, or a fatbin `func()` searches is missing
