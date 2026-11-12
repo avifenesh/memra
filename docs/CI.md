@@ -37,7 +37,8 @@ Thin mode runs, for the affected packages only:
 - `merge-validation`, each command once: the static merge guards (action pins, workflow keys,
   conflict markers, docs registry, publish members, stub ABI, arch matrix), the scoped guards the
   plan reaches (PDL chain, flags coverage, gate OFF-arm lint, support-state census, coalescer
-  contract) and the changed-input CPU contracts.
+  contract), the changed-input CPU contracts and the base's link checker
+  ([`tools/check-doc-links.py`](../tools/check-doc-links.py)) over the candidate's markdown.
 - `boundary`: a public-boundary scan of every blob introduced in the pinned commit range. It does
   not prove whole-tree allowlist drift; full mode does.
 - `build` and `clippy` through `tools/validation_plan.py cargo`, with the build-identity check, the

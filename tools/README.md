@@ -15,6 +15,7 @@ Where to look instead:
   `cell_evidence.py`, `daily-regression.py`): [docs/RELEASE-QUALIFICATION.md](../docs/RELEASE-QUALIFICATION.md)
   and [docs/RELEASING.md](../docs/RELEASING.md).
 - The pre-push hook: `hooks/pre-push`, enabled with `git config core.hooksPath tools/hooks`.
+- Markdown links and heading anchors: `python3 tools/check-doc-links.py` (thin CI runs it).
 
 The earlier index, with its notes on `box-health.sh`, `peer-read-probe.cu`,
 `peer-copy-direction-probe.cu` and the host-tier spill gates, is kept in

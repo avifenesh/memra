@@ -451,6 +451,15 @@ TOOL_CONTRACTS = {
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_crates_publish.py', '25'],
         'native': [],
     },
+    # Markdown links and anchors. One case of the suite checks the whole tree, so a full
+    # inventory run checks every link; thin public CI runs the checker itself on each change.
+    'doc-links': {
+        'required': True,
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',
+                   'tools/check-doc-links.py', 'tools/test_check_doc_links.py'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_check_doc_links.py', '13'],
+        'native': [],
+    },
     'support-records': {
         'required': True,
         'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',

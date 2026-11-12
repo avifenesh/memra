@@ -50,7 +50,8 @@ native math, emitted programs, build defaults, model artifacts, tolerances and r
 coverage unchanged; file location alone does not prove that. A change to the gate set itself (a
 narrower default selection, a removed cell, the impact rules) is a `gate` change. **No CPU result,
 fast-gate green or successful build is device evidence for a model, a runtime or a serving
-binary.** There is no markdown link checker in the tree: check the links and anchors you touch.
+binary.** [`tools/check-doc-links.py`](../tools/check-doc-links.py) checks relative links and heading
+anchors in tracked markdown; thin CI runs it.
 
 ## Checkpoints
 
