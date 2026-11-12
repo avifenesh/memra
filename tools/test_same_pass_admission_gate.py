@@ -94,6 +94,16 @@ class Reserve(unittest.TestCase):
         self.assertIsNone(gate.RE_RESERVE.search(COST_SPEC))
 
 
+class BootFloor(unittest.TestCase):
+    def test_the_calibration_floor_is_read_in_mib(self):
+        line = ('[admit-cal] boot calibration done: model="gate" route=dspark transient floor 1576MB '
+                '(static was 1536MB; measured 1576MB; probe kv charge 119MB, draft-state 0MB)')
+        self.assertEqual(gate.boot_floor(line), 1576 << 20)
+        # The admission lines print the same reserve in decimal MB.
+        self.assertEqual(round(gate.boot_floor(line) / MB), 1653)
+        self.assertIsNone(gate.boot_floor("[server] listening"))
+
+
 class ChargeOf(unittest.TestCase):
     def test_spec_charge_is_cost_plus_plane(self):
         lines = [

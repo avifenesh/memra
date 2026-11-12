@@ -103,7 +103,9 @@ def main() -> None:
         kt.start()
         time.sleep(6.0)
         busy = g.effective_free(server.fresh_metrics())
-        reserve_est = floor + 77 * MB  # the verify-graph debt measured in the gate runs (1,653 - 1,576 MB)
+        # The floor was read as decimal MB; the calibration line prints MiB, so 1,576 MiB is
+        # 1,653 MB. The 77 MB added here is that unit difference (the runs here used this form).
+        reserve_est = floor + 77 * MB
         lo = learn["A"]["charge"] + reserve_est
         hi = learn["B"]["charge"] + reserve_est
         target = (lo + hi) // 2

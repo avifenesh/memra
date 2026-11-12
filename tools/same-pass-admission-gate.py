@@ -19,9 +19,10 @@ The cell, on one card and one boot:
    with `MEMRA_SPEC_GATE_LOW=3` so the keeper and the pair (a projected wave of 3) all stay on the
    DFlash route; at the default band of 2 the pair is priced plain and builds its cache in
    `admit`, which is not the shape under test.
-3. Probe the reserve the gate applies (the boot floor plus the verify-graph pool's admission
-   debt, printed only on a defer line): B's prompt with a 4 s deadline on a reading it cannot
-   fit; it defers, names the reserve and expires unadmitted.
+3. Probe the reserve the gate applies (the boot floor, which the calibration line prints in
+   MiB, plus any verify-graph pool debt that door adds; a defer line names it in decimal MB):
+   B's prompt with a 4 s deadline on a reading it cannot fit; it defers, names the reserve and
+   expires unadmitted.
 4. Place: hold a ballast (plain driver allocations in a child process) so effective free beside
    the keeper lies between `charge_A + reserve` and `charge_A + charge_B + reserve`
    (`--place`): each request fits alone, the two together do not. The reading is taken again
@@ -75,15 +76,23 @@ WORDS = (
 
 RE_COST = re.compile(r"\[admission\] request cost: model=\"[^\"]+\" ctx=(\d+) path=(\w+) = .* = (\d+)MB$")
 RE_DRAFT = re.compile(r"\[admission\] per-session draft-state charge: model=\"[^\"]+\" \+(\d+)MB \(")
+# The calibration line prints the floor in MiB (`>> 20`); the admission lines print decimal MB.
 RE_FLOOR = re.compile(r"\[admit-cal\] boot calibration done: .*? transient floor (\d+)MB \(static was")
 OOM_LINES = ("out of memory", "CUDA_ERROR_OUT_OF_MEMORY")
 BAD_LINES = ("panicked", "[worker] FATAL", "[worker] respawn")
 TICK_LINES = ("[prime-yield]", "[dspark-acc]", "[admit-oom] step OOM")
 WORKER_ADMIT_LINE = "[spec-k] "  # `admit` decided the request's K: the worker admitted it
 SETTLE_LINE = "[admission] settle wait:"
-# The reserve the gate applied, as a VRAM defer or settle wait line names it: the boot floor plus
-# the verify-graph pool's admission debt.
+# The reserve the gate applied, as a VRAM defer or settle wait line names it (decimal MB): the boot
+# floor plus any verify-graph pool debt.
 RE_RESERVE = re.compile(r"< cost \d+MB \+ reserve (\d+)MB")
+
+
+def boot_floor(boot_text: str) -> int | None:
+    """The boot-calibrated transient floor in bytes. The calibration line prints it in MiB
+    (`>> 20`) under the label MB; 1,576 there is 1,653 decimal MB on the admission lines."""
+    m = RE_FLOOR.search(boot_text)
+    return None if m is None else int(m.group(1)) * MIB
 
 
 def refuse(msg: str) -> None:
@@ -402,10 +411,9 @@ def main() -> None:
     try:
         server.boot()
         boot_text = serve_log.read_text(errors="replace")
-        m = RE_FLOOR.search(boot_text)
-        if m is None:
+        floor = boot_floor(boot_text)
+        if floor is None:
             refuse("no boot calibration line (transient floor)")
-        floor = int(m.group(1)) * MB
         # 1. Learn each request's charge and greedy text alone on the idle card.
         learn = {}
         for name, prompt in prompts.items():
@@ -429,8 +437,8 @@ def main() -> None:
         time.sleep(8.0)
         busy_free = effective_free(server.fresh_metrics())
         ballast = Ballast(args.out / "ballast.log")
-        # 2b. The reserve the gate applies is the boot floor plus the verify-graph pool's debt,
-        # which no line prints before a request defers. Probe it: B's prompt once more, with a
+        # 2b. The reserve the gate applies is the boot floor plus any verify-graph pool debt, which
+        # no line prints before a request defers. Probe it: B's prompt once more, with a
         # 4 s deadline, on a reading 300 MB short of its charge plus the floor; its defer line
         # names the reserve and the request expires unadmitted (408).
         probe_free = learn["B"]["charge"] + floor - 300 * MB

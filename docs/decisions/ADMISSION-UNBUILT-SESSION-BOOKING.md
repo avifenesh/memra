@@ -154,10 +154,11 @@ and reclaim run is a single run.
 ### Same-pass gate (RTX 5090)
 
 `tools/same-pass-admission-gate.py`: two cold prompts (5,772 and 5,741 prompt tokens, charges
-816 and 814 MB) fired together beside a decoding keeper. The gate applied a reserve of 1,653 MB
-(the boot floor of 1,576 MB plus the verify-graph pool's debt, read from a probe that defers),
-so one request fits at 2,469 MB of effective free and two at 3,283 MB; a ballast placed the
-reading at 2,874 MB.
+816 and 814 MB) fired together beside a decoding keeper. The gate applied a reserve of 1,653 MB,
+the boot floor the calibration line prints as 1,576 MiB (read from a probe that defers), so one
+request fits at 2,469 MB of effective free and two at 3,283 MB; a ballast placed the reading at
+2,874 MB. The calibration line prints MiB and the admission lines decimal MB: 1,576 MiB is
+1,653 MB.
 
 | run | exit | failed verdicts | settle waits | out-of-memory lines | the keeper |
 |---|---|---|---|---|---|
@@ -175,9 +176,9 @@ reading at 2,874 MB.
   ordinary VRAM defer until the first finished. Both answered 200 with the reference greedy text.
 - **Earlier pairs.** Round 1 against base on the same gate (`fix3-g5`, `base-g5`): the same
   verdicts and readings, the settle wait 3,540.3 ms. The first cut against base before the gate
-  probed the reserve (band from the floor, 2,392 to 3,206 MB, placement 2,799 MB, inside the
-  applied band too): base exit 1 with 2 out-of-memory lines and the keeper's 503, the first cut
-  exit 0 with 1 settle wait.
+  probed the reserve (band from the floor read as 1,576 MB instead of MiB, 2,392 to 3,206 MB,
+  placement 2,799 MB, inside the applied band too): base exit 1 with 2 out-of-memory lines and
+  the keeper's 503, the first cut exit 0 with 1 settle wait.
 
 ### Agentic replay at c = 2
 
