@@ -67,8 +67,8 @@ request's arrival, admission refuses the request (HTTP 400) on both arms before 
 
 **The band this change opens** (`gb10/band-u1`, B V V B): the raw reading under the requirement
 and `MemAvailable` above it. The holder kept `MemAvailable` near 3.5 GB through a 131k prompt's
-prime. Main's guard refused the capture in both cells (driver 1,389 and 1,408 MB + pool 1,070 MB
-< 3,140 MB, with `MemAvailable` at 3,429 and 3,476 MB). The head's guard let it go ahead without
+prime. Main's guard refused the capture in both cells (driver 1,389 and 1,408 MB + pool 1,070 MB,
+under 3,140 and 3,141 MB required, with `MemAvailable` at 3,429 and 3,476 MB). The head's guard let it go ahead without
 a trim at `MemAvailable` 3,463 and 3,470 MB, and the capture succeeded in both: no capture
 warning, no out-of-memory line, no kernel OOM, `MemAvailable` no lower than 3,225 MB to the
 request's end. All four cells served the same text in the same rounds.
