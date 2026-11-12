@@ -56,6 +56,65 @@ long texts: 12 texts over 3 (cell, stream) keys: PREFIX PASS
 plain texts: 36 (cell, n) keys over 144 requests (beside streams and solo, all arms): IDENTICAL
 long texts: 44 texts over 11 (cell, stream) keys: PREFIX PASS
 
+## gb10/plain3
+
+`python3 tools/summ_plain.py gb10/plain3`
+
+| long streams | class | plain class | arm | boots | plain reqs | TTFT p50 / max s | gap p50 / p95 / max s | E2E p50 / max s | plain tok/s live | long tok/s live | long tok/s idle | long longest gap s | solo gap p50 s | solo E2E s |
+|---:|---|---|---|---:|---:|---|---|---|---:|---:|---:|---:|---:|---|
+| 2 | greedy | pen | change3 | 1 | 4 | 1.790 / 1.807 | 0.116 / 0.117 / 0.119 | 4.55 / 4.57 | 5.47 | 41.56 | 39.93 | 0.509 | 0.073 | 1.88 1.88 |
+| 2 | greedy | pen | parent3 | 1 | 2 | 1.812 / 1.812 | 1.601 / 1.841 / 1.852 | 40.58 / 40.58 | 0.60 | 40.95 | 41.56 | 0.603 | 0.073 | 1.88 1.88 |
+| 2 | greedy | pen+hit | change3 | 1 | 8 | 1.732 / 1.947 | 0.115 / 0.117 / 0.121 | 4.45 / 4.70 | 5.38 | 40.64 | 40.68 | 1.103 | 0.073 | 1.90 1.89 |
+| 2 | greedy | pen+hit | parent3 | 1 | 4 | 1.831 / 1.931 | 1.532 / 1.837 / 2.021 | 40.14 / 40.72 | 0.61 | 42.09 | 43.50 | 0.787 | 0.073 | 1.88 1.88 |
+| 2 | greedy | t1json | change3 | 1 | 4 | 3.404 / 3.580 | 0.189 / 0.191 / 0.192 | 7.92 / 8.11 | 2.82 | 33.56 | 42.92 | 0.500 | 0.073 | 1.89 1.88 |
+| 2 | greedy | t1json | parent3 | 1 | 2 | 3.578 / 3.578 | 1.609 / 1.846 / 1.964 | 42.21 / 42.21 | 0.57 | 40.92 | 40.13 | 0.682 | 0.073 | 1.89 1.88 |
+
+plain texts: 12 (cell, n) keys over 36 requests (beside streams and solo, all arms): IDENTICAL
+long texts: 12 texts over 6 (cell, stream) keys: PREFIX PASS
+
+## gb10/plain5
+
+`python3 tools/summ_plain.py gb10/plain5`
+
+| long streams | class | plain class | arm | boots | plain reqs | TTFT p50 / max s | gap p50 / p95 / max s | E2E p50 / max s | plain tok/s live | long tok/s live | long tok/s idle | long longest gap s | solo gap p50 s | solo E2E s |
+|---:|---|---|---|---:|---:|---|---|---|---:|---:|---:|---:|---:|---|
+| 2 | greedy | pen | change5 | 1 | 4 | 3.110 / 3.140 | 0.115 / 0.117 / 0.119 | 5.84 / 5.87 | 4.15 | 33.35 | 40.53 | 1.204 | 0.072 | 2.95 2.95 |
+| 2 | greedy | pen | parent3 | 1 | 2 | 5.848 / 5.848 | 1.608 / 1.857 / 2.001 | 44.96 / 44.96 | 0.54 | 40.15 | 39.78 | 1.108 | 0.073 | 2.97 2.96 |
+| 2 | greedy | pen+hit | change5 | 1 | 8 | 2.898 / 3.293 | 0.115 / 0.117 / 0.118 | 5.59 / 6.02 | 5.56 | 35.86 | 41.33 | 1.298 | 0.072 | 2.96 2.96 |
+| 2 | greedy | pen+hit | parent3 | 1 | 4 | 6.104 / 6.200 | 1.516 / 1.822 / 1.957 | 42.79 / 44.37 | 0.59 | 41.99 | 41.89 | 1.294 | 0.073 | 2.96 2.96 |
+| 2 | greedy | t1json | change5 | 1 | 4 | 4.718 / 4.920 | 0.188 / 0.191 / 0.191 | 9.24 / 9.44 | 2.60 | 29.37 | 41.46 | 1.108 | 0.072 | 2.97 2.97 |
+| 2 | greedy | t1json | parent3 | 1 | 2 | 7.646 / 7.646 | 1.617 / 1.900 / 1.962 | 46.83 / 46.83 | 0.52 | 39.87 | 42.04 | 1.204 | 0.072 | 2.97 2.96 |
+
+| long streams | arm | boot | request | TTFT s | streams tok/s until its first token | alone TTFT s |
+|---:|---|---|---:|---:|---:|---|
+| 2 | change5 | change5-2 | 0 | 3.11 | 27.65 | 1.21 1.21 |
+| 2 | change5 | change5-2 | 1 | 3.01 | 27.22 | 1.21 1.21 |
+| 2 | change5 | change5-2 | 2 | 3.14 | 26.11 | 1.21 1.21 |
+| 2 | change5 | change5-2 | 3 | 2.92 | 28.41 | 1.21 1.21 |
+| 2 | change5 | change5-2 | 0 | 4.92 | 30.89 | 1.22 1.23 |
+| 2 | change5 | change5-2 | 1 | 4.70 | 30.86 | 1.22 1.23 |
+| 2 | change5 | change5-2 | 2 | 4.46 | 32.99 | 1.22 1.23 |
+| 2 | change5 | change5-2 | 3 | 4.72 | 30.10 | 1.22 1.23 |
+| 2 | change5 | change5-2 | 0 | 3.29 | 24.60 | 1.21 1.22 |
+| 2 | change5 | change5-2 | 0 | 0.07 | 53.56 | 1.21 1.22 |
+| 2 | change5 | change5-2 | 1 | 3.03 | 25.07 | 1.21 1.22 |
+| 2 | change5 | change5-2 | 1 | 0.13 | 29.72 | 1.21 1.22 |
+| 2 | change5 | change5-2 | 2 | 2.90 | 27.95 | 1.21 1.22 |
+| 2 | change5 | change5-2 | 2 | 0.10 | 49.85 | 1.21 1.22 |
+| 2 | change5 | change5-2 | 3 | 3.05 | 27.18 | 1.21 1.22 |
+| 2 | change5 | change5-2 | 3 | 0.12 | 60.22 | 1.21 1.22 |
+| 2 | parent3 | parent3-1 | 0 | 5.85 | 35.40 | 1.22 1.21 |
+| 2 | parent3 | parent3-1 | 1 | 5.64 | 35.82 | 1.22 1.21 |
+| 2 | parent3 | parent3-1 | 0 | 7.65 | 35.70 | 1.22 1.22 |
+| 2 | parent3 | parent3-1 | 1 | 7.14 | 38.91 | 1.22 1.22 |
+| 2 | parent3 | parent3-1 | 0 | 6.20 | 33.55 | 1.21 1.21 |
+| 2 | parent3 | parent3-1 | 0 | 1.57 | 45.89 | 1.21 1.21 |
+| 2 | parent3 | parent3-1 | 1 | 6.10 | 32.77 | 1.21 1.21 |
+| 2 | parent3 | parent3-1 | 1 | 1.61 | 45.98 | 1.21 1.21 |
+
+plain texts: 18 (cell, n) keys over 36 requests (beside streams and solo, all arms): IDENTICAL
+long texts: 12 texts over 6 (cell, stream) keys: PREFIX PASS
+
 ## gb10/longprime
 
 `python3 tools/summ_plain.py gb10/longprime`
@@ -121,6 +180,119 @@ long texts: 16 texts over 4 (cell, stream) keys: PREFIX PASS
 plain texts: 18 (cell, n) keys over 36 requests (beside streams and solo, all arms): IDENTICAL
 long texts: 8 texts over 4 (cell, stream) keys: PREFIX PASS
 
+## rtx5090/plain5
+
+`python3 tools/summ_plain.py rtx5090/plain5`
+
+| long streams | class | plain class | arm | boots | plain reqs | TTFT p50 / max s | gap p50 / p95 / max s | E2E p50 / max s | plain tok/s live | long tok/s live | long tok/s idle | long longest gap s | solo gap p50 s | solo E2E s |
+|---:|---|---|---|---:|---:|---|---|---|---:|---:|---:|---:|---:|---|
+| 1 | greedy | pen | change5 | 1 | 4 | 1.539 / 1.577 | 0.054 / 0.056 / 0.056 | 2.82 / 2.84 | 8.59 | 36.67 | 76.20 | 0.757 | 0.022 | 1.52 1.59 |
+| 1 | greedy | pen | parent3 | 1 | 2 | 2.812 / 2.812 | 0.500 / 0.596 / 0.633 | 15.31 / 15.31 | 1.64 | 61.24 | 69.86 | 0.994 | 0.025 | 1.82 1.90 |
+| 1 | greedy | t1json | change5 | 1 | 4 | 2.142 / 2.406 | 0.057 / 0.059 / 0.060 | 3.49 / 3.75 | 6.84 | 39.96 | 76.03 | 0.844 | 0.023 | 1.66 1.71 |
+| 1 | greedy | t1json | parent3 | 1 | 2 | 3.662 / 3.662 | 0.523 / 0.612 / 0.693 | 16.29 / 16.29 | 1.50 | 58.70 | 70.68 | 1.032 | 0.025 | 1.78 1.92 |
+| 2 | greedy | pen | change5 | 1 | 4 | 1.949 / 1.976 | 0.071 / 0.075 / 0.076 | 3.61 / 3.63 | 6.72 | 53.32 | 98.66 | 0.921 | 0.023 | 1.58 1.67 |
+| 2 | greedy | pen | parent3 | 1 | 2 | 3.575 / 3.575 | 0.746 / 0.885 / 0.926 | 21.52 / 21.52 | 1.12 | 83.86 | 89.51 | 1.000 | 0.024 | 1.71 1.80 |
+| 2 | greedy | pen+hit | change5 | 1 | 8 | 1.930 / 2.064 | 0.075 / 0.078 / 0.081 | 3.67 / 3.85 | 8.45 | 54.93 | 94.63 | 0.935 | 0.024 | 1.66 1.73 |
+| 2 | greedy | pen+hit | parent3 | 1 | 4 | 3.391 / 3.498 | 0.729 / 0.837 / 0.878 | 20.49 / 21.03 | 1.22 | 87.81 | 80.42 | 1.070 | 0.023 | 1.60 1.71 |
+
+| long streams | arm | boot | request | TTFT s | streams tok/s until its first token | alone TTFT s |
+|---:|---|---|---:|---:|---:|---|
+| 1 | change5 | change5-1 | 0 | 1.52 | 26.94 | 0.99 1.05 |
+| 1 | change5 | change5-1 | 1 | 1.46 | 27.33 | 0.99 1.05 |
+| 1 | change5 | change5-1 | 2 | 1.58 | 25.37 | 0.99 1.05 |
+| 1 | change5 | change5-1 | 3 | 1.54 | 24.68 | 0.99 1.05 |
+| 1 | change5 | change5-1 | 0 | 2.41 | 42.81 | 1.10 1.15 |
+| 1 | change5 | change5-1 | 1 | 1.95 | 38.04 | 1.10 1.15 |
+| 1 | change5 | change5-1 | 2 | 2.14 | 35.02 | 1.10 1.15 |
+| 1 | change5 | change5-1 | 3 | 2.11 | 36.02 | 1.10 1.15 |
+| 1 | parent3 | parent3-2 | 0 | 2.50 | 41.21 | 1.23 1.30 |
+| 1 | parent3 | parent3-2 | 1 | 2.81 | 35.91 | 1.23 1.30 |
+| 1 | parent3 | parent3-2 | 0 | 3.66 | 45.61 | 1.18 1.33 |
+| 1 | parent3 | parent3-2 | 1 | 3.57 | 37.54 | 1.18 1.33 |
+| 2 | change5 | change5-1 | 0 | 1.89 | 42.42 | 1.04 1.12 |
+| 2 | change5 | change5-1 | 1 | 1.98 | 42.01 | 1.04 1.12 |
+| 2 | change5 | change5-1 | 2 | 1.88 | 45.84 | 1.04 1.12 |
+| 2 | change5 | change5-1 | 3 | 1.95 | 45.14 | 1.04 1.12 |
+| 2 | change5 | change5-1 | 0 | 2.00 | 40.49 | 1.10 1.16 |
+| 2 | change5 | change5-1 | 0 | 0.19 | 57.43 | 1.10 1.16 |
+| 2 | change5 | change5-1 | 1 | 1.93 | 42.48 | 1.10 1.16 |
+| 2 | change5 | change5-1 | 1 | 0.23 | 66.06 | 1.10 1.16 |
+| 2 | change5 | change5-1 | 2 | 2.06 | 41.66 | 1.10 1.16 |
+| 2 | change5 | change5-1 | 2 | 0.22 | 36.32 | 1.10 1.16 |
+| 2 | change5 | change5-1 | 3 | 2.05 | 42.43 | 1.10 1.16 |
+| 2 | change5 | change5-1 | 3 | 0.22 | 40.66 | 1.10 1.16 |
+| 2 | parent3 | parent3-2 | 0 | 3.58 | 56.78 | 1.14 1.23 |
+| 2 | parent3 | parent3-2 | 1 | 3.47 | 59.09 | 1.14 1.23 |
+| 2 | parent3 | parent3-2 | 0 | 3.50 | 58.03 | 1.04 1.15 |
+| 2 | parent3 | parent3-2 | 0 | 0.86 | 86.29 | 1.04 1.15 |
+| 2 | parent3 | parent3-2 | 1 | 3.39 | 59.87 | 1.04 1.15 |
+| 2 | parent3 | parent3-2 | 1 | 0.82 | 86.70 | 1.04 1.15 |
+
+plain texts: 24 (cell, n) keys over 46 requests (beside streams and solo, all arms): IDENTICAL
+long texts: 12 texts over 6 (cell, stream) keys: PREFIX PASS
+
+## gb10/riders
+
+`python3 tools/summ_riders.py gb10/riders`
+
+| long streams | riders | class | arm | boots | window s | streams tok/s before | streams tok/s live | riders tok/s live | all tok/s live | rider gap p50 / p95 s | rider TTFT p50 s | rider E2E max s | riders alone tok/s |
+|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|
+| 2 | 4 | pen | change3 | 1 | 8.8 | 43.65 | 33.28 | 29.07 | 62.35 | 0.133 / 0.136 | 0.430 | 8.81 | 44.76 |
+| 2 | 4 | pen | parent3 | 1 | 106.2 | 44.64 | 40.32 | 2.41 | 42.73 | 1.615 / 1.849 | 2.084 | 106.21 | 45.60 |
+| 2 | 4 | vendor | change3 | 1 | 6.7 | 43.82 | 20.48 | 37.99 | 58.47 | 0.143 / 0.164 | 0.676 | 6.74 | 46.08 |
+| 2 | 4 | vendor | parent3 | 1 | 6.7 | 43.82 | 20.59 | 38.20 | 58.79 | 0.143 / 0.162 | 0.650 | 6.70 | 46.58 |
+| 2 | 8 | vendor | change3 | 1 | 9.3 | 43.64 | 14.64 | 55.11 | 69.75 | 0.135 / 0.139 | 0.676 | 9.29 | 57.78 |
+| 2 | 8 | vendor | parent3 | 1 | 9.3 | 44.64 | 14.27 | 54.92 | 69.18 | 0.135 / 0.139 | 0.730 | 9.32 | 57.02 |
+
+plain texts: 16 (riders, class, n) keys over 64 requests (beside streams and alone, all arms): DIFFER {(8, 'vendor', 0): {('9c9afb2481b792e7', 64), ('0f85961509321c8b', 64), ('c6688e3acd19f017', 64)}, (8, 'vendor', 1): {('d3e2d8e5f4e0fee3', 64), ('7cbc433d84785da1', 64)}}
+long texts: 12 texts over 6 keys: PREFIX PASS
+
+## gb10/riders9
+
+`python3 tools/summ_riders.py gb10/riders9`
+
+| long streams | riders | class | arm | boots | window s | streams tok/s before | streams tok/s live | riders tok/s live | all tok/s live | rider gap p50 / p95 s | rider TTFT p50 s | rider E2E max s | riders alone tok/s |
+|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|
+| 2 | 6 | pen | change5 | 1 | 6.7 | 44.65 | 19.95 | 57.59 | 77.53 | 0.096 / 0.099 | 0.571 | 6.67 | 61.15 |
+| 2 | 6 | pen | parent3 | 1 | 6.7 | 44.65 | 19.93 | 57.55 | 77.48 | 0.095 / 0.099 | 0.574 | 6.67 | 61.13 |
+| 2 | 8 | pen | change5 | 1 | 7.5 | 43.82 | 18.19 | 68.49 | 86.68 | 0.106 / 0.110 | 0.721 | 7.48 | 74.03 |
+| 2 | 8 | pen | parent3 | 1 | 7.5 | 43.82 | 18.22 | 68.59 | 86.81 | 0.106 / 0.110 | 0.717 | 7.46 | 74.24 |
+
+plain texts: 14 (riders, class, n) keys over 56 requests (beside streams and alone, all arms): IDENTICAL
+long texts: 8 texts over 4 keys: PREFIX PASS
+
+## gb10/riders10
+
+`python3 tools/summ_riders.py gb10/riders10`
+
+| long streams | riders | class | arm | boots | window s | streams tok/s before | streams tok/s live | riders tok/s live | all tok/s live | rider gap p50 / p95 s | rider TTFT p50 s | rider E2E max s | riders alone tok/s |
+|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|
+| 2 | 4 | pen | change5 | 1 | 8.8 | 43.80 | 33.37 | 29.16 | 62.53 | 0.132 / 0.135 | 0.459 | 8.78 | 45.57 |
+| 2 | 4 | pen | parent3 | 1 | 106.3 | 43.82 | 40.34 | 2.41 | 42.74 | 1.607 / 1.883 | 2.061 | 106.33 | 44.80 |
+| 2 | 5 | pen | change5 | 1 | 6.5 | 44.65 | 20.51 | 49.35 | 69.86 | 0.093 / 0.096 | 0.553 | 6.48 | 54.63 |
+| 2 | 5 | pen | parent3 | 1 | 6.5 | 44.64 | 20.56 | 49.46 | 70.02 | 0.093 / 0.096 | 0.547 | 6.47 | 54.74 |
+
+plain texts: 9 (riders, class, n) keys over 36 requests (beside streams and alone, all arms): IDENTICAL
+long texts: 8 texts over 4 keys: PREFIX PASS
+
+## rtx5090/riders5
+
+`python3 tools/summ_riders.py rtx5090/riders5`
+
+| long streams | riders | class | arm | boots | window s | streams tok/s before | streams tok/s live | riders tok/s live | all tok/s live | rider gap p50 / p95 s | rider TTFT p50 s | rider E2E max s | riders alone tok/s |
+|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|
+| 2 | 4 | pen | change5 | 1 | 2.7 | 107.30 | 50.39 | 95.56 | 145.95 | 0.037 / 0.039 | 0.287 | 2.68 | 121.09 |
+| 2 | 4 | pen | parent3 | 1 | 2.6 | 108.14 | 50.91 | 97.26 | 148.18 | 0.037 / 0.039 | 0.253 | 2.63 | 119.22 |
+| 2 | 4 | vendor | change5 | 1 | 3.6 | 106.32 | 36.34 | 70.48 | 106.83 | 0.053 / 0.054 | 0.284 | 3.63 | 81.73 |
+| 2 | 4 | vendor | parent3 | 1 | 3.6 | 107.14 | 36.25 | 70.84 | 107.08 | 0.052 / 0.054 | 0.290 | 3.61 | 82.68 |
+| 2 | 8 | pen | change5 | 1 | 3.9 | 106.64 | 33.99 | 129.88 | 163.88 | 0.055 / 0.058 | 0.428 | 3.94 | 148.55 |
+| 2 | 8 | pen | parent3 | 1 | 3.9 | 106.63 | 34.60 | 132.20 | 166.80 | 0.055 / 0.058 | 0.388 | 3.87 | 150.61 |
+| 2 | 8 | vendor | change5 | 1 | 5.9 | 107.15 | 22.42 | 86.96 | 109.38 | 0.085 / 0.088 | 0.471 | 5.89 | 97.61 |
+| 2 | 8 | vendor | parent3 | 1 | 5.9 | 106.65 | 22.60 | 86.37 | 108.97 | 0.086 / 0.089 | 0.452 | 5.93 | 94.51 |
+
+plain texts: 24 (riders, class, n) keys over 96 requests (beside streams and alone, all arms): DIFFER {(4, 'vendor', 0): {('6e1005c63acf10c5', 64), ('b41d0c67ade4dbbd', 64)}}
+long texts: 16 texts over 8 keys: PREFIX PASS
+
 ## gb10/new
 
 `python3 tools/summ_newcomer.py gb10/new`
@@ -177,3 +349,18 @@ prefix check: 16 long texts, 120 newcomer texts, 0 mismatches -> PASS
 | 3 | greedy/greedy | parent | 2 | 24 | 0.142 | 0.155 | 0.183 | 0.031 | 0.640 | 96.8, 96.47 | 104.97, 104.65 | 0.187 | 28.2 / 153.9 |
 
 prefix check: 32 long texts, 240 newcomer texts, 0 mismatches -> PASS
+
+## rtx5090/new5
+
+`python3 tools/summ_newcomer.py rtx5090/new5`
+
+| long streams | class (long/new) | arm | boots | newcomers | TTFT p50 s | TTFT p95 s | TTFT max s | 1st to 2nd token p50 s | newcomer E2E p50 s | long tok/s (sum), per boot | all tok/s (long + newcomers), per boot | long longest gap s, max | long ITL p50 / p99 ms |
+|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|---:|---|
+| 1 | greedy/greedy | change5 | 1 | 12 | 0.170 | 0.197 | 0.197 | 0.002 | 0.480 | 63.24 | 72.17 | 0.242 | 0.0 / 59.5 |
+| 1 | greedy/greedy | parent3 | 1 | 12 | 0.159 | 0.176 | 0.176 | 0.001 | 0.461 | 65.2 | 74.25 | 0.232 | 0.0 / 55.7 |
+| 2 | greedy/greedy | change5 | 1 | 12 | 0.212 | 0.238 | 0.238 | 0.032 | 1.381 | 74.66 | 80.61 | 0.347 | 0.0 / 201.9 |
+| 2 | greedy/greedy | parent3 | 1 | 12 | 0.860 | 0.966 | 0.966 | 0.032 | 2.050 | 77.55 | 82.31 | 0.437 | 0.0 / 195.1 |
+| 2 | t1/t1 | change5 | 1 | 12 | 0.207 | 0.227 | 0.227 | 0.032 | 1.383 | 66.46 | 72.38 | 0.341 | 0.0 / 202.4 |
+| 2 | t1/t1 | parent3 | 1 | 12 | 0.999 | 1.178 | 1.178 | 0.034 | 2.287 | 65.91 | 70.37 | 0.427 | 0.0 / 211.6 |
+
+prefix check: 10 long texts, 72 newcomer texts, 0 mismatches -> PASS
