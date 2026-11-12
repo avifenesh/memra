@@ -6550,7 +6550,9 @@ impl KvFlex {
     /// Instant shed: zero the grant and evict the borrowed residency back to the floor.
     /// `arm_hold` marks a capture arrival (embeddings/rerank), which also parks the grant
     /// for the hold window so the rest of the burst cannot race re-borrowing inserts.
-    /// Returns entries evicted. Borrowed bytes EVAPORATE (no demote sink; see module doc).
+    /// Returns the bytes shed: entries, and the prompt-end tails `evict_to_bytes` strips before
+    /// them (memra#1233), so a shed that tails alone cover is a shed and not a failure. Borrowed
+    /// bytes EVAPORATE (no demote sink; see module doc).
     fn shed(&mut self, px: &mut PrefixCache, arm_hold: bool, why: &str) -> usize {
         if !self.armed {
             return 0;
@@ -6564,7 +6566,7 @@ impl KvFlex {
         }
         let t0 = Instant::now();
         let (n, freed) = px.evict_to_bytes(self.floor);
-        if n == 0 {
+        if freed == 0 {
             let unleased = px.evictable_bytes();
             if unleased == 0 {
                 // Above-floor residency that is entirely pinned (in-flight fanout leases)
@@ -6581,7 +6583,7 @@ impl KvFlex {
                 // Unreachable by construction; loud if the victim function and the LRU
                 // indexes ever disagree.
                 eprintln!(
-                    "[kv-flex] shed ({why}): no entry evicted while {:.1}MB unleased bytes sit \
+                    "[kv-flex] shed ({why}): nothing freed while {:.1}MB unleased bytes sit \
                      above the floor; the victim function and the LRU indexes disagree",
                     unleased as f64 / 1e6,
                 );
@@ -6598,7 +6600,7 @@ impl KvFlex {
             px.total_bytes as f64 / 1e6,
             self.floor as f64 / 1e6,
         );
-        n
+        freed
     }
 
     /// Current borrowed occupancy, DERIVED from the one byte accountant (never a second
@@ -9728,7 +9730,9 @@ fn prefix_yield_transient_reserve(
     let before = pool_readings(engine, loaded);
     let resident = px.total_bytes;
     let (n, freed) = px.evict_to_bytes(resident - short);
-    if n == 0 {
+    // Bytes, not entries: prompt-end tails go first (memra#1233), and a shortfall they cover
+    // alone still has to be settled back to the driver.
+    if freed == 0 {
         return (0, 0);
     }
     settle_reclaimed_prefix_bytes(engine, loaded, &before, freed, "prefix reserve");
@@ -10778,8 +10782,8 @@ fn reclaim_owed_booking(
 
 /// Whether a partial pass arms the reclaim booking: it freed bytes, by its own eviction or by the
 /// fallback flush of the rest. A pass that freed nothing changes nothing.
-fn reclaim_pass_arms_booking(pass_evicted: usize, rest: bool) -> bool {
-    pass_evicted > 0 || rest
+fn reclaim_pass_arms_booking(pass_freed: usize, rest: bool) -> bool {
+    pass_freed > 0 || rest
 }
 
 /// The booking ends at an arrival that finds nothing owed: no session priming, no seed pending.
@@ -21681,12 +21685,16 @@ pub fn run(
                                 hpx.budget as f64 / 1e6,
                             );
                         }
-                        if evicted_prefix > 0 {
+                        // Bytes, not entries: a partial pass strips prompt-end tails before any
+                        // entry (memra#1233), and what tails alone freed is settled like the rest.
+                        let reclaim_freed =
+                            prefix_bytes_before_reclaim.saturating_sub(px.total_bytes);
+                        if reclaim_freed > 0 {
                             settle_reclaimed_prefix_bytes(
                                 &engine,
                                 &loaded,
                                 &pool_before_reclaim,
-                                prefix_bytes_before_reclaim.saturating_sub(px.total_bytes),
+                                reclaim_freed,
                                 "reclaim-on-defer",
                             );
                             if let Some(next_headroom) =
@@ -21705,7 +21713,7 @@ pub fn run(
                         // bytes are the priming sessions' until they land.
                         let mut evicted_prefix = evicted_prefix;
                         if let Some((need, owed)) = partial_need {
-                            if evicted_prefix == 0
+                            if reclaim_freed == 0
                                 && let Some(next_headroom) = admission_headroom(
                                     &engine,
                                     &loaded,
@@ -21719,8 +21727,7 @@ pub fn run(
                             let kept_bytes = px.evictable_bytes();
                             let kept_entries = px.lru.len();
                             let pass_evicted = evicted_prefix;
-                            let pass_freed =
-                                prefix_bytes_before_reclaim.saturating_sub(px.total_bytes);
+                            let pass_freed = reclaim_freed;
                             let free_after_pass = headroom.limiting_free_bytes();
                             let rest = reclaim_after_partial_pass(covered, kept_bytes, || {
                                 let pool_before_rest = pool_readings(&engine, &loaded);
@@ -21745,7 +21752,7 @@ pub fn run(
                             });
                             // One line per pass that freed something: a deferred arrival comes
                             // back through this site every tick.
-                            if reclaim_pass_arms_booking(pass_evicted, rest) {
+                            if reclaim_pass_arms_booking(pass_freed, rest) {
                                 eprintln!(
                                     "[admit-oom] reclaim-on-defer (partial): evicted \
                                      {pass_evicted} prefix entries ({:.0}MB, oldest first) for \
@@ -45487,6 +45494,54 @@ mod tests {
         ));
     }
 
+    /// memra#1233: a reclaim that prompt-end tails alone cover is a reclaim. `evict_to_bytes`
+    /// strips tails before entries and can free bytes with no entry evicted; the kv-flex shed,
+    /// the transient reserve and the reclaim on defer key on the bytes, so those bytes are
+    /// counted and settled back to the driver instead of read as a failed pass.
+    #[test]
+    fn a_reclaim_that_tails_alone_cover_is_not_a_failure() {
+        let k = key("");
+        let now = std::time::Instant::now();
+        let mut px = PrefixCache::default();
+        let a = aged_entry(&k, 0, 64, 10, now);
+        let a_toks = a.toks.clone();
+        px.insert_with_budget(&k, a, "seed", 1_000);
+        let rest: Vec<u32> = (0..28).map(|i| 61_000 + i).collect();
+        assert!(px.attach_tail(&k, &a_toks, tail_of(rest, 5, now)));
+        assert_eq!(px.total_bytes, 15);
+        // The shed above a 10-byte floor is the tail alone: 5 bytes, no entry.
+        let mut flex = armed_flex(10);
+        assert_eq!(
+            flex.shed(&mut px, false, "test"),
+            5,
+            "the tail's bytes are the shed"
+        );
+        assert_eq!(flex.sheds, 1, "a tail-only shed is counted");
+        assert_eq!((px.n_entries(), px.n_tails, px.total_bytes), (1, 0, 10));
+        // Nothing above the floor now: no shed, no count.
+        assert_eq!(flex.shed(&mut px, false, "test"), 0);
+        assert_eq!(flex.sheds, 1);
+        // The reclaim booking arms on bytes freed, whatever went.
+        assert!(super::reclaim_pass_arms_booking(5, false));
+        assert!(!super::reclaim_pass_arms_booking(0, false));
+        let src: String = include_str!("worker.rs")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(src.contains(
+            "if freed == 0 { return (0, 0); } settle_reclaimed_prefix_bytes(engine, loaded, \
+             &before, freed, \"prefix reserve\");"
+        ));
+        assert!(src.contains(
+            "if reclaim_freed > 0 { settle_reclaimed_prefix_bytes( &engine, &loaded, \
+             &pool_before_reclaim, reclaim_freed, \"reclaim-on-defer\", );"
+        ));
+        assert!(src.contains(
+            "if reclaim_freed == 0 && let Some(next_headroom) = \
+             admission_headroom("
+        ));
+    }
+
     /// memra#1233 (b): the fence's starvation bound. The fence stands down once its deferred
     /// ticks add up to one prefill chunk's time, and the tick loop keeps that account:
     /// without the bound a steady stream of hit suffixes holds cold prefill back without end.
@@ -48313,7 +48368,7 @@ mod tests {
              = pool_readings(&engine, &loaded); let bytes_before_rest = px.total_bytes; \
              evicted_prefix += px.evict_all();",
         );
-        let arm = at("if reclaim_pass_arms_booking(pass_evicted, rest) {");
+        let arm = at("if reclaim_pass_arms_booking(pass_freed, rest) {");
         // The arm is the last statement of that block, inside the pass's own block.
         let stored = at("reclaim_booking = true; } }");
         let spare = at(
@@ -48351,7 +48406,7 @@ mod tests {
         let mut flex = armed_flex(15);
         assert_eq!(
             flex.shed(&mut px, false, "test"),
-            2,
+            20,
             "unleased bytes above the floor shed, oldest first, reused or not"
         );
         assert_eq!(px_survivors(&px), vec![2]);
@@ -48434,7 +48489,7 @@ mod tests {
         // counted with its wall time, hold armed against re-borrowing mid-burst.
         assert_eq!(f.borrowed_bytes(&px), 20);
         let n = f.shed(&mut px, true, "test capture");
-        assert_eq!(n, 2, "both borrowed entries evaporate");
+        assert_eq!(n, 20, "both borrowed entries evaporate");
         assert_eq!(px.total_bytes, 10, "residency is back at the floor");
         assert_eq!(f.borrowed_bytes(&px), 0);
         assert_eq!(
