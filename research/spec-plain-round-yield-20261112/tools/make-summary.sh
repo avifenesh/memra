@@ -16,6 +16,7 @@ summ_plain.py gb10/t1yield
 summ_plain.py gb10/plain2
 summ_plain.py gb10/plain3
 summ_plain.py gb10/plain5
+summ_plain.py gb10/plain6
 summ_plain.py gb10/longprime
 summ_plain.py rtx5090/plain
 summ_plain.py rtx5090/plain2
@@ -26,6 +27,7 @@ summ_riders.py gb10/riders10
 summ_riders.py rtx5090/riders5
 summ_riders.py rtx5090/riders6
 summ_riders.py rtx5090/riders7
+summ_mixed.py gb10/mixed
 summ_newcomer.py gb10/new
 summ_newcomer.py gb10/new2
 summ_newcomer.py rtx5090/new
