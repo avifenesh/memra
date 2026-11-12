@@ -8039,6 +8039,10 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
             json!(worker::dspark_cold_drafter_grid_refusals_total());
         body["prefix_cache_seed_grid_refusals"] = json!(m.prefix_seed_grid_refusals);
         body["prefix_cache_restore_grid_refusals"] = json!(m.prefix_restore_grid_refusals);
+        body["prefix_cache_tail_attaches"] = json!(m.prefix_tail_attaches);
+        body["prefix_cache_tail_strips"] = json!(m.prefix_tail_strips);
+        body["prefix_cache_tail_hits"] = json!(m.prefix_tail_hits);
+        body["prefix_cache_tail_skips"] = json!(m.prefix_tail_skips);
         body["prefix_cache_hit_tokens"] = json!(m.prefix_hit_tokens);
         // Pinned-host spill tier behind the prefix cache (lane/kv-host-spill-20260830;
         // MEMRA_KV_HOST_MB, default 0 = off). *_ms are cumulative copy wall-time: the

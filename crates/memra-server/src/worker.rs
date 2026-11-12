@@ -1724,6 +1724,57 @@ fn cached_hit_needs_first_token(
     n_prompt > 0 && n_cached == n_prompt && prefill_done && generated == 0
 }
 
+/// THE HIT-SUFFIX FENCE (memra#1233 b): a resumed row (`n_cached > 0`: a restored prefix-cache hit,
+/// or a continuation-pool or affinity resume, which stands in the same place) that has not
+/// emitted and whose remaining prompt suffix completes in ONE prime call this tick: at least the
+/// prime floor, at most the interactive tick budget, and no capture boundary strictly inside it
+/// (a boundary stops the call there). Such a row primes ahead of every cold chunk. The fence for a
+/// whole-prompt restore (`cached_hit_needs_first_token`) keyed on "fully restored" and stopped
+/// firing once memra#602 left exact re-sends a 28-token remainder; this is the suffix half.
+fn hit_suffix_fits_one_call(
+    n_cached: usize,
+    prefill_done: bool,
+    generated: usize,
+    fed: usize,
+    queued: usize,
+    budget: usize,
+    boundaries: [Option<usize>; 3],
+) -> bool {
+    n_cached > 0
+        && !prefill_done
+        && generated == 0
+        && queued >= memra_engine::hybrid_forward::PRIME_MIN_T
+        && queued <= budget
+        && !boundaries
+            .into_iter()
+            .flatten()
+            .any(|b| b > fed && b < fed + queued)
+}
+
+/// THE HIT-SUFFIX FENCE'S STARVATION BOUND (memra#1233 b). Every fenced tick holds the other
+/// interactive prefill back for one tick, and hits that keep arriving could hold it back without
+/// end. The fence therefore keeps an account: `deferred` is the prefill-phase time of the
+/// consecutive ticks it deferred, `allowance` the time of one prefill chunk
+/// (`hit_suffix_fence_allowance`). Once the deferred time reaches it, the fence stands down for
+/// one tick and the suffixes prime beside the cold chunks, as before the fence existed: waiting
+/// prefill is never held back longer than one chunk's time plus one fenced tick.
+fn hit_suffix_fence_yields(deferred: Duration, allowance: Duration) -> bool {
+    !deferred.is_zero() && deferred >= allowance
+}
+
+/// The fence's allowance: the time one tick-budget chunk takes at the measured tick prefill rate
+/// (`prefill_rate_update`, which skips ticks under one chunk, so a suffix call or a cold prompt's
+/// own remainder never sets it). A fenced stream so costs waiting prefill at most half of its
+/// rate. Zero before any chunk was timed: one deferred tick is then the whole allowance.
+fn hit_suffix_fence_allowance(rate_tok_s: Option<f64>, chunk: usize) -> Duration {
+    match rate_tok_s {
+        Some(rate) if rate.is_finite() && rate > 0.0 => {
+            Duration::from_secs_f64(chunk as f64 / rate)
+        }
+        _ => Duration::ZERO,
+    }
+}
+
 fn tick_trace_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("MEMRA_TICK_TRACE").as_deref() == Ok("1"))
@@ -2879,6 +2930,13 @@ pub struct Metrics {
     /// typed `restore grid law` lines (throttled), counted. Nonzero names traffic whose entries
     /// end off the GDN prime grid, served by a shorter exact entry or cold.
     pub prefix_restore_grid_refusals: u64,
+    /// Prompt-end tails (memra#1233, `PromptEndTail`): attached at prefill-done, dropped by
+    /// capacity (`PrefixCache::tail_victim`), restored whole by an exact re-send, and skipped for
+    /// want of free budget room (a tail never evicts).
+    pub prefix_tail_attaches: u64,
+    pub prefix_tail_strips: u64,
+    pub prefix_tail_hits: u64,
+    pub prefix_tail_skips: u64,
     pub prefix_hit_tokens: u64,
     /// Pinned-host spill tier behind the prefix cache (lane/kv-host-spill-20260830;
     /// MEMRA_KV_HOST_MB, default 0 = off). Entries/bytes are current gauges; demotions/
@@ -5064,6 +5122,20 @@ fn seed_capture_boundary(prompt_len: usize, hit_len: usize) -> SeedCapture {
         return SeedCapture::Covered;
     }
     SeedCapture::AtBoundary(b)
+}
+
+/// The tail base of a covered plain hit (memra#1233, `Session::tail_base`): the restored grid
+/// entry, when the prompt end lies past it (a whole-prompt restore needs no tail).
+fn covered_hit_tail_base(
+    prompt_len: usize,
+    n_cached: usize,
+    hit: Option<&PrefixPin>,
+) -> Option<(usize, u64)> {
+    let pin = hit?;
+    (n_cached > 0
+        && n_cached < prompt_len
+        && n_cached.is_multiple_of(memra_engine::Engine::gdn_chunk_size()))
+    .then_some((n_cached, pin.id))
 }
 
 /// The cold DFlash prime's capture when no render-stable cut is armed (`dspark_capture_at` is
@@ -8889,8 +8961,52 @@ fn pending_seed_bytes(active: &[Session]) -> usize {
                     .as_ref()
                     .map_or(0, |cache| prefix_seed_bytes_at(cache, rows)),
             }
+            .saturating_add(
+                match session_pending_tail_rows(
+                    s.seed_prefix,
+                    s.seed_at,
+                    s.tail_base,
+                    s.n_prompt,
+                    s.vision.is_some()
+                        || s.spec.is_some()
+                        || s.gspec_k > 0
+                        || s.dspark_on
+                        || s.glm5_on,
+                    s.cache.is_some(),
+                ) {
+                    0 => 0,
+                    rows => s
+                        .cache
+                        .as_ref()
+                        .map_or(0, |cache| prefix_seed_bytes_at(cache, rows)),
+                },
+            )
         })
         .fold(0usize, usize::saturating_add)
+}
+
+/// The prompt-end tail rows a session still owes the prefix cache (memra#1233,
+/// `maybe_prefix_tail`): past an armed seed boundary under the prompt end, or past the restored
+/// grid entry of a covered hit. A tail is those KV rows plus one recurrent state, which is what
+/// `prefix_seed_bytes_at` sizes at this row count.
+fn session_pending_tail_rows(
+    seed_prefix: bool,
+    seed_at: Option<usize>,
+    tail_base: Option<(usize, u64)>,
+    n_prompt: usize,
+    no_tail_route: bool,
+    has_cache: bool,
+) -> usize {
+    // A vision, speculative, DSpark or GLM5 session never attaches a tail (`maybe_prefix_tail`).
+    if no_tail_route || !has_cache {
+        return 0;
+    }
+    let base = match (tail_base, seed_at) {
+        (Some((b, _)), _) => b,
+        (None, Some(b)) if seed_prefix && b < n_prompt => b,
+        _ => return 0,
+    };
+    n_prompt.saturating_sub(base)
 }
 
 /// WP-B day 37 (on-demand KV planes, DAY37 1.3): the routes whose engine calls the tick-top
@@ -10286,6 +10402,7 @@ struct PrefixEntry {
     /// predecessor-pairing anchor). Empty = unavailable; a spec restore then leaves the
     /// fill's zeros row-0 fallback to cover it (acceptance-only).
     last_h: Vec<f32>,
+    /// Device bytes of the whole entry, its `prompt_end` tail included.
     bytes: usize,
     last_use: Instant,
     /// Recency-index identity (Q3, audit 2026-08-05): unique per insert (monotonic counter,
@@ -10294,6 +10411,10 @@ struct PrefixEntry {
     /// In-flight fanout/cache-hit leases. A pinned entry is absent from the evictable LRU
     /// index until the last participating session retires.
     pins: usize,
+    /// The prompt-end state of the prompt that published this grid entry (memra#1233,
+    /// `PromptEndTail`): an exact re-send of that prompt restores it whole instead of priming
+    /// the off-grid remainder. `None` on every entry whose prompt ended on the grid.
+    prompt_end: Option<PromptEndTail>,
     /// CPU tests cannot allocate the GDN conv/ssm planes, so this marks a test entry as
     /// carrying them, and the restore grid law's probes run in the default test set
     /// (memra#1088). It does not exist outside test builds.
@@ -10301,7 +10422,66 @@ struct PrefixEntry {
     recurrent_in_test: bool,
 }
 
+/// THE PROMPT-END TAIL of a grid entry (memra#1233).
+///
+/// memra#602 publishes the prompt-end seed at the largest GDN-grid length under an off-grid
+/// prompt end (`seed_capture_boundary`), so a growing conversation restores an on-grid entry and
+/// primes its suffix from a grid start, the cold prime's own split. The price fell on the exact
+/// re-send: a 4,860-token prompt restored 4,832 tokens and primed the 28-token remainder before
+/// its first token (that call alone takes 115 to 136 ms on Qwen3.8-27B; the whole first token
+/// of a hit restored through a tail takes 88 ms p50 on GB10;
+/// `research/hit-prompt-end-20261111/`).
+///
+/// The tail is the rest of the state the publishing prime ended in: the KV rows
+/// `[entry.pos, entry.pos + toks.len())` of every attention layer, the recurrent (GDN conv/ssm)
+/// state at the prompt end and the prompt-end logits row. A prompt equal to `entry.toks ++
+/// tail.toks` restores base plus tail as one launch and decodes its first token from the
+/// restored logits. That state is the cold prime's own (the cold prime stops at the grid
+/// boundary for the seed and primes the remainder as one call from the grid start, and a hit
+/// that re-attaches a tail primes the same call from the same restored state), so the re-send
+/// is the cold request's numeric program. Any longer prompt never reads the tail: `lookup` and
+/// the restore grid law are unchanged.
+///
+/// Memory: the recurrent state dominates (about 158 MB of a tail against 0.8 MB of KV rows for
+/// the 28 tokens on Qwen3.8-27B), so a tail is never allowed to cost an entry that served a hit
+/// (`PrefixCache::tail_victim`): a tail attaches only into free budget room and never evicts
+/// anything; an UNPROVEN tail (attached by the cold prime, no re-send yet: the never-used tails
+/// of growing conversations and one-off prompts) is dropped before any entry; a PROVEN tail (a
+/// re-send went through it or attached it) is dropped before any entry that was itself restored
+/// since its insert, and outlives only entries that never were. Tails never spill to the host
+/// tier.
+struct PromptEndTail {
+    /// The prompt tokens past the entry's key.
+    toks: Vec<u32>,
+    /// Per layer, the KV rows `[entry.pos, entry.pos + toks.len())`; `len` is the row count.
+    kv: Vec<Option<PrefixPlane>>,
+    conv: Vec<Option<CudaSlice<f32>>>,
+    ssm: Vec<Option<CudaSlice<f32>>>,
+    last_logits: Vec<f32>,
+    bytes: usize,
+    /// Attach time or the last restore through the tail.
+    last_use: Instant,
+    /// Reuse demonstrated: a restore went through this tail, or a hit that restored the entry and
+    /// primed this remainder attached it. A tail the cold prime attached is unproven until then.
+    proven: bool,
+}
+
 impl PrefixEntry {
+    /// Does `prompt` equal this entry's key followed by its tail's tokens?
+    fn tail_covers(&self, prompt: &[u32]) -> bool {
+        self.prompt_end.as_ref().is_some_and(|t| {
+            prompt.len() == self.toks.len() + t.toks.len()
+                && prompt.starts_with(&self.toks)
+                && prompt[self.toks.len()..] == t.toks[..]
+        })
+    }
+
+    /// Device bytes without the tail (what the host tier would hold).
+    fn base_bytes(&self) -> usize {
+        self.bytes
+            .saturating_sub(self.prompt_end.as_ref().map_or(0, |t| t.bytes))
+    }
+
     /// Does this entry carry recurrent state (GDN conv/ssm planes)? Such an entry restores
     /// exactly only where `prefix_restore_exact` allows.
     fn carries_recurrent(&self) -> bool {
@@ -10672,6 +10852,19 @@ struct PrefixCache {
     seed_grid_refusals: u64,
     /// Longer covers the hit site skipped under the restore grid law (`prefix_restore_exact`).
     restore_grid_refusals: u64,
+    /// Resident prompt-end tails (memra#1233): `tail_victim` scans only while one exists, so a
+    /// tail-free cache keeps the O(log E) eviction the recency index gives it.
+    n_tails: usize,
+    /// Ids of the resident entries a request restored since their insert (memra#1233): a proven
+    /// tail goes before any of these, and outranks only an entry that is not here.
+    hit_ids: std::collections::HashSet<u64>,
+    /// Prompt-end tails attached, stripped (by capacity or replaced), and restored whole
+    /// (memra#1233).
+    tail_attaches: u64,
+    tail_strips: u64,
+    tail_hits: u64,
+    /// Tails not attached for want of free budget room (a tail never evicts).
+    tail_skips: u64,
     /// stderr throttle for the restore grid law line, keyed (pool, refused length, served length).
     grid_refusals: PrefixRefusalAnnouncer<(PoolKey, usize, usize)>,
     /// stderr throttle for the two typed refusal lines; the skip counters above count every
@@ -11216,6 +11409,10 @@ impl PrefixCache {
             return None;
         }
         let dead = pool.swap_remove(i);
+        if dead.prompt_end.is_some() {
+            self.n_tails = self.n_tails.saturating_sub(1);
+        }
+        self.hit_ids.remove(&dead.id);
         self.lru.remove(&Self::lru_key(&dead));
         if let Some(moved) = pool.get(i)
             && moved.pins == 0
@@ -11241,6 +11438,112 @@ impl PrefixCache {
         self.lru.values().next().cloned()
     }
 
+    /// THE TAIL VICTIM (memra#1233, `PromptEndTail`): the tail that goes before the oldest
+    /// evictable entry, if any. An UNPROVEN tail (no re-send has used it) goes before every entry,
+    /// oldest first. A PROVEN tail goes before every entry that was itself restored since its
+    /// insert (`hit_ids`), and outranks only an entry that never was: while the oldest evictable
+    /// entry is such a never-used one (a one-off cold prompt's seed), the proven tails stay and
+    /// that entry goes, as plain LRU takes it anyway. So a tail never costs an entry that served a
+    /// hit: a proven tail that outlived older, re-sent entries cost a growing conversation's
+    /// cohort an entry at a small budget (`tools/prefix-newest-turn-fits-gate.py`, day-16 shape),
+    /// and strict tails-first kept 38 of 90 hits on a tail where this rule keeps the proven tails
+    /// of the hot prompts through the cold misses' entries (GB10, frozen mixed cell). The entries'
+    /// own order is plain LRU in every case. A tail's recency is its attach time or last restore.
+    fn tail_victim(&self) -> Option<(PoolKey, usize)> {
+        if self.n_tails == 0 {
+            return None;
+        }
+        let (proven, _, slot) = self
+            .lru
+            .values()
+            .filter_map(|slot| {
+                let t = self
+                    .entries
+                    .get(&slot.0)?
+                    .get(slot.1)?
+                    .prompt_end
+                    .as_ref()?;
+                Some((t.proven, t.last_use, slot))
+            })
+            .min_by_key(|t| (t.0, t.1))?;
+        if proven {
+            let oldest = self.lru.values().next()?;
+            let oldest_was_hit = self
+                .entries
+                .get(&oldest.0)
+                .and_then(|pool| pool.get(oldest.1))
+                .is_some_and(|e| self.hit_ids.contains(&e.id));
+            if !oldest_was_hit {
+                return None;
+            }
+        }
+        Some(slot.clone())
+    }
+
+    /// Drop the tail `tail_victim` names; the device bytes it freed (0 when there is none).
+    fn strip_tail_victim(&mut self) -> usize {
+        let Some((key, i)) = self.tail_victim() else {
+            return 0;
+        };
+        self.strip_tail(&key, i, "LRU")
+    }
+
+    /// Drop pool[i]'s tail (the entry stays); the device bytes freed.
+    fn strip_tail(&mut self, key: &PoolKey, i: usize, why: &str) -> usize {
+        let Some(e) = self.entries.get_mut(key).and_then(|p| p.get_mut(i)) else {
+            return 0;
+        };
+        let Some(t) = e.prompt_end.take() else {
+            return 0;
+        };
+        self.n_tails = self.n_tails.saturating_sub(1);
+        e.bytes = e.bytes.saturating_sub(t.bytes);
+        self.total_bytes = self.total_bytes.saturating_sub(t.bytes);
+        self.tail_strips += 1;
+        eprintln!(
+            "[prefix-cache] evict tail ({why}): {} prompt-end tokens past the {}-token entry, \
+             {:.1}MB (model {}{})",
+            t.toks.len(),
+            e.toks.len(),
+            t.bytes as f64 / 1e6,
+            key.0,
+            ns_suffix(&key.1)
+        );
+        t.bytes
+    }
+
+    /// Attach a prompt-end tail to the entry keyed `base` (replacing any other tail it holds).
+    /// The caller checked that `tail.bytes` fit the free budget while it held a lease on the
+    /// entry (`maybe_prefix_tail`). Returns false (the tail drops) when the entry is gone.
+    fn attach_tail(&mut self, key: &PoolKey, base: &[u32], tail: PromptEndTail) -> bool {
+        let Some(i) = self.key_index(key, base) else {
+            return false;
+        };
+        let e = &mut self.entries.get_mut(key).unwrap()[i];
+        let old = match e.prompt_end.take() {
+            Some(t) => t.bytes,
+            None => {
+                self.n_tails += 1;
+                0
+            }
+        };
+        e.bytes = e.bytes.saturating_sub(old) + tail.bytes;
+        self.total_bytes = self.total_bytes.saturating_sub(old) + tail.bytes;
+        self.tail_attaches += 1;
+        eprintln!(
+            "[prefix-cache] insert tail: {} prompt-end tokens past the {}-token entry, {:.1}MB \
+             (resident {:.1}MB, model {}{})",
+            tail.toks.len(),
+            e.toks.len(),
+            tail.bytes as f64 / 1e6,
+            self.total_bytes as f64 / 1e6,
+            key.0,
+            ns_suffix(&key.1)
+        );
+        e.prompt_end = Some(tail);
+        true
+    }
+
     /// Env-budgeted insert for unit tests (production inserts route through `insert_demoting`).
     #[cfg(test)]
     fn insert(&mut self, key: &PoolKey, e: PrefixEntry, why: &str) {
@@ -11259,7 +11562,7 @@ impl PrefixCache {
         why: &str,
         engine: &Engine,
         host: &mut HostPrefixCache,
-    ) {
+    ) -> Option<u64> {
         // Floor + flex grant (lane/kv-flex-20260831); with MEMRA_KV_FLEX off the grant is 0 by
         // construction and this is exactly prefix_cache_budget_bytes(). On unified memory the
         // live-free guard clamps it (prefix_insert_budget).
@@ -11269,14 +11572,14 @@ impl PrefixCache {
             self.total_bytes,
             e.bytes,
         );
-        let _ = self.insert_with_budget_pins(
+        self.insert_with_budget_pins(
             key,
             e,
             why,
             budget,
             0,
             Some(&mut |dead| host_demote_prefix_entry(engine, host, dead)),
-        );
+        )
     }
 
     /// Insert a prefix already serving `pins` in-flight sessions, with the host-tier demote
@@ -11350,7 +11653,10 @@ impl PrefixCache {
         }
         if let Some(i) = self.key_index(key, &e.toks) {
             return if initial_pins > 0 {
-                self.pin_n(key, i, initial_pins).map(|pin| pin.id)
+                // Fanout followers restore from this entry: it served a hit (`hit_ids`).
+                let id = self.pin_n(key, i, initial_pins).map(|pin| pin.id);
+                self.hit_ids.extend(id);
+                id
             } else {
                 None
             };
@@ -11392,6 +11698,10 @@ impl PrefixCache {
         e.id = self.next_id;
         self.next_id += 1;
         e.pins = initial_pins;
+        if initial_pins > 0 {
+            // Published for in-flight fanout followers: it serves hits from its insert on.
+            self.hit_ids.insert(e.id);
+        }
         let inserted_id = e.id;
         let lk = Self::lru_key(&e);
         let idx = {
@@ -11403,6 +11713,10 @@ impl PrefixCache {
             self.lru.insert(lk, (key.clone(), idx));
         }
         while self.total_bytes > budget {
+            // The tail that goes before the oldest entry, if any (`tail_victim`).
+            if self.strip_tail_victim() > 0 {
+                continue;
+            }
             // Never the entry just inserted: it is the global newest (or leased), and the
             // preflight above guarantees an older unleased victim exists while over budget.
             let Some((k, i)) = self.oldest_evictable() else {
@@ -11464,6 +11778,9 @@ impl PrefixCache {
             return false;
         }
         while self.total_bytes > target {
+            if self.strip_tail_victim() > 0 {
+                continue;
+            }
             let Some((key, i)) = self.oldest_evictable() else {
                 return false;
             };
@@ -11502,6 +11819,11 @@ impl PrefixCache {
         let mut n = 0usize;
         let mut freed = 0usize;
         while self.total_bytes > target {
+            let tail = self.strip_tail_victim();
+            if tail > 0 {
+                freed += tail;
+                continue;
+            }
             let Some((key, i)) = self.oldest_evictable() else {
                 break;
             };
@@ -12497,15 +12819,16 @@ fn host_entry_from_device(
     if sizes
         .iter()
         .try_fold(dead.last_h.len() * 4, |n, b| n.checked_add(*b))
-        != Some(dead.bytes)
+        != Some(dead.base_bytes())
     {
         return Err(format!(
             "pinned arena admission refused: host byte census does not match snapshot accounting {}",
-            dead.bytes
+            dead.base_bytes()
         ));
     }
     sizes.extend([dead.last_logits.len() * 4, dead.last_h.len() * 4]);
-    let bytes = host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits)?;
+    // A prompt-end tail never spills (memra#1233): the host image is the grid entry alone.
+    let bytes = host_image_bytes(dead.base_bytes(), &dead.toks, &dead.last_logits)?;
     let mut planes = host.reserve_image(&dead.pool_key, &dead.toks, bytes, &sizes, true)?;
     let glm = if is_glm {
         Some(host_glm::HostGlmState::down(engine, dead, &mut planes)?)
@@ -12591,7 +12914,8 @@ fn host_entry_from_device(
         draft,
         dspark_draft,
         last_h: HostF32::from_slice(&dead.last_h, &mut planes)?,
-        device_bytes: dead.bytes,
+        // The grid entry alone: a promoted entry carries no tail (memra#1233).
+        device_bytes: dead.base_bytes(),
         bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by HostPrefixCache::insert
@@ -12613,10 +12937,10 @@ fn host_entry_from_device(
             + entry.dspark_draft.as_ref().map_or(0, |d| {
                 d.layers.iter().map(|(k, v)| (k.len() + v.len()) * 4).sum()
             });
-        if bytes != dead.bytes {
+        if bytes != dead.base_bytes() {
             return Err(format!(
                 "GLM host byte census {bytes} != device snapshot accounting {}",
-                dead.bytes
+                dead.base_bytes()
             ));
         }
     }
@@ -12932,7 +13256,7 @@ fn host_demote_prefix_ref(
         );
         return HostDemoteOutcome::Failed;
     }
-    let host_bytes = match host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits) {
+    let host_bytes = match host_image_bytes(dead.base_bytes(), &dead.toks, &dead.last_logits) {
         Ok(bytes) => bytes,
         Err(err) => {
             eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
@@ -13342,6 +13666,7 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
         last_use: Instant::now(),
         id: 0, // recency identity assigned by PrefixCache::insert
         pins: 0,
+        prompt_end: None,
     };
     Ok(entry)
 }
@@ -15161,6 +15486,7 @@ fn prefix_snapshot(
         last_use: Instant::now(),
         id: 0, // recency identity assigned by PrefixCache::insert
         pins: 0,
+        prompt_end: None,
     })
 }
 
@@ -15383,6 +15709,244 @@ fn prefix_restore_validate(
     Ok(())
 }
 
+/// Device bytes of a prompt-end tail captured from `cache` past a `base`-token entry: the KV rows
+/// `[base, cache.pos)` of every executed attention layer and the whole recurrent state.
+fn prefix_tail_bytes(cache: &Cache, base: usize) -> usize {
+    let rows = cache.pos.saturating_sub(base);
+    let mut bytes = 0usize;
+    for il in 0..cache.kv.len() {
+        if let Some(kv) = &cache.kv[il]
+            && !(kv.len == 0 && cache.pos > 0)
+        {
+            bytes = bytes.saturating_add(rows.saturating_mul(kv.k_tok_bytes + kv.v_tok_bytes));
+        }
+        if let Some(r) = &cache.recur[il] {
+            bytes = bytes.saturating_add((r.conv_state.len() + r.ssm_state.len()) * 4);
+        }
+    }
+    bytes
+}
+
+/// Capture the PROMPT-END TAIL (memra#1233, `PromptEndTail`) of a plain session whose cache sits
+/// at its prompt end, past the `base`-token grid entry it published or restored: the KV rows
+/// `[base, cache.pos)`, the recurrent state and the logits, as one copy launch. Plain flat-history
+/// caches only (no SWA ring, latent planes or TP shards: their entries have no tail).
+fn prefix_tail_snapshot(
+    engine: &Engine,
+    cache: &Cache,
+    base: usize,
+    toks: &[u32],
+    last_logits: &[f32],
+    proven: bool,
+) -> Result<PromptEndTail, Box<dyn std::error::Error>> {
+    use cudarc::driver::{DevicePtr, DevicePtrMut};
+    if cache.has_swa_ring()
+        || cache.latent.iter().any(Option::is_some)
+        || cache.glm5_tp_recur.iter().any(Option::is_some)
+        || cache.glm5_tp_latent_peer.iter().any(Option::is_some)
+    {
+        return Err("prompt-end tails cover flat-history plain caches only".into());
+    }
+    if base == 0 || base + toks.len() != cache.pos || toks.is_empty() {
+        return Err(format!(
+            "prompt-end tail of {} tokens past {base} != cache pos {}",
+            toks.len(),
+            cache.pos
+        )
+        .into());
+    }
+    if last_logits.is_empty() {
+        return Err("prompt-end tail has no logits".into());
+    }
+    let rows = toks.len();
+    let n = cache.kv.len();
+    let mut kv = Vec::with_capacity(n);
+    let mut conv = Vec::with_capacity(n);
+    let mut ssm = Vec::with_capacity(n);
+    let mut bytes = 0usize;
+    for il in 0..n {
+        match &cache.kv[il] {
+            // The allocated-but-unexecuted NextN/MTP layer: absent, as in `prefix_snapshot`.
+            Some(l) if l.len == 0 && cache.pos > 0 => kv.push(None),
+            Some(l) => {
+                if l.len != cache.pos {
+                    return Err(format!(
+                        "prompt-end tail layer {il} len {} != cache pos {}",
+                        l.len, cache.pos
+                    )
+                    .into());
+                }
+                let k = prefix_plane_alloc(engine, rows * l.k_tok_bytes)?;
+                let v = prefix_plane_alloc(engine, rows * l.v_tok_bytes)?;
+                bytes += rows * (l.k_tok_bytes + l.v_tok_bytes);
+                kv.push(Some(PrefixPlane {
+                    k,
+                    v,
+                    len: rows,
+                    k_tok_bytes: l.k_tok_bytes,
+                    v_tok_bytes: l.v_tok_bytes,
+                }));
+            }
+            None => kv.push(None),
+        }
+        match &cache.recur[il] {
+            Some(r) => {
+                conv.push(Some(engine.alloc_f32_uninit(r.conv_state.len())?));
+                ssm.push(Some(engine.alloc_f32_uninit(r.ssm_state.len())?));
+                bytes += (r.conv_state.len() + r.ssm_state.len()) * 4;
+            }
+            None => {
+                conv.push(None);
+                ssm.push(None);
+            }
+        }
+    }
+    let st = engine.stream();
+    let mut items: Vec<(u64, u64, u64)> = Vec::new();
+    let mut guards = Vec::new();
+    for (il, slot) in kv.iter_mut().enumerate() {
+        let (Some(dst), Some(src)) = (slot.as_mut(), cache.kv[il].as_ref()) else {
+            continue;
+        };
+        for (to, from, tok_bytes) in [
+            (&mut dst.k, &*src.k, dst.k_tok_bytes),
+            (&mut dst.v, &*src.v, dst.v_tok_bytes),
+        ] {
+            let (off, len) = (base * tok_bytes, rows * tok_bytes);
+            if len == 0 {
+                continue;
+            }
+            if from.len() < off + len || to.len() < len {
+                return Err(format!(
+                    "prompt-end tail layer {il}: rows [{off},{}) of {} bytes into {}",
+                    off + len,
+                    from.len(),
+                    to.len()
+                )
+                .into());
+            }
+            let (s, gs) = from.device_ptr(&st);
+            let (d, gd) = to.device_ptr_mut(&st);
+            items.push((s + off as u64, d, len as u64));
+            guards.push(gs);
+            guards.push(gd);
+        }
+    }
+    for (il, (c, s)) in conv.iter_mut().zip(ssm.iter_mut()).enumerate() {
+        let (Some(c), Some(s), Some(r)) = (c.as_mut(), s.as_mut(), cache.recur[il].as_ref()) else {
+            continue;
+        };
+        for (to, from) in [(c, &r.conv_state), (s, &r.ssm_state)] {
+            let (sp, gs) = from.device_ptr(&st);
+            let (dp, gd) = to.device_ptr_mut(&st);
+            items.push((sp, dp, (from.len() * 4) as u64));
+            guards.push(gs);
+            guards.push(gd);
+        }
+    }
+    engine.copy_batch_items_u8(&items, &[])?;
+    drop(guards);
+    Ok(PromptEndTail {
+        toks: toks.to_vec(),
+        kv,
+        conv,
+        ssm,
+        last_logits: last_logits.to_vec(),
+        bytes,
+        last_use: Instant::now(),
+        proven,
+    })
+}
+
+/// PROMPT-END TAIL capture at prefill-done (memra#1233; the law at `PromptEndTail`). A plain
+/// session armed with `tail_base = (b, id)` (it published the grid entry `id` at `b` under its
+/// off-grid prompt end, or restored that entry and primed the remainder) attaches its prompt-end
+/// state to that entry, so an exact re-send restores the whole prompt. Only the entry the
+/// session's own state derives from: an entry of the same key published by another session
+/// (concurrent identical prompts, a dedupe-refused seed) has a different `id` and is left alone,
+/// because its rows and this session's tail need not come from one numeric program. Never fails
+/// the request: a refused room preflight or a failed copy prints and serves on.
+fn maybe_prefix_tail(engine: &Engine, px: &mut PrefixCache, s: &mut Session) {
+    let Some((base, id)) = s.tail_base.take() else {
+        return;
+    };
+    // A covered hit (it restored the base and primed the remainder) demonstrated a re-send.
+    let proven = s.n_cached == base;
+    if memra_engine::pp::pp_host_bounce_active()
+        || s.prompt_tok_decode_step
+        || s.vision.is_some()
+        || !s.generated.is_empty()
+        || s.last_logits.is_empty()
+        || base == 0
+        || base >= s.fed.len()
+    {
+        return;
+    }
+    let Some(cache) = s.cache.as_ref() else {
+        return;
+    };
+    if cache.pos != s.fed.len() {
+        return;
+    }
+    let key = s.pool_key();
+    let pin = PrefixPin {
+        key: key.clone(),
+        id,
+    };
+    let Some(i) = px.id_index(&pin) else {
+        return; // the entry was evicted since the session published or restored it
+    };
+    {
+        let e = &px.entries[&key][i];
+        if e.toks[..] != s.fed[..base]
+            || e.pos != base
+            || e.tp.is_some()
+            || e.draft.is_some()
+            || e.dspark_draft.is_some()
+            || e.latent.iter().any(Option::is_some)
+            || e.tail_covers(&s.fed)
+        {
+            return;
+        }
+    }
+    // Lease the base across the snapshot, so nothing can take it meanwhile.
+    let Some(lease) = px.pin(&key, i) else {
+        return;
+    };
+    // A tail takes free budget room only: it never evicts an entry or another entry's tail. A
+    // tail of another prompt on this entry is replaced (the newest prompt end wins), and only
+    // when the new one fits in the room the old one gives back.
+    let bytes = prefix_tail_bytes(cache, base);
+    let old = px.entries[&key][i]
+        .prompt_end
+        .as_ref()
+        .map_or(0, |t| t.bytes);
+    let budget = prefix_insert_budget(engine, kv_flex_effective_budget(), px.total_bytes, 0);
+    if px.total_bytes.saturating_sub(old).saturating_add(bytes) <= budget {
+        if old > 0 {
+            px.strip_tail(&key, i, "replaced");
+        }
+        match prefix_tail_snapshot(engine, cache, base, &s.fed[base..], &s.last_logits, proven) {
+            Ok(tail) => {
+                px.attach_tail(&key, &s.fed[..base], tail);
+            }
+            Err(err) => eprintln!("[prefix-cache] tail snapshot failed ({err}); not cached"),
+        }
+    } else {
+        px.tail_skips += 1;
+        eprintln!(
+            "[prefix-cache] tail skipped: {:.1}MB of prompt-end state past the {base}-token entry \
+             does not fit the free budget ({:.1}MB of {:.1}MB resident, model {}{})",
+            bytes as f64 / 1e6,
+            px.total_bytes as f64 / 1e6,
+            budget as f64 / 1e6,
+            key.0,
+            ns_suffix(&key.1)
+        );
+    }
+    px.unpin(&lease);
+}
+
 /// Design B1: a restore's KV copies (`[0, e.pos * tok_bytes)` of each plane), its length sets and
 /// its recurrent copies as ONE launch. A range too long for its source or destination fails the
 /// request with a named error before any device write. Guards as in [`prefix_snapshot_batch`].
@@ -15390,28 +15954,54 @@ fn prefix_restore_batch(
     engine: &Engine,
     cache: &mut Cache,
     e: &PrefixEntry,
+    tail: Option<&PromptEndTail>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use cudarc::driver::{DevicePtr, DevicePtrMut};
     let st = engine.stream();
     let restore_len = e.pos;
-    let len_value = i32::try_from(restore_len).map_err(|_| "prefix restore length exceeds i32")?;
+    let tail_rows = tail.map_or(0, |t| t.toks.len());
+    let len_value =
+        i32::try_from(restore_len + tail_rows).map_err(|_| "prefix restore length exceeds i32")?;
+    // (destination view, destination byte offset, source plane, bytes)
     let mut kv_views = Vec::new();
     let mut lens = Vec::new();
     for (il, slot) in cache.kv.iter_mut().enumerate() {
         let (Some(dst), Some(src)) = (slot.as_mut(), e.kv[il].as_ref()) else {
             continue;
         };
-        let kb = restore_len * dst.k_tok_bytes;
-        let vb = restore_len * dst.v_tok_bytes;
-        for (plane, from, n, what) in [(&mut dst.k, &src.k, kb, "K"), (&mut dst.v, &src.v, vb, "V")]
-        {
+        let tail_src = match tail {
+            Some(t) => Some(t.kv[il].as_ref().ok_or_else(|| {
+                format!("prefix restore layer {il}: the prompt-end tail has no rows")
+            })?),
+            None => None,
+        };
+        let (kt, vt) = (dst.k_tok_bytes, dst.v_tok_bytes);
+        let cap_k = dst.k.capacity_bytes();
+        let cap_v = dst.v.capacity_bytes();
+        let mut parts: Vec<(bool, usize, &CudaSlice<u8>, usize, &'static str)> = vec![
+            (true, 0, &src.k, restore_len * kt, "K"),
+            (false, 0, &src.v, restore_len * vt, "V"),
+        ];
+        if let Some(ts) = tail_src {
+            if ts.len != tail_rows || ts.k_tok_bytes != kt || ts.v_tok_bytes != vt {
+                return Err(format!(
+                    "prefix restore layer {il}: tail rows {}/{}B/{}B != {tail_rows}/{kt}B/{vt}B",
+                    ts.len, ts.k_tok_bytes, ts.v_tok_bytes
+                )
+                .into());
+            }
+            parts.push((true, restore_len * kt, &ts.k, tail_rows * kt, "tail K"));
+            parts.push((false, restore_len * vt, &ts.v, tail_rows * vt, "tail V"));
+        }
+        for &(is_k, off, from, n, what) in &parts {
             if n == 0 {
                 continue;
             }
-            let cap = plane.capacity_bytes();
-            if n > cap {
+            let cap = if is_k { cap_k } else { cap_v };
+            if off + n > cap {
                 return Err(format!(
-                    "prefix restore layer {il} {what}: copy_u8_into dst range [0,{n}) exceeds capacity {cap}"
+                    "prefix restore layer {il} {what}: copy_u8_into dst range [{off},{}) exceeds capacity {cap}",
+                    off + n
                 )
                 .into());
             }
@@ -15422,15 +16012,35 @@ fn prefix_restore_batch(
                 )
                 .into());
             }
-            kv_views.push((plane.as_view_mut(), from, n));
         }
+        let (k_view, v_view) = (dst.k.as_view_mut(), dst.v.as_view_mut());
+        kv_views.push((
+            k_view,
+            parts
+                .iter()
+                .filter(|p| p.0)
+                .map(|p| (p.1, p.2, p.3))
+                .collect::<Vec<_>>(),
+        ));
+        kv_views.push((
+            v_view,
+            parts
+                .iter()
+                .filter(|p| !p.0)
+                .map(|p| (p.1, p.2, p.3))
+                .collect::<Vec<_>>(),
+        ));
         lens.push(&mut dst.len_d);
     }
     let mut recur = Vec::new();
     for (il, slot) in cache.recur.iter_mut().enumerate() {
-        let (Some(dst), Some(c), Some(s)) =
-            (slot.as_mut(), e.conv[il].as_ref(), e.ssm[il].as_ref())
-        else {
+        // A tail restores the recurrent state the prompt end holds; the base's state at the
+        // grid boundary is not copied under it.
+        let (conv_src, ssm_src) = match tail {
+            Some(t) => (t.conv[il].as_ref(), t.ssm[il].as_ref()),
+            None => (e.conv[il].as_ref(), e.ssm[il].as_ref()),
+        };
+        let (Some(dst), Some(c), Some(s)) = (slot.as_mut(), conv_src, ssm_src) else {
             continue;
         };
         for (to, from, what) in [
@@ -15451,12 +16061,17 @@ fn prefix_restore_batch(
     let mut items: Vec<(u64, u64, u64)> = Vec::new();
     let mut sets: Vec<(u64, i32)> = Vec::new();
     let mut guards = Vec::new();
-    for (view, from, n) in kv_views.iter_mut() {
-        let (s, gs) = from.device_ptr(&st);
+    for (view, parts) in kv_views.iter_mut() {
         let (d, gd) = view.device_ptr_mut(&st);
-        items.push((s, d, *n as u64));
-        guards.push(gs);
         guards.push(gd);
+        for &(off, from, n) in parts.iter() {
+            if n == 0 {
+                continue;
+            }
+            let (s, gs) = from.device_ptr(&st);
+            items.push((s, d + off as u64, n as u64));
+            guards.push(gs);
+        }
     }
     for (to, from) in recur.iter_mut() {
         let (s, gs) = from.device_ptr(&st);
@@ -15491,7 +16106,7 @@ fn prefix_restore(
     let max_ctx = cache.max_ctx;
     // Design B1 (DAY59 section 7): the KV copies, the length sets and the recurrent copies in one
     // launch, checked before any device write.
-    prefix_restore_batch(engine, cache, e)?;
+    prefix_restore_batch(engine, cache, e, None)?;
     for il in 0..cache.kv.len() {
         if let (Some(dst), Some(_)) = (cache.kv[il].as_mut(), &e.kv[il]) {
             dst.len = e.pos;
@@ -15510,6 +16125,66 @@ fn prefix_restore(
     }
     cache.pos = e.pos;
     Ok(())
+}
+
+/// WHOLE-PROMPT RESTORE THROUGH THE PROMPT-END TAIL (memra#1233, `PromptEndTail`): the entry's KV
+/// rows `[0, e.pos)`, the tail's rows `[e.pos, prompt end)`, the tail's recurrent state and the
+/// lengths, as one launch after every check `prefix_restore` makes plus the tail's own. Only for
+/// a prompt the tail covers exactly (`PrefixEntry::tail_covers`). The caller samples the first
+/// token from the tail's logits. Returns the restored length (the prompt length).
+fn prefix_restore_through_tail(
+    engine: &Engine,
+    cache: &mut Cache,
+    e: &PrefixEntry,
+    expected_key: &PoolKey,
+    model: Option<&HybridModel>,
+    prompt: &[u32],
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let t = e
+        .prompt_end
+        .as_ref()
+        .filter(|_| e.tail_covers(prompt))
+        .ok_or("no prompt-end tail covers this prompt")?;
+    prefix_restore_validate(cache, e, expected_key, model)?;
+    if e.tp.is_some() || e.latent.iter().any(Option::is_some) {
+        return Err("a prompt-end tail restores flat-history plain entries only".into());
+    }
+    let end = e.pos + t.toks.len();
+    if end > cache.max_ctx {
+        return Err(format!(
+            "prompt-end tail end {end} exceeds cache capacity {}",
+            cache.max_ctx
+        )
+        .into());
+    }
+    if t.last_logits.is_empty() {
+        return Err("prompt-end tail has no logits".into());
+    }
+    if t.kv.len() != cache.kv.len()
+        || t.conv.len() != cache.recur.len()
+        || t.ssm.len() != cache.recur.len()
+    {
+        return Err("prompt-end tail layer counts differ from the cache".into());
+    }
+    for il in 0..cache.kv.len() {
+        if e.kv[il].is_some() != t.kv[il].is_some() {
+            return Err(format!("prompt-end tail layer {il} kind mismatch").into());
+        }
+        match (cache.recur[il].as_ref(), &t.conv[il], &t.ssm[il]) {
+            (Some(dst), Some(c), Some(s))
+                if c.len() == dst.conv_state.len() && s.len() == dst.ssm_state.len() => {}
+            (None, None, None) => {}
+            _ => return Err(format!("prompt-end tail recur {il} mismatch").into()),
+        }
+    }
+    prefix_restore_batch(engine, cache, e, Some(t))?;
+    for il in 0..cache.kv.len() {
+        if let (Some(dst), Some(_)) = (cache.kv[il].as_mut(), &e.kv[il]) {
+            dst.len = end;
+        }
+    }
+    cache.pos = end;
+    Ok(end)
 }
 
 fn digest_usize(hasher: &mut Sha256, value: usize) {
@@ -16120,9 +16795,10 @@ fn prefix_insert_from_spec_boundary(
         last_use: Instant::now(),
         id: 0, // recency identity assigned by PrefixCache::insert
         pins: 0,
+        prompt_end: None,
     };
     trace_prefix_entry_state(engine, &e, e.pos, "spec-snapshot", why);
-    px.insert_demoting(pool_key, e, why, engine, hpx);
+    let _ = px.insert_demoting(pool_key, e, why, engine, hpx);
 }
 
 /// Device bytes allocated by a plain snapshot, including both TP ranks. Use live lengths,
@@ -16179,19 +16855,17 @@ fn prefix_insert_from_session(
     s: &Session,
     why: &str,
     model: Option<&HybridModel>,
-) {
+) -> Option<u64> {
     if memra_engine::pp::pp_host_bounce_active() {
-        return;
+        return None;
     }
-    let Some(cache) = s.cache.as_ref() else {
-        return;
-    };
+    let cache = s.cache.as_ref()?;
     if s.last_logits.is_empty() {
-        return;
+        return None;
     }
     let pool_key = s.pool_key();
     if px.has_key(&pool_key, &s.fed) {
-        return;
+        return None;
     }
     let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead);
     // The snapshot is not allocated yet: on unified memory the guard reserves its room from the
@@ -16207,14 +16881,17 @@ fn prefix_insert_from_session(
     ) {
         // The preflight printed its typed `[prefix-cache] insert refused:` line in bytes
         // (memra#523 item 1: never a silent cold turn); the request continues unpublished.
-        return;
+        return None;
     }
     match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits, model) {
         Ok(e) => {
             trace_prefix_entry_state(engine, &e, e.pos, "snapshot", why);
-            px.insert_demoting(&pool_key, e, why, engine, hpx);
+            px.insert_demoting(&pool_key, e, why, engine, hpx)
         }
-        Err(err) => eprintln!("[prefix-cache] snapshot failed ({err}); prefix not cached"),
+        Err(err) => {
+            eprintln!("[prefix-cache] snapshot failed ({err}); prefix not cached");
+            None
+        }
     }
 }
 
@@ -16362,7 +17039,14 @@ fn maybe_prefix_seed(
     if !prefix_seed_deepens(px.deepest_covering(&key, &s.fed), s.fed.len()) {
         return; // an entry of (near-)equal depth already serves this prefix class
     }
-    prefix_insert_from_session(engine, px, hpx, s, "seed", model);
+    let id = prefix_insert_from_session(engine, px, hpx, s, "seed", model);
+    // PROMPT-END TAIL BASE (memra#1233): a seed published at a grid boundary under the prompt end
+    // takes the prompt-end state at prefill-done (`maybe_prefix_tail`).
+    if let Some(id) = id
+        && !s.prefill_queue.is_empty()
+    {
+        s.tail_base = Some((s.fed.len(), id));
+    }
 }
 
 /// Minimum extra depth (tokens) a seed must add over the deepest covering entry before it is
@@ -17337,6 +18021,11 @@ struct Session {
     /// the restored entry, or cleared with `snapshot_at`). Like `ckpt_at`, a capture boundary
     /// bounds the take and never vetoes the solo prefill widening (`solo_widen_fresh`).
     seed_at: Option<usize>,
+    /// PROMPT-END TAIL BASE (memra#1233, `maybe_prefix_tail`): `(length, entry id)` of the grid
+    /// entry this session's own state derives from, below an off-grid prompt end: the entry it
+    /// restored when the seed is covered, or the seed it published at `seed_at` (set when that
+    /// insert lands). At prefill-done the prompt-end state attaches to that entry.
+    tail_base: Option<(usize, u64)>,
     /// Refcounted lease on the prefix entry this request resumed from (or helped create
     /// through in-batch fanout). Released by the centralized retire sweep on every exit.
     prefix_pin: Option<PrefixPin>,
@@ -19335,6 +20024,8 @@ pub fn run(
     let mut interactive_refill_until: Option<Instant> = None;
     // When the last tick reached phase (b) (`formation_hold`, memra#1223).
     let mut last_phase_b: Option<Instant> = None;
+    // The hit-suffix fence's starvation bound (memra#1233, `hit_suffix_fence_yields`).
+    let mut fence_deferred = Duration::ZERO;
     let mut step_stats = StepStats::new(
         std::env::var("MEMRA_LANE_WINDOW_S")
             .ok()
@@ -23220,6 +23911,17 @@ pub fn run(
             if !refill_grace {
                 interactive_refill_until = None;
             }
+            // HIT-SUFFIX FENCE (memra#1233 b): a restored hit whose remaining suffix completes in
+            // one prime call primes this tick ahead of every cold chunk, so its first token is
+            // that call plus one decode, never a cold 1,024-token chunk on top. Only rows whose
+            // suffix `prefill_tick` primes in one call: a resumed row (`n_cached > 0`: a prefix-cache
+            // hit, whose source lease may already be released, or a pool or affinity resume) on a
+            // model that primes a carried suffix (an eager-only model feeds it one `decode_step`
+            // per tick, and would hold cold prefill back for the whole suffix).
+            // A whole-prompt hit decodes first: on a tick where one waits for its first token
+            // (`cached_hit_waiting_for_ttft`) the suffixes stay queued, so that hit's first token
+            // is one decode and never a peer's suffix call (11 of 17 whole hits waited 126 to 278
+            // ms behind one or two of them); the suffixes prime on the next tick.
             let cached_hit_waiting_for_ttft = active.iter().enumerate().any(|(i, s)| {
                 !finished.contains(&i)
                     && s.lane == crate::lanes::Lane::Interactive
@@ -23230,12 +23932,59 @@ pub fn run(
                         s.generated.len(),
                     )
             });
+            // THE BOUND: the fence stands down for a tick once its consecutive deferred ticks
+            // add up to the time of one prefill chunk at the measured rate, and while the
+            // deadline-aware order is on (`hit_suffix_fence_yields`).
+            let fence_yields = cached_hit_waiting_for_ttft
+                || prefill_deadline_mode
+                || hit_suffix_fence_yields(
+                    fence_deferred,
+                    hit_suffix_fence_allowance(prefill_rate_tok_s, budgets[0]),
+                );
+            let hit_suffix_rows: std::collections::HashSet<usize> = active
+                .iter()
+                .enumerate()
+                .filter(|(i, s)| {
+                    !fence_yields
+                        && !finished.contains(i)
+                        && !confidence_trace_enabled()
+                        && s.glm5_plain_prime.is_none()
+                        && !eager_only.contains(&s.model)
+                        && s.lane == crate::lanes::Lane::Interactive
+                        && s.choice.is_none()
+                        && s.vision.is_none()
+                        && s.spec.is_none()
+                        && s.gspec_k == 0
+                        && !s.dspark_on
+                        && !s.glm5_on
+                        && hit_suffix_fits_one_call(
+                            s.n_cached,
+                            s.prefill_done,
+                            s.generated.len(),
+                            s.fed.len(),
+                            s.prefill_queue.len(),
+                            budgets[0],
+                            [s.snapshot_at, s.ckpt_at, s.seed_at],
+                        )
+                })
+                .map(|(i, _)| i)
+                .collect();
             // SOLD mixed-cache shape, box1 N=5: five full-cache hits arrived while the worker
             // was inside a cold prime chunk and inherited 269-299ms TTFT (21.6ms envelope).
             // A refill grace covers the channel handoff after a peer retires; the first-token
             // fence then lets an admitted hit decode before any unrelated cold prefill. Cold-only
             // ticks and all later hit tokens retain the established prefill/decode ordering.
-            let defer_interactive_prefill = refill_grace || cached_hit_waiting_for_ttft;
+            let defer_interactive_prefill =
+                refill_grace || cached_hit_waiting_for_ttft || !hit_suffix_rows.is_empty();
+            // Interactive prefill the hit-suffix fence alone holds back this tick.
+            let fence_holds_prefill = !hit_suffix_rows.is_empty()
+                && active.iter().enumerate().any(|(i, s)| {
+                    !finished.contains(&i)
+                        && !hit_suffix_rows.contains(&i)
+                        && s.lane == crate::lanes::Lane::Interactive
+                        && !s.prefill_done
+                        && !s.prefill_queue.is_empty()
+                });
             let dedup_advanced = if defer_interactive_prefill {
                 Default::default()
             } else {
@@ -23584,6 +24333,7 @@ pub fn run(
                                         s,
                                         loaded.get(&s.model).map(|l| &l.model),
                                     );
+                                    maybe_prefix_tail(&engine, &mut px, s);
                                 }
                                 batch_advanced.insert(i);
                             }
@@ -23639,7 +24389,8 @@ pub fn run(
             #[allow(clippy::needless_range_loop)]
             // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for i in 0..active.len() {
-                if defer_interactive_prefill {
+                // Deferred ticks still prime the fenced hits' suffixes (memra#1233 b).
+                if defer_interactive_prefill && !hit_suffix_rows.contains(&i) {
                     continue;
                 }
                 if finished.contains(&i) {
@@ -23780,6 +24531,13 @@ pub fn run(
                 .map(|started| started.elapsed().as_secs_f32() * 1000.0)
                 .unwrap_or(0.0);
             let primed_this_tick = prefill_single_tokens + prefill_batch_tokens;
+            // The hit-suffix fence's account (`hit_suffix_fence_yields`): the time its consecutive
+            // deferred ticks took from waiting prefill; an undeferred tick clears it.
+            if fence_holds_prefill {
+                fence_deferred += phase_b_at.elapsed();
+            } else if !defer_interactive_prefill {
+                fence_deferred = Duration::ZERO;
+            }
             prefill_rate_mark =
                 (primed_this_tick > 0).then_some((t_prefill_phase, primed_this_tick));
             // Before the decode step allocates (`yield_prefix_reserve!` above).
@@ -25174,6 +25932,10 @@ pub fn run(
             m.prefix_skips_pinned = px.skips_pinned;
             m.prefix_seed_grid_refusals = px.seed_grid_refusals;
             m.prefix_restore_grid_refusals = px.restore_grid_refusals;
+            m.prefix_tail_attaches = px.tail_attaches;
+            m.prefix_tail_strips = px.tail_strips;
+            m.prefix_tail_hits = px.tail_hits;
+            m.prefix_tail_skips = px.tail_skips;
             m.prefix_hit_tokens = px.hit_tokens;
             m.prefix_host_entries = hpx.n_entries() as u64;
             m.prefix_host_bytes = hpx.total_bytes as u64;
@@ -27792,16 +28554,37 @@ fn admit(
                     )
                 }) {
                     Ok(mut c) => {
-                        match prefix_restore(engine, &mut c, e, &pool_key, Some(&lm.model)) {
+                        // EXACT RE-SEND (memra#1233): a prompt equal to the entry's key plus its
+                        // prompt-end tail restores the whole prompt, the state its cold prime
+                        // ended in, and decodes its first token from the tail's logits.
+                        let through_tail = !dspark_restorable_hit && e.tail_covers(&prompt);
+                        let restored = if through_tail {
+                            prefix_restore_through_tail(
+                                engine,
+                                &mut c,
+                                e,
+                                &pool_key,
+                                Some(&lm.model),
+                                &prompt,
+                            )
+                            .map(|_| ())
+                        } else {
+                            prefix_restore(engine, &mut c, e, &pool_key, Some(&lm.model))
+                        };
+                        let (fed, logits) = match (&e.prompt_end, through_tail) {
+                            (Some(t), true) => (prompt.clone(), &t.last_logits),
+                            _ => (e.toks.clone(), &e.last_logits),
+                        };
+                        match restored {
                             // A prefix-cache restore is a transient carrier consumed straight into a
                             // fresh session below (never re-parked from here), so the plain-affinity
                             // fields are inert defaults — a new checkpoint is armed at Session build.
                             Ok(()) => Ok({
-                                kvprobe(engine, &c, &e.last_logits, "prefix-restored");
+                                kvprobe(engine, &c, logits, "prefix-restored");
                                 ReuseEntry {
-                                    fed: e.toks.clone(),
+                                    fed,
                                     cache: c,
-                                    last_logits: e.last_logits.clone(),
+                                    last_logits: logits.clone(),
                                     cap: ctx_cap,
                                     ckpt: None,
                                     affinity: None,
@@ -27820,6 +28603,22 @@ fn admit(
                 Ok(entry) => {
                     prefix_pin = px.pin(&pool_key, i);
                     debug_assert!(prefix_pin.is_some(), "lookup entry vanished before pin");
+                    // The entry served a hit: no proven tail outranks it from here on.
+                    let hit_id = px.entries[&pool_key][i].id;
+                    px.hit_ids.insert(hit_id);
+                    // A restore through the tail refreshes the tail's own recency.
+                    let base_len = px.entries[&pool_key][i].toks.len();
+                    if entry.fed.len() > base_len
+                        && let Some(t) = px
+                            .entries
+                            .get_mut(&pool_key)
+                            .and_then(|p| p.get_mut(i))
+                            .and_then(|e| e.prompt_end.as_mut())
+                    {
+                        t.last_use = Instant::now();
+                        t.proven = true;
+                        px.tail_hits += 1;
+                    }
                     px.hits += 1;
                     px.hit_tokens += entry.fed.len() as u64;
                     px.record_lcp(entry.fed.len()); // histogram: served-prefix length
@@ -30190,12 +30989,16 @@ fn admit(
     // Plain sessions only: a spec session's `capture_at` publication (prompt end, the
     // engine's post-prime seed capture) keeps its own boundary discipline and is not moved
     // here. `n_cached` is the restored prefix length on a plain hit, 0 on a miss.
+    // PROMPT-END TAIL BASE (memra#1233): a covered plain hit with an off-grid remainder attaches
+    // its prompt-end state to the entry it restored; a published boundary seed arms it at insert.
+    let mut tail_base: Option<(usize, u64)> = None;
     let seed_at = if seed_prefix && spec.is_none() {
         match seed_capture_boundary(prompt.len(), n_cached) {
             SeedCapture::AtPromptEnd => Some(prompt.len()),
             SeedCapture::AtBoundary(b) => Some(b),
             SeedCapture::Covered => {
                 seed_prefix = false;
+                tail_base = covered_hit_tail_base(prompt.len(), n_cached, prefix_pin.as_ref());
                 None
             }
             SeedCapture::Refused { aligned } => {
@@ -30371,6 +31174,10 @@ fn admit(
         prefix_miss_lcp,
         seed_prefix,
         seed_at,
+        // Plain sessions only: the other routes never reach `maybe_prefix_tail`, and an armed
+        // base would book a tail's bytes at admission (`session_pending_tail_rows`).
+        tail_base: tail_base
+            .filter(|_| gspec_k == 0 && !dspark_on && !dspark_session_installed && !glm5_on),
         prefix_pin,
         tx: req.tx,
         ttft: req.ttft,
@@ -31229,6 +32036,7 @@ fn prefill_tick(
     if q == 0 {
         s.prefill_done = true;
         maybe_prefix_seed(engine, px, hpx, s, loaded.get(&s.model).map(|l| &l.model));
+        maybe_prefix_tail(engine, px, s);
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
         }
@@ -31554,6 +32362,7 @@ fn prefill_tick(
             kvprobe(engine, c, &s.last_logits, "prefill-done");
         }
         maybe_prefix_seed(engine, px, hpx, s, loaded.get(&s.model).map(|l| &l.model));
+        maybe_prefix_tail(engine, px, s);
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
         }
@@ -38466,6 +39275,7 @@ mod tests {
             last_use: std::time::Instant::now(),
             id: 0,
             pins: 0,
+            prompt_end: None,
         };
         let mut px = PrefixCache::default();
         let k = (String::from("q38"), String::new());
@@ -38499,11 +39309,12 @@ mod tests {
         assert!(squashed.contains(
             "let pending_booked = pending_booked.saturating_add(unified_growth.saturating_sub(pending_seed));"
         ));
-        // Every production insert path takes the unified guard.
+        // Every production insert path takes the unified guard (the prompt-end tail attach,
+        // memra#1233, included).
         assert_eq!(
             squashed.matches("prefix_insert_budget( engine,").count()
                 + squashed.matches("prefix_insert_budget(engine,").count(),
-            3
+            4
         );
     }
 
@@ -42673,6 +43484,7 @@ mod tests {
             last_use: std::time::Instant::now(),
             id: 0,
             pins: 0,
+            prompt_end: None,
         };
         let k = (String::from("q38"), String::new());
         let mut px = PrefixCache::default();
@@ -44389,6 +45201,7 @@ mod tests {
             last_use: std::time::Instant::now(),
             id: 0,
             pins: 0,
+            prompt_end: None,
         }
     }
 
@@ -44398,6 +45211,443 @@ mod tests {
 
     fn toks(n: usize) -> Vec<u32> {
         (0..n as u32).collect()
+    }
+
+    /// A device-free prompt-end tail (memra#1233) of `toks` with `bytes` of residency.
+    fn tail_of(toks: Vec<u32>, bytes: usize, at: std::time::Instant) -> super::PromptEndTail {
+        super::PromptEndTail {
+            toks,
+            kv: Vec::new(),
+            conv: Vec::new(),
+            ssm: Vec::new(),
+            last_logits: vec![0.0],
+            bytes,
+            last_use: at,
+            proven: false,
+        }
+    }
+
+    fn proven_tail(toks: Vec<u32>, bytes: usize, at: std::time::Instant) -> super::PromptEndTail {
+        super::PromptEndTail {
+            proven: true,
+            ..tail_of(toks, bytes, at)
+        }
+    }
+
+    /// An entry of `n` tokens (key salted by `salt`) with `bytes` and recency `at`.
+    fn aged_entry(
+        k: &PoolKey,
+        salt: u32,
+        n: usize,
+        bytes: usize,
+        at: std::time::Instant,
+    ) -> PrefixEntry {
+        let mut t = toks(n);
+        t[0] = u32::MAX - salt;
+        let mut e = entry(k, t);
+        e.pos = n;
+        e.bytes = bytes;
+        e.last_use = at;
+        e
+    }
+
+    fn resident_sum(px: &PrefixCache) -> usize {
+        px.entries.values().flatten().map(|e| e.bytes).sum()
+    }
+
+    /// memra#1233: an exact re-send is the only prompt a tail covers; a longer or shorter prompt,
+    /// or the same length with other tokens, is not, and `lookup` still returns the grid entry.
+    #[test]
+    fn a_prompt_end_tail_covers_exactly_its_own_prompt() {
+        let k = key("");
+        let now = std::time::Instant::now();
+        let mut px = PrefixCache::default();
+        let base = aged_entry(&k, 0, 4_832, 300, now);
+        let base_toks = base.toks.clone();
+        px.insert_with_budget(&k, base, "seed", 10_000);
+        let rest: Vec<u32> = (0..28).map(|i| 50_000 + i).collect();
+        assert!(px.attach_tail(&k, &base_toks, tail_of(rest.clone(), 158, now)));
+        let prompt = [base_toks.clone(), rest.clone()].concat();
+        let i = px
+            .lookup(&k, &prompt)
+            .expect("the grid entry serves the re-send");
+        let e = &px.entries[&k][i];
+        assert_eq!(e.toks.len(), 4_832);
+        assert!(e.tail_covers(&prompt));
+        assert_eq!(e.base_bytes(), 300);
+        assert_eq!(e.bytes, 458);
+        let mut longer = prompt.clone();
+        longer.extend(0..40);
+        assert!(
+            !e.tail_covers(&longer),
+            "a growing prompt restores the grid entry only"
+        );
+        assert!(!e.tail_covers(&prompt[..prompt.len() - 1]));
+        let mut other = prompt.clone();
+        *other.last_mut().unwrap() += 1;
+        assert!(!e.tail_covers(&other));
+        assert_eq!(
+            px.lookup(&k, &longer),
+            Some(i),
+            "lookup is unchanged for growth"
+        );
+        assert_eq!(px.total_bytes, resident_sum(&px));
+    }
+
+    /// memra#1233: a tail never costs an entry that served a hit. An unproven tail (the cold
+    /// prime's) goes before any entry whatever the ages; a proven tail goes before every entry
+    /// that was restored since its insert, and outranks only an oldest entry that never was; a
+    /// leased entry's tail never goes; the byte accountant always equals the sum of entry bytes.
+    #[test]
+    fn prompt_end_tails_evict_before_any_entry_that_served_a_hit() {
+        use std::time::Duration;
+        let k = key("");
+        let t0 = std::time::Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        let rest = |salt: u32| -> Vec<u32> { (0..28).map(|i| 60_000 + salt * 100 + i).collect() };
+        let two = |px: &mut PrefixCache| {
+            let a = aged_entry(&k, 0, 64, 10, at(2));
+            let b = aged_entry(&k, 1, 64, 10, at(3));
+            let toks = (a.toks.clone(), b.toks.clone());
+            px.insert_with_budget(&k, a, "seed", 1_000);
+            px.insert_with_budget(&k, b, "seed", 1_000);
+            toks
+        };
+        // What `admit` records when a request restores the entry.
+        let hit = |px: &mut PrefixCache, toks: &[u32]| {
+            let id = px.entries[&k][px.key_index(&k, toks).unwrap()].id;
+            px.hit_ids.insert(id);
+        };
+
+        // An unproven tail newer than every entry still goes before the oldest entry.
+        let mut px = PrefixCache::default();
+        let (_, b) = two(&mut px);
+        assert!(px.attach_tail(&k, &b, tail_of(rest(1), 5, at(9))));
+        assert_eq!(
+            px.evict_to_bytes(20),
+            (0, 5),
+            "the unproven tail goes, no entry"
+        );
+        assert_eq!(px.n_entries(), 2);
+        assert_eq!(px.tail_strips, 1);
+        assert_eq!(px.total_bytes, resident_sum(&px));
+
+        // A proven tail goes before an oldest entry that served a hit, whatever the ages (the
+        // day-16 newest-turn-fits cohort: a proven tail that outlived an older, re-sent entry
+        // cost the cohort that entry).
+        for tail_at in [1, 4] {
+            let mut px = PrefixCache::default();
+            let (a, b) = two(&mut px);
+            hit(&mut px, &a);
+            hit(&mut px, &b);
+            assert!(px.attach_tail(&k, &b, proven_tail(rest(1), 5, at(tail_at))));
+            assert_eq!(
+                px.evict_to_bytes(20),
+                (0, 5),
+                "the proven tail goes, no entry"
+            );
+            assert!(px.key_index(&k, &a).is_some());
+            assert_eq!(px.total_bytes, resident_sum(&px));
+        }
+
+        // A proven tail outranks an oldest entry that never served a hit (a one-off cold
+        // prompt's seed): that entry goes, as plain LRU takes it, and the tail stays.
+        let mut px = PrefixCache::default();
+        let (a, b) = two(&mut px);
+        hit(&mut px, &b);
+        assert!(px.attach_tail(&k, &b, proven_tail(rest(1), 5, at(4))));
+        assert_eq!(
+            px.evict_to_bytes(20),
+            (1, 10),
+            "the never-used entry goes; B keeps its proven tail"
+        );
+        assert!(px.key_index(&k, &a).is_none());
+        assert!(px.entries[&k][0].prompt_end.is_some());
+        assert!(px.hit_ids.len() == 1, "an evicted entry leaves the hit set");
+        assert_eq!(px.total_bytes, resident_sum(&px));
+        // The entry left is the tail's own, and it served a hit: now the tail goes first.
+        assert_eq!(px.evict_to_bytes(10), (0, 5));
+        assert_eq!(px.n_entries(), 1);
+
+        // Among tails: the unproven one first whatever its age, then the oldest proven one.
+        let mut px = PrefixCache::default();
+        let (a, b) = two(&mut px);
+        let c = aged_entry(&k, 2, 64, 10, at(4));
+        let c_toks = c.toks.clone();
+        px.insert_with_budget(&k, c, "seed", 1_000);
+        hit(&mut px, &a);
+        hit(&mut px, &b);
+        assert!(px.attach_tail(&k, &a, proven_tail(rest(0), 5, at(1))));
+        assert!(px.attach_tail(&k, &b, proven_tail(rest(1), 6, at(5))));
+        assert!(px.attach_tail(&k, &c_toks, tail_of(rest(2), 7, at(9))));
+        assert_eq!(px.evict_to_bytes(41), (0, 7), "the unproven tail first");
+        assert_eq!(px.evict_to_bytes(36), (0, 5), "then the oldest proven tail");
+        assert!(
+            px.entries[&k][px.key_index(&k, &b).unwrap()]
+                .prompt_end
+                .is_some()
+        );
+        assert_eq!(
+            px.evict_to_bytes(20),
+            (1, 16),
+            "then the last tail and entry A"
+        );
+        assert!(px.key_index(&k, &a).is_none());
+        assert_eq!((px.n_tails, px.n_entries()), (0, 2));
+        assert_eq!(px.total_bytes, resident_sum(&px));
+
+        // A leased entry's tail is never a victim, proven or not.
+        let mut px = PrefixCache::default();
+        let (_, b) = two(&mut px);
+        assert!(px.attach_tail(&k, &b, tail_of(rest(1), 5, at(1))));
+        let lease = px.pin(&k, px.key_index(&k, &b).unwrap()).unwrap();
+        assert_eq!(
+            px.evict_to_bytes(15),
+            (1, 10),
+            "entry A goes; B's tail is leased"
+        );
+        assert!(
+            px.entries[&k][px.id_index(&lease).unwrap()]
+                .prompt_end
+                .is_some()
+        );
+        px.unpin(&lease);
+
+        // An insert over budget strips an unproven tail before it evicts an entry.
+        let mut px = PrefixCache::default();
+        let a = aged_entry(&k, 0, 64, 10, at(2));
+        let a_toks = a.toks.clone();
+        px.insert_with_budget(&k, a, "seed", 24);
+        assert!(px.attach_tail(&k, &a_toks, tail_of(rest(0), 5, at(3))));
+        px.insert_with_budget(&k, aged_entry(&k, 1, 64, 10, at(9)), "seed", 24);
+        assert_eq!(px.n_entries(), 2, "no entry evicted");
+        assert!(px.entries[&k].iter().all(|e| e.prompt_end.is_none()));
+        assert_eq!((px.total_bytes, px.evictions), (20, 0));
+
+        // Re-attaching replaces the old tail's bytes, never adds them twice.
+        let mut px = PrefixCache::default();
+        let a = aged_entry(&k, 0, 64, 10, at(2));
+        let a_toks = a.toks.clone();
+        px.insert_with_budget(&k, a, "seed", 1_000);
+        assert!(px.attach_tail(&k, &a_toks, tail_of(rest(0), 5, at(3))));
+        assert!(px.attach_tail(&k, &a_toks, tail_of(rest(1), 7, at(4))));
+        assert_eq!(px.total_bytes, 17);
+        assert_eq!(px.total_bytes, resident_sum(&px));
+        assert_eq!(px.n_tails, 1, "a replaced tail is counted once");
+        assert!(
+            !px.attach_tail(&k, &toks(64), tail_of(rest(2), 7, at(4))),
+            "no entry, no tail"
+        );
+        assert_eq!(px.evict_to_bytes(0), (1, 17));
+        assert_eq!(
+            px.n_tails, 0,
+            "an evicted entry takes its tail out of the count"
+        );
+
+        // A fanout entry (published with leases for its followers) serves hits from its insert,
+        // and a second fanout on an existing key marks it too.
+        let mut px = PrefixCache::default();
+        let f = aged_entry(&k, 7, 64, 10, at(2));
+        let f_toks = f.toks.clone();
+        let id = px
+            .insert_with_budget_pins(&k, f, "fanout", 1_000, 2, None)
+            .unwrap();
+        assert!(px.hit_ids.contains(&id));
+        px.hit_ids.clear();
+        let again = aged_entry(&k, 7, 64, 10, at(3));
+        assert_eq!(again.toks, f_toks);
+        assert_eq!(
+            px.insert_with_budget_pins(&k, again, "fanout", 1_000, 1, None),
+            Some(id)
+        );
+        assert!(px.hit_ids.contains(&id));
+
+        // The host tier holds the grid entry alone: a demoted entry's recorded device bytes
+        // exclude the tail, so the promoted entry is not charged for a tail it lost.
+        let src: String = include_str!("worker.rs")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        // One-line pins: this test's own text holds each once, the code is the second.
+        for pin in [
+            "device_bytes: dead.base_bytes(),",
+            "if bytes != dead.base_bytes() {",
+        ] {
+            assert_eq!(src.matches(pin).count(), 2, "{pin}");
+        }
+        assert!(!src.contains(concat!("device_bytes: dead", ".bytes,")));
+        // `admit` records the hit on the entry and proves the tail it restored through.
+        assert!(src.contains(
+            "let hit_id = px.entries[&pool_key][i].id; \
+             px.hit_ids.insert(hit_id);"
+        ));
+        assert!(src.contains(
+            "t.last_use = Instant::now(); t.proven = true; \
+             px.tail_hits += 1;"
+        ));
+    }
+
+    /// memra#1233 (b): the fence's starvation bound. The fence stands down once its deferred
+    /// ticks add up to one prefill chunk's time, and the tick loop keeps that account:
+    /// without the bound a steady stream of hit suffixes holds cold prefill back without end.
+    #[test]
+    fn the_hit_suffix_fence_yields_after_its_share_of_prefill_time() {
+        use super::hit_suffix_fence_yields as yields;
+        use std::time::Duration;
+        let ms = Duration::from_millis;
+        assert!(!yields(Duration::ZERO, Duration::ZERO), "nothing deferred");
+        assert!(!yields(Duration::ZERO, ms(1_000)));
+        assert!(
+            yields(ms(1), Duration::ZERO),
+            "no cold tick timed yet: one deferred tick is the allowance"
+        );
+        assert!(
+            !yields(ms(190), ms(1_000)),
+            "one suffix tick against a 1 s chunk"
+        );
+        assert!(!yields(ms(950), ms(1_000)));
+        assert!(yields(ms(1_000), ms(1_000)), "an equal share: stand down");
+        assert!(yields(ms(1_140), ms(1_000)));
+        // A stream of 190 ms suffix ticks against 1 s cold chunks: the cold rows prime at least
+        // every seventh tick, and between two cold ticks the fence takes less than a cold tick
+        // plus one tick of its own.
+        let (mut deferred, mut fenced, mut cold, mut run, mut longest) =
+            (Duration::ZERO, Duration::ZERO, 0u32, 0, 0);
+        for _ in 0..1_000 {
+            if yields(deferred, ms(1_000)) {
+                cold += 1;
+                assert!(deferred < ms(1_000) + ms(190));
+                deferred = Duration::ZERO;
+                run = 0;
+            } else {
+                deferred += ms(190);
+                fenced += ms(190);
+                run += 1;
+                longest = longest.max(run);
+            }
+        }
+        assert_eq!(longest, 6);
+        assert!(cold >= 142 && fenced < (ms(1_000) + ms(190)) * (cold + 1));
+        // The allowance is one chunk at the measured rate; nothing measured, nothing allowed
+        // past the first deferred tick.
+        use super::hit_suffix_fence_allowance as allowance;
+        assert_eq!(allowance(None, 1_024), Duration::ZERO);
+        assert_eq!(allowance(Some(0.0), 1_024), Duration::ZERO);
+        assert_eq!(allowance(Some(f64::NAN), 1_024), Duration::ZERO);
+        assert_eq!(allowance(Some(1_024.0), 1_024), ms(1_000));
+        assert_eq!(allowance(Some(2_048.0), 1_024), ms(500));
+        assert_eq!(allowance(Some(1_280.0), 4_096), ms(3_200));
+        let src: String = include_str!("worker.rs")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(src.contains(
+            "let fence_yields = cached_hit_waiting_for_ttft || prefill_deadline_mode || \
+             hit_suffix_fence_yields( fence_deferred, \
+             hit_suffix_fence_allowance(prefill_rate_tok_s, budgets[0]), );"
+        ));
+        // A one-line pin: this test's own text holds it once, the tick loop's copy is the second.
+        let pin = ".filter(|(i, s)| { !fence_yields && !finished.contains(i)";
+        assert_eq!(src.matches(pin).count(), 2, "{pin}");
+        assert!(src.contains(
+            "if fence_holds_prefill { fence_deferred += phase_b_at.elapsed(); } else if \
+             !defer_interactive_prefill { fence_deferred = Duration::ZERO; }"
+        ));
+        // The fence takes resumed rows on models that prime a carried suffix, nothing else.
+        assert!(src.contains(
+            "&& !confidence_trace_enabled() && s.glm5_plain_prime.is_none() && \
+             !eager_only.contains(&s.model)"
+        ));
+    }
+
+    /// memra#1233 (b): the hit-suffix fence holds exactly the restored hits whose remaining suffix
+    /// completes in one prime call before their first token.
+    #[test]
+    fn the_hit_suffix_fence_takes_one_call_suffixes_only() {
+        use super::hit_suffix_fits_one_call as fits;
+        // The frozen shape's exact re-send without a tail: 4,832 restored, 28 queued.
+        assert!(fits(4_832, false, 0, 4_832, 28, 1_024, [None, None, None]));
+        // Not a hit, already primed, already emitted.
+        assert!(!fits(0, false, 0, 0, 28, 1_024, [None, None, None]));
+        assert!(!fits(4_832, true, 0, 4_860, 0, 1_024, [None, None, None]));
+        assert!(!fits(4_832, false, 1, 4_832, 28, 1_024, [None, None, None]));
+        // Over the tick budget or under the prime floor: not one prime call.
+        assert!(!fits(
+            4_832,
+            false,
+            0,
+            4_832,
+            1_025,
+            1_024,
+            [None, None, None]
+        ));
+        assert!(fits(
+            4_832,
+            false,
+            0,
+            4_832,
+            1_024,
+            1_024,
+            [None, None, None]
+        ));
+        assert!(!fits(4_832, false, 0, 4_832, 15, 1_024, [None, None, None]));
+        // A capture boundary inside the suffix stops the call there; one at its end does not.
+        assert!(!fits(
+            4_832,
+            false,
+            0,
+            4_832,
+            200,
+            1_024,
+            [None, None, Some(4_992)]
+        ));
+        assert!(fits(
+            4_832,
+            false,
+            0,
+            4_832,
+            200,
+            1_024,
+            [None, None, Some(5_032)]
+        ));
+        assert!(fits(
+            4_832,
+            false,
+            0,
+            4_992,
+            40,
+            1_024,
+            [None, None, Some(4_992)]
+        ));
+    }
+
+    /// memra#1233: admission books the tail a session still owes: past a seed boundary under the
+    /// prompt end, or past a covered hit's restored entry; never for an on-grid prompt end.
+    #[test]
+    fn admission_books_the_pending_prompt_end_tail() {
+        use super::session_pending_tail_rows as rows;
+        assert_eq!(rows(true, Some(4_832), None, 4_860, false, true), 28);
+        assert_eq!(rows(true, Some(4_864), None, 4_864, false, true), 0);
+        assert_eq!(rows(false, None, Some((4_832, 3)), 4_860, false, true), 28);
+        assert_eq!(rows(false, None, None, 4_860, false, true), 0);
+        assert_eq!(rows(true, Some(4_832), None, 4_860, true, true), 0);
+        assert_eq!(rows(true, Some(4_832), None, 4_860, false, false), 0);
+    }
+
+    /// memra#1233: a covered plain hit attaches its prompt-end state to the grid entry it
+    /// restored, never past a whole-prompt restore or an off-grid restore.
+    #[test]
+    fn a_covered_hit_takes_the_restored_entry_as_its_tail_base() {
+        use super::covered_hit_tail_base as base;
+        let pin = super::PrefixPin {
+            key: key(""),
+            id: 7,
+        };
+        assert_eq!(base(4_860, 4_832, Some(&pin)), Some((4_832, 7)));
+        assert_eq!(base(4_860, 4_860, Some(&pin)), None);
+        assert_eq!(base(4_860, 4_831, Some(&pin)), None);
+        assert_eq!(base(4_860, 0, Some(&pin)), None);
+        assert_eq!(base(4_860, 4_832, None), None);
     }
 
     /// memra#1085: the spec tick's peer quantum counts only other rows' pending primes.
@@ -49095,6 +50345,7 @@ mod tests {
             last_use: next_instant(),
             id: 0,
             pins: 0,
+            prompt_end: None,
         }
     }
 
@@ -49992,6 +51243,7 @@ mod tests {
             last_use: std::time::Instant::now(),
             id: 0,
             pins: 0,
+            prompt_end: None,
         }
     }
 

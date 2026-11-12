@@ -572,6 +572,7 @@ mod tests {
             last_use: Instant::now(),
             id: 0,
             pins: 0,
+            prompt_end: None,
         }
     }
 
