@@ -271,18 +271,44 @@ and it now falls inside a window 5 to 8 times shorter. The total while the reque
 falls on every row of this table, so here the change trades throughput for latency on both
 cards. Texts are identical across arms and alone on both cards.
 
+**Round 2 of the review.** The rules above that the second review added (interactive host
+riders, one riding rule, the yield beside hooked MTP bursts only, the dark cadence) ran as
+`change6` (11ae9661d1) against main `parent4` (11b368f7d7) on one GB10 unit, one boot per arm.
+The plain cell (`gb10/plain6`) repeats `gb10/plain5` within 0.003 s on every gap: greedy with
+a penalty 1.609 -> 0.115 s, the re-send's first token 1.58/1.61 -> 0.07 to 0.13 s, t1 json
+1.617 -> 0.188 s, texts identical. The mixed cell (`gb10/mixed`, `tools/mixed_cell.py`; L = 2
+greedy streams, then the requests named, 24 tokens each unless stated):
+
+| requests beside the streams | request | gap p50 s | streams live tok/s | all live tok/s |
+|---|---|---|---|---|
+| interactive greedy + penalty, then interactive t1 json 1 s later | penalty rider | 1.607 -> 0.115 | 40.8 -> 29.7 | 41.9 -> 36.0 |
+| | t1 json | 1.597 -> 0.189 | | |
+| interactive t1 json | t1 json | 1.597 -> 0.189 | 41.1 -> 30.1 | 41.7 -> 33.9 |
+| harvest greedy + penalty (48 tokens), then interactive t1 json 3 s later | t1 json | 1.610 -> 0.189 | 40.7 -> 29.5 | 41.9 -> 33.6 |
+| | harvest | 1.610 -> 1.619 | | |
+
+The first row is the `rider-uncarried` receipt: the penalty request rides until the json
+request decodes, the json request then keeps it in phase (c), and the yield names it
+(`[spec-round-yield] engaged: rider-uncarried` on a tick with two bursts, followed by
+one-round bursts). The dark harvest request keeps one token per burst's worth of time on the
+change (1.619 s between tokens, 1.610 s on main) and costs the streams 2% beside the
+interactive json request (30.1 -> 29.5 tok/s; 1% on main, 41.1 -> 40.7). It is admitted only
+with `MEMRA_SHED_HARVEST=100`: GB10's interactive step p99 (the 74 ms plain step) is above
+0.9 times the 50 ms SLO, so by default the lane gate sheds it with a 429 (`gb10/mixed-shed`,
+the first change boot). The raise moves admission only; phase (c), phase (d) and the cadence
+read the SLO. Texts are identical across arms, beside the streams and alone.
+
 **Gates on the change.** Seeded invariance (`seeded-invariance-gate.py`): PASS on GB10 for
-`change`, `change2`, `change3` and `change5` and on the 5090 for `change2` and `change5`,
-54 rows each over 10 prompts (ref, K=0 to 3, demotion). Burst boundary
-(`spec-burst-boundary-gate.py`, GB10): PASS for `change`, `change2`, `change3` and `change5`,
-229 rows each over the grid default, 1:2, 3:2, 3:3. Texts: every plain text is identical
-across arms and identical beside the streams and alone, and every stream text is a prefix of
-the longest run of its stream, except the vendor-shape riders noted above. CPU checks on the
-review head rebased onto main 11b368f7d7 (`cpu/checks.log`, 76af934425; the code delta is the
-one the cells ran, plus a test-only compile fix): fmt, clippy, the engine (743) and server
-(1,220) suites and the flags and numeric censuses pass. Each of the ten red arms fails exactly the test it was
-built to fail (`cpu/redgreen.log`, on 0550953c2a, whose `worker.rs` the head keeps byte for
-byte).
+`change`, `change2`, `change3`, `change5` and `change6` and on the 5090 for `change2`,
+`change5` and `change6`, 54 rows each over 10 prompts (ref, K=0 to 3, demotion). Burst
+boundary (`spec-burst-boundary-gate.py`, GB10): PASS for `change`, `change2`, `change3`,
+`change5` and `change6`, 229 rows each over the grid default, 1:2, 3:2, 3:3. Texts: every
+plain text is identical across arms and identical beside the streams and alone, and every
+stream text is a prefix of the longest run of its stream, except the vendor-shape riders noted
+above. CPU checks on the round-2 head (`cpu/checks.log`, 11ae9661d1 on main 11b368f7d7): fmt,
+clippy, the engine (743) and server (1,222) suites and the flags and numeric censuses pass.
+Each of the 18 red arms fails exactly the tests it was built to fail, and the head passes all
+seven (`cpu/redgreen.log`).
 
 ## Rejected
 
