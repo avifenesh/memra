@@ -480,7 +480,8 @@
         "tools/check-flags.sh",
         "tools/flags-row-shape.py",
         "tools/flags-table-census.py",
-        "tools/kernels-symbol-census.py"
+        "tools/kernels-symbol-census.py",
+        "tools/gen-env-registry.py"
       ],
       "cpu": [
         "bash",
@@ -531,7 +532,8 @@
       "id": "flags-coverage",
       "inputs": [
         "tools/check-flags.sh",
-        "tools/flags-row-shape.py"
+        "tools/flags-row-shape.py",
+        "tools/gen-env-registry.py"
       ],
       "cpu": [
         "bash",

@@ -99,8 +99,8 @@ links all of the workspace's roughly 250 binaries, each with fat LTO, which take
 longer ([measurements](decisions/RELEASE-PROFILE.md)). The onboarding CLI runs as
 `cargo run --release -p memra-cli --bin memra -- model inspect ...`.
 
-`cargo install memra-server --locked` builds the server from crates.io instead. Such a build has no
-`docs/FLAGS.md` to read, so it skips the boot audit of `MEMRA_*` names
+`cargo install memra-server --locked` builds the server from crates.io instead. The crate leaves out
+the generated `MEMRA_*` registry, so such a build skips the boot audit of `MEMRA_*` names
 (`[env-audit] registry absent in this build`) and does not refuse a misspelled one.
 
 Per target:

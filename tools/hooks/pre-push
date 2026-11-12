@@ -147,6 +147,36 @@ else
     echo "pre-push: flags census OK — $(printf '%s\n' "$flags_out" | sed -n 's/^check-flags: runtime/runtime/p')"
 fi
 
+# ---- the engine's MEMRA_* registry, judged on the pushed commits (2026-11-12) ----
+# The census above reads the worktree. The engine builds from the COMMITTED
+# crates/memra-engine/env-registry.txt, so each pushed tip's registry is checked against that
+# tip's own docs/FLAGS.md, from the blobs, with that tip's generator. Running the generator and
+# then committing FLAGS.md without `git add` of the registry passes the worktree census and
+# would ship a binary that audits against the old catalog. Needs python3 only (no rg); the
+# flags census's one emergency switch covers it.
+if [ "${MEMRA_SKIP_FLAGS_CENSUS:-0}" != "1" ]; then
+    reg_tmp=$(mktemp -d)
+    while read -r _reg_lref reg_oid _reg_rref _reg_roid; do
+        case "$reg_oid" in *[!0]*) ;; *) continue ;; esac
+        git cat-file -e "$reg_oid:tools/gen-env-registry.py" 2>/dev/null || continue
+        git show "$reg_oid:tools/gen-env-registry.py" > "$reg_tmp/gen.py"
+        git show "$reg_oid:docs/FLAGS.md" > "$reg_tmp/FLAGS.md" 2>/dev/null || continue
+        git show "$reg_oid:crates/memra-engine/env-registry.txt" > "$reg_tmp/env-registry.txt" 2>/dev/null \
+            || : > "$reg_tmp/env-registry.txt"
+        if ! reg_out=$(python3 "$reg_tmp/gen.py" --check --flags "$reg_tmp/FLAGS.md" \
+                --out "$reg_tmp/env-registry.txt" 2>&1); then
+            printf '%s\n' "$reg_out" >&2
+            echo "pre-push: REFUSED — $reg_oid commits a crates/memra-engine/env-registry.txt that" >&2
+            echo "    does not match its own docs/FLAGS.md. Run python3 tools/gen-env-registry.py," >&2
+            echo "    git add crates/memra-engine/env-registry.txt, and amend or add a commit." >&2
+            rm -rf "$reg_tmp"
+            exit 1
+        fi
+    done < "$push_refs"
+    rm -rf "$reg_tmp"
+    echo "pre-push: engine registry OK on the pushed commits"
+fi
+
 # ---- releasability censuses (2026-08-23) ----
 # Same lesson as the arm above, one layer out: the check existed and ran TOO LATE. On
 # 2026-08-22 main became unreleasable and stayed that way for a day — cu/mmq_fp8_blk_stub.cu

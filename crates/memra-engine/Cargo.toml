@@ -9,6 +9,10 @@ categories.workspace = true
 keywords.workspace = true
 rust-version.workspace = true
 edition = "2024"
+# The boot-audit registry (generated from docs/FLAGS.md) stays out of the crates.io package, so
+# a packaged build keeps the audit inert, as it was when build.rs read docs/FLAGS.md: the
+# owned-family scan would otherwise read every crate in the cargo source cache.
+exclude = ["env-registry.txt"]
 
 [dependencies]
 memra-sampling = { workspace = true }

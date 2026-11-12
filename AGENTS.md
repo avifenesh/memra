@@ -82,7 +82,7 @@ Do not give up a local win to simplify a remote default. When a mechanism's win 
 
 ## Flags doctrine and door hygiene
 
-Winners are defaults: naked commands run the tuned path. An environment variable exists only as a runtime parameter, machine-specific config (VRAM budgets, KV formats, spill), rollback seam (`MEMRA_FAST=0` oracle path), diagnostic or explicitly blocked experimental door. Catalog: `docs/FLAGS.md` (row history in `docs/FLAGS-HISTORY.md`). A new `MEMRA_*` read needs its FLAGS.md row in the same commit; a prefix row such as `MEMRA_TCOL_*` covers a family.
+Winners are defaults: naked commands run the tuned path. An environment variable exists only as a runtime parameter, machine-specific config (VRAM budgets, KV formats, spill), rollback seam (`MEMRA_FAST=0` oracle path), diagnostic or explicitly blocked experimental door. Catalog: `docs/FLAGS.md` (row history in `docs/FLAGS-HISTORY.md`). A new `MEMRA_*` read needs its FLAGS.md row in the same commit; a prefix row such as `MEMRA_TCOL_*` covers a family. The engine's boot audit reads `crates/memra-engine/env-registry.txt`, generated from FLAGS.md: a catalog edit that adds, retires or removes a name commits `python3 tools/gen-env-registry.py`'s output with it (the flags census refuses a stale registry).
 
 Doors are decided, not kept (owner, 2026-09-05: "we stop leaving unneeded flags."):
 

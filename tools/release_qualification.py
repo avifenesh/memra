@@ -500,8 +500,9 @@ def verify_published(repo, head, binaries=None, profile=None, fetch_source=False
 def docs_only_paths(repo, base, oid):
     """Markdown paths a fast-forward from base changes, or None if anything else changes.
 
-    A Markdown file is still a build input when crate code names it (build.rs reads
-    docs/FLAGS.md), so any file under crates/ or named as ../<path> from crates/ refuses."""
+    A Markdown file is still a build input when crate code names it (a memra-gguf test reads
+    docs/EXECUTION-SURFACES.md), so any file under crates/ or named as ../<path> from crates/
+    refuses."""
     if set(base) == {"0"} or subprocess.run(
             ["git", "-C", str(repo), "merge-base", "--is-ancestor", base, oid],
             capture_output=True).returncode != 0:

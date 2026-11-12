@@ -1025,14 +1025,16 @@ mod tests {
 
     #[test]
     fn every_declared_door_has_a_flags_row() {
-        let flags = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/FLAGS.md"),
+        // env-registry.txt is generated from docs/FLAGS.md (tools/gen-env-registry.py); a
+        // `legal` line means the catalog documents the name outside the Removed ledgers.
+        let registry = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("env-registry.txt"),
         )
-        .expect("docs/FLAGS.md");
+        .expect("crates/memra-engine/env-registry.txt");
         for row in DSV4_DOORS {
             assert!(
-                flags.contains(row.env),
-                "door {:?} has no docs/FLAGS.md row for {}",
+                registry.lines().any(|l| l == format!("legal\t{}", row.env)),
+                "door {:?} has no live docs/FLAGS.md row for {}",
                 row.name,
                 row.env
             );

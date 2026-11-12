@@ -48,8 +48,9 @@ hook=$here/tools/hooks/pre-push
 census=$here/tools/check-flags.sh
 shape=$here/tools/flags-row-shape.py
 range=$here/tools/push-range.sh
+reggen=$here/tools/gen-env-registry.py
 
-for required in "$hook" "$census" "$shape" "$range"; do
+for required in "$hook" "$census" "$shape" "$range" "$reggen"; do
     [[ -f "$required" ]] || { echo "test_flags_guard: missing $required" >&2; exit 2; }
 done
 command -v rg >/dev/null || { echo "test_flags_guard: rg is required" >&2; exit 2; }
@@ -94,12 +95,13 @@ stage() {
         git config user.email flagsguard@test
         git config user.name flagsguard
         git remote add origin "$root/origin.git"
-        mkdir -p tools/hooks docs crates/memra-tokenizer/src
+        mkdir -p tools/hooks docs crates/memra-tokenizer/src crates/memra-engine
 
         cp "$hook" tools/hooks/pre-push
         cp "$census" tools/check-flags.sh
         cp "$shape" tools/flags-row-shape.py
         cp "$range" tools/push-range.sh
+        cp "$reggen" tools/gen-env-registry.py
         chmod +x tools/hooks/pre-push tools/check-flags.sh tools/flags-row-shape.py \
             tools/push-range.sh
 
@@ -135,6 +137,8 @@ stage() {
         # An empty crate src keeps the census non-vacuous-by-construction (it refuses outright
         # when no crates/*/src exists) while reading zero flags, so the seed push is green.
         : > crates/memra-tokenizer/src/lib.rs
+        # The engine registry the census and the hook check (crates/memra-engine/env-registry.txt).
+        python3 tools/gen-env-registry.py >/dev/null
 
         # Pathspec staging, never -A, even in a fixture repo.
         git add tools docs crates
@@ -155,7 +159,9 @@ document() {
     # document <work> <row text> — append a FLAGS.md row and commit it.
     local work=$1 row=$2
     ( cd "$work" && printf '| `%s` | documented by the fixture |\n' "$row" >> docs/FLAGS.md \
-        && git add docs/FLAGS.md && git commit -qm "flags row: $row" ) >/dev/null
+        && python3 tools/gen-env-registry.py >/dev/null \
+        && git add docs/FLAGS.md crates/memra-engine/env-registry.txt \
+        && git commit -qm "flags row: $row" ) >/dev/null
 }
 
 plant_read() {
@@ -396,7 +402,8 @@ plant_read "$work"
     cd "$work" || exit 1
     python3 -c 'import sys; print("| `%s` | off | %s |" % (sys.argv[1], "x" * 4000))' \
         "$FIXTURE_FLAG" >> docs/FLAGS.md
-    git add docs/FLAGS.md && git commit -qm "flags row over the row-shape cap"
+    python3 tools/gen-env-registry.py >/dev/null
+    git add docs/FLAGS.md crates/memra-engine/env-registry.txt && git commit -qm "flags row over the row-shape cap"
 ) >/dev/null
 out=$(push "$work"); rc=$?
 if (( rc != 0 )) && [[ "$out" == *"cap 4000"* && "$out" == *"flags census is red"* ]]; then
@@ -416,7 +423,8 @@ lines.insert(len(lines) - 1, "| `%s` | off | Rollback: unset. History: [FLAGS-HI
 open("docs/FLAGS.md", "w").write("\n".join(lines))
 open("docs/FLAGS-HISTORY.md", "w").write("# FLAGS history\n\n## %s\n\nThe long row, moved.\n" % flag)
 PY
-    git add docs/FLAGS.md docs/FLAGS-HISTORY.md && git commit -qm "split the row"
+    python3 tools/gen-env-registry.py >/dev/null
+    git add docs/FLAGS.md docs/FLAGS-HISTORY.md crates/memra-engine/env-registry.txt && git commit -qm "split the row"
 ) >/dev/null
 if out=$(push "$work"); then
     ok "arm10: the split row (short row + linked FLAGS-HISTORY.md section) PASSES"
@@ -426,13 +434,41 @@ $out"
 fi
 
 # ---------------------------------------------------------------------------
+# arm11 (2026-11-12): the engine builds from the COMMITTED crates/memra-engine/env-registry.txt.
+# A FLAGS.md row committed after regenerating the registry but without staging it passes the
+# worktree census, and must still be refused, by the hook's check of the pushed blobs. Then the
+# same tree with the registry committed passes.
+# ---------------------------------------------------------------------------
+stage arm11
+(
+    cd "$work" || exit 1
+    printf '| `%s` | documented by the fixture |\n' MEMRA_FIXTURE_REG_ONLY >> docs/FLAGS.md
+    python3 tools/gen-env-registry.py >/dev/null
+    git add docs/FLAGS.md && git commit -qm "flags row, registry left unstaged"
+) >/dev/null
+out=$(push "$work"); rc=$?
+if (( rc != 0 )) && [[ "$out" == *"does not match its own docs/FLAGS.md"* ]]; then
+    ok "arm11: a pushed commit with a stale committed registry REFUSES the push"
+else
+    bad "arm11: the stale committed registry was not refused (rc=$rc)
+$out"
+fi
+( cd "$work" && git add crates/memra-engine/env-registry.txt && git commit -qm "the registry" ) >/dev/null
+if out=$(push "$work"); then
+    ok "arm11: the same tree with the registry committed PASSES"
+else
+    bad "arm11: the registry commit was refused
+$out"
+fi
+
+# ---------------------------------------------------------------------------
 # The fixture's own floor, the shape test_check_flags.sh uses: a run that records FEWER
 # assertions than it should is BROKEN, not green. Every `bad` path above is paired so the count
 # is invariant to which branch was taken.
 #   arms 1-2: 2 | arm 3: 1 | arm 4: 1 | arm 5: 2 | arm 6: 1 | arm 7: 3 | arm 8: 1
-#   arm 9: 1 | arm 10: 2  = 14
+#   arm 9: 1 | arm 10: 2 | arm 11: 2  = 16
 # ---------------------------------------------------------------------------
-EXPECTED_ASSERTIONS=14
+EXPECTED_ASSERTIONS=16
 total=$((pass + fail))
 printf '\ntest_flags_guard: %d passed, %d failed (%d assertions, expected %d)\n' \
     "$pass" "$fail" "$total" "$EXPECTED_ASSERTIONS"

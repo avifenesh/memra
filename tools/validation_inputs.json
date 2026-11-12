@@ -9,14 +9,14 @@
       "note": "All crate-local sources are package inputs. Toolchain/environment changes require full validation."
     },
     "crates/memra-server/build.rs": {
-      "sha256": "50e5bf1f4ea5b8606f4c856461f749e6a4f3afd109c2d7818684af0bb7ea86c9",
+      "sha256": "edb6a1185d0db7a230bc2b1ff4e67d9cd19ab134aa3484efcd540447b3c06ea3",
       "package": "memra-server",
       "generated_env": [],
       "external_inputs": [],
       "note": "All crate-local sources are package inputs. Toolchain/environment changes require full validation."
     },
     "crates/memra-engine/build.rs": {
-      "sha256": "87d62276bce3a7ce5f08f800d363d351c0d545d69b1769565a87731b9473276f",
+      "sha256": "0324a7f663ecfb8e93fd13e51c33ccac073d03f6b84c31a432578a019ee1564f",
       "package": "memra-engine",
       "generated_env": [
         "MEMRA_ENGINE_FATBIN",
@@ -29,9 +29,7 @@
         "MEMRA_ROUTER_FATBIN",
         "MEMRA_SAMPLE_FATBIN"
       ],
-      "external_inputs": [
-        "docs/FLAGS.md"
-      ],
+      "external_inputs": [],
       "note": "All crate-local sources are package inputs. Toolchain/environment changes require full validation."
     }
   },

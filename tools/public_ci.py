@@ -415,7 +415,7 @@ def guard_ids(plan):
     if jobs['engine']:
         selected.add('pdl-chain')
     if any(path.startswith('crates/') and '/src/' in path and path.endswith('.rs')
-           or path == 'docs/FLAGS.md' for path in paths):
+           or path in ('docs/FLAGS.md', 'crates/memra-engine/env-registry.txt') for path in paths):
         selected.add('flags-coverage')
     if any(path.startswith('crates/') and path.endswith('.rs')
            and ('/tests/' in path or '/src/bin/' in path) for path in paths):
@@ -456,7 +456,8 @@ def guard_data_inputs(root, head, name):
         indexed = {path.decode() for path in validation_plan.git(root, 'ls-files', '-z').split(b'\0') if path}
         census(paths, {path for path in indexed if conflict_input(path)}, 'Conflict census index')
     elif name == 'docs-registry':
-        paths.update(('docs/KERNELS.md', 'docs/MODELS.md', 'docs/ROUTER.md', 'docs/FLAGS.md'))
+        paths.update(('docs/KERNELS.md', 'docs/MODELS.md', 'docs/ROUTER.md', 'docs/FLAGS.md',
+                      'crates/memra-engine/env-registry.txt'))
         paths.update(rust_sources(lambda path: path.startswith('crates/') and '/src/' in path and path.endswith('.rs')))
         # tools/kernels-symbol-census.py reads every cu/*.cu and the cu/ headers they include.
         prefix = 'crates/memra-engine/cu'
@@ -510,7 +511,10 @@ def guard_data_inputs(root, head, name):
                   if relevant(path.relative_to(root).as_posix())}
         if not paths or paths != actual:
             raise Refused('runtime/gate input census is missing or differs from pinned source')
-        paths.add('docs/FLAGS.md' if name == 'flags-coverage' else 'tools/gate-remove-var-allowlist.txt')
+        if name == 'flags-coverage':
+            paths.update(('docs/FLAGS.md', 'crates/memra-engine/env-registry.txt'))
+        else:
+            paths.add('tools/gate-remove-var-allowlist.txt')
     elif name == 'support-state':
         resolved = validation_plan.support_record_data_inputs(tree)
         paths.update(validation_plan.support_record_source_inputs(tree)['inputs'])

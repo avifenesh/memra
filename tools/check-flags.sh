@@ -272,3 +272,21 @@ elif (( shape_rc != 0 )); then
     echo "check-flags: $shape could not read the registry (rc=$shape_rc)" >&2
     exit 2
 fi
+
+# ---- the engine's registry (env-registry.txt) ----
+# The boot audit's legal and retired names are generated from this catalog into
+# crates/memra-engine/env-registry.txt, which build.rs reads; the catalog itself is not a build
+# input. A catalog edit that changes the registry must commit the regenerated file with it, or the
+# binary audits against the old catalog (a new flag in an owned family would be refused at boot).
+reg=tools/gen-env-registry.py
+[[ -f "$reg" ]] || { echo "check-flags: missing $reg (the registry half of this census)" >&2; exit 2; }
+reg_rc=0
+python3 "$reg" --check || reg_rc=$?
+if (( reg_rc == 1 )); then
+    echo "check-flags: run python3 $reg and commit crates/memra-engine/env-registry.txt with the" >&2
+    echo "    $flag_doc edit." >&2
+    exit 1
+elif (( reg_rc != 0 )); then
+    echo "check-flags: $reg failed (rc=$reg_rc)" >&2
+    exit 2
+fi

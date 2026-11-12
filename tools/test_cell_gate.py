@@ -434,7 +434,7 @@ class CellGate(unittest.TestCase):
                          ("README.md", "docs/guide.md", "research/other-lane/README.md"))
 
     def test_a_docs_file_a_crate_reads_still_voids_the_record(self):
-        # build.rs reading docs/FLAGS.md is the real case; the include census sees the read.
+        # A crate test reading docs/EXECUTION-SURFACES.md is the real case; the include census sees it.
         self.f.write("docs/table.md", "| a |\n")
         self.f.write("crates/memra-server/src/worker.rs",
                      'pub fn step() { let _ = include_str!("../../../docs/table.md"); }\n')

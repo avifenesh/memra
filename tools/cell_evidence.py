@@ -269,7 +269,7 @@ def research_drift(repo, old, new):
     rebases onto it, its inputs digest moves, and it re-runs about an hour of device time for
     bytes the build and the gate never see; a README edit on main did that to two landings on
     2026-11-08). The classifier decides (`change_impact.impact_between` under the rules in
-    force), so a file a crate reads (the CI include census, e.g. build.rs reading docs/FLAGS.md)
+    force), so a file a crate reads (the CI include census, e.g. a test reading docs/EXECUTION-SURFACES.md)
     or a gate tool reads (a `gate` rule in tools/change-impact.toml) counts as code. When the
     census cannot answer, its literal fallback misses directory and runtime reads, so this fails
     closed.

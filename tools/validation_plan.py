@@ -1263,9 +1263,6 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
                     inputs[input_pattern].add(package)
                     # A literal may be a directory later extended with join()/read_dir().
                     inputs[input_pattern.rstrip('/') + '/**'].add(package)
-    # memra-engine/build.rs emits the boot-audit registry from this source.
-    if 'memra-engine' in owners.values():
-        inputs['docs/FLAGS.md'].add('memra-engine')
     while True:
         additions = 0
         for packages in inputs.values():

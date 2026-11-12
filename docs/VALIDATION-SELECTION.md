@@ -40,7 +40,7 @@ plan.
 - Inputs outside a crate are dependencies. The census reads both sides of the change, including
   literal, raw, multiline and concatenated Rust includes and runtime fixture paths. Reviewed
   build-script and dynamic-include contracts in `tools/validation_inputs.json` are source-hash bound:
-  `docs/FLAGS.md`, for example, generates engine code. A producer edit invalidates its declaration
+  `crates/memra-engine/env-registry.txt`, for example, generates engine code. A producer edit invalidates its declaration
   until the changed dependency is reviewed.
 - Symlinks, unproven `..` traversal, missing directories, `cfg_attr` module paths and Rust source
   outside crates expand validation until their graph has an explicit contract.

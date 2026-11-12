@@ -102,10 +102,16 @@ class ValidationPlanTests(unittest.TestCase):
         self.assertFalse(any(p['jobs'].values()))
         self.assertEqual(p['native']['scope'], 'none')
 
-    def test_flags_is_a_real_build_input_not_just_documentation(self):
-        p = self.plan(['docs/FLAGS.md'])
+    def test_the_flags_registry_is_the_build_input_not_the_catalog(self):
+        # build.rs reads crates/memra-engine/env-registry.txt, generated from docs/FLAGS.md
+        # (tools/gen-env-registry.py; the flags census refuses a stale one), so a catalog edit
+        # that leaves the registry unchanged builds nothing.
+        p = self.plan(['crates/memra-engine/env-registry.txt'])
         self.assertEqual(p['packages'], ['memra-engine', 'memra-server'])
         self.assertTrue(p['jobs']['build'])
+        p = self.plan(['docs/FLAGS.md'])
+        self.assertEqual(p['packages'], [])
+        self.assertFalse(p['jobs']['build'])
 
     def test_declared_python_contract_avoids_native_compilation(self):
         p = self.plan(['tools/q35-cold-mixed-gate.py'])

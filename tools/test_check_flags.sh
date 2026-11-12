@@ -22,6 +22,7 @@ cd -- "$(dirname -- "$0")/.."
 SCRIPT=$PWD/tools/check-flags.sh
 [[ -x "$SCRIPT" ]] || { echo "test_check_flags: missing $SCRIPT" >&2; exit 2; }
 SHAPE=$PWD/tools/flags-row-shape.py
+REGGEN=$PWD/tools/gen-env-registry.py
 [[ -x "$SHAPE" ]] || { echo "test_check_flags: missing $SHAPE" >&2; exit 2; }
 command -v rg >/dev/null || { echo "test_check_flags: rg is required" >&2; exit 2; }
 # TEETH HARNESS ONLY (tools/test_gate_integrity_r2.sh, the same shape round 1 used for
@@ -52,6 +53,7 @@ fixture() {
     done
     cp "$SCRIPT" "$root/tools/check-flags.sh"
     cp "$SHAPE" "$root/tools/flags-row-shape.py"
+    cp "$REGGEN" "$root/tools/gen-env-registry.py"
     printf '%s\n' "$body" > "$root/crates/$crate/src/lib.rs"
     # The placeholder row keeps the registry non-empty when a case documents nothing: the row-shape
     # half refuses (rc=2) a registry with no rows at all, which is a parser or registry break.
@@ -71,6 +73,11 @@ run_gate() {
     # exit 2 instead of exercising the census. The fixture used to point it at an EMPTY file,
     # which is why these cases behaved the same before and after the cut.
     local root=$1
+    # The registry half (env-registry.txt) is regenerated for every arm unless the arm froze it:
+    # the arms below edit docs/FLAGS.md after fixture(), and only the registry arms test staleness.
+    if [[ ! -e "$root/.registry-frozen" ]]; then
+        ( cd "$root" && python3 tools/gen-env-registry.py >/dev/null )
+    fi
     ( cd "$root" && tools/check-flags.sh 2>&1 )
 }
 
@@ -499,6 +506,24 @@ else
     fail=$((fail+1))
 fi
 
+# ---------------------------------------------------------------------------
+# REGISTRY (2026-11-12). build.rs reads crates/memra-engine/env-registry.txt, generated from
+# docs/FLAGS.md by tools/gen-env-registry.py, so a catalog edit that changes the registry must
+# commit the regenerated file. One red arm for a stale registry, one for a missing generator.
+# ---------------------------------------------------------------------------
+reg_root=$(fixture memra-engine "$SHAPE_READ" MEMRA_FIXTURE_SHAPE)
+( cd "$reg_root" && python3 tools/gen-env-registry.py >/dev/null )
+printf '| `MEMRA_FIXTURE_NEW` | added without regenerating the registry |\n' >> "$reg_root/docs/FLAGS.md"
+: > "$reg_root/.registry-frozen"
+check "registry: a catalog edit without the regenerated registry is REFUSED" 1 \
+    "env-registry.txt" "$reg_root"
+
+reg_root=$(fixture memra-engine "$SHAPE_READ" MEMRA_FIXTURE_SHAPE)
+rm "$reg_root/tools/gen-env-registry.py"
+: > "$reg_root/.registry-frozen"
+check "registry: a missing generator is a refusal, never a pass" 2 \
+    "gen-env-registry" "$reg_root"
+
 # The retired baseline must STAY gone in this tree. The throwaway arms above prove the gate
 # refuses a reappearance; this proves nobody has restored it here — the difference between "the
 # refusal works" and "there is nothing to refuse".
@@ -523,10 +548,11 @@ fi
 # row-shape arm (memra#127, 2026-09-27) = 34; + 3 CUDA-read arms and a fourth live flag
 # (MEMRA_MIMO_SPLIT_STAGE_TIMING, 3 assertions) on 2026-11-03 = 40; + 3 CPU-expert-companion
 # arms and a fifth live flag (MEMRA_CPU_EXPERT_IO_CPUSET, 3 assertions) the same day = 46;
-# + 3 build-script arms and a sixth live flag (MEMRA_MMQ_X_Q45K, 3 assertions) the same day = 52.
+# + 3 build-script arms and a sixth live flag (MEMRA_MMQ_X_Q45K, 3 assertions) the same day = 52;
+# + 2 registry arms (env-registry.txt, 2026-11-12) = 54.
 # (This constant caught its own first draft: it was written 23 and the run refused at 19. It
 # went 19 -> 24 on 2026-08-23 when the grandfather list was deleted.)
-EXPECTED_ASSERTIONS=52
+EXPECTED_ASSERTIONS=54
 total=$((pass + fail))
 printf '\ntest_check_flags: %d passed, %d failed (%d assertions, expected %d)\n' \
     "$pass" "$fail" "$total" "$EXPECTED_ASSERTIONS"
