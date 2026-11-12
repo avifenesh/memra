@@ -80,9 +80,10 @@ The review's change (17f4e087ef) touches only the discrete branch and the code's
 unified memory it decides, trims and logs as `vi` did, so the GB10 cells and gates stand for the
 head.
 
-`spec.rs` at 782dc471b7 equals main 46920874c0's and cdfdfd6006's, and the PR's `spec.rs` is byte-identical to V's
-(sha256 35f42088...). The B/W/N/V builds share one tree and one target directory on u1
-(`gb10/build-probe.log`, `gb10/build-arms.log`).
+`spec.rs` at 782dc471b7 equals main 46920874c0's and cdfdfd6006's. V's `spec.rs` is the PR's at
+6009545f71 (sha256 35f42088...); the head's differs from it only by the review change above. The
+B/W/N/V builds share one tree and one target directory on u1 (`gb10/build-probe.log`,
+`gb10/build-arms.log`).
 
 ## 1. Where the pause goes (main, Nsight Systems, one profile per size)
 
@@ -258,6 +259,31 @@ When memory is really short the head's guard still refuses the capture. It reads
 logged an out-of-memory line, every server exited 0, the kernel logged no OOM in any window, and
 the 131k text is the one every other 131k cell served. The 03-B row is kept for completeness.
 
+**The band the PR opens: raw < required <= `MemAvailable`** (`gb10/band-u1`, B V V B, review
+S3; `tools/band_u1.sh`, rows by `tools/band_rows.py`). The same cell with the holder's target
+at 3,500 MB: once the g131k prime starts, the holder keeps `MemAvailable` between about 3,250 and
+3,750 MB (it takes or gives back 256 MB chunks), so at the cold request's capture the raw reading
+is under the 3,140 MB requirement and `MemAvailable` is above it. Directory label W is `vi`.
+
+| cell | MemAvailable at the capture | capture guard | lowest MemAvailable to the request's end | request | OOM lines (server / kernel) |
+|---|---:|---|---:|---|---|
+| 01-B | 3,429 MB | refused: effective 2,459 MB (driver 1,389 + pool 1,070) < 3,140 | 3,429 MB | served eagerly, e3b0c1e81f9a | 0 / 0 |
+| 02-W (V) | 3,463 MB | went ahead, no trim; captured (no capture warning) | 3,428 MB | served, e3b0c1e81f9a | 0 / 0 |
+| 03-W (V) | 3,470 MB | went ahead, no trim; captured (no capture warning) | 3,225 MB | served, e3b0c1e81f9a | 0 / 0 |
+| 04-B | 3,476 MB | refused: effective 2,478 MB (driver 1,408 + pool 1,070) < 3,141 | 3,475 MB | served eagerly, e3b0c1e81f9a | 0 / 0 |
+
+In the band main refuses the capture and the head takes it, and the capture succeeds: the guard
+logs nothing on its `Go` path, and any failed capture, refused before the attempt or failed by
+the driver, prints the `[spec] WARN: draft-graph capture failed` line, which neither V cell has.
+Every server exited 0 and the kernel logged no OOM in any window. The rounds are the same on both
+arms (137.7-138.6 ms per round, 36 rounds, 60 of 108 drafts accepted, TTFT 117.6-117.9 s):
+at 131k the eager draft costs no measurable time per round. In every cell the holder gave back
+one 256 MB chunk after the capture, on both arms alike, so a memory over-ask that only the kernel
+OOM killer could settle is not what these cells test; the capture's appetite here is 2 x 34 MB
+under a 3,072 MB floor. With `MemAvailable` this low the prefix cache refuses the 131k entry
+for its byte budget (insert budget 3,888-4,156 MB, entry 4,290 MB) in all four cells, so there is no
+publication to time.
+
 ## 7. RTX 5090 Laptop GPU: the discrete path
 
 Binaries built for sm_120a on the CPU build host from the PR tree (`cpu/build5090*.log`):
@@ -301,16 +327,22 @@ with its MTP draft, GB10 (`gb10/gates/`):
 
 On the CPU build host (`cpu/`), sm_120a build, `--release --locked`:
 
-- **The red/green test.** `pre_capture_guard_reads_the_allocatable_free_memory` passes at the head
-  and fails on the same tree with the guard on the raw reading ("the pre-capture guard reads the
-  raw driver free memory", `cpu/census-final.txt`). The first commit's
-  `pre_capture_trim_releases_the_shortfall_not_the_cache` fails on main's trim
-  (`cpu/census-narrow-trim.txt`).
-- **The local CI CPU chain** on the PR's tree after its rebase onto cdfdfd6006
-  (`cpu/full-final.txt`): `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, the
-  coalescer contracts, `memra-server` (1,223 passed), `memra-engine --lib` (743 passed),
-  `memra-gguf --lib` (417 passed; model files absent on that host, so this is not the skip
-  census), `tools/portable-suites.sh`: all exit 0.
+All on the head's code (17f4e087ef; every file under `crates/` and `tools/` matched the PR's by
+sha256):
+
+- **The red/green tests.** `pre_capture_guard_plan_by_reading_and_device` (the table over the GB10
+  readings and the discrete rows, plus the pin that the guard reads `allocatable_mem_info` and
+  decides through `capture_headroom_plan`) passes at the head and fails on the same tree with the
+  guard on the raw reading (`cpu/census-r2-raw.txt`).
+  `pre_capture_trim_releases_the_shortfall_not_the_cache` passes at the head and fails with the
+  unified trim back to zero ("the pre-capture trim does not keep the pool's blocks above the
+  shortfall", `cpu/census-r2-zero.txt`). Before the review the same pair ran on the first commit
+  (`cpu/census-narrow-trim.txt`) and on 6009545f71 (`cpu/census-final.txt`, whose guard test the
+  table test replaced).
+- **The local CI CPU chain** (`cpu/full-r2.txt`): `cargo fmt --check`,
+  `cargo clippy --all-targets -D warnings`, the coalescer contracts, `memra-server` (1,223
+  passed), `memra-engine --lib` (743 passed), `memra-gguf --lib` (417 passed; model files absent
+  on that host, so this is not the skip census), `tools/portable-suites.sh`: all exit 0.
 
 ## Reproduce
 
@@ -318,7 +350,9 @@ Every cell: `tools/specpub_cell.sh CAMPAIGN NN-ARM ...` under one Spark lease
 (`tools/unit_cell.sh`, `tools/ab_run.sh`), with `MID="bash box/fill_cache.sh 3000"` for a filled
 page cache; tables: `tools/specpub_tab.py gb10/CAMPAIGN`. Probe arms: `tools/probe_i782.py` on
 `crates/memra-server/src/worker.rs` at 782dc471b7, built by `tools/spark_build_probe.sh` and
-`tools/spark_build_arms.sh`. Truly short: `tools/short_cell.sh`. 5090: `tools/rtx_ab.sh`.
+`tools/spark_build_arms.sh`. Truly short: `tools/short_cell.sh`; the band: `tools/band_u1.sh`
+(`SIZE=131072 short_cell.sh band-u1 NN-ARM BIN 3500` per cell), rows by `tools/band_rows.py`.
+5090: `tools/rtx_ab.sh`.
 Receipts were copied by `tools/receipts.py` (home paths written as `~`, units as `u1`/`u2`, files
 over 64 KB gzipped).
 
