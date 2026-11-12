@@ -255,12 +255,14 @@ session. Cost on Qwen3.5-9B NVFP4 + MTP, one RTX 5090, 256-token greedy, N=3 (20
   ([SPEC-COHORT-NEWCOMER.md](../decisions/SPEC-COHORT-NEWCOMER.md),
   [`research/spec-cohort-newcomer-20261112/`](../../research/spec-cohort-newcomer-20261112/)).
 - **A plain session behind the bursts advances once per round** (memra#1244, 2026-11-12). A plain
-  request with a host sampler (greedy with a penalty) rides the pooled cohort like a device-sampled
-  one, while the cost model keeps the streams speculative (on GB10's Qwen3.8-27B up to 4 riders
+  interactive request with a host sampler (greedy with a penalty) rides the pooled cohort like a
+  device-sampled one, while the cost model keeps the streams speculative (on GB10's Qwen3.8-27B up to 4 riders
   beside 2 streams). While an interactive plain session gets its step only after the tick's
   bursts (constrained, vision, fork, a rider candidate no cohort carries, a prompt whose prime
   phase (b) runs this tick within one chunk), every MTP burst of the tick ends at its first
-  round. Judge and harvest sessions never engage it. Before, such a session got one token per
+  round, in a tick with no DFlash2, glm5 or gemma burst. Judge and harvest sessions never engage
+  it, never keep interactive riders in phase (c), and keep their burst cadence on yielded ticks.
+  Before, such a session got one token per
   burst: on GB10 1.4 to 1.8 s between tokens beside one to three streams, 0.10 to 0.19 s now.
   The streams lose 1 to 5% beside a rider row in their forward and pay for the plain session's
   own forward while it is live otherwise (24 to 29% on GB10 beside a constrained request; 29 to
