@@ -22774,406 +22774,458 @@ pub fn run(
             let mut rider_ledger = RiderLedger::default();
             // (active index, generated length before its cohort ran)
             let mut rider_before: Vec<(usize, usize)> = Vec::new();
-            {
-                // (model, dspark cohort?, members)
-                let mut cohorts: Vec<(String, bool, Vec<usize>)> = Vec::new();
-                for &i in &spec_order {
-                    let s = &active[i];
-                    if finished.contains(&i) {
-                        continue;
-                    }
-                    let lm = &loaded[&s.model];
-                    let dspark = dspark_pool_candidate(s, lm, &dspark_drafts);
-                    if !dspark && !spec_pool_candidate(s, lm) {
-                        continue;
-                    }
-                    match cohorts
-                        .iter_mut()
-                        .find(|(m, k, _)| *m == s.model && *k == dspark)
-                    {
-                        Some((_, _, v)) => v.push(i),
-                        None => cohorts.push((s.model.clone(), dspark, vec![i])),
-                    }
-                }
-                let mut riders_of: HashMap<String, Vec<usize>> = HashMap::new();
-                // A model with a decoding plain session that cannot ride (constrained,
-                // host-sampled, vision, fork) takes no riders this tick: the lockstep advances
-                // riders once per round, and the session left in phase (c) would get one token
-                // per (now longer) tick. Measured on the q9 mixed cell at c=8 (two such rows
-                // beside four riders): 0.94x aggregate with riders, the tail set by the rows
-                // left behind.
-                let mut left_behind: std::collections::HashSet<String> =
-                    std::collections::HashSet::new();
-                for (i, s) in active.iter().enumerate() {
-                    if finished.contains(&i) {
-                        continue;
-                    }
-                    if plain_rider_candidate(s, &loaded[&s.model], &eager_decode) {
-                        riders_of.entry(s.model.clone()).or_default().push(i);
-                    } else if s.spec.is_none()
-                        && s.gspec_k == 0
-                        && !s.dspark_on
-                        && !s.glm5_on
-                        && s.prefill_done
-                        && s.cache.is_some()
-                    {
-                        left_behind.insert(s.model.clone());
-                    }
-                }
-                riders_of.retain(|m, _| !left_behind.contains(m));
-                // A cohort of two or more, or one MTP member carrying riders.
-                cohorts.retain(|(m, d, v)| {
-                    v.len() >= 2 || (!*d && !v.is_empty() && riders_of.contains_key(m))
-                });
-                for (model, dspark, cohort) in cohorts {
-                    let riders: Vec<usize> = if dspark {
-                        Vec::new()
-                    } else {
-                        riders_of.remove(&model).unwrap_or_default()
-                    };
-                    // Engagement receipt, once per route and cohort size (the dead-arm lesson).
-                    static SEEN: std::sync::atomic::AtomicU64 =
-                        std::sync::atomic::AtomicU64::new(0);
-                    static SEEN_DSPARK: std::sync::atomic::AtomicU64 =
-                        std::sync::atomic::AtomicU64::new(0);
-                    let bit = 1u64 << cohort.len().min(63);
-                    let seen = if dspark { &SEEN_DSPARK } else { &SEEN };
-                    if seen.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
-                        eprintln!(
-                            "[spec-pool] pooled {} cohort engaged: {} sessions (model {})",
-                            if dspark { "DFlash2" } else { "MTP" },
-                            cohort.len(),
-                            active[cohort[0]].model
-                        );
-                    }
-                    if !riders.is_empty() {
-                        static SEEN_UNIFIED: std::sync::Mutex<Vec<(usize, usize)>> =
-                            std::sync::Mutex::new(Vec::new());
-                        let shape = (cohort.len(), riders.len());
-                        let mut seen = SEEN_UNIFIED.lock().unwrap_or_else(|p| p.into_inner());
-                        if !seen.contains(&shape) {
-                            seen.push(shape);
-                            eprintln!(
-                                "[spec-pool] unified step engaged: {} spec + {} plain sessions \
-                                 (model {})",
-                                shape.0, shape.1, model
-                            );
-                        }
-                    }
-                    let gen_before: HashMap<usize, usize> = cohort
-                        .iter()
-                        .map(|&i| (i, active[i].generated.len()))
-                        .collect();
-                    for &i in &riders {
-                        rider_before.push((i, active[i].generated.len()));
-                    }
-                    let started = Instant::now();
-                    let ids: Vec<String> = cohort
-                        .iter()
-                        .chain(&riders)
-                        .map(|&i| active[i].request_id.clone())
-                        .collect();
-                    let route = fault_route(&active[cohort[0]]);
-                    let mut out = Vec::new();
-                    let guarded =
-                        guard_request(&engine, &ids.join(","), &route, "pooled spec step", || {
-                            out = if dspark {
-                                step_dspark_pooled(
-                                    &engine,
-                                    &loaded,
-                                    &dspark_drafts,
-                                    &mut active,
-                                    &cohort,
-                                )
-                            } else {
-                                step_spec_pooled(
-                                    &engine,
-                                    &loaded,
-                                    &mut active,
-                                    &cohort,
-                                    &riders,
-                                    &mut rider_ledger,
-                                    &mut spec_metrics,
-                                )
-                            };
-                            Ok(())
-                        });
-                    let ms = started.elapsed().as_secs_f32() * 1000.0;
-                    match guarded {
-                        Ok(()) => {
-                            for (i, r) in out {
-                                pooled_steps.insert(i, (r, ms, gen_before[&i]));
-                            }
-                        }
-                        // A fault inside the cohort leaves every member's device state as the
-                        // unwound frames left it: each member gets the quoted fault.
-                        Err(err) => {
-                            for &i in &cohort {
-                                pooled_steps
-                                    .insert(i, (Err(err.to_string().into()), ms, gen_before[&i]));
-                            }
-                            // Riders still in the lockstep get the batched step's error arm.
-                            for &i in &riders {
-                                rider_ledger.served.insert(i);
-                                if rider_ledger.finished.contains(&i) {
-                                    continue;
-                                }
-                                quarantine_request_fault(&mut active[i], err.as_ref());
-                                active[i].aborted = true;
-                                active[i].errored = true;
-                                let _ = active[i].tx.send(Event::Error(EngineError::engine(
-                                    format!("batch step: {err}"),
-                                )));
-                                rider_ledger.finished.push(i);
-                            }
-                        }
-                    }
-                }
-            }
             let mut rider_interactive = false;
-            for &(i, before) in &rider_before {
-                let lane = active[i].lane;
-                let emitted = record_output_tokens(
-                    before,
-                    active[i].generated.len(),
-                    lane,
-                    &mut n_tokens_out,
-                    &mut lane_tokens,
-                );
-                if emitted > 0 && lane == crate::lanes::Lane::Interactive {
-                    rider_interactive = true;
-                    last_interactive_decode = Instant::now();
-                }
-            }
-            for &i in &rider_ledger.finished {
-                if !finished.contains(&i) {
-                    finished.push(i);
-                }
-            }
-            for i in spec_order {
-                if finished.contains(&i) {
-                    continue;
-                }
-                // Re-read after each prime step: a peer later in this same tick already
-                // owes bounded service when an earlier route has just yielded. Only another
-                // row's pending prime counts: a row finishing its own split prime this tick
-                // owes no quantum to itself (memra#1085).
-                active[i].prime_service.peer_quantum =
-                    memra_engine::prime_walker::prime_yield_enabled()
-                        && crate::prime_fairness::owes_peer_quantum(
-                            i,
-                            active.iter().map(|s| s.prime_service.pending),
-                        );
-                // A pooled cohort member already ran this tick: its progress counts from the
-                // length it had before the cohort (token metrics, lane accounting, the cost
-                // gate's realized-rate samples all read the delta).
-                let generated_before = pooled_steps
-                    .get(&i)
-                    .map_or(active[i].generated.len(), |(_, _, g)| *g);
-                let lane = active[i].lane;
-                let step_started = Instant::now();
-                let trace_before = t_spec.map(|phase_start| {
-                    (
-                        phase_start.elapsed().as_secs_f32() * 1000.0,
-                        generated_before,
-                        active[i].spec_rounds,
-                        active[i].spec_drafted,
-                        active[i].spec_accepted,
-                        active[i].spec_k,
-                        active[i].trace_id.clone().unwrap_or_else(|| "-".into()),
-                        Instant::now(),
-                    )
-                });
-                let was_dspark_step = active[i].dspark_on;
-                // MEMRA_STEP_OOM_FAULT (diagnostic door, battery-20260831 tenancy-gates
-                // T2): forge a quoted CUDA OOM instead of running this step, LOUD and
-                // named. The step itself is SKIPPED (no device work on a card the gate is
-                // pretending is full); the match below (park-vs-honest-error, the
-                // teardown fence, park_requeue, the retry budget) is production logic,
-                // un-doctored. One of the door's two injection points: this spec-phase step and
-                // the batched decode chunk (WP-B day 38 addendum A).
-                let (fault_id, fault_route) =
-                    (active[i].request_id.clone(), fault_route(&active[i]));
-                let pooled_step = pooled_steps.remove(&i);
-                let pooled_ms = pooled_step.as_ref().map(|(_, ms, _)| *ms);
-                let step_result = if let Some((r, _, _)) = pooled_step {
-                    r
-                } else {
-                    guard_request(&engine, &fault_id, &fault_route, "spec step", || {
-                        if step_oom_fault_fire() {
-                            eprintln!(
-                                "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this step reports a \
-                             synthetic CUDA OOM (model {}, generated {}, oom_retries {}/{})",
-                                active[i].model,
-                                active[i].generated.len(),
-                                active[i].oom_retries,
-                                step_oom_retries(),
-                            );
-                            Err(STEP_OOM_FAULT_MSG.into())
-                        } else if was_dspark_step {
-                            step_dspark_spec(&engine, &loaded, &mut dspark_drafts, &mut active[i])
-                        } else if active[i].glm5_on {
-                            step_glm5_spec(&engine, &loaded, &mut active[i])
-                        } else if active[i].gspec_k > 0 {
-                            step_gemma_spec(&engine, &loaded, &mut gemma_drafts, &mut active[i])
-                        } else {
-                            step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
+            // NEWCOMERS PRIME BEFORE THE COHORTS (memra#1227). The cohorts used to step first,
+            // so a newcomer admitted at this tick's top (no longer a waiting admission, so the
+            // admission yield does not see it) waited out a whole lockstep burst before its
+            // prime: on GB10's 27B 1.6 to 2.4 s to the first token behind two or three
+            // streams, against 0.3 s behind one. Now the sessions that have emitted nothing
+            // and start a prime this tick step first (`spec_cold_serial_first`), the cohorts
+            // form after them, so a session whose prime completed joins this tick's lockstep
+            // instead of waiting a burst for its second token, and every other serial session
+            // steps last. Order across independent sessions and cohort membership are
+            // content-neutral (the pooled step is the serial step's stream), so this moves
+            // when tokens come, never which.
+            let cold_first = spec_cold_serial_first(&spec_order, admit_yield_on, |i| {
+                let s = &active[i];
+                let lm = &loaded[&s.model];
+                !finished.contains(&i)
+                    && s.generated.is_empty()
+                    && !s.prime_service.pending
+                    && !dspark_pool_candidate(s, lm, &dspark_drafts)
+                    && !spec_pool_candidate(s, lm)
+            });
+            for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] {
+                if pass == SpecPass::Cohorts {
+                    // (model, dspark cohort?, members)
+                    let mut cohorts: Vec<(String, bool, Vec<usize>)> = Vec::new();
+                    for &i in &spec_order {
+                        let s = &active[i];
+                        if finished.contains(&i) {
+                            continue;
                         }
-                    })
-                };
-                let step_elapsed_ms =
-                    pooled_ms.unwrap_or_else(|| step_started.elapsed().as_secs_f32() * 1000.0);
-                if let Some((
-                    start_ms,
-                    generated0,
-                    rounds0,
-                    drafted0,
-                    accepted0,
-                    k,
-                    trace_id,
-                    call_start,
-                )) = trace_before
-                {
-                    let end_ms = t_spec.unwrap().elapsed().as_secs_f32() * 1000.0;
-                    spec_calls += 1;
-                    eprintln!(
-                        "[tick-spec] seq={} slot={i} trace={} start_ms={start_ms:.3} \
+                        let lm = &loaded[&s.model];
+                        let dspark = dspark_pool_candidate(s, lm, &dspark_drafts);
+                        if !dspark && !spec_pool_candidate(s, lm) {
+                            continue;
+                        }
+                        // A DFlash2 session that primed in this tick joins the next tick's cohort,
+                        // as before: its first burst hands a prefix capture to the end of the tick.
+                        if dspark && cold_first.contains(&i) {
+                            continue;
+                        }
+                        match cohorts
+                            .iter_mut()
+                            .find(|(m, k, _)| *m == s.model && *k == dspark)
+                        {
+                            Some((_, _, v)) => v.push(i),
+                            None => cohorts.push((s.model.clone(), dspark, vec![i])),
+                        }
+                    }
+                    let mut riders_of: HashMap<String, Vec<usize>> = HashMap::new();
+                    // A model with a decoding plain session that cannot ride (constrained,
+                    // host-sampled, vision, fork) takes no riders this tick: the lockstep advances
+                    // riders once per round, and the session left in phase (c) would get one token
+                    // per (now longer) tick. Measured on the q9 mixed cell at c=8 (two such rows
+                    // beside four riders): 0.94x aggregate with riders, the tail set by the rows
+                    // left behind.
+                    let mut left_behind: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
+                    for (i, s) in active.iter().enumerate() {
+                        if finished.contains(&i) {
+                            continue;
+                        }
+                        if plain_rider_candidate(s, &loaded[&s.model], &eager_decode) {
+                            riders_of.entry(s.model.clone()).or_default().push(i);
+                        } else if s.spec.is_none()
+                            && s.gspec_k == 0
+                            && !s.dspark_on
+                            && !s.glm5_on
+                            && s.prefill_done
+                            && s.cache.is_some()
+                        {
+                            left_behind.insert(s.model.clone());
+                        }
+                    }
+                    riders_of.retain(|m, _| !left_behind.contains(m));
+                    // A cohort of two or more, or one MTP member carrying riders.
+                    cohorts.retain(|(m, d, v)| {
+                        v.len() >= 2 || (!*d && !v.is_empty() && riders_of.contains_key(m))
+                    });
+                    for (model, dspark, cohort) in cohorts {
+                        let riders: Vec<usize> = if dspark {
+                            Vec::new()
+                        } else {
+                            riders_of.remove(&model).unwrap_or_default()
+                        };
+                        // Engagement receipt, once per route and cohort size (the dead-arm lesson).
+                        static SEEN: std::sync::atomic::AtomicU64 =
+                            std::sync::atomic::AtomicU64::new(0);
+                        static SEEN_DSPARK: std::sync::atomic::AtomicU64 =
+                            std::sync::atomic::AtomicU64::new(0);
+                        let bit = 1u64 << cohort.len().min(63);
+                        let seen = if dspark { &SEEN_DSPARK } else { &SEEN };
+                        if seen.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
+                            eprintln!(
+                                "[spec-pool] pooled {} cohort engaged: {} sessions (model {})",
+                                if dspark { "DFlash2" } else { "MTP" },
+                                cohort.len(),
+                                active[cohort[0]].model
+                            );
+                        }
+                        if !riders.is_empty() {
+                            static SEEN_UNIFIED: std::sync::Mutex<Vec<(usize, usize)>> =
+                                std::sync::Mutex::new(Vec::new());
+                            let shape = (cohort.len(), riders.len());
+                            let mut seen = SEEN_UNIFIED.lock().unwrap_or_else(|p| p.into_inner());
+                            if !seen.contains(&shape) {
+                                seen.push(shape);
+                                eprintln!(
+                                    "[spec-pool] unified step engaged: {} spec + {} plain sessions \
+                                 (model {})",
+                                    shape.0, shape.1, model
+                                );
+                            }
+                        }
+                        let gen_before: HashMap<usize, usize> = cohort
+                            .iter()
+                            .map(|&i| (i, active[i].generated.len()))
+                            .collect();
+                        for &i in &riders {
+                            rider_before.push((i, active[i].generated.len()));
+                        }
+                        let started = Instant::now();
+                        let ids: Vec<String> = cohort
+                            .iter()
+                            .chain(&riders)
+                            .map(|&i| active[i].request_id.clone())
+                            .collect();
+                        let route = fault_route(&active[cohort[0]]);
+                        let mut out = Vec::new();
+                        let guarded = guard_request(
+                            &engine,
+                            &ids.join(","),
+                            &route,
+                            "pooled spec step",
+                            || {
+                                out = if dspark {
+                                    step_dspark_pooled(
+                                        &engine,
+                                        &loaded,
+                                        &dspark_drafts,
+                                        &mut active,
+                                        &cohort,
+                                    )
+                                } else {
+                                    step_spec_pooled(
+                                        &engine,
+                                        &loaded,
+                                        &mut active,
+                                        &cohort,
+                                        &riders,
+                                        &mut rider_ledger,
+                                        &mut spec_metrics,
+                                    )
+                                };
+                                Ok(())
+                            },
+                        );
+                        let ms = started.elapsed().as_secs_f32() * 1000.0;
+                        match guarded {
+                            Ok(()) => {
+                                for (i, r) in out {
+                                    pooled_steps.insert(i, (r, ms, gen_before[&i]));
+                                }
+                            }
+                            // A fault inside the cohort leaves every member's device state as the
+                            // unwound frames left it: each member gets the quoted fault.
+                            Err(err) => {
+                                for &i in &cohort {
+                                    pooled_steps.insert(
+                                        i,
+                                        (Err(err.to_string().into()), ms, gen_before[&i]),
+                                    );
+                                }
+                                // Riders still in the lockstep get the batched step's error arm.
+                                for &i in &riders {
+                                    rider_ledger.served.insert(i);
+                                    if rider_ledger.finished.contains(&i) {
+                                        continue;
+                                    }
+                                    quarantine_request_fault(&mut active[i], err.as_ref());
+                                    active[i].aborted = true;
+                                    active[i].errored = true;
+                                    let _ = active[i].tx.send(Event::Error(EngineError::engine(
+                                        format!("batch step: {err}"),
+                                    )));
+                                    rider_ledger.finished.push(i);
+                                }
+                            }
+                        }
+                    }
+                    for &(i, before) in &rider_before {
+                        let lane = active[i].lane;
+                        let emitted = record_output_tokens(
+                            before,
+                            active[i].generated.len(),
+                            lane,
+                            &mut n_tokens_out,
+                            &mut lane_tokens,
+                        );
+                        if emitted > 0 && lane == crate::lanes::Lane::Interactive {
+                            rider_interactive = true;
+                            last_interactive_decode = Instant::now();
+                        }
+                    }
+                    for &i in &rider_ledger.finished {
+                        if !finished.contains(&i) {
+                            finished.push(i);
+                        }
+                    }
+                }
+                for &i in &spec_order {
+                    if finished.contains(&i)
+                        || !spec_pass_steps(
+                            pass,
+                            cold_first.contains(&i),
+                            pooled_steps.contains_key(&i),
+                        )
+                    {
+                        continue;
+                    }
+                    // Re-read after each prime step: a peer later in this same tick already
+                    // owes bounded service when an earlier route has just yielded. Only another
+                    // row's pending prime counts: a row finishing its own split prime this tick
+                    // owes no quantum to itself (memra#1085).
+                    active[i].prime_service.peer_quantum =
+                        memra_engine::prime_walker::prime_yield_enabled()
+                            && crate::prime_fairness::owes_peer_quantum(
+                                i,
+                                active.iter().map(|s| s.prime_service.pending),
+                            );
+                    // A pooled cohort member already ran this tick: its progress counts from the
+                    // length it had before the cohort (token metrics, lane accounting, the cost
+                    // gate's realized-rate samples all read the delta).
+                    let generated_before = pooled_steps
+                        .get(&i)
+                        .map_or(active[i].generated.len(), |(_, _, g)| *g);
+                    let lane = active[i].lane;
+                    let step_started = Instant::now();
+                    let trace_before = t_spec.map(|phase_start| {
+                        (
+                            phase_start.elapsed().as_secs_f32() * 1000.0,
+                            generated_before,
+                            active[i].spec_rounds,
+                            active[i].spec_drafted,
+                            active[i].spec_accepted,
+                            active[i].spec_k,
+                            active[i].trace_id.clone().unwrap_or_else(|| "-".into()),
+                            Instant::now(),
+                        )
+                    });
+                    let was_dspark_step = active[i].dspark_on;
+                    // MEMRA_STEP_OOM_FAULT (diagnostic door, battery-20260831 tenancy-gates
+                    // T2): forge a quoted CUDA OOM instead of running this step, LOUD and
+                    // named. The step itself is SKIPPED (no device work on a card the gate is
+                    // pretending is full); the match below (park-vs-honest-error, the
+                    // teardown fence, park_requeue, the retry budget) is production logic,
+                    // un-doctored. One of the door's two injection points: this spec-phase step and
+                    // the batched decode chunk (WP-B day 38 addendum A).
+                    let (fault_id, fault_route) =
+                        (active[i].request_id.clone(), fault_route(&active[i]));
+                    let pooled_step = pooled_steps.remove(&i);
+                    let pooled_ms = pooled_step.as_ref().map(|(_, ms, _)| *ms);
+                    let step_result = if let Some((r, _, _)) = pooled_step {
+                        r
+                    } else {
+                        guard_request(&engine, &fault_id, &fault_route, "spec step", || {
+                            if step_oom_fault_fire() {
+                                eprintln!(
+                                    "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this step reports a \
+                             synthetic CUDA OOM (model {}, generated {}, oom_retries {}/{})",
+                                    active[i].model,
+                                    active[i].generated.len(),
+                                    active[i].oom_retries,
+                                    step_oom_retries(),
+                                );
+                                Err(STEP_OOM_FAULT_MSG.into())
+                            } else if was_dspark_step {
+                                step_dspark_spec(
+                                    &engine,
+                                    &loaded,
+                                    &mut dspark_drafts,
+                                    &mut active[i],
+                                )
+                            } else if active[i].glm5_on {
+                                step_glm5_spec(&engine, &loaded, &mut active[i])
+                            } else if active[i].gspec_k > 0 {
+                                step_gemma_spec(&engine, &loaded, &mut gemma_drafts, &mut active[i])
+                            } else {
+                                step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
+                            }
+                        })
+                    };
+                    let step_elapsed_ms =
+                        pooled_ms.unwrap_or_else(|| step_started.elapsed().as_secs_f32() * 1000.0);
+                    if let Some((
+                        start_ms,
+                        generated0,
+                        rounds0,
+                        drafted0,
+                        accepted0,
+                        k,
+                        trace_id,
+                        call_start,
+                    )) = trace_before
+                    {
+                        let end_ms = t_spec.unwrap().elapsed().as_secs_f32() * 1000.0;
+                        spec_calls += 1;
+                        eprintln!(
+                            "[tick-spec] seq={} slot={i} trace={} start_ms={start_ms:.3} \
                          gap_ms={:.3} wall_ms={:.3} generated={generated0}->{} rounds={} \
                          drafted={} accepted={} k={k}",
-                        spec_calls,
-                        trace_id,
-                        start_ms - spec_prev_end_ms,
-                        call_start.elapsed().as_secs_f32() * 1000.0,
-                        active[i].generated.len(),
-                        active[i].spec_rounds.saturating_sub(rounds0),
-                        active[i].spec_drafted.saturating_sub(drafted0),
-                        active[i].spec_accepted.saturating_sub(accepted0),
-                    );
-                    spec_prev_end_ms = end_ms;
-                }
-                record_output_progress(
-                    generated_before,
-                    active[i].generated.len(),
-                    lane,
-                    step_elapsed_ms,
-                    &mut n_tokens_out,
-                    &mut lane_tokens,
-                    &mut step_stats,
-                    &mut last_interactive_decode,
-                );
-                // A first DFlash burst may also finish the request. Transfer its one-shot capture
-                // only after success; publication waits until ALL current-tick serving work has
-                // run, so the first c2 owner cannot serialize a large prefix copy ahead of row
-                // two, interactive prefill, or plain decode. Errored bursts stay unpublished.
-                if should_collect_dspark_after_phase_a(was_dspark_step, step_result.is_ok())
-                    && let Some(cap) = take_dspark_prefix_capture(&mut active[i])
-                {
-                    dspark_phase_captures.push((i, cap));
-                }
-                match step_result {
-                    Ok(true) => {}
-                    Ok(false) => finished.push(i),
-                    // STEP-OOM PARK-NOT-KILL (lane/admit-oom, 2026-08-06). A step that OOMs
-                    // on a card-full condition used to kill the stream outright, and at c=64
-                    // that killed ALL 64 in one tick sweep (research/serving-density-20260806
-                    // §Q2: 0/64 well-formed). The honest admission gate above makes this rare
-                    // — it is now the TRANSIENT-COLLISION backstop, for the case where two
-                    // sessions' capture arenas land in the same tick despite the reserve.
-                    //
-                    // The session PARKS: its caches drop (freeing exactly the VRAM the retry
-                    // needs) and the REQUEST goes back to the admission queue, where the
-                    // reserve-floor gate holds it until a retire frees room — the same
-                    // FIFO-wait every over-cap request already takes. Bounded by
-                    // step_oom_retries() before the honest error, so a genuine capacity
-                    // failure still surfaces instead of looping forever.
-                    //
-                    // WHAT PARKING COSTS, stated honestly: the session's committed KV is
-                    // discarded, so the retry RE-PRIMES its prompt from scratch. That is
-                    // pure latency, never a correctness change — a re-primed session emits
-                    // exactly what a cold one would (the same property the F5 right-size
-                    // ladder relies on). Tokens already streamed to the client are NOT
-                    // re-sent: `park_requeue` rebuilds the request with the prompt only, and
-                    // a session that has already emitted cannot be silently restarted, so it
-                    // takes the honest error instead. Only pre-emission sessions park.
-                    // "Emitted" is read from BOTH markers (`step_oom_parkable`): `generated`
-                    // is post-burst bookkeeping, `tokens_emitted` is advanced at every SEND
-                    // site, including the round-cadence flush inside a spec burst
-                    // (`MEMRA_SPEC_FIRST_TOKEN_EAGER`, the qwen sse-cadence hook) — a step
-                    // OOM after an in-burst flush must not replay the streamed prefix.
-                    // A member closed at its round (memra#1209) never parks for a replay: its
-                    // client already has [DONE], even one with nothing emitted (a stop id first).
-                    Err(err)
-                        if is_cuda_oom(&err.to_string())
-                            && active[i].early_done.is_none()
-                            && step_oom_parkable(
-                                active[i].generated.len(),
-                                active[i].tokens_emitted,
-                                active[i].oom_retries,
-                                step_oom_retries(),
-                            ) =>
-                    {
-                        let n_active = active.len();
-                        let s = &mut active[i];
-                        s.oom_retries += 1;
-                        s.oom_teardown = true;
-                        let telemetry = {
-                            let mut parts: Vec<String> = Vec::new();
-                            for_each_device_engine(&engine, &loaded, &mut |device, dev_engine| {
-                                let free =
-                                    dev_engine.ctx().mem_get_info().map(|(f, _)| f).unwrap_or(0);
-                                let (res, used) = dev_engine.pool_reserved_used();
-                                parts.push(format!(
-                                    "dev{device} free {}MB pool-res {}MB pool-used {}MB",
-                                    free / (1 << 20),
-                                    res / (1 << 20),
-                                    used / (1 << 20),
-                                ));
-                            });
-                            parts.join("; ")
-                        };
-                        eprintln!(
-                            "[admit-oom] step OOM parked session back to queue \
-                                   (model {}, retry {}/{}, {n_active} active) [{telemetry}]: {err}",
-                            s.model,
-                            s.oom_retries,
-                            step_oom_retries()
+                            spec_calls,
+                            trace_id,
+                            start_ms - spec_prev_end_ms,
+                            call_start.elapsed().as_secs_f32() * 1000.0,
+                            active[i].generated.len(),
+                            active[i].spec_rounds.saturating_sub(rounds0),
+                            active[i].spec_drafted.saturating_sub(drafted0),
+                            active[i].spec_accepted.saturating_sub(accepted0),
                         );
-                        match park_requeue(&loaded, s) {
-                            Some(req) => {
-                                n_step_oom_parks += 1;
-                                reserve_internal_admission(req.lane);
-                                requeue_oom.push_back(req);
-                                finished.push(i);
-                            }
-                            None => {
-                                // cannot rebuild the request (no prompt to replay) — the
-                                // pre-fix honest error, quoted.
-                                s.errored = true;
-                                send_step_error(s, format!("step error: {err}"));
-                                finished.push(i);
-                            }
-                        }
+                        spec_prev_end_ms = end_ms;
                     }
-                    Err(err) => {
-                        if is_cuda_oom(&err.to_string()) {
-                            // Honest-error OOM exits take the SAME fenced teardown as parks:
-                            // the card just proved full and the stream may still be chewing
-                            // this session's aborted work (lane/step37-vram-admission).
-                            active[i].oom_teardown = true;
+                    record_output_progress(
+                        generated_before,
+                        active[i].generated.len(),
+                        lane,
+                        step_elapsed_ms,
+                        &mut n_tokens_out,
+                        &mut lane_tokens,
+                        &mut step_stats,
+                        &mut last_interactive_decode,
+                    );
+                    // A first DFlash burst may also finish the request. Transfer its one-shot capture
+                    // only after success; publication waits until ALL current-tick serving work has
+                    // run, so the first c2 owner cannot serialize a large prefix copy ahead of row
+                    // two, interactive prefill, or plain decode. Errored bursts stay unpublished.
+                    if should_collect_dspark_after_phase_a(was_dspark_step, step_result.is_ok())
+                        && let Some(cap) = take_dspark_prefix_capture(&mut active[i])
+                    {
+                        dspark_phase_captures.push((i, cap));
+                    }
+                    match step_result {
+                        Ok(true) => {}
+                        Ok(false) => finished.push(i),
+                        // STEP-OOM PARK-NOT-KILL (lane/admit-oom, 2026-08-06). A step that OOMs
+                        // on a card-full condition used to kill the stream outright, and at c=64
+                        // that killed ALL 64 in one tick sweep (research/serving-density-20260806
+                        // §Q2: 0/64 well-formed). The honest admission gate above makes this rare
+                        // — it is now the TRANSIENT-COLLISION backstop, for the case where two
+                        // sessions' capture arenas land in the same tick despite the reserve.
+                        //
+                        // The session PARKS: its caches drop (freeing exactly the VRAM the retry
+                        // needs) and the REQUEST goes back to the admission queue, where the
+                        // reserve-floor gate holds it until a retire frees room — the same
+                        // FIFO-wait every over-cap request already takes. Bounded by
+                        // step_oom_retries() before the honest error, so a genuine capacity
+                        // failure still surfaces instead of looping forever.
+                        //
+                        // WHAT PARKING COSTS, stated honestly: the session's committed KV is
+                        // discarded, so the retry RE-PRIMES its prompt from scratch. That is
+                        // pure latency, never a correctness change — a re-primed session emits
+                        // exactly what a cold one would (the same property the F5 right-size
+                        // ladder relies on). Tokens already streamed to the client are NOT
+                        // re-sent: `park_requeue` rebuilds the request with the prompt only, and
+                        // a session that has already emitted cannot be silently restarted, so it
+                        // takes the honest error instead. Only pre-emission sessions park.
+                        // "Emitted" is read from BOTH markers (`step_oom_parkable`): `generated`
+                        // is post-burst bookkeeping, `tokens_emitted` is advanced at every SEND
+                        // site, including the round-cadence flush inside a spec burst
+                        // (`MEMRA_SPEC_FIRST_TOKEN_EAGER`, the qwen sse-cadence hook) — a step
+                        // OOM after an in-burst flush must not replay the streamed prefix.
+                        // A member closed at its round (memra#1209) never parks for a replay: its
+                        // client already has [DONE], even one with nothing emitted (a stop id first).
+                        Err(err)
+                            if is_cuda_oom(&err.to_string())
+                                && active[i].early_done.is_none()
+                                && step_oom_parkable(
+                                    active[i].generated.len(),
+                                    active[i].tokens_emitted,
+                                    active[i].oom_retries,
+                                    step_oom_retries(),
+                                ) =>
+                        {
+                            let n_active = active.len();
+                            let s = &mut active[i];
+                            s.oom_retries += 1;
+                            s.oom_teardown = true;
+                            let telemetry = {
+                                let mut parts: Vec<String> = Vec::new();
+                                for_each_device_engine(
+                                    &engine,
+                                    &loaded,
+                                    &mut |device, dev_engine| {
+                                        let free = dev_engine
+                                            .ctx()
+                                            .mem_get_info()
+                                            .map(|(f, _)| f)
+                                            .unwrap_or(0);
+                                        let (res, used) = dev_engine.pool_reserved_used();
+                                        parts.push(format!(
+                                            "dev{device} free {}MB pool-res {}MB pool-used {}MB",
+                                            free / (1 << 20),
+                                            res / (1 << 20),
+                                            used / (1 << 20),
+                                        ));
+                                    },
+                                );
+                                parts.join("; ")
+                            };
                             eprintln!(
-                                "[admit-oom] step OOM NOT parked (model {}, retries \
-                                       {}/{}, generated {}, streamed {}): reporting honestly",
-                                active[i].model,
-                                active[i].oom_retries,
-                                step_oom_retries(),
-                                active[i].generated.len(),
-                                active[i].tokens_emitted
+                                "[admit-oom] step OOM parked session back to queue \
+                                   (model {}, retry {}/{}, {n_active} active) [{telemetry}]: {err}",
+                                s.model,
+                                s.oom_retries,
+                                step_oom_retries()
                             );
+                            match park_requeue(&loaded, s) {
+                                Some(req) => {
+                                    n_step_oom_parks += 1;
+                                    reserve_internal_admission(req.lane);
+                                    requeue_oom.push_back(req);
+                                    finished.push(i);
+                                }
+                                None => {
+                                    // cannot rebuild the request (no prompt to replay) — the
+                                    // pre-fix honest error, quoted.
+                                    s.errored = true;
+                                    send_step_error(s, format!("step error: {err}"));
+                                    finished.push(i);
+                                }
+                            }
                         }
-                        quarantine_request_fault(&mut active[i], err.as_ref());
-                        active[i].errored = true;
-                        send_step_error(&active[i], format!("step error: {err}"));
-                        finished.push(i);
+                        Err(err) => {
+                            if is_cuda_oom(&err.to_string()) {
+                                // Honest-error OOM exits take the SAME fenced teardown as parks:
+                                // the card just proved full and the stream may still be chewing
+                                // this session's aborted work (lane/step37-vram-admission).
+                                active[i].oom_teardown = true;
+                                eprintln!(
+                                    "[admit-oom] step OOM NOT parked (model {}, retries \
+                                       {}/{}, generated {}, streamed {}): reporting honestly",
+                                    active[i].model,
+                                    active[i].oom_retries,
+                                    step_oom_retries(),
+                                    active[i].generated.len(),
+                                    active[i].tokens_emitted
+                                );
+                            }
+                            quarantine_request_fault(&mut active[i], err.as_ref());
+                            active[i].errored = true;
+                            send_step_error(&active[i], format!("step error: {err}"));
+                            finished.push(i);
+                        }
                     }
                 }
             }
@@ -33243,6 +33295,40 @@ fn spec_burst_post(
 /// One spec step's result as `step_session` returns it.
 type SpecStepResult = Result<bool, Box<dyn std::error::Error>>;
 
+/// The two passes of phase (a) (memra#1227): the newcomers' primes, then the pooled cohorts and
+/// every other serial step.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum SpecPass {
+    ColdSerial,
+    Cohorts,
+}
+
+/// The spec sessions that step before the tick's pooled cohorts, in `order`'s order: those
+/// `cold_serial` names, which the worker sets to a session that has emitted nothing, is no
+/// cohort candidate (it still primes) and holds no suspended prime (a long prime keeps the
+/// place the prime policy gives it after its first chunk, so a cohort waits one chunk per
+/// newcomer at most). None under `MEMRA_ADMIT_YIELD=0`, the lockstep-fairness order.
+fn spec_cold_serial_first(
+    order: &[usize],
+    admit_yield_on: bool,
+    cold_serial: impl Fn(usize) -> bool,
+) -> Vec<usize> {
+    if !admit_yield_on {
+        return Vec::new();
+    }
+    order.iter().copied().filter(|&i| cold_serial(i)).collect()
+}
+
+/// Whether a session's step is handled in `pass`. `stepped_first`: it is one of the tick's
+/// `spec_cold_serial_first` sessions. `pooled`: a cohort of this tick ran it. A session that
+/// primed in the first pass comes back in the second only as a member of a cohort it joined.
+fn spec_pass_steps(pass: SpecPass, stepped_first: bool, pooled: bool) -> bool {
+    match pass {
+        SpecPass::ColdSerial => stepped_first,
+        SpecPass::Cohorts => !stepped_first || pooled,
+    }
+}
+
 /// A session that may join this tick's pooled MTP cohort: an unconstrained MTP spec session on
 /// a CONTINUATION burst (prompt fully primed, no prime walker in flight). Prime bursts,
 /// constrained sessions and the other spec routes keep the serial per-session step.
@@ -40193,6 +40279,98 @@ mod tests {
              self.record_entry(waiting); let keep = waiting == 0; \
              let keep = self.bound_entry_yield(keep, slice.is_empty());"
         ));
+    }
+
+    /// memra#1227: the sessions that step before the pooled cohorts are the ones the worker
+    /// names (nothing emitted, still to prime, no suspended prime), in the tick's order, and
+    /// none under `MEMRA_ADMIT_YIELD=0`. Before, no session stepped ahead of a cohort.
+    #[test]
+    fn spec_cold_serial_first_names_the_newcomers() {
+        let cold = |i: usize| i == 3 || i == 1;
+        assert_eq!(
+            super::spec_cold_serial_first(&[3, 0, 1, 2], true, cold),
+            [3, 1]
+        );
+        assert_eq!(
+            super::spec_cold_serial_first(&[0, 1, 2, 3], true, cold),
+            [1, 3]
+        );
+        assert!(super::spec_cold_serial_first(&[0, 2], true, cold).is_empty());
+        assert!(
+            super::spec_cold_serial_first(&[3, 0, 1, 2], false, cold).is_empty(),
+            "lockstep fairness keeps the cohorts first"
+        );
+    }
+
+    /// memra#1227: a session's step is handled once per tick, in the pass it ran in. A session
+    /// that primed ahead of the cohorts comes back in the second pass only when a cohort of
+    /// this tick ran it (the same-tick join); without that clause its pooled result would be
+    /// dropped, and without the first clause it would wait for the cohorts as before.
+    #[test]
+    fn spec_pass_steps_each_step_once() {
+        use super::SpecPass::{self, Cohorts, ColdSerial};
+        // (stepped first, pooled) -> the passes that handle it
+        for (first, pooled, want) in [
+            (false, false, vec![Cohorts]),
+            (false, true, vec![Cohorts]),
+            (true, false, vec![ColdSerial]),
+            (true, true, vec![ColdSerial, Cohorts]),
+        ] {
+            let got: Vec<SpecPass> = [ColdSerial, Cohorts]
+                .into_iter()
+                .filter(|&p| super::spec_pass_steps(p, first, pooled))
+                .collect();
+            assert_eq!(got, want, "stepped_first={first} pooled={pooled}");
+        }
+    }
+
+    /// memra#1227's wiring: phase (a) names the newcomers before any step, runs their pass
+    /// ahead of the cohort pass, forms the cohorts inside the second pass (so a session that
+    /// primed in the first can join), and the per-session loop reads the pass. Without any one
+    /// of them a newcomer waits out a pooled burst again and the unit tests above still pass.
+    #[test]
+    fn spec_newcomers_prime_before_cohorts_is_wired() {
+        let worker: String = include_str!("worker.rs")
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let live = worker[..worker.find("mod tests").expect("the test module exists")]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let at = |a: &str| live.find(a).unwrap_or_else(|| panic!("{a} exists"));
+        let named = at(
+            "let cold_first = spec_cold_serial_first(&spec_order, admit_yield_on, |i| { let s = \
+             &active[i]; let lm = &loaded[&s.model]; !finished.contains(&i) && \
+             s.generated.is_empty() && !s.prime_service.pending && !dspark_pool_candidate(s, lm, \
+             &dspark_drafts) && !spec_pool_candidate(s, lm) });",
+        );
+        let passes = at(
+            "for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] { if pass == SpecPass::Cohorts {",
+        );
+        let cohorts = at("let mut cohorts: Vec<(String, bool, Vec<usize>)> = Vec::new();");
+        let pooled = at("step_spec_pooled( &engine, &loaded, &mut active, &cohort,");
+        let steps = at(
+            "for &i in &spec_order { if finished.contains(&i) || !spec_pass_steps( pass, \
+             cold_first.contains(&i), pooled_steps.contains_key(&i), ) { continue; }",
+        );
+        let serial = at("step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)");
+        let marks = at("spec_cost_close_wave_marks(); for s in active.iter_mut() {");
+        assert!(
+            named < passes
+                && passes < cohorts
+                && cohorts < pooled
+                && pooled < steps
+                && steps < serial
+                && serial < marks,
+            "phase (a): name the newcomers, then both passes around the cohorts and the steps"
+        );
+        assert_eq!(
+            live.matches("for pass in [SpecPass::").count(),
+            1,
+            "one pass loop, newcomers first"
+        );
     }
 
     /// A burst ends at the round its public stream ends, through the real round hook: the flush
