@@ -1574,6 +1574,62 @@ calls by rows (swapped) against the normal form, A B B A, 30 reps a shape, GB10)
 smallest call, 2 of 96 experts one row (a four-rank expert share), 2.6 and 3.7 (0.029 -> 0.074 and 0.030 -> 0.113
 ms). The swapped grouped forms come back only with the fault inside them found and fixed.
 
+### The small-row expert body: decode widths back, one program
+
+The decode-width cost above made the four-card decode bar (level with k3 or better at 1/4/8 rows) a risk: the
+split route's calls at one and two rows are a handful of experts, which the 128 x 128 normal form covers with a
+few under-filled tiles. bs1's small-row body (a warp streams its weight rows through a cp.async ring) was the
+fastest body we had at those widths, but it was a different program: it converted the e2m1 weights to e4m3 and
+ran `kind::mxf8f6f4 .e4m3.e4m3`, and its fp32 accumulators differ from CUTLASS's in a few elements a million (the
+bsmma rev-3 probe). k3's expert kernels are further away (101 of the 111 layer tensors moved from k3 to bs1).
+Routing a call by its width to either of them would make a request's bytes depend on the rows and experts of the
+calls it rides in.
+
+The e2m1 probe (`receipts/decode-e2m1-probe`: one chain of block-scaled MMAs against CUTLASS's normal form with fp32
+out, N 2304, K 5120, 1 to 128 rows, three draws each, GB10): bs1's chain differs in 94 elements; the same chain with
+the weights entering the MMA as e2m1 in their 8-bit container (the nibble at bits 5..2, as CUTLASS shifts them),
+`.e2m1.e4m3`, differs in none, and neither does the operand-swapped `.e4m3.e2m1`. The difference was the operand
+type, not the K placement.
+
+So the small-row body comes back on that MMA (`v41_moe_small_kernel`, `cu/dsv41_gpu.cu`): bs1's ring, the tile
+list of the device plan, scales read in CUTLASS's layout, w1 and w3 in one launch. It is the program of the CUTLASS
+grouped kernel element for element: in the crossover bench every one of 101 shapes, two runs each, wrote the same
+bytes as CUTLASS (`receipts/decode-bench`), and the kernel gate holds it to the per-expert dense call on every
+routing of tiles of up to 8 rows (`schedule/moe_small*`). Which body runs a call is speed only, and a request's
+numerics do not depend on its batch width.
+
+Crossover (`receipts/decode-bench/crossover.md`, `dsv41-bench gemm`, both bodies A B B A inside each run, two runs,
+GB10, cache-warm repeats of one call): the axis is not rows an expert but how many blocks the call puts on the card.
+Counting tiles x 64-column blocks x projections, the small-row body takes 0.31-0.98 of CUTLASS's time at 72 to 240
+blocks and 1.10-1.23 at 432 and more (0.92-0.97 for the widest w2 at 480); 16 rows an expert and up it falls further
+behind (1.4-9.6). The split route's decode calls (each rank holds every expert by rows):
+
+| ranks, call rows | w1 + w3 (one launch), ms | w2, ms |
+|---|---|---|
+| 4, 1 row (6 experts) | 0.065 vs 0.111 (0.59) | 0.034 vs 0.074 (0.46) |
+| 4, 2 rows (12 experts) | 0.095 vs 0.152 (0.63) | 0.048 vs 0.095 (0.51) |
+| 4, 4 rows (24 experts) | 0.406 vs 0.361 (1.13) | 0.211 vs 0.190 (1.11) |
+| 2, 1 row | 0.095 vs 0.156 (0.61) | 0.048 vs 0.126 (0.38) |
+| 2, 2 rows | 0.398 vs 0.358 (1.11) | 0.204 vs 0.210 (0.97) |
+| 1, 1 row | 0.394 vs 0.354 (1.11) | 0.211 vs 0.227 (0.93) |
+
+(small-row body vs CUTLASS's normal form, medians of both runs; the 96-expert share of a four-rank expert-parallel
+layout at one row: 0.47 and 0.31.) The route (`moe_gemm`): a plan of tiles of at most 8 rows whose launch is at most 16/3 blocks an
+SM (`memra_v41_moe_small_fits`, 256 on GB10) takes the small-row body, every other call CUTLASS's normal form. On
+four ranks that is the one- and two-row decode steps, on two ranks the one-row step; one card and every wider call
+stay on CUTLASS. The line is measured on GB10 only; the PRO 6000's crossover is owed (window).
+
+Gates of this build on GB10 (`receipts/gates-cutlass-gb10/f4`, 121a): kernels 270/0 (the 18 new small-row checks:
+the body against the per-expert dense call on six routings of tiles up to 8 rows, 2304- and 576-column shares, w1 +
+w3 in one launch against CUTLASS's); layer 161/0, the 111 saved tensors byte-identical to the previous build's
+(`fa825eee...`, bs1's set); tp at 2 ranks peer-pull 478/0, host-canonical 478/0, default 480/0; at 4 ranks peer-pull
+914/0, host-canonical 914/0, default 916/0 (B3 and C ran on the second GB10 from the same binaries, the gate data staged at the same path); decode 240/240/60; the decode graph door 555/0 (one rank) and 1105/0 (two ranks, device-push: the small-row body recorded and replayed inside the captured spans). The tp decode steps put the ranks' calls on the small-row body (the split shares of
+one row) against the single card's CUTLASS calls, byte for byte. Order gate: the chat (82 files) and long (28) tapes
+of this build are byte-identical to the previous build's, so its by-tape intervals are unchanged (the difference
+is zero); the tapes are one-card teacher-forced runs, which stay on CUTLASS, so the decode-shaped crossing is the tp
+gate's. CheckpointParity on the capital probe passes (max abs 2.938, the same value; the vendor's argmax;
+`receipts/ckpt-cutlass-f4`).
+
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
 The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor

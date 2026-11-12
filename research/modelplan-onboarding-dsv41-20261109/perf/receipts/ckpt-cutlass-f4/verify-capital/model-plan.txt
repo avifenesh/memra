@@ -1,0 +1,4192 @@
+ModelPlan {
+    arch: DeepSeekV41,
+    hidden_size: 5120,
+    vocab_size: 129280,
+    context_length: 1048576,
+    embedding_scale: 1.0,
+    vision: None,
+    multimodal: None,
+    layers: [
+        LayerPlan {
+            index: 0,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 10000.0,
+                        factors: None,
+                    },
+                    sink: Required,
+                    mode: Window,
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: None,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 1,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 10000.0,
+                        factors: None,
+                    },
+                    sink: Required,
+                    mode: Window,
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: Some(
+                        EngramPlan {
+                            table_index: 0,
+                            table_rows: 384006168,
+                            head_dim: 256,
+                            heads: 8,
+                            max_ngram: 4,
+                            hash_columns: 24,
+                            bucket_base: 16000000,
+                            compressed_vocab_size: 99092,
+                            pad_token_id: 2,
+                            table_quant: BlockQuant {
+                                element: Fp8E4m3,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            gate_clamp: 1e-6,
+                        },
+                    ),
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: None,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 2,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Full {
+                        ratio: 2,
+                        compressor: Csa2CompressorPlan {
+                            ratio: 2,
+                            pooling: SoftmaxGated,
+                            latent_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 16,
+                                scale: E4m3,
+                            },
+                        },
+                        indexer: Csa2IndexerPlan {
+                            heads: 32,
+                            head_dim: 128,
+                            top_k: 512,
+                            query_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            key_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            candidates: None,
+                        },
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Own {
+                        ratio: 2,
+                        index_head_dim: 128,
+                        partial_group: true,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 3,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 2,
+                        index_source: 2,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 2,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 4,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 2,
+                        index_source: 2,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 2,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 5,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 2,
+                        index_source: 2,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 2,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 6,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 2,
+                        index_source: 2,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 2,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 7,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 2,
+                        index_source: 2,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 2,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 8,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Full {
+                        ratio: 2,
+                        compressor: Csa2CompressorPlan {
+                            ratio: 2,
+                            pooling: SoftmaxGated,
+                            latent_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 16,
+                                scale: E4m3,
+                            },
+                        },
+                        indexer: Csa2IndexerPlan {
+                            heads: 32,
+                            head_dim: 128,
+                            top_k: 512,
+                            query_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            key_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            candidates: None,
+                        },
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Own {
+                        ratio: 2,
+                        index_head_dim: 128,
+                        partial_group: true,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 9,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 8,
+                        index_source: 8,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 8,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 10,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 8,
+                        index_source: 8,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 8,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 11,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 8,
+                        index_source: 8,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 8,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 12,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 8,
+                        index_source: 8,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 8,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 13,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 8,
+                        index_source: 8,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 8,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 14,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Full {
+                        ratio: 2,
+                        compressor: Csa2CompressorPlan {
+                            ratio: 2,
+                            pooling: SoftmaxGated,
+                            latent_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 16,
+                                scale: E4m3,
+                            },
+                        },
+                        indexer: Csa2IndexerPlan {
+                            heads: 32,
+                            head_dim: 128,
+                            top_k: 512,
+                            query_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            key_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            candidates: None,
+                        },
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: Some(
+                        EngramPlan {
+                            table_index: 1,
+                            table_rows: 384016682,
+                            head_dim: 256,
+                            heads: 8,
+                            max_ngram: 4,
+                            hash_columns: 24,
+                            bucket_base: 16000000,
+                            compressed_vocab_size: 99092,
+                            pad_token_id: 2,
+                            table_quant: BlockQuant {
+                                element: Fp8E4m3,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            gate_clamp: 1e-6,
+                        },
+                    ),
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Own {
+                        ratio: 2,
+                        index_head_dim: 128,
+                        partial_group: true,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 15,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 14,
+                        index_source: 14,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 14,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 16,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 14,
+                        index_source: 14,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 14,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 17,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 14,
+                        index_source: 14,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 14,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 18,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 14,
+                        index_source: 14,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 14,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 19,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 2,
+                        kv_source: 14,
+                        index_source: 14,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 2,
+                        source_layer: 14,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 20,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Full {
+                        ratio: 1,
+                        compressor: Csa2CompressorPlan {
+                            ratio: 1,
+                            pooling: Projection,
+                            latent_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 16,
+                                scale: E4m3,
+                            },
+                        },
+                        indexer: Csa2IndexerPlan {
+                            heads: 32,
+                            head_dim: 128,
+                            top_k: 512,
+                            query_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            key_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            candidates: Produce {
+                                top_blocks: 2048,
+                                block_size: 8,
+                            },
+                        },
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Own {
+                        ratio: 1,
+                        index_head_dim: 128,
+                        partial_group: false,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 21,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 20,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 22,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 20,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 23,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 20,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 24,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reindex {
+                        ratio: 1,
+                        kv_source: 20,
+                        indexer: Csa2IndexerPlan {
+                            heads: 32,
+                            head_dim: 128,
+                            top_k: 512,
+                            query_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            key_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            candidates: Restrict {
+                                source_layer: 20,
+                            },
+                        },
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 25,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 24,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 26,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 24,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 27,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 24,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 28,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reindex {
+                        ratio: 1,
+                        kv_source: 20,
+                        indexer: Csa2IndexerPlan {
+                            heads: 32,
+                            head_dim: 128,
+                            top_k: 512,
+                            query_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            key_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            candidates: Restrict {
+                                source_layer: 20,
+                            },
+                        },
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 29,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 28,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 30,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 28,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 31,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 28,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 32,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reindex {
+                        ratio: 1,
+                        kv_source: 20,
+                        indexer: Csa2IndexerPlan {
+                            heads: 32,
+                            head_dim: 128,
+                            top_k: 512,
+                            query_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            key_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            candidates: Restrict {
+                                source_layer: 20,
+                            },
+                        },
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 33,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 32,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 34,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 32,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 35,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 32,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 36,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reindex {
+                        ratio: 1,
+                        kv_source: 20,
+                        indexer: Csa2IndexerPlan {
+                            heads: 32,
+                            head_dim: 128,
+                            top_k: 512,
+                            query_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            key_quant: BlockQuant {
+                                element: Fp4E2m1,
+                                block: 32,
+                                scale: Ue8m0,
+                            },
+                            candidates: Restrict {
+                                source_layer: 20,
+                            },
+                        },
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 37,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 36,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 38,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 36,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 39,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            attention: Csa2(
+                Csa2AttentionPlan {
+                    query_heads: 64,
+                    q_lora_rank: 1280,
+                    head_dim: 512,
+                    rope_head_dim: 64,
+                    output_lora_rank: 1024,
+                    output_groups: 8,
+                    window: 128,
+                    rope: RopePlan {
+                        dimensions: 64,
+                        base: 160000.0,
+                        factors: Yarn {
+                            factor: 16.0,
+                            original_context: 65536,
+                            beta_fast: 32.0,
+                            beta_slow: 1.0,
+                        },
+                    },
+                    sink: Required,
+                    mode: Reuse {
+                        ratio: 1,
+                        kv_source: 20,
+                        index_source: 36,
+                    },
+                    window_kv_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                    output_quant: BlockQuant {
+                        element: Fp8E4m3,
+                        block: 32,
+                        scale: Ue8m0,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-20,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 384,
+                    experts_per_token: 6,
+                    expert_intermediate_size: 2304,
+                    router: SqrtSoftplus {
+                        normalize_selected: true,
+                        scaling_factor: 1.5,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 2304,
+                            gated: false,
+                        },
+                    ),
+                    activation: SwiGluPreClamped {
+                        limit: 10.0,
+                    },
+                },
+            ),
+            residual: SinglePassHyperConnections(
+                SinglePassHcPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    sinkhorn_iterations: 20,
+                    mix_norm_epsilon: 1e-20,
+                    engram: None,
+                },
+            ),
+            state: Csa2(
+                Csa2StatePlan {
+                    window: 128,
+                    head_dim: 512,
+                    compressed: Shared {
+                        ratio: 1,
+                        source_layer: 20,
+                    },
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+    ],
+    output_norm: NormPlan {
+        kind: Rms,
+        epsilon: 1e-20,
+        weight_transform: Identity,
+    },
+    exit_mixer: None,
+    logits: [],
+    mtp_blocks: [],
+    drafter: Some(
+        Dspark(
+            DsparkPlan {
+                block_size: 5,
+                noise_token_id: 128799,
+                target_layer_ids: [
+                    37,
+                    38,
+                    39,
+                ],
+                markov_rank: 256,
+                blocks: [
+                    LayerPlan {
+                        index: 40,
+                        pre_attention_norm: NormPlan {
+                            kind: Rms,
+                            epsilon: 1e-20,
+                            weight_transform: Identity,
+                        },
+                        attention: Csa2(
+                            Csa2AttentionPlan {
+                                query_heads: 64,
+                                q_lora_rank: 1280,
+                                head_dim: 512,
+                                rope_head_dim: 64,
+                                output_lora_rank: 1024,
+                                output_groups: 8,
+                                window: 128,
+                                rope: RopePlan {
+                                    dimensions: 64,
+                                    base: 10000.0,
+                                    factors: None,
+                                },
+                                sink: Required,
+                                mode: Window,
+                                window_kv_quant: BlockQuant {
+                                    element: Fp8E4m3,
+                                    block: 32,
+                                    scale: Ue8m0,
+                                },
+                                output_quant: BlockQuant {
+                                    element: Fp8E4m3,
+                                    block: 32,
+                                    scale: Ue8m0,
+                                },
+                            },
+                        ),
+                        pre_mlp_norm: NormPlan {
+                            kind: Rms,
+                            epsilon: 1e-20,
+                            weight_transform: Identity,
+                        },
+                        mlp: Moe(
+                            MoeMlpPlan {
+                                expert_count: 128,
+                                experts_per_token: 3,
+                                expert_intermediate_size: 2304,
+                                router: SqrtSoftplus {
+                                    normalize_selected: true,
+                                    scaling_factor: 1.5,
+                                    selection_bias: true,
+                                },
+                                shared: Some(
+                                    SharedMlpPlan {
+                                        intermediate_size: 2304,
+                                        gated: false,
+                                    },
+                                ),
+                                activation: SwiGluPreClamped {
+                                    limit: 10.0,
+                                },
+                            },
+                        ),
+                        residual: SinglePassHyperConnections(
+                            SinglePassHcPlan {
+                                streams: 4,
+                                epsilon: 1e-6,
+                                sinkhorn_iterations: 20,
+                                mix_norm_epsilon: 1e-20,
+                                engram: None,
+                            },
+                        ),
+                        state: Csa2(
+                            Csa2StatePlan {
+                                window: 128,
+                                head_dim: 512,
+                                compressed: None,
+                            },
+                        ),
+                        sparse_overlay: None,
+                        ple: None,
+                    },
+                    LayerPlan {
+                        index: 41,
+                        pre_attention_norm: NormPlan {
+                            kind: Rms,
+                            epsilon: 1e-20,
+                            weight_transform: Identity,
+                        },
+                        attention: Csa2(
+                            Csa2AttentionPlan {
+                                query_heads: 64,
+                                q_lora_rank: 1280,
+                                head_dim: 512,
+                                rope_head_dim: 64,
+                                output_lora_rank: 1024,
+                                output_groups: 8,
+                                window: 128,
+                                rope: RopePlan {
+                                    dimensions: 64,
+                                    base: 10000.0,
+                                    factors: None,
+                                },
+                                sink: Required,
+                                mode: Window,
+                                window_kv_quant: BlockQuant {
+                                    element: Fp8E4m3,
+                                    block: 32,
+                                    scale: Ue8m0,
+                                },
+                                output_quant: BlockQuant {
+                                    element: Fp8E4m3,
+                                    block: 32,
+                                    scale: Ue8m0,
+                                },
+                            },
+                        ),
+                        pre_mlp_norm: NormPlan {
+                            kind: Rms,
+                            epsilon: 1e-20,
+                            weight_transform: Identity,
+                        },
+                        mlp: Moe(
+                            MoeMlpPlan {
+                                expert_count: 128,
+                                experts_per_token: 3,
+                                expert_intermediate_size: 2304,
+                                router: SqrtSoftplus {
+                                    normalize_selected: true,
+                                    scaling_factor: 1.5,
+                                    selection_bias: true,
+                                },
+                                shared: Some(
+                                    SharedMlpPlan {
+                                        intermediate_size: 2304,
+                                        gated: false,
+                                    },
+                                ),
+                                activation: SwiGluPreClamped {
+                                    limit: 10.0,
+                                },
+                            },
+                        ),
+                        residual: SinglePassHyperConnections(
+                            SinglePassHcPlan {
+                                streams: 4,
+                                epsilon: 1e-6,
+                                sinkhorn_iterations: 20,
+                                mix_norm_epsilon: 1e-20,
+                                engram: None,
+                            },
+                        ),
+                        state: Csa2(
+                            Csa2StatePlan {
+                                window: 128,
+                                head_dim: 512,
+                                compressed: None,
+                            },
+                        ),
+                        sparse_overlay: None,
+                        ple: None,
+                    },
+                    LayerPlan {
+                        index: 42,
+                        pre_attention_norm: NormPlan {
+                            kind: Rms,
+                            epsilon: 1e-20,
+                            weight_transform: Identity,
+                        },
+                        attention: Csa2(
+                            Csa2AttentionPlan {
+                                query_heads: 64,
+                                q_lora_rank: 1280,
+                                head_dim: 512,
+                                rope_head_dim: 64,
+                                output_lora_rank: 1024,
+                                output_groups: 8,
+                                window: 128,
+                                rope: RopePlan {
+                                    dimensions: 64,
+                                    base: 10000.0,
+                                    factors: None,
+                                },
+                                sink: Required,
+                                mode: Window,
+                                window_kv_quant: BlockQuant {
+                                    element: Fp8E4m3,
+                                    block: 32,
+                                    scale: Ue8m0,
+                                },
+                                output_quant: BlockQuant {
+                                    element: Fp8E4m3,
+                                    block: 32,
+                                    scale: Ue8m0,
+                                },
+                            },
+                        ),
+                        pre_mlp_norm: NormPlan {
+                            kind: Rms,
+                            epsilon: 1e-20,
+                            weight_transform: Identity,
+                        },
+                        mlp: Moe(
+                            MoeMlpPlan {
+                                expert_count: 128,
+                                experts_per_token: 3,
+                                expert_intermediate_size: 2304,
+                                router: SqrtSoftplus {
+                                    normalize_selected: true,
+                                    scaling_factor: 1.5,
+                                    selection_bias: true,
+                                },
+                                shared: Some(
+                                    SharedMlpPlan {
+                                        intermediate_size: 2304,
+                                        gated: false,
+                                    },
+                                ),
+                                activation: SwiGluPreClamped {
+                                    limit: 10.0,
+                                },
+                            },
+                        ),
+                        residual: SinglePassHyperConnections(
+                            SinglePassHcPlan {
+                                streams: 4,
+                                epsilon: 1e-6,
+                                sinkhorn_iterations: 20,
+                                mix_norm_epsilon: 1e-20,
+                                engram: None,
+                            },
+                        ),
+                        state: Csa2(
+                            Csa2StatePlan {
+                                window: 128,
+                                head_dim: 512,
+                                compressed: None,
+                            },
+                        ),
+                        sparse_overlay: None,
+                        ple: None,
+                    },
+                ],
+            },
+        ),
+    ),
+    draft_source: Embedded,
+    sampling_defaults: None,
+    partition_boundaries: [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+    ],
+    deepseek_v41: DeepSeekV41Numerics {
+        dense_weight_block: 32,
+        expert_weight: BlockQuant {
+            element: Fp4E2m1,
+            block: 32,
+            scale: Ue8m0,
+        },
+        linear_activation: BlockQuant {
+            element: Fp8E4m3,
+            block: 32,
+            scale: Ue8m0,
+        },
+        routed_weight_before_down: true,
+        output_lora_a_dequantized_bf16: true,
+    },
+}

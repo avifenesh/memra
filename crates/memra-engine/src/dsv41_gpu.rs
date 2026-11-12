@@ -611,6 +611,33 @@ pub mod ffi {
             blk_bytes: i64,
             stream: *mut c_void,
         ) -> i32;
+        /// The small-row body of a grouped call (`cu/dsv41_gpu.cu`): the plan's tile list (tiles
+        /// of at most 8 rows), projection `p0` into `d0` and, with `nproj` 2, `p1` into `d1`; the
+        /// program of the CUTLASS grouped kernel element for element.
+        pub fn memra_v41_moe_small(
+            a: *const c_void,
+            lda: i64,
+            asf: *const c_void,
+            sfrow: *const i32,
+            tiles: *const c_void,
+            ntiles: *const i32,
+            max_tiles: i32,
+            ew: *const c_void,
+            nproj: i32,
+            p0: i32,
+            p1: i32,
+            ldb: i64,
+            d0: *mut c_void,
+            d1: *mut c_void,
+            ldc: i64,
+            n: i32,
+            k: i32,
+            bm: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        /// Whether a grouped call of at most `max_tiles` tiles takes the small-row body (speed
+        /// only: the bodies give the same bytes).
+        pub fn memra_v41_moe_small_fits(max_tiles: i32, n: i32, nproj: i32) -> i32;
         /// A bench's choice of the most rows of a call that keep a family's small-row body in
         /// groups of 8 (0 block-scaled dense, 1 bf16, 2 fp32 FMA, 3 the one-pass mHC kernel).
         pub fn memra_v41_wide_rows(family: i32, rows: i32);
@@ -2821,10 +2848,16 @@ pub fn moe_sfrow(ops: &Ops, plan: &MoePlanDev, sfrow: &Buf) -> Result<(), String
     })
 }
 
-/// One grouped CUTLASS GEMM over `plan`'s local experts: projections `proj.0` into `d.0` and, when
+/// One grouped GEMM over `plan`'s local experts: projections `proj.0` into `d.0` and, when
 /// `proj.1` differs, `proj.1` into `d.1` in the same launch (0 w1, 1 w2, 2 w3 of the table `tab`).
-/// `a` holds the pairs' codes `[np][k]` and `asf` their scales placed through [`moe_sfrow`]; each
-/// output row is a pair (pitch `ldc`, `n` columns).
+/// `a` holds the pairs' codes `[np][k]` and `asf` their scales placed through [`moe_sfrow`] (`sfrow`
+/// holds each pair's scale row); each output row is a pair (pitch `ldc`, `n` columns). A plan of
+/// small-row tiles (at most [`SMALL_M`] rows: calls of up to [`WIDE_TILES`] rows) whose launch is
+/// a few waves of blocks on the card (`memra_v41_moe_small_fits`: a decode step's few experts)
+/// runs the small-row body over its tile list, every other call the CUTLASS grouped kernel in its
+/// normal form. The two are one program element for element (the same block-scaled MMA on e2m1
+/// weights, one chain over K in ascending order), so the body a call takes is speed only: a
+/// request's bytes do not depend on the rows or experts of the calls it rides in.
 #[allow(clippy::too_many_arguments)]
 pub fn moe_gemm(
     ops: &Ops,
@@ -2833,6 +2866,7 @@ pub fn moe_gemm(
     proj: (i32, i32),
     a: &Buf,
     asf: &Buf,
+    sfrow: &Buf,
     d: (Dp, Dp),
     ldc: usize,
     n: usize,
@@ -2840,6 +2874,35 @@ pub fn moe_gemm(
 ) -> Result<(), String> {
     let st = &ops.st;
     let nproj = if proj.0 == proj.1 { 1 } else { 2 };
+    // SAFETY: a host-side decision, no device work
+    let small = plan.bm <= SMALL_M
+        && unsafe { ffi::memra_v41_moe_small_fits(plan.max_tiles as i32, n as i32, nproj as i32) }
+            != 0;
+    if small {
+        return ck("moe_small", unsafe {
+            ffi::memra_v41_moe_small(
+                a.p(st).c(),
+                k as i64,
+                asf.p(st).c(),
+                sfrow.p(st).i(),
+                plan.tiles.p(st).c(),
+                plan.ntiles.p(st).i(),
+                plan.max_tiles as i32,
+                tab.p(st).c(),
+                nproj as i32,
+                proj.0,
+                proj.1,
+                (k / 2) as i64,
+                d.0.m(),
+                d.1.m(),
+                ldc as i64,
+                n as i32,
+                k as i32,
+                plan.bm as i32,
+                ops.sv(),
+            )
+        });
+    }
     // SAFETY: a size query, no device work
     let bytes = unsafe { ffi::memra_v41_cutlass_moe_bytes((plan.ng * nproj) as i32) };
     if bytes <= 0 {
@@ -5753,12 +5816,11 @@ impl Ctx {
         Ok((sel, selw))
     }
 
-    /// Tile rows of the grouped expert GEMMs for a slice of `rows` tokens: the small-M kernel
-    /// when no expert can hold more than `SMALL_M` rows (a token picks an expert once, so a tile
-    /// has at most `rows` rows and the kernel's shared memory is sized for that many), else the
-    /// pipelined tile, 128 rows once the mean expert holds that many. Measured both ways on one
-    /// card with the padding skipped: 128-row tiles at 4,096 rows (mean 64) are 0.8% slower than
-    /// 64-row ones, 64-row tiles at 32,768 rows 3.5% slower than 128-row ones.
+    /// Tile rows of the plan of a slice of `rows` tokens, which pick the body of its grouped expert
+    /// GEMMs ([`moe_gemm`]): up to `SMALL_M` rows one tile an expert of `rows` rows (a token picks an
+    /// expert once, so no expert holds more), up to [`WIDE_TILES`] rows tiles of `SMALL_M` rows, both
+    /// for the small-row body; more rows CUTLASS's grouped kernel, which ignores the tiles (64 or
+    /// 128 rows, kept for the plan's size).
     pub fn moe_bm(&self, rows: usize) -> usize {
         if rows <= SMALL_M {
             rows.max(1)
@@ -5942,6 +6004,7 @@ impl Ctx {
             (0, 2),
             &aq,
             &asf,
+            &sfrow,
             (gb.p(&st), ub.p(&st)),
             inter,
             inter,
@@ -5980,6 +6043,7 @@ impl Ctx {
             (1, 1),
             &aq2,
             &asf2,
+            &sfrow,
             (slots, Dp::NULL),
             d,
             d,

@@ -1726,11 +1726,14 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         let want = want.host(&st)?;
         // one grouped call over local experts [e0, e0 + ng) of the plan, in `form`, into a fresh
         // buffer of 0xA5 bytes (rows of other experts must stay untouched)
+        // `small`: the small-row body over the device plan's tile list (experts [0, ne), tiles of
+        // `bm` rows) instead of CUTLASS's grouped kernel
         let grouped = |e0: usize,
                        ng: usize,
                        form: i32,
                        tab: &Buf,
-                       projs: (i32, i32)|
+                       projs: (i32, i32),
+                       small: bool|
          -> Result<Grouped, String> {
             let sfrow = ops.buf(np * 4)?;
             ck("cutlass_sfrow", unsafe {
@@ -1758,6 +1761,32 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             let fill = vec![0xA5u8; np * n * 2];
             let (d0, d1) = (Buf::from_bytes(&st, &fill)?, Buf::from_bytes(&st, &fill)?);
             let nproj = if projs.0 == projs.1 { 1 } else { 2 };
+            if small {
+                ck("moe_small", unsafe {
+                    ffi::memra_v41_moe_small(
+                        a.p(&st).c(),
+                        k as i64,
+                        asf.p(&st).c(),
+                        sfrow.p(&st).i(),
+                        tiles.p(&st).c(),
+                        ntiles.p(&st).i(),
+                        max_tiles as i32,
+                        tab.p(&st).c(),
+                        nproj as i32,
+                        projs.0,
+                        projs.1,
+                        (k / 2) as i64,
+                        d0.p(&st).m(),
+                        d1.p(&st).m(),
+                        n as i64,
+                        n as i32,
+                        k as i32,
+                        bm as i32,
+                        sv,
+                    )
+                })?;
+                return Ok((d0.host(&st)?, d1.host(&st)?, bytes_i32(&sfrow.host(&st)?)));
+            }
             let bytes = unsafe { ffi::memra_v41_cutlass_moe_bytes((ng * nproj) as i32) };
             let blk = ops.buf(bytes.max(1) as usize)?;
             ck("cutlass_moe", unsafe {
@@ -1797,7 +1826,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         }
         // the grouped calls take the normal form only (by rows: 0, and 1)
         for form in [1, 0] {
-            let (got, _, sfrow) = grouped(0, ne, form, &tabd, (0, 0))?;
+            let (got, _, sfrow) = grouped(0, ne, form, &tabd, (0, 0), false)?;
             if form == 1 {
                 rep.raw(
                     &format!("schedule/cutlass_sfrow/rows{rows}{nt}"),
@@ -1813,9 +1842,19 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 &want,
             );
         }
+        // the small-row body over the tile list (plans of tiles of at most 8 rows): the same bytes
+        if bm <= 8 {
+            let (got, _, _) = grouped(0, ne, 0, &tabd, (0, 0), true)?;
+            same(
+                rep,
+                &format!("schedule/moe_small/rows{rows}_bm{bm}{nt}"),
+                &got,
+                &want,
+            );
+        }
         // a rank's range of experts [4, 12): its pairs' rows as above, every other row untouched
         {
-            let (got, _, _) = grouped(4, 8, 0, &tabd, (0, 0))?;
+            let (got, _, _) = grouped(4, 8, 0, &tabd, (0, 0), false)?;
             let (p0, p1) = (host.off[4] * n * 2, host.off[12] * n * 2);
             let outside = got[..p0].iter().chain(&got[p1..]).all(|&b| b == 0xA5);
             let inside = got[p0..p1] == want[p0..p1];
@@ -1841,9 +1880,25 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 tab2.extend_from_slice(&0i32.to_le_bytes());
             }
             let tab2 = Buf::from_bytes(&st, &tab2)?;
-            let (g2, u2, _) = grouped(0, ne, 0, &tab2, (0, 2))?;
-            let (g1, _, _) = grouped(0, ne, 0, &tab2, (0, 0))?;
-            let (u1, _, _) = grouped(0, ne, 0, &tab2, (2, 2))?;
+            let (g2, u2, _) = grouped(0, ne, 0, &tab2, (0, 2), false)?;
+            let (g1, _, _) = grouped(0, ne, 0, &tab2, (0, 0), false)?;
+            let (u1, _, _) = grouped(0, ne, 0, &tab2, (2, 2), false)?;
+            if bm <= 8 {
+                // the small-row body's two projections in one launch == CUTLASS's
+                let (gs, us, _) = grouped(0, ne, 0, &tab2, (0, 2), true)?;
+                same(
+                    rep,
+                    &format!("schedule/moe_small_pair/rows{rows}_w1{nt}"),
+                    &gs,
+                    &g2,
+                );
+                same(
+                    rep,
+                    &format!("schedule/moe_small_pair/rows{rows}_w3{nt}"),
+                    &us,
+                    &u2,
+                );
+            }
             same(
                 rep,
                 &format!("schedule/cutlass_moe_pair/rows{rows}_w1{nt}"),

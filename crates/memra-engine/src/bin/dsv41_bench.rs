@@ -841,33 +841,100 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
             ));
         }
     }
-    // grouped MXFP4 experts on the CUTLASS grouped GEMM: w1/w3 (n 2304, k 5120) and w2 (n 5120,
-    // k 2304), `ng` groups of which the first `act` hold `rows` rows each (a decode step's call
-    // covers a rank's every expert, most of them without rows)
-    for &(ng, act, rows) in &[
-        (6usize, 6usize, 1usize),
-        (12, 12, 1),
-        (29, 29, 1),
-        (48, 48, 1),
-        (15, 15, 2),
-        (384, 6, 1),
-        (96, 2, 1),
-        (384, 48, 1),
-        (64, 64, 64),
-        (384, 384, 64),
-        (384, 384, 512),
-    ] {
-        for &(name, n, k) in &[("exp_w13", 2304usize, 5120usize), ("exp_w2", 5120, 2304)] {
-            // every shape draws its own inputs, so adding a shape never changes another's bytes
-            let mut rng = Lcg(0x5eed_d541 ^ ((ng * 1_000_003 + rows * 7919 + n) as u64));
-            let mut wts = Vec::with_capacity(act);
+    // grouped MXFP4 experts, the two bodies of a grouped call on the same inputs: the small-row body
+    // over a tile list of 8-row tiles (`memra_v41_moe_small`) and CUTLASS's grouped kernel in its
+    // normal form (`memra_v41_cutlass_moe`), timed A B B A a shape (reps / 2 a leg), their outputs
+    // compared byte for byte. w1/w3 (n 2304, k 5120) and w2 (n 5120, k 2304); `ng` groups (a rank's
+    // experts: 384 on one rank, 96 on four), the first `act` with `rows` rows each. The weights of a
+    // (ng, projection) are drawn once and shared by its shapes.
+    let half = (reps / 2).max(1);
+    // (label, groups, (name, n, k, projections), (experts with rows, rows) list): the full experts of a
+    // rank holding 384 or 96 of them over 1 to 128 rows an expert, and the split route's shares (every
+    // rank holds all 384 experts, w1 and w3 by hidden rows in one launch, w2 by output rows) at 1, 2
+    // and 4 ranks over a decode call's experts
+    let sweep: &[(usize, usize)] = &[
+        (6, 1),
+        (48, 1),
+        (48, 2),
+        (96, 4),
+        (384, 1),
+        (384, 2),
+        (384, 4),
+        (384, 8),
+        (384, 16),
+        (384, 32),
+        (384, 64),
+        (384, 128),
+    ];
+    let sweep96: &[(usize, usize)] = &[
+        (2, 1),
+        (12, 1),
+        (12, 2),
+        (24, 4),
+        (96, 1),
+        (96, 2),
+        (96, 4),
+        (96, 8),
+        (96, 16),
+        (96, 32),
+        (96, 64),
+        (96, 128),
+    ];
+    let decode: &[(usize, usize)] = &[
+        (6, 1),
+        (12, 1),
+        (24, 1),
+        (46, 1),
+        (24, 2),
+        (46, 2),
+        (92, 1),
+        (180, 1),
+        (384, 1),
+        (384, 2),
+        (384, 4),
+        (384, 8),
+        (384, 16),
+    ];
+    type Proj = (&'static str, usize, usize, i32);
+    type Set<'a> = (&'a str, usize, Vec<Proj>, &'a [(usize, usize)]);
+    let shapes: Vec<Set<'_>> = vec![
+        (
+            "full",
+            384,
+            vec![("exp_w13", 2304, 5120, 1), ("exp_w2", 5120, 2304, 1)],
+            sweep,
+        ),
+        (
+            "full",
+            96,
+            vec![("exp_w13", 2304, 5120, 1), ("exp_w2", 5120, 2304, 1)],
+            sweep96,
+        ),
+        (
+            "split1",
+            384,
+            vec![("w1w3", 2304, 5120, 2), ("w2", 5120, 2304, 1)],
+            decode,
+        ),
+        (
+            "split2",
+            384,
+            vec![("w1w3", 1152, 5120, 2), ("w2", 2560, 2304, 1)],
+            decode,
+        ),
+        (
+            "split4",
+            384,
+            vec![("w1w3", 576, 5120, 2), ("w2", 1280, 2304, 1)],
+            decode,
+        ),
+    ];
+    for (label, ng, projs, list) in shapes {
+        for (name, n, k, nproj) in projs {
+            let mut rng = Lcg(0x5eed_d541 ^ ((ng * 1_000_003 + n) as u64));
+            let mut wts = Vec::with_capacity(ng);
             let mut ew = Vec::with_capacity(ng * 64);
-            for z in 0..ng {
-                if z >= act {
-                    // a group without rows: its record is never read
-                    ew.extend_from_slice(&[0u8; 64]);
-                    continue;
-                }
+            for _ in 0..ng {
                 let w = Buf::from_bytes(&st, &rng.bytes(n * k / 2))?;
                 let s = Buf::from_bytes(&st, &rng.e8m0(v::sf_bytes(n, k), 112, 124))?;
                 for _ in 0..3 {
@@ -882,59 +949,115 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
                 ew.extend_from_slice(&0i32.to_le_bytes());
                 wts.push((w, s));
             }
-            let m = act * rows;
-            let off: Vec<i32> = (0..=ng).map(|z| (z.min(act) * rows) as i32).collect();
-            let offd = Buf::from_i32(&st, &off)?;
             let ewd = Buf::from_bytes(&st, &ew)?;
-            let aq = Buf::from_bytes(&st, &rng.e4m3(m * k))?;
-            let asf = Buf::from_bytes(
-                &st,
-                &rng.e8m0(v::sf_bytes(act * rows.next_multiple_of(128), k), 118, 130),
-            )?;
-            let c = ops.buf(m * n * 2)?;
             // SAFETY: a size query
-            let bytes = unsafe { ffi::memra_v41_cutlass_moe_bytes(ng as i32) };
+            let bytes = unsafe { ffi::memra_v41_cutlass_moe_bytes(ng as i32 * nproj) };
             let blk = ops.buf(bytes.max(1) as usize)?;
-            let ms = time_ms(&ops, reps, || {
-                ck("cutlass_moe", unsafe {
-                    ffi::memra_v41_cutlass_moe(
-                        offd.p(&st).i(),
-                        0,
-                        ng as i32,
-                        1,
-                        0,
-                        0,
-                        ewd.p(&st).c(),
-                        aq.p(&st).c(),
-                        asf.p(&st).c(),
-                        c.p(&st).m(),
-                        std::ptr::null_mut(),
-                        n as i64,
-                        n as i32,
-                        k as i32,
-                        (k / 2) as i64,
-                        rows as i32,
-                        gform,
-                        blk.p(&st).m(),
-                        bytes,
-                        ops.sv(),
-                    )
-                })
-            })?;
-            let hsh = sha(&c.host(&st)?);
-            let med = median(&ms);
-            let bytes = (act * n * k / 2 + m * k + m * n * 2) as f64;
-            let flops = 2.0 * (m * n * k) as f64;
-            eprintln!(
-                "gemm mxfp4 grouped {name} groups {ng} with rows {act} rows {rows} form {gform}: median {:.4} ms ({:.0} GB/s, {:.1} TFLOPS) sha {hsh}",
-                med,
-                bytes / med / 1e6,
-                flops / med / 1e9
-            );
-            out.push(format!(
-                "{{\"op\": \"mxfp4_grouped\", \"name\": \"{name}\", \"groups\": {ng}, \"experts\": {act}, \"rows\": {rows}, \"form\": {gform}, \"n\": {n}, \"k\": {k}, \"median_ms\": {med:.5}, \"ms\": {}, \"sha\": \"{hsh}\"}}",
-                fmt_list(&ms)
-            ));
+            let p1 = if nproj == 2 { 2 } else { 0 };
+            for &(act, rows) in list {
+                let m = act * rows;
+                let off: Vec<i32> = (0..=ng).map(|z| (z.min(act) * rows) as i32).collect();
+                let offd = Buf::from_i32(&st, &off)?;
+                let aq = Buf::from_bytes(&st, &rng.e4m3(m * k))?;
+                // each group's scale rows start at a multiple of 128
+                let rp = rows.next_multiple_of(128);
+                let asf = Buf::from_bytes(&st, &rng.e8m0(v::sf_bytes(act * rp, k), 118, 130))?;
+                let sfrow: Vec<i32> = (0..m)
+                    .map(|p| ((p / rows) * rp + p % rows) as i32)
+                    .collect();
+                let sfrowd = Buf::from_i32(&st, &sfrow)?;
+                // the plan's tile list: tiles of min(rows, 8) rows
+                let bm = rows.min(8);
+                let mut tl = Vec::new();
+                for z in 0..act {
+                    for m0 in (0..rows).step_by(bm) {
+                        for x in [(z * rows) as i32, rows as i32, m0 as i32, z as i32] {
+                            tl.extend_from_slice(&x.to_le_bytes());
+                        }
+                    }
+                }
+                let nt = tl.len() / 16;
+                let tiles = Buf::from_bytes(&st, &tl)?;
+                let ntiles = Buf::from_i32(&st, &[nt as i32])?;
+                let outs = |_: ()| -> Result<(Buf, Buf), String> {
+                    Ok((ops.buf(m * n * 2)?, ops.buf(m * n * 2)?))
+                };
+                let ((s0, s1), (c0, c1)) = (outs(())?, outs(())?);
+                let small = || {
+                    ck("moe_small", unsafe {
+                        ffi::memra_v41_moe_small(
+                            aq.p(&st).c(),
+                            k as i64,
+                            asf.p(&st).c(),
+                            sfrowd.p(&st).i(),
+                            tiles.p(&st).c(),
+                            ntiles.p(&st).i(),
+                            nt as i32,
+                            ewd.p(&st).c(),
+                            nproj,
+                            0,
+                            p1,
+                            (k / 2) as i64,
+                            s0.p(&st).m(),
+                            s1.p(&st).m(),
+                            n as i64,
+                            n as i32,
+                            k as i32,
+                            bm as i32,
+                            ops.sv(),
+                        )
+                    })
+                };
+                let cut = || {
+                    ck("cutlass_moe", unsafe {
+                        ffi::memra_v41_cutlass_moe(
+                            offd.p(&st).i(),
+                            0,
+                            ng as i32,
+                            nproj,
+                            0,
+                            p1,
+                            ewd.p(&st).c(),
+                            aq.p(&st).c(),
+                            asf.p(&st).c(),
+                            c0.p(&st).m(),
+                            c1.p(&st).m(),
+                            n as i64,
+                            n as i32,
+                            k as i32,
+                            (k / 2) as i64,
+                            rows as i32,
+                            gform,
+                            blk.p(&st).m(),
+                            bytes,
+                            ops.sv(),
+                        )
+                    })
+                };
+                let mut ms_s = time_ms(&ops, half, small)?;
+                let mut ms_c = time_ms(&ops, half, cut)?;
+                ms_c.extend(time_ms(&ops, half, cut)?);
+                ms_s.extend(time_ms(&ops, half, small)?);
+                let hs = s0.host(&st)?;
+                let mut same = hs == c0.host(&st)?;
+                if nproj == 2 {
+                    same &= s1.host(&st)? == c1.host(&st)?;
+                }
+                let (ms_med, mc_med) = (median(&ms_s), median(&ms_c));
+                eprintln!(
+                    "gemm mxfp4 grouped {label} {name} n {n} k {k} groups {ng} with rows {act} rows {rows}: small {:.4} ms, cutlass {:.4} ms, small/cutlass {:.3}, bytes equal {same} sha {}",
+                    ms_med,
+                    mc_med,
+                    ms_med / mc_med,
+                    sha(&hs)
+                );
+                out.push(format!(
+                    "{{\"op\": \"mxfp4_grouped\", \"set\": \"{label}\", \"name\": \"{name}\", \"groups\": {ng}, \"experts\": {act}, \"rows\": {rows}, \"n\": {n}, \"k\": {k}, \"projections\": {nproj}, \"small_median_ms\": {ms_med:.5}, \"cutlass_median_ms\": {mc_med:.5}, \"small_ms\": {}, \"cutlass_ms\": {}, \"bytes_equal\": {same}, \"sha\": \"{}\"}}",
+                    fmt_list(&ms_s),
+                    fmt_list(&ms_c),
+                    sha(&hs)
+                ));
+            }
         }
     }
     Ok(format!(

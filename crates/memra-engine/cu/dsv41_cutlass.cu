@@ -32,6 +32,9 @@
 // tileN 8 forced at every width 174-194, the normal form 0 in every run; receipts research/
 // modelplan-onboarding-dsv41-20261109/perf/receipts/race-cutlass-gb10). The dense (non-grouped) swapped forms
 // showed no such slice in the same runs and stay.
+// Grouped calls of a few rows an expert (a plan of tiles of at most 8 rows) do not come here: they run the
+// small-row body of cu/dsv41_gpu.cu (`memra_v41_moe_small`), which is this program element for element (the same
+// MMA on e2m1 weights, one chain over K; equal to the normal form in fp32 on GB10).
 #include <cuda_runtime.h>
 #include <stdint.h>
 
