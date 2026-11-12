@@ -205,6 +205,7 @@ verify-graph replay, pooled verify and device-token verify are covered by the to
 | request fault | `tools/request-fault-gate.py --model <gguf> --bin <memra-server> --out <new-dir>` | an injected per-request panic ends only that stream (`worker_fault`); peers finish byte-equal to control | local-ci |
 | context edge | `tools/spec-ctx-edge-gate.sh <model> <memra-server> [out]` | open requests at their cap under default spec end `length` with no crash line | local-ci |
 | memory-admission burst | `tools/admit-mem-burst-gate.sh <model> <memra-server> [out]` | 64 open requests: no OOM, no 503, every refusal a 429 with `Retry-After` | local-ci; SKIPs where memory-shaped admission is off by default, which is every card except the full-power RTX PRO 6000 Blackwell Workstation Edition |
+| drafter admission | `tools/drafter-admission-gate.py --model <gguf> [--draft <export-dir>] --bin <memra-server> --out <new-dir>` (`--external-lock 9` under `gpulock run`) | a DFlash request that does not fit with its draft plane is never admitted with the plane uncharged: no `eager-arm admit` line, each of the four `drafter refused` arms taken with receipt numbers that agree with it, every refused request served plain with the reference text, a step-OOM replay never speculating on a plain charge; without `--draft` the MTP eager arm must show the capture's refusal | by hand, for the VRAM gate's verdict or the DFlash route in `admit`; CPU twins `worker::tests::the_vram_gate_never_admits_a_dflash_request_without_its_draft_plane`, `the_drafter_refusal_is_wired_from_the_gate_to_every_dflash_route` and `python3 tools/test_drafter_admission_gate.py` |
 | prime fairness | `tools/prime-fairness-gate.py --model <gguf> --bin <memra-server> --out <new-dir>` | texts identical across `MEMRA_PRIME_YIELD` arms; peers' first token within bar under a long prime | local-ci |
 | GPU probe recovery | `tools/gpu-probe-recovery-gate.py --model <gguf> --bin <memra-server> --out <new-dir>` | probe hangs degrade then recover; a third miss or an ECC answer latches 503 | local-ci |
 | safetensors serving | `tools/serve-st-gate.sh [st_dir]` | an HF checkpoint dir serves through its own template; CLI and server streams agree under the stated near-tie rule | by hand |
@@ -216,7 +217,7 @@ verify-graph replay, pooled verify and device-token verify are covered by the to
 Receipts: `research/request-fault-20260922/`, `research/spec-ctx-edge-20260923/`,
 `research/prime-fairness-default-20260922/`, `research/gpu-probe-recovery-20260922/`,
 `research/route-contract-20260922/`, `research/dsv4-route-policies-20260922/`,
-`research/spec-gate-20260806/`.
+`research/spec-gate-20260806/`, `research/drafter-admission-20261112/`.
 
 ### Prefix cache
 

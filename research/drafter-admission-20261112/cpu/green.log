@@ -1,0 +1,14 @@
+2026-11-12T10:50:45+01:00
+c650de5aeb8f4a8daf04597df47ad4de12b7ae3ea6b884eabe2a2ccde15a862c  crates/memra-server/src/worker.rs
+   Compiling memra-engine v0.141.1 (<scratch>/tree-red/crates/memra-engine)
+   Compiling memra-server v0.141.1 (<scratch>/tree-red/crates/memra-server)
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 6m 55s
+     Running unittests src/lib.rs (<scratch>/target/release/deps/memra_server-84c25559e043e0da)
+
+running 2 tests
+test worker::tests::the_vram_gate_never_admits_a_dflash_request_without_its_draft_plane ... ok
+test worker::tests::the_drafter_refusal_is_wired_from_the_gate_to_every_dflash_route ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.02s
+

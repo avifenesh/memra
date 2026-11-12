@@ -1,0 +1,10 @@
+--- <scratch>/tree/crates/memra-server/src/worker.rs	2026-11-12 10:35:05.223702136 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 11:28:25.390070035 +0100
+@@ -22548,7 +22548,6 @@
+                             arm.as_str(),
+                         );
+                         n_drafter_refusals += 1;
+-                        req.drafter_refused = true;
+                         queue.push_front(req);
+                         continue;
+                     }

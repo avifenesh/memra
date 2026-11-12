@@ -1,0 +1,11 @@
+--- <scratch>/tree/crates/memra-server/src/worker.rs	2026-11-12 10:35:05.223702136 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 10:57:42.051016141 +0100
+@@ -26911,7 +26911,7 @@
+ ) -> Option<DraftStateArm> {
+     match (draft_state_bytes, dflash_route, capture_gate_on) {
+         (0, _, _) => None,
+-        (_, true, _) => Some(DraftStateArm::RefuseDrafter),
++        (_, true, gate) => gate.then_some(DraftStateArm::EagerCapture),
+         (_, false, true) => Some(DraftStateArm::EagerCapture),
+         (_, false, false) => None,
+     }

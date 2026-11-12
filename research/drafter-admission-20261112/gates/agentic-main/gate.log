@@ -1,0 +1,20 @@
+2026-11-12T13:09:19+02:00
+de1e84621861a15f03130090e880df6b0bdaa3f7626d4a3da60c1ce8963fca1a  <bin>/memra-server-main-120a
+NVIDIA GeForce RTX 5090 Laptop GPU, 615.71.09, 65, 10.71 W, 150.00 W, 48 MiB
+ 13:09:19 up 25 days,  4:16,  4 users,  load average: 5.45, 4.82, 3.53
+step 1 idle-window: free 4570MB (ballast 1800MB) status 200 greedy speculated True receipt None eager 1
+step 2 idle-window: free 4570MB (ballast 1799MB) status 200 sampled speculated True receipt None eager 1
+step 3 idle-band: not placed, the driver could not give the ballast for 3822MB effective free
+step 4 busy-window: free 4570MB (ballast 1459MB) status 200 speculated True receipt None eager 1 peer alive True
+step 5 busy-band: free 3882MB (ballast 2146MB) status 400 speculated False receipt None eager 0 peer alive False
+step 6 busy-band: free 3882MB (ballast 2146MB) status 400 speculated False receipt None eager 0 peer alive False
+replay step: status 200 speculated True fault 1 cost lines [('spec', 1816), ('plain', 1491)]
+V1 window_reached: PASS (2 idle window steps of 5 steps (want 2))
+V2 plane_charged: FAIL (3 eager-arm admit lines on a DFlash boot)
+V3 served_plain: FAIL (no step was refused its drafter)
+V4 plane_not_held: FAIL (full admission peak pool use 2449MB, draft plane 1197MB; idle refused steps none)
+V5 no_oom: PASS (bad lines {}, 5xx [], alive True, /health 200)
+V6 same_text: PASS (step 1 greedy speculated True: same; step 2 sampled speculated True: same; greedy references agree True; sampled references agree False)
+V7 every_arm: FAIL (receipts per arm {'idle-fits': 0, 'idle-short': 0, 'busy-fits': 0, 'busy-unfundable': 0}; ; step 4 busy-window: status 200, no receipt; step 5 busy-band: status 400, no receipt; step 6 busy-band: status 400, no receipt; step 3 idle-band: not placed, the driver could not give the ballast for 3822MB effective free)
+V8 replay_charged: FAIL (status 200, fault fired 1, cost lines [('spec', 1816), ('plain', 1491)], speculated True, only the synthetic OOM True)
+gate r-agentic-main rc=1 2026-11-12T13:15:24+02:00

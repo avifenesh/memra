@@ -407,6 +407,19 @@ a `[shed]` line.
   requests on that device wait behind it; dark-lane ones shed. Refusals that need no memory (slot
   capacity, template, the first-token gate) still answer at once. `/metrics`
   `admission_vram_hol_holds` counts the held requests.
+- **A DFlash request that does not fit with its drafter is served plain.** A speculating request is
+  charged its session, its draft state and the reserve. On the MTP route a request that fits only
+  without the draft state is admitted and its draft-graph capture is refused later
+  (`[admission] eager-arm admit:`). On the DFlash route the draft state is the drafter KV plane,
+  allocated with the drafter session, so the gate refuses the request its drafter
+  (`[admission] drafter refused: ... arm A`) and prices it again in the same pass as a plain
+  request, in its queue position: beside peers when the charge without the plane fits or when no
+  retirement can fund the full charge, and on an idle card, after its drained re-read, whenever
+  the full charge still does not fit. The refusal holds for the request's life. A drafter session
+  exists only for a request whose plane the gate charged, so a step-OOM replay runs plain too. A
+  greedy request writes the same text either way; a seeded sampled one writes its plain stream
+  (memra#1154). `/metrics` `admission_drafter_refusals` counts them. Record:
+  [`decisions/DRAFTER-ADMISSION-REFUSAL.md`](decisions/DRAFTER-ADMISSION-REFUSAL.md).
 - **A prefill at risk goes first.** Prefilling sessions normally advance one chunk per tick in turn.
   When a session would miss its first-token deadline under that order but would make it served
   alone, the tick advances sessions in earliest-deadline order until one chunk of tokens is used.

@@ -1,0 +1,450 @@
+{
+ "gpu": {
+  "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+  "used_mib": 48,
+  "total_mib": 24463,
+  "enforced_power_limit_w": "150.00"
+ },
+ "binary": "<bin>/memra-server-fix-120a",
+ "model": "<models>/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+ "draft": "<models>/q38-gguf/Qwen3.8-27B-DFlash2-memra",
+ "route": "dflash",
+ "ctx": 32768,
+ "draft_plane_bytes": 169000000,
+ "reserve_estimate_bytes": 1652555776,
+ "first_estimate_bytes": {
+  "with": 3637555776,
+  "without": 3468555776
+ },
+ "ballast_context_bytes": 271581184,
+ "reference_texts": {
+  "plain_greedy": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 1513 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a mix",
+  "plain_sampled": " The ledger contains 1513 items, each a sequence of words.\n\nAbout the items in the ledger:\n- \"anchor\" is a category of item that appears in items 6, 8,  appears in items",
+  "spec_greedy": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 1513 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a mix",
+  "spec_sampled": " The inventory ledger contains 1513 items composed of various natural and fabricated elements.\n\n<think>\nThe user is asking me to provide a summary of the ledger in one sentence. They've already provided the summary at the end: \""
+ },
+ "full_admission": {
+  "step": 0,
+  "kind": "full",
+  "ballast_bytes": 0,
+  "effective_free_before": 4875380984,
+  "pool_used_before": 19623679752,
+  "min_effective_free": 3452277284,
+  "min_driver_free": 1614938112,
+  "peak_pool_used": 21046783452,
+  "samples": 508,
+  "effective_free_after": 4874664176,
+  "served_plain_delta": 0,
+  "served_dspark_delta": 1,
+  "drafter_refusals_delta": 0,
+  "eager_lines": [],
+  "refused_lines": [],
+  "receipt": null,
+  "declined_lines": [],
+  "capture_skipped_lines": [],
+  "fault_lines": [],
+  "cost_lines": [],
+  "spec_cost_mb": null,
+  "last_cost_path": null,
+  "draft_mb": null,
+  "status": 200,
+  "prompt_tokens": 29110,
+  "completion_tokens": 48,
+  "speculated": true,
+  "sampled": true,
+  "text": " The inventory ledger contains 1513 items composed of various natural and fabricated elements.\n\n<think>\nThe user is asking me to provide a summary of the ledger in one sentence. They've already provided the summary at the end: \"",
+  "error": null
+ },
+ "steps": [
+  {
+   "step": 1,
+   "kind": "idle-window",
+   "ballast_bytes": 1050027216,
+   "effective_free_before": 3553055776,
+   "pool_used_before": 19624396560,
+   "min_effective_free": 2322954780,
+   "min_driver_free": 695009280,
+   "peak_pool_used": 20853523940,
+   "samples": 511,
+   "effective_free_after": 3552082160,
+   "served_plain_delta": 1,
+   "served_dspark_delta": 0,
+   "drafter_refusals_delta": 1,
+   "eager_lines": [],
+   "refused_lines": [
+    "[admission] drafter refused: model=\"gate\" ctx=29222 draft plane 169MB does not fit (available 3552MB, required 3638MB with it, 3469MB without; arm idle-fits); the request is priced again as PLAIN, no drafter session is created"
+   ],
+   "receipt": {
+    "plane_mb": 169,
+    "available_mb": 3552,
+    "with_mb": 3638,
+    "without_mb": 3469,
+    "arm": "idle-fits"
+   },
+   "declined_lines": [
+    "[dspark] declined: drafter refused at admission (its draft plane did not fit); serving PLAIN (prompt=29110 decode_budget=48)"
+   ],
+   "capture_skipped_lines": [],
+   "fault_lines": [],
+   "cost_lines": [
+    [
+     "plain",
+     1491
+    ]
+   ],
+   "spec_cost_mb": null,
+   "last_cost_path": "plain",
+   "draft_mb": null,
+   "status": 200,
+   "prompt_tokens": 29110,
+   "completion_tokens": 48,
+   "speculated": false,
+   "sampled": false,
+   "text": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 1513 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a mix",
+   "error": null,
+   "target_effective_free": 3553055776
+  },
+  {
+   "step": 2,
+   "kind": "idle-window",
+   "ballast_bytes": 1048609376,
+   "effective_free_before": 3553500000,
+   "pool_used_before": 19624396560,
+   "min_effective_free": 2322954780,
+   "min_driver_free": 695009280,
+   "peak_pool_used": 20853523940,
+   "samples": 518,
+   "effective_free_after": 3552082160,
+   "served_plain_delta": 1,
+   "served_dspark_delta": 0,
+   "drafter_refusals_delta": 1,
+   "eager_lines": [],
+   "refused_lines": [
+    "[admission] drafter refused: model=\"gate\" ctx=29222 draft plane 169MB does not fit (available 3552MB, required 4000MB with it, 3831MB without; arm idle-short); the request is priced again as PLAIN, no drafter session is created"
+   ],
+   "receipt": {
+    "plane_mb": 169,
+    "available_mb": 3552,
+    "with_mb": 4000,
+    "without_mb": 3831,
+    "arm": "idle-short"
+   },
+   "declined_lines": [
+    "[dspark] declined: drafter refused at admission (its draft plane did not fit); serving PLAIN (prompt=29110 decode_budget=48)"
+   ],
+   "capture_skipped_lines": [],
+   "fault_lines": [],
+   "cost_lines": [
+    [
+     "spec",
+     2178
+    ],
+    [
+     "plain",
+     1853
+    ]
+   ],
+   "spec_cost_mb": 2178,
+   "last_cost_path": "plain",
+   "draft_mb": 169,
+   "status": 200,
+   "prompt_tokens": 29110,
+   "completion_tokens": 48,
+   "speculated": false,
+   "sampled": true,
+   "text": " The ledger contains 1513 items, each a sequence of words.\n\nAbout the items in the ledger:\n- \"anchor\" is a category of item that appears in items 6, 8,  appears in items",
+   "error": null,
+   "target_effective_free": 3553500000
+  },
+  {
+   "step": 3,
+   "kind": "idle-window",
+   "ballast_bytes": 685191536,
+   "effective_free_before": 3915500000,
+   "pool_used_before": 19624396560,
+   "min_effective_free": 2687859228,
+   "min_driver_free": 695009280,
+   "peak_pool_used": 20853523940,
+   "samples": 520,
+   "effective_free_after": 3916986608,
+   "served_plain_delta": 1,
+   "served_dspark_delta": 0,
+   "drafter_refusals_delta": 1,
+   "eager_lines": [],
+   "refused_lines": [
+    "[admission] drafter refused: model=\"gate\" ctx=29222 draft plane 169MB does not fit (available 3917MB, required 4000MB with it, 3831MB without; arm idle-fits); the request is priced again as PLAIN, no drafter session is created"
+   ],
+   "receipt": {
+    "plane_mb": 169,
+    "available_mb": 3917,
+    "with_mb": 4000,
+    "without_mb": 3831,
+    "arm": "idle-fits"
+   },
+   "declined_lines": [
+    "[dspark] declined: drafter refused at admission (its draft plane did not fit); serving PLAIN (prompt=29110 decode_budget=48)"
+   ],
+   "capture_skipped_lines": [],
+   "fault_lines": [],
+   "cost_lines": [
+    [
+     "spec",
+     2178
+    ],
+    [
+     "plain",
+     1853
+    ]
+   ],
+   "spec_cost_mb": 2178,
+   "last_cost_path": "plain",
+   "draft_mb": 169,
+   "status": 200,
+   "prompt_tokens": 29110,
+   "completion_tokens": 48,
+   "speculated": false,
+   "sampled": true,
+   "text": " The ledger contains 1513 items, each a sequence of words.\n\nAbout the items in the ledger:\n- \"anchor\" is a category of item that appears in items 6, 8,  appears in items",
+   "error": null,
+   "target_effective_free": 3915500000
+  },
+  {
+   "step": 4,
+   "kind": "idle-band",
+   "ballast_bytes": 921178144,
+   "effective_free_before": 3681000000,
+   "pool_used_before": 19624396560,
+   "min_effective_free": 2450881052,
+   "min_driver_free": 822935552,
+   "peak_pool_used": 20853523940,
+   "samples": 536,
+   "effective_free_after": 3680008432,
+   "served_plain_delta": 1,
+   "served_dspark_delta": 0,
+   "drafter_refusals_delta": 1,
+   "eager_lines": [],
+   "refused_lines": [
+    "[admission] drafter refused: model=\"gate\" ctx=29222 draft plane 169MB does not fit (available 3680MB, required 4000MB with it, 3831MB without; arm idle-short); the request is priced again as PLAIN, no drafter session is created"
+   ],
+   "receipt": {
+    "plane_mb": 169,
+    "available_mb": 3680,
+    "with_mb": 4000,
+    "without_mb": 3831,
+    "arm": "idle-short"
+   },
+   "declined_lines": [
+    "[dspark] declined: drafter refused at admission (its draft plane did not fit); serving PLAIN (prompt=29110 decode_budget=48)"
+   ],
+   "capture_skipped_lines": [],
+   "fault_lines": [],
+   "cost_lines": [
+    [
+     "spec",
+     2178
+    ],
+    [
+     "plain",
+     1853
+    ]
+   ],
+   "spec_cost_mb": 2178,
+   "last_cost_path": "plain",
+   "draft_mb": 169,
+   "status": 200,
+   "prompt_tokens": 29110,
+   "completion_tokens": 48,
+   "speculated": false,
+   "sampled": false,
+   "text": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 1513 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a mix",
+   "error": null,
+   "target_effective_free": 3681000000
+  },
+  {
+   "step": 5,
+   "kind": "busy-window",
+   "ballast_bytes": 344590236,
+   "effective_free_before": 3915628892,
+   "pool_used_before": 19965492900,
+   "min_effective_free": 2686501512,
+   "min_driver_free": 2339176448,
+   "peak_pool_used": 21194620280,
+   "samples": 549,
+   "effective_free_after": 4256725232,
+   "served_plain_delta": 1,
+   "served_dspark_delta": 0,
+   "drafter_refusals_delta": 1,
+   "eager_lines": [],
+   "refused_lines": [
+    "[admission] drafter refused: model=\"gate\" ctx=29222 draft plane 169MB does not fit (available 3916MB, required 4000MB with it, 3831MB without; arm busy-fits); the request is priced again as PLAIN, no drafter session is created"
+   ],
+   "receipt": {
+    "plane_mb": 169,
+    "available_mb": 3916,
+    "with_mb": 4000,
+    "without_mb": 3831,
+    "arm": "busy-fits"
+   },
+   "declined_lines": [
+    "[dspark] declined: drafter refused at admission (its draft plane did not fit); serving PLAIN (prompt=29110 decode_budget=48)"
+   ],
+   "capture_skipped_lines": [],
+   "fault_lines": [],
+   "cost_lines": [
+    [
+     "spec",
+     2178
+    ],
+    [
+     "plain",
+     1706
+    ]
+   ],
+   "spec_cost_mb": 2178,
+   "last_cost_path": "plain",
+   "draft_mb": 169,
+   "status": 200,
+   "prompt_tokens": 29110,
+   "completion_tokens": 48,
+   "speculated": false,
+   "sampled": false,
+   "text": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 1513 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a mix",
+   "error": null,
+   "target_effective_free": 3915500000,
+   "peer_tokens_at_end": 177,
+   "peer_alive_at_end": true
+  },
+  {
+   "step": 6,
+   "kind": "busy-band",
+   "ballast_bytes": 829219128,
+   "effective_free_before": 3429089628,
+   "pool_used_before": 19965492900,
+   "min_effective_free": 2199962248,
+   "min_driver_free": 1852637184,
+   "peak_pool_used": 21194620280,
+   "samples": 548,
+   "effective_free_after": 3770185968,
+   "served_plain_delta": 1,
+   "served_dspark_delta": 0,
+   "drafter_refusals_delta": 1,
+   "eager_lines": [],
+   "refused_lines": [
+    "[admission] drafter refused: model=\"gate\" ctx=29222 draft plane 169MB does not fit (available 3429MB, required 4000MB with it, 3831MB without; arm busy-unfundable); the request is priced again as PLAIN, no drafter session is created"
+   ],
+   "receipt": {
+    "plane_mb": 169,
+    "available_mb": 3429,
+    "with_mb": 4000,
+    "without_mb": 3831,
+    "arm": "busy-unfundable"
+   },
+   "declined_lines": [
+    "[dspark] declined: drafter refused at admission (its draft plane did not fit); serving PLAIN (prompt=29110 decode_budget=48)"
+   ],
+   "capture_skipped_lines": [],
+   "fault_lines": [],
+   "cost_lines": [
+    [
+     "spec",
+     2178
+    ],
+    [
+     "plain",
+     1706
+    ]
+   ],
+   "spec_cost_mb": 2178,
+   "last_cost_path": "plain",
+   "draft_mb": 169,
+   "status": 200,
+   "prompt_tokens": 29110,
+   "completion_tokens": 48,
+   "speculated": false,
+   "sampled": false,
+   "text": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 1513 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a mix",
+   "error": null,
+   "target_effective_free": 3431000000,
+   "peer_tokens_at_end": 177,
+   "peer_alive_at_end": true
+  }
+ ],
+ "skipped_steps": [],
+ "replay": {
+  "step": "replay",
+  "kind": "replay",
+  "ballast_bytes": 0,
+  "effective_free_before": 0,
+  "pool_used_before": 0,
+  "min_effective_free": 0,
+  "min_driver_free": 0,
+  "peak_pool_used": 20807015908,
+  "samples": 487,
+  "effective_free_after": 4921172208,
+  "served_plain_delta": 1,
+  "served_dspark_delta": 1,
+  "drafter_refusals_delta": 0,
+  "eager_lines": [],
+  "refused_lines": [],
+  "receipt": null,
+  "declined_lines": [],
+  "capture_skipped_lines": [],
+  "fault_lines": [
+   "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this step reports a synthetic CUDA OOM (model gate, generated 0, oom_retries 0/3)"
+  ],
+  "cost_lines": [
+   [
+    "spec",
+    1816
+   ],
+   [
+    "plain",
+    1491
+   ]
+  ],
+  "spec_cost_mb": 1816,
+  "last_cost_path": "plain",
+  "draft_mb": 169,
+  "status": 200,
+  "prompt_tokens": 29110,
+  "completion_tokens": 48,
+  "speculated": false,
+  "sampled": false,
+  "text": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 1513 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a mix",
+  "error": null
+ },
+ "verdicts": {
+  "V1 window_reached": {
+   "pass": true,
+   "detail": "2 idle window steps of 6 steps (want 2)"
+  },
+  "V2 plane_charged": {
+   "pass": true,
+   "detail": "0 eager-arm admit lines on a DFlash boot"
+  },
+  "V3 served_plain": {
+   "pass": true,
+   "detail": "step 1: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 2: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 3: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 4: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 5: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 6: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1"
+  },
+  "V4 plane_not_held": {
+   "pass": true,
+   "detail": "full admission peak pool use 1423MB, draft plane 169MB; idle refused steps 1229MB, 1229MB, 1229MB, 1229MB"
+  },
+  "V5 no_oom": {
+   "pass": true,
+   "detail": "bad lines {}, 5xx [], alive True, /health 200"
+  },
+  "V6 same_text": {
+   "pass": true,
+   "detail": "step 1 greedy speculated False: same; step 3 sampled speculated False: same; step 2 sampled speculated False: same; step 4 greedy speculated False: same; greedy references agree True; sampled references agree False"
+  },
+  "V7 every_arm": {
+   "pass": true,
+   "detail": "receipts per arm {'idle-fits': 2, 'idle-short': 2, 'busy-fits': 1, 'busy-unfundable': 1}; step 1 idle-window: idle-fits available 3552MB with 3638MB without 3469MB ok; step 2 idle-window: idle-short available 3552MB with 4000MB without 3831MB ok; step 3 idle-window: idle-fits available 3917MB with 4000MB without 3831MB ok; step 4 idle-band: idle-short available 3680MB with 4000MB without 3831MB ok; step 5 busy-window: busy-fits available 3916MB with 4000MB without 3831MB ok; step 6 busy-band: busy-unfundable available 3429MB with 4000MB without 3831MB ok"
+  },
+  "V8 replay_charged": {
+   "pass": true,
+   "detail": "status 200, fault fired 1, cost lines [('spec', 1816), ('plain', 1491)], speculated False, only the synthetic OOM True"
+  }
+ }
+}

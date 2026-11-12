@@ -1,0 +1,11 @@
+--- <scratch>/tree/crates/memra-server/src/worker.rs	2026-11-12 10:35:05.223702136 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 11:17:01.470193655 +0100
+@@ -28617,7 +28617,7 @@
+         // route. Every drafter-session site below (cold prime, pool resume, prefix restore,
+         // cold-drafter conversion) reads this struct, so this one term closes them all, for
+         // a refused request and for one the gate priced plain (a step-OOM park replay).
+-        route_ready: dflash_route_open && req_drafter_funded,
++        route_ready: dflash_route_open,
+         prime_feasible: dspark_prime_feasible,
+         greedy: sampler.is_greedy(),
+         greedy_penalized,

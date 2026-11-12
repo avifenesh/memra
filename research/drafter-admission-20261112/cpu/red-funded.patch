@@ -1,0 +1,11 @@
+--- <scratch>/tree/crates/memra-server/src/worker.rs	2026-11-12 10:35:05.223702136 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 11:20:25.356734827 +0100
+@@ -20965,7 +20965,7 @@
+             };
+             // The serve side reads this, never its own guess (memra#1173): a drafter session
+             // exists only where this pass charged its plane.
+-            req.drafter_funded = estimate_spec && dspark_drafts.contains_key(&model_key);
++            req.drafter_funded = true;
+             let cost_pre_draft = cost;
+             let mut cost = cost.saturating_add(draft_state_bytes);
+             if log_estimate && draft_state_bytes > 0 {

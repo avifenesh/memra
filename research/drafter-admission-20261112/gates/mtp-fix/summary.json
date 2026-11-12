@@ -1,0 +1,167 @@
+{
+ "gpu": {
+  "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+  "used_mib": 48,
+  "total_mib": 24463,
+  "enforced_power_limit_w": "150.00"
+ },
+ "binary": "<bin>/memra-server-fix-120a",
+ "model": "<models>/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+ "draft": null,
+ "route": "mtp",
+ "ctx": 65536,
+ "draft_plane_bytes": 39000000,
+ "reserve_estimate_bytes": 1610612736,
+ "first_estimate_bytes": {
+  "with": 5146612736,
+  "without": 5107612736
+ },
+ "ballast_context_bytes": 271581184,
+ "reference_texts": {
+  "plain_greedy": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 2669 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a combination",
+  "plain_sampled": "\n\nBased on the 2,669 items listed in the inventory ledger, the collection consists of complex, multi-word strings combining diverse geological, nautical, mineral, and geographic terms (such as \"cobalt,\" \"ferry",
+  "spec_greedy": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 2669 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a combination",
+  "spec_sampled": "\n\nBased on the 2,669 items listed in the inventory ledger, the collection consists of complex, multi-word strings combining diverse geological, nautical, mineral, and geographic terms (such as \"cobalt,\" \"ferry"
+ },
+ "full_admission": {
+  "step": 0,
+  "kind": "full",
+  "ballast_bytes": 0,
+  "effective_free_before": 7392350392,
+  "pool_used_before": 17490489160,
+  "min_effective_free": 4249213920,
+  "min_driver_free": 2804023296,
+  "peak_pool_used": 20633625632,
+  "samples": 1038,
+  "effective_free_after": 7392350392,
+  "served_plain_delta": 0,
+  "served_dspark_delta": 0,
+  "drafter_refusals_delta": 0,
+  "eager_lines": [],
+  "refused_lines": [],
+  "receipt": null,
+  "declined_lines": [],
+  "capture_skipped_lines": [],
+  "fault_lines": [],
+  "cost_lines": [
+   [
+    "spec",
+    3497
+   ]
+  ],
+  "spec_cost_mb": 3497,
+  "last_cost_path": "spec",
+  "draft_mb": 39,
+  "status": 200,
+  "prompt_tokens": 52579,
+  "completion_tokens": 48,
+  "speculated": true,
+  "sampled": true,
+  "text": "\n\nBased on the 2,669 items listed in the inventory ledger, the collection consists of complex, multi-word strings combining diverse geological, nautical, mineral, and geographic terms (such as \"cobalt,\" \"ferry",
+  "error": null
+ },
+ "steps": [
+  {
+   "step": 1,
+   "kind": "idle-window",
+   "ballast_bytes": 1993656472,
+   "effective_free_before": 5127112736,
+   "pool_used_before": 17490489160,
+   "min_effective_free": 1982913504,
+   "min_driver_free": 705495040,
+   "peak_pool_used": 20633625632,
+   "samples": 1064,
+   "effective_free_after": 5126049976,
+   "served_plain_delta": 0,
+   "served_dspark_delta": 0,
+   "drafter_refusals_delta": 0,
+   "eager_lines": [
+    "[admission] eager-arm admit: model=\"gate\" ctx=52691 draft-state 39MB uncharged (capture would be refused at current headroom; the pre-capture gate enforces it)"
+   ],
+   "refused_lines": [],
+   "receipt": null,
+   "declined_lines": [],
+   "capture_skipped_lines": [
+    "[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1741MB (driver 672MB + pool-cached 1068MB) < required 3146MB (2x appetite 37MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume"
+   ],
+   "fault_lines": [],
+   "cost_lines": [],
+   "spec_cost_mb": null,
+   "last_cost_path": null,
+   "draft_mb": null,
+   "status": 200,
+   "prompt_tokens": 52579,
+   "completion_tokens": 48,
+   "speculated": true,
+   "sampled": false,
+   "text": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 2669 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a combination",
+   "error": null,
+   "target_effective_free": 5127112736
+  },
+  {
+   "step": 2,
+   "kind": "idle-window",
+   "ballast_bytes": 1992593712,
+   "effective_free_before": 5127112736,
+   "pool_used_before": 17490489160,
+   "min_effective_free": 1824924588,
+   "min_driver_free": 705495040,
+   "peak_pool_used": 20791614548,
+   "samples": 1079,
+   "effective_free_after": 5126049976,
+   "served_plain_delta": 0,
+   "served_dspark_delta": 0,
+   "drafter_refusals_delta": 0,
+   "eager_lines": [
+    "[admission] eager-arm admit: model=\"gate\" ctx=52691 draft-state 39MB uncharged (capture would be refused at current headroom; the pre-capture gate enforces it)"
+   ],
+   "refused_lines": [],
+   "receipt": null,
+   "declined_lines": [],
+   "capture_skipped_lines": [
+    "[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1740MB (driver 672MB + pool-cached 1067MB) < required 3146MB (2x appetite 37MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume"
+   ],
+   "fault_lines": [],
+   "cost_lines": [],
+   "spec_cost_mb": null,
+   "last_cost_path": null,
+   "draft_mb": null,
+   "status": 200,
+   "prompt_tokens": 52579,
+   "completion_tokens": 48,
+   "speculated": true,
+   "sampled": true,
+   "text": "\n\nBased on the 2,669 items listed in the inventory ledger, the collection consists of complex, multi-word strings combining diverse geological, nautical, mineral, and geographic terms (such as \"cobalt,\" \"ferry",
+   "error": null,
+   "target_effective_free": 5127112736
+  }
+ ],
+ "skipped_steps": [],
+ "replay": null,
+ "verdicts": {
+  "V1 window_reached": {
+   "pass": true,
+   "detail": "2 idle window steps of 2 steps (want 2)"
+  },
+  "M2 capture_refused": {
+   "pass": true,
+   "detail": "step 1: eager-arm lines 1, capture refusals 1; step 2: eager-arm lines 1, capture refusals 1"
+  },
+  "M3 served": {
+   "pass": true,
+   "detail": "step 1: status 200 tokens 48 speculated True; step 2: status 200 tokens 48 speculated True"
+  },
+  "INFO peak_pool_use": {
+   "pass": true,
+   "detail": "full admission peak pool use 3143MB, draft state 39MB; window steps 3143MB, 3301MB"
+  },
+  "V5 no_oom": {
+   "pass": true,
+   "detail": "bad lines {}, 5xx [], alive True, /health 200"
+  },
+  "V6 same_text": {
+   "pass": true,
+   "detail": "step 1 greedy speculated True: same; step 2 sampled speculated True: same; greedy references agree True; sampled references agree True"
+  }
+ }
+}

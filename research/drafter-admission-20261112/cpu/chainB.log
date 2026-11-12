@@ -1,0 +1,41 @@
+build fix 2026-11-12T10:37:05+01:00 worker c650de5aeb8f4a8d
+   Compiling memra-server v0.141.1 (<scratch>/tree/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 7m 09s
+71a7b8173fcbd94e8717b0b51cacf0cc35a686d7fc9d3a52db9a4adc558fe8e4  <bin>/memra-server-fix-120a
+memra-0.141.1-089bd6b58f1a
+build main 2026-11-12T10:44:15+01:00 worker a73702568563ed6a
+   Compiling memra-server v0.141.1 (<scratch>/tree-main/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 6m 29s
+de1e84621861a15f03130090e880df6b0bdaa3f7626d4a3da60c1ce8963fca1a  <bin>/memra-server-main-120a
+memra-0.141.1-24e7e0144192
+BUILD-DONE 2026-11-12T10:50:45+01:00
+green rc=0 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.02s
+red-arm rc=101 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.01s
+red-busy rc=101 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.02s
+red-unfundable rc=101 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.02s
+red-stale rc=101 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.01s
+red-idle rc=101 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.01s
+red-route rc=101 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.01s
+red-funded rc=101 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.01s
+red-price rc=101 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.01s
+red-requeue rc=101 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.02s
+RED-DONE 2026-11-12T11:31:59+01:00
+== fmt: 2026-11-12T11:31:59+01:00
+== fmt rc=0
+== clippy: 2026-11-12T11:32:02+01:00
+== clippy rc=0
+      1 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+== test-server: 2026-11-12T11:35:48+01:00
+== test-server rc=0
+      3 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+      1 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+      1 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+      1 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+      1 test result: ok. 1212 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out; finished in 13.71s
+      1 test job_store::tests::failed_or_panicked_settlement_does_not_expose_output ... ok
+== flags: 2026-11-12T11:44:45+01:00
+== flags rc=0
+== numeric: 2026-11-12T11:44:48+01:00
+== numeric rc=0
+CHECKS-DONE fail=0 2026-11-12T11:44:52+01:00
+CHAIN-B-DONE 2026-11-12T11:44:52+01:00

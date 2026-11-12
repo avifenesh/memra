@@ -1,0 +1,11 @@
+--- <scratch>/tree/crates/memra-server/src/worker.rs	2026-11-12 10:35:05.223702136 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 11:13:04.698080085 +0100
+@@ -27007,7 +27007,7 @@
+         Some(DraftStateArm::RefuseDrafter) if fits_without => {
+             GateVerdict::RefuseDrafter(RefusalArm::IdleFits)
+         }
+-        Some(DraftStateArm::RefuseDrafter) => GateVerdict::RefuseDrafter(RefusalArm::IdleShort),
++        Some(DraftStateArm::RefuseDrafter) => GateVerdict::Reject,
+         Some(DraftStateArm::EagerCapture) if fits_without => GateVerdict::AdmitEager,
+         _ => GateVerdict::Reject,
+     }

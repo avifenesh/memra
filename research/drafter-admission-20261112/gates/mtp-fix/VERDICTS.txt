@@ -1,0 +1,6 @@
+V1 window_reached: PASS (2 idle window steps of 2 steps (want 2))
+M2 capture_refused: PASS (step 1: eager-arm lines 1, capture refusals 1; step 2: eager-arm lines 1, capture refusals 1)
+M3 served: PASS (step 1: status 200 tokens 48 speculated True; step 2: status 200 tokens 48 speculated True)
+INFO peak_pool_use: full admission peak pool use 3143MB, draft state 39MB; window steps 3143MB, 3301MB
+V5 no_oom: PASS (bad lines {}, 5xx [], alive True, /health 200)
+V6 same_text: PASS (step 1 greedy speculated True: same; step 2 sampled speculated True: same; greedy references agree True; sampled references agree True)

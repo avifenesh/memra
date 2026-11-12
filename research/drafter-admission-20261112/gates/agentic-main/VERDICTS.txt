@@ -1,0 +1,8 @@
+V1 window_reached: PASS (2 idle window steps of 5 steps (want 2))
+V2 plane_charged: FAIL (3 eager-arm admit lines on a DFlash boot)
+V3 served_plain: FAIL (no step was refused its drafter)
+V4 plane_not_held: FAIL (full admission peak pool use 2449MB, draft plane 1197MB; idle refused steps none)
+V5 no_oom: PASS (bad lines {}, 5xx [], alive True, /health 200)
+V6 same_text: PASS (step 1 greedy speculated True: same; step 2 sampled speculated True: same; greedy references agree True; sampled references agree False)
+V7 every_arm: FAIL (receipts per arm {'idle-fits': 0, 'idle-short': 0, 'busy-fits': 0, 'busy-unfundable': 0}; ; step 4 busy-window: status 200, no receipt; step 5 busy-band: status 400, no receipt; step 6 busy-band: status 400, no receipt; step 3 idle-band: not placed, the driver could not give the ballast for 3822MB effective free)
+V8 replay_charged: FAIL (status 200, fault fired 1, cost lines [('spec', 1816), ('plain', 1491)], speculated True, only the synthetic OOM True)

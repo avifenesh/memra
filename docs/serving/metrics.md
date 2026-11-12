@@ -59,6 +59,7 @@ Present for the operator and completion-domain scopes.
 | `prompt_tokens_in`, `cached_tokens_in`, `computed_tokens_in` | the prompt split, see [Cache metering](#cache-metering) |
 | `admission_session_defers`, `admission_vram_defers` | admission decisions deferred at the session cap or by the VRAM gate. A queued request counts once per tick it is deferred |
 | `admission_vram_hol_holds` | requests held behind an earlier VRAM-deferred request in the same admission pass |
+| `admission_drafter_refusals` | DFlash requests the VRAM gate refused their drafter and priced again as plain, once per request |
 | `prefill_deadline_ticks` | ticks whose interactive prefill used the earliest-deadline order instead of round robin |
 | `prefix_headroom_evictions` | prefix-cache entries evicted to give back the transient reserve after an insert |
 | `step_oom_parks` | successful step-OOM requeues |

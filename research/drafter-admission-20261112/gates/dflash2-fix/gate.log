@@ -1,0 +1,20 @@
+2026-11-12T12:44:57+02:00
+71a7b8173fcbd94e8717b0b51cacf0cc35a686d7fc9d3a52db9a4adc558fe8e4  <bin>/memra-server-fix-120a
+NVIDIA GeForce RTX 5090 Laptop GPU, 615.71.09, 67, 10.77 W, 150.00 W, 48 MiB
+ 12:44:57 up 25 days,  3:52,  3 users,  load average: 1.58, 1.99, 2.10
+step 1 idle-window: free 3553MB (ballast 1050MB) status 200 greedy speculated False receipt idle-fits eager 0
+step 2 idle-window: free 3554MB (ballast 1049MB) status 200 sampled speculated False receipt idle-short eager 0
+step 3 idle-window: free 3916MB (ballast 685MB) status 200 sampled speculated False receipt idle-fits eager 0
+step 4 idle-band: free 3681MB (ballast 921MB) status 200 greedy speculated False receipt idle-short eager 0
+step 5 busy-window: free 3916MB (ballast 345MB) status 200 speculated False receipt busy-fits eager 0 peer alive True
+step 6 busy-band: free 3429MB (ballast 829MB) status 200 speculated False receipt busy-unfundable eager 0 peer alive True
+replay step: status 200 speculated False fault 1 cost lines [('spec', 1816), ('plain', 1491)]
+V1 window_reached: PASS (2 idle window steps of 6 steps (want 2))
+V2 plane_charged: PASS (0 eager-arm admit lines on a DFlash boot)
+V3 served_plain: PASS (step 1: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 2: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 3: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 4: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 5: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 6: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1)
+V4 plane_not_held: PASS (full admission peak pool use 1423MB, draft plane 169MB; idle refused steps 1229MB, 1229MB, 1229MB, 1229MB)
+V5 no_oom: PASS (bad lines {}, 5xx [], alive True, /health 200)
+V6 same_text: PASS (step 1 greedy speculated False: same; step 3 sampled speculated False: same; step 2 sampled speculated False: same; step 4 greedy speculated False: same; greedy references agree True; sampled references agree False)
+V7 every_arm: PASS (receipts per arm {'idle-fits': 2, 'idle-short': 2, 'busy-fits': 1, 'busy-unfundable': 1}; step 1 idle-window: idle-fits available 3552MB with 3638MB without 3469MB ok; step 2 idle-window: idle-short available 3552MB with 4000MB without 3831MB ok; step 3 idle-window: idle-fits available 3917MB with 4000MB without 3831MB ok; step 4 idle-band: idle-short available 3680MB with 4000MB without 3831MB ok; step 5 busy-window: busy-fits available 3916MB with 4000MB without 3831MB ok; step 6 busy-band: busy-unfundable available 3429MB with 4000MB without 3831MB ok)
+V8 replay_charged: PASS (status 200, fault fired 1, cost lines [('spec', 1816), ('plain', 1491)], speculated False, only the synthetic OOM True)
+gate r-dflash2-fix rc=0 2026-11-12T12:51:06+02:00

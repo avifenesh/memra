@@ -1,0 +1,26 @@
+2026-11-12T11:28:25+01:00
+30366a08e18f659ce92f92785fa52361e594550f94f74c79080a7a558483d300  crates/memra-server/src/worker.rs
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (<scratch>/tree-red/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 3m 33s
+     Running unittests src/lib.rs (<scratch>/target/release/deps/memra_server-84c25559e043e0da)
+
+running 2 tests
+test worker::tests::the_vram_gate_never_admits_a_dflash_request_without_its_draft_plane ... ok
+test worker::tests::the_drafter_refusal_is_wired_from_the_gate_to_every_dflash_route ... FAILED
+
+failures:
+
+---- worker::tests::the_drafter_refusal_is_wired_from_the_gate_to_every_dflash_route stdout ----
+
+thread 'worker::tests::the_drafter_refusal_is_wired_from_the_gate_to_every_dflash_route' (1285233) panicked at crates/memra-server/src/worker.rs:39763:14:
+the refusal requeues the request
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::the_drafter_refusal_is_wired_from_the_gate_to_every_dflash_route
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p memra-server --lib`

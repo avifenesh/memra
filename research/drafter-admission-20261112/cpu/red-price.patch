@@ -1,0 +1,10 @@
+--- <scratch>/tree/crates/memra-server/src/worker.rs	2026-11-12 10:35:05.223702136 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 11:24:23.597871882 +0100
+@@ -26866,7 +26866,6 @@
+         || !serve_spec_enabled()
+         // memra#1173: the gate refused this request its drafter; it is priced plain, and
+         // `admit` builds no drafter session for it (`Request::drafter_refused`).
+-        || req.drafter_refused
+     {
+         return false;
+     }

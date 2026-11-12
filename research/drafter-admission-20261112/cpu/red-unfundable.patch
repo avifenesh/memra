@@ -1,0 +1,13 @@
+--- <scratch>/tree/crates/memra-server/src/worker.rs	2026-11-12 10:35:05.223702136 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 11:05:19.767995477 +0100
+@@ -26987,9 +26987,7 @@
+         (Some(DraftStateArm::RefuseDrafter), false) if fits_without => {
+             GateVerdict::RefuseDrafter(RefusalArm::BusyFits)
+         }
+-        (Some(DraftStateArm::RefuseDrafter), false) if !fundable => {
+-            GateVerdict::RefuseDrafter(RefusalArm::BusyUnfundable)
+-        }
++        (Some(DraftStateArm::RefuseDrafter), false) if !fundable => GateVerdict::Defer,
+         (_, false) => GateVerdict::Defer,
+     }
+ }

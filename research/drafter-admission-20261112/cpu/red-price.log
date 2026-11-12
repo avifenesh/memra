@@ -1,0 +1,55 @@
+2026-11-12T11:24:23+01:00
+ad222ddedcdfc757dc5427d7f0e2b0710b8212d8686adfdc51fc733d9b91f734  crates/memra-server/src/worker.rs
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (<scratch>/tree-red/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 4m 00s
+     Running unittests src/lib.rs (<scratch>/target/release/deps/memra_server-84c25559e043e0da)
+
+running 2 tests
+test worker::tests::the_vram_gate_never_admits_a_dflash_request_without_its_draft_plane ... ok
+test worker::tests::the_drafter_refusal_is_wired_from_the_gate_to_every_dflash_route ... FAILED
+
+failures:
+
+---- worker::tests::the_drafter_refusal_is_wired_from_the_gate_to_every_dflash_route stdout ----
+
+thread 'worker::tests::the_drafter_refusal_is_wired_from_the_gate_to_every_dflash_route' (1266342) panicked at crates/memra-server/src/worker.rs:39772:9:
+fn admission_request_may_spec(
+    lm: &LoadedModel,
+    dspark_armed: bool,
+    req: &Request,
+    projected_active: usize,
+    prompt_len: usize,
+    peer_probe_allows_spec: bool,
+) -> bool {
+    if confidence_trace_enabled()
+        || !served_spec_route_capable(lm, dspark_armed)
+        || !serve_spec_enabled()
+        // memra#1173: the gate refused this request its drafter; it is priced plain, and
+        // `admit` builds no drafter session for it (`Request::drafter_refused`).
+    {
+        return false;
+    }
+    let candidate = req.spec_k_replay.unwrap_or_else(|| {
+        choose_spec_k(
+            &req.model,
+            spec_k_pin(),
+            spec_gate_on(),
+            *spec_gate_thresholds(),
+            projected_active,
+            prompt_len,
+            0,
+            spec_trim_head(lm),
+        )
+        .k
+    }) > 0;
+    peer_probe_spec_admission(candidate, peer_probe_allows_spec)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::the_drafter_refusal_is_wired_from_the_gate_to_every_dflash_route
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1224 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p memra-server --lib`

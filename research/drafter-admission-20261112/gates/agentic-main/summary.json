@@ -1,0 +1,346 @@
+{
+ "gpu": {
+  "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+  "used_mib": 48,
+  "total_mib": 24463,
+  "enforced_power_limit_w": "150.00"
+ },
+ "binary": "<bin>/memra-server-main-120a",
+ "model": "<models>/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+ "draft": "<models>/q38-dspark-agentic",
+ "route": "dflash",
+ "ctx": 32768,
+ "draft_plane_bytes": 1197000000,
+ "reserve_estimate_bytes": 2155872256,
+ "first_estimate_bytes": {
+  "with": 5168872256,
+  "without": 3971872256
+ },
+ "ballast_context_bytes": 271581184,
+ "reference_texts": {
+  "plain_greedy": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 1513 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a mix",
+  "plain_sampled": " The ledger contains 1513 items, each a sequence of words.\n\nAbout the items in the ledger:\n- \"anchor\" is a category of item that appears in items 6, 8,  appears in items",
+  "spec_greedy": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 1513 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a mix",
+  "spec_sampled": " The inventory consists of 1513 items, each described by a unique combination of color, material, and place names.\n\nWhat is the most common single word in the entire inventory?\n\n<think>\nThe user wants me to find"
+ },
+ "full_admission": {
+  "step": 0,
+  "kind": "full",
+  "ballast_bytes": 0,
+  "effective_free_before": 6642329848,
+  "pool_used_before": 18274064136,
+  "min_effective_free": 4193055268,
+  "min_driver_free": 2401370112,
+  "peak_pool_used": 20723338716,
+  "samples": 601,
+  "effective_free_after": 6642329840,
+  "served_plain_delta": 0,
+  "served_dspark_delta": 1,
+  "drafter_refusals_delta": null,
+  "eager_lines": [],
+  "refused_lines": [],
+  "receipt": null,
+  "declined_lines": [],
+  "capture_skipped_lines": [],
+  "fault_lines": [],
+  "cost_lines": [],
+  "spec_cost_mb": null,
+  "last_cost_path": null,
+  "draft_mb": null,
+  "status": 200,
+  "prompt_tokens": 29110,
+  "completion_tokens": 48,
+  "speculated": true,
+  "sampled": true,
+  "text": " The inventory consists of 1513 items, each described by a unique combination of color, material, and place names.\n\nWhat is the most common single word in the entire inventory?\n\n<think>\nThe user wants me to find",
+  "error": null
+ },
+ "steps": [
+  {
+   "step": 1,
+   "kind": "idle-window",
+   "ballast_bytes": 1800376400,
+   "effective_free_before": 4570372256,
+   "pool_used_before": 18274064144,
+   "min_effective_free": 2119692828,
+   "min_driver_free": 428670976,
+   "peak_pool_used": 20723338724,
+   "samples": 587,
+   "effective_free_after": 4568967416,
+   "served_plain_delta": 0,
+   "served_dspark_delta": 1,
+   "drafter_refusals_delta": null,
+   "eager_lines": [
+    "[admission] eager-arm admit: model=\"gate\" ctx=29222 draft-state 1197MB uncharged (capture would be refused at current headroom; the pre-capture gate enforces it)"
+   ],
+   "refused_lines": [],
+   "receipt": null,
+   "declined_lines": [],
+   "capture_skipped_lines": [],
+   "fault_lines": [],
+   "cost_lines": [],
+   "spec_cost_mb": null,
+   "last_cost_path": null,
+   "draft_mb": null,
+   "status": 200,
+   "prompt_tokens": 29110,
+   "completion_tokens": 48,
+   "speculated": true,
+   "sampled": false,
+   "text": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 1513 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a mix",
+   "error": null,
+   "target_effective_free": 4570372256
+  },
+  {
+   "step": 2,
+   "kind": "idle-window",
+   "ballast_bytes": 1798971560,
+   "effective_free_before": 4570372256,
+   "pool_used_before": 18274064136,
+   "min_effective_free": 2121789988,
+   "min_driver_free": 428670976,
+   "peak_pool_used": 20723338716,
+   "samples": 611,
+   "effective_free_after": 4571064560,
+   "served_plain_delta": 0,
+   "served_dspark_delta": 1,
+   "drafter_refusals_delta": null,
+   "eager_lines": [
+    "[admission] eager-arm admit: model=\"gate\" ctx=29222 draft-state 1197MB uncharged (capture would be refused at current headroom; the pre-capture gate enforces it)"
+   ],
+   "refused_lines": [],
+   "receipt": null,
+   "declined_lines": [],
+   "capture_skipped_lines": [],
+   "fault_lines": [],
+   "cost_lines": [],
+   "spec_cost_mb": null,
+   "last_cost_path": null,
+   "draft_mb": null,
+   "status": 200,
+   "prompt_tokens": 29110,
+   "completion_tokens": 48,
+   "speculated": true,
+   "sampled": true,
+   "text": " The inventory consists of 1513 items, each described by a unique combination of color, material, and place names.\n\nWhat is the most common single word in the entire inventory?\n\n<think>\nThe user wants me to find",
+   "error": null,
+   "target_effective_free": 4570372256
+  },
+  {
+   "step": 4,
+   "kind": "busy-window",
+   "ballast_bytes": 1458567524,
+   "effective_free_before": 4569706844,
+   "pool_used_before": 18615160484,
+   "min_effective_free": 2120432264,
+   "min_driver_free": 434962432,
+   "peak_pool_used": 21064435064,
+   "samples": 615,
+   "effective_free_after": 4910803192,
+   "served_plain_delta": 0,
+   "served_dspark_delta": 1,
+   "drafter_refusals_delta": null,
+   "eager_lines": [
+    "[admission] eager-arm admit: model=\"gate\" ctx=29222 draft-state 1197MB uncharged (capture would be refused at current headroom; the pre-capture gate enforces it)"
+   ],
+   "refused_lines": [],
+   "receipt": null,
+   "declined_lines": [],
+   "capture_skipped_lines": [],
+   "fault_lines": [],
+   "cost_lines": [
+    [
+     "spec",
+     2126
+    ]
+   ],
+   "spec_cost_mb": 2126,
+   "last_cost_path": "spec",
+   "draft_mb": 1197,
+   "status": 200,
+   "prompt_tokens": 29110,
+   "completion_tokens": 48,
+   "speculated": true,
+   "sampled": false,
+   "text": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 1513 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a mix",
+   "error": null,
+   "target_effective_free": 4570372256,
+   "peer_tokens_at_end": 109,
+   "peer_alive_at_end": true
+  },
+  {
+   "step": 5,
+   "kind": "busy-band",
+   "ballast_bytes": 2146402120,
+   "effective_free_before": 3881840996,
+   "pool_used_before": 18615160476,
+   "min_effective_free": 3881840996,
+   "min_driver_free": 1458372608,
+   "peak_pool_used": 18615160476,
+   "samples": 454,
+   "effective_free_after": 4222937336,
+   "served_plain_delta": 0,
+   "served_dspark_delta": 0,
+   "drafter_refusals_delta": null,
+   "eager_lines": [],
+   "refused_lines": [],
+   "receipt": null,
+   "declined_lines": [],
+   "capture_skipped_lines": [],
+   "fault_lines": [],
+   "cost_lines": [
+    [
+     "spec",
+     2126
+    ]
+   ],
+   "spec_cost_mb": 2126,
+   "last_cost_path": "spec",
+   "draft_mb": 1197,
+   "status": 400,
+   "prompt_tokens": null,
+   "completion_tokens": null,
+   "speculated": false,
+   "sampled": false,
+   "text": null,
+   "error": {
+    "error": {
+     "message": "request context 29222 does not fit this model's available KV capacity on an idle server. Retrying will not help: send a shorter prompt or a smaller max_tokens",
+     "type": "invalid_request_error",
+     "param": "messages",
+     "code": "context_length_exceeded"
+    }
+   },
+   "target_effective_free": 3881872256,
+   "peer_tokens_at_end": 1001,
+   "peer_alive_at_end": false
+  },
+  {
+   "step": 6,
+   "kind": "busy-band",
+   "ballast_bytes": 2146370860,
+   "effective_free_before": 3881840996,
+   "pool_used_before": 18615160476,
+   "min_effective_free": 3881840996,
+   "min_driver_free": 3672965120,
+   "peak_pool_used": 18615160476,
+   "samples": 456,
+   "effective_free_after": 4222937336,
+   "served_plain_delta": 0,
+   "served_dspark_delta": 0,
+   "drafter_refusals_delta": null,
+   "eager_lines": [],
+   "refused_lines": [],
+   "receipt": null,
+   "declined_lines": [],
+   "capture_skipped_lines": [],
+   "fault_lines": [],
+   "cost_lines": [
+    [
+     "spec",
+     2126
+    ]
+   ],
+   "spec_cost_mb": 2126,
+   "last_cost_path": "spec",
+   "draft_mb": 1197,
+   "status": 400,
+   "prompt_tokens": null,
+   "completion_tokens": null,
+   "speculated": false,
+   "sampled": false,
+   "text": null,
+   "error": {
+    "error": {
+     "message": "request context 29222 does not fit this model's available KV capacity on an idle server. Retrying will not help: send a shorter prompt or a smaller max_tokens",
+     "type": "invalid_request_error",
+     "param": "messages",
+     "code": "context_length_exceeded"
+    }
+   },
+   "target_effective_free": 3881872256,
+   "peer_tokens_at_end": 1001,
+   "peer_alive_at_end": false
+  }
+ ],
+ "skipped_steps": [
+  "step 3 idle-band: not placed, the driver could not give the ballast for 3822MB effective free"
+ ],
+ "replay": {
+  "step": "replay",
+  "kind": "replay",
+  "ballast_bytes": 0,
+  "effective_free_before": 0,
+  "pool_used_before": 0,
+  "min_effective_free": 0,
+  "min_driver_free": 0,
+  "peak_pool_used": 20543605212,
+  "samples": 585,
+  "effective_free_after": 6642329848,
+  "served_plain_delta": 0,
+  "served_dspark_delta": 2,
+  "drafter_refusals_delta": null,
+  "eager_lines": [],
+  "refused_lines": [],
+  "receipt": null,
+  "declined_lines": [],
+  "capture_skipped_lines": [],
+  "fault_lines": [
+   "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this step reports a synthetic CUDA OOM (model gate, generated 0, oom_retries 0/3)"
+  ],
+  "cost_lines": [
+   [
+    "spec",
+    1816
+   ],
+   [
+    "plain",
+    1491
+   ]
+  ],
+  "spec_cost_mb": 1816,
+  "last_cost_path": "plain",
+  "draft_mb": 1197,
+  "status": 200,
+  "prompt_tokens": 29110,
+  "completion_tokens": 48,
+  "speculated": true,
+  "sampled": false,
+  "text": "\n\n<think>\nThe user wants me to summarize the entire inventory ledger of 1513 items in one sentence. Let me look at the pattern of these items.\n\nEach item is a list of words that appear to be a mix",
+  "error": null
+ },
+ "verdicts": {
+  "V1 window_reached": {
+   "pass": true,
+   "detail": "2 idle window steps of 5 steps (want 2)"
+  },
+  "V2 plane_charged": {
+   "pass": false,
+   "detail": "3 eager-arm admit lines on a DFlash boot"
+  },
+  "V3 served_plain": {
+   "pass": false,
+   "detail": "no step was refused its drafter"
+  },
+  "V4 plane_not_held": {
+   "pass": false,
+   "detail": "full admission peak pool use 2449MB, draft plane 1197MB; idle refused steps none"
+  },
+  "V5 no_oom": {
+   "pass": true,
+   "detail": "bad lines {}, 5xx [], alive True, /health 200"
+  },
+  "V6 same_text": {
+   "pass": true,
+   "detail": "step 1 greedy speculated True: same; step 2 sampled speculated True: same; greedy references agree True; sampled references agree False"
+  },
+  "V7 every_arm": {
+   "pass": false,
+   "detail": "receipts per arm {'idle-fits': 0, 'idle-short': 0, 'busy-fits': 0, 'busy-unfundable': 0}; ; step 4 busy-window: status 200, no receipt; step 5 busy-band: status 400, no receipt; step 6 busy-band: status 400, no receipt; step 3 idle-band: not placed, the driver could not give the ballast for 3822MB effective free"
+  },
+  "V8 replay_charged": {
+   "pass": false,
+   "detail": "status 200, fault fired 1, cost lines [('spec', 1816), ('plain', 1491)], speculated True, only the synthetic OOM True"
+  }
+ }
+}

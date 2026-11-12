@@ -1,0 +1,8 @@
+V1 window_reached: PASS (2 idle window steps of 5 steps (want 2))
+V2 plane_charged: PASS (0 eager-arm admit lines on a DFlash boot)
+V3 served_plain: PASS (step 1: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 2: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 3: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 4: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1; step 5: status 200 tokens 48 speculated False declined 1 served_plain +1 refusals +1)
+V4 plane_not_held: PASS (full admission peak pool use 2449MB, draft plane 1197MB; idle refused steps 1229MB, 1229MB, 1229MB)
+V5 no_oom: PASS (bad lines {}, 5xx [], alive True, /health 200)
+V6 same_text: PASS (step 1 greedy speculated False: same; step 2 sampled speculated False: same; step 3 greedy speculated False: same; greedy references agree True; sampled references agree False)
+V7 every_arm: PASS (receipts per arm {'idle-fits': 2, 'idle-short': 1, 'busy-fits': 1, 'busy-unfundable': 1}; step 1 idle-window: idle-fits available 4569MB with 5170MB without 3973MB ok; step 2 idle-window: idle-fits available 4571MB with 5532MB without 4335MB ok; step 3 idle-band: idle-short available 4183MB with 5532MB without 4335MB ok; step 4 busy-window: busy-fits available 4937MB with 5532MB without 4335MB ok; step 5 busy-band: busy-unfundable available 3934MB with 5532MB without 4335MB ok)
+V8 replay_charged: PASS (status 200, fault fired 1, cost lines [('spec', 1816), ('plain', 1491)], speculated False, only the synthetic OOM True)
