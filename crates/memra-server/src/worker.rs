@@ -1811,14 +1811,15 @@ fn hit_suffix_fence_rows(
         .collect()
 }
 
-/// The rows still inside their same-prefix fanout formation window: phase (b) leaves them
-/// queued so siblings can reach the worker first. Shared by phase (b) and the round yield's
-/// prime outlook (memra#1244).
+/// The rows still inside their same-prefix fanout formation window `ahead` from now: phase (b)
+/// leaves them queued so siblings can reach the worker first. Shared by phase (b) (`ahead`
+/// zero) and the round yield's prime outlook (memra#1244), which looks one yielded round ahead.
 fn prefix_fanout_waiting(
     active: &[Session],
     finished: &[usize],
     eager_only: &std::collections::HashSet<String>,
     pb_hold_ms: u64,
+    ahead: Duration,
 ) -> std::collections::HashSet<usize> {
     if confidence_trace_enabled() || pb_hold_ms == 0 {
         return Default::default();
@@ -1829,7 +1830,7 @@ fn prefix_fanout_waiting(
         .filter(|(i, s)| {
             !finished.contains(i)
                 && prefix_fanout_eligible(s, eager_only)
-                && s.t0.elapsed().as_millis() < pb_hold_ms as u128
+                && (s.t0.elapsed() + ahead).as_millis() < pb_hold_ms as u128
         })
         .map(|(i, _)| i)
         .collect()
@@ -20195,6 +20196,11 @@ pub fn run(
     let mut last_phase_b: Option<Instant> = None;
     // The hit-suffix fence's starvation bound (memra#1233, `hit_suffix_fence_yields`).
     let mut fence_deferred = Duration::ZERO;
+    // The last phase (a) that ran under the round yield (memra#1244): one round of every
+    // speculative session, the soonest phase (b) comes after a tick's start while the yield is
+    // on (before the first yielded tick, the first phase (a) that ran bursts). The prime outlook
+    // reads phase (b)'s time windows at that point.
+    let mut yield_round: Option<Duration> = None;
     let mut step_stats = StepStats::new(
         std::env::var("MEMRA_LANE_WINDOW_S")
             .ok()
@@ -23751,8 +23757,14 @@ pub fn run(
                 let chunk = policy.prefill_budget[0];
                 // Phase (b)'s outlook for a plain prime, from the predicates phase (b) reads,
                 // as the tick's start knows them (`plain_prime_runs`).
+                // Phase (b) comes one round of bursts after this point at the soonest
+                // (`yield_round`, measured; none yet: now), so its time windows (refill grace,
+                // fanout formation window, batch-formation hold, all `MEMRA_PRIME_BATCH_HOLD_MS`
+                // long) are read as they stand then.
+                let ahead = yield_round.unwrap_or(Duration::ZERO);
                 let now = Instant::now();
-                let refill_grace = interactive_refill_until.is_some_and(|until| now < until);
+                let b_at = now + ahead;
+                let refill_grace = interactive_refill_until.is_some_and(|until| b_at < until);
                 let hit_wait = cached_hit_waiting(&active, &finished);
                 let fence_yields = hit_wait
                     || prefill_deadline_mode
@@ -23763,7 +23775,8 @@ pub fn run(
                 let hit_rows =
                     hit_suffix_fence_rows(&active, &finished, fence_yields, &eager_only, chunk);
                 let deferred = refill_grace || hit_wait || !hit_rows.is_empty();
-                let fanout = prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms);
+                let fanout =
+                    prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms, ahead);
                 let block = if deferred {
                     None
                 } else {
@@ -23775,10 +23788,10 @@ pub fn run(
                         prefill_rate_tok_s,
                         chunk,
                         !queue.is_empty() || !requeue_oom.is_empty(),
-                        now,
+                        b_at,
                     )
                 };
-                let prev_tick = last_phase_b.map_or(Duration::MAX, |t| now.duration_since(t));
+                let prev_tick = last_phase_b.map_or(Duration::MAX, |t| b_at.duration_since(t));
                 let mut plain: Vec<(&str, PlainTick)> = Vec::new();
                 for (i, s) in active.iter().enumerate() {
                     let speculative = s.spec.is_some() || s.gspec_k > 0 || s.dspark_on || s.glm5_on;
@@ -23790,7 +23803,8 @@ pub fn run(
                         || block.as_ref().is_some_and(|b| b.contains(&i))
                         || (block.is_none()
                             && formation_hold_with(
-                                Duration::from_millis(pb_hold_ms).saturating_sub(s.t0.elapsed()),
+                                Duration::from_millis(pb_hold_ms)
+                                    .saturating_sub(s.t0.elapsed() + ahead),
                                 prev_tick,
                                 |_| false,
                             ));
@@ -23843,6 +23857,7 @@ pub fn run(
             for &i in &spec_order {
                 active[i].spec_round_yield = round_yield.is_some();
             }
+            let phase_a_at = Instant::now();
             for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] {
                 if pass == SpecPass::Cohorts {
                     // A newcomer's prime that suspended in the first pass is pending now, so
@@ -24310,6 +24325,10 @@ pub fn run(
             // +80% at B=8 T=64, +44-49% at T=128, crossover ~T=320 (above it, single primes
             // win — per-seq m already at the GEMM plateau). Gate: prime-batch-gate ALL GREEN
             // (per-seq argmax + decode-stream equality). MEMRA_PRIME_BATCH=1 disables.
+            // Until a yielded tick is measured, a full phase (a) stands in (it is longer).
+            if !spec_order.is_empty() && (round_yield.is_some() || yield_round.is_none()) {
+                yield_round = Some(phase_a_at.elapsed());
+            }
             let t_prefill = tick_trace.then(Instant::now);
             let mut prefill_single_calls = 0usize;
             let mut prefill_single_tokens = 0usize;
@@ -24389,7 +24408,8 @@ pub fn run(
             // existing batch-formation window before its same-prefix siblings reach the
             // worker. Matching groups above fire immediately; unmatched misses wait at most
             // the same hold already budgeted for a lone fresh prime.
-            let dedup_waiting = prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms);
+            let dedup_waiting =
+                prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms, Duration::ZERO);
             // Long cold prompts used to miss the complete-prompt batch predicate below and
             // execute one synchronous `prime_cache` call per session before decode. Keep one
             // scheduler-level chunk per session, but concatenate eligible chunks so N cold
@@ -34673,10 +34693,12 @@ fn round_yield_weighs(live: bool, speculative: bool, lane: crate::lanes::Lane) -
 /// split the last 916 tokens into 896 and 20, the parent ran a full burst (1.4 to 1.5 s)
 /// before each, and the yield took both off the first token.
 ///
-/// The outlook may hold a session back that phase (b) would prime (the formation hold is
-/// judged with the window left and the time since the last prefill phase at the tick's start,
-/// its in-tick wait as no arrival); it never names a session phase (b) skips for one of these
-/// reasons.
+/// The outlook reads phase (b)'s time windows (refill grace, fanout formation window,
+/// batch-formation hold, each `MEMRA_PRIME_BATCH_HOLD_MS` long) one yielded round after the
+/// tick's start, where phase (b) reads them at the soonest: read at the start, a newcomer
+/// admitted at the tick's top is always inside its 4 ms window, and the outlook held back every
+/// such prime behind a full burst (GB10, first token 1.79 s against 0.31 s). The formation
+/// hold's in-tick wait counts as no arrival.
 fn plain_prime_runs(prefill_done: bool, queued: usize, chunk: usize, held_back: bool) -> bool {
     !prefill_done
         && queued > 0
@@ -42255,11 +42277,13 @@ mod tests {
         // phase (a) and again in phase (b).
         let outlook_block = &live[at("let round_yield = {")..due];
         for held in [
-            "let refill_grace = interactive_refill_until.is_some_and(|until| now < until);",
+            "let refill_grace = interactive_refill_until.is_some_and(|until| b_at < until);",
             "let hit_wait = cached_hit_waiting(&active, &finished);",
             "hit_suffix_fence_rows(&active, &finished, fence_yields, &eager_only, chunk);",
             "let deferred = refill_grace || hit_wait || !hit_rows.is_empty();",
-            "let fanout = prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms);",
+            "let ahead = yield_round.unwrap_or(Duration::ZERO);",
+            "let b_at = now + ahead;",
+            "prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms, ahead);",
             "prefill_deadline_block( &active, &finished, &Default::default(), &fanout,",
             "let held_back = (deferred && !hit_rows.contains(&i)) || fanout.contains(&i) || \
              block.as_ref().is_some_and(|b| b.contains(&i)) || (block.is_none() && \
@@ -42267,10 +42291,18 @@ mod tests {
         ] {
             assert!(outlook_block.contains(held), "the outlook reads {held}");
         }
+        // The windows are read one yielded round ahead: phase (a) measures that round.
+        assert!(
+            live[written..].contains(
+                "if !spec_order.is_empty() && (round_yield.is_some() || yield_round.is_none()) { \
+                 yield_round = Some(phase_a_at.elapsed()); }"
+            ),
+            "phase (a) measures the round the outlook looks ahead"
+        );
         for phase_b in [
             "let cached_hit_waiting_for_ttft = cached_hit_waiting(&active, &finished);",
             "hit_suffix_fence_rows(&active, &finished, fence_yields, &eager_only, budgets[0]);",
-            "let dedup_waiting = prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms);",
+            "prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms, Duration::ZERO);",
             "prefill_deadline_block( &active, &finished, &dedup_advanced, &dedup_waiting,",
         ] {
             assert!(live[due..].contains(phase_b), "phase (b) reads {phase_b}");
