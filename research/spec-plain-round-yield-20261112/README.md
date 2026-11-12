@@ -23,7 +23,10 @@ request waits before admission (memra#1249), a long prime's chunks between full 
 
 - **GB10**: one DGX Spark unit per comparison, both arms on it, one boot per lease, arms
   interleaved (ABBA or BAAB). `121a` build.
-- **RTX 5090 Laptop GPU**: enforced power limit 150 to 160 W. `120a` build.
+- **RTX 5090 Laptop GPU**: `120a` build. Enforced power limit 150 to 160 W for the first
+  cells. The review-head cells (`riders5`, `riders6`, `plain5`, `new5`, `inv-change5`) ran
+  after a reboot, on AC: 150 to 160 W at a boot's start and 175 W under load (a 150 W TGP plus
+  25 W of dynamic boost), recorded per boot in `guard.log` and not changed.
 - **Binaries**:
 
   | arm | tree | GB10 | RTX 5090 |
@@ -32,6 +35,9 @@ request waits before admission (memra#1249), a long prime's chunks between full 
   | `change` | 00a72fc60b on it | `memra-0.141.1-a1f586cfa120`, sha256 `bbc34b63...` | sha256 `b4262dc49fde...` |
   | `parent2` | 51b933a584, #1227's final head | `memra-0.141.1-2c65e91e03d3`, sha256 `f144447bf402...` | sha256 `ed4791b87bd9...` |
   | `change2` | 7107ce3eba on it (this branch before the rebase onto main) | `memra-0.141.1-6ac6d0891c9c`, sha256 `81e7da7bc66d...` | sha256 `e44719014080...` |
+  | `parent3` | cdfdfd6006, main (#1227 and #1233 landed) | `memra-0.141.1-14a59677bb0e`, sha256 `00b8744f648f...` | sha256 `70130b7d8202...` |
+  | `change3` | 9074ec16aa, the first review head (superseded) | `memra-0.141.1-a88473c260ed`, sha256 `48caeb28da7e...` | sha256 `fa3e3999b2d6...` |
+  | `change5` | 3eeb4710f0, the review head on cdfdfd6006 (rebased onto main 9d7c086c67 as 13599ccfb5 with the same delta; 0550953c2a adds a test line only) | `memra-0.141.1-1f4dcebc4fe7`, sha256 `a43e7ff33839...` | sha256 `33af2f820d97...` |
 
   `mech` and `mech-burst1` ran main 340a5e5bfa (the same crates as #1241's head a20fd8c59f).
 
@@ -61,7 +67,17 @@ identical and stream texts prefix-equal). Server logs are gzipped when large.
 | `rtx5090/new` | newcomer cell | parent, change, change, parent |
 | `rtx5090/norm` | closed loop c = 1, 2, 4, 8 greedy (`normal_cell.py`), one boot per arm | parent, change |
 | `rtx5090/inv-change2` | seeded-invariance gate on change2 | |
-| `cpu/` | CPU checks on bbcec42e31, the rebased head (fmt, clippy, engine and server suites, flags and numeric censuses), and the red arms | |
+| `gb10/riders` | riders cell (`tools/riders_cell.py`): 2 greedy streams, then 4 greedy-with-penalty riders, 4 and 8 of the vendor shape (`MEMRA_SERVE_DEVPENALTY=0`), one boot per arm | parent3, change3 |
+| `gb10/plain3` | plain cell with a re-send, 40-token prompts (under the cache minimum: no hit), the first review head; shows the outlook regression the time-window rule fixed | parent3, change3 |
+| `gb10/inv-change3`, `gb10/bnd-change3` | both gates on change3 (superseded head) | |
+| `gb10/plain5` | plain cell, 1,234-token prompts and a prefix-hit re-send, review head | parent3, change5 |
+| `gb10/riders9` | riders cell, 8 and 6 greedy-with-penalty riders, review head | change5, parent3 |
+| `gb10/inv-change5`, `gb10/bnd-change5` | both gates on the review head | |
+| `rtx5090/riders5` | riders cell, 4 and 8 greedy-with-penalty riders, 4 and 8 of the vendor shape (`MEMRA_SERVE_DEVPENALTY=0`) | parent3, change5 |
+| `rtx5090/plain5` | plain cell, 1,234-token prompts and a prefix-hit re-send, L = 1, 2 | change5, parent3 |
+| `rtx5090/new5` | newcomer cell, L = 1, 2 | parent3, change5 |
+| `rtx5090/inv-change5` | seeded-invariance gate on the review head | |
+| `cpu/` | CPU checks on 0550953c2a, the review head rebased onto main 9d7c086c67 with its test-only compile fix (fmt, clippy, engine and server suites, flags and numeric censuses), and the red arms | |
 
 Void: `gb10/longprime/void.jsonl` and `void-server-parent2-4.log.gz` are the parent2 boot 4
 whose lease overlapped another lane's page-cache fill on the unit; boot `parent2-5` replaces it.
@@ -82,7 +98,9 @@ tools over these dirs (each command is in its heading). Per dir:
   card); json-constrained 0.47 -> 0.060 s, streams -29%.
 - `gb10/new`, `gb10/new2`: first-token time behind a cohort unchanged (p50 within 0.013 s,
   p95 within 0.005 s), long rates equal. `rtx5090/new`: the third request at L = 2, which the
-  band admits plain, rides: 0.842 -> 0.202 s (greedy), 0.896 -> 0.214 s (t1) p50.
+  band admits plain, rides in both arms (first to second token 0.035 and 0.034 s); `Priming`
+  ends the tick's bursts before its prime, so its first token comes 0.842 -> 0.202 s (greedy),
+  0.896 -> 0.214 s (t1) p50, and the streams give up 3% (greedy) and 8% (t1) for it.
 - `rtx5090/norm`: aggregate 73.2/94.7/116.4/146.5 -> 73.5/95.4/118.3/154.0 tok/s at c = 1, 2, 4,
   8 (one boot per arm, no plain request).
 - `gb10/longprime`: TTFT 57.6 to 59.8 s -> 55.0 to 55.9 s (19.4 to 19.6 s alone), decode gap
@@ -91,13 +109,37 @@ tools over these dirs (each command is in its heading). Per dir:
   streams; the plain request's gap p50 1.37/1.62/1.84 s against 0.074 s alone.
 - `gb10/mech-burst1`: `MEMRA_SPEC_BURST=1` runs no speculative round: streams 6.6/8.8/9.9 tok/s,
   plain gap 0.15/0.23/0.30 s. Rejected.
-- Gates: seeded invariance PASS (54 rows) on `gb10/inv-change`, `gb10/inv-change2` and
-  `rtx5090/inv-change2`; burst boundary PASS (229 rows) on `gb10/bnd-change` and
-  `gb10/bnd-change2`. Each verdict is the `PASS` line of the dir's `gate.log`.
+- Review head (`change5` against main `parent3`, one boot per arm):
+  - `gb10/plain5`, `rtx5090/plain5` (1,234-token prompts): greedy with a penalty 1.608 ->
+    0.115 s gap p50 on GB10 (L = 2), 0.500/0.746 -> 0.054/0.071 s on the 5090 (L = 1, 2);
+    the prefix-hit re-send's first token 1.57/1.61 -> 0.07 to 0.13 s (GB10) and 0.86/0.82
+    -> 0.19 to 0.23 s (5090). The total while the request is live falls on every row of these
+    two dirs (a latency-for-throughput trade). Texts identical.
+  - `gb10/riders10`, `gb10/riders9`: 4 greedy-with-penalty riders beside 2 streams ride on
+    GB10: gap 1.607 -> 0.132 s, streams -17% while they are live, total +46%. With 5, 6 and 8
+    riders the cost model demotes the streams to batched decode in both arms, and the arms are
+    equal. `gb10/riders` ran the 4-rider cell on the first review head (1.615 -> 0.133 s).
+  - `rtx5090/riders5`: 4 and 8 riders put 6 and 10 sessions in flight, above the band's
+    HIGH = 4 on this card, so the streams are demoted in both arms and the arms are equal.
+    `rtx5090/riders6` (2 + 2 and 1 + 3, 4 in flight, the riding case on this card): pending.
+  - `rtx5090/new5`: the third request at L = 2, admitted plain and riding in both arms, gets
+    its first token 0.860 -> 0.212 s (greedy), 0.999 -> 0.207 s (t1); L = 1 0.159 -> 0.170 s.
+    Newcomer texts prefix-equal.
+  - `gb10/plain3` (the first review head, `change3`): a newcomer's first token 1.79 s where
+    `change2` had 0.31 s, because the prime outlook read phase (b)'s 4 ms windows at the tick's
+    start. The time-window rule of the review head answers it.
+- Gates: seeded invariance PASS (54 rows) on `gb10/inv-change`, `gb10/inv-change2`,
+  `gb10/inv-change3`, `gb10/inv-change5` and `rtx5090/inv-change2` (`rtx5090/inv-change5` pending); burst boundary
+  PASS (229 rows) on `gb10/bnd-change`, `gb10/bnd-change2`, `gb10/bnd-change3` and
+  `gb10/bnd-change5`. Each verdict is the `PASS` line of the dir's `gate.log`.
 
 ## Red arms
 
-`tools/redarm.py` writes each arm into a copy of the tree, `tools/dd-redgreen.sh` runs the
-three new tests on each (`cpu/redgreen.log`): `parent` (the change reverted) and `nohook` (no
-round hook) fail the burst and wiring tests and pass the naming test; `nodue` fails the naming
-test; `nowrite` and `noride` fail the wiring test; the change passes all three.
+`tools/redarm.py` writes each arm into a copy of the tree, `tools/dd-redgreen.sh` runs the five
+tests on each (`cpu/redgreen.log`, on the rebased review head 0550953c2a): `parent` (the change
+reverted) and `nohook` (no round hook) fail the burst and wiring tests; `nodue` fails the naming
+test; `nowrite` and `noride` fail the wiring test; `nolane` (the lane helper ignores the lane)
+fails the lane test; `nolanewire` (the tick weighs every live plain session without the helper)
+and `nooutlook` (the tick passes no phase (b) hold) fail the wiring test; `noheld` (the prime
+helper ignores the hold) and `nowindows` (phase (b)'s time windows never count as closed) fail
+the prime test. The change passes all five.

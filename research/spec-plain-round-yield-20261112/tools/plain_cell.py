@@ -27,6 +27,9 @@ env: CELL_MODEL, CELL_PORT (18244), CELLS ("2:greedy:pen" = 2 long greedy stream
      PAD (0: that many numbered filler sentences, about 20 tokens each and distinct per request,
      go in front of each plain request's prompt: a long prime; the solo request of the same n
      gets its own filler, so nothing is restored from the first one's cache)
+A plain class may end in "+hit" (e.g. pen+hit): each plain request is sent again, with the same
+prompt, GAPS later beside the streams, so the second is an exact re-send the prefix cache
+restores (a prefix-hit newcomer); both carry the same n, so their texts must be equal.
 """
 import hashlib
 import json
@@ -108,7 +111,9 @@ def pct(xs, q):
 
 
 def plain_request(ci, n, ncls, label):
-    pad = "".join(f"Note {label}-{ci}-{n}-{k}: station {k * 7 + n} logged {k * 13 % 97} readings and {k % 11} faults on day {k}.\n"
+    ncls = ncls.split("+")[0]
+    pl = "p" if label == "h" else label  # a re-send repeats its first send's prompt exactly
+    pad = "".join(f"Note {pl}-{ci}-{n}-{k}: station {k * 7 + n} logged {k * 13 % 97} readings and {k % 11} faults on day {k}.\n"
                   for k in range(PAD))
     body = {"model": "q", "max_tokens": NEWTOK, "stream": True, **CLASSES[ncls](100 + n),
             "messages": [{"role": "user", "content": f"{pad}Explain how {NEW_TOPICS[(ci * 5 + n) % len(NEW_TOPICS)]}, "
@@ -172,6 +177,11 @@ def main():
             for n in range(NEW):
                 threading.Event().wait(GAPS[n % len(GAPS)])
                 news.append(plain_request(ci, n, ncls, "p"))
+                if ncls.endswith("+hit"):
+                    threading.Event().wait(GAPS[(n + 1) % len(GAPS)])
+                    x = plain_request(ci, n, ncls, "h")
+                    x["resend"] = True
+                    news.append(x)
             t2 = time.perf_counter()
             mark2 = log.stat().st_size
             threading.Event().wait(TAIL)
