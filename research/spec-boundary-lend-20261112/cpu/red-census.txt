@@ -1,0 +1,100 @@
+# main 11b368f7d7's production code with the four census tests appended (tools/dd_red_census.sh)
+   Compiling tokio v1.52.3
+   Compiling memra-kv v0.141.1 (~/.cache/memra-1221b/src-main/crates/memra-kv)
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (~/.cache/memra-1221b/src-main/crates/memra-server)
+   Compiling memra-engine v0.141.1 (~/.cache/memra-1221b/src-main/crates/memra-engine)
+   Compiling tokio-util v0.7.19
+   Compiling tower v0.5.3
+   Compiling tokio-rustls v0.26.5
+   Compiling tower-http v0.6.11
+   Compiling h2 v0.4.19
+warning: unused import: `super::*`
+     --> crates/memra-engine/src/spec.rs:18502:9
+      |
+18502 |     use super::*;
+      |         ^^^^^^^^
+      |
+      = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling hyper v1.10.1
+   Compiling hyper-util v0.1.20
+   Compiling hyper-rustls v0.27.10
+   Compiling axum v0.7.9
+   Compiling reqwest v0.13.5
+warning: `memra-engine` (lib test) generated 1 warning (run `cargo fix --lib -p memra-engine --tests` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 7m 29s
+     Running unittests src/lib.rs (~/.cache/memra-1221b/target-bt/release/deps/memra_engine-93cd76aa33db980b)
+
+running 1 test
+test spec::lend_floor_tests::scratch_length_setters_check_the_lend_before_writing ... FAILED
+
+failures:
+
+---- spec::lend_floor_tests::scratch_length_setters_check_the_lend_before_writing stdout ----
+
+thread 'spec::lend_floor_tests::scratch_length_setters_check_the_lend_before_writing' (3294507) panicked at crates/memra-engine/src/spec.rs:18520:14:
+set_plane_len checks the lend
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    spec::lend_floor_tests::scratch_length_setters_check_the_lend_before_writing
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 808 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-engine --lib`
+     Running unittests src/lib.rs (~/.cache/memra-1221b/target-bt/release/deps/memra_kv-91e1b38dde639d01)
+
+running 1 test
+test plane::tests::every_write_below_a_lend_checks_it ... FAILED
+
+failures:
+
+---- plane::tests::every_write_below_a_lend_checks_it stdout ----
+
+thread 'plane::tests::every_write_below_a_lend_checks_it' (3294509) panicked at crates/memra-kv/src/plane.rs:1359:9:
+pub fn release_beyond(&mut self, keep_bytes: usize) -> usize { self.on_demand .as_mut() .map_or(0, |o| o.request_release_beyond(keep_bytes))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    plane::tests::every_write_below_a_lend_checks_it
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 87 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-kv --lib`
+     Running unittests src/lib.rs (~/.cache/memra-1221b/target-bt/release/deps/memra_server-84c25559e043e0da)
+
+running 2 tests
+test worker::tests::spec_boundary_publish_lends_on_the_mtp_path ... FAILED
+test worker::tests::every_caller_of_a_write_below_a_lend_is_pinned ... FAILED
+
+failures:
+
+---- worker::tests::spec_boundary_publish_lends_on_the_mtp_path stdout ----
+
+thread 'worker::tests::spec_boundary_publish_lends_on_the_mtp_path' (3294512) panicked at crates/memra-server/src/worker.rs:37553:9:
+fn drain_mtp_prefix_captures( engine: &Engine, px: &mut PrefixCache, hpx: &mut HostPrefixCache, s: &mut Session, ) { // A saved prime is not a committed decode/park boundary. Its adapter owns the partial // captures until finalization succeeds. if s.prime_service.pending { return; } let mtp_captures = s .spec .as_mut() .map(|sp| std::mem::take(&mut sp.boundary_captures)) .unwrap_or_default(); if mtp_captures.is_empty() { return; } let pool_key = s.pool_key(); let sp = s.spec.as_ref().expect("captures came from this session"); // MTP can produce one capture per prime stop (miss-LCP split + the stable pre-generation // boundary, lane/frspec-multiturn-cache). for cap in mtp_captures { let end = cap.pos.min(sp.committed.len()); if end == 0 || px.has_key(&pool_key, &sp.committed[..end]) { continue; } prefix_insert_from_spec_boundary( engine, px, hpx, &pool_key, &sp.committed, sp.cache_ref(), sp.draft_plane_ref(), None, // MTP publisher: its draft state rides `draft`, not the dspark tail cap, "spec-boundary", ); }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- worker::tests::every_caller_of_a_write_below_a_lend_is_pinned stdout ----
+
+thread 'worker::tests::every_caller_of_a_write_below_a_lend_is_pinned' (3294511) panicked at crates/memra-server/src/worker.rs:37682:17:
+assertion `left == right` failed: memra-kv/src/lib.rs: 0 call sites of rollback, pinned 2: check each new one against a live lend (memra#1221) and update the census
+  left: 0
+ right: 2
+
+
+failures:
+    worker::tests::every_caller_of_a_write_below_a_lend_is_pinned
+    worker::tests::spec_boundary_publish_lends_on_the_mtp_path
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.10s
+
+error: test failed, to rerun pass `-p memra-server --lib`
+error: 3 targets failed:
+    `-p memra-engine --lib`
+    `-p memra-kv --lib`
+    `-p memra-server --lib`
+rc=101

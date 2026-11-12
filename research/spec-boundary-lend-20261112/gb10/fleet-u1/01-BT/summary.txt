@@ -1,0 +1,13 @@
+rewind refused below a lent prefix row=0
+[prefix-loan] reconcile=0
+[prefix-loan] compact=0
+insert (spec-boundary)=75
+[prefix-cache] hit=61
+spec restore=61
+evict (LRU)=57
+spec-park=1
+out of memory=0
+[probe-trim]=3
+1794522800.146114 [probe-trim] baseline pool_reserved=19461570560 pool_used=19190598416 prefix_total_bytes=0
+1794522903.896795 [probe-trim] requested
+1794522904.019189 [probe-trim] after trim pool_reserved=19495124992 pool_used=19190598416 prefix_total_bytes=0 prefix_entries=0
