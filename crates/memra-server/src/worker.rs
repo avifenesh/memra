@@ -24133,8 +24133,6 @@ pub fn run(
                     &carried,
                 )
             };
-            // Dark work keeps its burst cadence on the yield's short ticks (`DarkCadence`).
-            let dark_turn = dark_cadence.turn(round_yield.is_some(), burst_rounds_recent.max());
             if let Some(class) = round_yield {
                 // Engagement receipt, once per class (the dead-arm lesson).
                 static SEEN: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
@@ -24606,6 +24604,14 @@ pub fn run(
                     burst_rounds_recent.push(burst_rounds);
                 }
             }
+            // Dark work on the yield's short ticks (`DarkCadence`), decided once phase (a) has
+            // run: a tick counts as yielded only when the yield was on and a burst ran a round,
+            // so one whose MTP sessions only primed, or ended at entry for a waiting admission,
+            // shortened nothing and runs dark work as any other tick does.
+            let dark_turn = dark_cadence.turn(
+                round_yield.is_some() && burst_rounds > 0,
+                burst_rounds_recent.max(),
+            );
             // Freeze this before prefill/decode work; the summary must describe phase (a),
             // not elapsed time from phase (a)'s start to the end of the whole scheduler tick or
             // the deferred prefix-publication copy.
@@ -35155,8 +35161,11 @@ impl<T: Copy + Ord, const N: usize> RecentWindow<T, N> {
 /// long, so the same rule would run dark work up to a burst's rounds times as often (13 on
 /// GB10's 27B), charged to the interactive streams the yield already slows. So on yielded ticks
 /// dark work runs once every `rounds` ticks, `rounds` being the longest recent burst the yield
-/// did not end (the burst it replaces), and on every tick that is not yielded. With no burst
-/// measured yet it runs every tick.
+/// did not end (the burst it replaces), and on every tick that is not yielded, which also
+/// restarts the count. With no such burst measured yet it runs every tick. A yielded tick is a
+/// round plus the plain session's step, so `rounds` of them take longer than one burst: on
+/// GB10's 27B about 3 s per dark step against a 1.2 to 1.75 s burst (`gb10/mixed`), about half
+/// the burst cadence. Dark work yields first, as the lanes ask.
 #[derive(Default)]
 struct DarkCadence {
     yielded: u64,
@@ -42975,12 +42984,15 @@ mod tests {
             "once every 13 yielded ticks"
         );
         assert!(turns[12] && turns[25] && !turns[0] && !turns[11]);
-        assert!(!c.turn(true, Some(13)));
+        for _ in 0..5 {
+            assert!(!c.turn(true, Some(13)));
+        }
+        assert!(c.turn(false, Some(13)), "a full tick runs dark work");
+        let after: Vec<bool> = (0..13).map(|_| c.turn(true, Some(13))).collect();
         assert!(
-            c.turn(false, Some(13)),
-            "a full tick runs dark work and restarts the count"
+            after[..12].iter().all(|&t| !t) && after[12],
+            "and restarts the count: the next turn is 13 yielded ticks later"
         );
-        assert!(!c.turn(true, Some(13)));
         let mut c = super::DarkCadence::default();
         assert!(
             c.turn(true, None) && c.turn(true, None),
@@ -43178,7 +43190,8 @@ mod tests {
             "spec_round_yield_due( admit_yield_on, mtp_bursts, hookless_bursts, &plain, &carried, ) };",
         );
         let cadence = at(
-            "let dark_turn = dark_cadence.turn(round_yield.is_some(), burst_rounds_recent.max());",
+            "let dark_turn = dark_cadence.turn( round_yield.is_some() && burst_rounds > 0, \
+             burst_rounds_recent.max(), );",
         );
         let written =
             at("for &i in &spec_order { active[i].spec_round_yield = round_yield.is_some(); }");
@@ -43189,11 +43202,11 @@ mod tests {
                 && named < carried_outlook
                 && carried_outlook < bursts
                 && bursts < due
-                && due < cadence
-                && cadence < written
-                && written < passes,
-            "only interactive plain sessions are weighed, and the yield is decided and written \
-             before any burst of the tick"
+                && due < written
+                && written < passes
+                && passes < cadence,
+            "only interactive plain sessions are weighed, the yield is decided and written \
+             before any burst of the tick, and the dark cadence after them"
         );
         // Phase (a) forms its riders through the same rule as the outlook.
         let cohorts = at("let mut riders_of: HashMap<String, Vec<usize>> = HashMap::new();");
@@ -43233,8 +43246,8 @@ mod tests {
             "let adaptive_cap = if dark_turn { (headroom_ms * prime_tok_per_ms) as usize } else { 0 };",
         ] {
             assert!(
-                live[passes..].contains(dark),
-                "dark work waits its turn: {dark}"
+                live[cadence..].contains(dark),
+                "dark work waits its turn, decided after phase (a): {dark}"
             );
         }
         // The prime outlook reads phase (b)'s own predicates: the same helpers, called before
