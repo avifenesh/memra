@@ -256,16 +256,18 @@ session. Cost on Qwen3.5-9B NVFP4 + MTP, one RTX 5090, 256-token greedy, N=3 (20
   [`research/spec-cohort-newcomer-20261112/`](../../research/spec-cohort-newcomer-20261112/)).
 - **A plain session behind the bursts advances once per round** (memra#1244, 2026-11-12). A plain
   request with a host sampler (greedy with a penalty) rides the pooled cohort like a device-sampled
-  one. While another plain session gets its step only after the tick's bursts (constrained,
-  vision, fork, a rider candidate no cohort carries, a prompt one prefill chunk completes), every
-  MTP burst of the tick ends at its first round. Before, such a session got one token per burst:
-  on GB10's Qwen3.8-27B 1.4 to 1.8 s between tokens beside one to three streams, 0.10 to 0.19 s
-  now. The streams lose 1 to 5% beside a rider row in their forward and pay for the plain
-  session's own forward while it is live otherwise (24 to 29% on GB10 beside a constrained
-  request; 29 to 41% on the RTX 5090, where the rider steps plain inside each round). Texts are
-  unchanged; `MEMRA_ADMIT_YIELD=0` keeps full bursts. The DFlash2, glm5 and gemma bursts and a long
-  prime's chunks are not covered (memra#1246, memra#1253)
-  ([SPEC-ROUND-YIELD.md](../decisions/SPEC-ROUND-YIELD.md),
+  one, while the cost model keeps the streams speculative (on GB10's Qwen3.8-27B up to 4 riders
+  beside 2 streams). While an interactive plain session gets its step only after the tick's
+  bursts (constrained, vision, fork, a rider candidate no cohort carries, a prompt whose prime
+  phase (b) runs this tick within one chunk), every MTP burst of the tick ends at its first
+  round. Judge and harvest sessions never engage it. Before, such a session got one token per
+  burst: on GB10 1.4 to 1.8 s between tokens beside one to three streams, 0.10 to 0.19 s now.
+  The streams lose 1 to 5% beside a rider row in their forward and pay for the plain session's
+  own forward while it is live otherwise (24 to 29% on GB10 beside a constrained request; 29 to
+  41% on the RTX 5090, where the rider steps plain inside each round). Where the total falls,
+  this is a trade of throughput for latency. Texts are unchanged; `MEMRA_ADMIT_YIELD=0` keeps
+  full bursts. The DFlash2, glm5 and gemma bursts and a long prime's chunks are not covered
+  (memra#1246, memra#1253) ([SPEC-ROUND-YIELD.md](../decisions/SPEC-ROUND-YIELD.md),
   [`research/spec-plain-round-yield-20261112/`](../../research/spec-plain-round-yield-20261112/)).
 - **The burst ends with the stream.** The round that commits EOS or a stop id ends the burst, and
   so does a client that disconnected. Measured: up to 0.8 s less per ~100-token answer on GB10
