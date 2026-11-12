@@ -238,6 +238,20 @@ session. Cost on Qwen3.5-9B NVFP4 + MTP, one RTX 5090, 256-token greedy, N=3 (20
   session's plain steps that see a waiting request refresh the mark; it expires 64 s after the last
   refresh. Greedy text and seeded sampled text are unchanged
   ([SPEC-STALL-MARK.md](../decisions/SPEC-STALL-MARK.md)).
+- **Newcomers prime before the pooled cohorts** (memra#1227, 2026-11-12). A speculative session
+  that has emitted nothing steps before the tick's pooled cohorts, and a session whose prime
+  completed joins that tick's lockstep. Before, the cohorts stepped first, so a newcomer admitted
+  at the tick top waited a whole lockstep burst (32 tokens per member) for its prime, and behind a
+  single stream its second token waited that stream's burst. On GB10's Qwen3.8-27B the first token
+  behind two or three long streams comes at 0.27 and 0.29 s where it came at 1.86 and 2.03 s, and
+  closed-loop clients at c = 2..4 gain 9 to 11% aggregate. A suspended long prime keeps the prime
+  policy's place after its first chunk, DFlash2 cohorts keep the next-tick join, and
+  `MEMRA_ADMIT_YIELD=0` keeps the cohorts first. Session order and cohort membership are
+  content-neutral, so texts are unchanged. A cohort under short arrivals now meets waiting
+  requests at its burst entries, so the stall mark above applies to it as it does to one stream. A
+  request admitted to plain decode is not covered (memra#1244)
+  ([SPEC-COHORT-NEWCOMER.md](../decisions/SPEC-COHORT-NEWCOMER.md),
+  [`research/spec-cohort-newcomer-20261112/`](../../research/spec-cohort-newcomer-20261112/)).
 - **The burst ends with the stream.** The round that commits EOS or a stop id ends the burst, and
   so does a client that disconnected. Measured: up to 0.8 s less per ~100-token answer on GB10
   ([`research/gb10-decode-20261109/`](../../research/gb10-decode-20261109/)). Acceptance read after
@@ -258,6 +272,7 @@ Decisions: [SPEC-ADMISSION-GATE](../decisions/SPEC-ADMISSION-GATE.md),
 [SAMPLED-VERIFY-POSITION-KEYED](../decisions/SAMPLED-VERIFY-POSITION-KEYED.md),
 [SAMPLED-PENDING-CARRY](../decisions/SAMPLED-PENDING-CARRY.md),
 [SPEC-ENTRY-YIELD-BOUND](../decisions/SPEC-ENTRY-YIELD-BOUND.md),
+[SPEC-COHORT-NEWCOMER](../decisions/SPEC-COHORT-NEWCOMER.md),
 [POOLED-MEMBER-CLOSE](../decisions/POOLED-MEMBER-CLOSE.md). Per-request `usage.spec` and the
 acceptance counters: [metrics.md](metrics.md#speculative-decoding). The dated history is in the
 [archived serving reference](../archive/SERVING-2026-11-12.md#streaming-cadence--admission-latency--the-felt-ttft-arc-lanes-sse-cadence-2026-08-05-admission-latency-2026-08-06).
