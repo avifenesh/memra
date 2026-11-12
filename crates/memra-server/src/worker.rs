@@ -2359,12 +2359,12 @@ pub struct Request {
     /// carries Some(K), including K=0, so changing queue depth cannot change its decision.
     pub spec_k_replay: Option<usize>,
     /// The VRAM gate refused this request its DFlash drafter (memra#1173): the full charge,
-    /// draft plane included, did not fit and the charge without the plane did. The request is
-    /// priced and served PLAIN from then on: `admission_request_may_spec` returns false, so the
-    /// gate charges no draft plane, and `admit` builds no drafter session on any route (cold
-    /// prime, pool resume, prefix restore, cold-drafter conversion), so no plane is allocated.
-    /// Sticky for the request's life, a step-OOM park replay included. Always false from the
-    /// HTTP layer.
+    /// draft plane included, did not fit, and either the charge without the plane did or the
+    /// card was idle. The request is priced and served PLAIN from then on:
+    /// `admission_request_may_spec` returns false, so the gate charges no draft plane, and
+    /// `admit` builds no drafter session on any route (cold prime, pool resume, prefix restore,
+    /// cold-drafter conversion), so no plane is allocated. Sticky for the request's life, a
+    /// step-OOM park replay included. Always false from the HTTP layer.
     pub drafter_refused: bool,
     /// Constrained decoding (`response_format` json_object/json_schema): the parsed
     /// grammar spec. None = unconstrained — the request takes the exact legacy path
@@ -3009,9 +3009,8 @@ pub struct Metrics {
     /// ticks); parks count successful step-OOM requeues. Pool entry fields are current gauges.
     pub admission_session_defers: u64,
     pub admission_vram_defers: u64,
-    /// Requests the VRAM gate refused their DFlash drafter and served plain (memra#1173): the
-    /// full charge with the draft plane did not fit and the charge without it did. Once per
-    /// request.
+    /// Requests the VRAM gate refused their DFlash drafter and priced again as plain
+    /// (memra#1173): the full charge with the draft plane did not fit. Once per request.
     pub admission_drafter_refusals: u64,
     /// Requests that waited behind an earlier request the VRAM gate deferred in the same
     /// admission pass (head-of-line memory order), counted per pass like the defers.
@@ -22232,6 +22231,18 @@ pub fn run(
                         captured_ok || eager_ok
                     } {
                         // fall through to admit: the drained re-read says the work fits.
+                    } else if !headroom.sufficient(required)
+                        && active.is_empty()
+                        && draft_arm == Some(DraftStateArm::RefuseDrafter)
+                    {
+                        // An idle card cannot hold this request with its drafter, drained or
+                        // not, so no wait can fund the plane. Its plain charge can be smaller
+                        // than the charge without the plane (a plain prime holds one take, a
+                        // DFlash walker the whole prompt's stack), so the read above does not say
+                        // whether the plain request fits: price it again as plain and let that
+                        // pass admit it or answer for it, never a refusal of a request the
+                        // trunk can serve.
+                        refuse_drafter = true;
                     } else if !headroom.sufficient(required) {
                         if active.is_empty() {
                             // NOTHING ELSE IS RUNNING, so this request does not fit the box at
@@ -22484,14 +22495,15 @@ pub fn run(
                         // Grep-stable receipt. The request goes back to the FRONT of the
                         // queue and this same pass prices it again as a plain request (no
                         // draft plane in the cost, no drafter session in `admit`), so it
-                        // keeps its place and the gate decides on what will be allocated.
-                        // At most once per request: a refused request charges no draft
-                        // state, so `draft_state_arm` is None for it.
+                        // keeps its place and the gate decides on what will be allocated:
+                        // it admits the plain request, or defers or refuses it as it would
+                        // any plain request. At most once per request: a refused request
+                        // charges no draft state, so `draft_state_arm` is None for it.
                         eprintln!(
                             "[admission] drafter refused: model={model_key:?} ctx={} \
                              draft plane {:.0}MB does not fit (available {:.0}MB, required \
                              {:.0}MB with it, {:.0}MB without); the request is priced again \
-                             and served PLAIN, no drafter session is created",
+                             as PLAIN, no drafter session is created",
                             admission_cap,
                             draft_state_bytes as f64 / 1e6,
                             headroom.limiting_free_bytes() as f64 / 1e6,
@@ -26917,7 +26929,9 @@ enum DraftStateArm {
     EagerCapture,
     /// DFlash route: the draft state is the drafter KV plane, which every drafter session
     /// allocates when it is created; no later gate can refuse it. The gate refuses the request
-    /// its drafter and prices it again as a plain request.
+    /// its drafter and prices it again as a plain request: when the charge without the plane
+    /// fits, and on an idle card whenever the full charge does not (no wait can fund the
+    /// plane there, and the plain charge can be below the charge without the plane).
     RefuseDrafter,
 }
 
@@ -39583,13 +39597,22 @@ mod tests {
             squashed
                 .matches("draft_arm == Some(DraftStateArm::RefuseDrafter)")
                 .count(),
-            2,
-            "the first read and the drained re-read both refuse the drafter"
+            3,
+            "the first read, the drained re-read and the idle card each refuse the drafter"
         );
         assert!(squashed.contains(
             "let eager_arm = !headroom.sufficient(required) && draft_arm.is_some() && {"
         ));
         assert!(squashed.contains("let eager_ok = draft_arm.is_some() && admission_headroom("));
+        // An idle card that cannot hold the full charge prices the request as plain before
+        // it refuses anything: the arm sits ahead of the capacity reject.
+        let idle_arm = squashed
+            .find(
+                "} else if !headroom.sufficient(required) && active.is_empty() && draft_arm == \
+                 Some(DraftStateArm::RefuseDrafter) {",
+            )
+            .expect("the idle-card arm");
+        assert!(idle_arm < squashed.find("[admit-oom] capacity reject:").unwrap());
         assert!(squashed.contains(
             "n_drafter_refusals += 1; req.drafter_refused = true; queue.push_front(req); continue;"
         ));

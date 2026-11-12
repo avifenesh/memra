@@ -13,16 +13,20 @@ Serving shape, one card, one boot of the real `memra-server` with a DFlash draft
 (`MEMRA_DSPARK_SPEC=1`, `MEMRA_DSPARK_DRAFT`), prefix cache and whole-session pools off so
 every request is a cold prime:
 
-  step 0   one long greedy request on the idle card: admitted in full, speculates. Its cost
-           line gives C (`[admission] request cost ... = C MB`), its draft-state line gives D
-           (`per-session draft-state charge ... +D MB`), and /metrics gives effective free F0
-           (driver free + pool cached) and the peak pool use of a full drafter session.
-  step k   a BALLAST process (one plain cuMemAlloc through libcuda, grown between requests)
+  step 0   one long greedy request on the idle card, then the same one sampled: both admitted
+           in full, both speculate. The first's cost line gives C (`[admission] request cost
+           ... = C MB`) and its draft-state line gives D (`per-session draft-state charge ...
+           +D MB`); around the second, /metrics gives effective free (driver free + pool
+           cached) and the peak pool use of a full drafter session.
+  step k   a BALLAST process (plain cuMemAlloc chunks through libcuda, resized between requests)
            lowers effective free by about D/3 per step, starting about D/2 above the gate's
-           estimated requirement C + D + reserve, and the same shape of request (a different
-           text) is sent. A step lands in the WINDOW when the server prints either the unfixed
-           receipt (`eager-arm admit`) or the fixed one (`drafter refused`). The gate stops
-           after --window-hits such steps. No admission door is touched.
+           estimated requirement C + D + reserve, and the same request is sent. A step lands in
+           the WINDOW when the server prints either the unfixed receipt (`eager-arm admit`) or
+           the fixed one (`drafter refused`); the next step repeats that headroom with the other
+           request kind. A step the idle card refuses (HTTP 400: the estimate was high and the
+           ballast went past the window) turns the descent into a bisection between the last
+           full admission and that refusal. The gate stops after --window-hits window steps.
+           No admission door is touched.
 
 Verdicts (every number from the server's own lines, /metrics and nvidia-smi):
   V1 window_reached   at least --window-hits steps landed in the window. Otherwise REFUSED:
@@ -32,7 +36,7 @@ Verdicts (every number from the server's own lines, /metrics and nvidia-smi):
   V3 served_plain     every window step answered 200 with tokens and no `usage.spec`, printed
                       `[dspark] declined: drafter refused at admission`, and /metrics
                       `served_plain` and `admission_drafter_refusals` each rose by one per step.
-  V4 plane_not_held   every window step's peak pool use stayed at least D/2 under step 0's: the
+  V4 plane_not_held   every window step's peak pool use stayed at least D/2 under the full admission's: the
                       plane was not allocated. RED on the unfixed tree (the plane is there).
   V5 no_oom           zero `out of memory` lines, zero 5xx, the server alive with /health 200,
                       no `panicked`, `[worker] FATAL` or `[worker] respawn` line.
@@ -46,16 +50,17 @@ Verdicts (every number from the server's own lines, /metrics and nvidia-smi):
 
 Without --draft the boot serves the MTP route, where the second arm stays (`--route mtp`
 verdicts): M2 every window step printed `eager-arm admit` and the pre-capture gate's `capture
-skipped pre-attempt` refusal, M3 it answered 200 with tokens, M4 its peak pool use stayed at
-least D/2 under step 0's (the capture state the request was not charged for was not allocated),
-plus V1, V5 and V6.
+skipped pre-attempt` refusal (the capture state the request was not charged for was not
+allocated), M3 it answered 200 with tokens, plus V1, V5 and V6. Peak pool use is printed as
+information only there: a capture's state is smaller than the difference between the eager
+and the captured draft programs' transients.
 
 `summary.json` carries per step: effective free before the request, the ballast held, the
 minimum effective free and driver free seen during the request (the headroom the admission
 left), peak pool use, status, tokens, and whether the request speculated.
 
 Exit 0 = every verdict held; 1 = a verdict failed; 2 = REFUSED (precondition: lock, port,
-window not reached, a request refused before the window).
+a ballast the driver cannot hold, the window not reached).
 
 usage: drafter-admission-gate.py [--external-lock FD] --model GGUF [--draft DIR] --bin memra-server \\
            --out NEW_DIR [--port N] [--ctx N] [--prompt-words N] [--max-tokens N] \\
@@ -134,7 +139,8 @@ def gpu_row() -> dict:
 
 
 def ballast_hold() -> None:
-    """Child mode: hold plain driver allocations (no pool, no stream); one more per stdin line."""
+    """Child mode: hold plain driver allocations (no pool, no stream): one more chunk per
+    stdin number, the newest freed on a `-` line."""
     import ctypes
 
     cuda = ctypes.CDLL("libcuda.so.1")
@@ -147,17 +153,22 @@ def ballast_hold() -> None:
     ):
         if rc != 0:
             refuse(f"ballast: {name} failed rc={rc}")
-    total = 0
+    chunks: list[tuple[int, int]] = []
     print("BALLAST READY total=0", flush=True)
     for line in sys.stdin:
-        nbytes = int(line)
-        ptr = ctypes.c_ulonglong()
-        rc = cuda.cuMemAlloc_v2(ctypes.byref(ptr), ctypes.c_size_t(nbytes))
-        if rc != 0:
-            print(f"BALLAST FAILED rc={rc} bytes={nbytes}", flush=True)
-            continue
-        total += nbytes
-        print(f"BALLAST HELD total={total}", flush=True)
+        if line.strip() == "-":  # free the newest chunk
+            if chunks:
+                ptr, _ = chunks.pop()
+                cuda.cuMemFree_v2(ctypes.c_ulonglong(ptr))
+        else:
+            nbytes = int(line)
+            ptr = ctypes.c_ulonglong()
+            rc = cuda.cuMemAlloc_v2(ctypes.byref(ptr), ctypes.c_size_t(nbytes))
+            if rc != 0:
+                print(f"BALLAST FAILED rc={rc} bytes={nbytes}", flush=True)
+                continue
+            chunks.append((ptr.value, nbytes))
+        print(f"BALLAST HELD total={sum(n for _, n in chunks)}", flush=True)
 
 
 class Ballast:
@@ -182,10 +193,17 @@ class Ballast:
             refuse(f"ballast: wanted {prefix!r}, got {line!r}")
         return line
 
-    def add(self, nbytes: int) -> None:
-        self.proc.stdin.write(f"{nbytes}\n")
+    def _send(self, line: str) -> None:
+        self.proc.stdin.write(line + "\n")
         self.proc.stdin.flush()
         self.total = int(self._expect("BALLAST HELD").split("total=")[1])
+
+    def set(self, total: int) -> None:
+        """Hold `total` bytes: grow by one chunk, or free the newest chunks and regrow."""
+        while self.total > total:
+            self._send("-")
+        if total > self.total:
+            self._send(str(total - self.total))
 
     def stop(self) -> None:
         if self.proc.poll() is None:
@@ -329,7 +347,9 @@ class Sampler(threading.Thread):
 
 
 def run_step(server: Server, step: int, words: int, max_tokens: int, ballast_total: int,
-             sampled: bool = False) -> dict:
+             sampled: bool = False, ballast_added: int = 0) -> dict:
+    # An idle worker does not refresh /metrics, so the reading before a request is the one the
+    # last request left: correct except for the ballast added since, which is subtracted here.
     before = server.metrics()
     offset = server.log.stat().st_size
     sampler = Sampler(server)
@@ -346,8 +366,8 @@ def run_step(server: Server, step: int, words: int, max_tokens: int, ballast_tot
     return {
         "step": step,
         "ballast_bytes": ballast_total,
-        "effective_free_before": effective_free(before),
-        "driver_free_before": int(before["cuda_driver_free_bytes"]),
+        "effective_free_before": effective_free(before) - ballast_added,
+        "driver_free_before": int(before["cuda_driver_free_bytes"]) - ballast_added,
         "pool_used_before": int(before["cuda_pool_used_bytes"]),
         "min_effective_free": sampler.min_effective,
         "min_driver_free": sampler.min_driver,
@@ -376,12 +396,14 @@ def in_window(row: dict) -> bool:
 
 
 def verdicts(rows: list[dict], window_hits: int, draft_bytes: int, log_text: str, alive: bool, health: int,
-             refs: dict, dflash: bool = True) -> dict:
+             refs: dict, full: dict, dflash: bool = True) -> dict:
     """The verdicts over the recorded steps: pure, so the gate's teeth are testable.
 
-    `rows[0]` is the full greedy admission; `refs` holds the four reference texts
-    (`spec_greedy`, `spec_sampled`, `plain_greedy`, `plain_sampled`)."""
-    full, window = rows[0], [r for r in rows[1:] if in_window(r)]
+    `rows[1:]` are the ballast steps; `full` is a full speculating admission on the idle card
+    whose /metrics reading before it is live (the boot's second request: the worker publishes
+    none before its first); `refs` holds the four reference texts (`spec_greedy`,
+    `spec_sampled`, `plain_greedy`, `plain_sampled`)."""
+    window = [r for r in rows[1:] if in_window(r)]
     v = {}
     v["V1 window_reached"] = (
         len(window) >= window_hits,
@@ -423,12 +445,18 @@ def verdicts(rows: list[dict], window_hits: int, draft_bytes: int, log_text: str
             ),
         )
     full_peak = full["peak_pool_used"] - full["pool_used_before"]
-    held = [(r["peak_pool_used"] - r["pool_used_before"]) <= full_peak - draft_bytes // 2 for r in window]
-    v["V4 plane_not_held" if dflash else "M4 capture_not_held"] = (
-        bool(held) and all(held),
-        f"full step peak pool use {full_peak / MB:.0f}MB, plane {draft_bytes / MB:.0f}MB; window steps "
-        + ", ".join(f"{(r['peak_pool_used'] - r['pool_used_before']) / MB:.0f}MB" for r in window),
+    peaks = (
+        f"full admission peak pool use {full_peak / MB:.0f}MB, draft state {draft_bytes / MB:.0f}MB; window steps "
+        + ", ".join(f"{(r['peak_pool_used'] - r['pool_used_before']) / MB:.0f}MB" for r in window)
     )
+    if dflash:
+        held = [(r["peak_pool_used"] - r["pool_used_before"]) <= full_peak - draft_bytes // 2 for r in window]
+        v["V4 plane_not_held"] = (bool(held) and all(held), peaks)
+    else:
+        # Not a verdict on this route: a capture's state is small beside the difference between
+        # the eager and the captured draft programs' own transients (39 MB against 157 MB on
+        # Qwen3.8-27B), so peak pool use cannot show its absence. M2's refusal line does.
+        v["INFO peak_pool_use"] = (True, peaks)
     bad = {b: log_text.count(b) for b in BAD_LINES if b in log_text}
     fivexx = [r["status"] for r in rows if r["status"] >= 500]
     v["V5 no_oom"] = (
@@ -541,35 +569,62 @@ def main() -> None:
         if spec_sampled["status"] != 200 or not spec_sampled["speculated"] or in_window(spec_sampled):
             refuse(f"the sampled reference must be a full speculating admission: {json.dumps(spec_sampled)[:600]}")
         refs["spec_sampled"] = spec_sampled["text"]
-        cost, draft = full["cost_mb"] * MB, full["draft_mb"] * MB
+        # The second request's cost line, when it printed one, carries the fixed residual the
+        # first request taught the cost model; the first's does not.
+        cost = (spec_sampled["cost_mb"] or full["cost_mb"]) * MB
+        draft = full["draft_mb"] * MB
         boot_text = server.log.read_text(errors="replace")
         floor = RE_FLOOR.search(boot_text)
         reserve = int(floor.group(1)) * MIB if floor else STATIC_RESERVE  # that line prints MiB
         required = cost + draft + reserve
-        target = required + draft // 2
+        # Effective free with no ballast, as the last request left it. An idle worker does not
+        # refresh /metrics, so what the ballast process takes is accounted here, not read back:
+        # its CUDA context first (a few hundred MB, read from nvidia-smi), then its chunks.
+        used_before = gpu_row()["used_mib"]
         ballast = Ballast(args.out / "ballast.log")
+        time.sleep(1.0)
+        context_bytes = max(0, gpu_row()["used_mib"] - used_before) * MIB
+        idle_free = effective_free(server.metrics()) - context_bytes
+        # Descend from about D/2 above the estimated requirement in steps of D/3. A request the
+        # card refuses (the ballast went past the window: the estimate was high) turns the
+        # descent into a bisection between the last full admission and that refusal.
+        target = required + draft // 2
+        lo_full, hi_refused = 0, None  # ballast totals: largest full admission, smallest refusal
         for step in range(1, args.max_steps + 1):
-            # The first ballast lands about D/2 above the estimated requirement; each later
-            # step takes D/3 more, whatever the last request left behind.
-            free = effective_free(server.metrics())
-            if free > target:
-                ballast.add(free - target)
-                time.sleep(1.0)
+            want = max(0, idle_free - target)
+            before_total = ballast.total
+            ballast.set(want)
+            time.sleep(1.0)
             hits = sum(in_window(r) for r in rows)
-            row = run_step(server, step, args.prompt_words, args.max_tokens, ballast.total, sampled=hits % 2 == 1)
+            row = run_step(server, step, args.prompt_words, args.max_tokens, ballast.total, sampled=hits % 2 == 1,
+                           ballast_added=ballast.total - before_total + (context_bytes if step == 1 else 0))
             row["target_effective_free"] = target
             rows.append(row)
             with (args.out / "steps.jsonl").open("a") as f:
                 f.write(json.dumps(row) + "\n")
             print(
-                f"step {step}: free {row['effective_free_before'] / MB:.0f}MB (target {target / MB:.0f}MB) "
+                f"step {step}: free {row['effective_free_before'] / MB:.0f}MB (ballast {ballast.total / MB:.0f}MB) "
                 f"status {row['status']} {'sampled' if row['sampled'] else 'greedy'} speculated "
                 f"{row['speculated']} window {in_window(row)}",
                 flush=True,
             )
-            if sum(in_window(r) for r in rows) >= args.window_hits or row["status"] != 200:
+            if sum(in_window(r) for r in rows) >= args.window_hits or row["status"] >= 500:
                 break
-            target -= draft // 3
+            # The next request reads the memory this one left: re-base on the live reading
+            # (it already has the ballast's context and chunks in it).
+            idle_free = effective_free(server.metrics()) + ballast.total
+            if in_window(row):
+                continue  # the same headroom again, for the other request kind
+            if row["status"] == 200:
+                lo_full = ballast.total
+            else:
+                hi_refused = ballast.total
+            if hi_refused is None:
+                target -= draft // 3
+            elif hi_refused - lo_full < draft // 8:
+                break  # no room left for a window between a full admission and a refusal
+            else:
+                target = idle_free - (lo_full + hi_refused) // 2
         time.sleep(1.0)
         alive = server.proc is not None and server.proc.poll() is None
         health = server.health() if alive else 0
@@ -579,7 +634,7 @@ def main() -> None:
         server.stop()
 
     log_text = server.log.read_text(errors="replace")
-    result = verdicts(rows, args.window_hits, draft, log_text, alive, health, refs, dflash)
+    result = verdicts(rows, args.window_hits, draft, log_text, alive, health, refs, spec_sampled, dflash)
     summary = {
         "gpu": gpu,
         "binary": args.bin,
@@ -592,13 +647,15 @@ def main() -> None:
         "draft_plane_bytes": draft,
         "reserve_estimate_bytes": reserve,
         "required_estimate_bytes": required,
+        "ballast_context_bytes": context_bytes,
+        "full_admission": spec_sampled,
         "steps": rows,
         "verdicts": {k: {"pass": ok, "detail": detail} for k, (ok, detail) in result.items()},
     }
     (args.out / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
     with (args.out / "VERDICTS.txt").open("w") as f:
         for k, (ok, detail) in result.items():
-            line = f"{k}: {'PASS' if ok else 'FAIL'} ({detail})"
+            line = f"{k}: {detail}" if k.startswith("INFO") else f"{k}: {'PASS' if ok else 'FAIL'} ({detail})"
             print(line, flush=True)
             f.write(line + "\n")
     if not result["V1 window_reached"][0]:
