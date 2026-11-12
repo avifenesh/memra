@@ -34,7 +34,9 @@ prime. Three boots:
                      idle window   the middle of [without, with), greedy then sampled
                      idle band     --band-mb under `without`
                      busy window   the same middle while a peer request decodes
-                     busy band     --busy-band-mb under `without` while a peer decodes
+                     busy band     --busy-band-mb under `without` while a peer decodes (under
+                                   the peer's own charge the request would wait for it)
+                   A step whose ballast the driver cannot give is skipped and named.
   replay boot      `MEMRA_STEP_OOM_FAULT=1`: the request's first step reports a synthetic CUDA
                    OOM, the session parks and replays. The gate prices a replay from its K,
                    which is 0 for every DFlash session.
@@ -215,17 +217,27 @@ class Ballast:
             refuse(f"ballast: wanted {prefix!r}, got {line!r}")
         return line
 
-    def _send(self, line: str) -> None:
+    def _send(self, line: str) -> bool:
         self.proc.stdin.write(line + "\n")
         self.proc.stdin.flush()
-        self.total = int(self._expect("BALLAST HELD").split("total=")[1])
+        answer = self.proc.stdout.readline().strip()
+        with self.log.open("a") as f:
+            f.write(answer + "\n")
+        if answer.startswith("BALLAST FAILED"):
+            return False
+        if not answer.startswith("BALLAST HELD"):
+            self.stop()
+            refuse(f"ballast: wanted 'BALLAST HELD', got {answer!r}")
+        self.total = int(answer.split("total=")[1])
+        return True
 
-    def set(self, total: int) -> None:
-        """Hold `total` bytes: grow by one chunk, or free the newest chunks and regrow."""
+    def set(self, total: int) -> bool:
+        """Hold `total` bytes: grow by one chunk, or free the newest chunks and regrow. False
+        when the driver cannot give the growth: the ballast takes driver-free memory only, and
+        what the server's pool holds cached is not the ballast's to take."""
         while self.total > total:
             self._send("-")
-        if total > self.total:
-            self._send(str(total - self.total))
+        return total <= self.total or self._send(str(total - self.total))
 
     def stop(self) -> None:
         if self.proc.poll() is None:
@@ -371,9 +383,11 @@ class Sampler(threading.Thread):
 
 
 class Peer(threading.Thread):
-    """One long streamed generation held open: the busy card."""
+    """One streamed generation held open: the busy card. Short enough that its own admission
+    charge (what its retirement could give back) stays under the busy band's shortfall, long
+    enough to outlast the measured request's pricing by seconds."""
 
-    def __init__(self, server: Server, max_tokens: int = 3000):
+    def __init__(self, server: Server, max_tokens: int = 1000):
         super().__init__(daemon=True)
         self.server, self.max_tokens = server, max_tokens
         self.started, self.halt = threading.Event(), threading.Event()
@@ -623,7 +637,7 @@ def main() -> None:
     ap.add_argument("--max-tokens", type=int, default=48)
     ap.add_argument("--max-steps", type=int, default=14)
     ap.add_argument("--band-mb", type=int, default=150)
-    ap.add_argument("--busy-band-mb", type=int, default=300)
+    ap.add_argument("--busy-band-mb", type=int, default=400)
     ap.add_argument("--gpu-lock", default=os.environ.get("MEMRA_GPU_LOCK", LOCKS[1]))
     args = ap.parse_args(argv)
     if lock_fd is None:
@@ -722,8 +736,17 @@ def main() -> None:
                 est["without"] = est["with"] - draft
             base["free"] = row["effective_free_after"] + row["ballast_bytes"]
 
-        def idle_step(step: int, kind: str, target: int, sampled: bool = False) -> dict:
-            ballast.set(max(0, base["free"] - target))
+        skipped: list[str] = []
+
+        def skip(step: int, kind: str, target: int) -> None:
+            skipped.append(f"step {step} {kind}: not placed, the driver could not give the ballast for "
+                           f"{target / MB:.0f}MB effective free")
+            print(skipped[-1], flush=True)
+
+        def idle_step(step: int, kind: str, target: int, sampled: bool = False) -> dict | None:
+            if not ballast.set(max(0, base["free"] - target)):
+                skip(step, kind, target)
+                return None
             pause(1.0)
             row = run_step(server, step, kind, words, ntok, ballast.total, sampled,
                            before_free=base["free"] - ballast.total)
@@ -757,7 +780,12 @@ def main() -> None:
             pause(1.0)
             live = effective_free(server.metrics())  # the peer keeps /metrics fresh
             target = est["without"] + offset_from_without
-            ballast.set(max(0, ballast.total + live - target))
+            if not ballast.set(max(0, ballast.total + live - target)):
+                skip(step, kind, target)
+                peer.halt.set()
+                peer.join(timeout=60)
+                idle_again()
+                return None
             pause(1.0)
             before_free = effective_free(server.metrics())
             row = run_step(server, step, kind, words, ntok, ballast.total, before_free=before_free)
@@ -785,6 +813,8 @@ def main() -> None:
         while hits < 2 and step < args.max_steps:
             step += 1
             row = idle_step(step, "idle-window", est["without"] + draft // 2, sampled=hits == 1)
+            if row is None:
+                break
             if in_window(row):
                 hits += 1
             elif row["status"] == 200 and row["speculated"] and row["spec_cost_mb"] is None:
@@ -829,6 +859,9 @@ def main() -> None:
         replay_log = replay_server.log.read_text(errors="replace")
 
     result = verdicts(rows, draft, log_text, alive, health, refs, full, dflash, replay, replay_log)
+    if skipped and "V7 every_arm" in result:
+        ok, detail = result["V7 every_arm"]
+        result["V7 every_arm"] = (ok, detail + "; " + "; ".join(skipped))
     summary = {
         "gpu": gpu,
         "binary": args.bin,
@@ -843,6 +876,7 @@ def main() -> None:
         "reference_texts": refs,
         "full_admission": full,
         "steps": rows,
+        "skipped_steps": skipped,
         "replay": replay,
         "verdicts": {k: {"pass": ok, "detail": detail} for k, (ok, detail) in result.items()},
     }
