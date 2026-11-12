@@ -2,7 +2,7 @@
 # kv-host-spill-failure-gate.sh: the prefix-cache HOST TIER's failure paths must be LOUD and
 # harmless (lane/kv-host-spill-20260830). Every failure path here is EXECUTED, not asserted
 # in prose (the loud-failures-fail-quietly law), via the MEMRA_KV_HOST_FAULT diagnostic door
-# (docs/FLAGS.md section 4). Six cells, each its own boot:
+# (docs/FLAGS.md, "KV cache, prefix cache and memory tiers"). Six cells, each its own boot:
 #
 #   pool-full      MEMRA_KV_HOST_MB=1: a real entry cannot fit the 1 MiB tier, so the demote
 #                  must refuse BY NAME, keep zero host entries, and leave serving untouched.

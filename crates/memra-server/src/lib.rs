@@ -6623,9 +6623,8 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
             "[server] WARNING: build identity is DEGRADED: {BUILD_ID_NOTE}. \
              system_fingerprint {SYSTEM_FINGERPRINT} carries a version-only id, so it does \
              NOT identify the source this binary was compiled from and published \
-             performance pins cannot be verified against it (darklanes \
-             tools/check-claim-builds.mjs --live). Rebuild where the workspace source tree \
-             is readable."
+             performance pins cannot be verified against it. Rebuild where the workspace \
+             source tree is readable."
         );
     }
     // memra #1158: the retired scheduler seam refuses by its own name, ahead of the general

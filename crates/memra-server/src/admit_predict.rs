@@ -63,7 +63,8 @@
 //! Scope boundary, stated: this instruments the PRODUCTION admission seam (the batched
 //! worker loop). The experimental dsv4 door serves bs=1 on its own dedicated thread and
 //! diverts in `handle_cmd` BEFORE that loop, so dsv4 requests appear in neither the
-//! book nor the receipts; that door is not a serving-grade path (docs/FLAGS.md §5).
+//! book nor the receipts; that door is not a serving-grade path (docs/FLAGS.md, DeepSeek-V4
+//! family doors).
 
 use std::collections::HashMap;
 
