@@ -23897,15 +23897,14 @@ pub fn run(
                             && !s.dspark_on
                             && !s.glm5_on
                     })
-                    .map(|(_, s)| {
-                        let tick = if plain_rider_candidate(s, &loaded[&s.model], &eager_decode) {
-                            PlainTick::Rider
-                        } else if s.prefill_done && s.cache.is_some() {
-                            PlainTick::Decoding
-                        } else {
-                            PlainTick::Priming
-                        };
-                        (s.model.as_str(), tick)
+                    .filter_map(|(_, s)| {
+                        plain_tick(
+                            plain_rider_candidate(s, &loaded[&s.model], &eager_decode),
+                            s.prefill_done && s.cache.is_some(),
+                            s.prefill_queue.len(),
+                            policy.prefill_budget[s.lane.idx()],
+                        )
+                        .map(|tick| (s.model.as_str(), tick))
                     })
                     .collect();
                 let cohort_models: std::collections::HashSet<&str> = spec_order
@@ -34785,8 +34784,27 @@ enum PlainTick {
     /// Decoding, and no rider candidate (constrained, vision, a fork, an eager-only model): it
     /// takes one phase (c) step per tick and keeps its model's riders in phase (c) with it.
     Decoding,
-    /// Not decoding yet: its prompt is primed in phase (b), after the bursts.
+    /// Not decoding yet, and what is left of its prompt fits one prefill chunk: the tick's
+    /// prefill phase, after the bursts, completes its prime.
     Priming,
+}
+
+/// A live plain session's `PlainTick`. `rider`: it is a rider candidate. `decoding`: its
+/// prompt is primed. Otherwise it still primes, with `queued` prompt tokens left and `chunk`
+/// the tokens its lane's prefill takes per tick: it counts once its first token is one chunk
+/// away. None for a longer prime: its earlier chunks keep alternating with full bursts, as a
+/// speculative newcomer's long prime does (memra#1227), so a long prompt does not hold the
+/// speculating streams at one round per chunk for its whole prime.
+fn plain_tick(rider: bool, decoding: bool, queued: usize, chunk: usize) -> Option<PlainTick> {
+    if rider {
+        Some(PlainTick::Rider)
+    } else if decoding {
+        Some(PlainTick::Decoding)
+    } else if queued <= chunk {
+        Some(PlainTick::Priming)
+    } else {
+        None
+    }
 }
 
 /// ROUND YIELD (memra#1244): whether this tick's MTP bursts end at their first round. True
@@ -42416,6 +42434,18 @@ mod tests {
             !super::spec_round_yield_due(false, &[("q", Decoding)], &models(&["q"])),
             "lockstep fairness keeps full bursts"
         );
+        // The session's class: a rider candidate, a decoding session, and a priming one only
+        // when the tick's prefill chunk completes its prompt.
+        assert_eq!(super::plain_tick(true, true, 0, 1024), Some(Rider));
+        assert_eq!(super::plain_tick(false, true, 0, 1024), Some(Decoding));
+        assert_eq!(super::plain_tick(false, false, 34, 1024), Some(Priming));
+        assert_eq!(super::plain_tick(false, false, 1024, 1024), Some(Priming));
+        assert_eq!(
+            super::plain_tick(false, false, 1025, 1024),
+            None,
+            "a longer prime keeps its cadence"
+        );
+        assert_eq!(super::plain_tick(false, false, 34, 0), None);
     }
 
     /// memra#1244, through the real round hook: with the tick's round yield on, the burst's
@@ -42518,9 +42548,9 @@ mod tests {
             .join(" ");
         let at = |a: &str| live.find(a).unwrap_or_else(|| panic!("{a} exists"));
         let named = at(
-            "let tick = if plain_rider_candidate(s, &loaded[&s.model], &eager_decode) { \
-             PlainTick::Rider } else if s.prefill_done && s.cache.is_some() { \
-             PlainTick::Decoding } else { PlainTick::Priming };",
+            "plain_tick( plain_rider_candidate(s, &loaded[&s.model], &eager_decode), \
+             s.prefill_done && s.cache.is_some(), s.prefill_queue.len(), \
+             policy.prefill_budget[s.lane.idx()], )",
         );
         let due = at("spec_round_yield_due(admit_yield_on, &plain, &cohort_models) };");
         let written = at("for &i in &spec_order { active[i].spec_round_yield = round_yield; }");
