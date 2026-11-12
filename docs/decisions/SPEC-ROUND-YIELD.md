@@ -68,13 +68,17 @@ rate, which was fine, and takes no sample from a mixed tick.
    cannot end the plain session waits that burst out anyway while the MTP streams would lose
    their rounds.
 
-   Judge and harvest sessions are never weighed, and they keep their burst cadence on the
-   ticks the yield shortens (`DarkCadence`): phase (c) steps dark rows, and phase (d) primes a
-   dark chunk, once every N yielded ticks, N being the rounds of the longest of the last 64
-   bursts the yield did not end, and on every tick it does not end. So dark work keeps one
-   step per burst's worth of time, and the yield does not run it a burst's rounds times as
-   often at the interactive streams' cost ("interactive is never preempted; harvest yields
-   first").
+   Judge and harvest sessions are never weighed, and on the ticks the yield shortens dark
+   work waits (`DarkCadence`): phase (c) steps dark rows, and phase (d) primes a dark chunk,
+   once every N yielded ticks, N being the rounds of the longest of the last 64 bursts the
+   yield did not end, and on every other tick, which also restarts the count. A tick counts
+   as yielded when the yield was on and a burst ran a round; the decision is taken after
+   phase (a), so a tick whose MTP sessions only primed or ended at entry counts as any other.
+   The yield therefore does not run dark work a burst's rounds times as often at the
+   interactive streams' cost. A yielded tick is a round plus the plain session's step (on
+   GB10 about 114 + 74 ms), so N of them take longer than one burst, and dark work gets about
+   half its burst cadence while the yield holds (measured below), which is the lanes' order:
+   "interactive is never preempted; harvest yields first".
 
    While the yield holds, every MTP burst of the tick ends at its first round: the burst's
    entry hook call says continue and every round's call says stop (`spec_admit_keep`), through
@@ -285,14 +289,19 @@ greedy streams, then the requests named, 24 tokens each unless stated):
 | | t1 json | 1.597 -> 0.189 | | |
 | interactive t1 json | t1 json | 1.597 -> 0.189 | 41.1 -> 30.1 | 41.7 -> 33.9 |
 | harvest greedy + penalty (48 tokens), then interactive t1 json 3 s later | t1 json | 1.610 -> 0.189 | 40.7 -> 29.5 | 41.9 -> 33.6 |
-| | harvest | 1.610 -> 1.619 | | |
+| | harvest (p50 over its life) | 1.610 -> 1.619 | | |
 
 The first row is the `rider-uncarried` receipt: the penalty request rides until the json
 request decodes, the json request then keeps it in phase (c), and the yield names it
 (`[spec-round-yield] engaged: rider-uncarried` on a tick with two bursts, followed by
-one-round bursts). The dark harvest request keeps one token per burst's worth of time on the
-change (1.619 s between tokens, 1.610 s on main) and costs the streams 2% beside the
-interactive json request (30.1 -> 29.5 tok/s; 1% on main, 41.1 -> 40.7). It is admitted only
+one-round bursts). The dark harvest request's tokens across the yield came 3.15 and 3.01 s
+apart on the change: it stepped on one of the 25 yielded ticks (the 16th; N was 16), against
+1.2 to 2.0 s between its tokens beside the full bursts of the same boot (a full burst there
+takes 1.2 to 1.75 s, `spec_ms`), so about half its burst cadence. The table's harvest gap is its p50 over its whole life (84 s), of which the
+yield held about 6 s. The streams' 30.1 -> 29.5 tok/s beside the json request with and
+without it is inside the spread of the json-only rows on the change boots (29.7, 30.1,
+30.1): the harvest row added about 3 ms to the one tick it stepped on, so this cell does not
+resolve its cost. It is admitted only
 with `MEMRA_SHED_HARVEST=100`: GB10's interactive step p99 (the 74 ms plain step) is above
 0.9 times the 50 ms SLO, so by default the lane gate sheds it with a 429 (`gb10/mixed-shed`,
 the first change boot). The raise moves admission only; phase (c), phase (d) and the cadence
@@ -339,11 +348,16 @@ seven (`cpu/redgreen.log`).
   see the table above. The cost model takes no rate sample from those ticks (a mixed tick is
   not a steady regime), so it does not price that cost, and a stream is not demoted for it.
 - Interactive lane only. A judge or harvest plain session never engages the yield, never
-  rides on a host sampler, never keeps interactive riders in phase (c), and keeps one step per
-  burst's worth of time on yielded ticks (`DarkCadence`). A device-sampled dark rider rode
-  before this change and still does; on a card where a rider takes its plain step inside every
-  round it costs the interactive streams that step, as it did. The cadence's N is the longest
-  recent burst; until one burst has run, dark work runs on every tick.
+  rides on a host sampler, never keeps interactive riders in phase (c), and steps once every N
+  yielded ticks (`DarkCadence`): about half its burst cadence on GB10 while the yield holds.
+  A device-sampled dark rider rode before this change and still does; on a card where a rider
+  takes its plain step inside every round it costs the interactive streams that step, as it
+  did.
+- The cadence's N is the longest of the last 64 bursts the yield did not end. Until one such
+  burst has run (a server whose first bursts are all yielded), dark work runs on every tick.
+  N does not move while the yield holds: if the bursts before a long yield were all cut short
+  (for example to one round each by waiting admissions), N stays small and dark work runs on
+  most yielded ticks until a full burst runs again.
 - The prime outlook is read at the tick's start. Phase (b)'s time windows (refill grace,
   fanout formation window, batch-formation hold, each `MEMRA_PRIME_BATCH_HOLD_MS`, 4 ms by
   default) count as closed when they are shorter than the shortest of the last 64 phase (a)s
