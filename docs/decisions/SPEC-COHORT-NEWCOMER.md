@@ -31,24 +31,34 @@ newcomer primed first, and its second token then waited that stream's serial bur
 
 Phase (a) of the worker tick runs in two passes (`crates/memra-server/src/worker.rs`):
 
-1. **The newcomers' pass.** The speculative sessions that have emitted nothing, are no cohort
-   candidate (they still prime) and hold no suspended prime step first, in the tick's existing
-   order (`spec_cold_serial_first`).
-2. **The cohort pass.** The cohorts form after those primes, so a session whose prime completed
-   in this tick joins this tick's lockstep. Its pooled step is accounted as any member's
-   (`spec_pass_steps`: a session that primed first is handled a second time only as a member of
-   a cohort it joined). Every other serial session steps after the cohorts, as before.
+1. **The newcomers' pass.** An MTP speculative session that has emitted nothing, is no cohort
+   candidate (it still primes), has a same-model speculative peer on a model that pools and
+   holds no suspended prime steps first, in the tick's existing order
+   (`spec_cold_serial_first`). With such a peer its prime burst ends at one token (the trim
+   lane/batch-spec added), so this step is one prime chunk, or the whole prime of a prompt
+   that fits one chunk, plus one token.
+2. **The cohort pass.** The cohort pass first reads the prime quantum (a peer's prime that
+   suspended in the first pass is pending now), then the cohorts form, so a session whose
+   prime completed in this tick joins this tick's lockstep. Its pooled step is accounted as
+   any member's (`spec_pass_steps`: a session that primed first is handled a second time only
+   as a member of a cohort it joined). Every other serial session steps after the cohorts, as
+   before.
 
-- **A suspended long prime keeps its place.** A prime that spans ticks (the prime walker) runs
-  its first chunk in the newcomers' pass and then takes the place the prime policy gives a
-  pending prime, after the others. A cohort therefore waits one prime chunk per newcomer at
-  most.
+- **A long prime.** A prime that spans ticks (the prime walker) runs its first chunk in the
+  newcomers' pass and then takes the place the prime policy gives a pending prime, after the
+  others. The cohort reads the quantum before it sizes its burst, so between the newcomer's
+  chunks it runs one round, not a whole burst. A cohort therefore waits one prime chunk per
+  newcomer per tick at most.
+- **Every untrimmed first step keeps its place after the cohorts.** A lone speculative session
+  (no same-model speculative peer, also when the model's other sessions are plain riders), and
+  the DFlash2, glm5 and gemma routes: their first step is a prime plus a whole first burst, and
+  it runs where it ran before. (The first form of this change named every session that had
+  emitted nothing. The review found that a lone speculative newcomer beside plain riders then
+  ran its whole first burst and a second one as a one-member cohort in the same tick, and that
+  those untrimmed steps made a cohort wait a whole burst, not a chunk.)
 - **`MEMRA_ADMIT_YIELD=0` keeps the cohorts first.** That value already selects lockstep
   fairness (index order, full-burst holds); the newcomers' pass is part of the newcomer-first
   order it turns off.
-- **DFlash2 cohorts keep the next-tick join.** A DFlash2 session's first burst hands a prefix
-  capture to the end of the tick, and no DFlash2 cell was measured here. Its newcomers do step
-  ahead of the cohorts.
 - **No new flag, no engine change.**
 
 **Why no text can change.** The order of independent sessions inside a tick and the membership
@@ -65,7 +75,11 @@ GB10 (DGX Spark), Qwen3.8-27B NVFP4 + Q5_K with its MTP head, context 8,192, eig
 every switch at its default, so the calibrated cost model owns the gate; tick trace on. The base
 is memra#1241's head a20fd8c59f (its crates are main's); both arms of a comparison ran on one
 unit, one boot per lease, arms interleaved. Rows, server logs and the table tools are in the
-receipts.
+receipts. The newcomer cell, the closed loop and most stall boots ran the first form of the
+change (every session that had emitted nothing stepped first); the long-prompt cell, run 2 of
+the 0 ms stall cells and the exactness gates ran the final form. For a newcomer with a
+same-model speculative peer and a one-chunk prime, which is every newcomer of the first-form
+cells, the two forms run the same code, and the final form's short-prompt cells repeat them.
 
 **The newcomer cell.** L long greedy streams run alone for 8 s, then 12 streamed 16-token
 newcomers are sent one at a time. Two boots per arm (base, change, change, base), 24 newcomers
@@ -79,14 +93,33 @@ per figure:
 | 2, sampled (T = 1, seeded) | 1.881 / 0.267 | 2.214 / 0.317 | 0.007 / 0.007 | 2.704 / 1.093 | 40.96 / 42.99 |
 | 3 | 2.029 / 0.289 | 2.419 / 0.336 | 0.009 / 0.009 | 2.934 / 1.144 | 55.16 / 54.51 |
 
-- The long streams' own rate does not compare across arms (the newcomer window is shorter when
-  newcomers wait less), so the throughput figure is all tokens of the window: +3.8% behind one
-  stream, +0.3% behind two, -1.2% behind three.
+- The long streams' own rate is about 6% lower on the change (23.2 to 21.7, 39.6 to 36.9 and
+  51.4 to 48.1 tok/s behind one, two and three streams). It does not compare across arms: the
+  newcomer window is 36 to 41% shorter when newcomers wait less, and the same twelve newcomers
+  (a prime and fifteen rounds in a wider cohort each) fall inside it. The throughput figure is
+  all tokens of the window: +3.8% behind one stream, +0.3% behind two, -1.2% behind three.
 - **What a member pays per newcomer**, from the long streams' gaps above 150 ms: behind two
   and three streams the median of a member's twelve longest gaps is 0.41 to 0.64 s on the base
   and 0.41 to 0.44 s on the change (sampled: 0.41 to 0.66 s and 0.41 s), and its longest gap falls or holds (0.91 to 0.61 s, 0.96 to
   0.93 s). Behind one stream see Limits.
 - Texts: 44 long texts prefix-equal and 336 newcomer texts equal across the four boots.
+
+**A newcomer whose prime spans chunks** (the same cell with 5,117-token newcomer prompts, on
+the final form; two boots per arm, 24 newcomers per figure):
+
+| long streams | first token p50 s, base / change | first token max s | long streams' longest gap s |
+|---:|---|---|---|
+| 1 | 3.917 / 3.928 | 3.951 / 4.047 | 2.52 / 2.60 |
+| 2 | 5.354 / 3.987 | 5.776 / 4.066 | 3.11 / 2.61 |
+
+- Behind a cohort the first token comes 1.37 s sooner: the first chunk runs ahead of the
+  cohort and the cohort runs one round between chunks. Behind one stream nothing moves; there
+  was no cohort burst ahead of the prime.
+- A member's gap per long newcomer is one prime chunk on both arms (2.5 s). The long streams
+  emit about 51 fewer tokens per newcomer inside the newcomer window (1,105 against 1,722
+  tokens in 69.8 against 85.7 s): the burst the cohort used to run ahead of the first chunk.
+- The short-prompt cells on the final form repeat the table above (first token behind two and
+  three streams 0.266 and 0.303 s against 1.881 and 2.027 s).
 
 **Closed loop** (c clients, three greedy 160-token requests each; c = 2, 3, 4 twice per boot,
 two boots per arm on one unit, four phases per figure):
@@ -103,16 +136,19 @@ two boots per arm on one unit, four phases per figure):
 - 0 stall marks, 0 demotions, K = 3 at every admission on both arms; 216 texts equal.
 
 **memra#1241's stall cells with two long streams** (a cohort; closed-loop clients of one-token
-requests for 30 s, written `clients:think ms`; one unit; one boot per arm for the four cells,
-then one more per arm for the two 200 ms cells; a short request is one token, so all tokens =
-long tokens + short requests):
+requests for 30 s, written `clients:think ms`; one unit; two boots per arm for every cell, arms
+interleaved; a short request is one token, so all tokens = long tokens + short requests):
 
 | cell | arm, run | long tokens in 30 s (both streams) | short requests served | all tokens | short p50 s | short p95 s | stall marks | newcomers admitted plain |
 |---|---|---:|---:|---:|---:|---:|---:|---|
-| 2:0 | base | 361 | 145 | 506 | 0.386 | 0.414 | 2 | 139 of 145 |
-| 2:0 | change | 381 | 192 | 573 | 0.304 | 0.313 | 1 | 184 of 192 |
-| 4:0 | base | 295 | 233 | 528 | 0.456 | 0.935 | 2 | 216 of 233 |
-| 4:0 | change | 305 | 308 | 613 | 0.362 | 0.755 | 1 | 292 of 308 |
+| 2:0 | base, run 1 | 361 | 145 | 506 | 0.386 | 0.414 | 2 | 139 of 145 |
+| 2:0 | base, run 2 | 364 | 144 | 508 | 0.384 | 0.418 | 2 | 138 of 144 |
+| 2:0 | change, run 1 | 381 | 192 | 573 | 0.304 | 0.313 | 1 | 184 of 192 |
+| 2:0 | change, run 2 (final form) | 382 | 194 | 576 | 0.301 | 0.313 | 1 | 186 of 194 |
+| 4:0 | base, run 1 | 295 | 233 | 528 | 0.456 | 0.935 | 2 | 216 of 233 |
+| 4:0 | base, run 2 | 296 | 235 | 531 | 0.453 | 0.933 | 2 | 218 of 235 |
+| 4:0 | change, run 1 | 305 | 308 | 613 | 0.362 | 0.755 | 1 | 292 of 308 |
+| 4:0 | change, run 2 (final form) | 306 | 312 | 618 | 0.358 | 0.748 | 1 | 296 of 312 |
 | 2:200 | base, run 1 | 757 | 67 | 824 | 0.664 | 0.672 | 0 | 0 of 67 |
 | 2:200 | base, run 2 | 770 | 68 | 838 | 0.655 | 0.665 | 0 | 0 of 68 |
 | 2:200 | change, run 1 | 435 | 111 | 546 | 0.336 | 0.352 | 2 | 106 of 111 |
@@ -122,21 +158,23 @@ long tokens + short requests):
 | 4:200 | change, run 1 | 371 | 193 | 564 | 0.401 | 0.633 | 2 | 180 of 193 |
 | 4:200 | change, run 2 | 370 | 193 | 563 | 0.397 | 0.640 | 2 | 180 of 193 |
 
-- **0 ms think: both classes gain** (single runs). The long cohort gets 381 and 305 tokens
-  where it got 361 and 295, the short p50 falls from 0.39 to 0.30 s and from 0.46 to 0.36 s,
-  and a third more short requests are served. Both arms set a stall mark and demote the
-  streams.
-- **2:200 is a stable trade** (two runs per arm). The long cohort gets 43% fewer tokens (435
-  and 437 against 757 and 770) and the cell 34% fewer tokens in all; the short requests get
-  half the latency (p50 0.34 s against 0.66 s) and 65% more of them are served (111 against 67
-  and 68). The base never sets a stall mark there; the change always does.
-- **4:200: the base is bimodal across boots** (marked in 1 of 2, n = 2). In run 1 it set no
-  mark (462 long tokens, short p50 0.86 s); in run 2 it set the mark itself and demoted (330
-  long tokens, short p50 0.41 s). The change is in the marked mode in both runs (371 and 370
-  long tokens, 193 short requests at 0.40 s): its long tokens lie between the base's two modes
-  (12% above the marked boot, 20% below the unmarked one), and its short requests and all
-  tokens are at or above the base's better mode (563 and 564 tokens in all against 511 and
-  566).
+- **Runs.** Two boots per arm for every cell, arms interleaved on one unit. The 200 ms cells
+  and run 1 of the 0 ms cells ran the first form of the change (301df182c6); run 2 of the 0 ms
+  cells ran the final form (bab448b40d crates). The two forms differ only for a newcomer
+  without a same-model speculative peer and for a prime that spans chunks.
+- **0 ms think: both classes gain, in both runs.** The long cohort gets 381 and 382 tokens
+  where it got 361 and 364 at two clients, and 305 and 306 where it got 295 and 296 at four;
+  the short p50 falls from 0.39 to 0.30 s and from 0.45 to 0.36 s, and a third more short
+  requests are served. Both arms set a stall mark and demote the streams.
+- **2:200 is a stable trade.** The long cohort gets 43% fewer tokens (435 and 437 against 757
+  and 770) and the cell 34% fewer tokens in all; the short requests get half the latency (p50
+  0.34 s against 0.66 s) and 65% more of them are served (111 against 67 and 68). The base set
+  no stall mark in either run; the change set it in both.
+- **4:200, n = 2 per arm.** The change set the mark in both runs: 371 and 370 long tokens, 193
+  short requests at a p50 of 0.40 s, 564 and 563 tokens in all. The base set the mark in one
+  of its two runs: without it 462 long tokens, 104 short requests at 0.86 s, 566 tokens in
+  all; with it 330 long tokens, 181 short requests at 0.41 s, 511 tokens in all. Two boots do
+  not say how often the base marks.
 - **Why.** On the base a one-token request admitted beside the cohort waited out the cohort's
   burst and primed after it, so the next arrival was rarely waiting when a burst began: no
   pressed entries, no stall mark (memra#1211), and the streams kept speculating while each
@@ -146,22 +184,25 @@ long tokens + short requests):
   long stream at 2:200 (226 tokens for the stream, short p50 0.32 s): here 218 and 217 tokens
   per stream at 0.34 s. The share policy memra#1241 landed now reaches a cohort; a cohort no
   longer keeps its rate by making arrivals wait a burst.
-- Long texts are prefix-equal across arms and runs in every cell (24 texts).
+- Long texts are prefix-equal across arms and runs in every cell (32 texts).
 
-**Exactness on the change:** the seeded-invariance gate passes on GB10 and on the RTX 5090 (54
-rows each); the burst-boundary gate on GB10 passes (229 rows).
+**Exactness on the final form:** the seeded-invariance gate passes on GB10 and on the RTX 5090 (54 rows each); the burst-boundary
+gate on GB10 passes (229 rows). Both also passed on the first form (54 and 229 rows).
 
 **RTX 5090 Laptop GPU** (the same 27B, where the band owns the gate; newcomer cell two boots
-per arm, closed loop c = 1, 2, 4, 8 one boot per arm): behind one stream the second token
-comes at 0.002 s where it came at 0.463 s and nothing else moves. Behind two streams the band
-admits the third request to plain decode, so that row is memra#1244's on both arms (first
-token 0.81 and 0.83 s). No row regresses and every text is equal.
+per arm on the first form and two more on the final form, closed loop c = 1, 2, 4, 8 one boot
+per arm): behind one stream the second token comes at 0.002 s where it came at 0.47 s and
+nothing else moves. Behind two streams the band admits the third request to plain decode, so
+that row is memra#1244's on every arm (first token 0.82 to 0.86 s). All tok/s per boot overlap
+across arms in every row (the card drifts 4 to 8% between boots of one arm), and every text is
+equal.
 
 **CPU:** the three tests (`spec_cold_serial_first_names_the_newcomers`,
 `spec_pass_steps_each_step_once`, `spec_newcomers_prime_before_cohorts_is_wired`) pass on the
 change. On main's phase (a) with only the two pure functions and the tests added, the wiring
-test fails. Each of three red arms fails its test: nobody named for the first pass, no
-second handling of a session that joined a cohort, the cohort pass first.
+test fails. Each of five red arms fails its test: nobody named for the first pass, no second
+handling of a session that joined a cohort, the cohort pass first, every newcomer named
+whether its prime is trimmed or not, no prime-quantum read before the cohorts form.
 
 ## Rejected
 
@@ -198,6 +239,13 @@ second handling of a session that joined a cohort, the cohort pass first.
   short arrivals with a think time, two long streams used to keep speculating because the
   arrivals waited out their burst; they now meet waiting requests at their burst entries, the
   stall mark fires and they demote, as one stream already did.
+- **A long prime costs the cohort the burst it used to run first.** With a multi-chunk prime
+  the cohort gets one round between chunks from the first chunk on, where it ran a whole burst
+  before the first chunk: about 51 fewer long-stream tokens per newcomer in the measured cell,
+  for a first token 1.37 s sooner.
+- **Memory in the join tick is not measured.** A newcomer's prime captures are released at the
+  next tick top, so the first pooled burst it joins now runs while they are still held. No
+  cell here is memory-tight (context 8,192, eight sessions).
 - **Scope of the evidence:** Qwen3.8-27B on GB10 (the calibrated cost model owns the gate) and
   on an RTX 5090 Laptop GPU (the band owns it). Other models that pool take the same code path
   and were not measured. Whether arrivals spread over minutes (agentic traffic) meet a cohort
