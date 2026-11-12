@@ -458,6 +458,16 @@ def guard_data_inputs(root, head, name):
     elif name == 'docs-registry':
         paths.update(('docs/KERNELS.md', 'docs/MODELS.md', 'docs/ROUTER.md', 'docs/FLAGS.md'))
         paths.update(rust_sources(lambda path: path.startswith('crates/') and '/src/' in path and path.endswith('.rs')))
+        # tools/kernels-symbol-census.py reads every cu/*.cu and the cu/ headers they include.
+        prefix = 'crates/memra-engine/cu'
+        cuda = census({path for path in tree.paths(prefix) if Path(path).parent.as_posix() == prefix
+                       and Path(path).suffix in ('.cu', '.cuh')},
+                      {path.relative_to(root).as_posix() for pattern in ('*.cu', '*.cuh')
+                       for path in (root / prefix).glob(pattern)},
+                      'Kernel symbol input')
+        if not cuda:
+            raise Refused('kernel symbol input census is empty')
+        paths.update(cuda)
         indexed = {path.decode() for path in validation_plan.git(root, 'ls-files', '-z').split(b'\0') if path}
         census(set(tree.paths()), indexed, 'Docs registry index')
     elif name == 'publish-members':
@@ -521,7 +531,7 @@ def guard_data_inputs(root, head, name):
         if docs != actual_docs:
             raise Refused('support doc membership differs from pinned source')
         paths.update(docs)
-        paths.update(('README.md', 'STATUS.md', 'AGENTS.md', 'crates/memra-cli/src/lib.rs'))
+        paths.update(('README.md', 'ARCHITECTURE.md', 'AGENTS.md', 'crates/memra-cli/src/lib.rs'))
         pack_root = 'crates/memra-gguf/src/model_packs'
         packs = {path for path in tree.paths(pack_root) if path.endswith('.rs')}
         actual_packs = {path.relative_to(root).as_posix() for path in (root / pack_root).rglob('*.rs')}

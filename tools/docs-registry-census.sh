@@ -18,6 +18,9 @@
 #      tools/check-flags.sh --list still answers (exit 0, non-empty is enforced by the
 #      lister itself), so the two gates cannot drift into disagreeing about whose
 #      territory a flag row is.
+#   5. docs/KERNELS.md names every .cu entry symbol by its exact name
+#      (tools/kernels-symbol-census.py). A family pattern such as foo_* names nothing, so
+#      a new kernel cannot count as documented without a row naming it.
 #
 # No grandfather list, same reason check-flags.sh has none: an exceptions file with no
 # expiry silently absorbs the regression it was never granted for. A row that points at
@@ -93,6 +96,25 @@ while IFS= read -r tok; do
     grep -q -e "^${esc}\$" -e "/${esc}\$" "$files_list" && continue
     printf '%s: referenced file not in tree: %s\n' "$kernels_doc" "$tok" >> "$violations"
 done < "$kernel_tokens"
+
+# ---------------------------------------------------------------------------------
+# 1b. docs/KERNELS.md: every .cu entry symbol is named (AGENTS.md: the page maps every
+# `.cu` entry symbol). The census extracts the kernels, the extern "C" host functions,
+# the macro-stamped ones and those in the cu/ headers each TU includes, and lists every
+# symbol no code span names exactly. Its exit 2 (unusable input) is a refusal here too:
+# a census that read nothing must not pass.
+# ---------------------------------------------------------------------------------
+symbols_rc=0
+symbols_out=$(python3 tools/kernels-symbol-census.py 2>&1) || symbols_rc=$?
+case "$symbols_rc" in
+    0) ;;
+    1) printf '%s\n' "$symbols_out" >> "$violations" ;;
+    *)
+        printf 'docs-registry-census: tools/kernels-symbol-census.py refused (exit %s): %s\n' \
+            "$symbols_rc" "$symbols_out" >&2
+        exit 2
+        ;;
+esac
 
 # ---------------------------------------------------------------------------------
 # 2. docs/MODELS.md: support-state vocabulary.
@@ -171,6 +193,7 @@ if [[ -s "$violations" ]]; then
 fi
 
 echo "docs-registry-census: KERNELS.md file references=$kernel_ref_count, all resolve"
+echo "docs-registry-census: $symbols_out"
 echo "docs-registry-census: MODELS.md support-state tokens=$state_count, all in the three-state vocabulary"
 echo "docs-registry-census: ROUTER.md lines=$router_lines (cap 60)"
 echo "docs-registry-census: check-flags --list answered with $flags_count runtime names (coverage enforced by check-flags.sh itself)"
