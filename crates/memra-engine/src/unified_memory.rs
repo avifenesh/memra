@@ -20,7 +20,9 @@
 //! the scheduler thread) and refused 1k requests' captures, while a capture with the trim
 //! skipped at that reading succeeded. The graph-launch floor and admission's driver-headroom
 //! trim keep the raw reading: on unified memory it can only be lower, so they stay on the
-//! conservative side.
+//! conservative side. A capture admitted on `MemAvailable` therefore still runs eagerly in any
+//! round where the raw reading falls under the 256 MiB launch floor (memra#1221's cells kept it
+//! at 1.1 GB or more).
 
 use cudarc::driver::{CudaContext, DriverError};
 
