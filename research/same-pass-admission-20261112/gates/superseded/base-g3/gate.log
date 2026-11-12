@@ -1,0 +1,45 @@
+2026-11-12T19:27:25+02:00
+2b16d303ec4f96b86505b351fd6c45cbcab32fa0360f5f8a9152b58ccae213f1  /home/avifenesh/.cache/memra-1255/bin/memra-server-base-120a
+NVIDIA GeForce RTX 5090 Laptop GPU, 615.71.09, 55, 180 MHz, 9.50 W, 150.00 W, 31 MiB
+ 19:27:25 up  1:17,  2 users,  load average: 2.30, 2.37, 2.19
+REFUSED: the driver could not give the corrected ballast
+Exception in thread Thread-1 (<lambda>):
+Traceback (most recent call last):
+  File "/home/avifenesh/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/home/avifenesh/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/.cache/memra-1255/wt/tools/same-pass-admission-gate.py", line 408, in <lambda>
+    target=lambda: keeper.update(server.complete(keeper_prompt(), args.keeper_tokens)))
+                                 ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/.cache/memra-1255/wt/tools/same-pass-admission-gate.py", line 271, in complete
+    with urllib.request.urlopen(req, timeout=300) as f:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 487, in open
+    response = self._open(req, data)
+  File "/home/avifenesh/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "/home/avifenesh/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/home/avifenesh/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 1350, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 1325, in do_open
+    r = h.getresponse()
+  File "/home/avifenesh/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/http/client.py", line 1450, in getresponse
+    response.begin()
+    ~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/http/client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/http/client.py", line 305, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+                             " response")
+http.client.RemoteDisconnected: Remote end closed connection without response
+gate base-g3 rc=2 2026-11-12T19:28:40+02:00

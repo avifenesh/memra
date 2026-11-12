@@ -1,0 +1,77 @@
+{
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "used_mib": 31,
+    "total_mib": 24463,
+    "enforced_power_limit_w": "160.00"
+  },
+  "bin": "/home/avifenesh/.cache/memra-1255/bin/memra-server-base-120a",
+  "words": 3600,
+  "max_tokens": 96,
+  "floor": 1576000000,
+  "learn": {
+    "A": {
+      "charge": 816000000,
+      "status": 200,
+      "prompt_tokens": 5772,
+      "completion_tokens": 96
+    },
+    "B": {
+      "charge": 814000000,
+      "status": 200,
+      "prompt_tokens": 5741,
+      "completion_tokens": 96
+    }
+  },
+  "busy_free": 4106780636,
+  "one_fits_at": 2392000000,
+  "two_fit_at": 3206000000,
+  "target_free": 2799000000,
+  "first_after_ballast": 2526248924,
+  "ballast": 1035029560,
+  "free_before_pair": 2798878684,
+  "pair": {
+    "B": {
+      "status": 200,
+      "prompt_tokens": 5741,
+      "completion_tokens": 96,
+      "error": null
+    },
+    "A": {
+      "status": 200,
+      "prompt_tokens": 5772,
+      "completion_tokens": 96,
+      "error": null
+    }
+  },
+  "shape": {
+    "pair_admit_lines": [
+      7,
+      12,
+      23
+    ],
+    "pair_routes": [
+      "spec",
+      "spec"
+    ],
+    "next_tick_line": 13,
+    "settle_lines": [],
+    "placed": true,
+    "both_admitted_in_one_pass": true,
+    "settle_waits": 0,
+    "oom_lines": 2,
+    "bad_lines": 0
+  },
+  "alive": true,
+  "keeper": {
+    "status": 503,
+    "completion_tokens": null
+  },
+  "same_text": true,
+  "verdicts": {
+    "V1 SAME-PASS": true,
+    "V2 NO-OVERLAP": false,
+    "V3 NO-OOM": false,
+    "V4 SERVED": true
+  }
+}

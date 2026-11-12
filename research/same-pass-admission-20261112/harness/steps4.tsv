@@ -1,0 +1,7 @@
+gates g4 base then fix (memra #1255 same-pass gate, red then green)	bash /home/avifenesh/.cache/memra-1255/harness/gate-5090.sh base-g4 base; bash /home/avifenesh/.cache/memra-1255/harness/gate-5090.sh fix-g4 fix
+agentic c2 pair 1: base fix	AG_SUB=ab bash /home/avifenesh/.cache/memra-1255/harness/agentic-5090.sh base; AG_SUB=ab bash /home/avifenesh/.cache/memra-1255/harness/agentic-5090.sh fix
+agentic c2 pair 2: fix base	AG_SUB=ab bash /home/avifenesh/.cache/memra-1255/harness/agentic-5090.sh fix; AG_SUB=ab bash /home/avifenesh/.cache/memra-1255/harness/agentic-5090.sh base
+agentic c2 pair 3: base fix	AG_SUB=ab bash /home/avifenesh/.cache/memra-1255/harness/agentic-5090.sh base; AG_SUB=ab bash /home/avifenesh/.cache/memra-1255/harness/agentic-5090.sh fix
+agentic c2 pair 4: fix base	AG_SUB=ab bash /home/avifenesh/.cache/memra-1255/harness/agentic-5090.sh fix; AG_SUB=ab bash /home/avifenesh/.cache/memra-1255/harness/agentic-5090.sh base
+cells base fix fix base	REQS=6 bash /home/avifenesh/.cache/memra-1255/harness/cell-5090.sh base; REQS=6 bash /home/avifenesh/.cache/memra-1255/harness/cell-5090.sh fix; REQS=6 bash /home/avifenesh/.cache/memra-1255/harness/cell-5090.sh fix; REQS=6 bash /home/avifenesh/.cache/memra-1255/harness/cell-5090.sh base
+gates g5 fix then base (memra #1255 same-pass gate, repeat in the other order)	bash /home/avifenesh/.cache/memra-1255/harness/gate-5090.sh fix-g5 fix; bash /home/avifenesh/.cache/memra-1255/harness/gate-5090.sh base-g5 base

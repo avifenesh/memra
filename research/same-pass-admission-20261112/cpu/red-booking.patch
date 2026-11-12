@@ -1,0 +1,11 @@
+--- /home/avifenesh/.cache/memra-1255/worker.rs.orig	2026-11-12 17:40:24.252318992 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 17:40:24.281319481 +0100
+@@ -8677,7 +8677,7 @@
+     workspace_booked: bool,
+ ) -> usize {
+     sessions
+-        .filter(|(built, _, _)| !built)
++        .filter(|(built, _, _)| !built && false)
+         .map(|(_, charge, workspace)| {
+             if workspace_booked {
+                 charge.saturating_sub(workspace)

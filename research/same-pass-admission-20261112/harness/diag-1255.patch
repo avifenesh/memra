@@ -1,0 +1,165 @@
+diff --git a/crates/memra-engine/src/lib.rs b/crates/memra-engine/src/lib.rs
+index 25d8c384fb..b4e6a5b6f6 100644
+--- a/crates/memra-engine/src/lib.rs
++++ b/crates/memra-engine/src/lib.rs
+@@ -3869,8 +3869,43 @@ pub fn alloc_trace_on() -> bool {
+     *V.get_or_init(|| std::env::var("MEMRA_ALLOC_TRACE").as_deref() == Ok("1"))
+ }
+ 
++/// DIAG memra#1255 (diagnostic build only, never merged): the last 192 funnel allocations.
++type DiagEntry = (u64, usize, &'static str, u32, u128);
++static DIAG_RING: std::sync::Mutex<std::collections::VecDeque<DiagEntry>> =
++    std::sync::Mutex::new(std::collections::VecDeque::new());
++static DIAG_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
++fn diag_t0() -> &'static std::time::Instant {
++    static T: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
++    T.get_or_init(std::time::Instant::now)
++}
++/// DIAG memra#1255: dump the allocation ring (oldest first), then clear it.
++pub fn diag_ring_dump(tag: &str) {
++    let mut ring = DIAG_RING.lock().unwrap();
++    eprintln!("[diag1255-ring] {tag}: {} entries (last is the newest)", ring.len());
++    let mut sum = 0usize;
++    for (seq, bytes, file, line, t_us) in ring.iter() {
++        sum += *bytes;
++        eprintln!(
++            "[diag1255-ring] seq={seq} t_ms={:.3} bytes={bytes} at {file}:{line}",
++            *t_us as f64 / 1e3
++        );
++    }
++    eprintln!("[diag1255-ring] {tag}: sum {sum} bytes");
++    ring.clear();
++}
++
+ #[track_caller]
+ pub(crate) fn alloc_trace_hit(bytes: usize) {
++    {
++        let loc = std::panic::Location::caller();
++        let seq = DIAG_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++        let t = diag_t0().elapsed().as_micros();
++        let mut ring = DIAG_RING.lock().unwrap();
++        if ring.len() >= 192 {
++            ring.pop_front();
++        }
++        ring.push_back((seq, bytes, loc.file(), loc.line(), t));
++    }
+     if alloc_trace_on() {
+         let loc = std::panic::Location::caller();
+         eprintln!(
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index ff6c794c39..84917542c1 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -22446,6 +22446,14 @@ pub fn run(
+                         requeue.push_back(req); // waits (FIFO), never rejected
+                         continue;
+                     }
++                    eprintln!(
++                        "[diag1255] gate-pass id={} prompt={prompt_len} path={} cost={}MB draft={}MB reserve={}MB required={}MB required_eager={}MB eager_arm={eager_arm} booked={}MB limiting_free={}MB active={}",
++                        req.request_id,
++                        if estimate_spec { "spec" } else { "plain" },
++                        cost >> 20, draft_state_bytes >> 20, reserve >> 20, required >> 20,
++                        required_eager >> 20, pending_booked >> 20,
++                        headroom.limiting_free_bytes() >> 20, active.len(),
++                    );
+                     // ADMIT RECEIPT (memra#680): armed, every arrival this gate lets through is a
+                     // door decision with its own line, so a burst's admissions can be checked
+                     // against the booked reading instead of inferred from the absence of a
+@@ -22496,6 +22504,7 @@ pub fn run(
+             // fits; make sure the DRIVER itself has room for the prime's own allocations
+             // before any device work starts (see admit_driver_headroom_bytes).
+             ensure_driver_headroom(&engine, &loaded, "prime");
++            diag1255_snap(&engine, "after-admit-trim");
+             let observe_model = &loaded[&model_key].model;
+             let observe_n_trunk =
+                 (observe_model.cfg.n_layer - observe_model.cfg.nextn_predict_layers) as usize;
+@@ -22824,6 +22833,7 @@ pub fn run(
+                         );
+                     }
+                     admission_book.admit(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
++                    diag1255_snap(&engine, &format!("after-admit id={} spec={} dspark_on={} cache={} dspark_sess={}", s.request_id, s.spec.is_some(), s.dspark_on, s.cache.is_some(), s.dspark.is_some()));
+                     active.push(s);
+                 }
+                 Err((tx, msg)) => {
+@@ -22834,6 +22844,7 @@ pub fn run(
+         }
+         queue = requeue;
+ 
++        diag1255_tick(&engine, "start");
+         // 3. The tick. Three phases:
+         //    (a) spec sessions burst solo (spec x batch composition is a later step);
+         //    (b) prefilling sessions prime at the full tick chunk (the lane's prefill budget);
+@@ -23896,6 +23907,8 @@ pub fn run(
+                                 );
+                                 parts.join("; ")
+                             };
++                            diag1255_snap(&engine, &format!("step-oom id={}", s.request_id));
++                            memra_engine::diag_ring_dump("step-oom");
+                             eprintln!(
+                                 "[admit-oom] step OOM parked session back to queue \
+                                    (model {}, retry {}/{}, {n_active} active) [{telemetry}]: {err}",
+@@ -27169,6 +27182,33 @@ fn constrained_spec_supported(
+ /// device (GB10) the driver term is the allocatable reading, which counts the page cache the
+ /// kernel reclaims on demand (`memra_engine::unified_memory`); discrete cards read
+ /// `cuMemGetInfo` unchanged.
++/// DIAG memra#1255 (diagnostic build only): one device reading line.
++fn diag1255_snap(engine: &Engine, tag: &str) {
++    let free = engine.ctx().mem_get_info().map(|(f, _)| f).unwrap_or(0);
++    let (res, used) = engine.pool_reserved_used();
++    let eff = free + res.saturating_sub(used);
++    static LAST: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
++    LAST.store(eff, std::sync::atomic::Ordering::Relaxed);
++    eprintln!(
++        "[diag1255] {tag}: driver_free={}MB pool_res={}MB pool_used={}MB pool_unused={}MB eff_free={}MB",
++        free >> 20, res >> 20, used >> 20, res.saturating_sub(used) >> 20, eff >> 20
++    );
++}
++/// DIAG memra#1255: a tick-phase reading, printed only when effective free moved by 32 MB or more.
++fn diag1255_tick(engine: &Engine, tag: &str) {
++    let free = engine.ctx().mem_get_info().map(|(f, _)| f).unwrap_or(0);
++    let (res, used) = engine.pool_reserved_used();
++    let eff = free + res.saturating_sub(used);
++    static LAST: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
++    let last = LAST.swap(eff, std::sync::atomic::Ordering::Relaxed);
++    if eff.abs_diff(last) >= 32 << 20 {
++        eprintln!(
++            "[diag1255] tick {tag}: driver_free={}MB pool_res={}MB pool_used={}MB eff_free={}MB (moved {}MB)",
++            free >> 20, res >> 20, used >> 20, eff >> 20, (eff as i64 - last as i64) >> 20
++        );
++    }
++}
++
+ fn effective_free_bytes(engine: &Engine) -> Option<(usize, usize)> {
+     memra_engine::unified_memory::allocatable_mem_info(engine.ctx())
+         .ok()
+@@ -35129,6 +35169,15 @@ fn step_dspark_spec(
+                 }
+                 _ => memra_engine::dflash::DsparkCapture::Off,
+             };
++            if std::env::var("MEMRA_DIAG_TRIM_BEFORE_PRIME").as_deref() == Ok("1") {
++                // DIAG memra#1258 (diagnostic build only): drain the pool's cached blocks to the
++                // driver before the cold prime, the state the failing chunk started from.
++                let _ = engine.stream().synchronize();
++                let (_, used) = engine.pool_reserved_used();
++                let released = engine.pool_trim_to(used);
++                eprintln!("[diag1255] trim-before-prime released={}MB", released >> 20);
++            }
++            diag1255_snap(engine, &format!("dspark-prime-start-before id={} rows={}", s.request_id, tokens.len()));
+             s.dspark_prime = Some(match s.dspark.take() {
+                 Some(sess) => lm
+                     .model
+@@ -35143,11 +35192,14 @@ fn step_dspark_spec(
+                 )?,
+             });
+         }
++        diag1255_snap(engine, &format!("dspark-prime-chunk-before id={}", s.request_id));
+         let mut walker = lm.model.dspark_prime_walker(engine, d, &mut s.dspark_prime);
+         if !s.prime_service.advance(&mut walker)? {
++            diag1255_snap(engine, &format!("dspark-prime-chunk-after id={}", s.request_id));
+             return Ok(true);
+         }
+         s.dspark = Some(s.prime_service.finish(walker)?);
++        diag1255_snap(engine, &format!("dspark-prime-done id={}", s.request_id));
+         for tok in s.prefill_queue.drain(..) {
+             s.fed.push(tok);
+             s.sampler.accept(tok);

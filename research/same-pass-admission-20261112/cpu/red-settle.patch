@@ -1,0 +1,12 @@
+--- /home/avifenesh/.cache/memra-1255/worker.rs.orig	2026-11-12 17:40:24.252318992 +0100
++++ crates/memra-server/src/worker.rs	2026-11-12 17:44:28.296440741 +0100
+@@ -8707,7 +8707,8 @@
+ /// and the next reading shows what it took, so no reclaim, eager admission, drafter refusal or
+ /// capacity reject is decided on this one.
+ fn settle_wait(unbuilt_booked: usize, fits_full: bool) -> bool {
+-    unbuilt_booked > 0 && !fits_full
++    let _ = (unbuilt_booked, fits_full);
++    false
+ }
+ 
+ /// Prompt rows a session still has to prime (memra#680): its queued rows while the prime runs,
