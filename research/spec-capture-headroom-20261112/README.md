@@ -64,6 +64,22 @@ the growth into burst 1 (+123 ms at 131k) and hold more memory. The plane copies
 | V (`vi`) | 782dc471b7 + probe + the PR's spec.rs | this PR: allocatable reading, the narrow trim as backstop |
 | `v` | 782dc471b7 + the PR's spec.rs | V without the probe (the gates' binary) |
 
+**Directory labels.** The cell directories name arms by one letter, which `specpub_cell.sh` maps
+to a binary per campaign (each cell's `guard.log` has its sha256):
+
+| campaign | B | W | N | I / H / P / O |
+|---|---|---|---|---|
+| `probe131k`, `probe260k`, `ih131k-u1` | | | | I, H, P, O as above |
+| `zt131k`, `fa260k-u1` | 782dc471b7 main, no probe | narrow trim, no probe | | |
+| `pa260k-u1` | `bi` | `wi` (narrow trim) | `ni` | |
+| `qa260k-u1`, `qa131k-u1`, `short-u1`, `band-u1` | `bi` | `vi` (the PR, called V in the text) | | |
+| `rtx28k`, `rtx60k` | main 46920874c0 | narrow trim alone | | |
+| `rtx28k-v`, `rtx28k-v2` | main 46920874c0 | the PR before review | | |
+
+The review's change (17f4e087ef) touches only the discrete branch and the code's shape; on
+unified memory it decides, trims and logs as `vi` did, so the GB10 cells and gates stand for the
+head.
+
 `spec.rs` at 782dc471b7 equals main 46920874c0's and cdfdfd6006's, and the PR's `spec.rs` is byte-identical to V's
 (sha256 35f42088...). The B/W/N/V builds share one tree and one target directory on u1
 (`gb10/build-probe.log`, `gb10/build-arms.log`).
@@ -205,15 +221,19 @@ One text (5275df37e59f) and one burst structure in all six cells; the same publi
 
 | cell | trim at the capture (MB) | cached at entry, MB | growth, MB | pub, ms | stall, ms | burst 1, ms | ms per round | TTFT, s | g1k capture |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 01-B | none | 3629 | 544 | 54.1 | 69.5 | 1525.4 | 137.88 | 117.495 | refused |
+| 01-B | none; the 131k capture itself refused (driver 1977 + pool 1069 < 3141) | 3629 | 544 | 54.1 | 69.5 | 1525.4 | 137.88 | 117.495 | refused |
 | 02-V | none | 3626 | 544 | 57.8 | 87.5 | 1521.1 | 138.95 | 117.874 | captured |
 | 03-V | none | 3626 | 544 | 56.7 | 51.3 | 1517.9 | 137.25 | 117.615 | captured |
-| 04-B | rel. 896 MB (driver 2154 < 3076) | 3404 | 768 | 74.5 | 79.9 | 1522.7 | 137.36 | 117.785 | refused |
+| 04-B | rel. 896 MB (driver 2154 < 3076); 15,808 MB at boot calibration | 3404 | 768 | 74.5 | 79.9 | 1522.7 | 137.36 | 117.785 | refused |
 
-At 131k the cold request's capture needs less: main's trim fired in one cell of two (896 MB,
-growth 768 MB, publisher 74.5 ms); where it did not fire both arms grow the pool 544 MB and
-publish in 54-58 ms. The g1k capture was refused in both main cells and in neither V cell. One
-text (e3b0c1e81f9a) in all four.
+Main's guard fired in both 131k cells, three ways. In 01-B it refused the 131k request's own
+capture 2.3 s before the publisher (effective 3,046 MB: driver 1,977 + pool 1,069 < 3,141), so that
+request drafted eagerly: 01-B compares eager drafting with V's graph drafting, and its 544 MB of
+growth and 54.1 ms publisher are not the same path as V's. In 04-B it trimmed 896 MB before the
+131k capture (growth 768 MB, publisher 74.5 ms) and, during boot calibration with the page cache
+already full, 15,808 MB ("driver free 2310MB < required 3200MB"). The g1k capture was refused in
+both main cells. V's guard fired in none of the four checks. One text (e3b0c1e81f9a) in all four
+cells and one burst structure.
 
 ## 6. Truly short: MemAvailable itself under the requirement
 
@@ -238,14 +258,16 @@ When memory is really short the head's guard still refuses the capture. It reads
 logged an out-of-memory line, every server exited 0, the kernel logged no OOM in any window, and
 the 131k text is the one every other 131k cell served. The 03-B row is kept for completeness.
 
-## 7. RTX 5090 Laptop GPU: the discrete path is unchanged
+## 7. RTX 5090 Laptop GPU: the discrete path
 
 Binaries built for sm_120a on the CPU build host from the PR tree (`cpu/build5090*.log`):
 main 46920874c0 against the narrow trim alone (`rtx28k`) and against the PR's code (`rtx28k-v`, `rtx28k-v2`; the PR's code before its rebase onto cdfdfd6006, the same `spec.rs`),
 Qwen3.8-27B with its MTP draft at 32,768 context and a 28,006-token cold prompt
-(`tools/rtx_cell.sh`; `rtx60k`: 65,536 context, 60,016 tokens). On a discrete card the guard reads
-`cuMemGetInfo` as before, so the code path is the same and the cells check that nothing else
-moved.
+(`tools/rtx_cell.sh`; `rtx60k`: 65,536 context, 60,016 tokens). These binaries carry the narrow
+trim on every device. The review moved it to unified memory only (`capture_headroom_plan`
+returns `TrimAll`, main's trim to zero, on a discrete card), so at the PR's head a discrete card
+reads, decides, trims and logs exactly as main; the table test pins both branches. The trim did
+not fire in any cell below, so these cells ran main's path on both arms either way.
 
 | campaign | cells (arm: ms per round, TTFT s) | trims | g1k capture |
 |---|---|---|---|
