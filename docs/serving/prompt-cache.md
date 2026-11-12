@@ -182,10 +182,10 @@ Captures land on the 32-token prime grid (`gdn_chunk_size()`), so a published en
 
 What an operator sees:
 
-- A hit reports `cached_tokens == capture_len(P_previous)`, never `P_previous`. An exact re-send of
-  an off-grid prompt restores all `P` tokens while the entry's prompt-end tail is resident
-  ([below](#prompt-end-tails)); without the tail it restores `capture_len(P)` and primes 16 to 47
-  tokens from a grid start.
+- A grid-entry hit reports `cached_tokens == capture_len(P_previous)`, never `P_previous`.
+- An exact re-send of an off-grid prompt restores all `P` tokens and reports `cached_tokens == P`
+  while the entry's prompt-end tail is resident ([below](#prompt-end-tails)). Without the tail it
+  restores `capture_len(P)` and primes 16 to 47 tokens from a grid start.
 - A prompt from 65 to 79 tokens off the grid has no grid-aligned entry at or above the 64-token
   floor and publishes nothing: `[prefix-cache] seed REFUSED (grid): ...`, counted as
   `prefix_cache_seed_grid_refusals`.
@@ -199,20 +199,25 @@ Why the grid matters, and what it does not promise, is
 
 ### Prompt-end tails
 
-At prefill-done, a plain session that published (or restored and primed past) a grid entry under an
-off-grid prompt end attaches the rest of the state its prime ended in to that entry: the KV rows past
-the entry, the recurrent (GDN) state and the logits at the prompt end (`PromptEndTail`, worker.rs). A
-prompt equal to the entry's key plus the tail's tokens restores both in one launch and decodes its
-first token from the restored logits, the state the cold prime itself ended in. Every longer prompt
-still restores the grid entry, so the grid law above is unchanged.
+A plain session can end its prompt off the grid after it published a grid entry, or after it
+restored one and primed past it. At prefill-done it then attaches the rest of the state its prime
+ended in to that entry: the KV rows past the entry, the recurrent (GDN) state and the logits at the
+prompt end (`PromptEndTail`, worker.rs). A prompt equal to the entry's key plus the tail's tokens
+restores both in one launch. It decodes its first token from the restored logits, the state the
+cold prime itself ended in. Every longer prompt still restores the grid entry, so the grid law above
+is unchanged.
+
+A tail attaches to plain entries only (no draft plane, latent planes or TP shards). An exact re-send
+on a speculative route therefore still primes its remainder.
 
 The recurrent state dominates a tail: 157.6 MB at 24 tokens on Qwen3.8-27B (an 11,000-token entry
 is about 483 MB), 66.1 MB on Ornith-1.5-35B-A3B. A tail therefore never costs an entry that served
 a hit:
 
 - it attaches only into free budget room, else `[prefix-cache] tail skipped: ...`;
-- an unproven tail (no restore has gone through it yet) is dropped before any entry, and a proven one
-  before any entry that was itself restored since its insert;
+- an unproven tail is dropped before any entry. A tail is unproven when a cold prime attached it
+  and no restore has gone through it yet; one a covered hit attaches is proven from the start;
+- a proven tail is dropped before any entry that was itself restored since its insert;
 - it outlives only an oldest entry that never served a hit, which plain LRU takes anyway
   (`[prefix-cache] evict tail ...`).
 

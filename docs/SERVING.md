@@ -422,18 +422,24 @@ a `[shed]` line.
   a sole fresh interactive request. Boot prints `[prime-walk] model=... route=... supported=true|false`
   for each speculative route, naming the terms that decided it; the DeepSeek-V4 route primes each
   request in one call ([decision](decisions/PRIME-FAIRNESS-DEFAULT.md)).
-- A full-prompt cache hit takes its first decode before unrelated cold prefill. A resumed row (a
-  prefix-cache hit, a pool or affinity resume) on a model that primes a carried suffix, whose
-  remaining suffix fits one prime call (at least `PRIME_MIN_T`, at most the tick budget, no
-  capture boundary inside) primes it first too, and cold prefill waits one tick
-  (`hit_suffix_fits_one_call`). The fence is bounded: once its deferred ticks add up to one prefill
-  chunk's time at the measured rate, it stands down for a tick and the suffixes prime beside the cold
-  chunks (`hit_suffix_fence_yields`). It also stands down while the deadline-aware prefill order is
-  on, and on a tick where a whole-prompt hit waits for its first decode
-  ([decision](decisions/PREFIX-PROMPT-END-TAIL.md)).
-- When an interactive completion frees a slot while cold prefill remains,
-  `MEMRA_PRIME_BATCH_HOLD_MS` (4 ms) gives the replacement a short window to join the next prime
-  call.
+- **A cache hit goes before cold prefill.** A full-prompt hit takes its first decode before
+  unrelated cold prefill.
+- **A short hit suffix primes first, bounded.** A resumed row (a prefix-cache hit, a pool or
+  affinity resume) whose remaining suffix fits one prime call primes it first, and cold prefill
+  waits one tick. Fitting means at least `PRIME_MIN_T` tokens, at most the tick budget and no
+  capture boundary inside (`hit_suffix_fits_one_call`). This hit-suffix fence covers plain
+  interactive rows only: not speculative or GLM-5 routes, vision, multi-choice requests, eager-only models or a
+  run with the confidence trace on.
+
+  The fence is bounded. Once its consecutive deferred ticks add up to one prefill chunk's time at
+  the measured rate, it stands down for a tick and the suffixes prime beside the cold chunks
+  (`hit_suffix_fence_yields`). A steady stream of hits therefore never holds cold prefill back
+  longer than one chunk's time plus one fenced tick. The fence also stands down while the
+  deadline-aware prefill order is on, and on a tick where a whole-prompt hit waits for its first
+  decode ([decision](decisions/PREFIX-PROMPT-END-TAIL.md)).
+- **A freed slot gets a refill grace.** When an interactive completion frees a slot while cold
+  prefill remains, `MEMRA_PRIME_BATCH_HOLD_MS` (4 ms) gives the replacement a short window to join
+  the next prime call.
 
 Why the hold, the deadline order and the reserve yield, measured at c=8 on a 24 GB card:
 [decision](decisions/C8-SERVING-24GB.md); the workspace charge on the RTX 5090 Laptop GPU:
@@ -541,11 +547,10 @@ Against a cold run of another prime program it inherits the
 **Capture and eviction law.** Every boundary the server chooses lands on the
 [prime grid](#the-prime-grid-law). An entry for a prompt of P tokens is `capture_len(P)` long: P
 when P is a multiple of 32, else the largest multiple of 32 below P that leaves at least 16 tokens
-behind it. A hit reports `cached_tokens == capture_len(P_previous)`. The entry also carries the
-prompt-end tail of the prompt that published it, so an exact re-send of an off-grid prompt restores
-all P tokens while that tail is resident ([detail](serving/prompt-cache.md#prompt-end-tails)).
-A prompt with no on-grid entry
-above the floor publishes nothing (`[prefix-cache] seed REFUSED (grid)`), and a recurrent entry that
+behind it. A grid-entry hit reports `cached_tokens == capture_len(P_previous)`. The entry also
+carries the prompt-end tail of the prompt that published it. While that tail is resident, an exact
+re-send of an off-grid prompt restores all P tokens and reports `cached_tokens == P`
+([detail](serving/prompt-cache.md#prompt-end-tails)). A prompt with no on-grid entry above the floor publishes nothing (`[prefix-cache] seed REFUSED (grid)`), and a recurrent entry that
 would leave an off-grid suffix is skipped at the hit site; both are counted. Eviction is plain
 global LRU: the oldest unleased entry goes first and an entry is never its own victim, so the newest
 turn of a growing conversation always fits ([decision](decisions/PREFIX-CACHE-POLICY.md)). Sessions

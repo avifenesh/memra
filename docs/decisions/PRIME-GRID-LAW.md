@@ -99,11 +99,11 @@ the binary before the change.
 
 - A published entry's length is `capture_len(P)` for a prompt of `P` tokens: `P` when `P` is a
   multiple of 32, otherwise the largest multiple of 32 below `P` whose remainder is at least 16. A
-  hit reports `cached_tokens == capture_len(P_previous)`. An exact re-send of an off-grid prompt
-  restores `capture_len(P)` and primes 16 to 47 tokens from a grid start. Since 2026-11-11
-  (memra#1233) the entry also carries the publishing prompt's prompt-end tail, so that re-send
-  restores all `P` tokens while the tail is resident; every longer prompt still restores the grid
-  entry ([PREFIX-PROMPT-END-TAIL](PREFIX-PROMPT-END-TAIL.md)).
+  grid-entry hit reports `cached_tokens == capture_len(P_previous)`. An exact re-send of an off-grid
+  prompt restores `capture_len(P)` and primes 16 to 47 tokens from a grid start. Since 2026-11-11
+  (memra#1233) the entry also carries the publishing prompt's prompt-end tail. While the tail is
+  resident, that re-send restores all `P` tokens and reports `cached_tokens == P`; every longer
+  prompt still restores the grid entry ([PREFIX-PROMPT-END-TAIL](PREFIX-PROMPT-END-TAIL.md)).
 - A prompt between the 64-token entry floor and the floor plus 16 publishes nothing:
   `[prefix-cache] seed REFUSED (grid)`, counted in `prefix_cache_seed_grid_refusals`. A refused
   recurrent hit prints `[prefix-cache] restore grid law: ...` and counts in

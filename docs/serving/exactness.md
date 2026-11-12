@@ -257,10 +257,11 @@ One capture law for every site the server captures at (`seed_capture_boundary`):
 - A published entry's length is `capture_len(P)` for a prompt of `P` tokens: `P` when `P` is a
   multiple of 32, otherwise the largest multiple of 32 below `P` that leaves at least 16 tokens
   after it. The prime stops there, the entry is snapshotted, and the rest primes from a grid start.
-  A hit reports `cached_tokens == capture_len(P_previous)`; the operator view is in
+  A grid-entry hit reports `cached_tokens == capture_len(P_previous)`; the operator view is in
   [prompt-cache.md](prompt-cache.md). A plain session's off-grid prompt end attaches to that entry
   as a [prompt-end tail](prompt-cache.md#prompt-end-tails): the state the cold prime ended in,
-  restored only by a prompt equal to the entry's key plus the tail's tokens.
+  restored only by a prompt equal to the entry's key plus the tail's tokens. Such a hit reports
+  `cached_tokens == P`.
 - A prompt of 65 to 79 tokens has no grid entry at or above the 64-token floor and publishes
   nothing: `[prefix-cache] seed REFUSED (grid)`, counted in `prefix_cache_seed_grid_refusals`. A
   prime path that cannot stop on the boundary refuses with the same line rather than publish an

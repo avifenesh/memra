@@ -82,7 +82,7 @@ Present only for the operator scope.
 | --- | --- |
 | `cache_hit_token_ratio` | `cached_tokens_in / prompt_tokens_in`, 0 before the first prompt |
 | `prefix_cache_hits`, `prefix_cache_misses`, `prefix_cache_inserts`, `prefix_cache_evictions` | device prefix-cache probe outcomes and churn |
-| `prefix_cache_hit_tokens` | tokens restored by prefix-cache hits (sum of served entry lengths) |
+| `prefix_cache_hit_tokens` | tokens restored by prefix-cache hits (sum of served entry lengths, a prompt-end tail's tokens included when it served) |
 | `prefix_cache_entries`, `prefix_cache_bytes` | resident device entries and bytes (gauges) |
 | `prefix_cache_skips_budget`, `prefix_cache_skips_pinned` | snapshots refused before insertion: larger than the whole budget, or a pinned entry that cannot fit beside the in-flight leases. Only the first means the budget can never admit that shape |
 | `prefix_cache_seed_grid_refusals`, `prefix_cache_restore_grid_refusals` | prompt-end seeds and longer restores refused by the prime-grid law (the `seed REFUSED (grid)` and `restore grid law` log lines, counted) |
