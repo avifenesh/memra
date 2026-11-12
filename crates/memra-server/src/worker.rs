@@ -1811,15 +1811,14 @@ fn hit_suffix_fence_rows(
         .collect()
 }
 
-/// The rows still inside their same-prefix fanout formation window `ahead` from now: phase (b)
-/// leaves them queued so siblings can reach the worker first. Shared by phase (b) (`ahead`
-/// zero) and the round yield's prime outlook (memra#1244), which looks one yielded round ahead.
+/// The rows still inside their same-prefix fanout formation window: phase (b) leaves them
+/// queued so siblings can reach the worker first. Shared by phase (b) and the round yield's
+/// prime outlook (memra#1244).
 fn prefix_fanout_waiting(
     active: &[Session],
     finished: &[usize],
     eager_only: &std::collections::HashSet<String>,
     pb_hold_ms: u64,
-    ahead: Duration,
 ) -> std::collections::HashSet<usize> {
     if confidence_trace_enabled() || pb_hold_ms == 0 {
         return Default::default();
@@ -1830,7 +1829,7 @@ fn prefix_fanout_waiting(
         .filter(|(i, s)| {
             !finished.contains(i)
                 && prefix_fanout_eligible(s, eager_only)
-                && (s.t0.elapsed() + ahead).as_millis() < pb_hold_ms as u128
+                && s.t0.elapsed().as_millis() < pb_hold_ms as u128
         })
         .map(|(i, _)| i)
         .collect()
@@ -20196,11 +20195,9 @@ pub fn run(
     let mut last_phase_b: Option<Instant> = None;
     // The hit-suffix fence's starvation bound (memra#1233, `hit_suffix_fence_yields`).
     let mut fence_deferred = Duration::ZERO;
-    // The last phase (a) that ran under the round yield (memra#1244): one round of every
-    // speculative session, the soonest phase (b) comes after a tick's start while the yield is
-    // on (before the first yielded tick, the first phase (a) that ran bursts). The prime outlook
-    // reads phase (b)'s time windows at that point.
-    let mut yield_round: Option<Duration> = None;
+    // The shortest phase (a) that ran a speculative round (memra#1244): phase (b) comes at
+    // least that long after the start of a tick whose bursts run (`prefill_windows_close`).
+    let mut shortest_phase_a: Option<Duration> = None;
     let mut step_stats = StepStats::new(
         std::env::var("MEMRA_LANE_WINDOW_S")
             .ok()
@@ -23757,14 +23754,14 @@ pub fn run(
                 let chunk = policy.prefill_budget[0];
                 // Phase (b)'s outlook for a plain prime, from the predicates phase (b) reads,
                 // as the tick's start knows them (`plain_prime_runs`).
-                // Phase (b) comes one round of bursts after this point at the soonest
-                // (`yield_round`, measured; none yet: now), so its time windows (refill grace,
-                // fanout formation window, batch-formation hold, all `MEMRA_PRIME_BATCH_HOLD_MS`
-                // long) are read as they stand then.
-                let ahead = yield_round.unwrap_or(Duration::ZERO);
+                // Phase (b)'s time windows (refill grace, fanout formation window,
+                // batch-formation hold, each `MEMRA_PRIME_BATCH_HOLD_MS` long) close before it
+                // reads them when they are shorter than any phase (a) (`prefill_windows_close`).
+                let windows_close =
+                    prefill_windows_close(Duration::from_millis(pb_hold_ms), shortest_phase_a);
                 let now = Instant::now();
-                let b_at = now + ahead;
-                let refill_grace = interactive_refill_until.is_some_and(|until| b_at < until);
+                let refill_grace =
+                    !windows_close && interactive_refill_until.is_some_and(|until| now < until);
                 let hit_wait = cached_hit_waiting(&active, &finished);
                 let fence_yields = hit_wait
                     || prefill_deadline_mode
@@ -23775,8 +23772,11 @@ pub fn run(
                 let hit_rows =
                     hit_suffix_fence_rows(&active, &finished, fence_yields, &eager_only, chunk);
                 let deferred = refill_grace || hit_wait || !hit_rows.is_empty();
-                let fanout =
-                    prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms, ahead);
+                let fanout = if windows_close {
+                    Default::default()
+                } else {
+                    prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms)
+                };
                 let block = if deferred {
                     None
                 } else {
@@ -23788,10 +23788,10 @@ pub fn run(
                         prefill_rate_tok_s,
                         chunk,
                         !queue.is_empty() || !requeue_oom.is_empty(),
-                        b_at,
+                        now,
                     )
                 };
-                let prev_tick = last_phase_b.map_or(Duration::MAX, |t| b_at.duration_since(t));
+                let prev_tick = last_phase_b.map_or(Duration::MAX, |t| now.duration_since(t));
                 let mut plain: Vec<(&str, PlainTick)> = Vec::new();
                 for (i, s) in active.iter().enumerate() {
                     let speculative = s.spec.is_some() || s.gspec_k > 0 || s.dspark_on || s.glm5_on;
@@ -23801,10 +23801,10 @@ pub fn run(
                     let held_back = (deferred && !hit_rows.contains(&i))
                         || fanout.contains(&i)
                         || block.as_ref().is_some_and(|b| b.contains(&i))
-                        || (block.is_none()
+                        || (!windows_close
+                            && block.is_none()
                             && formation_hold_with(
-                                Duration::from_millis(pb_hold_ms)
-                                    .saturating_sub(s.t0.elapsed() + ahead),
+                                Duration::from_millis(pb_hold_ms).saturating_sub(s.t0.elapsed()),
                                 prev_tick,
                                 |_| false,
                             ));
@@ -23858,6 +23858,7 @@ pub fn run(
                 active[i].spec_round_yield = round_yield.is_some();
             }
             let phase_a_at = Instant::now();
+            let rounds_at: u64 = spec_order.iter().map(|&i| active[i].spec_rounds).sum();
             for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] {
                 if pass == SpecPass::Cohorts {
                     // A newcomer's prime that suspended in the first pass is pending now, so
@@ -24300,6 +24301,17 @@ pub fn run(
                     }
                 }
             }
+            // Only a phase (a) that ran a speculative round: one whose bursts all ended at
+            // their entry call (a waiting admission, the entry-yield bound) can take no time.
+            if spec_order
+                .iter()
+                .map(|&i| active[i].spec_rounds)
+                .sum::<u64>()
+                > rounds_at
+            {
+                let took = phase_a_at.elapsed();
+                shortest_phase_a = Some(shortest_phase_a.map_or(took, |d| d.min(took)));
+            }
             // Freeze this before prefill/decode work; the summary must describe phase (a),
             // not elapsed time from phase (a)'s start to the end of the whole scheduler tick or
             // the deferred prefix-publication copy.
@@ -24325,10 +24337,6 @@ pub fn run(
             // +80% at B=8 T=64, +44-49% at T=128, crossover ~T=320 (above it, single primes
             // win — per-seq m already at the GEMM plateau). Gate: prime-batch-gate ALL GREEN
             // (per-seq argmax + decode-stream equality). MEMRA_PRIME_BATCH=1 disables.
-            // Until a yielded tick is measured, a full phase (a) stands in (it is longer).
-            if !spec_order.is_empty() && (round_yield.is_some() || yield_round.is_none()) {
-                yield_round = Some(phase_a_at.elapsed());
-            }
             let t_prefill = tick_trace.then(Instant::now);
             let mut prefill_single_calls = 0usize;
             let mut prefill_single_tokens = 0usize;
@@ -24408,8 +24416,7 @@ pub fn run(
             // existing batch-formation window before its same-prefix siblings reach the
             // worker. Matching groups above fire immediately; unmatched misses wait at most
             // the same hold already budgeted for a lone fresh prime.
-            let dedup_waiting =
-                prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms, Duration::ZERO);
+            let dedup_waiting = prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms);
             // Long cold prompts used to miss the complete-prompt batch predicate below and
             // execute one synchronous `prime_cache` call per session before decode. Keep one
             // scheduler-level chunk per session, but concatenate eligible chunks so N cold
@@ -34676,6 +34683,20 @@ fn round_yield_weighs(live: bool, speculative: bool, lane: crate::lanes::Lane) -
     live && !speculative && lane == crate::lanes::Lane::Interactive
 }
 
+/// Whether phase (b)'s time windows (refill grace, fanout formation window, batch-formation
+/// hold, each `window` = `MEMRA_PRIME_BATCH_HOLD_MS` long) have closed by the time phase (b)
+/// reads them, as the round yield's prime outlook sees it (memra#1244 review): yes when the
+/// window is shorter than the shortest phase (a) that ran a speculative round, since phase (b)
+/// comes after at least one round of every tick whose bursts the yield would end. A window
+/// that can outlast that, or one with nothing measured yet, stays open and holds the prime
+/// back in the outlook.
+/// Read at the tick's start instead, a newcomer admitted at the tick's top is always inside
+/// its 4 ms window, and the outlook held its prime behind a full burst (GB10, first token
+/// 1.79 s against 0.31 s).
+fn prefill_windows_close(window: Duration, shortest_phase_a: Option<Duration>) -> bool {
+    shortest_phase_a.is_some_and(|phase_a| window < phase_a)
+}
+
 /// Whether this tick's prefill phase runs a prime call for an interactive plain session whose
 /// first token it brings within one chunk, as the tick's start knows it: something is left
 /// to prime, phase (b) does not hold the session back this tick (`held_back`: the refill
@@ -34693,12 +34714,8 @@ fn round_yield_weighs(live: bool, speculative: bool, lane: crate::lanes::Lane) -
 /// split the last 916 tokens into 896 and 20, the parent ran a full burst (1.4 to 1.5 s)
 /// before each, and the yield took both off the first token.
 ///
-/// The outlook reads phase (b)'s time windows (refill grace, fanout formation window,
-/// batch-formation hold, each `MEMRA_PRIME_BATCH_HOLD_MS` long) one yielded round after the
-/// tick's start, where phase (b) reads them at the soonest: read at the start, a newcomer
-/// admitted at the tick's top is always inside its 4 ms window, and the outlook held back every
-/// such prime behind a full burst (GB10, first token 1.79 s against 0.31 s). The formation
-/// hold's in-tick wait counts as no arrival.
+/// Phase (b)'s time windows count only while they can outlast a phase (a)
+/// (`prefill_windows_close`); the formation hold's in-tick wait counts as no arrival.
 fn plain_prime_runs(prefill_done: bool, queued: usize, chunk: usize, held_back: bool) -> bool {
     !prefill_done
         && queued > 0
@@ -42153,6 +42170,21 @@ mod tests {
         assert!(!runs(false, 0, false), "nothing left to prime");
         assert!(!runs(true, 34, false), "the prompt is primed");
         assert!(!runs(false, 34, true), "phase (b) holds it back this tick");
+        // Phase (b)'s 4 ms windows close inside any phase (a) that ran a round; a window that
+        // can outlast one, or one with nothing measured yet, stays open.
+        use super::prefill_windows_close as close;
+        let ms = Duration::from_millis;
+        assert!(
+            close(ms(4), Some(ms(99))),
+            "a 4 ms window inside a 99 ms round"
+        );
+        assert!(
+            !close(ms(200), Some(ms(99))),
+            "a window longer than a round stays open"
+        );
+        assert!(!close(ms(99), Some(ms(99))), "as long as the round: open");
+        assert!(!close(ms(4), None), "nothing measured yet: open");
+        assert!(!close(ms(0), None));
     }
 
     /// memra#1244, through the real round hook: with the tick's round yield on, the burst's
@@ -42277,32 +42309,33 @@ mod tests {
         // phase (a) and again in phase (b).
         let outlook_block = &live[at("let round_yield = {")..due];
         for held in [
-            "let refill_grace = interactive_refill_until.is_some_and(|until| b_at < until);",
+            "let refill_grace = !windows_close && interactive_refill_until.is_some_and(|until| now < until);",
             "let hit_wait = cached_hit_waiting(&active, &finished);",
             "hit_suffix_fence_rows(&active, &finished, fence_yields, &eager_only, chunk);",
             "let deferred = refill_grace || hit_wait || !hit_rows.is_empty();",
-            "let ahead = yield_round.unwrap_or(Duration::ZERO);",
-            "let b_at = now + ahead;",
-            "prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms, ahead);",
+            "let windows_close = prefill_windows_close(Duration::from_millis(pb_hold_ms), \
+             shortest_phase_a);",
+            "let fanout = if windows_close { Default::default() } else { prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms) };",
             "prefill_deadline_block( &active, &finished, &Default::default(), &fanout,",
             "let held_back = (deferred && !hit_rows.contains(&i)) || fanout.contains(&i) || \
-             block.as_ref().is_some_and(|b| b.contains(&i)) || (block.is_none() && \
-             formation_hold_with(",
+             block.as_ref().is_some_and(|b| b.contains(&i)) || (!windows_close && block.is_none() \
+             && formation_hold_with(",
         ] {
             assert!(outlook_block.contains(held), "the outlook reads {held}");
         }
-        // The windows are read one yielded round ahead: phase (a) measures that round.
+        // Phase (a) measures the shortest phase (a) that ran bursts.
         assert!(
             live[written..].contains(
-                "if !spec_order.is_empty() && (round_yield.is_some() || yield_round.is_none()) { \
-                 yield_round = Some(phase_a_at.elapsed()); }"
+                "if spec_order .iter() .map(|&i| active[i].spec_rounds) .sum::<u64>() > rounds_at { \
+                 let took = phase_a_at.elapsed(); shortest_phase_a = \
+                 Some(shortest_phase_a.map_or(took, |d| d.min(took))); }"
             ),
-            "phase (a) measures the round the outlook looks ahead"
+            "phase (a) measures the shortest phase (a) that ran a round"
         );
         for phase_b in [
             "let cached_hit_waiting_for_ttft = cached_hit_waiting(&active, &finished);",
             "hit_suffix_fence_rows(&active, &finished, fence_yields, &eager_only, budgets[0]);",
-            "prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms, Duration::ZERO);",
+            "let dedup_waiting = prefix_fanout_waiting(&active, &finished, &eager_only, pb_hold_ms);",
             "prefill_deadline_block( &active, &finished, &dedup_advanced, &dedup_waiting,",
         ] {
             assert!(live[due..].contains(phase_b), "phase (b) reads {phase_b}");
