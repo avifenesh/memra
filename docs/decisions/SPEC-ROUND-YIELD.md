@@ -28,41 +28,60 @@ rate, which was fine, and takes no sample from a mixed tick.
 
 ## The change
 
-1. **A host-sampled plain session rides.** `plain_rider_candidate` no longer asks for a
-   device-sample meta. The session still has to be unconstrained, with no vision input and no
-   fork, on a model whose plain rows the pooled walk reproduces bitwise. It then advances once
-   per lockstep round inside the cohort's forwards, like every other rider, and it no longer
-   keeps the model's other riders in phase (c).
-2. **Round yield.** Before phase (a) the tick names its interactive plain sessions
+1. **An interactive host-sampled plain session rides.** `plain_rider_candidate` asks for a
+   device-sample meta only of a judge or harvest session. An interactive session still has to
+   be unconstrained, with no vision input and no fork, on a model whose plain rows the pooled
+   walk reproduces bitwise. It then advances once per lockstep round inside the cohort's
+   forwards, like every other rider, and it no longer keeps the model's other riders in
+   phase (c). A dark host-sampled session stays in phase (c) at one token per burst: on a card
+   where a rider takes its plain step inside every round it would cost the interactive streams
+   that step in every round (the RTX 5090 rows below). A device-sampled dark session rides as
+   it did before this change.
+2. **One riding rule.** Phase (a) forms its riders, and the round yield's outlook names the
+   riders nothing carries, through one helper (`carried_rider_models`, over `ride_facts`): a
+   model's riders are carried when it has a pooled MTP cohort candidate and no interactive
+   plain session of it decodes without riding. A dark one no longer keeps interactive riders
+   in phase (c).
+3. **Round yield.** Before phase (a) the tick names its interactive plain sessions
    (`round_yield_weighs`, `plain_tick`) and decides whether one of them gets its step only
    after the bursts (`spec_round_yield_due`):
    - a session that decodes and is no rider candidate (constrained, vision, fork, an
-     eager-only model);
-   - a rider candidate nothing carries this tick: its model has no pooled-cohort candidate at
-     the tick's start, or a decoding non-rider of its model, in any lane, keeps the riders in
-     phase (c);
+     eager-only model); a prompt fed tokenwise (an eager monolithic carried suffix, a
+     remainder under `PRIME_MIN_T`) is the same trade, one prompt token per tick;
+   - a rider candidate nothing carries this tick (item 2);
    - a session still to prime whose prime phase (b) runs this tick with the rest of its prompt
      within one chunk (`plain_prime_runs`). Phase (b)'s own predicates decide "runs": the
      refill grace, a cached hit waiting for its first token, the hit-suffix fence, the fanout
      formation window, the batch-formation hold and the deadline order are read through the
      helpers phase (b) calls (`cached_hit_waiting`, `hit_suffix_fence_rows`,
      `prefix_fanout_waiting`, `prefill_deadline_block`), as the tick's start knows them; the
-     4 ms time windows among them count as closed when shorter than the shortest phase (a)
-     that ran a round (`prefill_windows_close`, see Limits). A capture boundary inside that
-     last chunk splits it into two calls on two ticks; both count, since each runs a real prime
-     call that would otherwise wait a full burst (the long-prompt cell below shows the trace).
+     4 ms time windows among them count as closed when shorter than the shortest of the last
+     64 phase (a)s that ran a round (`prefill_windows_close`, see Limits). A follower of an n>1
+     choice group still being admitted and a prompt on the hyper-trunk plain prime walker,
+     which may suspend inside the call, run no prime call that tick. A capture boundary
+     inside that last chunk splits it into two calls on two ticks; both count, since each
+     runs a real prime call that would otherwise wait a full burst (the long-prompt cell below
+     shows the trace).
 
-   Judge and harvest sessions are never weighed: phase (c) still steps them once per tick and
-   phase (d) primes them in the SLO headroom, so dark work keeps one token per burst and never
-   shortens an interactive stream's bursts ("interactive is never preempted; harvest yields
+   It decides only in a tick with an MTP burst and with no DFlash2, glm5 or gemma burst
+   (`round_hooked`): with no burst there is nothing to end, and beside a burst the round hook
+   cannot end the plain session waits that burst out anyway while the MTP streams would lose
+   their rounds.
+
+   Judge and harvest sessions are never weighed, and they keep their burst cadence on the
+   ticks the yield shortens (`DarkCadence`): phase (c) steps dark rows, and phase (d) primes a
+   dark chunk, once every N yielded ticks, N being the rounds of the longest of the last 64
+   bursts the yield did not end, and on every tick it does not end. So dark work keeps one
+   step per burst's worth of time, and the yield does not run it a burst's rounds times as
+   often at the interactive streams' cost ("interactive is never preempted; harvest yields
    first").
 
-   While that holds, every MTP burst of the tick ends at its first round: the burst's entry
-   hook call says continue and every round's call says stop (`spec_admit_keep`), through the
-   exit a reached burst count and the admission yield take. A tick is then one round of every
-   speculative session plus one plain step, the share a rider gets inside a cohort. The first
-   tick of each class prints `[spec-round-yield] engaged: decoding|priming|rider-uncarried`.
-3. `MEMRA_ADMIT_YIELD=0` (lockstep fairness) turns the round yield off with the admission
+   While the yield holds, every MTP burst of the tick ends at its first round: the burst's
+   entry hook call says continue and every round's call says stop (`spec_admit_keep`), through
+   the exit a reached burst count and the admission yield take. A tick is then one round of
+   every speculative session plus one plain step, the share a rider gets inside a cohort. The
+   first tick of each class prints `[spec-round-yield] engaged: decoding|priming|rider-uncarried`.
+4. `MEMRA_ADMIT_YIELD=0` (lockstep fairness) turns the round yield off with the admission
    yield. No new switch. Host-sampled riding (item 1) is not under it, as device-sampled
    riding never was: where a rider takes its plain step inside each round (a card with no cost
    table for the model, see the RTX 5090 rows below), a host rider costs the streams that step
@@ -163,7 +182,8 @@ total still rises 6%; with 2 streams and 1 rider the streams give up 27% and the
 across arms, beside the streams and alone.
 
 **Which requests ride, per card.** A plain session rides when it is unconstrained, has no
-vision input and no fork, and the cost model or the band admitted it to plain decode. On
+vision input and no fork, and the cost model or the band admitted it to plain decode; on a
+host sampler, only in the interactive lane. On
 GB10 a greedy request with a penalty is admitted plain (eligibility) and samples on the host,
 so it is the host rider these cells measure. A sampled request with a penalty samples on the
 device on GB10, the RTX 5090 and the RTX PRO 6000 (`MEMRA_SERVE_DEVPENALTY` on); with the
@@ -283,27 +303,38 @@ byte).
 ## Limits
 
 - MTP route only, as the admission yield is. The DFlash2, glm5 and gemma bursts have no round
-  hook that ends them, for a waiting admission or for a plain session (memra#1246).
+  hook that ends them, for a waiting admission or for a plain session (memra#1246). A tick that
+  holds one of them does not yield at all, so a server holding both routes keeps full bursts
+  while one of those sessions bursts.
 - A plain prompt longer than one prefill chunk keeps its old cadence until its last chunk:
   each earlier chunk is followed by full bursts, as a speculative newcomer's long prime is
   under memra#1227 (memra#1253).
 - While the round yield is on, the speculating streams pay for the plain session's forward:
   see the table above. The cost model takes no rate sample from those ticks (a mixed tick is
   not a steady regime), so it does not price that cost, and a stream is not demoted for it.
-- Interactive lane only. A judge or harvest plain session keeps one token per burst beside
-  interactive streams, as before; the yield never spends an interactive stream's rate on dark
-  work.
+- Interactive lane only. A judge or harvest plain session never engages the yield, never
+  rides on a host sampler, never keeps interactive riders in phase (c), and keeps one step per
+  burst's worth of time on yielded ticks (`DarkCadence`). A device-sampled dark rider rode
+  before this change and still does; on a card where a rider takes its plain step inside every
+  round it costs the interactive streams that step, as it did. The cadence's N is the longest
+  recent burst; until one burst has run, dark work runs on every tick.
 - The prime outlook is read at the tick's start. Phase (b)'s time windows (refill grace,
   fanout formation window, batch-formation hold, each `MEMRA_PRIME_BATCH_HOLD_MS`, 4 ms by
-  default) count as closed when they are shorter than the shortest phase (a) that ran a
-  speculative round, since phase (b) comes at least that long after the start of a tick whose
-  bursts the yield would end (`prefill_windows_close`). A longer configured window, or a
-  server that has not yet run a round, keeps them open and the outlook holds the prime back,
-  as phase (b) may. Read at the start instead, a newcomer admitted at the tick's top is always
-  inside its 4 ms window, and the first form of this review held its prime behind a full burst
-  (GB10, `gb10/plain3`: first token 1.79 s where the earlier change had 0.31 s). A hold that
-  begins during phase (a) (a refill grace opened by a stream that ends in its burst) can leave
-  one tick yielded for a prime that then waits.
+  default) count as closed when they are shorter than the shortest of the last 64 phase (a)s
+  that ran a speculative round, since phase (b) comes at least that long after the start of a
+  tick whose bursts the yield would end (`prefill_windows_close`): the fanout window and the
+  formation hold run from the session's arrival and the refill grace from the previous tick's
+  end, all at or before the tick's start. A longer configured window, a server that has not
+  yet run a round, or a recent short phase (a) (a small co-loaded model) keeps them open and
+  the outlook holds the prime back, as phase (b) may, until that phase (a) leaves the window.
+  Read at the start instead, a newcomer admitted at the tick's top is always inside its 4 ms
+  window, and the first form of this review held its prime behind a full burst (GB10,
+  `gb10/plain3`: first token 1.79 s where the earlier change had 0.31 s).
+- The outlook reads phase (b)'s inputs before phase (b) does: the prefill rate before phase
+  (b) marks this tick's, no fanout session advanced yet, and the pooled cohorts as the tick's
+  start knows them (phase (a) forms them after the newcomers' pass, memra#1227). On the tick
+  after a prefill its deadline order, and on a tick where a newcomer completes a cohort its
+  riding verdict, can differ from phase (a)'s and (b)'s for that one tick.
 - GB10 and the RTX 5090 Laptop GPU on Qwen3.8-27B only. Two boots per arm in one order pair,
   one where a row says so; the gaps move by a factor of 8 to 14, far outside boot-to-boot
   spread, and the stream costs are stated per card, not as a timing claim.
