@@ -244,7 +244,7 @@ long texts: 12 texts over 6 (cell, stream) keys: PREFIX PASS
 | 2 | 8 | vendor | change3 | 1 | 9.3 | 43.64 | 14.64 | 55.11 | 69.75 | 0.135 / 0.139 | 0.676 | 9.29 | 57.78 |
 | 2 | 8 | vendor | parent3 | 1 | 9.3 | 44.64 | 14.27 | 54.92 | 69.18 | 0.135 / 0.139 | 0.730 | 9.32 | 57.02 |
 
-plain texts: 16 (riders, class, n) keys over 64 requests (beside streams and alone, all arms): DIFFER {(8, 'vendor', 0): {('9c9afb2481b792e7', 64), ('0f85961509321c8b', 64), ('c6688e3acd19f017', 64)}, (8, 'vendor', 1): {('d3e2d8e5f4e0fee3', 64), ('7cbc433d84785da1', 64)}}
+plain texts: 16 (riders, class, n) keys over 64 requests (beside streams and alone, all arms): DIFFER {(8, 'vendor', 0): {('c6688e3acd19f017', 64), ('9c9afb2481b792e7', 64), ('0f85961509321c8b', 64)}, (8, 'vendor', 1): {('d3e2d8e5f4e0fee3', 64), ('7cbc433d84785da1', 64)}}
 long texts: 12 texts over 6 keys: PREFIX PASS
 
 ## gb10/riders9
@@ -290,8 +290,36 @@ long texts: 8 texts over 4 keys: PREFIX PASS
 | 2 | 8 | vendor | change5 | 1 | 5.9 | 107.15 | 22.42 | 86.96 | 109.38 | 0.085 / 0.088 | 0.471 | 5.89 | 97.61 |
 | 2 | 8 | vendor | parent3 | 1 | 5.9 | 106.65 | 22.60 | 86.37 | 108.97 | 0.086 / 0.089 | 0.452 | 5.93 | 94.51 |
 
-plain texts: 24 (riders, class, n) keys over 96 requests (beside streams and alone, all arms): DIFFER {(4, 'vendor', 0): {('6e1005c63acf10c5', 64), ('b41d0c67ade4dbbd', 64)}}
+plain texts: 24 (riders, class, n) keys over 96 requests (beside streams and alone, all arms): DIFFER {(4, 'vendor', 0): {('b41d0c67ade4dbbd', 64), ('6e1005c63acf10c5', 64)}}
 long texts: 16 texts over 8 keys: PREFIX PASS
+
+## rtx5090/riders6
+
+`python3 tools/summ_riders.py rtx5090/riders6`
+
+| long streams | riders | class | arm | boots | window s | streams tok/s before | streams tok/s live | riders tok/s live | all tok/s live | rider gap p50 / p95 s | rider TTFT p50 s | rider E2E max s | riders alone tok/s |
+|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|
+| 1 | 3 | pen | change5 | 1 | 2.3 | 73.49 | 30.25 | 84.17 | 114.42 | 0.033 / 0.036 | 0.192 | 2.28 | 91.16 |
+| 1 | 3 | pen | parent3 | 1 | 2.1 | 76.66 | 31.15 | 90.61 | 121.76 | 0.030 / 0.032 | 0.179 | 2.12 | 99.99 |
+| 2 | 2 | pen | change5 | 1 | 2.1 | 102.80 | 62.03 | 59.70 | 121.74 | 0.030 / 0.031 | 0.207 | 2.14 | 73.87 |
+| 2 | 2 | pen | parent3 | 1 | 2.1 | 101.81 | 64.70 | 61.81 | 126.51 | 0.030 / 0.030 | 0.175 | 2.07 | 74.44 |
+
+plain texts: 5 (riders, class, n) keys over 20 requests (beside streams and alone, all arms): IDENTICAL
+long texts: 6 texts over 3 keys: PREFIX PASS
+
+## rtx5090/riders7
+
+`python3 tools/summ_riders.py rtx5090/riders7`
+
+| long streams | riders | class | arm | boots | window s | streams tok/s before | streams tok/s live | riders tok/s live | all tok/s live | rider gap p50 / p95 s | rider TTFT p50 s | rider E2E max s | riders alone tok/s |
+|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|
+| 1 | 2 | pen | change5 | 1 | 3.8 | 76.82 | 42.71 | 33.75 | 76.46 | 0.057 / 0.058 | 0.171 | 3.79 | 74.53 |
+| 1 | 2 | pen | parent3 | 1 | 31.8 | 73.99 | 67.77 | 4.02 | 71.79 | 0.486 / 0.578 | 0.652 | 31.84 | 66.53 |
+| 2 | 1 | pen | change5 | 1 | 4.5 | 102.80 | 64.29 | 14.29 | 78.57 | 0.069 / 0.070 | 0.165 | 4.48 | 41.61 |
+| 2 | 1 | pen | parent3 | 1 | 48.7 | 95.82 | 88.31 | 1.31 | 89.62 | 0.751 / 0.860 | 0.856 | 48.73 | 37.62 |
+
+plain texts: 3 (riders, class, n) keys over 12 requests (beside streams and alone, all arms): IDENTICAL
+long texts: 6 texts over 3 keys: PREFIX PASS
 
 ## gb10/new
 

@@ -25,6 +25,7 @@ summ_riders.py gb10/riders9
 summ_riders.py gb10/riders10
 summ_riders.py rtx5090/riders5
 summ_riders.py rtx5090/riders6
+summ_riders.py rtx5090/riders7
 summ_newcomer.py gb10/new
 summ_newcomer.py gb10/new2
 summ_newcomer.py rtx5090/new

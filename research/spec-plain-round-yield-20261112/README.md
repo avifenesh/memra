@@ -24,7 +24,7 @@ request waits before admission (memra#1249), a long prime's chunks between full 
 - **GB10**: one DGX Spark unit per comparison, both arms on it, one boot per lease, arms
   interleaved (ABBA or BAAB). `121a` build.
 - **RTX 5090 Laptop GPU**: `120a` build. Enforced power limit 150 to 160 W for the first
-  cells. The review-head cells (`riders5`, `riders6`, `plain5`, `new5`, `inv-change5`) ran
+  cells. The review-head cells (`riders5`, `riders6`, `riders7`, `plain5`, `new5`, `inv-change5`) ran
   after a reboot, on AC: 150 to 160 W at a boot's start and 175 W under load (a 150 W TGP plus
   25 W of dynamic boost), recorded per boot in `guard.log` and not changed.
 - **Binaries**:
@@ -37,7 +37,7 @@ request waits before admission (memra#1249), a long prime's chunks between full 
   | `change2` | 7107ce3eba on it (this branch before the rebase onto main) | `memra-0.141.1-6ac6d0891c9c`, sha256 `81e7da7bc66d...` | sha256 `e44719014080...` |
   | `parent3` | cdfdfd6006, main (#1227 and #1233 landed) | `memra-0.141.1-14a59677bb0e`, sha256 `00b8744f648f...` | sha256 `70130b7d8202...` |
   | `change3` | 9074ec16aa, the first review head (superseded) | `memra-0.141.1-a88473c260ed`, sha256 `48caeb28da7e...` | sha256 `fa3e3999b2d6...` |
-  | `change5` | 3eeb4710f0, the review head on cdfdfd6006 (rebased onto main 9d7c086c67 as 13599ccfb5 with the same delta; 0550953c2a adds a test line only) | `memra-0.141.1-1f4dcebc4fe7`, sha256 `a43e7ff33839...` | sha256 `33af2f820d97...` |
+  | `change5` | 3eeb4710f0, the review head on cdfdfd6006 (rebased onto main 11b368f7d7 as 29b03f85fb with the same delta; 76af934425 adds a test line only) | `memra-0.141.1-1f4dcebc4fe7`, sha256 `a43e7ff33839...` | sha256 `33af2f820d97...` |
 
   `mech` and `mech-burst1` ran main 340a5e5bfa (the same crates as #1241's head a20fd8c59f).
 
@@ -74,10 +74,12 @@ identical and stream texts prefix-equal). Server logs are gzipped when large.
 | `gb10/riders9` | riders cell, 8 and 6 greedy-with-penalty riders, review head | change5, parent3 |
 | `gb10/inv-change5`, `gb10/bnd-change5` | both gates on the review head | |
 | `rtx5090/riders5` | riders cell, 4 and 8 greedy-with-penalty riders, 4 and 8 of the vendor shape (`MEMRA_SERVE_DEVPENALTY=0`) | parent3, change5 |
+| `rtx5090/riders6` | riders cell, 2 streams + 2 riders and 1 + 3 (4 in flight) | change5, parent3 |
+| `rtx5090/riders7` | riders cell, 1 stream + 2 riders and 2 + 1 (3 in flight) | parent3, change5 |
 | `rtx5090/plain5` | plain cell, 1,234-token prompts and a prefix-hit re-send, L = 1, 2 | change5, parent3 |
 | `rtx5090/new5` | newcomer cell, L = 1, 2 | parent3, change5 |
 | `rtx5090/inv-change5` | seeded-invariance gate on the review head | |
-| `cpu/` | CPU checks on 0550953c2a, the review head rebased onto main 9d7c086c67 with its test-only compile fix (fmt, clippy, engine and server suites, flags and numeric censuses), and the red arms | |
+| `cpu/` | CPU checks on 76af934425, the review head rebased onto main 11b368f7d7 with its test-only compile fix (fmt, clippy, engine and server suites, flags and numeric censuses), and the red arms | |
 
 Void: `gb10/longprime/void.jsonl` and `void-server-parent2-4.log.gz` are the parent2 boot 4
 whose lease overlapped another lane's page-cache fill on the unit; boot `parent2-5` replaces it.
@@ -121,7 +123,10 @@ tools over these dirs (each command is in its heading). Per dir:
     equal. `gb10/riders` ran the 4-rider cell on the first review head (1.615 -> 0.133 s).
   - `rtx5090/riders5`: 4 and 8 riders put 6 and 10 sessions in flight, above the band's
     HIGH = 4 on this card, so the streams are demoted in both arms and the arms are equal.
-    `rtx5090/riders6` (2 + 2 and 1 + 3, 4 in flight, the riding case on this card): pending.
+    `rtx5090/riders6`: 2 + 2 and 1 + 3 (4 in flight) are demoted too, both arms.
+    `rtx5090/riders7` (3 in flight, the only shape where several riders ride on this card): 1
+    stream + 2 riders 0.486 -> 0.057 s gap, the stream -37% while they are live, total +6%; 2
+    streams + 1 rider 0.751 -> 0.069 s, streams -27%, total -12%.
   - `rtx5090/new5`: the third request at L = 2, admitted plain and riding in both arms, gets
     its first token 0.860 -> 0.212 s (greedy), 0.999 -> 0.207 s (t1); L = 1 0.159 -> 0.170 s.
     Newcomer texts prefix-equal.
@@ -129,14 +134,14 @@ tools over these dirs (each command is in its heading). Per dir:
     `change2` had 0.31 s, because the prime outlook read phase (b)'s 4 ms windows at the tick's
     start. The time-window rule of the review head answers it.
 - Gates: seeded invariance PASS (54 rows) on `gb10/inv-change`, `gb10/inv-change2`,
-  `gb10/inv-change3`, `gb10/inv-change5` and `rtx5090/inv-change2` (`rtx5090/inv-change5` pending); burst boundary
+  `gb10/inv-change3`, `gb10/inv-change5`, `rtx5090/inv-change2` and `rtx5090/inv-change5`; burst boundary
   PASS (229 rows) on `gb10/bnd-change`, `gb10/bnd-change2`, `gb10/bnd-change3` and
   `gb10/bnd-change5`. Each verdict is the `PASS` line of the dir's `gate.log`.
 
 ## Red arms
 
 `tools/redarm.py` writes each arm into a copy of the tree, `tools/dd-redgreen.sh` runs the five
-tests on each (`cpu/redgreen.log`, on the rebased review head 0550953c2a): `parent` (the change
+tests on each (`cpu/redgreen.log`, on 0550953c2a, whose `worker.rs` the head keeps byte for byte): `parent` (the change
 reverted) and `nohook` (no round hook) fail the burst and wiring tests; `nodue` fails the naming
 test; `nowrite` and `noride` fail the wiring test; `nolane` (the lane helper ignores the lane)
 fails the lane test; `nolanewire` (the tick weighs every live plain session without the helper)

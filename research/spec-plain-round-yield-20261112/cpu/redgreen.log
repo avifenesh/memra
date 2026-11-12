@@ -1,202 +1,202 @@
-== red-parent: 2026-11-12T16:16:32+01:00
+== red-parent: 2026-11-12T19:06:35+01:00
 red-parent spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-parent spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=101
 red-parent spec_round_yield_is_wired rc=101
 red-parent spec_round_yield_weighs_interactive_plain_sessions_only rc=0
 red-parent plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... FAILED
-thread 'worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits' (2183556) panicked at crates/memra-server/src/worker.rs:41766:9:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+thread 'worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits' (2530180) panicked at crates/memra-server/src/worker.rs:42242:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (2183571) panicked at crates/memra-server/src/worker.rs:41813:59:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.01s
+thread 'worker::tests::spec_round_yield_is_wired' (2530193) panicked at crates/memra-server/src/worker.rs:42289:59:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.01s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
-== red-nohook: 2026-11-12T16:19:56+01:00
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
+== red-nohook: 2026-11-12T19:10:20+01:00
 red-nohook spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nohook spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=101
 red-nohook spec_round_yield_is_wired rc=101
 red-nohook spec_round_yield_weighs_interactive_plain_sessions_only rc=0
 red-nohook plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... FAILED
-thread 'worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits' (2185650) panicked at crates/memra-server/src/worker.rs:41765:9:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+thread 'worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits' (2536774) panicked at crates/memra-server/src/worker.rs:42241:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (2185663) panicked at crates/memra-server/src/worker.rs:41871:9:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.01s
+thread 'worker::tests::spec_round_yield_is_wired' (2536790) panicked at crates/memra-server/src/worker.rs:42347:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.01s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
-== red-nodue: 2026-11-12T16:24:01+01:00
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
+== red-nodue: 2026-11-12T19:14:17+01:00
 red-nodue spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=101
 red-nodue spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nodue spec_round_yield_is_wired rc=0
 red-nodue spec_round_yield_weighs_interactive_plain_sessions_only rc=0
 red-nodue plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... FAILED
-thread 'worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts' (2187660) panicked at crates/memra-server/src/worker.rs:41589:9:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+thread 'worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts' (2544473) panicked at crates/memra-server/src/worker.rs:42065:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.01s
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
-== red-nowrite: 2026-11-12T16:27:05+01:00
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
+== red-nowrite: 2026-11-12T19:18:05+01:00
 red-nowrite spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nowrite spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nowrite spec_round_yield_is_wired rc=101
 red-nowrite spec_round_yield_weighs_interactive_plain_sessions_only rc=0
 red-nowrite plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (2189663) panicked at crates/memra-server/src/worker.rs:41812:59:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.01s
+thread 'worker::tests::spec_round_yield_is_wired' (2549970) panicked at crates/memra-server/src/worker.rs:42288:59:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.01s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
-== red-noride: 2026-11-12T16:30:29+01:00
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
+== red-noride: 2026-11-12T19:21:28+01:00
 red-noride spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-noride spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-noride spec_round_yield_is_wired rc=101
 red-noride spec_round_yield_weighs_interactive_plain_sessions_only rc=0
 red-noride plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (2192126) panicked at crates/memra-server/src/worker.rs:41880:9:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.01s
+thread 'worker::tests::spec_round_yield_is_wired' (2556632) panicked at crates/memra-server/src/worker.rs:42356:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.01s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
-== red-nolane: 2026-11-12T16:34:21+01:00
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
+== red-nolane: 2026-11-12T19:24:53+01:00
 red-nolane spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nolane spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nolane spec_round_yield_is_wired rc=0
 red-nolane spec_round_yield_weighs_interactive_plain_sessions_only rc=101
 red-nolane plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.01s
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... FAILED
-thread 'worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only' (2193112) panicked at crates/memra-server/src/worker.rs:41655:9:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+thread 'worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only' (2564567) panicked at crates/memra-server/src/worker.rs:42131:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
-== red-nolanewire: 2026-11-12T16:37:31+01:00
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
+== red-nolanewire: 2026-11-12T19:28:25+01:00
 red-nolanewire spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nolanewire spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nolanewire spec_round_yield_is_wired rc=101
 red-nolanewire spec_round_yield_weighs_interactive_plain_sessions_only rc=0
 red-nolanewire plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (2195776) panicked at crates/memra-server/src/worker.rs:41812:59:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.01s
+thread 'worker::tests::spec_round_yield_is_wired' (2579349) panicked at crates/memra-server/src/worker.rs:42288:59:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.01s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
-== red-noheld: 2026-11-12T16:40:51+01:00
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
+== red-noheld: 2026-11-12T19:32:13+01:00
 red-noheld spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-noheld spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-noheld spec_round_yield_is_wired rc=0
 red-noheld spec_round_yield_weighs_interactive_plain_sessions_only rc=0
 red-noheld plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=101
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.01s
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... FAILED
-thread 'worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk' (2198198) panicked at crates/memra-server/src/worker.rs:41696:9:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+thread 'worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk' (2589979) panicked at crates/memra-server/src/worker.rs:42172:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
-== red-nooutlook: 2026-11-12T16:44:50+01:00
+== red-nooutlook: 2026-11-12T19:36:09+01:00
 red-nooutlook spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nooutlook spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nooutlook spec_round_yield_is_wired rc=101
 red-nooutlook spec_round_yield_weighs_interactive_plain_sessions_only rc=0
 red-nooutlook plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (2199077) panicked at crates/memra-server/src/worker.rs:41812:59:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.01s
+thread 'worker::tests::spec_round_yield_is_wired' (2599234) panicked at crates/memra-server/src/worker.rs:42288:59:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.01s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
-== red-nowindows: 2026-11-12T16:47:59+01:00
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
+== red-nowindows: 2026-11-12T19:39:44+01:00
 red-nowindows spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nowindows spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nowindows spec_round_yield_is_wired rc=0
 red-nowindows spec_round_yield_weighs_interactive_plain_sessions_only rc=0
 red-nowindows plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=101
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.01s
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... FAILED
-thread 'worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk' (2201096) panicked at crates/memra-server/src/worker.rs:41702:9:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+thread 'worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk' (2608864) panicked at crates/memra-server/src/worker.rs:42178:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
-== green: 2026-11-12T16:51:19+01:00
+== green: 2026-11-12T19:43:30+01:00
 green spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 green spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 green spec_round_yield_is_wired rc=0
 green spec_round_yield_weighs_interactive_plain_sessions_only rc=0
 green plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.02s
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.00s
-REDGREEN-DONE 2026-11-12T16:55:15+01:00
-DD-ALL-DONE 2026-11-12T16:55:15+01:00
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1233 filtered out; finished in 0.00s
+REDGREEN-DONE 2026-11-12T19:47:36+01:00
+DD-ALL-DONE 2026-11-12T19:47:36+01:00
