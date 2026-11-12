@@ -722,6 +722,63 @@ pub(crate) fn pooled_verify_headroom(e: &Engine) -> usize {
     }
 }
 
+/// What a verify round allocates on the device (memra#1266), pooled or serial: the
+/// replay-free checkpoint, `rows - 1` columns of every linear layer's GDN state
+/// (`col_bytes`, [`HybridModel::dspark_verify_ckpt_col_bytes`]; about 157 MB a column on
+/// Qwen3.8-27B), and two `[rows, n_vocab]` f32 logits stacks (the forward's and the per-member
+/// split). A pooled forward holds every member's checkpoint until the members' rounds finish.
+pub(crate) fn pooled_verify_round_bytes(
+    rows: usize,
+    ckpt: bool,
+    col_bytes: usize,
+    n_vocab: usize,
+) -> usize {
+    let cols = if ckpt { rows.saturating_sub(1) } else { 0 };
+    cols.saturating_mul(col_bytes)
+        .saturating_add(2 * rows * n_vocab * std::mem::size_of::<f32>())
+}
+
+/// What a pooled MTP verify forward may allocate now (memra#1266): the allocatable device
+/// bytes ([`crate::unified_memory::allocatable_mem_info`], the driver reading on a discrete
+/// card and the larger of it and `MemAvailable` on unified memory) plus the async pool's cached
+/// blocks, which the forward's allocations reuse first. An unreadable device reads 0, so the
+/// forward pools nothing; serial verifies are the same bytes, one round at a time.
+pub fn pooled_verify_allocatable(e: &Engine) -> usize {
+    crate::unified_memory::allocatable_mem_info(e.ctx())
+        .map(|(free, _)| free.saturating_add(e.pool_cached_bytes()))
+        .unwrap_or(0)
+}
+
+/// The room a verify forward leaves unspent (memra#1266): the graph-launch floor, the engine's
+/// exhausted-card line. At the measured failure 195 MiB of the reading (67 MiB driver free and
+/// 128 MiB of cached pool fragments) could not serve a 15 MiB checkpoint slab.
+pub fn pooled_verify_floor_bytes() -> usize {
+    GRAPH_LAUNCH_MIN_FREE
+}
+
+/// MEMORY CAP OF THE POOLED MTP VERIFY (memra#1266): whether a round needing `need` bytes may
+/// join a pooled forward whose members so far need `held`, against the `allocatable` reading
+/// ([`pooled_verify_allocatable`]). The first member always joins (`held == 0`): alone it
+/// verifies serially or with riders, the same bytes either way. A later member joins only while
+/// the whole forward fits the reading less [`pooled_verify_floor_bytes`]; the others verify
+/// after the forward's rounds finish, so the checkpoints live at once never exceed what the
+/// device holds. Admission funds one serial round (its transient floor), not the extra members.
+pub(crate) fn pooled_verify_admits(held: usize, need: usize, allocatable: usize) -> bool {
+    held == 0
+        || held
+            .saturating_add(need)
+            .saturating_add(pooled_verify_floor_bytes())
+            <= allocatable
+}
+
+/// Pooled MTP verify forwards the memory cap shortened since process start (memra#1266).
+static MTP_POOL_CAPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Pooled MTP verify forwards the memory cap shortened since process start (memra#1266).
+pub fn mtp_pool_capped_total() -> u64 {
+    MTP_POOL_CAPPED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// One grep-stable suspension line per ROUTE (each call site holds its own
 /// process-lifetime `Once`): every captured-graph launch route below the floor names
 /// itself in the tag while keeping the same `graph replay suspended:` key the step37
@@ -8118,6 +8175,18 @@ impl HybridModel {
             && !spec_verify_graph_env().unwrap_or_else(|| self.vgraph_family_default())
     }
 
+    /// The device bytes one MTP verify round at draft depth `k` allocates (memra#1266):
+    /// [`pooled_verify_round_bytes`] at its widest, `k + 1` rows with the replay-free checkpoint.
+    /// The worker's pre-cohort reclaim funds the largest member's round with it.
+    pub fn spec_round_transient_bytes(&self, k: usize) -> usize {
+        pooled_verify_round_bytes(
+            k + 1,
+            true,
+            self.dspark_verify_ckpt_col_bytes(),
+            self.output.out_features(),
+        )
+    }
+
     /// Whether this model's plain decode rows may ride a pooled MTP cohort's forwards (the
     /// lane/batch-spec v2 unified step). The pooled walk's family (`spec_pool_capable`) with a
     /// dense FFN, and a serving plain step that is the generic batched trunk at every chunk
@@ -8367,6 +8436,10 @@ impl HybridModel {
                 }
             }
         }
+        // The verify memory cap's inputs (memra#1266): one checkpoint column's bytes and the
+        // logits row width.
+        let col_bytes = self.dspark_verify_ckpt_col_bytes();
+        let n_vocab_v = self.output.out_features();
         loop {
             // Gate + draft-begin every live session (its own loop condition first).
             let mut drs: Vec<Option<SpecDraftRound>> = (0..n).map(|_| None).collect();
@@ -8478,7 +8551,8 @@ impl HybridModel {
                 Some(r) => r.round_begin().into(),
                 None => std::collections::VecDeque::new(),
             };
-            // Verify: chunks of consecutive pool-ready rounds, at most 16 rows each.
+            // Verify: chunks of consecutive pool-ready rounds, at most 16 rows each, and only as
+            // many members as the device holds at once (memra#1266: the memory cap).
             let mut verified: Vec<Option<PooledVerifyOut>> = (0..n).map(|_| None).collect();
             let mut failed: Vec<Option<String>> = (0..n).map(|_| None).collect();
             let mut j = 0;
@@ -8498,27 +8572,65 @@ impl HybridModel {
                     j += 1;
                     continue;
                 }
+                // MEMORY CAP (memra#1266). Every member's checkpoint lives until its round
+                // finishes, so a pooled forward holds all of them at once; nothing charges that
+                // beyond one serial round. On the RTX 5090 Laptop a K=5 newcomer joined a K=5
+                // member with 1,616 MiB allocatable; the forward needed about 1.5 GB of slabs and
+                // failed at layer 61 of 64, both streams already sent and their state advanced.
+                // A member joins only while the forward fits the reading less the launch floor
+                // (`pooled_verify_admits`); the rest verify in the next chunk, after this one's
+                // rounds have finished and freed their checkpoints. Pooled and serial verifies are
+                // bitwise equal, so the cap moves no token.
+                let allocatable = pooled_verify_allocatable(e);
+                let mut held = 0usize;
+                let mut capped_need: Option<usize> = None;
                 let mut end = j;
                 let mut rows = 0;
                 while end < n {
-                    if preps[end].is_none() {
+                    let Some(p) = preps[end].as_ref() else {
                         end += 1;
                         continue;
-                    }
-                    let t = preps[end].as_ref().unwrap().verify_tokens.len();
+                    };
+                    let t = p.verify_tokens.len();
                     if !ready(&preps[end], &bursts[end]) || rows + t > 16 {
                         break;
                     }
+                    let need = pooled_verify_round_bytes(t, p.ckpt.is_some(), col_bytes, n_vocab_v);
+                    if !pooled_verify_admits(held, need, allocatable) {
+                        capped_need = Some(need);
+                        break;
+                    }
+                    held += need;
                     rows += t;
                     end += 1;
                 }
+                if let Some(need) = capped_need {
+                    let total =
+                        MTP_POOL_CAPPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    if total <= 16 || total.is_multiple_of(256) {
+                        eprintln!(
+                            "[spec-pool] pooled MTP verify capped by memory: forward {} MiB + next \
+                             member {} MiB over {} MiB allocatable less the {} MiB launch floor; \
+                             it verifies after this forward (capped forwards {total})",
+                            held >> 20,
+                            need >> 20,
+                            allocatable >> 20,
+                            pooled_verify_floor_bytes() >> 20,
+                        );
+                    }
+                }
                 let members: Vec<usize> = (j..end).filter(|&m| preps[m].is_some()).collect();
-                // Riders take the forward's free rows.
+                // Riders take the forward's free rows, within the same memory cap (a rider row
+                // holds logits rows only).
                 let cap = match riders.as_ref() {
                     Some(r) => rider_rows_cap.min(r.forward_rows_cap(rows)),
                     None => 0,
                 };
-                let take = cap.saturating_sub(rows).min(rider_q.len());
+                let mut take = cap.saturating_sub(rows).min(rider_q.len());
+                let rider_need = pooled_verify_round_bytes(1, false, col_bytes, n_vocab_v);
+                while take > 0 && !pooled_verify_admits(held, take * rider_need, allocatable) {
+                    take -= 1;
+                }
                 let chunk_riders: Vec<PlainRiderRow> = rider_q.drain(..take).collect();
                 if members.len() + chunk_riders.len() >= 2 {
                     let embd_dev = bursts[j..end]
@@ -18682,5 +18794,102 @@ mod lend_floor_tests {
         drop(lend);
         scratch.set_len(&e, 0).unwrap();
         eprintln!("[lend floor cell] MTP scratch: lengths 0 and 39 refused under a 40-row lend");
+    }
+}
+
+/// memra#1266: the memory cap of the pooled MTP verify. The need, the join rule against the
+/// readings measured on the RTX 5090 Laptop (Qwen3.8-27B, agentic c = 2), and a census of the
+/// lockstep chunk walk that applies it.
+#[cfg(test)]
+mod pooled_verify_cap_1266_tests {
+    use super::*;
+
+    const MIB: usize = 1 << 20;
+    /// Qwen3.8-27B: 48 linear layers x (conv 30,720 + ssm 786,432 words) x 4 B = one column
+    /// (156.9 MB). The ssm term is the measured one: the failing slab was 5 x 786,432 x 4 B.
+    const COL: usize = 48 * (30_720 + 786_432) * 4;
+    const VOCAB: usize = 248_320;
+
+    #[test]
+    fn a_round_needs_its_checkpoint_columns_and_two_logits_stacks() {
+        // K=5 with a pending bonus: 6 rows, 5 columns.
+        let k5 = pooled_verify_round_bytes(6, true, COL, VOCAB);
+        assert_eq!(k5, 5 * COL + 2 * 6 * VOCAB * 4);
+        // About 760 MiB: 5 x 149.6 MiB of checkpoint columns + 11.4 MiB of logits.
+        assert!((755 * MIB..765 * MIB).contains(&k5), "{}", k5 / MIB);
+        // No checkpoint (the legacy replay seam, a rider row): logits only.
+        assert_eq!(
+            pooled_verify_round_bytes(6, false, COL, VOCAB),
+            2 * 6 * VOCAB * 4
+        );
+        assert_eq!(
+            pooled_verify_round_bytes(1, true, COL, VOCAB),
+            2 * VOCAB * 4
+        );
+    }
+
+    #[test]
+    fn the_first_member_always_joins_and_a_later_one_only_within_the_reading() {
+        let k5 = pooled_verify_round_bytes(6, true, COL, VOCAB);
+        let k2 = pooled_verify_round_bytes(3, true, COL, VOCAB);
+        // The first member joins whatever the reading says: alone it is the serial round.
+        assert!(pooled_verify_admits(0, k5, 0));
+        // The failing round (memra#1266): K=5 + K=5 at 99 MiB driver free + 1,517 MiB cached.
+        // Main pooled it and ran out at layer 61 of 64; the cap verifies the second member
+        // after the first.
+        assert!(!pooled_verify_admits(k5, k5, 1_616 * MIB));
+        // The pooled rounds of the same replay: K=5 + K=2 at the 10th percentile reading pools,
+        // so does K=5 + K=5 at the median; the minimum reading still pools K=2 + K=2 only.
+        assert!(pooled_verify_admits(k5, k2, 1_723 * MIB));
+        assert!(pooled_verify_admits(k5, k5, 2_135 * MIB));
+        assert!(!pooled_verify_admits(k5, k2, 1_294 * MIB));
+        assert!(pooled_verify_admits(k2, k2, 1_294 * MIB));
+        // The rule: the whole forward plus the launch floor within the reading.
+        let at = k5 + k5 + pooled_verify_floor_bytes();
+        assert!(pooled_verify_admits(k5, k5, at));
+        assert!(!pooled_verify_admits(k5, k5, at - 1));
+    }
+
+    /// The census: the MTP lockstep's verify chunk walk reads the allocatable memory and joins
+    /// members through `pooled_verify_admits`, riders included, and it counts what it caps.
+    #[test]
+    fn the_mtp_lockstep_chunk_walk_applies_the_memory_cap() {
+        let src = include_str!("spec.rs");
+        let production = &src[..src.find("mod pooled_verify_cap_1266_tests").unwrap()];
+        let at = production
+            .find("pub fn generate_spec_sessions_unified<'a>(")
+            .expect("the lockstep");
+        let body = &production[at..];
+        let body = &body[..body.find("\n    }\n").unwrap()];
+        let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        let body = squash(body);
+        for needle in [
+            "let allocatable = pooled_verify_allocatable(e);",
+            "let need = pooled_verify_round_bytes(t, p.ckpt.is_some(), col_bytes, n_vocab_v); \
+             if !pooled_verify_admits(held, need, allocatable) {",
+            "while take > 0 && !pooled_verify_admits(held, take * rider_need, allocatable) {",
+            "MTP_POOL_CAPPED.fetch_add(1,",
+        ] {
+            assert!(
+                body.contains(&squash(needle)),
+                "the lockstep lost: {needle}"
+            );
+        }
+        // The cap is read before the walk builds a chunk, and the forward runs on what it built.
+        let read = body
+            .find("let allocatable = pooled_verify_allocatable(e);")
+            .unwrap();
+        let walk = body.find("let mut end = j;").unwrap();
+        let forward = body
+            .find("self.verify_pooled_dev(e, &mut segs, embd_dev)")
+            .unwrap();
+        assert!(read < walk && walk < forward);
+        // The reading counts unified memory's allocatable bytes, never the raw driver figure.
+        let reader = &production[production
+            .find("pub fn pooled_verify_allocatable(")
+            .unwrap()..];
+        let reader = &reader[..reader.find("\n}\n").unwrap()];
+        assert!(reader.contains("crate::unified_memory::allocatable_mem_info(e.ctx())"));
+        assert!(reader.contains("e.pool_cached_bytes()"));
     }
 }
