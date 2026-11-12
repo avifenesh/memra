@@ -1,0 +1,6 @@
+| boot | turns ok | tokens | TTFT median s | agg tok/s | reconcile lines (charged == real) | adoptions / compactions at the end | max books | refused rewinds | pool used: baseline -> after trim (MiB) | charged after trim | out of memory |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 01-BT | 80/80 | 2073 | - | - | 0 (0) | - | 0 | 0 | 18301 -> 18301 | 0 | 0 |
+| 02-ST | 80/80 | 2073 | - | - | 75 (75) | 2074 / 0 | 748 | 0 | 18301 -> 18301 | 0 | 0 |
+
+texts 02-ST vs 01-BT: 80/80 requests equal

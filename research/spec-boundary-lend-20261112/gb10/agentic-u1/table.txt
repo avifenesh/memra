@@ -1,0 +1,10 @@
+| boot | turns ok | tokens | TTFT median s | agg tok/s | reconcile lines (charged == real) | adoptions / compactions at the end | max books | refused rewinds | pool used: baseline -> after trim (MiB) | charged after trim | out of memory |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 01-BT | 29/29 | 9665 | 2.413 | 33.47 | 0 (0) | - | 0 | 0 | 18301 -> 18402 | 0 | 0 |
+| 02-ST | 29/29 | 9665 | 2.477 | 33.54 | 87 (87) | 1904 / 0 | 510 | 0 | 18301 -> 18402 | 0 | 0 |
+| 03-ST | 29/29 | 9665 | 2.409 | 33.45 | 87 (87) | 1904 / 0 | 510 | 0 | 18301 -> 18402 | 0 | 0 |
+| 04-BT | 29/29 | 9665 | 2.404 | 33.44 | 0 (0) | - | 0 | 0 | 18301 -> 18402 | 0 | 0 |
+
+texts 02-ST vs 01-BT: 29/29 requests equal
+texts 03-ST vs 01-BT: 29/29 requests equal
+texts 04-BT vs 01-BT: 29/29 requests equal
