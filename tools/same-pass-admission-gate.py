@@ -19,11 +19,14 @@ The cell, on one card and one boot:
    with `MEMRA_SPEC_GATE_LOW=3` so the keeper and the pair (a projected wave of 3) all stay on the
    DFlash route; at the default band of 2 the pair is priced plain and builds its cache in
    `admit`, which is not the shape under test.
-3. Place: hold a ballast (plain driver allocations in a child process) so effective free beside
-   the keeper lies between `charge_A + floor` and `charge_A + charge_B + floor` (`--place`):
-   each request fits alone, the two together do not. The reading is taken again after the
-   ballast and corrected once; a placement outside that band is refused.
-4. Fire A and B together (two threads), greedy.
+3. Probe the reserve the gate applies (the boot floor plus the verify-graph pool's admission
+   debt, printed only on a defer line): B's prompt with a 4 s deadline on a reading it cannot
+   fit; it defers, names the reserve and expires unadmitted.
+4. Place: hold a ballast (plain driver allocations in a child process) so effective free beside
+   the keeper lies between `charge_A + reserve` and `charge_A + charge_B + reserve`
+   (`--place`): each request fits alone, the two together do not. The reading is taken again
+   after the ballast and corrected once; a placement outside that band is refused.
+5. Fire A and B together (two threads), greedy.
 
 Verdicts, read from the server log after the pair was fired:
 
@@ -78,6 +81,9 @@ BAD_LINES = ("panicked", "[worker] FATAL", "[worker] respawn")
 TICK_LINES = ("[prime-yield]", "[dspark-acc]", "[admit-oom] step OOM")
 WORKER_ADMIT_LINE = "[spec-k] "  # `admit` decided the request's K: the worker admitted it
 SETTLE_LINE = "[admission] settle wait:"
+# The reserve the gate applied, as a VRAM defer or settle wait line names it: the boot floor plus
+# the verify-graph pool's admission debt.
+RE_RESERVE = re.compile(r"< cost \d+MB \+ reserve (\d+)MB")
 
 
 def refuse(msg: str) -> None:
@@ -273,9 +279,9 @@ class Server:
                 return m
         refuse(f"no fresh /metrics snapshot within {timeout_s:.0f}s (is the keeper decoding?)")
 
-    def complete(self, prompt: str, max_tokens: int) -> dict:
+    def complete(self, prompt: str, max_tokens: int, timeout_ms: int = 240000) -> dict:
         body = {"model": "gate", "prompt": prompt, "max_tokens": max_tokens,
-                "temperature": 0, "seed": 1234, "timeout_ms": 240000}
+                "temperature": 0, "seed": 1234, "timeout_ms": timeout_ms}
         req = urllib.request.Request(
             f"{self.base}/v1/completions", data=json.dumps(body).encode(),
             headers={"Content-Type": "application/json"},
@@ -373,7 +379,7 @@ def main() -> None:
     ap.add_argument("--max-tokens", type=int, default=96)
     ap.add_argument("--ctx", type=int, default=32768)
     ap.add_argument("--port", type=int, default=18176)
-    ap.add_argument("--keeper-tokens", type=int, default=8000,
+    ap.add_argument("--keeper-tokens", type=int, default=12000,
                     help="the keeper's max_tokens: it must outlast the placement and the pair")
     ap.add_argument("--place", type=float, default=0.5,
                     help="where in [charge_A + floor, charge_A + charge_B + floor) to place free")
@@ -422,17 +428,36 @@ def main() -> None:
         keeper_thread.start()
         time.sleep(8.0)
         busy_free = effective_free(server.fresh_metrics())
-        lo = learn["A"]["charge"] + floor
-        hi = learn["A"]["charge"] + learn["B"]["charge"] + floor
+        ballast = Ballast(args.out / "ballast.log")
+        # 2b. The reserve the gate applies is the boot floor plus the verify-graph pool's debt,
+        # which no line prints before a request defers. Probe it: B's prompt once more, with a
+        # 4 s deadline, on a reading 300 MB short of its charge plus the floor; its defer line
+        # names the reserve and the request expires unadmitted (408).
+        probe_free = learn["B"]["charge"] + floor - 300 * MB
+        if not ballast.set(max(0, busy_free - probe_free)):
+            refuse("the driver could not give the reserve probe's ballast")
+        start = len(serve_log.read_text(errors="replace").splitlines())
+        probe = server.complete(prompts["B"], args.max_tokens, timeout_ms=4000)
+        time.sleep(0.5)
+        reserves = [int(m.group(1)) * MB for line in log_lines(serve_log, start)
+                    if (m := RE_RESERVE.search(line))]
+        summary["reserve_probe"] = {"status": probe["status"], "reserve_lines": len(reserves)}
+        if probe["status"] == 200 or not reserves:
+            refuse(f"the reserve probe was not deferred (HTTP {probe['status']}, "
+                   f"{len(reserves)} reserve lines)")
+        reserve = reserves[-1]
+        lo = learn["A"]["charge"] + reserve
+        hi = learn["A"]["charge"] + learn["B"]["charge"] + reserve
         target = int(lo + (hi - lo) * args.place)
-        summary.update({"busy_free": busy_free, "one_fits_at": lo, "two_fit_at": hi, "target_free": target})
+        summary.update({"reserve": reserve, "one_fits_at": lo, "two_fit_at": hi, "target_free": target,
+                        "busy_free": busy_free})
         if busy_free < target:
             refuse(f"effective free {busy_free / MB:.0f}MB beside the keeper is under the target "
                    f"{target / MB:.0f}MB")
-        ballast = Ballast(args.out / "ballast.log")
-        if not ballast.set(busy_free - target):
+        # Place, then one correction: the keeper's own allocations move the reading.
+        here = effective_free(server.fresh_metrics())
+        if not ballast.set(max(0, ballast.total + here - target)):
             refuse(f"the driver could not give a {(busy_free - target) / MB:.0f}MB ballast")
-        # One correction: the keeper's own allocations move the reading after the first take.
         first = effective_free(server.fresh_metrics())
         if not ballast.set(max(0, ballast.total + first - target)):
             refuse("the driver could not give the corrected ballast")
@@ -441,7 +466,8 @@ def main() -> None:
         summary["free_before_pair"] = effective_free(server.fresh_metrics())
         print(f"placed: beside the keeper {busy_free / MB:.0f}MB, ballast {ballast.total / MB:.0f}MB "
               f"(first read after it {first / MB:.0f}MB), after {summary['free_before_pair'] / MB:.0f}MB; "
-              f"one fits at {lo / MB:.0f}MB, two at {hi / MB:.0f}MB, target {target / MB:.0f}MB", flush=True)
+              f"reserve {reserve / MB:.0f}MB (floor {floor / MB:.0f}MB); one fits at {lo / MB:.0f}MB, "
+              f"two at {hi / MB:.0f}MB, target {target / MB:.0f}MB", flush=True)
         if not lo <= summary["free_before_pair"] < hi:
             refuse(f"placement missed the band: {summary['free_before_pair'] / MB:.0f}MB not in "
                    f"[{lo / MB:.0f}, {hi / MB:.0f})MB")

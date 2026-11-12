@@ -85,6 +85,15 @@ class PairShape(unittest.TestCase):
         self.assertFalse(gate.pair_shape(lines, PAIR)["both_admitted_in_one_pass"])
 
 
+class Reserve(unittest.TestCase):
+    def test_the_applied_reserve_is_read_from_a_defer_or_settle_line(self):
+        defer = ('[admit-oom] VRAM defer: 2 active, effective free 2112MB (driver + 1652MB pool-cached) '
+                 '< cost 815MB + reserve 1653MB \u2014 queueing (FIFO) [pool res 22750MB used 21098MB]')
+        self.assertEqual(gate.RE_RESERVE.search(defer).group(1), "1653")
+        self.assertEqual(gate.RE_RESERVE.search(SETTLE).group(1), "1576")
+        self.assertIsNone(gate.RE_RESERVE.search(COST_SPEC))
+
+
 class ChargeOf(unittest.TestCase):
     def test_spec_charge_is_cost_plus_plane(self):
         lines = [
