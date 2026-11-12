@@ -20,7 +20,7 @@ import threading
 import time
 import traceback
 
-from cache_qualification import capture_len, gdn_grid
+from cache_qualification import capture_len, gdn_grid, tail_witness, whole_prompt_restores
 
 
 def digest(path):
@@ -203,11 +203,30 @@ def server_capture_len(prompt_tokens):
     return capture_len(prompt_tokens, gdn_grid({}))
 
 
-def cache_check(cold, warm):
+def cache_check(cold, warm, lines=()):
+    """`lines` is the server log of this cell's own requests: a warm request that restored the
+    whole off-grid prompt must have its prompt-end tail's insert line there (memra#1233); without
+    it only the grid entry passes."""
+    grid = gdn_grid({})
     require(cold["cached_tokens"] == 0, "cold request restored cache")
-    require(warm["cached_tokens"] == server_capture_len(cold["prompt_tokens"]), "cache grid accounting differs")
+    require(warm["cached_tokens"] in whole_prompt_restores(cold["prompt_tokens"], grid),
+            "cache grid accounting differs")
+    if warm["cached_tokens"] != capture_len(cold["prompt_tokens"], grid):
+        require(tail_witness(lines, cold["prompt_tokens"], grid),
+                "whole-prompt restore without a prompt-end tail insert line")
     require(warm["cached_tokens"] > 0, "warm request did not restore cache")
     same_completion(cold, warm, "cold/warm")
+
+
+def witness_lines(server, start, cold, warm):
+    """The cell's own server log lines for `cache_check`. The log reader can lag the HTTP reply,
+    so a warm request that restored the whole off-grid prompt waits for the tail's insert line."""
+    if warm["cached_tokens"] == cold["prompt_tokens"] != server_capture_len(cold["prompt_tokens"]):
+        try:
+            server.event("[prefix-cache] insert tail:", start, timeout=10)
+        except ValueError:
+            pass  # cache_check names the missing witness
+    return list(server.lines[start:])
 
 
 def same_completion(a, b, label):
@@ -283,10 +302,13 @@ def collect(args):
         cell("streaming", streaming)
 
         def cache():
+            start = len(server.lines)
             cold, _ = req("cache-cold", body(salt="cache"))
             warm, _ = req("cache-warm", body(salt="cache"))
-            cache_check(cold, warm)
-            return {"cold": cold, "warm": warm, "expected_cached": server_capture_len(cold["prompt_tokens"])}
+            cache_check(cold, warm, witness_lines(server, start, cold, warm))
+            return {"cold": cold, "warm": warm, "expected_cached": server_capture_len(cold["prompt_tokens"]),
+                    "restored_through_tail": warm["cached_tokens"] == cold["prompt_tokens"]
+                    != server_capture_len(cold["prompt_tokens"])}
         cell("cache", cache)
 
         def concurrency():
@@ -306,6 +328,7 @@ def collect(args):
         cell("concurrency", concurrency)
 
         def cancellation():
+            cell_start = len(server.lines)
             control, _ = req("cancel-control", body(salt="cancel-control"))
             start = len(server.lines)
             cancelled = server.request("cancel-disconnect", body(salt="cancel-fault", maximum=1024,
@@ -313,7 +336,7 @@ def collect(args):
             aborted = server.event("[abort] client disconnected:", start, timeout=30)
             require(not b"data: [DONE]" in (on / "cancel-disconnect.sse").read_bytes(), "cancel stream already complete")
             recovery, _ = req("cancel-recovery", body(salt="cancel-control"))
-            cache_check(control, recovery)
+            cache_check(control, recovery, witness_lines(server, cell_start, control, recovery))
             server.request("cancel-readyz", route="/readyz")
             return {"control": control, "disconnected": cancelled, "abort_log": aborted, "recovery": recovery}
         cell("cancellation", cancellation)
@@ -324,9 +347,10 @@ def collect(args):
                       + "List the colors from the archive:\n")
             tokens, _ = server.request("long-tokenize", {"model": "gate", "prompt": prompt}, "/v1/tokenize")
             require(6000 <= tokens["count"] <= 8128, f"long fixture has {tokens['count']} tokens outside declared band")
+            start = len(server.lines)
             cold, _ = req("long-cold", body(prompt, "long"))
             warm, _ = req("long-warm", body(prompt, "long"))
-            cache_check(cold, warm)
+            cache_check(cold, warm, witness_lines(server, start, cold, warm))
             require(cold["prompt_tokens"] == tokens["count"], "tokenize/usage mismatch")
             return {"cold": cold, "warm": warm, "context_envelope": 8192,
                     "tested_prompt_tokens": tokens["count"], "generation_budget": 64}

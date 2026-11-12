@@ -11,6 +11,9 @@ A hit's expected `cached_tokens` is the length of the entry the prompt-end seed 
 the prompt length: since memra#602 the seed publishes at the largest length on the GDN prime grid
 under the prompt end (`capture_len` below, the law of `seed_capture_boundary` in
 crates/memra-server/src/worker.rs), so a 4860-token prompt publishes and restores 4832 tokens.
+Since memra#1233 that entry also carries the prompt-end state its cold prime ended in (a tail kept
+while the prefix budget has room, `PromptEndTail`), so an exact re-send restores all 4860 tokens;
+a hit reports either length.
 """
 
 from __future__ import annotations
@@ -45,6 +48,7 @@ COUNTERS = (
     "prefix_cache_inserts",
     "prefix_cache_evictions",
     "prefix_cache_hit_tokens",
+    "prefix_cache_tail_hits",
     "prefix_cache_entries",
     "prefix_cache_bytes",
     "admission_session_defers",
@@ -383,12 +387,16 @@ def response_ok(row: dict[str, Any], workload: dict[str, Any]) -> bool:
 
 
 def usage_mismatches(
-    row: dict[str, Any], expected_cached: int, workload: dict[str, Any]
+    row: dict[str, Any],
+    expected_cached: int,
+    workload: dict[str, Any],
+    also_cached: int | None = None,
 ) -> list[str]:
     """Every prompt-side usage field that disagrees with the closed-form expectation, named.
 
     The completion count is the response check's (`response_ok`): a short request is a token
-    regression, and it is not also reported as a usage mismatch.
+    regression, and it is not also reported as a usage mismatch. `also_cached` is a second
+    accepted `cached_tokens` (a whole-prompt hit through the entry's prompt-end tail, memra#1233).
     """
     expected = {
         "prompt_tokens": int(workload["prompt_tokens"]),
@@ -398,6 +406,7 @@ def usage_mismatches(
         f"{key} {row.get(key)} != expected {value}"
         for key, value in expected.items()
         if row.get(key) != value
+        and not (key == "cached_tokens" and also_cached is not None and row.get(key) == also_cached)
     ]
 
 
@@ -409,7 +418,9 @@ def judge_request(
     workload: dict[str, Any],
 ) -> dict[str, Any]:
     """Judge one scored request; pure, so a banked receipt replays through the same code."""
-    mismatches = usage_mismatches(row, expected_cached, workload)
+    # A hit restores the grid entry or, through its prompt-end tail, the whole prompt (memra#1233).
+    also = int(workload["prompt_tokens"]) if int(expected_cached) > 0 else None
+    mismatches = usage_mismatches(row, expected_cached, workload, also)
     golden_ok = bool(golden_sha256 is None or row.get("text_sha256") == golden_sha256)
     # Cache exactness is byte-gated under the same serial decode composition at c=1.
     # At c>1, the repository's documented batched-prime near-tie class can move text
@@ -440,7 +451,8 @@ def judge_seed(
     """Judge one hot-set seed; records the template's golden on its first clean answer.
 
     A seed is either the first send of its namespace (cached 0) or a re-send that restores the
-    entry an earlier seed published (cached == capture_len, never the prompt end off the grid).
+    entry an earlier seed published (cached == capture_len) or, through that entry's prompt-end
+    tail, the whole prompt (memra#1233).
     """
     failures: list[str] = []
     expected_hash = goldens.get((label, template))
@@ -451,10 +463,11 @@ def judge_seed(
     if not row.get("ok"):
         failures.append(f"{label} hot template {template}: seed failed: {row.get('error')}")
     entry = capture_len(prompt_n, grid)
-    if row.get("cached_tokens") not in (0, entry):
+    if row.get("cached_tokens") not in (0, entry, prompt_n):
         failures.append(
             f"{label} hot template {template}: {FAIL_USAGE}: seed cached "
-            f"{row.get('cached_tokens')} not 0 or {entry} (capture_len({prompt_n}, grid {grid}))"
+            f"{row.get('cached_tokens')} not 0, {entry} (capture_len({prompt_n}, grid {grid})) "
+            f"or {prompt_n} (the prompt-end tail)"
         )
     return failures
 
@@ -502,6 +515,21 @@ def cell_integrity_failures(
         failures.append(f"{FAIL_ACCOUNTING}: cached_tokens_in drift={drift_cached_in}")
     if drift_prefix_tokens != 0:
         failures.append(f"{FAIL_ACCOUNTING}: prefix_cache_hit_tokens drift={drift_prefix_tokens}")
+    # A whole-prompt restore of an off-grid prompt goes through the entry's prompt-end tail
+    # (memra#1233) and the server counts it; one the server did not count is an off-grid
+    # prompt-end entry, the memra#602 defect. Receipts older than the counter carry no such row.
+    whole_n = sum(
+        int(row.get("expected_cached_tokens") or 0) > 0
+        and row.get("cached_tokens") == row.get("prompt_tokens")
+        and row.get("cached_tokens") != row.get("expected_cached_tokens")
+        for row in target_rows
+    )
+    tail_hits = int(deltas.get("prefix_cache_tail_hits") or 0)
+    if whole_n != tail_hits:
+        failures.append(
+            f"{FAIL_ACCOUNTING}: {whole_n} whole-prompt restores != prefix_cache_tail_hits "
+            f"delta {tail_hits} (a whole-prompt restore needs its prompt-end tail)"
+        )
     if deltas["prefix_cache_hits"] != expected_hit_n:
         failures.append(
             f"{FAIL_ACCOUNTING}: prefix hit count {deltas['prefix_cache_hits']} != {expected_hit_n}"

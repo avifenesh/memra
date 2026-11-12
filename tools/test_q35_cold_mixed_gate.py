@@ -156,13 +156,37 @@ class MutatedReceipts(unittest.TestCase):
             if row.get("kind") == kind and (role is None or row.get("cache_role") == role)
         )
 
-    def test_hit_reporting_the_prompt_end_is_a_usage_mismatch(self) -> None:
+    def test_hit_reporting_the_prompt_end_passes(self) -> None:
+        """memra#1233: an exact re-send restores the whole prompt through the entry's tail."""
         rows = copy.deepcopy(self.rows)
         hit = self._first(rows, "request", "hit")
         hit["cached_tokens"] = 4860
         cell = self._first(rows, "cell")
         cell["counter_deltas"]["cached_tokens_in"] += 28
         cell["counter_deltas"]["prefix_cache_hit_tokens"] += 28
+        cell["counter_deltas"]["prefix_cache_tail_hits"] = 1
+        summary = self._replay(rows)
+        self.assertEqual(summary["verdict"], "PASS", summary)
+
+    def test_hit_reporting_the_prompt_end_without_a_tail_hit_fails(self) -> None:
+        """A whole-prompt restore the server did not count as a tail hit is the off-grid
+        prompt-end entry of memra#602, not a tail restore."""
+        rows = copy.deepcopy(self.rows)
+        hit = self._first(rows, "request", "hit")
+        hit["cached_tokens"] = 4860
+        cell = self._first(rows, "cell")
+        cell["counter_deltas"]["cached_tokens_in"] += 28
+        cell["counter_deltas"]["prefix_cache_hit_tokens"] += 28
+        summary = self._replay(rows)
+        self.assertEqual(summary["verdict"], "FAIL")
+
+    def test_hit_reporting_neither_length_is_a_usage_mismatch(self) -> None:
+        rows = copy.deepcopy(self.rows)
+        hit = self._first(rows, "request", "hit")
+        hit["cached_tokens"] = 4800
+        cell = self._first(rows, "cell")
+        cell["counter_deltas"]["cached_tokens_in"] -= 32
+        cell["counter_deltas"]["prefix_cache_hit_tokens"] -= 32
         summary = self._replay(rows)
         self.assertEqual(summary["verdict"], "FAIL")
         self.assertEqual(summary["failure_classes"], ["usage_mismatch"])
@@ -189,9 +213,9 @@ class MutatedReceipts(unittest.TestCase):
         self.assertEqual(summary["verdict"], "FAIL")
         self.assertEqual(summary["failure_classes"], ["cell_accounting"])
 
-    def test_seed_restoring_the_prompt_end_fails_as_seed_usage(self) -> None:
+    def test_seed_restoring_neither_length_fails_as_seed_usage(self) -> None:
         rows = copy.deepcopy(self.rows)
-        self._first(rows, "seed")["cached_tokens"] = 4860
+        self._first(rows, "seed")["cached_tokens"] = 4800
         summary = self._replay(rows)
         self.assertEqual(summary["verdict"], "FAIL")
         self.assertIn("seed_failure", summary["failure_classes"])
@@ -201,14 +225,14 @@ class MutatedReceipts(unittest.TestCase):
 class SeedJudge(unittest.TestCase):
     ROW = {"ok": True, "text_sha256": "a" * 64}
 
-    def test_seed_accepts_cold_and_grid_entry(self) -> None:
-        for cached in (0, 4832):
+    def test_seed_accepts_cold_grid_entry_and_prompt_end(self) -> None:
+        for cached in (0, 4832, 4860):
             with self.subTest(cached=cached):
                 row = dict(self.ROW, cached_tokens=cached)
                 self.assertEqual(HARNESS.judge_seed("q35", 0, row, 4860, 32, {}), [])
 
-    def test_seed_rejects_the_prompt_end(self) -> None:
-        row = dict(self.ROW, cached_tokens=4860)
+    def test_seed_rejects_neither_length(self) -> None:
+        row = dict(self.ROW, cached_tokens=4800)
         failures = HARNESS.judge_seed("q35", 0, row, 4860, 32, {})
         self.assertEqual(len(failures), 1)
         self.assertIn(HARNESS.FAIL_USAGE, failures[0])

@@ -64,7 +64,17 @@ class RefusalChecks(unittest.TestCase):
         cold = collector.completion(response(), 64)
         warm = {**cold, "cached_tokens": 64}
         collector.cache_check(cold, warm)
-        for bad in ({**warm, "cached_tokens": 0}, {**warm, "cached_tokens": 106},
+        # memra#1233: the whole prompt through the grid entry's prompt-end tail, and only with
+        # the tail's insert line in the server log (an off-grid prompt-end entry has none).
+        whole = {**warm, "cached_tokens": cold["prompt_tokens"]}
+        rest = cold["prompt_tokens"] - 64
+        line = f"[prefix-cache] insert tail: {rest} prompt-end tokens past the 64-token entry, 157.9MB"
+        collector.cache_check(cold, whole, [line])
+        for lines in ([], [line.replace("past the 64-", "past the 32-")],
+                      [line.replace(f"tail: {rest} ", f"tail: {rest + 1} ")]):
+            with self.assertRaisesRegex(ValueError, "without a prompt-end tail"):
+                collector.cache_check(cold, whole, lines)
+        for bad in ({**warm, "cached_tokens": 0}, {**warm, "cached_tokens": 96},
                     {**warm, "text_sha256": "different"}, {**warm, "completion_tokens": 3}):
             with self.assertRaises(ValueError):
                 collector.cache_check(cold, bad)

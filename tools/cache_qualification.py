@@ -23,7 +23,9 @@ class QualificationError(ValueError):
 
 # The memra#602 capture law (crates/memra-server/src/worker.rs `seed_capture_boundary`): a
 # whole-prompt re-send restores the entry the prompt-end seed published, which sits on the GDN
-# prime grid, so its cached_tokens is capture_len(prompt_tokens), not prompt_tokens.
+# prime grid, so its cached_tokens is capture_len(prompt_tokens). Since memra#1233 a plain seed's
+# entry also carries the prompt-end state its prime ended in while the prefix budget has free room
+# (`PromptEndTail`), and such a re-send restores all prompt_tokens: `whole_prompt_restores`.
 PRIME_MIN_T = 16
 PREFIX_CACHE_MIN_TOKENS = 64
 
@@ -235,3 +237,25 @@ def completion(base, body, output, name, raw_tape=False):
     row.update(name=name, http_status=status, wall_s=round(time.monotonic() - start, 3), ttft_s=ttft, spec=spec)
     (output / (name + "-verdict.json")).write_text(json.dumps(row, indent=2) + "\n")
     return row
+
+
+def whole_prompt_restores(prompt_tokens, grid=None):
+    """The cached_tokens an exact re-send of a `prompt_tokens` prompt may report: the grid entry
+    (capture_len) or, through that entry's prompt-end tail, the whole prompt (memra#1233)."""
+    entry = capture_len(prompt_tokens, grid)
+    return {entry, prompt_tokens} if entry else set()
+
+
+TAIL_INSERT = re.compile(r"\[prefix-cache\] insert tail: (\d+) prompt-end tokens past the (\d+)-token entry")
+
+
+def tail_witness(lines, prompt_tokens, grid=None):
+    """Did the server attach the prompt-end tail a whole-prompt restore of `prompt_tokens` needs?
+    True when its log has `[prefix-cache] insert tail:` for exactly the tokens between the grid
+    entry (capture_len) and the prompt end. A whole-prompt `cached_tokens` without this line is
+    an off-grid prompt-end entry, the defect memra#602 fixed, not a tail restore (memra#1233)."""
+    entry = capture_len(prompt_tokens, grid)
+    if not entry or entry == prompt_tokens:
+        return False
+    want = (str(prompt_tokens - entry), str(entry))
+    return any(m.groups() == want for line in lines if (m := TAIL_INSERT.search(line)))

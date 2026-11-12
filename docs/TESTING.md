@@ -220,7 +220,7 @@ Receipts: `research/request-fault-20260922/`, `research/spec-ctx-edge-20260923/`
 
 ### Prefix cache
 
-All three boot the real `memra-server` on one card, hold the canonical rig lock for the whole cell
+All four boot the real `memra-server` on one card, hold the canonical rig lock for the whole cell
 (`--external-lock FD` under the collector), print one verdict line ending `-> PASS|FAIL`, and exit
 0 (pass), 1 (fail) or 2 (`REFUSED: ...`).
 
@@ -229,10 +229,18 @@ All three boot the real `memra-server` on one card, hold the canonical rig lock 
 | eviction credits admission | `tools/prefix-evict-reclaim-gate.py --model <gguf> --bin <memra-server> --out <new-dir>` | an eviction on defer credits at least the entry's bytes, the waiting prefill is admitted in the same tick, and texts match across boots |
 | restore identity | `tools/prefix-restore-identity-gate.py --model <gguf> --bin <memra-server> --out <new-dir>` | every restore point gives the cold completion and lands on the GDN prime grid |
 | newest turn fits | `tools/prefix-newest-turn-fits-gate.py --model <gguf> --bin <memra-server> --out <new-dir>` | each turn of a growing conversation restores the previous turn's entry under plain-LRU pressure, bytes balance, and texts equal cold |
+| exact re-send | `tools/prefix-exact-resend-gate.py --model <gguf> --bin <memra-server> --out <new-dir>` | an exact re-send of an off-grid prompt restores the whole prompt through the entry's prompt-end tail with no prime call, growth still restores the grid entry and primes on the grid, a tail attached by a covered hit serves its own prompt only, and all nine texts equal cold |
+
+A whole-prompt `cached_tokens` on an off-grid prompt is accepted only with its tail's witness: the
+sellgate replay counts such restores against the `/metrics` `prefix_cache_tail_hits` delta, and
+`tools/collect-serving-qualification.py` requires the entry's `[prefix-cache] insert tail:` line in
+its own cell's server log (`cache_qualification.tail_witness`). Without the witness it is the
+off-grid prompt-end entry of memra#602 and fails.
 
 The capture and eviction law is in [SERVING.md](SERVING.md); the policy choice is
 [PREFIX-CACHE-POLICY](decisions/PREFIX-CACHE-POLICY.md). Receipts: `research/spill-b-20260919/`
-days 13 to 19.
+days 13 to 19 and `research/hit-prompt-end-20261111/` (the prompt-end tail and the hit-suffix
+fence, [PREFIX-PROMPT-END-TAIL](decisions/PREFIX-PROMPT-END-TAIL.md)).
 
 ### Multi-GPU (PP-N) exactness gates: run on the multi-card box
 <a id="multi-gpu-pp-n-exactness-gates--run-on-the-multi-card-box"></a>

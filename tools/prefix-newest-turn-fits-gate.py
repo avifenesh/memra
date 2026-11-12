@@ -78,8 +78,9 @@ verdict, none is relaxed for a binary):
                   --grow-tokens 150`) it read 11/12 on `main` (turn 10) while V1..V4 passed.
   V6 grid:        every `insert (seed)` of the measured boot (cohort and turns) has exactly
                   `capture_len(prompt_tokens)` tokens, and every hit's restored length is a
-                  multiple of `--grid`: the capture law above, checked on the server's own
-                  lines. Red on an off-grid prompt-end seed even when V5 happens to hold (a
+                  multiple of `--grid` (or, for a cohort re-send restored through the entry's
+                  prompt-end tail, memra#1233, the whole prompt): the capture law above, checked
+                  on the server's own lines. Red on an off-grid prompt-end seed even when V5 happens to hold (a
                   near-tie that did not flip on one card is not identity).
   Recorded, not judged: the per-turn `[primeseg] call start=.. grid_off=..` receipts
   (MEMRA_DEBUG_PRIMESEG=1, an existing diagnostic) and the count of off-grid prime-call starts.
@@ -147,6 +148,12 @@ RE_EVICT = re.compile(
     r"\[prefix-cache\] evict \((?:snapshot preflight(?:, )?)?(Probation|Protected)? ?(?:LRU)?\): (\d+) tokens, ([\d.]+)MB"
 )
 RE_NS = re.compile(r'ns "([^"]+)"')
+# Prompt-end tails (memra#1233, `PromptEndTail`): a grid entry carries the prompt-end state of the
+# prompt that published it, in free budget room only, dropped before any entry that served a
+# hit. Neither line is an entry insert or an entry eviction; the gate tracks their bytes so the
+# shape arithmetic below reads the entries' own bytes.
+RE_TAIL_INSERT = re.compile(r"\[prefix-cache\] insert tail: (\d+) prompt-end tokens past the (\d+)-token entry, ([\d.]+)MB")
+RE_TAIL_EVICT = re.compile(r"\[prefix-cache\] evict tail \([^)]*\): (\d+) prompt-end tokens past the (\d+)-token entry, ([\d.]+)MB")
 RE_REFUSED = re.compile(r"\[prefix-cache\] insert refused: (.*)$")
 RE_SKIPPED = re.compile(r"\[prefix-cache\] snapshot skipped: (.*)$")
 # The grid law's own typed refusal (memra#602): counted with the refusals above.
@@ -362,7 +369,7 @@ def effective_free(row: dict) -> int:
 
 
 def parse_window(lines: list[str]) -> dict:
-    ev: dict = {"inserts": [], "hits": [], "evicts": [], "refused": [], "skipped": [], "demotes": 0, "reclaims": 0, "lines": [], "route": [], "primeseg": [], "parked_releases": []}
+    ev: dict = {"inserts": [], "hits": [], "evicts": [], "refused": [], "skipped": [], "demotes": 0, "reclaims": 0, "lines": [], "route": [], "primeseg": [], "parked_releases": [], "tail_inserts": [], "tail_evicts": []}
     for ln in lines:
         if "[prefix-cache]" in ln or "[admit-oom]" in ln or "[glm5-spec] route=" in ln or "[spec-k] model=" in ln or "[primeseg] call" in ln:
             ev["lines"].append(ln.strip())
@@ -377,6 +384,14 @@ def parse_window(lines: list[str]) -> dict:
         m = RE_SPECK.search(ln)
         if m:
             ev["route"].append({"kind": "spec-k", "prompt": int(m.group(1)), "cached": int(m.group(2)), "lcp": int(m.group(3)), "line": ln.strip()})
+            continue
+        m = RE_TAIL_INSERT.search(ln)
+        if m:
+            ev["tail_inserts"].append({"tokens": int(m.group(1)), "entry": int(m.group(2)), "mb": float(m.group(3))})
+            continue
+        m = RE_TAIL_EVICT.search(ln)
+        if m:
+            ev["tail_evicts"].append({"tokens": int(m.group(1)), "entry": int(m.group(2)), "mb": float(m.group(3))})
             continue
         m = RE_INSERT.search(ln)
         if m:
@@ -711,17 +726,31 @@ def main() -> None:
                 refuse(f"cohort prompt of {n} tokens published {len(ins)} seed entries, expected one (window: {w1['lines']})")
             points.append((ins[0]["tokens"], ins[0]["mb"] * 1e6))
             # The second send must restore the entry the first one published, whole (the
-            # published length, which the grid law makes `capture_len(n)`: judged by V6 below).
-            if second["cached_tokens"] != ins[0]["tokens"] or not w2["hits"] or w2["hits"][0]["hit"] != ins[0]["tokens"]:
-                refuse(f"cohort promotion did not happen for {n} tokens: second send cached={second['cached_tokens']} of {second['prompt_tokens']}, published {ins[0]['tokens']}")
+            # published length, which the grid law makes `capture_len(n)`: judged by V6 below),
+            # or, when the first send attached its prompt-end tail to that entry (memra#1233),
+            # the whole prompt through it.
+            tailed = any(t["entry"] == ins[0]["tokens"] and t["entry"] + t["tokens"] == first["prompt_tokens"] for t in w1["tail_inserts"])
+            restored_ok = (ins[0]["tokens"],) + ((second["prompt_tokens"],) if tailed else ())
+            if second["cached_tokens"] not in restored_ok or not w2["hits"] or w2["hits"][0]["hit"] != second["cached_tokens"]:
+                refuse(f"cohort promotion did not happen for {n} tokens: second send cached={second['cached_tokens']} of {second['prompt_tokens']}, published {ins[0]['tokens']}{' (tail attached)' if tailed else ''}")
             grid_rows.append({"who": f"cohort {n}", "kind": "insert", "tokens": ins[0]["tokens"], "expected": capture_len(first["prompt_tokens"], args.grid), "prompt_tokens": first["prompt_tokens"]})
-            grid_rows.append({"who": f"cohort {n}", "kind": "hit", "tokens": second["cached_tokens"], "expected": ins[0]["tokens"], "prompt_tokens": second["prompt_tokens"]})
+            grid_rows.append({"who": f"cohort {n}", "kind": "hit", "tokens": second["cached_tokens"], "expected": second["cached_tokens"] if second["cached_tokens"] in restored_ok else ins[0]["tokens"], "prompt_tokens": second["prompt_tokens"], "through_tail": second["cached_tokens"] == second["prompt_tokens"] and tailed})
         cohort_row = rec["cohort"][-1]["metrics_after"]
         if cohort_row is None:
             refuse("/metrics never settled after the cohort")
-        cohort_bytes = cohort_row["prefix_cache_bytes"]
+        # Tails are soft bytes (dropped before any entry that served a hit): the shape
+        # reads the cohort ENTRIES' bytes, the resident cache bytes less the resident tails.
+        cohort_tail_bytes = int(
+            sum(t["mb"] for c in rec["cohort"] for w in (c["window_first"], c["window_second"]) for t in w["tail_inserts"]) * 1e6
+            - sum(t["mb"] for c in rec["cohort"] for w in (c["window_first"], c["window_second"]) for t in w["tail_evicts"]) * 1e6
+        )
+        cohort_bytes = cohort_row["prefix_cache_bytes"] - max(0, cohort_tail_bytes)
         if cohort_row["prefix_cache_entries"] != len(cohort_tokens) or cohort_row["prefix_cache_evictions"] != 0:
-            refuse(f"the cohort is not intact: {cohort_row}")
+            # Prompt-end tails (memra#1233) are evicted before any entry that served a hit, so they
+            # never cost the re-sent cohort an entry; the refusal names their bytes so a policy
+            # that lets one do so is read off the line.
+            why = f" ({cohort_tail_bytes} B of prompt-end tails are resident beside the entries)" if cohort_tail_bytes > 0 else ""
+            refuse(f"the cohort is not intact{why}: {cohort_row}")
         if any(w["demotes"] for c in rec["cohort"] for w in (c["window_first"], c["window_second"])):
             refuse("a cohort entry was demoted during seeding; the cohort exceeds the protected share")
         per_token, fixed = fit_bytes_per_token(points)
@@ -732,6 +761,7 @@ def main() -> None:
             "budget_bytes": budget,
             "cohort_cap_bytes": cohort_cap,
             "cohort_bytes": cohort_bytes,
+            "cohort_tail_bytes": cohort_tail_bytes,
             "cohort_points": points,
             "fit_bytes_per_token": per_token,
             "fit_fixed_bytes": fixed,
@@ -849,7 +879,9 @@ def main() -> None:
     v6_rows = []
     for row in grid_rows:
         on_law = row["tokens"] is not None and row["expected"] is not None and row["tokens"] == row["expected"]
-        on_grid = row["tokens"] is not None and row["tokens"] % args.grid == 0
+        # A whole-prompt restore through the entry's prompt-end tail (memra#1233) ends at the
+        # prompt end, not on the grid; its base entry is on the grid (the insert row above).
+        on_grid = row["tokens"] is not None and (row["tokens"] % args.grid == 0 or bool(row.get("through_tail")))
         row["ok"] = on_law and on_grid
         v6_rows.append(row["ok"])
     v6 = bool(v6_rows) and all(v6_rows)

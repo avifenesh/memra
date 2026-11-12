@@ -342,7 +342,16 @@ followed by the serving batched-decode trunk (`research/coldfix-20260812/`).
 
 Mixed hit/cold scheduling separately protects cache-hit first-token latency. A full-prompt cache
 hit already owns the logits needed for its first decode, so an admitted hit takes that decode
-before unrelated synchronous cold prefill. When an interactive completion opens a client-
+before unrelated synchronous cold prefill. A restored hit whose remaining suffix completes in one
+prime call (at least `PRIME_MIN_T`, at most the tick budget, no capture boundary inside) takes that
+call first as well: the tick primes those suffixes only and cold prefill waits one tick
+(`hit_suffix_fits_one_call`, memra#1233). The fence takes resumed rows (a prefix-cache hit, a pool or
+affinity resume) on models that prime a carried suffix, and it is bounded: once its consecutive deferred ticks add up to the time of one
+prefill chunk at the measured rate, it stands down for one tick and the suffixes prime beside the
+cold chunks (`hit_suffix_fence_yields`), so a steady stream of hits never holds cold prefill back
+longer than one chunk's time plus one fenced tick. It also stands down while the deadline-aware
+prefill order is on, and on a tick where a whole-prompt hit waits for its first decode. Before the fence, an exact re-send of an off-grid prompt whose
+grid entry had no prompt-end tail shared its tick with cold 1,024-token chunks. When an interactive completion opens a client-
 concurrency slot while cold prefill remains, the scheduler also uses the short
 `MEMRA_PRIME_BATCH_HOLD_MS` window as a refill grace. That lets a not-yet-admitted replacement
 cross the HTTP/channel boundary before the worker can enter the next cold prime call. The fence
@@ -3354,9 +3363,25 @@ start. Operator-visible consequences, stated plainly:
   multiple of `gdn_chunk_size()` (32), otherwise the largest multiple of 32 below `P` whose
   remainder is at least 16 (a 1..15 remainder steps one grid unit further down). A hit against
   it reports `cached_tokens == capture_len(P_previous)`, never `P_previous`: the bill and the
-  `/metrics` hit mass count what was restored. An exact re-send of an off-grid prompt is a hit
-  of `capture_len(P)` plus a suffix prime of 16..47 tokens from a grid start, not a whole-entry
-  restore.
+  `/metrics` hit mass count what was restored. Since memra#1233 the grid entry also carries the
+  prompt-end tail of the prompt that published it (next item), so an exact re-send of an off-grid
+  prompt restores all `P` tokens while that tail is resident; without it the re-send is a hit of
+  `capture_len(P)` plus a suffix prime of 16..47 tokens from a grid start.
+- **Prompt-end tails (memra#1233).** At prefill-done a plain session that published (or restored
+  and primed past) the grid entry under an off-grid prompt end attaches the rest of the state its
+  prime ended in to that entry: the KV rows past the entry, the recurrent (GDN) state and the logits
+  at the prompt end (`PromptEndTail`, worker.rs). A prompt equal to the entry's key plus the tail's
+  tokens restores both in one launch and decodes its first token from the restored logits, the
+  state the cold prime itself ended in; every longer prompt still restores the grid entry, so the
+  grid law above is unchanged. The recurrent state dominates a tail: 157.6 MB at 24 tokens on
+  Qwen3.8-27B (an 11,000-token entry is about 483 MB), 66.1 MB on Ornith-1.5-35B-A3B. A tail
+  therefore never costs an entry that served a hit: it attaches only into free budget room (`[prefix-cache] tail
+  skipped: ...` otherwise), an unproven tail (no restore has gone through it yet) is dropped before
+  any entry, and a proven one before any entry that was itself restored since its insert; it
+  outlives only an oldest entry that never served a hit, which plain LRU takes anyway
+  (`[prefix-cache] evict tail ...`).
+  Tails never spill to the host tier. `/metrics` counts `prefix_cache_tail_attaches`,
+  `prefix_cache_tail_strips`, `prefix_cache_tail_hits` and `prefix_cache_tail_skips`.
 - A prompt between the 64-token entry floor and the floor plus 16 has no grid-aligned entry
   above the floor and publishes nothing, loudly: `[prefix-cache] seed REFUSED (grid): ...`,
   counted in `/metrics` `prefix_cache_seed_grid_refusals` (operator-only). A prime path that
