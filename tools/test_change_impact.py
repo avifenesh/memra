@@ -298,6 +298,58 @@ class GateToolDocsInputs(unittest.TestCase):
         self.assertEqual(sorted(set(missed)), [], "add a gate rule in tools/change-impact.toml for these")
 
 
+class LiteralInputs(unittest.TestCase):
+    """A crate line that spells a docs path is a read unless every spelling sits in a comment or a
+    string literal holding whitespace (a message that names the file). 2026-11-12: error texts
+    citing docs/FLAGS.md and docs/SERVING.md made every edit of those docs a battery-and-perf
+    change on every target."""
+
+    PATH = "docs/FLAGS.md"
+
+    def mention(self, text):
+        k = text.index(self.PATH)
+        start = text.rfind("\n", 0, k) + 1
+        end = text.find("\n", k)
+        return ci._rust_prose_mention(text, ci.rust_text_spans(text), start, len(text) if end < 0 else end,
+                                      self.PATH)
+
+    def test_messages_and_comments_are_mentions(self):
+        for text in ('fn f() { eprintln!("see docs/FLAGS.md now"); }\n',
+                     "let x = 1; // docs/FLAGS.md\n",
+                     "/* see\n docs/FLAGS.md */ let x = 1;\n",
+                     'let m = "first line \\\n docs/FLAGS.md: second";\n',
+                     'let m = r#"a "quoted" docs/FLAGS.md mention"#;\n'):
+            self.assertTrue(self.mention(text), text)
+
+    def test_path_literals_and_code_stay_reads(self):
+        for text in ('fn f() { let _ = include_str!("../../docs/FLAGS.md"); }\n',
+                     'let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/FLAGS.md");\n',
+                     'let m = include_str!(r"../../docs/FLAGS.md");\n',
+                     "fn f<'a>(x: &'a str) { let c = '\\''; let q = \"../../docs/FLAGS.md\"; }\n",
+                     'f("../../docs/FLAGS.md", "see docs/FLAGS.md");\n',
+                     "let p = docs/FLAGS.md;\n",
+                     # a command line reads a path inside a string with spaces
+                     'Command::new("sh").args(["-c", "grep -c x ../../docs/FLAGS.md"]);\n',
+                     # a C raw string, then a glob whose `/*` must not swallow the read below
+                     'let a = cr"C:\\"; let g = "crates/*/src";\nlet t = include_str!("../../docs/FLAGS.md");\n',
+                     # an unterminated block comment: the lexer lost its place, so it is a read
+                     "/* unterminated\nlet t = docs/FLAGS.md;\n"):
+            self.assertFalse(self.mention(text), text)
+
+    def test_the_census_drops_only_mentions(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            run = lambda *a: subprocess.run(["git", "-C", tmp, *a], check=True, capture_output=True)
+            run("init", "-q")
+            src = Path(tmp, "crates/memra-server/src/lib.rs")
+            src.parent.mkdir(parents=True)
+            src.write_text('pub fn f() { eprintln!("ledger: docs/FLAGS.md \'Removed\'"); }\n'
+                           'pub fn g() -> &\'static str { include_str!("../../../docs/SERVING.md") }\n')
+            run("add", "."); run("-c", "user.name=f", "-c", "user.email=f@x", "commit", "-qm", "a")
+            found = ci.literal_inputs(tmp, "HEAD", ["docs/FLAGS.md", "docs/SERVING.md"])
+            self.assertEqual(found, {"docs/SERVING.md": {"memra-server"}})
+
+
 class DiffParse(unittest.TestCase):
     def test_header_lookalike_content_is_still_content(self):
         import tempfile

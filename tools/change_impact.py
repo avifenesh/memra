@@ -527,6 +527,86 @@ def crate_inputs_at(repo, ref, paths):
         return literal, None
 
 
+RUST_RAW_OPEN = re.compile(r'[bc]?r(#*)"')
+# A line that builds a command or a script can read a path inside a string with spaces.
+RUST_COMMAND = re.compile(r'Command|\.args?\(|"-c"|read_to_string|include_str|include_bytes|open\(')
+
+
+def rust_text_spans(text):
+    """Comment and string-literal spans of Rust source: [(start, end, kind, content)], kind
+    "comment" or "string". A small lexer: line and nested block comments, plain and byte
+    strings with escapes, raw strings (r#"..."#), and char literals told apart from lifetimes.
+    A span it cannot close runs to the end of the file, and _rust_prose_mention treats that as a
+    read, so a misparse widens what counts as a read."""
+    spans, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            spans.append((i, j, "comment", text[i:j]))
+            i = j
+        elif text.startswith("/*", i):
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if text.startswith("/*", j):
+                    depth, j = depth + 1, j + 2
+                elif text.startswith("*/", j):
+                    depth, j = depth - 1, j + 2
+                else:
+                    j += 1
+            spans.append((i, j, "comment", text[i:j]))
+            i = j
+        elif c in "bcr" and (m := RUST_RAW_OPEN.match(text, i)) and not (i and (text[i - 1].isalnum() or text[i - 1] == "_")):
+            close = '"' + m.group(1)
+            start = m.end()
+            j = text.find(close, start)
+            j = n if j < 0 else j
+            spans.append((i, j + len(close), "string", text[start:j]))
+            i = j + len(close)
+        elif c == '"' or (c in "bc" and text.startswith(c + '"', i) and not (i and (text[i - 1].isalnum() or text[i - 1] == "_"))):
+            start = i + (2 if c in "bc" else 1)
+            j = start
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            spans.append((i, min(j + 1, n), "string", text[start:j]))
+            i = j + 1
+        elif c == "'":
+            # 'x', '\n', '\u{..}' are char literals; 'a without a closing quote is a lifetime.
+            if text.startswith("\\", i + 1):
+                j = text.find("'", i + 3)
+                i = n if j < 0 else j + 1
+            elif i + 2 < n and text[i + 2] == "'":
+                i += 3
+            else:
+                i += 1
+        else:
+            i += 1
+    return spans
+
+
+def _rust_prose_mention(text, spans, line_start, line_end, path):
+    """Whether every spelling of `path` on one line of Rust source sits in a comment or in a
+    string literal that holds whitespace (a message naming the file: "see docs/FLAGS.md"). A
+    path literal has no whitespace in this repository, so `include_str!("../../docs/X.md")`,
+    `.join("../../docs/X.md")` and `concat!(.., "/../../docs/X.md")` stay reads."""
+    if RUST_COMMAND.search(text[line_start:line_end]):
+        return False
+    spans = [s for s in spans if s[0] < line_end and s[1] > line_start]
+    k = text.find(path, line_start)
+    found = False
+    while 0 <= k < line_end:
+        found = True
+        inside = [s for s in spans if s[0] <= k and k + len(path) <= s[1]]
+        # A span that runs to the end of the file is a lexer that lost its place (an
+        # unterminated string or comment), so the spelling counts as a read.
+        if not inside or inside[0][1] >= len(text) or not (
+                inside[0][2] == "comment" or re.search(r"\s", inside[0][3])):
+            return False
+        k = text.find(path, k + 1)
+    return found
+
+
 def literal_inputs(repo, ref, paths):
     wanted = sorted({p for p in paths if not p.startswith(("crates/", PUBLICATION))})
     if not wanted:
@@ -537,15 +617,31 @@ def literal_inputs(repo, ref, paths):
     result = _git(repo, *args, ref, "--", "crates", check=False)
     if result.returncode not in (0, 1):
         return {"**": {"<literal input census failed>"}}
-    inputs = {}
+    inputs, sources = {}, {}
     for line in result.stdout.decode(errors="replace").splitlines():
-        _, source, _, text = line.split(":", 3)
+        _, source, lineno, text = line.split(":", 3)
         if _comment_line(text) or not _may_read(source, text):
             continue
         package = _package_of(source, None)
         for path in wanted:
-            if path in text:
-                inputs.setdefault(path, set()).add(package or "<unowned>")
+            if path not in text:
+                continue
+            if source.endswith(".rs"):
+                # A Rust message or comment that names a doc does not read it (2026-11-12:
+                # error texts citing docs/FLAGS.md and docs/SERVING.md made every edit of
+                # those docs a battery-and-perf change on every target).
+                if source not in sources:
+                    body = read_blob(repo, ref, source)
+                    sources[source] = None if body is None else (
+                        body, rust_text_spans(body), [0] + [m.end() for m in re.finditer("\n", body)])
+                if sources[source] is not None:
+                    body, spans, starts = sources[source]
+                    row = int(lineno) - 1
+                    if row < len(starts):
+                        end = starts[row + 1] - 1 if row + 1 < len(starts) else len(body)
+                        if _rust_prose_mention(body, spans, starts[row], end, path):
+                            continue
+            inputs.setdefault(path, set()).add(package or "<unowned>")
     return inputs
 
 
