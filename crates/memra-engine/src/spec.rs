@@ -555,24 +555,70 @@ pub(crate) fn capture_trim_keep(reserved: usize, driver_free: usize, required: u
     reserved.saturating_sub(required.saturating_sub(driver_free))
 }
 
+/// What the pre-capture guard does, from its readings (pure, table-tested).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CaptureHeadroomPlan {
+    /// The capture fits: go ahead, nothing trimmed.
+    Go,
+    /// Free memory plus the pool's cache cannot cover the requirement: refuse before any
+    /// attempt (the session drafts eagerly).
+    Refuse { required: usize, effective: usize },
+    /// Discrete card, the driver alone short, the cache would cover it: trim the pool to zero
+    /// (`cuMemPoolTrimTo(0)`), main's behavior before memra#1221, kept byte for byte.
+    TrimAll,
+    /// Unified memory, even the allocatable reading short, the cache would cover it: release
+    /// the shortfall and keep the rest ([`capture_trim_keep`]).
+    TrimShortfall,
+}
+
+/// The pre-capture guard's decision. `free` is the reading the guard compares: `cuMemGetInfo`
+/// on a discrete card, [`crate::unified_memory::unified_free_bytes`] on unified memory.
+/// `need` is the capture's appetite; the requirement is twice it plus two
+/// `CAPTURE_HEADROOM_FLOOR`s (see [`capture_headroom_refusal`]).
+pub(crate) fn capture_headroom_plan(
+    free: usize,
+    pool_cached: usize,
+    need: usize,
+    unified: bool,
+) -> CaptureHeadroomPlan {
+    let floor = CAPTURE_HEADROOM_FLOOR.saturating_mul(2);
+    let required_need = need.saturating_mul(2);
+    let required = required_need.saturating_add(floor);
+    match capture_headroom_verdict(free, pool_cached, required_need, floor) {
+        Some((required, effective)) => CaptureHeadroomPlan::Refuse {
+            required,
+            effective,
+        },
+        None if free < required && pool_cached > 0 => {
+            if unified {
+                CaptureHeadroomPlan::TrimShortfall
+            } else {
+                CaptureHeadroomPlan::TrimAll
+            }
+        }
+        None => CaptureHeadroomPlan::Go,
+    }
+}
+
 /// Impure half of the pre-capture reserve check: reads the device, trims the async pool
-/// when the driver alone is short but cached blocks would cover it (graph instantiate and
+/// when the free memory alone is short but cached blocks would cover it (graph instantiate and
 /// cuBLAS workspaces allocate from the DRIVER, not from our pool — a pool sitting on freed
 /// blocks starves them), and returns the refusal reason line when the capture must not be
-/// attempted. `None` = go ahead. The trim hands back the driver's shortfall
-/// ([`capture_trim_keep`]), not the whole cache.
+/// attempted. `None` = go ahead. [`capture_headroom_plan`] decides.
 ///
-/// The driver's side is the allocatable reading ([`crate::unified_memory::allocatable_mem_info`]):
-/// `cuMemGetInfo` on a discrete card, and on a unified-memory device the larger of it and
-/// `MemAvailable`, because there the driver's reading leaves out page cache that the kernel
-/// hands to the driver's allocations on demand (memra#1221: on GB10 with a full page cache the
-/// raw reading was 2.0-2.7 GB with `MemAvailable` near 100 GB; the trim fired and released the
-/// cache a 260k prompt's publication grew back one burst later, and a 1k request's capture was
-/// refused; with the trim skipped at that reading the capture succeeded and nothing ran out of
-/// memory). The margin is the requirement's own: two `CAPTURE_HEADROOM_FLOOR`s on top of twice
-/// the appetite, over a `MemAvailable` that already leaves out the kernel's reserve.
+/// A discrete card reads `cuMemGetInfo` and trims to zero, as before memra#1221. A unified-memory
+/// device reads the larger of the driver's reading and `MemAvailable`
+/// ([`crate::unified_memory::allocatable_mem_info`]), because there the driver's reading leaves
+/// out page cache that the kernel hands to the driver's allocations on demand (memra#1221: on
+/// GB10 with a full page cache the raw reading was 1.1-2.8 GB with `MemAvailable` near 100 GB;
+/// the trim fired and released the cache a 260k prompt's publication grew back one burst later,
+/// and 1k and 131k requests' captures were refused; with the trim skipped at that reading the
+/// capture succeeded and nothing ran out of memory), and its trim releases only the shortfall.
+/// The margin is the requirement's own: two `CAPTURE_HEADROOM_FLOOR`s on top of twice the
+/// appetite, over a `MemAvailable` that already leaves out the kernel's reserve.
 pub(crate) fn capture_headroom_refusal(e: &Engine, need: usize) -> Option<String> {
-    let Ok((driver_free, _total)) = crate::unified_memory::allocatable_mem_info(e.ctx()) else {
+    let unified = crate::unified_memory::is_unified(e.ctx());
+    let Ok((free, _total)) = crate::unified_memory::allocatable_mem_info(e.ctx()) else {
         return None; // unreadable device: keep the historical try-and-fail behavior
     };
     let pool_cached = e.pool_cached_bytes();
@@ -587,38 +633,53 @@ pub(crate) fn capture_headroom_refusal(e: &Engine, need: usize) -> Option<String
     // capture is an optimization worth ~2-3 ms of TTFT (draft-graph lane receipts); at the
     // margin it is never worth an OOM incident.
     let floor = CAPTURE_HEADROOM_FLOOR.saturating_mul(2);
-    let required_need = need.saturating_mul(2);
-    let required = required_need.saturating_add(floor);
-    match capture_headroom_verdict(driver_free, pool_cached, required_need, floor) {
-        Some((required, effective)) => Some(format!(
-            "insufficient VRAM headroom for capture: effective free {}MB (allocatable {}MB + \
-             pool-cached {}MB) < required {}MB (2x appetite {}MB + floor {}MB); capture skipped pre-attempt",
+    let required = need.saturating_mul(2).saturating_add(floor);
+    let reading = if unified { "allocatable" } else { "driver" };
+    match capture_headroom_plan(free, pool_cached, need, unified) {
+        CaptureHeadroomPlan::Go => None,
+        CaptureHeadroomPlan::Refuse {
+            required,
+            effective,
+        } => Some(format!(
+            "insufficient VRAM headroom for capture: effective free {}MB ({reading} {}MB + \
+             pool-cached {}MB) < required {}MB (2x appetite {}MB + floor {}MB); capture skipped \
+             pre-attempt",
             effective / (1 << 20),
-            driver_free / (1 << 20),
+            free / (1 << 20),
             pool_cached / (1 << 20),
             required / (1 << 20),
             need / (1 << 20),
             floor / (1 << 20),
         )),
-        None => {
-            if driver_free < required && pool_cached > 0 {
-                // The driver gets the bytes it is short of, not the whole cache: the blocks
-                // that stay are what the next allocations reuse (a cold request's prefix
-                // publication, memra#1221). An unreadable pool reads as 0 reserved, which
-                // trims everything, as before.
-                let (reserved, _) = e.pool_reserved_used();
-                let trimmed = e.pool_trim_to(capture_trim_keep(reserved, driver_free, required));
-                if trimmed > 0 {
-                    eprintln!(
-                        "[spec] pre-capture pool trim: released {}MB of {}MB cached back to the \
-                         driver (allocatable free {}MB < required {}MB; instantiate allocates \
-                         from the driver)",
-                        trimmed / (1 << 20),
-                        pool_cached / (1 << 20),
-                        driver_free / (1 << 20),
-                        required / (1 << 20),
-                    );
-                }
+        CaptureHeadroomPlan::TrimAll => {
+            let trimmed = e.pool_trim_to_zero();
+            if trimmed > 0 {
+                eprintln!(
+                    "[spec] pre-capture pool trim: released {}MB cached back to the driver \
+                     (driver free {}MB < required {}MB; instantiate allocates from the driver)",
+                    trimmed / (1 << 20),
+                    free / (1 << 20),
+                    required / (1 << 20),
+                );
+            }
+            None
+        }
+        CaptureHeadroomPlan::TrimShortfall => {
+            // The driver gets the bytes it is short of, not the whole cache: the blocks that
+            // stay are what the next allocations reuse (a cold request's prefix publication,
+            // memra#1221). An unreadable pool reads as 0 reserved, which trims everything.
+            let (reserved, _) = e.pool_reserved_used();
+            let trimmed = e.pool_trim_to(capture_trim_keep(reserved, free, required));
+            if trimmed > 0 {
+                eprintln!(
+                    "[spec] pre-capture pool trim: released {}MB of {}MB cached back to the \
+                     driver (allocatable free {}MB < required {}MB; instantiate allocates \
+                     from the driver)",
+                    trimmed / (1 << 20),
+                    pool_cached / (1 << 20),
+                    free / (1 << 20),
+                    required / (1 << 20),
+                );
             }
             None
         }
@@ -17531,9 +17592,9 @@ mod capture_headroom_tests {
         draft_capture_bootstrap_estimate,
     };
 
-    /// memra#1221: the pre-capture trim hands the driver its shortfall and keeps the rest of
-    /// the cached pool. The arithmetic, then the call site: the refusal check trims through
-    /// `capture_trim_keep` and never to zero.
+    /// memra#1221: the pre-capture trim on unified memory hands the driver its shortfall and
+    /// keeps the rest of the cached pool. The arithmetic, then the call site: the unified
+    /// branch trims through `capture_trim_keep`.
     #[test]
     fn pre_capture_trim_releases_the_shortfall_not_the_cache() {
         const MIB: usize = 1 << 20;
@@ -17552,71 +17613,136 @@ mod capture_headroom_tests {
         assert_eq!(capture_trim_keep(100 * MIB, 0, 3_140 * MIB), 0);
         assert_eq!(capture_trim_keep(0, 2_559 * MIB, 3_140 * MIB), 0);
 
-        let src = include_str!("spec.rs");
-        let production = &src[..src.find("mod capture_headroom_tests").unwrap()];
-        let at = production
-            .find("pub(crate) fn capture_headroom_refusal(")
-            .unwrap();
-        let body = &production[at..];
-        let body = &body[..body.find("\n}\n").unwrap()];
+        let body = guard_body();
         assert!(
-            !body.contains("pool_trim_to_zero"),
-            "the pre-capture trim releases the whole cached pool"
-        );
-        assert!(
-            body.contains("e.pool_trim_to(capture_trim_keep(reserved, driver_free, required))"),
+            body.contains("e.pool_trim_to(capture_trim_keep(reserved, free, required))"),
             "the pre-capture trim does not keep the pool's blocks above the shortfall"
         );
     }
 
-    /// memra#1221: the pre-capture guard reads the allocatable free memory, not the raw
-    /// driver reading. On a unified-memory device that is the larger of the driver's reading
-    /// and `MemAvailable` (page cache the kernel hands to the driver on demand); a discrete
-    /// card keeps `cuMemGetInfo` byte for byte. The numbers are a filled-cache GB10 cell's:
-    /// the raw reading 2,079 MiB, `MemAvailable` about 98 GiB, 407 MiB cached in the pool,
-    /// 3,139 MiB required. On the raw reading the capture was refused; on the allocatable one
-    /// it goes ahead with nothing trimmed.
-    #[test]
-    fn pre_capture_guard_reads_the_allocatable_free_memory() {
-        use crate::unified_memory::unified_free_bytes;
-        const MIB: usize = 1 << 20;
-        let (raw, avail, cached) = (2_079 * MIB, 98 * 1024 * MIB, 407 * MIB);
-        let (need2, floor) = (66 * MIB, 3_072 * MIB);
-        let required = need2 + floor;
-        assert!(capture_headroom_verdict(raw, cached, need2, floor).is_some());
-        let headroom = unified_free_bytes(raw, Some(avail));
-        assert_eq!(
-            capture_headroom_verdict(headroom, cached, need2, floor),
-            None
-        );
-        assert!(
-            headroom >= required,
-            "the trim fires on the allocatable reading"
-        );
-        // Truly short (MemAvailable itself under the requirement): the guard still trims the
-        // shortfall, and refuses when the cache cannot cover it.
-        let short = unified_free_bytes(raw, Some(2_048 * MIB));
-        assert_eq!(short, 2_079 * MIB);
-        assert_eq!(
-            capture_trim_keep(2_000 * MIB, short, required),
-            2_000 * MIB - (required - short)
-        );
-        assert!(capture_headroom_verdict(short, 0, need2, floor).is_some());
-
+    /// The production body of `capture_headroom_refusal`, for the wiring pins below.
+    fn guard_body() -> &'static str {
         let src = include_str!("spec.rs");
         let production = &src[..src.find("mod capture_headroom_tests").unwrap()];
         let at = production
             .find("pub(crate) fn capture_headroom_refusal(")
             .unwrap();
         let body = &production[at..];
-        let body = &body[..body.find("\n}\n").unwrap()];
+        &body[..body.find("\n}\n").unwrap()]
+    }
+
+    /// memra#1221: the guard's decision, as a table. A unified-memory device compares the
+    /// allocatable reading (the larger of the driver's and `MemAvailable`) and trims only the
+    /// shortfall; a discrete card compares `cuMemGetInfo` and trims to zero, as before. The
+    /// readings are the GB10 cells': a full page cache leaves the raw reading at 2,079 MiB with
+    /// `MemAvailable` near 98 GiB; truly short is `MemAvailable` at 1,970 MiB.
+    #[test]
+    fn pre_capture_guard_plan_by_reading_and_device() {
+        use super::{CaptureHeadroomPlan as P, capture_headroom_plan};
+        use crate::unified_memory::unified_free_bytes;
+        const MIB: usize = 1 << 20;
+        let need = 33 * MIB; // required = 66 + 3,072 = 3,138 MiB
+        let required = 2 * need + 2 * CAPTURE_HEADROOM_FLOOR;
+        let full_cache = unified_free_bytes(2_079 * MIB, Some(98 * 1024 * MIB));
+        let short = unified_free_bytes(1_100 * MIB, Some(1_970 * MIB));
+        let band = unified_free_bytes(1_100 * MIB, Some(3_500 * MIB));
+        let rows: &[(&str, usize, usize, bool, P)] = &[
+            // Unified, full page cache: the allocatable reading covers it; nothing trimmed.
+            (
+                "unified, full page cache",
+                full_cache,
+                407 * MIB,
+                true,
+                P::Go,
+            ),
+            // Unified, MemAvailable itself short but the cache covers it: the narrow trim.
+            (
+                "unified, short, cache covers",
+                band.min(3_000 * MIB),
+                1_070 * MIB,
+                true,
+                P::TrimShortfall,
+            ),
+            // Unified, MemAvailable above the requirement although the raw reading is low.
+            (
+                "unified, raw low, MemAvailable above",
+                band,
+                1_070 * MIB,
+                true,
+                P::Go,
+            ),
+            // Unified, truly short: refused (the 131k truly-short cell, 1,970 + 1,070 < 3,138).
+            (
+                "unified, truly short",
+                short,
+                1_070 * MIB,
+                true,
+                P::Refuse {
+                    required,
+                    effective: short + 1_070 * MIB,
+                },
+            ),
+            // Discrete: the raw reading, trim to zero when the cache covers the shortfall.
+            (
+                "discrete, cache covers",
+                2_079 * MIB,
+                1_813 * MIB,
+                false,
+                P::TrimAll,
+            ),
+            ("discrete, plenty", 8_000 * MIB, 0, false, P::Go),
+            (
+                "discrete, short",
+                1_458 * MIB,
+                1_156 * MIB,
+                false,
+                P::Refuse {
+                    required,
+                    effective: 2_614 * MIB,
+                },
+            ),
+            // Nothing cached: no trim to do even when the reading is short of the requirement
+            // (the verdict already refuses there).
+            (
+                "unified, plenty, nothing cached",
+                4_000 * MIB,
+                0,
+                true,
+                P::Go,
+            ),
+        ];
+        for (name, free, cached, unified, want) in rows {
+            assert_eq!(
+                capture_headroom_plan(*free, *cached, need, *unified),
+                *want,
+                "{name}"
+            );
+        }
+        // The raw reading on unified memory is what main compared: in the full-cache row it
+        // refuses the capture that the allocatable reading lets go ahead.
+        assert_eq!(
+            capture_headroom_plan(2_079 * MIB, 407 * MIB, need, true),
+            P::Refuse {
+                required,
+                effective: 2_486 * MIB,
+            }
+        );
+
+        // Wiring: the guard reads the allocatable reading and decides through the plan; the
+        // discrete branch keeps main's trim to zero.
+        let body = guard_body();
         assert!(
-            body.contains("crate::unified_memory::allocatable_mem_info(e.ctx())"),
+            body.contains("crate::unified_memory::allocatable_mem_info(e.ctx())")
+                && !body.contains("e.ctx().mem_get_info()"),
             "the pre-capture guard reads the raw driver free memory"
         );
         assert!(
-            !body.contains("e.ctx().mem_get_info()"),
-            "the pre-capture guard reads the raw driver free memory"
+            body.contains("capture_headroom_plan(free, pool_cached, need, unified)"),
+            "the pre-capture guard does not decide through capture_headroom_plan"
+        );
+        assert!(
+            body.contains("CaptureHeadroomPlan::TrimAll => {\n            let trimmed = e.pool_trim_to_zero();"),
+            "the discrete trim no longer trims to zero"
         );
     }
 
