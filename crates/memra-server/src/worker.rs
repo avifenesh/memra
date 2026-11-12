@@ -1371,6 +1371,8 @@ fn admission_dflash_inputs(
     let sampler = Sampler::new(req.sampler_cfg.clone());
     let greedy = sampler.is_greedy();
     DsparkColdPrefixAdmission {
+        // `!drafter_refused` is defense in depth: both callers already require the spec
+        // estimate, which is false for a refused request (memra#1173).
         route_ready: serve_spec_enabled()
             && !req.drafter_refused
             && !confidence_trace_enabled()
@@ -2366,6 +2368,13 @@ pub struct Request {
     /// cold-drafter conversion), so no plane is allocated. Sticky for the request's life, a
     /// step-OOM park replay included. Always false from the HTTP layer.
     pub drafter_refused: bool,
+    /// Whether the VRAM gate's last pricing of this request charged a DFlash draft plane
+    /// (memra#1173). `admit` builds a drafter session only for a funded request, so a request
+    /// the gate priced plain can never allocate a plane: a refused request, and a step-OOM
+    /// park replay, which the gate prices from `spec_k_replay` (0 for every DFlash and plain
+    /// session) while `admit`'s DFlash route never read that K. Written by the gate on every
+    /// pass; false from the HTTP layer and from a replay until the gate prices it.
+    pub drafter_funded: bool,
     /// Constrained decoding (`response_format` json_object/json_schema): the parsed
     /// grammar spec. None = unconstrained — the request takes the exact legacy path
     /// (no factory, no matcher, no masking branch).
@@ -2497,6 +2506,7 @@ pub(crate) fn choice_requests(
             oom_retries: 0,
             spec_k_replay: leader.spec_k_replay,
             drafter_refused: leader.drafter_refused,
+            drafter_funded: false,
             grammar: leader.grammar.clone(),
             prepared_constraint: None,
             constraint_ready: None,
@@ -20953,6 +20963,9 @@ pub fn run(
                 (true, Some(draft)) => draft.resident_kv_bytes(admission_cap),
                 (true, None) => loaded[&model_key].model.draft_session_admission_bytes(),
             };
+            // The serve side reads this, never its own guess (memra#1173): a drafter session
+            // exists only where this pass charged its plane.
+            req.drafter_funded = estimate_spec && dspark_drafts.contains_key(&model_key);
             let cost_pre_draft = cost;
             let mut cost = cost.saturating_add(draft_state_bytes);
             if log_estimate && draft_state_bytes > 0 {
@@ -22122,17 +22135,19 @@ pub fn run(
                             px.unpin(&pin);
                         }
                     }
-                    // memra#1173: the arm exists only where something enforces it. On the MTP
-                    // route the pre-capture gate does. On the DFlash route nothing refuses
+                    // memra#1173: a second arm exists only where something enforces it. On the
+                    // MTP route the pre-capture gate does. On the DFlash route nothing refuses
                     // the drafter plane once a drafter session exists, so the request is
-                    // refused its drafter here and priced again as plain.
+                    // refused its drafter and priced again as plain. The verdict is two pure
+                    // functions (`vram_gate_first_read`, `vram_gate_drained`); this block only
+                    // gathers their inputs and carries the verdict out.
                     let draft_arm = draft_state_arm(
                         draft_state_bytes,
                         dspark_drafts.contains_key(&model_key),
                         memra_engine::spec::spec_capture_gate_on(),
                     );
-                    let mut refuse_drafter = false;
-                    let eager_arm = !headroom.sufficient(required) && draft_arm.is_some() && {
+                    let fits_full = headroom.sufficient(required);
+                    let fits_without = !fits_full && draft_arm.is_some() && {
                         let requirements_eager = if pp_plan.is_some()
                             || !request_state.is_empty()
                             || !pending_state.is_empty()
@@ -22156,20 +22171,40 @@ pub fn run(
                             .map(book)
                             .is_some_and(|h| h.sufficient(required_eager))
                     };
-                    if eager_arm && draft_arm == Some(DraftStateArm::RefuseDrafter) {
-                        refuse_drafter = true;
-                    } else if eager_arm {
-                        // Grep-stable receipt: the session is admitted for EAGER serving;
-                        // if headroom later grows, an opportunistic capture stays bounded
-                        // by the pre-capture gate's own post-capture floor.
-                        eprintln!(
-                            "[admission] eager-arm admit: model={model_key:?} ctx={} \
-                             draft-state {:.0}MB uncharged (capture would be refused at \
-                             current headroom; the pre-capture gate enforces it)",
-                            admission_cap,
-                            draft_state_bytes as f64 / 1e6,
-                        );
-                    } else if !headroom.sufficient(required) && active.is_empty() && {
+                    // Can the full charge fit once this device's sessions retire and the
+                    // evictable entries go? The reclaim ladder above has already dropped the
+                    // parked sessions it could, so what is left to free is the peers' resident
+                    // charge. Read only for a busy DFlash request the first read cannot hold.
+                    let fundable = fits_full
+                        || active.is_empty()
+                        || draft_arm != Some(DraftStateArm::RefuseDrafter)
+                        || {
+                            let devices = model_devices(&engine, &loaded[&model_key]);
+                            let reclaimable = active
+                                .iter()
+                                .filter(|s| {
+                                    model_devices(&engine, &loaded[&s.model])
+                                        .iter()
+                                        .any(|d| devices.contains(d))
+                                })
+                                .map(|s| s.booked_kv_bytes.saturating_sub(s.booked_w_bytes))
+                                .sum::<u64>()
+                                .saturating_add(px.evictable_bytes());
+                            memory_defer_can_fit(
+                                required as u64,
+                                headroom.limiting_free_bytes() as u64,
+                                reclaimable,
+                            )
+                        };
+                    let mut verdict = vram_gate_first_read(
+                        fits_full,
+                        fits_without,
+                        draft_arm,
+                        active.is_empty(),
+                        fundable,
+                    );
+                    let drained = verdict == GateVerdict::Drain;
+                    if drained {
                         // STALE-READ HONESTY (measured on the med-class cell): the
                         // retire sweep's frees are stream-ordered, so an admission
                         // pass one tick later can read a card that still LOOKS full
@@ -22177,6 +22212,10 @@ pub fn run(
                         // reject with no active peers is the coldest path there is:
                         // fence every device, hand cached pool blocks back to the
                         // driver, and re-read before declaring headroom unattainable.
+                        // A DFlash request is refused its drafter only on this drained
+                        // read (memra#1173 review): the refusal holds for the request's
+                        // life, so it must not be taken on a reading a retiring session
+                        // has not yet left.
                         oom_teardown_fence(&engine, &loaded);
                         trim_model_device_pools(&engine, &loaded, "admission-drain");
                         // The captured-arm and eager-arm device plans DIFFER, and the
@@ -22204,22 +22243,18 @@ pub fn run(
                         } else {
                             None
                         };
-                        let captured_ok =
+                        let drained_headroom =
                             admission_headroom(&engine, &loaded, device_requirements.as_deref())
-                                .map(book)
-                                .is_some_and(|h| h.sufficient(required));
+                                .map(book);
+                        let captured_ok = drained_headroom
+                            .as_ref()
+                            .is_some_and(|h| h.sufficient(required));
                         let eager_ok = draft_arm.is_some()
                             && admission_headroom(&engine, &loaded, requirements_eager.as_deref())
                                 .map(book)
                                 .is_some_and(|h| h.sufficient(required_eager));
-                        if !captured_ok
-                            && eager_ok
-                            && draft_arm == Some(DraftStateArm::RefuseDrafter)
-                        {
-                            // The drained card holds the request only without its draft
-                            // plane: same verdict as the arm above.
-                            refuse_drafter = true;
-                        } else if captured_ok || eager_ok {
+                        verdict = vram_gate_drained(captured_ok, eager_ok, draft_arm);
+                        if matches!(verdict, GateVerdict::Admit | GateVerdict::AdmitEager) {
                             eprintln!(
                                 "[admission] reject averted: model={model_key:?} \
                                      ctx={} headroom recovered after fence+trim re-read \
@@ -22228,23 +22263,24 @@ pub fn run(
                                 if captured_ok { "captured" } else { "eager" },
                             );
                         }
-                        captured_ok || eager_ok
-                    } {
-                        // fall through to admit: the drained re-read says the work fits.
-                    } else if !headroom.sufficient(required)
-                        && active.is_empty()
-                        && draft_arm == Some(DraftStateArm::RefuseDrafter)
-                    {
-                        // An idle card cannot hold this request with its drafter, drained or
-                        // not, so no wait can fund the plane. Its plain charge can be smaller
-                        // than the charge without the plane (a plain prime holds one take, a
-                        // DFlash walker the whole prompt's stack), so the read above does not say
-                        // whether the plain request fits: price it again as plain and let that
-                        // pass admit it or answer for it, never a refusal of a request the
-                        // trunk can serve.
-                        refuse_drafter = true;
-                    } else if !headroom.sufficient(required) {
-                        if active.is_empty() {
+                        if let Some(h) = drained_headroom {
+                            headroom = h; // the receipts below print the drained reading
+                        }
+                    }
+                    let eager_arm = verdict == GateVerdict::AdmitEager && !drained;
+                    if eager_arm {
+                        // Grep-stable receipt: the session is admitted for EAGER serving;
+                        // if headroom later grows, an opportunistic capture stays bounded
+                        // by the pre-capture gate's own post-capture floor.
+                        eprintln!(
+                            "[admission] eager-arm admit: model={model_key:?} ctx={} \
+                             draft-state {:.0}MB uncharged (capture would be refused at \
+                             current headroom; the pre-capture gate enforces it)",
+                            admission_cap,
+                            draft_state_bytes as f64 / 1e6,
+                        );
+                    } else if matches!(verdict, GateVerdict::Reject | GateVerdict::Defer) {
+                        if verdict == GateVerdict::Reject {
                             // NOTHING ELSE IS RUNNING, so this request does not fit the box at
                             // ANY arrival rate, and its class is ContextLength, not RateLimit.
                             // This branch used to answer `rate_limit_error` /
@@ -22491,7 +22527,7 @@ pub fn run(
                         requeue.push_back(req); // waits (FIFO), never rejected
                         continue;
                     }
-                    if refuse_drafter {
+                    if let GateVerdict::RefuseDrafter(arm) = verdict {
                         // Grep-stable receipt. The request goes back to the FRONT of the
                         // queue and this same pass prices it again as a plain request (no
                         // draft plane in the cost, no drafter session in `admit`), so it
@@ -22502,13 +22538,14 @@ pub fn run(
                         eprintln!(
                             "[admission] drafter refused: model={model_key:?} ctx={} \
                              draft plane {:.0}MB does not fit (available {:.0}MB, required \
-                             {:.0}MB with it, {:.0}MB without); the request is priced again \
-                             as PLAIN, no drafter session is created",
+                             {:.0}MB with it, {:.0}MB without; arm {}); the request is \
+                             priced again as PLAIN, no drafter session is created",
                             admission_cap,
                             draft_state_bytes as f64 / 1e6,
                             headroom.limiting_free_bytes() as f64 / 1e6,
                             required as f64 / 1e6,
                             required_eager as f64 / 1e6,
+                            arm.as_str(),
                         );
                         n_drafter_refusals += 1;
                         req.drafter_refused = true;
@@ -26929,9 +26966,7 @@ enum DraftStateArm {
     EagerCapture,
     /// DFlash route: the draft state is the drafter KV plane, which every drafter session
     /// allocates when it is created; no later gate can refuse it. The gate refuses the request
-    /// its drafter and prices it again as a plain request: when the charge without the plane
-    /// fits, and on an idle card whenever the full charge does not (no wait can fund the
-    /// plane there, and the plain charge can be below the charge without the plane).
+    /// its drafter and prices it again as a plain request (`RefusalArm` names the cases).
     RefuseDrafter,
 }
 
@@ -26949,6 +26984,102 @@ fn draft_state_arm(
         (_, true, _) => Some(DraftStateArm::RefuseDrafter),
         (_, false, true) => Some(DraftStateArm::EagerCapture),
         (_, false, false) => None,
+    }
+}
+
+/// Why the gate refused a DFlash request its drafter (memra#1173), printed in the receipt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RefusalArm {
+    /// Peers active: the charge without the plane fits now.
+    BusyFits,
+    /// Peers active: the full charge cannot fit even after every peer on the device retires
+    /// and the evictable entries go, so no wait can fund the plane.
+    BusyUnfundable,
+    /// Idle card, drained: the charge without the plane fits.
+    IdleFits,
+    /// Idle card, drained: not even the charge without the plane fits. The plain charge can be
+    /// smaller still (a plain prime holds one take, a DFlash walker the whole prompt's stack),
+    /// so the plain pass decides.
+    IdleShort,
+}
+
+impl RefusalArm {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::BusyFits => "busy-fits",
+            Self::BusyUnfundable => "busy-unfundable",
+            Self::IdleFits => "idle-fits",
+            Self::IdleShort => "idle-short",
+        }
+    }
+}
+
+/// The VRAM gate's verdict on one request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GateVerdict {
+    /// The full charge fits.
+    Admit,
+    /// MTP route: admitted on the charge without the capture state; the pre-capture gate
+    /// refuses the capture.
+    AdmitEager,
+    /// DFlash route: refused its drafter, priced again as plain.
+    RefuseDrafter(RefusalArm),
+    /// Idle card and the first read is short: fence, trim and read again
+    /// (`vram_gate_drained`) before answering.
+    Drain,
+    /// Peers active: wait for memory.
+    Defer,
+    /// Idle card, drained, still short: the request does not fit this box.
+    Reject,
+}
+
+/// The gate's verdict from its first headroom read. `fits_without` is the read against the
+/// charge without the draft state; `fundable` says whether the full charge can fit once the
+/// device's peers retire (read only for a busy DFlash request).
+///
+/// A DFlash request is never refused its drafter on an idle card's first read: the refusal is
+/// for the request's life, and a retiring session's frees may not have landed yet, so the
+/// idle card drains first. The MTP eager arm keeps its place ahead of the drain: an eager
+/// admission costs the request nothing it cannot regain.
+fn vram_gate_first_read(
+    fits_full: bool,
+    fits_without: bool,
+    arm: Option<DraftStateArm>,
+    idle: bool,
+    fundable: bool,
+) -> GateVerdict {
+    if fits_full {
+        return GateVerdict::Admit;
+    }
+    match (arm, idle) {
+        (Some(DraftStateArm::EagerCapture), _) if fits_without => GateVerdict::AdmitEager,
+        (_, true) => GateVerdict::Drain,
+        (Some(DraftStateArm::RefuseDrafter), false) if fits_without => {
+            GateVerdict::RefuseDrafter(RefusalArm::BusyFits)
+        }
+        (Some(DraftStateArm::RefuseDrafter), false) if !fundable => {
+            GateVerdict::RefuseDrafter(RefusalArm::BusyUnfundable)
+        }
+        (_, false) => GateVerdict::Defer,
+    }
+}
+
+/// The idle card's verdict after the fence and trim re-read.
+fn vram_gate_drained(
+    fits_full: bool,
+    fits_without: bool,
+    arm: Option<DraftStateArm>,
+) -> GateVerdict {
+    if fits_full {
+        return GateVerdict::Admit;
+    }
+    match arm {
+        Some(DraftStateArm::RefuseDrafter) if fits_without => {
+            GateVerdict::RefuseDrafter(RefusalArm::IdleFits)
+        }
+        Some(DraftStateArm::RefuseDrafter) => GateVerdict::RefuseDrafter(RefusalArm::IdleShort),
+        Some(DraftStateArm::EagerCapture) if fits_without => GateVerdict::AdmitEager,
+        _ => GateVerdict::Reject,
     }
 }
 
@@ -27757,6 +27888,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         route_ticket: None,
         spec_k_replay: Some(s.spec_k),
         drafter_refused: s.drafter_refused,
+        drafter_funded: false,
         prepared_prompt: None,
         images: Vec::new(),
         gemma_images: Vec::new(),
@@ -28023,6 +28155,7 @@ fn admit(
     });
     let req_oom_retries = req.oom_retries;
     let req_drafter_refused = req.drafter_refused;
+    let req_drafter_funded = req.drafter_funded;
     let req_spec_k_replay = req.spec_k_replay;
     let vision_memory = req.vision_memory.take();
 
@@ -28543,15 +28676,18 @@ fn admit(
                 dspark_entry_restorable(&px.entries[&pool_key][i], prompt.len(), dspark_tail_window)
             })
             .unwrap_or(false);
+    // What the DFlash route needs apart from memory: an attached, compatible drafter and
+    // speculation on.
+    let dflash_route_open = dspark_draft_ready
+        && memra_engine::plan_backend::gdn_dspark_compatible(&lm.model.plan)
+        && serve_spec
+        && !confidence_trace_enabled();
     let cold_prefix_inputs = DsparkColdPrefixAdmission {
-        // memra#1173: a request the VRAM gate refused its drafter takes no DFlash route at
-        // all. Every drafter-session site below (cold prime, pool resume, prefix restore,
-        // cold-drafter conversion) reads this struct, so this one term closes them all.
-        route_ready: dspark_draft_ready
-            && !req_drafter_refused
-            && memra_engine::plan_backend::gdn_dspark_compatible(&lm.model.plan)
-            && serve_spec
-            && !confidence_trace_enabled(),
+        // memra#1173: only a request whose draft plane the VRAM gate charged takes a DFlash
+        // route. Every drafter-session site below (cold prime, pool resume, prefix restore,
+        // cold-drafter conversion) reads this struct, so this one term closes them all, for
+        // a refused request and for one the gate priced plain (a step-OOM park replay).
+        route_ready: dflash_route_open && req_drafter_funded,
         prime_feasible: dspark_prime_feasible,
         greedy: sampler.is_greedy(),
         greedy_penalized,
@@ -28649,6 +28785,25 @@ fn admit(
             eprintln!(
                 "[dspark] declined: drafter refused at admission (its draft plane did not \
                  fit); serving PLAIN (prompt={} decode_budget={})",
+                prompt.len(),
+                budget,
+            );
+        } else if !req_drafter_funded
+            && dspark_draft_ready
+            && dspark_prefers_cold_over_prefix(DsparkColdPrefixAdmission {
+                route_ready: dflash_route_open,
+                ..cold_prefix_inputs
+            })
+        {
+            // The route would have taken a request whose plane nothing charged.
+            eprintln!(
+                "[dspark] declined: admission priced this request plain (no draft plane \
+                 charged{}); serving PLAIN (prompt={} decode_budget={})",
+                if req_spec_k_replay.is_some() {
+                    ", a step-OOM park replay"
+                } else {
+                    ""
+                },
                 prompt.len(),
                 budget,
             );
@@ -38345,6 +38500,7 @@ mod tests {
             oom_retries: 0,
             spec_k_replay: None,
             drafter_refused: false,
+            drafter_funded: false,
             grammar: None,
             prepared_constraint: None,
             constraint_ready: None,
@@ -38963,6 +39119,7 @@ mod tests {
             oom_retries: 0,
             spec_k_replay: None,
             drafter_refused: false,
+            drafter_funded: false,
             grammar: None, // moved into the compiler job above
             prepared_constraint: None,
             constraint_ready: Some(ready_tx),
@@ -39557,15 +39714,20 @@ mod tests {
     }
 
     #[test]
-    fn a_dflash_request_is_never_admitted_with_its_draft_plane_uncharged() {
+    fn the_vram_gate_never_admits_a_dflash_request_without_its_draft_plane() {
         // memra#1173. The gate's second arm fits a spec request without its draft-state term.
         // That is honest on the MTP route, where the term is a capture the pre-capture gate
         // refuses. On the DFlash route the term is the drafter KV plane, allocated by every
         // drafter session with nothing later to refuse it (1,229 MB at a 30k cap for a
         // drafter with no sliding layer), so that arm admitted a plane nothing had charged.
-        use super::{DraftStateArm, draft_state_arm};
+        use super::{
+            DraftStateArm, GateVerdict as V, RefusalArm as R, draft_state_arm, vram_gate_drained,
+            vram_gate_first_read,
+        };
         let plane = 1_229 << 20;
-        // DFlash route: the request is refused its drafter, whatever the MTP capture gate says.
+        // Which arm a route has. DFlash: refuse the drafter, whatever the MTP capture gate
+        // says. MTP: the eager arm, only while the gate that enforces it is armed. Nothing
+        // charged for draft state (a plain request, a refused one): no second arm.
         assert_eq!(
             draft_state_arm(plane, true, true),
             Some(DraftStateArm::RefuseDrafter)
@@ -39574,74 +39736,156 @@ mod tests {
             draft_state_arm(plane, true, false),
             Some(DraftStateArm::RefuseDrafter)
         );
-        // MTP route: the eager arm, and only while the gate that enforces it is armed.
         assert_eq!(
             draft_state_arm(plane, false, true),
             Some(DraftStateArm::EagerCapture)
         );
         assert_eq!(draft_state_arm(plane, false, false), None);
-        // Nothing charged for draft state (a plain request, a refused one): no second arm.
         for dflash in [false, true] {
             for gate in [false, true] {
                 assert_eq!(draft_state_arm(0, dflash, gate), None);
             }
         }
+        let dflash = Some(DraftStateArm::RefuseDrafter);
+        let mtp = Some(DraftStateArm::EagerCapture);
 
-        // The wiring the verdict needs, at each seam it crosses.
+        // FIRST READ: (fits full, fits without, arm, idle, fundable) -> verdict.
+        let first = [
+            // The full charge fits: admitted, whatever else is true.
+            ((true, false, dflash, false, true), V::Admit),
+            ((true, false, dflash, true, true), V::Admit),
+            ((true, false, mtp, false, true), V::Admit),
+            ((true, false, None, true, true), V::Admit),
+            // DFlash beside peers: the charge without the plane fits. Refused the drafter,
+            // never admitted on that charge (main's eager arm).
+            (
+                (false, true, dflash, false, true),
+                V::RefuseDrafter(R::BusyFits),
+            ),
+            (
+                (false, true, dflash, false, false),
+                V::RefuseDrafter(R::BusyFits),
+            ),
+            // DFlash beside peers, short even without the plane: it waits while the peers'
+            // retirement can fund the full charge, and is refused the drafter when it cannot.
+            ((false, false, dflash, false, true), V::Defer),
+            (
+                (false, false, dflash, false, false),
+                V::RefuseDrafter(R::BusyUnfundable),
+            ),
+            // DFlash on an idle card: never refused on the first read (a retiring session's
+            // frees may not have landed, and the refusal is for the request's life).
+            ((false, true, dflash, true, true), V::Drain),
+            ((false, false, dflash, true, true), V::Drain),
+            ((false, false, dflash, true, false), V::Drain),
+            // MTP: the eager arm where its charge fits, idle or not; else wait or drain.
+            ((false, true, mtp, false, true), V::AdmitEager),
+            ((false, true, mtp, true, true), V::AdmitEager),
+            ((false, false, mtp, false, true), V::Defer),
+            ((false, false, mtp, false, false), V::Defer),
+            ((false, false, mtp, true, true), V::Drain),
+            // No draft state charged: wait beside peers, drain when idle.
+            ((false, false, None, false, true), V::Defer),
+            ((false, false, None, false, false), V::Defer),
+            ((false, false, None, true, true), V::Drain),
+        ];
+        for ((full, without, arm, idle, fundable), want) in first {
+            assert_eq!(
+                vram_gate_first_read(full, without, arm, idle, fundable),
+                want,
+                "first read: full={full} without={without} arm={arm:?} idle={idle} \
+                 fundable={fundable}"
+            );
+        }
+        // DRAINED (idle card, after the fence and trim): (fits full, fits without, arm).
+        let drained = [
+            // The drained card holds the full charge: the request keeps its drafter.
+            ((true, true, dflash), V::Admit),
+            ((true, false, dflash), V::Admit),
+            ((true, false, mtp), V::Admit),
+            ((true, false, None), V::Admit),
+            // DFlash, still short: refused the drafter, and never answered a capacity
+            // refusal here (its plain charge can fit where the charge without the plane
+            // does not; the plain pass decides).
+            ((false, true, dflash), V::RefuseDrafter(R::IdleFits)),
+            ((false, false, dflash), V::RefuseDrafter(R::IdleShort)),
+            // MTP: eager where that fits, else the request does not fit the box.
+            ((false, true, mtp), V::AdmitEager),
+            ((false, false, mtp), V::Reject),
+            ((false, false, None), V::Reject),
+        ];
+        for ((full, without, arm), want) in drained {
+            assert_eq!(
+                vram_gate_drained(full, without, arm),
+                want,
+                "drained: full={full} without={without} arm={arm:?}"
+            );
+        }
+        // No verdict admits a DFlash request that does not fit in full.
+        for without in [false, true] {
+            for idle in [false, true] {
+                for fundable in [false, true] {
+                    let v = vram_gate_first_read(false, without, dflash, idle, fundable);
+                    assert!(!matches!(v, V::Admit | V::AdmitEager), "{v:?}");
+                }
+            }
+            let v = vram_gate_drained(false, without, dflash);
+            assert!(!matches!(v, V::Admit | V::AdmitEager), "{v:?}");
+        }
+    }
+
+    #[test]
+    fn the_drafter_refusal_is_wired_from_the_gate_to_every_dflash_route() {
+        // memra#1173: the verdict's wiring, at each seam it crosses. The served behavior is
+        // `tools/drafter-admission-gate.py`'s; this pins that no seam is dropped.
         let worker = include_str!("worker.rs");
         let production = &worker[..worker.find("\nmod tests {").unwrap()];
         let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
-        // The gate consults the arm at both of its headroom reads and admits nothing on the
-        // DFlash one: the refused request goes back to the queue front and is priced again.
-        assert_eq!(
-            squashed
-                .matches("draft_arm == Some(DraftStateArm::RefuseDrafter)")
-                .count(),
-            3,
-            "the first read, the drained re-read and the idle card each refuse the drafter"
+        // The gate asks the pure functions and nothing else decides: no admission arm reads
+        // headroom against the charge without the plane on its own.
+        assert!(squashed.contains(
+            "let mut verdict = vram_gate_first_read( fits_full, fits_without, draft_arm, \
+             active.is_empty(), fundable, );"
+        ));
+        assert!(
+            squashed.contains("verdict = vram_gate_drained(captured_ok, eager_ok, draft_arm);")
         );
-        assert!(squashed.contains(
-            "let eager_arm = !headroom.sufficient(required) && draft_arm.is_some() && {"
-        ));
-        assert!(squashed.contains("let eager_ok = draft_arm.is_some() && admission_headroom("));
-        // An idle card that cannot hold the full charge prices the request as plain before
-        // it refuses anything: the arm sits ahead of the capacity reject.
-        let idle_arm = squashed
-            .find(
-                "} else if !headroom.sufficient(required) && active.is_empty() && draft_arm == \
-                 Some(DraftStateArm::RefuseDrafter) {",
-            )
-            .expect("the idle-card arm");
-        assert!(idle_arm < squashed.find("[admit-oom] capacity reject:").unwrap());
-        assert!(squashed.contains(
-            "n_drafter_refusals += 1; req.drafter_refused = true; queue.push_front(req); continue;"
-        ));
+        assert_eq!(squashed.matches("h.sufficient(required_eager)").count(), 2);
+        assert!(
+            squashed.contains("let eager_arm = verdict == GateVerdict::AdmitEager && !drained;")
+        );
+        // The drain runs only on the verdict that asks for it, before any refusal.
+        let drain = squashed
+            .find("let drained = verdict == GateVerdict::Drain; if drained {")
+            .expect("the drain");
+        // A refusal sets the sticky flag, puts the request back at the queue front and ends
+        // the pass for it, after the wait and reject verdicts were answered.
+        let refuse = squashed
+            .find("if let GateVerdict::RefuseDrafter(arm) = verdict {")
+            .expect("the refusal");
+        let wait = squashed
+            .find("} else if matches!(verdict, GateVerdict::Reject | GateVerdict::Defer) {")
+            .expect("the wait and reject verdicts");
+        assert!(drain < wait && wait < refuse);
+        let tail = &squashed[refuse..];
+        let end = tail
+            .find("n_drafter_refusals += 1; req.drafter_refused = true; queue.push_front(req); continue; }")
+            .expect("the refusal requeues the request");
+        assert!(
+            end < 2500,
+            "the requeue belongs to the refusal block: {end}"
+        );
         // A refused request is priced plain: no spec estimate, so no draft plane in its cost
         // and no second refusal.
         let may_spec = &production[production.find("fn admission_request_may_spec(").unwrap()..];
         let may_spec = &may_spec[..may_spec.find("\n}\n").unwrap()];
         assert!(may_spec.contains("|| req.drafter_refused"), "{may_spec}");
-        // `admit` creates no drafter session for it: every drafter route reads `route_ready`.
+        // The gate tells `admit` whether it charged a plane, and `admit` builds a drafter
+        // session only then: every drafter route reads `route_ready`.
         assert!(squashed.contains(
-            "route_ready: dspark_draft_ready && !req_drafter_refused && \
-             memra_engine::plan_backend::gdn_dspark_compatible(&lm.model.plan)"
+            "req.drafter_funded = estimate_spec && dspark_drafts.contains_key(&model_key);"
         ));
-        let planned = &production[production.find("fn admission_dflash_inputs(").unwrap()..];
-        let planned = &planned[..planned.find("\n}\n").unwrap()];
-        assert!(
-            planned
-                .contains("route_ready: serve_spec_enabled()\n            && !req.drafter_refused"),
-            "{planned}"
-        );
-        for site in [
-            "dspark_resume",
-            "dspark_prefix_restored",
-            "DSPARK cold-drafter restore:",
-        ] {
-            assert!(production.contains(site), "{site}");
-        }
-        // The pool resume and the prefix restore require the cold preference; the cold-drafter
-        // conversion requires the same inputs with the shape veto lifted.
+        assert!(squashed.contains("route_ready: dflash_route_open && req_drafter_funded,"));
         assert!(squashed.contains(
             "if admission_restore.is_none() && dspark_draft_ready && dspark_prefers_cold && spec.is_none()"
         ));
@@ -39653,66 +39897,16 @@ mod tests {
             "&& dspark_prefers_cold_over_prefix(DsparkColdPrefixAdmission { hit_available: false, \
              ..cold_prefix_inputs }) && let Some(draft) = dspark_draft"
         ));
-        // Sticky across a step-OOM park replay and a choice group.
+        assert!(squashed.contains(
+            "let dspark_on = dspark_session_armed( dspark_prefers_cold, dspark_resume.is_some(), \
+             dspark_prefix_restored.is_some(), );"
+        ));
+        // Sticky across a step-OOM park replay and a choice group; a replay and a choice
+        // member are funded only by their own pass through the gate.
         assert!(production.contains("drafter_refused: s.drafter_refused,"));
         assert!(production.contains("drafter_refused: leader.drafter_refused,"));
         assert!(production.contains("drafter_refused: req_drafter_refused,"));
-    }
-
-    #[test]
-    fn a_refused_drafter_closes_every_dflash_route() {
-        // memra#1173: `route_ready` false (what `drafter_refused` makes it) declines the cold
-        // prime, and with it the pool resume and the prefix restore that require the cold
-        // preference, for every load and hit shape that would otherwise take the route.
-        let base = super::DsparkColdPrefixAdmission {
-            route_ready: true,
-            prime_feasible: true,
-            greedy: true,
-            greedy_penalized: false,
-            sampled: false,
-            constrained: false,
-            vision: false,
-            cold: true,
-            gate_on: true,
-            pin: None,
-            projected_wave: 1,
-            low: 4,
-            n_active: 0,
-            has_live_non_demotable: false,
-            prompt_len: 30_000,
-            decode_budget: 4_096,
-            hit_available: false,
-            hit_restorable: false,
-            pool_resumable: false,
-        };
-        assert!(super::dspark_prefers_cold_over_prefix_with(base, true));
-        for (hit_available, hit_restorable, pool_resumable) in [
-            (false, false, false),
-            (true, false, false),
-            (true, true, false),
-            (true, false, true),
-        ] {
-            for sampled in [false, true] {
-                let refused = super::DsparkColdPrefixAdmission {
-                    route_ready: false,
-                    greedy: !sampled,
-                    sampled,
-                    hit_available,
-                    hit_restorable,
-                    pool_resumable,
-                    ..base
-                };
-                assert!(!super::dspark_prefers_cold_over_prefix_with(refused, true));
-                // The cold-drafter conversion's own predicate: the veto lifted.
-                assert!(!super::dspark_prefers_cold_over_prefix_with(
-                    super::DsparkColdPrefixAdmission {
-                        hit_available: false,
-                        ..refused
-                    },
-                    true
-                ));
-            }
-        }
+        assert_eq!(production.matches("drafter_funded: false,").count(), 2);
     }
 
     #[test]
@@ -53824,6 +54018,7 @@ mod tests {
             oom_retries: 0,
             spec_k_replay: None,
             drafter_refused: false,
+            drafter_funded: false,
             grammar: None,
             prepared_constraint: None,
             constraint_ready: None,

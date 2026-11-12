@@ -9420,6 +9420,7 @@ fn build_request_with_trace(
         oom_retries: 0, // step-OOM park budget: fresh from the HTTP layer (lane/admit-oom)
         spec_k_replay: None,
         drafter_refused: false,
+        drafter_funded: false,
         prepared_prompt: None,
         capture: None,      // set only by the embeddings/rerank routes
         images: Vec::new(), // /v1/completions is a raw-text surface
@@ -10010,6 +10011,7 @@ fn build_chat_request_with_trace(
             oom_retries: 0, // step-OOM park budget: fresh from the HTTP layer (lane/admit-oom)
             spec_k_replay: None,
             drafter_refused: false,
+            drafter_funded: false,
             prepared_prompt: None,
             // Filled by decode_pending_vision AFTER budget admission (hermes
             // decode-bomb finding, fixed 2026-08-23) — the pad runs above were rendered
