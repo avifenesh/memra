@@ -43,7 +43,7 @@ The record campaign, unit 1, filled page cache, probe arms, medians with spread:
 | | main, 260k | head, 260k | main, 131k | head, 131k |
 |---|---:|---:|---:|---:|
 | cells | 3 | 3 | 2 | 2 |
-| pre-capture trim fired | 3 (1,696 MB each) | 0 | 1 (896 MB) | 0 |
+| guard fired on the cold request | 3 trims (1,696 MB each) | 0 | 2: one refusal of the 131k capture, one trim (896 MB) | 0 |
 | pool growth inside the publisher, MB | 2,400 (0) | 1,408 (0) | 544, 768 | 544, 544 |
 | publisher on the scheduler thread, ms | 152.7 (8.7) | 124.2 (24.5) | 54.1, 74.5 | 57.8, 56.7 |
 | first burst boundary over its rounds, ms | 165.7 (4.9) | 142.7 (24.8) | 69.5, 79.9 | 87.5, 51.3 |
@@ -53,7 +53,10 @@ The record campaign, unit 1, filled page cache, probe arms, medians with spread:
 
 At 260k every head cell is under every main cell on the publisher (-28.5 ms, -18.7%) and on the
 boundary (-23.0 ms). Texts and burst structures are identical across arms; no out-of-memory line in
-any cell. At 131k the change matters only where main's trim fires.
+any cell. At 131k main's guard fired in both cells: it refused the 131k request's own capture in
+one (effective 3,046 MB < 3,141, so that request drafted eagerly), trimmed 896 MB before it in the
+other, and in that cell's boot calibration trimmed 15,808 MB with the page cache already full. The
+head's guard fired in none.
 
 **Truly short** (`gb10/short-u1`): a holder process (`oom_score_adj` 1000, capped at 300 s) took
 `MemAvailable` to about 2 GB during a 131k prompt's prime. Main's guard refused the capture
@@ -67,17 +70,21 @@ request's arrival, admission refuses the request (HTTP 400) on both arms before 
 `capture_headroom_refusal` (`spec.rs`) reads `unified_memory::allocatable_mem_info` instead of
 the raw `cuMemGetInfo`:
 
-- **Discrete cards:** the same raw reading, byte for byte.
+- **Discrete cards:** unchanged. The guard reads `cuMemGetInfo`, trims to zero and logs as main
+  does; `capture_headroom_plan` returns `TrimAll` there.
 - **Unified memory** (`CU_DEVICE_ATTRIBUTE_INTEGRATED`): the larger of the raw reading and
   `/proc/meminfo` `MemAvailable`, the reading admission, the prefix-cache budget and the MoE
   residency decision already size with. An unreadable `/proc/meminfo` keeps the raw reading.
 - **The requirement is unchanged:** twice the capture's measured appetite plus two
   `CAPTURE_HEADROOM_FLOOR`s (3,072 MiB). That floor is the margin over `MemAvailable`, which
   already leaves out the kernel's own reserve.
-- **The trim stays as the backstop**, narrowed: when even the allocatable reading is short and
-  the pool holds cached blocks, the pool releases the shortfall (`required - free`) through
+- **The trim stays as the backstop**, narrowed on unified memory only: when even the allocatable
+  reading is short and the pool holds cached blocks, the pool releases the shortfall (`required - free`) through
   `cuMemPoolTrimTo` and keeps the rest (`capture_trim_keep`), as admission's driver-headroom rung
-  does. It used to release every cached block.
+  does. It used to release every cached block. A discrete card keeps the trim to zero: the narrow
+  trim measured flat on GB10 and has no cell on a discrete card. The decision is one pure
+  function (`capture_headroom_plan`: `Go`, `Refuse`, `TrimAll`, `TrimShortfall`) with a table
+  test over the GB10 readings and discrete rows.
 - Unchanged: the 256 MiB graph-launch floor and admission's driver-headroom rung keep the raw
   reading (`unified_memory.rs` says why).
 
@@ -110,5 +117,11 @@ the raw `cuMemGetInfo`:
   graph-launch floor still read the raw value. On a full page cache the rung fired before the
   prime in 8 of the 14 filled-cache 260k cells (10 times) at a raw reading of 1,882-2,002 MB and
   released 0-160 MB each time: small next to the capture trim's 1,696 MB, and left for its own item (memra#1257).
-- One model (Qwen3.8-27B with its MTP draft) on GB10. On the RTX 5090 the guard's code path is
-  unchanged and neither the trim nor a refusal fired at 28k or 60k prompts.
+- One model (Qwen3.8-27B with its MTP draft) on GB10. On a discrete card the guard is main's; on
+  the RTX 5090 neither the trim nor a false refusal fired at 28k or 60k prompts.
+- `/proc/meminfo` is host-wide. Inside a container or a memory-cgroup-limited service,
+  `MemAvailable` can overstate what the process may take, at least for its page cache; whether
+  GB10 driver allocations are charged to the cgroup is not established. Admission, the prefix
+  budget and the MoE residency decision already read it this way; this change extends it to the
+  capture guard. The cells here ran on the host, outside any memory cgroup limit.
+- The band raw < required <= MemAvailable + pool: band cells pending (review S3).
