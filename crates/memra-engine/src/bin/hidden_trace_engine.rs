@@ -18,8 +18,8 @@
 //! broke (`tools/test_hidden_trace_localizer.py`). `largest` picks the layer's largest dense
 //! matrix, so one harness covers every pack without knowing its tensor names.
 //!
-//! The engine side sets `NVIDIA_TF32_OVERRIDE=0` before CUDA init unless the caller set it: an
-//! f32 parity comparison must not ride TF32.
+//! The engine side forces `NVIDIA_TF32_OVERRIDE=0` before CUDA init, whatever the caller set:
+//! an f32 parity comparison must not ride TF32. The summary line prints the value it ran with.
 //!
 //! Usage: MEMRA_HYPER_TRACE=<trace> hidden_trace_engine (<config.json> | --tiny <family>)
 //!            --side reference|engine [--inject L:SUB:SCALE]
@@ -283,10 +283,8 @@ fn run() -> Result<(), String> {
             let config = config
                 .as_ref()
                 .ok_or("--side engine needs a <config.json>: a tiny plan has no config to load")?;
-            if std::env::var_os("NVIDIA_TF32_OVERRIDE").is_none() {
-                // SAFETY: single-threaded, before the first CUDA call in this process.
-                unsafe { std::env::set_var("NVIDIA_TF32_OVERRIDE", "0") };
-            }
+            // SAFETY: single-threaded, before the first CUDA call in this process.
+            unsafe { std::env::set_var("NVIDIA_TF32_OVERRIDE", "0") };
             let source = fixture_source(config, &plan, &fixture.weights)?;
             let engine = Engine::new(0).map_err(|error| format!("CUDA engine: {error}"))?;
             let model = HybridModel::load_from_source_without_mtp(&engine, &source)
@@ -299,8 +297,9 @@ fn run() -> Result<(), String> {
     };
     hidden_trace::emit_last_row("logits", -1, 1, logits.len(), &logits);
     println!(
-        "side={side} family={family} layers={layers} tokens={} injected={}",
+        "side={side} family={family} layers={layers} tokens={} tf32_override={} injected={}",
         tokens.len(),
+        std::env::var("NVIDIA_TF32_OVERRIDE").unwrap_or_else(|_| "unset".to_string()),
         if injected.is_empty() {
             "none".to_string()
         } else {

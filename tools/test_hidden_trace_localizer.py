@@ -44,6 +44,8 @@ def main():
             info = trace(binary, family, p("clean-a"))
             trace(binary, family, p("clean-b"))
             layers = int(re.search(r"layers=(\d+)", info).group(1))
+            if layers == 0:
+                raise RuntimeError("the reference run reported no trunk layers: nothing to localize")
             trace(binary, family, p("noop"), f"{layers // 2}:largest:1.0")
             tensors = {}
             for k in range(layers):

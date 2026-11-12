@@ -15,9 +15,17 @@ verdict:
           growth with depth is drift. The verdict names the first step and the branch stages
           of that layer whose error exceeds the floor.
 
+A non-finite value, or a zero vector against a non-zero one, is an infinite error in every
+mode. In quant mode the trunk-level stages count too: `expand` before layer 0, `collapse` and
+`logits` after the last layer, each stepping against the residual error just before it.
+
 Order-sensitive stages (default: `route`, the selected (expert, weight) pairs in selection
 order) are reported but never decide a verdict: two top-k kernels may emit the same set in a
-different order.
+different order. One-sided stages may be absent from either trace. The defaults are
+`layer_hidden`, which only `hidden_trace_engine`'s reference side writes, and `expand`, which
+memra-reference taps only in its streamed checkpoint driver and not in `execute`, while the CUDA
+hyper walk always does. Any other stage present in one trace and not the other makes the pair
+incomparable (a killed run leaves a well-formed, truncated trace).
 
 Inputs: two trace files, or (--table) a banked per-stage table with columns
 `stage L n cos ...` (the layout of research/glm53-flash-bringup-20260827/forward-bisect-receipts).
@@ -27,11 +35,14 @@ inputs (different token ids, missing stages, length mismatch, malformed lines).
 """
 import argparse
 import math
+import re
 import struct
 import sys
 
-RESIDUAL = {"expand", "attn", "layer", "layer_hidden", "collapse"}
+RESIDUAL = {"expand", "attn", "layer", "layer_hidden", "collapse", "logits"}
 ORDER_SENSITIVE = {"route"}
+ONE_SIDED = {"layer_hidden", "expand"}
+HEX32 = re.compile(r"^[0-9a-fA-F]{8}$")
 # Trunk-level (layer -1) stages with a fixed place: the stream expansion runs before layer 0,
 # the stream collapse and the logits after the last layer. `layer_hidden` lines are appended
 # after the run, so file order alone cannot place these on families with no per-layer taps.
@@ -54,6 +65,8 @@ def load_trace(path):
                 if fields[1:] != ["memra-hidden-trace-v1"]:
                     raise Incomparable(f"{path}:{number}: format {fields[1:]}")
             elif fields[0] == "tokens":
+                if len(fields) != 2:
+                    raise Incomparable(f"{path}:{number}: malformed tokens line")
                 if tokens is None:
                     tokens = fields[1]
                 elif tokens != fields[1]:
@@ -61,31 +74,42 @@ def load_trace(path):
             elif fields[0] == "stage":
                 if len(fields) != 5:
                     raise Incomparable(f"{path}:{number}: malformed stage line")
-                stage, layer, width = fields[1], int(fields[2]), int(fields[3])
+                try:
+                    stage, layer, width = fields[1], int(fields[2]), int(fields[3])
+                except ValueError:
+                    raise Incomparable(f"{path}:{number}: layer or width is not an integer") from None
                 hexes = fields[4].split(",") if fields[4] else []
                 if len(hexes) != width:
                     raise Incomparable(f"{path}:{number}: width {width} but {len(hexes)} values")
+                if not all(HEX32.match(h) for h in hexes):
+                    raise Incomparable(f"{path}:{number}: a value is not 8 hex digits of f32 bits")
                 key = (stage, layer)
-                if key in entries:
-                    # A second call at the same stage (e.g. a later chunk): keep the last row,
-                    # which is the one the logits come from.
-                    order.remove(key)
+                if key not in entries:
+                    order.append(key)
+                # A second call at the same stage (e.g. a later chunk) keeps its first place in
+                # the order and the last row, which is the one the logits come from.
                 entries[key] = hexes
-                order.append(key)
     return tokens, entries, order
 
 
 def execution_order(order):
-    """Sort (stage, layer) keys: trunk-level stages written before any layer first, then layers
-    in index order, then trunk-level stages written after the layers. Within one layer the
-    file order stands: a trace is written in execution order, and lines appended after the
-    run (`layer_hidden`) land after that layer's taps."""
-    first_layer_pos = next((i for i, (_, l) in enumerate(order) if l >= 0), len(order))
+    """Sort (stage, layer) keys into execution order: trunk-level stages written before any
+    layer, then layers in index order, then trunk-level stages written after the layers, then
+    layers written after the trunk end whose index is past every trunk layer (MTP blocks run
+    after the collapse; their taps carry layer index trunk + depth). Within one layer the file
+    order stands: a trace is written in execution order, and lines appended after the run
+    (`layer_hidden`) land after that layer's taps."""
     pos = {key: i for i, key in enumerate(order)}
+    first_layer_pos = next((i for i, (_, l) in enumerate(order) if l >= 0), len(order))
+    trunk_end_pos = next((i for i, (st, l) in enumerate(order) if l < 0 and st in TRUNK_END), len(order))
+    trunk_layers = [l for i, (_, l) in enumerate(order) if l >= 0 and i < trunk_end_pos]
+    last_trunk_layer = max(trunk_layers) if trunk_layers else None
 
     def key(k):
         stage, layer = k
         if layer >= 0:
+            if last_trunk_layer is not None and pos[k] > trunk_end_pos and layer > last_trunk_layer:
+                return (3, layer, pos[k])
             return (1, layer, pos[k])
         if stage in TRUNK_START:
             return (0, 0, pos[k])
@@ -104,7 +128,11 @@ def metrics(a_hex, b_hex):
     nb = math.sqrt(sum(y * y for y in b))
     nd = math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
     dot = sum(x * y for x, y in zip(a, b))
-    cos = dot / (na * nb) if na > 0 and nb > 0 else (1.0 if na == nb == 0 else float("nan"))
+    finite = all(math.isfinite(v) for v in a) and all(math.isfinite(v) for v in b)
+    if not finite and not bits_equal:
+        cos = float("nan")
+    else:
+        cos = dot / (na * nb) if na > 0 and nb > 0 else (1.0 if na == nb == 0 else float("nan"))
     return {
         "bits_equal": bits_equal,
         "cos": cos,
@@ -114,13 +142,19 @@ def metrics(a_hex, b_hex):
     }
 
 
-def rows_from_traces(path_a, path_b):
+def rows_from_traces(path_a, path_b, one_sided=ONE_SIDED):
     ta, ea, oa = load_trace(path_a)
     tb, eb, ob = load_trace(path_b)
     if ta is not None and tb is not None and ta != tb:
         raise Incomparable("the two traces ran different token ids")
     shared = [k for k in oa if k in eb]
     only_a = [k for k in oa if k not in eb]
+    only_b = [k for k in ob if k not in ea]
+    for side, path, missing in ((path_b, path_b, only_a), (path_a, path_a, only_b)):
+        lacking = [k for k in missing if k[0] not in one_sided]
+        if lacking:
+            names = ", ".join(f"{st}@{l}" for st, l in lacking[:4])
+            raise Incomparable(f"{len(lacking)} stages missing from {path} (e.g. {names}): a truncated or different run")
     if not shared:
         raise Incomparable("the traces share no stage")
     rows = []
@@ -128,7 +162,7 @@ def rows_from_traces(path_a, path_b):
         if len(ea[k]) != len(eb[k]):
             raise Incomparable(f"{k[0]}@{k[1]}: {len(ea[k])} vs {len(eb[k])} values")
         rows.append((k[0], k[1], metrics(ea[k], eb[k])))
-    return rows, only_a
+    return rows, only_a + only_b
 
 
 def rows_from_table(path):
@@ -147,6 +181,8 @@ def rows_from_table(path):
         order.append(key)
         rows.append((stage, layer, {"bits_equal": False, "cos": cos, "rel": float("nan"),
                                     "max_abs": float("nan"), "n": n}))
+    if not rows:
+        raise Incomparable(f"{path}: no table row of the form `stage L n cos ...`")
     by_key = {(s, l): m for s, l, m in rows}
     return [(s, l, by_key[(s, l)]) for s, l in execution_order(order)], []
 
@@ -160,22 +196,32 @@ def verdict(rows, mode, args):
             if bad:
                 return 1, f"FIRST DIVERGENCE at {s}@{l} (cos {m['cos']:.6f}, rel {m['rel']:.3g}, max_abs {m['max_abs']:.3g})", (s, l)
         return 0, f"CLEAN: {len(deciding)} shared stages agree ({mode})", None
-    # quant: step vs drift on the residual stream
-    prev = {}
+    # quant: step vs drift on the residual stream, trunk-level stages included
+    def err(m):
+        return math.inf if math.isnan(m["cos"]) else 1.0 - m["cos"]
+
+    prev, last_residual, drift = {}, None, None
     for s, l, m in deciding:
-        e = 1.0 - m["cos"]
-        if s in RESIDUAL and l >= 0:
-            p = prev.get(s)
-            if e > args.floor and (p is None or e > args.jump * max(p, 1e-6)):
-                suspects = [f"{bs}@{bl} (err {1 - bm['cos']:.3g})" for bs, bl, bm in rows
-                            if bl == l and bs not in RESIDUAL and 1 - bm["cos"] > args.floor]
-                return 1, (f"STEP at {s}@{l}: err {e:.3g} vs {p if p is not None else 0:.3g} at the "
-                           f"previous layer; branch stages above the floor in layer {l}: "
-                           f"{', '.join(suspects) if suspects else 'none'}"), (s, l)
+        if s not in RESIDUAL:
+            continue
+        e = err(m)
+        # a layered stage steps against itself one layer up; a trunk-level stage against the
+        # residual error just before it (none for `expand`)
+        p = prev.get(s) if l >= 0 else last_residual
+        if e > args.floor and (p is None or e > args.jump * max(p, 1e-6)):
+            where = l if l >= 0 else None
+            suspects = [f"{bs}@{bl} (err {err(bm):.3g})" for bs, bl, bm in rows
+                        if where is not None and bl == where and bs not in RESIDUAL and err(bm) > args.floor]
+            return 1, (f"STEP at {s}@{l}: err {e:.3g} vs {p if p is not None else 0:.3g} before it; "
+                       f"branch stages above the floor in layer {l}: "
+                       f"{', '.join(suspects) if suspects else 'none'}"), (s, l)
+        if drift is None and e > args.floor:
+            drift = (s, l)
+        if l >= 0:
             prev[s] = e
-    drift = [(s, l) for s, l, m in deciding if s in RESIDUAL and l >= 0 and 1 - m["cos"] > args.floor]
+        last_residual = e
     if drift:
-        return 0, f"DRIFT, no step: residual error first exceeds {args.floor:g} at {drift[0][0]}@{drift[0][1]}", None
+        return 0, f"DRIFT, no step: residual error first exceeds {args.floor:g} at {drift[0]}@{drift[1]}", None
     return 0, "CLEAN: no residual stage exceeds the floor", None
 
 
@@ -189,6 +235,8 @@ def main():
     ap.add_argument("--floor", type=float, default=1e-3)
     ap.add_argument("--jump", type=float, default=20.0)
     ap.add_argument("--order-sensitive", default=",".join(sorted(ORDER_SENSITIVE)))
+    ap.add_argument("--one-sided", default=",".join(sorted(ONE_SIDED)),
+                    help="stages that may be in one trace only (comma list)")
     ap.add_argument("--rows", action="store_true", help="print every compared stage")
     args = ap.parse_args()
     try:
@@ -199,15 +247,16 @@ def main():
         else:
             if not args.b:
                 raise Incomparable("two traces are required")
-            rows, only_a = rows_from_traces(args.a, args.b)
-    except (Incomparable, OSError, ValueError) as error:
+            one_sided = set(args.one_sided.split(",")) if args.one_sided else set()
+            rows, only_a = rows_from_traces(args.a, args.b, one_sided)
+    except (Incomparable, OSError, ValueError, UnicodeDecodeError) as error:
         print(f"INCOMPARABLE: {error}")
         return 2
     if args.rows:
         for s, l, m in rows:
             print(f"{s:14s} {l:4d} n={m['n']:6d} cos={m['cos']:.6f} rel={m['rel']:.3g} max_abs={m['max_abs']:.3g} bits_equal={m['bits_equal']}")
     if only_a:
-        print(f"note: {len(only_a)} stages only in {args.a}, e.g. {only_a[0][0]}@{only_a[0][1]}")
+        print(f"note: {len(only_a)} one-sided stages not compared, e.g. {only_a[0][0]}@{only_a[0][1]}")
     code, text, _ = verdict(rows, args.mode, args)
     print(text)
     return code
