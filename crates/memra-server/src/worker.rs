@@ -18064,6 +18064,10 @@ struct Session {
     /// Consecutive speculative bursts of this session that yielded at their entry with
     /// nothing emitted (the entry-yield bound, `SPEC_ENTRY_YIELD_MAX`, memra#1201).
     spec_entry_yields: u32,
+    /// The tick's round-yield verdict for this session's speculative burst (memra#1244): a
+    /// plain session of the tick steps only after the bursts, so the burst ends at its first
+    /// round (`spec_round_yield_due`). Written before phase (a) of every tick.
+    spec_round_yield: bool,
     /// This session's last speculative bursts, newest in bit 0: set when a request waited for
     /// admission at the burst's entry hook (a pressed entry, memra#1211).
     spec_press_hist: u8,
@@ -23880,6 +23884,43 @@ pub fn run(
                     && lm.model.spec_pool_capable()
                     && !spec_pool_candidate(s, lm)
             });
+            // ROUND YIELD (memra#1244): while a plain session gets its step only after
+            // these bursts, each MTP burst of the tick ends at its first round.
+            let round_yield = {
+                let plain: Vec<(&str, PlainTick)> = active
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, s)| {
+                        !finished.contains(i)
+                            && s.spec.is_none()
+                            && s.gspec_k == 0
+                            && !s.dspark_on
+                            && !s.glm5_on
+                    })
+                    .map(|(_, s)| {
+                        let tick = if plain_rider_candidate(s, &loaded[&s.model], &eager_decode) {
+                            PlainTick::Rider
+                        } else if s.prefill_done && s.cache.is_some() {
+                            PlainTick::Decoding
+                        } else {
+                            PlainTick::Priming
+                        };
+                        (s.model.as_str(), tick)
+                    })
+                    .collect();
+                let cohort_models: std::collections::HashSet<&str> = spec_order
+                    .iter()
+                    .filter(|&&i| {
+                        !finished.contains(&i)
+                            && spec_pool_candidate(&active[i], &loaded[&active[i].model])
+                    })
+                    .map(|&i| active[i].model.as_str())
+                    .collect();
+                spec_round_yield_due(admit_yield_on, &plain, &cohort_models)
+            };
+            for &i in &spec_order {
+                active[i].spec_round_yield = round_yield;
+            }
             for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] {
                 if pass == SpecPass::Cohorts {
                     // A newcomer's prime that suspended in the first pass is pending now, so
@@ -23917,7 +23958,7 @@ pub fn run(
                     }
                     let mut riders_of: HashMap<String, Vec<usize>> = HashMap::new();
                     // A model with a decoding plain session that cannot ride (constrained,
-                    // host-sampled, vision, fork) takes no riders this tick: the lockstep advances
+                    // vision, fork) takes no riders this tick: the lockstep advances
                     // riders once per round, and the session left in phase (c) would get one token
                     // per (now longer) tick. Measured on the q9 mixed cell at c=8 (two such rows
                     // beside four riders): 0.94x aggregate with riders, the tail set by the rows
@@ -31769,6 +31810,7 @@ fn admit(
         tokens_emitted: 0,
         early_done: None,
         spec_entry_yields: 0,
+        spec_round_yield: false,
         spec_press_hist: 0,
         spec_press_due: None,
         spec_stall_n: None,
@@ -34237,6 +34279,9 @@ struct SpecBurstEmit<'t> {
     /// How many requests waited for admission at this burst's entry call (memra#1211); `None`
     /// until the entry call has run. `spec_burst_post` shifts it into the session's history.
     entry_waiting: Option<usize>,
+    /// ROUND YIELD (memra#1244): a plain session of this tick steps only after the bursts
+    /// (`spec_round_yield_due`), so this burst ends at its first round.
+    round_yield: bool,
     tok: &'t memra_tokenizer::Tokenizer,
     decoded_visible: Vec<u8>,
     cursor: usize,
@@ -34285,6 +34330,7 @@ impl<'t> SpecBurstEmit<'t> {
             entry: true,
             entry_yields: s.spec_entry_yields,
             entry_waiting: None,
+            round_yield: s.spec_round_yield,
             tok,
             decoded_visible,
             cursor,
@@ -34320,7 +34366,9 @@ impl<'t> SpecBurstEmit<'t> {
             0
         };
         self.record_entry(waiting);
-        let keep = waiting == 0;
+        // ROUND YIELD (memra#1244): the entry call lets the burst run, every round's call
+        // ends it, so the burst is one round long while a plain session waits behind it.
+        let keep = spec_admit_keep(waiting, self.round_yield, self.entry);
         let keep = self.bound_entry_yield(keep, slice.is_empty());
         let (tok, flush_tx) = (self.tok, &self.flush_tx);
         if self.eos_seen || self.emit_remaining == 0 || slice.is_empty() {
@@ -34720,6 +34768,56 @@ fn spec_pass_steps(pass: SpecPass, stepped_first: bool, pooled: bool) -> bool {
     }
 }
 
+/// The hook's continue-verdict before the entry-yield bound and the stream's own end: false
+/// while a request waits for admission (ADMISSION YIELD), and false at a round's call (never
+/// at the burst's entry call) while the tick's round yield is on (memra#1244).
+fn spec_admit_keep(waiting: usize, round_yield: bool, entry: bool) -> bool {
+    waiting == 0 && (entry || !round_yield)
+}
+
+/// What a live plain session (no speculative route) does in a tick whose bursts run first.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum PlainTick {
+    /// A rider candidate (`plain_rider_candidate`): it advances once per lockstep round inside
+    /// its model's pooled MTP cohort, when the tick has one and no session of the model is
+    /// `Decoding`.
+    Rider,
+    /// Decoding, and no rider candidate (constrained, vision, a fork, an eager-only model): it
+    /// takes one phase (c) step per tick and keeps its model's riders in phase (c) with it.
+    Decoding,
+    /// Not decoding yet: its prompt is primed in phase (b), after the bursts.
+    Priming,
+}
+
+/// ROUND YIELD (memra#1244): whether this tick's MTP bursts end at their first round. True
+/// when a live plain session gets its step only after phase (a): every `Decoding` and
+/// `Priming` session, and a `Rider` no cohort carries this tick (its model has no session
+/// in `cohort_models`, the models with a pooled-cohort candidate at the tick's start, or a
+/// `Decoding` session of its model keeps the riders in phase (c)).
+///
+/// Before, phase (a) ran every burst to its target (32 tokens, 13 rounds on GB10's 27B)
+/// ahead of that session's one step, so it got one token per burst: 1.4 to 1.8 s a token
+/// beside one to three speculating streams, against 0.074 s alone. With the yield a tick is
+/// one round of every speculative session and one plain step, the share a rider gets inside
+/// a cohort. Where a burst ends is content-neutral (the burst-boundary and seeded-invariance
+/// gates), so this moves when tokens come, never which. Off under `MEMRA_ADMIT_YIELD=0`
+/// (lockstep fairness: full bursts). MTP route only, as the admission yield is: the DFlash,
+/// glm5 and gemma bursts have no round hook that ends them.
+fn spec_round_yield_due(
+    admit_yield_on: bool,
+    plain: &[(&str, PlainTick)],
+    cohort_models: &std::collections::HashSet<&str>,
+) -> bool {
+    admit_yield_on
+        && plain.iter().any(|&(model, tick)| {
+            tick != PlainTick::Rider
+                || !cohort_models.contains(model)
+                || plain
+                    .iter()
+                    .any(|&(m, t)| m == model && t == PlainTick::Decoding)
+        })
+}
+
 /// A session that may join this tick's pooled MTP cohort: an unconstrained MTP spec session on
 /// a CONTINUATION burst (prompt fully primed, no prime walker in flight). Prime bursts,
 /// constrained sessions and the other spec routes keep the serial per-session step.
@@ -34740,10 +34838,17 @@ fn spec_pool_candidate(s: &Session, lm: &LoadedModel) -> bool {
 }
 
 /// A plain decoding session that may ride this tick's pooled MTP cohort of its model (the
-/// lane/batch-spec v2 unified step): one that phase (c) would serve through the batched step
-/// with a device sample, unconstrained (no grammar mask), with no vision input and no fork,
-/// on a model whose plain rows the pooled walk reproduces bitwise (`plain_rider_capable`).
-/// Constrained, host-sampled, vision, eager-only and other-model sessions keep phase (c).
+/// lane/batch-spec v2 unified step): one that phase (c) would serve through the batched step,
+/// unconstrained (no grammar mask), with no vision input and no fork, on a model whose plain
+/// rows the pooled walk reproduces bitwise (`plain_rider_capable`). Constrained, vision,
+/// eager-only and other-model sessions keep phase (c).
+///
+/// A host-sampled session rides too (memra#1244): greedy with a penalty, and a sampled
+/// penalty where the card keeps it on the host. Its rider row carries no device-sample meta,
+/// so it comes back as the host logits row the batched step returns for it
+/// (`rider_sample_rows`, the plain step's own epilogue) and `advance_sample_emit` samples it
+/// as in phase (c). Until then such a session stayed in phase (c) at one token per burst and
+/// kept every rider of its model there with it.
 fn plain_rider_candidate(
     s: &Session,
     lm: &LoadedModel,
@@ -34759,7 +34864,6 @@ fn plain_rider_candidate(
         && s.constraint.is_none()
         && s.vision.is_none()
         && s.choice.is_none()
-        && devsample_meta(s).is_some()
         && lm.model.plain_rider_capable()
 }
 
@@ -41578,6 +41682,7 @@ mod tests {
             entry: true,
             entry_yields,
             entry_waiting: None,
+            round_yield: false,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
@@ -42015,6 +42120,7 @@ mod tests {
             entry: true,
             entry_yields,
             entry_waiting: None,
+            round_yield: false,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
@@ -42158,8 +42264,9 @@ mod tests {
         assert!(flush.contains(
             "let waiting = if self.admit_yield { \
              PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) } else { 0 }; \
-             self.record_entry(waiting); let keep = waiting == 0; \
-             let keep = self.bound_entry_yield(keep, slice.is_empty());"
+             self.record_entry(waiting); let keep = spec_admit_keep(waiting, \
+             self.round_yield, self.entry); let keep = self.bound_entry_yield(keep, \
+             slice.is_empty());"
         ));
     }
 
@@ -42267,6 +42374,179 @@ mod tests {
         );
     }
 
+    /// memra#1244: the round yield is due exactly while a plain session gets its step only
+    /// after the tick's bursts: one that decodes and cannot ride, one still to prime, and a
+    /// rider candidate nothing carries (no cohort of its model, or a decoding session of its
+    /// model keeps the riders in phase (c)). A rider a cohort carries advances inside the
+    /// rounds and asks for nothing. Before, no plain session ended a burst.
+    #[test]
+    fn spec_round_yield_due_names_the_plain_sessions_behind_the_bursts() {
+        use super::PlainTick::{Decoding, Priming, Rider};
+        let models = |m: &[&'static str]| -> std::collections::HashSet<&'static str> {
+            m.iter().copied().collect()
+        };
+        let due = |plain: &[(&str, super::PlainTick)], cohorts: &[&'static str]| {
+            super::spec_round_yield_due(true, plain, &models(cohorts))
+        };
+        assert!(!due(&[], &["q"]), "no plain session: full bursts");
+        assert!(
+            !due(&[("q", Rider)], &["q"]),
+            "a carried rider asks for nothing"
+        );
+        assert!(!due(&[("q", Rider), ("q", Rider)], &["q", "r"]));
+        assert!(due(&[("q", Decoding)], &["q"]), "it steps once per tick");
+        assert!(
+            due(&[("q", Priming)], &["q"]),
+            "its prime waits for phase (b)"
+        );
+        assert!(due(&[("q", Rider)], &[]), "no cohort carries it");
+        assert!(
+            due(&[("q", Rider)], &["r"]),
+            "the cohort is another model's"
+        );
+        assert!(
+            due(&[("q", Rider), ("q", Decoding)], &["q"]),
+            "the decoding session keeps the rider in phase (c)"
+        );
+        assert!(
+            due(&[("q", Rider), ("r", Decoding)], &["q"]),
+            "another model's plain session still waits"
+        );
+        assert!(
+            !super::spec_round_yield_due(false, &[("q", Decoding)], &models(&["q"])),
+            "lockstep fairness keeps full bursts"
+        );
+    }
+
+    /// memra#1244, through the real round hook: with the tick's round yield on, the burst's
+    /// entry call says continue (the burst runs its round) and the first round's call says
+    /// stop, so the plain session behind it waits one round. Without the yield every round
+    /// continues, which is what the hook answered before for any tick with no waiting
+    /// admission.
+    #[test]
+    fn spec_burst_ends_at_its_first_round_while_a_plain_session_waits() {
+        let tok = chatml_fixture_tokenizer("spec-burst-round-yield");
+        let (a, nl) = (0u32, 1u32);
+        // `admit_yield: false`: PENDING_ADMITS is process-global and other tests move it.
+        let emit = |tx: EventSender, round_yield: bool| SpecBurstEmit {
+            admit_yield: false,
+            entry: true,
+            entry_yields: 0,
+            entry_waiting: None,
+            round_yield,
+            tok: &tok,
+            decoded_visible: Vec::new(),
+            cursor: 0,
+            emit_remaining: 64,
+            eos_seen: false,
+            send_ok: true,
+            token_events: 0,
+            flush_tx: tx,
+            eos_ids: vec![tok.eos_id()],
+            stop_ids: Vec::new(),
+            stop_strings: Vec::new(),
+            stop_string_at: None,
+            generated_before: 0,
+            slices: 0,
+        };
+        let mut clock = crate::hybrid_telemetry::EmissionClock::default();
+        let mut sent = 0usize;
+        let mut flush = |e: &mut SpecBurstEmit, slice: &[u32], sent: &mut usize| {
+            e.flush(
+                slice,
+                None,
+                "m",
+                crate::lanes::Lane::Interactive,
+                &mut clock,
+                sent,
+            )
+        };
+
+        // A burst that enters on a carried token: a silent entry call, then its rounds.
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx, true);
+        assert!(
+            flush(&mut e, &[], &mut sent),
+            "the entry call runs the round"
+        );
+        assert!(
+            !flush(&mut e, &[a, nl], &mut sent),
+            "the first round ends the burst"
+        );
+        assert_eq!(sent, 2, "the round's tokens are published");
+        assert_eq!(e.entry_yields, 0, "not an entry yield");
+
+        // A burst whose entry call carries its boundary token.
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx, true);
+        assert!(
+            flush(&mut e, &[a], &mut sent),
+            "the entry call runs the round"
+        );
+        assert!(!flush(&mut e, &[nl, a], &mut sent));
+
+        // No plain session behind the bursts: every round continues.
+        let (tx, _rx) = event_channel();
+        let mut e = emit(tx, false);
+        assert!(flush(&mut e, &[], &mut sent));
+        assert!(flush(&mut e, &[a, nl], &mut sent));
+        assert!(flush(&mut e, &[a], &mut sent));
+
+        // The verdict itself: a waiting admission still ends any call, the entry call included.
+        assert!(super::spec_admit_keep(0, false, false));
+        assert!(super::spec_admit_keep(0, true, true));
+        assert!(!super::spec_admit_keep(0, true, false));
+        assert!(!super::spec_admit_keep(1, false, true));
+        assert!(!super::spec_admit_keep(1, true, true));
+    }
+
+    /// memra#1244's wiring: the tick names its plain sessions and writes the round yield to
+    /// every speculative session before the first burst of phase (a), the burst's emission
+    /// state reads it, the hook's verdict uses it, and a host-sampled session is a rider
+    /// candidate. Without any one of them the plain session is back to one token per burst
+    /// and the tests above still pass.
+    #[test]
+    fn spec_round_yield_is_wired() {
+        let worker: String = include_str!("worker.rs")
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let live = worker[..worker.find("mod tests").expect("the test module exists")]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let at = |a: &str| live.find(a).unwrap_or_else(|| panic!("{a} exists"));
+        let named = at(
+            "let tick = if plain_rider_candidate(s, &loaded[&s.model], &eager_decode) { \
+             PlainTick::Rider } else if s.prefill_done && s.cache.is_some() { \
+             PlainTick::Decoding } else { PlainTick::Priming };",
+        );
+        let due = at("spec_round_yield_due(admit_yield_on, &plain, &cohort_models) };");
+        let written = at("for &i in &spec_order { active[i].spec_round_yield = round_yield; }");
+        let passes = at("for pass in [SpecPass::ColdSerial, SpecPass::Cohorts] {");
+        assert!(
+            named < due && due < written && written < passes,
+            "the yield is decided and written before any burst of the tick"
+        );
+        assert!(
+            live.contains("round_yield: s.spec_round_yield,"),
+            "the burst's emission state reads the session's verdict"
+        );
+        assert!(
+            live.contains(
+                "let keep = spec_admit_keep(waiting, self.round_yield, self.entry); let keep \
+                 = self.bound_entry_yield(keep, slice.is_empty());"
+            ),
+            "the round hook's verdict carries the round yield"
+        );
+        let rider = &live[at("fn plain_rider_candidate(")..at("struct RiderLedger")];
+        assert!(
+            !rider.contains("devsample_meta"),
+            "a host-sampled session is a rider candidate"
+        );
+    }
+
     /// A burst ends at the round its public stream ends, through the real round hook: the flush
     /// that commits EOS (or a stop id) answers false, and so does every later flush, so the
     /// engine runs no rounds after it. A gone client ends it too. Before this verdict the hook
@@ -42281,6 +42561,7 @@ mod tests {
             entry: true,
             entry_yields: 0,
             entry_waiting: None,
+            round_yield: false,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
@@ -42363,6 +42644,7 @@ mod tests {
             entry: true,
             entry_yields: 0,
             entry_waiting: None,
+            round_yield: false,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
@@ -42542,6 +42824,7 @@ mod tests {
             entry: true,
             entry_yields: 0,
             entry_waiting: None,
+            round_yield: false,
             tok: &tok,
             decoded_visible: Vec::new(),
             cursor: 0,
