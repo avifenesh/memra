@@ -66,7 +66,7 @@ comparison. Its receipt and isolated layer-20 attention/FFN controls remain as e
 All rig execution was explicitly owner-authorized tiny CPU work under nice, one process/thread.
 No GPU, local workspace CI, general battery or smoke server. Source shard hashes were verified.
 Hosted CI gates each committed stage; pushes use `MEMRA_SKIP_PERF_CI=1`.
-The complete ASR program is still unqualified: decoder policy, pinned rental oracles,
+The complete ASR program is still unqualified: decoder policy, pinned oracles,
 checkpoint/serve parity, RNNT and target-device execution remain separate gates.
 
 ## Sealed encoder stage

@@ -35,6 +35,12 @@ device. The [front page](../README.md) has the quick start and the
 | [rigs/](rigs/README.md) | What should I run on my GPU, and what was measured on it? (one card per GPU) |
 | [workloads/](workloads/README.md) | Which model, card and settings fit my request shape: agents, long context, batch, images, multi-GPU? |
 | [SERVING.md](SERVING.md) | How do I operate `memra-server`: models, auth, admission, caching, multi-GPU, health, shutdown? |
+| [serving/prompt-cache.md](serving/prompt-cache.md) | How does the prompt cache reuse state across requests: tiers, budgets, isolation, affinity? |
+| [serving/speculative.md](serving/speculative.md) | Which requests speculate, at what depth K, and how drafters attach and demote? |
+| [serving/exactness.md](serving/exactness.md) | Which streams are byte-identical, which differ, and which gates prove it? |
+| [serving/metrics.md](serving/metrics.md) and [serving/request-log.md](serving/request-log.md) | What do `/metrics` and the per-request timing log report? |
+| [serving/model-metadata.md](serving/model-metadata.md) | What goes in the optional per-model metadata file, and how do catalog views use it? |
+| [serving/deployment-binary.md](serving/deployment-binary.md) | How do I build my own server binary on the `memra-server` crate? |
 | [API-SURFACES.md](API-SURFACES.md) | Which HTTP routes and request fields exist, and how do Messages and Responses map onto chat? |
 | [FLAGS.md](FLAGS.md) | What does each `MEMRA_*` variable do, what is its default, and which names are retired? |
 | [deploy/README.md](../deploy/README.md) | What do the example systemd units show about supervising `memra-server`? |
@@ -51,7 +57,7 @@ device. The [front page](../README.md) has the quick start and the
 | [TOKENIZER-PROGRAM.md](TOKENIZER-PROGRAM.md) | How does the tokenizer apply Hugging Face normalizers and added tokens? |
 | [HY3-SPILL.md](HY3-SPILL.md) | How does Hy3 run when its expert bank exceeds VRAM and host RAM? |
 | [SPEECH.md](SPEECH.md) | What do the speech (ASR and TTS) packs cover, and what would a served speech path need? |
-| [ASR-MODALITY-PLAN.md](../ASR-MODALITY-PLAN.md) | What is the native ASR plan, and what did its bring-up measure for the first speech checkpoints? |
+| [ASR lane plan](../research/asr-modality-20260909/PLAN.md) | What is the native ASR plan, and what did its bring-up measure for the first speech checkpoints? |
 
 ## Contribute
 
@@ -97,6 +103,7 @@ decisions and gate histories it no longer carries.
 | [history/API-SURFACES.md](history/API-SURFACES.md) | API-SURFACES.md: the Messages section, accounting parity across dialects, bounded choices |
 | [history/CI.md](history/CI.md) | CI.md: CPU checks and native qualification, requesting a GPU run, the input manifest, receipt custody |
 | [history/COOKBOOK.md](history/COOKBOOK.md) | COOKBOOK.md: the per-model launch blocks and their measurements as of commit `d1ed663256` |
+| [history/DRAFT-REGIME.md](history/DRAFT-REGIME.md) | DRAFT-REGIME.md: the whole page before the 2026-11-12 rewrite, with its PP-2 note and prebuilt-draft claim |
 | [history/HY3-SPILL.md](history/HY3-SPILL.md) | HY3-SPILL.md: the page as of commit `d1ed663256`, with its run profile and tuning state |
 | [history/KERNELS.md](history/KERNELS.md) | KERNELS.md: the full inventory before the rewrite, with its dated lane sections |
 | [history/MODELS.md](history/MODELS.md) | MODELS.md and the model and hardware cards: support notes, format direction, family status, lane notes |
@@ -113,6 +120,7 @@ Superseded plans and release records, each with a banner naming what replaced it
 
 | File | What it is |
 |---|---|
+| [archive/SERVING-2026-11-12.md](archive/SERVING-2026-11-12.md) | The serving reference before the 2026-11-12 split into the operator guide and `serving/` pages, with its lane narratives and measurements |
 | [archive/ARCHITECTURE-2026-06.md](archive/ARCHITECTURE-2026-06.md) | The June 2026 tech-stack plan and sm_120 feasibility ledger (the old root ARCHITECTURE.md) |
 | [archive/ROADMAP-2026-06.md](archive/ROADMAP-2026-06.md) | The June 2026 build roadmap that went with that plan |
 | [archive/RELEASE-NOTES-v0.122.0-v0.123.0.md](archive/RELEASE-NOTES-v0.122.0-v0.123.0.md) | Release notes for v0.122.0 and v0.123.0, from before the 2026-09-01 history rebuild |

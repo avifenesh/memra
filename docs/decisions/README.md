@@ -20,6 +20,7 @@ line here.
 | [RIG-NATIVE-DECODE.md](RIG-NATIVE-DECODE.md) | 2026-08-15 | Adopted | Rig-native decode on sm_120a means fused multi-tensor walks (fewer launches, larger transfers), not a new layout; each increment gated. |
 | [SM121-SPARK-TARGET.md](SM121-SPARK-TARGET.md) | 2026-11-01 | Adopted | GB10 (DGX Spark) builds its own `121a` SASS in the `120a` policy family; one `120f` family binary rejected. |
 | [RELEASE-PROFILE.md](RELEASE-PROFILE.md) | 2026-11-02 | Adopted | Release profile opt-level 3, fat LTO, one codegen unit: results byte-identical, tokenization 6% faster, binary 17% smaller, relinks 1.5-6.7x slower. |
+| [BUILD-FINGERPRINT.md](BUILD-FINGERPRINT.md) | 2026-09-01 | Adopted | `system_fingerprint` is `memra-<version>-<content id>`, a 48-bit FNV-1a-128 digest of the compiled source; the git sha as identity, a build timestamp and a flag rejected. |
 | [GRID-Y-ROW-BLOCKS.md](GRID-Y-ROW-BLOCKS.md) | 2026-11-11 | Adopted | Launches with a row count in CUDA grid y split into blocks of at most 65,535 rows; launches without a split refuse by name (memra#1200). |
 | [PUBLIC-BOUNDARY-DETECTION.md](PUBLIC-BOUNDARY-DETECTION.md) | 2026-08-18 | Adopted | What the public-boundary gate matches, which candidate rules were rejected as too noisy, and why published refs need their own scan. |
 
@@ -34,14 +35,17 @@ line here.
 
 | Record | Date | Verdict | Decides |
 |---|---|---|---|
+| [ONE-CLASS-DECODE-DEFAULT.md](ONE-CLASS-DECODE-DEFAULT.md) | 2026-08-13 | Adopted | B=1 and B>=2 decode run the generic batched body on every architecture, so gaining a peer never changes a request's program; the eager B=1 trunk (+8.33% / +5.19% at c=1) is a fixed-solo door only. |
 | [ADMIT-BY-MEMORY-DEFAULT.md](ADMIT-BY-MEMORY-DEFAULT.md) | 2026-11-04 | Adopted | Memory-shaped admission (32,768-token open-output charge) is the default on the full-power RTX PRO 6000 Workstation Edition; `MEMRA_ADMIT_BY_MEMORY` deleted. |
 | [ADMIT-W-RELEASE-DEFAULT.md](ADMIT-W-RELEASE-DEFAULT.md) | 2026-11-04 | Adopted | The prefill workspace leaves both admission books at prime completion on the full-power RTX PRO 6000 Workstation Edition; the door deleted. |
 | [BATCH-OOM-RECOVER-DEFAULT.md](BATCH-OOM-RECOVER-DEFAULT.md) | 2026-11-04 | Amended | A batched decode chunk's untouched CUDA OOM retries once on the RTX PRO 6000 Workstation Edition, and since 2026-11-08 on the RTX 5090 Laptop GPU. |
 | [C8-SERVING-24GB.md](C8-SERVING-24GB.md) | 2026-11-07 | Adopted | c8 on a 24 GB card: a memory-deferred request holds the queue, deadline-first prefill only at risk, seed rows join the concat prime, the cache yields the transient reserve. |
 | [PREFILL-WORKSPACE-HELD.md](PREFILL-WORKSPACE-HELD.md) | 2026-11-08 | Adopted | On the RTX 5090 Laptop GPU admission charges the prefill workspace a prime actually holds and bounds concat batches by free memory. |
 | [PRIME-FAIRNESS-DEFAULT.md](PRIME-FAIRNESS-DEFAULT.md) | 2026-09-22 | Adopted | The owned prime walker yields to its peers by default; `MEMRA_PRIME_YIELD=0` is the rollback seam (memra#521). |
+| [REQUEST-DEADLINES.md](REQUEST-DEADLINES.md) | 2026-08-23 | Amended | `timeout_ms` on every surface, defaulting to the mode's maximum (90 s non-streaming on discrete cards, derived on unified memory); infeasible requests refused at admission, partials delivered on the OpenAI dialects; a time cut is never `length`. |
 | [BACKGROUND-DELIVERY-DEFAULT.md](BACKGROUND-DELIVERY-DEFAULT.md) | 2026-11-09 | Adopted | `background: true` is always accepted on Responses, chat and text completions; `MEMRA_BACKGROUND_RESPONSES` deleted on two PASS receipts. |
 | [COMPLETE-RESULT-PATH-V1.md](COMPLETE-RESULT-PATH-V1.md) | 2026-09-28 | Amended | The delivery contract for non-streaming requests past the 90 s deadline: a per-request opt-in, not a conversation store. The record tracks what is still owed. |
+| [REASONING-CONTROL.md](REASONING-CONTROL.md) | 2026-08-23 | Adopted | One effort table on three dialects; absent is the model's default, `minimal` is off, levels are token dials, reasoning is always delivered and `max_tokens` covers it; `budget_tokens` refused. |
 | [GEMMA-UNOPENED-THOUGHT.md](GEMMA-UNOPENED-THOUGHT.md) | 2026-11-04 | Adopted | gemma4 parsers route text before an unopened `<channel\|>` at the start of a turn to reasoning; a stream holds at most 256 bytes. |
 | [POOLED-MEMBER-CLOSE.md](POOLED-MEMBER-CLOSE.md) | 2026-11-11 | Adopted | A pooled MTP or DSpark cohort member closes at the round its stream ended, not when the whole cohort call returns (memra#1209). |
 | [HANDOFF-DIRECT-EXPORT.md](HANDOFF-DIRECT-EXPORT.md) | 2026-11-04 | Adopted | The host-tier handoff export writes with `O_DIRECT` on the full-power RTX PRO 6000 Workstation Edition, buffered elsewhere; `MEMRA_KV_HOST_HANDOFF_IO` deleted. |
@@ -58,12 +62,14 @@ line here.
 | [PREFIX-CACHE-POLICY.md](PREFIX-CACHE-POLICY.md) | 2026-09-21 | Adopted | Plain LRU is the only prefix-cache eviction policy; the segmented (SLRU) arm and its two doors deleted. Re-tested 2026-11-07, unchanged. |
 | [PREFIX-PROMPT-END-TAIL.md](PREFIX-PROMPT-END-TAIL.md) | 2026-11-11 | Adopted | A grid entry carries the prompt-end tail of the prompt that published it, so an exact re-send restores its whole prompt; a restored hit's one-call suffix primes ahead of cold chunks, bounded; a tail never costs an entry that served a hit. LRU-item tails and strict tails-first rejected by measurement. |
 | [PREFIX-CACHE-DISCRETE.md](PREFIX-CACHE-DISCRETE.md) | 2026-11-07 | Adopted | A discrete card's derived prefix budget leaves the session peak; value-per-byte eviction, second-hit admission and four other levers rejected. |
+| [PRIME-GRID-LAW.md](PRIME-GRID-LAW.md) | 2026-08-21 | Adopted | On a GDN hybrid every boundary the server chooses (checkpoint, capture, seed, pool resume) rounds down to the 32-token fold grid, so a split prime reproduces the cold bytes. |
 | [GENERIC-SPILL-INTERFACE-V1.md](GENERIC-SPILL-INTERFACE-V1.md) | 2026-09-19 | Adopted | `memra-tier::contracts` is the only shared schema for spill control-plane contracts; no runtime default or hardware qualification. |
 
 ## Speculative decoding and sampling
 
 | Record | Date | Verdict | Decides |
 |---|---|---|---|
+| [SPEC-ADMISSION-GATE.md](SPEC-ADMISSION-GATE.md) | 2026-08-07 | Amended | Speculation is admitted while `active + 1 <= 2` and live sessions demote at `active >= 4`; PP-2 never admits; since 2026-11-02 a boot-measured cost model decides where it has a verdict. |
 | [MTP-LEARNED-DEPTH-20260920.md](MTP-LEARNED-DEPTH-20260920.md) | 2026-09-20 | Rejected | An online learned MTP depth policy is not promoted: Qwen lost 2.45% to fixed K=3, Gemma gained 0.43% over native adaptation; existing policies kept. |
 | [SPEC-K-COLD-LONG-K2.md](SPEC-K-COLD-LONG-K2.md) | 2026-11-09 | Adopted | Cold prompts of 1,024+ tokens speculate at K=2 on the RTX 5090 Laptop GPU and the RTX PRO 6000 Max-Q; GB10 and every other card keep K=3. |
 | [SPEC-K-COLD-SHORT-5090.md](SPEC-K-COLD-SHORT-5090.md) | 2026-11-10 | Rejected | K=2 for cold short prompts on the RTX 5090 Laptop GPU; the rung stays at K=3 because the faster depth follows acceptance. |
@@ -71,6 +77,7 @@ line here.
 | [SPEC-STALL-MARK.md](SPEC-STALL-MARK.md) | 2026-11-11 | Adopted | When a speculating session's last four burst entries each met a waiting request, the cost model marks that concurrency plain for 64 s (memra#1211). |
 | [SAMPLED-VERIFY-POSITION-KEYED.md](SAMPLED-VERIFY-POSITION-KEYED.md) | 2026-11-10 | Adopted | The MTP route verifies a sampled round by position (one Philox event per generated position); the Leviathan/Chen rejection walk rejected (memra#1154). |
 | [SAMPLED-PENDING-CARRY.md](SAMPLED-PENDING-CARRY.md) | 2026-11-10 | Adopted | A sampled MTP burst carries its pending token into the next burst like a greedy one; GB10 sampled decode +8.4%, greedy flat (memra#1186). |
+| [VENDOR-SAMPLING-DEFAULTS.md](VENDOR-SAMPLING-DEFAULTS.md) | 2026-08-19 | Adopted | An omitted sampling field takes the model vendor's published value; greedy and house defaults rejected, a zero default temperature refused at boot, the thinking and non-thinking arms never blend. |
 | [DSV4-SAMPLER-RADIX-DEFAULT.md](DSV4-SAMPLER-RADIX-DEFAULT.md) | 2026-09-07 | Adopted | The DSv4 sampler orders candidates by radix when `MEMRA_DSV4_SAMPLE_SORT` is unset; `comparison` stays the explicit oracle arm. |
 | [GB10-DEVICE-PENALTY-DEFAULT.md](GB10-DEVICE-PENALTY-DEFAULT.md) | 2026-11-10 | Adopted | The device penalty arm is on for the dense and MoE Qwen3.5 classes on GB10, keyed by device name; every other family stays off there. |
 | [FA-VERIFY-ROWS.md](FA-VERIFY-ROWS.md) | 2026-11-10 | Adopted | A speculative verify reads the KV once through the rows walk from a measured depth floor per GQA shape, on every device, with no flag. |

@@ -49,8 +49,9 @@ route; "qualified" and "tuned" belong to pack states.
 Packs with no model card: `qwen3`, `qwen3_moe`, `llama_dense` and `glm_dsa` (GLM-5 and 5.2) are NativeReference on tiny fixtures; `olmoe`, `minimax_m3` and the `mimo_v2` profiles declare no state. <!-- support: qwen3-tiny-random,qwen3_moe-reference,llama_dense-reference,glm_dsa-reference -->
 
 Speech: the Whisper large-v3, Nemotron RNNT and Qwen3-TTS packs bind their checkpoints and execute
-nothing natively. The `/v1/audio/*` routes exist and answer 503, since no speech operation has a
-CUDA kernel. The program is [SPEECH.md](SPEECH.md).
+nothing natively. The `/v1/audio/*` routes exist: transcription and session open answer 503
+`engine_unbound`, since no speech operation has a CUDA kernel, the session list answers 200, and
+frames or close answer 404 `unknown_session`. The program is [SPEECH.md](SPEECH.md).
 
 ## Generated board
 

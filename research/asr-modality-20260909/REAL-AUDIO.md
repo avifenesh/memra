@@ -1,6 +1,6 @@
-# Real-audio parity against the rental oracle
+# Real-audio parity against the pinned oracle
 
-Oracle: `~/hebrew-asr-data/oracle/whisper-large-v3-ivrit/`, cell lock
+Oracle: the pinned `whisper-large-v3-ivrit` capture (local copy), cell lock
 `876f0a7f74268c6b914623bce2799bc61d7c4d901a98cd6f886600362da6bbf2`.
 71 CT2 clips (364 windows of 30 seconds) plus 8 HF FP32 clips, recorded Hebrew speech.
 Runner and gate: `tools/check_whisper_real_audio.py`. This is frontend and encoder

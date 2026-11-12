@@ -12,6 +12,8 @@ deleted and `background: true` is always accepted on all three routes
 ([BACKGROUND-DELIVERY-DEFAULT.md](BACKGROUND-DELIVERY-DEFAULT.md)). The owner's TTL/byte-cap
 call (Owed item 4) is still open.
 
+**Note, 2026-11-12:** the `docs/SERVING.md:N` references below point at the old serving doc, now kept as [docs/archive/SERVING-2026-11-12.md](../archive/SERVING-2026-11-12.md) (its "Request deadlines" and "Long non-streaming requests" sections); the line numbers are from this record's date and do not match the archive's lines.
+
 **Original status line:** interface frozen, design only. Nothing in this document is
 built, wired, or gated. Issue: `avifenesh/memra#550`. Scope: a supported way for a request
 whose valid workload cannot finish inside the synchronous non-streaming deadline to

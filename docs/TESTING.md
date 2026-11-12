@@ -237,7 +237,7 @@ sellgate replay counts such restores against the `/metrics` `prefix_cache_tail_h
 its own cell's server log (`cache_qualification.tail_witness`). Without the witness it is the
 off-grid prompt-end entry of memra#602 and fails.
 
-The capture and eviction law is in [SERVING.md](SERVING.md); the policy choice is
+The capture and eviction law is in [prompt-cache.md](serving/prompt-cache.md); the policy choice is
 [PREFIX-CACHE-POLICY](decisions/PREFIX-CACHE-POLICY.md). Receipts: `research/spill-b-20260919/`
 days 13 to 19 and `research/hit-prompt-end-20261111/` (the prompt-end tail and the hit-suffix
 fence, [PREFIX-PROMPT-END-TAIL](decisions/PREFIX-PROMPT-END-TAIL.md)).

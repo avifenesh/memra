@@ -12,7 +12,7 @@ page) and docs/README.md (doc map), and the one-read engine overview is ARCHITEC
 - Which tuned program implements plan operation X -> docs/EXECUTION-SURFACES.md (generated from crates/memra-gguf/src/op_registry.rs)
 - Hopper (sm_90a) lane evidence -> ARCHITECTURE-H100.md
 - Hy3 expert spill on a 24 GB card -> docs/HY3-SPILL.md
-- Speech packs and audio routes -> docs/SPEECH.md; ASR plan -> ASR-MODALITY-PLAN.md; ASR lane status -> research/asr-modality-20260909/STATUS.md
+- Speech packs and audio routes -> docs/SPEECH.md; ASR plan -> research/asr-modality-20260909/PLAN.md; speech program record -> research/speech-program-20260911/README.md; ASR lane status -> research/asr-modality-20260909/STATUS.md
 
 ## Models
 
@@ -26,7 +26,8 @@ page) and docs/README.md (doc map), and the one-read engine overview is ARCHITEC
 ## Serving
 
 - Install paths -> docs/INSTALLATION.md; copy-paste run commands per model and card -> docs/COOKBOOK.md
-- Operating memra-server (models, admission, caching, drafters, supervision) -> docs/SERVING.md
+- Operating memra-server (models, drafters, deadlines, admission, caching, auth, supervision, errors) -> docs/SERVING.md
+- Serving detail: prompt cache, speculative scheduling, exactness laws, metrics, request log, model metadata, deployment binaries -> docs/serving/
 - Request and response schemas per route -> docs/API-SURFACES.md
 - Card-specific truth -> docs/rigs/; workload guides -> docs/workloads/
 

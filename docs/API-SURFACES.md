@@ -37,9 +37,9 @@ ignored.
 | POST | `/v1/embeddings` | Embeddings from a prefill | key |
 | POST | `/v1/rerank` | Cohere-shaped rerank from a prefill | key |
 | POST | `/v1/tokenize`, `/v1/detokenize` | Token inspection, CPU only | key |
-| POST | `/v1/audio/transcriptions` | Batch transcription (fails closed today) | key |
-| POST, GET | `/v1/audio/sessions` | Open or list streaming audio sessions | key |
-| POST | `/v1/audio/sessions/{id}/frames`, `/v1/audio/sessions/{id}/close` | Append frames, close a session | key |
+| POST | `/v1/audio/transcriptions` | Batch transcription (503 `engine_unbound` today) | key |
+| POST, GET | `/v1/audio/sessions` | Open (503 `engine_unbound` today) or list streaming audio sessions | key |
+| POST | `/v1/audio/sessions/{id}/frames`, `/v1/audio/sessions/{id}/close` | Append frames, close a session (404 `unknown_session` today) | key |
 | GET | `/metrics` | Serving counters, JSON or Prometheus text | metrics |
 | GET | `/yield/metrics` | Per-lane QoS counters and step p50/p99 | metrics |
 
@@ -52,7 +52,7 @@ The stock server has no `/admin/*` route; a deployment binary adds its own throu
 - `MEMRA_API_KEY` sets one bearer key (tenant `default`). `MEMRA_API_KEYS` sets a keyring (a TOML
   file of SHA-256 hashes, hot-reloaded, or an inline list) with per-key tenant, lane class and
   rate limit. With neither, the server is open; a non-loopback bind then refuses to start unless
-  `MEMRA_ALLOW_OPEN_BIND=1`. Key management: [Serving](SERVING.md#api-keys--multi-key-tenant-auth-laneapi-keys-2026-08-05).
+  `MEMRA_ALLOW_OPEN_BIND=1`. Key management: [Serving](SERVING.md#api-keys).
 - Keys travel as `Authorization: Bearer <key>`. `/v1/messages` and `/v1/auth/check` also take
   `x-api-key`; when both headers are present, each is tried.
 - Auth reads headers only and runs before the body is read, so a rejected caller cannot spend the
@@ -84,7 +84,7 @@ The stock server has no `/admin/*` route; a deployment binary adds its own throu
 
 - `x-lane: interactive | judge | harvest` picks the admission lane; an unknown value is a 400.
   Batch-class keys default to `harvest` and get a 403 on `interactive`. Lane policy:
-  [Serving](SERVING.md#multi-tenant-qos--the-x-lane-slo-gate-laneqos-p95-2026-08-02).
+  [Serving](SERVING.md#lanes-x-lane).
 - Responses on the four generation surfaces, tokenize and detokenize carry `X-RateLimit-Limit`,
   `-Remaining` and `-Reset` with concurrency-slot meaning: the lane's session cap, the free
   slots, and the estimated seconds until one frees. A request past the waiting-queue bound or
@@ -98,9 +98,11 @@ The stock server has no `/admin/*` route; a deployment binary adds its own throu
 ### Deadlines: `timeout_ms`
 
 All four generation surfaces, embeddings and rerank take `timeout_ms` in milliseconds.
-Non-streaming accepts 1000 through 90000, default 90000. Streaming defaults to and caps at the
-deployment's first-token ceiling (`MEMRA_STREAM_TTFT_MS_MAX`; 90000 unless the operator raises it
-or the device has unified memory). Blocking, it bounds the complete response; streaming, it bounds
+Non-streaming accepts 1000 through 90000, default 90000, on a discrete card; on a unified-memory
+device the maximum and default are derived
+([SERVING.md](SERVING.md#unified-memory-devices-gb10-dgx-spark)). Streaming defaults to and caps
+at the deployment's first-token ceiling (`MEMRA_STREAM_TTFT_MS_MAX`; 90000 unless the operator
+raises it or the device has unified memory). Blocking, it bounds the complete response; streaming, it bounds
 the time to the first generated token.
 
 - A non-streaming request whose pessimistic estimate cannot finish inside its deadline is refused
@@ -110,47 +112,33 @@ the time to the first generated token.
   and no usage is counted. `/v1/messages` and `/v1/responses` answer every non-streaming miss
   this way.
 - On chat and text completions, a non-streaming miss after generation started returns the tokens
-  produced so far with `finish_reason: "error"` and an `error` object (`code: "deadline_exceeded"`,
-  `metadata.error_type: "timeout"`); the native completion shape reports `stop_reason: "Deadline"`
+  produced so far with `finish_reason: "error"`, `native_finish_reason: "deadline_exceeded"` and an
+  `error` object (`code: "deadline_exceeded"`, `metadata.error_type: "timeout"`); the native
+  completion shape reports `stop_reason: "Deadline"`
   with the same `error`. Those delivered tokens count as usage.
 - A stream already committed for prefill keepalives ends with a named error event: an `error`
   event of type `timeout` on `/v1/messages`, `response.failed` with `code: "deadline_exceeded"`
   on `/v1/responses`.
 
-Semantics: [Serving](SERVING.md#request-deadlines-and-the-billing-promise-timeout_ms).
+Semantics: [Serving](SERVING.md#request-deadlines-timeout_ms).
 
-### Reasoning controls
+<a id="tool-calls-and-structured-output"></a>
 
-One effort table serves every surface: `none` and `minimal` turn thinking off; `low`, `medium`
-and `high` turn it on at that level; `xhigh`, `max` and `ultra` map to the highest level the
-model's template distinguishes; anything else is a 400. On a model with only an on/off switch, a
-graded value means on. With no reasoning field at all, the model's own default applies, or the
-`default_reasoning_effort` its `MEMRA_MODEL_METADATA` entry declares.
+### Structured output: `response_format`
 
-| Surface | Fields |
-|---|---|
-| `/v1/chat/completions` | `reasoning_effort`; `reasoning` object with exactly `effort`, `enabled`, `exclude` (any other key, `max_tokens` included, is a 400); `include_reasoning: false` and `reasoning.exclude: true` mean reasoning off, not hidden; `enable_thinking` aliases `reasoning.enabled`; `chat_template_kwargs` accepts only `enable_thinking` |
-| `/v1/messages` | `thinking.type`: `enabled`, `disabled`, or `adaptive` (the model's default); `thinking.budget_tokens` is a 400; `output_config.effort` uses the table above, and `thinking.type` wins the on/off switch when both are present |
-| `/v1/responses` | `reasoning.effort` uses the table; `reasoning.summary` (or its alias `generate_summary`) accepts only `"auto"`, since reasoning is returned verbatim; other keys are a 400 |
-
-Contradictory switches are a 400, and so is an off-request on a template that cannot turn
-reasoning off. Reasoning tokens count against the one `max_tokens` budget.
-
-### Tool calls and structured output
-
-- Tools are client-defined functions: chat `tools: [{"type":"function","function":{name,
-  description?, parameters?}}]`. They render through the chat template's tools branch, and the
-  model's tool-call blocks parse into OpenAI `tool_calls` with `finish_reason: "tool_calls"`.
-- `tool_choice`: `"auto"` (default) and `"none"` keep the native path; `"required"` (needs
-  declared tools) and `{"type":"function","function":{"name":...}}` (the name must be declared)
-  force a call through a tool-call grammar.
-- `parallel_tool_calls: false` limits the reply to one call; `true` is a 400 on a single-call
-  template; omitted keeps the template's own behavior.
-- `response_format`: `{"type":"text"}`, `{"type":"json_object"}` and
+- `{"type":"text"}` changes nothing; `{"type":"json_object"}` and
   `{"type":"json_schema","json_schema":{...,"schema":{...}}}` decode under an llguidance grammar.
-  The DeepSeek-V4-Flash route refuses `response_format` by name.
-- `/v1/models` reports `capabilities.tools`, `forced_tool_calls`, `parallel_tool_calls` and
-  `structured_output` per model. More: [Serving](SERVING.md#openai-tools-surface-serve-tools-lane-2026-08-02).
+  On `/v1/responses` the same forms arrive as `text.format`. Compile limits and cost:
+  [Serving](SERVING.md#constrained-decoding-response_format).
+- On a template with a thinking switch, `response_format` turns thinking off for the request. On
+  a template whose think segment always opens, the think segment runs unconstrained and the
+  grammar engages at its close; a template with no recognizable close sequence answers 400.
+- `response_format` together with a constrained tool request (see [Tool calls](#tool-calls)) is a
+  400. The DeepSeek-V4-Flash route refuses `response_format` by name.
+- `/v1/models` reports `capabilities.structured_output` per model.
+
+Tools and reasoning have their own sections: [Tool calls](#tool-calls) and
+[Reasoning controls](#reasoning-controls).
 
 ## Chat and text completions
 
@@ -232,6 +220,167 @@ rotated key of the same tenant keeps access), and a foreign or unknown id is the
   binary may supply its own store.
 
 Delivery contract: [Serving](SERVING.md#background-delivery-for-long-non-streaming-requests-background-true).
+
+## Tool calls
+
+Tools are client-defined functions. The server renders them through the model's own chat
+template and parses the model's tool-call blocks back into the surface's call shape. Chat takes
+`tools: [{"type":"function","function":{name, description?, parameters?}}]`; Responses takes
+`{"type":"function","name",...,"parameters"}` entries and maps them to the chat form; Messages
+takes `{name, description, input_schema}` with its own `tool_choice` forms (see its table).
+
+### Rendering
+
+- Each template renders tools in its own protocol, reproduced byte for byte from the vendor
+  template: the Qwen class's `<tool_call>` and `<function=...>` blocks, Hy3's `:opensource`
+  tags (`<tool_call:opensource>`), Gemma 4's `<|tool_call>`, GLM-5.3-Flash's own form and
+  DeepSeek-V4's DSML.
+- A model whose template has no tools branch answers a request carrying `tools` with a 400
+  (`chat template has no tools branch`) before admission.
+- `tool_choice: "none"` renders the prompt without the tools block, byte-identical to a request
+  without tools, and runs no call parser.
+- Requests without tools skip the tools renderer and the call parser. The one exception is the
+  Qwen3.8 effort-ladder template, where every chat request uses the tools-capable renderer,
+  because only that renderer writes the vendor's default effort on an unset request.
+- `usage.prompt_tokens` counts the rendered tools block, and a repeated tools block is an ordinary
+  cacheable prefix.
+
+### `tool_choice` and `parallel_tool_calls`
+
+| Value | Behavior |
+|---|---|
+| `tool_choice` omitted, `null` or `"auto"` | the template's native path; the model decides |
+| `"none"` | tools are not rendered and no parser runs |
+| `"required"` | at least one call, forced through a tool-call grammar; without declared tools it is a 400 |
+| `{"type":"function","function":{"name":...}}` | a call to that function, forced through the grammar; an undeclared name is a 400 |
+| `parallel_tool_calls` omitted | the template's own behavior |
+| `parallel_tool_calls: false` | ordinary content or one complete call, through the grammar |
+| `parallel_tool_calls: true` | several calls where the dialect allows them; a 400 on the single-call Gemma 4 template |
+
+A forced or single-call request is a constrained tool request. It runs on the Qwen-class and
+Gemma 4 dialects; Hy3, GLM-5.3-Flash and DeepSeek-V4 answer a named 400 (`constrained tool calls
+are not supported by this template dialect`). The arguments are one JSON object checked against
+the function's `parameters` schema (default `{"type":"object"}`, and the schema must allow an
+object). These refuse before generation, with `param` naming `tool_choice` or
+`parallel_tool_calls`:
+
+- no declared function, or more than 128;
+- a tools array larger than the constrained schema byte limit, a tool that is not a function,
+  or a function name that is empty, longer than 64 bytes, outside `[A-Za-z0-9_-]` or repeated;
+- a `parameters` schema the grammar compiler refuses;
+- an explicit `stop` or `stop_token_ids`, which could cut a call short;
+- `response_format` in the same request.
+
+### Tool-call output
+
+- Calls parse from the generated stream into OpenAI `tool_calls`: streaming deltas, or
+  `message.tool_calls` with `content: null` on a turn that is only calls. Ids are deterministic,
+  `arguments` is a compact JSON string with values coerced to the declared schema types, and
+  `finish_reason` is `"tool_calls"`. Messages returns `tool_use` blocks with parsed `input`;
+  Responses returns `function_call` items.
+- A block that does not parse is returned as content, verbatim and with its tags; an unterminated
+  block flushes as raw content when generation ends. A malformed call is never an error and never
+  drops bytes: content plus parsed calls reassemble to the generated text.
+- Text inside an open reasoning segment is not scanned, so a call the model mentions while
+  reasoning is not a call.
+- In history, `tool_calls` belong on `assistant` messages (elsewhere they are a 400), and tool
+  results arrive as `tool` role turns.
+- `/v1/models` reports `capabilities.tools` (the template has a tools branch),
+  `forced_tool_calls` (a constrained dialect exists) and `parallel_tool_calls`. These describe the
+  API mechanics, not a model's support state.
+
+Receipts: [research/serve-tools-20260802/](../research/serve-tools-20260802/) (round trips, the
+streaming schema check, the malformed-block transcript),
+[research/tool-choice-20261003/](../research/tool-choice-20261003/) (forced and single-call
+requests) and [research/integrate-cache-20260802/](../research/integrate-cache-20260802/) (tools
+with the prefix cache).
+
+## Reasoning controls
+
+One effort table serves all three dialects (`canonical_effort_for` and `parse_think` in
+`crates/memra-server/src/lib.rs`): the same values are accepted and refused, with the same effect,
+on every surface.
+
+| Value | Meaning |
+|---|---|
+| `none`, `minimal` | thinking off |
+| `low`, `medium`, `high` | thinking on; the level reaches only templates that read one |
+| `xhigh`, `max`, `ultra` | thinking on at the highest level the template distinguishes: `max` on DeepSeek-V4-Flash and GLM-5.3-Flash, `high` elsewhere |
+| no reasoning field | the template's own default, or the `default_reasoning_effort` the model's [metadata](serving/model-metadata.md) declares |
+| anything else | 400 |
+
+`minimal` means off on purpose, unlike hosted APIs that map it to a short low-effort think: the
+server's promise is that the no-reasoning side is real. On a model that cannot turn reasoning off,
+`minimal` is the same 400 as `none`.
+
+The levels save tokens; they are not a quality ladder. On Step-3.7-Flash (NVFP4, 2x RTX PRO 6000,
+three prompts, n=8 sampled per level, 2026-08-29) every level was honored, `high` reasoned less
+than `medium` on both non-trivial prompts, and the request with no level reasoned longest
+([receipt](../research/step37-reasoning-effort-20260829/RESULTS.md)). Why the table reads this
+way: [decision](decisions/REASONING-CONTROL.md).
+
+### Fields per surface
+
+| Surface | Fields |
+|---|---|
+| `/v1/chat/completions` | `reasoning_effort`; a `reasoning` object with exactly `effort`, `enabled` and `exclude` (any other key, `max_tokens` included, is a 400; a `null` key or object is unset); `enable_thinking` and `chat_template_kwargs.enable_thinking`, aliases of `reasoning.enabled`; `include_reasoning: false` and `reasoning.exclude: true`, which turn reasoning off rather than hide it. `chat_template_kwargs` takes `enable_thinking` and `preserve_thinking: true`; `preserve_thinking: false` and any other key are a 400 |
+| `/v1/messages` | `thinking.type`: `enabled`, `disabled` or `adaptive` (the model's default); `thinking.budget_tokens` is a 400, since no lever can cap a reasoning segment; `output_config.effort` uses the table, and `output_config` takes no other key |
+| `/v1/responses` | `reasoning.effort` uses the table; `reasoning.summary` (or its alias `generate_summary`) accepts only `"auto"`, since reasoning is returned verbatim; other keys are a 400 |
+
+### Precedence and refusals
+
+- An explicit switch (`reasoning.enabled`, either `enable_thinking` spelling, Anthropic
+  `thinking.type`) decides on or off over the switch an effort value implies. The effort value is
+  still validated and still supplies the level.
+- Two switches that disagree are a 400: `reasoning.enabled` against `enable_thinking`, the two
+  `enable_thinking` spellings, or reasoning on with `include_reasoning: false` or
+  `reasoning.exclude: true`.
+- Every off spelling renders the same prompt as `reasoning_effort: "none"`.
+- A graded level on a template with only an on/off switch means on, and renders the same prompt
+  as `reasoning: {"enabled": true}`. Stock agent clients send `xhigh` on every request, so this
+  mapping keeps them working against binary-switch models.
+- Step-3.7-Flash and GLM-5.3-Flash open their think segment unconditionally and have no switch.
+  An off request from the client is a 400 naming the model (`cannot disable reasoning`). A
+  `default_reasoning_effort` of `none` or `minimal` never refuses a client that sent nothing; it
+  renders the lowest level instead.
+- `max_tokens` is one budget for reasoning and content. Reasoning tokens count as completion
+  tokens, there is no separate reasoning budget and no `reasoning_tokens` field, so a small budget
+  on a thinking request can end with `finish_reason: "length"` and empty content. To spend less,
+  turn reasoning off, lower the level or raise the cap.
+
+### What each template renders
+
+| Template | absent | `none`, `minimal` | `low` | `medium` | `high` | `xhigh`, `max`, `ultra` |
+|---|---|---|---|---|---|---|
+| Qwen3.5 and 3.6 class, including Ornith and AgentWorld (`enable_thinking` switch) | on: open `<think>` | closed `<think></think>` | on | on | on | on |
+| Qwen3.8 (switch plus the vendor's effort sentence) | on, `xhigh` sentence | closed | on, `low` sentence | on, no sentence | on, `xhigh` sentence | on, `xhigh` sentence |
+| Gemma 4 (`enable_thinking`, template default off) | off: closed thought channel | off | on: `<\|think\|>` in the system turn | on | on | on |
+| Hy3 (`reasoning_effort` header) | `no_think` | `no_think` | `low` | `low` (no medium level) | `high` | `high` |
+| Step-3.7-Flash (`Reasoning:` line; think always open) | no line | 400 | `Reasoning: low` | `Reasoning: medium` | `Reasoning: high` | `Reasoning: high` |
+| GLM-5.3-Flash (`Reasoning Effort:` line; think always open) | `Max` | 400 | `Low` | `High` (no medium rung) | `High` | `Max` |
+
+DeepSeek-V4-Flash renders its encoding's effort prefix: off is chat mode with no prefix; on the
+0731 encoding `high` adds the absolute-max prefix and `xhigh`, `max` and `ultra` the beyond-max
+prefix, while absent, `low` and `medium` add none. On Qwen3.5 and 3.6 class and Gemma 4 templates
+the three on levels render identical prompts; the level is wired only on templates that read
+one. The `/models?schema=openrouter` feed lists the native rungs of the two ladders: `xhigh`,
+`medium` and `low` on Qwen3.8, `low`, `high` and `max` on GLM-5.3-Flash.
+
+### Delivery
+
+Reasoning text is always returned on every surface, never stripped server-side, and a request
+with reasoning off carries no reasoning field rather than an empty one. To keep it out of view,
+drop it client-side; to stop generating it, turn reasoning off.
+
+| Surface | Non-streaming | Streaming |
+|---|---|---|
+| `/v1/chat/completions` | `message.reasoning` (string) and `message.reasoning_details[]` (`{type: "reasoning.text", text}`) | `delta.reasoning` |
+| `/v1/messages` | a `{type: "thinking", thinking, signature: ""}` content block | `content_block_start` of type `thinking`, then `thinking_delta` |
+| `/v1/responses` | a `{type: "reasoning", summary: [{type: "summary_text", text}]}` output item | `response.reasoning_summary_text.delta` and `.done` |
+
+Assistant history may carry `reasoning` (alias `reasoning_content`). The Qwen3.8 ladder template
+replays it inside a `<think>` block, empty when absent, as its vendor template does by default
+(`preserve_thinking`).
 
 ## `/v1/tokenize` and `/v1/detokenize`: token inspection
 
@@ -354,7 +503,8 @@ only the non-streaming partial on a mid-generation deadline differs by dialect (
 recorded at admission and completion tokens as they stream. The stock server ships no accounting:
 a deployment binary attaches metering, a request ledger, tenant budgets or capture through
 `ServerWiring`, and the stock binary refuses their variables (`MEMRA_REQUEST_LEDGER`,
-`MEMRA_TENANT_BUDGETS`, `MEMRA_CAPTURE_DIR`, ...) at boot.
+`MEMRA_TENANT_BUDGETS`, `MEMRA_CAPTURE_DIR`, ...) at boot. The seam and the outcome each terminal
+path settles: [deployment binaries](serving/deployment-binary.md#the-metering-seam).
 
 ## Embeddings and rerank
 
@@ -371,15 +521,25 @@ Both run a prefill of a causal LM, with no decode step, and read the last prompt
 
 Each input is one admitted worker request with the usual auth, lane and rate limits, and its
 tokens count as prompt usage. Worker
-semantics: [Serving](SERVING.md#embeddings-and-rerank--the-capture-surfaces-laneembed-serve-2026-08-26).
+semantics: [Serving](SERVING.md#embeddings-and-rerank).
 
 ## Audio
 
 `/v1/audio/transcriptions` and the `/v1/audio/sessions` lifecycle (open, list, append frames,
 close) exist with their session, frame and shed contracts. No speech pack can be resident yet, so
-a request that passes validation fails closed with a 503 and code `engine_unbound`. Transcription
-takes JSON with base64 audio in `file`; a multipart form is refused with a message. `top_p` is a
-400, and `temperature` is accepted only as a rung of the model's declared ladder. Speech program:
+each route answers as follows today:
+
+| Route | Outcome today |
+|---|---|
+| `POST /v1/audio/transcriptions` | 503 `engine_unbound` once the request passes validation |
+| `POST /v1/audio/sessions` | 503 `engine_unbound` once the model and lane resolve, checked before the session cap |
+| `GET /v1/audio/sessions` | 200 with the operator view: `drive`, `sessions_live`, `sessions_max`, `queue_frames`, `frame_ms`, `final_slo_ms` and the `scheduler` counters, with shed counts per code |
+| `POST /v1/audio/sessions/{id}/frames` | 404 `unknown_session`; `frames` outside 1 to 256 is a 400 first |
+| `POST /v1/audio/sessions/{id}/close` | 404 `unknown_session` |
+
+Transcription takes JSON with base64 audio in `file`; a multipart form is refused with a 415 and a
+message. `top_p` is a 400, and `temperature` is accepted only as 0 or a rung of the model's
+declared ladder. Speech program:
 [Speech](SPEECH.md).
 
 ## Models, health and metrics
@@ -390,11 +550,11 @@ takes JSON with base64 audio in `file`; a multipart form is refused with a messa
   come from the optional `MEMRA_MODEL_METADATA` file. `GET /models` defaults to
   `{"object":"list","data":[{"id":...,"object":"model"}]}`; `?schema=openrouter` and
   `?schema=openmodels` render the
-  listing feeds described in [Serving](SERVING.md#gateway-listing-surface).
+  listing feeds described in [model metadata](serving/model-metadata.md#gateway-listing-surface).
 - `GET /health` and `/livez` report inference liveness: `status` `ok`, `draining` or `unhealthy`,
   with worker phase and GPU probe blocks. `ok` and `draining` answer 200; a dead, faulted, stalled
   or still-loading worker answers 503. `GET /readyz` answers `ready` (200) or `not_ready` (503).
-  Supervision: [Serving](SERVING.md#health-readiness-and-fault-handling-serve-hardening-lane-2026-08-06).
+  Supervision: [Serving](SERVING.md#health-supervision-and-faults).
 - `GET /metrics` returns JSON, or Prometheus text when `Accept` prefers `text/plain` or
   `application/openmetrics-text`. `GET /yield/metrics` returns per-lane QoS counters and engine
   step p50/p99.
