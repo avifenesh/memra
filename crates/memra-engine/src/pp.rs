@@ -3710,6 +3710,13 @@ pub fn restore_cache_checkpoint(
         )
         .into());
     }
+    // LENT ROWS (memra#1221 review): a prefix entry may read the target's rows in place. Every
+    // layer is checked against its lends before the first write, so a refusal leaves the target
+    // as it was: in place a layer may not fall below its lend, and from a source it is written
+    // from row 0.
+    if let Some(why) = target.checkpoint_lend_refusal(snap, source.is_some()) {
+        return Err(why.into());
+    }
 
     let n_trunk = (cfg.n_layer - cfg.nextn_predict_layers) as usize;
     let mut dropped_mirrors = 0usize;

@@ -9,11 +9,11 @@
 
 pub mod plane;
 pub use plane::{
-    GrowEvent, KvAllocator, KvLend, KvLoan, KvPlane, KvWrite, VmmFaults, VmmGrowPlacement,
-    lend_floor_refusal, note_on_demand_plane, on_demand_initial_rows, on_demand_pays,
-    release_keep_bytes, vmm_counters, vmm_granularity_for, vmm_graveyard_bytes, vmm_grow_placement,
-    vmm_quarantined_bytes, vmm_reap_graveyard, vmm_reap_graveyard_blocking, vmm_set_faults,
-    vmm_set_grow_placement, with_on_demand_kv,
+    AdoptionSink, GrowEvent, KvAllocator, KvLend, KvLoan, KvPlane, KvWrite, VmmFaults,
+    VmmGrowPlacement, lend_floor_refusal, note_on_demand_plane, on_demand_initial_rows,
+    on_demand_pays, release_keep_bytes, vmm_counters, vmm_granularity_for, vmm_graveyard_bytes,
+    vmm_grow_placement, vmm_quarantined_bytes, vmm_reap_graveyard, vmm_reap_graveyard_blocking,
+    vmm_set_faults, vmm_set_grow_placement, with_on_demand_kv,
 };
 pub mod record;
 pub mod tiered;
@@ -2885,6 +2885,37 @@ impl Cache {
         Ok(())
     }
 
+    /// The most rows a live lend reads on any KV layer (memra#1221 part 2): 0 when no prefix entry
+    /// reads this cache in place. Dropping a cache that lends frees none of its lent planes.
+    pub fn lent_rows(&self) -> usize {
+        self.kv
+            .iter()
+            .flatten()
+            .map(KvLayer::lent_rows)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// The refusal of restoring `snap` into this cache in place or from a source (memra#1221
+    /// review): every KV layer the restore sets to `snap.kv_len` rows is checked against its live
+    /// lends before the first write. A restore from a source writes a layer from row 0, so any
+    /// lend refuses it (`from_source`).
+    pub fn checkpoint_lend_refusal(
+        &self,
+        snap: &CacheSnapshot,
+        from_source: bool,
+    ) -> Option<String> {
+        self.kv
+            .iter()
+            .zip(snap.kv_len.iter())
+            .find_map(|(layer, len)| match (layer, len) {
+                (Some(kvl), Some(len)) => {
+                    kvl.lend_floor_refusal("checkpoint restore", if from_source { 0 } else { *len })
+                }
+                _ => None,
+            })
+    }
+
     /// WP-B day 37: on-demand VMM planes in this cache (0 for a pooled cache).
     pub fn on_demand_planes(&self) -> usize {
         self.kv
@@ -4721,6 +4752,7 @@ mod lend_gpu_tests {
         }
         assert!(plane.mapped_bytes() >= 32 * mib);
         let lend = plane.lend(lent).unwrap();
+        let short = plane.lend(lent / 2).unwrap();
         plane.release_beyond(0);
         dev.0.synchronize().unwrap();
         plane.reap();
@@ -4741,10 +4773,78 @@ mod lend_gpu_tests {
             "the adopted plane holds {} bytes for a {lent}-byte lend",
             lend.held_bytes()
         );
+        let adopted = lend.held_bytes();
+        // The longer lend goes: the adopted plane releases down to the lend that lives.
+        let loan = lend.loan();
+        drop(lend);
+        let loan = loan.upgrade().expect("the shorter lend keeps the loan");
+        loan.reap();
+        dev.0.synchronize().unwrap();
+        loan.reap();
+        assert!(
+            short.held_bytes() >= lent / 2 && short.held_bytes() <= lent / 2 + g,
+            "the adopted plane holds {} bytes for the {}-byte lend left",
+            short.held_bytes(),
+            lent / 2
+        );
         eprintln!(
             "[lend floor cell] on-demand: a release past 0 kept the {lent} lent bytes of 32 MiB \
-             backed; the adopted plane holds {}",
-            lend.held_bytes()
+             backed; the adopted plane holds {adopted}, then {} once the longer lend went",
+            short.held_bytes()
         );
+    }
+
+    /// memra#1221 review: the floor follows the lends that live. Two lends of the first layer's
+    /// K plane, 32 and 16 rows: a checkpoint restore in place under 32 rows refuses, at 32 it
+    /// passes, and any restore from a source (written from row 0) refuses; the 32-row lend gone,
+    /// the floor is 16 and a rollback to 16 lands. The cache dropped, the plane's adoption is
+    /// reported to the sink its lend named, once.
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn the_floor_follows_the_live_lends_and_the_adoption_is_reported() {
+        let dev = Dev(CudaContext::new(0).unwrap().default_stream());
+        let mut cache = Cache::new(&dev, &tiny(), 64).unwrap();
+        let first = cache.kv.iter().position(Option::is_some).unwrap();
+        for l in cache.kv.iter_mut().flatten() {
+            l.len = 40;
+        }
+        cache.pos = 40;
+        let sink = Arc::new(AdoptionSink::default());
+        let l = cache.kv[first].as_ref().unwrap();
+        let tok = l.k_tok_bytes;
+        let long = l.k.lend_into(32 * tok, Some(&sink)).unwrap();
+        let short = l.k.lend_into(16 * tok, Some(&sink)).unwrap();
+        assert_eq!(cache.lent_rows(), 32);
+        let n = cache.kv.len();
+        let rowed: Vec<bool> = cache.kv.iter().map(Option::is_some).collect();
+        let snap = |rows: usize| CacheSnapshot {
+            kv_len: rowed.iter().map(|&r| r.then_some(rows)).collect(),
+            tp_kv_len: vec![None; n],
+            conv: vec![None; n],
+            ssm: vec![None; n],
+            pos: rows,
+        };
+        assert!(cache.checkpoint_lend_refusal(&snap(31), false).is_some());
+        assert!(cache.checkpoint_lend_refusal(&snap(32), false).is_none());
+        assert!(cache.checkpoint_lend_refusal(&snap(40), true).is_some());
+        drop(long);
+        assert_eq!(
+            cache.lent_rows(),
+            16,
+            "the floor falls with the longer lend"
+        );
+        assert!(cache.checkpoint_lend_refusal(&snap(16), false).is_none());
+        cache
+            .rollback(&dev, &snap(16), 0)
+            .expect("a rollback to the live lend");
+        assert!(
+            sink.drain().is_empty(),
+            "nothing adopted while the owner holds it"
+        );
+        let id = short.loan_id();
+        drop(cache);
+        assert_eq!(sink.drain(), vec![id], "the adoption reported once");
+        assert!(short.held_bytes() > 0);
+        eprintln!("[lend floor cell] live lends: floor 32 -> 16 rows, adoption reported");
     }
 }

@@ -50,7 +50,14 @@
 //!   not move it. A carry that drew the token after a boundary at another event, or in
 //!   another penalty window, differs from the one-burst session there.
 //!
-//! usage: session-gate <model.gguf>   (env: MEMRA_SPEC_K, MEMRA_NGEN per turn)
+//! - **A lend above the checkpoint** (`MEMRA_GATE_LEND_ABOVE=1`, memra#1221 review). Before each
+//!   rewind the gate lends every trunk layer's rows `[0, committed)`, as a prefix entry whose
+//!   boundary capture sat above the turn checkpoint reads them, and holds the lends through the
+//!   turn. The rewind must keep those rows (the session moves to a fresh cache, its old planes to
+//!   the lends) and the turn must still emit the oracle's tokens: the lent rows' bytes after the
+//!   turn must be the bytes before it.
+//!
+//! usage: session-gate <model.gguf>   (env: MEMRA_SPEC_K, MEMRA_NGEN per turn, MEMRA_GATE_LEND_ABOVE)
 use memra_engine::Engine;
 use memra_engine::hybrid::HybridModel;
 use memra_engine::hybrid_forward::PRIME_MIN_T;
@@ -152,6 +159,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => println!("STEP-IDENTITY: n/a (no MTP head or no generic verify forward)"),
     }
     let mut rewound_turns = 0usize;
+    let lend_above = std::env::var("MEMRA_GATE_LEND_ABOVE").is_ok_and(|v| v == "1");
+    let mut lent: Option<(Vec<memra_engine::cache::KvLend>, Vec<Vec<u8>>)> = None;
+    let mut lent_turns = 0usize;
     // The previous turn's oracle input and how many tokens the session emitted from it, for the
     // continuation burst's reference.
     let mut prev_turn: Option<(Vec<u32>, usize)> = None;
@@ -180,6 +190,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             match rewind_refusal(&sess, hist.len(), grid) {
                 None => {
+                    // memra#1221 review: rows past the checkpoint lent to a reader, held through
+                    // the turn; their bytes are read now and after the turn.
+                    lent = if lend_above {
+                        let rows = sess.committed.len();
+                        let lends = sess
+                            .cache_ref()
+                            .kv
+                            .iter()
+                            .flatten()
+                            .filter(|l| l.len >= rows)
+                            .flat_map(|l| {
+                                [
+                                    l.k.lend(rows * l.k_tok_bytes),
+                                    l.v.lend(rows * l.v_tok_bytes),
+                                ]
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let before = lends
+                            .iter()
+                            .map(|l| e.dtoh_u8(l))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        println!(
+                            "  lent {} planes, rows [0, {rows}), past the checkpoint",
+                            lends.len()
+                        );
+                        Some((lends, before))
+                    } else {
+                        None
+                    };
                     let pos = model
                         .spec_rewind_to_checkpoint(&e, &mut sess)?
                         .expect("the checkpoint passed rewind_refusal");
@@ -246,6 +285,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             out.len(),
             sess.committed.len()
         );
+        if let Some((lends, before)) = lent.take() {
+            let after = lends
+                .iter()
+                .map(|l| e.dtoh_u8(l))
+                .collect::<Result<Vec<_>, _>>()?;
+            let kept = after == before;
+            lent_turns += 1;
+            if !kept {
+                ok = false;
+            }
+            println!(
+                "  the lent rows after the turn: {}",
+                if kept {
+                    "unchanged"
+                } else {
+                    "CHANGED (a write landed below a lend)"
+                }
+            );
+        }
         if m == "MISMATCH" {
             println!("  session:   {:?}", &out[..out.len().min(12)]);
             println!("  reference: {:?}", &reference[..reference.len().min(12)]);
@@ -253,6 +311,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if recurrent && rewound_turns == 0 {
         println!("no turn rewound to a checkpoint: every turn primed cold, no boundary was tested");
+        ok = false;
+    }
+    if lend_above && lent_turns == 0 {
+        println!("MEMRA_GATE_LEND_ABOVE=1 but no rewind ran under a lend: nothing was tested");
         ok = false;
     }
     // A continuation burst whose first commit hook says stop (the admission yield at a burst's
