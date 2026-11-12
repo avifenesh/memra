@@ -1561,6 +1561,19 @@ interleaved in one lease, 13 runs each: unchanged 4 of 13 runs failed (12- and 1
 of 13 (`race-cutlass-gb10/race7`); at 40 rounds a run the debug build's normal-form arm had 0 failed checks in three
 runs against 22-28 for the unchanged form.
 
+Gates of the fixed build on GB10 (121a; `receipts/gates-cutlass-gb10/f1`): kernels 252/0 (the 22 checks of the
+removed grouped forms are gone), layer 161/0 with the 111 saved tensors byte-identical to c2's and bs1's set
+(`save-c.sha256` = `fa825eee...`); tp at 2 ranks peer-pull 478/0, host-canonical 478/0, default 480/0; at 4 ranks
+peer-pull 914/0, host-canonical 914/0, default 916/0; decode 240/240/60; the decode graph door 555/0 (one rank)
+and 1105/0 (two ranks, device-push).
+
+What the fix costs (`receipts/race-cutlass-gb10/perf-form`: `dsv41-bench gemm` on the unchanged build, the grouped
+calls by rows (swapped) against the normal form, A B B A, 30 reps a shape, GB10): level from 64 rows an expert up
+(0.996-1.016); at decode widths the normal form is slower: one row on 6 of 384 experts (a one-card decode step)
+1.14 (w1 + w3) and 1.22 (w2), 48 of 384 experts 1.00 and 1.05, two rows on 15 experts 1.03 and 1.09, and the
+smallest call, 2 of 96 experts one row (a four-rank expert share), 2.6 and 3.7 (0.029 -> 0.074 and 0.030 -> 0.113
+ms). The swapped grouped forms come back only with the fault inside them found and fixed.
+
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
 The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor
