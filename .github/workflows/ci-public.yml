@@ -129,10 +129,9 @@ jobs:
       - name: Execute mapped merge guards and affected callers once
         run: python3 -I trusted/tools/trusted_public_ci.py contracts --trusted-head "$TRUSTED_HEAD" --repo "$GITHUB_WORKSPACE/candidate" --plan validation-plan.json --out contract-execution.json
       # The base's checker reads the candidate's markdown, so a change cannot relax the check
-      # it is judged by. docs/FLAGS.md writes a formula that renders as a link; the checker
-      # fails once that exclusion hides nothing, so the fix drops it here.
+      # it is judged by (a change to this workflow takes the full inventory instead).
       - name: Markdown links and anchors
-        run: python3 -I trusted/tools/check-doc-links.py --repo "$GITHUB_WORKSPACE/candidate" --exclude docs/FLAGS.md
+        run: python3 -I trusted/tools/check-doc-links.py --repo "$GITHUB_WORKSPACE/candidate"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: public-ci-execution

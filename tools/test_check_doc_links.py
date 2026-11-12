@@ -16,9 +16,8 @@ import unittest
 
 REPO = Path(__file__).resolve().parent.parent
 CHECK = REPO / 'tools/check-doc-links.py'
-# docs/FLAGS.md writes a formula as E[tok](j), which renders as a link to a file named j.
-# The exclusion goes in the change that escapes it; the checker fails while it hides nothing.
-TREE_EXCLUDES = ('docs/FLAGS.md',)
+# Known breaks the whole-tree case tolerates; the checker fails while an exclusion hides nothing.
+TREE_EXCLUDES = ()
 
 
 def load_checker():
