@@ -219,7 +219,8 @@ whether its prime is trimmed or not, no prime-quantum read before the cohorts fo
 
 ## Limits
 
-- **A plain newcomer is not covered** (memra#1244). A request admitted to plain decode primes
+- **A plain newcomer is not covered** (memra#1244; since addressed by
+  [SPEC-ROUND-YIELD.md](SPEC-ROUND-YIELD.md)). A request admitted to plain decode primes
   in phase (b), after every speculative burst of the tick, and one that cannot ride a cohort
   then gets one token per tick: on GB10 a greedy request
   with a frequency penalty waited 1.4 to 1.85 s for its first token and 1.3 to 1.7 s for each
