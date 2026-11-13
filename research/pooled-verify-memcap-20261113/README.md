@@ -15,7 +15,7 @@ writes the same texts. With a test door that pads the need, the reclaim ran on b
 reclaims on the RTX 5090; 48 reclaims and 240 short passes on GB10) with texts equal to main's.
 The rider cap counted 307 capped rider rows on GB10 in the forced-cap arm with texts equal to
 main's; on the RTX 5090 a rider steps plain inside each round, so that path does not run there.
-GB10 never reaches the cap in serving shape. Pending on the RTX 5090: c = 4 F, S and M, the two gates and the cost bench.
+GB10 never reaches the cap in serving shape. At c = 4 the RTX 5090 decodes every session plain (no cohort forms at 4 in flight), and F6, its forced-cap arm and main answer 29 of 29 with equal texts; the seeded-invariance and exact-resend gates pass on F6. Pending: the cost bench.
 
 Decision record:
 [`docs/decisions/POOLED-VERIFY-MEMORY-CAP.md`](../../docs/decisions/POOLED-VERIFY-MEMORY-CAP.md).
@@ -31,7 +31,7 @@ Decision record:
 | fix (F3) | the round-1 code on main's crates (`7d7f56b46a`) | RTX 5090 (sm_120a) | `4a1abee9fb32937f` | |
 | fix (F4) | `e8a306389a`: F3 plus the numeric-scope guard in `spec_round_bytes` (it launches nothing); built, superseded by F5 before a cell ran on it | RTX 5090 (sm_120a) | `8cb259d1f85008b5` | |
 | fix (F5) | the review-round-2 code (`0551668a5d`, on `a17add18f3`) | RTX 5090 (sm_120a) | `6980707df19deedf` | |
-| fix (F6) | the head: F5 plus review round 3 (the unbuilt booking bounded to the FA growth, a test), rebased onto `202e1411fe` with no change to this PR's files; the RTX 5090's c = 4 cells and gates | RTX 5090 (sm_120a) | `4006b4aa92925f8e` | |
+| fix (F6) | the review-round-3 code (`deb6114414`, on `202e1411fe`); the RTX 5090's c = 4 cells and gates; the head (`3cf70f3009`) adds only the booking bound priced on the stacked cohort, which no cell reaches | RTX 5090 (sm_120a) | `4006b4aa92925f8e` | |
 | diagnostic | main + `harness/rig/diag_probe.py` (log lines only) | RTX 5090 (sm_120a) | `8e7abde6637cc294` | `memra-0.141.1-c200db12045d` |
 | main | `11b368f7d7` | GB10 (sm_121a) | `2e1211ff9466a203` | `memra-0.141.1-32737cebc309` |
 | fix, round 0 | as above | GB10 (sm_121a) | `b9c35baaee789aca` | `memra-0.141.1-4e861bdcb961` |
@@ -111,7 +111,29 @@ change, which the rebase brings, does not reach them.
 
 ### Agentic replay, RTX 5090, c = 4 (`agentic-5090-c4-r2/`)
 
-F6, F6 forced cap and M3 at c = 4 run in the RTX 5090's first round-2 block; this section is updated when they finish (round 0's main boot at c = 4 answered 29 of 29, below).
+F6, F6 with `MEMRA_SPEC_POOL_SERIAL=1` and M3, one balanced lease:
+
+| boot | ok | failed | tokens | OOM lines | not parked | capped forwards | capped rider rows | pre-cohort reclaims | short passes | fence-funded passes | graph suspended | profile; limit under load W |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 01-F | 29 | - | 9396 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | balanced; 155 (155 to 155) |
+| 02-S | 29 | - | 9396 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | balanced; 155 (155 to 155) |
+| 03-M | 29 | - | 9396 | 0 | 0 | n/a | n/a | n/a | n/a | n/a | 0 | balanced; 155 (155 to 155) |
+
+- 01-F: 29 answered texts equal 01-F's; differing k: none
+- 02-S: 29 answered texts equal 01-F's; differing k: none
+- 03-M: 29 answered texts equal 01-F's; differing k: none
+- 01-F against memra#1221 part 2 head rtxag3/02-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
+- 02-S against memra#1221 part 2 head rtxag3/02-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
+- 03-M against memra#1221 part 2 head rtxag3/02-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
+- 01-F against memra#1221 part 2 head rtxag3/03-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
+- 02-S against memra#1221 part 2 head rtxag3/03-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
+- 03-M against memra#1221 part 2 head rtxag3/03-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
+
+Every tick of these boots logged `spec=0`: with four requests in flight this card decodes every
+session plain (the LOW/HIGH band's HIGH is 4 without a cost table; GB10's cost table also prices
+n = 4 at K = 0), so no cohort forms and neither the cap nor the reclaim has anything to do. The
+band past admission's floor (the record) is therefore unreachable at c = 4 under today's
+policies; the short count reads 0 for that reason.
 
 ### The pre-cohort reclaim on hardware (`pad-5090/`, `pad-gb10/`)
 
@@ -305,8 +327,8 @@ Round 1 before the pause (`agentic-5090-c2-r1/`):
 - 01-M against memra#1221 part 2 head rtxag3/03-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
 
 Round 0's main boot at c = 4 (`agentic-5090-c4/01-M`) answered all 29 with no OOM and texts equal
-to the head boots'. The final-code boots (`agentic-5090-c4-final/`: F, S, M under `--perf` and
-the take rule) are queued.
+to the head boots'. The final code's c = 4 boots run as `agentic-5090-c4-r2/` (F6, F6 forced cap,
+M3) on a balanced lease, under "Review round 2" above.
 
 ## Agentic replay, GB10, c = 2: earlier rounds (`agentic-gb10-c2/`, `agentic-gb10-c2-final/`)
 
@@ -427,15 +449,17 @@ updated when it finishes.
 
 ## Gates
 
-The seeded-invariance and exact-resend gates on F6 run in the RTX 5090's first round-2 block (with
-the c = 4 cells); this section is updated when they finish.
+On F6 (`gates-5090/`, balanced lease, in block 1):
+
+- seeded invariance (`tools/seeded-invariance-gate.py`, the device-penalised arm): `SEEDED INVARIANCE: PASS (54 rows, 10 prompts, cases ref,0,1,2,3,demote)`;
+- exact resend (`tools/prefix-exact-resend-gate.py`): `PREFIX-EXACT-RESEND: p1=11000 p2=11150 grid=32 capture_p1=10976 resend_ok=2/2 growth_ok=2/2 identical=9/9 tails=4 covered_ok=4/4 V1=ok V2=ok V3=ok V4=ok V5=ok -> PASS`.
 
 ## CPU (`cpu/`)
 
-The head (`cpu/full-chain-head.txt`, `cpu/green-head.txt`, `cpu/red-head/arms.txt`): the review-round-3
-code on main `202e1411fe`, on the CPU build host with the whole `research/` tree the suites read at
+The head (`cpu/full-chain-head.txt`, `cpu/green-head.txt`, `cpu/red-head/arms.txt`): `3cf70f3009`, the
+fold-check code on main `202e1411fe`, on the CPU build host with the whole `research/` tree the suites read at
 run time. `cargo fmt --check`, `cargo clippy --release --all-targets -D warnings`, the coalescer
-contract, memra-server 1,243 passed / 0 failed, memra-kv 87 / 0, memra-engine lib 756 / 0,
+contract, memra-server 1,243 passed / 0 failed, memra-kv 87 / 0, memra-engine lib 757 / 0,
 memra-gguf lib 418 / 0, the portable suites 448 passed / 0 skipped / 0 failed;
 `check-numeric-scope` passes on every entry site.
 
@@ -459,13 +483,16 @@ test fails (cargo exit 101 with the test's own panic). The census arms use main'
 | `fence-funded-off` | the ladder does not mark a pass the fence funded | `a_reading_the_fence_funds_evicts_nothing` |
 | `booking-off` | the reclaim's reading keeps the unbuilt booking | `the_reclaim_reads_without_the_unbuilt_booking` |
 | `booking-unbounded` | the reclaim leaves the whole unbuilt booking out, not just the FA growth it overlaps | `only_the_fa_growth_overlaps_the_unbuilt_booking` |
+| `cohort-rows-first-only` | `cohort_verify_rows` stacks only the first member (the booking bound priced on one round) | `a_cohort_stacked_grows_the_pool_where_no_round_alone_does` |
 | `reap-off` | the parked rung does not reap after an eviction | `vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap` (a census: the reap does work only under on-demand KV planes, the RTX PRO 6000 default) |
 | `main-worker` | main's `worker.rs`, server `lib.rs` and engine `spec.rs` with the Cohorts-pass census appended | `the_cohorts_pass_reclaims_before_it_forms_cohorts` |
 
-Earlier heads: `cpu/full-chain-final.txt` and `cpu/red-final/` (the review-round-2 code at
-`0551668a5d`: 14 arms; one memra-gguf failure there, the per-process temp-config race main
-fixed in landing 17, passed three reruns), `cpu/full-chain-rebased.txt` (it rebased onto
-`202e1411fe`), `cpu/red/` (round 0), `cpu/red-r1/` (round 1), `cpu/full-chain.txt` (round 0).
+Earlier heads: `cpu/full-chain-final.txt` and `cpu/red-final/` hold the review-round-2 code at
+`0551668a5d` (14 arms, all exit 101; one memra-gguf failure in that chain, the per-process
+temp-config race main fixed in landing 17, passed three reruns); `cpu/full-chain-rebased.txt` holds
+it rebased onto `202e1411fe`. The review-round-3 code (`deb6114414`) ran the full chain and 16 arms
+green and red as expected before the fold check added the 17th. `cpu/red/` and `cpu/red-r1/` hold
+rounds 0 and 1, `cpu/full-chain.txt` round 0.
 
 ## What is here
 
@@ -476,5 +503,6 @@ fixed in landing 17, passed three reruns), `cpu/full-chain-rebased.txt` (it reba
 | `riders-5090/<boot>/`, `riders-gb10/<boot>/`, `riders-gb10-n6/<boot>/` | the riders cell: `riders.jsonl` (per rider, solo re-run and stream: tokens, gaps, text sha), `texts/`, `metrics-<boot>.json`, the server log, `guard.log`, `summary.txt` |
 | `normal-5090*/<boot>/`, `normal-gb10*/<boot>/` | `normal.jsonl` (per request: tokens, TTFT, inter-token gaps, text sha), the server log, telemetry, `guard.log`, `summary.txt` |
 | `ref-1221b-head-texts.jsonl` | the memra#1221 part 2 head boots' text hashes |
-| `cpu/` | the red arms (`red/` round 0, `red-r1/` round 1, `red-final/` the head's 16), the new tests' green runs, the full CPU chains (`full-chain-final.txt` on the review-round-2 code, `full-chain-rebased.txt` on it rebased onto `202e1411fe`) |
+| `gates-5090/` | the seeded-invariance and exact-resend gate runs on F6 (logs, `.guard` with the profile at start and end, each run's directory as a tarball) |
+| `cpu/` | the red arms (`red/` round 0, `red-r1/` round 1, `red-final/` the review-round-2 code's 14, `red-head/` the head's), the new tests' green runs, the full CPU chains (`full-chain.txt` round 0, `full-chain-final.txt` the review-round-2 code, `full-chain-rebased.txt` it rebased onto `202e1411fe`, `full-chain-head.txt` the head) |
 | `harness/rig/`, `harness/gb10/`, `harness/build-host/` | the scripts that ran all of it, with the step files; paths and hosts are written generically (`harness/rig/sanitize_receipts.py`) |

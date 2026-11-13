@@ -1,0 +1,64 @@
+case ref
+     ref    alone  a tokens=240 cached=0 acceptance=None sha=381727999c7538e5
+     ref    alone  b tokens=240 cached=0 acceptance=None sha=e84443251444e66c
+     ref    alone  f tokens=240 cached=0 acceptance=None sha=ed3e17bd47d7718e
+     ref    alone  g tokens=240 cached=0 acceptance=None sha=85cbe095a1f60f55
+     ref    alone  c tokens=240 cached=0 acceptance=None sha=f274f56e4d68f827
+     ref    alone  d tokens=240 cached=0 acceptance=None sha=057a275d67888aa8
+     ref    alone e1 tokens=240 cached=0 acceptance=None sha=7ebbccf5a88c1865
+     ref    alone p1 tokens=48 cached=0 acceptance=None sha=e3604ec7a87bcbbf
+    ref2     cold e2 tokens=226 cached=0 acceptance=None sha=13317764c0c065af
+    ref2     cold p2 tokens=240 cached=0 acceptance=None sha=3ad3680071e93955
+case 0
+       0    alone  a tokens=240 cached=0 acceptance=None sha=381727999c7538e5
+       0    alone  b tokens=240 cached=0 acceptance=None sha=e84443251444e66c
+       0    alone  f tokens=240 cached=0 acceptance=None sha=ed3e17bd47d7718e
+       0    alone  g tokens=240 cached=0 acceptance=None sha=85cbe095a1f60f55
+       0     pair  c tokens=240 cached=0 acceptance=None sha=f274f56e4d68f827
+       0     pair  d tokens=240 cached=0 acceptance=None sha=057a275d67888aa8
+       0    turn1 e1 tokens=240 cached=0 acceptance=None sha=7ebbccf5a88c1865
+       0  resumed e2 tokens=226 cached=1248 acceptance=None sha=13317764c0c065af
+       0     park p1 tokens=48 cached=0 acceptance=None sha=e3604ec7a87bcbbf
+       0   parked p2 tokens=240 cached=192 acceptance=None sha=3ad3680071e93955
+case 1
+       1    alone  a tokens=240 cached=0 acceptance=0.7777777777777778 sha=381727999c7538e5
+       1    alone  b tokens=240 cached=0 acceptance=0.6551724137931034 sha=e84443251444e66c
+       1    alone  f tokens=240 cached=0 acceptance=0.7391304347826086 sha=ed3e17bd47d7718e
+       1    alone  g tokens=240 cached=0 acceptance=0.636986301369863 sha=85cbe095a1f60f55
+       1     pair  c tokens=240 cached=0 acceptance=0.7071428571428572 sha=f274f56e4d68f827
+       1     pair  d tokens=240 cached=0 acceptance=0.6830985915492958 sha=057a275d67888aa8
+       1    turn1 e1 tokens=240 cached=0 acceptance=0.6326530612244898 sha=7ebbccf5a88c1865
+       1  resumed e2 tokens=226 cached=1248 acceptance=0.5694444444444444 sha=13317764c0c065af
+       1     park p1 tokens=48 cached=0 acceptance=0.38235294117647056 sha=e3604ec7a87bcbbf
+       1   parked p2 tokens=240 cached=192 acceptance=0.6901408450704225 sha=3ad3680071e93955
+case 2
+       2    alone  a tokens=240 cached=0 acceptance=0.6586538461538461 sha=381727999c7538e5
+       2    alone  b tokens=240 cached=0 acceptance=0.46774193548387094 sha=e84443251444e66c
+       2    alone  f tokens=240 cached=0 acceptance=0.5954545454545455 sha=ed3e17bd47d7718e
+       2    alone  g tokens=240 cached=0 acceptance=0.43359375 sha=85cbe095a1f60f55
+       2     pair  c tokens=240 cached=0 acceptance=0.5909090909090909 sha=f274f56e4d68f827
+       2     pair  d tokens=240 cached=0 acceptance=0.5625 sha=057a275d67888aa8
+       2    turn1 e1 tokens=240 cached=0 acceptance=0.4523809523809524 sha=7ebbccf5a88c1865
+       2  resumed e2 tokens=226 cached=1248 acceptance=0.404 sha=13317764c0c065af
+       2     park p1 tokens=48 cached=0 acceptance=0.2833333333333333 sha=e3604ec7a87bcbbf
+       2   parked p2 tokens=240 cached=192 acceptance=0.5434782608695652 sha=3ad3680071e93955
+case 3
+       3    alone  a tokens=240 cached=0 acceptance=0.5212765957446809 sha=381727999c7538e5
+       3    alone  b tokens=240 cached=0 acceptance=0.38095238095238093 sha=e84443251444e66c
+       3    alone  f tokens=240 cached=0 acceptance=0.46534653465346537 sha=ed3e17bd47d7718e
+       3    alone  g tokens=240 cached=0 acceptance=0.3475783475783476 sha=85cbe095a1f60f55
+       3     pair  c tokens=240 cached=0 acceptance=0.4521452145214521 sha=f274f56e4d68f827
+       3     pair  d tokens=240 cached=0 acceptance=0.4444444444444444 sha=057a275d67888aa8
+       3    turn1 e1 tokens=240 cached=0 acceptance=0.3446327683615819 sha=7ebbccf5a88c1865
+       3  resumed e2 tokens=226 cached=1248 acceptance=0.28184281842818426 sha=13317764c0c065af
+       3     park p1 tokens=48 cached=0 acceptance=0.18888888888888888 sha=e3604ec7a87bcbbf
+       3   parked p2 tokens=240 cached=192 acceptance=0.4666666666666667 sha=3ad3680071e93955
+case demote
+  demote    alone  a tokens=240 cached=0 acceptance=0.6607142857142857 sha=381727999c7538e5
+  demote    alone  b tokens=240 cached=0 acceptance=0.39080459770114945 sha=e84443251444e66c
+  demote    alone  f tokens=240 cached=0 acceptance=0.5862068965517241 sha=ed3e17bd47d7718e
+  demote    alone  g tokens=240 cached=0 acceptance=0.4691358024691358 sha=85cbe095a1f60f55
+  demote: 4 sampled handoffs in the server log for 4 requests, 4 at event = generated + 1
+
+receipts: <lane>/runs/gates/inv-F6
+SEEDED INVARIANCE: PASS (54 rows, 10 prompts, cases ref,0,1,2,3,demote)
