@@ -8814,16 +8814,14 @@ fn pp_boundary_slot_token_cap(
     if !memra_engine::pp::prime_pp_on() || memra_engine::pp::pp2_streams_off() {
         return decode_wave_cap;
     }
-    let single = memra_engine::hybrid_forward::prime_chunk_ranges(
+    // The widest call of any prime up to the context cap (memra#1276): a prime of a shorter
+    // stretch can make a wider call than the whole context's schedule does.
+    let single = memra_engine::hybrid_forward::prime_call_rows_max(
         context_cap,
         n_trunk,
         model.gdn_prime_grid_on(),
         model.swa_ring_on(),
     )
-    .into_iter()
-    .map(|(start, end)| end.saturating_sub(start))
-    .max()
-    .unwrap_or(0)
     .max(decode_wave_cap);
     // Concat-prime transports the sum of all selected rows through one boundary payload. The
     // scheduler caps each member by PRIME_BATCH_MAX_T and the group by PRIME_BATCH.
@@ -41732,6 +41730,8 @@ mod tests {
             prompt_row_bytes: 20_480,
             n_layers: 64,
             swa_ring: false,
+            gdn_grid: false,
+            step_gemm: false,
         };
         // Who owes the stack: an unbuilt session, an MTP session before its walker starts.
         assert!(
@@ -41794,6 +41794,8 @@ mod tests {
             prompt_row_bytes: 20_480,
             n_layers: 64,
             swa_ring: false,
+            gdn_grid: false,
+            step_gemm: false,
         };
         let owed_of = |rows: usize, owns: bool, mtp: bool| PrimeOwed {
             rows,
@@ -50248,6 +50250,8 @@ mod tests {
                 prompt_row_bytes: 4 * h,
                 n_layers: 64,
                 swa_ring: false,
+                gdn_grid: false,
+                step_gemm: false,
             }),
             transient_floor: Some(1882 << 20),
             pp_activation_bytes: [0; 4],
@@ -50564,6 +50568,8 @@ mod tests {
                         prompt_row_bytes: 8192,
                         n_layers: 40,
                         swa_ring: false,
+                        gdn_grid: false,
+                        step_gemm: false,
                     }),
                     transient_floor: Some(1536 << 20),
                     pp_activation_bytes: [0; 4],
@@ -50588,6 +50594,8 @@ mod tests {
                         prompt_row_bytes: 12_288,
                         n_layers: 32,
                         swa_ring: true,
+                        gdn_grid: false,
+                        step_gemm: false,
                     }),
                     transient_floor: None,
                     pp_activation_bytes: [0; 4],
@@ -50730,6 +50738,8 @@ mod tests {
                 prompt_row_bytes: 8192,
                 n_layers: 40,
                 swa_ring: false,
+                gdn_grid: false,
+                step_gemm: false,
             }),
             transient_floor: Some(1536 << 20),
             pp_activation_bytes: [0; 4],
@@ -52049,6 +52059,8 @@ mod tests {
             prompt_row_bytes: 4 * 2048,
             n_layers: 41,
             swa_ring: false,
+            gdn_grid: false,
+            step_gemm: false,
         };
         let cost =
             |prime: Option<memra_engine::hybrid_forward::PrimeWorkspaceShape>| AdmissionCostModel {
@@ -57401,6 +57413,8 @@ mod tests {
             prompt_row_bytes: 20_480,
             n_layers: 64,
             swa_ring: false,
+            gdn_grid: false,
+            step_gemm: false,
         };
         let o = |rows, unstarted_walker, cooperative| super::PrimeOwed {
             rows,
