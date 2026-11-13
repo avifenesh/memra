@@ -3338,13 +3338,24 @@ extern "C" int memra_v41_add_cast(const float* y, const void* add, void* out, lo
 // tile list of the grouped expert GEMMs (one entry per `bm` rows of an expert that has rows). No
 // host round trip: per-chunk expert counts, one block scanning them, then each chunk placing its
 // tokens in order. `err` counts expert ids outside [0, ne) (skipped, their order slot -1), and such an id
-// sets bit 0 of `*flag` when it is given (the rank's call flag, read with the call's logits).
+// sets bit 0 of `*flag` when it is given (the rank's call flag, read with the call's logits) and, when
+// `rows_bad` is given, the bit of its row in that bitmap: bit `row0 + t` for row t of the plan (`row0`: the
+// slice's first row in its call), the last bit of the map's `rows_cap` for any row past it. The serving
+// route reads the map of each call to fail only the requests whose rows named no expert.
 
 #define V41_PLAN_CH 256
 
+// a plan row's bit in the call's row map (see above)
+__device__ __forceinline__ void v41_row_bad(int* rows_bad, int row0, int rows_cap, int t) {
+    if (!rows_bad) return;
+    int b = min(row0 + t, rows_cap - 1);
+    atomicOr(&rows_bad[b >> 5], (int)(1u << (b & 31)));
+}
+
 __global__ void __launch_bounds__(V41_PLAN_CH) v41_moe_count_kernel(const int* __restrict__ sel, int rows, int topk,
                                                                      int ne, int* __restrict__ counts,
-                                                                     int* __restrict__ err, int* flag) {
+                                                                     int* __restrict__ err, int* flag, int* rows_bad,
+                                                                     int row0, int rows_cap) {
     extern __shared__ int v41_cnt[];
     for (int e = threadIdx.x; e < ne; e += blockDim.x) v41_cnt[e] = 0;
     __syncthreads();
@@ -3355,6 +3366,7 @@ __global__ void __launch_bounds__(V41_PLAN_CH) v41_moe_count_kernel(const int* _
             if (e < 0 || e >= ne) {
                 atomicAdd(err, 1);
                 if (flag) atomicOr(flag, 1);
+                v41_row_bad(rows_bad, row0, rows_cap, t);
             } else {
                 atomicAdd(&v41_cnt[e], 1);
             }
@@ -3468,12 +3480,14 @@ __global__ void __launch_bounds__(1024) v41_moe_plan_small_kernel(const int* __r
                                                                   int* __restrict__ ptok, float* __restrict__ pw,
                                                                   int* __restrict__ order, V41Tile* __restrict__ tiles,
                                                                   int* __restrict__ ntiles, int* __restrict__ err,
-                                                                  int* flag) {
+                                                                  int* flag, int* rows_bad, int row0, int rows_cap) {
     __shared__ int s_sel[V41_PLAN_SMALL], s_off[1024], s_til[1024], s_placed;
     int tid = threadIdx.x, np = rows * topk;
     if (tid < np) {
         int e = sel[tid];
-        s_sel[tid] = (e >= 0 && e < ne) ? e : -1;
+        bool ok = e >= 0 && e < ne;
+        s_sel[tid] = ok ? e : -1;
+        if (!ok) v41_row_bad(rows_bad, row0, rows_cap, tid / topk);
     }
     __syncthreads();
     int run = 0;  // expert tid's pairs
@@ -3532,17 +3546,19 @@ __global__ void __launch_bounds__(1024) v41_moe_plan_small_kernel(const int* __r
 // ceil(rows * topk / bm) + min(ne, rows * topk); the tile list covers experts [e0, e1)
 extern "C" int memra_v41_moe_plan(const int* sel, const float* selw, int rows, int topk, int ne, int bm, int e0, int e1,
                                   int* counts, int* off, int* ptok, float* pw, int* order, void* tiles, int* ntiles,
-                                  int* err, int* flag, void* stream) {
+                                  int* err, int* flag, int* rows_bad, int row0, int rows_cap, void* stream) {
     if (rows <= 0) return rows < 0 ? 41025 : 0;
     if (ne <= 0 || ne > 1024 || topk <= 0 || topk > 16 || bm <= 0 || e0 < 0 || e1 > ne || e0 > e1) return 41025;
+    if (rows_bad && (row0 < 0 || rows_cap <= 0)) return 41025;
     cudaStream_t st = (cudaStream_t)stream;
     if (rows * topk <= V41_PLAN_SMALL) {
         v41_moe_plan_small_kernel<<<1, 1024, 0, st>>>(sel, selw, rows, topk, ne, bm, e0, e1, off, ptok, pw, order,
-                                                     (V41Tile*)tiles, ntiles, err, flag);
+                                                     (V41Tile*)tiles, ntiles, err, flag, rows_bad, row0, rows_cap);
         V41_ERR();
     }
     int nch = (rows + V41_PLAN_CH - 1) / V41_PLAN_CH;
-    v41_moe_count_kernel<<<nch, V41_PLAN_CH, ne * 4, st>>>(sel, rows, topk, ne, counts, err, flag);
+    v41_moe_count_kernel<<<nch, V41_PLAN_CH, ne * 4, st>>>(sel, rows, topk, ne, counts, err, flag, rows_bad, row0,
+                                                           rows_cap);
     v41_moe_scan_kernel<<<1, 1024, 0, st>>>(counts, nch, ne, bm, e0, e1, off, (V41Tile*)tiles, ntiles);
     v41_moe_place_kernel<<<nch, V41_PLAN_CH, ne * 4 * (1 + V41_PLAN_CH / 32), st>>>(sel, selw, rows, topk, ne, counts,
                                                                                   off, ptok, pw, order);
