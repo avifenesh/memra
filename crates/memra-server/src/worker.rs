@@ -24349,8 +24349,9 @@ pub fn run(
                 })
             };
             let automatic_demote = spec_k_pin().is_none() && spec_gate_on();
-            // Lent planes whose owner dropped them since the last tick are charged (or compacted)
-            // before this tick's publications and admissions read the cache (memra#1221 part 2).
+            // Lent planes whose owner dropped them since the last tick are charged before this
+            // tick's publications and admissions read the cache (memra#1221 part 2); compaction
+            // waits for memory demand.
             px.reconcile_loans(Some(&engine), "tick", false);
             // PREFIX-CACHE spec publication sweep (lane/spec-prefix-cache): a speculative
             // session whose first cold burst produced a boundary capture publishes it ONCE, at
@@ -27116,8 +27117,8 @@ pub fn run(
                 }
             }
         }
-        // The retired sessions' lent planes moved to their entries: charge or compact them now
-        // (memra#1221 part 2).
+        // The retired sessions' lent planes moved to their entries: charge them now (memra#1221
+        // part 2).
         px.reconcile_loans(Some(&engine), "retire", false);
         if oom_teardowns > 0 {
             // memra#145: RECLAIM BEFORE RETRY. Until 2026-09-04 this block only trimmed the
