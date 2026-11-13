@@ -278,9 +278,15 @@ pub struct Capture<T> {
 impl Group {
     /// Whether this group's launches can be recorded at all: no host read sits inside a span
     /// (trace, timed collectives) and the gathers are the in-kernel ones.
+    /// Whether a span of this group's launches can be recorded: no trace and no timing, the
+    /// gathers inside kernels, and nothing in the half-layer that waits for the host: an expert
+    /// cache resolves its misses on the host from the plan it reads back, and a route log reads
+    /// each block's routing back. A group that cannot record keeps every span launch by launch.
     pub fn can_capture(&self) -> bool {
         !self.trace
             && !self.timed
+            && self.route_log.is_none()
+            && self.cx.iter().all(|c| c.experts.is_none())
             && (self.n() == 1 || self.transport == crate::tp_transport::TpTransport::DevicePush)
     }
 
