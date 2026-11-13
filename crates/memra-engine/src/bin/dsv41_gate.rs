@@ -1942,12 +1942,21 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             }
         }
     }
-    // the ring kernel on a narrow output whose width is not a multiple of its 4-column blocks (the
-    // last block partial), against a form that is not the ring: a 24-row call takes the narrow kernel
-    // with K in parts, so its first rows hold the same chains from another kernel. The pair's two
-    // outputs against the same 24-row calls.
-    {
-        let (m, n, k) = (2usize, 30usize, 5120usize);
+    // the ring kernel against a form that is not the ring: a 24-row call takes the narrow kernel with
+    // K in parts, so its first rows hold the same chains from another kernel. The pair's two outputs
+    // against the same 24-row calls. Widths 30 (the last 4-column block partial) and 32 (whole
+    // blocks); K 5,120 fills the ring's 4 stages many times over, K 256 and 512 are one and two
+    // stages, fewer than the 3 its prologue lands (the prologue's guard and the loop's refill guard
+    // both skip); 8 rows is every lane of the warp.
+    for &(m, n, k) in &[
+        (2usize, 30usize, 5120usize),
+        (2, 30, 256),
+        (2, 32, 256),
+        (8, 30, 256),
+        (2, 30, 512),
+        (2, 32, 512),
+        (8, 30, 512),
+    ] {
         let a24 = Buf::from_bytes(&st, &rng.bf16(24 * k))?;
         let b0 = Buf::from_bytes(&st, &rng.bf16(n * k))?;
         let b1 = Buf::from_bytes(&st, &rng.bf16(n * k))?;
@@ -1976,9 +1985,15 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         ffma(&b0, &mid0, 24)?;
         ffma(&b1, &mid1, 24)?;
         let (h0, h1) = (mid0.host(&st)?, mid1.host(&st)?);
+        // the entry names of the (2, 30, 5120) shape stay as they were
+        let (form, pair) = if n % 4 == 0 {
+            ("ring", "ring")
+        } else {
+            ("ring_partial", "partial")
+        };
         same(
             rep,
-            &format!("schedule/gemm_ffma_ring_partial/m{m}_n{n}_k{k}"),
+            &format!("schedule/gemm_ffma_{form}/m{m}_n{n}_k{k}"),
             &ring.host(&st)?,
             &h0[..m * n * 4],
         );
@@ -2004,13 +2019,13 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         })?;
         same(
             rep,
-            &format!("schedule/gemm_ffma2_partial/m{m}_n{n}_k{k}/first"),
+            &format!("schedule/gemm_ffma2_{pair}/m{m}_n{n}_k{k}/first"),
             &p0.host(&st)?,
             &h0[..m * n * 4],
         );
         same(
             rep,
-            &format!("schedule/gemm_ffma2_partial/m{m}_n{n}_k{k}/second"),
+            &format!("schedule/gemm_ffma2_{pair}/m{m}_n{n}_k{k}/second"),
             &p1.host(&st)?,
             &h1[..m * n * 4],
         );
