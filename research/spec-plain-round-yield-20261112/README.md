@@ -86,7 +86,7 @@ identical and stream texts prefix-equal). Server logs are gzipped when large.
 | `gb10/inv-change6`, `gb10/bnd-change6` | both gates on the round-2 head | |
 | `gb10/mixed-shed` | the first change6 boot of the mixed cell: the harvest request shed with a 429 (kept as the receipt of the shed) | change6 |
 | `rtx5090/inv-change6` | seeded-invariance gate on the round-2 head | |
-| `cpu/` | CPU checks on 11ae9661d1, the round-2 head on main 11b368f7d7 (fmt, clippy, engine and server suites, flags and numeric censuses), and the red arms | |
+| `cpu/` | CPU checks on 919e1ff2a6, the round-3 head on main 11b368f7d7 (the round-2 head's cells and gates ran 11ae9661d1; round 3 moved only when the dark cadence is decided) (fmt, clippy, engine and server suites, flags and numeric censuses), and the red arms | |
 
 Void: `gb10/longprime/void.jsonl` and `void-server-parent2-4.log.gz` are the parent2 boot 4
 whose lease overlapped another lane's page-cache fill on the unit; boot `parent2-5` replaces it.
@@ -143,9 +143,12 @@ tools over these dirs (each command is in its heading). Per dir:
 - Round-2 head (`change6` against main `parent4`, one boot per arm):
   - `gb10/plain6`: repeats `gb10/plain5` within 0.003 s on every gap; texts identical.
   - `gb10/mixed`: an interactive penalty rider kept in phase (c) by an interactive json request
-    (the `rider-uncarried` receipt) 1.607 -> 0.115 s, the json request 1.597 -> 0.189 s; a dark
-    harvest request beside the json request keeps one token per burst's worth of time
-    (1.610 -> 1.619 s) and costs the streams 2% (30.1 -> 29.5 tok/s; 1% on main). The harvest
+    (the `rider-uncarried` receipt) 1.607 -> 0.115 s, the json request 1.597 -> 0.189 s. A
+    dark harvest request beside the json request steps once every N yielded ticks: its tokens
+    across the yield came 3.15 and 3.01 s apart (one step in 25 yielded ticks, N = 16),
+    against 1.2 to 2.0 s beside full bursts, about half its burst cadence; its 1.619 s gap is
+    the p50 over its whole 84 s life. The streams' 30.1 -> 29.5 tok/s with it is inside the
+    json-only spread (29.7, 30.1, 30.1), so the cell does not resolve its cost. The harvest
     request is admitted with `MEMRA_SHED_HARVEST=100`; `gb10/mixed-shed` is the first change
     boot, where the default shed it (429) beside the streams and alone.
 - Gates: seeded invariance PASS (54 rows) on `gb10/inv-change`, `gb10/inv-change2`,
@@ -157,7 +160,7 @@ tools over these dirs (each command is in its heading). Per dir:
 ## Red arms
 
 `tools/redarm.py` writes each arm into a copy of the tree, `tools/dd-redgreen.sh` runs the seven
-tests on each (`cpu/redgreen.log`, on the round-2 head 11ae9661d1):
+tests on each (`cpu/redgreen.log`, on the round-3 head 919e1ff2a6):
 - `parent` (the change reverted) and `nohook` (no round hook) fail the burst and wiring tests;
 - `nodue` (the verdict never says yes) and `nomtp` (it ignores the tick's bursts) fail the
   naming test;
@@ -170,6 +173,8 @@ tests on each (`cpu/redgreen.log`, on the round-2 head 11ae9661d1):
   `nochoice` (a waiting choice group or the walker primes) fail the prime test;
 - `carriedA` (rider candidates hold riders back, the second review's arm A) and `carriedC`
   (dark decoders hold riders back) fail the carried test;
-- `nocadence` (dark work on every yielded tick) fails the cadence test.
+- `nocadence` (dark work on every yielded tick) and `noreset` (a full tick does not restart
+  the count, the third review's arm) fail the cadence test;
+- `nocadencerounds` (a yielded tick counts with no round run) fails the wiring test.
 
 The change passes all seven.
