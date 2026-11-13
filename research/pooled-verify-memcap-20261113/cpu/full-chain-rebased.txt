@@ -1,0 +1,24 @@
+# head 19f0bb4648 (the round-2 code rebased onto main 202e1411fe, landing 17; its crate changes touch none of this PR's files)
+# 2026-11-13T12:22:28+01:00 full CPU chain of memra#1266
+# 2026-11-13T12:22:28+01:00 fmt
+fmt rc=0
+# 2026-11-13T12:22:40+01:00 clippy
+clippy rc=0
+# 2026-11-13T12:32:34+01:00 coalescer
+coalescer rc=0
+# 2026-11-13T12:32:38+01:00 server
+server rc=0
+  passed 1242, failed 0, ignored 14 over 6 binaries
+# 2026-11-13T12:55:45+01:00 kv
+kv rc=0
+  passed 87, failed 0, ignored 0 over 1 binaries
+# 2026-11-13T12:57:07+01:00 engine
+engine rc=0
+  passed 755, failed 0, ignored 65 over 1 binaries
+# 2026-11-13T13:00:46+01:00 gguf
+gguf rc=0
+  passed 418, failed 0, ignored 2 over 1 binaries
+# 2026-11-13T13:02:09+01:00 portable
+portable rc=0
+FULL-DONE
+skip-census: 448 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 17 binaries

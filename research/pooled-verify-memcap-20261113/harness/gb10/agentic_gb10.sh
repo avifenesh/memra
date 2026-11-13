@@ -4,14 +4,15 @@
 # the timed pass) on the MTP route the GB10 launcher serves (serve.sh: Qwen3.8-27B NVFP4 + Q5_K
 # with its masked MTP draft), ctx 32,768, 8 sessions, prefix cache 4,000 MB, no host tier,
 # MEMRA_PREFIX_STABLE_BOUNDARY=1, c = USERS (default 2), thinking on, temperature 0, seed 1234,
-# 768 tokens. usage: [USERS=N] agentic_gb10.sh CAMPAIGN NAME ARM   -> runs/CAMPAIGN/NAME/
+# 768 tokens. EXTRA_ADD: more KEY=VALUE server env (a test door).
+# usage: [USERS=N] [EXTRA_ADD='K=V'] agentic_gb10.sh CAMPAIGN NAME ARM   -> runs/CAMPAIGN/NAME/
 set -u
 D=<lane>
 CAMP=$1; NAME=$2; BIN=$D/bins/$3
 OUT=$D/runs/$CAMP/$NAME; mkdir -p "$OUT"
 [ -x "$BIN/memra-server" ] || { echo "AGENTIC-CELL-FAIL $NAME (no binary)" >> "$D/runs/$CAMP/campaign.log"; exit 1; }
 OUT=$OUT BIN=$BIN WRAP="python3 $D/box/tsrun.py" \
-  EXTRA="MEMRA_CTX=32768 MEMRA_MAX_SESSIONS=8 MEMRA_PREFIX_CACHE_MB=4000 MEMRA_TICK_TRACE=1" \
+  EXTRA="MEMRA_CTX=32768 MEMRA_MAX_SESSIONS=8 MEMRA_PREFIX_CACHE_MB=4000 MEMRA_TICK_TRACE=1 ${EXTRA_ADD:-}" \
   bash "$D/box/serve.sh" &
 sp=$!
 waitfor --file "$OUT/server.pid" --timeout 1m > /dev/null 2>&1

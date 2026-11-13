@@ -8,7 +8,10 @@ import pathlib
 import statistics
 import sys
 
-camp = pathlib.Path(sys.argv[1])
+# --no-timing: correctness cells (a balanced lease, memra#1266 after the thermal finding): no
+# throughput, TTFT or ITL column and no arm medians.
+NO_TIMING = "--no-timing" in sys.argv[1:]
+camp = pathlib.Path([a for a in sys.argv[1:] if a != "--no-timing"][0])
 
 
 def load_limits(d):
@@ -70,13 +73,13 @@ rows = []
 for d in sorted(p for p in camp.iterdir() if p.is_dir() and (p / "normal.jsonl").exists()):
     for line in (d / "normal.jsonl").read_text().splitlines():
         rows.append((d.name, json.loads(line)))
-print("| boot | c | requests, errors | completion tokens | agg tok/s | TTFT p50 s | ITL p50 / p99 ms |")
-print("|---|---|---|---|---|---|---|")
+print("| boot | c | requests, errors | completion tokens |" + ("" if NO_TIMING else " agg tok/s | TTFT p50 s | ITL p50 / p99 ms |"))
+print("|---|---|---|---|" + ("" if NO_TIMING else "---|---|---|"))
 sets = {}
 for name, r in rows:
     sets.setdefault(r["c"], set()).add(tuple(sorted((x["prompt"], x.get("sha")) for x in r["rows"])))
-    print(f"| {name} | {r['c']} | {r['requests']}, {r['errors']} | {r['completion_tokens']} | {r['agg_tok_s']} | "
-          f"{r['ttft_p50_s']} | {r['itl_p50_ms']} / {r['itl_p99_ms']} |")
+    timing = "" if NO_TIMING else f" {r['agg_tok_s']} | {r['ttft_p50_s']} | {r['itl_p50_ms']} / {r['itl_p99_ms']} |"
+    print(f"| {name} | {r['c']} | {r['requests']}, {r['errors']} | {r['completion_tokens']} |" + timing)
 print()
 for c, s in sorted(sets.items()):
     print(f"- c={c}: {'one' if len(s) == 1 else len(s)} set of (prompt, text sha) across the boots")
@@ -84,7 +87,7 @@ for d in sorted(p for p in camp.iterdir() if p.is_dir() and (p / "summary.txt").
     print(f"- {d.name}: " + "; ".join(l.strip() for l in (d / "summary.txt").read_text().splitlines())
           + f"; profile; limit under load W: {load_limits(d)}")
 print()
-for c in sorted(sets):
+for c in sorted(sets) if not NO_TIMING else []:
     by = {}
     for name, r in rows:
         if r["c"] == c:

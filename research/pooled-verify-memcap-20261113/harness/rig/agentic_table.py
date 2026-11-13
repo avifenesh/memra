@@ -9,8 +9,12 @@ import re
 import pathlib
 import sys
 
-camp = pathlib.Path(sys.argv[1])
-refs = [pathlib.Path(p) for p in sys.argv[2:]]
+# --no-timing: correctness cells (a balanced lease, memra#1266 after the thermal finding): no
+# throughput or TTFT column, since those boots make no timing claim.
+args = [a for a in sys.argv[1:] if a != "--no-timing"]
+NO_TIMING = len(args) != len(sys.argv) - 1
+camp = pathlib.Path(args[0])
+refs = [pathlib.Path(p) for p in args[1:]]
 
 
 def load_limits(d):
@@ -91,15 +95,20 @@ def boot(d):
 
 boots = sorted(p for p in camp.iterdir() if p.is_dir() and (p / "cells.jsonl").exists())
 data = {b.name: boot(b) for b in boots}
-print("| boot | ok | failed | tokens | agg gen tok/s | per-user median tok/s | TTFT p50 s | OOM lines | not parked | "
-      "capped forwards | pre-cohort reclaims | graph suspended | profile; limit under load W |")
-print("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+timing_head = "" if NO_TIMING else "agg gen tok/s | per-user median tok/s | TTFT p50 s | "
+print("| boot | ok | failed | tokens | " + timing_head + "OOM lines | not parked | "
+      "capped forwards | capped rider rows | pre-cohort reclaims | short passes | fence-funded passes | graph suspended | "
+      "profile; limit under load W |")
+print("|---|---|---|---|" + ("" if NO_TIMING else "---|---|---|") + "---|---|---|---|---|---|---|---|---|")
 for name, (cell, reqs, summ, m) in data.items():
     failed = sorted(k for k, r in reqs.items() if not r["ok"])
-    print(f"| {name} | {cell['ok']} | {','.join(map(str, failed)) or '-'} | {cell['tokens']} | {cell['aggregate_gen_tps']} | "
-          f"{cell['per_user_gen_tps_median']} | {cell['ttft_median_s']} | {summ.get('out of memory', '?')} | "
+    timing = "" if NO_TIMING else f"{cell['aggregate_gen_tps']} | {cell['per_user_gen_tps_median']} | {cell['ttft_median_s']} | "
+    print(f"| {name} | {cell['ok']} | {','.join(map(str, failed)) or '-'} | {cell['tokens']} | {timing}"
+          f"{summ.get('out of memory', '?')} | "
           f"{summ.get('NOT parked', '?')} | {m.get('spec_pool_capped_forwards_total', 'n/a')} | "
-          f"{m.get('spec_cohort_reclaims_total', 'n/a')} | {summ.get('graph replay suspended', '?')} | {load_limits(camp / name)} |")
+          f"{m.get('spec_pool_capped_rider_rows_total', 'n/a')} | {m.get('spec_cohort_reclaims_total', 'n/a')} | "
+          f"{m.get('spec_cohort_short_total', 'n/a')} | {m.get('spec_cohort_fence_funded_total', 'n/a')} | "
+          f"{summ.get('graph replay suspended', '?')} | {load_limits(camp / name)} |")
 print()
 first_fix = next((n for n in data if n.endswith("-F")), None)
 ref = data[first_fix][1] if first_fix else None

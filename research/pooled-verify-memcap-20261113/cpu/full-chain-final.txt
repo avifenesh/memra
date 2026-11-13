@@ -1,24 +1,24 @@
-# head 7d7f56b46a (the branch rebased onto 7a32d9b10b, the landing of memra#1244 + #1256 + #1272)
-# 2026-11-13T04:36:33+01:00 full CPU chain of memra#1266
-# 2026-11-13T04:36:33+01:00 fmt
+# head 0551668a5d (review round 2, on main a17add18f3)
+# 2026-11-13T07:22:43+01:00 full CPU chain of memra#1266
+# 2026-11-13T07:22:43+01:00 fmt
 fmt rc=0
-# 2026-11-13T04:36:40+01:00 clippy
+# 2026-11-13T07:22:51+01:00 clippy
 clippy rc=0
-# 2026-11-13T04:42:06+01:00 coalescer
+# 2026-11-13T07:29:53+01:00 coalescer
 coalescer rc=0
-# 2026-11-13T04:42:08+01:00 server
+# 2026-11-13T07:29:56+01:00 server
 server rc=0
-  passed 1239, failed 0, ignored 14 over 6 binaries
-# 2026-11-13T04:56:48+01:00 kv
+  passed 1242, failed 0, ignored 14 over 6 binaries
+# 2026-11-13T07:38:35+01:00 kv
 kv rc=0
   passed 87, failed 0, ignored 0 over 1 binaries
-# 2026-11-13T04:56:48+01:00 engine
+# 2026-11-13T07:38:35+01:00 engine
 engine rc=0
-  passed 750, failed 0, ignored 65 over 1 binaries
-# 2026-11-13T04:59:56+01:00 gguf
-gguf rc=0
-  passed 417, failed 0, ignored 2 over 1 binaries
-# 2026-11-13T04:59:59+01:00 portable
+  passed 753, failed 0, ignored 65 over 1 binaries
+# 2026-11-13T07:42:13+01:00 gguf
+gguf rc=101
+  passed 416, failed 1, ignored 2 over 1 binaries
+# 2026-11-13T07:42:16+01:00 portable
 portable rc=0
 FULL-DONE
 skip-census: memra-engine: 27 protocol skip row(s), 0 unstructured
@@ -30,3 +30,15 @@ skip-census: VERIFY OK (54 declared skip row(s) across 14 crate(s))
 skip-census: running: cargo test -p memra-tier -p memra-kv -p memra-cli --offline --locked --no-fail-fast -- --test-threads=1 --nocapture
 skip-census: output banked at <lane>/src/target/portable-suites.log
 skip-census: 448 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 17 binaries
+
+# memra-gguf: one failure in this chain, hf_mapping::tests::fp8_blk_non_aligned_refused, reading a
+# config.json another test thread of the same process was writing (hybrid_cfg's temp path is per
+# process, not per call: a test race in main's code, untouched here). The same suite three more times:
+#   test hf_mapping::tests::fp8_blk_non_aligned_refused ... FAILED
+#   thread 'hf_mapping::tests::fp8_blk_non_aligned_refused' (637532) panicked at crates/memra-gguf/src/hf_mapping.rs:2478:57:
+#   called `Result::unwrap()` on an `Err` value: Custom { kind: InvalidData, error: "EOF while parsing a value at line 1 column 0" }
+#   test result: FAILED. 416 passed; 1 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.72s
+run 1 rc=0 test result: ok. 417 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.57s
+run 2 rc=0 test result: ok. 417 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.75s
+run 3 rc=0 test result: ok. 417 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.68s
+GGUF-DONE

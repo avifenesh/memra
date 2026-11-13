@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Rig: memra#1266's RTX 5090 cells, one gpulock lease per step line (TTL <= 30 min). Before each
 # step the 5090 must have shown no "memra landing" or "release" lease or ticket for 3 minutes
-# (observed), and the rig must be on AC with nv_tgp 150 and ppt_pl1_spl 140 (recorded, never set).
+# (observed), and the rig must be on AC with nv_tgp 150 and ppt_pl1_spl 140 (100 under a --perf
+# lease's CPU cap) (recorded, never set).
 # A ticket of ours that is still waiting is withdrawn as soon as such a lease or ticket shows.
 # usage: rtx_chain.sh STEPFILE   lines: NAME TTL_MIN [perf] -- CMD (run inside the lease). "perf" marks
 # a timed cell: a --perf lease (acquire, renewed by timed_take.sh, which applies the owner's take
@@ -16,7 +17,8 @@ quiet() { s=$(gpulock status 2>/dev/null) || return 1; now=$(date +%s)
   if echo "$s" | grep -qiE 'memra landing|release'; then echo "$now" > "$SEEN"; return 1; fi
   [ "$(cat /sys/class/power_supply/ADP0/online)" = 1 ] || return 1
   [ "$(cat /sys/class/firmware-attributes/asus-armoury/attributes/nv_tgp/current_value)" = 150 ] || return 1
-  [ "$(cat /sys/class/firmware-attributes/asus-armoury/attributes/ppt_pl1_spl/current_value)" = 140 ] || return 1
+  # pl1 140, or 100 while another lane's --perf lease caps the CPU (gpulock, owner 2026-11-13).
+  case "$(cat /sys/class/firmware-attributes/asus-armoury/attributes/ppt_pl1_spl/current_value)" in 140|100) ;; *) return 1 ;; esac
   [ $(( now - $(cat "$SEEN") )) -ge ${QUIET_S:-180} ]; }
 export -f quiet; export SEEN
 echo "$(date -Is) chain start $1 pid $$" >> "$L"

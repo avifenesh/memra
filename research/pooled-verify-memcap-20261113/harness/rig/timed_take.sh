@@ -42,6 +42,12 @@ for take in 1 2 3 4; do
     log "take $take counts"
     exit 0
   fi
+  # A second off AC stops the step: the owner asked to stop and report, not to retry.
+  if grep -q '"off_ac_s": [1-9]' "${DIRS[@]/%//take.json}" 2>/dev/null; then
+    for d in "${DIRS[@]}"; do mv -T "$d" "$d.take$take"; done
+    log "AC-DROP in take $take: stopped; the take is kept as DIR.take$take"
+    exit 9
+  fi
   worst=$(python3 -c 'import json,sys; print(max(json.load(open(f + "/take.json"))["sw_thermal_load_share"] for f in sys.argv[1:]))' "${DIRS[@]}")
   if python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) < float(sys.argv[2]) else 1)' "$worst" "$best_share"; then best=$take; best_share=$worst; fi
   for d in "${DIRS[@]}"; do mv -T "$d" "$d.take$take"; done

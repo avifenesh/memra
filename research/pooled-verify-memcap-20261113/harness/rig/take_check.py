@@ -54,11 +54,20 @@ def judge(d):
         why.append(f"sw thermal slowdown in {share:.1%} of the samples under load (> 5%)")
     if start >= START_MAX_C:
         why.append(f"started at {start:.0f} C (>= 86 C)")
+    # Any second off AC in the arm's window voids it (owner, 2026-11-13); ac.txt is the bench's
+    # 1 Hz log of /sys/class/power_supply/ADP0/online.
+    ac = d / "ac.txt"
+    off_ac = 0
+    if ac.exists():
+        off_ac = sum(1 for line in ac.read_text().splitlines() if line.split()[-1:] == ["0"])
+        if off_ac:
+            why.append(f"off AC for {off_ac} s")
     return {"dir": d.name, "start": rows[0][0], "start_temp_c": start, "max_temp_c": max(r[1] for r in rows),
             "samples": len(rows), "load_samples": len(load), "sw_thermal_load_samples": sw_load,
             "sw_thermal_load_share": round(share, 4),
             "sw_thermal_all_share": round(sum(1 for r in rows if r[3]) / len(rows), 4),
-            "hw_thermal_samples": sum(1 for r in rows if r[4]), "counts": not why, "why": "; ".join(why)}
+            "hw_thermal_samples": sum(1 for r in rows if r[4]), "off_ac_s": off_ac, "counts": not why,
+            "why": "; ".join(why)}
 
 
 if sys.argv[1] == "dirs":
