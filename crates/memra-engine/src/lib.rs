@@ -29582,6 +29582,34 @@ impl Engine {
         }
     }
 
+    /// Grows the prime's dequant-once K/V workspace (`prime_deqw_ws`) to at least `k_bytes` and
+    /// `v_bytes` now, the growth a later call of the same prime would make, with the same
+    /// grow-only rule (memra#1258: a multi-call prime sized it once per call, each new block a
+    /// call's rows larger than the one it freed, which the pool could not reuse for the next).
+    pub(crate) fn prime_deqw_reserve(
+        &self,
+        k_bytes: usize,
+        v_bytes: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut guard = self.prime_deqw_ws.lock().unwrap();
+        let need_grow = match guard.as_ref() {
+            Some((kw, vw)) => kw.len() < k_bytes || vw.len() < v_bytes,
+            None => true,
+        };
+        if need_grow {
+            let grow = |cur: usize, need: usize| if cur >= need { cur } else { need };
+            let (ck, cv) = guard
+                .as_ref()
+                .map(|(a, b)| (a.len(), b.len()))
+                .unwrap_or((0, 0));
+            *guard = Some((
+                self.alloc_u8(grow(ck, k_bytes))?,
+                self.alloc_u8(grow(cv, v_bytes))?,
+            ));
+        }
+        Ok(())
+    }
+
     /// ARC B (2026-07-05): dequant-once chunk-prime FA. Same contract as `fa_prefill_view`, but
     /// instead of every (q-block, head) CTA re-dequanting the whole quantized KV stream inline
     /// (T/64 x n_head redundant at chunk prime — 30.5% of the 32k prime wall), dequant the full
@@ -34165,7 +34193,12 @@ impl Engine {
         let mut a = self.uninit(nc * h * c * c)?;
         let mut p = self.uninit(nc * h * c * c)?;
         let mut u = self.uninit(nc * h * c * D)?;
-        let mut w = self.uninit(nc * h * c * D)?;
+        // With W's bf16 twin on the C=32/64 solve and the f32 store skipped (`w_ptr` below), the
+        // f32 W has no writer and no reader: a one-element placeholder stands in for the
+        // [nc, h, c, D] plane (memra#1258: 100.7 MB per GDN layer at a 4,096-row prime call on
+        // Qwen3.8-27B). `gdn_scan_chunked_to`'s f32 K4, the plane's one reader, refuses it.
+        let w_skip = matches!(c, 32 | 64) && wb16.is_some() && !Self::gdn_w32_keep();
+        let mut w = self.uninit(if w_skip { 1 } else { nc * h * c * D })?;
         {
             // K1
             let f = self.func("gdn_chunk_cumgate_f32");
@@ -35440,6 +35473,9 @@ impl Engine {
             return Err("GDN out-norm form off the fused K4+K5 route".into());
         };
         // f32 pair buffers (the mma branches above return before reaching here)
+        if w.len() < nc * h * c * D {
+            return Err("gdn_scan_chunked: the f32 K4 reached with W's f32 plane skipped".into());
+        }
         let mut y = self.uninit(nc * h * c * D)?;
         let mut ssnap = self.uninit(nc * h * D * D)?; // chunk-start state snapshots (K5 phase 1)
         {
