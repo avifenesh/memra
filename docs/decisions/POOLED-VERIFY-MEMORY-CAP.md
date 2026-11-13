@@ -61,8 +61,9 @@ poolable and runs the eager pooled verify whether or not replay is suspended; th
   joins: alone it is the serial round. The walk stops at the first round that does not fit and
   tries no smaller later one; that round leads the next chunk, after this one's rounds have
   finished and freed their checkpoints. Plain riders join within the same reading
-  (`pooled_rider_take`). Pooled and serial verifies are bitwise equal (`decode-batch-bench
-  --pooled`), so the cap moves no token. `[spec-pool] pooled MTP verify capped by memory: ...`
+  (`pooled_rider_take`). A capped member verifies after the forward; the forced-cap arm, which
+  verifies every member alone, writes the same texts as the default arm in every cell, so the
+  cap moves no token. `[spec-pool] pooled MTP verify capped by memory: ...`
   (the first 16, then every 256th); `/metrics` `spec_pool_capped_forwards_total` and
   `spec_pool_capped_rider_rows_total`.
 - **The verify margin** (`POOLED_VERIFY_MARGIN`, 256 MiB) is its own constant: the part of the
@@ -72,8 +73,9 @@ poolable and runs the eager pooled verify whether or not replay is suspended; th
   no spread. A test pins it above the measurement.
 - **The pre-cohort reclaim.** After the newcomers primed and before the cohorts form, the
   reading must fund the cohort's first verify (`pre_cohort_need`): the largest member's round
-  (`spec_round_bytes`: its checkpoint columns, logits and the FA pool's growth for its rows, run
-  by run as above, since the serial verify launches per same-rung run too),
+  (`spec_round_bytes`: its checkpoint columns, logits and the FA pool's growth for its rows,
+  priced run by run as the pooled layer launches them, a safe overestimate for the serial
+  verify),
   every member's burst-entry snapshot (`spec_burst_snapshot_bytes`: each burst takes a fresh copy
   of the session's GDN state at its start and holds it to its end, one column, 149.6 MiB here;
   the diagnostic boot's reading fell from 1,915 to 1,616 MiB between the cohort's entry and its
@@ -83,9 +85,13 @@ poolable and runs the eager pooled verify whether or not replay is suspended; th
   (`prefix_yield_to_reserve`, on unified memory too), then parked sessions, globally oldest
   first, one at a time; under on-demand KV planes each parked eviction reaps the graveyard
   (`vmm_reap_for`) before the next reading, or the evicted planes would not show and every parked
-  session would go. The reading leaves out the admitted sessions' unbuilt booking (memra#1255's
-  `unbuilt_session_booking`, single device only): those sessions build their state in the tick,
-  so their bytes are not the cohort's, and the prefix rung covers the need on top of them. An
+  session would go (a census pins that reap: it does work only under on-demand KV planes, the
+  RTX PRO 6000 default, so no cell here exercises it). The reading leaves out the part of the
+  admitted sessions' unbuilt booking (memra#1255's `unbuilt_session_booking`, single device
+  only) that overlaps the cohort: those sessions build their state after the cohorts step, once
+  the rounds' checkpoints and snapshots are freed, so only the FA pool's growth, which the pool
+  keeps, is live beside them (`booking_overlap`); the prefix rung covers the need on top of
+  that. An
   unreadable device does nothing; a pass the fence alone funds evicts nothing and counts in
   `spec_cohort_fence_funded_total`. `[spec-pool] pre-cohort reclaim: ...`;
   a pass that stays short with nothing evictable prints `[spec-pool] pre-cohort reclaim still
