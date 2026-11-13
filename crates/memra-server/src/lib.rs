@@ -7735,12 +7735,22 @@ fn render_prometheus_metrics(
             (
                 "memra_spec_pool_capped_forwards_total",
                 memra_engine::spec::mtp_pool_capped_total(),
-                "Pooled MTP verify forwards the memory cap shortened (the rest verified serially).",
+                "Pooled MTP verify forwards the memory cap shortened; the members left out verified after the forward, serially or in the next forward.",
+            ),
+            (
+                "memra_spec_pool_capped_rider_rows_total",
+                memra_engine::spec::mtp_pool_capped_rider_rows_total(),
+                "Plain rider rows the pooled verify's memory cap left to the plain batched step.",
             ),
             (
                 "memra_spec_cohort_reclaims_total",
                 worker::spec_cohort_reclaims_total(),
-                "Pre-cohort reclaims: evictable memory freed so the largest member's verify round fits.",
+                "Pre-cohort reclaims: evictable memory freed so the cohort's verify is funded.",
+            ),
+            (
+                "memra_spec_cohort_short_total",
+                worker::spec_cohort_short_total(),
+                "Phase (a) passes that stayed short of the cohort's verify with nothing evictable left.",
             ),
         ] {
             prometheus_header(&mut out, name, "counter", help);
@@ -8092,7 +8102,10 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         // memra#1266: the pooled MTP verify's memory cap and the pre-cohort reclaim.
         body["spec_pool_capped_forwards_total"] =
             json!(memra_engine::spec::mtp_pool_capped_total());
+        body["spec_pool_capped_rider_rows_total"] =
+            json!(memra_engine::spec::mtp_pool_capped_rider_rows_total());
         body["spec_cohort_reclaims_total"] = json!(worker::spec_cohort_reclaims_total());
+        body["spec_cohort_short_total"] = json!(worker::spec_cohort_short_total());
         body["prefix_cache_seed_grid_refusals"] = json!(m.prefix_seed_grid_refusals);
         body["prefix_cache_restore_grid_refusals"] = json!(m.prefix_restore_grid_refusals);
         body["prefix_cache_tail_attaches"] = json!(m.prefix_tail_attaches);
