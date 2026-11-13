@@ -1593,8 +1593,9 @@ pub fn grid_yz_row_blocks(rows: usize) -> impl Iterator<Item = (usize, usize)> {
 
 /// Widest prime range that stays launch-legal through the ring-off tail fold of
 /// `fixed_prime_chunk_ranges`: a trailing remainder shorter than `PRIME_MIN_T`
-/// folds INTO the previous range, widening it by up to `PRIME_MIN_T - 1` tokens, so the
-/// cap keeps `chunk + PRIME_MIN_T - 1 <= CUDA_GRID_YZ_MAX`. With this value every
+/// folds INTO the previous range (on a chunk no wider than `PRIME_CHUNK_MAX_TOKENS`, only while
+/// the result stays within that cap; memra#1258), widening it by up to `PRIME_MIN_T - 1`
+/// tokens, so the cap keeps `chunk + PRIME_MIN_T - 1 <= CUDA_GRID_YZ_MAX`. With this value every
 /// t <= 65,535 still schedules as the identical single monolithic range (t <= chunk, or
 /// the fold collapses the split), so behavior below the CUDA wall is byte-for-byte
 /// unchanged — only prompts that today CANNOT launch get chunked.
@@ -1712,14 +1713,40 @@ pub fn prime_chunk_tokens(t: usize, n_layers: usize, ring_on: bool) -> usize {
     }
 }
 
-/// Equal-token ranges. A trailing remainder shorter than `PRIME_MIN_T` folds into the previous
-/// range with the ring off; a ring plan (`ring_on`, the model's contract as in
-/// [`prime_chunk_tokens`]) shifts the last boundary back instead, so no range outgrows the
-/// chunk the ring was sized for.
+/// Equal-token ranges of `chunk` rows. A trailing remainder shorter than `PRIME_MIN_T` folds into
+/// the previous range with the ring off, while the merged range stays within
+/// `PRIME_CHUNK_MAX_TOKENS` (memra#1258); past the cap, and always with a ring plan (`ring_on`,
+/// the model's contract as in [`prime_chunk_tokens`]), the last boundary moves back to
+/// `t - PRIME_MIN_T` instead, so no range outgrows the cap or the chunk the ring was sized for.
+/// An explicit chunk wider than the cap (`MEMRA_PRIME_CHUNK`, monolithic) keeps the plain fold.
 fn fixed_prime_chunk_ranges(t: usize, chunk: usize, ring_on: bool) -> Vec<(usize, usize)> {
+    fixed_prime_chunk_ranges_on_grid(t, chunk, ring_on, 1)
+}
+
+/// [`fixed_prime_chunk_ranges`] with the boundary a cap-bounded fold moves back placed on the GDN
+/// chunk grid `grid` (rounded down), where [`align_prime_ranges_to_gdn`] would place it. The
+/// explicit-`MEMRA_PRIME_CHUNK` schedule is not aligned afterwards, so this is how an explicit
+/// chunk equal to the cap keeps the default schedule's split. `grid` <= 1 is no grid.
+fn fixed_prime_chunk_ranges_on_grid(
+    t: usize,
+    chunk: usize,
+    ring_on: bool,
+    grid: usize,
+) -> Vec<(usize, usize)> {
     if chunk == 0 || t <= chunk {
         return vec![(0, t)];
     }
+    // The widest call a ring-off tail fold may make (memra#1258). Before the cap, a fold past
+    // `PRIME_CHUNK_MAX_TOKENS` made the last call of every prompt of k * 4,096 + 1 to 15 tokens
+    // (k >= 1) up to 4,111 rows wide: at 4,106 tokens the prime grew the pool by 1,980 MB,
+    // against 1,611-1,644 MB for its neighbours either side (RTX 5090 Laptop, Qwen3.8-27B,
+    // DFlash2), and admission did not charge it. An explicit chunk wider than the cap keeps the
+    // legacy fold.
+    let fold_cap = if chunk > crate::cache::PRIME_CHUNK_MAX_TOKENS {
+        usize::MAX
+    } else {
+        crate::cache::PRIME_CHUNK_MAX_TOKENS
+    };
     let mut ranges = Vec::with_capacity(t.div_ceil(chunk));
     let mut start = 0usize;
     while start < t {
@@ -1728,6 +1755,20 @@ fn fixed_prime_chunk_ranges(t: usize, chunk: usize, ring_on: bool) -> Vec<(usize
             if ring_on {
                 let shifted = t - PRIME_MIN_T;
                 end = if shifted > start { shifted } else { t };
+            } else if t - start > fold_cap {
+                let shifted = t - PRIME_MIN_T;
+                let on_grid = if grid > 1 {
+                    shifted / grid * grid
+                } else {
+                    shifted
+                };
+                end = if on_grid > start {
+                    on_grid
+                } else if shifted > start {
+                    shifted
+                } else {
+                    t
+                };
             } else {
                 end = t;
             }
@@ -1736,6 +1777,22 @@ fn fixed_prime_chunk_ranges(t: usize, chunk: usize, ring_on: bool) -> Vec<(usize
         start = end;
     }
     ranges
+}
+
+/// The single-device default schedule: [`fixed_prime_chunk_ranges`] at `PRIME_CHUNK_MAX_TOKENS`,
+/// aligned to the GDN chunk grid `grid` when the trunk has one. This is what
+/// [`prime_chunk_ranges`] returns with no `MEMRA_PRIME_CHUNK` and no pipeline geometry; tests
+/// and the DFlash tap bookkeeping read it from here.
+pub(crate) fn single_device_prime_ranges(
+    t: usize,
+    ring_on: bool,
+    grid: Option<usize>,
+) -> Vec<(usize, usize)> {
+    let fixed = fixed_prime_chunk_ranges(t, crate::cache::PRIME_CHUNK_MAX_TOKENS, ring_on);
+    match grid {
+        Some(c) => align_prime_ranges_to_gdn(&fixed, t, c),
+        None => fixed,
+    }
 }
 
 fn prime_chunk_work(prefix: usize, total: usize) -> u128 {
@@ -1792,8 +1849,10 @@ fn dynamic_prime_chunk_ranges(
 /// `gdn_grid`: the model runs the chunked GDN WY scan (`HybridModel::gdn_prime_grid_on`) —
 /// AUTO-scheduled internal boundaries are then snapped down to the WY-chunk grid
 /// (`align_prime_ranges_to_gdn`; the spec-longctx grid law, extended from serve splits to
-/// the PP prime microchunks). Explicit MEMRA_PRIME_CHUNK keeps its operator-authoritative
-/// (fixed, unaligned) semantics — the FLAGS caveat documents that identity contract.
+/// the PP prime microchunks). Explicit MEMRA_PRIME_CHUNK keeps its operator-authoritative fixed
+/// semantics (the FLAGS caveat documents that identity contract): its chunk boundaries are not
+/// aligned, except the boundary a cap-bounded tail fold moves back, which goes on the grid
+/// (`fixed_prime_chunk_ranges_on_grid`, memra#1258) as the default schedule's alignment puts it.
 ///
 /// `ring_on`: the model's SWA-ring contract, as in [`prime_chunk_tokens`].
 pub fn prime_chunk_ranges(
@@ -1804,15 +1863,26 @@ pub fn prime_chunk_ranges(
 ) -> Vec<(usize, usize)> {
     let explicit_chunk = std::env::var_os("MEMRA_PRIME_CHUNK").is_some();
     let chunk = prime_chunk_tokens(t, n_layers, ring_on);
+    if explicit_chunk {
+        // memra#1258: a fold the cap stops splits on the GDN grid, as the default's alignment
+        // places it; every other explicit boundary stays where the operator's chunk puts it.
+        let grid = if gdn_grid {
+            Engine::gdn_chunk_size()
+        } else {
+            1
+        };
+        return fixed_prime_chunk_ranges_on_grid(t, chunk, ring_on, grid);
+    }
+    if !prime_pipeline_auto_geometry(n_layers) {
+        // The single-device schedule (`chunk` is the cap here).
+        return single_device_prime_ranges(t, ring_on, gdn_grid.then(Engine::gdn_chunk_size));
+    }
     let fixed = fixed_prime_chunk_ranges(t, chunk, ring_on);
     let dynamic = match std::env::var("MEMRA_PRIME_CHUNK_SCHED") {
         Ok(value) => value == "dynamic",
         Err(_) => true,
     };
-    if explicit_chunk {
-        return fixed;
-    }
-    let ranges = if !dynamic || !prime_pipeline_auto_geometry(n_layers) {
+    let ranges = if !dynamic {
         fixed
     } else {
         dynamic_prime_chunk_ranges(t, chunk, &fixed)
@@ -31332,10 +31402,11 @@ mod prime_chunk_schedule_tests {
         CUDA_GRID_YZ_MAX, PRIME_CHUNK_LAUNCH_CAP, PRIME_MIN_T, PRIME_PIPE_MIN_CHUNK, PrimePpSignal,
         PrimePpStageChannels, PrimePpWaveCredits, PrimePpWaveSlot, active_matrix_values,
         align_prime_ranges_to_gdn, dynamic_prime_chunk_ranges, explicit_prime_chunk,
-        fixed_prime_chunk_ranges, grid_yz_row_blocks, kda_rows_refusal, move_prime_cache_layers,
-        parse_step_ep_grouped_prefill, parse_step_tp_prefill, prime_cache_stage_for_layer,
-        recv_prime_pp_signal, restore_prime_cache_layers, step_grouped_decode_shape,
-        step_grouped_prefill_shape, step_tp_prefill_shape, validate_step_prime_batch_modes,
+        fixed_prime_chunk_ranges, fixed_prime_chunk_ranges_on_grid, grid_yz_row_blocks,
+        kda_rows_refusal, move_prime_cache_layers, parse_step_ep_grouped_prefill,
+        parse_step_tp_prefill, prime_cache_stage_for_layer, recv_prime_pp_signal,
+        restore_prime_cache_layers, step_grouped_decode_shape, step_grouped_prefill_shape,
+        step_tp_prefill_shape, validate_step_prime_batch_modes,
     };
 
     fn sizes(ranges: &[(usize, usize)]) -> Vec<usize> {
@@ -31865,10 +31936,109 @@ mod prime_chunk_schedule_tests {
         let capped = sizes(&fixed_prime_chunk_ranges(8200, 4096, true));
         assert_eq!(capped, vec![4096, 4088, 16]);
         assert!(capped.iter().all(|&rows| rows <= 4096));
+        // memra#1258: a tail fold never widens a call past PRIME_CHUNK_MAX_TOKENS; the boundary
+        // moves back to t - PRIME_MIN_T as the ring path's does.
         assert_eq!(
             sizes(&fixed_prime_chunk_ranges(4100, 4096, false)),
-            vec![4100],
-            "flag-off schedule remains byte-for-byte the legacy monolithic tail",
+            vec![4084, 16],
+        );
+        // A fold that stays inside the cap keeps the legacy merged tail.
+        assert_eq!(
+            sizes(&fixed_prime_chunk_ranges(394, 128, false)),
+            vec![128, 128, 138],
+        );
+    }
+
+    /// The ring-off rule before memra#1258: a sub-`PRIME_MIN_T` remainder folds into the previous
+    /// range whatever its width.
+    fn legacy_fixed_prime_chunk_ranges(
+        t: usize,
+        chunk: usize,
+        ring_on: bool,
+    ) -> Vec<(usize, usize)> {
+        if chunk == 0 || t <= chunk {
+            return vec![(0, t)];
+        }
+        let mut ranges = Vec::new();
+        let mut start = 0usize;
+        while start < t {
+            let mut end = (start + chunk).min(t);
+            if t - end > 0 && t - end < PRIME_MIN_T {
+                if ring_on {
+                    let shifted = t - PRIME_MIN_T;
+                    end = if shifted > start { shifted } else { t };
+                } else {
+                    end = t;
+                }
+            }
+            ranges.push((start, end));
+            start = end;
+        }
+        ranges
+    }
+
+    #[test]
+    fn no_default_prime_call_exceeds_the_chunk_cap() {
+        // memra#1258: before the cap, the single-device schedule folded the sub-PRIME_MIN_T tail
+        // of every prompt of k * cap + 1 to 15 tokens (k >= 1) into a call above the cap. Every
+        // default schedule, ring on or off, with no GDN grid or a grid of 32, 64 or 128, stays
+        // within the cap, covers 0..t in order with calls of at least PRIME_MIN_T rows, and equals
+        // the old schedule wherever the old one fit.
+        let cap = crate::cache::PRIME_CHUNK_MAX_TOKENS;
+        let mut changed = 0usize;
+        for ring_on in [false, true] {
+            for grid in [None, Some(32), Some(64), Some(128)] {
+                for t in 1..=4 * cap + 64 {
+                    let ranges = super::single_device_prime_ranges(t, ring_on, grid);
+                    let mut at = 0usize;
+                    for &(s, e) in &ranges {
+                        assert_eq!(s, at, "t={t} ring={ring_on} grid={grid:?}: {ranges:?}");
+                        assert!(
+                            e > s && e - s <= cap,
+                            "t={t} ring={ring_on} grid={grid:?}: {ranges:?}"
+                        );
+                        assert!(
+                            e - s >= PRIME_MIN_T || ranges.len() == 1,
+                            "t={t} ring={ring_on} grid={grid:?}: {ranges:?}"
+                        );
+                        at = e;
+                    }
+                    assert_eq!(at, t, "t={t} ring={ring_on} grid={grid:?}");
+                    let legacy = legacy_fixed_prime_chunk_ranges(t, cap, ring_on);
+                    let old = match grid {
+                        Some(c) => align_prime_ranges_to_gdn(&legacy, t, c),
+                        None => legacy,
+                    };
+                    if old.iter().all(|&(s, e)| e - s <= cap) {
+                        assert_eq!(ranges, old, "t={t} ring={ring_on} grid={grid:?}");
+                    } else {
+                        changed += 1;
+                    }
+                }
+            }
+        }
+        // Ring off, four grids, the four multiples of the cap below 4 * cap + 64, 15 tails each.
+        assert_eq!(changed, 4 * 4 * 15);
+    }
+
+    #[test]
+    fn an_explicit_cap_chunk_keeps_the_default_schedule() {
+        // memra#1258: the explicit-MEMRA_PRIME_CHUNK schedule is not aligned to the GDN grid
+        // afterwards, so the split a cap-bounded fold makes is placed on the grid in the
+        // schedule itself; an explicit chunk equal to the cap then primes in the default's calls.
+        let cap = crate::cache::PRIME_CHUNK_MAX_TOKENS;
+        for grid in [32usize, 64, 128] {
+            for t in 1..=4 * cap + 64 {
+                assert_eq!(
+                    fixed_prime_chunk_ranges_on_grid(t, cap, false, grid),
+                    super::single_device_prime_ranges(t, false, Some(grid)),
+                    "t={t} grid={grid}"
+                );
+            }
+        }
+        assert_eq!(
+            sizes(&fixed_prime_chunk_ranges_on_grid(4100, cap, false, 32)),
+            vec![4064, 36]
         );
     }
 

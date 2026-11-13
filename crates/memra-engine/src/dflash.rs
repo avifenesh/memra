@@ -8925,17 +8925,9 @@ mod dflash_tap_oracle_tests {
     #[test]
     fn standalone_prime_consumes_each_chunk_before_the_next_and_keeps_the_256_row_partition() {
         fn grid(tp: usize) -> Vec<(usize, usize)> {
-            // the single-device serial grid: 4096-row chunks, a sub-16 tail folded into the last
-            let (mut ranges, mut start) = (Vec::new(), 0usize);
-            while start < tp {
-                let mut end = (start + 4096).min(tp);
-                if tp - end > 0 && tp - end < 16 {
-                    end = tp;
-                }
-                ranges.push((start, end));
-                start = end;
-            }
-            ranges
+            // the single-device serial grid production builds (memra#1258: a sub-16 tail folds
+            // into the last call only within the 4,096-row cap), on the default 32-row GDN grid
+            crate::hybrid_forward::single_device_prime_ranges(tp, false, Some(32))
         }
         for tp in [
             16, 255, 256, 257, 4096, 4097, 4111, 4112, 8192, 8194, 16382, 32759, 65507,
