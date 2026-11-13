@@ -90,8 +90,10 @@ poolable and runs the eager pooled verify whether or not replay is suspended; th
   admitted sessions' unbuilt booking (memra#1255's `unbuilt_session_booking`, single device
   only) that overlaps the cohort: those sessions build their state after the cohorts step, once
   the rounds' checkpoints and snapshots are freed, so only the FA pool's growth, which the pool
-  keeps, is live beside them (`booking_overlap`); the prefix rung covers the need on top of
-  that. An
+  keeps, is live beside them (`booking_overlap`). That growth is priced on the cohort's members
+  stacked in one pooled forward (`spec_cohort_fa_growth_bytes`, the larger of the stack and any
+  round alone): across a split rung a forward grows the pool where no single round does. The
+  prefix rung covers the need on top of the bounded booking. An
   unreadable device does nothing; a pass the fence alone funds evicts nothing and counts in
   `spec_cohort_fence_funded_total`. `[spec-pool] pre-cohort reclaim: ...`;
   a pass that stays short with nothing evictable prints `[spec-pool] pre-cohort reclaim still
