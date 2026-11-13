@@ -1,0 +1,614 @@
+[
+ {
+  "id": "zq8v1-crossfile-fmad",
+  "kind": "negative-incident",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "a793f6071caecb788397618279ceb9bda9710565",
+  "commit_after": "a793f6071caecb788397618279ceb9bda9710565",
+  "cu_files": [
+   "crates/memra-engine/cu/dsv4_gpu.cu",
+   "crates/memra-engine/cu/kernels.cu"
+  ],
+  "kernels": [
+   "dsv4_hc_pre_zq8_kernel",
+   "rms_norm_zq8_f32_v2"
+  ],
+  "arch": "100a",
+  "cause_class": "fma-contraction"
+ },
+ {
+  "id": "v4z-pinned-norm-twin",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "8837f1653c5bcf3e79262ca4ac2fce007bf2c0d9",
+  "commit_after": "8837f1653c5bcf3e79262ca4ac2fce007bf2c0d9",
+  "cu_files": [
+   "crates/memra-engine/cu/dsv4_gpu.cu",
+   "crates/memra-engine/cu/kernels.cu"
+  ],
+  "kernels": [
+   "dsv4_hc_pre_v4z_e16_kernel",
+   "rms_norm_zq8_f32_v2"
+  ],
+  "arch": "100a",
+  "cause_class": "none"
+ },
+ {
+  "id": "tpwalk9-hcpost-crossfile-fmad",
+  "kind": "negative-incident",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "ca83f876fac387fa72ac93bb6dd9b025d4505bd0",
+  "commit_after": "ca83f876fac387fa72ac93bb6dd9b025d4505bd0",
+  "cu_files": [
+   "crates/memra-engine/cu/tp_ar.cu",
+   "crates/memra-engine/cu/dsv4_gpu.cu"
+  ],
+  "kernels": [
+   "memra_tp_ar_1stage_hcpost_kernel",
+   "dsv4_hc_post_kernel"
+  ],
+  "arch": "100a",
+  "cause_class": "fma-contraction"
+ },
+ {
+  "id": "tpwalk10-hcpost-nonfma-pin",
+  "kind": "negative-incident",
+  "mode": "base-vs-head",
+  "commit_before": "ca83f876fac387fa72ac93bb6dd9b025d4505bd0",
+  "commit_after": "6bcb01f69a6d724bcb62ad8225ec20f474cf1016",
+  "cu_files": [
+   "crates/memra-engine/cu/tp_ar.cu"
+  ],
+  "kernels": [
+   "memra_tp_ar_1stage_hcpost_kernel"
+  ],
+  "arch": "100a",
+  "cause_class": "fma-contraction"
+ },
+ {
+  "id": "tpwalk11-hcpost-pinned-twin",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "6bcb01f69a6d724bcb62ad8225ec20f474cf1016",
+  "commit_after": "6bcb01f69a6d724bcb62ad8225ec20f474cf1016",
+  "cu_files": [
+   "crates/memra-engine/cu/tp_ar.cu",
+   "crates/memra-engine/cu/dsv4_gpu.cu"
+  ],
+  "kernels": [
+   "memra_tp_ar_1stage_hcpost_kernel",
+   "dsv4_hc_post_kernel"
+  ],
+  "arch": "100a",
+  "cause_class": "none"
+ },
+ {
+  "id": "moe-expert-core-rn-pin",
+  "kind": "positive-refactor",
+  "mode": "base-vs-head",
+  "commit_before": "ad25aeb9ac6af22c38729250d1161fcd10ebdb7a",
+  "commit_after": "f6daafca45a327660c80fbd8137f7482065c5047",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "moe_gate_up_preclamp8_q8",
+   "moe_down8_fma_q8",
+   "moe_gate_up_preclamp8_q8_w4",
+   "moe_down8_fma_q8_w4"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "hcpre-normfold-tp-tape-move",
+  "kind": "negative-incident",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "c3075a2abfbbbad80852ae9d8feff0569f1aeff1",
+  "commit_after": "c3075a2abfbbbad80852ae9d8feff0569f1aeff1",
+  "cu_files": [
+   "crates/memra-engine/cu/dsv4_gpu.cu",
+   "crates/memra-engine/cu/kernels.cu"
+  ],
+  "kernels": [
+   "dsv4_hc_pre_v4_e16_norm_zq8_kernel",
+   "rms_norm_zq8_f32_v2"
+  ],
+  "arch": "100a",
+  "cause_class": "unknown"
+ },
+ {
+  "id": "fa-verify-rows-vs-seqs",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "b2a426c06ddeb6bb149d860930c651eab7c4a40d",
+  "commit_after": "b2a426c06ddeb6bb149d860930c651eab7c4a40d",
+  "cu_files": [
+   "crates/memra-engine/cu/flash_attn.cu"
+  ],
+  "kernels": [
+   "fa_verify_rows_v4_deep",
+   "fa_decode_vec_q_seqs_v4_deep"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "nvfp4-b32-tensorcore-vs-dp4a",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "f0be39228405cfa2ce0a7e9c3b86065b1cb8201e",
+  "commit_after": "f0be39228405cfa2ce0a7e9c3b86065b1cb8201e",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "qmatvec_nvfp4_mmvq_b32_tc",
+   "qmatvec_nvfp4_mmvq_b32_rpcs8"
+  ],
+  "arch": "121a",
+  "cause_class": "none"
+ },
+ {
+  "id": "nvfp4-b16-rpscx-vs-rpsc",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "1146ea1c083a2f4d6d4fee7d0d566bd25386a573",
+  "commit_after": "1146ea1c083a2f4d6d4fee7d0d566bd25386a573",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "qmatvec_nvfp4_mmvq_b16_rpscx",
+   "qmatvec_nvfp4_mmvq_b16_rpsc"
+  ],
+  "arch": "121a",
+  "cause_class": "none"
+ },
+ {
+  "id": "nvfp4-b16-rpsc-splitplane-vs-interleaved-mmvq",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "b788857e7e29103db103fc5d815fef1842d0976d",
+  "commit_after": "b788857e7e29103db103fc5d815fef1842d0976d",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "qmatvec_nvfp4_mmvq_b16_rpsc",
+   "qmatvec_nvfp4_mmvq"
+  ],
+  "arch": "121a",
+  "cause_class": "none"
+ },
+ {
+  "id": "rms-norm-zq8-ilp-v2",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "4cd2444df314e3c2cb3512e6fa293133f02b67cc",
+  "commit_after": "4cd2444df314e3c2cb3512e6fa293133f02b67cc",
+  "cu_files": [
+   "crates/memra-engine/cu/kernels.cu"
+  ],
+  "kernels": [
+   "rms_norm_zq8_f32_v2",
+   "rms_norm_zq8_f32"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "moe-gateup-rows-ilp",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "e7beeaf00a9fbb200ee22219a9f18842fc2a28e4",
+  "commit_after": "e7beeaf00a9fbb200ee22219a9f18842fc2a28e4",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "moe_gate_up_preclamp8_q8_rows_ilp",
+   "moe_gate_up_preclamp8_q8_rows"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "moe-down-rows-ilp2",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "22afbda3b6ee57834664c6002a0c06c3f182c70f",
+  "commit_after": "22afbda3b6ee57834664c6002a0c06c3f182c70f",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "moe_down8_fma_q8_rows_ilp2",
+   "moe_down8_fma_q8_rows_ilp"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "nvfp4-trunk-mr2-rp-ilp",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "cceff0ef87f0e5b8407a0fce6e3922493888786c",
+  "commit_after": "cceff0ef87f0e5b8407a0fce6e3922493888786c",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "qmatvec_nvfp4_mmvq_mr2_rp_ilp",
+   "qmatvec_nvfp4_mmvq_mr2_rp"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "q8-0-rp-v2-ilp",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "90b7ae8663615f5eabd8cb90974d95b7e3bf0cf9",
+  "commit_after": "90b7ae8663615f5eabd8cb90974d95b7e3bf0cf9",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "qmatvec_q8_0_mmvq_rp_v2_ilp",
+   "qmatvec_q8_0_mmvq_rp_v2"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "kda6-bf16-v2-y5-unwritten",
+  "kind": "negative-incident",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "a5b9174d0a998c16f85b44029908ee625eb7f544",
+  "commit_after": "a5b9174d0a998c16f85b44029908ee625eb7f544",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "qmatvec_kda6_bf16f32_v2",
+   "qmatvec_kda6_bf16f32"
+  ],
+  "arch": "100a",
+  "cause_class": "semantic"
+ },
+ {
+  "id": "kda6-bf16-v2-fixed",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "1cd6a3b25cbaba5b629bb7c701c0f3132337eaa5",
+  "commit_after": "1cd6a3b25cbaba5b629bb7c701c0f3132337eaa5",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "qmatvec_kda6_bf16f32_v2",
+   "qmatvec_kda6_bf16f32"
+  ],
+  "arch": "100a",
+  "cause_class": "none"
+ },
+ {
+  "id": "moe-down8-v2-b200",
+  "kind": "positive-twin",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "a5b9174d0a998c16f85b44029908ee625eb7f544",
+  "commit_after": "a5b9174d0a998c16f85b44029908ee625eb7f544",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "moe_down8_fma_q8_v2",
+   "moe_down8_fma_q8"
+  ],
+  "arch": "100a",
+  "cause_class": "none"
+ },
+ {
+  "id": "gdn-packed-seam-copy-indirect-delete",
+  "kind": "positive-refactor",
+  "mode": "base-vs-head",
+  "commit_before": "bc7c38d72ecd288449fa31a001552e9556576fe6",
+  "commit_after": "51e08e2515363677ec9109de6b78d356135a8604",
+  "cu_files": [
+   "crates/memra-engine/cu/kernels.cu"
+  ],
+  "kernels": [
+   "copy_indirect_src_f32",
+   "copy_batch_uniform_f32",
+   "copy_batch_uniform_kv_u8_set_len",
+   "gdn_scan_step_f32"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "f8f4v3-half-height-pbm-template",
+  "kind": "positive-refactor",
+  "mode": "base-vs-head",
+  "commit_before": "897a826a2c2012b4711b066fe4980a6b8be00c46",
+  "commit_after": "d10f70145d205ba169ef776117d2da0678c8aa3e",
+  "cu_files": [
+   "crates/memra-engine/cu/mmq_nvfp4_w4a8.cu"
+  ],
+  "kernels": [
+   "mul_mat_f8f4v3t",
+   "mul_mat_f8f4v3"
+  ],
+  "arch": "121a",
+  "cause_class": "none"
+ },
+ {
+  "id": "dsv4-shared-array-linkage-rename",
+  "kind": "positive-refactor",
+  "mode": "base-vs-head",
+  "commit_before": "76dcd0a96bf2b945d83fd9a71d40a5aea15a9881",
+  "commit_after": "cf975cabb12e22ab56d3ab2ce42aed7bce091169",
+  "cu_files": [
+   "crates/memra-engine/cu/dsv4_gpu.cu"
+  ],
+  "kernels": [
+   "dsv4_topk_idx_numeric_rows_kernel",
+   "dsv4_indexer_score_f32acc_kernel",
+   "dsv4_indexer_score_f32acc_rows_kernel",
+   "dsv4_dots_f32_mrow_kernel"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "prime-kv-t3-door-delete",
+  "kind": "positive-refactor",
+  "mode": "base-vs-head",
+  "commit_before": "d3ae841c86e33e5e40ae07a02b71d5349230bce5",
+  "commit_after": "9485c73f09cdbf780a6903122f4e3e495dfe614b",
+  "cu_files": [
+   "crates/memra-engine/cu/flash_attn.cu"
+  ],
+  "kernels": [
+   "fa_prefill_qw_t3",
+   "fa_prefill_qw_t3_prime_table",
+   "fa_prefill_qw_db",
+   "fa_prefill_qw_h2",
+   "fa_prefill_qw_db_prime_table",
+   "fa_prefill_qw_h2_prime_table",
+   "fa_prefill_qw_db_hd128",
+   "fa_prefill_qw_db_w_hd128"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "pdl-entry-guard-portable-90a",
+  "kind": "positive-refactor",
+  "mode": "base-vs-head",
+  "commit_before": "d685ff5a64e21f76963554d84d548da3a7fb07d7",
+  "commit_after": "7e8b3673d4fb4067ed37a79f3af49690660fc81c",
+  "cu_files": [
+   "crates/memra-engine/cu/kernels.cu",
+   "crates/memra-engine/cu/qmatvec.cu",
+   "crates/memra-engine/cu/flash_attn.cu"
+  ],
+  "kernels": [
+   "rms_norm_f32",
+   "add_rms_norm_f32_v2",
+   "rms_norm_qkv_rope_append_f32",
+   "fa_decode_vec_q_rows_v4_w"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "dsv4-qlora-normpack-headrms-registers",
+  "kind": "positive-refactor",
+  "mode": "base-vs-head",
+  "commit_before": "1dad104ea3b60c4336800ef93cc2057186b2d40a",
+  "commit_after": "ca7a6e08382006c55f331cd3919aad88362e4cf6",
+  "cu_files": [
+   "crates/memra-engine/cu/dsv4_gpu.cu"
+  ],
+  "kernels": [
+   "dsv4_small_norm_pack_f32_fixed_order_kernel",
+   "dsv4_headrms_f32acc_kernel"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "prime-kv-dequant-ws-vec8",
+  "kind": "positive-refactor",
+  "mode": "base-vs-head",
+  "commit_before": "d6ef68f5a1b0c272c447877853e6251837325769",
+  "commit_after": "548c0c2c983e01987ad266e97c0f9bfae53a47b0",
+  "cu_files": [
+   "crates/memra-engine/cu/flash_attn.cu"
+  ],
+  "kernels": [
+   "fa_dequant_kv_ws_bf16",
+   "fa_dequant_kv_ws_bf16_prime_table"
+  ],
+  "arch": "121a",
+  "cause_class": "none"
+ },
+ {
+  "id": "f8f4v2-shared-stage-cta-copies",
+  "kind": "positive-refactor",
+  "mode": "base-vs-head",
+  "commit_before": "7add90bcd67f55c0cd2f7a268ab3581ad31f2547",
+  "commit_after": "48c3e26bd31588ea1fafb9b48454ba409a431a23",
+  "cu_files": [
+   "crates/memra-engine/cu/mmq_nvfp4_w4a8.cu"
+  ],
+  "kernels": [
+   "mul_mat_f8f4v2",
+   "mul_mat_f8f4v3"
+  ],
+  "arch": "121a",
+  "cause_class": "none"
+ },
+ {
+  "id": "dsa-score-tc-bf16",
+  "kind": "negative-rounding",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "d220be49d9e9bb4288ca0073b0daeaa9a8993067",
+  "commit_after": "d220be49d9e9bb4288ca0073b0daeaa9a8993067",
+  "cu_files": [
+   "crates/memra-engine/cu/mla_attn.cu"
+  ],
+  "kernels": [
+   "memra_mla_kpool_score_tiled_kernel",
+   "memra_mla_kpool_score_tc_kernel"
+  ],
+  "arch": "100a",
+  "cause_class": "tensor-core"
+ },
+ {
+  "id": "dsa-warp-online-f32",
+  "kind": "negative-rounding",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "053730e12e81f23dcc0d9a86e99518bbf12567e4",
+  "commit_after": "053730e12e81f23dcc0d9a86e99518bbf12567e4",
+  "cu_files": [
+   "crates/memra-engine/cu/mla_attn.cu"
+  ],
+  "kernels": [
+   "memra_mla_attn_gathered_kernel",
+   "memra_mla_dsa_attn_warp_kernel"
+  ],
+  "arch": "100a",
+  "cause_class": "reduction-order"
+ },
+ {
+  "id": "qwen-fa2-prefill",
+  "kind": "negative-rounding",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "c7c27cd5fc23cd964db9185e76863b965b5d3f15",
+  "commit_after": "c7c27cd5fc23cd964db9185e76863b965b5d3f15",
+  "cu_files": [
+   "crates/memra-engine/cu/flash_attn.cu"
+  ],
+  "kernels": [
+   "fa_prefill_qw_db",
+   "fa_prefill_qw_fa2"
+  ],
+  "arch": "120a",
+  "cause_class": "reduction-order"
+ },
+ {
+  "id": "spec-penalty-keskar-rn",
+  "kind": "negative-rounding",
+  "mode": "base-vs-head",
+  "commit_before": "a69dfc9b25deccaa24f08593f524bc4b60c114d6",
+  "commit_after": "3a3ce1a2886f75d6b4c9007147ffef193a515c87",
+  "cu_files": [
+   "crates/memra-engine/cu/spec_sample.cu"
+  ],
+  "kernels": [
+   "penalize_logits_sparse_rows_f32",
+   "penalize_logits_f32",
+   "penalize_logits_rows_f32",
+   "penalize_logits_rows_inc_f32"
+  ],
+  "arch": "120a",
+  "cause_class": "fma-contraction"
+ },
+ {
+  "id": "rms-block-1024-launch",
+  "kind": "negative-rounding",
+  "mode": "base-vs-head",
+  "commit_before": "b02b135fea838103be9028061ddf39c0282410ab",
+  "commit_after": "8ca766c15d5b42c51863be4d148bac7366771c34",
+  "cu_files": [
+   "crates/memra-engine/cu/kernels.cu"
+  ],
+  "kernels": [
+   "rms_norm_f32"
+  ],
+  "arch": "100a",
+  "cause_class": "reduction-order"
+ },
+ {
+  "id": "hc-pre-zq8-v1-fmad",
+  "kind": "negative-incident",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "ae6959969b37dbb93d4a0e29eb84ce09df13d140",
+  "commit_after": "ae6959969b37dbb93d4a0e29eb84ce09df13d140",
+  "cu_files": [
+   "crates/memra-engine/cu/kernels.cu",
+   "crates/memra-engine/cu/dsv4_gpu.cu"
+  ],
+  "kernels": [
+   "rms_norm_zq8_f32_v2",
+   "dsv4_hc_pre_zq8_kernel"
+  ],
+  "arch": "100a",
+  "cause_class": "build-flag"
+ },
+ {
+  "id": "tp-ar-hcpost-fma",
+  "kind": "negative-incident",
+  "mode": "base-vs-head",
+  "commit_before": "ca83f876fac387fa72ac93bb6dd9b025d4505bd0",
+  "commit_after": "6bcb01f69a6d724bcb62ad8225ec20f474cf1016",
+  "cu_files": [
+   "crates/memra-engine/cu/tp_ar.cu"
+  ],
+  "kernels": [
+   "memra_tp_ar_1stage_hcpost_kernel"
+  ],
+  "arch": "100a",
+  "cause_class": "fma-contraction"
+ },
+ {
+  "id": "q8-fuse-blockdim",
+  "kind": "negative-incident",
+  "mode": "kernel-vs-kernel",
+  "commit_before": "1bdd38275966d47bee32a2699e7f592fe4d1c2d5",
+  "commit_after": "1bdd38275966d47bee32a2699e7f592fe4d1c2d5",
+  "cu_files": [
+   "crates/memra-engine/cu/kernels.cu"
+  ],
+  "kernels": [
+   "rms_norm_f32",
+   "rms_norm_zq8_f32"
+  ],
+  "arch": "120a",
+  "cause_class": "reduction-order"
+ },
+ {
+  "id": "moe-split-plane-pinned-core",
+  "kind": "positive-refactor",
+  "mode": "base-vs-head",
+  "commit_before": "ad25aeb9ac6af22c38729250d1161fcd10ebdb7a",
+  "commit_after": "f6daafca45a327660c80fbd8137f7482065c5047",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "moe_gate_up_preclamp8_q8_w4",
+   "moe_down8_fma_q8_w4"
+  ],
+  "arch": "120a",
+  "cause_class": "none"
+ },
+ {
+  "id": "kda6-v2-y5-missing-write",
+  "kind": "negative-incident",
+  "mode": "base-vs-head",
+  "commit_before": "a5b9174d0a998c16f85b44029908ee625eb7f544",
+  "commit_after": "1cd6a3b25cbaba5b629bb7c701c0f3132337eaa5",
+  "cu_files": [
+   "crates/memra-engine/cu/qmatvec.cu"
+  ],
+  "kernels": [
+   "qmatvec_kda6_bf16f32_v2"
+  ],
+  "arch": "100a",
+  "cause_class": "semantic"
+ }
+]
