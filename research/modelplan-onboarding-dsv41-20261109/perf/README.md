@@ -1457,9 +1457,26 @@ that span, and lists over the cell what the load should have removed; with the r
 Checked on GB10 (121a, `receipts/emb-gates-gb10`; GB10 writes the 120a bytes): fmt; the kernel
 gate 151 checks, 0 failed, the two new ones byte-equal; the layer gate 161 checks, 0 failed, its
 111 saved tensors equal to k3's; teacher-forced runs through `Runner::forward` (`dsv41-run --cases`: capital, code_pal and a 3,761-token prompt over the first 4 layers, Engram layer 1 inside) write every file byte-equal to the transport fix alone's on one rank and on two ranks of the card (18 of 18 each), one rank's equal to two ranks'; the tp gate at 2 and 4 ranks 480 and 916 checks, 0 failed. `dsv41-tpbench` does not fit on GB10 with the checkpoint in its page cache (1.3 to 2.2 GiB free against a 5.2 GiB reserve, both builds), so the pool's reserve at the load runs only in the four-card window. On the 120a target: the release build, fmt and
-clippy `--all-targets -D warnings`. Owed: the four-card prefill A B B A against the transport fix
-alone and the traced prefill of the host's serial part before the first launch, in the next
-four-card window.
+clippy `--all-targets -D warnings`.
+
+Measured on the pair (2026-11-12, cards 2 and 3, 20 layers, `receipts/prefillab-emb-pair23`): the
+transport fix alone (A, kpc) against this build on top of it (B), A B B A, three prompts a run in
+the order 4,096, 32,768, 131,072 and back, first-token time:
+
+| tokens | every round, median [min, max] ms (n 6 an arm) | rounds 1 and 2, median [min, max] (n 4) | B / A, every round / rounds 1-2 |
+|---|---|---|---|
+| 4,096 | 487.4 [471.9, 569.4] -> 480.7 [452.1, 485.6] | 487.4 [485.8, 491.5] -> 482.7 [479.7, 485.6] | 0.986 / 0.990 |
+| 32,768 | 3,298.3 [3,287.6, 3,531.3] -> 3,226.0 [3,175.1, 3,248.0] | 3,298.3 [3,295.3, 3,299.0] -> 3,235.7 [3,222.2, 3,248.0] | 0.978 / 0.981 |
+| 131,072 | 13,682.4 [13,564.3, 13,731.1] -> 13,348.1 [13,224.3, 13,481.3] | 13,686.0 [13,564.3, 13,731.1] -> 13,400.9 [13,310.8, 13,481.3] | 0.976 / 0.979 |
+
+The first round of the first run is where the load's reserve shows most (A 569.4 ms at 4,096 tokens,
+the pool growing; B's first round is its fastest); from the second round on the ranges are apart
+at every length. No run flagged for a slowdown, no page-cache drop inside a run. The traced prefill
+(`receipts/pre-trace-emb-pair23`, `serial.md`): the host's serial part before a prompt's first
+launch is 0.76 ms at 4,096 tokens and 6.20 ms at 32,768, nearly all of it Engram's hashing (0.69
+and 6.14 ms); no pinned allocation and no pool allocation of 1 ms or more inside a cell. The
+53-tape order gate puts this build in k3's byte family (d = 0). Owed: the same A B B A on four
+cards.
 
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
