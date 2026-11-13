@@ -1,0 +1,36 @@
+k18-wide9: jobs 2 pass 2
+
+rows-time (one-token ms median | rows 2..8 repeat ms median)
+batch-time (batched ms 1/2/4/8 | each alone)
+  distinct16 k18-wide9      4.64 5.95 8.55 13.44 31.09 | 4.80 10.04 20.18 40.40 81.37 | experts/layer 46.1
+    argmax 4.94/5.92/8.38/13.28/30.11 fwd 3.91/4.74/6.90/11.44/26.86 chunk8 nan/nan/nan/nan/26.30
+    launch_ms_16_two_steps: total 1042 (62.96 ms) per layer [[88, 6.18], [96, 6.24], [204, 8.08], [88, 5.76], [88, 5.78], [88, 5.69], [88, 5.61], [88, 5.5], [204, 7.99], [10, 6.12]]
+    launch_ms_1_two_steps: total 874 (14.24 ms) per layer [[88, 1.24], [96, 1.66], [120, 1.58], [88, 1.22], [88, 1.23], [88, 1.23], [88, 1.23], [88, 1.23], [120, 1.58], [10, 2.05]]
+    launches_16_two_steps: total 1042 (0.0 ms) per layer [[88, 0.0], [96, 0.0], [204, 0.0], [88, 0.0], [88, 0.0], [88, 0.0], [88, 0.0], [88, 0.0], [204, 0.0], [10, 0.0]]
+    launches_1_two_steps: total 874 (0.0 ms) per layer [[88, 0.0], [96, 0.0], [120, 0.0], [88, 0.0], [88, 0.0], [88, 0.0], [88, 0.0], [88, 0.0], [120, 0.0], [10, 0.0]]
+    per kernel, two steps: launches and ms, launch_ms_1_two_steps -> launch_ms_16_two_steps
+      gemm_f8_tiles                  54    2.06 ->   54   27.89  (+25.83)
+      memra_v41_gemm_ffma            28    2.55 ->   28   13.34  (+10.79)
+      memra_v41_gemm_f8             132    3.05 ->  132    9.61  (+6.56)
+      memra_v41_gemm_bf16            24    1.03 ->   26    3.00  (+1.97)
+      hc_mixes                       36    0.64 ->   36    2.32  (+1.68)
+      memra_v41_act_quant           186    1.17 ->  186    1.28  (+0.11)
+      memra_v41_rmsnorm              78    0.69 ->   82    0.72  (+0.03)
+      memra_v41_sparse_attn_keys     18    0.32 ->   18    0.65  (+0.33)
+      topk                            4    0.03 ->   64    0.45  (+0.42)
+      memra_v41_rope                 62    0.43 ->   66    0.45  (+0.02)
+      index_score                     4    0.03 ->   64    0.44  (+0.41)
+      swiglu                         36    0.29 ->   36    0.36  (+0.07)
+      hc_post                        36    0.31 ->   36    0.32  (+0.01)
+      comp_pool2                      2    0.02 ->   32    0.28  (+0.26)
+      put_rows                       30    0.20 ->   34    0.24  (+0.04)
+      hc_pre                         38    0.24 ->   38    0.24  (+0.00)
+      moe_plan                       18    0.22 ->   18    0.24  (+0.02)
+      route                          18    0.21 ->   18    0.22  (+0.01)
+      moe_combine                    18    0.18 ->   18    0.20  (+0.02)
+      attn_idx_batch                 18    0.13 ->   18    0.15  (+0.02)
+      engram_dequant                  2    0.16 ->    2    0.15  (+-0.01)
+      memra_v41_fp4_qdq               8    0.08 ->   12    0.12  (+0.04)
+      argmax_rows                     2    0.13 ->    2    0.11  (+-0.02)
+      (host between layers)          20    0.05 ->   20    0.11  (+0.06)
+      engram_gate                     2    0.04 ->    2    0.04  (+0.00)

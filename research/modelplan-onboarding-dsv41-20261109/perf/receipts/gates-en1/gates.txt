@@ -1,0 +1,16 @@
+kernels rc 0 138 checks, 0 failed
+layer rc 0 161 checks, 0 failed
+layer saved tensors: 111 compared with the reference set, 0 differ
+tp 0,0 peer-pull rc 0 358 checks, 0 failed
+tp 0,0 default rc 0 358 checks, 0 failed
+tp 0,0 device-push rc 0 360 checks, 0 failed
+PASS stress/push_gather: 20000 gathers on devices [0, 0]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 0]: 75265 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+tp 0,0,0,0 peer-pull rc 0 704 checks, 0 failed
+tp 0,0,0,0 default rc 0 704 checks, 0 failed
+tp 0,0,0,0 device-push rc 0 706 checks, 0 failed
+PASS stress/push_gather: 20000 gathers on devices [0, 0, 0, 0]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 0, 0, 0]: 9563075 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+decode straddle126 rc 0 240 checks, 0 failed
+decode gsm rc 0 240 checks, 0 failed
+decode capital rc 0 60 checks, 0 failed

@@ -1,0 +1,36 @@
+08:37:37 n4a: device-push, plan n4a, devices 0,1,2,3, 40 layers 
+[dsv41-tp] ranks=4 devices=[0, 1, 2, 3] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+[dsv41-resident] device 0 ranks [0]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.47 -> 24.18 GiB of 95.06 GiB; reserve 8.00 GiB; load 11.8s
+[dsv41-resident] device 1 ranks [1]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.47 -> 24.18 GiB of 95.06 GiB; reserve 8.00 GiB; load 11.8s
+[dsv41-resident] device 2 ranks [2]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.47 -> 24.18 GiB of 95.06 GiB; reserve 8.00 GiB; load 11.8s
+[dsv41-resident] device 3 ranks [3]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.47 -> 24.18 GiB of 95.06 GiB; reserve 8.00 GiB; load 11.8s
+dsv41-spec: 6 job(s), 40 layers + 0 draft stages, 4 rank(s) on devices [0, 1, 2, 3], up in 13.2s
+PASS batch-rows chat8: 8 sequences, rows 503, logits equal 503, taps equal 503, device argmax equal 503, calls by width [0, 17, 85, 3, 8, 12, 10, 5, 14], first_bad None
+PASS batch-rows nine: 9 sequences, rows 1242, logits equal 1242, taps equal 1242, device argmax equal 1242, calls by width [0, 137, 0, 0, 0, 0, 0, 0, 137], first_bad None
+PASS batch-time distinct8 argmax   ms at [1, 2, 4, 8]: 12.48 / 14.13 / 17.29 / 23.58
+PASS batch-time distinct8 fwd      ms at [1, 2, 4, 8]: 12.19 / 13.86 / 16.96 / 23.07
+PASS batch-time distinct8 batched  ms at [1, 2, 4, 8]: 12.50 / 14.23 / 17.44 / 23.82
+PASS batch-time distinct8 alone    ms at [1, 2, 4, 8]: 12.35 / 23.93 / 47.09 / 93.43
+     distinct experts a layer at the widest: 29.4
+PASS batch-rows window: 4 sequences, rows 1384, logits equal 1384, taps equal 1384, device argmax equal 1384, calls by width [0, 0, 0, 0, 345, 0, 0, 0, 0], first_bad None
+PASS batch-rows mixed: 5 sequences, rows 701, logits equal 701, taps equal 701, device argmax equal 701, calls by width [0, 191, 17, 96, 22, 19, 0, 0, 0], first_bad None
+PASS batch-time distinct16 argmax   ms at [1, 2, 4, 8, 16]: 12.47 / 13.98 / 17.35 / 23.12 / 72.57
+PASS batch-time distinct16 fwd      ms at [1, 2, 4, 8, 16]: 12.22 / 13.70 / 17.04 / 22.59 / 71.75
+PASS batch-time distinct16 batched  ms at [1, 2, 4, 8, 16]: 12.52 / 14.10 / 17.51 / 23.35 / 73.27
+PASS batch-time distinct16 alone    ms at [1, 2, 4, 8, 16]: 12.37 / 23.89 / 47.14 / 93.28 / 186.09
+PASS batch-time distinct16 chunk8   ms at [1, 2, 4, 8, 16]: - / - / - / - / 46.94
+     distinct experts a layer at the widest: 47.4
+SPEC-DONE jobs 6 failed 0
+08:42:05 n4a: binary rc 0, jobs rc 0, 268 s since the start
+08:42:05 n4b: peer-pull, plan n4b, devices 0,1,2,3, 40 layers --batch-max 16
+[dsv41-tp] ranks=4 devices=[0, 1, 2, 3] transport=peer-pull (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+[dsv41-resident] device 0 ranks [0]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.48 -> 24.19 GiB of 95.06 GiB; reserve 8.00 GiB; load 11.6s
+[dsv41-resident] device 1 ranks [1]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.48 -> 24.19 GiB of 95.06 GiB; reserve 8.00 GiB; load 11.6s
+[dsv41-resident] device 2 ranks [2]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.48 -> 24.19 GiB of 95.06 GiB; reserve 8.00 GiB; load 11.6s
+[dsv41-resident] device 3 ranks [3]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.48 -> 24.19 GiB of 95.06 GiB; reserve 8.00 GiB; load 11.6s
+dsv41-spec: 2 job(s), 40 layers + 0 draft stages, 4 rank(s) on devices [0, 1, 2, 3], up in 12.5s
+PASS batch-rows chat8: 8 sequences, rows 503, logits equal 503, taps equal 503, device argmax equal 503, calls by width [0, 17, 85, 3, 8, 12, 10, 5, 14, 0, 0, 0, 0, 0, 0, 0, 0], first_bad None
+PASS batch-rows wide16: 16 sequences, rows 480, logits equal 480, taps equal 480, device argmax equal 480, calls by width [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 29], first_bad None
+SPEC-DONE jobs 2 failed 0
+08:42:59 n4b: binary rc 0, jobs rc 0, 322 s since the start
+N4-DONE k15 green, 322 s; tables: $LANE/spec/logs/k15-n4a-tables.txt

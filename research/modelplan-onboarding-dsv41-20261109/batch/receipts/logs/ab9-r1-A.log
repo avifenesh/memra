@@ -1,0 +1,18 @@
+04:24:08 ab9-r1: lease on GPU1 (GPU-<uuid>), receipt $LANE/leases/spec-ab9-r1-20261110T042408
+server ready after 7 s
+[dsv41-serve] v41: MEMRA_DSV41_TRUNK_LAYERS: 9 of the 40 trunk layers run. The answers are NOT the checkpoint's; this is a rehearsal of the route's memory and serving loop
+[dsv41-serve] v41: card 0 ranks [0]: weights 63.63 GiB resident (63.63 GiB a rank) in 4.5s, 30.81 GiB of 95.06 GiB left for requests (30.81 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.0s; one-token call 5.2 ms
+[dsv41-serve] v41: 1 rank(s) on devices [0]; routed experts on the cards; resident weights [68321157272] bytes per rank; ceiling [33086233956] bytes; expert cache [] slots of 18800640 bytes (floor 0 slots, all 0); max_seq 8192; 8 session(s); prefill slices of 8192 rows
+[dsv41-serve] v41: capacity: the longest session with the route idle is 8192 positions (max_seq 8192); at once: 4096 sessions of 1,536 positions (1,024-token prompts), 4096 of 4,608 (4,096-token prompts), 2186 of 32,768, 2327 of 131,072; MEMRA_MAX_SESSIONS 8
+[dsv41-serve] v41: up in 4.8s
+04:28:43 label ab9/r1-A engine memra model v41 seed 1128877002 plan ['decode_c1', 'conc8']
+04:28:49 decode_c1 0 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.4162, 'decode_tok_s': 172.09, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+04:28:53 decode_c1 1 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.3678, 'decode_tok_s': 171.48, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+04:28:56 decode_c1 2 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.3584, 'decode_tok_s': 170.93, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+04:29:48 conc8 0 {'wall_s': 26.128, 'completion_tokens': 4096, 'agg_out_tok_s': 156.77, 'n_err': 0} 20.305 None None
+04:30:14 conc8 1 {'wall_s': 26.226, 'completion_tokens': 4096, 'agg_out_tok_s': 156.18, 'n_err': 0} 20.145 None None
+04:30:40 conc8 2 {'wall_s': 26.367, 'completion_tokens': 4096, 'agg_out_tok_s': 155.35, 'n_err': 0} 20.055 None None
+04:30:40 DONE ab9/r1-A elapsed 118 s quality pass: None
+serve_bench ab9/r1-A rc 0
+04:30:43 ab9-r1: lease ended rc 0

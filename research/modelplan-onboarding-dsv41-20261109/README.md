@@ -371,3 +371,32 @@ gates, placements, normalized config and tokenizer contract (the probe passes th
 control-string and special-token checks), and the lock differs from step 2b's only by the step-2
 lines; the 0731 artifact `--against deepseek_v4_dspark` writes every receipt byte for byte as
 step 2b (lock `000ce525`, the same as step 1).
+
+# Step 3 (GPU): single-card kernels and checkpoint layers (2026-11-09)
+
+Single-card kernels for every V4.1 operation and real-checkpoint layers on one card, then (step 4) the whole trunk on one card as the native checkpoint runner, CheckpointParity on a pack-declared probe, and long-context gates to 257k tokens: `gpu/README.md`.
+
+# Step 5 (GPU, N ranks): the TP/EP partition, gated at N=2 (2026-11-09)
+
+The V4.1 layer split across N ranks (heads, output groups, `wo_b` rows, routed experts, head rows;
+gathers only, so the N-rank program writes the one-card bytes): byte-identical to the one-card
+`block_forward` on six real layers at prefill and decode on two cards, the whole trunk on two cards
+gives the one-card logits bit for bit up to 128,745 tokens, the indexer splits its query rows at
+prefill (measured against a head split), and the list of what the 4-card stage adds: `tp/README.md`.
+
+# Step 6 (GPU): the decode loop, gated against the vendor's generations (2026-11-09)
+
+A prefill, then one token per call with every sequence's window rings, compressor groups,
+compressed KV, index keys and token history carried as the vendor carries them (`dsv41_gpu::decode`,
+`dsv41-run --force / --gen`), on one rank or N. Teacher-forced with the vendor's greedy tokens it sits
+inside the vendor program's own decode floor on 711 steps of 17 tapes (16 to 128,745 tokens of
+context); greedy generation, the identity gates (layer-by-layer replay against token-by-token
+generation, N=2 against N=1) and what serving still needs: `decode/README.md`.
+
+# Step 7 (GPU): the serving route on one card (2026-11-09)
+
+memra-server's deepseek-v4.1 route over the decode loop, every layer's own weights on the card and the
+routed experts in pinned host memory behind a device LRU cache that writes the streamed runner's bytes;
+CheckpointParity again on that residency, `memra model verify serve` passing, served greedy answers
+equal to the native runner's, batched equal to solo, the decode rate, and the support record that makes
+the pack NativeQualified on this topology: `serve/README.md`.

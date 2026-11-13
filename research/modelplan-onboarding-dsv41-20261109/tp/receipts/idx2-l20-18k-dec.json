@@ -1,0 +1,9 @@
+{
+ "gate": "idx", "capture": "captures-v2/needle1200", "layer": 20, "rows": 1, "first_row": 18342, "keys": 18343, "ranks": 2, "devices": [0, 1], "transport": "peer-pull", "slice": 2048, "ms": {"replicated": 0.206, "rows_split": 0.222, "head_split": 0.245}, "head_split_gather_ms": 0.015, "bytes": {"rows_split": 2048, "head_split": 146744}, "head_split_same_rows": 1, "head_split_mean_jaccard": 1.000000,
+ "checks": [
+  {"name": "layer20/index/rows_split_selection", "pass": true, "rule": "row split = replicated indexer, byte for byte", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "9391616 selection words"},
+  {"name": "layer20/index/head_split_selection", "pass": true, "rule": "reported: the head split adds the head sum in another order, so its bf16 score and top-k can move", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "1/1 rows with the identical set, mean Jaccard 1.000000"},
+  {"name": "layer20/index/time", "pass": true, "rule": "reported: median of the timed runs (first run is warm-up), host wall time with device syncs", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "replicated 0.21 ms, rows split 0.22 ms (2048 B gathered), head split 0.25 ms (146744 B gathered in 0.02 ms, 9.7 GB/s), 1 rows, 18343 keys, 2 ranks, peer-pull"}
+ ],
+ "total": 3, "failed": 0
+}

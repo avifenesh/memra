@@ -1,0 +1,43 @@
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) gathers-only=true
+dsv41-run: 4 sequence(s), longest prompt 128745, 40 layers, chunk 8192, 1 rank(s) on devices [0], 11 resident, transport host-canonical
+dsv41-run: pass 0: 128 calls in 247.1s (weights 23.2s, 40 layer loads)
+dsv41-run: decode32k_he_summary: replayed 61 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: decode64k_en_continue: replayed 61 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: needle4800: replayed 3 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: needle8400: replayed 3 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: decode forward 1: 2 sequence(s), 21.4s (weights 21.1s)
+dsv41-run: decode forward 2: 2 sequence(s), 14.4s (weights 14.1s)
+dsv41-run: decode forward 3: 2 sequence(s), 16.1s (weights 15.8s)
+dsv41-run: decode forward 4: 2 sequence(s), 14.6s (weights 14.2s)
+dsv41-run: decode forward 5: 2 sequence(s), 15.7s (weights 15.3s)
+dsv41-run: decode forward 6: 2 sequence(s), 14.4s (weights 14.1s)
+dsv41-run: decode forward 7: 2 sequence(s), 15.6s (weights 15.3s)
+dsv41-run: decode forward 8: 2 sequence(s), 14.1s (weights 13.8s)
+dsv41-run: decode forward 9: 2 sequence(s), 15.2s (weights 14.9s)
+dsv41-run: decode forward 10: 2 sequence(s), 13.5s (weights 13.2s)
+dsv41-run: decode forward 11: 2 sequence(s), 13.5s (weights 13.2s)
+dsv41-run: decode forward 12: 2 sequence(s), 14.0s (weights 13.6s)
+dsv41-run: decode forward 13: 2 sequence(s), 13.9s (weights 13.6s)
+dsv41-run: decode forward 14: 2 sequence(s), 11.9s (weights 11.6s)
+dsv41-run: decode forward 15: 2 sequence(s), 11.5s (weights 11.2s)
+dsv41-run: decode forward 16: 1 sequence(s), 11.0s (weights 10.8s)
+dsv41-run: decode forward 17: 1 sequence(s), 11.2s (weights 11.0s)
+dsv41-run: decode forward 18: 1 sequence(s), 11.7s (weights 11.6s)
+dsv41-run: decode forward 19: 1 sequence(s), 11.8s (weights 11.6s)
+dsv41-run: decode forward 20: 1 sequence(s), 12.0s (weights 11.8s)
+dsv41-run: decode forward 21: 1 sequence(s), 11.8s (weights 11.6s)
+dsv41-run: decode forward 22: 1 sequence(s), 11.9s (weights 11.7s)
+dsv41-run: decode forward 23: 1 sequence(s), 12.2s (weights 12.0s)
+dsv41-run: decode forward 24: 1 sequence(s), 12.0s (weights 11.8s)
+dsv41-run: decode forward 25: 1 sequence(s), 11.9s (weights 11.7s)
+dsv41-run: decode forward 26: 1 sequence(s), 11.5s (weights 11.4s)
+dsv41-run: decode forward 27: 1 sequence(s), 11.7s (weights 11.5s)
+dsv41-run: decode forward 28: 1 sequence(s), 11.8s (weights 11.7s)
+dsv41-run: decode forward 29: 1 sequence(s), 11.6s (weights 11.4s)
+dsv41-run: decode forward 30: 1 sequence(s), 11.6s (weights 11.5s)
+dsv41-run: stopping after 30 decode forwards; rerun with the same --out to resume
+decode32k_he_summary: greedy, 91 steps
+decode64k_en_continue: greedy, 76 steps, done
+needle4800: greedy, 3 steps, done
+needle8400: greedy, 3 steps, done
+dsv41-run: 31 forwards, 173 calls, 921 layer loads (411.3s), blocks 226.7s, total 643.5s

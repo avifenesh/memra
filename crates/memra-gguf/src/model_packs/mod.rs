@@ -94,6 +94,16 @@ pub struct CheckpointParityGate {
     pub require_argmax: bool,
 }
 
+/// A checkpoint-parity gate for one oracle numeric class. A pack whose checkpoint runs under
+/// more than one numeric program (a correctly rounded CPU reference and a hardware-primitive
+/// GPU route, say) names each class's band here; the oracle's `numeric_class` picks it, and a
+/// class the pack does not name falls back to `checkpoint_parity`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClassParityGate {
+    pub numeric_class: &'static str,
+    pub gate: CheckpointParityGate,
+}
+
 /// Who owns the output projection when the checkpoint carries no `output.weight` /
 /// `lm_head.weight` (memra#541). The loaders used to fall back to the token embedding for every
 /// family; now a family says so explicitly, and a checkpoint that omits the head under a
@@ -133,6 +143,12 @@ pub struct ModelPack {
     pub support: Option<NativeSupport>,
     pub gates: &'static [Gate],
     pub checkpoint_parity: Option<CheckpointParityGate>,
+    /// Per-numeric-class bands that replace `checkpoint_parity` for an oracle of that class.
+    pub checkpoint_parity_classes: &'static [ClassParityGate],
+    /// The prompt `memra model verify checkpoint` runs both sides on. `None` keeps the default
+    /// probe, tokens 1,2,3,4; a pack declares its own when that probe cannot tell programs apart
+    /// on its family (the declaration and its reason belong next to the pack's band).
+    pub checkpoint_probe: Option<&'static [u32]>,
     matches_config: fn(&ModelConfig) -> bool,
     plan_builder: fn(&ModelConfig) -> Result<ModelPlan, PlanCompileError>,
     tensor_schema: fn(
@@ -145,6 +161,21 @@ pub struct ModelPack {
 }
 
 impl ModelPack {
+    /// The prompt checkpoint parity runs on: the pack's declared probe, else tokens 1,2,3,4.
+    pub fn checkpoint_probe_tokens(&self) -> &'static [u32] {
+        self.checkpoint_probe.unwrap_or(&[1, 2, 3, 4])
+    }
+
+    /// The checkpoint-parity band for an oracle of `numeric_class`: the class's own gate when
+    /// the pack names one, else the pack's default gate.
+    pub fn checkpoint_parity_for(&self, numeric_class: &str) -> Option<CheckpointParityGate> {
+        self.checkpoint_parity_classes
+            .iter()
+            .find(|c| c.numeric_class == numeric_class)
+            .map(|c| c.gate)
+            .or(self.checkpoint_parity)
+    }
+
     pub fn matches_config(&self, config: &ModelConfig) -> bool {
         (self.matches_config)(config)
     }
@@ -321,7 +352,17 @@ mod tests {
                     )),
                 }
                 assert!(pack.checkpoint_parity.is_none());
+                assert!(pack.checkpoint_parity_classes.is_empty());
+                assert!(pack.checkpoint_probe.is_none());
             } else {
+                for c in pack.checkpoint_parity_classes {
+                    assert!(c.gate.max_abs >= 0.0 && c.gate.max_rel >= 0.0);
+                    assert!(
+                        c.gate.max_abs > 0.0 || c.gate.max_rel > 0.0,
+                        "class {} needs a positive bound",
+                        c.numeric_class
+                    );
+                }
                 let gate = pack
                     .checkpoint_parity
                     .expect("native reference packs require a checkpoint parity gate");
@@ -332,6 +373,28 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn checkpoint_class_band_and_probe_fall_back_to_the_pack_defaults() {
+        let v41 = by_alias("deepseek_v41").unwrap();
+        let gpu = v41
+            .checkpoint_parity_for("deepseek-v41-source-program")
+            .unwrap();
+        assert!(gpu.require_argmax && gpu.max_abs > v41.checkpoint_parity.unwrap().max_abs);
+        // an unnamed class keeps the pack's default band
+        assert_eq!(
+            v41.checkpoint_parity_for("deepseek-v41-bf16-correctly-rounded"),
+            v41.checkpoint_parity
+        );
+        assert_eq!(v41.checkpoint_probe_tokens().len(), 16);
+        // a pack that declares nothing keeps today's probe and band
+        let qwen = by_alias("qwen3").unwrap();
+        assert_eq!(qwen.checkpoint_probe_tokens(), &[1, 2, 3, 4]);
+        assert_eq!(
+            qwen.checkpoint_parity_for("source-weights-float32-accumulation"),
+            qwen.checkpoint_parity
+        );
     }
 
     #[test]

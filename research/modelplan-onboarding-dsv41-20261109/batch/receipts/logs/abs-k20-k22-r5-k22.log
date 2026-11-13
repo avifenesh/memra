@@ -1,0 +1,19 @@
+12:42:56 abs-r5: lease on GPU1 (GPU-<uuid>), receipt $LANE/leases/spec-abs-r5-20261110T124256; GPU2  50, 30 %, 0x0000000000000400, 137255157 us, 0 us
+server ready after 8 s
+[dsv41-serve] v41: MEMRA_DSV41_TRUNK_LAYERS: 9 of the 40 trunk layers run. The answers are NOT the checkpoint's; this is a rehearsal of the route's memory and serving loop
+[dsv41-serve] v41: card 0 ranks [0]: weights 63.63 GiB resident (63.63 GiB a rank) in 6.9s, 30.81 GiB of 95.06 GiB left for requests (30.81 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.0s; one-token call 4.7 ms
+[dsv41-serve] v41: 1 rank(s) on devices [0]; routed experts on the cards; resident weights [68321157272] bytes per rank; ceiling [33086233956] bytes; expert cache [] slots of 18800640 bytes (floor 0 slots, all 0); max_seq 8192; 8 session(s); prefill slices of 8192 rows
+[dsv41-serve] v41: capacity: the longest session with the route idle is 8192 positions (max_seq 8192); at once: 4096 sessions of 1,536 positions (1,024-token prompts), 4080 of 4,608 (4,096-token prompts), 2186 of 32,768, 2327 of 131,072; MEMRA_MAX_SESSIONS 8
+[dsv41-serve] v41: up in 7.2s
+12:43:04 label abs-k20-k22/r5-k22 engine memra model v41 seed 1158538596 plan ['decode_c1', 'conc8']
+12:43:10 decode_c1 0 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2287, 'decode_tok_s': 199.12, 'tok_per_chunk': 1.002, 'spec_accept_length': None} None 
+12:43:13 decode_c1 1 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2249, 'decode_tok_s': 198.62, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+12:43:15 decode_c1 2 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2176, 'decode_tok_s': 198.79, 'tok_per_chunk': 1.002, 'spec_accept_length': None} None 
+12:43:30 conc8 0 {'wall_s': 7.17, 'completion_tokens': 4096, 'agg_out_tok_s': 571.25, 'n_err': 0} 78.675 None None
+12:43:37 conc8 1 {'wall_s': 7.322, 'completion_tokens': 4096, 'agg_out_tok_s': 559.44, 'n_err': 0} 76.91 None None
+12:43:44 conc8 2 {'wall_s': 7.255, 'completion_tokens': 4096, 'agg_out_tok_s': 564.56, 'n_err': 0} 77.775 None None
+12:43:44 DONE abs-k20-k22/r5-k22 elapsed 40 s quality pass: None
+serve_bench abs-k20-k22/r5-k22 rc 0
+12:43:46 abs-r5: page-cache drops before: 12:40:48 drop_caches: 3;12:41:18 drop_caches: 3; after: 12:40:48 drop_caches: 3;12:41:18 drop_caches: 3; 
+12:43:46 abs-r5: lease ended rc 0; GPU2  54, 30 %, 0x0000000000000400, 137255157 us, 0 us

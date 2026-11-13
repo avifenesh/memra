@@ -1,0 +1,16 @@
+dsv41-tpbench: 2 cells x 1 rounds on 4 rank(s) [0, 1, 2, 3], 40/40 layers resident, chunk 8192, max_pos 32785
+  plan prefill-4096: workspace 1.69 GiB + state 0.02 GiB a rank
+  plan prefill-32768: workspace 7.24 GiB + state 0.10 GiB a rank
+  carried state: 3205 B a position a rank (+5.0 MiB of window rings a sequence); reserve 7.34 GiB a device-rank
+[dsv41-tp] ranks=4 devices=[0, 1, 2, 3] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+[dsv41-resident] device 0 ranks [0]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.46 -> 24.17 GiB of 95.06 GiB; reserve 7.34 GiB; load 11.6s
+[dsv41-resident] device 1 ranks [1]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.46 -> 24.17 GiB of 95.06 GiB; reserve 7.34 GiB; load 11.6s
+[dsv41-resident] device 2 ranks [2]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.46 -> 24.17 GiB of 95.06 GiB; reserve 7.34 GiB; load 11.6s
+[dsv41-resident] device 3 ranks [3]: 40 of 40 layers + head resident, 70.29 GiB (70.29 GiB a rank); free 94.46 -> 24.17 GiB of 95.06 GiB; reserve 7.34 GiB; load 11.6s
+  capacity at 4096 positions: 1313 sequences a rank after one prefill's 1.69 GiB workspace (0.017 GiB state each, 24.17 GiB free a rank)
+  capacity at 32768 positions: 165 sequences a rank after one prefill's 7.24 GiB workspace (0.103 GiB state each, 24.17 GiB free a rank)
+  capacity at 131072 positions: 26 sequences a rank after one prefill's 13.53 GiB workspace (0.396 GiB state each, 24.17 GiB free a rank)
+  capacity at 262144 positions: 0 sequences a rank after one prefill's 26.58 GiB workspace (0.786 GiB state each, 24.17 GiB free a rank)
+dsv41-tpbench: {"argmax":48,"cell":"prefill-4096","comm":{"bytes":34961620992,"collectives":248,"copies":2976,"timed":false,"timed_s":0.0},"end_unix":1794292133.7057798,"forward_s":5.8456783770000005,"forwards":1,"kind":"prefill","layers_streamed":0,"peak_used":[76231048656,76231048656,76231048656,76231048656],"prefill_tok_s":548.4839832802563,"prompt_len":4096,"readback_wait_s_per_rank":1.6219739925,"round":0,"start_unix":1794292126.2378783,"stream_load_s":2.0720000000000002e-6,"ttft_s":7.467857084}
+dsv41-tpbench: {"argmax":646,"cell":"prefill-32768","comm":{"bytes":279692967936,"collectives":488,"copies":5856,"timed":false,"timed_s":0.0},"end_unix":1794292192.060313,"forward_s":51.228482395,"forwards":1,"kind":"prefill","layers_streamed":0,"peak_used":[80899026640,80899026640,80899026640,80899026640],"prefill_tok_s":561.533940624598,"prompt_len":32768,"readback_wait_s_per_rank":7.11042173625,"round":0,"start_unix":1794292133.7058158,"stream_load_s":2.5259999999999962e-6,"ttft_s":58.354442411}
+dsv41-tpbench: done in 78.4s

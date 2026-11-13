@@ -1,0 +1,125 @@
+{
+ "label": "ab-k18/r5-A",
+ "engine": "memra",
+ "url": "http://127.0.0.1:18361",
+ "seed": 1152646636,
+ "workloads_sha256": "995eaba4a656af90b52129b98939b585dcad79edbc06d2b8e3047b8fa12ae291",
+ "elapsed_s": 134.8,
+ "workloads": {
+  "decode_c1": {
+   "kind": "single",
+   "n_ok": 3,
+   "n_err": 0,
+   "ttft_s": {
+    "n": 3,
+    "median": 4.6514,
+    "min": 3.4929,
+    "max": 6.504
+   },
+   "decode_tok_s": {
+    "n": 3,
+    "median": 158.5,
+    "min": 138.57,
+    "max": 170.64
+   },
+   "prefill_tok_s": {
+    "n": 3,
+    "median": 440.2975,
+    "min": 314.8831,
+    "max": 586.3323
+   },
+   "prompt_tokens": {
+    "n": 3,
+    "median": 2048,
+    "min": 2048,
+    "max": 2048
+   },
+   "completion_tokens": {
+    "n": 3,
+    "median": 512,
+    "min": 512,
+    "max": 512
+   },
+   "cached_tokens": {
+    "n": 3,
+    "median": 0,
+    "min": 0,
+    "max": 0
+   },
+   "tok_per_chunk": {
+    "n": 3,
+    "median": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "accept_len_server": null,
+   "gpu_power_mean_w": {
+    "n": 3,
+    "median": 151.8,
+    "min": 137.1,
+    "max": 162.0
+   },
+   "gpu_sm_mean_mhz": {
+    "n": 3,
+    "median": 2213,
+    "min": 2183,
+    "max": 2237
+   },
+   "gpu_temp_max_c": {
+    "n": 3,
+    "median": 73.0,
+    "min": 72.0,
+    "max": 73.0
+   }
+  },
+  "conc8": {
+   "kind": "concurrent",
+   "conc": 8,
+   "n_ok": 3,
+   "agg_out_tok_s": {
+    "n": 3,
+    "median": 176.38,
+    "min": 175.17,
+    "max": 177.86
+   },
+   "per_req_decode_tok_s_median": {
+    "n": 3,
+    "median": 22.755,
+    "min": 22.595,
+    "max": 22.945
+   },
+   "ttft_median_s": {
+    "n": 3,
+    "median": 0.7188,
+    "min": 0.716,
+    "max": 0.7253
+   },
+   "ttft_max_s": {
+    "n": 3,
+    "median": 1.3508,
+    "min": 1.3459,
+    "max": 1.3628
+   },
+   "cached_tokens_max": 0,
+   "accept_len_server": null,
+   "gpu_power_mean_w": {
+    "n": 3,
+    "median": 250.0,
+    "min": 250.0,
+    "max": 250.0
+   },
+   "gpu_sm_mean_mhz": {
+    "n": 3,
+    "median": 1778,
+    "min": 1756,
+    "max": 1812
+   },
+   "gpu_temp_max_c": {
+    "n": 3,
+    "median": 82.0,
+    "min": 81.0,
+    "max": 84.0
+   }
+  }
+ }
+}

@@ -11,7 +11,7 @@ Every claim about a model sits on one of two axes, stated separately.
 - **Pack state**: the ModelPlan support state of the model's pack, backed by a record in
   [support-records.toml](support-records.toml). The three states are `NativeReference`, `NativeQualified` and `NativeTuned`, defined in [AGENTS.md](../AGENTS.md). <!-- support: none; not NativeReference NativeQualified NativeTuned -->
   Every doc line that names a state carries a `<!-- support: <record-id> -->` marker, checked by
-  `tools/check-support-states.py`. No record today is NativeQualified or NativeTuned. <!-- support: none; not NativeQualified NativeTuned -->
+  `tools/check-support-states.py`. One record is NativeQualified, DeepSeek-V4.1-Flash on one RTX PRO 6000; none is NativeTuned. <!-- support: deepseek_v41-gpu-1x-pro6000; not NativeTuned -->
 - **Serving route**: a measured configuration (artifact, card, topology) with the gates it passed,
   the version and date it was last gated, and whether a standing gate covers it. Only the two
   `tools/release-roster.tsv` checkpoints have a standing gate: the tag battery on every release and
@@ -19,8 +19,8 @@ Every claim about a model sits on one of two axes, stated separately.
   last measured on the date in its row.
 
 The axes are independent. A model can serve through a hand-written path with no pack state
-(Step-3.7-Flash, DeepSeek-V4-Flash), and a pack can be NativeReference with nothing serving it <!-- support: deepseek_v41-reference -->
-(DeepSeek-V4.1-Flash). These docs say "measured configuration" or "gated route" for a serving
+(Step-3.7-Flash, DeepSeek-V4-Flash), and a pack can be NativeReference with no gated route serving it <!-- support: gemma4_e4b-reference -->
+(Gemma-4 E4B). These docs say "measured configuration" or "gated route" for a serving
 route; "qualified" and "tuned" belong to pack states.
 
 ## Roster
@@ -43,7 +43,7 @@ route; "qualified" and "tuned" belong to pack states.
 | [DeepSeek-V4-Flash](models/deepseek-v4-flash.md) | `deepseek_v4` | none; its drafter pack is NativeReference on a tiny fixture <!-- support: deepseek_v4_dspark-reference --> | NVFP4 checkpoint, TP/EP on 2x RTX PRO 6000; 2026-09-28 | no |
 | [GLM-5.3-Flash](models/glm53-flash.md) | `glm5_next` | NativeReference <!-- support: glm5_next-reference --> | NVFP4 mint on RTX PRO 6000, TP-2/TP-4 plain; September 2026 | no |
 | [Hy3](models/hy3.md) | `hy3`, `hy3_nvfp4` | NativeReference for both <!-- support: hy3-bf16-reference,hy3_nvfp4-modelopt-w4a16 --> | W4A16 mint, EP-4 on 4x RTX PRO 6000; reported 2026-08-30, receipts not tracked | no |
-| [DeepSeek-V4.1-Flash](models/deepseek-v41-flash.md) | `deepseek_v41` | NativeReference <!-- support: deepseek_v41-reference --> | none (reference executor on CPU) | no |
+| [DeepSeek-V4.1-Flash](models/deepseek-v41-flash.md) | `deepseek_v41` | NativeQualified on one RTX PRO 6000, NativeReference on CPU <!-- support: deepseek_v41-gpu-1x-pro6000,deepseek_v41-reference --> | safetensors checkpoint through its own memra-server route, one RTX PRO 6000 with the routed experts in host memory; `verify serve` November 2026 | no |
 | [Qwen3.8-Flash-Next](models/qwen38-flash-next.md) | `qwen4_exp` | none (pack support `None`) | none (bring-up gate path) | no |
 
 Packs with no model card: `qwen3`, `qwen3_moe`, `llama_dense` and `glm_dsa` (GLM-5 and 5.2) are NativeReference on tiny fixtures; `olmoe`, `minimax_m3` and the `mimo_v2` profiles declare no state. <!-- support: qwen3-tiny-random,qwen3_moe-reference,llama_dense-reference,glm_dsa-reference -->

@@ -31,6 +31,8 @@ pub static PACK: ModelPack = ModelPack {
         max_rel: 0.005,
         require_argmax: true,
     }),
+    checkpoint_parity_classes: &[],
+    checkpoint_probe: None,
     // MLA metadata comes from the GGUF keys only (`from_hf` leaves `mla` None until the
     // HF/safetensors import lands), so an HF glm_moe_dsa config refuses here instead of
     // compiling a full-attention plan.

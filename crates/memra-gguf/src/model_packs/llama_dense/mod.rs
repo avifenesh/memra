@@ -35,6 +35,8 @@ pub static PACK: ModelPack = ModelPack {
         max_rel: 0.005,
         require_argmax: true,
     }),
+    checkpoint_parity_classes: &[],
+    checkpoint_probe: None,
     matches_config: |config| {
         matches!(config.arch, Arch::Llama)
             && !config.moe.as_ref().is_some_and(|moe| moe.expert_count > 0)

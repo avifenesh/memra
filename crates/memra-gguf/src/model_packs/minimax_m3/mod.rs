@@ -24,6 +24,8 @@ pub static PACK: ModelPack = ModelPack {
         Gate::Serve,
     ],
     checkpoint_parity: None,
+    checkpoint_parity_classes: &[],
+    checkpoint_probe: None,
     matches_config: |config| matches!(config.arch, Arch::MinimaxM3) && config.m3.is_some(),
     plan_builder: canonical_plan,
     tensor_schema: canonical_tensor_schema,

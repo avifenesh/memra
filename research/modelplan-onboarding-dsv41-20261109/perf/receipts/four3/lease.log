@@ -1,0 +1,36 @@
+gate-B-device-push start 08:47:36
+gate-B-device-push rc 0 end 08:47:56
+gate-B-device-push: 706 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1, 2, 3]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1, 2, 3]: 30463342 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+gate-C-peer-pull start 08:47:56
+gate-C-peer-pull rc 0 end 08:48:14
+gate-C-peer-pull: 704 checks, 0 failed 0 FAIL lines
+gate-C-default start 08:48:14
+gate-C-default rc 0 end 08:48:32
+gate-C-default: 704 checks, 0 failed 0 FAIL lines
+gate-D-device-push start 08:48:32
+gate-D-device-push rc 0 end 08:48:51
+gate-D-device-push: 706 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1, 2, 3]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1, 2, 3]: 30660034 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+pre-run1-C start 08:48:51
+pre-run1-C rc 0 end 08:49:45
+pre-run2-D start 08:49:45
+pre-run2-D rc 0 end 08:50:25
+pre-trace start 08:50:25
+pre-trace rc 0 end 08:51:26
+pre-trace arm D
+dec-run1-A start 08:51:26
+dec-run1-A rc 0 end 08:51:45
+dec-run2-B start 08:51:45
+dec-run2-B rc 0 end 08:52:03
+dec-run3-B start 08:52:03
+dec-run3-B rc 0 end 08:52:21
+dec-run4-A start 08:52:21
+dec-run4-A rc 0 end 08:52:40
+dec-run5-A start 08:52:40
+dec-run5-A rc 0 end 08:52:58
+dec-run6-B start 08:52:58
+dec-run6-B rc 0 end 08:53:16
+FOUR-INNER-DONE

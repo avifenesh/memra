@@ -1,0 +1,23 @@
+{
+ "error": "hc_mixes: CUDA error 701",
+ "checks": [
+  {"name": "layer1/engram_hash", "pass": true, "rule": "identical hash ids to the vendor NgramHashState", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "90264/90264"},
+  {"name": "layer1/engram_out", "pass": true, "rule": "rel_l2 <= 2 x floor (2.158e-5) + 1e-4", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=1.976e-5 maxabs/max=4.139e-4 worst_tok=5.212e-4 cos=1.00000000"},
+  {"name": "layer1/attn_in", "pass": true, "rule": "rel_l2 <= 2e-2 (no floor)", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=2.736e-5 maxabs/max=1.938e-3 worst_tok=6.565e-4 cos=1.00000000"},
+  {"name": "layer1/qr", "pass": true, "rule": "rel_l2 <= 2e-2 (no floor)", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=1.184e-4 maxabs/max=3.650e-3 worst_tok=2.512e-3 cos=0.99999999"},
+  {"name": "layer1/attn_q", "pass": true, "rule": "rel_l2 <= 2e-2 (no floor)", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=2.412e-4 maxabs/max=2.242e-3 worst_tok=4.505e-3 cos=0.99999997"},
+  {"name": "layer1/attn_kv", "pass": true, "rule": "rel_l2 <= 2e-2 (no floor)", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=3.739e-4 maxabs/max=1.562e-2 worst_tok=1.156e-2 cos=0.99999993"},
+  {"name": "layer1/attn_o", "pass": true, "rule": "rel_l2 <= 2e-2 (no floor)", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=3.866e-4 maxabs/max=1.210e-2 worst_tok=6.632e-3 cos=0.99999993"},
+  {"name": "layer1/attn_out", "pass": true, "rule": "rel_l2 <= 2 x floor (4.409e-3) + 1e-4", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=3.810e-3 maxabs/max=7.519e-3 worst_tok=2.318e-2 cos=0.99999274"},
+  {"name": "layer1/mid_stream", "pass": true, "rule": "rel_l2 <= 2 x floor (2.093e-3) + 1e-4", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=1.863e-3 maxabs/max=2.070e-3 worst_tok=1.231e-2 cos=0.99999826"},
+  {"name": "layer1/moe_in", "pass": true, "rule": "rel_l2 <= 2e-2 (no floor)", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=3.051e-3 maxabs/max=1.504e-2 worst_tok=2.165e-2 cos=0.99999535"},
+  {"name": "layer1/moe_out", "pass": true, "rule": "rel_l2 <= 2 x floor (1.551e-2) + 1e-4", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=1.339e-2 maxabs/max=3.532e-3 worst_tok=3.035e-1 cos=0.99991032"},
+  {"name": "layer1/attn_idx", "pass": true, "rule": "mean per-row Jaccard >= 0.99", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "3761/3761 rows identical, mean Jaccard 1.00000, width 128"},
+  {"name": "layer1/route", "pass": true, "rule": "token expert sets agree within 1% of the floor's 3692/3761", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "3717/3761 token sets equal"},
+  {"name": "layer1/out_stream", "pass": true, "rule": "rel_l2 <= 2 x floor (4.644e-3) + 1e-4", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=4.123e-3 maxabs/max=1.588e-3 worst_tok=8.741e-2 cos=0.99999150 load 0.5s fwd 0.04s"},
+  {"name": "layer1/out_pre_mix", "pass": true, "rule": "rel_l2 <= 2 x floor (6.041e-4) + 1e-4", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2=5.504e-4 max_abs=7.475e-3"},
+  {"name": "layer1/engram_hash_decode", "pass": true, "rule": "identical hash ids to the vendor NgramHashState", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "24/24"},
+  {"name": "run", "pass": false, "rule": "the gate ran to completion", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "hc_mixes: CUDA error 701"}
+ ],
+ "total": 17, "failed": 1
+}

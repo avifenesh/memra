@@ -1,0 +1,203 @@
+{
+ "label": "memra-1card-wiring",
+ "engine": "memra",
+ "url": "http://127.0.0.1:18342",
+ "seed": 1107754336,
+ "workloads_sha256": "995eaba4a656af90b52129b98939b585dcad79edbc06d2b8e3047b8fa12ae291",
+ "elapsed_s": 403.0,
+ "workloads": {
+  "chat_c1": {
+   "kind": "single",
+   "n_ok": 2,
+   "n_err": 0,
+   "ttft_s": {
+    "n": 2,
+    "median": 1.1772,
+    "min": 1.1631,
+    "max": 1.1914
+   },
+   "decode_tok_s": {
+    "n": 2,
+    "median": 7.435,
+    "min": 7.4,
+    "max": 7.47
+   },
+   "prefill_tok_s": {
+    "n": 2,
+    "median": 32.7336,
+    "min": 30.2166,
+    "max": 35.2506
+   },
+   "prompt_tokens": {
+    "n": 2,
+    "median": 38.5,
+    "min": 36,
+    "max": 41
+   },
+   "completion_tokens": {
+    "n": 2,
+    "median": 384.0,
+    "min": 384,
+    "max": 384
+   },
+   "cached_tokens": {
+    "n": 2,
+    "median": 0.0,
+    "min": 0,
+    "max": 0
+   },
+   "tok_per_chunk": {
+    "n": 2,
+    "median": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "accept_len_server": null,
+   "gpu_power_mean_w": {
+    "n": 2,
+    "median": 195.2,
+    "min": 193.5,
+    "max": 196.9
+   },
+   "gpu_sm_mean_mhz": {
+    "n": 2,
+    "median": 2316.5,
+    "min": 2316,
+    "max": 2317
+   },
+   "gpu_temp_max_c": {
+    "n": 2,
+    "median": 88.0,
+    "min": 87.0,
+    "max": 89.0
+   }
+  },
+  "decode_c1": {
+   "kind": "single",
+   "n_ok": 2,
+   "n_err": 0,
+   "ttft_s": {
+    "n": 2,
+    "median": 6.3876,
+    "min": 6.2649,
+    "max": 6.5104
+   },
+   "decode_tok_s": {
+    "n": 2,
+    "median": 7.225,
+    "min": 7.18,
+    "max": 7.27
+   },
+   "prefill_tok_s": {
+    "n": 2,
+    "median": 320.7371,
+    "min": 314.5736,
+    "max": 326.9007
+   },
+   "prompt_tokens": {
+    "n": 2,
+    "median": 2048.0,
+    "min": 2048,
+    "max": 2048
+   },
+   "completion_tokens": {
+    "n": 2,
+    "median": 512.0,
+    "min": 512,
+    "max": 512
+   },
+   "cached_tokens": {
+    "n": 2,
+    "median": 0.0,
+    "min": 0,
+    "max": 0
+   },
+   "tok_per_chunk": {
+    "n": 2,
+    "median": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "accept_len_server": null,
+   "gpu_power_mean_w": {
+    "n": 2,
+    "median": 191.3,
+    "min": 190.6,
+    "max": 192.0
+   },
+   "gpu_sm_mean_mhz": {
+    "n": 2,
+    "median": 2311.0,
+    "min": 2311,
+    "max": 2311
+   },
+   "gpu_temp_max_c": {
+    "n": 2,
+    "median": 87.5,
+    "min": 87.0,
+    "max": 88.0
+   }
+  },
+  "prefill4k": {
+   "kind": "single",
+   "n_ok": 2,
+   "n_err": 0,
+   "ttft_s": {
+    "n": 2,
+    "median": 7.7937,
+    "min": 6.8667,
+    "max": 8.7207
+   },
+   "decode_tok_s": null,
+   "prefill_tok_s": {
+    "n": 2,
+    "median": 533.0945,
+    "min": 469.6871,
+    "max": 596.502
+   },
+   "prompt_tokens": {
+    "n": 2,
+    "median": 4096.0,
+    "min": 4096,
+    "max": 4096
+   },
+   "completion_tokens": {
+    "n": 2,
+    "median": 1.0,
+    "min": 1,
+    "max": 1
+   },
+   "cached_tokens": {
+    "n": 2,
+    "median": 0.0,
+    "min": 0,
+    "max": 0
+   },
+   "tok_per_chunk": {
+    "n": 2,
+    "median": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "accept_len_server": null,
+   "gpu_power_mean_w": {
+    "n": 2,
+    "median": 181.1,
+    "min": 172.8,
+    "max": 189.4
+   },
+   "gpu_sm_mean_mhz": {
+    "n": 2,
+    "median": 2152.5,
+    "min": 2089,
+    "max": 2216
+   },
+   "gpu_temp_max_c": {
+    "n": 2,
+    "median": 87.5,
+    "min": 87.0,
+    "max": 88.0
+   }
+  }
+ }
+}

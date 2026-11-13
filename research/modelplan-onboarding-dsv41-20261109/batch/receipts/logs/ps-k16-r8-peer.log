@@ -1,0 +1,22 @@
+10:21:09 spec-ps-r8: waiting (holding nothing) for cards 0 1 to be free together
+server ready after 7 s
+warm-up request rc 0 {"object":"text_completion","model":"v41","choices":[{"index":0,"text":"URY<｜box｜><｜box｜> muzzle就地 BrunGazGazGazGazGazGazGazGazGazGazGazGazGazGazGaz
+[dsv41-serve] v41: MEMRA_DSV41_TRUNK_LAYERS: 9 of the 40 trunk layers run. The answers are NOT the checkpoint's; this is a rehearsal of the route's memory and serving loop
+[dsv41-serve] v41: card 0 ranks [0]: weights 31.97 GiB resident (31.97 GiB a rank) in 3.5s, 62.47 GiB of 95.06 GiB left for requests (62.47 GiB a rank)
+[dsv41-serve] v41: card 1 ranks [1]: weights 31.97 GiB resident (31.97 GiB a rank) in 3.5s, 62.50 GiB of 95.06 GiB left for requests (62.50 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.0s; one-token call 4.0 ms
+[dsv41-serve] v41: 2 rank(s) on devices [0, 1]; routed experts on the cards; resident weights [34332482712, 34332482712] bytes per rank; ceiling [67074570596, 67108125028] bytes; expert cache [] slots of 18800640 bytes (floor 0 slots, all 0); max_seq 8192; 8 session(s); prefill slices of 8192 rows
+[dsv41-serve] v41: capacity: the longest session with the route idle is 8192 positions (max_seq 8192); at once: 4096 sessions of 1,536 positions (1,024-token prompts), 4096 of 4,608 (4,096-token prompts), 4096 of 32,768, 4096 of 131,072; MEMRA_MAX_SESSIONS 8
+[dsv41-serve] v41: up in 4.0s
+10:21:26 label ps-k16/r8-peer engine memra model v41 seed 1150040432 plan ['decode_c1', 'conc8', 'dconc8']
+10:21:31 decode_c1 0 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2556, 'decode_tok_s': 234.89, 'tok_per_chunk': 1.002, 'spec_accept_length': None} None 
+10:21:33 decode_c1 1 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2401, 'decode_tok_s': 236.1, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+10:21:36 decode_c1 2 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2199, 'decode_tok_s': 234.85, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+10:21:47 conc8 0 {'wall_s': 5.431, 'completion_tokens': 4096, 'agg_out_tok_s': 754.23, 'n_err': 0} 104.36 None None
+10:21:52 conc8 1 {'wall_s': 5.423, 'completion_tokens': 4096, 'agg_out_tok_s': 755.35, 'n_err': 0} 103.63 None None
+10:21:57 conc8 2 {'wall_s': 5.42, 'completion_tokens': 4096, 'agg_out_tok_s': 755.77, 'n_err': 0} 103.81 None None
+10:22:08 dconc8 0 {'wall_s': 5.396, 'completion_tokens': 4096, 'agg_out_tok_s': 759.09, 'n_err': 0} 103.13 None None
+10:22:14 dconc8 1 {'wall_s': 5.426, 'completion_tokens': 4096, 'agg_out_tok_s': 754.84, 'n_err': 0} 102.67 None None
+10:22:19 dconc8 2 {'wall_s': 5.416, 'completion_tokens': 4096, 'agg_out_tok_s': 756.35, 'n_err': 0} 102.9 None None
+10:22:19 DONE ps-k16/r8-peer elapsed 53 s quality pass: None
+serve_bench ps-k16/r8-peer rc 0

@@ -1,0 +1,54 @@
+[transformers] You are using a model of type `deepseek_v41` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+{
+ "name": "n257k",
+ "cases": [
+  "needle16800"
+ ],
+ "pooled": {
+  "all": {
+   "steps": 3,
+   "kl_native_mean": 0.00016182026639021194,
+   "kl_floor_mean": 3.642778058056226e-05,
+   "kl_ratio": 4.442221398373051,
+   "kl_native_p99": 0.00046847389667559544,
+   "kl_floor_p99": 7.025969589731822e-05,
+   "top1_native": 1.0,
+   "top1_floor": 1.0,
+   "top1_slack": 0.01,
+   "pass_kl": false,
+   "pass_top1": true,
+   "pass": false
+  },
+  "entropy_gt_1nat": {
+   "steps": 0
+  }
+ },
+ "full_logit_steps": {
+  "steps": 3,
+  "kl_native_mean": 0.00017959620553948741,
+  "kl_floor_mean": 5.8897798084748755e-05,
+  "kl_native_max": 0.0005309500151791013,
+  "kl_floor_max": 0.00013779105513577665
+ },
+ "vendor_spread_p99_logit": 3.1589683151245116,
+ "vendor_margin_move": {
+  "steps": 3,
+  "p50": 1.0463409423828125,
+  "p99": 1.3527217864990235,
+  "max": 1.3589744567871094
+ },
+ "greedy": [
+  {
+   "case": "needle16800",
+   "vendor_steps": 3,
+   "native_steps": 3,
+   "exact_prefix": 3,
+   "all_equal": true,
+   "forced_vs_greedy_identical_steps": 3,
+   "forced_vs_greedy_identical": true,
+   "native_text": "14542<\uff5cend\u2581of\u2581sentence\uff5c>",
+   "vendor_text": "14542<\uff5cend\u2581of\u2581sentence\uff5c>"
+  }
+ ]
+}
+{"case": "needle16800", "prompt": 257185, "steps": 3, "ref_reproduces_tape": true, "kl_native_mean": 0.00016182026639021194, "kl_floor_mean": 3.642778058056226e-05, "kl_native_max": 0.00047788136093941116, "kl_floor_max": 7.091180903121976e-05, "top1_native": 3, "top1_floor": 3, "full_kl_steps": 3, "full_kl_native_mean": 0.00017959620553948741, "full_kl_floor_mean": 5.8897798084748755e-05, "first_native_miss": null, "first_floor_miss": null}

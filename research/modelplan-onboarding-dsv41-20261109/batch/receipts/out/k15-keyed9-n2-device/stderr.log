@@ -1,0 +1,33 @@
+[dsv41-tp] ranks=2 devices=[0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+[dsv41-resident] device 0 ranks [0, 1]: 9 of 9 layers + head resident, 63.95 GiB (31.97 GiB a rank); free 94.41 -> 30.46 GiB of 95.06 GiB; reserve 8.00 GiB; load 5.2s
+dsv41-spec: 9 layers resident in 5.2s
+dsv41-spec: 12 job(s), 9 layers + 0 draft stages, 2 rank(s) on devices [0, 0], up in 5.7s
+dsv41-spec: needle done in 2.4s
+dsv41-spec: needle1200 done in 3.9s
+dsv41-spec: decode32k done in 6.5s
+dsv41-spec: gsm done in 0.3s
+dsv41-spec: cross128 done in 3.5s
+dsv41-spec: needle done in 4.3s
+dsv41-spec: decode32k_he_summary done in 8.6s
+dsv41-spec: chat8 done in 5.7s
+dsv41-spec: window done in 12.9s
+dsv41-spec: mixed done in 12.3s
+dsv41-spec: nine done in 11.8s
+dsv41-spec: batch-time distinct8 batched_1_ms 6.140
+dsv41-spec: batch-time distinct8 alone_1_ms 6.143
+dsv41-spec: batch-time distinct8 argmax_1_ms 6.191
+dsv41-spec: batch-time distinct8 fwd_1_ms 5.046
+dsv41-spec: batch-time distinct8 batched_2_ms 7.864
+dsv41-spec: batch-time distinct8 alone_2_ms 12.429
+dsv41-spec: batch-time distinct8 argmax_2_ms 7.767
+dsv41-spec: batch-time distinct8 fwd_2_ms 6.486
+dsv41-spec: batch-time distinct8 batched_4_ms 11.733
+dsv41-spec: batch-time distinct8 alone_4_ms 24.917
+dsv41-spec: batch-time distinct8 argmax_4_ms 11.649
+dsv41-spec: batch-time distinct8 fwd_4_ms 10.047
+dsv41-spec: batch-time distinct8 batched_8_ms 18.159
+dsv41-spec: batch-time distinct8 alone_8_ms 49.910
+dsv41-spec: batch-time distinct8 argmax_8_ms 17.943
+dsv41-spec: batch-time distinct8 fwd_8_ms 15.736
+dsv41-spec: distinct8 done in 8.2s
+dsv41-spec: expert cache CacheStats { lookups: 0, hits: 0, misses: 0, h2d_bytes: 0, evictions: 0, slabs_released: 0, slabs_grown: 0 }, slots []

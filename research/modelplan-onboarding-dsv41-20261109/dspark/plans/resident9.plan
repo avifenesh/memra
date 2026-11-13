@@ -1,0 +1,21 @@
+# a 9-layer trunk with every weight on the card (no expert is fetched): what a decode call costs by its rows,
+# the draft head on the vendor tapes' inputs, and the byte gate on those layers
+rows-time short $LANE/dec/ids/hebrew_para.prompt.i32 $LANE/spec/ids/cross128.force.i32 12
+rows-time needle $LANE/dec/ids/needle.prompt.i32 $LANE/spec/ids/cross128.force.i32 12
+rows-time needle1200 $LANE/dec/ids/needle1200.prompt.i32 $LANE/spec/ids/cross128.force.i32 12
+verify-rows gsm $LANE/dec/ids/gsm.prompt.i32 $LANE/dec/ids/gsm.gen.i32
+verify-rows cross128 $LANE/dec/ids/hebrew_para.prompt.i32 $LANE/spec/ids/cross128.force.i32
+verify-rows cross128odd $LANE/dec/ids/story.prompt.i32 $LANE/spec/ids/cross128.force.i32
+verify-rows needle $LANE/dec/ids/needle.prompt.i32 $LANE/spec/ids/cross128.force.i32
+draft-tape gsm $LANE/spec/tapes-raw/gsm
+draft-tape code $LANE/spec/tapes-raw/code
+draft-tape copy $LANE/spec/tapes-raw/copy
+draft-tape story $LANE/spec/tapes-raw/story
+draft-tape hebrew_para $LANE/spec/tapes-raw/hebrew_para
+draft-tape code_pal $LANE/spec/tapes-raw/code_pal
+draft-tape sys_json $LANE/spec/tapes-raw/sys_json
+draft-tape gsm_think $LANE/spec/tapes-raw/gsm_think
+draft-tape needle $LANE/spec/tapes-raw/needle
+draft-tape capital $LANE/spec/tapes-raw/capital
+draft-tape hebrew $LANE/spec/tapes-raw/hebrew
+draft-tape multiturn $LANE/spec/tapes-raw/multiturn

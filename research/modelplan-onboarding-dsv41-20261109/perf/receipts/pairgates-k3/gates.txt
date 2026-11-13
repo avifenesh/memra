@@ -1,0 +1,9 @@
+tp default rc 0 480 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1]: 861745 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+tp peer-pull rc 0 478 checks, 0 failed 0 FAIL lines
+tp host-canonical rc 0 478 checks, 0 failed 0 FAIL lines
+tp graph rc 0 1105 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1]: 833374 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+PASS graph/replayed: 12 steps x 4 repeats: 6 captures, 42 replays (12 self-checked), 42 moved, 0 refused [MEMRA_DSV41_DECODE_GRAPH=1: the decode steps ran through the captured spans]

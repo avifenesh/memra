@@ -1,0 +1,69 @@
+kernels rc 0 149 checks, 0 failed
+layer rc 0 161 checks, 0 failed
+DIFF ./s0__L14__attn__out.bin
+DIFF ./s0__L14__gate__out1.bin
+DIFF ./s0__L14__hcpost0.bin
+DIFF ./s0__L14__moe__out.bin
+DIFF ./s0__L14__moe__x.bin
+DIFF ./s0__L14__out__pre_mix.bin
+DIFF ./s0__L14__out__x.bin
+DIFF ./s0__L14__sattn__o.bin
+DIFF ./s0__L1__attn__out.bin
+DIFF ./s0__L1__gate__out1.bin
+DIFF ./s0__L1__hcpost0.bin
+DIFF ./s0__L1__moe__out.bin
+DIFF ./s0__L1__moe__x.bin
+DIFF ./s0__L1__out__pre_mix.bin
+DIFF ./s0__L1__out__x.bin
+DIFF ./s0__L20__attn__out.bin
+DIFF ./s0__L20__comp__out.bin
+DIFF ./s0__L20__gate__out1.bin
+DIFF ./s0__L20__hcpost0.bin
+DIFF ./s0__L20__moe__out.bin
+DIFF ./s0__L20__moe__x.bin
+DIFF ./s0__L20__out__pre_mix.bin
+DIFF ./s0__L20__out__x.bin
+DIFF ./s0__L20__sattn__kv.bin
+DIFF ./s0__L20__sattn__o.bin
+DIFF ./s0__L21__attn__out.bin
+DIFF ./s0__L21__gate__out1.bin
+DIFF ./s0__L21__hcpost0.bin
+DIFF ./s0__L21__moe__out.bin
+DIFF ./s0__L21__moe__x.bin
+DIFF ./s0__L21__out__pre_mix.bin
+DIFF ./s0__L21__out__x.bin
+DIFF ./s0__L24__attn__out.bin
+DIFF ./s0__L24__gate__out1.bin
+DIFF ./s0__L24__hcpost0.bin
+DIFF ./s0__L24__moe__out.bin
+DIFF ./s0__L24__moe__x.bin
+DIFF ./s0__L24__out__pre_mix.bin
+DIFF ./s0__L24__out__x.bin
+DIFF ./s0__L24__sattn__o.bin
+DIFF ./s0__L2__attn__out.bin
+DIFF ./s0__L2__gate__out1.bin
+DIFF ./s0__L2__hcpost0.bin
+DIFF ./s0__L2__moe__out.bin
+DIFF ./s0__L2__moe__x.bin
+DIFF ./s0__L2__out__pre_mix.bin
+DIFF ./s0__L2__out__x.bin
+DIFF ./s0__L2__sattn__o.bin
+DIFF ./s1__L20__attn__out.bin
+DIFF ./s1__L20__moe__out.bin
+DIFF ./s1__L20__out__x.bin
+DIFF ./s2__L20__attn__out.bin
+DIFF ./s2__L20__moe__out.bin
+DIFF ./s2__L20__out__x.bin
+DIFF ./s2__L21__attn__out.bin
+DIFF ./s2__L21__moe__out.bin
+DIFF ./s2__L21__out__x.bin
+layer saved tensors: 111 compared with the reference set, 57 differ
+tp 0,0 peer-pull rc 0 478 checks, 0 failed
+tp 0,0 default rc 0 480 checks, 0 failed
+tp 0,0 host-canonical rc 0 478 checks, 0 failed
+tp 0,0,0,0 peer-pull rc 0 914 checks, 0 failed
+tp 0,0,0,0 default rc 0 916 checks, 0 failed
+tp 0,0,0,0 host-canonical rc 0 914 checks, 0 failed
+decode straddle126 rc 0 240 checks, 0 failed
+decode gsm rc 0 240 checks, 0 failed
+decode capital rc 0 60 checks, 0 failed

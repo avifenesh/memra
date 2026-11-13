@@ -32,6 +32,8 @@ pub static PACK: ModelPack = ModelPack {
         max_rel: 0.005,
         require_argmax: true,
     }),
+    checkpoint_parity_classes: &[],
+    checkpoint_probe: None,
     matches_config: |config| matches!(config.arch, Arch::Glm5Next),
     plan_builder: canonical_plan,
     tensor_schema: glm5_tensor_schema,

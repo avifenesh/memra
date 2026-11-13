@@ -1,0 +1,32 @@
+09:21:52 k15-keyed9-copy rc 0 SPEC-DONE jobs 12 failed 0
+09:23:13 k15-keyed9-on rc 0 SPEC-DONE jobs 12 failed 0
+09:23:13 keyed compare rc 0 hashes k15-keyed9-on vs k15-keyed9-copy: same 8 different 0 missing 0 (4638 hash lines)
+09:23:43 k15-wide9 rc 0 SPEC-DONE jobs 2 failed 0
+09:23:57 k15-wide20 rc 0 SPEC-DONE jobs 1 failed 0
+09:25:24 k15-keyed9-n2-peer rc 0 SPEC-DONE jobs 12 failed 0
+09:25:24 two-rank peer-pull compare rc 0 hashes k15-keyed9-n2-peer vs k15-keyed9-on: same 8 different 0 missing 0 (4638 hash lines)
+09:25:38 k15-wide20-n2-peer rc 0 SPEC-DONE jobs 1 failed 0
+09:25:38 two-rank peer-pull wide compare rc 0 hashes k15-wide20-n2-peer vs k15-wide20: same 1 different 0 missing 0 (600 hash lines)
+09:26:09 two-rank peer-pull served gate rc 0 9 pass lines
+09:27:37 k15-keyed9-n2-device rc 0 SPEC-DONE jobs 12 failed 0
+09:27:37 two-rank device-push compare rc 0 hashes k15-keyed9-n2-device vs k15-keyed9-on: same 8 different 0 missing 0 (4638 hash lines)
+09:27:51 k15-wide20-n2-device rc 0 SPEC-DONE jobs 1 failed 0
+09:27:51 two-rank device-push wide compare rc 0 hashes k15-wide20-n2-device vs k15-wide20: same 1 different 0 missing 0 (600 hash lines)
+09:28:18 two-rank device-push served gate rc 0 9 pass lines
+09:29:38 k15-gate9b rc 0 SPEC-DONE jobs 22 failed 0
+09:30:05 served gate rc 0 9 pass lines
+09:32:17 run 1 arm A rc 0
+09:33:16 run 2 arm B rc 0
+09:34:15 run 3 arm B rc 0
+09:36:17 run 4 arm A rc 0
+09:38:19 run 5 arm A rc 0
+09:39:16 run 6 arm B rc 0
+alone    c1     [171.75, 174.48, 173.63] median 173.6
+Traceback (most recent call last):
+  File "$LANE/spec/scripts/ab_summary.py", line 23, in <module>
+    print(f"{name:8s} {k:6s} {r[k]} median {statistics.median(r[k]):.1f}")
+                                            ~~~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/statistics.py", line 340, in median
+    data = sorted(data)
+TypeError: '<' not supported between instances of 'dict' and 'dict'
+CHAIN-DONE k15

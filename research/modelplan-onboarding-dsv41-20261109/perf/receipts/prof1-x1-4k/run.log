@@ -1,0 +1,34 @@
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+dsv41-bench: 4096 tokens, layers [2, 20, 21], reps 2, decode 6, chunk 8192, path group1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition
+layer 0: load 0.7 s, block 40.8 ms
+layer 1: load 0.7 s, block 30.9 ms
+layer 2: prefill 4096 tokens: first 34.764 ms, reps [34.882, 34.866] ms, median 34.874 ms, 2/2 reruns byte-identical, engram NaN ms, out b99aad4ceed2c852afcaeb45 pre 18eab62a8520470791e5d551
+layer 3: load 0.6 s, block 34.3 ms
+layer 4: load 0.7 s, block 32.2 ms
+layer 5: load 0.6 s, block 31.6 ms
+layer 6: load 0.6 s, block 32.2 ms
+layer 7: load 0.7 s, block 33.3 ms
+layer 8: load 0.7 s, block 33.3 ms
+layer 9: load 0.6 s, block 31.2 ms
+layer 10: load 0.6 s, block 31.1 ms
+layer 11: load 0.7 s, block 31.8 ms
+layer 12: load 0.7 s, block 32.8 ms
+layer 13: load 0.7 s, block 33.0 ms
+layer 14: load 0.7 s, block 33.8 ms
+layer 15: load 0.7 s, block 33.6 ms
+layer 16: load 0.7 s, block 31.6 ms
+layer 17: load 0.7 s, block 32.5 ms
+layer 18: load 0.7 s, block 33.0 ms
+layer 19: load 0.7 s, block 34.3 ms
+layer 20: prefill 4096 tokens: first 33.021 ms, reps [33.102, 33.070] ms, median 33.086 ms, 2/2 reruns byte-identical, engram NaN ms, out 4fee875bf63377e428d57c3a pre 3eb5421d9e34cc9f3b4987f9
+layer 21: prefill 4096 tokens: first 33.191 ms, reps [31.914, 31.925] ms, median 31.919 ms, 2/2 reruns byte-identical, engram NaN ms, out 56dd8aaaf47ea0cedbe9286f pre 0a6f42c47f706f93652c9f48
+run [2]: whole decode steps at 4102..: [0.574, 0.599, 0.577, 0.605, 0.577, 0.599] ms, median (steps 2..) 0.599 ms
+layer 2: decode at 4096..4102: steps [0.817, 0.613, 0.585, 0.602, 0.575, 0.604] ms, median (steps 2..) 0.602 ms
+run [20, 21]: whole decode steps at 4102..: [1.057, 1.056, 1.059, 1.064, 1.067, 1.062] ms, median (steps 2..) 1.062 ms
+layer 20: decode at 4096..4102: steps [0.584, 0.572, 0.575, 0.575, 0.577, 0.573] ms, median (steps 2..) 0.575 ms
+layer 21: decode at 4096..4102: steps [0.490, 0.486, 0.487, 0.486, 0.486, 0.483] ms, median (steps 2..) 0.486 ms
+Collecting data...
+Generating '/tmp/nsys-access/nsys-report-a2e3.qdstrm'
+[1/1] [0%                          ] run.nsys-rep[1/1] [0%                          ] run.nsys-rep[1/1] [1%                          ] run.nsys-rep[1/1] [2%                          ] run.nsys-rep[1/1] [5%                          ] run.nsys-rep[1/1] [6%                          ] run.nsys-rep[1/1] [7%                          ] run.nsys-rep[1/1] [8%                          ] run.nsys-rep[1/1] [9%                          ] run.nsys-rep[1/1] [11%                         ] run.nsys-rep[1/1] [12%                         ] run.nsys-rep[1/1] [13%                         ] run.nsys-rep[1/1] [14%                         ] run.nsys-rep[1/1] [=15%                        ] run.nsys-rep[1/1] [=16%                        ] run.nsys-rep[1/1] [=17%                        ] run.nsys-rep[1/1] [==18%                       ] run.nsys-rep[1/1] [==19%                       ] run.nsys-rep[1/1] [==20%                       ] run.nsys-rep[1/1] [======================92%   ] run.nsys-rep[1/1] [=======================96%  ] run.nsys-rep[1/1] [========================98% ] run.nsys-rep[1/1] [========================100%] run.nsys-rep[1/1] [========================100%] run.nsys-rep
+Generated:
+	$LANE/receipts-perf/prof1-x1-4k/run.nsys-rep

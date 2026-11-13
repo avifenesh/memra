@@ -1,0 +1,34 @@
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) gathers-only=true
+dsv41-bench: 32768 tokens, layers [2, 20, 21], reps 2, decode 6, chunk 8192, path group1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition
+layer 0: load 0.6 s, block 243.2 ms
+layer 1: load 1.3 s, block 237.6 ms
+layer 2: prefill 32768 tokens: first 291.013 ms, reps [291.294, 291.351] ms, median 291.323 ms, 2/2 reruns byte-identical, engram NaN ms, out d283c276ecfc6257115aee6c pre 673d745863bcb52325ab4617
+layer 3: load 0.6 s, block 258.0 ms
+layer 4: load 0.6 s, block 254.5 ms
+layer 5: load 0.6 s, block 251.1 ms
+layer 6: load 0.6 s, block 253.9 ms
+layer 7: load 0.6 s, block 262.6 ms
+layer 8: load 0.6 s, block 285.6 ms
+layer 9: load 0.6 s, block 250.5 ms
+layer 10: load 0.5 s, block 244.8 ms
+layer 11: load 0.5 s, block 251.7 ms
+layer 12: load 0.5 s, block 252.3 ms
+layer 13: load 0.6 s, block 256.5 ms
+layer 14: load 0.6 s, block 285.7 ms
+layer 15: load 0.5 s, block 261.2 ms
+layer 16: load 0.5 s, block 246.8 ms
+layer 17: load 0.5 s, block 254.6 ms
+layer 18: load 0.5 s, block 256.0 ms
+layer 19: load 0.5 s, block 266.1 ms
+layer 20: prefill 32768 tokens: first 296.511 ms, reps [297.324, 296.593] ms, median 296.958 ms, 2/2 reruns byte-identical, engram NaN ms, out f4af9767edbd646572f30c76 pre a10adf5c735c4c22a5af5916
+layer 21: prefill 32768 tokens: first 250.915 ms, reps [249.658, 248.992] ms, median 249.325 ms, 2/2 reruns byte-identical, engram NaN ms, out 1e0d1cede09c9b887320699a pre a3d1be493970c2a85c6b0a65
+run [2]: whole decode steps at 32774..: [0.639, 0.660, 0.637, 0.660, 0.637, 0.664] ms, median (steps 2..) 0.660 ms
+layer 2: decode at 32768..32774: steps [0.823, 0.665, 0.641, 0.664, 0.641, 0.667] ms, median (steps 2..) 0.664 ms
+run [20, 21]: whole decode steps at 32774..: [1.226, 1.228, 1.235, 1.232, 1.249, 1.224] ms, median (steps 2..) 1.232 ms
+layer 20: decode at 32768..32774: steps [0.703, 0.701, 0.693, 0.698, 0.700, 0.693] ms, median (steps 2..) 0.698 ms
+layer 21: decode at 32768..32774: steps [0.545, 0.542, 0.545, 0.541, 0.543, 0.546] ms, median (steps 2..) 0.543 ms
+Collecting data...
+Generating '/tmp/nsys-access/nsys-report-3763.qdstrm'
+[1/1] [0%                          ] run2-B.nsys-rep[1/1] [0%                          ] run2-B.nsys-rep[1/1] [1%                          ] run2-B.nsys-rep[1/1] [2%                          ] run2-B.nsys-rep[1/1] [5%                          ] run2-B.nsys-rep[1/1] [6%                          ] run2-B.nsys-rep[1/1] [7%                          ] run2-B.nsys-rep[1/1] [8%                          ] run2-B.nsys-rep[1/1] [9%                          ] run2-B.nsys-rep[1/1] [10%                         ] run2-B.nsys-rep[1/1] [11%                         ] run2-B.nsys-rep[1/1] [12%                         ] run2-B.nsys-rep[1/1] [13%                         ] run2-B.nsys-rep[1/1] [14%                         ] run2-B.nsys-rep[1/1] [=15%                        ] run2-B.nsys-rep[1/1] [=16%                        ] run2-B.nsys-rep[1/1] [=17%                        ] run2-B.nsys-rep[1/1] [==18%                       ] run2-B.nsys-rep[1/1] [==19%                       ] run2-B.nsys-rep[1/1] [==20%                       ] run2-B.nsys-rep[1/1] [======================91%   ] run2-B.nsys-rep[1/1] [======================92%   ] run2-B.nsys-rep[1/1] [=======================96%  ] run2-B.nsys-rep[1/1] [========================98% ] run2-B.nsys-rep[1/1] [========================100%] run2-B.nsys-rep[1/1] [========================100%] run2-B.nsys-rep
+Generated:
+	$LANE/receipts-perf/profab-f34-32k/run2-B.nsys-rep

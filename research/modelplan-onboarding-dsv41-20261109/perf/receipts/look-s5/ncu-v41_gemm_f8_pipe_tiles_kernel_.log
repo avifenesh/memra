@@ -1,0 +1,41 @@
+==WARNING== Note: Running with unmodified GPU clocks. If not controlled otherwise, profiling results may be inconsistent.
+==PROF== Connected to process 1670153 ($LANE/perf-bins/s5/dsv41-bench)
+gemm fp8 wq_a m 1 n 1280 k 5120: median 0.0334 ms (196 GB/s, 0.4 TFLOPS) sha c5652a9e3a409d8a840718a8
+gemm fp8 wq_a m 64 n 1280 k 5120: median 0.1020 ms (69 GB/s, 8.2 TFLOPS) sha cb8bfc1513542b0b5056343b
+gemm fp8 wq_a m 4096 n 1280 k 5120: median 0.2908 ms (131 GB/s, 184.6 TFLOPS) sha 850c95093b50a948e09a285b
+gemm fp8 wq_a m 8192 n 1280 k 5120: median 0.5616 ms (124 GB/s, 191.2 TFLOPS) sha ad20523eee27c38cdf21a0fa
+gemm fp8 wkv m 1 n 512 k 5120: median 0.0322 ms (82 GB/s, 0.2 TFLOPS) sha 7cf87a8642a581a4eacc0847
+gemm fp8 wkv m 64 n 512 k 5120: median 0.1025 ms (29 GB/s, 3.3 TFLOPS) sha 07ca9dd65b3489af6b70dba9
+gemm fp8 wkv m 4096 n 512 k 5120: median 0.1466 ms (190 GB/s, 146.5 TFLOPS) sha 1a378ae0ed749443aaa48a83
+gemm fp8 wkv m 8192 n 512 k 5120: median 0.2704 ms (196 GB/s, 158.8 TFLOPS) sha 5624d0f6cdd65cc5ae14e1c3
+gemm fp8 wq_b m 1 n 32768 k 1280: median 0.0679 ms (619 GB/s, 1.2 TFLOPS) sha c1dda01b595b2358a6a47566
+gemm fp8 wq_b m 64 n 32768 k 1280: median 0.0631 ms (733 GB/s, 85.1 TFLOPS) sha 257a245626d5128ce9c08d04
+gemm fp8 wq_b m 4096 n 32768 k 1280: median 1.7806 ms (177 GB/s, 193.0 TFLOPS) sha 1b38815baa19f980ef93da61
+gemm fp8 wq_b m 8192 n 32768 k 1280: median 3.5100 ms (168 GB/s, 195.8 TFLOPS) sha acd88ef4b78c6067bfdefc0d
+gemm fp8 idx_wq_b m 1 n 4096 k 1280: median 0.0340 ms (154 GB/s, 0.3 TFLOPS) sha 4523c7f662bdf4786a333dbb
+gemm fp8 idx_wq_b m 64 n 4096 k 1280: median 0.0496 ms (118 GB/s, 13.5 TFLOPS) sha 9d5104b99dee69910a76f7f1
+gemm fp8 idx_wq_b m 4096 n 4096 k 1280: median 0.2529 ms (174 GB/s, 169.8 TFLOPS) sha 43cfde573b789a837d8b1f0f
+gemm fp8 idx_wq_b m 8192 n 4096 k 1280: median 0.4822 ms (172 GB/s, 178.2 TFLOPS) sha 275c5dc22896b886a44fae13
+gemm fp8 wo_b m 1 n 5120 k 8192: median 0.0490 ms (856 GB/s, 1.7 TFLOPS) sha d911d805c09bceefda9f4794
+gemm fp8 wo_b m 64 n 5120 k 8192: median 0.1515 ms (285 GB/s, 35.4 TFLOPS) sha 817ebfb38207efa04b3e37d6
+gemm fp8 wo_b m 4096 n 5120 k 8192: median 1.5452 ms (76 GB/s, 222.4 TFLOPS) sha e577ef3a6a0526326f036ab7
+gemm fp8 wo_b m 8192 n 5120 k 8192: median 3.1571 ms (61 GB/s, 217.7 TFLOPS) sha b58b631c4ffc1202dda14d54
+gemm fp8 shared_w13 m 1 n 2304 k 5120: median 0.0365 ms (324 GB/s, 0.6 TFLOPS) sha 2f4cc9d36b28867b4f7626b3
+gemm fp8 shared_w13 m 64 n 2304 k 5120: median 0.1022 ms (122 GB/s, 14.8 TFLOPS) sha 9ace7c003c9068afd12437ad
+gemm fp8 shared_w13 m 4096 n 2304 k 5120: median 0.5292 ms (98 GB/s, 182.6 TFLOPS) sha b1db196ce4624717072b82ee
+gemm fp8 shared_w13 m 8192 n 2304 k 5120: median 0.9582 ms (95 GB/s, 201.7 TFLOPS) sha 9e26a997f2604313fb0e460f
+gemm fp8 shared_w2 m 1 n 5120 k 2304: median 0.0360 ms (328 GB/s, 0.7 TFLOPS) sha 95718eff155b05ff49ed607b
+gemm fp8 shared_w2 m 64 n 5120 k 2304: median 0.0632 ms (199 GB/s, 23.9 TFLOPS) sha 68a667e524e55ee83a503abf
+gemm fp8 shared_w2 m 4096 n 5120 k 2304: median 0.4979 ms (127 GB/s, 194.1 TFLOPS) sha 8f62de87fceac091b230672c
+gemm fp8 shared_w2 m 8192 n 5120 k 2304: median 0.9751 ms (117 GB/s, 198.2 TFLOPS) sha eade19f575a768b146011afb
+gemm mxfp4 tiles exp_w13 experts 6 rows 1 bm 4: median 0.1034 ms (343 GB/s, 1.4 TFLOPS) sha 13b594d8dcab7fb6a7a96075
+gemm mxfp4 tiles exp_w2 experts 6 rows 1 bm 4: median 0.0754 ms (470 GB/s, 1.9 TFLOPS) sha c8943e524d4644b214815fd5
+==PROF== Profiling "v41_gemm_f8_pipe_tiles_kernel": 0%....50%....100% - 41 passes
+gemm mxfp4 tiles exp_w13 experts 64 rows 64 bm 64: median 1.1659 ms (358 GB/s, 82.9 TFLOPS) sha ccf43c2d0fe29f2262a045ca
+gemm mxfp4 tiles exp_w2 experts 64 rows 64 bm 64: median 0.9283 ms (462 GB/s, 104.1 TFLOPS) sha b457c29fe24d8294479a784a
+gemm mxfp4 tiles exp_w13 experts 384 rows 64 bm 64: median 5.7942 ms (432 GB/s, 100.1 TFLOPS) sha 6a81b6abf234aa4d053ed0ea
+gemm mxfp4 tiles exp_w2 experts 384 rows 64 bm 64: median 5.2955 ms (486 GB/s, 109.5 TFLOPS) sha 6ae1f35f1926b9a1982d78b3
+gemm mxfp4 tiles exp_w13 experts 384 rows 512 bm 128: median 36.5494 ms (114 GB/s, 126.9 TFLOPS) sha 046c4c5a7710477b49fade0f
+gemm mxfp4 tiles exp_w2 experts 384 rows 512 bm 128: median 30.6356 ms (154 GB/s, 151.4 TFLOPS) sha 9c47abe1cb7f17fe26859a87
+==PROF== Disconnected from process 1670153
+==PROF== Report: $LANE/receipts-perf/look-s5/ncu-v41_gemm_f8_pipe_tiles_kernel_.ncu-repz

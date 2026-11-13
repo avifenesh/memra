@@ -1,0 +1,49 @@
+dsv41-tpbench: 1 cells x 3 rounds on 1 rank(s) [0], 9/9 layers resident, chunk 8192, max_pos 1024
+  plan decode-c8: workspace 0.54 GiB + state 0.01 GiB a rank
+  carried state: 1281 B a position a rank (+1.1 MiB of window rings a sequence); reserve 0.55 GiB a device-rank
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+[dsv41-resident] device 0 ranks [0]: 9 of 9 layers + head resident, 63.63 GiB (63.63 GiB a rank); free 94.48 -> 30.85 GiB of 95.06 GiB; reserve 0.55 GiB; load 5.0s
+  capacity at 4096 positions: 4727 sequences a rank after one prefill's 2.50 GiB workspace (0.006 GiB state each, 30.85 GiB free a rank)
+  capacity at 32768 positions: 617 sequences a rank after one prefill's 6.05 GiB workspace (0.040 GiB state each, 30.85 GiB free a rank)
+  capacity at 131072 positions: 94 sequences a rank after one prefill's 16.01 GiB workspace (0.157 GiB state each, 30.85 GiB free a rank)
+  capacity at 262144 positions: 0 sequences a rank after one prefill's 34.00 GiB workspace (0.314 GiB state each, 30.85 GiB free a rank)
+FAIL step/decode-c8/calls/step0/ids: [105868, 92693, 5305, 119457, 105868, 72238, 109597, 92213] against [105868, 92693, 105868, 119457, 128387, 65059, 109597, 92213]
+FAIL step/decode-c8/calls/step0/rank0/stream: 327680 against 327680 bytes, first difference at Some(40960)
+FAIL step/decode-c8/calls/step0/rank0/pre_mix: 128 against 128 bytes, first difference at Some(16)
+FAIL step/decode-c8/calls/step1/ids: [105868, 53116, 105868, 8223, 105868, 65059, 91168, 129276] against [105868, 92693, 105868, 112848, 105868, 65059, 59572, 129276]
+FAIL step/decode-c8/calls/step1/rank0/stream: 327680 against 327680 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step1/rank0/pre_mix: 128 against 128 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step2/ids: [105868, 67298, 105868, 59361, 105868, 99293, 105210, 12213] against [105868, 84290, 105868, 59361, 63860, 115665, 108408, 12213]
+FAIL step/decode-c8/calls/step2/rank0/stream: 327680 against 327680 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step2/rank0/pre_mix: 128 against 128 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step3/ids: [105868, 129276, 105868, 25856, 63860, 115665, 129276, 12213] against [105868, 129276, 105868, 25856, 63860, 45559, 129276, 12213]
+FAIL step/decode-c8/calls/step3/rank0/stream: 327680 against 327680 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step3/rank0/pre_mix: 128 against 128 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step4/ids: [118612, 129276, 118612, 354, 63860, 115665, 6431, 12213] against [12213, 129276, 860, 8876, 63860, 115665, 6431, 12213]
+FAIL step/decode-c8/calls/step4/rank0/stream: 327680 against 327680 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step4/rank0/pre_mix: 128 against 128 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step5/ids: [12213, 57830, 64985, 122473, 63860, 115665, 121259, 12213] against [12213, 57830, 105868, 122473, 63860, 115665, 121259, 12213]
+FAIL step/decode-c8/calls/step5/rank0/stream: 327680 against 327680 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step5/rank0/pre_mix: 128 against 128 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step6/ids: [12213, 55850, 11651, 122332, 63860, 115665, 107358, 12213] against [12213, 74534, 17704, 122332, 63860, 115665, 107358, 12213]
+FAIL step/decode-c8/calls/step6/rank0/stream: 327680 against 327680 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step6/rank0/pre_mix: 128 against 128 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step7/ids: [12213, 74534, 129276, 1358, 129276, 30063, 107358, 12213] against [12213, 74534, 129276, 1358, 63860, 30063, 107358, 12213]
+FAIL step/decode-c8/calls/step7/rank0/stream: 327680 against 327680 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step7/rank0/pre_mix: 128 against 128 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step8/ids: [12213, 74534, 92683, 19680, 63860, 45559, 107358, 12213] against [12213, 97165, 92683, 80539, 63860, 45559, 56667, 12213]
+FAIL step/decode-c8/calls/step8/rank0/stream: 327680 against 327680 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step8/rank0/pre_mix: 128 against 128 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step9/ids: [12213, 33196, 118944, 3274, 63860, 115665, 51479, 109405] against [12213, 33196, 118944, 80539, 63860, 115665, 51479, 109405]
+FAIL step/decode-c8/calls/step9/rank0/stream: 327680 against 327680 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step9/rank0/pre_mix: 128 against 128 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step10/ids: [12213, 50226, 118944, 129275, 82374, 45559, 50460, 12213] against [12213, 50226, 118944, 12213, 63860, 30063, 125016, 12213]
+FAIL step/decode-c8/calls/step10/rank0/stream: 327680 against 327680 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step10/rank0/pre_mix: 128 against 128 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step11/ids: [12213, 33196, 92683, 12213, 58345, 45559, 39593, 12213] against [12213, 73657, 92683, 12213, 58345, 45559, 125016, 12213]
+FAIL step/decode-c8/calls/step11/rank0/stream: 327680 against 327680 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls/step11/rank0/pre_mix: 128 against 128 bytes, first difference at Some(0)
+FAIL step/decode-c8/calls: 8 rows x 12 steps on 1 rank(s), door on against off: 37 checks, 36 failed; 9 captures, 855 replays (18 self-checked), 0 refused
+PASS step/decode-c8/batched: 8 rows x 12 steps on 1 rank(s), door on against off: 37 checks, 0 failed; 9 captures, 99 replays (18 self-checked), 0 refused
+[dsv41-graph] spans=18 captures=18 replays=954 checked=36 moved=954 refused=0
+dsv41-tpbench: step gate: the graph door changes a batched step

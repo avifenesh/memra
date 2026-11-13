@@ -1,0 +1,25 @@
+04:18:18 gate9: lease on GPU1 (GPU-<uuid>), receipt $LANE/leases/spec-gate9-20261110T041818
+native greedy rc 0 dsv41-run: 200 forwards, 1400 calls, 9 layer loads (0.0s), blocks 7.1s, total 20.6s
+server ready after 29 s
+[dsv41-serve] v41: MEMRA_DSV41_TRUNK_LAYERS: 9 of the 40 trunk layers run. The answers are NOT the checkpoint's; this is a rehearsal of the route's memory and serving loop
+[dsv41-serve] v41: card 0 ranks [0]: weights 63.63 GiB resident (63.63 GiB a rank) in 6.7s, 30.80 GiB of 95.06 GiB left for requests (30.80 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.0s; one-token call 5.2 ms
+[dsv41-serve] v41: 1 rank(s) on devices [0]; routed experts on the cards; resident weights [68321157272] bytes per rank; ceiling [33073651044] bytes; expert cache [] slots of 18800640 bytes (floor 0 slots, all 0); max_seq 32768; 8 session(s); prefill slices of
+[dsv41-serve] v41: capacity: the longest session with the route idle is 32768 positions (max_seq 32768); at once: 4096 sessions of 1,536 positions (1,024-token prompts), 2547 of 4,608 (4,096-token prompts), 412 of 32,768, 412 of 131,072; MEMRA_MAX_SESSIONS 8
+[dsv41-serve] v41: up in 7.0s
+2367
+[dsv41-step] calls=2 prefill=42 decode_rows=2 step_s=0.042 transient_peak=10139648 predicted_live_need=1634121555 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=2 prefill=16 decode_rows=3 step_s=0.034 transient_peak=4176956 predicted_live_need=1620467353 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=2 prefill=31 decode_rows=4 step_s=0.044 transient_peak=6397952 predicted_live_need=1628343497 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+render: PASS 7 prompts tokenized through /v1/tokenize vs the tape ids
+solo: PASS served greedy content and token counts equal dsv41-run --gen on 7 cases
+batched: PASS five concurrent requests answer byte for byte as solo
+stream: PASS 200 deltas of sys_json
+sampled: PASS seed 1017, T 0.8, top_p 0.95, top_k 40: two solo runs and one beside four others
+stops: PASS stop 'lle' cuts sys_json at its first occurrence; max_tokens 5 cuts gsm with finish length
+penalties: PASS frequency 0.5, presence 0.3 greedy: served, identical twice
+budget: PASS 63 -> 200 (reasoning 95 chars), 101 -> 400
+speed: story 200 {'prompt_tokens': 22, 'completion_tokens': 128, 'total_tokens': 150, 'prompt_tokens_details': {'cached_tokens': 0}, 'elapsed_s': 0.821355986} in 0.8s
+CHAT-GATE PASS
+serve_gate9 gate9-b8 rc 0
+04:19:10 gate9: lease ended rc 0

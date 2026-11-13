@@ -1,0 +1,77 @@
+k22-keyed9-copy: jobs 12 pass 12
+k22-keyed9-on: jobs 12 pass 12
+hashes k22-keyed9-on vs k22-keyed9-copy: same 8 different 0 missing 0 (4638 hash lines)
+
+rows-time (one-token ms median | rows 2..8 repeat ms median)
+  needle       prompt   3761 k22-keyed9-copy 1: 4.98 | 5.72 6.64 7.45 8.37 9.31 10.06 11.29
+  needle       prompt   3761 k22-keyed9-on  1: 5.13 | 5.97 6.95 7.78 8.76 9.70 10.54 11.75
+  needle1200   prompt  18343 k22-keyed9-copy 1: 5.08 | 5.87 6.76 7.56 8.47 9.38 10.21 11.45
+  needle1200   prompt  18343 k22-keyed9-on  1: 5.20 | 6.00 6.94 7.75 8.72 9.69 10.53 11.82
+  decode32k    prompt  41098 k22-keyed9-copy 1: 5.22 | 5.98 6.84 7.67 8.57 9.44 10.29 11.53
+  decode32k    prompt  41098 k22-keyed9-on  1: 5.24 | 6.05 6.96 7.80 8.77 9.68 10.58 11.82
+batch-time (batched ms 1/2/4/8 | each alone)
+  distinct8  k22-keyed9-copy 4.65 6.05 8.50 13.90 | 4.80 10.03 20.02 40.13 | experts/layer 28.8
+    argmax 4.95/6.01/8.45/13.75 fwd 3.92/4.87/7.02/11.95
+    launch_ms_1_two_steps: total 906 (14.37 ms) per layer [[90, 1.24], [98, 1.74], [124, 1.58], [92, 1.25], [92, 1.24], [92, 1.23], [92, 1.23], [92, 1.24], [124, 1.57], [10, 2.04]]
+    launch_ms_8_two_steps: total 1424 (31.69 ms) per layer [[118, 2.86], [126, 3.49], [250, 3.9], [134, 2.84], [134, 2.91], [134, 2.93], [134, 2.72], [134, 2.79], [250, 3.86], [10, 3.39]]
+    launches_1_two_steps: total 906 (0.0 ms) per layer [[90, 0.0], [98, 0.0], [124, 0.0], [92, 0.0], [92, 0.0], [92, 0.0], [92, 0.0], [92, 0.0], [124, 0.0], [10, 0.0]]
+    launches_8_two_steps: total 1424 (0.0 ms) per layer [[118, 0.0], [126, 0.0], [250, 0.0], [134, 0.0], [134, 0.0], [134, 0.0], [134, 0.0], [134, 0.0], [250, 0.0], [10, 0.0]]
+    per kernel, two steps: launches and ms, launch_ms_1_two_steps -> launch_ms_8_two_steps
+      gemm_f8_tiles                  54    2.07 ->   54   12.64  (+10.57)
+      memra_v41_gemm_f8             132    3.05 ->  132    4.34  (+1.29)
+      memra_v41_gemm_ffma            28    2.56 ->   28    4.07  (+1.51)
+      copy_d2d                       62    0.21 ->  496    2.69  (+2.48)
+      memra_v41_act_quant           186    1.18 ->  186    1.29  (+0.11)
+      memra_v41_gemm_bf16            24    1.02 ->   26    1.20  (+0.18)
+      hc_mixes                       36    0.64 ->   36    0.93  (+0.29)
+      memra_v41_rmsnorm              78    0.68 ->   82    0.74  (+0.06)
+      memra_v41_rope                 62    0.42 ->   66    0.46  (+0.04)
+      hc_post                        36    0.29 ->   36    0.39  (+0.10)
+      swiglu                         36    0.29 ->   36    0.36  (+0.07)
+      memra_v41_sparse_attn          18    0.31 ->   18    0.32  (+0.01)
+      moe_combine                    18    0.18 ->   18    0.27  (+0.09)
+      hc_pre                         38    0.24 ->   38    0.27  (+0.03)
+      moe_plan                       18    0.22 ->   18    0.23  (+0.01)
+      index_score                     4    0.03 ->   32    0.22  (+0.19)
+      route                          18    0.21 ->   18    0.21  (+0.00)
+      topk                            4    0.03 ->   32    0.21  (+0.18)
+      attn_idx_batch                 18    0.18 ->   18    0.18  (+0.00)
+      comp_pool2                      2    0.02 ->   16    0.16  (+0.14)
+      engram_dequant                  2    0.22 ->    2    0.15  (+-0.07)
+      argmax_rows                     2    0.13 ->    2    0.13  (+0.00)
+      memra_v41_fp4_qdq               8    0.08 ->   12    0.12  (+0.04)
+      (host between layers)          20    0.07 ->   20    0.09  (+0.02)
+      engram_gate                     2    0.04 ->    2    0.04  (+0.00)
+  distinct8  k22-keyed9-on  4.73 6.18 8.64 14.05 | 4.98 10.23 20.54 41.15 | experts/layer 28.8
+    argmax 5.01/6.17/8.54/13.90 fwd 3.94/4.96/7.15/12.06
+    launch_ms_1_two_steps: total 896 (14.23 ms) per layer [[88, 1.23], [96, 1.53], [130, 1.64], [88, 1.22], [88, 1.22], [88, 1.22], [88, 1.21], [88, 1.23], [130, 1.64], [12, 2.09]]
+    launch_ms_8_two_steps: total 952 (29.58 ms) per layer [[88, 2.74], [96, 3.31], [158, 3.46], [88, 2.61], [88, 2.69], [88, 2.7], [88, 2.51], [88, 2.56], [158, 3.4], [12, 3.6]]
+    launches_1_two_steps: total 896 (0.0 ms) per layer [[88, 0.0], [96, 0.0], [130, 0.0], [88, 0.0], [88, 0.0], [88, 0.0], [88, 0.0], [88, 0.0], [130, 0.0], [12, 0.0]]
+    launches_8_two_steps: total 952 (0.0 ms) per layer [[88, 0.0], [96, 0.0], [158, 0.0], [88, 0.0], [88, 0.0], [88, 0.0], [88, 0.0], [88, 0.0], [158, 0.0], [12, 0.0]]
+    per kernel, two steps: launches and ms, launch_ms_1_two_steps -> launch_ms_8_two_steps
+      gemm_f8_tiles                  54    2.07 ->   54   12.92  (+10.85)
+      memra_v41_gemm_f8             132    3.06 ->  132    4.38  (+1.32)
+      memra_v41_gemm_ffma            28    2.58 ->   28    4.23  (+1.65)
+      memra_v41_act_quant           186    1.15 ->  186    1.28  (+0.13)
+      memra_v41_gemm_bf16            26    1.05 ->   26    1.23  (+0.18)
+      hc_mixes                       36    0.64 ->   36    0.95  (+0.31)
+      memra_v41_rmsnorm              82    0.71 ->   82    0.76  (+0.05)
+      memra_v41_rope                 66    0.45 ->   66    0.47  (+0.02)
+      hc_post                        36    0.29 ->   36    0.38  (+0.09)
+      swiglu                         36    0.30 ->   36    0.36  (+0.06)
+      memra_v41_sparse_attn_keys     18    0.32 ->   18    0.35  (+0.03)
+      hc_pre                         38    0.24 ->   38    0.29  (+0.05)
+      moe_combine                    18    0.18 ->   18    0.25  (+0.07)
+      moe_plan                       18    0.22 ->   18    0.23  (+0.01)
+      route                          18    0.21 ->   18    0.22  (+0.01)
+      index_score                     4    0.03 ->   32    0.22  (+0.19)
+      put_rows                       34    0.20 ->   34    0.22  (+0.02)
+      topk                            4    0.03 ->   32    0.21  (+0.18)
+      argmax_rows                     2    0.13 ->    2    0.13  (+0.00)
+      copy_d2d                        2    0.04 ->    2    0.12  (+0.08)
+      attn_idx_batch                 18    0.11 ->   18    0.12  (+0.01)
+      memra_v41_fp4_qdq              12    0.11 ->   12    0.12  (+0.01)
+      engram_gate                     2    0.04 ->    2    0.05  (+0.01)
+      comp_pool2_keys                 4    0.04 ->    4    0.04  (+0.00)
+      (host between layers)          20    0.02 ->   20    0.04  (+0.02)
+      engram_dequant                  2    0.01 ->    2    0.02  (+0.01)

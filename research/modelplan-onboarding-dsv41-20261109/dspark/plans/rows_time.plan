@@ -1,0 +1,4 @@
+# what a decode call costs by its rows: short context, past the window, long context
+rows-time short $LANE/dec/ids/hebrew_para.prompt.i32 $LANE/spec/ids/cross128.force.i32 8
+rows-time needle $LANE/dec/ids/needle.prompt.i32 $LANE/spec/ids/cross128.force.i32 8
+verify-rows gsm $LANE/dec/ids/gsm.prompt.i32 $LANE/dec/ids/gsm.gen.i32

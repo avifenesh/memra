@@ -1,0 +1,42 @@
+12:17:58 perf-pair-g3-lease: waiting (holding nothing) for cards 0 1 to be free together
+gate-B-device-push start 12:18:09
+gate-B-device-push rc 0 end 12:18:27
+gate-B-device-push: 360 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1]: 967494 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+gate-C-device-push start 12:18:27
+gate-C-device-push rc 1 end 12:18:45
+gate-C-device-push: 1081 checks, 96 failed 96 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1]: 1028261 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+dec-run1-A start 12:18:45
+dec-run1-A rc 0 end 12:18:59
+dec-run2-B start 12:18:59
+dec-run2-B rc 0 end 12:19:13
+dec-run3-C start 12:19:13
+dec-run3-C rc 0 end 12:19:27
+dec-run4-C start 12:19:27
+dec-run4-C rc 0 end 12:19:40
+dec-run5-B start 12:19:40
+dec-run5-B rc 0 end 12:19:54
+dec-run6-A start 12:19:54
+dec-run6-A rc 0 end 12:20:08
+dec-run7-A start 12:20:08
+dec-run7-A rc 0 end 12:20:22
+dec-run8-B start 12:20:22
+dec-run8-B rc 0 end 12:20:36
+dec-run9-C start 12:20:36
+dec-run9-C rc 0 end 12:20:50
+rows-run1-A start 12:20:50
+rows-run1-A rc 0 end 12:21:03
+rows-run2-B start 12:21:03
+rows-run2-B rc 0 end 12:21:16
+rows-run3-C start 12:21:16
+rows-run3-C rc 0 end 12:21:29
+rows-run4-C start 12:21:29
+rows-run4-C rc 0 end 12:21:42
+rows-run5-B start 12:21:42
+rows-run5-B rc 0 end 12:21:55
+rows-run6-A start 12:21:55
+rows-run6-A rc 0 end 12:22:08
+FOUR-INNER-DONE

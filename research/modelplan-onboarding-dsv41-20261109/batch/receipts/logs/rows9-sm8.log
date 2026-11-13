@@ -1,0 +1,11 @@
+04:10:38 rows9-sm8: lease on GPU1 (GPU-<uuid>), receipt $LANE/leases/spec-rows9-sm8-20261110T041038
+host memory before: Mem:            1002         128         555           0         306         873
+dsv41-spec: 2 job(s), 9 layers + 0 draft stages, 1 rank(s) on devices [0], up in 6.4s
+dsv41-spec: short done in 1.5s
+dsv41-spec: needle done in 8.3s
+dsv41-spec: expert cache CacheStats { lookups: 0, hits: 0, misses: 0, h2d_bytes: 0, evictions: 0, slabs_released: 0, slabs_grown: 0 }, slots []
+{"id":"short","job":"rows-time","one_token_ms":[9.774522000000001,9.775694,9.170858,9.571839,9.791078,9.55897,9.501754,9.494492000000001,9.57971,8.908394,9.587663,9.835424],"one_token_ms_median":9.57971,"pass":true,"prefill_ms":148.12962700000003,"prompt":27,"reps":12,"rows_2_to_6_first_ms":[15.293796,16.655687999999998,13.156142,15.961046999999999,17.194666],"rows_2_to_6_repeat_ms_median":[7.130179,8.372131,9.623156000000002,12.292467,13.290873999999999],"same_token_rows_2_to_6_first_ms":[11.776384,10.49321,9.673572,11.081140999999999,11.861622],"same_token_rows_2_to_6_repeat_ms_median":[7.278751,8.183027000000001,9.132390000000001,11.073741,11.836614]}
+{"id":"needle","job":"rows-time","one_token_ms":[6.471602,6.384550999999999,6.428706999999999,6.376279,6.384631,6.369558,6.409448,6.339563,6.41083,6.35067,6.35689,6.346474000000001],"one_token_ms_median":6.384550999999999,"pass":true,"prefill_ms":6970.14643,"prompt":3761,"reps":12,"rows_2_to_6_first_ms":[7.974113999999999,9.133992000000001,10.473711,12.939126,13.872877],"rows_2_to_6_repeat_ms_median":[7.888986000000001,9.131949,10.476695,12.913548,13.850543],"same_token_rows_2_to_6_first_ms":[8.098641,8.987333,9.850927,11.702063,12.478226],"same_token_rows_2_to_6_repeat_ms_median":[8.077018,8.997417,9.846761,11.682152,12.479436999999999]}
+SPEC-DONE jobs 2 failed 0
+spec_run rc 0
+04:10:55 rows9-sm8: lease ended rc 0

@@ -1,0 +1,18 @@
+09:36:17 ab-k15-r5: lease on GPU1 (GPU-<uuid>), receipt $LANE/leases/spec-ab-k15-r5-20261110T093617
+server ready after 6 s
+[dsv41-serve] v41: MEMRA_DSV41_TRUNK_LAYERS: 9 of the 40 trunk layers run. The answers are NOT the checkpoint's; this is a rehearsal of the route's memory and serving loop
+[dsv41-serve] v41: card 0 ranks [0]: weights 63.63 GiB resident (63.63 GiB a rank) in 5.0s, 30.81 GiB of 95.06 GiB left for requests (30.81 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.0s; one-token call 5.0 ms
+[dsv41-serve] v41: 1 rank(s) on devices [0]; routed experts on the cards; resident weights [68321157272] bytes per rank; ceiling [33086233956] bytes; expert cache [] slots of 18800640 bytes (floor 0 slots, all 0); max_seq 8192; 8 session(s); prefill slices of 8192 rows
+[dsv41-serve] v41: capacity: the longest session with the route idle is 8192 positions (max_seq 8192); at once: 4096 sessions of 1,536 positions (1,024-token prompts), 4096 of 4,608 (4,096-token prompts), 2186 of 32,768, 2327 of 131,072; MEMRA_MAX_SESSIONS 8
+[dsv41-serve] v41: up in 5.3s
+09:36:23 label ab-k15/r5-A engine memra model v41 seed 1147337546 plan ['decode_c1', 'conc8']
+09:36:30 decode_c1 0 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.3319, 'decode_tok_s': 173.63, 'tok_per_chunk': 1.002, 'spec_accept_length': None} None 
+09:36:33 decode_c1 1 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.3138, 'decode_tok_s': 173.81, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+09:36:36 decode_c1 2 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.3042, 'decode_tok_s': 173.37, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+09:37:26 conc8 0 {'wall_s': 25.192, 'completion_tokens': 4096, 'agg_out_tok_s': 162.59, 'n_err': 0} 21.015 None None
+09:37:52 conc8 1 {'wall_s': 25.215, 'completion_tokens': 4096, 'agg_out_tok_s': 162.44, 'n_err': 0} 20.98 None None
+09:38:17 conc8 2 {'wall_s': 25.18, 'completion_tokens': 4096, 'agg_out_tok_s': 162.67, 'n_err': 0} 21.005 None None
+09:38:17 DONE ab-k15/r5-A elapsed 114 s quality pass: None
+serve_bench ab-k15/r5-A rc 0
+09:38:19 ab-k15-r5: lease ended rc 0

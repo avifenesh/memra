@@ -24,6 +24,8 @@ pub static PACK: ModelPack = ModelPack {
         Gate::Serve,
     ],
     checkpoint_parity: None,
+    checkpoint_parity_classes: &[],
+    checkpoint_probe: None,
     matches_config: |config| config.step35.is_some(),
     plan_builder,
     tensor_schema,

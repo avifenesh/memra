@@ -1,0 +1,89 @@
+11:38:41 peer-pull run 1 k16 rc 0 SPEC-DONE jobs 1 failed 0
+11:38:54 peer-pull run 2 k19 rc 0 SPEC-DONE jobs 1 failed 0
+11:39:07 peer-pull run 3 k19 rc 0 SPEC-DONE jobs 1 failed 0
+11:39:20 peer-pull run 4 k16 rc 0 SPEC-DONE jobs 1 failed 0
+11:39:34 device-push run 1 k16 rc 0 SPEC-DONE jobs 1 failed 0
+11:40:51 device-push run 2 k19 rc 0 SPEC-DONE jobs 1 failed 0
+11:41:03 device-push run 3 k19 rc 0 SPEC-DONE jobs 1 failed 0
+11:41:13 device-push run 4 k16 rc 0 SPEC-DONE jobs 1 failed 0
+peer-r1-k16 argmax [3.9, 4.58, 5.92, 8.44] fwd [3.43, 4.09, 5.28, 7.57]
+peer-r2-k19 argmax [3.92, 4.53, 5.7, 8.18] fwd [3.37, 4.01, 5.17, 7.43]
+peer-r3-k19 argmax [3.92, 4.52, 5.73, 8.18] fwd [3.39, 4.02, 5.17, 7.43]
+peer-r4-k16 argmax [3.92, 4.59, 5.92, 8.5] fwd [3.41, 4.07, 5.29, 7.59]
+peer k16: argmax 1/2/4/8 [3.91, 4.58, 5.92, 8.47] fwd [3.42, 4.08, 5.28, 7.58]
+peer k19: argmax 1/2/4/8 [3.92, 4.52, 5.72, 8.18] fwd [3.38, 4.02, 5.17, 7.43]
+peer, 1 sequence(s): kernel, launches a step over both ranks, own ms a step summed over both ranks, k16 -> k19
+   memra_v41_gemm_f8               132   2.23 ->    132   2.21  (-0.02)
+   memra_v41_gemm_ffma              28   1.62 ->     28   1.60  (-0.02)
+   memra_v41_act_quant             168   1.32 ->    168   1.26  (-0.06)
+   swiglu_tiles                     18   0.98 ->     18   0.98  (+0.01)
+   memra_v41_gemm_bf16              24   0.83 ->     24   0.83  (-0.01)
+   memra_v41_rmsnorm                78   0.68 ->     78   0.68  (+0.00)
+   hc_mixes                         36   0.64 ->     36   0.62  (-0.01)
+   hc_post                          36   0.52 ->     36   0.49  (-0.03)
+   gemm_f8_tiles                    18   0.45 ->     18   0.41  (-0.04)
+   memra_v41_rope                   62   0.39 ->     62   0.39  (-0.01)
+   blk_pack                         36   0.37 ->     36   0.35  (-0.02)
+   memra_v41_sparse_attn_keys       18   0.30 ->     18   0.30  (+0.00)
+   hc_pre                           38   0.24 ->     38   0.24  (+0.00)
+   moe_plan                         18   0.21 ->     18   0.21  (+0.00)
+   engram_dequant                    2   0.17 ->      2   0.21  (+0.04)
+   put_rows                         30   0.21 ->     30   0.20  (-0.01)
+peer, 8 sequence(s): kernel, launches a step over both ranks, own ms a step summed over both ranks, k16 -> k19
+   swiglu_tiles                     18   5.12 ->     18   5.13  (+0.01)
+   memra_v41_gemm_f8               132   3.07 ->    132   2.99  (-0.08)
+   memra_v41_gemm_ffma              28   2.61 ->     28   2.29  (-0.32)
+   gemm_f8_tiles                    18   2.17 ->     18   2.00  (-0.17)
+   blk_pack                        144   1.73 ->    144   1.68  (-0.05)
+   memra_v41_act_quant             168   1.27 ->    168   1.25  (-0.02)
+   memra_v41_gemm_bf16              26   1.06 ->     26   1.05  (-0.00)
+   hc_mixes                         36   0.89 ->     36   0.88  (-0.01)
+   memra_v41_rmsnorm                82   0.71 ->     82   0.71  (-0.01)
+   hc_post                          36   0.42 ->     36   0.39  (-0.04)
+   memra_v41_rope                   66   0.42 ->     66   0.42  (-0.00)
+   memra_v41_sparse_attn_keys       18   0.31 ->     18   0.31  (+0.00)
+   hc_pre                           38   0.26 ->     38   0.24  (-0.02)
+   put_rows                         34   0.24 ->     34   0.24  (-0.00)
+   moe_plan                         18   0.23 ->     18   0.23  (+0.00)
+   index_score                      32   0.22 ->     32   0.22  (+0.00)
+device-r1-k16 argmax [3.68, 4.18, 5.54, 8.27] fwd [3.17, 3.66, 4.91, 7.32]
+device-r2-k19 argmax [3.65, 4.13, 5.31, 7.98] fwd [3.15, 3.61, 4.76, 7.25]
+device-r3-k19 argmax [3.64, 4.12, 5.31, 8.0] fwd [3.14, 3.62, 4.75, 7.25]
+device-r4-k16 argmax [3.67, 4.19, 5.55, 8.29] fwd [3.15, 3.66, 4.9, 7.35]
+device k16: argmax 1/2/4/8 [3.68, 4.18, 5.55, 8.28] fwd [3.16, 3.66, 4.91, 7.34]
+device k19: argmax 1/2/4/8 [3.65, 4.12, 5.31, 7.99] fwd [3.15, 3.62, 4.76, 7.25]
+device, 1 sequence(s): kernel, launches a step over both ranks, own ms a step summed over both ranks, k16 -> k19
+   memra_v41_gemm_f8               132   2.22 ->    132   2.22  (+0.00)
+   memra_v41_gemm_ffma              28   1.63 ->     28   1.61  (-0.02)
+   memra_v41_act_quant             168   1.15 ->    168   1.15  (+0.00)
+   swiglu_tiles                     18   0.98 ->     18   0.98  (+0.00)
+   memra_v41_gemm_bf16              24   0.83 ->     24   0.83  (+0.00)
+   push                             72   0.73 ->     72   0.72  (-0.01)
+   memra_v41_rmsnorm                78   0.68 ->     78   0.68  (-0.00)
+   hc_mixes                         36   0.63 ->     36   0.63  (+0.00)
+   pull                             72   0.48 ->     72   0.49  (+0.00)
+   gemm_f8_tiles                    18   0.45 ->     18   0.41  (-0.04)
+   memra_v41_rope                   62   0.39 ->     62   0.40  (+0.01)
+   hc_post                          36   0.34 ->     36   0.34  (-0.00)
+   memra_v41_sparse_attn_keys       18   0.30 ->     18   0.30  (-0.00)
+   engram_dequant                    2   0.16 ->      2   0.25  (+0.09)
+   hc_pre                           38   0.24 ->     38   0.24  (+0.01)
+   moe_plan                         18   0.21 ->     18   0.22  (+0.00)
+device, 8 sequence(s): kernel, launches a step over both ranks, own ms a step summed over both ranks, k16 -> k19
+   swiglu_tiles                     18   5.07 ->     18   5.11  (+0.04)
+   memra_v41_gemm_f8               132   3.11 ->    132   3.09  (-0.02)
+   memra_v41_gemm_ffma              28   2.60 ->     28   2.27  (-0.33)
+   gemm_f8_tiles                    18   2.16 ->     18   2.00  (-0.16)
+   memra_v41_act_quant             168   1.19 ->    168   1.20  (+0.01)
+   push                             72   1.13 ->     72   1.15  (+0.02)
+   memra_v41_gemm_bf16              26   1.06 ->     26   1.05  (-0.01)
+   hc_mixes                         36   0.88 ->     36   0.86  (-0.01)
+   memra_v41_rmsnorm                82   0.71 ->     82   0.71  (+0.00)
+   pull                             72   0.69 ->     72   0.69  (-0.00)
+   memra_v41_rope                   66   0.42 ->     66   0.42  (+0.00)
+   hc_post                          36   0.35 ->     36   0.35  (+0.00)
+   memra_v41_sparse_attn_keys       18   0.31 ->     18   0.31  (+0.00)
+   put_rows                         34   0.25 ->     34   0.24  (-0.01)
+   hc_pre                           38   0.24 ->     38   0.24  (-0.01)
+   moe_plan                         18   0.23 ->     18   0.23  (+0.00)
+AB-PAIR-DONE k16 k19

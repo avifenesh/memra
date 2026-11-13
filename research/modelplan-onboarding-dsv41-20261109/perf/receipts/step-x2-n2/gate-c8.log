@@ -1,0 +1,12 @@
+dsv41-tpbench: 1 cells x 3 rounds on 2 rank(s) [0, 0], 9/9 layers resident, chunk 8192, max_pos 1024
+  plan decode-c8: workspace 0.53 GiB + state 0.01 GiB a rank
+  carried state: 1281 B a position a rank (+1.1 MiB of window rings a sequence); reserve 0.54 GiB a device-rank
+[dsv41-tp] ranks=2 devices=[0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+[dsv41-resident] device 0 ranks [0, 1]: 9 of 9 layers + head resident, 63.95 GiB (31.97 GiB a rank); free 94.43 -> 30.48 GiB of 95.06 GiB; reserve 1.09 GiB; load 4.4s
+  capacity at 4096 positions: 2215 sequences a rank after one prefill's 1.96 GiB workspace (0.006 GiB state each, 15.24 GiB free a rank)
+  capacity at 32768 positions: 170 sequences a rank after one prefill's 8.38 GiB workspace (0.040 GiB state each, 15.24 GiB free a rank)
+  capacity at 131072 positions: 4 sequences a rank after one prefill's 14.61 GiB workspace (0.157 GiB state each, 15.24 GiB free a rank)
+  capacity at 262144 positions: 0 sequences a rank after one prefill's 29.05 GiB workspace (0.314 GiB state each, 15.24 GiB free a rank)
+PASS step/decode-c8/calls: 8 rows x 12 steps on 2 rank(s), door on against off: 61 checks, 0 failed; 9 captures, 855 replays (18 self-checked), 0 refused
+PASS step/decode-c8/batched: 8 rows x 12 steps on 2 rank(s), door on against off: 61 checks, 0 failed; 9 captures, 99 replays (18 self-checked), 0 refused
+[dsv41-graph] spans=18 captures=18 replays=954 checked=36 moved=954 refused=0

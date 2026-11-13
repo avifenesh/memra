@@ -1,0 +1,18 @@
+11:09:32 ab-k18-r7: lease on GPU1 (GPU-<uuid>), receipt $LANE/leases/spec-ab-k18-r7-20261110T110931; GPU2  85, 76 %, 0x0000000000000004, 137255157 us, 0 us
+server ready after 8 s
+[dsv41-serve] v41: MEMRA_DSV41_TRUNK_LAYERS: 9 of the 40 trunk layers run. The answers are NOT the checkpoint's; this is a rehearsal of the route's memory and serving loop
+[dsv41-serve] v41: card 0 ranks [0]: weights 63.63 GiB resident (63.63 GiB a rank) in 5.6s, 30.81 GiB of 95.06 GiB left for requests (30.81 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.0s; one-token call 4.7 ms
+[dsv41-serve] v41: 1 rank(s) on devices [0]; routed experts on the cards; resident weights [68321157272] bytes per rank; ceiling [33086233956] bytes; expert cache [] slots of 18800640 bytes (floor 0 slots, all 0); max_seq 8192; 8 session(s); prefill slices of 8192 rows
+[dsv41-serve] v41: capacity: the longest session with the route idle is 8192 positions (max_seq 8192); at once: 4096 sessions of 1,536 positions (1,024-token prompts), 4096 of 4,608 (4,096-token prompts), 2186 of 32,768, 2327 of 131,072; MEMRA_MAX_SESSIONS 8
+[dsv41-serve] v41: up in 5.9s
+11:09:40 label ab-k18/r7-A engine memra model v41 seed 1152934510 plan ['decode_c1', 'conc8']
+11:09:46 decode_c1 0 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2806, 'decode_tok_s': 195.59, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+11:09:49 decode_c1 1 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2546, 'decode_tok_s': 195.78, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+11:09:52 decode_c1 2 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2472, 'decode_tok_s': 194.82, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+11:10:37 conc8 0 {'wall_s': 22.809, 'completion_tokens': 4096, 'agg_out_tok_s': 179.58, 'n_err': 0} 23.165 None None
+11:11:00 conc8 1 {'wall_s': 23.048, 'completion_tokens': 4096, 'agg_out_tok_s': 177.71, 'n_err': 0} 22.915 None None
+11:11:23 conc8 2 {'wall_s': 23.191, 'completion_tokens': 4096, 'agg_out_tok_s': 176.62, 'n_err': 0} 22.775 None None
+11:11:23 DONE ab-k18/r7-A elapsed 103 s quality pass: None
+serve_bench ab-k18/r7-A rc 0
+11:11:25 ab-k18-r7: lease ended rc 0; GPU2  81, 59 %, 0x0000000000000004, 137255157 us, 0 us

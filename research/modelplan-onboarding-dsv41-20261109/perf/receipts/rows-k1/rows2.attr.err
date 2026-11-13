@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "$LANE/bin/prof_attr.py", line 200, in <module>
+    main()
+    ~~~~^^
+  File "$LANE/bin/prof_attr.py", line 36, in main
+    rows = cur.execute(
+           ~~~~~~~~~~~^
+        "select start, end, text, textId, globalTid from NVTX_EVENTS where eventType = 59 and end is not null"
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ).fetchall()
+    ^
+sqlite3.OperationalError: no such table: NVTX_EVENTS

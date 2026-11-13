@@ -1,0 +1,27 @@
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) gathers-only=true
+dsv41-bench: 4096 tokens, layers [2, 20, 21], reps 3, decode 8, chunk 8192, path group1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition
+layer 0: load 0.5 s, block 56.2 ms
+layer 1: load 0.5 s, block 51.2 ms
+layer 2: prefill 4096 tokens: first 57.950 ms, reps [57.461, 57.459, 57.467] ms, median 57.461 ms, 3/3 reruns byte-identical, engram NaN ms, out b99aad4ceed2c852afcaeb45 pre 18eab62a8520470791e5d551
+layer 3: load 0.5 s, block 54.7 ms
+layer 4: load 0.5 s, block 54.2 ms
+layer 5: load 0.5 s, block 53.3 ms
+layer 6: load 0.5 s, block 54.2 ms
+layer 7: load 0.5 s, block 56.0 ms
+layer 8: load 0.5 s, block 55.1 ms
+layer 9: load 0.5 s, block 52.7 ms
+layer 10: load 0.5 s, block 52.0 ms
+layer 11: load 0.5 s, block 53.4 ms
+layer 12: load 0.5 s, block 54.4 ms
+layer 13: load 0.5 s, block 55.4 ms
+layer 14: load 0.5 s, block 55.9 ms
+layer 15: load 0.5 s, block 56.3 ms
+layer 16: load 0.5 s, block 53.0 ms
+layer 17: load 0.5 s, block 54.5 ms
+layer 18: load 0.5 s, block 54.3 ms
+layer 19: load 0.5 s, block 57.0 ms
+layer 20: prefill 4096 tokens: first 55.461 ms, reps [55.560, 55.536, 55.606] ms, median 55.560 ms, 3/3 reruns byte-identical, engram NaN ms, out 4fee875bf63377e428d57c3a pre 3eb5421d9e34cc9f3b4987f9
+layer 21: prefill 4096 tokens: first 59.324 ms, reps [53.676, 53.641, 53.617] ms, median 53.641 ms, 3/3 reruns byte-identical, engram NaN ms, out 56dd8aaaf47ea0cedbe9286f pre 0a6f42c47f706f93652c9f48
+layer 2: decode at 4096..4104: steps [4.029, 4.009, 3.969, 4.010, 3.969, 4.002, 3.970, 4.005] ms, median (steps 2..) 4.002 ms
+layer 20: decode at 4096..4104: steps [3.394, 3.393, 3.387, 3.389, 3.397, 3.404, 3.400, 3.401] ms, median (steps 2..) 3.397 ms
+layer 21: decode at 4096..4104: steps [2.974, 2.955, 2.972, 2.963, 2.957, 2.967, 2.971, 2.967] ms, median (steps 2..) 2.967 ms

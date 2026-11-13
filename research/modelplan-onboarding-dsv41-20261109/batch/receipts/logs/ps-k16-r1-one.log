@@ -1,0 +1,19 @@
+server ready after 8 s
+[dsv41-serve] v41: MEMRA_DSV41_TRUNK_LAYERS: 9 of the 40 trunk layers run. The answers are NOT the checkpoint's; this is a rehearsal of the route's memory and serving loop
+[dsv41-serve] v41: card 0 ranks [0]: weights 63.63 GiB resident (63.63 GiB a rank) in 5.5s, 30.81 GiB of 95.06 GiB left for requests (30.81 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.0s; one-token call 4.8 ms
+[dsv41-serve] v41: 1 rank(s) on devices [0]; routed experts on the cards; resident weights [68321157272] bytes per rank; ceiling [33086233956] bytes; expert cache [] slots of 18800640 bytes (floor 0 slots, all 0); max_seq 8192; 8 session(s); prefill slices of 8192 rows
+[dsv41-serve] v41: capacity: the longest session with the route idle is 8192 positions (max_seq 8192); at once: 4096 sessions of 1,536 positions (1,024-token prompts), 4080 of 4,608 (4,096-token prompts), 2186 of 32,768, 2327 of 131,072; MEMRA_MAX_SESSIONS 8
+[dsv41-serve] v41: up in 5.8s
+09:56:21 label ps-k16/r1-one engine memra model v41 seed 1148535470 plan ['decode_c1', 'conc8', 'dconc8']
+09:56:27 decode_c1 0 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2863, 'decode_tok_s': 186.21, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+09:56:30 decode_c1 1 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2749, 'decode_tok_s': 185.61, 'tok_per_chunk': 1.0, 'spec_accept_length': None} None 
+09:56:33 decode_c1 2 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.2627, 'decode_tok_s': 186.92, 'tok_per_chunk': 1.002, 'spec_accept_length': None} None 
+09:56:49 conc8 0 {'wall_s': 8.185, 'completion_tokens': 4096, 'agg_out_tok_s': 500.42, 'n_err': 0} 68.57 None None
+09:56:58 conc8 1 {'wall_s': 8.194, 'completion_tokens': 4096, 'agg_out_tok_s': 499.88, 'n_err': 0} 68.295 None None
+09:57:06 conc8 2 {'wall_s': 8.242, 'completion_tokens': 4096, 'agg_out_tok_s': 496.95, 'n_err': 0} 67.915 None None
+09:57:23 dconc8 0 {'wall_s': 8.395, 'completion_tokens': 4096, 'agg_out_tok_s': 487.93, 'n_err': 0} 66.525 None None
+09:57:31 dconc8 1 {'wall_s': 8.451, 'completion_tokens': 4096, 'agg_out_tok_s': 484.69, 'n_err': 0} 66.055 None None
+09:57:40 dconc8 2 {'wall_s': 8.575, 'completion_tokens': 4096, 'agg_out_tok_s': 477.66, 'n_err': 0} 64.99 None None
+09:57:40 DONE ps-k16/r1-one elapsed 79 s quality pass: None
+serve_bench ps-k16/r1-one rc 0

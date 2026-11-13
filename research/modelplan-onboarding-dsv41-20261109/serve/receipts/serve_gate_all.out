@@ -1,0 +1,59 @@
+b84f7cad9115517339317612399e8b88ac03adde7ffec474b905c88bd4b800be  target-serve/release/memra-server
+c7f4d63672d79d0394b69af101ff4ee218250057f22ba9459639ae42a7865e13  target-serve/release/memra
+MemAvailable:   1005088868 kB
+918d22c2451ebe291afb5a336ff68b2de00562751b3449ef777db5a422ef1c67  target-serve/release/dsv41-run
+a80b1623804c41f13a6e9c082a441a6b3095bd339ed0455c90fe4e0fc7483545  serve/scripts/dsv41-run-experts-host
+lease ckpt -> leases/serve-ckpt-20261109T222849
+family=deepseek_v41 verified=Checkpoint
+ckpt rc 0
+status	passed
+reference_engine	deepseek-v41-vendor-model.py-cuda
+native_engine	memra-native-full-precision
+numeric_class	deepseek-v41-source-program
+tokens	0,128803,3085,344,270,6102,294,8760,33,9361,295,834,2004,16,128804,128822
+vocab	129280
+max_abs	2.1399536
+max_rel	34384.133
+reference_argmax	51119
+native_argmax	51119
+artifact_lock_sha256	d0c10740b5bb1f901872b3c3ee4b7a5d3fbf8a63ba5986bcb2f907a6ba191977
+native_runner_sha256	a80b1623804c41f13a6e9c082a441a6b3095bd339ed0455c90fe4e0fc7483545
+checkpoint_probe_sha256	21aa0d420e79f8df3567e8116b812a31f3e32a4422e9427eab960706d413d70a
+Config=passed
+TokenizerTemplate=passed
+TensorCensus=passed
+TinyParity=pending
+CheckpointParity=passed
+RewriteParity=pending
+Serve=pending
+lease verify -> leases/serve-verify-20261109T223327
+family=deepseek_v41 verified=Serve
+verify rc 0
+status	passed
+family	deepseek_v41
+model	verify
+endpoint	/v1/completions
+artifact_lock_sha256	d0c10740b5bb1f901872b3c3ee4b7a5d3fbf8a63ba5986bcb2f907a6ba191977
+native_runner_sha256	b84f7cad9115517339317612399e8b88ac03adde7ffec474b905c88bd4b800be
+Config=passed
+TokenizerTemplate=passed
+TensorCensus=passed
+TinyParity=pending
+CheckpointParity=passed
+RewriteParity=pending
+Serve=passed
+lease chat -> leases/serve-chat-20261109T223401
+server ready after 22 s
+chat gate rc 0
+chat rc 0
+render: PASS 7 prompts tokenized through /v1/tokenize vs the tape ids
+solo: PASS served greedy content and token counts equal dsv41-run --gen on 7 cases
+batched: PASS five concurrent requests answer byte for byte as solo
+stream: PASS 14 deltas of sys_json
+sampled: PASS seed 1017, T 0.8, top_p 0.95, top_k 40: two solo runs and one beside four others
+stops: PASS stop ':"A' cuts sys_json at its first occurrence; max_tokens 5 cuts gsm with finish length
+penalties: PASS frequency 0.5, presence 0.3 greedy: served, identical twice
+budget: PASS 63 -> 200 (reasoning 70 chars), 101 -> 400
+speed: story 200 {'prompt_tokens': 22, 'completion_tokens': 125, 'total_tokens': 147, 'prompt_tokens_details': {'cached_tokens': 0}, 'elapsed_s': 17.59684581} in 17.6s
+CHAT-GATE PASS
+SERVE-GATE-DONE

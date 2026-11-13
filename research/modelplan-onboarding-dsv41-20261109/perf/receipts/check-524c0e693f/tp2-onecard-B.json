@@ -1,0 +1,23 @@
+{
+ "error": "hc_mixes: CUDA error 701",
+ "checks": [
+  {"name": "layer1/engram_hash", "pass": true, "rule": "identical hash ids to the vendor NgramHashState", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "90264/90264"},
+  {"name": "layer1/prefill/rank0/engram_out", "pass": true, "rule": "byte-identical to the single-card block_forward", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "154050560 bytes identical"},
+  {"name": "layer1/prefill/rank1/engram_out", "pass": true, "rule": "byte-identical to the single-card block_forward", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "154050560 bytes identical"},
+  {"name": "layer1/prefill/rank0/out_stream", "pass": true, "rule": "byte-identical to the single-card block_forward", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "154050560 bytes identical"},
+  {"name": "layer1/prefill/rank0/out_pre_mix", "pass": true, "rule": "byte-identical to the single-card block_forward", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "60176 bytes identical"},
+  {"name": "layer1/prefill/rank0/attn_out", "pass": true, "rule": "byte-identical to the single-card block_forward", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "38512640 bytes identical"},
+  {"name": "layer1/prefill/rank0/moe_out", "pass": true, "rule": "byte-identical to the single-card block_forward", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "38512640 bytes identical"},
+  {"name": "layer1/prefill/rank0/state/window_ring", "pass": true, "rule": "byte-identical to the single-card block_forward", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "131072 bytes identical"},
+  {"name": "layer1/prefill/rank1/out_stream", "pass": true, "rule": "byte-identical to the single-card block_forward", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "154050560 bytes identical"},
+  {"name": "layer1/prefill/rank1/out_pre_mix", "pass": true, "rule": "byte-identical to the single-card block_forward", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "60176 bytes identical"},
+  {"name": "layer1/prefill/rank1/attn_out", "pass": true, "rule": "byte-identical to the single-card block_forward", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "38512640 bytes identical"},
+  {"name": "layer1/prefill/rank1/moe_out", "pass": true, "rule": "byte-identical to the single-card block_forward", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "38512640 bytes identical"},
+  {"name": "layer1/prefill/rank1/state/window_ring", "pass": true, "rule": "byte-identical to the single-card block_forward", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "131072 bytes identical"},
+  {"name": "layer1/prefill/route", "pass": true, "rule": "identical expert ids and weights", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "22566 selections"},
+  {"name": "layer1/prefill/vs_vendor", "pass": true, "rule": "reported: the N-rank stream against the vendor capture, next to the single-card one", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "rel_l2 N-rank 4.123e-3 / single-card 4.123e-3, cos 0.99999150"},
+  {"name": "layer1/engram_hash_decode", "pass": true, "rule": "identical hash ids to the vendor NgramHashState", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "24/24"},
+  {"name": "run", "pass": false, "rule": "the gate ran to completion", "n": 0, "exact": 0, "max_abs": 0e0, "rms_ref": 0e0, "rel_l2": 0e0, "max_ulp": 0, "over_1ulp": 0, "nonfinite": 0, "extra": "hc_mixes: CUDA error 701"}
+ ],
+ "total": 17, "failed": 1
+}

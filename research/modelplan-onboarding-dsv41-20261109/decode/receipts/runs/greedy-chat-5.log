@@ -1,0 +1,44 @@
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) gathers-only=true
+dsv41-run: 13 sequence(s), longest prompt 18343, 40 layers, chunk 8192, 1 rank(s) on devices [0], 11 resident, transport host-canonical
+dsv41-run: pass 0: 509 calls in 104.1s (weights 25.4s, 40 layer loads)
+dsv41-run: capital: replayed 2 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: gsm: replayed 20 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: code: replayed 42 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: copy: replayed 30 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: hebrew: replayed 3 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: gsm_think: replayed 47 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: story: replayed 126 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: hebrew_para: replayed 161 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: code_pal: replayed 54 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: sys_json: replayed 15 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: multiturn: replayed 3 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: needle: replayed 3 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: needle1200: replayed 3 saved steps layer by layer, every one byte-identical to the saved step
+dsv41-run: decode forward 1: 1 sequence(s), 23.0s (weights 22.8s)
+dsv41-run: decode forward 2: 1 sequence(s), 15.3s (weights 15.1s)
+dsv41-run: decode forward 3: 1 sequence(s), 15.9s (weights 15.7s)
+dsv41-run: decode forward 4: 1 sequence(s), 16.1s (weights 16.0s)
+dsv41-run: decode forward 5: 1 sequence(s), 15.9s (weights 15.7s)
+dsv41-run: decode forward 6: 1 sequence(s), 16.0s (weights 15.8s)
+dsv41-run: decode forward 7: 1 sequence(s), 15.7s (weights 15.5s)
+dsv41-run: decode forward 8: 1 sequence(s), 15.7s (weights 15.5s)
+dsv41-run: decode forward 9: 1 sequence(s), 16.0s (weights 15.8s)
+dsv41-run: decode forward 10: 1 sequence(s), 16.1s (weights 16.0s)
+dsv41-run: decode forward 11: 1 sequence(s), 15.7s (weights 15.5s)
+dsv41-run: decode forward 12: 1 sequence(s), 16.3s (weights 16.1s)
+dsv41-run: decode forward 13: 1 sequence(s), 15.6s (weights 15.4s)
+dsv41-run: decode forward 14: 1 sequence(s), 15.6s (weights 15.4s)
+capital: greedy, 2 steps, done
+gsm: greedy, 20 steps, done
+code: greedy, 42 steps, done
+copy: greedy, 30 steps, done
+hebrew: greedy, 3 steps, done
+gsm_think: greedy, 47 steps, done
+story: greedy, 126 steps, done
+hebrew_para: greedy, 175 steps, done
+code_pal: greedy, 54 steps, done
+sys_json: greedy, 15 steps, done
+multiturn: greedy, 3 steps, done
+needle: greedy, 3 steps, done
+needle1200: greedy, 3 steps, done
+dsv41-run: 15 forwards, 523 calls, 457 layer loads (251.7s), blocks 80.1s, total 335.5s

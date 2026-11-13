@@ -1,0 +1,12 @@
+layer o2 (121a) rc 0 161 checks, 0 failed
+o2 121a against o2 120a: 111 compared, 0 differ
+layer k3 (121a, the new reference set) rc 0 161 checks, 0 failed
+k3 against the old set (57 expected to move): 111 compared, 57 differ
+46164854b745e1d8b1b7ccec290f631cdd6f4ef180b50303997d6966aea64b33  $LANE/out/bytecheck/save-k3.sha256
+kernels k3 rc 0 149 checks, 0 failed
+tp 0,0 peer-pull k3 rc 0 478 checks, 0 failed
+tp 0,0,0,0 peer-pull k3 rc 0 914 checks, 0 failed
+decode straddle126 k3 rc 0 240 checks, 0 failed
+decode gsm k3 rc 0 240 checks, 0 failed
+decode capital k3 rc 0 60 checks, 0 failed
+BYTECHECK-DONE 02:44:13

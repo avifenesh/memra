@@ -2451,6 +2451,9 @@ pub struct Request {
     pub sampler_cfg: SamplerConfig,
     pub stop_strings: Vec<String>,
     pub stop_token_ids: Vec<u32>,
+    /// `/v1/completions` `ignore_eos`: generation does not stop at the model's end-of-sentence
+    /// token. The HTTP layer admits `true` only for the deepseek-v4.1 route, which honors it.
+    pub ignore_eos: bool,
     pub trace_id: Option<String>,
     /// The HTTP envelope's request id (`x-request-id`, the metering receipt identity).
     /// Carried to the worker so the `[admit-predict]` shadow receipt (D2 gap G5) joins
@@ -2629,6 +2632,7 @@ pub(crate) fn choice_requests(
             sampler_cfg,
             stop_strings: leader.stop_strings.clone(),
             stop_token_ids: leader.stop_token_ids.clone(),
+            ignore_eos: leader.ignore_eos,
             trace_id: None,
             request_id: format!("{}:choice:{index}", leader.request_id),
             admit_predict_logged: false,
@@ -19005,6 +19009,9 @@ pub fn run(
     let mut dsv4_caps: HashMap<String, ModelCaps> = HashMap::new();
     // Each loaded dsv4 route's serving lanes (memra #667), for its post-load contract.
     let mut dsv4_lanes: HashMap<String, usize> = HashMap::new();
+    // deepseek-v4.1 checkpoints serve on their own thread too (`dsv41_serve`); their senders
+    // share `dsv4_routes` (the dedicated-thread dispatch map) and their contracts are their own.
+    let mut dsv41_sessions: HashMap<String, usize> = HashMap::new();
     // REMOVED-DOORS REFUSAL (2026-08-29). Env-only, so it runs BEFORE any model load: the
     // old step37-scoped refusal needed the loaded model's class and therefore paid a full
     // multi-minute checkpoint load before refusing; this one needs nothing but the
@@ -19028,7 +19035,12 @@ pub fn run(
         let mut planned = crate::route_contract::RouteRegistry::default();
         for (name, path, _) in &models {
             let p = std::path::Path::new(path);
-            if p.is_dir() && crate::dsv4_serve::is_dsv4_dir(p) {
+            if p.is_dir() && crate::dsv41_serve::is_dsv41_dir(p) {
+                planned.register(crate::dsv41_serve::contract(
+                    name,
+                    crate::route_contract::hybrid_interactive_cap().max(1),
+                ));
+            } else if p.is_dir() && crate::dsv4_serve::is_dsv4_dir(p) {
                 // The lane count is the load's; the planned check reads armed policies only.
                 planned.register(crate::dsv4_serve::contract(name, 1));
             } else {
@@ -19048,6 +19060,43 @@ pub fn run(
         // DIRECTORY path = safetensors HF checkpoint or a manifest-backed memra repack/overlay;
         // file = GGUF. Repack tokenizers live in the manifest's source_dir.
         let from_dir = std::path::Path::new(path).is_dir();
+        if from_dir && crate::dsv41_serve::is_dsv41_dir(std::path::Path::new(path)) {
+            if draft.is_some() {
+                let _ = ready_tx.send(Err(format!(
+                    "model {name:?}: '+draft' is a GGUF-family attach; the deepseek-v4.1 \
+                     route serves the trunk only (its DSpark blocks ship inside the checkpoint)"
+                )));
+                return;
+            }
+            let dir = std::path::Path::new(path);
+            let tok = match tokenizer_snapshots.load(name, path, || Tokenizer::from_hf_dir(dir)) {
+                Ok(t) => t,
+                Err(err) => {
+                    let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
+                    return;
+                }
+            };
+            let dm = match crate::dsv41_serve::load(name, dir, tok) {
+                Ok(m) => m,
+                Err(err) => {
+                    let _ = ready_tx.send(Err(format!("load {name}: {err}")));
+                    return;
+                }
+            };
+            dsv4_caps.insert(name.clone(), crate::dsv41_serve::caps(&dm));
+            dsv41_sessions.insert(name.clone(), dm.sessions);
+            let cap = crate::dsv41_serve::contract(name, dm.sessions)
+                .capacity
+                .concurrency();
+            let load = crate::route_telemetry::register(name, cap);
+            let route_health = health.register_route(name, load.clone());
+            dsv4_routes.insert(
+                name.clone(),
+                crate::dsv41_serve::spawn(dm, route_health, load),
+            );
+            order.push(name.clone());
+            continue;
+        }
         if from_dir && crate::dsv4_serve::is_dsv4_dir(std::path::Path::new(path)) {
             if draft.is_some() {
                 let _ = ready_tx.send(Err(format!(
@@ -19434,8 +19483,8 @@ pub fn run(
                 gemma_think: t.is_some_and(|t| t.contains("<|channel>")),
                 gemma_unopened_thought: lm.model.is_gemma4_e4b(),
                 dsv4: t.is_some_and(memra_tokenizer::chat::template_is_dsv4),
-                // No V4.1 program runs on this loader (the `deepseek_v41` pack compiles a plan
-                // nothing executes yet), so no model it loads speaks V4.1's dialect.
+                // V4.1 checkpoints serve on their own route (`dsv41_serve::caps`); this loader
+                // runs no V4.1 program, so no model it loads speaks V4.1's dialect.
                 dsv41: false,
                 // GLM-5.3-Flash: `[gMASK]<sop>` + `<|observation|>`. Template-keyed like every
                 // other cap — a glm5 checkpoint that shipped without its template would fall
@@ -19487,7 +19536,9 @@ pub fn run(
     let mut route_registry = crate::route_contract::RouteRegistry::default();
     let hybrid_sessions = crate::route_contract::hybrid_interactive_cap();
     for name in &order {
-        if dsv4_routes.contains_key(name) {
+        if let Some(&sessions) = dsv41_sessions.get(name) {
+            route_registry.register(crate::dsv41_serve::contract(name, sessions));
+        } else if dsv4_routes.contains_key(name) {
             route_registry.register(crate::dsv4_serve::contract(
                 name,
                 dsv4_lanes.get(name).copied().unwrap_or(1),
@@ -28361,6 +28412,9 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         sampler_cfg: p.sampler_cfg.clone(),
         stop_strings: s.stop_strings.clone(),
         stop_token_ids: s.stop_token_ids.clone(),
+        // a session of this worker never has it: the HTTP layer admits `ignore_eos` only for
+        // the deepseek-v4.1 route, which has its own serving thread
+        ignore_eos: false,
         trace_id: s.trace_id.clone(),
         request_id: s.request_id.clone(),
         // A park replay is the SAME arrival: its shadow verdict (if any) was already
@@ -39305,6 +39359,7 @@ mod tests {
             sampler_cfg: SamplerConfig::default(),
             stop_strings: Vec::new(),
             stop_token_ids: Vec::new(),
+            ignore_eos: false,
             trace_id: None,
             max_prompt_tokens: None,
             cache_ns: String::new(),
@@ -39924,6 +39979,7 @@ mod tests {
             sampler_cfg: memra_engine::sampler::SamplerConfig::default(),
             stop_strings: Vec::new(),
             stop_token_ids: Vec::new(),
+            ignore_eos: false,
             trace_id: None,
             max_prompt_tokens: None,
             cache_ns: String::new(),
@@ -55635,6 +55691,7 @@ mod tests {
             sampler_cfg: memra_engine::sampler::SamplerConfig::default(),
             stop_strings: Vec::new(),
             stop_token_ids: Vec::new(),
+            ignore_eos: false,
             trace_id: None,
             max_prompt_tokens: None,
             cache_ns: String::new(),

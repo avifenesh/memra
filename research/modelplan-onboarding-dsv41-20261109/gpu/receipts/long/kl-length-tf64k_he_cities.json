@@ -1,0 +1,37 @@
+{
+ "tape": "tf64k_he_cities.pt",
+ "other": "tf64k_he_cities_120k.pt",
+ "positions": 120000,
+ "subsets": {
+  "all": {
+   "positions": 120000,
+   "mean_kl": 0.013983251393654687,
+   "p50_kl": 0.002684036466709604,
+   "p99_kl": 0.14802599190498542,
+   "max_kl": 2.3665675306646063,
+   "top1_agree": 0.9551666666666667,
+   "mean_vendor_entropy": 0.7675760746834632,
+   "mean_mass_on_shared_top32": 0.9833056208849777
+  },
+  "entropy_gt_1nat": {
+   "positions": 39542,
+   "mean_kl": 0.030680871577007787,
+   "p50_kl": 0.018186884518400843,
+   "p99_kl": 0.21035549218826127,
+   "max_kl": 1.7978794757982137,
+   "top1_agree": 0.8818724394314905,
+   "mean_vendor_entropy": 1.9338526995064764,
+   "mean_mass_on_shared_top32": 0.9512636379597557
+  },
+  "entropy_top_decile": {
+   "positions": 12000,
+   "mean_kl": 0.030035042469582322,
+   "p50_kl": 0.020821702105005453,
+   "p99_kl": 0.16136516950702087,
+   "max_kl": 0.8870582188823457,
+   "top1_agree": 0.8245,
+   "mean_vendor_entropy": 2.64437367365555,
+   "mean_mass_on_shared_top32": 0.888750745474587
+  }
+ }
+}

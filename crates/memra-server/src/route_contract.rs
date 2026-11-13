@@ -339,6 +339,47 @@ impl RouteContract {
     }
 }
 
+impl RouteContract {
+    /// The deepseek-v4.1 serving thread (`dsv41_serve.rs`): `sessions` requests at once, each step
+    /// one runner forward with at most one new prompt's prefill call beside the running requests'
+    /// decode calls. Declared here, not in `dsv41_serve.rs`, for the same wiring-test reason as
+    /// the DSv4 thread.
+    pub fn dsv41_thread(model: impl Into<String>, sessions: usize) -> Self {
+        Self::new(
+            model,
+            "dsv41-thread",
+            "dsv41_serve.rs",
+            RouteCapacity::Sessions(sessions),
+        )
+        .implemented(
+            PolicySurface::Capacity,
+            "std::sync::mpsc::channel::<Box<Request>>()",
+        )
+        .implemented(PolicySurface::Occupancy, "load.begin()")
+        // the runner stamps every layer pass of a forward through the thread's own sink
+        .implemented(
+            PolicySurface::Progress,
+            "memra_engine::progress::ProgressSinkScope::install(",
+        )
+        .implemented(PolicySurface::FaultOwnership, "std::panic::catch_unwind(")
+        // a closed queue drains the running and waiting requests, then the thread leaves
+        .implemented(PolicySurface::ShutdownOwnership, "closing = true;")
+        // the route's own book per rank (state, prefill and decode transients against the
+        // ceiling beside the resident weights), the expert cache giving back slabs first
+        .implemented(PolicySurface::MemoryCost, "admit_dsv41_session(")
+        // the bundle must name this checkpoint and plan; the route runs the plan's own program
+        .implemented(
+            PolicySurface::RewriteQualification,
+            "install_v41_rewrite_bundle(",
+        )
+        .refused(
+            PolicySurface::PrimeFairness,
+            "a prompt's prefill is one call of one runner forward; it does not yield, and the running requests' decode calls ride the same forward",
+        )
+        .implemented(PolicySurface::ServiceMetrics, "run.finish(stats)")
+    }
+}
+
 /// The interactive session cap of the central worker, as ONE pure derivation: `max_sessions`
 /// (`MEMRA_MAX_SESSIONS`), default 64. The worker's admission gate, `lib.rs::lane_cap` and the
 /// registry all read it through `hybrid_interactive_cap`, so the number the gate enforces, the
@@ -589,6 +630,28 @@ mod tests {
         );
     }
 
+    /// The deepseek-v4.1 route consumes the bundle (`dsv41_serve::install_v41_rewrite_bundle`
+    /// checks it names this checkpoint and plan), so a V4.1-only process with one armed boots,
+    /// and it declares every surface, prime fairness refused by name.
+    #[test]
+    fn a_dsv41_route_honors_an_armed_rewrite_bundle_and_declares_every_surface() {
+        let env = |var: &str| (var == "MEMRA_REWRITE_BUNDLE").then(|| "/tmp/bundle".to_string());
+        let mut v41_only = RouteRegistry::default();
+        v41_only.register(RouteContract::dsv41_thread("ds41", 8));
+        v41_only.check(&no_env).unwrap();
+        v41_only.check(&env).unwrap();
+        let route = v41_only.contract_for("ds41").unwrap();
+        assert_eq!(route.capacity, RouteCapacity::Sessions(8));
+        for surface in PolicySurface::ALL {
+            assert!(route.decl(surface).is_some(), "{}", surface.name());
+        }
+        assert!(matches!(
+            route.decl(PolicySurface::PrimeFairness),
+            Some(PolicyDecl::Refused { .. })
+        ));
+        assert!(route.describe().contains("route=dsv41-thread"));
+    }
+
     #[test]
     fn capacity_is_readable_per_model() {
         let mut reg = RouteRegistry::default();
@@ -611,12 +674,14 @@ mod tests {
         let sources: &[(&str, &str)] = &[
             ("worker.rs", include_str!("worker.rs")),
             ("dsv4_serve.rs", include_str!("dsv4_serve.rs")),
+            ("dsv41_serve.rs", include_str!("dsv41_serve.rs")),
         ];
         // The declarations live in THIS file, never in a route's source, so a grep of the route's
         // file cannot be satisfied by the declaration text (revuto round 1 on the dsv4 contract).
         for route in [
             RouteContract::hybrid_worker("gate", 4),
             RouteContract::dsv4_thread("ds"),
+            RouteContract::dsv41_thread("ds41", 4),
         ] {
             assert!(
                 !sources.iter().any(|(name, _)| *name == "route_contract.rs"),
@@ -627,6 +692,7 @@ mod tests {
         let mut reg = RouteRegistry::default();
         reg.register(RouteContract::hybrid_worker("gate", 4));
         reg.register(RouteContract::dsv4_thread("ds"));
+        reg.register(RouteContract::dsv41_thread("ds41", 4));
         for route in reg.routes() {
             let (_, src) = sources
                 .iter()
