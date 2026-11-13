@@ -1,4 +1,4 @@
-== red-parent: 2026-11-12T22:15:22+01:00
+== red-parent: 2026-11-13T00:47:29+01:00
 red-parent spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-parent spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=101
 red-parent spec_round_yield_is_wired rc=101
@@ -9,11 +9,11 @@ red-parent dark_work_keeps_its_burst_cadence_on_yielded_ticks rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... FAILED
-thread 'worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits' (16494) panicked at crates/memra-server/src/worker.rs:42543:9:
+thread 'worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits' (2916042) panicked at crates/memra-server/src/worker.rs:42555:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (16528) panicked at crates/memra-server/src/worker.rs:42590:59:
+thread 'worker::tests::spec_round_yield_is_wired' (2916055) panicked at crates/memra-server/src/worker.rs:42602:59:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
@@ -24,7 +24,7 @@ test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-nohook: 2026-11-12T22:19:42+01:00
+== red-nohook: 2026-11-13T00:51:42+01:00
 red-nohook spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nohook spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=101
 red-nohook spec_round_yield_is_wired rc=101
@@ -35,22 +35,22 @@ red-nohook dark_work_keeps_its_burst_cadence_on_yielded_ticks rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... FAILED
-thread 'worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits' (125532) panicked at crates/memra-server/src/worker.rs:42543:9:
+thread 'worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits' (3409980) panicked at crates/memra-server/src/worker.rs:42555:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (125652) panicked at crates/memra-server/src/worker.rs:42715:9:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.02s
+thread 'worker::tests::spec_round_yield_is_wired' (3410009) panicked at crates/memra-server/src/worker.rs:42728:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-nodue: 2026-11-12T22:25:17+01:00
+== red-nodue: 2026-11-13T00:56:17+01:00
 red-nodue spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=101
 red-nodue spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nodue spec_round_yield_is_wired rc=0
@@ -59,13 +59,13 @@ red-nodue plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
 red-nodue carried_rider_models_follow_one_rule rc=0
 red-nodue dark_work_keeps_its_burst_cadence_on_yielded_ticks rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... FAILED
-thread 'worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts' (157385) panicked at crates/memra-server/src/worker.rs:42248:9:
+thread 'worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts' (3433357) panicked at crates/memra-server/src/worker.rs:42257:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.02s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
@@ -74,7 +74,7 @@ test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-nowrite: 2026-11-12T22:30:57+01:00
+== red-nowrite: 2026-11-13T01:00:13+01:00
 red-nowrite spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nowrite spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nowrite spec_round_yield_is_wired rc=101
@@ -87,7 +87,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (253409) panicked at crates/memra-server/src/worker.rs:42590:59:
+thread 'worker::tests::spec_round_yield_is_wired' (3468397) panicked at crates/memra-server/src/worker.rs:42602:59:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
@@ -98,7 +98,7 @@ test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-noride: 2026-11-12T22:35:30+01:00
+== red-noride: 2026-11-13T01:05:07+01:00
 red-noride spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-noride spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-noride spec_round_yield_is_wired rc=101
@@ -111,7 +111,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (313750) panicked at crates/memra-server/src/worker.rs:42723:9:
+thread 'worker::tests::spec_round_yield_is_wired' (3611254) panicked at crates/memra-server/src/worker.rs:42736:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.02s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
@@ -122,7 +122,7 @@ test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-noridelane: 2026-11-12T22:40:43+01:00
+== red-noridelane: 2026-11-13T01:09:46+01:00
 red-noridelane spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-noridelane spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-noridelane spec_round_yield_is_wired rc=101
@@ -135,7 +135,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (354769) panicked at crates/memra-server/src/worker.rs:42723:9:
+thread 'worker::tests::spec_round_yield_is_wired' (4075857) panicked at crates/memra-server/src/worker.rs:42736:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.02s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
@@ -146,7 +146,7 @@ test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-nolane: 2026-11-12T22:45:47+01:00
+== red-nolane: 2026-11-13T01:15:28+01:00
 red-nolane spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nolane spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nolane spec_round_yield_is_wired rc=0
@@ -159,9 +159,9 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.02s
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... FAILED
-thread 'worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only' (376838) panicked at crates/memra-server/src/worker.rs:42314:9:
+thread 'worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only' (4127243) panicked at crates/memra-server/src/worker.rs:42323:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
@@ -170,7 +170,7 @@ test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-nolanewire: 2026-11-12T22:50:05+01:00
+== red-nolanewire: 2026-11-13T01:21:45+01:00
 red-nolanewire spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nolanewire spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nolanewire spec_round_yield_is_wired rc=101
@@ -183,8 +183,8 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (391587) panicked at crates/memra-server/src/worker.rs:42590:59:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.02s
+thread 'worker::tests::spec_round_yield_is_wired' (4187083) panicked at crates/memra-server/src/worker.rs:42602:59:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
@@ -194,7 +194,7 @@ test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-noheld: 2026-11-12T22:53:50+01:00
+== red-noheld: 2026-11-13T01:26:56+01:00
 red-noheld spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-noheld spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-noheld spec_round_yield_is_wired rc=0
@@ -207,18 +207,18 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.02s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... FAILED
-thread 'worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk' (435647) panicked at crates/memra-server/src/worker.rs:42466:9:
+thread 'worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk' (11780) panicked at crates/memra-server/src/worker.rs:42478:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-nooutlook: 2026-11-12T22:59:09+01:00
+== red-nooutlook: 2026-11-13T01:31:08+01:00
 red-nooutlook spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nooutlook spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nooutlook spec_round_yield_is_wired rc=101
@@ -231,7 +231,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (582427) panicked at crates/memra-server/src/worker.rs:42590:59:
+thread 'worker::tests::spec_round_yield_is_wired' (57051) panicked at crates/memra-server/src/worker.rs:42602:59:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.02s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
@@ -242,7 +242,8 @@ test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-nowindows: 2026-11-12T23:05:15+01:00
+REDGREEN-DONE 2026-11-13T01:36:17+01:00
+== red-nowindows: 2026-11-13T00:22:02+01:00
 red-nowindows spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nowindows spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nowindows spec_round_yield_is_wired rc=0
@@ -259,14 +260,14 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... FAILED
-thread 'worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk' (603775) panicked at crates/memra-server/src/worker.rs:42480:9:
+thread 'worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk' (2272682) panicked at crates/memra-server/src/worker.rs:42492:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-nochoice: 2026-11-12T23:11:17+01:00
+== red-nochoice: 2026-11-13T00:38:38+01:00
 red-nochoice spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nochoice spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nochoice spec_round_yield_is_wired rc=0
@@ -283,14 +284,14 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... FAILED
-thread 'worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk' (623425) panicked at crates/memra-server/src/worker.rs:42467:9:
+thread 'worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk' (2789094) panicked at crates/memra-server/src/worker.rs:42479:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-carriedA: 2026-11-12T23:17:16+01:00
+== red-carriedA: 2026-11-13T00:44:56+01:00
 red-carriedA spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-carriedA spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-carriedA spec_round_yield_is_wired rc=0
@@ -303,18 +304,18 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.02s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::carried_rider_models_follow_one_rule ... FAILED
-thread 'worker::tests::carried_rider_models_follow_one_rule' (673910) panicked at crates/memra-server/src/worker.rs:42357:9:
+thread 'worker::tests::carried_rider_models_follow_one_rule' (2910631) panicked at crates/memra-server/src/worker.rs:42366:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-carriedB: 2026-11-12T23:24:50+01:00
+== red-carriedB: 2026-11-13T00:49:24+01:00
 red-carriedB spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-carriedB spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-carriedB spec_round_yield_is_wired rc=101
@@ -327,8 +328,8 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (706282) panicked at crates/memra-server/src/worker.rs:42653:13:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.02s
+thread 'worker::tests::spec_round_yield_is_wired' (3027625) panicked at crates/memra-server/src/worker.rs:42666:13:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
@@ -338,7 +339,7 @@ test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-carriedC: 2026-11-12T23:32:01+01:00
+== red-carriedC: 2026-11-13T00:53:19+01:00
 red-carriedC spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-carriedC spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-carriedC spec_round_yield_is_wired rc=0
@@ -357,12 +358,12 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::carried_rider_models_follow_one_rule ... FAILED
-thread 'worker::tests::carried_rider_models_follow_one_rule' (746799) panicked at crates/memra-server/src/worker.rs:42375:9:
+thread 'worker::tests::carried_rider_models_follow_one_rule' (3421893) panicked at crates/memra-server/src/worker.rs:42384:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-nomtp: 2026-11-12T23:37:06+01:00
+== red-nomtp: 2026-11-13T00:58:08+01:00
 red-nomtp spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=101
 red-nomtp spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nomtp spec_round_yield_is_wired rc=0
@@ -371,7 +372,7 @@ red-nomtp plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
 red-nomtp carried_rider_models_follow_one_rule rc=0
 red-nomtp dark_work_keeps_its_burst_cadence_on_yielded_ticks rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... FAILED
-thread 'worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts' (786789) panicked at crates/memra-server/src/worker.rs:42275:9:
+thread 'worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts' (3448443) panicked at crates/memra-server/src/worker.rs:42284:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
@@ -386,7 +387,7 @@ test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== red-nocadence: 2026-11-12T23:43:11+01:00
+== red-nocadence: 2026-11-13T01:03:27+01:00
 red-nocadence spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 red-nocadence spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 red-nocadence spec_round_yield_is_wired rc=0
@@ -394,6 +395,54 @@ red-nocadence spec_round_yield_weighs_interactive_plain_sessions_only rc=0
 red-nocadence plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
 red-nocadence carried_rider_models_follow_one_rule rc=0
 red-nocadence dark_work_keeps_its_burst_cadence_on_yielded_ticks rc=101
+test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+test worker::tests::spec_round_yield_is_wired ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
+test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+test worker::tests::carried_rider_models_follow_one_rule ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... FAILED
+thread 'worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks' (3598438) panicked at crates/memra-server/src/worker.rs:42415:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-server --lib`
+== red-nocadencewire: 2026-11-13T01:07:53+01:00
+red-nocadencewire spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
+red-nocadencewire spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
+red-nocadencewire spec_round_yield_is_wired rc=101
+red-nocadencewire spec_round_yield_weighs_interactive_plain_sessions_only rc=0
+red-nocadencewire plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
+red-nocadencewire carried_rider_models_follow_one_rule rc=0
+red-nocadencewire dark_work_keeps_its_burst_cadence_on_yielded_ticks rc=0
+test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+test worker::tests::spec_round_yield_is_wired ... FAILED
+thread 'worker::tests::spec_round_yield_is_wired' (4035557) panicked at crates/memra-server/src/worker.rs:42680:13:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p memra-server --lib`
+test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+test worker::tests::carried_rider_models_follow_one_rule ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
+== red-noreset: 2026-11-13T01:13:17+01:00
+red-noreset spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
+red-noreset spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
+red-noreset spec_round_yield_is_wired rc=0
+red-noreset spec_round_yield_weighs_interactive_plain_sessions_only rc=0
+red-noreset plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
+red-noreset carried_rider_models_follow_one_rule rc=0
+red-noreset dark_work_keeps_its_burst_cadence_on_yielded_ticks rc=101
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
@@ -407,24 +456,24 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... FAILED
-thread 'worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks' (821490) panicked at crates/memra-server/src/worker.rs:42406:9:
+thread 'worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks' (4116477) panicked at crates/memra-server/src/worker.rs:42425:9:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 error: test failed, to rerun pass `-p memra-server --lib`
-== red-nocadencewire: 2026-11-12T23:47:55+01:00
-red-nocadencewire spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
-red-nocadencewire spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
-red-nocadencewire spec_round_yield_is_wired rc=101
-red-nocadencewire spec_round_yield_weighs_interactive_plain_sessions_only rc=0
-red-nocadencewire plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
-red-nocadencewire carried_rider_models_follow_one_rule rc=0
-red-nocadencewire dark_work_keeps_its_burst_cadence_on_yielded_ticks rc=0
+== red-nocadencerounds: 2026-11-13T01:19:08+01:00
+red-nocadencerounds spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
+red-nocadencerounds spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
+red-nocadencerounds spec_round_yield_is_wired rc=101
+red-nocadencerounds spec_round_yield_weighs_interactive_plain_sessions_only rc=0
+red-nocadencerounds plain_prime_runs_only_when_phase_b_primes_the_last_chunk rc=0
+red-nocadencerounds carried_rider_models_follow_one_rule rc=0
+red-nocadencerounds dark_work_keeps_its_burst_cadence_on_yielded_ticks rc=0
 test worker::tests::spec_round_yield_due_names_the_plain_sessions_behind_the_bursts ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... FAILED
-thread 'worker::tests::spec_round_yield_is_wired' (889519) panicked at crates/memra-server/src/worker.rs:42667:13:
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.02s
+thread 'worker::tests::spec_round_yield_is_wired' (4136135) panicked at crates/memra-server/src/worker.rs:42602:59:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
 error: test failed, to rerun pass `-p memra-server --lib`
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
@@ -434,7 +483,7 @@ test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-== green: 2026-11-12T23:54:51+01:00
+== green: 2026-11-13T01:24:06+01:00
 green spec_round_yield_due_names_the_plain_sessions_behind_the_bursts rc=0
 green spec_burst_ends_at_its_first_round_while_a_plain_session_waits rc=0
 green spec_round_yield_is_wired rc=0
@@ -447,7 +496,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; f
 test worker::tests::spec_burst_ends_at_its_first_round_while_a_plain_session_waits ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::spec_round_yield_is_wired ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.02s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.01s
 test worker::tests::spec_round_yield_weighs_interactive_plain_sessions_only ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::plain_prime_runs_only_when_phase_b_primes_the_last_chunk ... ok
@@ -456,5 +505,5 @@ test worker::tests::carried_rider_models_follow_one_rule ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
 test worker::tests::dark_work_keeps_its_burst_cadence_on_yielded_ticks ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.00s
-REDGREEN-DONE 2026-11-13T00:02:23+01:00
-DD-ALL-DONE 2026-11-13T00:02:23+01:00
+REDGREEN-DONE 2026-11-13T01:29:06+01:00
+DD-ALL-DONE 2026-11-13T01:36:17+01:00

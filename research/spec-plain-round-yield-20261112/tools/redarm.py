@@ -22,7 +22,11 @@ carriedC     the riding rule's held-back models take dark decoders too: the carr
 nomtp        the yield is decided with no MTP burst, or beside a hookless one: the naming test
              fails.
 nocadence    dark work runs on every yielded tick: the cadence test fails.
-nocadencewire phase (c) and (d) ignore the dark cadence: the wiring test fails."""
+nocadencewire phase (c) and (d) ignore the dark cadence: the wiring test fails.
+noreset      a full tick does not restart the cadence count (the round-3 review's arm): the
+             cadence test fails.
+nocadencerounds a yielded tick counts toward the cadence with no burst run: the wiring test
+             fails."""
 import pathlib
 import sys
 
@@ -118,9 +122,19 @@ def nocadencewire(s):
     return swap(s, "            let adaptive_cap = if dark_turn {\n", "            let adaptive_cap = if dark_turn || true {\n")
 
 
+def noreset(s):
+    return swap(s, "        if !yielded {\n            self.yielded = 0;\n            return true;\n        }\n",
+                "        if !yielded {\n            return true;\n        }\n")
+
+
+def nocadencerounds(s):
+    return swap(s, "                round_yield.is_some() && burst_rounds > 0,\n",
+                "                round_yield.is_some(),\n")
+
+
 arms = {"parent": lambda s: noride(nowrite(nohook(s))), "nohook": nohook, "nodue": nodue, "nowrite": nowrite,
         "noride": noride, "noridelane": noridelane, "nolane": nolane, "nolanewire": nolanewire, "noheld": noheld,
         "nooutlook": nooutlook, "nowindows": nowindows, "nochoice": nochoice, "carriedA": carried_a,
         "carriedB": carried_b, "carriedC": carried_c, "nomtp": nomtp, "nocadence": nocadence,
-        "nocadencewire": nocadencewire}
+        "nocadencewire": nocadencewire, "noreset": noreset, "nocadencerounds": nocadencerounds}
 out.write_text(arms[arm](green))
