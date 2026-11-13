@@ -1,0 +1,5 @@
+hv0 = the old split path, hv1 = no scale-row kernels + SwiGLU separate (kept), hv2 = a fused SwiGLU:
+out-hv-1113-0131: one warp running w1 and w3 on the same fragments
+out-hv-1113-0139: the same with half the columns a warp
+out-hv-1113-0145: two warps a column run handing results through shared memory
+out-c2-1113-0125: the first fused form against k3 and the old build (moe cells), with moecheck

@@ -1,0 +1,26 @@
+# build k3 device NVIDIA GeForce RTX 5090 Laptop GPU SMs 82 L2 64 MB
+# mark 1 moe rows1 plan
+k3       moe    plan         n    384 k     0 rows   1  eager     5.25 us  host    1.44 us  graph     5.11 us  (a cell = 1 launches)
+# mark 2 moe rows1 hidden
+k3       moe    plan+hid     n    576 k  5120 rows   1  eager    45.44 us  host    4.13 us  graph    45.08 us  (a cell = 3 launches)
+# mark 3 moe rows1 out
+k3       moe    plan+out     n   1280 k  2304 rows   1  eager    36.30 us  host    6.79 us  graph    37.18 us  (a cell = 5 launches)
+# mark 4 moe rows1 all
+k3       moe    plan+all     n   1280 k  2304 rows   1  eager    80.06 us  host    9.59 us  graph    78.88 us  (a cell = 7 launches)
+# mark 5 moe rows4 plan
+k3       moe    plan         n    384 k     0 rows   4  eager     6.15 us  host    1.35 us  graph     5.99 us  (a cell = 1 launches)
+# mark 6 moe rows4 hidden
+k3       moe    plan+hid     n    576 k  5120 rows   4  eager   134.17 us  host    4.09 us  graph   148.14 us  (a cell = 3 launches)
+# mark 7 moe rows4 out
+k3       moe    plan+out     n   1280 k  2304 rows   4  eager    89.44 us  host    6.81 us  graph    88.33 us  (a cell = 5 launches)
+# mark 8 moe rows4 all
+k3       moe    plan+all     n   1280 k  2304 rows   4  eager   235.66 us  host    9.48 us  graph   233.60 us  (a cell = 7 launches)
+# mark 9 moe rows8 plan
+k3       moe    plan         n    384 k     0 rows   8  eager     7.69 us  host    1.32 us  graph     7.53 us  (a cell = 1 launches)
+# mark 10 moe rows8 hidden
+k3       moe    plan+hid     n    576 k  5120 rows   8  eager   287.98 us  host    4.07 us  graph   296.16 us  (a cell = 3 launches)
+# mark 11 moe rows8 out
+k3       moe    plan+out     n   1280 k  2304 rows   8  eager   171.38 us  host    6.87 us  graph   164.87 us  (a cell = 5 launches)
+# mark 12 moe rows8 all
+k3       moe    plan+all     n   1280 k  2304 rows   8  eager   449.59 us  host    9.53 us  graph   453.65 us  (a cell = 7 launches)
+# done

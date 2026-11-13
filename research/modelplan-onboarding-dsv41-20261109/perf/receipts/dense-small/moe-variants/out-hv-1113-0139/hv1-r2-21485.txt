@@ -1,0 +1,29 @@
+# build new device NVIDIA GeForce RTX 5090 Laptop GPU SMs 82 L2 64 MB
+moecheck rows 1 small13 1 small2 1: hidden bytes differ 0, output bytes differ 0
+# mark 1 moe rows1 plan
+new      moe    plan         n    384 k     0 rows   1  eager     5.25 us  host    1.35 us  graph     5.10 us  (a cell = 1 launches)
+# mark 2 moe rows1 hidden
+new      moe    plan+hid     n    576 k  5120 rows   1  eager    43.32 us  host    5.48 us  graph    43.07 us  (a cell = 3 launches)
+# mark 3 moe rows1 out
+new      moe    plan+out     n   1280 k  2304 rows   1  eager    35.22 us  host    7.07 us  graph    36.15 us  (a cell = 5 launches)
+# mark 4 moe rows1 all
+new      moe    plan+all     n   1280 k  2304 rows   1  eager    77.73 us  host   11.22 us  graph    76.15 us  (a cell = 7 launches)
+moecheck rows 4 small13 1 small2 1: hidden bytes differ 0, output bytes differ 0
+# mark 5 moe rows4 plan
+new      moe    plan         n    384 k     0 rows   4  eager     6.52 us  host    1.38 us  graph     6.38 us  (a cell = 1 launches)
+# mark 6 moe rows4 hidden
+new      moe    plan+hid     n    576 k  5120 rows   4  eager   145.43 us  host    5.41 us  graph   145.87 us  (a cell = 3 launches)
+# mark 7 moe rows4 out
+new      moe    plan+out     n   1280 k  2304 rows   4  eager    83.96 us  host    7.01 us  graph    82.06 us  (a cell = 5 launches)
+# mark 8 moe rows4 all
+new      moe    plan+all     n   1280 k  2304 rows   4  eager   228.89 us  host   11.16 us  graph   227.81 us  (a cell = 7 launches)
+moecheck rows 8 small13 1 small2 1: hidden bytes differ 0, output bytes differ 0
+# mark 9 moe rows8 plan
+new      moe    plan         n    384 k     0 rows   8  eager     7.59 us  host    1.37 us  graph     7.43 us  (a cell = 1 launches)
+# mark 10 moe rows8 hidden
+new      moe    plan+hid     n    576 k  5120 rows   8  eager   301.77 us  host    5.37 us  graph   307.04 us  (a cell = 3 launches)
+# mark 11 moe rows8 out
+new      moe    plan+out     n   1280 k  2304 rows   8  eager   176.00 us  host    6.94 us  graph   172.31 us  (a cell = 5 launches)
+# mark 12 moe rows8 all
+new      moe    plan+all     n   1280 k  2304 rows   8  eager   466.35 us  host   11.06 us  graph   474.57 us  (a cell = 7 launches)
+# done

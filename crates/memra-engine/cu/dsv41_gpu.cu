@@ -234,11 +234,12 @@ __device__ __forceinline__ long v41_sf_off(long r, long kb, long kbn) {
 }
 
 // act_quant into the CUTLASS GEMMs' operands: the codes of row r at q[r] (rowidx gathers input rows), its
-// scales at scale row sfrow[r] of the layout (r when sfrow is null; a negative entry places none). The codes
-// and scales are those of `v41_act_quant_kernel`.
+// scales at scale row sfrow[r] of the layout (a negative entry places none; when sfrow is null, r for r < split
+// and r - split + split rounded up to 128 from split on, so rows [split, rows) are a layout of their own at the
+// next 128-row block). The codes and scales are those of `v41_act_quant_kernel`.
 __global__ void v41_act_quant_sf_kernel(const v41_bf* __restrict__ x, long ldx, const int* __restrict__ rowidx,
                                         uint8_t* __restrict__ q, long ldq, uint8_t* __restrict__ sf,
-                                        const int* __restrict__ sfrow, int rows, int kb) {
+                                        const int* __restrict__ sfrow, int rows, int kb, int split) {
     long wid = ((long)blockIdx.x * blockDim.x + threadIdx.x) >> 5;
     int lane = threadIdx.x & 31;
     if (wid >= (long)rows * kb) return;
@@ -250,7 +251,7 @@ __global__ void v41_act_quant_sf_kernel(const v41_bf* __restrict__ x, long ldx, 
     float sc = v41_pow2_ceil(a * (1.0f / 448.0f));
     float t = fminf(fmaxf(v / sc, -448.f), 448.f);
     q[(long)r * ldq + b * 32 + lane] = v41_f2e4m3(t);
-    int sr = sfrow ? sfrow[r] : r;
+    int sr = sfrow ? sfrow[r] : r < split ? r : r - split + ((split + 127) & ~127);
     if (lane == 0 && sr >= 0) sf[v41_sf_off(sr, b, kb)] = v41_pow2_code(sc);
 }
 
@@ -261,7 +262,21 @@ extern "C" int memra_v41_act_quant_sf(const void* x, long ldx, const int* rowidx
     int kb = k / 32;
     long blocks = ((long)rows * kb * 32 + 255) / 256;
     v41_act_quant_sf_kernel<<<(unsigned)blocks, 256, 0, (cudaStream_t)stream>>>(
-        (const v41_bf*)x, ldx, rowidx, (uint8_t*)q, ldq, (uint8_t*)sf, sfrow, rows, kb);
+        (const v41_bf*)x, ldx, rowidx, (uint8_t*)q, ldq, (uint8_t*)sf, sfrow, rows, kb, rows);
+    V41_ERR();
+}
+
+// `memra_v41_act_quant_sf` of `rows` rows in two layouts in one launch: rows [0, split) in the layout of split rows
+// at sf, rows [split, rows) in the layout of rows - split rows at sf + `memra_v41_sf_bytes(split, k)` (the next
+// 128-row block). The split MoE's small-row path quantizes the pairs' and the shared expert's hidden rows so.
+extern "C" int memra_v41_act_quant_sf_split(const void* x, long ldx, void* q, long ldq, void* sf, int rows, int split,
+                                            int k, void* stream) {
+    if (k % 32 != 0 || rows < 0 || split < 0 || split > rows || !q || !sf) return 41001;
+    if (rows == 0) return 0;
+    int kb = k / 32;
+    long blocks = ((long)rows * kb * 32 + 255) / 256;
+    v41_act_quant_sf_kernel<<<(unsigned)blocks, 256, 0, (cudaStream_t)stream>>>(
+        (const v41_bf*)x, ldx, nullptr, (uint8_t*)q, ldq, (uint8_t*)sf, nullptr, rows, kb, split);
     V41_ERR();
 }
 
@@ -560,7 +575,8 @@ struct V41Sx {
 
 // The tile list (every tile at most V41_SM_MAX rows): block y runs tile y (none past *ntiles), block z projection
 // z (p0 into d0, p1 into d1), block x NW warps of CW output columns each. Warp: weight rows rw0 .. rw0 + CW - 1 of
-// its expert's projection against the tile's rows (pairs t0 .. t0 + M - 1 of a, scale rows sfrow[pair]).
+// its expert's projection against the tile's rows (pairs t0 .. t0 + M - 1 of a, scale rows sfrow[pair], or the pair's
+// own row of a layout of the pairs when sfrow is null).
 template <int CW>
 __global__ void __launch_bounds__(128) v41_moe_small_kernel(const uint8_t* __restrict__ A, long lda,
                                                             const uint8_t* __restrict__ asf,
@@ -590,7 +606,8 @@ __global__ void __launch_bounds__(128) v41_moe_small_kernel(const uint8_t* __res
     const int KB = K / 32, NS = KB / P::PK;
     const int STAGE = P::stage(BM), WS_O = P::W_B + BM * P::AR, AS_O = WS_O + P::WS_B;
     uint8_t* ring = v41_sx_sm + warp * P::warp(BM);
-    const int srow = lane < M ? sfrow[t0 + lane] : 0;  // lane r < M: activation row r's scale row
+    // lane r < M: activation row r's scale row (the pair itself when sfrow is null: a layout of the pairs)
+    const int srow = lane < M ? (sfrow ? sfrow[t0 + lane] : (int)(t0 + lane)) : 0;
     float acc[4] = {0.f, 0.f, 0.f, 0.f};
     // rows that are never copied (weight rows past N, activation rows past M) are never read: their fragments
     // and scale words are zeros in registers
@@ -686,8 +703,9 @@ static int v41_cc() {
 // - RTX PRO 6000 Max-Q (sm_120, 188 SMs; 2026-11-12): the line is in tile rows, not blocks: at 1 to 4 rows an
 //   expert the small-row body wins at every block count measured (median 0.61 at 1 row, 0.73 at 4; 0.63 at
 //   384 experts x 1 row, 30,720 blocks), 8 rows is level (median 1.01, 0.95-1.02) and 16 loses (1.83). Tiles of
-//   up to 8 rows take the small-row body (level at 8 rows; the split MoE's few-row calls then always take it).
-//   Other sm_120 cards take this rule until measured.
+//   up to 8 rows take the small-row body: level at 8 rows, and a split MoE call that takes it quantizes its rows
+//   straight into a layout of their own (no scale-row or placing launches; `dsv41_gpu::tp` split_hidden and
+//   split_out). Other sm_120 cards take this rule until measured.
 extern "C" int memra_v41_moe_small_fits(int max_tiles, int n, int nproj, int bm) {
     if (max_tiles <= 0 || n <= 0 || nproj < 1 || bm < 1) return 0;
     if (v41_cc() == 120) return bm <= V41_SM_MAX;
@@ -697,9 +715,9 @@ extern "C" int memra_v41_moe_small_fits(int max_tiles, int n, int nproj, int bm)
 
 // One small-row grouped call: projection p0 of every tile's expert into d0 and, when nproj is 2, p1 into d1
 // (bf16 rows at pair index, pitch ldc, n columns). a: the pairs' e4m3 codes [np][k] (pair p at row p, pitch lda);
-// asf + sfrow: their scales in the layout (`memra_v41_cutlass_sfrow`); ew: the rank's expert table (record g:
-// local expert g, the tiles' `expert`); ldb: a weight row's bytes (k / 2). tiles, ntiles, max_tiles, bm: the
-// plan's tile list with bm <= V41_SM_MAX. k a multiple of 128.
+// asf + sfrow: their scales in the layout (`memra_v41_cutlass_sfrow`; null sfrow: pair p's at scale row p, a layout
+// of the np pairs); ew: the rank's expert table (record g: local expert g, the tiles' `expert`); ldb: a weight row's
+// bytes (k / 2). tiles, ntiles, max_tiles, bm: the plan's tile list with bm <= V41_SM_MAX. k a multiple of 128.
 extern "C" int memra_v41_moe_small(const void* a, long lda, const void* asf, const int* sfrow, const void* tiles,
                                    const int* ntiles, int max_tiles, const void* ew, int nproj, int p0, int p1,
                                    long ldb, void* d0, void* d1, long ldc, int n, int k, int bm, void* stream) {

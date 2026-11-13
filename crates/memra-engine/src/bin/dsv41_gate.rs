@@ -1610,6 +1610,88 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         }
     }
 
+    // The split MoE's small-row quantization: `np + rows` hidden rows into two scale layouts in one
+    // launch (the pairs' rows a layout of np rows, the shared expert's rows their own at the next
+    // 128-row block) == act_quant's row-major codes and scales placed through sf_place twice.
+    for &(np, rows, k) in &[
+        (6usize, 1usize, 2304usize),
+        (24, 4, 2304),
+        (48, 8, 2304),
+        (128, 3, 2304),
+    ] {
+        let n = np + rows;
+        let kb = k / 32;
+        let mut xb = Vec::with_capacity(n * k * 2);
+        for _ in 0..n * k {
+            // bf16 near 1 with random signs and exponents a few steps apart
+            let sign = if rng.next() & 1 == 1 { 0x8000u16 } else { 0 };
+            let v = (0x3F00u16 + (rng.next() % 0x180) as u16) | sign;
+            xb.extend_from_slice(&v.to_le_bytes());
+        }
+        let x = Buf::from_bytes(&st, &xb)?;
+        let (q1, s1) = (ops.buf(n * k)?, ops.buf(n * kb)?);
+        ck("act_quant", unsafe {
+            ffi::memra_v41_act_quant(
+                x.p(&st).c(),
+                k as i64,
+                std::ptr::null(),
+                q1.p(&st).m(),
+                k as i64,
+                s1.p(&st).m(),
+                kb as i64,
+                std::ptr::null_mut(),
+                0,
+                n as i32,
+                k as i32,
+                sv,
+            )
+        })?;
+        let s_np = v::sf_bytes(np, k);
+        let lay = ops.buf(s_np + v::sf_bytes(rows, k))?;
+        for (src, dst, r) in [
+            (s1.p(&st), lay.p(&st), np),
+            (s1.at(&st, np * kb), lay.at(&st, s_np), rows),
+        ] {
+            ck("sf_place", unsafe {
+                ffi::memra_v41_sf_place(
+                    src.c(),
+                    kb as i64,
+                    std::ptr::null(),
+                    dst.m(),
+                    r as i32,
+                    k as i32,
+                    sv,
+                )
+            })?;
+        }
+        let (q2, lay2) = (ops.buf(n * k)?, ops.buf(s_np + v::sf_bytes(rows, k))?);
+        ck("act_quant_sf_split", unsafe {
+            ffi::memra_v41_act_quant_sf_split(
+                x.p(&st).c(),
+                k as i64,
+                q2.p(&st).m(),
+                k as i64,
+                lay2.p(&st).m(),
+                n as i32,
+                np as i32,
+                k as i32,
+                sv,
+            )
+        })?;
+        same(
+            rep,
+            &format!("schedule/act_quant_sf_split/np{np}_rows{rows}_codes"),
+            &q2.host(&st)?,
+            &q1.host(&st)?,
+        );
+        same(
+            rep,
+            &format!("schedule/act_quant_sf_split/np{np}_rows{rows}_scales"),
+            &lay2.host(&st)?,
+            &lay.host(&st)?,
+        );
+    }
+
     // the device plan against the host plan, then the grouped GEMM in every form against the dense
     // normal form run per expert, on a 16-expert slice
     // (rows, experts, top-k, tile rows, output columns): 576 is a rank's share of the hidden columns at 4
@@ -1973,6 +2055,46 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                     &format!("schedule/moe_small_pair/rows{rows}_w3{nt}"),
                     &us,
                     &u2,
+                );
+                // the split MoE's small-row path: the pairs' scales in a layout of their own (pair p
+                // at scale row p, no scale-row kernel)
+                let asf_np = Buf::from_bytes(&st, &sfp(np, k, &a_rows))?;
+                let fill = vec![0xA5u8; np * n * 2];
+                let (d0, d1) = (Buf::from_bytes(&st, &fill)?, Buf::from_bytes(&st, &fill)?);
+                ck("moe_small", unsafe {
+                    ffi::memra_v41_moe_small(
+                        a.p(&st).c(),
+                        k as i64,
+                        asf_np.p(&st).c(),
+                        std::ptr::null(),
+                        tiles.p(&st).c(),
+                        ntiles.p(&st).i(),
+                        max_tiles as i32,
+                        tab2.p(&st).c(),
+                        2,
+                        0,
+                        2,
+                        (k / 2) as i64,
+                        d0.p(&st).m(),
+                        d1.p(&st).m(),
+                        n as i64,
+                        n as i32,
+                        k as i32,
+                        bm as i32,
+                        sv,
+                    )
+                })?;
+                same(
+                    rep,
+                    &format!("schedule/moe_small_own_layout/rows{rows}_w1{nt}"),
+                    &d0.host(&st)?,
+                    &gs,
+                );
+                same(
+                    rep,
+                    &format!("schedule/moe_small_own_layout/rows{rows}_w3{nt}"),
+                    &d1.host(&st)?,
+                    &us,
                 );
             }
             same(

@@ -1717,6 +1717,45 @@ GB10 runs the same code as the previous commit (the rule is keyed on sm_120); it
 sm_120 kernel gate of this tree (RTX 5090 Laptop, the GB10 gate's fixtures): 856 checks, 0 failed
 (`receipts/kgate-5090/s2`).
 
+### The split MoE's small-row path without scale-row kernels
+
+At a few rows the split route's MoE ran five launches a layer that carry no arithmetic of their own: two scale-row
+kernels (`memra_v41_cutlass_sfrow`, before w1 + w3 and before w2), two placing kernels (`memra_v41_sf_place`: the
+pairs' row-major scale codes into the padded layout of the grouped call, the shared expert's into a layout of their
+own) and the SwiGLU between w1 + w3 and the gather. CUTLASS's grouped kernel needs the padded layout (each expert's
+rows start at a multiple of 128), so they were the price of the normal form. The small-row body reads each pair's
+scale row through `sfrow`, so where it runs the call the padded layout is not needed: pair p's scales sit at row p of
+a layout of the pairs.
+
+On that path (`moe_small_takes`: the plans the small-row body runs) the split MoE now quantizes straight into layouts
+of its own and drops all four. The hidden half: `act_quant_sf` of the pairs' gathered rows with no scale row (a layout
+of the np pairs), w1 + w3 in one small-row launch with a null `sfrow`, the SwiGLU. The output half:
+`memra_v41_act_quant_sf_split` quantizes the pairs' and the shared expert's hidden rows in one launch into two layouts
+(rows `[0, np)` a layout of their own, rows `[np, np + rows)` one at the next 128-row block), then w2 with a null
+`sfrow`, the shared expert's w2 on the second layout, the combine. Seven launches of the output half become four, four
+of the hidden half three. The general path (CUTLASS's grouped calls: GB10 from 4 rows, every call past 8 rows a tile)
+is unchanged.
+
+Fusing the SwiGLU into the w1 + w3 launch was measured and dropped (RTX 5090 Laptop, the probe's hidden half of one
+four-rank layer, graph replay, four runs each, medians in us at 1 / 4 / 8 rows): the old path 45.3 / 147.8 / 309.8; no
+scale-row kernel, SwiGLU separate 43.0 / 145.4 / 306.0; one warp running both chains on the same activation fragments
+45.8 / 162.5 / 300.0; the same with half the columns a warp 53.5 / 156.3 / 379.7; two warps a column run (w1 and w3)
+handing their results through shared memory 60.6 / 177.7 / 313.8. The small-row body is issue-bound at a few rows (the
+e2m1 container conversions), so a fused launch either doubles a warp's conversions per byte or halves the warps on the
+card; the separate SwiGLU launch costs less (`receipts/dense-small/moe-variants`). All three fused forms wrote the old
+path's bytes (`moecheck`: hidden rows and the layer's output columns, 0 bytes differ, rows 1, 4 and 8, every run).
+
+The bytes are the old path's: the kernel gate holds the null-`sfrow` call to the padded-layout call
+(`schedule/moe_small_own_layout/*`, both projections, every routing of tiles of up to 8 rows) and the split
+quantization to `act_quant` + `sf_place` (`schedule/act_quant_sf_split/*`, codes and both layouts).
+
+On the final tree's proxy run (`receipts/dense-small/out-full2-1113-0430`) the whole split MoE of a four-rank layer at
+1 / 4 rows takes 79.3 / 244.9 us against the CUTLASS tree's 85.0 / 249.4 (k3 81.3 / 253.8).
+
+GB10 gates of this tree are queued (kernels, tp at 2 and 4 ranks on every transport, decode and the graph door; the
+Sparks went to a landing record). The new checks pass in the final tree's kernel gates on GB10 and on sm_120 (972
+checks, 0 failed each; `receipts/gates-cutlass-gb10/s4`, `receipts/kgate-5090/s4`).
+
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
 The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor

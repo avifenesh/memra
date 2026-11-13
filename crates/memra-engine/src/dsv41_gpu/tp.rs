@@ -2812,15 +2812,57 @@ impl Ctx {
         plan: &super::MoePlanDev,
         hb: &Buf,
     ) -> Result<(), String> {
-        let g = self.g.clone();
         let st = self.ops.st.clone();
-        let (d, inter, np, hn, h0) = (g.dim, g.moe_inter, plan.np, lw.hid_l, lw.hid0);
+        let (d, np, hn, h0) = (self.g.dim, plan.np, lw.hid_l, lw.hid0);
         split_fmt(lw)?;
+        let small = super::moe_small_takes(plan, hn, 2);
+        // the pairs' rows gathered and quantized, w1 and w3 of every expert's slice in one grouped
+        // launch, the SwiGLU into the rank's columns of `hb`. On the small-row body the rows' scales
+        // go straight into a layout of their own (pair p at scale row p): no scale-row kernel.
+        let aq = self.ops.tmp(np * d)?;
+        let gb = self.ops.tmp(np * hn * 2)?;
+        let ub = self.ops.tmp(np * hn * 2)?;
+        if small {
+            let asf = self.ops.tmp(super::sf_bytes(np, d))?;
+            self.ops.act_quant_sf(
+                x,
+                d,
+                plan.ptok.p(&st),
+                np,
+                d,
+                aq.p(&st),
+                asf.p(&st),
+                Dp::NULL,
+            )?;
+            ck("moe_small", unsafe {
+                ffi::memra_v41_moe_small(
+                    aq.p(&st).c(),
+                    d as i64,
+                    asf.p(&st).c(),
+                    std::ptr::null(),
+                    plan.tiles.p(&st).c(),
+                    plan.ntiles.p(&st).i(),
+                    plan.max_tiles as i32,
+                    lw.exp_tab.p(&st).c(),
+                    2,
+                    0,
+                    2,
+                    (d / 2) as i64,
+                    gb.p(&st).m(),
+                    ub.p(&st).m(),
+                    hn as i64,
+                    hn as i32,
+                    d as i32,
+                    plan.bm as i32,
+                    self.ops.sv(),
+                )
+            })?;
+            return self.split_swiglu(plan, &gb, &ub, (h0, hn), hb);
+        }
         // the pairs' rows gathered and quantized, w1 and w3 of every expert's slice in one grouped
         // launch, the SwiGLU into the rank's columns of `hb`
         let sfrow = self.ops.tmp(np * 4)?;
         super::moe_sfrow(&self.ops, plan, &sfrow)?;
-        let aq = self.ops.tmp(np * d)?;
         let asf = self
             .ops
             .tmp(super::sf_bytes(super::moe_pad_rows(plan), d))?;
@@ -2834,8 +2876,6 @@ impl Ctx {
             asf.p(&st),
             sfrow.p(&st),
         )?;
-        let gb = self.ops.tmp(np * hn * 2)?;
-        let ub = self.ops.tmp(np * hn * 2)?;
         super::moe_gemm(
             &self.ops,
             plan,
@@ -2849,16 +2889,30 @@ impl Ctx {
             hn,
             d,
         )?;
+        self.split_swiglu(plan, &gb, &ub, (h0, hn), hb)
+    }
+
+    /// The SwiGLU of the pairs' w1 and w3 rows (`gb`, `ub`: `[np][hn]`), times each pair's routing
+    /// weight, into this rank's hidden columns `[h0, h0 + hn)` of `hb`.
+    fn split_swiglu(
+        &self,
+        plan: &super::MoePlanDev,
+        gb: &Buf,
+        ub: &Buf,
+        (h0, hn): (usize, usize),
+        hb: &Buf,
+    ) -> Result<(), String> {
+        let st = self.ops.st.clone();
         ck("swiglu", unsafe {
             ffi::memra_v41_swiglu(
-                gb.p(&st).m(),
-                ub.p(&st).m(),
+                gb.p(&st).c(),
+                ub.p(&st).c(),
                 hn as i64,
                 plan.pw.p(&st).f(),
-                g.swiglu_limit,
+                self.g.swiglu_limit,
                 hb.at(&st, h0 * 2).m(),
-                inter as i64,
-                np as i32,
+                self.g.moe_inter as i64,
+                plan.np as i32,
                 hn as i32,
                 self.ops.sv(),
             )
@@ -2877,7 +2931,64 @@ impl Ctx {
         out: Dp,
     ) -> Result<(), String> {
         let st = self.ops.st.clone();
-        let (inter, n) = (self.g.moe_inter, plan.np + rows);
+        let (inter, n, np, dn) = (self.g.moe_inter, plan.np + rows, plan.np, lw.shared[1].n);
+        if super::moe_small_takes(plan, dn, 1) {
+            // the small-row body: the pairs' and the shared expert's rows quantized straight into
+            // two scale layouts in one launch (pair p at scale row p; the shared rows a layout of
+            // their own at the next 128-row block), no scale-row or placing kernels; the bytes of
+            // the general path below
+            split_fmt(lw)?;
+            let q = self.ops.tmp(n * inter)?;
+            let s_np = super::sf_bytes(np, inter);
+            let asf = self.ops.tmp(s_np + super::sf_bytes(rows, inter))?;
+            ck("act_quant_sf_split", unsafe {
+                ffi::memra_v41_act_quant_sf_split(
+                    hb.p(&st).c(),
+                    inter as i64,
+                    q.p(&st).m(),
+                    inter as i64,
+                    asf.p(&st).m(),
+                    n as i32,
+                    np as i32,
+                    inter as i32,
+                    self.ops.sv(),
+                )
+            })?;
+            let o = self.ops.tmp(n * dn * 2)?;
+            ck("moe_small", unsafe {
+                ffi::memra_v41_moe_small(
+                    q.p(&st).c(),
+                    inter as i64,
+                    asf.p(&st).c(),
+                    std::ptr::null(),
+                    plan.tiles.p(&st).c(),
+                    plan.ntiles.p(&st).i(),
+                    plan.max_tiles as i32,
+                    lw.exp_tab.p(&st).c(),
+                    1,
+                    1,
+                    1,
+                    (inter / 2) as i64,
+                    o.p(&st).m(),
+                    std::ptr::null_mut(),
+                    dn as i64,
+                    dn as i32,
+                    inter as i32,
+                    plan.bm as i32,
+                    self.ops.sv(),
+                )
+            })?;
+            self.ops.gemm_q(
+                q.at(&st, np * inter),
+                asf.at(&st, s_np),
+                rows,
+                &lw.shared[1],
+                o.at(&st, np * dn * 2),
+                dn,
+                false,
+            )?;
+            return self.split_combine(lw, plan, &o, rows, out);
+        }
         let q = self.ops.tmp(n * inter)?;
         let sc = self.ops.tmp(n * inter / 32)?;
         // row-major scales, as the many-row path gathers them ([`Self::split_out_q`] places them)
@@ -2943,9 +3054,8 @@ impl Ctx {
         rows: usize,
         out: Dp,
     ) -> Result<(), String> {
-        let g = self.g.clone();
         let st = self.ops.st.clone();
-        let (d, inter, np, dn) = (g.dim, g.moe_inter, plan.np, lw.shared[1].n);
+        let (inter, np, dn) = (self.g.moe_inter, plan.np, lw.shared[1].n);
         let o = self.ops.tmp((np + rows) * dn * 2)?;
         // the row-major scales into the GEMMs' layout: the pairs' at their rows of the experts'
         // padded layout, the shared expert's rows as a call of their own
@@ -2994,6 +3104,22 @@ impl Ctx {
             dn,
             false,
         )?;
+        self.split_combine(lw, plan, &o, rows, out)
+    }
+
+    /// The split MoE's combine on this rank: each token's pair rows of `o` (`[np + rows][dn]`, the
+    /// shared expert's rows last) into its output columns of `out`.
+    fn split_combine(
+        &self,
+        lw: &LayerW,
+        plan: &super::MoePlanDev,
+        o: &Buf,
+        rows: usize,
+        out: Dp,
+    ) -> Result<(), String> {
+        let g = &self.g;
+        let st = self.ops.st.clone();
+        let (d, np, dn) = (g.dim, plan.np, lw.shared[1].n);
         ck("moe_combine", unsafe {
             ffi::memra_v41_moe_combine(
                 o.p(&st).c(),

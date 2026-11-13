@@ -544,6 +544,20 @@ pub mod ffi {
             k: i32,
             stream: *mut c_void,
         ) -> i32;
+        /// [`memra_v41_act_quant_sf`] of `rows` rows into two layouts in one launch: rows
+        /// `[0, split)` in the layout of `split` rows at `sf`, rows `[split, rows)` in their own
+        /// layout at `sf` + `memra_v41_sf_bytes(split, k)`.
+        pub fn memra_v41_act_quant_sf_split(
+            x: *const c_void,
+            ldx: i64,
+            q: *mut c_void,
+            ldq: i64,
+            sf: *mut c_void,
+            rows: i32,
+            split: i32,
+            k: i32,
+            stream: *mut c_void,
+        ) -> i32;
         /// Row-major scale codes into the layout at scale row `sfrow[r]` (r when null).
         pub fn memra_v41_sf_place(
             s: *const c_void,
@@ -614,7 +628,8 @@ pub mod ffi {
         ) -> i32;
         /// The small-row body of a grouped call (`cu/dsv41_gpu.cu`): the plan's tile list (tiles
         /// of at most 8 rows), projection `p0` into `d0` and, with `nproj` 2, `p1` into `d1`; the
-        /// program of the CUTLASS grouped kernel element for element.
+        /// program of the CUTLASS grouped kernel element for element. A null `sfrow` reads pair
+        /// p's scales at row p of a layout of the pairs.
         pub fn memra_v41_moe_small(
             a: *const c_void,
             lda: i64,
@@ -2853,6 +2868,22 @@ pub fn moe_sfrow(ops: &Ops, plan: &MoePlanDev, sfrow: &Buf) -> Result<(), String
     })
 }
 
+/// Whether a grouped call over `plan` of `n` output columns and `nproj` projections runs the
+/// small-row body ([`moe_gemm`]): a plan of small-row tiles whose launch the card's rule takes
+/// (`memra_v41_moe_small_fits`). Speed only: the two bodies write the same bytes.
+pub fn moe_small_takes(plan: &MoePlanDev, n: usize, nproj: usize) -> bool {
+    // SAFETY: a host-side decision, no device work
+    plan.bm <= SMALL_M
+        && unsafe {
+            ffi::memra_v41_moe_small_fits(
+                plan.max_tiles as i32,
+                n as i32,
+                nproj as i32,
+                plan.bm as i32,
+            )
+        } != 0
+}
+
 /// One grouped GEMM over `plan`'s local experts: projections `proj.0` into `d.0` and, when
 /// `proj.1` differs, `proj.1` into `d.1` in the same launch (0 w1, 1 w2, 2 w3 of the table `tab`).
 /// `a` holds the pairs' codes `[np][k]` and `asf` their scales placed through [`moe_sfrow`] (`sfrow`
@@ -2879,17 +2910,7 @@ pub fn moe_gemm(
 ) -> Result<(), String> {
     let st = &ops.st;
     let nproj = if proj.0 == proj.1 { 1 } else { 2 };
-    // SAFETY: a host-side decision, no device work
-    let small = plan.bm <= SMALL_M
-        && unsafe {
-            ffi::memra_v41_moe_small_fits(
-                plan.max_tiles as i32,
-                n as i32,
-                nproj as i32,
-                plan.bm as i32,
-            )
-        } != 0;
-    if small {
+    if moe_small_takes(plan, n, nproj) {
         return ck("moe_small", unsafe {
             ffi::memra_v41_moe_small(
                 a.p(st).c(),
