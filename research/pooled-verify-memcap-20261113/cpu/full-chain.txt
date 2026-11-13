@@ -1,0 +1,26 @@
+# 2026-11-13T00:45:48+01:00 full CPU chain of memra#1266
+# 2026-11-13T00:45:48+01:00 fmt
+fmt rc=0
+# 2026-11-13T00:45:57+01:00 clippy
+clippy rc=0
+# 2026-11-13T00:46:34+01:00 coalescer
+coalescer rc=0
+# 2026-11-13T00:46:37+01:00 server
+server rc=0
+  passed 1227, failed 0, ignored 14 over 6 binaries
+# 2026-11-13T00:53:06+01:00 kv
+kv rc=0
+  passed 87, failed 0, ignored 0 over 1 binaries
+# 2026-11-13T00:53:06+01:00 engine
+engine rc=0
+  passed 746, failed 0, ignored 65 over 1 binaries
+# 2026-11-13T00:53:11+01:00 gguf
+gguf rc=0
+  passed 417, failed 0, ignored 2 over 1 binaries
+# 2026-11-13T00:53:13+01:00 portable
+portable rc=0
+FULL-DONE
+skip-census: 448 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 17 binaries
+3
+   Compiling memra-server v0.141.1 (<lane>/src/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 36.21s

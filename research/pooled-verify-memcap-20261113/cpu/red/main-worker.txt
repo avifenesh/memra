@@ -1,0 +1,8 @@
+arm main-worker written
+test worker::pre_cohort_reclaim_1266_tests::the_cohorts_pass_reclaims_before_it_forms_cohorts ... FAILED
+thread 'worker::pre_cohort_reclaim_1266_tests::the_cohorts_pass_reclaims_before_it_forms_cohorts' (1202194) panicked at crates/memra-server/src/worker.rs:56886:9:
+assertion `left == right` failed
+  left: 0
+ right: 1
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.18s
+arm restore written
