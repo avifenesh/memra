@@ -628,8 +628,10 @@ impl KvLayer {
 
     /// The refusal of setting this layer's length to `rows` while a lend reads rows past them.
     pub fn lend_floor_refusal(&self, what: &str, rows: usize) -> Option<String> {
-        lend_floor_refusal(what, rows, self.lent_rows())
-            .map(|why| format!("{why} (rows: {rows} < {} lent)", self.lent_rows()))
+        let lent = self.lent_rows();
+        (rows < lent).then(|| {
+            format!("REFUSED: {what} to row {rows} is below the {lent} rows lent to a prefix entry")
+        })
     }
 
     /// The rows consumers may touch on both planes (capacity rows for pooled planes).
