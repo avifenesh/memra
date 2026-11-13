@@ -3503,51 +3503,168 @@ impl Engine {
             return Err("F8F4 v1: no seeded scratch for an unwritten activation".into());
         }
         let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
-        {
-            let stream = self.gpu.stream();
-            let (w_p, _gw) = bytes.device_ptr(&stream);
-            let (x_p, _gx) = x.device_ptr(&stream);
-            let (y_p, _gy) = y.device_ptr_mut(&stream);
-            let (s_p, _gs) = scratch.device_ptr_mut(&stream);
-            // Scratch layouts are footprint-identical, so only the entry point swaps.
-            let rc = unsafe {
-                if f8f4 {
-                    memra_mmq_nvfp4_f8f4(
-                        w_p as *const core::ffi::c_void,
-                        x_p as *const f32,
-                        y_p as *mut f32,
-                        in_f as i32,
-                        out_f as i32,
-                        m as i32,
-                        s_p as *mut core::ffi::c_void,
-                        stream.cu_stream() as *mut core::ffi::c_void,
-                        scale,
-                        rp as i32,
-                    )
-                } else {
-                    memra_mmq_nvfp4_w4a8(
-                        w_p as *const core::ffi::c_void,
-                        x_p as *const f32,
-                        y_p as *mut f32,
-                        in_f as i32,
-                        out_f as i32,
-                        m as i32,
-                        s_p as *mut core::ffi::c_void,
-                        stream.cu_stream() as *mut core::ffi::c_void,
-                        scale,
-                        rp as i32,
-                    )
-                }
-            };
-            if rc != 0 {
-                return Err(format!("memra_mmq_nvfp4_w4a8(f8f4={f8f4}) rc={rc}").into());
-            }
-        }
+        self.mmq_nvfp4_w4a8_launch(
+            bytes,
+            x,
+            &mut y,
+            &mut scratch,
+            m,
+            in_f,
+            out_f,
+            scale,
+            rp,
+            f8f4,
+        )?;
         if in_group && let Some(g) = group.as_mut() {
             g.scratch = Some(scratch);
             g.v2 = false;
         }
         Ok(y)
+    }
+
+    /// The W4A8 (or, `f8f4`, the F8F4) MMQ launch that quantizes `x` into `scratch` and writes
+    /// `y[..m * out_f]`: the one launch both `qmatvec_mmq_nvfp4_w4a8_scaled` (into its own fresh
+    /// output) and `matmul_prefill_w4a8_into` (into the caller's buffer) issue.
+    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    fn mmq_nvfp4_w4a8_launch(
+        &self,
+        bytes: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        scratch: &mut CudaSlice<u8>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        scale: f32,
+        rp: bool,
+        f8f4: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let stream = self.gpu.stream();
+        let (w_p, _gw) = bytes.device_ptr(&stream);
+        let (x_p, _gx) = x.device_ptr(&stream);
+        let (y_p, _gy) = y.device_ptr_mut(&stream);
+        let (s_p, _gs) = scratch.device_ptr_mut(&stream);
+        // Scratch layouts are footprint-identical, so only the entry point swaps.
+        let rc = unsafe {
+            if f8f4 {
+                memra_mmq_nvfp4_f8f4(
+                    w_p as *const core::ffi::c_void,
+                    x_p as *const f32,
+                    y_p as *mut f32,
+                    in_f as i32,
+                    out_f as i32,
+                    m as i32,
+                    s_p as *mut core::ffi::c_void,
+                    stream.cu_stream() as *mut core::ffi::c_void,
+                    scale,
+                    rp as i32,
+                )
+            } else {
+                memra_mmq_nvfp4_w4a8(
+                    w_p as *const core::ffi::c_void,
+                    x_p as *const f32,
+                    y_p as *mut f32,
+                    in_f as i32,
+                    out_f as i32,
+                    m as i32,
+                    s_p as *mut core::ffi::c_void,
+                    stream.cu_stream() as *mut core::ffi::c_void,
+                    scale,
+                    rp as i32,
+                )
+            }
+        };
+        if rc != 0 {
+            return Err(format!("memra_mmq_nvfp4_w4a8(f8f4={f8f4}) rc={rc}").into());
+        }
+        Ok(())
+    }
+
+    /// Whether `matmul_prefill` (and `matmul`, which it reaches for an unstamped weight) runs
+    /// `w` at `m` rows on the plain W4A8 MMQ tile, the one arm `matmul_prefill_w4a8_into` writes
+    /// into a caller's buffer. It follows that dispatch's order: no calibrated A4 stamp, no FP8
+    /// operand or f16 mirror (`try_fp8_gemm`, `try_fp8_blk_mmq` and `try_f16_gemm` return None),
+    /// the GEMM tier (`m >= 16` outside a verify-exact scope), `out_f >= 128`, an NVFP4 weight the
+    /// MMQ policy takes on W4A8 (`mmq_supports`, `nvfp4_use_w4a8`), and the F8F4 tile off.
+    pub(crate) fn mmq_w4a8_into_route(&self, w: &crate::model::GpuTensor, m: usize) -> bool {
+        use crate::model::GpuTensor;
+        let GpuTensor::Quant {
+            qtype,
+            rp,
+            fp8: None,
+            f16: None,
+            a4: None,
+            ..
+        } = w
+        else {
+            return false;
+        };
+        if *qtype != crate::QT_NVFP4
+            || m < 16
+            || self.verify_exact_on()
+            || w.out_features() < 128
+            || !self.mmq_supports(w)
+            || self.mmq_f8f4_route()
+        {
+            return false;
+        }
+        let w4a8_explicit = std::env::var("MEMRA_MMQ_W4A8")
+            .map(|v| v != "0")
+            .unwrap_or(false);
+        nvfp4_use_w4a8(
+            *rp,
+            w4a8_explicit,
+            mmq_w4a8_enabled(),
+            std::env::var("MEMRA_MMQ").is_ok(),
+        )
+    }
+
+    /// `matmul_prefill(w, x, m)` written into `dst[..m * out_f]` instead of a fresh output, when
+    /// `mmq_w4a8_into_route` holds: the same launch on the same operands, so the same bytes.
+    /// Returns false, writing nothing, for every other arm (the caller then takes the allocating
+    /// call). memra#1258: the prime's FFN outputs land in the resident prime slabs, so a prime
+    /// call stops drawing two [t, n_ff] and one [t, n_embd] f32 planes per layer from the pool.
+    /// Only `HybridModel::prime_layers` calls it (`only_prime_layers_writes_gemm_outputs_into_slabs`).
+    pub(crate) fn matmul_prefill_w4a8_into(
+        &self,
+        w: &crate::model::GpuTensor,
+        x: &CudaSlice<f32>,
+        m: usize,
+        dst: &mut CudaSlice<f32>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if !self.mmq_w4a8_into_route(w, m) {
+            return Ok(false);
+        }
+        let crate::model::GpuTensor::Quant {
+            bytes, scale, rp, ..
+        } = w
+        else {
+            unreachable!("mmq_w4a8_into_route holds only for a Quant tensor");
+        };
+        let (in_f, out_f) = (w.in_features(), w.out_features());
+        if dst.len() < m * out_f {
+            return Err(format!(
+                "matmul_prefill_w4a8_into: destination holds {} f32, the output needs {}",
+                dst.len(),
+                m * out_f
+            )
+            .into());
+        }
+        let act_bytes = unsafe { memra_mmq_nvfp4_w4a8_act_bytes(in_f as i32, m as i32) };
+        let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
+        self.mmq_nvfp4_w4a8_launch(
+            bytes,
+            x,
+            dst,
+            &mut scratch,
+            m,
+            in_f,
+            out_f,
+            *scale,
+            *rp,
+            false,
+        )?;
+        Ok(true)
     }
 
     /// CALIBRATED A4 PREFILL GEMM. Only reachable through `matmul_prefill`, and only for a weight
